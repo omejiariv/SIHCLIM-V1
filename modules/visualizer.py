@@ -16,7 +16,7 @@ import base64
 import branca.colormap as cm
 from pykrige.ok import OrdinaryKriging
 from scipy import stats
-from scipy.stats import gamma, norm
+from scipy.stats import gamma
 import statsmodels.api as sm
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import pacf
@@ -26,7 +26,7 @@ import pymannkendall as mk
 
 # --- Importaciones de Módulos Propios ---
 from modules.config import Config
-from modules.utils import add_folium_download_button, add_plotly_download_buttons
+from modules.utils import add_folium_download_button
 from modules.data_processor import calculate_spi, interpolate_idw, interpolate_rbf_spline
 
 # --- Funciones de Creación de Gráficos y Mapas ---
@@ -455,8 +455,7 @@ def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analys
             st.info("No hay datos de altitud o precipitación disponibles para analizar la relación.")
             
     with sub_tab_regional:
-        # (Código completo)
-
+        
 def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analysis, df_monthly_filtered):
     st.header("Mapas Avanzados")
     st.info(f"Mostrando análisis para {len(stations_for_analysis)} estaciones en el período {st.session_state.year_range[0]} - {st.session_state.year_range[1]}.")
@@ -1720,6 +1719,7 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     else:
 
         st.info("No hay datos de precipitación anual (con >= 10 meses) para mostrar en la selección actual.")
+
 
 
 
