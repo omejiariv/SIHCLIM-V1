@@ -14,6 +14,9 @@ class Config:
     LATITUDE_COL = 'latitud_geo'
     LONGITUDE_COL = 'longitud_geo'
     YEAR_COL = 'año'
+    ORIGIN_COL = 'origen'
+    ALTITUDE_COL = 'alt_est'
+    MUNICIPALITY_COL = 'municipio'
     
     # Rutas de Archivos (usando la ruta absoluta)
     LOGO_PATH = os.path.join(BASE_DIR, "data", "CuencaVerde Logo.jpg")
@@ -73,4 +76,5 @@ class Config:
             if key not in st.session_state:
 
                 st.session_state[key] = value
+
 
