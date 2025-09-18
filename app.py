@@ -75,7 +75,6 @@ def main():
         
         if st.button("Recargar Datos"):
             st.cache_data.clear()
-            # Reinicializar el estado de la sesión para una recarga limpia
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
@@ -110,67 +109,49 @@ def main():
             regions_list = sorted(st.session_state.gdf_stations[Config.REGION_COL].dropna().unique())
             selected_regions = st.multiselect('Filtrar por Depto/Región', options=regions_list, default=st.session_state.get('regions_multiselect', []), key='regions_multiselect')
             
-            temp_gdf = st.session_state.gdf_stations.copy()
+            temp_gdf_for_mun = st.session_state.gdf_stations.copy()
             if selected_regions:
-                temp_gdf = temp_gdf[temp_gdf[Config.REGION_COL].isin(selected_regions)]
-            municipios_list = sorted(temp_gdf[Config.MUNICIPALITY_COL].dropna().unique())
+                temp_gdf_for_mun = temp_gdf_for_mun[temp_gdf_for_mun[Config.REGION_COL].isin(selected_regions)]
+            municipios_list = sorted(temp_gdf_for_mun[Config.MUNICIPALITY_COL].dropna().unique())
             selected_municipios = st.multiselect('Filtrar por Municipio', options=municipios_list, default=st.session_state.get('municipios_multiselect', []), key='municipios_multiselect')
             
+            temp_gdf_for_celdas = temp_gdf_for_mun.copy()
             if selected_municipios:
-                temp_gdf = temp_gdf[temp_gdf[Config.MUNICIPALITY_COL].isin(selected_municipios)]
-            celdas_list = sorted(temp_gdf[Config.CELL_COL].dropna().unique())
+                temp_gdf_for_celdas = temp_gdf_for_celdas[temp_gdf_for_celdas[Config.MUNICIPALITY_COL].isin(selected_municipios)]
+            celdas_list = sorted(temp_gdf_for_celdas[Config.CELL_COL].dropna().unique())
             selected_celdas = st.multiselect('Filtrar por Celda_XY', options=celdas_list, default=st.session_state.get('celdas_multiselect', []), key='celdas_multiselect')
-
-            st.session_state.min_data_perc_slider = min_data_perc
-            st.session_state.selected_altitudes = selected_altitudes
-            st.session_state.selected_regions = selected_regions
-            st.session_state.selected_municipios = selected_municipios
-            st.session_state.selected_celdas = selected_celdas
-
+            
             if st.button("🧹 Limpiar Filtros"):
-                st.session_state.min_data_perc_slider = 0
-                st.session_state.altitude_multiselect = []
-                st.session_state.regions_multiselect = []
-                st.session_state.municipios_multiselect = []
-                st.session_state.celdas_multiselect = []
-                st.session_state.station_multiselect = []
-                st.session_state.select_all_checkbox = False
+                keys_to_clear = ['min_data_perc_slider', 'altitude_multiselect', 'regions_multiselect', 
+                                 'municipios_multiselect', 'celdas_multiselect', 'station_multiselect']
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.rerun()
-
-        gdf_filtered = apply_filters_to_stations(st.session_state.gdf_stations, min_data_perc, selected_altitudes, selected_regions, selected_municipios, selected_celdas)
         
+        gdf_filtered = apply_filters_to_stations(st.session_state.gdf_stations, min_data_perc, selected_altitudes, selected_regions, selected_municipios, selected_celdas)
+
         with st.sidebar.expander("**2. Selección de Estaciones y Período**", expanded=True):
             stations_options = sorted(gdf_filtered[Config.STATION_NAME_COL].unique())
+            select_all = st.checkbox("Seleccionar/Deseleccionar todas las estaciones", key='select_all_checkbox', value=True)
             
-            current_selection = st.session_state.get('station_multiselect', [])
-            valid_selection = [s for s in current_selection if s in stations_options]
-            st.session_state['station_multiselect'] = valid_selection
-            
-            select_all = st.checkbox("Seleccionar/Deseleccionar todas las estaciones", key='select_all_checkbox')
-            if select_all:
-                selected_stations = st.multiselect('Seleccionar Estaciones', options=stations_options, default=stations_options, key='station_multiselect')
-            else:
-                selected_stations = st.multiselect('Seleccionar Estaciones', options=stations_options, default=valid_selection, key='station_multiselect')
-            
-            st.session_state.station_multiselect = selected_stations
+            default_selection = stations_options if select_all else st.session_state.get('station_multiselect', [])
+            selected_stations = st.multiselect('Seleccionar Estaciones', options=stations_options, default=default_selection, key='station_multiselect')
             
             years_with_data = sorted(st.session_state.df_long[Config.YEAR_COL].unique())
             year_range_default = (min(years_with_data), max(years_with_data))
-            year_range = st.slider("Seleccionar Rango de Años", min_value=min(years_with_data), max_value=max(years_with_data), value=st.session_state.get('year_range', year_range_default))
-            st.session_state.year_range = year_range
+            year_range = st.slider("Seleccionar Rango de Años", min_value=min(years_with_data), max_value=max(years_with_data), value=st.session_state.get('year_range', year_range_default), key='year_range')
             
             meses_dict = {'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4, 'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8, 'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12}
-            meses_nombres = st.multiselect("Seleccionar Meses", list(meses_dict.keys()), default=list(meses_dict.keys()))
+            meses_nombres = st.multiselect("Seleccionar Meses", list(meses_dict.keys()), default=list(meses_dict.keys()), key='meses_nombres')
             meses_numeros = [meses_dict[m] for m in meses_nombres]
-            st.session_state.meses_numeros = meses_numeros
 
         with st.sidebar.expander("Opciones de Preprocesamiento de Datos", expanded=True):
-            analysis_mode_selection = st.radio("Análisis de Series Mensuales", ("Usar datos originales", "Completar series (interpolación)"), key="analysis_mode_radio")
-            st.session_state.analysis_mode = analysis_mode_selection
-            st.session_state.exclude_na = st.checkbox("Excluir datos nulos (NaN)", value=st.session_state.get('exclude_na', False))
-            st.session_state.exclude_zeros = st.checkbox("Excluir valores cero (0)", value=st.session_state.get('exclude_zeros', False))
+            st.radio("Análisis de Series Mensuales", ("Usar datos originales", "Completar series (interpolación)"), key="analysis_mode")
+            st.checkbox("Excluir datos nulos (NaN)", key='exclude_na')
+            st.checkbox("Excluir valores cero (0)", key='exclude_zeros')
         
-        stations_for_analysis = st.session_state.station_multiselect if st.session_state.station_multiselect else list(gdf_filtered[Config.STATION_NAME_COL].unique())
+        stations_for_analysis = st.session_state.station_multiselect
         gdf_filtered = gdf_filtered[gdf_filtered[Config.STATION_NAME_COL].isin(stations_for_analysis)]
 
         # --- LÓGICA CENTRAL DE PREPROCESAMIENTO ---
@@ -178,6 +159,7 @@ def main():
             df_monthly_processed = complete_series(st.session_state.df_long.copy())
         else:
             df_monthly_processed = st.session_state.df_long.copy()
+        
         st.session_state.df_monthly_processed = df_monthly_processed
 
         df_monthly_filtered = df_monthly_processed[
