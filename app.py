@@ -156,8 +156,6 @@ def main():
         # --- LÓGICA CENTRAL DE PREPROCESAMIENTO ---
         stations_for_analysis = selected_stations
         gdf_filtered = gdf_filtered[gdf_filtered[Config.STATION_NAME_COL].isin(stations_for_analysis)]
-
-        st.session_state.year_range = year_range
         st.session_state.meses_numeros = meses_numeros
 
         if st.session_state.analysis_mode == "Completar series (interpolación)":
