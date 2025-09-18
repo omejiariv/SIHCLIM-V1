@@ -16,6 +16,7 @@ import base64
 import branca.colormap as cm
 from pykrige.ok import OrdinaryKriging
 from scipy import stats
+from scipy.stats import gamma, norm
 import statsmodels.api as sm
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import pacf
@@ -1802,6 +1803,7 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     else:
 
         st.info("No hay datos de precipitación anual (con >= 10 meses) para mostrar en la selección actual.")
+
 
 
 
