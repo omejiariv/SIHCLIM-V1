@@ -12,7 +12,7 @@ import os
 from modules.config import Config
 from modules.data_processor import load_and_process_all_data, complete_series
 from modules.visualizer import (
-    display_welcome_tab,  
+    display_welcome_tab,  # <-- ✅ Indentado con 4 espacios
     display_spatial_distribution_tab,
     display_graphs_tab,
     display_advanced_maps_tab,
