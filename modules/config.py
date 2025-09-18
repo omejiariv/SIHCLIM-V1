@@ -12,7 +12,7 @@ class Config:
     STATION_NAME_COL = 'nom_est'
     PRECIPITATION_COL = 'precipitation'
     LATITUDE_COL = 'latitud_geo'
-    LONGITUDE_COL = 'longitud_geo' # <-- Nombre corregido
+    LONGITUDE_COL = 'longitud_geo'
     YEAR_COL = 'año'
     
     # Rutas de Archivos (usando la ruta absoluta)
@@ -73,3 +73,4 @@ class Config:
             if key not in st.session_state:
 
                 st.session_state[key] = value
+
