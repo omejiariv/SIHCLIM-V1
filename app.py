@@ -75,11 +75,13 @@ def main():
         
         if st.button("Recargar Datos"):
             st.cache_data.clear()
+            # Reinicializar el estado de la sesión para una recarga limpia
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
 
     if st.session_state.data_loaded:
+        
         def apply_filters_to_stations(df, min_perc, altitudes, regions, municipios, celdas):
             stations_filtered = df.copy()
             if Config.PERCENTAGE_COL in stations_filtered.columns:
@@ -108,14 +110,18 @@ def main():
             regions_list = sorted(st.session_state.gdf_stations[Config.REGION_COL].dropna().unique())
             selected_regions = st.multiselect('Filtrar por Depto/Región', options=regions_list, default=st.session_state.get('regions_multiselect', []), key='regions_multiselect')
             
-            temp_filtered_for_ui = apply_filters_to_stations(st.session_state.gdf_stations, min_data_perc, selected_altitudes, selected_regions, [], [])
-            municipios_list = sorted(temp_filtered_for_ui[Config.MUNICIPALITY_COL].dropna().unique())
+            temp_gdf = st.session_state.gdf_stations.copy()
+            if selected_regions:
+                temp_gdf = temp_gdf[temp_gdf[Config.REGION_COL].isin(selected_regions)]
+            municipios_list = sorted(temp_gdf[Config.MUNICIPALITY_COL].dropna().unique())
             selected_municipios = st.multiselect('Filtrar por Municipio', options=municipios_list, default=st.session_state.get('municipios_multiselect', []), key='municipios_multiselect')
             
-            temp_filtered_for_ui = apply_filters_to_stations(temp_filtered_for_ui, min_data_perc, selected_altitudes, selected_regions, selected_municipios, [])
-            celdas_list = sorted(temp_filtered_for_ui[Config.CELL_COL].dropna().unique())
+            if selected_municipios:
+                temp_gdf = temp_gdf[temp_gdf[Config.MUNICIPALITY_COL].isin(selected_municipios)]
+            celdas_list = sorted(temp_gdf[Config.CELL_COL].dropna().unique())
             selected_celdas = st.multiselect('Filtrar por Celda_XY', options=celdas_list, default=st.session_state.get('celdas_multiselect', []), key='celdas_multiselect')
 
+            st.session_state.min_data_perc_slider = min_data_perc
             st.session_state.selected_altitudes = selected_altitudes
             st.session_state.selected_regions = selected_regions
             st.session_state.selected_municipios = selected_municipios
@@ -132,9 +138,10 @@ def main():
                 st.rerun()
 
         gdf_filtered = apply_filters_to_stations(st.session_state.gdf_stations, min_data_perc, selected_altitudes, selected_regions, selected_municipios, selected_celdas)
-
+        
         with st.sidebar.expander("**2. Selección de Estaciones y Período**", expanded=True):
             stations_options = sorted(gdf_filtered[Config.STATION_NAME_COL].unique())
+            
             current_selection = st.session_state.get('station_multiselect', [])
             valid_selection = [s for s in current_selection if s in stations_options]
             st.session_state['station_multiselect'] = valid_selection
@@ -143,29 +150,27 @@ def main():
             if select_all:
                 selected_stations = st.multiselect('Seleccionar Estaciones', options=stations_options, default=stations_options, key='station_multiselect')
             else:
-                if not valid_selection and stations_options:
-                    st.session_state['station_multiselect'] = stations_options
-                    selected_stations = st.multiselect('Seleccionar Estaciones', options=stations_options, default=stations_options, key='station_multiselect_rerun')
-                else:
-                    selected_stations = st.multiselect('Seleccionar Estaciones', options=stations_options, default=st.session_state['station_multiselect'], key='station_multiselect')
+                selected_stations = st.multiselect('Seleccionar Estaciones', options=stations_options, default=valid_selection, key='station_multiselect')
+            
+            st.session_state.station_multiselect = selected_stations
             
             years_with_data = sorted(st.session_state.df_long[Config.YEAR_COL].unique())
-            year_range = st.slider("Seleccionar Rango de Años", min_value=min(years_with_data), max_value=max(years_with_data), value=st.session_state.get('year_range', (min(years_with_data), max(years_with_data))))
+            year_range_default = (min(years_with_data), max(years_with_data))
+            year_range = st.slider("Seleccionar Rango de Años", min_value=min(years_with_data), max_value=max(years_with_data), value=st.session_state.get('year_range', year_range_default))
+            st.session_state.year_range = year_range
             
             meses_dict = {'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4, 'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8, 'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12}
             meses_nombres = st.multiselect("Seleccionar Meses", list(meses_dict.keys()), default=list(meses_dict.keys()))
             meses_numeros = [meses_dict[m] for m in meses_nombres]
+            st.session_state.meses_numeros = meses_numeros
 
-        with st.sidebar.expander("Opciones de Preprocesamiento de Datos", expanded=False):
+        with st.sidebar.expander("Opciones de Preprocesamiento de Datos", expanded=True):
             analysis_mode_selection = st.radio("Análisis de Series Mensuales", ("Usar datos originales", "Completar series (interpolación)"), key="analysis_mode_radio")
-            exclude_na = st.checkbox("Excluir datos nulos (NaN)", value=st.session_state.get('exclude_na', False), key='exclude_na_checkbox')
-            exclude_zeros = st.checkbox("Excluir valores cero (0)", value=st.session_state.get('exclude_zeros', False), key='exclude_zeros_checkbox')
-            
             st.session_state.analysis_mode = analysis_mode_selection
-            st.session_state.exclude_na = exclude_na
-            st.session_state.exclude_zeros = exclude_zeros
-
-        stations_for_analysis = selected_stations if selected_stations else list(gdf_filtered[Config.STATION_NAME_COL].unique())
+            st.session_state.exclude_na = st.checkbox("Excluir datos nulos (NaN)", value=st.session_state.get('exclude_na', False))
+            st.session_state.exclude_zeros = st.checkbox("Excluir valores cero (0)", value=st.session_state.get('exclude_zeros', False))
+        
+        stations_for_analysis = st.session_state.station_multiselect if st.session_state.station_multiselect else list(gdf_filtered[Config.STATION_NAME_COL].unique())
         gdf_filtered = gdf_filtered[gdf_filtered[Config.STATION_NAME_COL].isin(stations_for_analysis)]
 
         # --- LÓGICA CENTRAL DE PREPROCESAMIENTO ---
@@ -173,9 +178,8 @@ def main():
             df_monthly_processed = complete_series(st.session_state.df_long.copy())
         else:
             df_monthly_processed = st.session_state.df_long.copy()
-        
         st.session_state.df_monthly_processed = df_monthly_processed
-        
+
         df_monthly_filtered = df_monthly_processed[
             (df_monthly_processed[Config.STATION_NAME_COL].isin(stations_for_analysis)) &
             (df_monthly_processed[Config.DATE_COL].dt.year >= year_range[0]) &
@@ -189,27 +193,20 @@ def main():
             (st.session_state.df_long[Config.YEAR_COL] <= year_range[1])
         ].copy()
 
-        if exclude_na:
+        if st.session_state.exclude_na:
             df_monthly_filtered.dropna(subset=[Config.PRECIPITATION_COL], inplace=True)
             annual_data_filtered.dropna(subset=[Config.PRECIPITATION_COL], inplace=True)
-        if exclude_zeros:
+        if st.session_state.exclude_zeros:
             df_monthly_filtered = df_monthly_filtered[df_monthly_filtered[Config.PRECIPITATION_COL] > 0]
             annual_data_filtered = annual_data_filtered[annual_data_filtered[Config.PRECIPITATION_COL] > 0]
-
+        
         annual_agg = annual_data_filtered.groupby([Config.STATION_NAME_COL, Config.YEAR_COL]).agg(
             precipitation_sum=(Config.PRECIPITATION_COL, 'sum'),
             meses_validos=(Config.PRECIPITATION_COL, 'count')
         ).reset_index()
         annual_agg.loc[annual_agg['meses_validos'] < 10, 'precipitation_sum'] = np.nan
+        df_anual_melted = annual_agg.rename(columns={'precipitation_sum': Config.PRECIPITATION_COL})
         
-        metadata_cols = [Config.STATION_NAME_COL, Config.MUNICIPALITY_COL, Config.LONGITUDE_COL, Config.LATITUDE_COL, Config.ALTITUDE_COL]
-        station_metadata = st.session_state.df_long[metadata_cols].drop_duplicates(subset=[Config.STATION_NAME_COL])
-        df_anual_melted = pd.merge(annual_agg, station_metadata, on=Config.STATION_NAME_COL, how='left')
-        df_anual_melted.rename(columns={'precipitation_sum': Config.PRECIPITATION_COL}, inplace=True)
-        
-        st.session_state.year_range = year_range
-        st.session_state.meses_numeros = meses_numeros
-
         # --- Pestañas y Visualización ---
         tab_names = [
             "🏠 Bienvenida", "🗺️ Distribución Espacial", "📊 Gráficos", "✨ Mapas Avanzados", 
@@ -224,7 +221,7 @@ def main():
         with tabs[1]:
             display_spatial_distribution_tab(gdf_filtered, stations_for_analysis, df_anual_melted, df_monthly_filtered)
         with tabs[2]:
-            display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analysis)
+            display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analysis, gdf_filtered)
         with tabs[3]:
             display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analysis, df_monthly_filtered)
         with tabs[4]:
@@ -238,7 +235,7 @@ def main():
         with tabs[8]:
             display_enso_tab(df_monthly_filtered, st.session_state.df_enso, gdf_filtered, stations_for_analysis)
         with tabs[9]:
-            display_trends_and_forecast_tab(df_anual_melted, df_monthly_processed, stations_for_analysis)
+            display_trends_and_forecast_tab(df_anual_melted, st.session_state.df_monthly_processed, stations_for_analysis)
         with tabs[10]:
             display_downloads_tab(df_anual_melted, df_monthly_filtered, stations_for_analysis)
         with tabs[11]:
