@@ -568,7 +568,6 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
 
     with mapa_interactivo_tab:
         st.subheader("Visualización de una Estación con Mini-gráfico de Precipitación")
-        # ✅ CORRECCIÓN: Usar `if not stations_for_analysis:`
         if not stations_for_analysis:
             st.warning("Por favor, seleccione al menos una estación en el panel lateral para ver esta sección.")
         else:
@@ -1811,4 +1810,5 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     else:
 
         st.info("No hay datos de precipitación anual (con >= 10 meses) para mostrar en la selección actual.")
+
 
