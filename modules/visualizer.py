@@ -1085,7 +1085,7 @@ def display_correlation_tab(df_monthly_filtered, stations_for_analysis):
             st.warning("No hay datos coincidentes entre la precipitación y el ENSO para la selección actual.")
             return
 
-        analysis_level = st.radio("Nivel de Análisis de Correlación con ENSO", ["Promedio de la selección", "Por Estación Individual"], key="enso_corr_level")
+        analysis_level = st.radio("Nivel de Análisis de Correlación con ENSO", ["Promedio de la selección", "Por Estación Individual"], horizontal=True, key="enso_corr_level")
         
         df_plot_corr = pd.DataFrame()
         title_text = ""
@@ -1568,10 +1568,12 @@ def display_trends_and_forecast_tab(df_anual_melted, df_monthly_to_process, stat
                         slope_lin, _, _, p_lin, _ = stats.linregress(station_data['año_num'], station_data[Config.PRECIPITATION_COL])
                     
                     if len(station_data) > 3:
-                        mk_result_table = mk.original
-                        trend_mk = mk_result.trend.capitalize()
-                        p_mk = mk.result.p
-                        slope_sen = mk_result.slope
+                        # --- INICIO DE CORRECCIÓN ---
+                        mk_result_table = mk.original_test(station_data[Config.PRECIPITATION_COL]) # Usar una variable local
+                        trend_mk = mk_result_table.trend.capitalize()
+                        p_mk = mk_result_table.p
+                        slope_sen = mk_result_table.slope
+                        # --- FIN DE CORRECCIÓN ---
 
                     results.append({
                         "Estación": station,
@@ -1694,8 +1696,7 @@ def display_trends_and_forecast_tab(df_anual_melted, df_monthly_to_process, stat
             else:
                 st.warning(f"No hay datos para la estación {station_to_analyze_acf} en el período seleccionado.")
     
-    # Lógica de Pronóstico SARIMA ya implementada arriba
-    
+
 def display_downloads_tab(df_anual_melted, df_monthly_filtered, stations_for_analysis):
     st.header("Opciones de Descarga")
     if len(stations_for_analysis) == 0:
@@ -1724,25 +1725,20 @@ def display_downloads_tab(df_anual_melted, df_monthly_filtered, stations_for_ana
             (st.session_state.df_monthly_processed[Config.DATE_COL].dt.month.isin(st.session_state.meses_numeros))
         ].copy()
         
-        # Aplicar los filtros de exclusión (NaN/Ceros) al DataFrame de descarga
-        if st.session_state.exclude_na:
-            df_completed_to_download.dropna(subset=[Config.PRECIPITATION_COL], inplace=True)
-        if st.session_state.exclude_zeros:
-            df_completed_to_download = df_completed_to_download[df_completed_to_download[Config.PRECIPITATION_COL] > 0]
-        
         csv_completado = convert_df_to_csv(df_completed_to_download)
         st.download_button("📥 Descargar CSV con Series Completadas", csv_completado, 'precipitacion_mensual_completada.csv', 'text/csv', key='download-completado')
-    else:
-        st.info("Para descargar las series completadas, seleccione la opción **Completar series (interpolación)** en el panel lateral.")
 
 def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analysis):
     st.header("Información Detallada de las Estaciones")
     selected_stations_str = f"{len(stations_for_analysis)} estaciones" if len(stations_for_analysis) > 1 else f"1 estación: {stations_for_analysis[0]}"
-    st.info(f"Mostrando análisis para {selected_stations_str} en el período {st.session_state.year_range[0]} - {st.session_state.year_range[1]}.")
+    st.info(f"Mostrando información para {selected_stations_str} en el período {st.session_state.year_range[0]} - {st.session_state.year_range[1]}.")
     
-    if len(stations_for_analysis) == 0:
+    if not stations_for_analysis:
         st.warning("Por favor, seleccione al menos una estación para ver esta sección.")
         return
+        
+    df_info_table = gdf_filtered[[Config.STATION_NAME_COL, Config.ALTITUDE_COL, Config.MUNICIPALITY_COL, Config.REGION_COL, Config.PERCENTAGE_COL]].copy()
+    
     if not df_anual_melted.empty:
         df_info_table = gdf_filtered[[Config.STATION_NAME_COL, Config.ALTITUDE_COL, Config.MUNICIPALITY_COL, Config.REGION_COL, Config.PERCENTAGE_COL]].copy()
         df_mean_precip = df_anual_melted.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].mean().round(0).reset_index()
@@ -1750,7 +1746,4 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
         df_info_table = df_info_table.merge(df_mean_precip, on=Config.STATION_NAME_COL, how='left')
         st.dataframe(df_info_table)
     else:
-
         st.info("No hay datos de precipitación anual (con >= 10 meses) para mostrar en la selección actual.")
-
-
