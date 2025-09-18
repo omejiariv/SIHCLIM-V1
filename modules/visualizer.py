@@ -1810,5 +1810,3 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     else:
 
         st.info("No hay datos de precipitación anual (con >= 10 meses) para mostrar en la selección actual.")
-
-
