@@ -48,7 +48,8 @@ def main():
 
     title_col1, title_col2 = st.columns([0.07, 0.93])
     with title_col1:
-        if os.path.exists(Config.LOGO_DROP_PATH): st.image(Config.LOGO_DROP_PATH, width=50)
+        if os.path.exists(Config.LOGO_DROP_PATH):
+            st.image(Config.LOGO_DROP_PATH, width=50)
     with title_col2:
         st.markdown(f'<h1 style="font-size:28px; margin-top:1rem;">{Config.APP_TITLE}</h1>', unsafe_allow_html=True)
     
@@ -123,7 +124,8 @@ def main():
             
             if st.button("🧹 Limpiar Filtros"):
                 keys_to_clear = ['min_data_perc_slider', 'altitude_multiselect', 'regions_multiselect', 
-                                 'municipios_multiselect', 'celdas_multiselect', 'station_multiselect']
+                                 'municipios_multiselect', 'celdas_multiselect', 'station_multiselect',
+                                 'select_all_checkbox', 'year_range', 'meses_nombres']
                 for key in keys_to_clear:
                     if key in st.session_state:
                         del st.session_state[key]
@@ -145,6 +147,7 @@ def main():
             meses_dict = {'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4, 'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8, 'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12}
             meses_nombres = st.multiselect("Seleccionar Meses", list(meses_dict.keys()), default=list(meses_dict.keys()), key='meses_nombres')
             meses_numeros = [meses_dict[m] for m in meses_nombres]
+            st.session_state.meses_numeros = meses_numeros # Guardar en session state para usarlo en visualizer
 
         with st.sidebar.expander("Opciones de Preprocesamiento de Datos", expanded=True):
             st.radio("Análisis de Series Mensuales", ("Usar datos originales", "Completar series (interpolación)"), key="analysis_mode")
