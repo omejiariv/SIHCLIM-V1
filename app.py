@@ -147,7 +147,7 @@ def main():
             meses_dict = {'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4, 'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8, 'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12}
             meses_nombres = st.multiselect("Seleccionar Meses", list(meses_dict.keys()), default=list(meses_dict.keys()), key='meses_nombres')
             meses_numeros = [meses_dict[m] for m in meses_nombres]
-            st.session_state.meses_numeros = meses_numeros # Guardar en session state para usarlo en visualizer
+            st.session_state.meses_numeros = meses_numeros
 
         with st.sidebar.expander("Opciones de Preprocesamiento de Datos", expanded=True):
             st.radio("Análisis de Series Mensuales", ("Usar datos originales", "Completar series (interpolación)"), key="analysis_mode")
