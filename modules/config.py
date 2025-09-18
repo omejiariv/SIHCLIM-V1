@@ -11,7 +11,9 @@ class Config:
     # Nombres de Columnas de Datos
     STATION_NAME_COL = 'nom_est'
     PRECIPITATION_COL = 'precipitation'
-    # ... (el resto de tus nombres de columnas) ...
+    LATITUDE_COL = 'latitud_geo'
+    LONGITUDE_COL = 'longitud_geo' # <-- Nombre corregido
+    YEAR_COL = 'año'
     
     # Rutas de Archivos (usando la ruta absoluta)
     LOGO_PATH = os.path.join(BASE_DIR, "data", "CuencaVerde Logo.jpg")
@@ -69,4 +71,5 @@ class Config:
         }
         for key, value in state_defaults.items():
             if key not in st.session_state:
+
                 st.session_state[key] = value
