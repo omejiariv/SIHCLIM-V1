@@ -137,7 +137,7 @@ def main():
             stations_options = sorted(gdf_filtered[Config.STATION_NAME_COL].unique())
             select_all = st.checkbox("Seleccionar/Deseleccionar todas las estaciones", key='select_all_checkbox', value=True)
             
-            default_selection = stations_options if select_all else st.session_state.get('station_multiselect', [])
+            default_selection = stations_options if select_all else []
             selected_stations = st.multiselect('Seleccionar Estaciones', options=stations_options, default=default_selection, key='station_multiselect')
             
             years_with_data = sorted(st.session_state.df_long[Config.YEAR_COL].unique())
@@ -147,7 +147,7 @@ def main():
             meses_dict = {'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4, 'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8, 'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12}
             meses_nombres = st.multiselect("Seleccionar Meses", list(meses_dict.keys()), default=list(meses_dict.keys()), key='meses_nombres')
             meses_numeros = [meses_dict[m] for m in meses_nombres]
-
+            
         with st.sidebar.expander("Opciones de Preprocesamiento de Datos", expanded=True):
             st.radio("Análisis de Series Mensuales", ("Usar datos originales", "Completar series (interpolación)"), key="analysis_mode")
             st.checkbox("Excluir datos nulos (NaN)", key='exclude_na')
