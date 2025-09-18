@@ -455,8 +455,6 @@ def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analys
             st.info("No hay datos de altitud o precipitación disponibles para analizar la relación.")
             
     with sub_tab_regional:
-
-    with sub_tab_regional: 
         st.subheader("Serie de Tiempo Promedio Regional (Múltiples Estaciones)")
 
         if len(stations_for_analysis) == 0:
@@ -776,21 +774,21 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
 
     with kriging_tab:
         st.subheader("Comparación de Superficies de Interpolación Anual")
-
+        
         df_anual_non_na = df_anual_melted.dropna(subset=[Config.PRECIPITATION_COL])
         if df_anual_non_na.empty or len(df_anual_non_na[Config.YEAR_COL].unique()) == 0:
             st.warning("No hay suficientes datos anuales para realizar la interpolación.")
         else:
             min_year, max_year = int(df_anual_non_na[Config.YEAR_COL].min()), int(df_anual_non_na[Config.YEAR_COL].max())
-
+            
             control_col, map_col1, map_col2 = st.columns([1, 2, 2])
-
+            
             with control_col:
                 st.markdown("##### Controles de los Mapas")
                 st.markdown("**Mapa 1**")
                 year1 = st.slider("Seleccione el año", min_year, max_year, max_year, key="interp_year1")
                 method1 = st.selectbox("Método de interpolación", options=["Kriging Ordinario", "IDW", "Spline (Thin Plate)"], key="interp_method1")
-
+                
                 st.markdown("---")
                 st.markdown("**Mapa 2**")
                 year2 = st.slider("Seleccione el año", min_year, max_year, max_year - 1 if max_year > min_year else max_year, key="interp_year2")
@@ -798,7 +796,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
 
             def generate_interpolation_map(year, method, gdf_filtered_map):
                 data_year = df_anual_non_na[df_anual_non_na[Config.YEAR_COL] == year].copy()
-
+                
                 if len(data_year) < 4:
                     fig = go.Figure()
                     fig.update_layout(title=f"Datos insuficientes para {method} en {year} (se necesitan >= 4)", xaxis_visible=False, yaxis_visible=False)
@@ -821,7 +819,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 except Exception as e:
                     st.error(f"Error al calcular {method} para el año {year}: {e}")
                     return go.Figure().update_layout(title=f"Error en {method} para {year}")
-
+                
                 if z_grid is not None:
                     fig = go.Figure(data=go.Contour(z=z_grid.T, x=grid_lon, y=grid_lat, 
                                                      colorscale='YlGnBu', contours=dict(showlabels=True, labelfont=dict(size=10, color='white'))))
@@ -834,7 +832,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 with st.spinner(f"Generando mapa 1 ({year1}, {method1})..."):
                     fig1 = generate_interpolation_map(year1, method1, gdf_filtered)
                     st.plotly_chart(fig1, use_container_width=True)
-
+            
             with map_col2:
                 with st.spinner(f"Generando mapa 2 ({year2}, {method2})..."):
                     fig2 = generate_interpolation_map(year2, method2, gdf_filtered)
@@ -1803,6 +1801,7 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     else:
 
         st.info("No hay datos de precipitación anual (con >= 10 meses) para mostrar en la selección actual.")
+
 
 
 
