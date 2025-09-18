@@ -147,17 +147,19 @@ def main():
             meses_dict = {'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4, 'Mayo': 5, 'Junio': 6, 'Julio': 7, 'Agosto': 8, 'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12}
             meses_nombres = st.multiselect("Seleccionar Meses", list(meses_dict.keys()), default=list(meses_dict.keys()), key='meses_nombres')
             meses_numeros = [meses_dict[m] for m in meses_nombres]
-            st.session_state.meses_numeros = meses_numeros
 
         with st.sidebar.expander("Opciones de Preprocesamiento de Datos", expanded=True):
             st.radio("Análisis de Series Mensuales", ("Usar datos originales", "Completar series (interpolación)"), key="analysis_mode")
             st.checkbox("Excluir datos nulos (NaN)", key='exclude_na')
             st.checkbox("Excluir valores cero (0)", key='exclude_zeros')
         
-        stations_for_analysis = st.session_state.station_multiselect
+        # --- LÓGICA CENTRAL DE PREPROCESAMIENTO ---
+        stations_for_analysis = selected_stations
         gdf_filtered = gdf_filtered[gdf_filtered[Config.STATION_NAME_COL].isin(stations_for_analysis)]
 
-        # --- LÓGICA CENTRAL DE PREPROCESAMIENTO ---
+        st.session_state.year_range = year_range
+        st.session_state.meses_numeros = meses_numeros
+
         if st.session_state.analysis_mode == "Completar series (interpolación)":
             df_monthly_processed = complete_series(st.session_state.df_long.copy())
         else:
