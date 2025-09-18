@@ -297,20 +297,7 @@ def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analys
 
     sub_tab_anual, sub_tab_mensual, sub_tab_comparacion, sub_tab_distribucion, sub_tab_acumulada, sub_tab_altitud, sub_tab_regional = st.tabs(["Análisis Anual", "Análisis Mensual", "Comparación Rápida", "Distribución", "Acumulada", "Relación Altitud", "Serie Regional"])
 
-    with sub_tab_altitud:
-        st.subheader("Relación entre Altitud y Precipitación")
-        if not df_anual_melted.empty and not gdf_filtered[Config.ALTITUDE_COL].isnull().all():
-            df_relacion = df_anual_melted.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].mean().reset_index()
-            df_relacion = df_relacion.merge(gdf_filtered[[Config.STATION_NAME_COL, Config.ALTITUDE_COL]].drop_duplicates(), on=Config.STATION_NAME_COL, how='left')
-            fig_relacion = px.scatter(df_relacion, x=Config.ALTITUDE_COL, y=Config.PRECIPITATION_COL, color=Config.STATION_NAME_COL,
-                                      title='Relación entre Precipitación Media Anual y Altitud',
-                                      labels={Config.ALTITUDE_COL: 'Altitud (m)', Config.PRECIPITATION_COL: 'Precipitación Media Anual (mm)'})
-            fig_relacion.update_layout(height=600)
-            st.plotly_chart(fig_relacion, use_container_width=True)
-        else:
-            st.info("No hay datos de altitud o precipitación disponibles para analizar la relación.")
-    
-        with sub_tab_anual:
+    with sub_tab_anual:
         anual_graf_tab, anual_analisis_tab = st.tabs(["Gráfico de Serie Anual", "Análisis Multianual"])
         with anual_graf_tab:
             if not df_anual_melted.empty:
@@ -455,9 +442,9 @@ def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analys
 
     with sub_tab_altitud:
         st.subheader("Relación entre Altitud y Precipitación")
-        if not df_anual_melted.empty and not st.session_state.gdf_filtered[Config.ALTITUDE_COL].isnull().all():
+        if not df_anual_melted.empty and not gdf_filtered[Config.ALTITUDE_COL].isnull().all():
             df_relacion = df_anual_melted.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].mean().reset_index()
-            df_relacion = df_relacion.merge(st.session_state.gdf_filtered[[Config.STATION_NAME_COL, Config.ALTITUDE_COL]].drop_duplicates(), on=Config.STATION_NAME_COL, how='left')
+            df_relacion = df_relacion.merge(gdf_filtered[[Config.STATION_NAME_COL, Config.ALTITUDE_COL]].drop_duplicates(), on=Config.STATION_NAME_COL, how='left')
             fig_relacion = px.scatter(df_relacion, x=Config.ALTITUDE_COL, y=Config.PRECIPITATION_COL, color=Config.STATION_NAME_COL,
                                       title='Relación entre Precipitación Media Anual y Altitud',
                                       labels={Config.ALTITUDE_COL: 'Altitud (m)', Config.PRECIPITATION_COL: 'Precipitación Media Anual (mm)'})
@@ -465,6 +452,8 @@ def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analys
             st.plotly_chart(fig_relacion, use_container_width=True)
         else:
             st.info("No hay datos de altitud o precipitación disponibles para analizar la relación.")
+            
+    with sub_tab_regional:
 
     with sub_tab_regional: 
         st.subheader("Serie de Tiempo Promedio Regional (Múltiples Estaciones)")
@@ -1813,4 +1802,5 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     else:
 
         st.info("No hay datos de precipitación anual (con >= 10 meses) para mostrar en la selección actual.")
+
 
