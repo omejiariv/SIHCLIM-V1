@@ -33,17 +33,14 @@ from modules.data_processor import calculate_spi, interpolate_idw, interpolate_r
 def create_enso_chart(enso_data):
     if enso_data.empty or Config.ENSO_ONI_COL not in enso_data.columns:
         return go.Figure()
-
     data = enso_data.copy().sort_values(Config.DATE_COL)
     data.dropna(subset=[Config.ENSO_ONI_COL], inplace=True)
-
     conditions = [data[Config.ENSO_ONI_COL] >= 0.5, data[Config.ENSO_ONI_COL] <= -0.5]
     phases = ['El Niño', 'La Niña']
     colors = ['red', 'blue']
     data['phase'] = np.select(conditions, phases, default='Neutral')
     data['color'] = np.select(conditions, colors, default='grey')
     y_range = [data[Config.ENSO_ONI_COL].min() - 0.5, data[Config.ENSO_ONI_COL].max() + 0.5]
-
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=data[Config.DATE_COL], y=[y_range[1] - y_range[0]] * len(data),
@@ -52,22 +49,16 @@ def create_enso_chart(enso_data):
     ))
     legend_map = {'El Niño': 'red', 'La Niña': 'blue', 'Neutral': 'grey'}
     for phase, color in legend_map.items():
-        fig.add_trace(go.Scatter(
-            x=[None], y=[None], mode='markers',
-            marker=dict(size=15, color=color, symbol='square', opacity=0.5),
-            name=phase, showlegend=True
-        ))
-    fig.add_trace(go.Scatter(
-        x=data[Config.DATE_COL], y=data[Config.ENSO_ONI_COL],
-        mode='lines', name='Anomalía ONI', line=dict(color='black', width=2), showlegend=True
-    ))
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers',
+                                 marker=dict(size=15, color=color, symbol='square', opacity=0.5),
+                                 name=phase, showlegend=True))
+    fig.add_trace(go.Scatter(x=data[Config.DATE_COL], y=data[Config.ENSO_ONI_COL],
+                             mode='lines', name='Anomalía ONI', line=dict(color='black', width=2), showlegend=True))
     fig.add_hline(y=0.5, line_dash="dash", line_color="red")
     fig.add_hline(y=-0.5, line_dash="dash", line_color="blue")
-    fig.update_layout(
-        height=600, title="Fases del Fenómeno ENSO y Anomalía ONI",
-        yaxis_title="Anomalía ONI (°C)", xaxis_title="Fecha", showlegend=True,
-        legend_title_text='Fase', yaxis_range=y_range
-    )
+    fig.update_layout(height=600, title="Fases del Fenómeno ENSO y Anomalía ONI",
+                      yaxis_title="Anomalía ONI (°C)", xaxis_title="Fecha", showlegend=True,
+                      legend_title_text='Fase', yaxis_range=y_range)
     return fig
 
 def create_anomaly_chart(df_plot):
@@ -75,10 +66,8 @@ def create_anomaly_chart(df_plot):
         return go.Figure()
     df_plot['color'] = np.where(df_plot['anomalia'] < 0, 'red', 'blue')
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=df_plot[Config.DATE_COL], y=df_plot['anomalia'],
-        marker_color=df_plot['color'], name='Anomalía de Precipitación'
-    ))
+    fig.add_trace(go.Bar(x=df_plot[Config.DATE_COL], y=df_plot['anomalia'],
+                         marker_color=df_plot['color'], name='Anomalía de Precipitación'))
     if Config.ENSO_ONI_COL in df_plot.columns:
         df_plot_enso = df_plot.dropna(subset=[Config.ENSO_ONI_COL])
         nino_periods = df_plot_enso[df_plot_enso[Config.ENSO_ONI_COL] >= 0.5]
@@ -91,10 +80,8 @@ def create_anomaly_chart(df_plot):
                           fillcolor="blue", opacity=0.15, layer="below", line_width=0)
         fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers', marker=dict(symbol='square', color='rgba(255, 0, 0, 0.3)'), name='Fase El Niño'))
         fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers', marker=dict(symbol='square', color='rgba(0, 0, 255, 0.3)'), name='Fase La Niña'))
-    fig.update_layout(
-        height=600, title="Anomalías Mensuales de Precipitación y Fases ENSO",
-        yaxis_title="Anomalía de Precipitación (mm)", xaxis_title="Fecha", showlegend=True
-    )
+    fig.update_layout(height=600, title="Anomalías Mensuales de Precipitación y Fases ENSO",
+                      yaxis_title="Anomalía de Precipitación (mm)", xaxis_title="Fecha", showlegend=True)
     return fig
 
 def get_map_options():
@@ -135,11 +122,11 @@ def display_welcome_tab():
     st.header("Bienvenido al Sistema de Información de Lluvias y Clima")
     st.markdown(Config.WELCOME_TEXT, unsafe_allow_html=True)
     if os.path.exists(Config.LOGO_PATH):
-        st.image(Config.LOGO_PATH, width=400, caption="Corporación Cuenca Verde")
+        st.image(Config.LOGO_PATH, width=250, caption="Corporación Cuenca Verde")
 
 def display_spatial_distribution_tab(gdf_filtered, stations_for_analysis, df_anual_melted, df_monthly_filtered):
     st.header("Distribución espacial de las Estaciones de Lluvia")
-    if len(stations_for_analysis) == 0:
+    if not stations_for_analysis:
         st.warning("Por favor, seleccione al menos una estación para ver esta sección.")
         return
     
@@ -285,19 +272,32 @@ def display_spatial_distribution_tab(gdf_filtered, stations_for_analysis, df_anu
         else:
             st.warning("No hay estaciones seleccionadas para mostrar el gráfico.")
 
-def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analysis):
+def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analysis, gdf_filtered):
     st.header("Visualizaciones de Precipitación")
     
-    selected_stations_str = f"{len(stations_for_analysis)} estaciones" if len(stations_for_analysis) > 1 else f"1 estación: {stations_for_analysis[0]}"
-    st.info(f"Mostrando análisis para {selected_stations_str} en el período {st.session_state.year_range[0]} - {st.session_state.year_range[1]} y meses {', '.join([str(m) for m in st.session_state.meses_numeros])}.")
-
-    if len(stations_for_analysis) == 0:
+    if not stations_for_analysis:
         st.warning("Por favor, seleccione al menos una estación para ver esta sección.")
         return
 
+    selected_stations_str = f"{len(stations_for_analysis)} estaciones" if len(stations_for_analysis) > 1 else f"1 estación: {stations_for_analysis[0]}"
+    st.info(f"Mostrando análisis para {selected_stations_str} en el período {st.session_state.year_range[0]} - {st.session_state.year_range[1]} y meses {', '.join([str(m) for m in st.session_state.meses_numeros])}.")
+
     sub_tab_anual, sub_tab_mensual, sub_tab_comparacion, sub_tab_distribucion, sub_tab_acumulada, sub_tab_altitud, sub_tab_regional = st.tabs(["Análisis Anual", "Análisis Mensual", "Comparación Rápida", "Distribución", "Acumulada", "Relación Altitud", "Serie Regional"])
 
-    with sub_tab_anual:
+    with sub_tab_altitud:
+        st.subheader("Relación entre Altitud y Precipitación")
+        if not df_anual_melted.empty and not gdf_filtered[Config.ALTITUDE_COL].isnull().all():
+            df_relacion = df_anual_melted.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].mean().reset_index()
+            df_relacion = df_relacion.merge(gdf_filtered[[Config.STATION_NAME_COL, Config.ALTITUDE_COL]].drop_duplicates(), on=Config.STATION_NAME_COL, how='left')
+            fig_relacion = px.scatter(df_relacion, x=Config.ALTITUDE_COL, y=Config.PRECIPITATION_COL, color=Config.STATION_NAME_COL,
+                                      title='Relación entre Precipitación Media Anual y Altitud',
+                                      labels={Config.ALTITUDE_COL: 'Altitud (m)', Config.PRECIPITATION_COL: 'Precipitación Media Anual (mm)'})
+            fig_relacion.update_layout(height=600)
+            st.plotly_chart(fig_relacion, use_container_width=True)
+        else:
+            st.info("No hay datos de altitud o precipitación disponibles para analizar la relación.")
+    
+        with sub_tab_anual:
         anual_graf_tab, anual_analisis_tab = st.tabs(["Gráfico de Serie Anual", "Análisis Multianual"])
         with anual_graf_tab:
             if not df_anual_melted.empty:
@@ -1798,4 +1798,5 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
         df_info_table = df_info_table.merge(df_mean_precip, on=Config.STATION_NAME_COL, how='left')
         st.dataframe(df_info_table)
     else:
+
         st.info("No hay datos de precipitación anual (con >= 10 meses) para mostrar en la selección actual.")
