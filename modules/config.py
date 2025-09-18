@@ -4,9 +4,9 @@ import streamlit as st
 import pandas as pd
 import os
 
+# Define la ruta base del proyecto de forma robusta
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# ✅ REEMPLAZA TU CLASE CON ESTA VERSIÓN COMPLETA Y CORREGIDA
 class Config:
     # Nombres de Columnas de Datos
     STATION_NAME_COL = 'nom_est'
@@ -58,6 +58,7 @@ class Config:
     
     @staticmethod
     def initialize_session_state():
+        """Inicializa todas las variables necesarias en el estado de la sesión de Streamlit."""
         state_defaults = {
             'data_loaded': False,
             'analysis_mode': "Usar datos originales",
