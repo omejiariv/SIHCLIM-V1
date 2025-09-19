@@ -207,6 +207,7 @@ def display_spatial_distribution_tab(gdf_filtered, stations_for_analysis, df_anu
                 st.markdown("---")
                 m1, m2 = st.columns([1, 3])
                 with m1:
+                    # CORRECCIÓN 3: Mostrar logo gota
                     if os.path.exists(Config.LOGO_DROP_PATH):
                         st.image(Config.LOGO_DROP_PATH, width=50)
                 with m2:
@@ -404,7 +405,8 @@ def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analys
                                      color=Config.PRECIPITATION_COL,
                                      color_continuous_scale=px.colors.sequential.Blues_r)
                     
-                    fig_avg.update_layout(height=600, xaxis={'categoryorder': 'total descending' if "Mayor a Menor" in sort_order else ('total ascending' if "Menor a Mayor" in sort_order else 'trace')})
+                    fig_avg.update_layout(height=600, 
+                                        xaxis={'categoryorder': 'total descending' if "Mayor a Menor" in sort_order else ('total ascending' if "Menor a Mayor" in sort_order else 'trace')})
                     st.plotly_chart(fig_avg, use_container_width=True)
                 
                 else: # Gráfico de Cajas
@@ -738,7 +740,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     # CORRECCIÓN 3: Reducción de la altura (ajuste de estilo)
                     folium_static(m, height=450, width="100%") 
                 else:
-                    st.warning(f"No se encontró información geográfica para la estación {station_to_show}.")
+                    st.warning("No se encontró información geográfica para la estación {station_to_show}.")
 
 
     with temporal_tab:
@@ -1074,7 +1076,6 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                         z_grid = interpolate_idw(lons, lats, vals.values, grid_lon, grid_lat)
                     elif method == "Spline (Thin Plate)":
                         # CORRECCIÓN DE INTERPOLACIÓN: Aseguramos el nombre de la función 'thin_plate'
-                        # Aunque el error lo sugiere, a veces es la única forma de que funcione la dependencia subyacente.
                         rbf = Rbf(lons, lats, vals.values, function='thin_plate')
                         z_grid = rbf(grid_lon, grid_lat)
                         z_grid = z_grid.T # Transponer para Plotly
@@ -1842,7 +1843,7 @@ def display_trends_and_forecast_tab(df_anual_melted, df_monthly_to_process, stat
                     )
 
                 except Exception as e:
-                    st.error(f"No se pudo generar el pronóstico SARIMA. El modelo no pudo convergir. Error: {e}")
+                    st.error(f"No se pudo generar el pronóstico SARIMA. El modelo no pudo converger. Error: {e}")
 
     with pronostico_prophet_tab:
         st.subheader("Pronóstico de Precipitación Mensual (Modelo Prophet)")
