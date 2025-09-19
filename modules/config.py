@@ -7,7 +7,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class Config:
-    # Nombres de Columnas de Datos (Confirma que soi e iod están en minúsculas)
+    # Nombres de Columnas de Datos
     STATION_NAME_COL = 'nom_est'
     PRECIPITATION_COL = 'precipitation'
     LATITUDE_COL = 'latitud_geo'
@@ -22,7 +22,7 @@ class Config:
     REGION_COL = 'depto_region'
     PERCENTAGE_COL = 'porc_datos'
     CELL_COL = 'celda_xy'
-    # Índices climáticos leídos del archivo principal (Confirmados en minúsculas)
+    # Índices climáticos
     SOI_COL = 'soi'
     IOD_COL = 'iod'
 
