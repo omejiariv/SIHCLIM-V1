@@ -569,7 +569,7 @@ def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analys
                     fig_violin_mensual.update_layout(height=600)
                     st.plotly_chart(fig_violin_mensual, use_container_width=True)
             else:
-                st.info("No hay datos mensuales para mostrar la distribución.")
+                st.warning("No hay datos mensuales para mostrar la distribución.")
 
     with sub_tab_acumulada:
         st.subheader("Precipitación Acumulada Anual")
@@ -891,18 +891,21 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     df_anual_melted[Config.PRECIPITATION_COL].min(), \
                     df_anual_melted[Config.PRECIPITATION_COL].max()
 
-                # CORRECCIÓN FINAL PLOTLY: Cambiar YIGnBu (obsoleto) por YlGnBu (estándar de Plotly)
-                fig_mapa_animado = px.scatter_geo(df_anim_complete,
-                    lat=df_anim_complete[Config.LATITUDE_COL], 
-                    lon=df_anim_complete[Config.LONGITUDE_COL],
+                # CORRECCIÓN FINAL PLOTLY: ELIMINAR COLUMNA GEOMETRY ANTES DE PLOTLY
+                df_anim_plot = df_anim_complete.drop(columns=['geometry']).copy()
+                
+                # CORRECCIÓN DE PALETA PLOTLY: Usando YlGnBu (estándar de Plotly)
+                fig_mapa_animado = px.scatter_geo(df_anim_plot,
+                    lat=df_anim_plot[Config.LATITUDE_COL], 
+                    lon=df_anim_plot[Config.LONGITUDE_COL],
                     color='precipitacion_plot', size='precipitacion_plot',
                     hover_name=Config.STATION_NAME_COL,
-                    hover_data={'geometry': False, 'precipitacion_plot': False,
+                    hover_data={'precipitacion_plot': False,
                                 'texto_tooltip': True},
                     animation_frame=Config.YEAR_COL,
                     projection='natural earth',
                     title=f'Precipitación Anual por Estación ({st.session_state.year_range[0]} - {st.session_state.year_range[1]})',
-                    color_continuous_scale=px.colors.sequential.YlGnBu, # <--- CAMBIO AQUÍ
+                    color_continuous_scale=px.colors.sequential.YlGnBu, 
                     range_color=[min_precip_anim, max_precip_anim])
 
                 fig_mapa_animado.update_traces(hovertemplate='%{customdata[0]}')
@@ -1020,7 +1023,6 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 
                 st.markdown("---")
                 
-                st.markdown("**Mapa 2**")
                 year2 = st.slider("Seleccione el año", min_year, max_year, max_year - 1 if max_year > min_year else max_year, key="interp_year2")
                 method2 = st.selectbox("Método de interpolación", options=["Kriging Ordinario", "IDW",
                                                                          "Spline (Thin Plate)"], index=1, key="interp_method2")
@@ -1039,7 +1041,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                                       xaxis_visible=False, yaxis_visible=False)
                     return fig
 
-                # CORRECCIÓN: Usamos las columnas numéricas LAT/LON del DataFrame mergeado para la interpolación
+                # Usamos las columnas numéricas LAT/LON del DataFrame mergeado para la interpolación
                 lons = data_year_with_geom[Config.LONGITUDE_COL].values
                 lats = data_year_with_geom[Config.LATITUDE_COL].values
                 vals = data_year_with_geom[Config.PRECIPITATION_COL]
@@ -1064,12 +1066,17 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     return go.Figure().update_layout(title=f"Error en {method} para {year}")
 
                 if z_grid is not None:
+                    # Creamos una copia del DataFrame *sin* la columna geometry antes de Plotly
+                    df_plot_scatter = data_year_with_geom.drop(columns=['geometry']).copy()
+                    
                     fig = go.Figure(data=go.Contour(z=z_grid.T, x=grid_lon, y=grid_lat,
                                                     colorscale='YIGnBu', contours=dict(showlabels=True,
                                                                                        labelfont=dict(size=10, color='white'))))
                     
-                    fig.add_trace(go.Scatter(x=lons, y=lats, mode='markers', marker=dict(color='red',
-                                                                                         size=5), name='Estaciones'))
+                    # CORRECCIÓN: Usamos las columnas numéricas para Plotly Scatter.
+                    fig.add_trace(go.Scatter(x=df_plot_scatter[Config.LONGITUDE_COL], 
+                                             y=df_plot_scatter[Config.LATITUDE_COL], 
+                                             mode='markers', marker=dict(color='red', size=5), name='Estaciones'))
                     
                     fig.update_layout(title=f"Precipitación en {year} ({method})", height=600)
                     return fig
@@ -1702,12 +1709,10 @@ def display_enso_tab(df_monthly_filtered, df_enso, gdf_filtered, stations_for_an
 def display_trends_and_forecast_tab(df_anual_melted, df_monthly_to_process, stations_for_analysis):
     st.header("Análisis de Tendencias y Pronósticos")
 
-    # VERIFICACIÓN AL INICIO DE LA FUNCIÓN PARA EVITAR EL ERROR
     if not stations_for_analysis:
         st.warning("Por favor, seleccione al menos una estación para ver esta sección.")
         return
 
-    # Este código ahora solo se ejecuta si la lista de estaciones NO está vacía
     selected_stations_str = f"{len(stations_for_analysis)} estaciones" if len(stations_for_analysis) > 1 else f"1 estación: {stations_for_analysis[0]}"
     st.info(f"Mostrando análisis para {selected_stations_str} en el período {st.session_state.year_range[0]} - {st.session_state.year_range[1]}.")
 
@@ -2308,4 +2313,3 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
         df_info_table['Precipitación media anual (mm)'] = 'N/A'
     
     st.dataframe(df_info_table.drop(columns=[Config.PERCENTAGE_COL]).set_index(Config.STATION_NAME_COL), use_container_width=True)
-
