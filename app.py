@@ -133,6 +133,7 @@ def main():
             options = sorted(st.session_state.get('filtered_station_options', []))
             
             if st.session_state.get('select_all_checkbox', True):
+                # Solo asigna si hay opciones filtradas
                 st.session_state.station_multiselect = options
             else:
                 st.session_state.station_multiselect = []
@@ -189,6 +190,14 @@ def main():
                 on_change=sync_station_selection,
                 value=st.session_state.get('select_all_checkbox', True)
             )
+            
+            # === CORRECCIÓN CLAVE AQUÍ ===
+            # Sincroniza la lista de estaciones seleccionadas *inmediatamente* después de filtrar
+            # si el checkbox está marcado y la lista de opciones de estaciones ha cambiado.
+            if st.session_state.get('select_all_checkbox', True) and \
+               st.session_state.station_multiselect != stations_options:
+                st.session_state.station_multiselect = stations_options
+            # =============================
 
             selected_stations = st.multiselect(
                 'Seleccionar Estaciones',
