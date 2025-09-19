@@ -168,7 +168,7 @@ def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded
     df_long = df_precip_raw.melt(id_vars=id_vars, value_vars=station_id_cols,
         var_name='id_estacion', value_name=Config.PRECIPITATION_COL)
 
-    # Nota: Config.SOI_COL y Config.IOD_COL se confirman en minúsculas en config.py.
+    # Nota: Config.SOI_COL and Config.IOD_COL se confirman en minúsculas en config.py.
     cols_to_numeric = [Config.ENSO_ONI_COL, 'temp_sst', 'temp_media',
                        Config.PRECIPITATION_COL, Config.SOI_COL, Config.IOD_COL]
     
@@ -235,10 +235,11 @@ def calculate_spi(series, window):
     """Calcula el Índice Estandarizado de Precipitación (SPI) para una serie de tiempo."""
     # 1. Calcula la suma móvil de la precipitación
     rolling_sum = series.rolling(window, min_periods=window).sum()
+    
     # 2. Ajusta una distribución Gamma a los datos de la suma móvil
-    # Se eliminan los ceros y NaNs para un ajuste adecuado
     params = gamma.fit(rolling_sum.dropna(), floc=0)
     shape, loc, scale = params
+    
     # 3. Calcula la probabilidad acumulada (CDF) con la distribución Gamma
     cdf = gamma.cdf(rolling_sum, shape, loc=loc, scale=scale)
     
@@ -246,11 +247,11 @@ def calculate_spi(series, window):
     spi = norm.ppf(cdf)
     
     # CORRECCIÓN: Usar np.where y np.isinf para reemplazar infinities con NaN en el array.
-    # Esto soluciona el AttributeError: 'numpy.ndarray' object has no attribute 'replace'
+    # Soluciona el AttributeError: 'numpy.ndarray' object has no attribute 'replace'
     spi = np.where(np.isinf(spi), np.nan, spi)
     
-    # Reconvertir a Series para mantener el índice temporal, necesario para la app.
-    spi = pd.Series(spi, index=cdf.index)
+    # Reconvertir a Series usando el índice de rolling_sum, que es la Series original.
+    spi = pd.Series(spi, index=rolling_sum.index)
 
     return spi
 
