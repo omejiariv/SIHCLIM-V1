@@ -307,7 +307,7 @@ def display_spatial_distribution_tab(gdf_filtered, stations_for_analysis, df_anu
                     sort_order_comp = st.radio("Ordenar por:", ["% Datos Originales (Mayor a Menor)", "% Datos Originales (Menor a Mayor)", "Alfabético"], horizontal=True, key="sort_comp")
                     
                     if "Mayor a Menor" in sort_order_comp: data_composition = data_composition.sort_values("% Original", ascending=False)
-                    elif "Menor a Mayor" in sort_composition: data_composition = data_composition.sort_values("% Original", ascending=True)
+                    elif "Menor a Mayor" in sort_order_comp: data_composition = data_composition.sort_values("% Original", ascending=True)
                     else: data_composition = data_composition.sort_index(ascending=True)
 
                     df_plot = data_composition.reset_index().melt(
@@ -1026,8 +1026,6 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 method1 = st.selectbox("Método de interpolación", options=["Kriging Ordinario", "IDW",
                                                                          "Spline (Thin Plate)"], key="interp_method1")
                 
-                st.markdown("---")
-                
                 st.markdown("**Mapa 2**")
                 year2 = st.slider("Seleccione el año", min_year, max_year, max_year - 1 if max_year > min_year else max_year, key="interp_year2")
                 method2 = st.selectbox("Método de interpolación", options=["Kriging Ordinario", "IDW",
@@ -1052,8 +1050,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 lats = data_year_with_geom[Config.LATITUDE_COL].values
                 vals = data_year_with_geom[Config.PRECIPITATION_COL]
                 
-                # FIX: Convertir a GeoDataFrame para usar total_bounds (si es necesario), o usar gdf_filtered_map para bounds iniciales.
-                # Usaremos gdf_filtered_map para obtener los límites de toda la selección filtrada para consistencia.
+                # FIX: Obtenemos los límites de toda la selección filtrada (GeoDataFrame) para consistencia.
                 bounds = gdf_filtered_map.total_bounds
                 
                 grid_lon = np.linspace(bounds[0] - 0.1, bounds[2] + 0.1, 100)
@@ -1078,8 +1075,10 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     # Creamos una copia del DataFrame *sin* la columna geometry antes de Plotly
                     df_plot_scatter = data_year_with_geom.drop(columns=['geometry']).copy()
                     
+                    # FIX: Corregimos la paleta de colores a un estándar de Plotly, ya que YIGnBu falla.
                     fig = go.Figure(data=go.Contour(z=z_grid.T, x=grid_lon, y=grid_lat,
-                                                    colorscale='YIGnBu', contours=dict(showlabels=True,
+                                                    colorscale=px.colors.sequential.YlGnBu,
+                                                    contours=dict(showlabels=True,
                                                                                        labelfont=dict(size=10, color='white'))))
                     
                     # CORRECCIÓN: Usamos las columnas numéricas para Plotly Scatter.
