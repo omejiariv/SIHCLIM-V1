@@ -93,7 +93,7 @@ def main():
             stations_filtered = df.copy()
 
             if Config.PERCENTAGE_COL in stations_filtered.columns:
-                # CONVERSIÓN NUMÉRICA CORREGIDA: Reemplazar coma por punto decimal y convertir
+                # CORRECCIÓN: CONVERSIÓN NUMÉRICA ESTANDARIZADA
                 stations_filtered[Config.PERCENTAGE_COL] = \
                     pd.to_numeric(stations_filtered[Config.PERCENTAGE_COL].astype(str).str.replace(',', '.', regex=False),
                                   errors='coerce').fillna(0)
@@ -127,13 +127,12 @@ def main():
             
             return stations_filtered
 
-        # FUNCIÓN CALLBACK AÑADIDA AQUÍ
+        # FUNCIÓN CALLBACK DE SINCRONIZACIÓN
         def sync_station_selection():
             """Sincroniza el multiselect de estaciones con la casilla 'Seleccionar Todas'."""
             options = sorted(st.session_state.get('filtered_station_options', []))
             
             if st.session_state.get('select_all_checkbox', True):
-                # Solo asigna si hay opciones filtradas
                 st.session_state.station_multiselect = options
             else:
                 st.session_state.station_multiselect = []
@@ -191,13 +190,10 @@ def main():
                 value=st.session_state.get('select_all_checkbox', True)
             )
             
-            # === CORRECCIÓN CLAVE AQUÍ ===
-            # Sincroniza la lista de estaciones seleccionadas *inmediatamente* después de filtrar
-            # si el checkbox está marcado y la lista de opciones de estaciones ha cambiado.
+            # CORRECCIÓN DE LÓGICA CLAVE: Sincronización inmediata de estaciones después de aplicar filtros
             if st.session_state.get('select_all_checkbox', True) and \
                st.session_state.station_multiselect != stations_options:
                 st.session_state.station_multiselect = stations_options
-            # =============================
 
             selected_stations = st.multiselect(
                 'Seleccionar Estaciones',
