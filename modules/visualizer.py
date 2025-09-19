@@ -307,7 +307,7 @@ def display_spatial_distribution_tab(gdf_filtered, stations_for_analysis, df_anu
                     sort_order_comp = st.radio("Ordenar por:", ["% Datos Originales (Mayor a Menor)", "% Datos Originales (Menor a Mayor)", "Alfabético"], horizontal=True, key="sort_comp")
                     
                     if "Mayor a Menor" in sort_order_comp: data_composition = data_composition.sort_values("% Original", ascending=False)
-                    elif "Menor a Mayor" in sort_order_comp: data_composition = data_composition.sort_values("% Original", ascending=True)
+                    elif "Menor a Mayor" in sort_composition: data_composition = data_composition.sort_values("% Original", ascending=True)
                     else: data_composition = data_composition.sort_index(ascending=True)
 
                     df_plot = data_composition.reset_index().melt(
@@ -972,7 +972,12 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 if not data.empty:
                     data_with_geom = pd.merge(data, gdf_stations_info, on=Config.STATION_NAME_COL)
                     
-                    for _, row in data_with_geom.iterrows():
+                    # CORRECCIÓN DE GEOPANDAS: Convertir a GeoDataFrame para usar total_bounds
+                    gpd_data = gpd.GeoDataFrame(
+                        data_with_geom, geometry='geometry', crs=gdf_stations_info.crs
+                    ) 
+
+                    for _, row in gpd_data.iterrows():
                         if pd.notna(row[Config.PRECIPITATION_COL]):
                             folium.CircleMarker(
                                 location=[row['geometry'].y, row['geometry'].x], radius=5,
@@ -981,8 +986,8 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                                 tooltip=f"{row[Config.STATION_NAME_COL]}: {row[Config.PRECIPITATION_COL]:.0f} mm"
                             ).add_to(m)
 
-                    if not data_with_geom.empty:
-                        bounds = data_with_geom.total_bounds
+                    if not gpd_data.empty:
+                        bounds = gpd_data.total_bounds
                         if np.all(np.isfinite(bounds)):
                             m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
 
@@ -1046,6 +1051,9 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 lons = data_year_with_geom[Config.LONGITUDE_COL].values
                 lats = data_year_with_geom[Config.LATITUDE_COL].values
                 vals = data_year_with_geom[Config.PRECIPITATION_COL]
+                
+                # FIX: Convertir a GeoDataFrame para usar total_bounds (si es necesario), o usar gdf_filtered_map para bounds iniciales.
+                # Usaremos gdf_filtered_map para obtener los límites de toda la selección filtrada para consistencia.
                 bounds = gdf_filtered_map.total_bounds
                 
                 grid_lon = np.linspace(bounds[0] - 0.1, bounds[2] + 0.1, 100)
