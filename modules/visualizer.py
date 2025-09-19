@@ -740,7 +740,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     # CORRECCIÓN 3: Reducción de la altura (ajuste de estilo)
                     folium_static(m, height=450, width="100%") 
                 else:
-                    st.warning("No se encontró información geográfica para la estación {station_to_show}.")
+                    st.warning(f"No se encontró información geográfica para la estación {station_to_show}.")
 
 
     with temporal_tab:
@@ -982,6 +982,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     data_with_geom = pd.merge(data, gdf_stations_info, on=Config.STATION_NAME_COL)
                     
                     # CORRECCIÓN DE GEOPANDAS: Convertir a GeoDataFrame para usar total_bounds
+                    # Esto resuelve el error 'DataFrame' object has no attribute 'total_bounds'
                     gpd_data = gpd.GeoDataFrame(
                         data_with_geom, geometry='geometry', crs=gdf_stations_info.crs
                     ) 
@@ -1076,10 +1077,12 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                         z_grid = interpolate_idw(lons, lats, vals.values, grid_lon, grid_lat)
                     elif method == "Spline (Thin Plate)":
                         # CORRECCIÓN DE INTERPOLACIÓN: Aseguramos el nombre de la función 'thin_plate'
+                        # El error de SciPy se debe a que 'thin_plate' debe ser una string en minúsculas.
                         rbf = Rbf(lons, lats, vals.values, function='thin_plate')
                         z_grid = rbf(grid_lon, grid_lat)
                         z_grid = z_grid.T # Transponer para Plotly
                 except Exception as e:
+                    # Este log de error será crucial si la falla de Spline persiste.
                     st.error(f"Error al calcular {method} para el año {year}: {e}")
                     return go.Figure().update_layout(title=f"Error en {method} para {year}")
 
