@@ -1738,19 +1738,21 @@ def display_downloads_tab(df_anual_melted, df_monthly_filtered, stations_for_ana
 def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analysis):
     st.header("Información Detallada de las Estaciones")
 
-    # ✅ CORRECCIÓN: Se añade la verificación al inicio de la función.
     if not stations_for_analysis:
         st.warning("Por favor, seleccione al menos una estación para ver esta sección.")
         return
 
-    # Este código ahora es seguro porque la verificación ya se realizó.
     selected_stations_str = f"{len(stations_for_analysis)} estaciones" if len(stations_for_analysis) > 1 else f"1 estación: {stations_for_analysis[0]}"
     st.info(f"Mostrando información para {selected_stations_str} en el período {st.session_state.year_range[0]} - {st.session_state.year_range[1]}.")
     
+    if gdf_filtered.empty:
+        st.info("No hay estaciones que cumplan con los filtros geográficos y de datos seleccionados.")
+        return # Si no hay estaciones, no continuamos.
+
     # Prepara la tabla base con la información geográfica
     df_info_table = gdf_filtered[[Config.STATION_NAME_COL, Config.ALTITUDE_COL, Config.MUNICIPALITY_COL, Config.REGION_COL, Config.PERCENTAGE_COL]].copy()
     
-    # Calcula y une la precipitación media anual si hay datos disponibles
+    # Calcula y une la precipitación media anual si hay datos anuales disponibles
     if not df_anual_melted.empty:
         df_mean_precip = df_anual_melted.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].mean().round(0).reset_index()
         df_mean_precip.rename(columns={Config.PRECIPITATION_COL: 'Precipitación media anual (mm)'}, inplace=True)
@@ -1762,3 +1764,4 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     st.dataframe(df_info_table)
     else:
         st.info("No hay datos de precipitación anual (con >= 10 meses) para mostrar en la selección actual.")
+
