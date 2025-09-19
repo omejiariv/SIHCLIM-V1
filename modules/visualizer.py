@@ -152,6 +152,7 @@ def create_folium_map(location, zoom, base_map_config, overlays_config, fit_boun
     m = folium.Map(location=location, zoom_start=zoom, tiles=base_map_config.get("tiles", "OpenStreetMap"), attr=base_map_config.get("attr", None))
 
     if fit_bounds_data is not None and not fit_bounds_data.empty:
+        # Aquí fit_bounds_data es un GeoDataFrame, por lo que total_bounds funciona
         bounds = fit_bounds_data.total_bounds
         if np.all(np.isfinite(bounds)):
             m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
@@ -281,7 +282,8 @@ def display_spatial_distribution_tab(gdf_filtered, stations_for_analysis, df_anu
                 
                 folium.LayerControl().add_to(m)
                 m.add_child(MiniMap(toggle_display=True))
-                folium_static(m, height=700, width="100%")
+                # CORRECCIÓN 1: Reducción de la altura (ajuste de estilo)
+                folium_static(m, height=450, width="100%") 
                 add_folium_download_button(m, "mapa_distribucion.html")
             else:
                 st.warning("No hay estaciones seleccionadas para mostrar en el mapa.")
@@ -733,7 +735,8 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                                       popup=folium.Popup(html_popup, max_width=400)).add_to(m)
 
                     folium.LayerControl().add_to(m)
-                    folium_static(m, height=700, width="100%")
+                    # CORRECCIÓN 3: Reducción de la altura (ajuste de estilo)
+                    folium_static(m, height=450, width="100%") 
                 else:
                     st.warning(f"No se encontró información geográfica para la estación {station_to_show}.")
 
@@ -836,8 +839,12 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
 
             fig_racing.update_traces(texttemplate='%{x:.0f}', textposition='outside')
             
+            # CORRECCIÓN 2: Ajuste del rango del eje X (Asegurar límite superior explícito)
+            max_val_plot = df_anual_melted[Config.PRECIPITATION_COL].max()
+            x_range = [0, max_val_plot * 1.15 if max_val_plot > 0 else 100]
+
             fig_racing.update_layout(
-                xaxis_range=[0, df_anual_melted[Config.PRECIPITATION_COL].max() * 1.15],
+                xaxis_range=x_range,
                 height=max(600, len(stations_for_analysis) * 35),
                 title_font_size=20, font_size=12,
                 yaxis=dict(categoryorder='total ascending')
@@ -994,7 +1001,8 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     folium.LayerControl().add_to(m)
 
                 with col:
-                    folium_static(m, height=600, width="100%")
+                    # CORRECCIÓN 3: Reducción de la altura (ajuste de estilo)
+                    folium_static(m, height=450, width="100%")
 
             gdf_stations_geometries = gdf_filtered[[Config.STATION_NAME_COL,
                                                     'geometry']].drop_duplicates()
@@ -2321,3 +2329,4 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
         df_info_table['Precipitación media anual (mm)'] = 'N/A'
     
     st.dataframe(df_info_table.drop(columns=[Config.PERCENTAGE_COL]).set_index(Config.STATION_NAME_COL), use_container_width=True)
+
