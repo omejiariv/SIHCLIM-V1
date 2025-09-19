@@ -22,3 +22,4 @@ geopandas==0.14.4
 Fiona==1.9.6
 pyproj==3.6.1
 Shapely==2.0.4
+matplotlib
