@@ -4,37 +4,23 @@ import streamlit as st
 import pandas as pd
 import os
 
-# Define la ruta base del proyecto de forma robusta
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# 2. Ahora, definir la clase. Ya puede "ver" y usar la variable BASE_DIR.
 class Config:
     # Nombres de Columnas de Datos
     STATION_NAME_COL = 'nom_est'
     PRECIPITATION_COL = 'precipitation'
-    LATITUDE_COL = 'latitud_geo'
-    LONGITUDE_COL = 'longitud_geo'
-    YEAR_COL = 'año'
-    MONTH_COL = 'mes'
-    DATE_COL = 'fecha_mes_año'
-    ENSO_ONI_COL = 'anomalia_oni'
-    ORIGIN_COL = 'origen'
-    ALTITUDE_COL = 'alt_est'
-    MUNICIPALITY_COL = 'municipio'
-    REGION_COL = 'depto_region'
-    PERCENTAGE_COL = 'porc_datos'
-    CELL_COL = 'celda_xy'
-    
-    # Índices climáticos leídos del archivo principal
-    SOI_COL = 'soi'
-    IOD_COL = 'iod'
+    # ... (el resto de tus nombres de columnas) ...
     
     # Rutas de Archivos (usando la ruta absoluta)
-    LOGO_PATH = os.path.join(BASE_DIR, "data", "CuencaVerdeLogo_V1.JPG")
+    LOGO_PATH = os.path.join(BASE_DIR, "data", "CuencaVerde Logo.jpg")
     LOGO_DROP_PATH = os.path.join(BASE_DIR, "data", "CuencaVerdeGoticaLogo.JPG")
     GIF_PATH = os.path.join(BASE_DIR, "data", "PPAM.gif")
     
     # Mensajes de la UI
     APP_TITLE = "Sistema de información de las lluvias y el Clima en el norte de la región Andina"
+    # ... (el resto de tu clase Config se mantiene igual) ...
     WELCOME_TEXT = """
     Esta plataforma interactiva está diseñada para la visualización y análisis de datos históricos de precipitación y su
     relación con el fenómeno ENSO en el norte de la región Andina.
@@ -58,7 +44,7 @@ class Config:
     
     @staticmethod
     def initialize_session_state():
-        """Inicializa todas las variables necesarias en el estado de la sesión de Streamlit."""
+        # ... (este método se mantiene igual) ...
         state_defaults = {
             'data_loaded': False,
             'analysis_mode': "Usar datos originales",
