@@ -93,7 +93,7 @@ def main():
             stations_filtered = df.copy()
 
             if Config.PERCENTAGE_COL in stations_filtered.columns:
-                # CORRECCIÓN: CONVERSIÓN NUMÉRICA ESTANDARIZADA
+                # CORRECCIÓN: CONVERSIÓN NUMÉRICA ESTANDARIZADA (se reemplaza coma por punto decimal)
                 stations_filtered[Config.PERCENTAGE_COL] = \
                     pd.to_numeric(stations_filtered[Config.PERCENTAGE_COL].astype(str).str.replace(',', '.', regex=False),
                                   errors='coerce').fillna(0)
