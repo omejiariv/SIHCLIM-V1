@@ -9,14 +9,13 @@ import numpy as np
 from modules.config import Config
 from scipy.stats import gamma, norm
 from scipy.interpolate import Rbf
-from sklearn.preprocessing import PolynomialFeatures # No usado en el código provisto, pero mantenido.
-from sklearn.linear_model import LinearRegression # No usado en el código provisto, pero mantenido.
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
 
 @st.cache_data
 def parse_spanish_dates(date_series):
     """Convierte abreviaturas de meses en español a inglés y parsea el formato mmm-yy."""
     # Mapeo completo de las abreviaturas comunes en español a inglés
-    # Este mapeo es esencial para que pd.to_datetime con %b-%y funcione.
     months_es_to_en = {
         'ene': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'abr': 'Apr',
         'may': 'May', 'jun': 'Jun', 'jul': 'Jul', 'ago': 'Aug',
@@ -27,7 +26,7 @@ def parse_spanish_dates(date_series):
     for es, en in months_es_to_en.items():
         # Usar regex=False para evitar warnings de pandas
         date_series_str = date_series_str.str.replace(es, en, regex=False)
-    # Intentar parsear el formato mmm-yy (ej. Jan-10), como se confirmó.
+    # Parsear el formato mmm-yy como se confirmó
     return pd.to_datetime(date_series_str, format='%b-%y', errors='coerce')
 
 
@@ -140,7 +139,7 @@ def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded
         st.error("No se encontraron columnas de longitud y/o latitud en el archivo de estaciones.")
         return None, None, None, None
 
-    # CORRECCIÓN: CONVERSIÓN NUMÉRICA ESTANDARIZADA
+    # CORRECCIÓN: CONVERSIÓN NUMÉRICA ESTANDARIZADA (de coma a punto decimal)
     df_stations_raw[lon_col] = pd.to_numeric(df_stations_raw[lon_col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     df_stations_raw[lat_col] = pd.to_numeric(df_stations_raw[lat_col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     
