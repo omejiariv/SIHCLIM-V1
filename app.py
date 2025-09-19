@@ -55,12 +55,12 @@ def main():
     
     st.sidebar.header("Panel de Control")
 
-    with st.sidebar.expander("**Cargar Archivos**", expanded=not st.session_state.data_loaded):
+    with st.sidebar.expander("**Cargar Archivos**", expanded=not st.session_state.get('data_loaded', False)):
         uploaded_file_mapa = st.file_uploader("1. Cargar archivo de estaciones (mapaCVENSO.csv)", type="csv")
         uploaded_file_precip = st.file_uploader("2. Cargar archivo de precipitación mensual y ENSO (DatosPptnmes_ENSO.csv)", type="csv")
         uploaded_zip_shapefile = st.file_uploader("3. Cargar shapefile de municipios (.zip)", type="zip")
 
-        if not st.session_state.data_loaded and all([uploaded_file_mapa, uploaded_file_precip, uploaded_zip_shapefile]):
+        if not st.session_state.get('data_loaded', False) and all([uploaded_file_mapa, uploaded_file_precip, uploaded_zip_shapefile]):
             with st.spinner("Procesando archivos y cargando datos..."):
                 gdf_stations, gdf_municipios, df_long, df_enso = load_and_process_all_data(
                     uploaded_file_mapa, uploaded_file_precip, uploaded_zip_shapefile)
@@ -76,11 +76,12 @@ def main():
         
         if st.button("Recargar Datos"):
             st.cache_data.clear()
-            for key in list(st.session_state.keys()):
+            keys_to_clear = list(st.session_state.keys())
+            for key in keys_to_clear:
                 del st.session_state[key]
             st.rerun()
 
-    if st.session_state.data_loaded:
+    if st.session_state.get('data_loaded', False):
         
         def apply_filters_to_stations(df, min_perc, altitudes, regions, municipios, celdas):
             stations_filtered = df.copy()
@@ -200,10 +201,10 @@ def main():
             (st.session_state.df_long[Config.YEAR_COL] <= year_range[1])
         ].copy()
 
-        if st.session_state.exclude_na:
+        if st.session_state.get('exclude_na', False):
             df_monthly_filtered.dropna(subset=[Config.PRECIPITATION_COL], inplace=True)
             annual_data_filtered.dropna(subset=[Config.PRECIPITATION_COL], inplace=True)
-        if st.session_state.exclude_zeros:
+        if st.session_state.get('exclude_zeros', False):
             df_monthly_filtered = df_monthly_filtered[df_monthly_filtered[Config.PRECIPITATION_COL] > 0]
             annual_data_filtered = annual_data_filtered[annual_data_filtered[Config.PRECIPITATION_COL] > 0]
         
