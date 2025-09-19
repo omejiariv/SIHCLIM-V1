@@ -545,7 +545,7 @@ def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analys
                     fig_violin_anual.update_layout(height=600)
                     st.plotly_chart(fig_violin_anual, use_container_width=True)
             else:
-                st.info("No hay datos anuales para mostrar la distribución.")
+                st.warning("No hay datos anuales para mostrar la distribución.")
         
         else: # Mensual
             if not df_monthly_filtered.empty:
@@ -1050,7 +1050,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 lats = data_year_with_geom[Config.LATITUDE_COL].values
                 vals = data_year_with_geom[Config.PRECIPITATION_COL]
                 
-                # FIX: Obtenemos los límites de toda la selección filtrada (GeoDataFrame) para consistencia.
+                # Obtenemos los límites de toda la selección filtrada (GeoDataFrame) para consistencia.
                 bounds = gdf_filtered_map.total_bounds
                 
                 grid_lon = np.linspace(bounds[0] - 0.1, bounds[2] + 0.1, 100)
