@@ -134,11 +134,25 @@ def main():
         gdf_filtered = apply_filters_to_stations(st.session_state.gdf_stations, min_data_perc, selected_altitudes, selected_regions, selected_municipios, selected_celdas)
 
         with st.sidebar.expander("**2. Selección de Estaciones y Período**", expanded=True):
+            # 1. Genera las opciones y las guarda en el estado para que el callback las pueda usar
             stations_options = sorted(gdf_filtered[Config.STATION_NAME_COL].unique())
-            select_all = st.checkbox("Seleccionar/Deseleccionar todas las estaciones", key='select_all_checkbox', value=True)
+            st.session_state['filtered_station_options'] = stations_options
+
+            # 2. Crea la casilla con el callback. Ya no se necesita el `value=True`
+            st.checkbox(
+                "Seleccionar/Deseleccionar todas las estaciones", 
+                key='select_all_checkbox',
+                on_change=sync_station_selection, # <-- La magia está aquí
+                value=True # Opcional: para que inicie marcada la primera vez
+            )
             
-            default_selection = stations_options if select_all else []
-            selected_stations = st.multiselect('Seleccionar Estaciones', options=stations_options, default=default_selection, key='station_multiselect')
+            # 3. El multiselect ya no necesita la lógica del 'default'.
+            # Su estado será controlado por el callback o la interacción del usuario.
+            selected_stations = st.multiselect(
+                'Seleccionar Estaciones', 
+                options=stations_options, 
+                key='station_multiselect'
+            )
             
             years_with_data = sorted(st.session_state.df_long[Config.YEAR_COL].unique())
             year_range_default = (min(years_with_data), max(years_with_data))
