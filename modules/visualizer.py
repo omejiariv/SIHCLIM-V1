@@ -24,7 +24,7 @@ import pymannkendall as mk
 #--- Importaciones de Módulos Propios
 from modules.config import Config
 from modules.utils import add_folium_download_button
-from modules.data_processor import calculate_spi, interpolate_idw, interpolate_rbf_spline # Se mantiene para evitar errores de importación
+from modules.data_processor import calculate_spi, interpolate_idw, interpolate_rbf_spline
 
 #--- Marcador de Posición para Funciones No Definidas
 def display_percentile_analysis_subtab(df_monthly_filtered, station_to_analyze_perc):
@@ -100,7 +100,6 @@ def create_anomaly_chart(df_plot):
         
         nino_periods = df_plot_enso[df_plot_enso[Config.ENSO_ONI_COL] >= 0.5]
         for _, row in nino_periods.iterrows():
-            # Nota: pd.DateOffset requiere importar pandas
             fig.add_vrect(x0=row[Config.DATE_COL] - pd.DateOffset(days=15),
                           x1=row[Config.DATE_COL] + pd.DateOffset(days=15),
                           fillcolor="red", opacity=0.15, layer="below", line_width=0)
@@ -111,7 +110,7 @@ def create_anomaly_chart(df_plot):
                           x1=row[Config.DATE_COL] + pd.DateOffset(days=15),
                           fillcolor="blue", opacity=0.15, layer="below", line_width=0)
 
-        # CORRECCIÓN DE SINTAXIS: Uso de marcadores para entradas de leyenda (El Niño y La Niña)
+        # CORRECCIÓN DE SINTAXIS/LÓGICA: Se usan trazas ocultas para mostrar los colores en la leyenda
         fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers', 
                                  marker=dict(symbol='square', color='rgba(255, 0, 0, 0.3)'), 
                                  name='Fase El Niño'))
@@ -784,7 +783,9 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                         
                         if min_val >= max_val: max_val = min_val + 1
 
-                        colormap = cm.linear.YIGnBu_09.scale(vmin=min_val, vmax=max_val)
+                        # === CORRECCIÓN DEL ATTRIBUTEERROR con branca.colormap (temporal_tab) ===
+                        colormap = cm.LinearColormap(cm.linear.YIGnBu_09.colors, vmin=min_val, vmax=max_val)
+                        # ========================================================================
 
                         for _, row in df_map_data.iterrows():
                             folium.CircleMarker(
@@ -945,8 +946,9 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
             data_year1 = df_anual_melted[df_anual_melted[Config.YEAR_COL] == year1]
             data_year2 = df_anual_melted[df_anual_melted[Config.YEAR_COL] == year2]
 
-            colormap = cm.linear.YIGnBu_09.scale(vmin=color_range_comp[0],
-                                                 vmax=color_range_comp[1])
+            # === CORRECCIÓN DEL ATTRIBUTEERROR con branca.colormap (compare_tab) ===
+            colormap = cm.LinearColormap(cm.linear.YIGnBu_09.colors, vmin=color_range_comp[0], vmax=color_range_comp[1])
+            # ========================================================================
 
             def create_compare_map(data, year, col, gdf_stations_info):
                 col.markdown(f"**Precipitación en {year}**")
@@ -1608,7 +1610,7 @@ def display_enso_tab(df_monthly_filtered, df_enso, gdf_filtered, stations_for_an
                                                   title=f"Serie de Tiempo para {var_name}")
                         st.plotly_chart(fig_enso_series, use_container_width=True)
                     else:
-                        st.warning(f"No hay datos disponibles para '{var_name}' en el período seleccionado.")
+                        st.warning(f"No hay datos disponibles para '{var_code}' en el período seleccionado.")
 
     with enso_anim_tab:
         st.subheader("Explorador Mensual del Fenómeno ENSO")
@@ -2069,12 +2071,10 @@ def display_trends_and_forecast_tab(df_anual_melted, df_monthly_to_process, stat
                                                                      station_data[Config.PRECIPITATION_COL])
                     
                     if len(station_data) > 3:
-                        # --- INICIO DE CORRECCIÓN (Se corrige la omisión en el código original)
                         mk_result_table = mk.original_test(station_data[Config.PRECIPITATION_COL]) 
                         trend_mk = mk_result_table.trend.capitalize()
                         p_mk = mk_result_table.p
                         slope_sen = mk_result_table.slope
-                        # --- FIN DE CORRECCIÓN ---
 
                     results.append({
                         "Estación": station,
