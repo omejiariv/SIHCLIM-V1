@@ -1,5 +1,6 @@
 import streamlit as st
 import io
+import plotly.graph_objects as go # Importado para type hinting
 
 def add_plotly_download_buttons(fig, file_prefix):
     """Muestra botones de descarga para un gráfico Plotly (HTML y PNG)."""
@@ -30,7 +31,7 @@ def add_plotly_download_buttons(fig, file_prefix):
                 use_container_width=True
             )
         except Exception as e:
-            st.warning("No se pudo generar la imagen PNG. Asegúrate de tener la librería 'kaleido' instalada ( `pip install kaleido` ).")
+            st.warning("No se pudo generar la imagen PNG. Asegúrate de tener la librería 'kaleido' instalada (`pip install kaleido`).")
 
 def add_folium_download_button(map_object, file_name):
     """Muestra un botón de descarga para un mapa de Folium (HTML)."""
