@@ -12,7 +12,7 @@ import os
 from modules.config import Config
 from modules.data_processor import load_and_process_all_data, complete_series
 from modules.visualizer import (
-    display_welcome_tab,  # <-- ✅ Indentado con 4 espacios
+    display_welcome_tab,
     display_spatial_distribution_tab,
     display_graphs_tab,
     display_advanced_maps_tab,
@@ -103,39 +103,36 @@ def main():
             if celdas: stations_filtered = stations_filtered[stations_filtered[Config.CELL_COL].isin(celdas)]
             return stations_filtered
 
-    # >>>>> PEGA LA NUEVA FUNCIÓN AQUÍ <<<<<
-    def sync_station_selection():
-        """
-        Sincroniza el multiselect de estaciones con la casilla 'Seleccionar Todas'.
-        Si la casilla está marcada, selecciona todas las opciones disponibles.
-        Si no, deselecciona todo.
-        """
-        options = sorted(st.session_state.get('filtered_station_options', []))
-        
-        if st.session_state.get('select_all_checkbox', True):
-            st.session_state.station_multiselect = options
-        else:
-            st.session_state.station_multiselect = []
+        # ✅ --- FUNCIÓN CALLBACK AÑADIDA AQUÍ ---
+        def sync_station_selection():
+            """
+            Sincroniza el multiselect de estaciones con la casilla 'Seleccionar Todas'.
+            """
+            options = sorted(st.session_state.get('filtered_station_options', []))
             
-    # El resto de tu código continúa aquí
-    with st.sidebar.expander("**1. Filtros Geográficos y de Datos**", expanded=True):
+            if st.session_state.get('select_all_checkbox', True):
+                st.session_state.station_multiselect = options
+            else:
+                st.session_state.station_multiselect = []
+
+        with st.sidebar.expander("**1. Filtros Geográficos y de Datos**", expanded=True):
             min_data_perc = st.slider("Filtrar por % de datos mínimo:", 0, 100, st.session_state.get('min_data_perc_slider', 0), key='min_data_perc_slider')
             altitude_ranges = ['0-500', '500-1000', '1000-2000', '2000-3000', '>3000']
-            selected_altitudes = st.multiselect('Filtrar por Altitud (m)', options=altitude_ranges, default=st.session_state.get('altitude_multiselect', []), key='altitude_multiselect')
+            selected_altitudes = st.multiselect('Filtrar por Altitud (m)', options=altitude_ranges, key='altitude_multiselect')
             regions_list = sorted(st.session_state.gdf_stations[Config.REGION_COL].dropna().unique())
-            selected_regions = st.multiselect('Filtrar por Depto/Región', options=regions_list, default=st.session_state.get('regions_multiselect', []), key='regions_multiselect')
+            selected_regions = st.multiselect('Filtrar por Depto/Región', options=regions_list, key='regions_multiselect')
             
             temp_gdf_for_mun = st.session_state.gdf_stations.copy()
             if selected_regions:
                 temp_gdf_for_mun = temp_gdf_for_mun[temp_gdf_for_mun[Config.REGION_COL].isin(selected_regions)]
             municipios_list = sorted(temp_gdf_for_mun[Config.MUNICIPALITY_COL].dropna().unique())
-            selected_municipios = st.multiselect('Filtrar por Municipio', options=municipios_list, default=st.session_state.get('municipios_multiselect', []), key='municipios_multiselect')
+            selected_municipios = st.multiselect('Filtrar por Municipio', options=municipios_list, key='municipios_multiselect')
             
             temp_gdf_for_celdas = temp_gdf_for_mun.copy()
             if selected_municipios:
                 temp_gdf_for_celdas = temp_gdf_for_celdas[temp_gdf_for_celdas[Config.MUNICIPALITY_COL].isin(selected_municipios)]
             celdas_list = sorted(temp_gdf_for_celdas[Config.CELL_COL].dropna().unique())
-            selected_celdas = st.multiselect('Filtrar por Celda_XY', options=celdas_list, default=st.session_state.get('celdas_multiselect', []), key='celdas_multiselect')
+            selected_celdas = st.multiselect('Filtrar por Celda_XY', options=celdas_list, key='celdas_multiselect')
             
             if st.button("🧹 Limpiar Filtros"):
                 keys_to_clear = ['min_data_perc_slider', 'altitude_multiselect', 'regions_multiselect', 
@@ -149,20 +146,16 @@ def main():
         gdf_filtered = apply_filters_to_stations(st.session_state.gdf_stations, min_data_perc, selected_altitudes, selected_regions, selected_municipios, selected_celdas)
 
         with st.sidebar.expander("**2. Selección de Estaciones y Período**", expanded=True):
-            # 1. Genera las opciones y las guarda en el estado para que el callback las pueda usar
             stations_options = sorted(gdf_filtered[Config.STATION_NAME_COL].unique())
             st.session_state['filtered_station_options'] = stations_options
 
-            # 2. Crea la casilla con el callback. Ya no se necesita el `value=True`
             st.checkbox(
                 "Seleccionar/Deseleccionar todas las estaciones", 
                 key='select_all_checkbox',
-                on_change=sync_station_selection, # <-- La magia está aquí
-                value=True # Opcional: para que inicie marcada la primera vez
+                on_change=sync_station_selection,
+                value=st.session_state.get('select_all_checkbox', True)
             )
             
-            # 3. El multiselect ya no necesita la lógica del 'default'.
-            # Su estado será controlado por el callback o la interacción del usuario.
             selected_stations = st.multiselect(
                 'Seleccionar Estaciones', 
                 options=stations_options, 
