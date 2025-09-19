@@ -27,7 +27,7 @@ class Config:
     IOD_COL = 'iod'
 
     # Rutas de Archivos (usando la ruta absoluta)
-    # NOTA: Los nombres de archivo se ajustan a las imágenes proporcionadas (asumo que se renombraron a .jpg y .png)
+    # Rutas ajustadas para mostrar el logo y la gota:
     LOGO_PATH = os.path.join(BASE_DIR, "data", "Cuenca Verde Logo.jpg")
     LOGO_DROP_PATH = os.path.join(BASE_DIR, "data", "Cuenca Verde Gotica Logo.jpg")
     GIF_PATH = os.path.join(BASE_DIR, "data", "PPAM.gif")
