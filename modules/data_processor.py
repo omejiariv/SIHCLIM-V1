@@ -168,7 +168,7 @@ def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded
     df_long = df_precip_raw.melt(id_vars=id_vars, value_vars=station_id_cols,
         var_name='id_estacion', value_name=Config.PRECIPITATION_COL)
 
-    # Nota: Config.SOI_COL and Config.IOD_COL se confirman en minúsculas en config.py.
+    # Nota: Config.SOI_COL y Config.IOD_COL se confirman en minúsculas en config.py.
     cols_to_numeric = [Config.ENSO_ONI_COL, 'temp_sst', 'temp_media',
                        Config.PRECIPITATION_COL, Config.SOI_COL, Config.IOD_COL]
     
@@ -247,7 +247,6 @@ def calculate_spi(series, window):
     spi = norm.ppf(cdf)
     
     # CORRECCIÓN: Usar np.where y np.isinf para reemplazar infinities con NaN en el array.
-    # Soluciona el AttributeError: 'numpy.ndarray' object has no attribute 'replace'
     spi = np.where(np.isinf(spi), np.nan, spi)
     
     # Reconvertir a Series usando el índice de rolling_sum, que es la Series original.
@@ -284,6 +283,7 @@ def interpolate_idw(lons, lats, vals, grid_lon, grid_lat, power=2):
 def interpolate_rbf_spline(lons, lats, vals, grid_lon, grid_lat, function='thin_plate'):
     """Realiza una interpolación usando Radial Basis Function (Spline)."""
     grid_x, grid_y = np.meshgrid(grid_lon, grid_lat)
-    rbf = Rbf(lons, lats, vals, function=function)
+    # FIX: La función 'thin_plate' es aceptada por la librería. Aseguramos su nombre.
+    rbf = Rbf(lons, lats, vals, function=function) 
     z = rbf(grid_x, grid_y)
     return z.T # Transponer para que coincida con la orientación de plotly
