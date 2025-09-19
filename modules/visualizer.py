@@ -577,7 +577,8 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 all_years_int = sorted(df_anual_melted_non_na[Config.YEAR_COL].unique())
                 selected_year = st.slider('Seleccione un Año para Explorar', min_value=min(all_years_int), max_value=max(all_years_int), value=min(all_years_int))
                 
-                min_precip_slider, max_precip_slider = int(df_anual_melted_non_na[Config.PRECIPITATION_COL].min()), int(df_anual_melted_non_na[Config.PRECIPITATION_COL].max())
+                min_precip_slider = int(df_anual_melted_non_na[Config.PRECIPITATION_COL].min())
+                max_precip_slider = int(df_anual_melted_non_na[Config.PRECIPITATION_COL].max())
                 if min_precip_slider >= max_precip_slider: max_precip_slider = min_precip_slider + 1
 
                 min_precip_filter, max_precip_filter = st.slider("Filtrar por rango de Precipitación Anual (mm)",
@@ -600,6 +601,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                         if os.path.exists(Config.LOGO_DROP_PATH): st.image(Config.LOGO_DROP_PATH, width=40)
                     with info_col:
                         st.metric(f"Estaciones con Datos en {selected_year}", f"{len(df_year_filtered)} de {len(stations_for_analysis)}")
+                    
                     if not df_year_filtered.empty:
                         max_row = df_year_filtered.loc[df_year_filtered[Config.PRECIPITATION_COL].idxmax()]
                         min_row = df_year_filtered.loc[df_year_filtered[Config.PRECIPITATION_COL].idxmin()]
@@ -612,23 +614,31 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                         """)
                     else:
                         st.warning(f"No hay datos de precipitación para el año {selected_year} con los filtros aplicados.")
+                
                 with map_col:
                     m_temporal = create_folium_map([6.24, -75.58], 7, selected_base_map_config, selected_overlays_config)
                     if not df_year_filtered.empty:
                         min_val, max_val = df_anual_melted_non_na[Config.PRECIPITATION_COL].min(), df_anual_melted_non_na[Config.PRECIPITATION_COL].max()
                         if min_val >= max_val: max_val = min_val + 1 
                         colormap = cm.linear.YlGnBu_09.scale(vmin=min_val, vmax=max_val)
-                        for _, row in df_year_filtered.iterrows():
+                        
+                        # ✅ SOLUCIÓN: Unir los datos del año con la información geográfica
+                        df_map_data = pd.merge(
+                            df_year_filtered,
+                            gdf_filtered[[Config.STATION_NAME_COL, 'geometry']],
+                            on=Config.STATION_NAME_COL
+                        )
+                        
+                        # Iterar sobre el nuevo DataFrame que SÍ tiene la columna 'geometry'
+                        for _, row in df_map_data.iterrows():
                             folium.CircleMarker(
                                 location=[row['geometry'].y, row['geometry'].x], radius=5,
                                 color=colormap(row[Config.PRECIPITATION_COL]), fill=True, fill_color=colormap(row[Config.PRECIPITATION_COL]),
                                 fill_opacity=0.8, tooltip=f"{row[Config.STATION_NAME_COL]}: {row[Config.PRECIPITATION_COL]:.0f} mm"
                             ).add_to(m_temporal)
                         
-                        # Corrección: gdf_filtered debe tener la geometría para bounds
-                        gdf_bounds_data = gdf_filtered[gdf_filtered[Config.STATION_NAME_COL].isin(df_year_filtered[Config.STATION_NAME_COL])]
-                        if not gdf_bounds_data.empty:
-                            bounds = gdf_bounds_data.total_bounds
+                        if not df_map_data.empty:
+                            bounds = df_map_data.total_bounds
                             if np.all(np.isfinite(bounds)):
                                 m_temporal.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
 
@@ -1760,3 +1770,4 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     else:
         # Si no hay datos anuales, añade la columna con un valor indicativo
         df_info_table['Precipitación media anual (mm)'] = "N/A"
+
