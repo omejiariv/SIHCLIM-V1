@@ -1,5 +1,3 @@
-# modules/data_processor.py
-
 import streamlit as st
 import pandas as pd
 import geopandas as gpd
@@ -7,21 +5,30 @@ import zipfile
 import tempfile
 import os
 import io
-
+import numpy as np
 from modules.config import Config
 from scipy.stats import gamma, norm
 from scipy.interpolate import Rbf
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures # No usado en el código provisto, pero mantenido.
+from sklearn.linear_model import LinearRegression # No usado en el código provisto, pero mantenido.
 
 @st.cache_data
 def parse_spanish_dates(date_series):
-    """Convierte abreviaturas de meses en español a inglés."""
-    months_es_to_en = {'ene': 'Jan', 'abr': 'Apr', 'ago': 'Aug', 'dic': 'Dec'}
+    """Convierte abreviaturas de meses en español a inglés y parsea el formato mmm-yy."""
+    # Mapeo completo de las abreviaturas comunes en español a inglés
+    months_es_to_en = {
+        'ene': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'abr': 'Apr',
+        'may': 'May', 'jun': 'Jun', 'jul': 'Jul', 'ago': 'Aug',
+        'sep': 'Sep', 'oct': 'Oct', 'nov': 'Nov', 'dic': 'Dec'
+    }
+    # Asegurarse de que la serie es de strings y está en minúsculas
     date_series_str = date_series.astype(str).str.lower()
     for es, en in months_es_to_en.items():
+        # Usar regex=False para evitar warnings de pandas
         date_series_str = date_series_str.str.replace(es, en, regex=False)
+    # Intentar parsear el formato mmm-yy (ej. Jan-10)
     return pd.to_datetime(date_series_str, format='%b-%y', errors='coerce')
+
 
 @st.cache_data
 def load_csv_data(file_uploader_object, sep=';', lower_case=True):
@@ -36,7 +43,7 @@ def load_csv_data(file_uploader_object, sep=';', lower_case=True):
     except Exception as e:
         st.error(f"Error al leer el archivo '{file_uploader_object.name}': {e}")
         return None
-
+    
     encodings_to_try = ['utf-8', 'latin1', 'cp1252', 'iso-8859-1']
     for encoding in encodings_to_try:
         try:
@@ -47,6 +54,7 @@ def load_csv_data(file_uploader_object, sep=';', lower_case=True):
             return df
         except Exception:
             continue
+    
     st.error(f"No se pudo decodificar el archivo '{file_uploader_object.name}' con las codificaciones probadas.")
     return None
 
@@ -55,6 +63,7 @@ def load_shapefile(file_uploader_object):
     """Procesa y carga un shapefile desde un archivo .zip subido a Streamlit."""
     if file_uploader_object is None:
         return None
+    
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             with zipfile.ZipFile(file_uploader_object, 'r') as zip_ref:
@@ -70,7 +79,9 @@ def load_shapefile(file_uploader_object):
             gdf.columns = gdf.columns.str.strip().str.lower()
             
             if gdf.crs is None:
-                gdf.set_crs("EPSG:9377", inplace=True)
+                # Asumiendo el CRS más común para Colombia si no está definido
+                gdf.set_crs("EPSG:9377", inplace=True) 
+            
             return gdf.to_crs("EPSG:4326")
     except Exception as e:
         st.error(f"Error al procesar el shapefile: {e}")
@@ -90,11 +101,12 @@ def complete_series(_df):
         
         if not df_station.index.is_unique:
             df_station = df_station[~df_station.index.duplicated(keep='first')]
-
+        
         date_range = pd.date_range(start=df_station.index.min(), end=df_station.index.max(), freq='MS')
         df_resampled = df_station.reindex(date_range)
         
-        df_resampled[Config.PRECIPITATION_COL] = df_resampled[Config.PRECIPITATION_COL].interpolate(method='time')
+        df_resampled[Config.PRECIPITATION_COL] = \
+            df_resampled[Config.PRECIPITATION_COL].interpolate(method='time')
         
         df_resampled[Config.ORIGIN_COL] = df_resampled[Config.ORIGIN_COL].fillna('Completado')
         df_resampled[Config.STATION_NAME_COL] = station
@@ -111,9 +123,7 @@ def complete_series(_df):
 
 @st.cache_data
 def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded_zip_shapefile):
-    """
-    Carga y procesa todos los archivos de entrada y los fusiona en dataframes listos para usar.
-    """
+    """Carga y procesa todos los archivos de entrada y los fusiona en dataframes listos para usar."""
     df_stations_raw = load_csv_data(uploaded_file_mapa)
     df_precip_raw = load_csv_data(uploaded_file_precip)
     gdf_municipios = load_shapefile(uploaded_zip_shapefile)
@@ -121,61 +131,77 @@ def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded
     if any(df is None for df in [df_stations_raw, df_precip_raw, gdf_municipios]):
         return None, None, None, None
 
-    # --- 1. Procesar Estaciones (gdf_stations) ---
+    # --- 1. Procesar Estaciones (gdf_stations)
     lon_col = next((col for col in df_stations_raw.columns if 'longitud' in col.lower() or 'lon' in col.lower()), None)
     lat_col = next((col for col in df_stations_raw.columns if 'latitud' in col.lower() or 'lat' in col.lower()), None)
+
     if not all([lon_col, lat_col]):
         st.error("No se encontraron columnas de longitud y/o latitud en el archivo de estaciones.")
         return None, None, None, None
+
+    # CONVERSIÓN NUMÉRICA ESTANDARIZADA: Reemplazar coma por punto decimal
+    df_stations_raw[lon_col] = pd.to_numeric(df_stations_raw[lon_col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+    df_stations_raw[lat_col] = pd.to_numeric(df_stations_raw[lat_col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     
-    df_stations_raw[lon_col] = pd.to_numeric(df_stations_raw[lon_col].astype(str).str.replace(',', '.'), errors='coerce')
-    df_stations_raw[lat_col] = pd.to_numeric(df_stations_raw[lat_col].astype(str).str.replace(',', '.'), errors='coerce')
     df_stations_raw.dropna(subset=[lon_col, lat_col], inplace=True)
 
     gdf_stations = gpd.GeoDataFrame(df_stations_raw,
-                                      geometry=gpd.points_from_xy(df_stations_raw[lon_col], df_stations_raw[lat_col]),
-                                      crs="EPSG:9377").to_crs("EPSG:4326")
+        geometry=gpd.points_from_xy(df_stations_raw[lon_col], df_stations_raw[lat_col]),
+        crs="EPSG:9377").to_crs("EPSG:4326")
+
     gdf_stations[Config.LONGITUDE_COL] = gdf_stations.geometry.x
     gdf_stations[Config.LATITUDE_COL] = gdf_stations.geometry.y
-    if Config.ALTITUDE_COL in gdf_stations.columns:
-        gdf_stations[Config.ALTITUDE_COL] = pd.to_numeric(gdf_stations[Config.ALTITUDE_COL].astype(str).str.replace(',', '.'), errors='coerce')
 
-    # --- 2. Procesar Precipitación (df_long) ---
+    if Config.ALTITUDE_COL in gdf_stations.columns:
+        # CONVERSIÓN NUMÉRICA ESTANDARIZADA para altitud
+        gdf_stations[Config.ALTITUDE_COL] = \
+            pd.to_numeric(gdf_stations[Config.ALTITUDE_COL].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+
+    # --- 2. Procesar Precipitación (df_long)
     station_id_cols = [col for col in df_precip_raw.columns if col.isdigit()]
+
     if not station_id_cols:
         st.error("No se encontraron columnas de estación (ej: '12345') en el archivo de precipitación mensual.")
         return None, None, None, None
 
     id_vars = [col for col in df_precip_raw.columns if not col.isdigit()]
-    df_long = df_precip_raw.melt(id_vars=id_vars, value_vars=station_id_cols, 
-                                 var_name='id_estacion', value_name=Config.PRECIPITATION_COL)
+    df_long = df_precip_raw.melt(id_vars=id_vars, value_vars=station_id_cols,
+        var_name='id_estacion', value_name=Config.PRECIPITATION_COL)
 
-    cols_to_numeric = [Config.ENSO_ONI_COL, 'temp_sst', 'temp_media', Config.PRECIPITATION_COL, Config.SOI_COL, Config.IOD_COL]
+    cols_to_numeric = [Config.ENSO_ONI_COL, 'temp_sst', 'temp_media',
+                       Config.PRECIPITATION_COL, Config.SOI_COL, Config.IOD_COL]
+    
     for col in cols_to_numeric:
         if col in df_long.columns:
-            df_long[col] = pd.to_numeric(df_long[col].astype(str).str.replace(',', '.'), errors='coerce')
-    
+            # CONVERSIÓN NUMÉRICA ESTANDARIZADA
+            df_long[col] = pd.to_numeric(df_long[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+
     df_long.dropna(subset=[Config.PRECIPITATION_COL], inplace=True)
+
+    # El formato mmm-yy se maneja en parse_spanish_dates
     df_long[Config.DATE_COL] = parse_spanish_dates(df_long[Config.DATE_COL])
     df_long.dropna(subset=[Config.DATE_COL], inplace=True)
-    df_long[Config.ORIGIN_COL] = 'Original'
 
+    df_long[Config.ORIGIN_COL] = 'Original'
     df_long[Config.YEAR_COL] = df_long[Config.DATE_COL].dt.year
     df_long[Config.MONTH_COL] = df_long[Config.DATE_COL].dt.month
-    
+
     id_estacion_col_name = next((col for col in gdf_stations.columns if 'id_estacio' in col), None)
+
     if id_estacion_col_name is None:
         st.error("No se encontró la columna 'id_estacio' en el archivo de estaciones.")
         return None, None, None, None
-        
+
     gdf_stations[id_estacion_col_name] = gdf_stations[id_estacion_col_name].astype(str).str.strip()
     df_long['id_estacion'] = df_long['id_estacion'].astype(str).str.strip()
-    station_mapping = gdf_stations.set_index(id_estacion_col_name)[Config.STATION_NAME_COL].to_dict()
+
+    station_mapping = \
+        gdf_stations.set_index(id_estacion_col_name)[Config.STATION_NAME_COL].to_dict()
     df_long[Config.STATION_NAME_COL] = df_long['id_estacion'].map(station_mapping)
     df_long.dropna(subset=[Config.STATION_NAME_COL], inplace=True)
 
     station_metadata_cols = [
-        Config.STATION_NAME_COL, Config.MUNICIPALITY_COL, Config.REGION_COL, 
+        Config.STATION_NAME_COL, Config.MUNICIPALITY_COL, Config.REGION_COL,
         Config.ALTITUDE_COL, Config.CELL_COL, Config.LATITUDE_COL, Config.LONGITUDE_COL
     ]
     existing_metadata_cols = [col for col in station_metadata_cols if col in gdf_stations.columns]
@@ -186,55 +212,46 @@ def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded
         on=Config.STATION_NAME_COL,
         how='left'
     )
-    
-    # --- 3. Extraer datos ENSO para gráficos aislados ---
+
+    # --- 3. Extraer datos ENSO para gráficos aislados
     enso_cols = ['id', Config.DATE_COL, Config.ENSO_ONI_COL, 'temp_sst', 'temp_media']
     existing_enso_cols = [col for col in enso_cols if col in df_precip_raw.columns]
+
     df_enso = df_precip_raw[existing_enso_cols].drop_duplicates().copy()
-    
+
     if Config.DATE_COL in df_enso.columns:
         df_enso[Config.DATE_COL] = parse_spanish_dates(df_enso[Config.DATE_COL])
         df_enso.dropna(subset=[Config.DATE_COL], inplace=True)
 
     for col in [Config.ENSO_ONI_COL, 'temp_sst', 'temp_media']:
         if col in df_enso.columns:
-            df_enso[col] = pd.to_numeric(df_enso[col].astype(str).str.replace(',', '.'), errors='coerce')
+            # CONVERSIÓN NUMÉRICA ESTANDARIZADA
+            df_enso[col] = pd.to_numeric(df_enso[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
 
     return gdf_stations, gdf_municipios, df_long, df_enso
 
-from scipy.stats import gamma, norm
-
 def calculate_spi(series, window):
-    """
-    Calcula el Índice Estandarizado de Precipitación (SPI) para una serie de tiempo.
-    """
+    """Calcula el Índice Estandarizado de Precipitación (SPI) para una serie de tiempo."""
     # 1. Calcula la suma móvil de la precipitación
     rolling_sum = series.rolling(window, min_periods=window).sum()
-    
     # 2. Ajusta una distribución Gamma a los datos de la suma móvil
     # Se eliminan los ceros y NaNs para un ajuste adecuado
     params = gamma.fit(rolling_sum.dropna(), floc=0)
     shape, loc, scale = params
-    
     # 3. Calcula la probabilidad acumulada (CDF) con la distribución Gamma
     cdf = gamma.cdf(rolling_sum, shape, loc=loc, scale=scale)
-    
     # 4. Transforma la probabilidad acumulada a una distribución normal estándar (Z-score)
     # Este Z-score es el valor del SPI
     spi = norm.ppf(cdf)
-    
     # Reemplaza los infinitos que pueden surgir de valores muy extremos
     spi = spi.replace([np.inf, -np.inf], np.nan)
-    
     return spi
 
 def interpolate_idw(lons, lats, vals, grid_lon, grid_lat, power=2):
-    """
-    Realiza una interpolación por Distancia Inversa Ponderada (IDW).
-    """
+    """Realiza una interpolación por Distancia Inversa Ponderada (IDW)."""
     nx, ny = len(grid_lon), len(grid_lat)
     grid_z = np.zeros((ny, nx))
-    
+
     for i in range(nx):
         for j in range(ny):
             x, y = grid_lon[i], grid_lat[j]
@@ -244,22 +261,20 @@ def interpolate_idw(lons, lats, vals, grid_lon, grid_lat, power=2):
             if np.any(distances < 1e-10):
                 grid_z[j, i] = vals[np.argmin(distances)]
                 continue
-
+            
             weights = 1.0 / (distances**power)
             weighted_sum = np.sum(weights * vals)
             total_weight = np.sum(weights)
-            
+
             if total_weight > 0:
                 grid_z[j, i] = weighted_sum / total_weight
             else:
                 grid_z[j, i] = np.nan # O un valor por defecto
 
-    return grid_z.T # Transponer para que coincida con la orientación de plotly
+    return grid_z.T #Transponer para que coincida con la orientación de plotly
 
 def interpolate_rbf_spline(lons, lats, vals, grid_lon, grid_lat, function='thin_plate'):
-    """
-    Realiza una interpolación usando Radial Basis Function (Spline).
-    """
+    """Realiza una interpolación usando Radial Basis Function (Spline)."""
     grid_x, grid_y = np.meshgrid(grid_lon, grid_lat)
     rbf = Rbf(lons, lats, vals, function=function)
     z = rbf(grid_x, grid_y)
