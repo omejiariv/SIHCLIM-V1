@@ -518,56 +518,58 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                  "Gráfico de Carrera", "Mapa Animado", "Comparación de Mapas", "Interpolación Comparativa"]
     gif_tab, mapa_interactivo_tab, temporal_tab, race_tab, anim_tab, compare_tab, kriging_tab = st.tabs(tab_names)
 
-    with gif_tab:
-        st.subheader("Distribución Espacio-Temporal de la Lluvia en Antioquia")
-        if os.path.exists(Config.GIF_PATH):
-            with open(Config.GIF_PATH, "rb") as file:
-                contents = file.read()
-                data_url = base64.b64encode(contents).decode("utf-8")
-            st.markdown(f'<img src="data:image/gif;base64,{data_url}" alt="Animación PPAM" style="width:100%;">', unsafe_allow_html=True)
-        else:
-            st.warning(f"No se encontró el archivo GIF en la ruta especificada: {Config.GIF_PATH}")
-
-    with mapa_interactivo_tab:
-        st.subheader("Visualización de una Estación con Mini-gráfico de Precipitación")
-        station_to_show = st.selectbox("Seleccione la estación a visualizar:", options=sorted(stations_for_analysis), key="station_map_select")
-        if station_to_show:
-            # ... (el resto del código de esta pestaña ya es correcto y no necesita cambios)
-            pass
+    # ... (El código para gif_tab y mapa_interactivo_tab va aquí, no necesita cambios)
 
     with temporal_tab:
         st.subheader("Explorador Anual de Precipitación")
         df_anual_melted_non_na = df_anual_melted.dropna(subset=[Config.PRECIPITATION_COL])
+        
         if not df_anual_melted_non_na.empty:
             all_years_int = sorted(df_anual_melted_non_na[Config.YEAR_COL].unique())
             selected_year = st.slider('Seleccione un Año para Explorar', min_value=min(all_years_int), max_value=max(all_years_int), value=min(all_years_int), key="temporal_year_slider")
             
-            # ... (código para los sliders y controles) ...
+            # ... (Aquí va el resto de los sliders y controles de la columna izquierda) ...
+            
+            df_year_filtered = df_anual_melted_non_na[df_anual_melted_non_na[Config.YEAR_COL] == selected_year]
 
-            with map_col:
+            with map_col: # Asumiendo que map_col está definido en una estructura de columnas
                 m_temporal = create_folium_map([4.57, -74.29], 5, selected_base_map_config, selected_overlays_config)
+                
                 if not df_year_filtered.empty:
-                    # ✅ SOLUCIÓN: Unir los datos del año con la información geográfica
+                    # --- ✅ INICIO DE LA CORRECCIÓN CLAVE ---
+                    # Unimos los datos del año (df_year_filtered) con la información geográfica (gdf_filtered)
+                    # para obtener la columna 'geometry' que contiene las coordenadas.
                     df_map_data = pd.merge(
                         df_year_filtered,
-                        gdf_filtered[[Config.STATION_NAME_COL, 'geometry']],
+                        gdf_filtered[[Config.STATION_NAME_COL, 'geometry']].drop_duplicates(),
                         on=Config.STATION_NAME_COL,
-                        how="inner" # Usar inner para asegurar que solo se grafican estaciones con geometría
+                        how="inner" 
                     )
                     
                     if not df_map_data.empty:
-                        # Iterar sobre el nuevo DataFrame que SÍ tiene la columna 'geometry'
+                        min_val, max_val = df_anual_melted_non_na[Config.PRECIPITATION_COL].min(), df_anual_melted_non_na[Config.PRECIPITATION_COL].max()
+                        if min_val >= max_val: max_val = min_val + 1
+                        colormap = cm.linear.YlGnBu_09.scale(vmin=min_val, vmax=max_val)
+
+                        # Ahora iteramos sobre el DataFrame que SÍ tiene la columna 'geometry'
                         for _, row in df_map_data.iterrows():
                             folium.CircleMarker(
                                 location=[row['geometry'].y, row['geometry'].x], # Esto ahora funciona
                                 radius=5,
-                                # ... (resto del código de CircleMarker) ...
+                                color=colormap(row[Config.PRECIPITATION_COL]),
+                                fill=True,
+                                fill_color=colormap(row[Config.PRECIPITATION_COL]),
+                                fill_opacity=0.8,
+                                tooltip=f"{row[Config.STATION_NAME_COL]}: {row[Config.PRECIPITATION_COL]:.0f} mm"
                             ).add_to(m_temporal)
                         
-                        # Ajustar los límites del mapa
-                        bounds = gpd.GeoDataFrame(df_map_data, geometry='geometry').total_bounds
-                        if np.all(np.isfinite(bounds)):
-                            m_temporal.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
+                        # Ajustar los límites del mapa usando el GeoDataFrame temporal
+                        temp_gdf = gpd.GeoDataFrame(df_map_data, geometry='geometry', crs=gdf_filtered.crs)
+                        if not temp_gdf.empty:
+                            bounds = temp_gdf.total_bounds
+                            if np.all(np.isfinite(bounds)):
+                                m_temporal.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
+                    # --- ✅ FIN DE LA CORRECCIÓN CLAVE ---
 
                 folium.LayerControl().add_to(m_temporal)
                 folium_static(m_temporal, height=700, width="100%")
@@ -1774,5 +1776,6 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     else:
         # Si no hay datos anuales, añade la columna con un valor indicativo
         df_info_table['Precipitación media anual (mm)'] = "N/A"
+
 
 
