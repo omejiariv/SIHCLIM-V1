@@ -891,7 +891,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     df_anual_melted[Config.PRECIPITATION_COL].min(), \
                     df_anual_melted[Config.PRECIPITATION_COL].max()
 
-                # CORRECCIÓN FINAL PLOTLY: ELIMINAR COLUMNA GEOMETRY ANTES DE PLOTLY
+                # CORRECCIÓN FINAL PLOTLY: ELIMINAR COLUMNA GEOMETRY ANTES DE PLOTLY (para evitar TypeError)
                 df_anim_plot = df_anim_complete.drop(columns=['geometry']).copy()
                 
                 # CORRECCIÓN DE PALETA PLOTLY: Usando YlGnBu (estándar de Plotly)
@@ -1023,6 +1023,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 
                 st.markdown("---")
                 
+                st.markdown("**Mapa 2**")
                 year2 = st.slider("Seleccione el año", min_year, max_year, max_year - 1 if max_year > min_year else max_year, key="interp_year2")
                 method2 = st.selectbox("Método de interpolación", options=["Kriging Ordinario", "IDW",
                                                                          "Spline (Thin Plate)"], index=1, key="interp_method2")
