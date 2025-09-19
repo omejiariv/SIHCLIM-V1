@@ -103,7 +103,22 @@ def main():
             if celdas: stations_filtered = stations_filtered[stations_filtered[Config.CELL_COL].isin(celdas)]
             return stations_filtered
 
-        with st.sidebar.expander("**1. Filtros Geográficos y de Datos**", expanded=True):
+    # >>>>> PEGA LA NUEVA FUNCIÓN AQUÍ <<<<<
+    def sync_station_selection():
+        """
+        Sincroniza el multiselect de estaciones con la casilla 'Seleccionar Todas'.
+        Si la casilla está marcada, selecciona todas las opciones disponibles.
+        Si no, deselecciona todo.
+        """
+        options = sorted(st.session_state.get('filtered_station_options', []))
+        
+        if st.session_state.get('select_all_checkbox', True):
+            st.session_state.station_multiselect = options
+        else:
+            st.session_state.station_multiselect = []
+            
+    # El resto de tu código continúa aquí
+    with st.sidebar.expander("**1. Filtros Geográficos y de Datos**", expanded=True):
             min_data_perc = st.slider("Filtrar por % de datos mínimo:", 0, 100, st.session_state.get('min_data_perc_slider', 0), key='min_data_perc_slider')
             altitude_ranges = ['0-500', '500-1000', '1000-2000', '2000-3000', '>3000']
             selected_altitudes = st.multiselect('Filtrar por Altitud (m)', options=altitude_ranges, default=st.session_state.get('altitude_multiselect', []), key='altitude_multiselect')
