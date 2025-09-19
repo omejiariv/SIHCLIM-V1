@@ -250,6 +250,7 @@ def calculate_spi(series, window):
     spi = np.where(np.isinf(spi), np.nan, spi)
     
     # Reconvertir a Series usando el índice de rolling_sum, que es la Series original.
+    # Esto soluciona el AttributeError: 'numpy.ndarray' object has no attribute 'index'
     spi = pd.Series(spi, index=rolling_sum.index)
 
     return spi
