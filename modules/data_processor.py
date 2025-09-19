@@ -241,11 +241,17 @@ def calculate_spi(series, window):
     shape, loc, scale = params
     # 3. Calcula la probabilidad acumulada (CDF) con la distribución Gamma
     cdf = gamma.cdf(rolling_sum, shape, loc=loc, scale=scale)
+    
     # 4. Transforma la probabilidad acumulada a una distribución normal estándar (Z-score)
-    # Este Z-score es el valor del SPI
     spi = norm.ppf(cdf)
-    # Reemplaza los infinitos que pueden surgir de valores muy extremos
-    spi = spi.replace([np.inf, -np.inf], np.nan)
+    
+    # CORRECCIÓN: Usar np.where y np.isinf para reemplazar infinities con NaN en el array.
+    # Esto soluciona el AttributeError: 'numpy.ndarray' object has no attribute 'replace'
+    spi = np.where(np.isinf(spi), np.nan, spi)
+    
+    # Reconvertir a Series para mantener el índice temporal, necesario para la app.
+    spi = pd.Series(spi, index=cdf.index)
+
     return spi
 
 def interpolate_idw(lons, lats, vals, grid_lon, grid_lat, power=2):
