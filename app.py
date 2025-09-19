@@ -45,8 +45,9 @@ def main():
     title_col1, title_col2 = st.columns([0.07, 0.93])
     
     with title_col1:
-        if os.path.exists(Config.LOGO_DROP_PATH):
-            st.image(Config.LOGO_DROP_PATH, width=50)
+        # CORRECCIÓN 3: Mostrar logo principal
+        if os.path.exists(Config.LOGO_PATH):
+            st.image(Config.LOGO_PATH, width=50)
     
     with title_col2:
         st.markdown(f'<h1 style="font-size:28px; margin-top:1rem;">{Config.APP_TITLE}</h1>',
