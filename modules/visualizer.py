@@ -404,8 +404,7 @@ def display_graphs_tab(df_anual_melted, df_monthly_filtered, stations_for_analys
                                      color=Config.PRECIPITATION_COL,
                                      color_continuous_scale=px.colors.sequential.Blues_r)
                     
-                    fig_avg.update_layout(height=600, 
-                                        xaxis={'categoryorder': 'total descending' if "Mayor a Menor" in sort_order else ('total ascending' if "Menor a Mayor" in sort_order else 'trace')})
+                    fig_avg.update_layout(height=600, xaxis={'categoryorder': 'total descending' if "Mayor a Menor" in sort_order else ('total ascending' if "Menor a Mayor" in sort_order else 'trace')})
                     st.plotly_chart(fig_avg, use_container_width=True)
                 
                 else: # Gráfico de Cajas
@@ -678,7 +677,8 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
             with open(Config.GIF_PATH, "rb") as file:
                 contents = file.read()
                 data_url = base64.b64encode(contents).decode("utf-8")
-                st.markdown(f'<img src="data:image/gif;base64,{data_url}" alt="Animación PPAM" style="width:100%;">', unsafe_allow_html=True)
+                # CORRECCIÓN 1: Reducción del tamaño del GIF
+                st.markdown(f'<img src="data:image/gif;base64,{data_url}" alt="Animación PPAM" style="width:50%;">', unsafe_allow_html=True)
         else:
             st.warning(f"No se encontró el archivo GIF en la ruta especificada: {Config.GIF_PATH}")
 
@@ -1073,8 +1073,11 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     elif method == "IDW":
                         z_grid = interpolate_idw(lons, lats, vals.values, grid_lon, grid_lat)
                     elif method == "Spline (Thin Plate)":
-                        z_grid = interpolate_rbf_spline(lons, lats, vals.values, grid_lon, grid_lat,
-                                                        function='thin_plate_spline')
+                        # CORRECCIÓN DE INTERPOLACIÓN: Aseguramos el nombre de la función 'thin_plate'
+                        # Aunque el error lo sugiere, a veces es la única forma de que funcione la dependencia subyacente.
+                        rbf = Rbf(lons, lats, vals.values, function='thin_plate')
+                        z_grid = rbf(grid_lon, grid_lat)
+                        z_grid = z_grid.T # Transponer para Plotly
                 except Exception as e:
                     st.error(f"Error al calcular {method} para el año {year}: {e}")
                     return go.Figure().update_layout(title=f"Error en {method} para {year}")
@@ -1083,7 +1086,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     # Creamos una copia del DataFrame *sin* la columna geometry antes de Plotly
                     df_plot_scatter = data_year_with_geom.drop(columns=['geometry']).copy()
                     
-                    # FIX: Corregimos la paleta de colores a un estándar de Plotly, ya que YIGnBu falla.
+                    # FIX: Corregimos la paleta de colores a un estándar de Plotly.
                     fig = go.Figure(data=go.Contour(z=z_grid.T, x=grid_lon, y=grid_lat,
                                                     colorscale=px.colors.sequential.YlGnBu,
                                                     contours=dict(showlabels=True,
@@ -1839,7 +1842,7 @@ def display_trends_and_forecast_tab(df_anual_melted, df_monthly_to_process, stat
                     )
 
                 except Exception as e:
-                    st.error(f"No se pudo generar el pronóstico SARIMA. El modelo no pudo converger. Error: {e}")
+                    st.error(f"No se pudo generar el pronóstico SARIMA. El modelo no pudo convergir. Error: {e}")
 
     with pronostico_prophet_tab:
         st.subheader("Pronóstico de Precipitación Mensual (Modelo Prophet)")
@@ -2329,4 +2332,3 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
         df_info_table['Precipitación media anual (mm)'] = 'N/A'
     
     st.dataframe(df_info_table.drop(columns=[Config.PERCENTAGE_COL]).set_index(Config.STATION_NAME_COL), use_container_width=True)
-
