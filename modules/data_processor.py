@@ -16,6 +16,7 @@ from sklearn.linear_model import LinearRegression # No usado en el código provi
 def parse_spanish_dates(date_series):
     """Convierte abreviaturas de meses en español a inglés y parsea el formato mmm-yy."""
     # Mapeo completo de las abreviaturas comunes en español a inglés
+    # Este mapeo es esencial para que pd.to_datetime con %b-%y funcione.
     months_es_to_en = {
         'ene': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'abr': 'Apr',
         'may': 'May', 'jun': 'Jun', 'jul': 'Jul', 'ago': 'Aug',
@@ -26,7 +27,7 @@ def parse_spanish_dates(date_series):
     for es, en in months_es_to_en.items():
         # Usar regex=False para evitar warnings de pandas
         date_series_str = date_series_str.str.replace(es, en, regex=False)
-    # Intentar parsear el formato mmm-yy (ej. Jan-10)
+    # Intentar parsear el formato mmm-yy (ej. Jan-10), como se confirmó.
     return pd.to_datetime(date_series_str, format='%b-%y', errors='coerce')
 
 
@@ -139,7 +140,7 @@ def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded
         st.error("No se encontraron columnas de longitud y/o latitud en el archivo de estaciones.")
         return None, None, None, None
 
-    # CONVERSIÓN NUMÉRICA ESTANDARIZADA: Reemplazar coma por punto decimal
+    # CORRECCIÓN: CONVERSIÓN NUMÉRICA ESTANDARIZADA
     df_stations_raw[lon_col] = pd.to_numeric(df_stations_raw[lon_col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     df_stations_raw[lat_col] = pd.to_numeric(df_stations_raw[lat_col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
     
@@ -153,7 +154,7 @@ def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded
     gdf_stations[Config.LATITUDE_COL] = gdf_stations.geometry.y
 
     if Config.ALTITUDE_COL in gdf_stations.columns:
-        # CONVERSIÓN NUMÉRICA ESTANDARIZADA para altitud
+        # CORRECCIÓN: CONVERSIÓN NUMÉRICA ESTANDARIZADA para altitud
         gdf_stations[Config.ALTITUDE_COL] = \
             pd.to_numeric(gdf_stations[Config.ALTITUDE_COL].astype(str).str.replace(',', '.', regex=False), errors='coerce')
 
@@ -168,12 +169,13 @@ def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded
     df_long = df_precip_raw.melt(id_vars=id_vars, value_vars=station_id_cols,
         var_name='id_estacion', value_name=Config.PRECIPITATION_COL)
 
+    # Nota: Config.SOI_COL y Config.IOD_COL se confirman en minúsculas en config.py.
     cols_to_numeric = [Config.ENSO_ONI_COL, 'temp_sst', 'temp_media',
                        Config.PRECIPITATION_COL, Config.SOI_COL, Config.IOD_COL]
     
     for col in cols_to_numeric:
         if col in df_long.columns:
-            # CONVERSIÓN NUMÉRICA ESTANDARIZADA
+            # CORRECCIÓN: CONVERSIÓN NUMÉRICA ESTANDARIZADA para índices/precipitación
             df_long[col] = pd.to_numeric(df_long[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
 
     df_long.dropna(subset=[Config.PRECIPITATION_COL], inplace=True)
@@ -225,7 +227,7 @@ def load_and_process_all_data(uploaded_file_mapa, uploaded_file_precip, uploaded
 
     for col in [Config.ENSO_ONI_COL, 'temp_sst', 'temp_media']:
         if col in df_enso.columns:
-            # CONVERSIÓN NUMÉRICA ESTANDARIZADA
+            # CORRECCIÓN: CONVERSIÓN NUMÉRICA ESTANDARIZADA para ENSO
             df_enso[col] = pd.to_numeric(df_enso[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
 
     return gdf_stations, gdf_municipios, df_long, df_enso
