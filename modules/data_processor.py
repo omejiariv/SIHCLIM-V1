@@ -247,6 +247,7 @@ def calculate_spi(series, window):
     spi = norm.ppf(cdf)
     
     # CORRECCIÓN: Usar np.where y np.isinf para reemplazar infinities con NaN en el array.
+    # Soluciona el AttributeError: 'numpy.ndarray' object has no attribute 'replace'
     spi = np.where(np.isinf(spi), np.nan, spi)
     
     # Reconvertir a Series usando el índice de rolling_sum, que es la Series original.
