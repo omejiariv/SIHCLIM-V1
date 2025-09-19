@@ -12,6 +12,7 @@ import numpy as np
 import os
 import base64
 import branca.colormap as cm
+from branca.colormap import LinearColormap # <<-- CORRECCIÓN 1: IMPORTACIÓN EXPLICITA
 from pykrige.ok import OrdinaryKriging
 from scipy import stats
 from scipy.stats import gamma
@@ -783,10 +784,9 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                         
                         if min_val >= max_val: max_val = min_val + 1
 
-                        # === CORRECCIÓN DEL ATTRIBUTEERROR con branca.colormap (temporal_tab) ===
-                        colormap = cm.LinearColormap(cm.linear.YIGnBu_09.colors, vmin=min_val, vmax=max_val)
-                        # ========================================================================
-
+                        # CORRECCIÓN DE BRANCA: Usar copy().scale()
+                        colormap = cm.linear.YIGnBu_09.copy().scale(vmin=min_val, vmax=max_val)
+                        
                         for _, row in df_map_data.iterrows():
                             folium.CircleMarker(
                                 location=[row['geometry'].y, row['geometry'].x],
@@ -946,9 +946,9 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
             data_year1 = df_anual_melted[df_anual_melted[Config.YEAR_COL] == year1]
             data_year2 = df_anual_melted[df_anual_melted[Config.YEAR_COL] == year2]
 
-            # === CORRECCIÓN DEL ATTRIBUTEERROR con branca.colormap (compare_tab) ===
-            colormap = cm.LinearColormap(cm.linear.YIGnBu_09.colors, vmin=color_range_comp[0], vmax=color_range_comp[1])
-            # ========================================================================
+            # CORRECCIÓN DE BRANCA: Usar copy().scale()
+            colormap = cm.linear.YIGnBu_09.copy().scale(vmin=color_range_comp[0], vmax=color_range_comp[1])
+            
 
             def create_compare_map(data, year, col, gdf_stations_info):
                 col.markdown(f"**Precipitación en {year}**")
