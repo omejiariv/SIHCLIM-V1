@@ -3,6 +3,7 @@
 # --- Importaciones ---
 import streamlit as st
 import pandas as pd
+import geopandas as gpd
 import altair as alt
 import folium
 from folium.plugins import MarkerCluster, MiniMap
@@ -23,7 +24,6 @@ from statsmodels.tsa.stattools import pacf
 from prophet import Prophet
 from prophet.plot import plot_plotly
 import pymannkendall as mk
-import geopandas as gpd
 
 # --- Importaciones de Módulos Propios ---
 from modules.config import Config
@@ -31,8 +31,6 @@ from modules.utils import add_folium_download_button
 from modules.data_processor import calculate_spi, interpolate_idw, interpolate_rbf_spline
 
 # --- Marcador de Posición para Funciones No Definidas ---
-# Se crea esta función para evitar un error 'NameError' ya que era llamada pero no existía.
-# Debes reemplazar 'pass' con la lógica real para el análisis de percentiles.
 def display_percentile_analysis_subtab(df_monthly_filtered, station_to_analyze_perc):
     st.warning(f"La funcionalidad de análisis por percentiles para la estación '{station_to_analyze_perc}' aún no ha sido implementada.")
     pass
@@ -45,6 +43,9 @@ def create_enso_chart(enso_data):
 
     data = enso_data.copy().sort_values(Config.DATE_COL)
     data.dropna(subset=[Config.ENSO_ONI_COL], inplace=True)
+
+    if data.empty:
+        return go.Figure()
 
     conditions = [data[Config.ENSO_ONI_COL] >= 0.5, data[Config.ENSO_ONI_COL] <= -0.5]
     phases = ['El Niño', 'La Niña']
@@ -155,16 +156,17 @@ def display_spatial_distribution_tab(gdf_filtered, stations_for_analysis, df_anu
     selected_stations_str = f"{len(stations_for_analysis)} estaciones" if len(stations_for_analysis) > 1 else f"1 estación: {stations_for_analysis[0]}"
     st.info(f"Mostrando análisis para {selected_stations_str} en el período {st.session_state.year_range[0]} - {st.session_state.year_range[1]}.")
 
+    gdf_display = gdf_filtered.copy()
     if not df_anual_melted.dropna(subset=[Config.PRECIPITATION_COL]).empty:
         summary_stats = df_anual_melted.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].agg(['mean', 'count']).reset_index()
         summary_stats.rename(columns={'mean': 'precip_media_anual', 'count': 'años_validos'}, inplace=True)
-        gdf_filtered = gdf_filtered.merge(summary_stats, on=Config.STATION_NAME_COL, how='left')
+        gdf_display = gdf_display.merge(summary_stats, on=Config.STATION_NAME_COL, how='left')
     else:
-        gdf_filtered['precip_media_anual'] = np.nan
-        gdf_filtered['años_validos'] = 0
+        gdf_display['precip_media_anual'] = np.nan
+        gdf_display['años_validos'] = 0
 
-    gdf_filtered['precip_media_anual'] = gdf_filtered['precip_media_anual'].fillna(0)
-    gdf_filtered['años_validos'] = gdf_filtered['años_validos'].fillna(0).astype(int)
+    gdf_display['precip_media_anual'] = gdf_display['precip_media_anual'].fillna(0)
+    gdf_display['años_validos'] = gdf_display['años_validos'].fillna(0).astype(int)
 
     sub_tab_mapa, sub_tab_grafico = st.tabs(["Mapa Interactivo", "Gráfico de Disponibilidad de Datos"])
 
@@ -592,6 +594,8 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
             with map_col:
                 m_temporal = create_folium_map([4.57, -74.29], 5, selected_base_map_config, selected_overlays_config)
                 
+                df_year_filtered = df_anual_melted_non_na[df_anual_melted_non_na[Config.YEAR_COL] == selected_year]
+                
                 if not df_year_filtered.empty:
                     df_map_data = pd.merge(
                         df_year_filtered,
@@ -607,7 +611,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
 
                         for _, row in df_map_data.iterrows():
                             folium.CircleMarker(
-                                location=[row['geometry'].y, row['geometry'].x],
+                                location=[row['geometry'].y, row['geometry'].x], 
                                 radius=5,
                                 color=colormap(row[Config.PRECIPITATION_COL]),
                                 fill=True,
@@ -1749,6 +1753,7 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
     else:
         # Si no hay datos anuales, añade la columna con un valor indicativo
         df_info_table['Precipitación media anual (mm)'] = "N/A"
+
 
 
 
