@@ -891,7 +891,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     df_anual_melted[Config.PRECIPITATION_COL].min(), \
                     df_anual_melted[Config.PRECIPITATION_COL].max()
 
-                # CORRECCIÓN: Usar las columnas LAT/LON numéricas
+                # CORRECCIÓN FINAL PLOTLY: Cambiar YIGnBu (obsoleto) por YlGnBu (estándar de Plotly)
                 fig_mapa_animado = px.scatter_geo(df_anim_complete,
                     lat=df_anim_complete[Config.LATITUDE_COL], 
                     lon=df_anim_complete[Config.LONGITUDE_COL],
@@ -902,7 +902,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     animation_frame=Config.YEAR_COL,
                     projection='natural earth',
                     title=f'Precipitación Anual por Estación ({st.session_state.year_range[0]} - {st.session_state.year_range[1]})',
-                    color_continuous_scale=px.colors.sequential.YIGnBu,
+                    color_continuous_scale=px.colors.sequential.YlGnBu, # <--- CAMBIO AQUÍ
                     range_color=[min_precip_anim, max_precip_anim])
 
                 fig_mapa_animado.update_traces(hovertemplate='%{customdata[0]}')
@@ -2308,3 +2308,4 @@ def display_station_table_tab(gdf_filtered, df_anual_melted, stations_for_analys
         df_info_table['Precipitación media anual (mm)'] = 'N/A'
     
     st.dataframe(df_info_table.drop(columns=[Config.PERCENTAGE_COL]).set_index(Config.STATION_NAME_COL), use_container_width=True)
+
