@@ -12,7 +12,7 @@ import numpy as np
 import os
 import base64
 import branca.colormap as cm
-import matplotlib.cm as mpl_cm # Importado para usar paletas estables como 'viridis'
+import matplotlib.cm as mpl_cm # Importado para usar paletas estables
 from pykrige.ok import OrdinaryKriging
 from scipy import stats
 from scipy.stats import gamma
@@ -773,7 +773,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                 if not df_year_filtered.empty:
                     df_map_data = pd.merge(
                         df_year_filtered,
-                        gdf_filtered[[Config.STATION_NAME_COL, 'geometry']].drop_duplicates(),
+                        gdf_filtered[[Config.STATION_NAME_COL, Config.LATITUDE_COL, Config.LONGITUDE_COL, 'geometry']].drop_duplicates(),
                         on=Config.STATION_NAME_COL,
                         how="inner"
                     )
@@ -792,6 +792,7 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                         )
                         
                         for _, row in df_map_data.iterrows():
+                            # Usamos la geometría de GeoDataFrame para ubicación precisa del marcador
                             folium.CircleMarker(
                                 location=[row['geometry'].y, row['geometry'].x],
                                 radius=5,
@@ -870,8 +871,9 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     pd.MultiIndex.from_product([all_selected_stations_info[Config.STATION_NAME_COL], all_years],
                                                names=[Config.STATION_NAME_COL, Config.YEAR_COL]).to_frame(index=False)
                 
-                full_grid = pd.merge(full_grid, all_selected_stations_info[['geometry',
-                                        Config.STATION_NAME_COL]], on=Config.STATION_NAME_COL)
+                # CORRECCIÓN DE GEOMETRÍA: Aseguramos LAT/LON numéricas y el objeto GeoSeries
+                full_grid = pd.merge(full_grid, all_selected_stations_info[['geometry', Config.LATITUDE_COL, Config.LONGITUDE_COL,
+                                        Config.STATION_NAME_COL]].drop_duplicates(), on=Config.STATION_NAME_COL)
                 
                 df_anim_complete = pd.merge(full_grid, df_anual_melted[[Config.STATION_NAME_COL,
                                               Config.YEAR_COL, Config.PRECIPITATION_COL]], on=[Config.STATION_NAME_COL,
@@ -889,9 +891,10 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                     df_anual_melted[Config.PRECIPITATION_COL].min(), \
                     df_anual_melted[Config.PRECIPITATION_COL].max()
 
+                # CORRECCIÓN: Usar las columnas LAT/LON numéricas
                 fig_mapa_animado = px.scatter_geo(df_anim_complete,
-                    lat=df_anim_complete['geometry'].y,
-                    lon=df_anim_complete['geometry'].x,
+                    lat=df_anim_complete[Config.LATITUDE_COL], 
+                    lon=df_anim_complete[Config.LONGITUDE_COL],
                     color='precipitacion_plot', size='precipitacion_plot',
                     hover_name=Config.STATION_NAME_COL,
                     hover_data={'geometry': False, 'precipitacion_plot': False,
@@ -1025,7 +1028,8 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
             def generate_interpolation_map(year, method, gdf_filtered_map):
                 data_year_with_geom = pd.merge(
                     df_anual_non_na[df_anual_non_na[Config.YEAR_COL] == year],
-                    gdf_filtered_map[[Config.STATION_NAME_COL, 'geometry']].drop_duplicates(),
+                    # Aseguramos la columna de geometría para Folium/Geopandas y las coordenadas numéricas
+                    gdf_filtered_map[[Config.STATION_NAME_COL, 'geometry', Config.LATITUDE_COL, Config.LONGITUDE_COL]].drop_duplicates(),
                     on=Config.STATION_NAME_COL
                 )
 
@@ -1035,8 +1039,9 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                                       xaxis_visible=False, yaxis_visible=False)
                     return fig
 
-                lons = data_year_with_geom.geometry.x
-                lats = data_year_with_geom.geometry.y
+                # CORRECCIÓN: Usamos las columnas numéricas LAT/LON del DataFrame mergeado para la interpolación
+                lons = data_year_with_geom[Config.LONGITUDE_COL].values
+                lats = data_year_with_geom[Config.LATITUDE_COL].values
                 vals = data_year_with_geom[Config.PRECIPITATION_COL]
                 bounds = gdf_filtered_map.total_bounds
                 
@@ -1046,13 +1051,13 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
 
                 try:
                     if method == "Kriging Ordinario":
-                        ok = OrdinaryKriging(lons.values, lats.values, vals.values, variogram_model='linear',
+                        ok = OrdinaryKriging(lons, lats, vals.values, variogram_model='linear',
                                              verbose=False, enable_plotting=False)
                         z_grid, _ = ok.execute('grid', grid_lon, grid_lat)
                     elif method == "IDW":
-                        z_grid = interpolate_idw(lons.values, lats.values, vals.values, grid_lon, grid_lat)
+                        z_grid = interpolate_idw(lons, lats, vals.values, grid_lon, grid_lat)
                     elif method == "Spline (Thin Plate)":
-                        z_grid = interpolate_rbf_spline(lons.values, lats.values, vals.values, grid_lon, grid_lat,
+                        z_grid = interpolate_rbf_spline(lons, lats, vals.values, grid_lon, grid_lat,
                                                         function='thin_plate_spline')
                 except Exception as e:
                     st.error(f"Error al calcular {method} para el año {year}: {e}")
