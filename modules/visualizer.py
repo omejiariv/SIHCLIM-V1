@@ -12,6 +12,7 @@ import numpy as np
 import os
 import base64
 import branca.colormap as cm
+import matplotlib.cm as mpl_cm # Importado para usar paletas estables como 'viridis'
 from pykrige.ok import OrdinaryKriging
 from scipy import stats
 from scipy.stats import gamma
@@ -132,7 +133,7 @@ def get_map_options():
         "Relieve (Stamen Terrain)": {"tiles": "Stamen Terrain", "attr": 'Map tiles by <a href="http://stamen.com">Stamen Design</a>, <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> &mdash; Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', "overlay": False},
         "Relieve y Océanos (GEBCO)": {"url": "https://www.gebco.net/data_and_products/gebco_web_services/web_map_service/web_map_service.php", "layers": "GEBCO_2021_Surface", "transparent": False, "attr": "GEBCO 2021", "overlay": True},
         "Mapa de Colombia (WMS IDEAM)": {"url": "https://geoservicios.ideam.gov.co/geoserver/ideam/wms", "layers": "ideam:col_admin", "transparent": True, "attr": "IDEAM", "overlay": True},
-        "Cobertura de la Tierra (WMS IGAC)": {"url": "https://servicios.igac.gov.co/geoserver/services/IDEAM/IDEAM_Cobertura_Corine/MapServer/WMSServer", "layers": "IDEAM_Cobertura_Corine_Web", "transparent": True, "attr": "IGAC", "overlay": True},
+        "Cobertura de la Tierra (WMS IGAC)": {"url": "https://servicios.igac.gov.co/server/services/IDEAM/IDEAM_Cobertura_Corine/MapServer/WMSServer", "layers": "IDEAM_Cobertura_Corine_Web", "transparent": True, "attr": "IGAC", "overlay": True},
     }
 
 def display_map_controls(container_object, key_prefix):
@@ -783,8 +784,12 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
                         
                         if min_val >= max_val: max_val = min_val + 1
 
-                        # CORRECCIÓN DE BRANCA: Usar Viridis (escala estándar)
-                        colormap = cm.linear.Viridis.copy().scale(vmin=min_val, vmax=max_val)
+                        # CORRECCIÓN DE BRANCA: Usar Viridis de Matplotlib (Compatible universalmente)
+                        colormap = cm.LinearColormap(
+                            colors=mpl_cm.get_cmap('viridis').colors, 
+                            vmin=min_val, 
+                            vmax=max_val
+                        )
                         
                         for _, row in df_map_data.iterrows():
                             folium.CircleMarker(
@@ -945,8 +950,12 @@ def display_advanced_maps_tab(gdf_filtered, df_anual_melted, stations_for_analys
             data_year1 = df_anual_melted[df_anual_melted[Config.YEAR_COL] == year1]
             data_year2 = df_anual_melted[df_anual_melted[Config.YEAR_COL] == year2]
 
-            # CORRECCIÓN DE BRANCA: Usar Viridis (escala estándar)
-            colormap = cm.linear.Viridis.copy().scale(vmin=color_range_comp[0], vmax=color_range_comp[1])
+            # CORRECCIÓN DE BRANCA: Usar Viridis de Matplotlib (Compatible universalmente)
+            colormap = cm.LinearColormap(
+                colors=mpl_cm.get_cmap('viridis').colors, 
+                vmin=color_range_comp[0], 
+                vmax=color_range_comp[1]
+            )
             
 
             def create_compare_map(data, year, col, gdf_stations_info):
