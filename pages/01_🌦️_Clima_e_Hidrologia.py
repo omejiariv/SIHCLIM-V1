@@ -191,69 +191,72 @@ def main():
     elif selected_module == "🔗 Correlación": viz.display_correlation_tab(**display_args)
     elif selected_module == "🌊 Extremos": viz.display_drought_analysis_tab(**display_args)
     
-    # --- MÓDULO: MAPAS AVANZADOS (INTEGRACIÓN TOTAL) ---
+# --- MÓDULO: MAPAS AVANZADOS (VERSIÓN DEFINITIVA CORREGIDA) ---
     elif selected_module == "🌍 Mapas Avanzados":
         
-        # --- A. FUNCIONES AUXILIARES LOCALES (Integración PDF y Física) ---
+        # --- A. FUNCIONES AUXILIARES LOCALES ---
         def local_warper_force_4326(tif_path, bounds_wgs84, shape_out):
             """Reproyección forzada a WGS84 para visualización."""
             import rasterio
             from rasterio.warp import reproject, Resampling, calculate_default_transform
             import os
             
-            # Parche Windows
+            # Parche para Windows/PROJ
             if os.name == 'nt':
                 try:
                     import pyproj
                     os.environ['PROJ_LIB'] = pyproj.datadir.get_data_dir()
                 except: pass
 
-            with rasterio.open(tif_path) as src:
-                transform, width, height = calculate_default_transform(
-                    src.crs, 'EPSG:4326', src.width, src.height, *src.bounds
-                )
-                minx, miny, maxx, maxy = bounds_wgs84
-                dst_transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, shape_out[0], shape_out[1])
-                destination = np.zeros(shape_out, dtype=np.float32)
-                reproject(
-                    source=rasterio.band(src, 1), destination=destination,
-                    src_transform=src.transform, src_crs=src.crs,
-                    dst_transform=dst_transform, dst_crs='EPSG:4326',
-                    resampling=Resampling.bilinear
-                )
-                destination[destination < -1000] = 0 # Limpieza de nodata
-                return destination
+            try:
+                with rasterio.open(tif_path) as src:
+                    transform, width, height = calculate_default_transform(
+                        src.crs, 'EPSG:4326', src.width, src.height, *src.bounds
+                    )
+                    minx, miny, maxx, maxy = bounds_wgs84
+                    dst_transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, shape_out[0], shape_out[1])
+                    destination = np.zeros(shape_out, dtype=np.float32)
+                    reproject(
+                        source=rasterio.band(src, 1), destination=destination,
+                        src_transform=src.transform, src_crs=src.crs,
+                        dst_transform=dst_transform, dst_crs='EPSG:4326',
+                        resampling=Resampling.bilinear,
+                        dst_nodata=np.nan
+                    )
+                    return destination
+            except Exception:
+                return None
 
-        # --- INTEGRACIÓN DEL PDF: GENERADOR DE POPUPS ---
         def generar_popup_html_avanzado(row):
-            """Genera HTML enriquecido para el popup de la estación."""
+            """Popup HTML enriquecido."""
             nombre = str(row.get(Config.STATION_NAME_COL, 'Estación'))
             muni = str(row.get('municipio', 'N/A'))
             alt = float(row.get('altitud', 0))
             ppt = float(row.get('ppt_media', 0))
             std = float(row.get('ppt_std', 0))
             
-            html = f"""
-            <div style='font-family:sans-serif; font-size:12px; min-width:150px'>
-                <b style='color:#1f77b4; font-size:14px'>{nombre}</b><hr style='margin:2px'>
+            return f"""
+            <div style='font-family:sans-serif; font-size:12px; min-width:160px; line-height:1.4;'>
+                <b style='color:#1f77b4; font-size:14px'>{nombre}</b><hr style='margin:4px 0; border-top:1px solid #ddd'>
                 📍 <b>Mpio:</b> {muni}<br>
                 ⛰️ <b>Altitud:</b> {alt:.0f} msnm<br>
-                💧 <b>P. Media:</b> {ppt:.1f} mm/año<br>
-                📉 <b>Desv. Std:</b> ±{std:.1f} mm
+                💧 <b>P. Anual:</b> {ppt:.0f} mm<br>
+                📊 <b>Desv. Std:</b> ±{std:.0f} mm
             </div>
             """
-            return html
 
         if not PHYSICS_AVAILABLE:
             st.error("❌ Módulos 'hydro_physics' o 'admin_utils' no disponibles.")
         else:
             st.header("🌍 Modelación Hidrológica Distribuida (Aleph)")
             
-            # --- 0. DIAGNÓSTICO RECURSOS ---
+            # --- 0. CARGA DE RECURSOS (AQUÍ ESTABA EL ERROR) ---
+            # Inicializamos las variables ANTES de cualquier botón
             dem_path = None
             cov_path = None
-            
-            # Carga silenciosa (ya sabemos que funciona)
+            gdf_bocatomas = None # <--- ¡ESTA LÍNEA ES LA CLAVE!
+
+            # A. Rasters
             if os.path.exists(Config.DEM_FILE_PATH): dem_path = Config.DEM_FILE_PATH
             else: 
                 try: dem_path = download_raster_to_temp(os.path.basename(Config.DEM_FILE_PATH))
@@ -261,18 +264,33 @@ def main():
                 
             if os.path.exists(Config.LAND_COVER_RASTER_PATH): cov_path = Config.LAND_COVER_RASTER_PATH
             else:
-                try: 
-                    cov_path = download_raster_to_temp(os.path.basename(Config.LAND_COVER_RASTER_PATH))
-                    if not cov_path: cov_path = download_raster_to_temp("Cob25m_WGS84.tif")
+                try: cov_path = download_raster_to_temp("Cob25m_WGS84.tif")
                 except: pass
 
-            if not dem_path:
-                st.error("⛔ Falta DEM. No se puede ejecutar."); st.stop()
+            if not dem_path: st.error("⛔ Falta DEM. Verifique carpeta data/."); st.stop()
+
+            # B. Bocatomas (Carga Segura)
+            try:
+                # Intentamos importar get_engine solo si es necesario
+                from modules.db_manager import get_engine
+                engine = get_engine()
+                if engine:
+                    gdf_bocatomas = gpd.read_postgis("SELECT * FROM bocatomas", engine, geom_col="geometry")
+                    # Estandarización de nombre para visualizer
+                    if 'nombre_bocatoma' in gdf_bocatomas.columns: 
+                        gdf_bocatomas['nombre_predio'] = gdf_bocatomas['nombre_bocatoma'] 
+                    elif 'nombre' in gdf_bocatomas.columns: 
+                        gdf_bocatomas['nombre_predio'] = gdf_bocatomas['nombre']
+                    else: 
+                        gdf_bocatomas['nombre_predio'] = "Bocatoma"
+            except Exception as e:
+                # Si falla la BD o no existe la tabla, seguimos sin bocatomas (no es crítico)
+                gdf_bocatomas = None
 
             # 1. CONFIGURACIÓN GRID
             c1, c2 = st.columns(2)
-            buffer_km = c1.slider("Buffer (km)", 0.0, 50.0, 20.0)
-            grid_res = c2.slider("Resolución Grid", 50, 300, 100)
+            buffer_km = c1.slider("Buffer Análisis (km)", 0.0, 50.0, 20.0)
+            grid_res = c2.slider("Resolución Grid (Celdas)", 50, 400, 150)
             
             # 2. GEOMETRÍA
             if gdf_zona is None: gdf_zona = gdf_filtered
@@ -285,10 +303,8 @@ def main():
             grid_x, grid_y = np.meshgrid(xi, yi)
             bounds_calc = (minx, miny, maxx, maxy)
             
-            # 3. DATOS ESTACIONES (ENRIQUECIDOS PARA POPUP)
-            # A. Suma Anual primero
+            # 3. DATOS ESTACIONES
             df_annual_sums = df_monthly_filtered.groupby([Config.STATION_NAME_COL, Config.YEAR_COL])[Config.PRECIPITATION_COL].sum().reset_index()
-            # B. Promedio y Desviación Estándar de los anuales
             df_stats = df_annual_sums.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].agg(['mean', 'std']).reset_index()
             df_stats.columns = [Config.STATION_NAME_COL, 'ppt_media', 'ppt_std']
             
@@ -296,23 +312,17 @@ def main():
             gdf_calc = gdf_calc.dropna(subset=['ppt_media', 'geometry'])
             gdf_calc['ppt_media'] = pd.to_numeric(gdf_calc['ppt_media'], errors='coerce').fillna(0)
             gdf_calc['ppt_std'] = pd.to_numeric(gdf_calc['ppt_std'], errors='coerce').fillna(0)
-            
-            # C. Crear columna Popup formateada (Solicitud 3)
             gdf_calc['popup_html'] = gdf_calc.apply(generar_popup_html_avanzado, axis=1)
 
-            # 4. PROCESAMIENTO DEM (Reproyección)
+            # 4. PROCESAMIENTO DEM (Visualización Previa)
             dem_array = None
             with st.spinner("🏔️ Procesando topografía..."):
-                try:
-                    dem_array = local_warper_force_4326(dem_path, bounds_calc, grid_x.shape)
-                except Exception as e: st.error(f"Error DEM: {e}"); st.stop()
+                try: dem_array = local_warper_force_4326(dem_path, bounds_calc, grid_x.shape)
+                except: pass
             
             # 5. EJECUCIÓN
             metodo = st.selectbox("Método Interpolación", ['kriging', 'idw', 'spline', 'ked'])
             
-            if metodo == 'ked':
-                st.caption("⚠️ **Nota sobre KED:** Si el mapa se ve extraño, la correlación Lluvia-Altura es baja en esta zona. Intente Kriging Ordinario.")
-
             if st.button("🚀 Ejecutar Modelo El Aleph"):
                 st.session_state['ejecutar_aleph'] = True
             
@@ -324,32 +334,33 @@ def main():
                 with st.spinner("Calculando balance hídrico distribuido..."):
                     try:
                         # A. INTERPOLACIÓN (P)
-                        # Nota: hydro_physics.interpolar_variable llama a interpolation.py
                         dem_safe = np.nan_to_num(dem_array, nan=0)
                         Z_P, Z_Err = physics.interpolar_variable(
                             gdf_calc, 'ppt_media', grid_x, grid_y, method=metodo, dem_array=dem_safe
                         )
                         if metodo == 'ked': Z_P = np.maximum(Z_P, 0)
 
-                        # B. EJECUCIÓN DEL MOTOR FÍSICO
-                        # Ahora 'matrices_finales' YA TRAE las claves largas y bonitas (1. Precipitación, etc.)
+                        # B. EJECUCIÓN DEL MOTOR FÍSICO (Claves Largas)
                         matrices_finales = physics.run_distributed_model(
                             Z_P, grid_x, grid_y, {'dem': dem_path, 'cobertura': cov_path}, bounds_calc
                         )
 
-                        # C. AGREGAR INCERTIDUMBRE (Si existe)
-                        # Es la única que se calcula fuera del motor físico
+                        # C. AGREGAR INCERTIDUMBRE
                         if Z_Err is not None:
                             matrices_finales['12. Incertidumbre Interpolación (Std)'] = Z_Err
 
-                        # D. CAPAS VECTORIALES (Predios/Bocatomas)
+                        # D. CAPAS VECTORIALES (UNIÓN SEGURA)
                         gdf_predios_safe = None
+                        
+                        # 1. Predios Normales
                         if gdf_predios is not None and not gdf_predios.empty:
                             gdf_predios_safe = gdf_predios.copy()
                             gdf_predios_safe['nombre_predio'] = gdf_predios_safe.get('nombre', 'Predio')
                         
+                        # 2. Bocatomas (Aquí fallaba antes si no estaba definida)
                         if gdf_bocatomas is not None and not gdf_bocatomas.empty:
-                            if gdf_predios_safe is None: gdf_predios_safe = gdf_bocatomas
+                            if gdf_predios_safe is None: 
+                                gdf_predios_safe = gdf_bocatomas
                             else: 
                                 try: gdf_predios_safe = pd.concat([gdf_predios_safe, gdf_bocatomas], ignore_index=True)
                                 except: pass
@@ -358,7 +369,7 @@ def main():
                         viz.display_advanced_maps_tab(
                             df_long=df_monthly_filtered,
                             gdf_stations=gdf_calc,
-                            matrices=matrices_finales, # Pasamos directo el resultado limpio
+                            matrices=matrices_finales, 
                             grid=(grid_x, grid_y),
                             mask=None, 
                             gdf_zona=gdf_zona, 
@@ -366,7 +377,7 @@ def main():
                             gdf_predios=gdf_predios_safe 
                         )
                         
-                        # F. DASHBOARD DE ESTADÍSTICAS
+                        # F. DASHBOARD ESTADÍSTICAS
                         st.markdown("---")
                         st.subheader("📊 Diagnóstico Hidrológico Integral")
                         try:
@@ -377,7 +388,6 @@ def main():
                             from shapely.vectorized import contains
                             mask_exact = contains(gdf_zona.unary_union, grid_x, grid_y)
                             
-                            # Función para buscar valores usando palabras clave, ya que los nombres son largos
                             def get_avg(keyword): 
                                 for k, v in matrices_finales.items():
                                     if keyword in k and v is not None: 
@@ -390,7 +400,6 @@ def main():
                             v_inf = get_avg("Infiltración")
                             v_rec = get_avg("Recarga Real")
                             v_ren = get_avg("Rendimiento")
-                            v_ero = get_avg("Erosión")
                             
                             f_q = (area_km2 * 1e6 * 1e-3) / 31536000
                             Q_medio = v_ppt * f_q
@@ -459,6 +468,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
