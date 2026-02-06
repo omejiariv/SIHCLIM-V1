@@ -317,159 +317,96 @@ def main():
                 st.session_state['ejecutar_aleph'] = True
             
             if st.session_state.get('ejecutar_aleph', False):
-                if st.button("❌ Cerrar"):
+                col_close = st.columns([6, 1])[1]
+                if col_close.button("❌ Cerrar"):
                     st.session_state['ejecutar_aleph'] = False; st.rerun()
 
-                with st.spinner("Calculando física distribuida..."):
+                with st.spinner("Calculando balance hídrico distribuido..."):
                     try:
-                        # A. INTERPOLACIÓN
-                        # KED a veces falla si hay nulos, blindaje:
-                        dem_safe = np.nan_to_num(dem_array, nan=0) if dem_array is not None else None
+                        # A. INTERPOLACIÓN (P)
+                        # Nota: hydro_physics.interpolar_variable llama a interpolation.py
+                        dem_safe = np.nan_to_num(dem_array, nan=0)
                         Z_P, Z_Err = physics.interpolar_variable(
                             gdf_calc, 'ppt_media', grid_x, grid_y, method=metodo, dem_array=dem_safe
                         )
-                        
-                        # Limpieza visual KED (Si genera valores negativos locos)
                         if metodo == 'ked': Z_P = np.maximum(Z_P, 0)
 
-                        # B. COBERTURA
-                        cov_array = None
-                        if cov_path:
-                            try: cov_array = local_warper_force_4326(cov_path, bounds_calc, grid_x.shape)
-                            except: pass
-
-                        # C. MODELO FÍSICO (Corre SIEMPRE, haya error o no)
-                        # El motor físico espera 'cobertura' como ruta, pero si ya tenemos array usamos ruta.
-                        # NOTA: hydro_physics lee el TIF de nuevo internamente. Aseguramos que el TIF exista.
-                        matrices_raw = physics.run_distributed_model(
+                        # B. EJECUCIÓN DEL MOTOR FÍSICO
+                        # Ahora 'matrices_finales' YA TRAE las claves largas y bonitas (1. Precipitación, etc.)
+                        matrices_finales = physics.run_distributed_model(
                             Z_P, grid_x, grid_y, {'dem': dem_path, 'cobertura': cov_path}, bounds_calc
                         )
-                        
-                        # D. ADUANA DE CAPAS (SOLICITUD 1 y 2 - TODAS LAS CAPAS)
-                        matrices_clean = {}
-                        matrices_clean['1. Precipitación (mm/año)'] = Z_P
-                        
-                        if dem_array is not None: matrices_clean['2. Elevación (msnm)'] = dem_array
-                        if cov_array is not None: matrices_clean['3. Cobertura (Clase)'] = cov_array
-                        
-                        # Mapeo de nombres técnicos a nombres de usuario
-                        map_nombres = {
-                            'Temperatura': '4. Temperatura Media (°C)',
-                            'ETR': '5. Evapotranspiración Real (mm/año)',
-                            'Escorrentía Superficial': '6. Escorrentía Superficial (mm/año)',
-                            'Q_Sup': '6. Escorrentía Superficial (mm/año)', # Alias
-                            'Infiltración': '7. Infiltración (mm/año)',
-                            'Recarga Potencial': '8. Recarga Potencial (mm/año)',
-                            'Recarga Real': '9. Recarga Real (mm/año)',
-                            'Rendimiento Hídrico': '10. Rendimiento Hídrico (L/s/km²)',
-                            'Riesgo Erosión': '11. Susceptibilidad Erosión (Adim)'
-                        }
-                        
-                        for k_raw, k_clean in map_nombres.items():
-                            if k_raw in matrices_raw:
-                                matrices_clean[k_clean] = matrices_raw[k_raw]
-                        
-                        # Incertidumbre (Solo si existe)
-                        if Z_Err is not None:
-                            matrices_clean['12. Incertidumbre (Std Dev)'] = Z_Err
 
-                        # E. VISUALIZACIÓN
-                        # Preparamos predios con nombre corregido
+                        # C. AGREGAR INCERTIDUMBRE (Si existe)
+                        # Es la única que se calcula fuera del motor físico
+                        if Z_Err is not None:
+                            matrices_finales['12. Incertidumbre Interpolación (Std)'] = Z_Err
+
+                        # D. CAPAS VECTORIALES (Predios/Bocatomas)
                         gdf_predios_safe = None
                         if gdf_predios is not None and not gdf_predios.empty:
                             gdf_predios_safe = gdf_predios.copy()
                             gdf_predios_safe['nombre_predio'] = gdf_predios_safe.get('nombre', 'Predio')
                         
-                        # Enviar 'popup_html' en lugar de nombre simple si es posible, 
-                        # pero visualizer.py espera columnas fijas. 
-                        # TRUCO: Sobrescribimos 'nombre' en gdf_calc temporalmente con el HTML para que folium lo use
-                        gdf_viz = gdf_calc.copy()
-                        # Nota: Si visualizer no soporta HTML en nombre, saldrá código raw. 
-                        # Idealmente visualizer debería tener un param 'tooltip_col'. 
-                        # Por ahora usamos los campos estándar.
+                        if gdf_bocatomas is not None and not gdf_bocatomas.empty:
+                            if gdf_predios_safe is None: gdf_predios_safe = gdf_bocatomas
+                            else: 
+                                try: gdf_predios_safe = pd.concat([gdf_predios_safe, gdf_bocatomas], ignore_index=True)
+                                except: pass
 
+                        # E. VISUALIZACIÓN
                         viz.display_advanced_maps_tab(
                             df_long=df_monthly_filtered,
-                            gdf_stations=gdf_viz, 
-                            matrices=matrices_clean, 
+                            gdf_stations=gdf_calc,
+                            matrices=matrices_finales, # Pasamos directo el resultado limpio
                             grid=(grid_x, grid_y),
-                            mask=None, # La máscara se calcula dentro si es None
+                            mask=None, 
                             gdf_zona=gdf_zona, 
                             gdf_buffer=gdf_buffer, 
                             gdf_predios=gdf_predios_safe 
                         )
                         
-                        # --- F. PANEL DE ESTADÍSTICAS HIDROLÓGICAS (SOLICITUD 7) ---
+                        # F. DASHBOARD DE ESTADÍSTICAS
                         st.markdown("---")
-                        st.subheader("📊 Balance Hídrico de la Zona Seleccionada")
-                        
-                        # Cálculos zonales (Solo dentro del polígono exacto, no el buffer)
+                        st.subheader("📊 Diagnóstico Hidrológico Integral")
                         try:
-                            # 1. Área Real (Proyectada a metros para exactitud)
                             gdf_zona_proj = gdf_zona.to_crs(epsg=3116)
                             area_km2 = gdf_zona_proj.area.sum() / 1e6
                             perim_km = gdf_zona_proj.length.sum() / 1e3
                             
-                            # 2. Promedios Espaciales (Usamos los arrays calculados)
-                            # Necesitamos una máscara booleana para filtrar solo lo que está DENTRO de la cuenca
                             from shapely.vectorized import contains
                             mask_exact = contains(gdf_zona.unary_union, grid_x, grid_y)
                             
-                            def get_mean_val(key_fragment):
-                                """Busca una matriz por nombre parcial y calcula su media en la cuenca."""
-                                for k, v in matrices_clean.items():
-                                    if key_fragment in k:
-                                        val_masked = v[mask_exact] # Filtrar por forma
-                                        return np.nanmean(val_masked)
-                                return 0.0
-
-                            # Extracción de valores medios
-                            ppt_mean = get_mean_val("Precipitación")
-                            etr_mean = get_mean_val("Evapotranspiración")
-                            esc_mean = get_mean_val("Escorrentía")
-                            inf_mean = get_mean_val("Infiltración")
-                            rec_mean = get_mean_val("Recarga Real")
+                            # Función para buscar valores usando palabras clave, ya que los nombres son largos
+                            def get_avg(keyword): 
+                                for k, v in matrices_finales.items():
+                                    if keyword in k and v is not None: 
+                                        return np.nanmean(v[mask_exact])
+                                return 0
                             
-                            # 3. Conversión a Caudales (m3/s)
-                            # Q (m3/s) = (Lluvia mm/año * Área km2 * 1000) / (31536000 s/año)
-                            factor_conv = (area_km2 * 1000) / 31536000
+                            v_ppt = get_avg("Precipitación")
+                            v_etr = get_avg("Evapotranspiración")
+                            v_esc = get_avg("Escorrentía")
+                            v_inf = get_avg("Infiltración")
+                            v_rec = get_avg("Recarga Real")
+                            v_ren = get_avg("Rendimiento")
+                            v_ero = get_avg("Erosión")
                             
-                            q_medio_lluvia = ppt_mean * factor_conv
-                            q_medio_escorrentia = esc_mean * factor_conv
-                            q_medio_recarga = rec_mean * factor_conv # Aporte a base
+                            f_q = (area_km2 * 1e6 * 1e-3) / 31536000
+                            Q_medio = v_ppt * f_q
+                            Q_oferta = (v_esc + v_rec) * f_q
                             
-                            # Oferta Hídrica Total Aprox (Escorrentía + Recarga Base)
-                            q_oferta = q_medio_escorrentia + q_medio_recarga
-                            
-                            # Caudal Ecológico (Estimación simple 25% Q medio multianual)
-                            q_eco = q_oferta * 0.25
-
-                            # 4. Renderizado del Dashboard
-                            m1, m2, m3, m4 = st.columns(4)
-                            m1.metric("📐 Geometría", f"{area_km2:.2f} km²", f"P: {perim_km:.1f} km")
-                            m1.metric("💧 Precipitación", f"{ppt_mean:.0f} mm/año", f"Vol: {q_medio_lluvia:.2f} m³/s")
-                            
-                            m2.metric("☀️ ETR", f"{etr_mean:.0f} mm/año", "Pérdida por calor")
-                            m2.metric("📉 Escorrentía Sup.", f"{esc_mean:.0f} mm/año", f"Q: {q_medio_escorrentia:.2f} m³/s")
-                            
-                            m3.metric("🌱 Infiltración", f"{inf_mean:.0f} mm/año", "Entrada al suelo")
-                            m3.metric("⏬ Recarga Acuífero", f"{rec_mean:.0f} mm/año", f"Q_base: {q_medio_recarga:.3f} m³/s")
-                            
-                            # Índices
-                            ind_aridez = ppt_mean / etr_mean if etr_mean > 0 else 0
-                            ind_esc = esc_mean / ppt_mean if ppt_mean > 0 else 0
-                            
-                            m4.metric("🌊 Oferta Hídrica Neta", f"{q_oferta:.2f} m³/s", f"Eco: {q_eco:.2f} m³/s")
-                            m4.metric("📊 Índices", f"Aridez: {ind_aridez:.2f}", f"Coef. Esc: {ind_esc:.2f}")
-
-                            st.caption(f"ℹ️ Análisis basado en {len(gdf_calc)} estaciones y grilla de {grid_res}x{grid_res} celdas.")
+                            k1, k2, k3, k4 = st.columns(4)
+                            k1.metric("Área Cuenca", f"{area_km2:.2f} km²")
+                            k2.metric("Caudal Medio", f"{Q_medio:.2f} m³/s")
+                            k3.metric("Escorrentía", f"{v_esc:.0f} mm/año", f"Q: {v_esc*f_q:.2f} m³/s")
+                            k4.metric("Rendimiento", f"{v_ren:.1f} L/s/km²")
                             
                         except Exception as e:
-                            st.warning(f"No se pudieron calcular estadísticas zonales: {e}")
+                            st.warning(f"Error estadísticas: {e}")
 
                     except Exception as e:
-                        st.error(f"Error crítico en ejecución: {e}")
-                        st.expander("Ver detalles técnicos").write(e)
+                        st.error(f"Error crítico: {e}")
 
 
     # --- OTROS MÓDULOS ---
@@ -522,6 +459,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
