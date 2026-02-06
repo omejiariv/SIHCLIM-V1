@@ -184,35 +184,28 @@ def main():
         def local_warper_force_4326(tif_path, bounds_wgs84, shape_out):
             """
             Fuerza la lectura del Raster transformándolo a WGS84 (EPSG:4326).
-            INCLUYE PARCHE PARA WINDOWS/POSTGRESQL.
+            Versión Universal (Limpia variables de entorno conflictivas).
             """
             import os
-            import sys
-            
-            # --- 🛡️ PARCHE DE CONFLICTO PROJ (CRÍTICO PARA WINDOWS) ---
-            # Python a veces hereda la variable PROJ_LIB de PostgreSQL, rompiendo rasterio.
-            # Aquí detectamos dónde está 'pyproj' real y forzamos esa ruta.
-            try:
-                import pyproj
-                proj_data_dir = pyproj.datadir.get_data_dir()
-                os.environ['PROJ_LIB'] = proj_data_dir
-                # print(f"🔧 PROJ_LIB reasignado a: {proj_data_dir}") # Debug
-            except ImportError:
-                # Si falla pyproj, intentamos limpiar la variable para que rasterio busque la suya
-                if 'PROJ_LIB' in os.environ:
-                    del os.environ['PROJ_LIB']
-            # -----------------------------------------------------------
-
             import rasterio
             from rasterio.warp import reproject, Resampling, calculate_default_transform
             
+            # --- LIMPIEZA DE CONFLICTOS PROJ ---
+            # En la nube, a veces es mejor NO setear nada y dejar que rasterio se autoconfigure.
+            # Solo si estamos en Windows forzamos pyproj.
+            if os.name == 'nt': # Si es Windows
+                try:
+                    import pyproj
+                    os.environ['PROJ_LIB'] = pyproj.datadir.get_data_dir()
+                except: pass
+            # -----------------------------------
+
             with rasterio.open(tif_path) as src:
-                # 1. Calcular transformación destino (WGS84)
+                # ... (El resto del código sigue IDÉNTICO a como lo tenías) ...
                 transform, width, height = calculate_default_transform(
                     src.crs, 'EPSG:4326', src.width, src.height, *src.bounds
                 )
                 
-                # 2. Definir el array destino ajustado al grid solicitado
                 minx, miny, maxx, maxy = bounds_wgs84
                 
                 dst_transform = rasterio.transform.from_bounds(
@@ -221,7 +214,6 @@ def main():
                 
                 destination = np.zeros(shape_out, dtype=np.float32)
                 
-                # 3. Reproyectar
                 reproject(
                     source=rasterio.band(src, 1),
                     destination=destination,
@@ -232,7 +224,6 @@ def main():
                     resampling=Resampling.bilinear
                 )
                 
-                # Limpieza de valores nulos (usualmente -9999 o muy negativos)
                 destination[destination < -1000] = 0
                 return destination
 
@@ -412,4 +403,5 @@ def main():
     st.markdown("""<style>.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }</style>""", unsafe_allow_html=True)
 
 if __name__ == "__main__":
+
     main()
