@@ -296,15 +296,34 @@ def _get_user_location_sidebar(key_suffix=""):
 # 0. ESTÉTICA UNIFICADA (EL ALEPH)
 # ==============================================================================
 
+# --- A. GENERADOR DE POPUPS (Tu diseño solicitado) ---
 def generar_popup_html(row, valor_col='ppt_media'):
-    """Versión de diagnóstico: Minimalista para evitar pantalla blanca."""
-    # Convertimos todo a string y limpiamos valores extraños
+    """
+    Genera el HTML para el popup de la estación con datos estadísticos.
+    """
+    # Limpieza de strings para evitar errores de comillas
     nombre = str(row.get('nombre', 'Estación')).replace("'", "")
     muni = str(row.get('municipio', 'N/A')).replace("'", "")
-    valor = float(row.get(valor_col, 0))
     
-    return f"<b>{nombre}</b><br>Mpio: {muni}<br>Valor: {valor:.1f} mm"
-
+    # Extracción de valores numéricos
+    altura = float(row.get('altitud', 0))
+    valor = float(row.get(valor_col, 0))
+    std = float(row.get('ppt_std', 0))
+    anios = int(row.get('n_anios', 0)) # <--- Nuevo campo calculado
+    
+    html = f"""
+    <div style='font-family:sans-serif; font-size:12px; min-width:160px; line-height:1.4;'>
+        <b style='color:#1f77b4; font-size:14px'>{nombre}</b>
+        <hr style='margin:4px 0; border-top:1px solid #ddd'>
+        📍 <b>Mpio:</b> {muni}<br>
+        ⛰️ <b>Altitud:</b> {altura:.0f} msnm<br>
+        💧 <b>P. Media:</b> {valor:.0f} mm/año<br>
+        📉 <b>Desv. Std:</b> ±{std:.0f} mm<br>
+        📅 <b>Registro:</b> {anios} años
+    </div>
+    """
+    return html
+    
 def _plot_panel_regional(rng, meth, col, tag, u_loc, df_long, gdf_stations):
     """Helper para graficar un panel regional (A o B)."""
     mask = (df_long[Config.YEAR_COL] >= rng[0]) & (df_long[Config.YEAR_COL] <= rng[1])
@@ -6477,88 +6496,143 @@ def display_current_filters(stations_sel, regions_sel, munis_sel, year_range, in
             st.markdown(f"**🏙️ Municipios:** {txt_munis}")
 
 
-def generar_mapa_interactivo(grid_final, xi, yi, bounds, df_estaciones, var_meteo, gdf_contexto=None):
+# --- B. MAPA INTERACTIVO PRINCIPAL ---
+def generar_mapa_interactivo(grid, bounds, gdf_stations, gdf_zona, gdf_buffer, gdf_predios=None, gdf_bocatomas=None, nombre_capa="Variable"):
     """
-    Genera un mapa Folium avanzado con raster overlay, isolíneas y popups.
+    Genera el mapa Folium con:
+    1. Raster (Variable interpolada) + Leyenda
+    2. Vectores (Zona, Buffer, Predios, Bocatomas)
+    3. Estaciones (Puntos con Popup)
     """
-    import folium
-    from matplotlib import cm
-    from shapely.geometry import LineString
+    import matplotlib.pyplot as plt
     
+    # 1. Configuración Base
     minx, miny, maxx, maxy = bounds
-    lat_mean = (miny + maxy) / 2
-    lon_mean = (minx + maxx) / 2
+    center_lat = (miny + maxy) / 2
+    center_lon = (minx + maxx) / 2
     
-    # 1. Mapa Base
-    m = folium.Map(location=[lat_mean, lon_mean], zoom_start=10, tiles="CartoDB positron")
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=11,
+        tiles="CartoDB positron",
+        control_scale=True
+    )
     
-    # 2. Raster Overlay
-    if grid_final is not None:
-        vmin, vmax = np.nanmin(grid_final), np.nanmax(grid_final)
-        cmap_name = 'Spectral_r' if 'Precipit' in var_meteo or 'Escorrent' in var_meteo else 'RdYlGn'
+    # 2. RASTER OVERLAY (El Mapa de Colores) + LEYENDA
+    if grid is not None:
+        grid_z = grid[0] # grid viene como tupla (Z, x, y) o solo Z array. Asumimos Z array si entra procesado.
+        if isinstance(grid, tuple): grid_z = grid[0]
+
+        # Definir Paleta y Rangos
+        vmin = np.nanmin(grid_z)
+        vmax = np.nanmax(grid_z)
         
-        # Normalización manual para evitar dependencias extra
-        norm_grid = (grid_final - vmin) / (vmax - vmin)
-        colored_data = cm.get_cmap(cmap_name)(norm_grid)
-        colored_data[np.isnan(grid_final), 3] = 0 # Transparencia
+        # Selección de colores según el tipo de variable
+        if 'Precipitación' in nombre_capa:
+            colors = ['#f7fbff', '#08306b'] # Azules (Blues)
+            caption = "Precipitación (mm/año)"
+        elif 'Temperatura' in nombre_capa:
+            colors = ['#fff5f0', '#67000d'] # Rojos (Reds)
+            caption = "Temperatura (°C)"
+        elif 'Erosión' in nombre_capa:
+            colors = ['#fff5eb', '#7f2704'] # Naranjas (Oranges)
+            caption = "Susceptibilidad Erosión"
+        else:
+            colors = ['#d73027', '#4575b4'] # Spectral divergente (RdYlBu_r aprox)
+            caption = nombre_capa
+
+        # Crear Colormap (Leyenda)
+        colormap = cm.LinearColormap(colors=colors, vmin=vmin, vmax=vmax, caption=caption)
         
-        folium.raster_layers.ImageOverlay(
-            image=colored_data,
-            bounds=[[miny, minx], [maxy, maxx]],
-            opacity=0.7,
-            name=f"{var_meteo}"
+        # Renderizar Imagen
+        try:
+            # Normalizar para imagen (0-1) usando la función de matplotlib para tener colores suaves
+            import matplotlib.cm as cm_mpl
+            norm = plt.Normalize(vmin=vmin, vmax=vmax)
+            cmap_mpl = plt.cm.get_cmap('Spectral_r' if 'Precip' in nombre_capa else 'viridis') # Fallback robusto
+            
+            image_data = cmap_mpl(norm(grid_z))
+            image_data[np.isnan(grid_z), 3] = 0 # Transparencia en nulos
+
+            folium.raster_layers.ImageOverlay(
+                image=image_data,
+                bounds=[[miny, minx], [maxy, maxx]],
+                opacity=0.7,
+                name=nombre_capa,
+                mercator_project=True
+            ).add_to(m)
+            
+            # Agregar la leyenda al mapa
+            colormap.add_to(m)
+            
+        except Exception as e:
+            print(f"Error renderizando raster: {e}")
+
+    # 3. CAPAS VECTORIALES (Separadas)
+    
+    # A. Zona de Estudio (Cuenca)
+    if gdf_zona is not None:
+        folium.GeoJson(
+            gdf_zona,
+            name="Cuenca / Zona",
+            style_function=lambda x: {'color': 'black', 'weight': 2, 'fillOpacity': 0}
         ).add_to(m)
         
-        # 3. Isolíneas
-        try:
-            import matplotlib.pyplot as plt
-            fig_iso, ax_iso = plt.subplots()
-            levels = np.linspace(vmin, vmax, 10)
-            cnt = ax_iso.contour(xi, yi, grid_final, levels=levels)
-            
-            lines = []
-            for collection in cnt.collections:
-                for path in collection.get_paths():
-                    coords = path.vertices
-                    if len(coords) > 1:
-                        # Asegurar formato [(lon, lat)...]
-                        lines.append(LineString(coords))
-            plt.close(fig_iso)
-            
-            if lines:
-                gdf_iso = gpd.GeoDataFrame(geometry=lines, crs="EPSG:4326")
-                folium.GeoJson(
-                    gdf_iso, name="Isolíneas",
-                    style_function=lambda x: {'color': 'black', 'weight': 0.5, 'opacity': 0.5}
-                ).add_to(m)
-        except Exception as e: print(f"Warning Isolineas: {e}")
+    # B. Buffer
+    if gdf_buffer is not None:
+        folium.GeoJson(
+            gdf_buffer,
+            name="Buffer Análisis",
+            style_function=lambda x: {'color': 'red', 'weight': 1, 'dashArray': '5, 5', 'fill': False}
+        ).add_to(m)
 
-    # 4. Contexto
-    if gdf_contexto:
-        if 'cuencas' in gdf_contexto and not gdf_contexto['cuencas'].empty:
-            folium.GeoJson(
-                gdf_contexto['cuencas'], name="🌊 Cuencas",
-                style_function=lambda x: {'color': '#2c3e50', 'fill': False, 'weight': 2}
-            ).add_to(m)
-            
-        if 'municipios' in gdf_contexto and not gdf_contexto['municipios'].empty:
-            folium.GeoJson(
-                gdf_contexto['municipios'], name="🏙️ Municipios", show=False,
-                style_function=lambda x: {'color': 'gray', 'fill': False, 'weight': 1, 'dashArray': '5, 5'}
-            ).add_to(m)
+    # C. Predios (Capa Separada)
+    if gdf_predios is not None and not gdf_predios.empty:
+        folium.GeoJson(
+            gdf_predios,
+            name="📂 Predios",
+            tooltip=folium.GeoJsonTooltip(fields=['nombre_predio'], aliases=['Predio:']),
+            style_function=lambda x: {'color': 'orange', 'weight': 1, 'fillOpacity': 0.2}
+        ).add_to(m)
 
-    # 5. Estaciones (Usando la Función Maestra)
-    if not df_estaciones.empty:
-        for _, row in df_estaciones.iterrows():
-            # Llamamos a la función única de popups
-            popup_html = generar_popup_html(row, valor_col='ppt_media') # O 'valor' según corresponda
+    # D. Bocatomas (Capa Separada) <--- SOLICITUD 3
+    if gdf_bocatomas is not None and not gdf_bocatomas.empty:
+        # Usamos CircleMarker para bocatomas si son puntos, o GeoJson si son polígonos
+        folium.GeoJson(
+            gdf_bocatomas,
+            name="🚰 Bocatomas",
+            tooltip=folium.GeoJsonTooltip(fields=['nombre_predio'], aliases=['Bocatoma:']),
+            style_function=lambda x: {'color': 'blue', 'weight': 2, 'fillColor': 'cyan', 'fillOpacity': 0.8},
+            marker=folium.CircleMarker(radius=5, fill=True, color='blue') # Si son puntos
+        ).add_to(m)
+
+    # 4. ESTACIONES (Con Popup Enriquecido)
+    if gdf_stations is not None and not gdf_stations.empty:
+        fg_stations = folium.FeatureGroup(name="🌦️ Estaciones")
+        
+        for _, row in gdf_stations.iterrows():
+            html = generar_popup_html(row, valor_col='ppt_media')
             
             folium.CircleMarker(
-                [row['latitud'], row['longitud']],
-                radius=5, color='black', weight=1, fill=True, fill_color='cyan', fill_opacity=1,
-                popup=folium.Popup(popup_html, max_width=250), # Max width ajustado
-                tooltip=f"{row.get('nombre', 'Est')} ({row.get('ppt_media', 0):.1f})"
-            ).add_to(m)
+                location=[row.geometry.y, row.geometry.x],
+                radius=5,
+                color='black',
+                weight=1,
+                fill=True,
+                fill_color='#3498db',
+                fill_opacity=1,
+                popup=folium.Popup(html, max_width=250),
+                tooltip=row.get('nombre', 'Estación')
+            ).add_to(fg_stations)
+            
+        fg_stations.add_to(m)
+
+    # 5. CONTROLES
+    folium.LayerControl(position='topright', collapsed=False).add_to(m)
+    Fullscreen().add_to(m)
+    MeasureControl(position='bottomleft').add_to(m)
+    
+    return m
 
 def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     """Análisis comparativo multiescalar (Municipio, Cuenca, Región)."""
@@ -6703,4 +6777,5 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
             st.download_button("📥 Descargar Datos Comparativos", csv, "comparativa.csv", "text/csv")
 
     except Exception as e:
+
         st.error(f"Error en módulo multiescalar: {e}")
