@@ -40,6 +40,8 @@ from scipy import stats
 import scipy.ndimage as ndimage
 from scipy.ndimage import gaussian_filter
 from matplotlib import path as mpath
+from folium.plugins import Fullscreen, Draw, MeasureControl
+
 
 # Desactivar explícitamente LaTeX en el renderizado de etiquetas
 st.set_option('client.showErrorDetails', False)
@@ -6604,4 +6606,5 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
