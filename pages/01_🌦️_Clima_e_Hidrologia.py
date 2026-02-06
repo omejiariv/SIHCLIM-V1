@@ -333,6 +333,11 @@ def main():
 
                 with st.spinner("Calculando balance hídrico distribuido..."):
                     try:
+                        # 0. PREPARAR DATOS ESTACIONES (Agregar Conteo de Años para Popup)
+                        # Calculamos cuántos años únicos tiene cada estación
+                        df_anios_count = df_monthly_filtered.groupby(Config.STATION_NAME_COL)[Config.YEAR_COL].nunique().reset_index(name='n_anios')
+                        gdf_calc = gdf_calc.merge(df_anios_count, on=Config.STATION_NAME_COL, how='left').fillna(0)
+
                         # A. INTERPOLACIÓN (P)
                         dem_safe = np.nan_to_num(dem_array, nan=0)
                         Z_P, Z_Err = physics.interpolar_variable(
@@ -340,7 +345,7 @@ def main():
                         )
                         if metodo == 'ked': Z_P = np.maximum(Z_P, 0)
 
-                        # B. EJECUCIÓN DEL MOTOR FÍSICO (Claves Largas)
+                        # B. EJECUCIÓN DEL MOTOR FÍSICO
                         matrices_finales = physics.run_distributed_model(
                             Z_P, grid_x, grid_y, {'dem': dem_path, 'cobertura': cov_path}, bounds_calc
                         )
@@ -349,23 +354,24 @@ def main():
                         if Z_Err is not None:
                             matrices_finales['12. Incertidumbre Interpolación (Std)'] = Z_Err
 
-                        # D. CAPAS VECTORIALES (UNIÓN SEGURA)
-                        gdf_predios_safe = None
-                        
-                        # 1. Predios Normales
+                        # D. CAPAS VECTORIALES (PREPARACIÓN SEPARADA)
+                        # 1. Predios
+                        gdf_predios_viz = None
                         if gdf_predios is not None and not gdf_predios.empty:
-                            gdf_predios_safe = gdf_predios.copy()
-                            gdf_predios_safe['nombre_predio'] = gdf_predios_safe.get('nombre', 'Predio')
+                            gdf_predios_viz = gdf_predios.copy()
+                            gdf_predios_viz['nombre_predio'] = gdf_predios_viz.get('nombre', 'Predio')
                         
-                        # 2. Bocatomas (Aquí fallaba antes si no estaba definida)
+                        # 2. Bocatomas (Sin unir, se pasan aparte)
+                        gdf_bocatomas_viz = None
                         if gdf_bocatomas is not None and not gdf_bocatomas.empty:
-                            if gdf_predios_safe is None: 
-                                gdf_predios_safe = gdf_bocatomas
-                            else: 
-                                try: gdf_predios_safe = pd.concat([gdf_predios_safe, gdf_bocatomas], ignore_index=True)
-                                except: pass
+                             gdf_bocatomas_viz = gdf_bocatomas.copy()
+                             # Aseguramos campo nombre para tooltip
+                             if 'nombre_bocatoma' in gdf_bocatomas_viz.columns:
+                                 gdf_bocatomas_viz['nombre_predio'] = gdf_bocatomas_viz['nombre_bocatoma']
+                             else:
+                                 gdf_bocatomas_viz['nombre_predio'] = "Bocatoma"
 
-                        # E. VISUALIZACIÓN
+                        # E. VISUALIZACIÓN (Pasamos argumentos separados)
                         viz.display_advanced_maps_tab(
                             df_long=df_monthly_filtered,
                             gdf_stations=gdf_calc,
@@ -374,17 +380,20 @@ def main():
                             mask=None, 
                             gdf_zona=gdf_zona, 
                             gdf_buffer=gdf_buffer, 
-                            gdf_predios=gdf_predios_safe 
+                            gdf_predios=gdf_predios_viz,
+                            gdf_bocatomas=gdf_bocatomas_viz # <--- Argumento Nuevo
                         )
                         
-                        # F. DASHBOARD ESTADÍSTICAS
+                        # F. DASHBOARD DE ESTADÍSTICAS (SOLICITUD 4 - COMPLETA)
                         st.markdown("---")
                         st.subheader("📊 Diagnóstico Hidrológico Integral")
                         try:
+                            # 1. Geometría
                             gdf_zona_proj = gdf_zona.to_crs(epsg=3116)
                             area_km2 = gdf_zona_proj.area.sum() / 1e6
                             perim_km = gdf_zona_proj.length.sum() / 1e3
                             
+                            # 2. Promedios Zonales
                             from shapely.vectorized import contains
                             mask_exact = contains(gdf_zona.unary_union, grid_x, grid_y)
                             
@@ -398,19 +407,58 @@ def main():
                             v_etr = get_avg("Evapotranspiración")
                             v_esc = get_avg("Escorrentía")
                             v_inf = get_avg("Infiltración")
-                            v_rec = get_avg("Recarga Real")
-                            v_ren = get_avg("Rendimiento")
+                            v_rec_pot = get_avg("Recarga Potencial")
+                            v_rec_real = get_avg("Recarga Real")
+                            v_ero = get_avg("Erosión")
                             
-                            f_q = (area_km2 * 1e6 * 1e-3) / 31536000
-                            Q_medio = v_ppt * f_q
-                            Q_oferta = (v_esc + v_rec) * f_q
+                            # 3. Conversiones y Caudales
+                            # Factor Q (m3/s) = (mm/año * km2 * 1000) / (31536000 s)
+                            factor_q = (area_km2 * 1000) / 31536000
                             
+                            Q_medio = v_ppt * factor_q
+                            Q_escorrentia = v_esc * factor_q
+                            Q_recarga = v_rec_real * factor_q
+                            Q_minimo = Q_recarga # Asumimos flujo base como Q minimo aprox
+                            Q_oferta_total = Q_escorrentia + Q_recarga
+                            Q_ecologico = Q_oferta_total * 0.25 # 25% Oferta
+                            
+                            # Rendimiento Hídrico en m3/ha-año
+                            # 1 mm = 10 m3/ha
+                            # Rendimiento (Oferta Total en mm) * 10
+                            Rendimiento_m3ha = (v_esc + v_rec_real) * 10 
+                            
+                            # Índices
+                            ind_aridez = v_ppt / v_etr if v_etr > 0 else 0
+                            # Indice Erosividad (Aprox R de USLE, correlación simple con P)
+                            # R = 0.0448 * P^1.56 (Fórmula genérica trópico si no hay dato exacto)
+                            ind_erosividad_R = 0.0448 * (v_ppt ** 1.56)
+
+                            # 4. Renderizado del Dashboard (4 Columnas)
                             k1, k2, k3, k4 = st.columns(4)
-                            k1.metric("Área Cuenca", f"{area_km2:.2f} km²")
-                            k2.metric("Caudal Medio", f"{Q_medio:.2f} m³/s")
-                            k3.metric("Escorrentía", f"{v_esc:.0f} mm/año", f"Q: {v_esc*f_q:.2f} m³/s")
-                            k4.metric("Rendimiento", f"{v_ren:.1f} L/s/km²")
                             
+                            k1.markdown("#### 📏 Morfometría")
+                            k1.metric("Área", f"{area_km2:.2f} km²")
+                            k1.metric("Perímetro", f"{perim_km:.1f} km")
+                            k1.metric("Estaciones", f"{len(gdf_calc)}")
+                            
+                            k2.markdown("#### 💧 Balance Hídrico (mm)")
+                            k2.metric("Precipitación", f"{v_ppt:.0f} mm/año")
+                            k2.metric("Evapotranspiración", f"{v_etr:.0f} mm/año")
+                            k2.metric("Escorrentía Sup.", f"{v_esc:.0f} mm/año")
+                            k2.metric("Infiltración", f"{v_inf:.0f} mm/año")
+                            
+                            k3.markdown("#### 🌊 Oferta y Caudales")
+                            k3.metric("Caudal Medio", f"{Q_medio:.2f} m³/s")
+                            k3.metric("Caudal Mínimo", f"{Q_minimo:.2f} m³/s", "Base")
+                            k3.metric("Caudal Ecológico", f"{Q_ecologico:.2f} m³/s", "25%")
+                            k3.metric("Rendimiento", f"{Rendimiento_m3ha:.0f} m³/ha-año")
+
+                            k4.markdown("#### 📉 Subterránea e Índices")
+                            k4.metric("Recarga Potencial", f"{v_rec_pot:.0f} mm/año")
+                            k4.metric("Recarga Real", f"{v_rec_real:.0f} mm/año")
+                            k4.metric("Índice Aridez", f"{ind_aridez:.2f}")
+                            k4.metric("Erosividad (R)", f"{ind_erosividad_R:.0f}", "MJ·mm/ha·h")
+
                         except Exception as e:
                             st.warning(f"Error estadísticas: {e}")
 
@@ -468,6 +516,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
