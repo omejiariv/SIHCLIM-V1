@@ -1,3 +1,18 @@
+# pages/01_🌦️_Clima_e_Hidrologia.py
+
+import os
+import sys
+
+# --- PARCHE UNIVERSAL PARA WINDOWS/PROJ (GDAL HELL) ---
+# Esto arregla Rasterio tanto en el script principal como en los módulos importados
+if os.name == 'nt': # Solo en Windows
+    try:
+        import pyproj
+        # Forzamos a que todo el sistema use el diccionario de coordenadas de Python
+        os.environ['PROJ_LIB'] = pyproj.datadir.get_data_dir()
+    except: pass
+# ------------------------------------------------------
+
 import warnings
 import pandas as pd
 import numpy as np
@@ -5,7 +20,6 @@ import streamlit as st
 import plotly.graph_objects as go
 from sqlalchemy import text
 import geopandas as gpd
-import os
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="SIHCLI-POTER", page_icon="🌦️", layout="wide")
@@ -431,4 +445,5 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
