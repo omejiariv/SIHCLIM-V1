@@ -1,86 +1,78 @@
-import streamlit as st
-import pandas as pd
 import os
-
-# Define la ruta base del proyecto de forma robusta
-# Asume que los archivos de datos están en 'data' y los módulos en 'modules'
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import streamlit as st
 
 class Config:
-    # Nombres de Columnas de Datos
-    STATION_NAME_COL = 'nom_est'
-    PRECIPITATION_COL = 'precipitation'
-    LATITUDE_COL = 'latitud_geo'
-    LONGITUDE_COL = 'longitud_geo'
-    YEAR_COL = 'año'
-    MONTH_COL = 'mes'
-    DATE_COL = 'fecha_mes_año'
-    ENSO_ONI_COL = 'anomalia_oni'
-    ORIGIN_COL = 'origen'
-    ALTITUDE_COL = 'alt_est'
-    MUNICIPALITY_COL = 'municipio'
-    REGION_COL = 'depto_region'
-    PERCENTAGE_COL = 'porc_datos'
-    CELL_COL = 'celda_xy'
-    # Índices climáticos
-    SOI_COL = 'soi'
-    IOD_COL = 'iod'
-
-    # Rutas de Archivos (usando la ruta absoluta)
-    # Rutas ajustadas para mostrar el logo y la gota:
-    LOGO_PATH = os.path.join(BASE_DIR, "data", "Cuenca Verde Logo.jpg")
-    LOGO_DROP_PATH = os.path.join(BASE_DIR, "data", "Cuenca Verde Gotica Logo.jpg")
-    GIF_PATH = os.path.join(BASE_DIR, "data", "PPAM.gif")
-    
-    # Mensajes de la UI
-    APP_TITLE = "Sistema de información de las lluvias y el Clima en el norte de la región Andina"
-    WELCOME_TEXT = """
-    Esta plataforma interactiva está diseñada para la visualización y análisis de datos históricos de
-    precipitación y su
-    relación con el fenómeno ENSO en el norte de la región Andina.
-    **¿Cómo empezar?**
-    1. **Cargue sus archivos**: Si es la primera vez que usa la aplicación, el panel de la izquierda le
-    solicitará cargar los archivos de estaciones,
-    precipitación y el shapefile de municipios. La aplicación recordará estos archivos en su sesión.
-    2. **Filtre los datos**: Una vez cargados los datos, utilice el **Panel de Control** en la barra
-    lateral para filtrar las estaciones por ubicación (región, municipio), altitud,
-    porcentaje de datos disponibles, y para seleccionar el período de análisis (años y meses).
-    3. **Explore las pestañas**: Cada pestaña ofrece una perspectiva diferente de los datos.
-    Navegue a través de ellas para descubrir:
-    - **Distribución Espacial**: Mapas interactivos de las estaciones.
-    - **Gráficos**: Series de tiempo anuales, mensuales, comparaciones y distribuciones.
-    - **Mapas Avanzados**: Animaciones y mapas de interpolación.
-    - **Análisis de Anomalías**: Desviaciones de la precipitación respecto a la media histórica.
-    - **Tendencias y Pronósticos**: Análisis de tendencias a largo plazo y modelos de pronóstico.
-    Utilice el botón **/ Limpiar Filtros** en el panel lateral para reiniciar su selección en cualquier
-    momento.
+    """
+    Configuración centralizada para SIHCLI-POTER.
+    Ajustada a la NUEVA estructura de Base de Datos PostgreSQL.
     """
 
+    APP_TITLE = "SIHCLI-POTER"
+
+    # --- MAPEO EXACTO CON BASE DE DATOS NUEVA (CORREGIDO) ---
+    # Antes: "fecha_mes_año" -> Ahora: "fecha"
+    DATE_COL = "fecha"
+    
+    # Antes: "precipitation" -> Ahora: "valor"
+    PRECIPITATION_COL = "valor"
+
+    # Metadatos de Estaciones
+    # Antes: "nom_est" -> Ahora: "nombre"
+    STATION_NAME_COL = "nombre"
+    
+    # Antes: "alt_est" -> Ahora: "altitud"
+    ALTITUDE_COL = "altitud"
+    
+    MUNICIPALITY_COL = "municipio"
+    
+    # Antes: "depto_region" -> Ahora: "departamento"
+    REGION_COL = "departamento"
+
+    # Columnas geográficas
+    LATITUDE_COL = "latitud"
+    LONGITUDE_COL = "longitud"
+    
+    # Columnas generadas internamente
+    YEAR_COL = "año"
+    MONTH_COL = "mes"
+
+    # Índices Climáticos
+    ENSO_ONI_COL = "anomalia_oni"
+    SOI_COL = "soi"
+    IOD_COL = "iod"
+
+    # --- RUTAS DE ARCHIVOS Y ASSETS ---
+    _MODULES_DIR = os.path.dirname(__file__)
+    _PROJECT_ROOT = os.path.abspath(os.path.join(_MODULES_DIR, ".."))
+
+    ASSETS_DIR = os.path.join(_PROJECT_ROOT, "assets")
+    DATA_DIR = os.path.join(_PROJECT_ROOT, "data")
+
+    # Archivos
+    LOGO_PATH = os.path.join(ASSETS_DIR, "CuencaVerde_Logo.jpg")
+    CHAAC_IMAGE_PATH = os.path.join(ASSETS_DIR, "chaac.png")
+    LAND_COVER_RASTER_PATH = os.path.join(DATA_DIR, "Cob25m_WGS84.tif")
+    DEM_FILE_PATH = os.path.join(DATA_DIR, "DemAntioquia_EPSG3116.tif")
+    PRECIP_RASTER_PATH = os.path.join(DATA_DIR, "PPAMAnt.tif")
+
+    # --- TEXTOS ---
+    WELCOME_TEXT = """
+    **Sistema de Información Hidroclimática del Norte de la Región Andina**
+    Esta plataforma integra datos históricos, análisis estadísticos y modelación espacial.
+    """
+    QUOTE_TEXT = "El agua es la fuerza motriz de toda la naturaleza."
+    QUOTE_AUTHOR = "Leonardo da Vinci"
+    CHAAC_STORY = "Chaac es la deidad maya de la lluvia."
+
+    # --- GESTIÓN DE SESIÓN ---
     @staticmethod
     def initialize_session_state():
-        """Inicializa todas las variables necesarias en el estado de la sesión de Streamlit."""
-        state_defaults = {
-            'data_loaded': False,
-            'analysis_mode': "Usar datos originales",
-            'select_all_stations_state': False,
-            'df_monthly_processed': pd.DataFrame(),
-            'gdf_stations': None,
-            'df_precip_anual': None,
-            'gdf_municipios': None,
-            'df_long': None,
-            'df_enso': None,
-            'min_data_perc_slider': 0,
-            'altitude_multiselect': [],
-            'regions_multiselect': [],
-            'municipios_multiselect': [],
-            'celdas_multiselect': [],
-            'station_multiselect': [],
-            'exclude_na': False,
-            'exclude_zeros': False,
-            'uploaded_forecast': None,
-            'sarima_forecast': None,
-            'prophet_forecast': None
-        }
-        for key, value in state_defaults.items():
-            if key not in st.session_state:
-                st.session_state[key] = value
+        keys = [
+            "data_loaded", "apply_interpolation", "gdf_stations", "df_long",
+            "df_enso", "gdf_municipios", "gdf_subcuencas", "gdf_predios",
+            "unified_basin_gdf", "basin_results", "sarima_res", 
+            "prophet_res", "res_cuenca", "current_coverage_stats"
+        ]
+        for k in keys:
+            if k not in st.session_state:
+                st.session_state[k] = None
