@@ -291,47 +291,73 @@ def main():
             if st.button("🚀 Ejecutar Modelo"):
                 st.session_state['ejecutar_aleph'] = True
             
+            # B. Bloque Persistente
             if st.session_state.get('ejecutar_aleph', False):
                 
-                # --- PANEL DE DEBUG (Confirmación visual de datos) ---
-                with st.expander("🔍 Depuración de Datos Espaciales", expanded=True):
-                    val_min = np.nanmin(dem_array)
-                    val_max = np.nanmax(dem_array)
-                    st.write(f"**Estadísticas DEM:** Min: {val_min:.2f} m, Max: {val_max:.2f} m")
-                    if val_max == 0:
-                        st.error("⚠️ El DEM se cargó pero son puros ceros. Problema de coordenadas persistente.")
-                    else:
-                        st.success("✅ DEM cargado con datos válidos.")
-
+                # Botón de cierre
                 col_close = st.columns([6, 1])[1]
-                if col_close.button("❌ Cerrar"):
+                if col_close.button("❌ Cerrar Mapa"):
                     st.session_state['ejecutar_aleph'] = False
                     st.rerun()
 
-                with st.spinner("Corriendo simulación física..."):
+                with st.spinner("Calculando física distribuida..."):
                     try:
-                        # A. Interpolación
+                        # 1. INTERPOLACIÓN LLUVIA (La joya de la corona)
                         Z_P, Z_Err = physics.interpolar_variable(
                             gdf_calc, 'ppt_media', grid_x, grid_y, method=metodo, dem_array=dem_array
                         )
                         
-                        # B. Cobertura (También usamos el warper seguro)
+                        # 2. PROCESAMIENTO DE COBERTURA (Local y Seguro)
                         cov_array = None
-                        if cov_path:
+                        if cov_path and os.path.exists(cov_path):
                             try:
                                 cov_array = local_warper_force_4326(cov_path, bounds_calc, grid_x.shape)
                             except: pass
 
-                        # C. Modelo Físico
-                        matrices = physics.run_distributed_model(
+                        # 3. EJECUCIÓN DEL MODELO FÍSICO
+                        # (Calcula escorrentía, infiltración, etc. internamente)
+                        matrices_raw = physics.run_distributed_model(
                             Z_P, grid_x, grid_y, {'dem': dem_path, 'cobertura': cov_path}, bounds_calc
                         )
                         
-                        # Sobrescribimos con los arrays procesados localmente para asegurar visualización
-                        if dem_array is not None: matrices['Elevación (msnm)'] = dem_array
-                        if cov_array is not None: matrices['Cobertura de Suelo'] = cov_array
+                        # --- 4. LA ADUANA (Limpieza de Duplicados y Nombres) ---
+                        matrices_clean = {}
+
+                        # A. Mapas Base (Priorizamos los nuestros que sabemos que se ven bien)
+                        matrices_clean['1. Precipitación (mm)'] = Z_P
                         
-                        # D. Predios Safe
+                        if dem_array is not None:
+                            matrices_clean['2. Elevación (msnm)'] = dem_array
+                        
+                        if cov_array is not None:
+                            matrices_clean['3. Cobertura de Suelo (Clase)'] = cov_array
+
+                        # B. Resultados del Modelo (Los rescatamos del output raw)
+                        # Buscamos nombres probables que devuelve hydro_physics y los estandarizamos
+                        keys_raw = matrices_raw.keys()
+                        
+                        # Escorrentía (Runoff)
+                        if 'Escorrentía Superficial' in keys_raw:
+                            matrices_clean['4. Escorrentía Superficial (mm)'] = matrices_raw['Escorrentía Superficial']
+                        elif 'Q_Sup' in keys_raw:
+                            matrices_clean['4. Escorrentía Superficial (mm)'] = matrices_raw['Q_Sup']
+
+                        # Infiltración / Recarga
+                        if 'Recarga Potencial' in keys_raw:
+                            matrices_clean['5. Recarga Potencial (mm)'] = matrices_raw['Recarga Potencial']
+                        
+                        # Rendimiento Hídrico
+                        if 'Rendimiento Hídrico' in keys_raw:
+                            matrices_clean['6. Rendimiento Hídrico (L/s/km2)'] = matrices_raw['Rendimiento Hídrico']
+
+                        # Inyectar Error si existe
+                        if Z_Err is not None:
+                            matrices_clean['7. Incertidumbre (Kriging Std)'] = Z_Err
+
+                        # --- 5. VISUALIZACIÓN ---
+                        # Pasamos 'matrices_clean' en lugar de 'matrices'
+                        
+                        # Preparamos Predios
                         gdf_predios_safe = None
                         if gdf_predios is not None and not gdf_predios.empty:
                             gdf_predios_safe = gdf_predios[gdf_predios.geometry.notnull()].copy()
@@ -339,11 +365,10 @@ def main():
                                 gdf_predios_safe['nombre_predio'] = gdf_predios_safe['nombre']
                             if gdf_predios_safe.empty: gdf_predios_safe = None
     
-                        # E. Visualización
                         viz.display_advanced_maps_tab(
                             df_long=df_monthly_filtered,
                             gdf_stations=gdf_calc, 
-                            matrices=matrices, 
+                            matrices=matrices_clean,  # <--- AQUÍ ESTÁ LA CLAVE
                             grid=(grid_x, grid_y),
                             mask=None, 
                             gdf_zona=gdf_zona, 
@@ -352,7 +377,8 @@ def main():
                         )
                         
                     except Exception as e:
-                        st.error(f"Error ejecución: {e}")
+                        st.error(f"Error crítico en ejecución: {e}")
+                        st.expander("Ver detalles técnicos").write(e)
 
 
     # --- OTROS MÓDULOS ---
@@ -405,3 +431,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
