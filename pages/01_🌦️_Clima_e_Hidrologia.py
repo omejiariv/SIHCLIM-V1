@@ -284,7 +284,13 @@ def main():
             bounds_calc = (minx, miny, maxx, maxy)
             
             # 3. Datos Estaciones
-            df_mean = df_monthly_filtered.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].mean().reset_index(name='ppt_media')
+            # A. Primero sumamos la lluvia de cada año completo (Total Anual)
+            df_annual_sums = df_monthly_filtered.groupby([Config.STATION_NAME_COL, Config.YEAR_COL])[Config.PRECIPITATION_COL].sum().reset_index()
+            
+            # B. Luego promediamos esos totales anuales (Promedio Multianual)
+            df_mean = df_annual_sums.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].mean().reset_index(name='ppt_media')
+            
+            # C. Fusión y Limpieza
             gdf_calc = gdf_filtered.merge(df_mean, on=Config.STATION_NAME_COL)
             gdf_calc = gdf_calc.dropna(subset=['ppt_media', 'geometry'])
             gdf_calc['ppt_media'] = pd.to_numeric(gdf_calc['ppt_media'], errors='coerce').fillna(0)
@@ -445,5 +451,6 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
