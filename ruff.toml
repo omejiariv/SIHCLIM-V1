@@ -1,0 +1,14 @@
+# Archivo: ruff.toml
+# Configuración directa para Ruff
+
+line-length = 88
+exclude = ["venv", ".git", "__pycache__"]
+
+[lint]
+ignore = [
+    "E722",  # Permitir try/except vacíos
+    "F401",  # Permitir imports sobrantes
+    "F841",  # Variables sobrantes
+    "E731",  # Permitir lambdas
+    "F821",  # Permitir nombres indefinidos
+]
