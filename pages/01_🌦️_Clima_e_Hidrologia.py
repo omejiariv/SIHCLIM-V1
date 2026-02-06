@@ -341,35 +341,50 @@ def main():
                         )
                         
                         # --- 4. LA ADUANA (Limpieza de Duplicados y Nombres) ---
-                        matrices_clean = {}
 
-                        # A. Mapas Base (Priorizamos los nuestros que sabemos que se ven bien)
-                        matrices_clean['1. Precipitación (mm)'] = Z_P
+                        matrices_clean = {}
+                        keys_raw = matrices_raw.keys() # Qué nos devolvió el motor físico
+
+                        # GRUPO A: Climatología Básica
+                        matrices_clean['1. Precipitación Media (mm/año)'] = Z_P
                         
                         if dem_array is not None:
                             matrices_clean['2. Elevación (msnm)'] = dem_array
                         
-                        if cov_array is not None:
-                            matrices_clean['3. Cobertura de Suelo (Clase)'] = cov_array
-
-                        # B. Resultados del Modelo (Los rescatamos del output raw)
-                        # Buscamos nombres probables que devuelve hydro_physics y los estandarizamos
-                        keys_raw = matrices_raw.keys()
+                        if 'Temperatura' in keys_raw:
+                            matrices_clean['3. Temperatura Media (°C)'] = matrices_raw['Temperatura']
                         
-                        # Escorrentía (Runoff)
+                        if 'ETR' in keys_raw:
+                            matrices_clean['4. Evapotranspiración Real (mm/año)'] = matrices_raw['ETR']
+
+                        # GRUPO B: Balance Hídrico
                         if 'Escorrentía Superficial' in keys_raw:
-                            matrices_clean['4. Escorrentía Superficial (mm)'] = matrices_raw['Escorrentía Superficial']
-                        elif 'Q_Sup' in keys_raw:
-                            matrices_clean['4. Escorrentía Superficial (mm)'] = matrices_raw['Q_Sup']
+                            matrices_clean['5. Escorrentía Superficial (mm/año)'] = matrices_raw['Escorrentía Superficial']
+                        elif 'Q_Sup' in keys_raw: # Nombre técnico alternativo
+                            matrices_clean['5. Escorrentía Superficial (mm/año)'] = matrices_raw['Q_Sup']
 
-                        # Infiltración / Recarga
-                        if 'Recarga Potencial' in keys_raw:
-                            matrices_clean['5. Recarga Potencial (mm)'] = matrices_raw['Recarga Potencial']
+                        if 'Infiltración' in keys_raw:
+                            matrices_clean['6. Infiltración (mm/año)'] = matrices_raw['Infiltración']
                         
-                        # Rendimiento Hídrico
-                        if 'Rendimiento Hídrico' in keys_raw:
-                            matrices_clean['6. Rendimiento Hídrico (L/s/km2)'] = matrices_raw['Rendimiento Hídrico']
+                        if 'Recarga Potencial' in keys_raw:
+                            matrices_clean['7. Recarga Potencial (mm/año)'] = matrices_raw['Recarga Potencial']
 
+                        if 'Recarga Real' in keys_raw: # Si existe
+                            matrices_clean['8. Recarga Real (mm/año)'] = matrices_raw['Recarga Real']
+
+                        # GRUPO C: Índices Ambientales
+                        if 'Rendimiento Hídrico' in keys_raw:
+                            matrices_clean['9. Rendimiento Hídrico (L/s/km²)'] = matrices_raw['Rendimiento Hídrico']
+                        
+                        if 'Riesgo Erosión' in keys_raw:
+                            matrices_clean['10. Susceptibilidad Erosión (Adim)'] = matrices_raw['Riesgo Erosión']
+
+                        if cov_array is not None:
+                            matrices_clean['11. Cobertura de Suelo (Clase)'] = cov_array
+                        
+                        if Z_Err is not None:
+                            matrices_clean['12. Incertidumbre Interpolación (Std)'] = Z_Err
+                        
                         # Inyectar Error si existe
                         if Z_Err is not None:
                             matrices_clean['7. Incertidumbre (Kriging Std)'] = Z_Err
@@ -451,6 +466,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
