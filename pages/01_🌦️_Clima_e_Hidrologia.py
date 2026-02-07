@@ -368,19 +368,25 @@ def main():
 
                         # D. VECTORES (Predios / Bocatomas)
                         gdf_predios_viz = None
-                        if gdf_predios is not None and not gdf_predios.empty:
-                            gdf_predios_viz = gdf_predios.copy()
-                            gdf_predios_viz['nombre_predio'] = gdf_predios_viz.get('nombre', 'Predio')
-                        
+                        try:
+                            # Intentamos recargar DIRECTAMENTE de la BD para tener todas las columnas (pk_predios, nombre_pre, etc.)
+                            from modules.db_manager import get_engine
+                            gdf_predios_viz = gpd.read_postgis("SELECT * FROM predios", get_engine(), geom_col="geometry")
+                            
+                            # Aseguramos proyección WGS84 para el mapa
+                            if gdf_predios_viz.crs and gdf_predios_viz.crs.to_string() != "EPSG:4326":
+                                gdf_predios_viz = gdf_predios_viz.to_crs("EPSG:4326")
+                        except Exception as e:
+                            # Si falla la recarga (o no hay BD conectada), usamos la variable global como respaldo
+                            if gdf_predios is not None and not gdf_predios.empty:
+                                gdf_predios_viz = gdf_predios.copy()
+
+                        # Bocatomas (Misma lógica de seguridad)
                         gdf_bocatomas_viz = None
                         if gdf_bocatomas is not None and not gdf_bocatomas.empty:
                              gdf_bocatomas_viz = gdf_bocatomas.copy()
-                             if 'nombre_bocatoma' in gdf_bocatomas_viz.columns:
-                                 gdf_bocatomas_viz['nombre_predio'] = gdf_bocatomas_viz['nombre_bocatoma']
-                             else:
-                                 gdf_bocatomas_viz['nombre_predio'] = "Bocatoma"
 
-                        # E. VISUALIZACIÓN (CON PALETA Y MUNICIPIOS)
+                        # E. VISUALIZACIÓN
                         viz.display_advanced_maps_tab(
                             df_long=df_monthly_filtered,
                             gdf_stations=gdf_calc,
@@ -389,9 +395,9 @@ def main():
                             mask=None, 
                             gdf_zona=gdf_zona, 
                             gdf_buffer=gdf_buffer, 
-                            gdf_predios=gdf_predios_viz,
+                            gdf_predios=gdf_predios_viz, # <--- Aquí va la versión recargada y completa
                             gdf_bocatomas=gdf_bocatomas_viz,
-                            gdf_municipios=gdf_municipios # <--- NUEVO ARGUMENTO
+                            gdf_municipios=gdf_municipios
                         )
                         
                         # F. DASHBOARD DE ESTADÍSTICAS (5 COLUMNAS - SUPER COMPLETO)
@@ -547,6 +553,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
