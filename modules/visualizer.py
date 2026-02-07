@@ -6485,15 +6485,17 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     st_folium(m, use_container_width=True, height=600)
     
 # -------------------------------------------------------------------------
-# FUNCIÓN COMPARATIVA MULTIESCALAR (CONVERSIÓN DE COORDENADAS ROBUSTA)
+# FUNCIÓN COMPARATIVA MULTIESCALAR (VERSIÓN LIMPIA Y MODULAR)
 # -------------------------------------------------------------------------
 def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
-    """Análisis comparativo con limpieza de BOM y conversión forzada de coordenadas."""
+    """Análisis comparativo utilizando utilidades centralizadas de limpieza."""
 
     import streamlit as st
     import pandas as pd
     import plotly.express as px
     import geopandas as gpd
+    # 👇 IMPORTANTE: Importar tus nuevas herramientas
+    from modules.admin_utils import estandarizar_id_estacion, asegurar_geometria_estaciones
 
     st.subheader("📊 Comparativa de Regímenes de Lluvia")
     st.info("💡 **Análisis Multiescalar:** Agregación por Municipio, Cuenca o Región.")
@@ -6503,68 +6505,26 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
         return
 
     try:
-        # --- 1. PREPARACIÓN Y LIMPIEZA DE COLUMNAS (BOM) ---
-        df_datos = df_long.copy()
-        df_meta = gdf_stations.copy()
-        gdf_poligonos = gdf_subcuencas.copy()
-
-        # Limpieza de caracteres fantasma (ï»¿)
-        df_datos.columns = df_datos.columns.str.replace('ï»¿', '').str.strip()
-        df_meta.columns = df_meta.columns.str.replace('ï»¿', '').str.strip()
+        # --- 1. LIMPIEZA CENTRALIZADA (LA MAGIA) ✨ ---
+        # Usamos las funciones de admin_utils para limpiar todo automáticamente
+        df_datos = estandarizar_id_estacion(df_long.copy())
+        df_meta = estandarizar_id_estacion(gdf_stations.copy())
         
-        # Mapeo de seguridad
-        mapa_nombres = {
-            'Id_estacio': 'id_estacion', 'Codigo': 'id_estacion', 'ID': 'id_estacion',
-            'nom_est': 'nombre', 'municipio': 'municipio'
-        }
-        df_meta.rename(columns=mapa_nombres, inplace=True)
-        df_datos.rename(columns=mapa_nombres, inplace=True)
-
-        # Validación básica de columnas clave
-        if 'id_estacion' not in df_datos.columns:
-            st.error(f"Error: No encuentro 'id_estacion' en Lluvia. Cols: {list(df_datos.columns)}")
-            return
-        if 'id_estacion' not in df_meta.columns:
-            st.error(f"Error: No encuentro 'id_estacion' en Estaciones. Cols: {list(df_meta.columns)}")
+        # Reparación geométrica centralizada
+        df_meta = asegurar_geometria_estaciones(df_meta)
+        
+        # Validaciones simples post-limpieza
+        if 'id_estacion' not in df_datos.columns or 'id_estacion' not in df_meta.columns:
+            st.error("No se pudo identificar la columna ID incluso después de la limpieza automática.")
             return
 
-        # Normalización de IDs a texto
-        df_datos['id_estacion'] = df_datos['id_estacion'].astype(str).str.strip()
-        df_meta['id_estacion'] = df_meta['id_estacion'].astype(str).str.strip()
-
-        # --- 2. GESTIÓN ESPACIAL (EL PUNTO CLAVE) ---
-        # Verificamos si es GeoDataFrame, si no, lo convertimos A LA FUERZA
-        if not isinstance(df_meta, gpd.GeoDataFrame) or getattr(df_meta, 'crs', None) is None:
-            
-            # Verificar columnas de coordenadas
-            if 'longitud' in df_meta.columns and 'latitud' in df_meta.columns:
-                # 1. Limpieza: Reemplazar comas por puntos y forzar a numérico
-                # 'errors=coerce' convertirá "None", textos o vacíos en NaN (Not a Number)
-                df_meta['longitud'] = pd.to_numeric(df_meta['longitud'].astype(str).str.replace(',', '.'), errors='coerce')
-                df_meta['latitud'] = pd.to_numeric(df_meta['latitud'].astype(str).str.replace(',', '.'), errors='coerce')
-                
-                # 2. Eliminar filas con coordenadas inválidas (NaN)
-                conteo_antes = len(df_meta)
-                df_meta = df_meta.dropna(subset=['longitud', 'latitud'])
-                
-                if df_meta.empty:
-                    st.error("Error: Todas las estaciones tienen coordenadas inválidas o vacías.")
-                    return
-
-                # 3. Crear GeoDataFrame
-                df_meta = gpd.GeoDataFrame(
-                    df_meta, 
-                    geometry=gpd.points_from_xy(df_meta['longitud'], df_meta['latitud']),
-                    crs="EPSG:4326"
-                )
-            else:
-                st.error("Error: La tabla de estaciones no tiene columnas 'latitud' y 'longitud'.")
-                return
-
-        # Preparación de Polígonos (Cuencas)
+        # --- 2. GESTIÓN ESPACIAL (POLÍGONOS) ---
+        gdf_poligonos = gdf_subcuencas.copy()
         if hasattr(gdf_poligonos, 'set_crs') and gdf_poligonos.crs is None:
             gdf_poligonos.set_crs("EPSG:4326", inplace=True)
-        if df_meta.crs != gdf_poligonos.crs:
+            
+        # Asegurar proyección común (df_meta ya viene en 4326 gracias a asegurar_geometria)
+        if hasattr(df_meta, 'crs') and df_meta.crs != gdf_poligonos.crs:
             gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
 
         # --- 3. CRUCE ESPACIAL (Spatial Join) ---
@@ -6575,50 +6535,50 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
         if col_cuenca: cols_poly.append(col_cuenca)
         if col_region: cols_poly.append(col_region)
         
-        # AHORA SÍ: df_meta es garantizado GeoDataFrame
+        # Join espacial
         df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos[cols_poly], how="left", predicate="intersects")
 
         # --- 4. UNIÓN FINAL ---
+        # Como ya estandarizamos a 'id_estacion' en ambos lados, el merge es directo
         df_full = pd.merge(df_datos, df_meta_espacial, on='id_estacion', how='inner')
 
         if df_full.empty:
-            st.warning("No hubo coincidencias. Verifique que los IDs de estación coincidan entre los archivos.")
+            st.warning(f"Sin coincidencias. Ejemplo IDs Lluvia: {df_datos['id_estacion'].iloc[0]} vs Estación: {df_meta['id_estacion'].iloc[0]}")
             return
 
         # --- 5. VISUALIZACIÓN ---
-        col_fecha = 'fecha' if 'fecha' in df_full.columns else 'date'
+        col_fecha = next((c for c in df_full.columns if c.lower() in ['fecha', 'date']), 'fecha')
         df_full[col_fecha] = pd.to_datetime(df_full[col_fecha], errors='coerce')
         df_full['MES_NUM'] = df_full[col_fecha].dt.month
         mapa_meses = {1:'Ene', 2:'Feb', 3:'Mar', 4:'Abr', 5:'May', 6:'Jun', 7:'Jul', 8:'Ago', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dic'}
         df_full['Nombre_Mes'] = df_full['MES_NUM'].map(mapa_meses)
         
-        col_valor = 'valor'
-        col_municipio = 'municipio'
-
+        # Búsqueda de columna valor (también podríamos llevar esto a admin_utils si quisieras)
+        col_valor = next((c for c in df_full.columns if c.lower() in ['valor', 'precipitacion_mm', 'p_mm']), 'valor')
+        
+        # Interfaz
         col1, col2 = st.columns([1, 2])
+        col_municipio = next((c for c in df_full.columns if c.lower() in ['municipio', 'mpio_cnmbr']), None)
+
         with col1:
             opts = []
-            if col_municipio in df_full.columns: opts.append("Municipio")
-            if col_cuenca and col_cuenca in df_full.columns: opts.append("Cuenca")
-            if col_region and col_region in df_full.columns: opts.append("Región")
+            if col_municipio: opts.append("Municipio")
+            if col_cuenca: opts.append("Cuenca")
+            if col_region: opts.append("Región")
             
             if not opts:
-                st.error("No se encontraron columnas geográficas para agrupar.")
+                st.error("No se encontraron columnas geográficas (Municipio/Cuenca) para agrupar.")
                 return
 
             nivel = st.radio("Agrupar por:", opts)
-            campo_filtro = col_municipio
-            if nivel == "Cuenca": campo_filtro = col_cuenca
-            elif nivel == "Región": campo_filtro = col_region
-
+            campo_filtro = col_municipio if nivel == "Municipio" else (col_cuenca if nivel == "Cuenca" else col_region)
             items = sorted(df_full[campo_filtro].dropna().astype(str).unique())
 
         with col2:
             seleccion = st.multiselect(f"Seleccione {nivel}:", items, default=items[:3] if len(items)>2 else items)
 
         if seleccion:
-            df_plot = df_full[df_full[campo_filtro].isin(seleccion)]
-            df_gp = df_plot.groupby(['MES_NUM', 'Nombre_Mes', campo_filtro])[col_valor].mean().reset_index().sort_values('MES_NUM')
+            df_gp = df_full[df_full[campo_filtro].isin(seleccion)].groupby(['MES_NUM', 'Nombre_Mes', campo_filtro])[col_valor].mean().reset_index().sort_values('MES_NUM')
             
             fig = px.line(
                 df_gp, x='Nombre_Mes', y=col_valor, color=campo_filtro,
@@ -6629,5 +6589,4 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
             st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv", "text/csv")
 
     except Exception as e:
-        st.error(f"Error crítico en multiescalar: {e}")
-
+        st.error(f"Error en multiescalar: {e}")
