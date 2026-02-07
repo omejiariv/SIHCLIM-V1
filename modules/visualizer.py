@@ -298,7 +298,7 @@ def _get_user_location_sidebar(key_suffix=""):
 # ==============================================================================
 
 # --- A. GENERADOR DE POPUPS (Tu diseño solicitado) ---
-def generar_popup_html(row, valor_col='ppt_media'):
+def generar_popup_estacion(row, valor_col='ppt_media'):
     """
     Genera el HTML para el popup de la estación con datos estadísticos.
     """
@@ -6701,6 +6701,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
 
