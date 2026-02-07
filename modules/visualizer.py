@@ -1839,22 +1839,23 @@ def display_spatial_distribution_tab(
 
 
 # -------------------------------------------------------------------------
-# FUNCIÓN MAESTRA DE GRÁFICOS (Compatible con tu 01_Clima_e_Hidrologia.py)
+# FUNCIÓN MAESTRA DE GRÁFICOS (CORREGIDA - DETECCIÓN DE COLUMNAS 🛡️)
 # -------------------------------------------------------------------------
 def display_graphs_tab(
     df_monthly_filtered, 
     df_anual_melted, 
     stations_for_analysis, 
-    # 👇 AQUÍ ESTÁ EL TRUCO: Declaramos explícitamente lo que necesitamos recibir
     gdf_stations=None,      
     gdf_subcuencas=None,    
-    **kwargs # Aquí cae todo lo demás que viene en display_args (predios, municipios, etc.)
+    **kwargs
 ):
     import streamlit as st
     import plotly.express as px
-    # Importamos Config solo si lo necesitamos para constantes
+    import pandas as pd
+    
+    # Intentamos importar Config para usar nombres oficiales
     try: from modules.config import Config
-    except: pass
+    except: Config = None
 
     st.subheader("📊 Análisis Gráfico Detallado")
 
@@ -1863,8 +1864,29 @@ def display_graphs_tab(
         st.warning("No hay datos para mostrar. Seleccione estaciones y rango de fechas.")
         return
 
-    # --- PREPARACIÓN DE DATOS ---
-    # Aseguramos columnas de tiempo
+    # --- 1. PREPARACIÓN DE NOMBRES DE COLUMNA (EL ARREGLO) ---
+    # Detectamos cómo se llaman las columnas en df_anual_melted
+    col_anio = 'Año'
+    col_valor = 'valor'
+    col_estacion = 'id_estacion'
+
+    if df_anual_melted is not None and not df_anual_melted.empty:
+        # Buscamos la columna de AÑO
+        posibles_anios = ['Año', 'year', 'anio', 'Year']
+        if Config: posibles_anios.insert(0, getattr(Config, 'YEAR_COL', 'Año'))
+        col_anio = next((c for c in df_anual_melted.columns if c in posibles_anios), df_anual_melted.columns[0])
+
+        # Buscamos la columna de VALOR
+        posibles_valores = ['valor', 'value', 'precipitacion', 'precipitation', 'lluvia']
+        if Config: posibles_valores.insert(0, getattr(Config, 'PRECIPITATION_COL', 'valor'))
+        col_valor = next((c for c in df_anual_melted.columns if c in posibles_valores), 'valor')
+
+        # Buscamos la columna de ESTACIÓN
+        posibles_est = ['id_estacion', 'codigo', 'station']
+        if Config: posibles_est.insert(0, getattr(Config, 'STATION_NAME_COL', 'id_estacion'))
+        col_estacion = next((c for c in df_anual_melted.columns if c in posibles_est), 'id_estacion')
+
+    # --- PREPARACIÓN DE DATOS MENSUALES ---
     if "Mes" not in df_monthly_filtered.columns:
         df_monthly_filtered["Mes"] = df_monthly_filtered["fecha"].dt.month
     
@@ -1886,8 +1908,8 @@ def display_graphs_tab(
         "3. Serie Mensual",
         "4. Ciclo Anual (Promedio)",
         "5. Análisis Estacional Detallado",
-        "6. Distribución de Frecuencias", # El Spaghetti arreglado
-        "7. Comparativa Multiescalar"     # El Mapa arreglado
+        "6. Distribución de Frecuencias",
+        "7. Comparativa Multiescalar"
     ]
     tabs = st.tabs(tab_names)
 
@@ -1897,27 +1919,28 @@ def display_graphs_tab(
     with tabs[0]: # Serie Anual
         st.markdown("##### Precipitación Total Anual")
         if df_anual_melted is not None and not df_anual_melted.empty:
-            # Usamos getattr para mayor seguridad si Config falla
-            col_x = getattr(Config, 'YEAR_COL', 'Año') if 'Año' not in df_anual_melted.columns else 'Año'
-            col_y = getattr(Config, 'PRECIPITATION_COL', 'valor')
-            col_color = getattr(Config, 'STATION_NAME_COL', 'id_estacion')
-            
-            # Fallback de nombres si no coinciden
-            if col_y not in df_anual_melted.columns: col_y = df_anual_melted.columns[-1]
-
             fig_anual = px.line(
-                df_anual_melted, x=col_x, y=col_y, color=col_color, markers=True,
-                labels={col_y: "Lluvia (mm)", col_x: "Año"}
+                df_anual_melted, x=col_anio, y=col_valor, color=col_estacion, markers=True,
+                labels={col_valor: "Lluvia (mm)", col_anio: "Año"}
             )
             st.plotly_chart(fig_anual, use_container_width=True)
             st.session_state["report_fig_anual"] = fig_anual
 
-    with tabs[1]: # Ranking
+    with tabs[1]: # Ranking (AQUÍ ESTABA EL ERROR)
         st.markdown("##### Ranking de Años más Lluviosos")
-        if df_anual_melted is not None:
-            # Pivotar para ranking
-            df_pivot = df_anual_melted.pivot_table(index="Año", columns="id_estacion", values="valor", aggfunc='sum')
-            st.dataframe(df_pivot.style.highlight_max(axis=0, color='lightgreen'), use_container_width=True)
+        if df_anual_melted is not None and not df_anual_melted.empty:
+            try:
+                # Usamos las columnas detectadas (col_anio, col_estacion, col_valor)
+                df_pivot = df_anual_melted.pivot_table(
+                    index=col_anio, 
+                    columns=col_estacion, 
+                    values=col_valor, 
+                    aggfunc='sum'
+                )
+                st.dataframe(df_pivot.style.highlight_max(axis=0, color='lightgreen'), use_container_width=True)
+            except Exception as e:
+                st.error(f"Error generando ranking: {e}")
+                st.write("Columnas disponibles:", df_anual_melted.columns.tolist())
 
     with tabs[2]: # Serie Mensual
         st.markdown("##### Serie Mensual Histórica")
@@ -6316,5 +6339,6 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
 
     except Exception as e:
         st.error(f"Error detallado: {e}")
+
 
 
