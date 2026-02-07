@@ -10,6 +10,7 @@ import zipfile
 import geopandas as gpd
 from sqlalchemy import text
 import shutil
+from modules.admin_utils import parsear_fechas_espanol
 
 # --- 1. CONFIGURACIÓN E IMPORTACIONES ---
 st.set_page_config(page_title="Panel de Administración", page_icon="👑", layout="wide")
@@ -290,7 +291,7 @@ with tabs[1]:
                 if 'Fecha' in df.columns: df = df.rename(columns={'Fecha': 'fecha'})
                 
                 df_long = df.melt(id_vars=['fecha'], var_name='id_estacion', value_name='valor')
-                df_long['fecha'] = pd.to_datetime(df_long['fecha'], errors='coerce')
+                df_long['fecha'] = parsear_fechas_espanol(df_long['fecha'])
                 df_long['valor'] = pd.to_numeric(df_long['valor'], errors='coerce')
                 df_long = df_long.dropna(subset=['fecha', 'valor'])
                 df_long['id_estacion'] = df_long['id_estacion'].astype(str).str.strip()
@@ -541,4 +542,5 @@ with tabs[10]:
                     conn.commit()
                     st.success("Comando ejecutado.")
         except Exception as e: st.error(str(e))
+
 
