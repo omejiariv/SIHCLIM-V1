@@ -105,28 +105,38 @@ def load_and_process_all_data():
 
         # 2. PRECIPITACIÓN
         try:
-            sql_ppt = text(
-                'SELECT id_estacion_fk, "fecha_mes_año", precipitation FROM precipitacion_mensual'
-            )
+            # ✅ CORRECCIÓN: Consulta a la tabla limpia 'precipitacion'
+            sql_ppt = text("SELECT id_estacion, fecha, valor FROM precipitacion ORDER BY fecha")
             df_ppt = pd.read_sql(sql_ppt, engine)
 
-            # LIMPIEZA DE FECHAS
-            df_ppt[Config.DATE_COL] = df_ppt["fecha_mes_año"].apply(parse_spanish_date_robust)
+            # LIMPIEZA DE DATOS (Ya vienen limpios de BD, pero aseguramos tipos)
+            # Mapeamos 'fecha' a lo que diga tu Config (usualmente 'fecha')
+            df_ppt = df_ppt.rename(columns={'fecha': Config.DATE_COL})
+            df_ppt[Config.DATE_COL] = pd.to_datetime(df_ppt[Config.DATE_COL])
+            df_ppt['valor'] = pd.to_numeric(df_ppt['valor'], errors='coerce')
+            df_ppt['id_estacion'] = df_ppt['id_estacion'].astype(str).str.strip()
+            
             df_ppt = df_ppt.dropna(subset=[Config.DATE_COL])
 
             if not gdf_stations.empty:
+                # Aseguramos que el ID de estaciones también esté limpio para el cruce
+                gdf_stations['id_estacion'] = gdf_stations['id_estacion'].astype(str).str.strip()
+                
                 df_long = pd.merge(
                     df_ppt,
                     gdf_stations[["id_estacion", Config.STATION_NAME_COL]],
-                    left_on="id_estacion_fk",
-                    right_on="id_estacion",
+                    on="id_estacion", # ✅ CORRECCIÓN: Usamos id_estacion en ambos lados
                     how="inner",
                 )
-                df_long = df_long.rename(columns={"precipitation": Config.PRECIPITATION_COL})
+                
+                # ✅ CORRECCIÓN: La tabla nueva tiene 'valor', renombramos a Config
+                df_long = df_long.rename(columns={"valor": Config.PRECIPITATION_COL})
+                
                 df_long[Config.YEAR_COL] = df_long[Config.DATE_COL].dt.year
                 df_long[Config.MONTH_COL] = df_long[Config.DATE_COL].dt.month
         except Exception as e:
             st.error(f"Error cargando Precipitación: {e}")
+            df_long = pd.DataFrame() # Evita que la app colapse si falla
 
         # 3. GEOMETRÍAS y 4. ENSO (Sin cambios)
         try:
@@ -165,4 +175,5 @@ def complete_series(df):
     if df is None or df.empty: return df
     df = df.sort_values(Config.DATE_COL)
     df[Config.PRECIPITATION_COL] = df[Config.PRECIPITATION_COL].interpolate(method="linear", limit_direction="both")
+
     return df
