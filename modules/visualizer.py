@@ -2167,30 +2167,33 @@ def display_graphs_tab(
             st.dataframe(desc)
 
     # -------------------------------------------------------------------------
-    # TAB 5: DISTRIBUCIÓN DE FRECUENCIAS (SPAGHETTI PLOT) - CORREGIDO
+    # TAB 5: DISTRIBUCIÓN DE FRECUENCIAS (SPAGHETTI PLOT) - EJE Y AÑO BLINDADOS
     # -------------------------------------------------------------------------
     with tabs[5]:
         st.markdown("#### 📅 Ciclo Anual Comparativo (Spaghetti Plot)")
         st.info("Compara el comportamiento de cada año individual frente al promedio histórico.")
 
-        # --- 1. BLINDAJE DE DATOS (ORDENAMIENTO) ---
-        # Aseguramos que exista MES_NUM para ordenar correctamente (1=Ene, 2=Feb...)
+        # --- 1. BLINDAJE DE DATOS (MES Y AÑO) ---
+        # Aseguramos MES_NUM para el orden Eje X
         if 'MES_NUM' not in df_monthly_filtered.columns:
-            # Intentamos crearlo desde la fecha
             df_monthly_filtered['MES_NUM'] = df_monthly_filtered['fecha'].dt.month
+        
+        # 🔥 BLINDAJE DE AÑO: Lo calculamos fresco desde la fecha 🔥
+        # Esto soluciona si la columna 'Año' original venía incompleta o con formato texto
+        df_monthly_filtered['Year_Real'] = df_monthly_filtered['fecha'].dt.year
+        col_anio = 'Year_Real' # Usaremos esta columna obligatoriamente
         
         # Diccionario maestro de orden
         meses_orden = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
                        7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
+        lista_meses_ordenada = list(meses_orden.values()) 
         
         # Aseguramos Nombre_Mes
         if 'Nombre_Mes' not in df_monthly_filtered.columns:
             df_monthly_filtered['Nombre_Mes'] = df_monthly_filtered['MES_NUM'].map(meses_orden)
 
-        # Definir columnas (usando Config si está disponible, o defaults)
         col_valor = getattr(Config, 'PRECIPITATION_COL', 'valor')
         col_estacion = getattr(Config, 'STATION_NAME_COL', 'id_estacion')
-        col_anio = "Año" if "Año" in df_monthly_filtered.columns else "year"
 
         # --- 2. SELECTORES ---
         stations_for_analysis = df_monthly_filtered[col_estacion].unique()
@@ -2199,20 +2202,25 @@ def display_graphs_tab(
         )
 
         if sel_st_detail:
-            # Filtrar datos de la estación y copiar
+            # Filtrar y Copiar
             df_st = df_monthly_filtered[
                 df_monthly_filtered[col_estacion] == sel_st_detail
             ].copy()
-
-            # 🔥 CORRECCIÓN CLAVE: ORDENAR EL DATAFRAME BASE POR MES NUMÉRICO 🔥
-            # Esto evita el desorden "Jul, Ago... Ene"
+            
+            # Ordenamos por mes numérico para evitar saltos en la línea
             df_st = df_st.sort_values('MES_NUM')
 
             c_hl, c_type = st.columns([1, 1])
             with c_hl:
-                years = sorted(df_st[col_anio].unique(), reverse=True)
+                # Obtener años únicos de la columna CALCULADA
+                years_disponibles = sorted(df_st[col_anio].unique(), reverse=True)
+                
+                # Si la lista está vacía, avisar
+                if not years_disponibles:
+                    st.warning("Esta estación no tiene años registrados en el filtro actual.")
+                
                 hl_year = st.selectbox(
-                    "Resaltar Año:", [None] + years, key="hl_year_spaghetti"
+                    "Resaltar Año:", [None] + years_disponibles, key="hl_year_spaghetti"
                 )
             with c_type:
                 chart_mode = st.radio(
@@ -2226,19 +2234,17 @@ def display_graphs_tab(
             if chart_mode == "Líneas (Spaghetti)":
                 fig_multi = go.Figure()
                 
-                # Iteramos sobre los años ordenados cronológicamente
-                for yr in sorted(years):
-                    # Filtramos el año y volvemos a asegurar el orden por MES_NUM
+                # Iteramos años disponibles
+                for yr in sorted(years_disponibles):
                     df_y = df_st[df_st[col_anio] == yr].sort_values("MES_NUM")
                     
-                    # Estilo Base (Gris)
+                    # Estilos
                     color = "rgba(200, 200, 200, 0.4)"
                     width = 1
                     opacity = 0.5
                     name = str(yr)
                     show_leg = False
                     
-                    # Estilo Resaltado (Rojo)
                     if hl_year and yr == hl_year:
                         color = "red"
                         width = 4
@@ -2259,14 +2265,12 @@ def display_graphs_tab(
                     )
 
                 # --- LÍNEA DE PROMEDIO HISTÓRICO ---
-                # Calculamos el promedio agrupando por MES_NUM para que el orden sea 1->12
                 clim_grouped = df_st.groupby("MES_NUM")[col_valor].mean().sort_index()
-                # Mapeamos los números (1,2,3) a nombres (Ene, Feb, Mar) para el eje X
-                nombres_eje_x = [meses_orden.get(m, str(m)) for m in clim_grouped.index]
+                nombres_eje_promedio = [meses_orden.get(m, str(m)) for m in clim_grouped.index]
 
                 fig_multi.add_trace(
                     go.Scatter(
-                        x=nombres_eje_x,
+                        x=nombres_eje_promedio,
                         y=clim_grouped.values,
                         mode="lines+markers",
                         name="Promedio Histórico",
@@ -2275,9 +2279,15 @@ def display_graphs_tab(
                     )
                 )
                 
+                # Configuración del Eje X Fija
+                fig_multi.update_xaxes(
+                    categoryorder='array', 
+                    categoryarray=lista_meses_ordenada,
+                    title="Mes"
+                )
+                
                 fig_multi.update_layout(
                     title=f"Ciclo Anual Comparativo - {sel_st_detail}",
-                    xaxis_title="Mes",
                     yaxis_title="Precipitación (mm)",
                     hovermode="x unified",
                     height=500,
@@ -2290,8 +2300,7 @@ def display_graphs_tab(
                     df_st,
                     x="Nombre_Mes",
                     y=col_valor,
-                    # Forzamos el orden explícito de las categorías en el eje X
-                    category_orders={"Nombre_Mes": list(meses_orden.values())},
+                    category_orders={"Nombre_Mes": lista_meses_ordenada},
                     color="Nombre_Mes",
                     points="all",
                     title=f"Variabilidad Mensual Histórica - {sel_st_detail}",
@@ -2302,28 +2311,21 @@ def display_graphs_tab(
             # --- 5. TABLA DE DETALLE ---
             if hl_year:
                 st.markdown(f"###### Detalle Año {hl_year} vs Promedio")
-                
-                # Datos del año seleccionado indexados por número de mes
                 df_y_hl = df_st[df_st[col_anio] == hl_year].set_index("MES_NUM")
-                # Promedio histórico indexado por número de mes
                 clim_series = df_st.groupby("MES_NUM")[col_valor].mean()
 
-                # Crear tabla comparativa alineada
                 comp_df = pd.DataFrame({
                     "Mes": [meses_orden.get(i) for i in clim_series.index],
                     "Año Seleccionado": df_y_hl[col_valor] if not df_y_hl.empty else pd.Series(index=clim_series.index),
                     "Promedio Histórico": clim_series
                 })
 
-                # Calcular diferencia
                 comp_df["Diferencia (%)"] = (
                     (comp_df["Año Seleccionado"] - comp_df["Promedio Histórico"])
                     / comp_df["Promedio Histórico"]
                 ) * 100
                 
                 st.dataframe(comp_df.set_index("Mes").style.format("{:.1f}"))
-
-    # -------------------------------------------------------------------------
 
     # 7. COMPARATIVA MULTIESCALAR (LIMPIO Y SIN REDUNDANCIA)
     # -------------------------------------------------------------------------
@@ -6680,4 +6682,5 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
 
     except Exception as e:
         st.error(f"Error detallado en multiescalar: {e}")
+
 
