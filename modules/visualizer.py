@@ -349,31 +349,40 @@ def generar_popup_bocatoma(row):
     """
 
 def generar_popup_predio(row):
-    """Popup HTML para Predios con los campos específicos solicitados."""
+    """Popup HTML para Predios usando las columnas exactas de la tabla."""
     
-    # Función auxiliar de búsqueda segura (ignora mayúsculas/minúsculas)
-    def get_val(col_names, default='N/A'):
-        if isinstance(col_names, str): col_names = [col_names]
-        for name in col_names:
-            if name in row: return row[name] # Prioridad exacta
-            # Búsqueda insensible
-            for k in row.keys():
-                if k.lower() == name.lower(): return row[k]
-        return default
-
-    # 1. Extracción de datos usando los nombres exactos de tu tabla
-    nombre = str(get_val('nombre_pre', 'Predio')).replace("'", "")
-    pk_id = str(get_val(['pk_predios', 'pk_predio'], 'N/A'))
-    embalse = str(get_val('embalse', 'N/A'))
-    vereda = str(get_val(['nombre_ver', 'vereda'], 'N/A'))
-    mecanismo = str(get_val(['mecanism', 'mecanismo'], 'N/A'))
+    # 1. Extracción Exacta (Basada en tu imagen)
+    nombre = str(row.get('nombre_pre', 'Predio')).replace("'", "")
+    pk_id = str(row.get('pk_predios', 'N/A'))
+    embalse = str(row.get('embalse', 'N/A'))
     
-    # Área formateada
-    raw_area = get_val(['area_ha', 'area'], 0)
+    # Ubicación: nomb_mpio y nombre_ver
+    mpio = str(row.get('nomb_mpio', '')).strip()
+    vereda = str(row.get('nombre_ver', '')).strip()
+    ubicacion = f"{mpio} - {vereda}" if vereda else mpio
+    if not ubicacion: ubicacion = "N/A"
+    
+    # Mecanismo (ojo: en tu tabla es 'mecanism' sin o)
+    mecanismo = str(row.get('mecanism', 'N/A'))
+    
+    # Área
     try:
-        area_txt = f"{float(raw_area):.2f} ha"
+        val = float(row.get('area_ha', 0))
+        area_txt = f"{val:.2f} ha"
     except:
-        area_txt = str(raw_area)
+        area_txt = "N/A"
+
+    return f"""
+    <div style='font-family:sans-serif; font-size:12px; min-width:180px;'>
+        <b style='color:#d35400; font-size:14px'>🏡 {nombre}</b>
+        <hr style='margin:4px 0; border-top:1px solid #ddd'>
+        🆔 <b>ID:</b> {pk_id}<br>
+        📍 <b>Ubicación:</b> {ubicacion}<br>
+        💧 <b>Embalse:</b> {embalse}<br>
+        📜 <b>Mecanismo:</b> {mecanismo}<br>
+        📐 <b>Área:</b> {area_txt}
+    </div>
+    """
 
     # 2. Construcción del HTML
     return f"""
@@ -6769,6 +6778,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
 
