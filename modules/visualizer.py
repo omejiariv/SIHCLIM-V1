@@ -326,45 +326,51 @@ def generar_popup_estacion(row, valor_col='ppt_media'):
     return html
 
 def generar_popup_bocatoma(row):
-    """Popup HTML para Bocatomas."""
-    # Intentamos buscar columnas comunes, o usamos defaults
-    nombre = str(row.get('nombre_bocatoma', row.get('nombre', 'Bocatoma'))).replace("'", "")
-    fuente = str(row.get('fuente_hidrica', row.get('fuente', 'N/A'))).replace("'", "")
-    caudal = row.get('caudal_diseno', row.get('caudal', 0))
-    id_boc = str(row.get('id_bocatoma', row.get('id', 'N/A')))
+    """Popup HTML para Bocatomas (Campos Reales)."""
+    nombre = str(row.get('nombre_acu', 'Bocatoma')).replace("'", "")
+    fuente = str(row.get('fuente_aba', 'N/A')).replace("'", "")
+    # Combinamos Municipio y Vereda
+    mpio = str(row.get('municipio', '')).strip()
+    vereda = str(row.get('veredas', '')).strip()
+    ubicacion = f"{mpio} - {vereda}" if vereda else mpio
     
-    try: caudal_val = f"{float(caudal):.2f} L/s"
-    except: caudal_val = str(caudal)
+    tipo = str(row.get('tipo', 'N/A'))
+    entidad = str(row.get('entidad_ad', 'N/A'))
 
     return f"""
-    <div style='font-family:sans-serif; font-size:12px; min-width:160px;'>
+    <div style='font-family:sans-serif; font-size:12px; min-width:180px;'>
         <b style='color:#16a085; font-size:14px'>🚰 {nombre}</b>
         <hr style='margin:4px 0; border-top:1px solid #ddd'>
-        🆔 <b>ID:</b> {id_boc}<br>
+        📍 <b>Ubicación:</b> {ubicacion}<br>
         🌊 <b>Fuente:</b> {fuente}<br>
-        ⚙️ <b>Q Diseño:</b> {caudal_val}
+        ⚙️ <b>Tipo:</b> {tipo}<br>
+        🏢 <b>Entidad:</b> {entidad}
     </div>
     """
 
 def generar_popup_predio(row):
-    """Popup HTML para Predios."""
-    nombre = str(row.get('nombre_predio', row.get('nombre', 'Predio'))).replace("'", "")
-    propietario = str(row.get('propietario', 'N/A')).replace("'", "")
-    # Area: si viene en geom, la calculamos, si no buscamos columna
-    if 'area_ha' in row:
-        area = f"{float(row['area_ha']):.1f} ha"
-    elif row.geometry:
-        # Calculo aproximado al vuelo si está en grados (error aceptable para popup visual)
-        area = f"{row.geometry.area * 12300:.1f} km² (aprox)" 
-    else:
-        area = "N/A"
+    """Popup HTML para Predios (Campos Reales)."""
+    nombre = str(row.get('nombre_pre', 'Predio')).replace("'", "")
+    # Combinamos Municipio y Vereda (nombres de columna detectados en tu imagen)
+    mpio = str(row.get('nomb_mpio', '')).strip()
+    vereda = str(row.get('nombre_ver', '')).strip()
+    ubicacion = f"{mpio} - {vereda}" if vereda else mpio
+    
+    embalse = str(row.get('embalse', 'N/A'))
+    mecanismo = str(row.get('mecanism', 'N/A'))
+    
+    # Manejo seguro del área
+    try: area_val = f"{float(row.get('area_ha', 0)):.2f} ha"
+    except: area_val = "N/A"
 
     return f"""
-    <div style='font-family:sans-serif; font-size:12px; min-width:150px;'>
+    <div style='font-family:sans-serif; font-size:12px; min-width:180px;'>
         <b style='color:#d35400; font-size:14px'>🏡 {nombre}</b>
         <hr style='margin:4px 0; border-top:1px solid #ddd'>
-        👤 <b>Prop:</b> {propietario}<br>
-        📐 <b>Área:</b> {area}
+        📍 <b>Ubicación:</b> {ubicacion}<br>
+        💧 <b>Embalse:</b> {embalse}<br>
+        📜 <b>Mecanismo:</b> {mecanismo}<br>
+        📐 <b>Área:</b> {area_val}
     </div>
     """
     
@@ -6458,12 +6464,34 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
 
     # 3. MUNICIPIOS (Con Tooltip)
     if gdf_municipios is not None and not gdf_municipios.empty:
-        # Detectar columna de nombre
-        col_name = next((c for c in gdf_municipios.columns if 'MPIO' in c or 'NOMBRE' in c), None)
+        # Definimos explícitamente los campos que vimos en tu imagen
+        campos_tooltip = []
+        alias_tooltip = []
+
+        # 1. Nombre (nombre_municipio es la columna clave)
+        if 'nombre_municipio' in gdf_municipios.columns:
+            campos_tooltip.append('nombre_municipio')
+            alias_tooltip.append('Municipio:')
+        elif 'MPIO_CNMBR' in gdf_municipios.columns: # Fallback
+            campos_tooltip.append('MPIO_CNMBR')
+            alias_tooltip.append('Municipio:')
+
+        # 2. Departamento
+        if 'departamento' in gdf_municipios.columns:
+            campos_tooltip.append('departamento')
+            alias_tooltip.append('Depto:')
+        
+        # 3. Área (MPIO_NAREA)
+        if 'MPIO_NAREA' in gdf_municipios.columns:
+            campos_tooltip.append('MPIO_NAREA')
+            alias_tooltip.append('Área:')
+
         folium.GeoJson(
-            gdf_municipios, name="🏛️ Municipios",
-            style_function=lambda x: {'color': '#7f8c8d', 'weight': 1, 'fill': False, 'dashArray': '4, 4'},
-            tooltip=folium.GeoJsonTooltip(fields=[col_name], aliases=['Municipio:']) if col_name else None
+            gdf_municipios,
+            name="🏛️ Municipios",
+            style_function=lambda x: {'color': '#7f8c8d', 'weight': 1, 'fill': False, 'dashArray': '2, 5'},
+            # Si encontramos columnas, creamos el tooltip, si no, lo dejamos None
+            tooltip=folium.GeoJsonTooltip(fields=campos_tooltip, aliases=alias_tooltip) if campos_tooltip else None
         ).add_to(m)
 
     # 4. CAPAS ZONA
@@ -6701,6 +6729,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
 
