@@ -141,9 +141,18 @@ def main():
             apply_interp = st.checkbox("🔄 Interpolación", value=False)
 
         # --- AQUÍ VA EL BOTÓN SALVAVIDAS ---
-        if st.button("🔄 Refrescar Datos", help="Borra la memoria y recarga"):
+        if st.button("🔄 Refrescar Datos", help="Borra memoria y recarga"):
+            # 1. Borrar caché de funciones (consultas SQL)
             st.cache_data.clear()
             st.cache_resource.clear()
+            
+            # 2. 🔥 CLAVE: Borrar las variables guardadas en memoria 🔥
+            keys_to_delete = ['df_long', 'gdf_stations', 'gdf_subcuencas', 'uploaded_file_hash']
+            for key in keys_to_delete:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            # 3. Recargar
             st.rerun()
 
     # --- D. PROCESAMIENTO ---
@@ -555,6 +564,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
