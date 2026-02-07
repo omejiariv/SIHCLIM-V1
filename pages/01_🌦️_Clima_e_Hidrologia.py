@@ -323,7 +323,7 @@ def main():
             # 5. EJECUCIÓN
             metodo = st.selectbox("Método Interpolación", ['kriging', 'idw', 'spline', 'ked'])
             
-            if st.button("🚀 Ejecutar Modelo El Aleph"):
+            if st.button("🚀 Ejecutar Modelo"):
                 st.session_state['ejecutar_aleph'] = True
             
             # ... (código previo dentro del if session_state) ...
@@ -547,6 +547,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
