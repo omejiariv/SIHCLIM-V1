@@ -455,7 +455,26 @@ with tabs[11]:
 # TAB 12: ZONA DE PELIGRO (EXPLICADA)
 # ==============================================================================
 with tabs[12]:
-    st.header("🔥 Zona de Peligro")
+# === CÓDIGO NUEVO PARA BORRAR TABLA BASURA ===
+    st.header("Zona de Peligro") 
+    
+    st.subheader("🧹 Limpieza de Tablas Obsoletas")
+    st.warning("Se ha detectado una tabla antigua llamada 'precipitacion_mensual' que causa conflictos.")
+    
+    if st.button("🗑️ Eliminar Tabla 'precipitacion_mensual' (SOLO BASURA)", type="primary"):
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS precipitacion_mensual"))
+                conn.commit()
+            st.success("✅ Tabla 'precipitacion_mensual' eliminada. El sistema ahora usará solo la tabla limpia.")
+            time.sleep(2)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error al eliminar: {e}")
+            
+    st.divider()
+    # =============================================
+    
     st.error("""
     **¿QUÉ ES ESTO?**
     Esta sección contiene controles administrativos de alto nivel que afectan la estructura misma de la base de datos.
@@ -522,3 +541,4 @@ with tabs[10]:
                     conn.commit()
                     st.success("Comando ejecutado.")
         except Exception as e: st.error(str(e))
+
