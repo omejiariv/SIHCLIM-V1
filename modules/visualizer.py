@@ -6506,27 +6506,45 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
         folium.GeoJson(gdf_buffer, name="⭕ Buffer", style_function=lambda x: {'color': 'red', 'weight': 1, 'dashArray': '5, 5', 'fill': False}).add_to(m)
 
     # 5. PREDIOS (Interacción Rica)
-    if gdf_predios is not None and not gdf_predios.empty:
-        fg_predios = folium.FeatureGroup(name="🏡 Predios", show=False)
-        
-        # Iteramos polígono por polígono para inyectar el HTML exacto
-        for _, row in gdf_predios.iterrows():
-            if row.geometry:
-                try:
-                    # Generamos el HTML con tu función de diseño
-                    html = generar_popup_predio(row)
-                    
-                    # Creamos el objeto GeoJson individual
-                    folium.GeoJson(
-                        row.geometry,
-                        style_function=lambda x: {'color': '#d35400', 'weight': 1, 'fillOpacity': 0.4, 'fillColor': 'orange'},
-                        popup=folium.Popup(html, max_width=250), # <--- Aquí entra el HTML
-                        tooltip=str(row.get('nombre_pre', 'Predio'))
-                    ).add_to(fg_predios)
-                except: 
-                    pass # Si un polígono falla, lo saltamos para no romper el mapa
-                    
-        fg_predios.add_to(m)
+    def generar_popup_predio(row):
+    """Popup HTML para Predios con los campos específicos solicitados."""
+    
+    # Función auxiliar de búsqueda segura (ignora mayúsculas/minúsculas)
+    def get_val(col_names, default='N/A'):
+        if isinstance(col_names, str): col_names = [col_names]
+        for name in col_names:
+            if name in row: return row[name] # Prioridad exacta
+            # Búsqueda insensible
+            for k in row.keys():
+                if k.lower() == name.lower(): return row[k]
+        return default
+
+    # 1. Extracción de datos usando los nombres exactos de tu tabla
+    nombre = str(get_val('nombre_pre', 'Predio')).replace("'", "")
+    pk_id = str(get_val(['pk_predios', 'pk_predio'], 'N/A'))
+    embalse = str(get_val('embalse', 'N/A'))
+    vereda = str(get_val(['nombre_ver', 'vereda'], 'N/A'))
+    mecanismo = str(get_val(['mecanism', 'mecanismo'], 'N/A'))
+    
+    # Área formateada
+    raw_area = get_val(['area_ha', 'area'], 0)
+    try:
+        area_txt = f"{float(raw_area):.2f} ha"
+    except:
+        area_txt = str(raw_area)
+
+    # 2. Construcción del HTML
+    return f"""
+    <div style='font-family:sans-serif; font-size:12px; min-width:200px;'>
+        <b style='color:#d35400; font-size:14px'>🏡 {nombre}</b>
+        <hr style='margin:4px 0; border-top:1px solid #ddd'>
+        🆔 <b>ID Predio:</b> {pk_id}<br>
+        💧 <b>Embalse:</b> {embalse}<br>
+        📍 <b>Vereda:</b> {vereda}<br>
+        📐 <b>Área:</b> {area_txt}<br>
+        📜 <b>Mecanismo:</b> {mecanismo}
+    </div>
+    """
 
     # 6. BOCATOMAS (Puntos con Popup HTML Rico)
     if gdf_bocatomas is not None and not gdf_bocatomas.empty:
@@ -6744,6 +6762,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
 
