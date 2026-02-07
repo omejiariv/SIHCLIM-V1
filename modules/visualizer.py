@@ -6534,11 +6534,11 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     st_folium(m, use_container_width=True, height=600)
     
 # -------------------------------------------------------------------------
-# FUNCIÓN COMPARATIVA MULTIESCALAR (BYPASS + DETECTOR DE ID MEJORADO 🛡️)
+# FUNCIÓN COMPARATIVA MULTIESCALAR (FINAL - LIMPIEZA BOM 👻)
 # -------------------------------------------------------------------------
 def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
     """
-    Versión con recarga directa SQL y detector flexible de IDs de estación.
+    Versión con limpieza de caracteres ocultos (BOM) en nombres de columnas.
     """
     import streamlit as st
     import pandas as pd
@@ -6558,7 +6558,6 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            # Traemos id_estacion explícitamente desde la BD
             query = "SELECT fecha, id_estacion, valor FROM precipitacion"
             df_fresh = pd.read_sql(query, conn)
             
@@ -6566,7 +6565,7 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
             df_fresh['MES_NUM'] = df_fresh['fecha'].dt.month
             
             if 1 in df_fresh['MES_NUM'].unique():
-                st.toast("✅ Datos de Enero recuperados exitosamente.", icon="🥑")
+                st.toast("✅ Datos de Enero recuperados.", icon="🥑")
             
             df_datos = df_fresh.copy()
             
@@ -6582,31 +6581,31 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
         return
 
     try:
-        # --- 1. PREPARACIÓN DE METADATOS (CORRECCIÓN AQUÍ) ---
+        # --- 1. PREPARACIÓN DE METADATOS ---
         df_meta = gdf_stations.copy()
         gdf_poligonos = gdf_subcuencas.copy()
 
-        # A. Normalización ID en DATOS (Sabemos que es 'id_estacion' porque viene del SQL)
+        # 🔥 A. LIMPIEZA DE NOMBRES DE COLUMNA (EL EXORCISMO 👻) 🔥
+        # Esto elimina 'ï»¿' y espacios extra de TODOS los nombres de columna
+        df_meta.columns = [c.strip().replace('ï»¿', '').lower() for c in df_meta.columns]
+        
+        # B. Normalización ID en DATOS
         col_id_dato = 'id_estacion' 
         df_datos[col_id_dato] = df_datos[col_id_dato].astype(str).str.strip()
 
-        # B. Normalización ID en ESTACIONES (Aquí fallaba)
-        # Lista ampliada de posibles nombres (Shapefiles suelen cortar a 10 caracteres)
-        posibles_ids = ['id_estacion', 'id_estacio', 'codigo', 'code', 'station_id', 'id', 'cod_estacion']
+        # C. Búsqueda inteligente de ID en ESTACIONES
+        posibles_ids = ['id_estacion', 'id_estacio', 'codigo', 'code', 'station_id', 'id']
+        col_id_meta = next((c for c in df_meta.columns if c in posibles_ids), None)
         
-        # Buscamos la primera coincidencia
-        col_id_meta = next((c for c in df_meta.columns if c.lower() in posibles_ids), None)
-        
-        # Si no encuentra columna, advertimos y mostramos qué columnas hay
         if not col_id_meta:
-            st.error(f"❌ No encuentro la columna de ID en el archivo de estaciones. Columnas disponibles: {list(df_meta.columns)}")
+            st.error(f"❌ No encuentro ID. Columnas limpias disponibles: {list(df_meta.columns)}")
             return
 
-        # Limpiamos usando la columna encontrada
         df_meta[col_id_meta] = df_meta[col_id_meta].astype(str).str.strip()
 
         # --- 2. GESTIÓN ESPACIAL ---
         if not isinstance(df_meta, gpd.GeoDataFrame):
+            # Intentamos convertir si hay lat/lon
             if 'longitud' in df_meta.columns and 'latitud' in df_meta.columns:
                 df_meta = gpd.GeoDataFrame(
                     df_meta, 
@@ -6625,18 +6624,18 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
         
         df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos[cols_poly], how="left", predicate="intersects")
         
-        # Merge Final (Usando las columnas detectadas)
+        # Merge Final
         df_full = pd.merge(df_datos, df_meta_espacial, left_on=col_id_dato, right_on=col_id_meta, how='inner')
 
         if df_full.empty:
-            st.warning("No hubo coincidencias entre Datos y Estaciones. Verifique los IDs.")
+            st.warning("No hubo coincidencias espaciales. Verifique IDs.")
             return
 
         # --- 3. DETECCIÓN DE COLUMNAS ---
-        col_valor = next((c for c in df_full.columns if c.lower() in ['valor', 'value', 'precipitacion']), 'valor')
-        col_municipio = next((c for c in df_full.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'mun_nomb']), None)
-        col_cuenca = col_cuenca_poly if col_cuenca_poly in df_full.columns else next((c for c in df_full.columns if c.lower() in ['cuenca', 'subcuenca']), None)
-        col_region = next((c for c in df_full.columns if c.lower() in ['subregion', 'region', 'zona']), None)
+        col_valor = next((c for c in df_full.columns if c in ['valor', 'value', 'precipitacion']), 'valor')
+        col_municipio = next((c for c in df_full.columns if c in ['municipio', 'mpio_cnmbr', 'mun_nomb']), None)
+        col_cuenca = col_cuenca_poly if col_cuenca_poly in df_full.columns else next((c for c in df_full.columns if c in ['cuenca', 'subcuenca']), None)
+        col_region = next((c for c in df_full.columns if c in ['subregion', 'region', 'zona']), None)
 
         # --- 4. FORMATO DE TIEMPO ---
         meses_orden = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
@@ -6655,7 +6654,7 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
             if col_region: opts.append("Región")
             
             if not opts:
-                st.error(f"No encontré columnas geográficas (Municipio, Cuenca, Región). Columnas disponibles: {list(df_full.columns)}")
+                st.error("No encontré columnas geográficas.")
                 return
 
             nivel = st.radio("Agrupar por:", opts)
@@ -6690,4 +6689,4 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
             st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv", "text/csv")
 
     except Exception as e:
-        st.error(f"Error detallado en módulo multiescalar: {e}")
+        st.error(f"Error detallado: {e}")
