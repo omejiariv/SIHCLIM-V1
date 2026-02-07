@@ -521,31 +521,4 @@ with tabs[10]:
                     conn.execute(text(q))
                     conn.commit()
                     st.success("Comando ejecutado.")
-
         except Exception as e: st.error(str(e))
-
-st.header("Zona de Peligro") # Esta línea ya existe
-
-    # --- NUEVO: BOTÓN DE LIMPIEZA ESPECÍFICA ---
-    st.subheader("🧹 Limpieza de Tablas Obsoletas")
-    st.warning("Se ha detectado una tabla antigua llamada 'precipitacion_mensual' que causa conflictos.")
-    
-    if st.button("🗑️ Eliminar Tabla 'precipitacion_mensual' (SOLO BASURA)", type="primary"):
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("DROP TABLE IF EXISTS precipitacion_mensual"))
-                conn.commit()
-            st.success("✅ Tabla 'precipitacion_mensual' eliminada correctamente. El sistema ahora usará solo la tabla limpia.")
-            time.sleep(2)
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error al eliminar: {e}")
-            
-    st.divider()
-    # ---------------------------------------------
-
-    # Aquí sigue tu código original del "Reinicio de Fábrica"...
-    st.error("""
-    ===============================
-    **¿QUÉ ES ESTO?**
-    ...
