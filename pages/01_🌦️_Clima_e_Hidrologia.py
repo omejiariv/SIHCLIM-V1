@@ -394,54 +394,102 @@ def main():
                             gdf_municipios=gdf_municipios # <--- NUEVO ARGUMENTO
                         )
                         
-                        # F. DASHBOARD
+                        # F. DASHBOARD DE ESTADÍSTICAS (5 COLUMNAS - SUPER COMPLETO)
                         st.markdown("---")
                         st.subheader("📊 Diagnóstico Hidrológico Integral")
+                        
                         try:
-                            gdf_zona_proj = gdf_zona.to_crs(epsg=3116)
+                            # --- 1. CÁLCULOS GEOMÉTRICOS ---
+                            gdf_zona_proj = gdf_zona.to_crs(epsg=3116) # Proyectar a metros (Magna Sirgas)
                             area_km2 = gdf_zona_proj.area.sum() / 1e6
                             perim_km = gdf_zona_proj.length.sum() / 1e3
                             
+                            # Índice de Forma (Compacidad de Gravelius): Kc = 0.28 * P / sqrt(A)
+                            # Kc = 1.0 (Círculo perfecto), > 1.0 (Alargada)
+                            ind_gravelius = (0.282 * perim_km) / (np.sqrt(area_km2)) if area_km2 > 0 else 0
+
+                            # --- 2. EXTRACCIÓN DE VARIABLES DEL MODELO ---
                             from shapely.vectorized import contains
                             mask_exact = contains(gdf_zona.unary_union, grid_x, grid_y)
                             
                             def get_avg(keyword): 
+                                """Busca la capa en matrices_finales y calcula el promedio zonal."""
                                 for k, v in matrices_finales.items():
                                     if keyword in k and v is not None: 
                                         return np.nanmean(v[mask_exact])
                                 return 0
                             
                             v_ppt = get_avg("Precipitación")
+                            v_temp = get_avg("Temperatura")
                             v_etr = get_avg("Evapotranspiración")
                             v_esc = get_avg("Escorrentía")
                             v_inf = get_avg("Infiltración")
+                            v_rec_pot = get_avg("Recarga Potencial")
                             v_rec_real = get_avg("Recarga Real")
                             
+                            # --- 3. HIDROLOGÍA Y CAUDALES ---
+                            # Factor Q (m3/s) = (mm/año * km2 * 1000) / (31536000 s/año)
                             factor_q = (area_km2 * 1000) / 31536000
-                            Q_medio = v_ppt * factor_q
-                            Q_oferta_total = (v_esc + v_rec_real) * factor_q
-                            Q_ecologico = Q_oferta_total * 0.25
+                            
+                            # Caudales Estimados
+                            Q_medio = (v_esc + v_rec_real) * factor_q # Oferta Hídrica Total
+                            Q_base = v_rec_real * factor_q # Flujo base (aprox Caudal Mínimo sostenido)
+                            Q_maximo = Q_medio * 2.5 # Estimación empírica pico anual (sin datos diarios)
+                            Q_ecologico = Q_medio * 0.25 # 25% del Medio (Criterio MADS usual)
+                            
+                            # Rendimiento Hídrico (m3/ha-año)
+                            # 1 mm = 10 m3/ha
                             Rendimiento_m3ha = (v_esc + v_rec_real) * 10 
-                            ind_aridez = v_ppt / v_etr if v_etr > 0 else 0
-                            ind_erosividad_R = 0.0448 * (v_ppt ** 1.56)
 
-                            k1, k2, k3, k4 = st.columns(4)
+                            # --- 4. ÍNDICES CLIMÁTICOS Y DE EROSIÓN ---
+                            # Índice de Aridez (Martonne): I = P / (T + 10)
+                            # 0-10 (Árido), 20-30 (Húmedo), >55 (Perhúmedo)
+                            ind_martonne_aridez = v_ppt / (v_temp + 10) if v_temp else 0
+                            
+                            # Índice Climático (Lang): I = P / T
+                            ind_lang = v_ppt / v_temp if v_temp > 0 else 0
+                            
+                            # Erosividad (Aprox Fournier Modificado o R-USLE simplificado)
+                            # R = 0.0739 * P^1.8 (Aprox tropical)
+                            ind_erosividad = 0.07 * (v_ppt ** 1.5)
+
+                            # --- 5. RENDERIZADO (5 COLUMNAS) ---
+                            k1, k2, k3, k4, k5 = st.columns(5)
+                            
+                            # COL 1: MORFOMETRÍA
                             k1.markdown("#### 📏 Morfometría")
                             k1.metric("Área", f"{area_km2:.2f} km²")
                             k1.metric("Perímetro", f"{perim_km:.1f} km")
+                            k1.metric("Índice Gravelius", f"{ind_gravelius:.2f}", "Forma (Kc)")
+                            k1.metric("Estaciones", f"{len(gdf_calc)}")
                             
+                            # COL 2: BALANCE HÍDRICO
                             k2.markdown("#### 💧 Balance (mm)")
-                            k2.metric("Precipitación", f"{v_ppt:.0f}")
-                            k2.metric("Infiltración", f"{v_inf:.0f}")
+                            k2.metric("Precipitación", f"{v_ppt:.0f} mm")
+                            k2.metric("ETR", f"{v_etr:.0f} mm", "Pérdida")
+                            k2.metric("Escorrentía", f"{v_esc:.0f} mm", "Superficial")
+                            k2.metric("Infiltración", f"{v_inf:.0f} mm", "Suelo")
                             
-                            k3.markdown("#### 🌊 Caudales")
-                            k3.metric("Caudal Medio", f"{Q_medio:.2f} m³/s")
-                            k3.metric("Caudal Eco.", f"{Q_ecologico:.2f} m³/s")
+                            # COL 3: CAUDALES
+                            k3.markdown("#### 🌊 Caudales (m³/s)")
+                            k3.metric("Caudal Medio", f"{Q_medio:.2f}")
+                            k3.metric("Caudal Mínimo", f"{Q_base:.2f}", "Base Est.")
+                            k3.metric("Caudal Máximo", f"{Q_maximo:.2f}", "Pico Est.")
+                            k3.metric("Caudal Ecológico", f"{Q_ecologico:.2f}", "25% Qm")
                             
+                            # COL 4: ÍNDICES
                             k4.markdown("#### 📉 Índices")
-                            k4.metric("Rendimiento", f"{Rendimiento_m3ha:.0f}", "m³/ha")
-                            k4.metric("Aridez", f"{ind_aridez:.2f}")
+                            k4.metric("Rendimiento", f"{Rendimiento_m3ha:.0f}", "m³/ha-año")
+                            k4.metric("Aridez (Martonne)", f"{ind_martonne_aridez:.1f}")
+                            k4.metric("Factor Lang", f"{ind_lang:.1f}", "Clima")
+                            k4.metric("Erosividad", f"{ind_erosividad:.0f}", "Potencial")
 
+                            # COL 5: AGUAS SUBTERRÁNEAS (NUEVA)
+                            k5.markdown("#### ⏬ Aguas Subt.")
+                            k5.metric("Recarga Potencial", f"{v_rec_pot:.0f} mm", "Infiltración Total")
+                            k5.metric("Recarga Real", f"{v_rec_real:.0f} mm", "Acuífero")
+                            k5.metric("Volumen Recarga", f"{(v_rec_real * area_km2 * 1000):.2e} m³", "Anual")
+                            
                         except Exception as e:
                             st.warning(f"Cálculos parciales: {e}")
 
@@ -499,6 +547,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
