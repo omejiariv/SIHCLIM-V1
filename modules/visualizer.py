@@ -6581,7 +6581,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
              cols_num = df_full.select_dtypes(include=['float', 'int']).columns.tolist()
              col_valor = next((c for c in cols_num if c not in [col_fecha, 'id_estacion', 'MES_NUM']), None)
 
-        # C. MUNICIPIO, CUENCA Y REGIÓN (Aquí estaba el detalle)
+        # C. MUNICIPIO, CUENCA Y REGIÓN
         col_municipio = next((c for c in df_full.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nom_mun']), None)
         
         # La cuenca viene del shapefile (col_cuenca_poly) O de la tabla estaciones
@@ -6602,7 +6602,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
             opts = []
             if col_municipio: opts.append("Municipio")
             if col_cuenca: opts.append("Cuenca")
-            if col_region: opts.append("Región") # ¡Ahora sí aparecerá!
+            if col_region: opts.append("Región")
             
             if not opts:
                 st.error("No encontré columnas geográficas (Municipio, Cuenca o Región) en la tabla final.")
