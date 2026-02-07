@@ -6431,7 +6431,7 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
             cm.LinearColormap(colors=colors_hex, vmin=vmin, vmax=vmax, caption=nombre_capa).add_to(m)
         except: pass
 
-    # 2. ISOLÍNEAS (MÉTODO LIMPIO ALLSEGS - SIN LÍNEAS RECTAS)
+    # 2. ISOLÍNEAS (MÉTODO LIMPIO ALLSEGS - Con etiquetas - SIN LÍNEAS RECTAS)
     if grid_data is not None:
         fg_iso = folium.FeatureGroup(name="〰️ Isolíneas", overlay=True, show=True)
         try:
@@ -6444,54 +6444,59 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
             contours = ax_iso.contour(grid_x_mesh, grid_y_mesh, Z_Smooth, levels=12)
             plt.close(fig_iso)
             
-            # --- CORRECCIÓN: Usar allsegs para evitar cierres de borde ---
             for i, level_segs in enumerate(contours.allsegs):
                 val = contours.levels[i]
                 for segment in level_segs:
-                    # segment es un array [[x, y], [x, y]...]
-                    # Convertir a Folium [[Lat, Lon]] -> [[y, x]]
                     lat_lon_coords = [[pt[1], pt[0]] for pt in segment]
                     
-                    # Filtramos líneas muy cortas (ruido)
-                    if len(lat_lon_coords) > 5:
+                    if len(lat_lon_coords) > 10: # Solo líneas significativas
+                        # Línea
                         folium.PolyLine(
                             lat_lon_coords, color='black', weight=0.6, opacity=0.5,
                             tooltip=f"{val:.1f}"
                         ).add_to(fg_iso)
                         
+                        # ETIQUETA DE TEXTO (DivIcon)
+                        # Ponemos la etiqueta en el punto medio de la línea
+                        mid_idx = len(lat_lon_coords) // 2
+                        mid_point = lat_lon_coords[mid_idx]
+                        
+                        folium.map.Marker(
+                            mid_point,
+                            icon=DivIcon(
+                                icon_size=(150,36),
+                                icon_anchor=(0,0),
+                                html=f'<div style="font-size: 9pt; font-weight: bold; color: #333; text-shadow: 1px 1px 0 #fff;">{val:.0f}</div>'
+                            )
+                        ).add_to(fg_iso)
+
         except Exception as e: print(f"Iso error: {e}")
         fg_iso.add_to(m)
 
     # 3. MUNICIPIOS (Con Tooltip)
     if gdf_municipios is not None and not gdf_municipios.empty:
-        # Definimos explícitamente los campos que vimos en tu imagen
-        campos_tooltip = []
-        alias_tooltip = []
-
-        # 1. Nombre (nombre_municipio es la columna clave)
-        if 'nombre_municipio' in gdf_municipios.columns:
-            campos_tooltip.append('nombre_municipio')
-            alias_tooltip.append('Municipio:')
-        elif 'MPIO_CNMBR' in gdf_municipios.columns: # Fallback
-            campos_tooltip.append('MPIO_CNMBR')
-            alias_tooltip.append('Municipio:')
-
-        # 2. Departamento
-        if 'departamento' in gdf_municipios.columns:
-            campos_tooltip.append('departamento')
-            alias_tooltip.append('Depto:')
-        
-        # 3. Área (MPIO_NAREA)
+        # Pre-calculamos el campo formateado para el tooltip
+        # Asumimos MPIO_NAREA en km2 -> Ha = km2 * 100
         if 'MPIO_NAREA' in gdf_municipios.columns:
-            campos_tooltip.append('MPIO_NAREA')
-            alias_tooltip.append('Área:')
+            gdf_municipios['area_ha_fmt'] = (gdf_municipios['MPIO_NAREA'] * 100).apply(lambda x: f"{x:,.1f} ha")
+            col_area = 'area_ha_fmt'
+        else:
+            col_area = None
+
+        col_name = next((c for c in gdf_municipios.columns if 'MPIO_CNMBR' in c or 'nombre' in c), None)
+        
+        # Configurar campos del tooltip
+        fields = []
+        aliases = []
+        if col_name: 
+            fields.append(col_name); aliases.append('Municipio:')
+        if col_area:
+            fields.append(col_area); aliases.append('Área:')
 
         folium.GeoJson(
-            gdf_municipios,
-            name="🏛️ Municipios",
-            style_function=lambda x: {'color': '#7f8c8d', 'weight': 1, 'fill': False, 'dashArray': '2, 5'},
-            # Si encontramos columnas, creamos el tooltip, si no, lo dejamos None
-            tooltip=folium.GeoJsonTooltip(fields=campos_tooltip, aliases=alias_tooltip) if campos_tooltip else None
+            gdf_municipios, name="🏛️ Municipios",
+            style_function=lambda x: {'color': '#7f8c8d', 'weight': 1, 'fill': False, 'dashArray': '4, 4'},
+            tooltip=folium.GeoJsonTooltip(fields=fields, aliases=aliases) if fields else None
         ).add_to(m)
 
     # 4. CAPAS ZONA
@@ -6503,13 +6508,24 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
     # 5. PREDIOS (Interacción Rica)
     if gdf_predios is not None and not gdf_predios.empty:
         fg_predios = folium.FeatureGroup(name="🏡 Predios", show=False)
-        # Para polígonos, GeoJson es mejor que iterar si son muchos.
-        # Usamos popup simple de folium pero formateado
+        
+        # Detectar columnas disponibles para el popup
+        campos_disponibles = [c for c in ['nombre_pre', 'nomb_mpio', 'embalse', 'mecanism', 'area_ha'] if c in gdf_predios.columns]
+        alias_map = {
+            'nombre_pre': 'Predio:', 
+            'nomb_mpio': 'Mpio:', 
+            'embalse': 'Embalse:', 
+            'mecanism': 'Mecanismo:', 
+            'area_ha': 'Área (ha):'
+        }
+        aliases_final = [alias_map.get(c, c) for c in campos_disponibles]
+
         folium.GeoJson(
             gdf_predios,
-            style_function=lambda x: {'color': 'orange', 'weight': 1, 'fillOpacity': 0.3},
-            tooltip=folium.GeoJsonTooltip(fields=['nombre_predio'], aliases=['Predio:']),
-            popup=folium.GeoJsonPopup(fields=['nombre_predio'], aliases=['Nombre:']) 
+            style_function=lambda x: {'color': 'orange', 'weight': 1, 'fillOpacity': 0.4},
+            # Usamos GeoJsonPopup para polígonos
+            popup=folium.GeoJsonPopup(fields=campos_disponibles, aliases=aliases_final),
+            tooltip=folium.GeoJsonTooltip(fields=['nombre_pre'], aliases=['Predio:']) if 'nombre_pre' in gdf_predios.columns else None
         ).add_to(fg_predios)
         fg_predios.add_to(m)
 
@@ -6729,6 +6745,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
 
