@@ -6736,3 +6736,4 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
 
 
 
+
