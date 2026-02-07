@@ -209,4 +209,93 @@ def download_raster_to_temp(file_name, bucket_name="rasters"):
             return tmp.name # Retornamos la ruta (ej: /tmp/tmpxyz.tif)
     except Exception as e:
         print(f"Error descargando {file_name}: {e}")
+
         return None
+
+# =============================================================================
+# 🛠️ FUNCIONES DE LIMPIEZA Y ESTANDARIZACIÓN UNIVERSAL (NUEVO)
+# =============================================================================
+
+def limpiar_encabezados_bom(df):
+    """
+    Elimina caracteres fantasma (BOM) y espacios de los nombres de columnas.
+    Ej: 'ï»¿id_estacion ' -> 'id_estacion'
+    """
+    if df is None: return None
+    # Elimina BOM utf-8, BOM excel y espacios
+    df.columns = df.columns.str.replace('ï»¿', '')\
+                           .str.replace('\ufeff', '')\
+                           .str.strip()
+    return df
+
+def estandarizar_id_estacion(df, posibles_nombres=None):
+    """
+    Busca la columna de ID (entre candidatos), la renombra a 'id_estacion'
+    y la convierte a texto limpio para asegurar cruces.
+    """
+    if df is None: return None
+    df = limpiar_encabezados_bom(df) # Paso 1: Limpiar encabezados
+    
+    if posibles_nombres is None:
+        posibles_nombres = ['id_estacion', 'Id_estacio', 'Codigo', 'ID', 'CODIGO', 'estacion']
+    
+    # 1. Buscar columna candidata
+    col_encontrada = next((c for c in posibles_nombres if c in df.columns), None)
+    
+    # Si está en el índice, sacarla
+    if not col_encontrada and df.index.name in posibles_nombres:
+        df = df.reset_index()
+        col_encontrada = df.index.name or 'id_estacion'
+
+    # 2. Renombrar y Castear
+    if col_encontrada:
+        df.rename(columns={col_encontrada: 'id_estacion'}, inplace=True)
+        # Convertir a string, quitar decimales (.0) si vienen de excel y espacios
+        df['id_estacion'] = df['id_estacion'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+        return df
+    else:
+        # Si no se encuentra, retornamos el df tal cual (o podríamos lanzar error)
+        return df
+
+def asegurar_geometria_estaciones(df):
+    """
+    Recibe un DataFrame de estaciones y garantiza que salga como GeoDataFrame
+    con coordenadas válidas WGS84.
+    """
+    import geopandas as gpd
+    import pandas as pd
+    
+    if df is None: return None
+    df = limpiar_encabezados_bom(df)
+    
+    # Si ya es GeoDataFrame válido, retornar
+    if isinstance(df, gpd.GeoDataFrame) and getattr(df, 'crs', None) is not None:
+        return df.to_crs("EPSG:4326")
+
+    # Si no, intentar reconstruir desde lat/lon
+    candidatos_lon = ['longitud', 'Longitud_geo', 'lon', 'LONGITUD']
+    candidatos_lat = ['latitud', 'Latitud_geo', 'lat', 'LATITUD']
+    
+    c_lon = next((c for c in candidatos_lon if c in df.columns), None)
+    c_lat = next((c for c in candidatos_lat if c in df.columns), None)
+    
+    if c_lon and c_lat:
+        try:
+            # Limpieza agresiva de coordenadas (comas por puntos, forzar numérico)
+            df[c_lon] = pd.to_numeric(df[c_lon].astype(str).str.replace(',', '.'), errors='coerce')
+            df[c_lat] = pd.to_numeric(df[c_lat].astype(str).str.replace(',', '.'), errors='coerce')
+            
+            # Eliminar vacíos
+            df = df.dropna(subset=[c_lon, c_lat])
+            
+            # Crear geometría
+            gdf = gpd.GeoDataFrame(
+                df, 
+                geometry=gpd.points_from_xy(df[c_lon], df[c_lat]),
+                crs="EPSG:4326"
+            )
+            return gdf
+        except Exception:
+            return df # Retorna el original si falla
+            
+    return df
