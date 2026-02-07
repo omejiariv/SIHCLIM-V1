@@ -2277,6 +2277,7 @@ def display_graphs_tab(
                 st.dataframe(comp_df.style.format("{:.1f}"))
 
     # -------------------------------------------------------------------------
+
     # 7. COMPARATIVA MULTIESCALAR (LIMPIO Y SIN REDUNDANCIA)
     # -------------------------------------------------------------------------
     with tabs[6]: # Asegúrate que corresponda a la pestaña "Comparativa Multiescalar"
@@ -2290,7 +2291,7 @@ def display_graphs_tab(
             display_multiscale_tab(df_long_safe, gdf_st_safe, gdf_sub_safe)
         else:
             st.info("👋 Para usar este módulo, primero carga los datos en la barra lateral.")
-
+            
 def display_weekly_forecast_tab(stations_for_analysis, gdf_filtered, **kwargs):
     """Muestra el pronóstico semanal para una estación seleccionada."""
     st.subheader("🌦️ Pronóstico a 7 Días (Open-Meteo)")
@@ -6634,4 +6635,3 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
 
     except Exception as e:
         st.error(f"Error detallado en multiescalar: {e}")
-
