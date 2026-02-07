@@ -140,12 +140,11 @@ def main():
             ignore_nulls = c2.checkbox("🚫 Sin Nulos", value=False)
             apply_interp = st.checkbox("🔄 Interpolación", value=False)
 
-    
-    # BOTÓN DE REFRESCAR (Asegúrate de copiar desde la primera letra 'i' de if)
-    if st.button("🔄 Refrescar Datos", help="Borra la memoria y recarga desde la Base de Datos"):
-        st.cache_data.clear()
-        st.cache_resource.clear()
-        st.rerun()
+        # --- AQUÍ VA EL BOTÓN SALVAVIDAS ---
+        if st.button("🔄 Refrescar Datos", help="Borra la memoria y recarga"):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            st.rerun()
 
     # --- D. PROCESAMIENTO ---
     mask_time = (df_long[Config.YEAR_COL] >= year_range[0]) & (df_long[Config.YEAR_COL] <= year_range[1])
@@ -556,6 +555,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
