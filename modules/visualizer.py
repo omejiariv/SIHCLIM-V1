@@ -349,37 +349,49 @@ def generar_popup_bocatoma(row):
     """
 
 def generar_popup_predio(row):
-    """Popup HTML para Predios con mapeo exacto de columnas solicitadas."""
+    """Popup HTML blindado contra mayúsculas/minúsculas."""
     
-    # Función auxiliar para obtener datos limpiando valores nulos o "None"
-    def get_clean(col, default='N/A'):
-        val = row.get(col, default)
-        if val is None or str(val).lower() == 'none' or str(val).strip() == '':
+    # Normalizamos las llaves del row a minúsculas para buscar sin errores
+    datos_norm = {k.lower(): v for k, v in row.items()}
+    
+    def get_seguro(col_key, default='N/A'):
+        val = datos_norm.get(col_key.lower(), default)
+        if val is None or str(val).lower() in ['none', 'nan', 'null', '']:
             return default
         return str(val).strip()
 
-    # 1. Mapeo Directo (Según tu imagen de tabla)
-    # "El ID quiero que corresponda al campo nombre_pre"
-    nombre_predio = get_clean('nombre_pre', 'Predio Sin Nombre') 
+    # Ahora buscamos usando las claves en minúscula (coincide con tu tabla)
+    nombre = get_seguro('nombre_pre', 'Predio')
+    pk = get_seguro('pk_predios')
+    anio = get_seguro('año_acuer', '-')
     
-    pk = get_clean('pk_predios', 'N/A')
-    anio = get_clean('año_acuer', '-')
+    mpio = get_seguro('nomb_mpio')
+    vereda = get_seguro('nombre_ver')
+    ubicacion = f"{mpio} / {vereda}" if (mpio != 'N/A' or vereda != 'N/A') else "N/A"
     
-    mpio = get_clean('nomb_mpio', '')
-    vereda = get_clean('nombre_ver', '')
-    ubicacion = f"{mpio} / {vereda}" if (mpio or vereda) else "N/A"
+    embalse = get_seguro('embalse')
+    mecanismo = get_seguro('mecanism')
     
-    embalse = get_clean('embalse', 'N/A')
-    mecanismo = get_clean('mecanism', 'N/A')
-    
-    # 2. Formato de Área
+    # Área
     try:
-        area_raw = row.get('area_ha', 0)
-        if area_raw is None: area_val = 0
-        else: area_val = float(area_raw)
-        area_txt = f"{area_val:.2f} ha"
+        # Buscamos 'area_ha' o 'shape_area' por si acaso
+        val_area = float(datos_norm.get('area_ha', 0))
+        area_txt = f"{val_area:.2f} ha"
     except:
         area_txt = "N/A"
+
+    return f"""
+    <div style='font-family:sans-serif; font-size:12px; min-width:200px;'>
+        <b style='color:#d35400; font-size:14px'>🏡 {nombre}</b>
+        <hr style='margin:4px 0; border-top:1px solid #ddd'>
+        🔑 <b>PK:</b> {pk}<br>
+        📅 <b>Año:</b> {anio}<br>
+        📍 <b>Ubicación:</b> {ubicacion}<br>
+        💧 <b>Embalse:</b> {embalse}<br>
+        📜 <b>Mecanismo:</b> {mecanismo}<br>
+        📐 <b>Área:</b> {area_txt}
+    </div>
+    """
 
     # 3. HTML Estructurado
     return f"""
@@ -6789,6 +6801,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
 
