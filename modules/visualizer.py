@@ -2277,191 +2277,19 @@ def display_graphs_tab(
                 st.dataframe(comp_df.style.format("{:.1f}"))
 
     # -------------------------------------------------------------------------
-    # 7. COMPARATIVA MULTIESCALAR (LLAMADA MODULAR)
+    # 7. COMPARATIVA MULTIESCALAR (LIMPIO Y SIN REDUNDANCIA)
     # -------------------------------------------------------------------------
-    with tabs[6]:
-        # 1. Recuperamos los datos de la memoria (Session State)
-        df_long = st.session_state.get('df_long')       # Datos de lluvia
-        gdf_st = st.session_state.get('gdf_stations')   # Estaciones
-        gdf_sub = st.session_state.get('gdf_subcuencas')# Cuencas
+    with tabs[6]: # Asegúrate que corresponda a la pestaña "Comparativa Multiescalar"
+        # 1. Recuperamos los datos limpios de la sesión
+        df_long_safe = st.session_state.get('df_long')
+        gdf_st_safe = st.session_state.get('gdf_stations')
+        gdf_sub_safe = st.session_state.get('gdf_subcuencas')
 
-        # 2. Llamamos a la función experta que está en visualizer.py (viz)
-        if df_long is not None and gdf_st is not None:
-            display_multiscale_tab(df_long, gdf_st, gdf_sub)
+        # 2. Llamamos al experto (visualizer.py)
+        if df_long_safe is not None and gdf_st_safe is not None:
+            viz.display_multiscale_tab(df_long_safe, gdf_st_safe, gdf_sub_safe)
         else:
-            st.info("💡 Para ver la comparativa, asegúrate de que los datos de lluvia y estaciones estén cargados correctamente.")
-            
-            try:
-                # --- PREPARACIÓN DE DATOS ---
-                df_datos = st.session_state['df_long'].copy()
-                df_meta = st.session_state['gdf_stations'].copy()
-                gdf_poligonos = st.session_state['gdf_subcuencas'].copy()
-
-                # --- CONFIGURACIÓN DE COLUMNAS (DETECCIÓN INTELIGENTE) ---
-                # Buscamos ID en datos
-                col_codigo_datos = next((c for c in ['Codigo', 'id_estacion', 'ID'] if c in df_datos.columns), 'id_estacion')
-                col_valor = next((c for c in ['precipitacion_mm', 'Valor', 'valor'] if c in df_datos.columns), 'valor')
-                col_fecha = next((c for c in ['fecha', 'fecha_mes_año', 'Date'] if c in df_datos.columns), 'fecha')
-                
-                # Buscamos ID en metadatos
-                col_codigo_meta = next((c for c in ['Id_estacio', 'Codigo', 'id_estacion'] if c in df_meta.columns), 'id_estacion')
-                
-                col_municipio = 'municipio'
-                col_region = 'SUBREGION' # Ajustar si tu shapefile tiene otro nombre
-                col_cuenca = 'SUBC_LBL'  # Ajustar si tu shapefile tiene otro nombre
-
-                # --- A) LIMPIEZA Y GEOMETRÍA ---
-                # Detectar columnas de coordenadas disponibles (Viejas o Nuevas)
-                c_lon = next((c for c in ['Longitud_geo', 'longitud', 'lon'] if c in df_meta.columns), None)
-                c_lat = next((c for c in ['Latitud_geo', 'latitud', 'lat'] if c in df_meta.columns), None)
-
-                if c_lon and c_lat:
-                    # Limpieza de comas decimales si son strings
-                    for col in [c_lon, c_lat]:
-                        if df_meta[col].dtype == 'object':
-                            df_meta[col] = (
-                                df_meta[col].astype(str)
-                                .str.replace(',', '.', regex=False)
-                                .apply(pd.to_numeric, errors='coerce')
-                            )
-                    
-                    df_meta = df_meta.dropna(subset=[c_lon, c_lat])
-
-                    # Reconstruir geometría si es necesario (para el Spatial Join)
-                    if not isinstance(df_meta, gpd.GeoDataFrame) or df_meta.geometry.isna().all():
-                        df_meta = gpd.GeoDataFrame(
-                            df_meta,
-                            geometry=gpd.points_from_xy(df_meta[c_lon], df_meta[c_lat]),
-                            crs="EPSG:4326"
-                        )
-                else:
-                    st.error("No se encontraron columnas de latitud/longitud en los metadatos de estaciones.")
-                    st.stop()
-                
-                # Asegurar CRS igual
-                if df_meta.crs is None: df_meta.set_crs("EPSG:4326", inplace=True)
-                if gdf_poligonos.crs and df_meta.crs != gdf_poligonos.crs:
-                    gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
-
-                # --- B) CRUCE ESPACIAL (SPATIAL JOIN) ---
-                # Esto asigna a cada estación su Región/Cuenca real basada en ubicación
-                cols_poligono = ['geometry']
-                if col_cuenca in gdf_poligonos.columns: cols_poligono.append(col_cuenca)
-                if col_region in gdf_poligonos.columns: cols_poligono.append(col_region)
-                
-                df_meta_espacial = gpd.sjoin(
-                    df_meta, 
-                    gdf_poligonos[cols_poligono], 
-                    how="left", 
-                    predicate="intersects"
-                )
-
-                # --- C) UNIÓN FINAL DATOS + METADATOS ---
-                df_datos[col_codigo_datos] = df_datos[col_codigo_datos].astype(str).str.strip()
-                df_meta_espacial[col_codigo_meta] = df_meta_espacial[col_codigo_meta].astype(str).str.strip()
-
-                cols_interes = [col_codigo_meta]
-                if col_municipio in df_meta_espacial.columns: cols_interes.append(col_municipio)
-                if col_cuenca in df_meta_espacial.columns: cols_interes.append(col_cuenca)
-                if col_region in df_meta_espacial.columns: cols_interes.append(col_region)
-
-                df_full = pd.merge(
-                    df_datos,
-                    df_meta_espacial[list(set(cols_interes))], # set para evitar duplicados
-                    left_on=col_codigo_datos,
-                    right_on=col_codigo_meta,
-                    how='inner'
-                )
-                
-                if df_full.empty:
-                    st.warning("No se pudieron cruzar datos de lluvia con la ubicación espacial.")
-                    st.stop()
-
-                # --- D) PROCESAMIENTO TEMPORAL ---
-                # Asegurar formato fecha
-                df_full[col_fecha] = pd.to_datetime(df_full[col_fecha], errors='coerce')
-                df_full['MES_NUM'] = df_full[col_fecha].dt.month
-                mapa_meses = {1:'Ene', 2:'Feb', 3:'Mar', 4:'Abr', 5:'May', 6:'Jun', 
-                              7:'Jul', 8:'Ago', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dic'}
-                df_full['Nombre_Mes'] = df_full['MES_NUM'].map(mapa_meses)
-                
-                # --- INTERFAZ VISUAL ---
-                col1, col2 = st.columns([1, 2])
-                
-                with col1:
-                    opts_nivel = ["Municipio"]
-                    if col_cuenca in df_full.columns: opts_nivel.append("Cuenca")
-                    if col_region in df_full.columns: opts_nivel.append("Región")
-                    
-                    nivel_analisis = st.radio("Nivel de Agregación:", opts_nivel, key="radio_multi_nivel_final")
-                    
-                    columna_filtro = col_municipio
-                    if nivel_analisis == "Cuenca": columna_filtro = col_cuenca
-                    elif nivel_analisis == "Región": columna_filtro = col_region
-
-                    opciones = sorted(df_full[columna_filtro].dropna().astype(str).unique())
-
-                with col2:
-                    seleccion = st.multiselect(
-                        f"Seleccione {nivel_analisis}s:",
-                        options=opciones,
-                        default=[opciones[0]] if len(opciones) > 0 else None
-                    )
-
-                if seleccion:
-                    df_filtrado = df_full[df_full[columna_filtro].isin(seleccion)]
-                    
-                    # Agrupación para el gráfico (Promedio mensual multianual)
-                    df_agrupado = df_filtrado.groupby(['MES_NUM', 'Nombre_Mes', columna_filtro])[col_valor].mean().reset_index()
-                    df_agrupado = df_agrupado.sort_values('MES_NUM')
-
-                    fig = px.line(
-                        df_agrupado,
-                        x='Nombre_Mes',
-                        y=col_valor,
-                        color=columna_filtro,
-                        title=f"Patrón Medio Anual Comparativo ({nivel_analisis})",
-                        markers=True,
-                        labels={col_valor: 'Precipitación (mm)', 'Nombre_Mes': 'Mes'}
-                    )
-                    
-                    fig.update_layout(hovermode="x unified", legend=dict(orientation="h", y=1.1))
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # --- BOTÓN DE DESCARGA ---
-                    df_export = df_agrupado.pivot(index=columna_filtro, columns='Nombre_Mes', values=col_valor)
-                    # Reordenar columnas
-                    cols_meses_validas = [m for m in mapa_meses.values() if m in df_export.columns]
-                    df_export = df_export[cols_meses_validas]
-                    
-                    csv_data = df_export.to_csv().encode('utf-8-sig')
-                    
-                    st.download_button(
-                        label="📥 Descargar Datos del Gráfico (CSV)",
-                        data=csv_data,
-                        file_name=f"comparativa_{nivel_analisis.lower()}.csv",
-                        mime="text/csv",
-                    )
-
-                    # --- FICHA METODOLÓGICA ---
-                    with st.expander("ℹ️ Metodología, Datos y Periodo Analizado"):
-                        min_year = df_full[col_fecha].dt.year.min()
-                        max_year = df_full[col_fecha].dt.year.max()
-                        
-                        st.markdown(f"""
-                        **Ficha Técnica del Análisis:**
-                        * **Metodología:** Promedio aritmético de la precipitación mensual histórica de todas las estaciones dentro de la zona seleccionada.
-                        * **Periodo de Registro:** {min_year} - {max_year}.
-                        * **Fuente:** Base de datos SIHCLI.
-                        """)
-                    
-                else:
-                    st.warning("Seleccione al menos un elemento para generar el reporte.")
-
-            except Exception as e:
-                st.error(f"Ocurrió un error en el procesamiento multiescalar: {e}")
-                # Debug opcional
-                # st.write(df_meta.columns)
+            st.info("👋 Para usar este módulo, primero carga los datos en la barra lateral.")
 
 def display_weekly_forecast_tab(stations_for_analysis, gdf_filtered, **kwargs):
     """Muestra el pronóstico semanal para una estación seleccionada."""
@@ -6657,10 +6485,10 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     
 
 # -------------------------------------------------------------------------
-# FUNCIÓN COMPARATIVA MULTIESCALAR (BLINDADA)
+# FUNCIÓN COMPARATIVA MULTIESCALAR (DEFINITIVA Y BLINDADA)
 # -------------------------------------------------------------------------
 def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
-    """Análisis comparativo multiescalar con reparación automática de geometría."""
+    """Análisis comparativo usando campos confirmados: 'id_estacion'."""
 
     import streamlit as st
     import pandas as pd
@@ -6669,182 +6497,140 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     from shapely import wkt
 
     st.subheader("📊 Comparativa de Regímenes de Lluvia")
-    st.info("💡 **Análisis Multiescalar:** Compara el comportamiento climático agregando datos por Municipio, Cuenca o Región.")
+    st.info("💡 **Análisis Multiescalar:** Agregación por Municipio, Cuenca o Región.")
 
-    # 1. Validación de Datos
     if df_long is None or gdf_stations is None or gdf_subcuencas is None:
-        st.warning("⚠️ Faltan datos cargados para realizar el análisis comparativo.")
+        st.warning("⚠️ Faltan datos para el análisis.")
         return
 
     try:
-        # --- PREPARACIÓN DE DATOS (COPIAS SEGURAS) ---
+        # --- 1. PREPARACIÓN Y LIMPIEZA DE DATOS ---
         df_datos = df_long.copy()
         df_meta = gdf_stations.copy()
         gdf_poligonos = gdf_subcuencas.copy()
 
-        # --- FASE 1: REPARACIÓN DE ESTACIONES (DataFrame -> GeoDataFrame) ---
-        # Si df_meta no es un GeoDataFrame o no tiene CRS, lo reconstruimos
-        if not isinstance(df_meta, gpd.GeoDataFrame) or getattr(df_meta, 'crs', None) is None:
-            # Buscamos columnas de coordenadas
-            col_lon = next((c for c in ['Longitud_geo', 'longitud', 'lon', 'LONGITUD'] if c in df_meta.columns), None)
-            col_lat = next((c for c in ['Latitud_geo', 'latitud', 'lat', 'LATITUD'] if c in df_meta.columns), None)
-            
-            if col_lon and col_lat:
-                # Limpieza de comas (por si vienen como texto "75,5")
-                try:
-                    df_meta[col_lon] = df_meta[col_lon].astype(str).str.replace(',', '.').astype(float)
-                    df_meta[col_lat] = df_meta[col_lat].astype(str).str.replace(',', '.').astype(float)
-                    
-                    # Creamos la geometría
-                    df_meta = gpd.GeoDataFrame(
-                        df_meta, 
-                        geometry=gpd.points_from_xy(df_meta[col_lon], df_meta[col_lat]),
-                        crs="EPSG:4326"
-                    )
-                except Exception as e:
-                    st.error(f"Error reconstruyendo coordenadas de estaciones: {e}")
-                    return
-            else:
-                st.error("Las estaciones perdieron su geometría y no encuentro columnas Lat/Lon para reconstruirlas.")
-                return
-
-        # --- FASE 2: REPARACIÓN DE POLÍGONOS (DataFrame -> GeoDataFrame) ---
-        if not isinstance(gdf_poligonos, gpd.GeoDataFrame) or getattr(gdf_poligonos, 'crs', None) is None:
-            if 'geometry' in gdf_poligonos.columns:
-                # Si la geometría viene como texto (WKT), la parseamos
-                try:
-                    # Convertir string a geometría si es necesario
-                    if gdf_poligonos['geometry'].dtype == 'object':
-                        from shapely import wkt
-                        gdf_poligonos['geometry'] = gdf_poligonos['geometry'].apply(
-                            lambda x: wkt.loads(x) if isinstance(x, str) else x
-                        )
-                    
-                    gdf_poligonos = gpd.GeoDataFrame(gdf_poligonos, geometry='geometry')
-                    gdf_poligonos.set_crs("EPSG:4326", inplace=True)
-                except Exception as e:
-                    st.error(f"Error reconstruyendo polígonos de cuencas: {e}")
-                    return
-            else:
-                st.error("La capa de cuencas no tiene columna de geometría.")
-                return
-
-        # --- FASE 3: UNIFICACIÓN DE SISTEMAS DE COORDENADAS (CRS) ---
-        # Aseguramos que ambos estén en WGS84
-        if df_meta.crs is None: df_meta.set_crs("EPSG:4326", inplace=True)
-        if gdf_poligonos.crs is None: gdf_poligonos.set_crs("EPSG:4326", inplace=True)
-        
-        if df_meta.crs != gdf_poligonos.crs:
-            gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
-
-        # --- FASE 4: CRUCE ESPACIAL (Spatial Join) ---
-        # Definimos columnas clave de los polígonos
-        col_region = next((c for c in gdf_poligonos.columns if c.lower() in ['subregion', 'region']), 'SUBREGION')
-        col_cuenca = next((c for c in gdf_poligonos.columns if c.lower() in ['subc_lbl', 'nombre_cuenca', 'cuenca']), 'SUBC_LBL')
-        
-        cols_poly = ['geometry']
-        if col_cuenca in gdf_poligonos.columns: cols_poly.append(col_cuenca)
-        if col_region in gdf_poligonos.columns: cols_poly.append(col_region)
-        
-        # Ejecutamos el cruce
-        df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos[cols_poly], how="left", predicate="intersects")
-
-        # --- FASE 5: UNIÓN CON DATOS DE LLUVIA ---
-        # Detectamos columnas de ID
+        # A. Normalización de la tabla de Lluvia (Datos)
+        # Si 'id_estacion' está en el índice, lo sacamos a columna
         if 'id_estacion' not in df_datos.columns and df_datos.index.name == 'id_estacion':
             df_datos = df_datos.reset_index()
-            
-        col_codigo_datos = next((c for c in ['id_estacion', 'Codigo', 'ID', 'CODIGO'] if c in df_datos.columns), None)
-        col_codigo_meta = next((c for c in ['id_estacion', 'Id_estacio', 'Codigo', 'CODIGO'] if c in df_meta.columns), None)
-        col_valor = next((c for c in ['valor', 'precipitacion_mm', 'Valor', 'P_mm'] if c in df_datos.columns), 'valor')
-        col_fecha = next((c for c in ['fecha', 'Date', 'FECHA'] if c in df_datos.columns), 'fecha')
+        
+        # B. Normalización de la tabla de Estaciones (Metadatos)
+        if 'id_estacion' not in df_meta.columns and df_meta.index.name == 'id_estacion':
+            df_meta = df_meta.reset_index()
 
-        if not col_codigo_datos or not col_codigo_meta:
-            st.error("No se encontraron columnas de ID coincidentes entre datos y estaciones.")
+        # C. Verificación de existencia de la columna clave
+        if 'id_estacion' not in df_datos.columns:
+            st.error("Error: La tabla de LLUVIA no tiene la columna 'id_estacion'.")
+            st.write("Columnas encontradas:", df_datos.columns.tolist())
+            return
+        
+        if 'id_estacion' not in df_meta.columns:
+            st.error("Error: La tabla de ESTACIONES no tiene la columna 'id_estacion'.")
+            st.write("Columnas encontradas:", df_meta.columns.tolist())
             return
 
-        # Normalizamos IDs (todo a string sin espacios)
-        df_datos[col_codigo_datos] = df_datos[col_codigo_datos].astype(str).str.strip()
-        df_meta_espacial[col_codigo_meta] = df_meta_espacial[col_codigo_meta].astype(str).str.strip()
+        # D. Conversión a String para garantizar cruce (evita error int vs str)
+        df_datos['id_estacion'] = df_datos['id_estacion'].astype(str).str.strip()
+        df_meta['id_estacion'] = df_meta['id_estacion'].astype(str).str.strip()
 
+        # --- 2. GESTIÓN ESPACIAL (Recuperación de Geometría) ---
+        # Si estaciones perdió su geometría, la reconstruimos usando lat/long
+        if not isinstance(df_meta, gpd.GeoDataFrame) or getattr(df_meta, 'crs', None) is None:
+            if 'longitud' in df_meta.columns and 'latitud' in df_meta.columns:
+                try:
+                    df_meta = gpd.GeoDataFrame(
+                        df_meta, 
+                        geometry=gpd.points_from_xy(pd.to_numeric(df_meta['longitud']), pd.to_numeric(df_meta['latitud'])),
+                        crs="EPSG:4326"
+                    )
+                except: pass
+        
+        # Si polígonos no tiene CRS, asignamos WGS84
+        if hasattr(gdf_poligonos, 'set_crs') and gdf_poligonos.crs is None:
+            gdf_poligonos.set_crs("EPSG:4326", inplace=True)
+            
+        # Asegurar proyección común
+        if hasattr(df_meta, 'to_crs') and hasattr(gdf_poligonos, 'crs'):
+            if df_meta.crs != gdf_poligonos.crs:
+                gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
+
+        # --- 3. CRUCE ESPACIAL (Estaciones -> Cuencas) ---
+        # Identificamos columnas de interés en los polígonos (Cuenca/Region)
+        col_cuenca = next((c for c in gdf_poligonos.columns if c.lower() in ['subc_lbl', 'nombre_cuenca', 'cuenca']), None)
+        col_region = next((c for c in gdf_poligonos.columns if c.lower() in ['subregion', 'region']), None)
+        
+        cols_poly = ['geometry']
+        if col_cuenca: cols_poly.append(col_cuenca)
+        if col_region: cols_poly.append(col_region)
+        
+        # Spatial Join: Asigna a cada estación la cuenca donde cae
+        df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos[cols_poly], how="left", predicate="intersects")
+
+        # --- 4. UNIÓN FINAL (Lluvia + Estaciones Ubicadas) ---
         df_full = pd.merge(
             df_datos,
             df_meta_espacial,
-            left_on=col_codigo_datos,
-            right_on=col_codigo_meta,
+            on='id_estacion', # ¡Aquí está la clave exacta!
             how='inner'
         )
 
         if df_full.empty:
-            st.warning("No hay coincidencias entre los IDs de lluvia y las estaciones ubicadas.")
+            st.warning(f"No hubo coincidencias. Revise ids. Ejemplo Lluvia: {df_datos['id_estacion'].iloc[0]}, Ejemplo Estación: {df_meta['id_estacion'].iloc[0]}")
             return
 
-        # --- FASE 6: VISUALIZACIÓN ---
-        # Preparar fechas
+        # --- 5. VISUALIZACIÓN ---
+        # Tratamiento de Fechas
+        col_fecha = 'fecha' if 'fecha' in df_full.columns else 'date'
         df_full[col_fecha] = pd.to_datetime(df_full[col_fecha], errors='coerce')
         df_full['MES_NUM'] = df_full[col_fecha].dt.month
-        mapa_meses = {1:'Ene', 2:'Feb', 3:'Mar', 4:'Abr', 5:'May', 6:'Jun', 
-                      7:'Jul', 8:'Ago', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dic'}
+        mapa_meses = {1:'Ene', 2:'Feb', 3:'Mar', 4:'Abr', 5:'May', 6:'Jun', 7:'Jul', 8:'Ago', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dic'}
         df_full['Nombre_Mes'] = df_full['MES_NUM'].map(mapa_meses)
-
-        # Interfaz de Usuario
-        col1, col2 = st.columns([1, 2])
-        col_municipio = next((c for c in df_meta.columns if c.lower() in ['municipio', 'mpio_cnmbr']), 'municipio')
         
+        col_valor = 'valor' # Confirmado en imagen
+
+        # Interfaz
+        col1, col2 = st.columns([1, 2])
+        
+        # Columna de municipio (Viene de la tabla estaciones, imagen 2ab65c.png)
+        col_municipio = 'municipio' 
+
         with col1:
-            opts_nivel = []
-            if col_municipio in df_full.columns: opts_nivel.append("Municipio")
-            if col_cuenca in df_full.columns: opts_nivel.append("Cuenca")
-            if col_region in df_full.columns: opts_nivel.append("Región")
+            opts = []
+            if col_municipio in df_full.columns: opts.append("Municipio")
+            if col_cuenca and col_cuenca in df_full.columns: opts.append("Cuenca")
+            if col_region and col_region in df_full.columns: opts.append("Región")
             
-            if not opts_nivel:
-                st.error("No se encontraron columnas de Municipio, Cuenca o Región para agrupar.")
+            if not opts:
+                st.error("No se encontraron columnas geográficas (Municipio, Cuenca) para agrupar.")
                 return
 
-            nivel_analisis = st.radio("Agrupar por:", opts_nivel, key="rd_multi_scale")
+            nivel = st.radio("Agrupar por:", opts)
             
-            col_filtro = col_municipio
-            if nivel_analisis == "Cuenca": col_filtro = col_cuenca
-            elif nivel_analisis == "Región": col_filtro = col_region
+            campo_filtro = col_municipio
+            if nivel == "Cuenca": campo_filtro = col_cuenca
+            elif nivel == "Región": campo_filtro = col_region
 
-            opciones = sorted(df_full[col_filtro].dropna().astype(str).unique())
+            # Limpiamos nulos y ordenamos
+            items_disponibles = sorted(df_full[campo_filtro].dropna().astype(str).unique())
 
         with col2:
-            seleccion = st.multiselect(
-                f"Seleccione {nivel_analisis}(s) a comparar:", 
-                options=opciones, 
-                default=opciones[:3] if len(opciones)>2 else opciones
-            )
+            seleccion = st.multiselect(f"Seleccione {nivel}:", items_disponibles, default=items_disponibles[:3] if len(items_disponibles)>2 else items_disponibles)
 
         if seleccion:
-            # Filtrar y Agrupar
-            df_filtrado = df_full[df_full[col_filtro].isin(seleccion)]
-            df_agrupado = df_filtrado.groupby(['MES_NUM', 'Nombre_Mes', col_filtro])[col_valor].mean().reset_index()
-            df_agrupado = df_agrupado.sort_values('MES_NUM')
-
-            # Gráfico Interactivo
+            # Filtrar
+            df_plot = df_full[df_full[campo_filtro].isin(seleccion)]
+            # Agrupar Promedio Mensual Multianual
+            df_gp = df_plot.groupby(['MES_NUM', 'Nombre_Mes', campo_filtro])[col_valor].mean().reset_index().sort_values('MES_NUM')
+            
             fig = px.line(
-                df_agrupado, 
-                x='Nombre_Mes', 
-                y=col_valor, 
-                color=col_filtro,
-                title=f"Ciclo Anual Promedio - Comparativa por {nivel_analisis}",
-                markers=True, 
-                labels={col_valor: 'Precipitación (mm)', 'Nombre_Mes': 'Mes'},
-                template="plotly_white"
+                df_gp, x='Nombre_Mes', y=col_valor, color=campo_filtro,
+                title=f"Régimen de Precipitación - Comparativa por {nivel}",
+                markers=True, labels={col_valor: "Precipitación (mm)"}
             )
-            fig.update_layout(hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
             
-            # Descarga de Datos
-            csv = df_agrupado.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="📥 Descargar Datos del Gráfico (CSV)",
-                data=csv,
-                file_name=f"comparativa_{nivel_analisis}.csv",
-                mime="text/csv"
-            )
+            # Descarga
+            st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv", "text/csv")
 
     except Exception as e:
-        st.error(f"Error en módulo multiescalar: {e}")
-
+        st.error(f"Error detallado en multiescalar: {e}")
