@@ -2287,7 +2287,7 @@ def display_graphs_tab(
 
         # 2. Llamamos al experto (visualizer.py)
         if df_long_safe is not None and gdf_st_safe is not None:
-            viz.display_multiscale_tab(df_long_safe, gdf_st_safe, gdf_sub_safe)
+            display_multiscale_tab(df_long_safe, gdf_st_safe, gdf_sub_safe)
         else:
             st.info("👋 Para usar este módulo, primero carga los datos en la barra lateral.")
 
@@ -6634,3 +6634,4 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
 
     except Exception as e:
         st.error(f"Error detallado en multiescalar: {e}")
+
