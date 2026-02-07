@@ -349,34 +349,45 @@ def generar_popup_bocatoma(row):
     """
 
 def generar_popup_predio(row):
-    """Popup HTML para Predios usando las columnas exactas de la tabla."""
+    """Popup HTML para Predios con mapeo exacto de columnas solicitadas."""
     
-    # 1. Extracción Exacta (Basada en tu imagen)
-    nombre = str(row.get('nombre_pre', 'Predio')).replace("'", "")
-    pk_id = str(row.get('pk_predios', 'N/A'))
-    embalse = str(row.get('embalse', 'N/A'))
+    # Función auxiliar para obtener datos limpiando valores nulos o "None"
+    def get_clean(col, default='N/A'):
+        val = row.get(col, default)
+        if val is None or str(val).lower() == 'none' or str(val).strip() == '':
+            return default
+        return str(val).strip()
+
+    # 1. Mapeo Directo (Según tu imagen de tabla)
+    # "El ID quiero que corresponda al campo nombre_pre"
+    nombre_predio = get_clean('nombre_pre', 'Predio Sin Nombre') 
     
-    # Ubicación: nomb_mpio y nombre_ver
-    mpio = str(row.get('nomb_mpio', '')).strip()
-    vereda = str(row.get('nombre_ver', '')).strip()
-    ubicacion = f"{mpio} - {vereda}" if vereda else mpio
-    if not ubicacion: ubicacion = "N/A"
+    pk = get_clean('pk_predios', 'N/A')
+    anio = get_clean('año_acuer', '-')
     
-    # Mecanismo (ojo: en tu tabla es 'mecanism' sin o)
-    mecanismo = str(row.get('mecanism', 'N/A'))
+    mpio = get_clean('nomb_mpio', '')
+    vereda = get_clean('nombre_ver', '')
+    ubicacion = f"{mpio} / {vereda}" if (mpio or vereda) else "N/A"
     
-    # Área
+    embalse = get_clean('embalse', 'N/A')
+    mecanismo = get_clean('mecanism', 'N/A')
+    
+    # 2. Formato de Área
     try:
-        val = float(row.get('area_ha', 0))
-        area_txt = f"{val:.2f} ha"
+        area_raw = row.get('area_ha', 0)
+        if area_raw is None: area_val = 0
+        else: area_val = float(area_raw)
+        area_txt = f"{area_val:.2f} ha"
     except:
         area_txt = "N/A"
 
+    # 3. HTML Estructurado
     return f"""
-    <div style='font-family:sans-serif; font-size:12px; min-width:180px;'>
-        <b style='color:#d35400; font-size:14px'>🏡 {nombre}</b>
+    <div style='font-family:sans-serif; font-size:12px; min-width:220px;'>
+        <b style='color:#d35400; font-size:14px'>🏡 {nombre_predio}</b>
         <hr style='margin:4px 0; border-top:1px solid #ddd'>
-        🆔 <b>ID:</b> {pk_id}<br>
+        🔑 <b>PK:</b> {pk}<br>
+        📅 <b>Año:</b> {anio}<br>
         📍 <b>Ubicación:</b> {ubicacion}<br>
         💧 <b>Embalse:</b> {embalse}<br>
         📜 <b>Mecanismo:</b> {mecanismo}<br>
@@ -6778,6 +6789,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
 
