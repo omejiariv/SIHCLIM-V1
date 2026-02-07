@@ -307,8 +307,29 @@ with tabs[1]:
                     conn.execute(text("INSERT INTO estaciones (id_estacion, nombre) SELECT id_estacion, nombre FROM temp_ids ON CONFLICT (id_estacion) DO NOTHING"))
                     conn.commit()
                     
-                    for i in range(0, len(df_long), chunk):
-                        df_long.iloc[i:i+chunk].to_sql('precipitacion', conn, if_exists='append', index=False, method='multi')
+                    # ✅ CÓDIGO NUEVO: CARGA INTELIGENTE (UPSERT)
+                    
+                    # 1. Cargar todo a una tabla TEMPORAL (staging)
+                    # Esto es rápido y no genera conflictos
+                    status.write(f"⏳ Subiendo {len(df_long)} datos a tabla temporal...")
+                    df_long.to_sql('temp_precipitacion', conn, if_exists='replace', index=False)
+                    
+                    # 2. Ejecutar el "Merge" (Fusión) usando SQL puro
+                    # La magia está en "ON CONFLICT ... DO UPDATE"
+                    status.write("🔄 Fusionando datos (Insertando nuevos / Actualizando existentes)...")
+                    
+                    query_upsert = text("""
+                        INSERT INTO precipitacion (fecha, id_estacion, valor)
+                        SELECT fecha, id_estacion, valor
+                        FROM temp_precipitacion
+                        ON CONFLICT (fecha, id_estacion) 
+                        DO UPDATE SET valor = EXCLUDED.valor;
+                    """)
+                    conn.execute(query_upsert)
+                    
+                    # 3. Limpieza: Borrar la tabla temporal
+                    conn.execute(text("DROP TABLE IF EXISTS temp_precipitacion"))
+                    conn.commit() # ¡Importante confirmar los cambios!
                 
                 status.update(label="✅ Carga Completa", state="complete")
                 st.balloons()
@@ -542,5 +563,6 @@ with tabs[10]:
                     conn.commit()
                     st.success("Comando ejecutado.")
         except Exception as e: st.error(str(e))
+
 
 
