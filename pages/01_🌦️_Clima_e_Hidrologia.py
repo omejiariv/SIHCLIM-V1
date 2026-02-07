@@ -140,9 +140,10 @@ def main():
             ignore_nulls = c2.checkbox("🚫 Sin Nulos", value=False)
             apply_interp = st.checkbox("🔄 Interpolación", value=False)
 
-    # En la barra lateral...
+    
+    # BOTÓN DE REFRESCAR (Asegúrate de copiar desde la primera letra 'i' de if)
     if st.button("🔄 Refrescar Datos", help="Borra la memoria y recarga desde la Base de Datos"):
-        st.cache_data.clear()  # <--- ESTA LÍNEA ES LA CLAVE MÁGICA
+        st.cache_data.clear()
         st.cache_resource.clear()
         st.rerun()
 
@@ -555,6 +556,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
