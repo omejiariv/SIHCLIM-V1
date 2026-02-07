@@ -6656,13 +6656,17 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     st_folium(m, use_container_width=True, height=600)
     
 
+# -------------------------------------------------------------------------
+# FUNCIÓN COMPARATIVA MULTIESCALAR (BLINDADA)
+# -------------------------------------------------------------------------
 def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
-    """Análisis comparativo multiescalar (Municipio, Cuenca, Región)."""
+    """Análisis comparativo multiescalar con reparación automática de geometría."""
 
     import streamlit as st
     import pandas as pd
     import plotly.express as px
     import geopandas as gpd
+    from shapely import wkt
 
     st.subheader("📊 Comparativa de Regímenes de Lluvia")
     st.info("💡 **Análisis Multiescalar:** Compara el comportamiento climático agregando datos por Municipio, Cuenca o Región.")
@@ -6678,64 +6682,88 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
         df_meta = gdf_stations.copy()
         gdf_poligonos = gdf_subcuencas.copy()
 
-        # --- BLINDAJE DE COLUMNAS (Fix: id_estacion) ---
-        # Si id_estacion está en el índice, lo sacamos a columna
-        if 'id_estacion' not in df_datos.columns and df_datos.index.name == 'id_estacion':
-            df_datos = df_datos.reset_index()
-        
-        # Detección inteligente de columnas clave
-        col_codigo_datos = next((c for c in ['id_estacion', 'Codigo', 'ID'] if c in df_datos.columns), None)
-        if not col_codigo_datos:
-            st.error("No se encontró columna de ID Estación en los datos de lluvia.")
-            return
-
-        col_codigo_meta = next((c for c in ['id_estacion', 'Id_estacio', 'Codigo'] if c in df_meta.columns), None)
-        col_valor = next((c for c in ['valor', 'precipitacion_mm', 'Valor'] if c in df_datos.columns), 'valor')
-        col_fecha = next((c for c in ['fecha', 'Date'] if c in df_datos.columns), 'fecha')
-        
-        # Columnas espaciales (Ajusta según tus shapefiles)
-        col_municipio = 'municipio'
-        col_region = next((c for c in gdf_poligonos.columns if c.lower() in ['subregion', 'region']), 'SUBREGION')
-        col_cuenca = next((c for c in gdf_poligonos.columns if c.lower() in ['subc_lbl', 'nombre_cuenca', 'cuenca']), 'SUBC_LBL')
-
-        # --- A) CRUCE ESPACIAL (Spatial Join) ---
-        # --- BLOQUE BLINDADO: REPARACIÓN GEOGRÁFICA ---
-        # 1. Asegurar que sean GeoDataFrames
-        if not isinstance(gdf_poligonos, gpd.GeoDataFrame):
-            # Intentamos recuperar la geometría si existe la columna
-            if 'geometry' in gdf_poligonos.columns:
-                from shapely import wkt
-                # A veces la geometría viene como texto, intentamos convertirla
+        # --- FASE 1: REPARACIÓN DE ESTACIONES (DataFrame -> GeoDataFrame) ---
+        # Si df_meta no es un GeoDataFrame o no tiene CRS, lo reconstruimos
+        if not isinstance(df_meta, gpd.GeoDataFrame) or getattr(df_meta, 'crs', None) is None:
+            # Buscamos columnas de coordenadas
+            col_lon = next((c for c in ['Longitud_geo', 'longitud', 'lon', 'LONGITUD'] if c in df_meta.columns), None)
+            col_lat = next((c for c in ['Latitud_geo', 'latitud', 'lat', 'LATITUD'] if c in df_meta.columns), None)
+            
+            if col_lon and col_lat:
+                # Limpieza de comas (por si vienen como texto "75,5")
                 try:
-                    gdf_poligonos['geometry'] = gdf_poligonos['geometry'].apply(lambda x: wkt.loads(x) if isinstance(x, str) else x)
-                except: pass
-                gdf_poligonos = gpd.GeoDataFrame(gdf_poligonos, geometry='geometry')
+                    df_meta[col_lon] = df_meta[col_lon].astype(str).str.replace(',', '.').astype(float)
+                    df_meta[col_lat] = df_meta[col_lat].astype(str).str.replace(',', '.').astype(float)
+                    
+                    # Creamos la geometría
+                    df_meta = gpd.GeoDataFrame(
+                        df_meta, 
+                        geometry=gpd.points_from_xy(df_meta[col_lon], df_meta[col_lat]),
+                        crs="EPSG:4326"
+                    )
+                except Exception as e:
+                    st.error(f"Error reconstruyendo coordenadas de estaciones: {e}")
+                    return
             else:
-                st.error("El archivo de cuencas/polígonos perdió su geometría. Recárgalo.")
+                st.error("Las estaciones perdieron su geometría y no encuentro columnas Lat/Lon para reconstruirlas.")
                 return
 
-        # 2. Asegurar CRS (Proyección)
-        if gdf_poligonos.crs is None:
-            gdf_poligonos.set_crs("EPSG:4326", inplace=True)
+        # --- FASE 2: REPARACIÓN DE POLÍGONOS (DataFrame -> GeoDataFrame) ---
+        if not isinstance(gdf_poligonos, gpd.GeoDataFrame) or getattr(gdf_poligonos, 'crs', None) is None:
+            if 'geometry' in gdf_poligonos.columns:
+                # Si la geometría viene como texto (WKT), la parseamos
+                try:
+                    # Convertir string a geometría si es necesario
+                    if gdf_poligonos['geometry'].dtype == 'object':
+                        from shapely import wkt
+                        gdf_poligonos['geometry'] = gdf_poligonos['geometry'].apply(
+                            lambda x: wkt.loads(x) if isinstance(x, str) else x
+                        )
+                    
+                    gdf_poligonos = gpd.GeoDataFrame(gdf_poligonos, geometry='geometry')
+                    gdf_poligonos.set_crs("EPSG:4326", inplace=True)
+                except Exception as e:
+                    st.error(f"Error reconstruyendo polígonos de cuencas: {e}")
+                    return
+            else:
+                st.error("La capa de cuencas no tiene columna de geometría.")
+                return
+
+        # --- FASE 3: UNIFICACIÓN DE SISTEMAS DE COORDENADAS (CRS) ---
+        # Aseguramos que ambos estén en WGS84
+        if df_meta.crs is None: df_meta.set_crs("EPSG:4326", inplace=True)
+        if gdf_poligonos.crs is None: gdf_poligonos.set_crs("EPSG:4326", inplace=True)
         
-        if df_meta.crs is None:
-            df_meta.set_crs("EPSG:4326", inplace=True)
-
-        if gdf_poligonos.crs != df_meta.crs:
+        if df_meta.crs != gdf_poligonos.crs:
             gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
-        # -----------------------------------------------
 
-        # Preparamos polígonos
+        # --- FASE 4: CRUCE ESPACIAL (Spatial Join) ---
+        # Definimos columnas clave de los polígonos
+        col_region = next((c for c in gdf_poligonos.columns if c.lower() in ['subregion', 'region']), 'SUBREGION')
+        col_cuenca = next((c for c in gdf_poligonos.columns if c.lower() in ['subc_lbl', 'nombre_cuenca', 'cuenca']), 'SUBC_LBL')
+        
         cols_poly = ['geometry']
         if col_cuenca in gdf_poligonos.columns: cols_poly.append(col_cuenca)
         if col_region in gdf_poligonos.columns: cols_poly.append(col_region)
         
-        # Join espacial
+        # Ejecutamos el cruce
         df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos[cols_poly], how="left", predicate="intersects")
 
+        # --- FASE 5: UNIÓN CON DATOS DE LLUVIA ---
+        # Detectamos columnas de ID
+        if 'id_estacion' not in df_datos.columns and df_datos.index.name == 'id_estacion':
+            df_datos = df_datos.reset_index()
+            
+        col_codigo_datos = next((c for c in ['id_estacion', 'Codigo', 'ID', 'CODIGO'] if c in df_datos.columns), None)
+        col_codigo_meta = next((c for c in ['id_estacion', 'Id_estacio', 'Codigo', 'CODIGO'] if c in df_meta.columns), None)
+        col_valor = next((c for c in ['valor', 'precipitacion_mm', 'Valor', 'P_mm'] if c in df_datos.columns), 'valor')
+        col_fecha = next((c for c in ['fecha', 'Date', 'FECHA'] if c in df_datos.columns), 'fecha')
 
-        # --- B) UNIÓN DATOS + METADATOS ---
-        # Normalizamos IDs para el merge
+        if not col_codigo_datos or not col_codigo_meta:
+            st.error("No se encontraron columnas de ID coincidentes entre datos y estaciones.")
+            return
+
+        # Normalizamos IDs (todo a string sin espacios)
         df_datos[col_codigo_datos] = df_datos[col_codigo_datos].astype(str).str.strip()
         df_meta_espacial[col_codigo_meta] = df_meta_espacial[col_codigo_meta].astype(str).str.strip()
 
@@ -6748,73 +6776,75 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
         )
 
         if df_full.empty:
-            st.warning("No hay coincidencia entre los IDs de lluvia y los IDs de las estaciones.")
+            st.warning("No hay coincidencias entre los IDs de lluvia y las estaciones ubicadas.")
             return
 
-        # --- C) VISUALIZACIÓN ---
-        # Convertir fecha
+        # --- FASE 6: VISUALIZACIÓN ---
+        # Preparar fechas
         df_full[col_fecha] = pd.to_datetime(df_full[col_fecha], errors='coerce')
         df_full['MES_NUM'] = df_full[col_fecha].dt.month
         mapa_meses = {1:'Ene', 2:'Feb', 3:'Mar', 4:'Abr', 5:'May', 6:'Jun', 
                       7:'Jul', 8:'Ago', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dic'}
         df_full['Nombre_Mes'] = df_full['MES_NUM'].map(mapa_meses)
 
+        # Interfaz de Usuario
         col1, col2 = st.columns([1, 2])
+        col_municipio = next((c for c in df_meta.columns if c.lower() in ['municipio', 'mpio_cnmbr']), 'municipio')
         
         with col1:
-            opts_nivel = ["Municipio"]
+            opts_nivel = []
+            if col_municipio in df_full.columns: opts_nivel.append("Municipio")
             if col_cuenca in df_full.columns: opts_nivel.append("Cuenca")
             if col_region in df_full.columns: opts_nivel.append("Región")
             
+            if not opts_nivel:
+                st.error("No se encontraron columnas de Municipio, Cuenca o Región para agrupar.")
+                return
+
             nivel_analisis = st.radio("Agrupar por:", opts_nivel, key="rd_multi_scale")
             
             col_filtro = col_municipio
             if nivel_analisis == "Cuenca": col_filtro = col_cuenca
             elif nivel_analisis == "Región": col_filtro = col_region
 
-            # Lista de opciones disponibles (sin nulos)
             opciones = sorted(df_full[col_filtro].dropna().astype(str).unique())
 
         with col2:
-            seleccion = st.multiselect(f"Seleccione {nivel_analisis}(s) a comparar:", options=opciones, default=opciones[:2] if len(opciones)>1 else None)
+            seleccion = st.multiselect(
+                f"Seleccione {nivel_analisis}(s) a comparar:", 
+                options=opciones, 
+                default=opciones[:3] if len(opciones)>2 else opciones
+            )
 
         if seleccion:
-            # Filtrar
+            # Filtrar y Agrupar
             df_filtrado = df_full[df_full[col_filtro].isin(seleccion)]
-            
-            # Agrupar (Ciclo Anual Promedio)
             df_agrupado = df_filtrado.groupby(['MES_NUM', 'Nombre_Mes', col_filtro])[col_valor].mean().reset_index()
             df_agrupado = df_agrupado.sort_values('MES_NUM')
 
-            # Gráfico
+            # Gráfico Interactivo
             fig = px.line(
-                df_agrupado, x='Nombre_Mes', y=col_valor, color=col_filtro,
+                df_agrupado, 
+                x='Nombre_Mes', 
+                y=col_valor, 
+                color=col_filtro,
                 title=f"Ciclo Anual Promedio - Comparativa por {nivel_analisis}",
-                markers=True, labels={col_valor: 'Precipitación (mm)'}
+                markers=True, 
+                labels={col_valor: 'Precipitación (mm)', 'Nombre_Mes': 'Mes'},
+                template="plotly_white"
             )
+            fig.update_layout(hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
             
-            # Descarga
+            # Descarga de Datos
             csv = df_agrupado.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 Descargar Datos Comparativos", csv, "comparativa.csv", "text/csv")
+            st.download_button(
+                label="📥 Descargar Datos del Gráfico (CSV)",
+                data=csv,
+                file_name=f"comparativa_{nivel_analisis}.csv",
+                mime="text/csv"
+            )
 
     except Exception as e:
-
         st.error(f"Error en módulo multiescalar: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
