@@ -2522,34 +2522,49 @@ def display_satellite_imagery_tab(gdf_filtered):
             )
 
 
-def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_zona, gdf_buffer, gdf_predios, gdf_bocatomas=None):
+def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_zona, gdf_buffer, gdf_predios, gdf_bocatomas=None, gdf_municipios=None):
     """
-    Renderiza el selector y el mapa en Streamlit.
+    Interfaz de Usuario: Selectores + Mapa.
     """
-    # Selector de Capa
-    opciones = list(matrices.keys())
-    # Ordenar opciones para que 'Precipitación' salga primero si existe
-    opciones.sort()
+    # 1. Panel de Control Visual
+    opciones = sorted(list(matrices.keys()))
     
-    c_sel, c_pal, c_op = st.columns([3, 2, 2])
-    capa_sel = c_sel.selectbox("Capa a Visualizar:", opciones)
+    c1, c2, c3 = st.columns([3, 2, 2])
     
-    # Obtener el grid seleccionado
+    with c1:
+        capa_sel = st.selectbox("Capa a Visualizar:", opciones)
+    
+    with c2:
+        # Paleta Inteligente según capa
+        idx_def = 0
+        paletas = ["Spectral_r", "viridis", "RdYlBu", "YlGnBu", "terrain", "magma", "jet", "coolwarm"]
+        if 'Elevación' in capa_sel: idx_def = paletas.index('terrain')
+        elif 'Precipitación' in capa_sel: idx_def = paletas.index('Spectral_r')
+        elif 'Temperatura' in capa_sel: idx_def = paletas.index('RdYlBu')
+        
+        cmap_user = st.selectbox("Paleta de Color:", paletas, index=idx_def)
+    
+    with c3:
+        opacidad = st.slider("Opacidad:", 0.0, 1.0, 0.7)
+    
+    # 2. Generación del Mapa
     grid_z = matrices[capa_sel]
     
-    # Generar Mapa
     m = generar_mapa_interactivo(
-        grid=grid_z,
+        grid_data=grid_z,
         bounds=gdf_buffer.total_bounds,
         gdf_stations=gdf_stations,
         gdf_zona=gdf_zona,
         gdf_buffer=gdf_buffer,
         gdf_predios=gdf_predios,
-        gdf_bocatomas=gdf_bocatomas, # <--- Pasamos bocatomas separado
-        nombre_capa=capa_sel
+        gdf_bocatomas=gdf_bocatomas,
+        gdf_municipios=gdf_municipios, # <--- Nuevo argumento
+        nombre_capa=capa_sel,
+        cmap_name=cmap_user, # <--- Pasamos la elección del usuario
+        opacidad=opacidad
     )
     
-    st_folium(m, use_container_width=True, height=500)
+    st_folium(m, use_container_width=True, height=600)
 
 
 
@@ -6323,16 +6338,13 @@ def display_current_filters(stations_sel, regions_sel, munis_sel, year_range, in
             st.markdown(f"**🏙️ Municipios:** {txt_munis}")
 
 
-# --- B. MAPA INTERACTIVO PRINCIPAL ---
-def generar_mapa_interactivo(grid, bounds, gdf_stations, gdf_zona, gdf_buffer, gdf_predios=None, gdf_bocatomas=None, nombre_capa="Variable"):
+# --- B. MAPA INTERACTIVO MAESTRO ---
+def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buffer, 
+                             gdf_predios=None, gdf_bocatomas=None, gdf_municipios=None,
+                             nombre_capa="Variable", cmap_name="Spectral_r", opacidad=0.7):
     """
-    Genera el mapa Folium con:
-    1. Raster (Variable interpolada) + Leyenda
-    2. Vectores (Zona, Buffer, Predios, Bocatomas)
-    3. Estaciones (Puntos con Popup)
+    Genera el mapa completo con Raster corregido, Isolíneas, Vectores y Satélite.
     """
-    import matplotlib.pyplot as plt
-    
     # 1. Configuración Base
     minx, miny, maxx, maxy = bounds
     center_lat = (miny + maxy) / 2
@@ -6341,122 +6353,156 @@ def generar_mapa_interactivo(grid, bounds, gdf_stations, gdf_zona, gdf_buffer, g
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=11,
-        tiles="CartoDB positron",
+        tiles=None, # Lo definimos manualmente abajo para tener control
         control_scale=True
     )
     
-    # 2. RASTER OVERLAY (El Mapa de Colores) + LEYENDA
-    if grid is not None:
-        grid_z = grid[0] # grid viene como tupla (Z, x, y) o solo Z array. Asumimos Z array si entra procesado.
-        if isinstance(grid, tuple): grid_z = grid[0]
+    # Capas Base (Satélite y Mapa Claro)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="🛰️ Satélite",
+        overlay=False
+    ).add_to(m)
+    
+    folium.TileLayer(
+        tiles="CartoDB positron",
+        name="🗺️ Mapa Claro",
+        overlay=False
+    ).add_to(m)
 
-        # Definir Paleta y Rangos
-        vmin = np.nanmin(grid_z)
-        vmax = np.nanmax(grid_z)
+    # 2. RASTER OVERLAY (El Mapa de Colores)
+    if grid_data is not None:
+        # Extraer array si viene como tupla
+        Z = grid_data[0] if isinstance(grid_data, tuple) else grid_data
+        Z = Z.astype(float)
         
-        # Selección de colores según el tipo de variable
-        if 'Precipitación' in nombre_capa:
-            colors = ['#f7fbff', '#08306b'] # Azules (Blues)
-            caption = "Precipitación (mm/año)"
-        elif 'Temperatura' in nombre_capa:
-            colors = ['#fff5f0', '#67000d'] # Rojos (Reds)
-            caption = "Temperatura (°C)"
-        elif 'Erosión' in nombre_capa:
-            colors = ['#fff5eb', '#7f2704'] # Naranjas (Oranges)
-            caption = "Susceptibilidad Erosión"
-        else:
-            colors = ['#d73027', '#4575b4'] # Spectral divergente (RdYlBu_r aprox)
-            caption = nombre_capa
-
-        # Crear Colormap (Leyenda)
-        colormap = cm.LinearColormap(colors=colors, vmin=vmin, vmax=vmax, caption=caption)
-        
-        # Renderizar Imagen
+        # Calcular rangos inteligentes (Percentiles) para evitar Cajas Grises por outliers
         try:
-            # Normalizar para imagen (0-1) usando la función de matplotlib para tener colores suaves
-            import matplotlib.cm as cm_mpl
-            norm = plt.Normalize(vmin=vmin, vmax=vmax)
-            cmap_mpl = plt.cm.get_cmap('Spectral_r' if 'Precip' in nombre_capa else 'viridis') # Fallback robusto
-            
-            image_data = cmap_mpl(norm(grid_z))
-            image_data[np.isnan(grid_z), 3] = 0 # Transparencia en nulos
+            valid = Z[~np.isnan(Z)]
+            if len(valid) > 0:
+                vmin, vmax = np.percentile(valid, 2), np.percentile(valid, 98)
+                if vmin == vmax: vmin, vmax = np.min(valid), np.max(valid) + 0.01
+            else:
+                vmin, vmax = 0, 1
+        except:
+            vmin, vmax = 0, 1
 
+        # Generar Imagen RGBA usando Matplotlib
+        try:
+            norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+            cmap = plt.get_cmap(cmap_name)
+            rgba_img = cmap(norm(Z))
+            
+            # Aplicar transparencia a los NaNs
+            rgba_img[..., 3] = np.where(np.isnan(Z), 0, opacidad)
+            
+            # IMPORTANTE: np.flipud para corregir orientación vertical
             folium.raster_layers.ImageOverlay(
-                image=image_data,
-                bounds=[[miny, minx], [maxy, maxx]],
-                opacity=0.7,
-                name=nombre_capa,
+                image=np.flipud(rgba_img),
+                bounds=[[miny, minx], [maxy, maxx]], # [LatMin, LonMin], [LatMax, LonMax]
+                name=f"🎨 {nombre_capa}",
+                opacity=1, # La opacidad ya va en el canal Alpha
                 mercator_project=True
             ).add_to(m)
             
-            # Agregar la leyenda al mapa
+            # Leyenda de Colores (Branca)
+            colors_hex = [mcolors.to_hex(cmap(i)) for i in np.linspace(0, 1, 5)]
+            colormap = cm.LinearColormap(colors=colors_hex, vmin=vmin, vmax=vmax, caption=nombre_capa)
             colormap.add_to(m)
             
         except Exception as e:
             print(f"Error renderizando raster: {e}")
 
-    # 3. CAPAS VECTORIALES (Separadas)
+    # 3. ISOLÍNEAS (Restauradas)
+    if grid_data is not None:
+        fg_iso = folium.FeatureGroup(name="〰️ Isolíneas", overlay=True, show=True)
+        try:
+            # Suavizado leve para curvas bonitas
+            Z_Smooth = gaussian_filter(np.nan_to_num(Z, nan=np.nanmean(Z)), sigma=1.0)
+            
+            # Crear grid de coordenadas para contour
+            xi = np.linspace(minx, maxx, Z.shape[1])
+            yi = np.linspace(miny, maxy, Z.shape[0])
+            grid_x_mesh, grid_y_mesh = np.meshgrid(xi, yi)
+            
+            # Generar contornos sin pintar en pantalla
+            fig_iso, ax_iso = plt.subplots()
+            contours = ax_iso.contour(grid_x_mesh, grid_y_mesh, Z_Smooth, levels=10)
+            plt.close(fig_iso) # Cerrar figura para liberar memoria
+            
+            # Convertir a Folium
+            for i, collection in enumerate(contours.collections):
+                val = contours.levels[i]
+                for path in collection.get_paths():
+                    coords = path.vertices
+                    # Convertir a [[Lat, Lon]]
+                    lat_lon_coords = [[p[1], p[0]] for p in coords]
+                    if len(lat_lon_coords) > 5:
+                        folium.PolyLine(
+                            lat_lon_coords, color='black', weight=0.5, opacity=0.6,
+                            tooltip=f"{val:.1f}"
+                        ).add_to(fg_iso)
+            fg_iso.add_to(m)
+        except Exception as e:
+            print(f"Error isolíneas: {e}")
+
+    # 4. CAPAS VECTORIALES
     
-    # A. Zona de Estudio (Cuenca)
+    # Contexto: Municipios (Nuevo)
+    if gdf_municipios is not None and not gdf_municipios.empty:
+        folium.GeoJson(
+            gdf_municipios,
+            name="🏛️ Municipios",
+            style_function=lambda x: {'color': 'gray', 'weight': 1, 'fill': False, 'dashArray': '5, 5'},
+            tooltip=folium.GeoJsonTooltip(fields=['MPIO_CNMBR'], aliases=['Municipio:']) if 'MPIO_CNMBR' in gdf_municipios.columns else None
+        ).add_to(m)
+
     if gdf_zona is not None:
         folium.GeoJson(
-            gdf_zona,
-            name="Cuenca / Zona",
-            style_function=lambda x: {'color': 'black', 'weight': 2, 'fillOpacity': 0}
+            gdf_zona, name="🟦 Cuenca",
+            style_function=lambda x: {'color': 'black', 'weight': 2, 'fill': False}
         ).add_to(m)
         
-    # B. Buffer
     if gdf_buffer is not None:
         folium.GeoJson(
-            gdf_buffer,
-            name="Buffer Análisis",
+            gdf_buffer, name="⭕ Buffer",
             style_function=lambda x: {'color': 'red', 'weight': 1, 'dashArray': '5, 5', 'fill': False}
         ).add_to(m)
 
-    # C. Predios (Capa Separada)
     if gdf_predios is not None and not gdf_predios.empty:
         folium.GeoJson(
-            gdf_predios,
-            name="📂 Predios",
+            gdf_predios, name="📂 Predios",
             tooltip=folium.GeoJsonTooltip(fields=['nombre_predio'], aliases=['Predio:']),
-            style_function=lambda x: {'color': 'orange', 'weight': 1, 'fillOpacity': 0.2}
+            style_function=lambda x: {'color': 'orange', 'weight': 1, 'fillOpacity': 0.2},
+            show=False
         ).add_to(m)
 
-    # D. Bocatomas (Capa Separada) <--- SOLICITUD 3
     if gdf_bocatomas is not None and not gdf_bocatomas.empty:
-        # Usamos CircleMarker para bocatomas si son puntos, o GeoJson si son polígonos
         folium.GeoJson(
-            gdf_bocatomas,
-            name="🚰 Bocatomas",
+            gdf_bocatomas, name="🚰 Bocatomas",
             tooltip=folium.GeoJsonTooltip(fields=['nombre_predio'], aliases=['Bocatoma:']),
-            style_function=lambda x: {'color': 'blue', 'weight': 2, 'fillColor': 'cyan', 'fillOpacity': 0.8},
-            marker=folium.CircleMarker(radius=5, fill=True, color='blue') # Si son puntos
+            marker=folium.CircleMarker(radius=5, fill=True, color='blue', fillColor='cyan'),
+            show=True
         ).add_to(m)
 
-    # 4. ESTACIONES (Con Popup Enriquecido)
+    # 5. ESTACIONES
     if gdf_stations is not None and not gdf_stations.empty:
         fg_stations = folium.FeatureGroup(name="🌦️ Estaciones")
-        
         for _, row in gdf_stations.iterrows():
-            html = generar_popup_html(row, valor_col='ppt_media')
-            
+            html = generar_popup_html(row)
             folium.CircleMarker(
                 location=[row.geometry.y, row.geometry.x],
-                radius=5,
-                color='black',
-                weight=1,
-                fill=True,
-                fill_color='#3498db',
-                fill_opacity=1,
+                radius=5, color='black', weight=1, fill=True, fill_color='#3498db', fill_opacity=1,
                 popup=folium.Popup(html, max_width=250),
                 tooltip=row.get('nombre', 'Estación')
             ).add_to(fg_stations)
-            
         fg_stations.add_to(m)
 
-    # 5. CONTROLES
+    # 6. CONTROLES FINALES
     folium.LayerControl(position='topright', collapsed=False).add_to(m)
     Fullscreen().add_to(m)
+    MousePosition().add_to(m)
     MeasureControl(position='bottomleft').add_to(m)
     
     return m
@@ -6606,5 +6652,6 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
