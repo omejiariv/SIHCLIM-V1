@@ -6484,12 +6484,11 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     )
     st_folium(m, use_container_width=True, height=600)
     
-
 # -------------------------------------------------------------------------
-# FUNCIÓN COMPARATIVA MULTIESCALAR (CON LIMPIEZA DE BOM)
+# FUNCIÓN COMPARATIVA MULTIESCALAR (CONVERSIÓN DE COORDENADAS ROBUSTA)
 # -------------------------------------------------------------------------
 def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
-    """Análisis comparativo con limpieza de caracteres extraños (BOM) en columnas."""
+    """Análisis comparativo con limpieza de BOM y conversión forzada de coordenadas."""
 
     import streamlit as st
     import pandas as pd
@@ -6504,69 +6503,71 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
         return
 
     try:
-        # --- 1. PREPARACIÓN Y LIMPIEZA DE DATOS ---
+        # --- 1. PREPARACIÓN Y LIMPIEZA DE COLUMNAS (BOM) ---
         df_datos = df_long.copy()
         df_meta = gdf_stations.copy()
         gdf_poligonos = gdf_subcuencas.copy()
 
-        # --- 🧹 BLOQUE CRÍTICO: LIMPIEZA DE BOM / FANTASMAS ---
-        # Eliminamos caracteres raros (ï»¿) que Excel agrega al inicio de los nombres
+        # Limpieza de caracteres fantasma (ï»¿)
         df_datos.columns = df_datos.columns.str.replace('ï»¿', '').str.strip()
         df_meta.columns = df_meta.columns.str.replace('ï»¿', '').str.strip()
         
-        # Normalizamos nombres comunes a 'id_estacion' por si acaso
+        # Mapeo de seguridad
         mapa_nombres = {
             'Id_estacio': 'id_estacion', 'Codigo': 'id_estacion', 'ID': 'id_estacion',
             'nom_est': 'nombre', 'municipio': 'municipio'
         }
         df_meta.rename(columns=mapa_nombres, inplace=True)
         df_datos.rename(columns=mapa_nombres, inplace=True)
-        # -------------------------------------------------------
 
-        # A. Normalización de la tabla de Lluvia (Datos)
-        if 'id_estacion' not in df_datos.columns and df_datos.index.name == 'id_estacion':
-            df_datos = df_datos.reset_index()
-        
-        # B. Normalización de la tabla de Estaciones (Metadatos)
-        if 'id_estacion' not in df_meta.columns and df_meta.index.name == 'id_estacion':
-            df_meta = df_meta.reset_index()
-
-        # C. Verificación FINAL
+        # Validación básica de columnas clave
         if 'id_estacion' not in df_datos.columns:
-            st.error(f"Error: No encuentro 'id_estacion' en Lluvia. Columnas: {list(df_datos.columns)}")
+            st.error(f"Error: No encuentro 'id_estacion' en Lluvia. Cols: {list(df_datos.columns)}")
             return
-        
         if 'id_estacion' not in df_meta.columns:
-            st.error(f"Error: No encuentro 'id_estacion' en Estaciones. Columnas: {list(df_meta.columns)}")
+            st.error(f"Error: No encuentro 'id_estacion' en Estaciones. Cols: {list(df_meta.columns)}")
             return
 
-        # D. Conversión a String para garantizar cruce
+        # Normalización de IDs a texto
         df_datos['id_estacion'] = df_datos['id_estacion'].astype(str).str.strip()
         df_meta['id_estacion'] = df_meta['id_estacion'].astype(str).str.strip()
 
-        # --- 2. GESTIÓN ESPACIAL ---
-        # Si estaciones perdió su geometría, la reconstruimos usando lat/long
+        # --- 2. GESTIÓN ESPACIAL (EL PUNTO CLAVE) ---
+        # Verificamos si es GeoDataFrame, si no, lo convertimos A LA FUERZA
         if not isinstance(df_meta, gpd.GeoDataFrame) or getattr(df_meta, 'crs', None) is None:
-            # Buscamos columnas de coordenadas (tu imagen muestra 'longitud' y 'latitud')
+            
+            # Verificar columnas de coordenadas
             if 'longitud' in df_meta.columns and 'latitud' in df_meta.columns:
-                try:
-                    df_meta = gpd.GeoDataFrame(
-                        df_meta, 
-                        geometry=gpd.points_from_xy(pd.to_numeric(df_meta['longitud']), pd.to_numeric(df_meta['latitud'])),
-                        crs="EPSG:4326"
-                    )
-                except: pass
-        
-        # Asegurar CRS en polígonos
+                # 1. Limpieza: Reemplazar comas por puntos y forzar a numérico
+                # 'errors=coerce' convertirá "None", textos o vacíos en NaN (Not a Number)
+                df_meta['longitud'] = pd.to_numeric(df_meta['longitud'].astype(str).str.replace(',', '.'), errors='coerce')
+                df_meta['latitud'] = pd.to_numeric(df_meta['latitud'].astype(str).str.replace(',', '.'), errors='coerce')
+                
+                # 2. Eliminar filas con coordenadas inválidas (NaN)
+                conteo_antes = len(df_meta)
+                df_meta = df_meta.dropna(subset=['longitud', 'latitud'])
+                
+                if df_meta.empty:
+                    st.error("Error: Todas las estaciones tienen coordenadas inválidas o vacías.")
+                    return
+
+                # 3. Crear GeoDataFrame
+                df_meta = gpd.GeoDataFrame(
+                    df_meta, 
+                    geometry=gpd.points_from_xy(df_meta['longitud'], df_meta['latitud']),
+                    crs="EPSG:4326"
+                )
+            else:
+                st.error("Error: La tabla de estaciones no tiene columnas 'latitud' y 'longitud'.")
+                return
+
+        # Preparación de Polígonos (Cuencas)
         if hasattr(gdf_poligonos, 'set_crs') and gdf_poligonos.crs is None:
             gdf_poligonos.set_crs("EPSG:4326", inplace=True)
-            
-        # Unificar proyección
-        if hasattr(df_meta, 'to_crs') and hasattr(gdf_poligonos, 'crs'):
-            if df_meta.crs != gdf_poligonos.crs:
-                gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
+        if df_meta.crs != gdf_poligonos.crs:
+            gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
 
-        # --- 3. CRUCE ESPACIAL ---
+        # --- 3. CRUCE ESPACIAL (Spatial Join) ---
         col_cuenca = next((c for c in gdf_poligonos.columns if c.lower() in ['subc_lbl', 'nombre_cuenca', 'cuenca']), None)
         col_region = next((c for c in gdf_poligonos.columns if c.lower() in ['subregion', 'region']), None)
         
@@ -6574,18 +6575,14 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
         if col_cuenca: cols_poly.append(col_cuenca)
         if col_region: cols_poly.append(col_region)
         
+        # AHORA SÍ: df_meta es garantizado GeoDataFrame
         df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos[cols_poly], how="left", predicate="intersects")
 
         # --- 4. UNIÓN FINAL ---
-        df_full = pd.merge(
-            df_datos,
-            df_meta_espacial,
-            on='id_estacion',
-            how='inner'
-        )
+        df_full = pd.merge(df_datos, df_meta_espacial, on='id_estacion', how='inner')
 
         if df_full.empty:
-            st.warning("No hubo coincidencias de ID entre estaciones y datos de lluvia.")
+            st.warning("No hubo coincidencias. Verifique que los IDs de estación coincidan entre los archivos.")
             return
 
         # --- 5. VISUALIZACIÓN ---
@@ -6596,10 +6593,9 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
         df_full['Nombre_Mes'] = df_full['MES_NUM'].map(mapa_meses)
         
         col_valor = 'valor'
+        col_municipio = 'municipio'
 
         col1, col2 = st.columns([1, 2])
-        col_municipio = 'municipio' 
-
         with col1:
             opts = []
             if col_municipio in df_full.columns: opts.append("Municipio")
@@ -6630,8 +6626,8 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
                 markers=True, labels={col_valor: "Precipitación (mm)"}
             )
             st.plotly_chart(fig, use_container_width=True)
-            
             st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv", "text/csv")
 
     except Exception as e:
-        st.error(f"Error detallado en multiescalar: {e}")
+        st.error(f"Error crítico en multiescalar: {e}")
+
