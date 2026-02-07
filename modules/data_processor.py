@@ -137,7 +137,7 @@ def load_and_process_all_data():
         except Exception as e:
             st.error(f"Error cargando Precipitación: {e}")
             df_long = pd.DataFrame() # Evita que la app colapse si falla
-
+            
         # 3. GEOMETRÍAS y 4. ENSO (Sin cambios)
         try:
             sql_geo = text("SELECT nombre, tipo_geometria, ST_AsText(geom) as wkt FROM geometrias")
@@ -177,3 +177,4 @@ def complete_series(df):
     df[Config.PRECIPITATION_COL] = df[Config.PRECIPITATION_COL].interpolate(method="linear", limit_direction="both")
 
     return df
+
