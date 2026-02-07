@@ -6534,11 +6534,11 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     st_folium(m, use_container_width=True, height=600)
     
 # -------------------------------------------------------------------------
-# FUNCIÓN COMPARATIVA MULTIESCALAR (CON BYPASS DE EMERGENCIA 🚨)
+# FUNCIÓN COMPARATIVA MULTIESCALAR (BYPASS + DETECTOR DE ID MEJORADO 🛡️)
 # -------------------------------------------------------------------------
 def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
     """
-    Versión con recarga directa desde SQL para ignorar el caché corrupto.
+    Versión con recarga directa SQL y detector flexible de IDs de estación.
     """
     import streamlit as st
     import pandas as pd
@@ -6546,7 +6546,6 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
     import geopandas as gpd
     from sqlalchemy import text
     
-    # Intentamos importar el gestor de base de datos
     try:
         from modules.db_manager import get_engine
     except ImportError:
@@ -6555,32 +6554,26 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
 
     st.subheader("📊 Comparativa de Regímenes de Lluvia")
     
-    # --- 🚨 BYPASS DE EMERGENCIA: RECARGA DIRECTA 🚨 ---
-    # Ignoramos el df_long_ignored que viene de la app porque está incompleto.
-    # Vamos directamente a la fuente (Base de Datos).
+    # --- 🚨 BYPASS DE EMERGENCIA 🚨 ---
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            # Consulta rápida para traer todo fresco
+            # Traemos id_estacion explícitamente desde la BD
             query = "SELECT fecha, id_estacion, valor FROM precipitacion"
             df_fresh = pd.read_sql(query, conn)
             
-            # Formateo inmediato
             df_fresh['fecha'] = pd.to_datetime(df_fresh['fecha'])
             df_fresh['MES_NUM'] = df_fresh['fecha'].dt.month
             
-            # Verificación de datos recuperados
             if 1 in df_fresh['MES_NUM'].unique():
-                st.toast("✅ Datos de Enero recuperados exitosamente desde BD.", icon="🥑")
-            else:
-                st.warning("⚠️ Aún no veo datos de Enero en la Base de Datos.")
+                st.toast("✅ Datos de Enero recuperados exitosamente.", icon="🥑")
             
-            df_datos = df_fresh.copy() # Usamos ESTOS datos, no los viejos
+            df_datos = df_fresh.copy()
             
     except Exception as e:
         st.error(f"Error al recargar datos frescos: {e}")
         return
-    # -------------------------------------------------------
+    # ----------------------------------
 
     st.info("💡 **Análisis Multiescalar:** Agregación por Municipio, Cuenca o Región.")
 
@@ -6589,19 +6582,30 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
         return
 
     try:
-        # --- 1. PREPARACIÓN DE METADATOS ---
+        # --- 1. PREPARACIÓN DE METADATOS (CORRECCIÓN AQUÍ) ---
         df_meta = gdf_stations.copy()
         gdf_poligonos = gdf_subcuencas.copy()
 
-        # Normalización de IDs
-        col_id_dato = next((c for c in df_datos.columns if c.lower() in ['id_estacion', 'codigo']), 'id_estacion')
-        col_id_meta = next((c for c in df_meta.columns if c.lower() in ['id_estacion', 'codigo']), 'id_estacion')
-        
+        # A. Normalización ID en DATOS (Sabemos que es 'id_estacion' porque viene del SQL)
+        col_id_dato = 'id_estacion' 
         df_datos[col_id_dato] = df_datos[col_id_dato].astype(str).str.strip()
+
+        # B. Normalización ID en ESTACIONES (Aquí fallaba)
+        # Lista ampliada de posibles nombres (Shapefiles suelen cortar a 10 caracteres)
+        posibles_ids = ['id_estacion', 'id_estacio', 'codigo', 'code', 'station_id', 'id', 'cod_estacion']
+        
+        # Buscamos la primera coincidencia
+        col_id_meta = next((c for c in df_meta.columns if c.lower() in posibles_ids), None)
+        
+        # Si no encuentra columna, advertimos y mostramos qué columnas hay
+        if not col_id_meta:
+            st.error(f"❌ No encuentro la columna de ID en el archivo de estaciones. Columnas disponibles: {list(df_meta.columns)}")
+            return
+
+        # Limpiamos usando la columna encontrada
         df_meta[col_id_meta] = df_meta[col_id_meta].astype(str).str.strip()
 
         # --- 2. GESTIÓN ESPACIAL ---
-        # Garantizamos GeoDataFrame para estaciones
         if not isinstance(df_meta, gpd.GeoDataFrame):
             if 'longitud' in df_meta.columns and 'latitud' in df_meta.columns:
                 df_meta = gpd.GeoDataFrame(
@@ -6610,7 +6614,6 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
                     crs="EPSG:4326"
                 )
         
-        # Aseguramos proyecciones
         if gdf_poligonos.crs is None: gdf_poligonos.set_crs("EPSG:4326", inplace=True)
         if df_meta.crs is None: df_meta.set_crs("EPSG:4326", inplace=True)
         if df_meta.crs != gdf_poligonos.crs: gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
@@ -6622,21 +6625,20 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
         
         df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos[cols_poly], how="left", predicate="intersects")
         
-        # Merge Final
+        # Merge Final (Usando las columnas detectadas)
         df_full = pd.merge(df_datos, df_meta_espacial, left_on=col_id_dato, right_on=col_id_meta, how='inner')
 
         if df_full.empty:
-            st.warning("No hubo coincidencias espaciales. Verifique coordenadas.")
+            st.warning("No hubo coincidencias entre Datos y Estaciones. Verifique los IDs.")
             return
 
         # --- 3. DETECCIÓN DE COLUMNAS ---
-        col_valor = next((c for c in df_full.columns if c.lower() in ['valor', 'value', 'precipitacion']), None)
-        col_municipio = next((c for c in df_full.columns if c.lower() in ['municipio', 'mpio_cnmbr']), None)
+        col_valor = next((c for c in df_full.columns if c.lower() in ['valor', 'value', 'precipitacion']), 'valor')
+        col_municipio = next((c for c in df_full.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'mun_nomb']), None)
         col_cuenca = col_cuenca_poly if col_cuenca_poly in df_full.columns else next((c for c in df_full.columns if c.lower() in ['cuenca', 'subcuenca']), None)
         col_region = next((c for c in df_full.columns if c.lower() in ['subregion', 'region', 'zona']), None)
 
         # --- 4. FORMATO DE TIEMPO ---
-        # Diccionario Maestro de Orden
         meses_orden = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
                        7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
         lista_meses_ordenada = list(meses_orden.values())
@@ -6653,7 +6655,7 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
             if col_region: opts.append("Región")
             
             if not opts:
-                st.error("No se encontraron columnas geográficas.")
+                st.error(f"No encontré columnas geográficas (Municipio, Cuenca, Región). Columnas disponibles: {list(df_full.columns)}")
                 return
 
             nivel = st.radio("Agrupar por:", opts)
@@ -6668,14 +6670,11 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
             seleccion = st.multiselect(f"Seleccione {nivel}:", items, default=items[:3] if len(items)>2 else items)
 
         if seleccion:
-            # Filtrar
             df_filtrado = df_full[df_full[campo_filtro].isin(seleccion)]
             
-            # Agrupar y Ordenar
             df_gp = df_filtrado.groupby(['MES_NUM', 'Nombre_Mes', campo_filtro])[col_valor].mean().reset_index()
             df_gp = df_gp.sort_values('MES_NUM')
 
-            # Gráfico
             fig = px.line(
                 df_gp, 
                 x='Nombre_Mes', 
@@ -6686,15 +6685,9 @@ def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
                 labels={col_valor: "Precipitación (mm)"}
             )
             
-            # 🔥 EJE X FORZADO (ENE-DIC) 🔥
-            fig.update_xaxes(
-                categoryorder='array', 
-                categoryarray=lista_meses_ordenada,
-                title="Mes"
-            )
-            
+            fig.update_xaxes(categoryorder='array', categoryarray=lista_meses_ordenada, title="Mes")
             st.plotly_chart(fig, use_container_width=True)
             st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv", "text/csv")
 
     except Exception as e:
-        st.error(f"Error en módulo multiescalar: {e}")
+        st.error(f"Error detallado en módulo multiescalar: {e}")
