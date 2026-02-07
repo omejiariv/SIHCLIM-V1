@@ -6534,29 +6534,62 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     st_folium(m, use_container_width=True, height=600)
     
 # -------------------------------------------------------------------------
-# FUNCIÓN COMPARATIVA MULTIESCALAR (VERSIÓN BLINDADA EJE X 🛡️)
+# FUNCIÓN COMPARATIVA MULTIESCALAR (CON BYPASS DE EMERGENCIA 🚨)
 # -------------------------------------------------------------------------
-def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
+def display_multiscale_tab(df_long_ignored, gdf_stations, gdf_subcuencas):
     """
-    Análisis comparativo con detección inteligente, soporte para Región
-    y Eje X forzado (Ene-Dic).
+    Versión con recarga directa desde SQL para ignorar el caché corrupto.
     """
     import streamlit as st
     import pandas as pd
     import plotly.express as px
     import geopandas as gpd
+    from sqlalchemy import text
+    
+    # Intentamos importar el gestor de base de datos
+    try:
+        from modules.db_manager import get_engine
+    except ImportError:
+        st.error("No se pudo importar db_manager.")
+        return
 
     st.subheader("📊 Comparativa de Regímenes de Lluvia")
+    
+    # --- 🚨 BYPASS DE EMERGENCIA: RECARGA DIRECTA 🚨 ---
+    # Ignoramos el df_long_ignored que viene de la app porque está incompleto.
+    # Vamos directamente a la fuente (Base de Datos).
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            # Consulta rápida para traer todo fresco
+            query = "SELECT fecha, id_estacion, valor FROM precipitacion"
+            df_fresh = pd.read_sql(query, conn)
+            
+            # Formateo inmediato
+            df_fresh['fecha'] = pd.to_datetime(df_fresh['fecha'])
+            df_fresh['MES_NUM'] = df_fresh['fecha'].dt.month
+            
+            # Verificación de datos recuperados
+            if 1 in df_fresh['MES_NUM'].unique():
+                st.toast("✅ Datos de Enero recuperados exitosamente desde BD.", icon="🥑")
+            else:
+                st.warning("⚠️ Aún no veo datos de Enero en la Base de Datos.")
+            
+            df_datos = df_fresh.copy() # Usamos ESTOS datos, no los viejos
+            
+    except Exception as e:
+        st.error(f"Error al recargar datos frescos: {e}")
+        return
+    # -------------------------------------------------------
+
     st.info("💡 **Análisis Multiescalar:** Agregación por Municipio, Cuenca o Región.")
 
-    # Validaciones básicas
-    if df_long is None or gdf_stations is None or gdf_subcuencas is None:
-        st.warning("⚠️ Faltan datos para el análisis.")
+    if gdf_stations is None or gdf_subcuencas is None:
+        st.warning("⚠️ Faltan datos espaciales (estaciones o cuencas).")
         return
 
     try:
-        # --- 1. PREPARACIÓN DE DATOS ---
-        df_datos = df_long.copy()
+        # --- 1. PREPARACIÓN DE METADATOS ---
         df_meta = gdf_stations.copy()
         gdf_poligonos = gdf_subcuencas.copy()
 
@@ -6567,8 +6600,8 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
         df_datos[col_id_dato] = df_datos[col_id_dato].astype(str).str.strip()
         df_meta[col_id_meta] = df_meta[col_id_meta].astype(str).str.strip()
 
-        # --- 2. GESTIÓN ESPACIAL (CRUCE) ---
-        # Garantizamos GeoDataFrame
+        # --- 2. GESTIÓN ESPACIAL ---
+        # Garantizamos GeoDataFrame para estaciones
         if not isinstance(df_meta, gpd.GeoDataFrame):
             if 'longitud' in df_meta.columns and 'latitud' in df_meta.columns:
                 df_meta = gpd.GeoDataFrame(
@@ -6577,7 +6610,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
                     crs="EPSG:4326"
                 )
         
-        # Aseguramos proyección
+        # Aseguramos proyecciones
         if gdf_poligonos.crs is None: gdf_poligonos.set_crs("EPSG:4326", inplace=True)
         if df_meta.crs is None: df_meta.set_crs("EPSG:4326", inplace=True)
         if df_meta.crs != gdf_poligonos.crs: gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
@@ -6589,7 +6622,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
         
         df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos[cols_poly], how="left", predicate="intersects")
         
-        # Merge Final (Datos + Metadatos Espaciales)
+        # Merge Final
         df_full = pd.merge(df_datos, df_meta_espacial, left_on=col_id_dato, right_on=col_id_meta, how='inner')
 
         if df_full.empty:
@@ -6597,22 +6630,12 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
             return
 
         # --- 3. DETECCIÓN DE COLUMNAS ---
-        # Fecha
-        col_fecha = next((c for c in df_full.columns if c.lower() in ['fecha', 'date', 'timestamp']), None)
-        if not col_fecha: col_fecha = df_full.columns[0]
-        
-        # Valor
         col_valor = next((c for c in df_full.columns if c.lower() in ['valor', 'value', 'precipitacion']), None)
-        
-        # Geografía
         col_municipio = next((c for c in df_full.columns if c.lower() in ['municipio', 'mpio_cnmbr']), None)
         col_cuenca = col_cuenca_poly if col_cuenca_poly in df_full.columns else next((c for c in df_full.columns if c.lower() in ['cuenca', 'subcuenca']), None)
         col_region = next((c for c in df_full.columns if c.lower() in ['subregion', 'region', 'zona']), None)
 
-        # --- 4. PROCESAMIENTO DE TIEMPO (BLINDAJE 🛡️) ---
-        df_full[col_fecha] = pd.to_datetime(df_full[col_fecha], errors='coerce')
-        df_full['MES_NUM'] = df_full[col_fecha].dt.month
-        
+        # --- 4. FORMATO DE TIEMPO ---
         # Diccionario Maestro de Orden
         meses_orden = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
                        7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
@@ -6620,7 +6643,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
 
         df_full['Nombre_Mes'] = df_full['MES_NUM'].map(meses_orden)
 
-        # --- 5. INTERFAZ DE USUARIO ---
+        # --- 5. INTERFAZ ---
         col1, col2 = st.columns([1, 2])
 
         with col1:
@@ -6639,7 +6662,6 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
             elif nivel == "Cuenca": campo_filtro = col_cuenca
             elif nivel == "Región": campo_filtro = col_region
 
-            # Limpiamos nulos y ordenamos
             items = sorted(df_full[campo_filtro].dropna().astype(str).unique())
 
         with col2:
@@ -6649,13 +6671,11 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
             # Filtrar
             df_filtrado = df_full[df_full[campo_filtro].isin(seleccion)]
             
-            # Agrupar por MES NUMÉRICO para garantizar orden 1->12
+            # Agrupar y Ordenar
             df_gp = df_filtrado.groupby(['MES_NUM', 'Nombre_Mes', campo_filtro])[col_valor].mean().reset_index()
-            
-            # Ordenar explícitamente
             df_gp = df_gp.sort_values('MES_NUM')
 
-            # --- 6. GRÁFICO ---
+            # Gráfico
             fig = px.line(
                 df_gp, 
                 x='Nombre_Mes', 
@@ -6666,7 +6686,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
                 labels={col_valor: "Precipitación (mm)"}
             )
             
-            # 🔥 LA SOLUCIÓN DEFINITIVA: FORZAR EL EJE X 🔥
+            # 🔥 EJE X FORZADO (ENE-DIC) 🔥
             fig.update_xaxes(
                 categoryorder='array', 
                 categoryarray=lista_meses_ordenada,
@@ -6674,8 +6694,6 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
             )
             
             st.plotly_chart(fig, use_container_width=True)
-            
-            # Descarga
             st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv", "text/csv")
 
     except Exception as e:
