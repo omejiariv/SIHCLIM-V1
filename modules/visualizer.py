@@ -6521,28 +6521,36 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
 
     # 5. PREDIOS (Interacción Rica)
     if gdf_predios is not None and not gdf_predios.empty:
-        fg_predios = folium.FeatureGroup(name="🏡 Predios", show=False)
+        fg_predios = folium.FeatureGroup(name="🏡 Predios", show=True)
         
-        # PROYECCIÓN SEGURA: Convertimos a WGS84 para visualización
+        # A. Asegurar Proyección (Vital para que no caigan en el océano)
         try:
-            gdf_viz = gdf_predios.to_crs(epsg=4326)
+            if gdf_predios.crs is not None and gdf_predios.crs.to_string() != "EPSG:4326":
+                gdf_viz = gdf_predios.to_crs(epsg=4326)
+            else:
+                gdf_viz = gdf_predios
         except:
-            gdf_viz = gdf_predios # Si falla, usamos original
-        
-        # Iteramos polígono por polígono
+            gdf_viz = gdf_predios # Si falla la conversión, usamos el original
+            
+        # B. Iteración Segura
         for _, row in gdf_viz.iterrows():
-            if row.geometry:
+            if row.geometry and not row.geometry.is_empty:
                 try:
+                    # Intento 1: Popup Rico (Con tus datos)
                     html = generar_popup_predio(row)
-                    
-                    folium.GeoJson(
-                        row.geometry,
-                        style_function=lambda x: {'color': '#d35400', 'weight': 1, 'fillOpacity': 0.4, 'fillColor': 'orange'},
-                        popup=folium.Popup(html, max_width=250),
-                        tooltip=str(get_val_smart(row, ['nombre_pre', 'nombre'], 'Predio')) # Tooltip simple
-                    ).add_to(fg_predios)
-                except: pass
-                    
+                    popup_obj = folium.Popup(html, max_width=250)
+                except:
+                    # Intento 2: Popup Básico (Si falla el HTML, que al menos salga el nombre)
+                    popup_obj = folium.Popup(str(row.get('nombre_pre', 'Predio')), max_width=200)
+
+                # Dibujamos el polígono
+                folium.GeoJson(
+                    row.geometry,
+                    style_function=lambda x: {'color': '#e67e22', 'weight': 1.5, 'fillOpacity': 0.3, 'fillColor': '#f39c12'},
+                    popup=popup_obj,
+                    tooltip=str(row.get('nombre_pre', 'Predio'))
+                ).add_to(fg_predios)
+
         fg_predios.add_to(m)
 
     # 6. BOCATOMAS (Puntos con Popup HTML Rico)
@@ -6761,6 +6769,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
 
