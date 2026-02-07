@@ -6509,24 +6509,23 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
     if gdf_predios is not None and not gdf_predios.empty:
         fg_predios = folium.FeatureGroup(name="🏡 Predios", show=False)
         
-        # Detectar columnas disponibles para el popup
-        campos_disponibles = [c for c in ['nombre_pre', 'nomb_mpio', 'embalse', 'mecanism', 'area_ha'] if c in gdf_predios.columns]
-        alias_map = {
-            'nombre_pre': 'Predio:', 
-            'nomb_mpio': 'Mpio:', 
-            'embalse': 'Embalse:', 
-            'mecanism': 'Mecanismo:', 
-            'area_ha': 'Área (ha):'
-        }
-        aliases_final = [alias_map.get(c, c) for c in campos_disponibles]
-
-        folium.GeoJson(
-            gdf_predios,
-            style_function=lambda x: {'color': 'orange', 'weight': 1, 'fillOpacity': 0.4},
-            # Usamos GeoJsonPopup para polígonos
-            popup=folium.GeoJsonPopup(fields=campos_disponibles, aliases=aliases_final),
-            tooltip=folium.GeoJsonTooltip(fields=['nombre_pre'], aliases=['Predio:']) if 'nombre_pre' in gdf_predios.columns else None
-        ).add_to(fg_predios)
+        # Iteramos polígono por polígono para inyectar el HTML exacto
+        for _, row in gdf_predios.iterrows():
+            if row.geometry:
+                try:
+                    # Generamos el HTML con tu función de diseño
+                    html = generar_popup_predio(row)
+                    
+                    # Creamos el objeto GeoJson individual
+                    folium.GeoJson(
+                        row.geometry,
+                        style_function=lambda x: {'color': '#d35400', 'weight': 1, 'fillOpacity': 0.4, 'fillColor': 'orange'},
+                        popup=folium.Popup(html, max_width=250), # <--- Aquí entra el HTML
+                        tooltip=str(row.get('nombre_pre', 'Predio'))
+                    ).add_to(fg_predios)
+                except: 
+                    pass # Si un polígono falla, lo saltamos para no romper el mapa
+                    
         fg_predios.add_to(m)
 
     # 6. BOCATOMAS (Puntos con Popup HTML Rico)
@@ -6745,6 +6744,7 @@ def display_multiscale_tab(df_long, gdf_stations, gdf_subcuencas):
     except Exception as e:
 
         st.error(f"Error en módulo multiescalar: {e}")
+
 
 
 
