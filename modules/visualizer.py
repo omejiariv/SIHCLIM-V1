@@ -2016,19 +2016,29 @@ def display_graphs_tab(
         fig_dist.update_layout(height=600, showlegend=(chart_typ != "Violín"))
         st.plotly_chart(fig_dist, use_container_width=True)
 
-    # --- TAB 6: ANÁLISIS ESTACIONAL DETALLADO (RESTAURADO: SPAGHETTI+CAJAS) ---
+    # -------------------------------------------------------------------------
+    # TAB 5: ANÁLISIS ESTACIONAL DETALLADO (CORREGIDO 🔧)
+    # -------------------------------------------------------------------------
     with tabs[5]:
-        st.markdown("#### 📅 Ciclo Anual Comparativo")
+        st.markdown("#### 📅 Ciclo Anual Comparativo (Spaghetti Plot)")
+        
+        # Selector de Estación
         sel_st_detail = st.selectbox("Analizar Estación:", stations_for_analysis, key="st_detail_seasonal")
 
         if sel_st_detail:
-            df_st = df_monthly_filtered[df_monthly_filtered['id_estacion'] == sel_st_detail].copy()
-            # 🔥 CORRECCIÓN CRÍTICA: Ordenar por MES_NUM para que no salga Ene, Oct, Feb...
+            # 🔥 CORRECCIÓN CLAVE: Usamos 'col_estacion' detectada, no 'id_estacion' fija
+            df_st = df_monthly_filtered[df_monthly_filtered[col_estacion] == sel_st_detail].copy()
+            
+            # Aseguramos orden numérico para que el gráfico no salga loco
+            if 'MES_NUM' not in df_st.columns:
+                df_st['MES_NUM'] = df_st['fecha'].dt.month
             df_st = df_st.sort_values('MES_NUM')
 
             c_hl, c_type = st.columns([1, 1])
             with c_hl:
-                years = sorted(df_st["Año"].unique(), reverse=True)
+                # Detectamos columna de año
+                c_anio_local = find_col(df_st, ['Año', 'year', 'anio']) or 'Año'
+                years = sorted(df_st[c_anio_local].unique(), reverse=True)
                 hl_year = st.selectbox("Resaltar Año:", [None] + list(years), key="hl_year_seasonal")
             with c_type:
                 chart_mode = st.radio("Visualización:", ["Líneas (Spaghetti)", "Cajas (Variabilidad)"], horizontal=True)
@@ -2036,32 +2046,34 @@ def display_graphs_tab(
             if chart_mode == "Líneas (Spaghetti)":
                 fig_multi = go.Figure()
                 for yr in years:
-                    df_y = df_st[df_st["Año"] == yr].sort_values("MES_NUM")
-                    color, width, opacity = "rgba(200, 200, 200, 0.4)", 1, 0.5
-                    show_leg = False
+                    df_y = df_st[df_st[c_anio_local] == yr].sort_values("MES_NUM")
+                    
+                    color, width, opacity, show_leg = "rgba(200, 200, 200, 0.4)", 1, 0.5, False
                     if hl_year and yr == hl_year:
                         color, width, opacity, show_leg = "red", 4, 1.0, True
                     
                     fig_multi.add_trace(go.Scatter(
-                        x=df_y["Nombre_Mes"], y=df_y['valor'], mode="lines",
+                        x=df_y["Nombre_Mes"], y=df_y[col_valor], mode="lines",
                         name=str(yr), line=dict(color=color, width=width), opacity=opacity, showlegend=show_leg
                     ))
                 
                 # Promedio
-                clim = df_st.groupby("MES_NUM")['valor'].mean().sort_index()
-                names_clim = [meses_orden[m] for m in clim.index]
+                clim = df_st.groupby("MES_NUM")[col_valor].mean().sort_index()
+                # Reconstruir nombres de meses ordenados
+                meses_mapa = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
+                names_clim = [meses_mapa.get(m, str(m)) for m in clim.index]
+                
                 fig_multi.add_trace(go.Scatter(
                     x=names_clim, y=clim.values, mode="lines+markers",
                     name="Promedio Histórico", line=dict(color="black", width=3, dash="dot")
                 ))
-                # 🔥 EJE X FORZADO 🔥
-                fig_multi.update_xaxes(categoryorder='array', categoryarray=list(meses_orden.values()), title="Mes")
+                fig_multi.update_xaxes(categoryorder='array', categoryarray=list(meses_mapa.values()), title="Mes")
                 st.plotly_chart(fig_multi, use_container_width=True)
             
             else: # Cajas
                 fig_box = px.box(
-                    df_st, x="Nombre_Mes", y='valor', color="Nombre_Mes", points="all",
-                    category_orders={"Nombre_Mes": list(meses_orden.values())}
+                    df_st, x="Nombre_Mes", y=col_valor, color="Nombre_Mes", points="all",
+                    category_orders={"Nombre_Mes": ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]}
                 )
                 fig_box.update_layout(showlegend=False)
                 st.plotly_chart(fig_box, use_container_width=True)
@@ -2069,11 +2081,17 @@ def display_graphs_tab(
             # Tabla comparativa
             if hl_year:
                 st.markdown(f"###### Detalle {hl_year} vs Promedio")
-                df_y_hl = df_st[df_st["Año"] == hl_year].set_index("MES_NUM")['valor']
-                clim_series = df_st.groupby("MES_NUM")['valor'].mean()
-                comp_df = pd.DataFrame({"Mes": [meses_orden[i] for i in clim_series.index], "Año Sel": df_y_hl, "Promedio": clim_series})
-                comp_df["Dif (%)"] = ((comp_df["Año Sel"] - comp_df["Promedio"]) / comp_df["Promedio"]) * 100
-                st.dataframe(comp_df.set_index("Mes").style.format("{:.1f}"))
+                # Lógica robusta para la tabla
+                try:
+                    df_y_hl = df_st[df_st[c_anio_local] == hl_year].set_index("MES_NUM")[col_valor]
+                    clim_series = df_st.groupby("MES_NUM")[col_valor].mean()
+                    comp_df = pd.DataFrame({"Año Sel": df_y_hl, "Promedio": clim_series})
+                    # Mapear índice numérico a nombre
+                    comp_df.index = comp_df.index.map(meses_mapa)
+                    comp_df["Dif (%)"] = ((comp_df["Año Sel"] - comp_df["Promedio"]) / comp_df["Promedio"]) * 100
+                    st.dataframe(comp_df.style.format("{:.1f}"))
+                except:
+                    st.info("Datos insuficientes para la tabla detallada.")
 
     # --- TAB 7: COMPARATIVA MULTIESCALAR ---
     with tabs[6]:
@@ -6275,13 +6293,9 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     st_folium(m, use_container_width=True, height=600)
     
 # -------------------------------------------------------------------------
-# FUNCIÓN COMPARATIVA MULTIESCALAR (VERSIÓN "BARRA LIBRE" - SIN FILTROS 🔓)
+# FUNCIÓN COMPARATIVA MULTIESCALAR (CON DETECTOR AMPLIADO 🕵️‍♂️)
 # -------------------------------------------------------------------------
 def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
-    """
-    Versión que conserva TODAS las columnas geográficas (Cuenca, Región, etc.)
-    y mejora la detección insensible a mayúsculas.
-    """
     try:
         from modules.db_manager import get_engine
     except ImportError:
@@ -6291,20 +6305,19 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
     st.markdown("#### 🗺️ Comparativa de Regímenes de Lluvia (Multiescalar)")
     st.info("💡 Agregación automática por Municipio, Cuenca o Región.")
 
-    # --- 1. BYPASS SQL (RECUPERACIÓN DE DATOS) ---
+    # 1. BYPASS SQL
     try:
         engine = get_engine()
         with engine.connect() as conn:
+            # Traemos id_estacion y nombre para asegurar cruce
             query = "SELECT fecha, id_estacion, valor FROM precipitacion"
             df_fresh = pd.read_sql(query, conn)
-            
             df_fresh['fecha'] = pd.to_datetime(df_fresh['fecha'])
             df_fresh['MES_NUM'] = df_fresh['fecha'].dt.month
             df_fresh['id_estacion'] = df_fresh['id_estacion'].astype(str).str.strip()
-            
             df_datos = df_fresh.copy()
     except Exception as e:
-        st.error(f"Error base de datos: {e}")
+        st.error(f"Error BD: {e}")
         return
 
     if gdf_stations is None or gdf_subcuencas is None:
@@ -6312,24 +6325,21 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         return
 
     try:
-        # --- 2. PREPARACIÓN DE METADATOS ---
+        # 2. CRUCE ESPACIAL
         df_meta = gdf_stations.copy()
         gdf_poligonos = gdf_subcuencas.copy()
-
-        # Limpieza de nombres de columna (Eliminar BOM y espacios)
+        
+        # Limpieza básica
         df_meta.columns = [c.strip().replace('ï»¿', '').lower() for c in df_meta.columns]
         
-        # Búsqueda de ID en Estaciones
-        posibles_ids = ['id_estacion', 'id_estacio', 'codigo', 'code', 'station_id', 'id']
-        col_id_meta = next((c for c in df_meta.columns if c in posibles_ids), None)
-        
+        # Buscar ID Estación
+        col_id_meta = find_col(df_meta, ['id_estacion', 'id_estacio', 'codigo', 'code', 'station_id', 'id'])
         if not col_id_meta:
-            st.error(f"Sin ID en estaciones. Cols: {list(df_meta.columns)}")
+            st.error("Sin ID en estaciones.")
             return
-        
         df_meta[col_id_meta] = df_meta[col_id_meta].astype(str).str.strip()
 
-        # Convertir a GeoDataFrame
+        # Asegurar GeoDataFrame
         if not isinstance(df_meta, gpd.GeoDataFrame):
             if 'longitud' in df_meta.columns and 'latitud' in df_meta.columns:
                 df_meta = gpd.GeoDataFrame(
@@ -6338,40 +6348,27 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
                     crs="EPSG:4326"
                 )
         
-        # Proyecciones
+        # Unificar CRS
         if gdf_poligonos.crs is None: gdf_poligonos.set_crs("EPSG:4326", inplace=True)
         if df_meta.crs is None: df_meta.set_crs("EPSG:4326", inplace=True)
         if df_meta.crs != gdf_poligonos.crs: gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
 
-        # --- 3. CRUCE ESPACIAL (SIN FILTROS RESTRICTIVOS) 🔓 ---
-        # Cruzamos con TODO lo que tenga el polígono (así no perdemos Cuenca ni Región si están ahí)
+        # Spatial Join (Trae columnas del polígono al punto)
         df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos, how="left", predicate="intersects")
         
-        # Merge Final
+        # Merge con datos de lluvia
         df_full = pd.merge(df_datos, df_meta_espacial, left_on='id_estacion', right_on=col_id_meta, how='inner')
 
-        if df_full.empty:
-            st.warning("No hay coincidencias espaciales.")
-            return
-
-        # --- 4. DETECCIÓN INTELIGENTE DE COLUMNAS 🦅 ---
-        def find_col(df, candidates):
-            # Busca ignorando mayúsculas/minúsculas
-            for col in df.columns:
-                if col.lower() in candidates:
-                    return col
-            return None
-
+        # 3. DETECCIÓN DE COLUMNAS (LISTA AMPLIADA)
         col_valor = 'valor'
-        col_municipio = find_col(df_full, ['municipio', 'mpio_cnmbr', 'mun_nomb', 'city'])
-        col_cuenca = find_col(df_full, ['subc_lbl', 'nombre_cuenca', 'cuenca', 'subcuenca', 'cuencas'])
-        col_region = find_col(df_full, ['subregion', 'region', 'zona', 'depto_region', 'territorio'])
+        # Sinónimos ampliados para encontrar las columnas
+        col_municipio = find_col(df_full, ['municipio', 'mpio_cnmbr', 'mun_nomb', 'city', 'nombre_municipio'])
+        col_cuenca = find_col(df_full, ['subc_lbl', 'nombre_cuenca', 'cuenca', 'subcuenca', 'cuencas', 'microcuenca'])
+        col_region = find_col(df_full, ['subregion', 'region', 'zona', 'depto_region', 'territorio', 'provincia'])
 
-        # --- 5. INTERFAZ ---
-        meses_orden = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
-                       7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
-        lista_meses_ordenada = list(meses_orden.values())
-        df_full['Nombre_Mes'] = df_full['MES_NUM'].map(meses_orden)
+        # 4. INTERFAZ
+        meses_mapa = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
+        df_full['Nombre_Mes'] = df_full['MES_NUM'].map(meses_mapa)
 
         c1, c2 = st.columns([1, 2])
         with c1:
@@ -6381,13 +6378,13 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
             if col_region: opts.append("Región")
             
             if not opts:
-                st.error(f"No se detectaron columnas geográficas. Cols disponibles: {list(df_full.columns)}")
+                st.warning(f"No se detectaron columnas geográficas en el mapa. Columnas disponibles: {list(df_full.columns)}")
                 return
 
             nivel = st.radio("Agrupar por:", opts)
             campo_filtro = col_municipio if nivel == "Municipio" else col_cuenca if nivel == "Cuenca" else col_region
             
-            # Limpieza de nulos en el selector
+            # Lista de opciones limpia
             items = sorted([str(x) for x in df_full[campo_filtro].dropna().unique() if str(x).lower() != 'nan'])
 
         with c2:
@@ -6403,13 +6400,9 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
                 title=f"Régimen de Precipitación - Comparativa por {nivel}",
                 markers=True
             )
-            fig.update_xaxes(categoryorder='array', categoryarray=lista_meses_ordenada, title="Mes")
+            fig.update_xaxes(categoryorder='array', categoryarray=list(meses_mapa.values()), title="Mes")
             st.plotly_chart(fig, use_container_width=True)
-            
             st.download_button("📥 CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv")
 
     except Exception as e:
         st.error(f"Error multiescalar: {e}")
-
-
-
