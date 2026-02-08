@@ -86,6 +86,18 @@ except ImportError:
             "pendiente_prom": 15,
         }
 
+# =============================================================================
+# UTILIDAD: BÚSQUEDA INSENSIBLE A MAYÚSCULAS/MINÚSCULAS 🦅
+# =============================================================================
+def find_col(df, candidates):
+    """Busca una columna en el DF ignorando mayúsculas/minúsculas."""
+    if df is None or df.empty: return None
+    df_cols = [c.lower() for c in df.columns]
+    for cand in candidates:
+        if cand.lower() in df_cols:
+            return df.columns[df_cols.index(cand.lower())]
+    return None
+
     def calculate_hydrological_balance(p, t, g):
         return {"P": p, "ET": p * 0.6, "Q_mm": p * 0.4, "Vol": (p * 0.4 * 100) / 1000}
 
@@ -6398,4 +6410,5 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
     except Exception as e:
         st.error(f"Error multiescalar: {e}")
+
 
