@@ -6354,21 +6354,25 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         return
 
     try:
-        # 2. CRUCE ESPACIAL
+        # 2. CRUCE ESPACIAL - PREPARACIÓN DE METADATOS (LIMPIEZA PROFUNDA 🧼) ---
         df_meta = gdf_stations.copy()
         gdf_poligonos = gdf_subcuencas.copy()
-        
-        # Limpieza básica
+
+        # 1. Limpieza de Estaciones (Ya lo teníamos)
         df_meta.columns = [c.strip().replace('ï»¿', '').lower() for c in df_meta.columns]
         
-        # Buscar ID Estación
+        # 2. Limpieza de Cuencas (ESTO FALTABA 🚨)
+        # Esto normaliza 'Subc_lbl ' -> 'subc_lbl' eliminando mayúsculas y espacios
+        gdf_poligonos.columns = [c.strip().replace('ï»¿', '').lower() for c in gdf_poligonos.columns]
+        
+        # Búsqueda de ID en Estaciones
         col_id_meta = find_col(df_meta, ['id_estacion', 'id_estacio', 'codigo', 'code', 'station_id', 'id'])
         if not col_id_meta:
             st.error("Sin ID en estaciones.")
             return
         df_meta[col_id_meta] = df_meta[col_id_meta].astype(str).str.strip()
 
-        # Asegurar GeoDataFrame
+        # Convertir a GeoDataFrame
         if not isinstance(df_meta, gpd.GeoDataFrame):
             if 'longitud' in df_meta.columns and 'latitud' in df_meta.columns:
                 df_meta = gpd.GeoDataFrame(
@@ -6377,30 +6381,35 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
                     crs="EPSG:4326"
                 )
         
-        # Unificar CRS
+        # Unificar Proyecciones
         if gdf_poligonos.crs is None: gdf_poligonos.set_crs("EPSG:4326", inplace=True)
         if df_meta.crs is None: df_meta.set_crs("EPSG:4326", inplace=True)
         if df_meta.crs != gdf_poligonos.crs: gdf_poligonos = gdf_poligonos.to_crs(df_meta.crs)
 
-        # Spatial Join (Trae columnas del polígono al punto)
+        # Spatial Join
         df_meta_espacial = gpd.sjoin(df_meta, gdf_poligonos, how="left", predicate="intersects")
         
-        # Merge con datos de lluvia
+        # Merge Final
         df_full = pd.merge(df_datos, df_meta_espacial, left_on='id_estacion', right_on=col_id_meta, how='inner')
 
-        # --- 3. DETECCIÓN DE COLUMNAS (PRECISIÓN CONFIRMADA 🎯) ---
+        # --- 3. DETECCIÓN DE COLUMNAS (NOMBRES EXACTOS 🎯) ---
         col_valor = 'valor'
         
-        # 1. Municipio: Buscamos variaciones comunes
+        # 1. Municipio (Estándar)
         col_municipio = find_col(df_full, ['municipio', 'mpio_cnmbr', 'mun_nomb', 'nombre_municipio'])
         
-        # 2. Cuenca: PRIORIDAD a 'subc_lbl' (Confirmado por usuario)
-        # El spatial join (cruce de mapas) agrega las columnas del mapa al dataframe final
-        col_cuenca = find_col(df_full, ['subc_lbl', 'nombre_cuenca', 'cuenca', 'subcuenca', 'szh'])
+        # 2. Cuenca: Buscamos 'subc_lbl' primero (Confirmado por imagen/usuario)
+        col_cuenca = find_col(df_full, ['subc_lbl', 'nombre_cuenca', 'cuenca', 'subcuenca'])
         
-        # 3. Región: PRIORIDAD a 'subregion' (Confirmado por usuario)
-        # Viene directo de la tabla de estaciones
+        # 3. Región: Buscamos 'subregion' primero (Confirmado por imagen/usuario)
         col_region = find_col(df_full, ['subregion', 'region', 'zona', 'depto_region'])
+
+        # --- DIAGNÓSTICO AUTOMÁTICO (SOLO SI FALLA) ---
+        # Si no aparecen las opciones, esto nos mostrará qué columnas SÍ existen
+        if not col_cuenca and not col_region:
+            with st.expander("🕵️ Ayuda: No veo Cuencas ni Regiones"):
+                st.write("Columnas disponibles:", list(df_full.columns))
+                st.info("Por favor confirma si ves 'subc_lbl' o 'subregion' en la lista de arriba.")
 
         # 4. INTERFAZ
         meses_mapa = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
@@ -6442,5 +6451,6 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
     except Exception as e:
         st.error(f"Error multiescalar: {e}")
+
 
 
