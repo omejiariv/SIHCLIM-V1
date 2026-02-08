@@ -2080,18 +2080,47 @@ def display_graphs_tab(
 
             # Tabla comparativa
             if hl_year:
-                st.markdown(f"###### Detalle {hl_year} vs Promedio")
-                # Lógica robusta para la tabla
-                try:
-                    df_y_hl = df_st[df_st[c_anio_local] == hl_year].set_index("MES_NUM")[col_valor]
-                    clim_series = df_st.groupby("MES_NUM")[col_valor].mean()
-                    comp_df = pd.DataFrame({"Año Sel": df_y_hl, "Promedio": clim_series})
-                    # Mapear índice numérico a nombre
-                    comp_df.index = comp_df.index.map(meses_mapa)
-                    comp_df["Dif (%)"] = ((comp_df["Año Sel"] - comp_df["Promedio"]) / comp_df["Promedio"]) * 100
-                    st.dataframe(comp_df.style.format("{:.1f}"))
-                except:
-                    st.info("Datos insuficientes para la tabla detallada.")
+                st.markdown(f"###### 🔎 Detalle: Año {hl_year} vs Promedio Histórico")
+                
+                # 1. Definir los datos del Año Seleccionado
+                # Forzamos una copia para no alterar el original
+                df_year_select = df_st[df_st[c_anio_local] == hl_year].copy()
+                
+                if df_year_select.empty:
+                    st.warning(f"No hay datos registrados para el año {hl_year}.")
+                else:
+                    # 2. Estandarización de Índice (La Clave Estructural 🔑)
+                    # Convertimos MES_NUM a entero explícito en ambos lados para garantizar el cruce
+                    df_year_select['MES_NUM'] = df_year_select['MES_NUM'].astype(int)
+                    serie_anio = df_year_select.set_index("MES_NUM")[col_valor]
+                    
+                    # Calculamos el promedio y también aseguramos su índice como entero
+                    df_promedio = df_st.groupby("MES_NUM")[col_valor].mean()
+                    df_promedio.index = df_promedio.index.astype(int)
+                    
+                    # 3. Fusión Explícita (Merge)
+                    # Unimos usando el índice entero. 'inner' solo muestra meses que existen en el año seleccionado.
+                    comp_df = pd.DataFrame({
+                        "Año Seleccionado": serie_anio,
+                        "Promedio Histórico": df_promedio
+                    }).dropna() # Eliminamos cualquier desajuste
+
+                    if comp_df.empty:
+                         st.info("No se pudieron alinear los meses del año seleccionado con el promedio.")
+                    else:
+                        # 4. Cálculos y Formato
+                        comp_df["Diferencia (%)"] = (
+                            (comp_df["Año Seleccionado"] - comp_df["Promedio Histórico"]) 
+                            / comp_df["Promedio Histórico"]
+                        ) * 100
+
+                        # Mapeo de nombres de meses
+                        meses_mapa = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
+                                      7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
+                        comp_df.index = comp_df.index.map(meses_mapa)
+
+                        # Mostrar tabla
+                        st.dataframe(comp_df.style.format("{:.1f}").background_gradient(subset=["Diferencia (%)"], cmap="RdYlGn"))
 
     # --- TAB 7: COMPARATIVA MULTIESCALAR ---
     with tabs[6]:
@@ -6406,3 +6435,4 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
     except Exception as e:
         st.error(f"Error multiescalar: {e}")
+
