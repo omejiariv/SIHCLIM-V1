@@ -1875,7 +1875,7 @@ def display_graphs_tab(
     if df_anual_melted is not None and not df_anual_melted.empty:
         col_anio = find_col(df_anual_melted, ['Año', 'year', 'anio']) or 'Año'
         col_valor = find_col(df_anual_melted, ['valor', 'value', 'precipitacion']) or 'valor'
-        col_estacion = find_col(df_anual_melted, ['id_estacion', 'codigo', 'station']) or 'id_estacion'
+        col_estacion = find_col(df_anual_melted, ['id_estacion', 'codigo', 'station', 'nombre']) or 'id_estacion'
 
     # --- 2. PREPARACIÓN DATOS ---
     if "Mes" not in df_monthly_filtered.columns:
@@ -6410,5 +6410,6 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
     except Exception as e:
         st.error(f"Error multiescalar: {e}")
+
 
 
