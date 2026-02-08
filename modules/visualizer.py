@@ -6388,12 +6388,19 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         # Merge con datos de lluvia
         df_full = pd.merge(df_datos, df_meta_espacial, left_on='id_estacion', right_on=col_id_meta, how='inner')
 
-        # 3. DETECCIÓN DE COLUMNAS (LISTA AMPLIADA)
+        # --- 3. DETECCIÓN DE COLUMNAS (PRECISIÓN CONFIRMADA 🎯) ---
         col_valor = 'valor'
-        # Sinónimos ampliados para encontrar las columnas
-        col_municipio = find_col(df_full, ['municipio', 'mpio_cnmbr', 'mun_nomb', 'city', 'nombre_municipio'])
-        col_cuenca = find_col(df_full, ['subc_lbl', 'nombre_cuenca', 'cuenca', 'subcuenca', 'cuencas', 'microcuenca'])
-        col_region = find_col(df_full, ['subregion', 'region', 'zona', 'depto_region', 'territorio', 'provincia'])
+        
+        # 1. Municipio: Buscamos variaciones comunes
+        col_municipio = find_col(df_full, ['municipio', 'mpio_cnmbr', 'mun_nomb', 'nombre_municipio'])
+        
+        # 2. Cuenca: PRIORIDAD a 'subc_lbl' (Confirmado por usuario)
+        # El spatial join (cruce de mapas) agrega las columnas del mapa al dataframe final
+        col_cuenca = find_col(df_full, ['subc_lbl', 'nombre_cuenca', 'cuenca', 'subcuenca', 'szh'])
+        
+        # 3. Región: PRIORIDAD a 'subregion' (Confirmado por usuario)
+        # Viene directo de la tabla de estaciones
+        col_region = find_col(df_full, ['subregion', 'region', 'zona', 'depto_region'])
 
         # 4. INTERFAZ
         meses_mapa = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
@@ -6435,4 +6442,5 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
     except Exception as e:
         st.error(f"Error multiescalar: {e}")
+
 
