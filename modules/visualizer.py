@@ -6322,7 +6322,7 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     st_folium(m, use_container_width=True, height=600)
     
 # -------------------------------------------------------------------------
-# FUNCIÓN COMPARATIVA MULTIESCALAR (CONEXIÓN TOTAL A BD 🔌)
+# FUNCIÓN COMPARATIVA MULTIESCALAR (VERSIÓN PREMIUM: CON SELECTOR DE ETIQUETA 🏷️)
 # -------------------------------------------------------------------------
 def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
     try:
@@ -6332,7 +6332,7 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         return
 
     st.markdown("#### 🗺️ Comparativa de Regímenes de Lluvia")
-    st.info("💡 Análisis Multiescalar: Datos integrados desde la Base de Datos Central.")
+    st.info("💡 Análisis Multiescalar: Integra datos de Lluvia, Regiones (BD) y Cuencas (Mapa).")
 
     # 1. RECUPERACIÓN DE DATOS (TODO DESDE LA BD)
     try:
@@ -6344,32 +6344,31 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
             # B. Metadatos de Estaciones (Con Región y Coordenadas)
             df_meta_bd = pd.read_sql("SELECT id_estacion, nombre, municipio, subregion, latitud, longitud FROM estaciones", conn)
             
-            # C. Mapa de Cuencas (NUEVO: Lo traemos directo de la BD para no fallar)
-            # Usamos gpd.read_postgis con la conexión activa
+            # C. Mapa de Cuencas (Directo de la BD)
             try:
                 gdf_polys_bd = gpd.read_postgis("SELECT * FROM cuencas", conn, geom_col="geometry")
             except Exception:
-                gdf_polys_bd = None # Si falla, usaremos el argumento gdf_subcuencas como respaldo
+                gdf_polys_bd = None 
 
     except Exception as e:
         st.error(f"Error crítico conectando a Base de Datos: {e}")
         return
 
-    # 2. PROCESAMIENTO DE LLUVIA
+    # 2. PROCESAMIENTO DE DATOS
     df_fresh['fecha'] = pd.to_datetime(df_fresh['fecha'])
     df_fresh['MES_NUM'] = df_fresh['fecha'].dt.month
     df_fresh['id_estacion'] = df_fresh['id_estacion'].astype(str).str.strip()
     df_datos = df_fresh.copy()
 
-    # 3. PROCESAMIENTO DE METADATOS
     df_meta = df_meta_bd.copy()
     df_meta.columns = [str(c).strip().lower() for c in df_meta.columns]
     df_meta['id_estacion'] = df_meta['id_estacion'].astype(str).str.strip()
 
-    # --- 4. CÁLCULO DE CUENCA (LÓGICA ESPACIAL ROBUSTA) ---
-    col_cuenca = None
+    # --- 3. CÁLCULO DE CUENCA CON SELECTOR DE COLUMNAS ---
+    col_cuenca_default = None
+    opciones_nombre_cuenca = [] # Aquí guardaremos las columnas disponibles (ej: subc_lbl, nombre)
     
-    # Priorizamos el mapa de la BD, si no, usamos el del argumento
+    # Priorizamos mapa de BD
     gdf_polys = gdf_polys_bd if gdf_polys_bd is not None else gdf_subcuencas
 
     if gdf_polys is not None:
@@ -6377,6 +6376,10 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
             # Normalizar columnas del mapa
             gdf_polys.columns = [str(c).strip().lower() for c in gdf_polys.columns]
             if gdf_polys.crs is None: gdf_polys.set_crs("EPSG:4326", inplace=True)
+            
+            # Identificar columnas que parecen nombres (texto) para dárselas a elegir al usuario
+            cols_ignore = ['geometry', 'id', 'gid', 'objectid', 'shape_leng', 'shape_area', 'index_right']
+            opciones_nombre_cuenca = [c for c in gdf_polys.columns if c not in cols_ignore and not c.startswith('shape')]
             
             # Preparar puntos de estaciones
             df_meta['longitud'] = pd.to_numeric(df_meta['longitud'], errors='coerce')
@@ -6393,39 +6396,37 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
                 # Alinear proyecciones
                 if gdf_puntos.crs != gdf_polys.crs: gdf_polys = gdf_polys.to_crs(gdf_puntos.crs)
                 
-                # Detectar columna de nombre de cuenca (subc_lbl es la estándar en tu BD)
-                cols_cuenca_mapa = [c for c in gdf_polys.columns if c in ['subc_lbl', 'nombre_cuenca', 'cuenca', 'szh', 'nombre']]
+                # SPATIAL JOIN: Nos traemos TODAS las columnas de texto del mapa
+                cols_to_join = ['geometry'] + opciones_nombre_cuenca
+                gdf_cruce = gpd.sjoin(gdf_puntos, gdf_polys[cols_to_join], how="left", predicate="intersects")
                 
-                if cols_cuenca_mapa:
-                    col_nombre_cuenca = cols_cuenca_mapa[0]
-                    
-                    # Spatial Join
-                    gdf_cruce = gpd.sjoin(gdf_puntos, gdf_polys[['geometry', col_nombre_cuenca]], how="left", predicate="intersects")
-                    
-                    # Merge para pegar el nombre de la cuenca a los metadatos
-                    # Eliminamos duplicados por si una estación cae en borde de dos cuencas
-                    gdf_cruce = gdf_cruce.drop_duplicates(subset=['id_estacion'])
-                    
-                    df_meta = pd.merge(
-                        df_meta, 
-                        gdf_cruce[['id_estacion', col_nombre_cuenca]], 
-                        on='id_estacion', 
-                        how='left'
-                    )
-                    col_cuenca = col_nombre_cuenca
+                # Limpieza de duplicados
+                gdf_cruce = gdf_cruce.drop_duplicates(subset=['id_estacion'])
+                
+                # Merge final hacia los metadatos
+                df_meta = pd.merge(
+                    df_meta, 
+                    gdf_cruce[['id_estacion'] + opciones_nombre_cuenca], 
+                    on='id_estacion', 
+                    how='left'
+                )
+                
+                # Intentamos definir una por defecto (prioridad subc_lbl)
+                if 'subc_lbl' in opciones_nombre_cuenca: col_cuenca_default = 'subc_lbl'
+                elif 'nombre_cuenca' in opciones_nombre_cuenca: col_cuenca_default = 'nombre_cuenca'
+                elif opciones_nombre_cuenca: col_cuenca_default = opciones_nombre_cuenca[0]
+
         except Exception as e:
-            # Si falla, dejamos col_cuenca como None pero no rompemos la app
             pass
 
-    # 5. MERGE FINAL
+    # 4. MERGE FINAL DE TODO
     df_full = pd.merge(df_datos, df_meta, on='id_estacion', how='inner')
 
-    # 6. INTERFAZ GRÁFICA
-    # Buscamos columnas seguras
+    # 5. DETECCIÓN DE COLUMNAS
     col_municipio = find_col(df_full, ['municipio', 'mpio', 'mpio_cnmbr'])
     col_region = find_col(df_full, ['subregion', 'region', 'zona'])
     
-    # Mapeo de Meses
+    # 6. INTERFAZ GRÁFICA
     meses_mapa = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
                   7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
     df_full['Nombre_Mes'] = df_full['MES_NUM'].map(meses_mapa)
@@ -6435,21 +6436,44 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         opts = []
         if col_municipio: opts.append("Municipio")
         if col_region: opts.append("Región") 
-        if col_cuenca: opts.append("Cuenca") # ¡Aquí debe aparecer!
+        # Si hay columnas de cuenca disponibles (aunque sea 1), mostramos la opción
+        if opciones_nombre_cuenca: opts.append("Cuenca")
         
         if not opts:
-            st.warning("⚠️ No se detectaron columnas geográficas.")
-            # Diagnóstico visible solo si falla
-            with st.expander("Ver detalles técnicos"):
-                st.write("Columnas disponibles:", list(df_full.columns))
+            st.warning("⚠️ No se detectaron agrupaciones geográficas.")
             return
 
         nivel = st.radio("Agrupar por:", opts)
         
-        if nivel == "Municipio": campo_filtro = col_municipio
-        elif nivel == "Región": campo_filtro = col_region
-        elif nivel == "Cuenca": campo_filtro = col_cuenca
+        # --- LÓGICA DE SELECCIÓN DE COLUMNA ---
+        campo_filtro = None
         
+        if nivel == "Municipio": 
+            campo_filtro = col_municipio
+            
+        elif nivel == "Región": 
+            campo_filtro = col_region
+            
+        elif nivel == "Cuenca":
+            # 🔥 AQUÍ ESTÁ LA MAGIA: Selector de campo para Cuenca 🔥
+            if opciones_nombre_cuenca:
+                # Calculamos el índice por defecto (buscando subc_lbl)
+                idx_def = 0
+                if 'subc_lbl' in opciones_nombre_cuenca:
+                    idx_def = opciones_nombre_cuenca.index('subc_lbl')
+                
+                col_seleccionada = st.selectbox(
+                    "🏷️ Etiqueta de Cuenca:", 
+                    opciones_nombre_cuenca, 
+                    index=idx_def,
+                    help="Seleccione qué columna del mapa usar para los nombres."
+                )
+                campo_filtro = col_seleccionada
+            else:
+                st.warning("No hay etiquetas de texto en el mapa de cuencas.")
+                return
+
+        # Llenar lista de items
         items = sorted([str(x) for x in df_full[campo_filtro].dropna().unique() if str(x).lower() != 'nan'])
 
     with c2:
@@ -6461,9 +6485,10 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
         fig = px.line(
             df_gp, x='Nombre_Mes', y='valor', color=campo_filtro,
-            title=f"Régimen de Precipitación - Comparativa por {nivel}", markers=True
+            title=f"Régimen de Precipitación - Comparativa por {nivel} ({campo_filtro})", markers=True
         )
         fig.update_xaxes(categoryorder='array', categoryarray=list(meses_mapa.values()), title="Mes")
-        st.plotly_chart(fig, use_container_width=True)
         
+        st.plotly_chart(fig, use_container_width=True)
         st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv")
+
