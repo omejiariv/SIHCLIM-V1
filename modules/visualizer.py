@@ -6352,56 +6352,61 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         st.error(f"Error conectando a BD: {e}")
         return
 
-    # 2. PREPARACIÓN DE METADATOS (PRIORIDAD AL CSV DE ESTACIONES)
-    # Aquí es donde garantizamos que aparezca la REGIÓN
-    if gdf_stations is None:
-        st.warning("⚠️ Faltan metadatos de estaciones.")
-        return
+    # 2. PREPARACIÓN DE METADATOS (FUENTE SEGURA: BASE DE DATOS 🛡️)
+    # En lugar de confiar en el archivo externo, consultamos la tabla oficial 'estaciones'
+    try:
+        # Solicitamos explícitamente las columnas que sabemos que existen
+        q_meta = "SELECT id_estacion, nombre, municipio, subregion FROM estaciones"
+        df_meta = pd.read_sql(q_meta, conn)
+        
+        # Limpieza estándar para evitar errores de mayúsculas/espacios
+        df_meta.columns = [str(c).strip().lower() for c in df_meta.columns]
+        df_meta['id_estacion'] = df_meta['id_estacion'].astype(str).str.strip()
+        
+    except Exception:
+        # Solo si falla la BD, usamos el archivo de respaldo (gdf_stations)
+        if gdf_stations is not None:
+            df_meta = gdf_stations.copy()
+            df_meta.columns = [str(c).strip().lower() for c in df_meta.columns]
+        else:
+            st.error("No hay metadatos de estaciones disponibles.")
+            return
 
-    # Trabajamos con una copia limpia
-    df_meta = gdf_stations.copy()
-    
-    # Limpieza de nombres de columnas (todo a minúsculas y sin espacios)
-    df_meta.columns = [str(c).strip().replace('ï»¿', '').lower() for c in df_meta.columns]
-    
-    # Buscar columna ID
-    col_id_meta = find_col(df_meta, ['id_estacion', 'codigo', 'code'])
-    if not col_id_meta:
-        st.error("No se encontró columna ID en estaciones.")
-        return
-    df_meta[col_id_meta] = df_meta[col_id_meta].astype(str).str.strip()
-
-    # --- 3. DETECCIÓN DE COLUMNAS (LA CLAVE DEL ÉXITO) ---
-    # Buscamos Región y Municipio DIRECTAMENTE en las estaciones (porque sabemos que ahí están)
-    col_municipio = find_col(df_meta, ['municipio', 'mpio', 'mpio_cnmbr'])
-    col_region = find_col(df_meta, ['subregion', 'region', 'zona', 'depto_region'])
-    
-    # Buscamos Cuenca en estaciones primero...
-    col_cuenca = find_col(df_meta, ['cuenca', 'subcuenca', 'szh', 'subc_lbl'])
-
-    # ...Si no está, intentamos sacarla del mapa (Spatial Join)
-    if not col_cuenca and gdf_subcuencas is not None:
+    # --- 3. RECUPERACIÓN DE CUENCA (CÁLCULO ESPACIAL) ---
+    # Como la tabla 'estaciones' no suele tener 'cuenca', la traemos del mapa (gdf_subcuencas)
+    if gdf_subcuencas is not None:
         try:
-            # Preparamos mapa de cuencas
             gdf_polys = gdf_subcuencas.copy()
             gdf_polys.columns = [str(c).strip().lower() for c in gdf_polys.columns]
             
-            # Aseguramos coordenadas en estaciones
-            if df_meta.crs is None and 'longitud' in df_meta.columns:
-                 df_meta = gpd.GeoDataFrame(df_meta, geometry=gpd.points_from_xy(df_meta.longitud, df_meta.latitud), crs="EPSG:4326")
-            
-            # Unificamos CRS y Cruzamos
-            if isinstance(df_meta, gpd.GeoDataFrame):
-                if gdf_polys.crs is None: gdf_polys.set_crs("EPSG:4326", inplace=True)
-                if df_meta.crs != gdf_polys.crs: gdf_polys = gdf_polys.to_crs(df_meta.crs)
-                
-                # Cruce espacial
-                df_meta = gpd.sjoin(df_meta, gdf_polys, how="left", predicate="intersects")
-                
-                # Buscamos de nuevo la columna de cuenca tras el cruce
-                col_cuenca = find_col(df_meta, ['subc_lbl', 'nombre_cuenca', 'cuenca_gis'])
+            # Para cruzar, necesitamos coordenadas. Si vienen de la BD, no tienen geometría.
+            # Las tomamos prestadas del archivo gdf_stations original si existe.
+            if 'geometry' not in df_meta.columns and gdf_stations is not None:
+                 temp_geo = gdf_stations[['id_estacion', 'geometry']].copy()
+                 temp_geo.columns = [c.lower() for c in temp_geo.columns]
+                 # Unimos geometría al dataframe de la BD
+                 if 'id_estacion' in temp_geo.columns:
+                     temp_geo['id_estacion'] = temp_geo['id_estacion'].astype(str).str.strip()
+                     df_meta = pd.merge(df_meta, temp_geo, on='id_estacion', how='left')
+                     df_meta = gpd.GeoDataFrame(df_meta, geometry='geometry')
+                     # Aseguramos proyección EPSG:4326
+                     if df_meta.crs is None: df_meta.set_crs("EPSG:4326", inplace=True)
+
+            # Realizamos el Cruce Espacial (Spatial Join)
+            if isinstance(df_meta, gpd.GeoDataFrame) and not df_meta.empty:
+                 if gdf_polys.crs is None: gdf_polys.set_crs("EPSG:4326", inplace=True)
+                 if gdf_polys.crs != df_meta.crs: gdf_polys = gdf_polys.to_crs(df_meta.crs)
+                 
+                 # Esto agrega las columnas de la cuenca (ej: subc_lbl) a df_meta
+                 df_meta = gpd.sjoin(df_meta, gdf_polys, how="left", predicate="intersects")
         except Exception:
-            pass # Si falla el mapa, no importa, seguimos con Región y Municipio
+            pass # Si falla el mapa de cuencas, no importa: ¡YA TENEMOS REGIÓN Y MUNICIPIO!
+
+    # Búsqueda de columnas usando las variables actualizadas
+    col_id_meta = 'id_estacion' # Ya lo forzamos en la consulta SQL
+    col_municipio = find_col(df_meta, ['municipio', 'mpio', 'mpio_cnmbr'])
+    col_region = find_col(df_meta, ['subregion', 'region', 'zona']) # <--- Esto ahora funcionará 100%
+    col_cuenca = find_col(df_meta, ['subc_lbl', 'nombre_cuenca', 'cuenca', 'szh'])
 
     # 4. MERGE FINAL (UNIÓN DE TODO)
     # Unimos Lluvia + Metadatos (que ahora tienen Región garantizada)
@@ -6452,3 +6457,4 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         
         st.plotly_chart(fig, use_container_width=True)
         st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv")
+
