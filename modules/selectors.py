@@ -18,7 +18,8 @@ def render_selector_espacial():
     # 1. MODO DE AGREGACIÓN
     modo = st.sidebar.radio(
         "Nivel de Agregación:",
-        ["Por Cuenca", "Por Municipio", "Departamento (Antioquia)"],
+        # 👇 Agregamos "Por Región" aquí
+        ["Por Cuenca", "Por Municipio", "Por Región", "Departamento (Antioquia)"],
         index=0
     )
     
@@ -50,6 +51,35 @@ def render_selector_espacial():
             except Exception as e:
                 st.sidebar.warning(f"Error cargando cuencas: {e}")
                 return [], "", 0, None
+
+        # --- NUEVO: POR REGIÓN ---
+        elif modo == "Por Región":
+            try:
+                # Consultamos las regiones únicas disponibles en la tabla de estaciones
+                df_reg = pd.read_sql("SELECT DISTINCT subregion FROM estaciones WHERE subregion IS NOT NULL ORDER BY subregion", engine)
+                lista_reg = df_reg['subregion'].astype(str).unique().tolist()
+                
+                sel = st.sidebar.selectbox("Seleccione Región:", lista_reg)
+                
+                if sel:
+                    nombre_zona = f"Región {sel}"
+                    # Al no tener un mapa de polígonos de regiones, traemos los puntos de las estaciones
+                    # de esa región para definir la ubicación espacial.
+                    q_geo = text(f"SELECT * FROM estaciones WHERE subregion = '{sel}'")
+                    df_pts = pd.read_sql(q_geo, engine)
+                    
+                    if not df_pts.empty:
+                        # Convertimos a GeoDataFrame para que sea compatible con el resto del código
+                        gdf_zona = gpd.GeoDataFrame(
+                            df_pts, 
+                            geometry=gpd.points_from_xy(df_pts.longitud, df_pts.latitud),
+                            crs="EPSG:4326"
+                        )
+                    else:
+                        st.sidebar.warning(f"No hay estaciones en {sel}")
+
+            except Exception as e:
+                st.sidebar.warning(f"Error cargando regiones: {e}")        
 
         # --- B. POR MUNICIPIO ---
         elif modo == "Por Municipio":
@@ -131,4 +161,5 @@ def render_selector_espacial():
     except Exception as e:
         st.sidebar.error(f"Error selector: {e}")
         
+
     return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
