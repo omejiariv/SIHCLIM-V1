@@ -140,38 +140,38 @@ if gdf_zona_seleccionada is not None:
                 st.subheader(f"Modelo Digital de Elevación 3D: {nombre_zona}")
                 
                 # --- VISUALIZACIÓN 3D INTERACTIVA (PLOTLY) ---
-                # Submuestreo inteligente para evitar que el navegador explote
-                # Queremos aprox 150x150 puntos máximo
+                import plotly.graph_objects as go
+
+                # 1. Submuestreo inteligente (Downsampling)
+                # Esto es vital: si intentamos graficar 1 millón de puntos, el navegador colapsa.
+                # Calculamos un factor para tener aprox. una malla de 150x150 puntos, que se ve HD y es rápida.
                 h, w = arr_elevacion.shape
                 factor = max(1, int(max(h, w) / 150))
                 
+                # Creamos la versión ligera para el gráfico
                 arr_3d = arr_elevacion[::factor, ::factor]
                 
-                # Crear Surface Plot
-                fig_3d = px.imshow(arr_3d, color_continuous_scale='Earth') # Base 2D
-                
-                # Convertir a 3D real con go.Surface
-                import plotly.graph_objects as go
-                
+                # 2. Crear el Gráfico de Superficie (Surface Plot)
                 fig_surf = go.Figure(data=[go.Surface(z=arr_3d, colorscale='Earth')])
                 
                 fig_surf.update_layout(
-                    title=f"Relieve 3D - {nombre_zona}",
+                    title=f"Topografía 3D - {nombre_zona}",
                     autosize=True,
                     width=800, 
                     height=600,
                     scene=dict(
-                        xaxis_title='Oeste-Este',
-                        yaxis_title='Sur-Norte',
+                        xaxis_title='Oeste - Este',
+                        yaxis_title='Sur - Norte',
                         zaxis_title='Altitud (m)',
-                        aspectmode='data' # Mantiene la proporción real del terreno
+                        # aspectmode='auto' ajusta la caja para que se vea bien visualmente
+                        aspectmode='auto' 
                     ),
                     margin=dict(l=65, r=50, b=65, t=90)
                 )
                 
                 st.plotly_chart(fig_surf, use_container_width=True)
                 
-                st.caption(f"💡 Puedes rotar, hacer zoom y explorar el terreno. Factor de simplificación: {factor}x")
+                st.info(f"💡 Usa el mouse para rotar, acercar y explorar el relieve. (Factor de optimización: 1 píxel de cada {factor})")
                 
             with tab2:
                 st.info("Aquí irá la Curva Hipsométrica Integrada.")
