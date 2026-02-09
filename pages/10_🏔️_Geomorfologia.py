@@ -176,39 +176,44 @@ if gdf_zona_seleccionada is not None:
             h, w = arr_elevacion.shape
             factor = max(1, int(max(h, w) / 200)) # Mejor resolución para el 3D
 
-            # --- TAB 1: 3D (CORREGIDO: EXAGERACIÓN VISUAL, NO DE DATOS) ---
+            # --- TAB 1: 3D (EXAGERACIÓN VISUAL, NO DE DATOS - SELECTOR DE COLOR) ---
             with tab1:
                 col_ctrl, col_map = st.columns([1, 4])
                 with col_ctrl:
                     st.markdown("##### 🎛️ Control 3D")
-                    # Rango más amplio y valor por defecto calibrado
                     exageracion = st.slider("Exageración Vertical:", 0.5, 5.0, 1.5, 0.1, key=f"slider_3d_{nombre_zona}")
+                    
+                    # 🎨 Nuevo Selector de Color
+                    paletas = {
+                        "Tierra (Natural)": "Earth",
+                        "Terreno (Verde/Café)": "bluyl", # Aprox a terreno
+                        "Viridis (Científico)": "Viridis",
+                        "Turbo (Alto Contraste)": "Turbo",
+                        "Agua (Azul/Verde)": "YlGnBu",
+                        "Magma (Oscuro)": "Magma"
+                    }
+                    paleta_nombre = st.selectbox("Paleta de Color:", list(paletas.keys()), index=0)
+                    paleta_codigo = paletas[paleta_nombre]
                 
                 with col_map:
                     arr_3d = arr_elevacion[::factor, ::factor]
                     
-                    # NO multiplicamos los datos. Usamos los datos reales.
-                    fig_surf = go.Figure(data=[go.Surface(z=arr_3d, colorscale='Earth')])
+                    # Usamos la paleta seleccionada
+                    fig_surf = go.Figure(data=[go.Surface(z=arr_3d, colorscale=paleta_codigo)])
                     
-                    # Calculamos el aspect ratio para que la exageración sea visual
-                    # Si el mapa es cuadrado, Z debe escalar proporcionalmente
-                    z_aspect = 0.2 * exageracion # 0.2 es una base empírica para que se vea bien
-                    
+                    z_aspect = 0.2 * exageracion
                     fig_surf.update_layout(
-                        title=f"Topografía 3D (Datos Reales - Vista x{exageracion})",
+                        title=f"Topografía 3D ({paleta_nombre})",
                         autosize=True, height=650,
                         scene=dict(
-                            xaxis_title='Oeste - Este',
-                            yaxis_title='Sur - Norte',
-                            zaxis_title='Altitud (m)',
-                            aspectmode='manual', 
-                            aspectratio=dict(x=1, y=1, z=z_aspect) # 🔥 AQUÍ ESTÁ LA MAGIA
+                            xaxis_title='X', yaxis_title='Y', zaxis_title='Altitud (m)',
+                            aspectmode='manual', aspectratio=dict(x=1, y=1, z=z_aspect)
                         ),
                         margin=dict(l=10, r=10, b=10, t=40)
                     )
                     st.plotly_chart(fig_surf, use_container_width=True)
 
-            # --- TAB 2: PENDIENTES (CORREGIDO: ZOOM ACTIVADO) ---
+            # --- TAB 2: PENDIENTES (ZOOM FULL) ---
             with tab2:
                 st.subheader("Mapa de Pendientes")
                 st.info(texto_analisis, icon="🤖") 
@@ -219,16 +224,19 @@ if gdf_zona_seleccionada is not None:
                     labels={'color': 'Grados'},
                     title=f"Pendientes: {nombre_zona}"
                 )
-                # Activamos Pan y Zoom explícitamente
+                
+                # Configuración explícita de ejes para permitir zoom libre
+                fig_slope.update_xaxes(fixedrange=False) # Permitir zoom X
+                fig_slope.update_yaxes(fixedrange=False) # Permitir zoom Y
+                
                 fig_slope.update_layout(
-                    height=600, 
-                    dragmode='pan', # Arrastrar para mover, rueda para zoom
+                    height=700, # Más alto
+                    dragmode='pan', 
                     hovermode='closest'
                 )
-                # Configuración crítica para permitir zoom con rueda del mouse
                 st.plotly_chart(fig_slope, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
 
-                # Tabla Resumen
+                # Tabla
                 slope_flat = slope_deg[~np.isnan(slope_deg)].flatten()
                 bins = [0, 3, 7, 12, 25, 50, 90]
                 labels = ['Plano', 'Suave', 'Inclinado', 'Ondulado', 'Escarpado', 'Muy Escarpado']
@@ -261,7 +269,7 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: RED DE DRENAJE VECTORIAL (CORREGIDO UMBRALES BAJOS - CRS) ---
+            # --- TAB 4: RED DE DRENAJE VECTORIAL (CORREGIDO CRS) ---
             gdf_rios_export = None 
             with tab4:
                 st.subheader("Red de Drenaje (Vectores)")
