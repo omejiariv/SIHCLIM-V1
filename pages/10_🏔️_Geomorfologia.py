@@ -32,10 +32,9 @@ if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
             bbox = gdf_zona_seleccionada.unary_union.envelope
             gdf_zona_seleccionada = gpd.GeoDataFrame({'geometry': [bbox]}, crs=gdf_zona_seleccionada.crs)
 
-# --- 2. CARGA DEL DEM (RASTER) ---
+# --- 2. CARGA DEL DEM (RASTER) MEJORADA ---
 DEM_PATH = os.path.join("data", "DemAntioquia_EPSG3116.tif")
 
-# Agregamos 'zona_id' para forzar la actualización del mapa al cambiar de municipio
 @st.cache_data(show_spinner="Procesando terreno...")
 def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
     """Corta el DEM grande usando la geometría seleccionada."""
@@ -51,7 +50,12 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
             gdf_proyectado = _gdf_corte.to_crs(crs_dem)
             geoms = gdf_proyectado.geometry.values
             
-            out_image, out_transform = mask(src, geoms, crop=True)
+            # Intentamos cortar. Si la zona está fuera del mapa, rasterio lanza ValueError
+            try:
+                out_image, out_transform = mask(src, geoms, crop=True)
+            except ValueError:
+                # Esto ocurre cuando el polígono no toca el mapa (Urabá, Bajo Cauca, etc.)
+                return None, "OUT_OF_BOUNDS", None
             
             out_meta = src.meta.copy()
             out_meta.update({
@@ -62,13 +66,21 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
             })
             
             dem_array = out_image[0]
+            
             # Filtros de limpieza
+            # Reemplazamos el valor NoData del archivo por NaN
             dem_array = np.where(dem_array == src.nodata, np.nan, dem_array)
+            # Filtro adicional para errores negativos o vacíos absolutos
             dem_array = np.where(dem_array < -100, np.nan, dem_array)
+            
+            # Verificación final: Si todo es NaN, es un recorte vacío
+            if np.isnan(dem_array).all():
+                 return None, "EMPTY_DATA", None
 
             return dem_array, out_meta, out_transform
 
     except Exception as e:
+        # Error técnico real
         st.error(f"Error técnico procesando el DEM: {e}")
         return None, None, None
 
@@ -119,7 +131,15 @@ if gdf_zona_seleccionada is not None:
         # Procesar DEM
         arr_elevacion, meta, transform = cargar_y_cortar_dem(DEM_PATH, gdf_zona_seleccionada, nombre_zona)
         
-        if arr_elevacion is not None and not np.isnan(arr_elevacion).all():
+        # MANEJO DE CASOS DE ERROR CONTROLADO
+        if meta == "OUT_OF_BOUNDS":
+            st.warning(f"⚠️ **Fuera de Cobertura:** La zona '{nombre_zona}' está fuera de los límites del mapa de elevación actual (DEM).")
+            st.info("💡 Por favor selecciona una zona en la región andina/central de Antioquia o carga un DEM de mayor cobertura.")
+        
+        elif meta == "EMPTY_DATA":
+             st.warning(f"⚠️ **Datos Vacíos:** El recorte se realizó, pero no contiene datos de elevación válidos.")
+             
+        elif arr_elevacion is not None and not np.isnan(arr_elevacion).all():
             
             # --- CÁLCULOS GLOBALES ---
             elevs_valid = arr_elevacion[~np.isnan(arr_elevacion)].flatten()
