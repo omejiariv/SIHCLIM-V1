@@ -22,24 +22,21 @@ calcular pendientes y realizar diagnósticos hidrológicos automáticos.
 # --- 1. BARRA LATERAL (SELECTOR) ---
 ids, nombre_zona, alt_ref, gdf_zona_seleccionada = selectors.render_selector_espacial()
 
-# 🛠️ CORRECCIÓN QUIRÚRGICA: Convertir Puntos (Regiones) en Polígono (Caja)
-# Esto soluciona que "Oriente", "Bajo Cauca", etc. devuelvan vacío.
+# 🛠️ CORRECCIÓN CLAVE: Convertir Puntos (Regiones) en Polígono (Caja)
+# Esto permite que zonas como "Oriente" o "Bajo Cauca" funcionen.
 if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
-    # Si la geometría son Puntos, creamos una caja envolvente (Bounding Box)
     if gdf_zona_seleccionada.geom_type.isin(['Point', 'MultiPoint']).any():
-        # Buffer pequeño para dar margen si es un solo punto, o envelope si son varios
+        # Buffer pequeño si es un solo punto, o caja envolvente si son varios (Región)
         if len(gdf_zona_seleccionada) == 1:
-            # Si es un solo punto, hacemos un buffer de 5km aprox (0.045 grados)
-            gdf_zona_seleccionada['geometry'] = gdf_zona_seleccionada.buffer(0.045)
+            gdf_zona_seleccionada['geometry'] = gdf_zona_seleccionada.buffer(0.045) # aprox 5km
         else:
-            # Si son muchos puntos (Región), creamos el rectángulo que los envuelve
             bbox = gdf_zona_seleccionada.unary_union.envelope
             gdf_zona_seleccionada = gpd.GeoDataFrame({'geometry': [bbox]}, crs=gdf_zona_seleccionada.crs)
 
 # --- 2. CARGA DEL DEM (RASTER) ---
 DEM_PATH = os.path.join("data", "DemAntioquia_EPSG3116.tif")
 
-# 🔥 CORRECCIÓN CLAVE: Agregamos 'zona_id' para que el caché sepa cuándo actualizarse
+# Agregamos 'zona_id' para forzar la actualización del mapa al cambiar de municipio
 @st.cache_data(show_spinner="Procesando terreno...")
 def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
     """Corta el DEM grande usando la geometría seleccionada."""
@@ -68,7 +65,7 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
             dem_array = out_image[0]
             # Filtros de limpieza
             dem_array = np.where(dem_array == src.nodata, np.nan, dem_array)
-            dem_array = np.where(dem_array < -100, np.nan, dem_array) # Eliminar errores negativos
+            dem_array = np.where(dem_array < -100, np.nan, dem_array)
 
             return dem_array, out_meta, out_transform
 
@@ -120,7 +117,7 @@ if gdf_zona_seleccionada is not None:
     if not os.path.exists(DEM_PATH):
         st.error(f"⚠️ No encuentro el archivo DEM en: {DEM_PATH}")
     else:
-        # Procesar DEM (Pasamos 'nombre_zona' para forzar actualización)
+        # Procesar DEM
         arr_elevacion, meta, transform = cargar_y_cortar_dem(DEM_PATH, gdf_zona_seleccionada, nombre_zona)
         
         if arr_elevacion is not None and not np.isnan(arr_elevacion).all():
@@ -129,7 +126,10 @@ if gdf_zona_seleccionada is not None:
             elevs_valid = arr_elevacion[~np.isnan(arr_elevacion)].flatten()
             min_el, max_el = np.min(elevs_valid), np.max(elevs_valid)
             mean_el = np.mean(elevs_valid)
-            hi_global = (mean_el - min_el) / (max_el - min_el)
+            
+            # Protección contra división por cero en HI
+            rango = max_el - min_el
+            hi_global = (mean_el - min_el) / rango if rango > 0 else 0.5
             
             # Pendientes
             pixel_size = 30.0 
@@ -138,8 +138,7 @@ if gdf_zona_seleccionada is not None:
             slope_deg = np.degrees(slope_rad)
             slope_mean_global = np.nanmean(slope_deg)
             max_slope = np.nanmax(slope_deg)
-            pct_escarpado = np.count_nonzero(slope_deg > 30) / np.count_nonzero(~np.isnan(slope_deg)) * 100
-
+            
             # Texto del Analista
             texto_analisis = analista_hidrologico(slope_mean_global, hi_global)
 
@@ -158,7 +157,7 @@ if gdf_zona_seleccionada is not None:
                 "🌊 Red de Drenaje (Beta)"
             ])
             
-            # Factor de reducción para gráficos pesados
+            # Factor de reducción para gráficos
             h, w = arr_elevacion.shape
             factor = max(1, int(max(h, w) / 150))
 
@@ -171,7 +170,7 @@ if gdf_zona_seleccionada is not None:
                 fig_surf.update_layout(
                     title=f"Topografía 3D - {nombre_zona}",
                     autosize=True,
-                    height=700, # 🔥 AUMENTADO TAMAÑO
+                    height=700,
                     scene=dict(
                         xaxis_title='Oeste - Este',
                         yaxis_title='Sur - Norte',
@@ -183,24 +182,19 @@ if gdf_zona_seleccionada is not None:
                 st.plotly_chart(fig_surf, use_container_width=True)
                 st.caption("Usa el mouse para rotar el modelo.")
 
-            # --- TAB 2: PENDIENTES (CORREGIDO LAYOUT) ---
+            # --- TAB 2: PENDIENTES (CORREGIDO Y BLINDADO) ---
             with tab2:
                 st.subheader(f"📐 Mapa de Pendientes y Riesgo")
                 
-                # 1. CÁLCULO SEGURO DE ESTADÍSTICAS (Anti-Crash) 🛡️
-                # Contamos cuántos píxeles tienen datos válidos (no son NaN)
+                # 1. CÁLCULO SEGURO DE ESTADÍSTICAS (Anti-ZeroDivision)
                 total_pixeles_validos = np.count_nonzero(~np.isnan(slope_deg))
                 
                 if total_pixeles_validos > 0:
-                    # Solo calculamos si hay datos
                     mean_slope = np.nanmean(slope_deg)
                     max_slope = np.nanmax(slope_deg)
-                    
-                    # Cálculo de porcentaje escarpado (>30 grados)
                     count_escarpado = np.count_nonzero((slope_deg > 30) & (~np.isnan(slope_deg)))
                     pct_escarpado = (count_escarpado / total_pixeles_validos) * 100
                 else:
-                    # Valores por defecto si el mapa está vacío
                     mean_slope = 0.0
                     max_slope = 0.0
                     pct_escarpado = 0.0
@@ -224,11 +218,11 @@ if gdf_zona_seleccionada is not None:
                     fig_slope.update_layout(height=600)
                     st.plotly_chart(fig_slope, use_container_width=True)
                 else:
-                    st.warning("⚠️ No hay datos de terreno suficientes en esta zona para calcular pendientes.")
+                    st.warning("⚠️ No hay datos de terreno suficientes para calcular pendientes.")
 
                 # 4. DIAGNÓSTICO DEL ANALISTA (Solo si hay datos)
                 if total_pixeles_validos > 0:
-                    st.info(texto_analisis, icon="🤖")"🤖")
+                    st.info(texto_analisis, icon="🤖")
 
             # --- TAB 3: HIPSOMETRÍA ---
             with tab3:
@@ -278,7 +272,7 @@ if gdf_zona_seleccionada is not None:
             # --- TAB 4: RED DE DRENAJE ---
             with tab4:
                 st.subheader("🌊 Red de Drenaje Teórica (Beta)")
-                st.warning("🚧 Módulo en construcción. Próximamente integración con PySheds.")
+                st.warning("🚧 Módulo en construcción.")
 
         else:
             st.warning("El recorte del DEM resultó en datos vacíos.")
