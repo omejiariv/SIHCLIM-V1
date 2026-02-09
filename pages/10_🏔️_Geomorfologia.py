@@ -26,31 +26,25 @@ ids, nombre_zona, alt_ref, gdf_zona_seleccionada = selectors.render_selector_esp
 DEM_PATH = os.path.join("data", "DemAntioquia_EPSG3116.tif")
 
 @st.cache_data(show_spinner="Cortando DEM...")
-def cargar_y_cortar_dem(ruta_dem, gdf_corte):
+def cargar_y_cortar_dem(ruta_dem, _gdf_corte):
     """
     Corta el DEM grande usando la geometría seleccionada.
-    Maneja la reproyección de coordenadas automáticamente.
     """
-    if gdf_corte is None or gdf_corte.empty:
+    if _gdf_corte is None or _gdf_corte.empty:
         return None, None, None
 
     try:
+        if not os.path.exists(ruta_dem):
+            return None, None, None
+
         with rasterio.open(ruta_dem) as src:
-            # 1. Verificar CRS del DEM y del Vector
             crs_dem = src.crs
-            
-            # 2. Reproyectar el Vector al sistema del DEM (EPSG:3116 - Metros)
-            # Esto es vital para que el corte coincida
-            gdf_proyectado = gdf_corte.to_crs(crs_dem)
-            
-            # 3. Obtener geometría para la máscara
+            # Usamos el argumento con guion bajo
+            gdf_proyectado = _gdf_corte.to_crs(crs_dem)
             geoms = gdf_proyectado.geometry.values
             
-            # 4. Cortar (Masking)
-            # crop=True elimina los bordes negros sobrantes
             out_image, out_transform = mask(src, geoms, crop=True)
             
-            # 5. Metadatos del nuevo recorte
             out_meta = src.meta.copy()
             out_meta.update({
                 "driver": "GTiff",
@@ -59,20 +53,16 @@ def cargar_y_cortar_dem(ruta_dem, gdf_corte):
                 "transform": out_transform
             })
             
-            # El array viene como (bandas, alto, ancho). Usamos la banda 1.
             dem_array = out_image[0]
-            
-            # Filtrar valores "No Data" (a veces vienen como -9999)
             dem_array = np.where(dem_array == src.nodata, np.nan, dem_array)
-            # Filtrar valores absurdos (ej: elevación < 0 en montaña)
-            dem_array = np.where(dem_array < 0, np.nan, dem_array)
+            dem_array = np.where(dem_array < -100, np.nan, dem_array)
 
             return dem_array, out_meta, out_transform
 
     except Exception as e:
-        st.error(f"Error procesando el DEM: {e}")
+        st.error(f"Error técnico procesando el DEM: {e}")
         return None, None, None
-
+        
 # --- 3. LÓGICA PRINCIPAL ---
 
 if gdf_zona_seleccionada is not None:
