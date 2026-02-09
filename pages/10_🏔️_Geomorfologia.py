@@ -281,7 +281,53 @@ if gdf_zona_seleccionada is not None:
                         st.warning("Datos insuficientes para calcular la curva.")
                 
             with tab3:
-                st.info("Aquí procesaremos el DEM con PySheds para obtener ríos.")
+                st.subheader(f"📐 Análisis de Pendientes: {nombre_zona}")
+                
+                if arr_elevacion is not None:
+                    # 1. CÁLCULO DE PENDIENTES (SLOPE) USANDO NUMPY
+                    # np.gradient calcula la derivada (cambio de altura por pixel)
+                    # Asumimos resolución de pixel aprox 30m (SRTM/ALOS) o 12.5m (ALOS PALSAR)
+                    # Para precisión exacta necesitaríamos leer el transform[0], pero usaremos 30m como estándar conservador
+                    pixel_size = 30.0 
+                    
+                    dy, dx = np.gradient(arr_elevacion, pixel_size)
+                    
+                    # Cálculo del ángulo en grados
+                    slope_rad = np.arctan(np.sqrt(dx**2 + dy**2))
+                    slope_deg = np.degrees(slope_rad)
+                    
+                    # Estadísticas
+                    mean_slope = np.nanmean(slope_deg)
+                    max_slope = np.nanmax(slope_deg)
+                    
+                    # Clasificación Simplificada (FAO)
+                    # 0-8°: Plano/Ondulado | 8-30°: Inclinado | >30°: Escarpado
+                    pct_plano = np.count_nonzero((slope_deg >= 0) & (slope_deg < 8)) / np.count_nonzero(~np.isnan(slope_deg)) * 100
+                    pct_escarpado = np.count_nonzero(slope_deg > 30) / np.count_nonzero(~np.isnan(slope_deg)) * 100
+                    
+                    # Métricas
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Pendiente Media", f"{mean_slope:.1f}°")
+                    c2.metric("Pendiente Máxima", f"{max_slope:.1f}°")
+                    c3.metric("% Área Escarpada (>30°)", f"{pct_escarpado:.1f}%")
+                    
+                    # Visualización
+                    # Usamos un mapa de colores "Turbo" o "Jet" para resaltar zonas rojas (pendientes altas)
+                    fig_slope = px.imshow(
+                        slope_deg[::factor, ::factor], # Usamos el mismo factor de reducción que en el mapa 3D
+                        color_continuous_scale='Turbo',
+                        title="Mapa de Pendientes (Grados)",
+                        labels={'color': 'Pendiente (°)'}
+                    )
+                    st.plotly_chart(fig_slope, use_container_width=True)
+                    
+                    st.info("""
+                    **Interpretación:**
+                    * 🟢 **Verdes/Azules (0-10°):** Zonas de deposición de sedimentos y posibles inundaciones lentas.
+                    * 🔴 **Rojos (>30°):** Zonas generadoras de caudal rápido y erosión. 
+                    """)
+                else:
+                    st.warning("No hay datos para calcular pendientes.")
 
 else:
     st.info("👈 Por favor selecciona una Cuenca o Municipio en la barra lateral para iniciar el análisis.")
