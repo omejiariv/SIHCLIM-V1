@@ -6,7 +6,6 @@ from rasterio.mask import mask
 import numpy as np
 import plotly.express as px
 import os
-import pydeck as pdk
 from modules import selectors
 import plotly.graph_objects as go
 
