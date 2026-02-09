@@ -261,7 +261,7 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: RED DE DRENAJE VECTORIAL (CORREGIDO: UMBRALES BAJOS) ---
+            # --- TAB 4: RED DE DRENAJE VECTORIAL (CORREGIDO UMBRALES BAJOS - CRS) ---
             gdf_rios_export = None 
             with tab4:
                 st.subheader("Red de Drenaje (Vectores)")
@@ -272,95 +272,75 @@ if gdf_zona_seleccionada is not None:
                     c_param, c_viz = st.columns([1, 4])
                     with c_param:
                         st.info("Configuración:")
-                        # 🔥 CAMBIO CRÍTICO: Bajamos el mínimo a 10 celdas.
-                        # En recortes pequeños, la acumulación es baja.
-                        umbral = st.slider("Umbral Acumulación", 10, 2000, 100, 10, key=f"umb_rio_{nombre_zona}")
-                        st.caption(f"Se mostrarán cauces que acumulen más de {umbral} celdas de agua.")
+                        # Slider más sensible (mínimo 5 celdas)
+                        umbral = st.slider("Umbral Acumulación", 5, 2000, 100, 5, key=f"umb_rio_{nombre_zona}")
+                        st.caption(f"Cauces con > {umbral} celdas de flujo.")
 
                     with c_viz:
                         import tempfile
-                        # 1. Procesamiento PySheds
-                        # Usamos un archivo temporal para garantizar compatibilidad
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
-                            # Escribir el recorte actual a disco
-                            meta_temp = meta.copy()
-                            meta_temp.update(driver='GTiff')
+                            meta_temp = meta.copy(); meta_temp.update(driver='GTiff')
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
                                 dst.write(arr_elevacion.astype(rasterio.float32), 1)
                             
-                            # Leer con PySheds
-                            grid = Grid.from_raster(tmp.name)
-                            dem_grid = grid.read_raster(tmp.name)
-                            
-                            # Rellenar sumideros (Depressions)
-                            pit_filled = grid.fill_pits(dem_grid)
-                            # Dirección de flujo
-                            fdir = grid.flowdir(pit_filled)
-                            # Acumulación
-                            acc = grid.accumulation(fdir)
-                            acc_arr = acc.view(np.ndarray)
-                            
-                            # Limpieza
-                            try: os.remove(tmp.name)
-                            except: pass
-
-                        # 2. Vectorización
-                        gdf_rios = extraer_vectores_rios(acc_arr, transform, umbral)
-                        
-                        if gdf_rios is not None:
-                            # Simplificar y guardar para exportación
-                            gdf_rios['geometry'] = gdf_rios.simplify(0) # Sin simplificación agresiva
-                            gdf_rios_export = gdf_rios.copy()
-                            
-                            # 3. Visualización (Sobre mapa real OpenStreetMap)
                             try:
-                                # Convertir a Lat/Lon para el mapa web
-                                gdf_rios_4326 = gdf_rios.set_crs(crs_dem, allow_override=True).to_crs("EPSG:4326")
+                                grid = Grid.from_raster(tmp.name)
+                                dem_grid = grid.read_raster(tmp.name)
+                                pit_filled = grid.fill_pits(dem_grid)
+                                fdir = grid.flowdir(pit_filled)
+                                acc = grid.accumulation(fdir)
+                                acc_arr = acc.view(np.ndarray)
+                            except Exception as e:
+                                st.error(f"Error PySheds: {e}")
+                                acc_arr = None
+                            finally:
+                                try: os.remove(tmp.name)
+                                except: pass
+
+                        if acc_arr is not None:
+                            gdf_rios = extraer_vectores_rios(acc_arr, transform, umbral)
+                            
+                            if gdf_rios is not None:
+                                gdf_rios['geometry'] = gdf_rios.simplify(0)
+                                gdf_rios_export = gdf_rios.copy()
                                 
-                                # Extraer coordenadas para pintar líneas en Plotly Mapbox
-                                lats = []
-                                lons = []
-                                for feature in gdf_rios_4326.geometry:
-                                    if feature.geom_type == 'LineString':
-                                        x, y = feature.xy
-                                        lons.extend(list(x) + [None])
-                                        lats.extend(list(y) + [None])
-                                    elif feature.geom_type == 'MultiLineString':
-                                        for geom in feature.geoms:
-                                            x, y = geom.xy
+                                try:
+                                    # 🔥 CORRECCIÓN: Usamos 'meta' para obtener el CRS, no 'crs_dem'
+                                    crs_actual = meta.get('crs', 'EPSG:3116') # Fallback seguro
+                                    gdf_rios_4326 = gdf_rios.set_crs(crs_actual, allow_override=True).to_crs("EPSG:4326")
+                                    
+                                    lats, lons = [], []
+                                    for feature in gdf_rios_4326.geometry:
+                                        if feature.geom_type == 'LineString':
+                                            x, y = feature.xy
                                             lons.extend(list(x) + [None])
                                             lats.extend(list(y) + [None])
+                                        elif feature.geom_type == 'MultiLineString':
+                                            for geom in feature.geoms:
+                                                x, y = geom.xy
+                                                lons.extend(list(x) + [None])
+                                                lats.extend(list(y) + [None])
 
-                                fig_map = go.Figure()
+                                    fig_map = go.Figure()
+                                    fig_map.add_trace(go.Scattermapbox(
+                                        mode = "lines", lon = lons, lat = lats,
+                                        line = {'width': 2, 'color': '#00BFFF'}, name = "Ríos"
+                                    ))
+                                    
+                                    center_lat = gdf_rios_4326.geometry.centroid.y.mean()
+                                    center_lon = gdf_rios_4326.geometry.centroid.x.mean()
 
-                                # Capa de Ríos
-                                fig_map.add_trace(go.Scattermapbox(
-                                    mode = "lines",
-                                    lon = lons, lat = lats,
-                                    line = {'width': 3, 'color': '#00BFFF'},
-                                    name = "Ríos Detectados"
-                                ))
-
-                                # Centrar mapa
-                                center_lat = gdf_rios_4326.geometry.centroid.y.mean()
-                                center_lon = gdf_rios_4326.geometry.centroid.x.mean()
-
-                                fig_map.update_layout(
-                                    mapbox_style="carto-positron", # Mapa base limpio
-                                    mapbox_center={"lat": center_lat, "lon": center_lon},
-                                    mapbox_zoom=11,
-                                    margin={"r":0,"t":0,"l":0,"b":0},
-                                    height=600
-                                )
-                                st.plotly_chart(fig_map, use_container_width=True)
-                                
-                            except Exception as e:
-                                st.error(f"Error visualizando mapa: {e}")
-                                # Fallback local
-                                fig_local = px.imshow(np.log1p(acc_arr), title="Acumulación de Flujo (Local)")
-                                st.plotly_chart(fig_local)
-                        else:
-                            st.warning(f"No se detectaron ríos con umbral {umbral}. Intenta bajarlo más (ej: 50).")
+                                    fig_map.update_layout(
+                                        mapbox_style="carto-positron",
+                                        mapbox_center={"lat": center_lat, "lon": center_lon},
+                                        mapbox_zoom=10, margin={"r":0,"t":0,"l":0,"b":0}, height=600
+                                    )
+                                    st.plotly_chart(fig_map, use_container_width=True)
+                                    
+                                except Exception as e:
+                                    st.error(f"Error visualizando mapa: {e}")
+                            else:
+                                st.warning(f"No se detectaron ríos con umbral {umbral}.")
 
             # --- TAB 5: DESCARGAS ---
             with tab5:
@@ -393,14 +373,13 @@ if gdf_zona_seleccionada is not None:
                 # 4. RÍOS (GEOJSON)
                 if gdf_rios_export is not None:
                     try:
-                        # Reproyectar a Lat/Lon para máxima compatibilidad (Google Earth, etc)
-                        gdf_export_4326 = gdf_rios_export.set_crs(crs_dem, allow_override=True).to_crs("EPSG:4326")
+                        # 🔥 CORRECCIÓN: Usamos meta['crs'] aquí también
+                        crs_actual = meta.get('crs', 'EPSG:3116')
+                        gdf_export_4326 = gdf_rios_export.set_crs(crs_actual, allow_override=True).to_crs("EPSG:4326")
                         json_str = gdf_export_4326.to_json()
                         c4.download_button("🌊 Red Drenaje (.geojson)", json_str, f"Rios_{nombre_zona}.geojson", "application/json")
                     except Exception as e:
                         c4.error(f"Error proyec: {e}")
-                else:
-                    c4.info("Genera la red en la pestaña 'Drenaje' primero.")
 
 else:
     st.info("👈 Selecciona una zona.")
