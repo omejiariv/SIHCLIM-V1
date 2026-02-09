@@ -279,7 +279,7 @@ if gdf_zona_seleccionada is not None:
                     with c_param:
                         st.info("Configuración Hidrológica")
                         # Slider calibrado para cuencas
-                        umbral = st.slider("Umbral Acumulación", 10, 5000, 500, 10, key=f"umb_rio_{nombre_zona}")
+                        umbral = st.slider("Umbral Acumulación", 1, 2000, 100, 2, key=f"umb_rio_{nombre_zona}")
                         st.caption(f"Se trazarán líneas donde se acumule el flujo de más de {umbral} celdas.")
 
                     with c_viz:
