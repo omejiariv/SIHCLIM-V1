@@ -176,40 +176,57 @@ if gdf_zona_seleccionada is not None:
             h, w = arr_elevacion.shape
             factor = max(1, int(max(h, w) / 200)) # Mejor resolución para el 3D
 
-            # --- TAB 1: 3D ---
+            # --- TAB 1: 3D (CORREGIDO: EXAGERACIÓN VISUAL, NO DE DATOS) ---
             with tab1:
                 col_ctrl, col_map = st.columns([1, 4])
                 with col_ctrl:
                     st.markdown("##### 🎛️ Control 3D")
-                    # Usamos una key única para forzar redraw si cambia
-                    exageracion = st.slider("Exageración Vertical:", 1.0, 10.0, 1.0, 0.5, key=f"slider_3d_{nombre_zona}")
+                    # Rango más amplio y valor por defecto calibrado
+                    exageracion = st.slider("Exageración Vertical:", 0.5, 5.0, 1.5, 0.1, key=f"slider_3d_{nombre_zona}")
                 
                 with col_map:
                     arr_3d = arr_elevacion[::factor, ::factor]
-                    # Aplicar la exageración directamente a los datos Z
-                    z_data = arr_3d * exageracion
                     
-                    fig_surf = go.Figure(data=[go.Surface(z=z_data, colorscale='Earth')])
+                    # NO multiplicamos los datos. Usamos los datos reales.
+                    fig_surf = go.Figure(data=[go.Surface(z=arr_3d, colorscale='Earth')])
+                    
+                    # Calculamos el aspect ratio para que la exageración sea visual
+                    # Si el mapa es cuadrado, Z debe escalar proporcionalmente
+                    z_aspect = 0.2 * exageracion # 0.2 es una base empírica para que se vea bien
+                    
                     fig_surf.update_layout(
-                        title=f"Topografía 3D (x{exageracion})",
+                        title=f"Topografía 3D (Datos Reales - Vista x{exageracion})",
                         autosize=True, height=650,
-                        scene=dict(aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.3)), # Z controlado
+                        scene=dict(
+                            xaxis_title='Oeste - Este',
+                            yaxis_title='Sur - Norte',
+                            zaxis_title='Altitud (m)',
+                            aspectmode='manual', 
+                            aspectratio=dict(x=1, y=1, z=z_aspect) # 🔥 AQUÍ ESTÁ LA MAGIA
+                        ),
                         margin=dict(l=10, r=10, b=10, t=40)
                     )
                     st.plotly_chart(fig_surf, use_container_width=True)
 
-            # --- TAB 2: PENDIENTES ---
+            # --- TAB 2: PENDIENTES (CORREGIDO: ZOOM ACTIVADO) ---
             with tab2:
                 st.subheader("Mapa de Pendientes")
-                st.info(texto_analisis, icon="🤖") # El Analista ha vuelto
+                st.info(texto_analisis, icon="🤖") 
                 
                 fig_slope = px.imshow(
                     slope_deg[::factor, ::factor], 
                     color_continuous_scale='Turbo',
-                    labels={'color': 'Grados'}
+                    labels={'color': 'Grados'},
+                    title=f"Pendientes: {nombre_zona}"
                 )
-                fig_slope.update_layout(height=600, dragmode='zoom') # Habilitar zoom explícito
-                st.plotly_chart(fig_slope, use_container_width=True)
+                # Activamos Pan y Zoom explícitamente
+                fig_slope.update_layout(
+                    height=600, 
+                    dragmode='pan', # Arrastrar para mover, rueda para zoom
+                    hovermode='closest'
+                )
+                # Configuración crítica para permitir zoom con rueda del mouse
+                st.plotly_chart(fig_slope, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
 
                 # Tabla Resumen
                 slope_flat = slope_deg[~np.isnan(slope_deg)].flatten()
@@ -244,8 +261,8 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: RED DE DRENAJE VECTORIAL 🌊 ---
-            gdf_rios_export = None # Para el botón de descarga
+            # --- TAB 4: RED DE DRENAJE VECTORIAL (CORREGIDO: UMBRALES BAJOS) ---
+            gdf_rios_export = None 
             with tab4:
                 st.subheader("Red de Drenaje (Vectores)")
                 
@@ -254,126 +271,136 @@ if gdf_zona_seleccionada is not None:
                 else:
                     c_param, c_viz = st.columns([1, 4])
                     with c_param:
-                        st.info("Configura la sensibilidad:")
-                        # Slider con key única para que se actualice
-                        umbral = st.slider("Umbral Acumulación", 500, 10000, 2000, 500, key=f"umb_rio_{nombre_zona}")
-                        st.caption("Menor valor = Más detalles (ríos pequeños).")
+                        st.info("Configuración:")
+                        # 🔥 CAMBIO CRÍTICO: Bajamos el mínimo a 10 celdas.
+                        # En recortes pequeños, la acumulación es baja.
+                        umbral = st.slider("Umbral Acumulación", 10, 2000, 100, 10, key=f"umb_rio_{nombre_zona}")
+                        st.caption(f"Se mostrarán cauces que acumulen más de {umbral} celdas de agua.")
 
                     with c_viz:
-                        # 1. Procesamiento PySheds
                         import tempfile
+                        # 1. Procesamiento PySheds
+                        # Usamos un archivo temporal para garantizar compatibilidad
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
-                            with rasterio.open(tmp.name, 'w', **meta) as dst:
+                            # Escribir el recorte actual a disco
+                            meta_temp = meta.copy()
+                            meta_temp.update(driver='GTiff')
+                            with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
                                 dst.write(arr_elevacion.astype(rasterio.float32), 1)
                             
+                            # Leer con PySheds
                             grid = Grid.from_raster(tmp.name)
                             dem_grid = grid.read_raster(tmp.name)
-                            # Rellenar y calcular flujo
+                            
+                            # Rellenar sumideros (Depressions)
                             pit_filled = grid.fill_pits(dem_grid)
+                            # Dirección de flujo
                             fdir = grid.flowdir(pit_filled)
+                            # Acumulación
                             acc = grid.accumulation(fdir)
                             acc_arr = acc.view(np.ndarray)
                             
-                            os.remove(tmp.name)
+                            # Limpieza
+                            try: os.remove(tmp.name)
+                            except: pass
 
-                        # 2. Vectorización (Pixels -> Líneas)
-                        # Usamos 'transform' para que las líneas queden en coords reales
+                        # 2. Vectorización
                         gdf_rios = extraer_vectores_rios(acc_arr, transform, umbral)
                         
                         if gdf_rios is not None:
-                            # Simplificar geometría para que sea rápido
-                            gdf_rios['geometry'] = gdf_rios.simplify(10) 
-                            gdf_rios_export = gdf_rios.copy() # Guardar copia para descarga
+                            # Simplificar y guardar para exportación
+                            gdf_rios['geometry'] = gdf_rios.simplify(0) # Sin simplificación agresiva
+                            gdf_rios_export = gdf_rios.copy()
                             
-                            # Plotly no soporta GeoDataFrame local plano fácilmente sin Mapbox.
-                            # Truco: Ploteamos las líneas como Scatter (XY)
-                            fig_net = go.Figure()
-                            
-                            # Mapa base (DEM en gris de fondo)
-                            fig_net.add_trace(go.Heatmap(
-                                z=arr_elevacion[::factor, ::factor],
-                                colorscale='Greys', opacity=0.4, showscale=False
-                            ))
-
-                            # Convertir líneas a coordenadas para Plotly
-                            lats = []
-                            lons = []
-                            for line in gdf_rios.geometry:
-                                if line.geom_type == 'LineString':
-                                    x, y = line.xy
-                                    # Convertir coordenadas planas a índices de pixel aproximados para coincidir con el heatmap
-                                    # O mejor: Plotear todo en coordenadas planas (quitar heatmap de pixel)
-                                    pass
-
-                            # MEJOR OPCIÓN VISUAL: Plotly Express con GeoJSON
-                            # Pero necesitamos convertir a Lat/Lon para que GeoJSON funcione bien en mapas web.
-                            # Si gdf_rios está en EPSG:3116, convertir a 4326.
+                            # 3. Visualización (Sobre mapa real OpenStreetMap)
                             try:
-                                gdf_rios_4326 = gdf_rios.set_crs("EPSG:3116", allow_override=True).to_crs("EPSG:4326")
+                                # Convertir a Lat/Lon para el mapa web
+                                gdf_rios_4326 = gdf_rios.set_crs(crs_dem, allow_override=True).to_crs("EPSG:4326")
                                 
-                                fig_map = px.choropleth_mapbox(
-                                    geojson=gdf_rios_4326.geometry.__geo_interface__,
-                                    locations=gdf_rios_4326.index,
-                                    mapbox_style="carto-positron",
-                                    zoom=8,
-                                    center={"lat": gdf_rios_4326.geometry.centroid.y.mean(), "lon": gdf_rios_4326.geometry.centroid.x.mean()},
-                                    opacity=0.5
-                                )
-                                # ScatterMapbox para las líneas de ríos (Más bonito)
-                                lat_lines = []
-                                lon_lines = []
-                                for geom in gdf_rios_4326.geometry:
-                                    if geom.geom_type == 'LineString':
-                                        xs, ys = geom.xy
-                                        lon_lines.extend(list(xs) + [None])
-                                        lat_lines.extend(list(ys) + [None])
-                                
-                                fig_map = go.Figure(go.Scattermapbox(
+                                # Extraer coordenadas para pintar líneas en Plotly Mapbox
+                                lats = []
+                                lons = []
+                                for feature in gdf_rios_4326.geometry:
+                                    if feature.geom_type == 'LineString':
+                                        x, y = feature.xy
+                                        lons.extend(list(x) + [None])
+                                        lats.extend(list(y) + [None])
+                                    elif feature.geom_type == 'MultiLineString':
+                                        for geom in feature.geoms:
+                                            x, y = geom.xy
+                                            lons.extend(list(x) + [None])
+                                            lats.extend(list(y) + [None])
+
+                                fig_map = go.Figure()
+
+                                # Capa de Ríos
+                                fig_map.add_trace(go.Scattermapbox(
                                     mode = "lines",
-                                    lon = lon_lines,
-                                    lat = lat_lines,
-                                    marker = {'size': 10},
-                                    line = {'width': 2, 'color': 'blue'}
+                                    lon = lons, lat = lats,
+                                    line = {'width': 3, 'color': '#00BFFF'},
+                                    name = "Ríos Detectados"
                                 ))
+
+                                # Centrar mapa
+                                center_lat = gdf_rios_4326.geometry.centroid.y.mean()
+                                center_lon = gdf_rios_4326.geometry.centroid.x.mean()
+
                                 fig_map.update_layout(
-                                    mapbox_style="open-street-map",
-                                    mapbox_center={"lat": gdf_rios_4326.geometry.centroid.y.mean(), "lon": gdf_rios_4326.geometry.centroid.x.mean()},
-                                    mapbox_zoom=10,
+                                    mapbox_style="carto-positron", # Mapa base limpio
+                                    mapbox_center={"lat": center_lat, "lon": center_lon},
+                                    mapbox_zoom=11,
                                     margin={"r":0,"t":0,"l":0,"b":0},
                                     height=600
                                 )
                                 st.plotly_chart(fig_map, use_container_width=True)
                                 
                             except Exception as e:
-                                st.warning("No se pudo reproyectar para mapa base. Mostrando esquema local.")
-                                # Fallback: Esquema local (Coordenadas de la imagen)
-                                fig_local = px.imshow(np.log1p(acc_arr), color_continuous_scale='Blues', title="Red de Flujo (Local)")
-                                st.plotly_chart(fig_local, use_container_width=True)
-
+                                st.error(f"Error visualizando mapa: {e}")
+                                # Fallback local
+                                fig_local = px.imshow(np.log1p(acc_arr), title="Acumulación de Flujo (Local)")
+                                st.plotly_chart(fig_local)
                         else:
-                            st.warning("No se detectaron ríos con ese umbral. Intenta bajar el valor.")
+                            st.warning(f"No se detectaron ríos con umbral {umbral}. Intenta bajarlo más (ej: 50).")
 
             # --- TAB 5: DESCARGAS ---
             with tab5:
                 st.subheader("Centro de Descargas")
-                c1, c2, c3 = st.columns(3)
+                c1, c2, c3, c4 = st.columns(4)
                 
-                # DEM
-                c1.download_button("📥 Descargar DEM (.tif)", to_tif(arr_elevacion, meta), f"DEM_{nombre_zona}.tif")
+                # 1. DEM (TIF)
+                c1.download_button("📥 DEM (.tif)", to_tif(arr_elevacion, meta), f"DEM_{nombre_zona}.tif")
                 
-                # Pendientes
+                # 2. Pendientes (TIF)
                 slope_meta = meta.copy(); slope_meta.update(dtype=rasterio.float32)
-                c2.download_button("📥 Descargar Pendientes (.tif)", to_tif(slope_deg, slope_meta), f"Slope_{nombre_zona}.tif")
+                c2.download_button("📥 Pendientes (.tif)", to_tif(slope_deg, slope_meta), f"Slope_{nombre_zona}.tif")
                 
-                # RÍOS (GEOJSON) - NUEVO 🌟
+                # 3. Datos Hipsométricos (CSV) - Recalculamos rápido para descargar
+                try:
+                    elevs_sorted = np.sort(elevs_valid)[::-1]
+                    n_px = len(elevs_sorted)
+                    area_pct = np.arange(1, n_px + 1) / n_px * 100
+                    # Submuestreo para CSV manejable (max 5000 filas)
+                    step = max(1, n_px // 5000)
+                    df_hypso_export = pd.DataFrame({
+                        "Porcentaje_Area": area_pct[::step],
+                        "Altitud_m": elevs_sorted[::step]
+                    })
+                    csv_hypso = df_hypso_export.to_csv(index=False).encode('utf-8')
+                    c3.download_button("📊 Curva Hipsométrica (.csv)", csv_hypso, f"Hipsometria_{nombre_zona}.csv", "text/csv")
+                except:
+                    c3.warning("Error generando CSV")
+
+                # 4. RÍOS (GEOJSON)
                 if gdf_rios_export is not None:
-                    # Intentamos convertir a LatLon para que sea útil en Google Earth/QGIS web
                     try:
-                        gdf_export_4326 = gdf_rios_export.set_crs("EPSG:3116", allow_override=True).to_crs("EPSG:4326")
+                        # Reproyectar a Lat/Lon para máxima compatibilidad (Google Earth, etc)
+                        gdf_export_4326 = gdf_rios_export.set_crs(crs_dem, allow_override=True).to_crs("EPSG:4326")
                         json_str = gdf_export_4326.to_json()
-                        c3.download_button("📥 Descargar Ríos (.geojson)", json_str, f"Rios_{nombre_zona}.geojson", "application/json")
-                    except:
-                        st.warning("No se pudo reproyectar ríos para descarga.")
+                        c4.download_button("🌊 Red Drenaje (.geojson)", json_str, f"Rios_{nombre_zona}.geojson", "application/json")
+                    except Exception as e:
+                        c4.error(f"Error proyec: {e}")
+                else:
+                    c4.info("Genera la red en la pestaña 'Drenaje' primero.")
 
 else:
     st.info("👈 Selecciona una zona.")
