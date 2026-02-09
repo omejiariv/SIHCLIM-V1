@@ -174,7 +174,111 @@ if gdf_zona_seleccionada is not None:
                 st.info(f"💡 Usa el mouse para rotar, acercar y explorar el relieve. (Factor de optimización: 1 píxel de cada {factor})")
                 
             with tab2:
-                st.info("Aquí irá la Curva Hipsométrica Integrada.")
+                st.subheader(f"📈 Análisis Hipsométrico: {nombre_zona}")
+                
+                if arr_elevacion is not None:
+                    # 1. Preparación de Datos (Usando lo que ya tenemos en memoria)
+                    elevs_valid = arr_elevacion[~np.isnan(arr_elevacion)].flatten()
+                    
+                    if len(elevs_valid) > 0:
+                        # Ordenamos de Mayor a Menor (Descendente) para la curva estándar
+                        elevs_sorted = np.sort(elevs_valid)[::-1]
+                        
+                        n_pixels = len(elevs_sorted)
+                        # Eje X: Porcentaje del Área Acumulada (0% a 100%)
+                        area_percent = np.arange(1, n_pixels + 1) / n_pixels * 100
+                        
+                        # --- 2. OPTIMIZACIÓN (Lógica de tu analysis.py) ---
+                        # Si hay demasiados puntos, reducimos a 200 para que el gráfico vuele
+                        if n_pixels > 200:
+                            indices = np.linspace(0, n_pixels - 1, 200, dtype=int)
+                            elevations_plot = elevs_sorted[indices]
+                            area_plot = area_percent[indices]
+                        else:
+                            elevations_plot = elevs_sorted
+                            area_plot = area_percent
+
+                        # --- 3. MODELO MATEMÁTICO (Tu joya de código) ---
+                        eq_str = "N/A"
+                        try:
+                            # Ajuste polinómico de grado 3
+                            coeffs = np.polyfit(area_plot, elevations_plot, 3)
+                            
+                            # Formateo elegante de la ecuación
+                            eq_str = (
+                                f"H = {coeffs[0]:.2e}A³ "
+                                f"{'+' if coeffs[1]>=0 else '-'} {abs(coeffs[1]):.2e}A² "
+                                f"{'+' if coeffs[2]>=0 else '-'} {abs(coeffs[2]):.2e}A "
+                                f"{'+' if coeffs[3]>=0 else '-'} {abs(coeffs[3]):.2f}"
+                            )
+                        except Exception:
+                            pass
+
+                        # --- 4. CÁLCULO DE INTEGRAL HIPSOMÉTRICA (HI) ---
+                        min_h = np.min(elevs_valid)
+                        max_h = np.max(elevs_valid)
+                        mean_h = np.mean(elevs_valid)
+                        median_h = np.median(elevs_valid)
+                        
+                        hi = (mean_h - min_h) / (max_h - min_h)
+                        
+                        # Interpretación Geomorfológica
+                        estado_cuenca = "Madura (Equilibrio)"
+                        icono_estado = "🏞️"
+                        interpretacion = "La cuenca ha alcanzado un equilibrio entre erosión y sedimentación."
+                        
+                        if hi > 0.60: 
+                            estado_cuenca = "Joven (Fase Activa)"
+                            icono_estado = "🌋"
+                            interpretacion = "Altas tasas de erosión y laderas inestables. Potencial torrencial."
+                        elif hi < 0.35: 
+                            estado_cuenca = "Vieja (Senil)"
+                            icono_estado = "🏝️"
+                            interpretacion = "Dominio de la sedimentación. Relieve muy desgastado."
+
+                        # --- 5. VISUALIZACIÓN ---
+                        
+                        # Métricas
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Integral Hipsométrica (HI)", f"{hi:.3f}")
+                        c2.metric("Estado", estado_cuenca)
+                        c3.metric("Altitud Mediana", f"{median_h:.0f} m")
+                        
+                        st.markdown(f"**📐 Ecuación del Relieve:** `$ {eq_str} $`")
+
+                        # Gráfico Plotly
+                        import plotly.graph_objects as go
+                        fig_hypso = go.Figure()
+                        
+                        fig_hypso.add_trace(go.Scatter(
+                            x=area_plot, 
+                            y=elevations_plot, 
+                            mode='lines', 
+                            name='Curva Real',
+                            line=dict(color='#2E86C1', width=3),
+                            fill='tozeroy',
+                            fillcolor='rgba(46, 134, 193, 0.2)'
+                        ))
+                        
+                        # Referencias
+                        fig_hypso.add_hline(y=mean_h, line_dash="dash", line_color="green", annotation_text="Media")
+                        fig_hypso.add_hline(y=median_h, line_dash="dash", line_color="orange", annotation_text="Mediana")
+
+                        fig_hypso.update_layout(
+                            title=f"Curva Hipsométrica - {nombre_zona}",
+                            xaxis_title="% Área Acumulada (A)",
+                            yaxis_title="Altitud H (m.s.n.m)",
+                            template="plotly_white",
+                            height=500,
+                            hovermode="x unified"
+                        )
+                        
+                        st.plotly_chart(fig_hypso, use_container_width=True)
+                        
+                        st.info(f"{icono_estado} **Diagnóstico:** {interpretacion}")
+
+                    else:
+                        st.warning("Datos insuficientes para calcular la curva.")
                 
             with tab3:
                 st.info("Aquí procesaremos el DEM con PySheds para obtener ríos.")
