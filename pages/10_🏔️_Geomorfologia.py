@@ -6,6 +6,7 @@ from rasterio.mask import mask
 import numpy as np
 import plotly.express as px
 import os
+import pydeck as pdk
 from modules import selectors
 
 # Configuración de Página
@@ -65,6 +66,51 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte):
         
 # --- 3. LÓGICA PRINCIPAL ---
 
+@st.cache_data
+def generar_mapa_3d(arr_elev, transform):
+    """
+    Genera una nube de puntos simplificada para visualización 3D en PyDeck.
+    """
+    # Submuestreo para rendimiento (max 100x100 puntos para fluidez)
+    h, w = arr_elev.shape
+    factor = max(1, int(max(h, w) / 100))
+    
+    # Crear malla de coordenadas
+    rows, cols = np.indices(arr_elev.shape)
+    elevs = arr_elev
+    
+    # Aplicar submuestreo
+    rows = rows[::factor, ::factor].flatten()
+    cols = cols[::factor, ::factor].flatten()
+    elevs = elevs[::factor, ::factor].flatten()
+    
+    # Filtrar NaNs
+    mask_valid = ~np.isnan(elevs)
+    rows = rows[mask_valid]
+    cols = cols[mask_valid]
+    elevs = elevs[mask_valid]
+    
+    # Convertir índices pixel a coordenadas reales (EPSG:3116 -> Lat/Lon)
+    # Nota: PyDeck necesita Lat/Lon. Aquí haremos una aproximación o reproyección.
+    # Para simplificar hoy, usaremos un mapa de calor 3D sobre el mapa base.
+    
+    # ESTRATEGIA: Usar 'TerrainLayer' de PyDeck es complejo sin un servidor de teselas.
+    # Usaremos 'ColumnLayer' (Hexágonos) que es más robusto para datos locales.
+    
+    # Transformación afín para obtener X, Y (Metros)
+    xs, ys = rasterio.transform.xy(transform, rows, cols)
+    
+    df_3d = pd.DataFrame({
+        "x": xs,
+        "y": ys,
+        "elev": elevs
+    })
+    
+    # Convertir a Lat/Lon (Necesitamos pyproj)
+    # Si no tienes pyproj instalado, esto fallará. 
+    # ¿Tienes pyproj en requirements.txt? Si no, usaremos Plotly 3D que es más fácil.
+    return df_3d
+
 if gdf_zona_seleccionada is not None:
     # Verificación de archivo
     if not os.path.exists(DEM_PATH):
@@ -91,16 +137,41 @@ if gdf_zona_seleccionada is not None:
             tab1, tab2, tab3 = st.tabs(["🗺️ Mapa de Elevación", "📈 Hipsometría", "🌊 Red de Drenaje (Beta)"])
             
             with tab1:
-                st.subheader(f"Modelo Digital de Elevación: {nombre_zona}")
-                # Visualización rápida 2D con Plotly (Heatmap)
-                # Submuestreo para velocidad (toma 1 de cada 5 píxeles) si es muy grande
-                factor = 1 if arr_elevacion.shape[0] < 1000 else 5
-                fig_dem = px.imshow(
-                    arr_elevacion[::factor, ::factor], 
-                    color_continuous_scale='Earth',
-                    title="Mapa de Altitudes (Vista Plana)"
+                st.subheader(f"Modelo Digital de Elevación 3D: {nombre_zona}")
+                
+                # --- VISUALIZACIÓN 3D INTERACTIVA (PLOTLY) ---
+                # Submuestreo inteligente para evitar que el navegador explote
+                # Queremos aprox 150x150 puntos máximo
+                h, w = arr_elevacion.shape
+                factor = max(1, int(max(h, w) / 150))
+                
+                arr_3d = arr_elevacion[::factor, ::factor]
+                
+                # Crear Surface Plot
+                fig_3d = px.imshow(arr_3d, color_continuous_scale='Earth') # Base 2D
+                
+                # Convertir a 3D real con go.Surface
+                import plotly.graph_objects as go
+                
+                fig_surf = go.Figure(data=[go.Surface(z=arr_3d, colorscale='Earth')])
+                
+                fig_surf.update_layout(
+                    title=f"Relieve 3D - {nombre_zona}",
+                    autosize=True,
+                    width=800, 
+                    height=600,
+                    scene=dict(
+                        xaxis_title='Oeste-Este',
+                        yaxis_title='Sur-Norte',
+                        zaxis_title='Altitud (m)',
+                        aspectmode='data' # Mantiene la proporción real del terreno
+                    ),
+                    margin=dict(l=65, r=50, b=65, t=90)
                 )
-                st.plotly_chart(fig_dem, use_container_width=True)
+                
+                st.plotly_chart(fig_surf, use_container_width=True)
+                
+                st.caption(f"💡 Puedes rotar, hacer zoom y explorar el terreno. Factor de simplificación: {factor}x")
                 
             with tab2:
                 st.info("Aquí irá la Curva Hipsométrica Integrada.")
