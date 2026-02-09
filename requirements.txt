@@ -35,3 +35,4 @@ sqlalchemy
 supabase
 scikit-learn
 pykrige
+pysheds
