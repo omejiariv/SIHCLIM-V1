@@ -99,35 +99,33 @@ def analista_hidrologico(pendiente_media, hi_value):
     Evolutivamente, es una **{tipo}** (HI: {hi_value:.3f}), indicando una {txt_hi}.
     """
 
-# --- FUNCIÓN DE VECTORIZACIÓN DE RÍOS (NUEVA) 🌊 ---
-@st.cache_data(show_spinner="Vectorizando red de drenaje...")
-def extraer_vectores_rios(acc_array, transform, umbral):
-    """Convierte la matriz de acumulación en líneas GeoJSON."""
-    # Crear máscara booleana
-    mask_rios = (acc_array > umbral).astype(np.int16)
-    
-    if np.sum(mask_rios) == 0:
-        return None
-
-    # Extraer formas del raster (Vectorización)
-    results = (
-        {'properties': {'raster_val': v}, 'geometry': s}
-        for i, (s, v) in enumerate(
-            features.shapes(mask_rios, transform=transform))
-        if v == 1 # Solo nos interesa donde hay río (valor 1)
-    )
-    
-    # Convertir a GeoDataFrame
-    geoms = list(results)
-    if not geoms:
-        return None
+# --- FUNCIÓN DE VECTORIZACIÓN DE RÍOS (MEJORADA: LÍNEAS DE FLUJO) 🌊 ---
+@st.cache_data(show_spinner="Trazando red de drenaje...")
+def extraer_vectores_rios(_grid, _fdir, _acc, umbral):
+    """
+    Usa PySheds para extraer líneas de flujo reales (no contornos de píxeles).
+    """
+    try:
+        # PySheds native extraction: Devuelve GeoJSON Lines siguiendo el flujo
+        # dirmap=(64, 128, 1, 2, 4, 8, 16, 32) es el estándar de PySheds
+        branches = _grid.extract_river_network(_fdir, _acc > umbral)
         
-    gdf = gpd.GeoDataFrame.from_features(geoms)
-    # Asignar CRS (asumimos el del DEM)
-    # Nota: para descargar GeoJSON necesitamos lat/lon (EPSG:4326), 
-    # pero para plotear en coords locales usamos coordenadas crudas.
-    # Aquí asumiremos coordenadas planas locales del DEM para visualización.
-    return gdf
+        if not branches['features']:
+            return None
+
+        # Convertir GeoJSON a GeoDataFrame
+        gdf = gpd.GeoDataFrame.from_features(branches['features'])
+        
+        # Asignar el CRS del sistema (PySheds usa el del raster original)
+        # Asumiremos el CRS del DEM (EPSG:3116)
+        if gdf.crs is None:
+            gdf.set_crs("EPSG:3116", inplace=True)
+            
+        return gdf
+
+    except Exception as e:
+        # Fallback silencioso si PySheds falla en algo interno
+        return None
 
 # --- FUNCIONES DE DESCARGA ---
 def to_tif(arr, meta):
@@ -269,7 +267,7 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: RED DE DRENAJE (CORREGIDO: POLÍGONOS VISIBLES) ---
+            # --- TAB 4: RED DE DRENAJE (MEJORADO: LÍNEAS CONTINUAS) ---
             gdf_rios_export = None 
             with tab4:
                 st.subheader("Red de Drenaje (Vectores)")
@@ -280,78 +278,77 @@ if gdf_zona_seleccionada is not None:
                     c_param, c_viz = st.columns([1, 4])
                     with c_param:
                         st.info("Configuración Hidrológica")
-                        # Slider ajustado para captar ríos en cuencas recortadas
-                        umbral = st.slider("Umbral Acumulación", 10, 5000, 100, 10, key=f"umb_rio_{nombre_zona}")
-                        st.caption(f"Se dibujarán zonas con más de {umbral} celdas de flujo acumulado.")
+                        # Slider calibrado para cuencas
+                        umbral = st.slider("Umbral Acumulación", 10, 5000, 500, 10, key=f"umb_rio_{nombre_zona}")
+                        st.caption(f"Se trazarán líneas donde se acumule el flujo de más de {umbral} celdas.")
 
                     with c_viz:
                         import tempfile
-                        # 1. Procesamiento PySheds
+                        # 1. Procesamiento PySheds (Necesario para obtener el Grid)
+                        # Creamos el grid hidrológico temporalmente
+                        acc_arr = None
+                        grid = None
+                        fdir = None
+                        
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                             meta_temp = meta.copy(); meta_temp.update(driver='GTiff')
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
                                 dst.write(arr_elevacion.astype(rasterio.float32), 1)
                             
                             try:
+                                # Instanciar Grid de PySheds
                                 grid = Grid.from_raster(tmp.name)
                                 dem_grid = grid.read_raster(tmp.name)
+                                
+                                # Operaciones Hidrológicas
                                 pit_filled = grid.fill_pits(dem_grid)
                                 fdir = grid.flowdir(pit_filled)
                                 acc = grid.accumulation(fdir)
                                 acc_arr = acc.view(np.ndarray)
+                                
                             except Exception as e:
                                 st.error(f"Error cálculo flujo: {e}")
-                                acc_arr = None
                             finally:
                                 try: os.remove(tmp.name)
                                 except: pass
 
-                        if acc_arr is not None:
-                            # 2. Vectorización
-                            gdf_rios = extraer_vectores_rios(acc_arr, transform, umbral)
+                        # 2. Vectorización (Ahora pasamos el grid y fdir)
+                        if grid is not None and fdir is not None:
+                            # Notar el guion bajo en los argumentos para el caché de Streamlit
+                            gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral)
                             
                             if gdf_rios is not None and not gdf_rios.empty:
                                 gdf_rios_export = gdf_rios.copy()
                                 
                                 try:
-                                    # Reproyección a Lat/Lon
-                                    crs_actual = meta.get('crs', 'EPSG:3116')
-                                    gdf_rios_4326 = gdf_rios.set_crs(crs_actual, allow_override=True).to_crs("EPSG:4326")
+                                    # Reproyección a Lat/Lon para el mapa web
+                                    # Aseguramos que el CRS de origen sea el correcto (EPSG:3116)
+                                    gdf_rios.set_crs("EPSG:3116", allow_override=True, inplace=True)
+                                    gdf_rios_4326 = gdf_rios.to_crs("EPSG:4326")
                                     
-                                    # --- LÓGICA DE VISUALIZACIÓN ROBUSTA (POLÍGONOS + LÍNEAS) ---
-                                    lats, lons = [], []
-                                    for feature in gdf_rios_4326.geometry:
-                                        # Extraer coordenadas según el tipo de geometría
-                                        coords = []
-                                        if feature.geom_type == 'Polygon':
-                                            coords = feature.exterior.coords
-                                        elif feature.geom_type == 'LineString':
-                                            coords = feature.coords
-                                        elif feature.geom_type == 'MultiPolygon':
-                                            for geom in feature.geoms:
-                                                lons.extend([p[0] for p in geom.exterior.coords] + [None])
-                                                lats.extend([p[1] for p in geom.exterior.coords] + [None])
-                                            continue # Ya procesado
-                                        elif feature.geom_type == 'MultiLineString':
-                                            for geom in feature.geoms:
-                                                lons.extend([p[0] for p in geom.coords] + [None])
-                                                lats.extend([p[1] for p in geom.coords] + [None])
-                                            continue
+                                    # Extraer coordenadas de líneas simples
+                                    lons, lats = [], []
+                                    for geom in gdf_rios_4326.geometry:
+                                        if geom.geom_type == 'LineString':
+                                            xs, ys = geom.xy
+                                            lons.extend(list(xs) + [None]) # None rompe la línea para pintar la siguiente
+                                            lats.extend(list(ys) + [None])
+                                        elif geom.geom_type == 'MultiLineString':
+                                            for g in geom.geoms:
+                                                xs, ys = g.xy
+                                                lons.extend(list(xs) + [None])
+                                                lats.extend(list(ys) + [None])
 
-                                        if coords:
-                                            lons.extend([p[0] for p in coords] + [None])
-                                            lats.extend([p[1] for p in coords] + [None])
-
-                                    # Crear Mapa
+                                    # Crear Mapa Limpio
                                     fig_map = go.Figure()
                                     
-                                    # Capa de Ríos (Azul Eléctrico)
+                                    # Líneas de Drenaje (Azul Claro)
                                     fig_map.add_trace(go.Scattermapbox(
                                         mode = "lines", 
                                         lon = lons, lat = lats,
-                                        line = {'width': 2.5, 'color': '#00BFFF'}, # Cyan brillante
-                                        name = "Ríos Identificados",
-                                        hoverinfo='none'
+                                        line = {'width': 2, 'color': '#00BFFF'}, # Cyan limpio
+                                        name = "Red Hídrica",
+                                        hoverinfo='skip' # Más limpio al pasar el mouse
                                     ))
                                     
                                     # Ajustar vista
@@ -363,19 +360,17 @@ if gdf_zona_seleccionada is not None:
                                         mapbox_center={"lat": center_lat, "lon": center_lon},
                                         mapbox_zoom=11, 
                                         margin={"r":0,"t":0,"l":0,"b":0}, 
-                                        height=600,
-                                        showlegend=True,
-                                        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                                        height=650,
+                                        showlegend=True
                                     )
                                     
-                                    # Estadísticas rápidas
-                                    st.success(f"✅ Se han vectorizado {len(gdf_rios)} segmentos de drenaje.")
+                                    st.success(f"✅ Red trazada: {len(gdf_rios)} segmentos.")
                                     st.plotly_chart(fig_map, use_container_width=True)
                                     
                                 except Exception as e:
                                     st.error(f"Error pintando mapa: {e}")
                             else:
-                                st.warning(f"⚠️ No se detectaron cauces con el umbral actual ({umbral}). Esto es normal en cabeceras o recortes pequeños. Prueba bajar el umbral a 10.")
+                                st.warning(f"No se detectaron ríos con umbral {umbral}. Baja el valor.")
 
             # --- TAB 5: DESCARGAS ---
             with tab5:
