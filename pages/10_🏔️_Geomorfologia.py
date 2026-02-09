@@ -22,6 +22,20 @@ calcular pendientes y realizar diagnósticos hidrológicos automáticos.
 # --- 1. BARRA LATERAL (SELECTOR) ---
 ids, nombre_zona, alt_ref, gdf_zona_seleccionada = selectors.render_selector_espacial()
 
+# 🛠️ CORRECCIÓN QUIRÚRGICA: Convertir Puntos (Regiones) en Polígono (Caja)
+# Esto soluciona que "Oriente", "Bajo Cauca", etc. devuelvan vacío.
+if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
+    # Si la geometría son Puntos, creamos una caja envolvente (Bounding Box)
+    if gdf_zona_seleccionada.geom_type.isin(['Point', 'MultiPoint']).any():
+        # Buffer pequeño para dar margen si es un solo punto, o envelope si son varios
+        if len(gdf_zona_seleccionada) == 1:
+            # Si es un solo punto, hacemos un buffer de 5km aprox (0.045 grados)
+            gdf_zona_seleccionada['geometry'] = gdf_zona_seleccionada.buffer(0.045)
+        else:
+            # Si son muchos puntos (Región), creamos el rectángulo que los envuelve
+            bbox = gdf_zona_seleccionada.unary_union.envelope
+            gdf_zona_seleccionada = gpd.GeoDataFrame({'geometry': [bbox]}, crs=gdf_zona_seleccionada.crs)
+
 # --- 2. CARGA DEL DEM (RASTER) ---
 DEM_PATH = os.path.join("data", "DemAntioquia_EPSG3116.tif")
 
@@ -173,27 +187,48 @@ if gdf_zona_seleccionada is not None:
             with tab2:
                 st.subheader(f"📐 Mapa de Pendientes y Riesgo")
                 
+                # 1. CÁLCULO SEGURO DE ESTADÍSTICAS (Anti-Crash) 🛡️
+                # Contamos cuántos píxeles tienen datos válidos (no son NaN)
+                total_pixeles_validos = np.count_nonzero(~np.isnan(slope_deg))
+                
+                if total_pixeles_validos > 0:
+                    # Solo calculamos si hay datos
+                    mean_slope = np.nanmean(slope_deg)
+                    max_slope = np.nanmax(slope_deg)
+                    
+                    # Cálculo de porcentaje escarpado (>30 grados)
+                    count_escarpado = np.count_nonzero((slope_deg > 30) & (~np.isnan(slope_deg)))
+                    pct_escarpado = (count_escarpado / total_pixeles_validos) * 100
+                else:
+                    # Valores por defecto si el mapa está vacío
+                    mean_slope = 0.0
+                    max_slope = 0.0
+                    pct_escarpado = 0.0
+
+                # 2. MOSTRAR MÉTRICAS
                 col_met1, col_met2, col_met3 = st.columns(3)
-                col_met1.metric("Pendiente Media", f"{slope_mean_global:.1f}°")
+                col_met1.metric("Pendiente Media", f"{mean_slope:.1f}°")
                 col_met2.metric("Pendiente Máxima", f"{max_slope:.1f}°")
                 col_met3.metric("% Área Escarpada (>30°)", f"{pct_escarpado:.1f}%")
                 
-                # 1. EL MAPA VA PRIMERO (Y GRANDE)
-                fig_slope = px.imshow(
-                    slope_deg[::factor, ::factor], 
-                    color_continuous_scale='Turbo',
-                    title=f"Mapa de Pendientes - {nombre_zona}",
-                    labels={'color': 'Pendiente (°)'}
-                )
-                # Quitamos ejes molestos y aumentamos tamaño
-                fig_slope.update_xaxes(showticklabels=False) 
-                fig_slope.update_yaxes(showticklabels=False)
-                fig_slope.update_layout(height=700) # 🔥 MAPA GRANDE
-                
-                st.plotly_chart(fig_slope, use_container_width=True)
+                # 3. VISUALIZACIÓN DEL MAPA
+                if total_pixeles_validos > 0:
+                    fig_slope = px.imshow(
+                        slope_deg[::factor, ::factor], 
+                        color_continuous_scale='Turbo',
+                        title=f"Mapa de Pendientes - {nombre_zona}",
+                        labels={'color': 'Pendiente (°)'}
+                    )
+                    fig_slope.update_xaxes(showticklabels=False) 
+                    fig_slope.update_yaxes(showticklabels=False)
+                    fig_slope.update_layout(height=600)
+                    st.plotly_chart(fig_slope, use_container_width=True)
+                else:
+                    st.warning("⚠️ No hay datos de terreno suficientes en esta zona para calcular pendientes.")
 
-                # 2. EL ANALISTA VA DEBAJO
-                st.info(texto_analisis, icon="🤖")
+                # 4. DIAGNÓSTICO DEL ANALISTA (Solo si hay datos)
+                if total_pixeles_validos > 0:
+                    st.info(texto_analisis, icon="🤖")"🤖")
 
             # --- TAB 3: HIPSOMETRÍA ---
             with tab3:
