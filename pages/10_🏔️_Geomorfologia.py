@@ -269,7 +269,7 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: RED DE DRENAJE VECTORIAL (CORREGIDO CRS) ---
+            # --- TAB 4: RED DE DRENAJE (CORREGIDO: POLÍGONOS VISIBLES) ---
             gdf_rios_export = None 
             with tab4:
                 st.subheader("Red de Drenaje (Vectores)")
@@ -279,13 +279,14 @@ if gdf_zona_seleccionada is not None:
                 else:
                     c_param, c_viz = st.columns([1, 4])
                     with c_param:
-                        st.info("Configuración:")
-                        # Slider más sensible (mínimo 5 celdas)
-                        umbral = st.slider("Umbral Acumulación", 5, 2000, 100, 5, key=f"umb_rio_{nombre_zona}")
-                        st.caption(f"Cauces con > {umbral} celdas de flujo.")
+                        st.info("Configuración Hidrológica")
+                        # Slider ajustado para captar ríos en cuencas recortadas
+                        umbral = st.slider("Umbral Acumulación", 10, 5000, 100, 10, key=f"umb_rio_{nombre_zona}")
+                        st.caption(f"Se dibujarán zonas con más de {umbral} celdas de flujo acumulado.")
 
                     with c_viz:
                         import tempfile
+                        # 1. Procesamiento PySheds
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                             meta_temp = meta.copy(); meta_temp.update(driver='GTiff')
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
@@ -299,56 +300,82 @@ if gdf_zona_seleccionada is not None:
                                 acc = grid.accumulation(fdir)
                                 acc_arr = acc.view(np.ndarray)
                             except Exception as e:
-                                st.error(f"Error PySheds: {e}")
+                                st.error(f"Error cálculo flujo: {e}")
                                 acc_arr = None
                             finally:
                                 try: os.remove(tmp.name)
                                 except: pass
 
                         if acc_arr is not None:
+                            # 2. Vectorización
                             gdf_rios = extraer_vectores_rios(acc_arr, transform, umbral)
                             
-                            if gdf_rios is not None:
-                                gdf_rios['geometry'] = gdf_rios.simplify(0)
+                            if gdf_rios is not None and not gdf_rios.empty:
                                 gdf_rios_export = gdf_rios.copy()
                                 
                                 try:
-                                    # 🔥 CORRECCIÓN: Usamos 'meta' para obtener el CRS, no 'crs_dem'
-                                    crs_actual = meta.get('crs', 'EPSG:3116') # Fallback seguro
+                                    # Reproyección a Lat/Lon
+                                    crs_actual = meta.get('crs', 'EPSG:3116')
                                     gdf_rios_4326 = gdf_rios.set_crs(crs_actual, allow_override=True).to_crs("EPSG:4326")
                                     
+                                    # --- LÓGICA DE VISUALIZACIÓN ROBUSTA (POLÍGONOS + LÍNEAS) ---
                                     lats, lons = [], []
                                     for feature in gdf_rios_4326.geometry:
-                                        if feature.geom_type == 'LineString':
-                                            x, y = feature.xy
-                                            lons.extend(list(x) + [None])
-                                            lats.extend(list(y) + [None])
+                                        # Extraer coordenadas según el tipo de geometría
+                                        coords = []
+                                        if feature.geom_type == 'Polygon':
+                                            coords = feature.exterior.coords
+                                        elif feature.geom_type == 'LineString':
+                                            coords = feature.coords
+                                        elif feature.geom_type == 'MultiPolygon':
+                                            for geom in feature.geoms:
+                                                lons.extend([p[0] for p in geom.exterior.coords] + [None])
+                                                lats.extend([p[1] for p in geom.exterior.coords] + [None])
+                                            continue # Ya procesado
                                         elif feature.geom_type == 'MultiLineString':
                                             for geom in feature.geoms:
-                                                x, y = geom.xy
-                                                lons.extend(list(x) + [None])
-                                                lats.extend(list(y) + [None])
+                                                lons.extend([p[0] for p in geom.coords] + [None])
+                                                lats.extend([p[1] for p in geom.coords] + [None])
+                                            continue
 
+                                        if coords:
+                                            lons.extend([p[0] for p in coords] + [None])
+                                            lats.extend([p[1] for p in coords] + [None])
+
+                                    # Crear Mapa
                                     fig_map = go.Figure()
+                                    
+                                    # Capa de Ríos (Azul Eléctrico)
                                     fig_map.add_trace(go.Scattermapbox(
-                                        mode = "lines", lon = lons, lat = lats,
-                                        line = {'width': 2, 'color': '#00BFFF'}, name = "Ríos"
+                                        mode = "lines", 
+                                        lon = lons, lat = lats,
+                                        line = {'width': 2.5, 'color': '#00BFFF'}, # Cyan brillante
+                                        name = "Ríos Identificados",
+                                        hoverinfo='none'
                                     ))
                                     
+                                    # Ajustar vista
                                     center_lat = gdf_rios_4326.geometry.centroid.y.mean()
                                     center_lon = gdf_rios_4326.geometry.centroid.x.mean()
 
                                     fig_map.update_layout(
                                         mapbox_style="carto-positron",
                                         mapbox_center={"lat": center_lat, "lon": center_lon},
-                                        mapbox_zoom=10, margin={"r":0,"t":0,"l":0,"b":0}, height=600
+                                        mapbox_zoom=11, 
+                                        margin={"r":0,"t":0,"l":0,"b":0}, 
+                                        height=600,
+                                        showlegend=True,
+                                        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
                                     )
+                                    
+                                    # Estadísticas rápidas
+                                    st.success(f"✅ Se han vectorizado {len(gdf_rios)} segmentos de drenaje.")
                                     st.plotly_chart(fig_map, use_container_width=True)
                                     
                                 except Exception as e:
-                                    st.error(f"Error visualizando mapa: {e}")
+                                    st.error(f"Error pintando mapa: {e}")
                             else:
-                                st.warning(f"No se detectaron ríos con umbral {umbral}.")
+                                st.warning(f"⚠️ No se detectaron cauces con el umbral actual ({umbral}). Esto es normal en cabeceras o recortes pequeños. Prueba bajar el umbral a 10.")
 
             # --- TAB 5: DESCARGAS ---
             with tab5:
