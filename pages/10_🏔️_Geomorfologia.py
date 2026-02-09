@@ -8,6 +8,8 @@ import plotly.express as px
 import os
 import pydeck as pdk
 from modules import selectors
+import plotly.graph_objects as go
+from modules import selectors
 
 # Configuración de Página
 st.set_page_config(page_title="Geomorfología Avanzada", page_icon="🏔️", layout="wide")
@@ -15,22 +17,18 @@ st.set_page_config(page_title="Geomorfología Avanzada", page_icon="🏔️", la
 st.title("🏔️ Análisis Geomorfológico y Terreno 3D")
 st.markdown("""
 Esta herramienta utiliza el **Modelo Digital de Elevación (DEM)** para modelar el terreno, 
-calcular pendientes y definir redes de drenaje.
+calcular pendientes y realizar diagnósticos hidrológicos automáticos.
 """)
 
 # --- 1. BARRA LATERAL (SELECTOR) ---
-# Reutilizamos tu selector robusto que ya filtra por Región/Cuenca/Municipio
 ids, nombre_zona, alt_ref, gdf_zona_seleccionada = selectors.render_selector_espacial()
 
 # --- 2. CARGA DEL DEM (RASTER) ---
-# Ruta del archivo (Ajusta la ruta si está en una subcarpeta 'data' o 'rasters')
 DEM_PATH = os.path.join("data", "DemAntioquia_EPSG3116.tif")
 
 @st.cache_data(show_spinner="Cortando DEM...")
 def cargar_y_cortar_dem(ruta_dem, _gdf_corte):
-    """
-    Corta el DEM grande usando la geometría seleccionada.
-    """
+    """Corta el DEM grande usando la geometría seleccionada."""
     if _gdf_corte is None or _gdf_corte.empty:
         return None, None, None
 
@@ -40,7 +38,6 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte):
 
         with rasterio.open(ruta_dem) as src:
             crs_dem = src.crs
-            # Usamos el argumento con guion bajo
             gdf_proyectado = _gdf_corte.to_crs(crs_dem)
             geoms = gdf_proyectado.geometry.values
             
@@ -63,271 +60,198 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte):
     except Exception as e:
         st.error(f"Error técnico procesando el DEM: {e}")
         return None, None, None
-        
-# --- 3. LÓGICA PRINCIPAL ---
 
-@st.cache_data
-def generar_mapa_3d(arr_elev, transform):
+# --- 3. CEREBRO DEL ANALISTA INTELIGENTE 🧠 ---
+def analista_hidrologico(pendiente_media, hi_value):
     """
-    Genera una nube de puntos simplificada para visualización 3D en PyDeck.
+    Genera un diagnóstico textual basado en métricas físicas.
     """
-    # Submuestreo para rendimiento (max 100x100 puntos para fluidez)
-    h, w = arr_elev.shape
-    factor = max(1, int(max(h, w) / 100))
+    diagnostico = ""
+    tipo_cuenca = ""
     
-    # Crear malla de coordenadas
-    rows, cols = np.indices(arr_elev.shape)
-    elevs = arr_elev
+    # 1. Análisis de Pendiente (Energía del flujo)
+    if pendiente_media > 25:
+        txt_pendiente = "un relieve fuertemente escarpado"
+        riesgo_pendiente = "alto potencial de flujos torrenciales y tiempos de concentración muy cortos (respuesta rápida)"
+    elif pendiente_media > 12:
+        txt_pendiente = "un relieve moderadamente ondulado"
+        riesgo_pendiente = "velocidades de flujo moderadas"
+    else:
+        txt_pendiente = "un relieve predominantemente plano"
+        riesgo_pendiente = "baja velocidad de flujo, propensión al encharcamiento y sedimentación"
+
+    # 2. Análisis Hipsométrico (Edad y Erosión)
+    if hi_value > 0.50:
+        tipo_cuenca = "Cuenca Joven (En Desequilibrio)"
+        txt_hi = "indica una fase activa de erosión, donde gran parte del volumen original de la montaña aún no ha sido removido"
+    elif hi_value < 0.35:
+        tipo_cuenca = "Cuenca Vieja (Senil)"
+        txt_hi = "indica una fase avanzada de sedimentación, con valles amplios y estabilizados"
+    else:
+        tipo_cuenca = "Cuenca Madura"
+        txt_hi = "indica un estado de equilibrio dinámico entre erosión y deposición"
+
+    # 3. Síntesis
+    diagnostico = f"""
+    **Diagnóstico del Analista:**
+    La zona analizada presenta **{txt_pendiente}** (Pendiente media: {pendiente_media:.1f}°), lo que sugiere {riesgo_pendiente}.
     
-    # Aplicar submuestreo
-    rows = rows[::factor, ::factor].flatten()
-    cols = cols[::factor, ::factor].flatten()
-    elevs = elevs[::factor, ::factor].flatten()
+    Desde el punto de vista evolutivo, se clasifica como una **{tipo_cuenca}** (HI: {hi_value:.3f}). Esto {txt_hi}.
     
-    # Filtrar NaNs
-    mask_valid = ~np.isnan(elevs)
-    rows = rows[mask_valid]
-    cols = cols[mask_valid]
-    elevs = elevs[mask_valid]
-    
-    # Convertir índices pixel a coordenadas reales (EPSG:3116 -> Lat/Lon)
-    # Nota: PyDeck necesita Lat/Lon. Aquí haremos una aproximación o reproyección.
-    # Para simplificar hoy, usaremos un mapa de calor 3D sobre el mapa base.
-    
-    # ESTRATEGIA: Usar 'TerrainLayer' de PyDeck es complejo sin un servidor de teselas.
-    # Usaremos 'ColumnLayer' (Hexágonos) que es más robusto para datos locales.
-    
-    # Transformación afín para obtener X, Y (Metros)
-    xs, ys = rasterio.transform.xy(transform, rows, cols)
-    
-    df_3d = pd.DataFrame({
-        "x": xs,
-        "y": ys,
-        "elev": elevs
-    })
-    
-    # Convertir a Lat/Lon (Necesitamos pyproj)
-    # Si no tienes pyproj instalado, esto fallará. 
-    # ¿Tienes pyproj en requirements.txt? Si no, usaremos Plotly 3D que es más fácil.
-    return df_3d
+    **Implicación Hidrológica:** {'⚠️ Se recomienda monitoreo de avenidas torrenciales y erosión de laderas.' if pendiente_media > 20 else 'ℹ️ La gestión debe enfocarse en el control de inundaciones lentas y drenaje.'}
+    """
+    return diagnostico
+
+# --- 4. LÓGICA PRINCIPAL ---
 
 if gdf_zona_seleccionada is not None:
-    # Verificación de archivo
     if not os.path.exists(DEM_PATH):
         st.error(f"⚠️ No encuentro el archivo DEM en: {DEM_PATH}")
-        st.info("Por favor verifica que el archivo 'DemAntioquia_EPSG3116.tif' esté en la carpeta 'data'.")
     else:
         # Procesar DEM
         arr_elevacion, meta, transform = cargar_y_cortar_dem(DEM_PATH, gdf_zona_seleccionada)
         
-        if arr_elevacion is not None:
-            # Estadísticas Básicas
-            min_el = np.nanmin(arr_elevacion)
-            max_el = np.nanmax(arr_elevacion)
-            mean_el = np.nanmean(arr_elevacion)
+        if arr_elevacion is not None and not np.isnan(arr_elevacion).all():
+            # Cálculos Globales para el Analista
+            elevs_valid = arr_elevacion[~np.isnan(arr_elevacion)].flatten()
+            min_el, max_el = np.min(elevs_valid), np.max(elevs_valid)
+            mean_el = np.mean(elevs_valid)
             
-            # KPIs
+            # Cálculo HI
+            hi_global = (mean_el - min_el) / (max_el - min_el)
+            
+            # Cálculo Pendiente
+            pixel_size = 30.0 
+            dy, dx = np.gradient(arr_elevacion, pixel_size)
+            slope_rad = np.arctan(np.sqrt(dx**2 + dy**2))
+            slope_deg = np.degrees(slope_rad)
+            slope_mean_global = np.nanmean(slope_deg)
+
+            # Generar el Texto del Analista
+            texto_analisis = analista_hidrologico(slope_mean_global, hi_global)
+
+            # Métricas Superiores
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Elevación Mínima", f"{min_el:.0f} m.s.n.m")
-            c2.metric("Elevación Máxima", f"{max_el:.0f} m.s.n.m")
-            c3.metric("Elevación Media", f"{mean_el:.0f} m.s.n.m")
+            c1.metric("Elevación Mínima", f"{min_el:.0f} m")
+            c2.metric("Elevación Máxima", f"{max_el:.0f} m")
+            c3.metric("Elevación Media", f"{mean_el:.0f} m")
             c4.metric("Rango Altitudinal", f"{max_el - min_el:.0f} m")
 
-            # --- PESTAÑAS DE ANÁLISIS ---
-            tab1, tab2, tab3 = st.tabs(["🗺️ Mapa de Elevación", "📈 Hipsometría", "🌊 Red de Drenaje (Beta)"])
+            # --- PESTAÑAS REORGANIZADAS ---
+            tab1, tab2, tab3, tab4 = st.tabs([
+                "🗺️ Elevación 3D", 
+                "📐 Pendientes", 
+                "📈 Hipsometría", 
+                "🌊 Red de Drenaje (Beta)"
+            ])
             
+            # --- TAB 1: 3D ---
             with tab1:
                 st.subheader(f"Modelo Digital de Elevación 3D: {nombre_zona}")
-                
-                # --- VISUALIZACIÓN 3D INTERACTIVA (PLOTLY) ---
-                import plotly.graph_objects as go
-
-                # 1. Submuestreo inteligente (Downsampling)
-                # Esto es vital: si intentamos graficar 1 millón de puntos, el navegador colapsa.
-                # Calculamos un factor para tener aprox. una malla de 150x150 puntos, que se ve HD y es rápida.
                 h, w = arr_elevacion.shape
                 factor = max(1, int(max(h, w) / 150))
-                
-                # Creamos la versión ligera para el gráfico
                 arr_3d = arr_elevacion[::factor, ::factor]
                 
-                # 2. Crear el Gráfico de Superficie (Surface Plot)
                 fig_surf = go.Figure(data=[go.Surface(z=arr_3d, colorscale='Earth')])
-                
                 fig_surf.update_layout(
                     title=f"Topografía 3D - {nombre_zona}",
                     autosize=True,
-                    width=800, 
                     height=600,
                     scene=dict(
                         xaxis_title='Oeste - Este',
                         yaxis_title='Sur - Norte',
                         zaxis_title='Altitud (m)',
-                        # aspectmode='auto' ajusta la caja para que se vea bien visualmente
                         aspectmode='auto' 
                     ),
                     margin=dict(l=65, r=50, b=65, t=90)
                 )
-                
                 st.plotly_chart(fig_surf, use_container_width=True)
-                
-                st.info(f"💡 Usa el mouse para rotar, acercar y explorar el relieve. (Factor de optimización: 1 píxel de cada {factor})")
-                
+                st.caption("Usa el mouse para rotar el modelo.")
+
+            # --- TAB 2: PENDIENTES (NUEVA PESTAÑA INDEPENDIENTE) ---
             with tab2:
-                st.subheader(f"📈 Análisis Hipsométrico: {nombre_zona}")
+                st.subheader(f"📐 Mapa de Pendientes y Riesgo")
                 
-                if arr_elevacion is not None:
-                    # 1. Preparación de Datos (Usando lo que ya tenemos en memoria)
-                    elevs_valid = arr_elevacion[~np.isnan(arr_elevacion)].flatten()
-                    
-                    if len(elevs_valid) > 0:
-                        # Ordenamos de Mayor a Menor (Descendente) para la curva estándar
-                        elevs_sorted = np.sort(elevs_valid)[::-1]
-                        
-                        n_pixels = len(elevs_sorted)
-                        # Eje X: Porcentaje del Área Acumulada (0% a 100%)
-                        area_percent = np.arange(1, n_pixels + 1) / n_pixels * 100
-                        
-                        # --- 2. OPTIMIZACIÓN (Lógica de tu analysis.py) ---
-                        # Si hay demasiados puntos, reducimos a 200 para que el gráfico vuele
-                        if n_pixels > 200:
-                            indices = np.linspace(0, n_pixels - 1, 200, dtype=int)
-                            elevations_plot = elevs_sorted[indices]
-                            area_plot = area_percent[indices]
-                        else:
-                            elevations_plot = elevs_sorted
-                            area_plot = area_percent
+                # Mostrar el Analista Inteligente Aquí
+                st.info(texto_analisis, icon="🤖")
 
-                        # --- 3. MODELO MATEMÁTICO (Tu joya de código) ---
-                        eq_str = "N/A"
-                        try:
-                            # Ajuste polinómico de grado 3
-                            coeffs = np.polyfit(area_plot, elevations_plot, 3)
-                            
-                            # Formateo elegante de la ecuación
-                            eq_str = (
-                                f"H = {coeffs[0]:.2e}A³ "
-                                f"{'+' if coeffs[1]>=0 else '-'} {abs(coeffs[1]):.2e}A² "
-                                f"{'+' if coeffs[2]>=0 else '-'} {abs(coeffs[2]):.2e}A "
-                                f"{'+' if coeffs[3]>=0 else '-'} {abs(coeffs[3]):.2f}"
-                            )
-                        except Exception:
-                            pass
-
-                        # --- 4. CÁLCULO DE INTEGRAL HIPSOMÉTRICA (HI) ---
-                        min_h = np.min(elevs_valid)
-                        max_h = np.max(elevs_valid)
-                        mean_h = np.mean(elevs_valid)
-                        median_h = np.median(elevs_valid)
-                        
-                        hi = (mean_h - min_h) / (max_h - min_h)
-                        
-                        # Interpretación Geomorfológica
-                        estado_cuenca = "Madura (Equilibrio)"
-                        icono_estado = "🏞️"
-                        interpretacion = "La cuenca ha alcanzado un equilibrio entre erosión y sedimentación."
-                        
-                        if hi > 0.60: 
-                            estado_cuenca = "Joven (Fase Activa)"
-                            icono_estado = "🌋"
-                            interpretacion = "Altas tasas de erosión y laderas inestables. Potencial torrencial."
-                        elif hi < 0.35: 
-                            estado_cuenca = "Vieja (Senil)"
-                            icono_estado = "🏝️"
-                            interpretacion = "Dominio de la sedimentación. Relieve muy desgastado."
-
-                        # --- 5. VISUALIZACIÓN ---
-                        
-                        # Métricas
-                        c1, c2, c3 = st.columns(3)
-                        c1.metric("Integral Hipsométrica (HI)", f"{hi:.3f}")
-                        c2.metric("Estado", estado_cuenca)
-                        c3.metric("Altitud Mediana", f"{median_h:.0f} m")
-                        
-                        st.markdown(f"**📐 Ecuación del Relieve:** `$ {eq_str} $`")
-
-                        # Gráfico Plotly
-                        import plotly.graph_objects as go
-                        fig_hypso = go.Figure()
-                        
-                        fig_hypso.add_trace(go.Scatter(
-                            x=area_plot, 
-                            y=elevations_plot, 
-                            mode='lines', 
-                            name='Curva Real',
-                            line=dict(color='#2E86C1', width=3),
-                            fill='tozeroy',
-                            fillcolor='rgba(46, 134, 193, 0.2)'
-                        ))
-                        
-                        # Referencias
-                        fig_hypso.add_hline(y=mean_h, line_dash="dash", line_color="green", annotation_text="Media")
-                        fig_hypso.add_hline(y=median_h, line_dash="dash", line_color="orange", annotation_text="Mediana")
-
-                        fig_hypso.update_layout(
-                            title=f"Curva Hipsométrica - {nombre_zona}",
-                            xaxis_title="% Área Acumulada (A)",
-                            yaxis_title="Altitud H (m.s.n.m)",
-                            template="plotly_white",
-                            height=500,
-                            hovermode="x unified"
-                        )
-                        
-                        st.plotly_chart(fig_hypso, use_container_width=True)
-                        
-                        st.info(f"{icono_estado} **Diagnóstico:** {interpretacion}")
-
-                    else:
-                        st.warning("Datos insuficientes para calcular la curva.")
+                max_slope = np.nanmax(slope_deg)
+                pct_escarpado = np.count_nonzero(slope_deg > 30) / np.count_nonzero(~np.isnan(slope_deg)) * 100
                 
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Pendiente Media", f"{slope_mean_global:.1f}°")
+                c2.metric("Pendiente Máxima", f"{max_slope:.1f}°")
+                c3.metric("% Área Escarpada (>30°)", f"{pct_escarpado:.1f}%")
+                
+                # Mapa de Pendientes
+                fig_slope = px.imshow(
+                    slope_deg[::factor, ::factor], 
+                    color_continuous_scale='Turbo',
+                    title="Mapa de Pendientes (Grados)",
+                    labels={'color': 'Pendiente (°)'}
+                )
+                st.plotly_chart(fig_slope, use_container_width=True)
+
+            # --- TAB 3: HIPSOMETRÍA ---
             with tab3:
-                st.subheader(f"📐 Análisis de Pendientes: {nombre_zona}")
+                st.subheader(f"📈 Curva Hipsométrica")
                 
-                if arr_elevacion is not None:
-                    # 1. CÁLCULO DE PENDIENTES (SLOPE) USANDO NUMPY
-                    # np.gradient calcula la derivada (cambio de altura por pixel)
-                    # Asumimos resolución de pixel aprox 30m (SRTM/ALOS) o 12.5m (ALOS PALSAR)
-                    # Para precisión exacta necesitaríamos leer el transform[0], pero usaremos 30m como estándar conservador
-                    pixel_size = 30.0 
-                    
-                    dy, dx = np.gradient(arr_elevacion, pixel_size)
-                    
-                    # Cálculo del ángulo en grados
-                    slope_rad = np.arctan(np.sqrt(dx**2 + dy**2))
-                    slope_deg = np.degrees(slope_rad)
-                    
-                    # Estadísticas
-                    mean_slope = np.nanmean(slope_deg)
-                    max_slope = np.nanmax(slope_deg)
-                    
-                    # Clasificación Simplificada (FAO)
-                    # 0-8°: Plano/Ondulado | 8-30°: Inclinado | >30°: Escarpado
-                    pct_plano = np.count_nonzero((slope_deg >= 0) & (slope_deg < 8)) / np.count_nonzero(~np.isnan(slope_deg)) * 100
-                    pct_escarpado = np.count_nonzero(slope_deg > 30) / np.count_nonzero(~np.isnan(slope_deg)) * 100
-                    
-                    # Métricas
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Pendiente Media", f"{mean_slope:.1f}°")
-                    c2.metric("Pendiente Máxima", f"{max_slope:.1f}°")
-                    c3.metric("% Área Escarpada (>30°)", f"{pct_escarpado:.1f}%")
-                    
-                    # Visualización
-                    # Usamos un mapa de colores "Turbo" o "Jet" para resaltar zonas rojas (pendientes altas)
-                    fig_slope = px.imshow(
-                        slope_deg[::factor, ::factor], # Usamos el mismo factor de reducción que en el mapa 3D
-                        color_continuous_scale='Turbo',
-                        title="Mapa de Pendientes (Grados)",
-                        labels={'color': 'Pendiente (°)'}
-                    )
-                    st.plotly_chart(fig_slope, use_container_width=True)
-                    
-                    st.info("""
-                    **Interpretación:**
-                    * 🟢 **Verdes/Azules (0-10°):** Zonas de deposición de sedimentos y posibles inundaciones lentas.
-                    * 🔴 **Rojos (>30°):** Zonas generadoras de caudal rápido y erosión. 
-                    """)
-                else:
-                    st.warning("No hay datos para calcular pendientes.")
+                # Mostrar el Analista Inteligente También Aquí (Contexto)
+                st.success(f"**Análisis Evolutivo:** Se clasifica como una **{('Cuenca Joven' if hi_global > 0.5 else 'Cuenca Vieja')}** (HI: {hi_global:.3f}).")
 
+                elevs_sorted = np.sort(elevs_valid)[::-1]
+                n_pixels = len(elevs_sorted)
+                area_percent = np.arange(1, n_pixels + 1) / n_pixels * 100
+                
+                # Optimización Gráfica
+                if n_pixels > 200:
+                    indices = np.linspace(0, n_pixels - 1, 200, dtype=int)
+                    elevations_plot = elevs_sorted[indices]
+                    area_plot = area_percent[indices]
+                else:
+                    elevations_plot = elevs_sorted
+                    area_plot = area_percent
+
+                # Ecuación
+                eq_str = "N/A"
+                try:
+                    coeffs = np.polyfit(area_plot, elevations_plot, 3)
+                    eq_str = (
+                        f"H = {coeffs[0]:.2e}A³ "
+                        f"{'+' if coeffs[1]>=0 else '-'} {abs(coeffs[1]):.2e}A² "
+                        f"{'+' if coeffs[2]>=0 else '-'} {abs(coeffs[2]):.2e}A "
+                        f"{'+' if coeffs[3]>=0 else '-'} {abs(coeffs[3]):.2f}"
+                    )
+                except: pass
+
+                st.markdown(f"**📐 Ecuación del Relieve:** `$ {eq_str} $`")
+
+                fig_hypso = go.Figure()
+                fig_hypso.add_trace(go.Scatter(
+                    x=area_plot, y=elevations_plot, mode='lines', name='Curva Real',
+                    line=dict(color='#2E86C1', width=3), fill='tozeroy'
+                ))
+                fig_hypso.update_layout(
+                    title="Distribución de Altitudes",
+                    xaxis_title="% Área Acumulada",
+                    yaxis_title="Altitud (m)",
+                    height=500
+                )
+                st.plotly_chart(fig_hypso, use_container_width=True)
+
+            # --- TAB 4: RED DE DRENAJE (PLACEHOLDER) ---
+            with tab4:
+                st.subheader("🌊 Red de Drenaje Teórica (Beta)")
+                st.warning("🚧 Módulo en construcción. Próximamente integración con PySheds para extracción automática de cauces.")
+                st.markdown("""
+                **Hoja de Ruta:**
+                1. Relleno de sumideros (Fill Sinks).
+                2. Dirección de flujo (Flow Direction).
+                3. Acumulación de flujo (Flow Accumulation).
+                4. Definición de umbral para arroyos.
+                """)
+
+        else:
+            st.warning("El recorte del DEM resultó en datos vacíos.")
 else:
-    st.info("👈 Por favor selecciona una Cuenca o Municipio en la barra lateral para iniciar el análisis.")
+    st.info("👈 Selecciona una zona en la barra lateral.")
