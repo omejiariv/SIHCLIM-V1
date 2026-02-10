@@ -351,24 +351,14 @@ if gdf_zona_seleccionada is not None:
                                 fig.update_xaxes(showticklabels=False); fig.update_yaxes(showticklabels=False)
                                 st.plotly_chart(fig, use_container_width=True)
 
-                            # --- MODO 2: DIVISORIA DE CUENCA ---
-                            elif modo_viz == "Divisoria de Cuenca (Beta)":
-                                st.markdown("##### 🏔️ Delimitación Automática")
-                                
-                                # 1. Encontrar Punto de Desfogue
-                                idx_max = np.argmax(acc)
-                                y_idx, x_idx = np.unravel_index(idx_max, acc.shape)
-                                x_pour, y_pour = int(x_idx), int(y_idx) # Convertir a int nativo
-                                
-                                st.write(f"📍 Salida detectada en pixel: ({x_pour}, {y_pour})")
-                                
-                                # 2. Calcular Catchment (CON ARREGLO DE MEMORIA AQUÍ)
+                                # 2. Calcular Catchment - Divisoria de Cuenca -
                                 try:
-                                    # Truco: PySheds a veces falla con 'memoryview' en catchment.
-                                    # Convertimos fdir a array puro solo para este paso si es necesario,
-                                    # pero usualmente pasar int nativos en x,y es suficiente.
+                                    # 🔥 SOLUCIÓN QUIRÚRGICA: 'Descongelar' la memoria
+                                    # Convertimos fdir a un array NumPy contiguo y explícito
+                                    fdir_array = np.ascontiguousarray(fdir, dtype=np.float64)
                                     
-                                    catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
+                                    # Ahora pasamos fdir_array en lugar de fdir
+                                    catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir_array, dirmap=dirmap, xytype='index')
                                     
                                     # 3. Vectorizar
                                     catch_int = catch.astype(np.uint8)
@@ -395,7 +385,7 @@ if gdf_zona_seleccionada is not None:
                                         )
                                         fig.update_layout(title="Divisoria Calculada (Rojo)", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                         st.plotly_chart(fig, use_container_width=True)
-                                        st.success("✅ Cuenca delimitada correctamente.")
+                                        st.success("✅ Divisoria calculada correctamente.")
                                     else:
                                         st.warning("No se pudo generar la geometría.")
                                         
