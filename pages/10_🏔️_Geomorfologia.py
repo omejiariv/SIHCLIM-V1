@@ -101,25 +101,25 @@ def analista_hidrologico(pendiente_media, hi_value):
 
 # --- FUNCIÓN DE VECTORIZACIÓN DE RÍOS (MEJORADA: LÍNEAS DE FLUJO) 🌊 ---
 @st.cache_data(show_spinner="Trazando red de drenaje...")
-def extraer_vectores_rios(_grid, _fdir, _acc, umbral, crs_in="EPSG:3116"):
+def extraer_vectores_rios(_grid, _fdir, _acc, umbral, _crs_in, cache_id):
     """
     Usa PySheds para extraer líneas de flujo reales (Centerlines).
     """
     try:
-        # PySheds extrae las ramas del río como líneas vectoriales
-        # dirmap=(64, 128, 1, 2, 4, 8, 16, 32) es el estándar
-        branches = _grid.extract_river_network(_fdir, _acc > umbral)
+        # PySheds native extraction
+        # dirmap estándar: (N, NE, E, SE, S, SW, W, NW)
+        dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
+        branches = _grid.extract_river_network(_fdir, _acc > umbral, dirmap=dirmap)
         
-        # Validar si encontró algo
         if not branches or not branches['features']:
             return None
 
         # Convertir GeoJSON a GeoDataFrame
         gdf = gpd.GeoDataFrame.from_features(branches['features'])
         
-        # Asignar CRS (Sistema de Coordenadas)
+        # Asignar CRS manualmente si viene vacío
         if gdf.crs is None:
-            gdf.set_crs(crs_in, inplace=True)
+            gdf.set_crs(_crs_in, inplace=True)
             
         return gdf
 
@@ -266,7 +266,7 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: RED DE DRENAJE (VECTORES REALES) ---
+            # --- TAB 4: RED DE DRENAJE (MEJORADO Y SIN ERRORES) ---
             gdf_rios_export = None 
             with tab4:
                 st.subheader("Red de Drenaje (Vectores)")
@@ -277,19 +277,18 @@ if gdf_zona_seleccionada is not None:
                     c_param, c_viz = st.columns([1, 4])
                     with c_param:
                         st.info("Configuración Hidrológica")
-                        # Slider ajustado a la realidad de micro-cuencas
-                        # Inicia en 50 para no saturar, pero permite bajar a 2
-                        umbral = st.slider("Umbral Acumulación", 2, 2000, 50, 5, key=f"umb_rio_{nombre_zona}")
-                        st.caption(f"Se dibujarán líneas donde el flujo supere {umbral} celdas.")
-                        st.markdown("""
-                        * **Valor Bajo:** Muestra cabeceras y arroyos.
-                        * **Valor Alto:** Muestra solo cauces principales.
+                        # Slider logarítmico simulado para mejor control en rangos bajos
+                        umbral = st.slider("Umbral Acumulación", 2, 5000, 100, 5, key=f"umb_rio_{nombre_zona}")
+                        st.markdown(f"""
+                        **Sensibilidad:**
+                        * Se muestran cauces con > **{umbral}** celdas drenantes.
+                        * 👇 Baja el valor para ver arroyos.
+                        * 👆 Sube el valor para ver solo ríos principales.
                         """)
 
                     with c_viz:
                         import tempfile
                         # 1. Procesamiento PySheds
-                        # Necesitamos guardar el TIF temporalmente porque PySheds lee rutas de archivo
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                             meta_temp = meta.copy(); meta_temp.update(driver='GTiff')
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
@@ -300,9 +299,9 @@ if gdf_zona_seleccionada is not None:
                                 grid = Grid.from_raster(tmp.name)
                                 dem_grid = grid.read_raster(tmp.name)
                                 
-                                # A. Rellenar depresiones (Crucial para continuidad)
+                                # A. Rellenar depresiones (Fill Pits) - Vital para continuidad
                                 pit_filled = grid.fill_pits(dem_grid)
-                                # B. Resolver zonas planas
+                                # B. Resolver zonas planas (Resolve Flats) - Vital para el río principal
                                 resolved = grid.resolve_flats(pit_filled)
                                 # C. Dirección de flujo
                                 fdir = grid.flowdir(resolved)
@@ -316,27 +315,26 @@ if gdf_zona_seleccionada is not None:
                                 try: os.remove(tmp.name)
                                 except: pass
 
-                        # 2. Vectorización (Ahora pasamos el grid y fdir)
+                        # 2. Vectorización
                         if acc is not None:
-                            # Obtenemos CRS correcto
                             crs_actual = meta.get('crs', 'EPSG:3116')
                             
-                            # Llamada a la nueva función
-                            gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_in=crs_actual)
+                            # 🔥 LLAMADA CORREGIDA: Pasamos 'nombre_zona' como cache_id
+                            gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
                             
                             if gdf_rios is not None and not gdf_rios.empty:
                                 gdf_rios_export = gdf_rios.copy()
                                 
                                 try:
-                                    # Reproyección a Lat/Lon para mapa web
+                                    # Reproyección a Lat/Lon
                                     gdf_rios_4326 = gdf_rios.to_crs("EPSG:4326")
                                     
-                                    # Extraer coordenadas para Plotly (LineString)
+                                    # Extraer coordenadas para Plotly
                                     lons, lats = [], []
                                     for geom in gdf_rios_4326.geometry:
                                         if geom.geom_type == 'LineString':
                                             xs, ys = geom.xy
-                                            lons.extend(list(xs) + [None]) # None corta la línea
+                                            lons.extend(list(xs) + [None])
                                             lats.extend(list(ys) + [None])
                                         elif geom.geom_type == 'MultiLineString':
                                             for g in geom.geoms:
@@ -347,11 +345,11 @@ if gdf_zona_seleccionada is not None:
                                     # Crear Mapa
                                     fig_map = go.Figure()
                                     
-                                    # Líneas de Drenaje
+                                    # Líneas de Drenaje (Azul Fuerte)
                                     fig_map.add_trace(go.Scattermapbox(
                                         mode = "lines", 
                                         lon = lons, lat = lats,
-                                        line = {'width': 2.5, 'color': '#0099FF'}, # Azul sólido
+                                        line = {'width': 2, 'color': '#0077BE'}, # Azul Río
                                         name = "Red Hídrica",
                                         hoverinfo='skip'
                                     ))
@@ -363,7 +361,7 @@ if gdf_zona_seleccionada is not None:
                                     fig_map.update_layout(
                                         mapbox_style="carto-positron",
                                         mapbox_center={"lat": center_lat, "lon": center_lon},
-                                        mapbox_zoom=11, 
+                                        mapbox_zoom=10, 
                                         margin={"r":0,"t":0,"l":0,"b":0}, 
                                         height=650,
                                         showlegend=False
@@ -375,7 +373,7 @@ if gdf_zona_seleccionada is not None:
                                 except Exception as e:
                                     st.error(f"Error pintando mapa: {e}")
                             else:
-                                st.warning(f"No se detectaron ríos con umbral {umbral}. Baja el valor.")
+                                st.warning(f"No se detectaron ríos con umbral {umbral}.")
                                 
             # --- TAB 5: DESCARGAS ---
             with tab5:
