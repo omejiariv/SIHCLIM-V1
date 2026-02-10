@@ -25,6 +25,9 @@ try:
 except ImportError:
     land_cover = None
 
+if 'gdf_contours' not in st.session_state: st.session_state['gdf_contours'] = None
+if 'catchment_raster' not in st.session_state: st.session_state['catchment_raster'] = None
+
 # Configuración de Página
 st.set_page_config(page_title="Geomorfología Pro", page_icon="🏔️", layout="wide")
 
@@ -174,24 +177,21 @@ if gdf_zona_seleccionada is not None:
             c3.metric("Media", f"{mean_el:.0f} m")
             c4.metric("Rango", f"{max_el - min_el:.0f} m")
 
-            tab1, tab2, tab3, tab4, tab6, tab5 = st.tabs([
+            tab1, tab2, tab3, tab4, tab6, tab7, tab5 = st.tabs([
                 "🗺️ 3D", "📐 Pendientes", "📈 Hipsometría", 
-                "🌊 Hidrología", "📊 Índices (Nuevo)", "📥 Descargas"
+                "🌊 Hidrología", "📊 Índices (Nuevo)", "🚨 Amenazas", "📥 Descargas"
             ])
             
             # Factor de reducción visual
             h, w = arr_elevacion.shape
             factor = max(1, int(max(h, w) / 200)) # Mejor resolución para el 3D
 
-            # --- TAB 1: 3D Y CURVAS DE NIVEL ---
-            gdf_contours_export = None # Variable para exportar
-            
+            # --- TAB 1: 3D Y CURVAS DE NIVEL (CORREGIDO) ---
             with tab1:
                 c1, c2 = st.columns([1, 4])
                 with c1:
                     st.markdown("#### Visualización")
                     exag = st.slider("Exageración Vertical:", 0.5, 5.0, 1.5, 0.1, key="z_exag")
-                    
                     st.markdown("---")
                     ver_curvas = st.toggle("Ver Curvas de Nivel", value=False)
                     intervalo_curvas = st.select_slider("Intervalo (m):", options=[10, 20, 50, 100], value=50, disabled=not ver_curvas)
@@ -199,7 +199,6 @@ if gdf_zona_seleccionada is not None:
                 with c2:
                     # Preparar Terreno 3D
                     arr_3d = arr_elevacion[::factor, ::factor]
-                    
                     fig = go.Figure()
                     
                     # 1. Superficie 3D
@@ -208,60 +207,46 @@ if gdf_zona_seleccionada is not None:
                     # 2. Generación de Curvas de Nivel (Vectores 3D)
                     if ver_curvas:
                         try:
-                            # Usamos matplotlib para hallar los contornos matemáticos
                             min_z, max_z = np.nanmin(arr_elevacion), np.nanmax(arr_elevacion)
                             levels = np.arange(np.floor(min_z), np.ceil(max_z), intervalo_curvas)
-                            
-                            # Generar contornos sobre la matriz original
                             contours_obj = plt.contour(arr_elevacion, levels=levels)
                             
-                            lines_3d_x = []
-                            lines_3d_y = []
-                            lines_3d_z = []
-                            geoms_2d = [] # Para exportar shapefile
+                            lines_x, lines_y, lines_z = [], [], []
+                            geoms_2d = [] 
                             
-                            # Extraer caminos
                             for level, collection in zip(levels, contours_obj.collections):
-                                paths = collection.get_paths()
-                                for path in paths:
+                                for path in collection.get_paths():
                                     v = path.vertices
-                                    # Submuestreo para rendimiento visual (cada factor * 2)
-                                    # Nota: Plotly Surface usa índices reducidos, ajustamos coordenadas
                                     x_plot = v[:, 1] / factor
                                     y_plot = v[:, 0] / factor
-                                    z_plot = np.full(len(x_plot), level)
+                                    # CORRECCIÓN: Sumamos el offset AQUÍ, antes de mezclar con None
+                                    z_plot = np.full(len(x_plot), level + 5) 
                                     
-                                    # Añadir a listas de Plotly (con None para cortar líneas)
-                                    lines_3d_x.extend(x_plot); lines_3d_x.append(None)
-                                    lines_3d_y.extend(y_plot); lines_3d_y.append(None)
-                                    lines_3d_z.extend(z_plot); lines_3d_z.append(None)
+                                    lines_x.extend(x_plot); lines_x.append(None)
+                                    lines_y.extend(y_plot); lines_y.append(None)
+                                    lines_z.extend(z_plot); lines_z.append(None)
                                     
-                                    # Guardar geometría real para exportación (Coordenadas geográficas)
-                                    # Transformar Pixel -> Lat/Lon
+                                    # Guardar geometría real para exportación
                                     xs_geo, ys_geo = rasterio.transform.xy(transform, v[:, 0], v[:, 1])
                                     if len(xs_geo) > 1:
                                         geoms_2d.append({'geometry': LineString(zip(xs_geo, ys_geo)), 'elevation': level})
 
-                            # Graficar trazas 3D sobre la superficie
-                            # Nota: Levantamos un poco (z + 2) para que no se entierren en el mesh
                             fig.add_trace(go.Scatter3d(
-                                x=lines_3d_x, y=lines_3d_y, z=np.array(lines_3d_z) + 5,
-                                mode='lines',
-                                line=dict(color='white', width=2),
+                                x=lines_x, y=lines_y, z=lines_z,
+                                mode='lines', line=dict(color='white', width=2),
                                 name="Curvas de Nivel"
                             ))
                             
-                            # Preparar GeoDataFrame para descarga
+                            # Guardar en Session State para la Tab de Descargas
                             if geoms_2d:
-                                gdf_contours_export = gpd.GeoDataFrame(geoms_2d, crs=meta['crs'])
+                                st.session_state['gdf_contours'] = gpd.GeoDataFrame(geoms_2d, crs=meta['crs'])
 
                         except Exception as e:
                             st.warning(f"No se pudieron generar curvas: {e}")
-                            plt.close() # Limpiar memoria matplotlib
+                            plt.close()
 
                     fig.update_layout(
-                        title="Terreno 3D + Geomorfología", 
-                        autosize=True, height=600, 
+                        title="Terreno 3D + Geomorfología", autosize=True, height=600, 
                         scene=dict(aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.2*exag)),
                         margin=dict(l=0, r=0, b=0, t=40)
                     )
@@ -299,29 +284,55 @@ if gdf_zona_seleccionada is not None:
                 df_slopes = pd.DataFrame({'Categoría': counts.index, '%': (counts.values/len(slope_flat)*100).round(1)})
                 st.dataframe(df_slopes.T, use_container_width=True)
 
-            # --- TAB 3: HIPSOMETRÍA (RECUPERADA) ---
+            # --- TAB 3: HIPSOMETRÍA (ESTÁNDAR Y ADIMENSIONAL) ---
             with tab3:
+                # Datos base
                 elevs_sorted = np.sort(elevs_valid)[::-1]
-                n_px = len(elevs_sorted)
-                area_pct = np.arange(1, n_px + 1) / n_px * 100
+                total_pixels = len(elevs_sorted)
+                x_pct = np.linspace(0, 100, total_pixels)
                 
-                # Optimización Gráfica
-                idx = np.linspace(0, n_px - 1, 300, dtype=int) if n_px > 300 else np.arange(n_px)
+                # Reducción para graficar rápido
+                idx = np.linspace(0, total_pixels-1, 500, dtype=int)
                 
-                # Cálculo de Ecuación
-                eq_str = "N/A"
-                try:
-                    coeffs = np.polyfit(area_pct[idx], elevs_sorted[idx], 3)
-                    eq_str = f"H = {coeffs[0]:.2e}A³ + {coeffs[1]:.2e}A² + {coeffs[2]:.2e}A + {coeffs[3]:.0f}"
-                except: pass
+                c_hip1, c_hip2 = st.columns(2)
+                
+                with c_hip1:
+                    # GRÁFICO 1: Curva Hipsométrica Clásica (Absoluta)
+                    fig_hyp = go.Figure()
+                    fig_hyp.add_trace(go.Scatter(x=x_pct[idx], y=elevs_sorted[idx], fill='tozeroy', name='Real', line=dict(color='#2E86C1')))
+                    fig_hyp.update_layout(
+                        title="Curva Hipsométrica (Absoluta)",
+                        xaxis_title="% Área Acumulada", yaxis_title="Altitud (m.s.n.m)",
+                        height=450, margin=dict(l=0,r=0,t=40,b=0)
+                    )
+                    st.plotly_chart(fig_hyp, use_container_width=True)
 
-                st.markdown(f"**📐 Ecuación:** `$ {eq_str} $`")
-                st.success(f"**Diagnóstico:** (HI: {hi_global:.3f}) - {('Joven/Erosiva' if hi_global>0.5 else 'Vieja/Sedimentaria')}")
-
-                fig_hypso = go.Figure()
-                fig_hypso.add_trace(go.Scatter(x=area_pct[idx], y=elevs_sorted[idx], fill='tozeroy'))
-                fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
-                st.plotly_chart(fig_hypso, use_container_width=True)
+                with c_hip2:
+                    # GRÁFICO 2: Curva Adimensional (Relativa)
+                    # Eje Y: (h - h_min) / (h_max - h_min)
+                    # Eje X: a / A
+                    h_min, h_max = np.min(elevs_sorted), np.max(elevs_sorted)
+                    h_rel = (elevs_sorted[idx] - h_min) / (h_max - h_min)
+                    a_rel = x_pct[idx] / 100.0 # De 0 a 1
+                    
+                    fig_adim = go.Figure()
+                    fig_adim.add_trace(go.Scatter(x=a_rel, y=h_rel, name='Cuenca Actual', line=dict(color='#E74C3C', width=3)))
+                    # Referencia de Equilibrio (Recta)
+                    fig_adim.add_trace(go.Scatter(x=[0, 1], y=[1, 0], name='Equilibrio (Ref)', line=dict(color='gray', dash='dot')))
+                    
+                    fig_adim.update_layout(
+                        title="Curva Adimensional (Ciclo de Erosión)",
+                        xaxis_title="Área Relativa (a/A)", yaxis_title="Altura Relativa (h/H)",
+                        height=450, margin=dict(l=0,r=0,t=40,b=0)
+                    )
+                    st.plotly_chart(fig_adim, use_container_width=True)
+                    
+                st.info("""
+                **Interpretación Adimensional:**
+                * **Curva Convexa (Arriba de la recta):** Cuenca joven, en fase activa de erosión.
+                * **Curva Concava (Debajo de la recta):** Cuenca vieja, sedimentada y estabilizada.
+                * **Forma de 'S':** Cuenca madura en transición.
+                """)
 
             # --- TAB 4: HIDROLOGÍA (ACTUALIZADO: COORDENADAS EXTREMAS) ---
             gdf_rios_export = None
@@ -459,8 +470,8 @@ if gdf_zona_seleccionada is not None:
                                 # Calcular Catchment con punto (session state o input)
                                 catch = None
                                 try:
-                                    catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
-                                    catchment_raster_export = catch
+                                catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
+                                st.session_state['catchment_raster'] = catch # <--- GUARDAR EN SESIÓN
                                 except: pass
 
                                 # Visualización (Idéntica a la versión blindada anterior)
@@ -655,6 +666,62 @@ if gdf_zona_seleccionada is not None:
     
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
+
+            # --- TAB 7: AMENAZAS (AVENIDA TORRENCIAL) ---
+            with tab7:
+                st.subheader("🚨 Mapa de Amenaza: Avenidas Torrenciales")
+                st.markdown("Identificación de zonas críticas donde convergen alta pendiente y alto flujo acumulado.")
+                
+                if 'acc' in locals() and acc is not None:
+                    c_par, c_vis = st.columns([1, 3])
+                    
+                    with c_par:
+                        st.markdown("#### Criterios")
+                        s_umb = st.slider("Pendiente Crítica (> Grados)", 15, 45, 30, help="Terreno propenso a inestabilidad.")
+                        a_umb = st.slider("Acumulación Log (> Umbral)", 1.0, 10.0, 5.5, 0.1, help="Define dónde comienza el 'cauce' con fuerza tractiva.")
+                        
+                        st.info("""
+                        **Semáforo de Riesgo:**
+                        * 🔴 **Muy Alta (Torrencial):** Pendiente > Crítica Y Flujo en Cauce. (El agua baja rápido y canalizada).
+                        * 🟠 **Alta (Ladera):** Pendiente > Crítica (Sin cauce mayor).
+                        * 🟡 **Media (Cauce Plano):** Flujo alto pero pendiente baja (Inundación lenta).
+                        """)
+
+                    with c_vis:
+                        # Asegurar dimensiones iguales
+                        min_h = min(slope_deg.shape[0], acc.shape[0])
+                        min_w = min(slope_deg.shape[1], acc.shape[1])
+                        
+                        s_core = slope_deg[:min_h, :min_w]
+                        a_core = np.log1p(acc[:min_h, :min_w])
+                        
+                        # Álgebra de Mapas
+                        risk = np.zeros_like(s_core, dtype=np.uint8)
+                        
+                        mask_steep = s_core >= s_umb
+                        mask_flow = a_core >= a_umb
+                        
+                        # Lógica de clasificación
+                        risk[mask_flow] = 1          # Cauce (Amarillo - Riesgo Inundación)
+                        risk[mask_steep] = 2         # Ladera inestable (Naranja)
+                        risk[mask_steep & mask_flow] = 3 # AVENIDA TORRENCIAL (Rojo)
+                        
+                        # Visualización
+                        colors = [
+                            [0.0, "rgba(0,0,0,0)"],   # Nada
+                            [0.33, "#FFD700"],        # Amarillo (Río plano)
+                            [0.66, "#FF8C00"],        # Naranja (Ladera)
+                            [1.0, "#FF0000"]          # Rojo (Torrencial)
+                        ]
+                        
+                        fig_risk = px.imshow(risk, color_continuous_scale=colors, title="Amenaza por Flujos Rápidos")
+                        fig_risk.update_layout(coloraxis_showscale=False, height=600, margin=dict(l=0,r=0,t=40,b=0))
+                        fig_risk.update_xaxes(visible=False); fig_risk.update_yaxes(visible=False)
+                        
+                        st.plotly_chart(fig_risk, use_container_width=True)
+                else:
+                    st.warning("⚠️ Calcula primero la hidrología en la pestaña 'Hidrología'.")
+            
                                 
             # --- TAB 5: DESCARGAS ---
             with tab5:
@@ -668,13 +735,13 @@ if gdf_zona_seleccionada is not None:
                 if gdf_contours_export is not None:
                     # Exportar a GeoJSON
                     geojson_data = gdf_contours_export.to_json()
-                    c3.download_button("📥 Curvas Nivel (.json)", geojson_data, f"Curvas_{nombre_zona}.geojson", "application/json")
+                    c2.download_button("📥 Curvas Nivel (.json)", geojson_data, f"Curvas_{nombre_zona}.geojson", "application/json")
                 else:
-                    c3.info("Activa 'Ver Curvas' en Tab 3D para generar.")
+                    c2.info("Activa 'Ver Curvas' en Tab 3D para generar.")
                 
                 # 3. Pendientes (TIF)
                 slope_meta = meta.copy(); slope_meta.update(dtype=rasterio.float32)
-                c2.download_button("📥 Pendientes (.tif)", to_tif(slope_deg, slope_meta), f"Slope_{nombre_zona}.tif")
+                c3.download_button("📥 Pendientes (.tif)", to_tif(slope_deg, slope_meta), f"Slope_{nombre_zona}.tif")
                 
                 # 4. Datos Hipsométricos (CSV) - Recalculamos rápido para descargar
                 try:
@@ -688,9 +755,9 @@ if gdf_zona_seleccionada is not None:
                         "Altitud_m": elevs_sorted[::step]
                     })
                     csv_hypso = df_hypso_export.to_csv(index=False).encode('utf-8')
-                    c3.download_button("📊 Curva Hipsométrica (.csv)", csv_hypso, f"Hipsometria_{nombre_zona}.csv", "text/csv")
+                    c4.download_button("📊 Curva Hipsométrica (.csv)", csv_hypso, f"Hipsometria_{nombre_zona}.csv", "text/csv")
                 except:
-                    c3.warning("Error generando CSV")
+                    c4.warning("Error generando CSV")
 
                 # 5. RÍOS (GEOJSON)
                 if gdf_rios_export is not None:
@@ -699,7 +766,7 @@ if gdf_zona_seleccionada is not None:
                         crs_actual = meta.get('crs', 'EPSG:3116')
                         gdf_export_4326 = gdf_rios_export.set_crs(crs_actual, allow_override=True).to_crs("EPSG:4326")
                         json_str = gdf_export_4326.to_json()
-                        c4.download_button("🌊 Red Drenaje (.geojson)", json_str, f"Rios_{nombre_zona}.geojson", "application/json")
+                        c5.download_button("🌊 Red Drenaje (.geojson)", json_str, f"Rios_{nombre_zona}.geojson", "application/json")
                     except Exception as e:
                         c4.error(f"Error proyec: {e}")
 
@@ -713,13 +780,15 @@ if gdf_zona_seleccionada is not None:
                 if catchment_raster_export is not None:
                     # Convertimos el array de 0/1 a TIF
                     catch_meta = meta.copy(); catch_meta.update(dtype=rasterio.uint8, nodata=0)
-                    c4.download_button(
+                    c5.download_button(
                         "🟦 Catchment (.tif)", 
                         to_tif(catchment_raster_export.astype(np.uint8), catch_meta), 
                         f"Catchment_{nombre_zona}.tif"
                     )
                 else:
-                    c4.info("Calcula la cuenca en la pestaña 'Hidrología' para descargar.")
+                    c5.info("Calcula la cuenca en la pestaña 'Hidrología' para descargar.")
 
 else:
     st.info("👈 Selecciona una zona.")
+
+
