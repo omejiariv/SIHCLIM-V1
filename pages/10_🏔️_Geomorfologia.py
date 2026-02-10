@@ -389,52 +389,94 @@ if gdf_zona_seleccionada is not None:
 
                                 # 3. Visualización
                                 if catch is not None:
-                                    # 🔥 SOLUCIÓN DEFINITIVA AL ERROR MEMORYVIEW
-                                    # Rasterio exige un array contiguo, no una vista. Lo forzamos aquí:
+                                    # Corrección de memoria para rasterio
                                     catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
-                                    
-                                    # Ahora sí, vectorizamos con seguridad
                                     shapes_gen = features.shapes(catch_int, transform=transform)
                                     geoms = [shape(geom) for geom, val in shapes_gen if val > 0]
                                     
                                     if geoms:
+                                        # Geometría Calculada (DEM)
                                         gdf_c = gpd.GeoDataFrame({'geometry': geoms}, crs=crs_actual).dissolve()
-                                        gdf_4326 = gdf_c.to_crs("EPSG:4326")
+                                        gdf_calc_4326 = gdf_c.to_crs("EPSG:4326")
                                         
-                                        # A. MASCARA AZUL
+                                        # Geometría Oficial (Validación) - Tu GeoJSON original
+                                        gdf_official_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
+                                        
+                                        # --- A. MASCARA AZUL (CATCHMENT) ---
                                         if modo_viz == "Catchment (Mascara)":
                                             fig = px.choropleth_mapbox(
-                                                geojson=gdf_4326.geometry.__geo_interface__,
-                                                locations=gdf_4326.index,
-                                                mapbox_style="carto-positron", zoom=10,
-                                                center={"lat": gdf_4326.centroid.y.mean(), "lon": gdf_4326.centroid.x.mean()},
+                                                geojson=gdf_calc_4326.geometry.__geo_interface__,
+                                                locations=gdf_calc_4326.index,
+                                                mapbox_style="carto-positron", 
+                                                zoom=10, # Zoom inicial aproximado
+                                                center={"lat": gdf_calc_4326.centroid.y.mean(), "lon": gdf_calc_4326.centroid.x.mean()},
                                                 opacity=0.5, color_discrete_sequence=["#0099FF"]
                                             )
-                                            fig.update_layout(title="Catchment (Área Drenante)", height=600, margin=dict(l=0,r=0,t=30,b=0))
+                                            
+                                            # Agregar Borde Oficial (Validación)
+                                            if not gdf_official_4326.empty:
+                                                poly = gdf_official_4326.geometry.iloc[0]
+                                                if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
+                                                else: x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
+                                                
+                                                fig.add_trace(go.Scattermapbox(
+                                                    mode="lines", lon=list(x), lat=list(y),
+                                                    line={'width': 2, 'color': 'green', 'dash': 'dash'}, 
+                                                    name="Límite Oficial (Validación)"
+                                                ))
+
+                                            fig.update_layout(
+                                                title="Catchment Calculado vs Oficial", 
+                                                height=600, 
+                                                margin=dict(l=0,r=0,t=30,b=0)
+                                            )
                                             st.plotly_chart(fig, use_container_width=True)
                                         
-                                        # B. DIVISORIA ROJA
+                                        # --- B. DIVISORIA DE LINEA (ROJO VS VERDE) ---
                                         elif modo_viz == "Divisoria (Línea)":
                                             fig = go.Figure()
-                                            # Extraer borde robusto
-                                            poly = gdf_4326.geometry.iloc[0]
-                                            if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
-                                            elif poly.geom_type == 'MultiPolygon': x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
+                                            
+                                            # 1. Trazo Calculado (Rojo)
+                                            poly_calc = gdf_calc_4326.geometry.iloc[0]
+                                            if poly_calc.geom_type == 'Polygon': xc, yc = poly_calc.exterior.coords.xy
+                                            else: xc, yc = max(poly_calc.geoms, key=lambda a: a.area).exterior.coords.xy
                                             
                                             fig.add_trace(go.Scattermapbox(
-                                                mode="lines", lon=list(x), lat=list(y),
-                                                line={'width': 3, 'color': 'red'}, name="Divisoria"
+                                                mode="lines", lon=list(xc), lat=list(yc),
+                                                line={'width': 3, 'color': 'red'}, name="Divisoria Calculada (DEM)"
                                             ))
+                                            
+                                            # 2. Trazo Oficial (Verde)
+                                            if not gdf_official_4326.empty:
+                                                poly_off = gdf_official_4326.geometry.iloc[0]
+                                                if poly_off.geom_type == 'Polygon': xo, yo = poly_off.exterior.coords.xy
+                                                else: xo, yo = max(poly_off.geoms, key=lambda a: a.area).exterior.coords.xy
+                                                
+                                                fig.add_trace(go.Scattermapbox(
+                                                    mode="lines", lon=list(xo), lat=list(yo),
+                                                    line={'width': 2, 'color': 'green', 'dash': 'dash'}, 
+                                                    name="Límite Oficial (Validación)"
+                                                ))
+                                            
+                                            # Corrección del Error de Zoom: Todo va dentro de mapbox=dict(...)
+                                            center_lat = gdf_calc_4326.centroid.y.mean()
+                                            center_lon = gdf_calc_4326.centroid.x.mean()
+                                            
                                             fig.update_layout(
-                                                title="Divisoria de Aguas",
-                                                mapbox_style="carto-positron", zoom=10,
-                                                mapbox_center={"lat": gdf_4326.centroid.y.mean(), "lon": gdf_4326.centroid.x.mean()},
-                                                height=600, margin=dict(l=0,r=0,t=30,b=0)
+                                                title="Comparativa de Divisorias",
+                                                mapbox=dict(
+                                                    style="carto-positron",
+                                                    zoom=10,
+                                                    center={"lat": center_lat, "lon": center_lon}
+                                                ),
+                                                height=600, 
+                                                margin=dict(l=0,r=0,t=30,b=0),
+                                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
                                             )
                                             st.plotly_chart(fig, use_container_width=True)
                                     else:
-                                        st.warning("No se pudo vectorizar la cuenca.")
-
+                                        st.warning("No se pudo vectorizar la cuenca calculada.")
+                                        
                             # --- MODO 3: VECTORES (LÍNEAS) ---
                             else:
                                 # Usamos fdir y acc tal cual vienen de grid (son compatibles)
