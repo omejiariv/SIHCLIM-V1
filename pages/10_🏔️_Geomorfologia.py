@@ -9,7 +9,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
-from shapely.geometry import shape, LineString, MultiLineString
+from shapely.geometry import shape, LineString, MultiLineString, Polygon
 from modules import selectors
 
 # Intentamos importar pysheds
@@ -152,9 +152,10 @@ if gdf_zona_seleccionada is not None:
             mean_el = np.mean(elevs_valid)
             hi_global = (mean_el - min_el) / (max_el - min_el) if (max_el - min_el) > 0 else 0.5
             
-            # Pendientes
+            # Pendientes (NumPy)
             dy, dx = np.gradient(arr_elevacion, 30.0)
-            slope_deg = np.degrees(np.arctan(np.sqrt(dx**2 + dy**2)))
+            slope_rad = np.arctan(np.sqrt(dx**2 + dy**2))
+            slope_deg = np.degrees(slope_rad)
             slope_mean = np.nanmean(slope_deg)
             
             # Texto Analista
@@ -167,7 +168,10 @@ if gdf_zona_seleccionada is not None:
             c3.metric("Media", f"{mean_el:.0f} m")
             c4.metric("Rango", f"{max_el - min_el:.0f} m")
 
-            tab1, tab2, tab3, tab4, tab5 = st.tabs(["🗺️ 3D", "📐 Pendientes", "📈 Hipsometría", "🌊 Drenaje (Vector)", "📥 Descargas"])
+            tab1, tab2, tab3, tab4, tab6, tab5 = st.tabs([
+                "🗺️ 3D", "📐 Pendientes", "📈 Hipsometría", 
+                "🌊 Hidrología", "📊 Índices (Nuevo)", "📥 Descargas"
+            ])
             
             # Factor de reducción visual
             h, w = arr_elevacion.shape
@@ -268,7 +272,8 @@ if gdf_zona_seleccionada is not None:
 
             # --- TAB 4: HIDROLOGÍA (CORREGIDO: NODATA + CATCHMENT) ---
             gdf_rios_export = None
-            gdf_cuenca_export = None 
+            gdf_cuenca_export = None
+            catchment_raster_export = None
 
             with tab4:
                 st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
@@ -281,9 +286,14 @@ if gdf_zona_seleccionada is not None:
                     with c_conf:
                         st.markdown("#### ⚙️ Configuración")
                         
-                        modo_viz = st.radio("Visualización:", 
-                                          ["Vectores (Líneas)", "Raster (Acumulación)", "Divisoria de Cuenca (Beta)"],
-                                          help="Vectores: Líneas limpias. Raster: Imagen cruda. Divisoria: Calcula el polígono drenante.")
+                        # ACTUALIZACIÓN: Nuevas opciones
+                        opciones_viz = [
+                            "Vectores (Líneas)", 
+                            "Catchment (Mascara)",  # La mancha azul
+                            "Divisoria (Línea)",    # El borde rojo
+                            "Raster (Acumulación)"  # Diagnóstico
+                        ]
+                        modo_viz = st.radio("Visualización:", opciones_viz)
                         
                         umbral = 0
                         if modo_viz == "Vectores (Líneas)":
@@ -343,7 +353,7 @@ if gdf_zona_seleccionada is not None:
                         if grid is not None and acc is not None:
                             crs_actual = meta.get('crs', 'EPSG:3116')
 
-                            # --- MODO 1: RASTER ---
+                            # --- MODO 1: RASTER (DIAGNÓSTICO) ---
                             if modo_viz == "Raster (Acumulación)":
                                 log_acc = np.log1p(acc)
                                 fig = px.imshow(log_acc, color_continuous_scale='Blues', title="Acumulación de Flujo (Log)")
@@ -351,46 +361,87 @@ if gdf_zona_seleccionada is not None:
                                 fig.update_xaxes(showticklabels=False); fig.update_yaxes(showticklabels=False)
                                 st.plotly_chart(fig, use_container_width=True)
 
-                                # 2. Calcular Catchment - Divisoria de Cuenca -
+                            # --- NUEVO BLOQUE: CATCHMENT Y DIVISORIA ---
+                            elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
+                                st.markdown("##### 🏔️ Delimitación Automática")
+                                
+                                # 1. Encontrar Punto de Desfogue
+                                idx_max = np.argmax(acc)
+                                y_idx, x_idx = np.unravel_index(idx_max, acc.shape)
+                                x_pour, y_pour = int(x_idx), int(y_idx)
+                                
+                                st.caption(f"📍 Punto de salida detectado: Pixel ({x_pour}, {y_pour})")
+                                
+                                # 2. Calcular Catchment (Raster)
+                                catch = None
                                 try:
-                                    # 🔥 SOLUCIÓN QUIRÚRGICA: 'Descongelar' la memoria
-                                    # Convertimos fdir a un array NumPy contiguo y explícito
+                                    # 🔥 SOLUCIÓN BLINDADA DE MEMORIA
                                     fdir_array = np.ascontiguousarray(fdir, dtype=np.float64)
-                                    
-                                    # Ahora pasamos fdir_array en lugar de fdir
                                     catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir_array, dirmap=dirmap, xytype='index')
                                     
-                                    # 3. Vectorizar
-                                    catch_int = catch.astype(np.uint8)
-                                    shapes_gen = features.shapes(catch_int, transform=transform)
+                                    # GUARDAR PARA DESCARGA (Esto conecta con tu botón en Tab 5)
+                                    catchment_raster_export = catch 
                                     
-                                    geometries = [shape(geom) for geom, val in shapes_gen if val > 0]
-                                    
-                                    if geometries:
-                                        gdf_cuenca = gpd.GeoDataFrame({'geometry': geometries}, crs=crs_actual)
-                                        gdf_cuenca = gdf_cuenca.dissolve() 
-                                        gdf_cuenca_export = gdf_cuenca.copy()
-                                        
-                                        # Visualizar
-                                        gdf_4326 = gdf_cuenca.to_crs("EPSG:4326")
-                                        
-                                        fig = px.choropleth_mapbox(
-                                            geojson=gdf_4326.geometry.__geo_interface__,
-                                            locations=gdf_4326.index,
-                                            mapbox_style="carto-positron",
-                                            zoom=9,
-                                            center={"lat": gdf_4326.centroid.y.mean(), "lon": gdf_4326.centroid.x.mean()},
-                                            opacity=0.4,
-                                            color_discrete_sequence=["red"]
-                                        )
-                                        fig.update_layout(title="Divisoria Calculada (Rojo)", height=600, margin=dict(l=0,r=0,t=30,b=0))
-                                        st.plotly_chart(fig, use_container_width=True)
-                                        st.success("✅ Divisoria calculada correctamente.")
-                                    else:
-                                        st.warning("No se pudo generar la geometría.")
-                                        
                                 except Exception as e:
                                     st.error(f"Error calculando catchment: {e}")
+
+                                # 3. Visualización
+                                if catch is not None:
+                                    # Convertimos el raster a polígonos vectoriales
+                                    catch_int = catch.astype(np.uint8)
+                                    # Asegúrate de tener: from rasterio import features
+                                    shapes_gen = features.shapes(catch_int, transform=transform)
+                                    geoms = [shape(geom) for geom, val in shapes_gen if val > 0]
+                                    
+                                    if geoms:
+                                        # Creamos GeoDataFrame y disolvemos (unimos) geometrías
+                                        gdf_c = gpd.GeoDataFrame({'geometry': geoms}, crs=crs_actual).dissolve()
+                                        gdf_4326 = gdf_c.to_crs("EPSG:4326")
+                                        
+                                        # A. OPCIÓN MASCARA (Mancha Azul)
+                                        if modo_viz == "Catchment (Mascara)":
+                                            fig = px.choropleth_mapbox(
+                                                geojson=gdf_4326.geometry.__geo_interface__,
+                                                locations=gdf_4326.index,
+                                                mapbox_style="carto-positron", zoom=10,
+                                                center={"lat": gdf_4326.centroid.y.mean(), "lon": gdf_4326.centroid.x.mean()},
+                                                opacity=0.6, 
+                                                color_discrete_sequence=["#0099FF"] # Azul Catchment
+                                            )
+                                            fig.update_layout(title="Catchment (Área Drenante)", height=600, margin=dict(l=0,r=0,t=30,b=0))
+                                            st.plotly_chart(fig, use_container_width=True)
+                                        
+                                        # B. OPCIÓN DIVISORIA (Línea Roja)
+                                        elif modo_viz == "Divisoria (Línea)":
+                                            fig = go.Figure()
+                                            
+                                            # Extraer coordenadas del borde exterior del polígono
+                                            poly = gdf_4326.geometry.iloc[0]
+                                            # Manejo robusto de MultiPolígonos
+                                            if poly.geom_type == 'Polygon':
+                                                x, y = poly.exterior.coords.xy
+                                            elif poly.geom_type == 'MultiPolygon':
+                                                # Si hay islas, tomamos la más grande
+                                                largest_poly = max(poly.geoms, key=lambda a: a.area)
+                                                x, y = largest_poly.exterior.coords.xy
+                                            
+                                            fig.add_trace(go.Scattermapbox(
+                                                mode="lines", 
+                                                lon=list(x), lat=list(y),
+                                                line={'width': 3, 'color': 'red'}, 
+                                                name="Divisoria"
+                                            ))
+                                            
+                                            center = gdf_4326.centroid.iloc[0]
+                                            fig.update_layout(
+                                                title="Divisoria de Aguas (Watershed Divide)",
+                                                mapbox_style="carto-positron", zoom=10,
+                                                mapbox_center={"lat": center.y, "lon": center.x},
+                                                height=600, margin=dict(l=0,r=0,t=30,b=0)
+                                            )
+                                            st.plotly_chart(fig, use_container_width=True)
+                                    else:
+                                        st.warning("No se pudo vectorizar la cuenca.")
 
                             # --- MODO 3: VECTORES (LÍNEAS) ---
                             else:
@@ -434,6 +485,65 @@ if gdf_zona_seleccionada is not None:
                                         st.error(f"Error visualizando: {e}")
                                 else:
                                     st.warning(f"No se detectaron ríos con umbral {umbral}.")
+
+            # --- TAB 6: ÍNDICES MORFOMÉTRICOS (NUEVO - FASE A) 📊 ---
+            with tab6:
+                st.subheader(f"📊 Parámetros Morfométricos: {nombre_zona}")
+                st.caption("Cálculos basados en la geometría oficial de la zona seleccionada.")
+                
+                # Usamos la geometría del selector (gdf_zona_seleccionada) para consistencia
+                # Aseguramos proyección métrica (EPSG:3116 para Colombia es ideal para medir metros)
+                try:
+                    gdf_metric = gdf_zona_seleccionada.to_crs("EPSG:3116")
+                    geom = gdf_metric.geometry.iloc[0]
+                    
+                    # 1. Cálculos Geométricos
+                    area_km2 = geom.area / 1e6
+                    perimetro_km = geom.length / 1000
+                    
+                    # 2. Índices de Forma
+                    # Índice de Gravelius (Kc): 0.282 * P / raiz(A)
+                    # Kc approx 1 -> Redonda. Kc > 1 -> Alargada.
+                    kc = 0.282 * perimetro_km / np.sqrt(area_km2)
+                    
+                    # Factor de Forma (Kf) - Aproximación usando bounding box
+                    minx, miny, maxx, maxy = geom.bounds
+                    longitud_axial = (maxy - miny) / 1000 # km (aprox norte-sur)
+                    ancho_promedio = area_km2 / longitud_axial
+                    kf = ancho_promedio / longitud_axial
+                    
+                    # 3. Interpretación Automática
+                    forma_desc = "Redonda" if kc < 1.25 else ("Ovalada" if kc < 1.5 else "Alargada")
+                    respuesta_desc = "Rápida (Picos altos)" if kc < 1.25 else "Lenta (Amortiguada)"
+                    
+                    # 4. Visualización en Tarjetas
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Área (A)", f"{area_km2:.2f} km²")
+                    col2.metric("Perímetro (P)", f"{perimetro_km:.2f} km")
+                    col3.metric("Longitud Axial Aprox", f"{longitud_axial:.2f} km")
+                    
+                    st.markdown("---")
+                    st.subheader("Diagnóstico de Forma")
+                    
+                    c_ind1, c_ind2 = st.columns(2)
+                    with c_ind1:
+                        st.metric("Índice de Gravelius (Kc)", f"{kc:.3f}")
+                        st.info(f"**Forma:** {forma_desc}\n\n**Respuesta Hidrológica:** {respuesta_desc}")
+                    
+                    with c_ind2:
+                        st.metric("Factor de Forma (Kf)", f"{kf:.3f}")
+                        st.caption("Relación Ancho / Largo. Valores bajos indican cuencas alargadas.")
+
+                    # Tabla consolidada
+                    df_indices = pd.DataFrame({
+                        "Parámetro": ["Área", "Perímetro", "Gravelius (Kc)", "Factor Forma (Kf)", "Pendiente Media"],
+                        "Valor": [area_km2, perimetro_km, kc, kf, slope_mean],
+                        "Unidad": ["km²", "km", "-", "-", "Grados"]
+                    })
+                    st.dataframe(df_indices.style.format({"Valor": "{:.3f}"}), use_container_width=True)
+                    
+                except Exception as e:
+                    st.error(f"No se pudieron calcular índices geométricos: {e}")            
                                 
             # --- TAB 5: DESCARGAS ---
             with tab5:
@@ -473,6 +583,24 @@ if gdf_zona_seleccionada is not None:
                         c4.download_button("🌊 Red Drenaje (.geojson)", json_str, f"Rios_{nombre_zona}.geojson", "application/json")
                     except Exception as e:
                         c4.error(f"Error proyec: {e}")
+
+                # CSV Índices
+                try:
+                    csv_ind = df_indices.to_csv(index=False).encode('utf-8')
+                    c3.download_button("📊 Índices (.csv)", csv_ind, f"Indices_{nombre_zona}.csv", "text/csv")
+                except: pass
+
+                # Catchment Raster (NUEVO)
+                if catchment_raster_export is not None:
+                    # Convertimos el array de 0/1 a TIF
+                    catch_meta = meta.copy(); catch_meta.update(dtype=rasterio.uint8, nodata=0)
+                    c4.download_button(
+                        "🟦 Catchment (.tif)", 
+                        to_tif(catchment_raster_export.astype(np.uint8), catch_meta), 
+                        f"Catchment_{nombre_zona}.tif"
+                    )
+                else:
+                    c4.info("Calcula la cuenca en la pestaña 'Hidrología' para descargar.")
 
 else:
     st.info("👈 Selecciona una zona.")
