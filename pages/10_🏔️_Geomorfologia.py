@@ -266,7 +266,7 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: HIDROLOGÍA AVANZADA (CORREGIDO: CATCHMENT + SLIDER FINO) ---
+            # --- TAB 4: HIDROLOGÍA Y DRENAJE (VERSIÓN ESTABLE) ---
             gdf_rios_export = None
             gdf_cuenca_export = None 
 
@@ -287,88 +287,97 @@ if gdf_zona_seleccionada is not None:
                         
                         umbral = 0
                         if modo_viz == "Vectores (Líneas)":
-                            # 🔥 AJUSTE DE ESCALA: Rango 2 a 500 para mayor precisión en cuencas pequeñas
-                            umbral = st.slider("Umbral Acumulación", 2, 500, 50, 1, key=f"umb_{nombre_zona}")
-                            st.caption(f"Mostrar cauces con > {umbral} celdas.")
-                            st.info("💡 Valores bajos (10-50) revelan arroyos detallados. Valores altos (>200) dejan solo ríos principales.")
-                        
-                        st.markdown("---")
-                        st.caption("Nota: El río principal puede aparecer cortado al inicio del mapa por el efecto de borde del recorte.")
+                            # Rango optimizado para recortes locales
+                            umbral = st.slider("Umbral Acumulación", 2, 2000, 100, 5, key=f"umb_{nombre_zona}")
+                            
+                            st.info("""
+                            **Interpretación:**
+                            * **Bajo (10-50):** Muestra hasta los arroyos más pequeños.
+                            * **Alto (>500):** Intenta mostrar solo ríos principales.
+                            
+                            ⚠️ **Importante:** Si usas un valor alto y el río principal desaparece, es porque el recorte del mapa eliminó el caudal que venía de aguas arriba.
+                            """)
 
                     with c_map:
                         import tempfile
                         from shapely.geometry import shape
                         
-                        # 1. PREPARACIÓN HIDROLÓGICA
+                        # 1. PREPARACIÓN HIDROLÓGICA ROBUSTA
                         grid = None
-                        # Guardamos temporalmente float64 para asegurar compatibilidad de tipos
+                        acc = None
+                        fdir = None
+                        
+                        # Usamos float64 explícito para evitar problemas de 'memoryview'
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
-                            meta_temp = meta.copy(); meta_temp.update(driver='GTiff', dtype='float64')
+                            meta_temp = meta.copy()
+                            meta_temp.update(driver='GTiff', dtype='float64') 
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
                                 dst.write(arr_elevacion.astype('float64'), 1)
                             
                             try:
                                 # Cargar Grid
                                 grid = Grid.from_raster(tmp.name)
-                                dem_grid = grid.read_raster(tmp.name)
+                                # Leer como array numpy explícito (rompe el memoryview)
+                                dem_grid = grid.read_raster(tmp.name).astype(np.float64)
                                 
                                 # A. Relleno de Depresiones
                                 pit_filled = grid.fill_pits(dem_grid)
                                 # B. Resolver Planicies
                                 resolved = grid.resolve_flats(pit_filled)
-                                # C. Dirección de Flujo 
+                                
+                                # C. Dirección de Flujo (Forzamos array float64 para estabilidad)
                                 dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
-                                fdir = grid.flowdir(resolved, dirmap=dirmap)
+                                fdir = grid.flowdir(resolved, dirmap=dirmap).astype(np.float64)
+                                
                                 # D. Acumulación
-                                acc = grid.accumulation(fdir, dirmap=dirmap)
+                                acc = grid.accumulation(fdir, dirmap=dirmap).astype(np.float64)
                                 
                             except Exception as e:
-                                st.error(f"Error hidrológico: {e}")
+                                st.error(f"Error procesando hidrología: {e}")
                                 grid = None
                             finally:
                                 try: os.remove(tmp.name)
                                 except: pass
 
-                        if grid is not None:
+                        if grid is not None and acc is not None:
                             crs_actual = meta.get('crs', 'EPSG:3116')
 
                             # --- MODO 1: RASTER (DIAGNÓSTICO) ---
                             if modo_viz == "Raster (Acumulación)":
-                                log_acc = np.log1p(acc.view(np.ndarray))
+                                # Logaritmo para ver mejor el contraste
+                                log_acc = np.log1p(acc)
                                 fig = px.imshow(log_acc, color_continuous_scale='Blues', title="Acumulación de Flujo (Log)")
                                 fig.update_layout(height=600, margin=dict(l=0, r=0, t=30, b=0))
                                 fig.update_xaxes(showticklabels=False); fig.update_yaxes(showticklabels=False)
                                 st.plotly_chart(fig, use_container_width=True)
 
-                            # --- MODO 2: DIVISORIA DE CUENCA (CORREGIDO TIPOS DE DATOS 🛡️) ---
+                            # --- MODO 2: DIVISORIA DE CUENCA (CORREGIDO TIPOS) ---
                             elif modo_viz == "Divisoria de Cuenca (Beta)":
-                                st.markdown("##### 🏔️ Delimitación Automática de Cuenca")
+                                st.markdown("##### 🏔️ Delimitación Automática")
                                 
                                 # 1. Encontrar Punto de Desfogue
-                                acc_view = acc.view(np.ndarray)
-                                idx_max = np.argmax(acc_view)
-                                y_idx, x_idx = np.unravel_index(idx_max, acc_view.shape)
+                                idx_max = np.argmax(acc)
+                                y_idx, x_idx = np.unravel_index(idx_max, acc.shape)
+                                x_pour, y_pour = int(x_idx), int(y_idx)
                                 
-                                # Convertir a enteros nativos de Python (solución al error memoryview/dtype)
-                                x_pour = int(x_idx)
-                                y_pour = int(y_idx)
-                                
-                                st.write(f"📍 Punto de Desfogue (Salida): ({x_pour}, {y_pour})")
+                                st.write(f"📍 Salida detectada en pixel: ({x_pour}, {y_pour})")
                                 
                                 # 2. Calcular Catchment
                                 try:
-                                    # Pasamos coordenadas limpias
+                                    # Pasamos el fdir asegurado como GridView o Array según pysheds prefiera
+                                    # pysheds a veces es quisquilloso, pasamos el objeto grid si es posible o el array
+                                    # Para catchment, fdir debe ser el array de direcciones
                                     catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
                                     
                                     # 3. Vectorizar
-                                    catch_int = catch.astype(np.uint8) # Asegurar tipo entero para shapes
+                                    catch_int = catch.astype(np.uint8)
                                     shapes_gen = features.shapes(catch_int, transform=transform)
                                     
                                     geometries = [shape(geom) for geom, val in shapes_gen if val > 0]
                                     
                                     if geometries:
                                         gdf_cuenca = gpd.GeoDataFrame({'geometry': geometries}, crs=crs_actual)
-                                        gdf_cuenca = gdf_cuenca.dissolve()
+                                        gdf_cuenca = gdf_cuenca.dissolve() # Unificar polígonos
                                         gdf_cuenca_export = gdf_cuenca.copy()
                                         
                                         # Visualizar
@@ -385,7 +394,7 @@ if gdf_zona_seleccionada is not None:
                                         )
                                         fig.update_layout(title="Divisoria Calculada (Rojo)", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                         st.plotly_chart(fig, use_container_width=True)
-                                        st.success("✅ Divisoria calculada correctamente.")
+                                        st.success("✅ Cuenca delimitada correctamente.")
                                     else:
                                         st.warning("No se pudo generar la geometría.")
                                         
