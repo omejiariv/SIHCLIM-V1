@@ -693,7 +693,8 @@ if gdf_zona_seleccionada is not None:
                     # Función auxiliar para vectorizar y pintar con mapa base
                     def pintar_amenaza_vector(mask_risk, color_hex, titulo):
                         # 1. Vectorizar raster (Mask -> Polígonos)
-                        mask_int = mask_risk.astype(np.uint8)
+                        # 🔥 Forzamos array contiguo para evitar el error 'memoryview'
+                        mask_int = np.ascontiguousarray(mask_risk, dtype=np.uint8)
                         shapes_risk = features.shapes(mask_int, transform=transform)
                         # Filtrar solo los valores 1 (Riesgo)
                         geoms_risk = [shape(g) for g, v in shapes_risk if v == 1]
