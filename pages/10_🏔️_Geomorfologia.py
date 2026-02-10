@@ -427,7 +427,7 @@ if gdf_zona_seleccionada is not None:
                                 fig.update_layout(height=600, margin=dict(l=0, r=0, t=30, b=0))
                                 st.plotly_chart(fig, use_container_width=True)
 
-                            # --- MODO 2: CATCHMENT / DIVISORIA (RESTAURADO Y MEJORADO) ---
+                            # --- MODO 2: CATCHMENT / DIVISORIA (VERSIÓN ORIGINAL RESTAURADA) ---
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
                                 # 1. Punto Inicial (Automático Global)
                                 if 'x_pour_calib' not in st.session_state:
@@ -449,12 +449,11 @@ if gdf_zona_seleccionada is not None:
                                     with c_snap:
                                         st.write("") 
                                         st.write("") 
-                                        if st.button("🧲 Atraer al Río", help="Busca el pixel con mayor flujo en un radio de 10 celdas."):
-                                            r = 10 # Mantenemos el radio de 10 que es mejor
+                                        if st.button("🧲 Atraer", help="Busca el pixel con mayor flujo en un radio de 5 celdas."):
+                                            r = 5
                                             y_curr, x_curr = y_pour, x_pour
                                             y_s, y_e = max(0, y_curr-r), min(acc.shape[0], y_curr+r+1)
                                             x_s, x_e = max(0, x_curr-r), min(acc.shape[1], x_curr+r+1)
-                                            
                                             window = acc[y_s:y_e, x_s:x_e]
                                             if window.size > 0:
                                                 loc_max = np.unravel_index(np.nanargmax(window), window.shape)
@@ -468,10 +467,11 @@ if gdf_zona_seleccionada is not None:
                                 try:
                                     catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
                                     st.session_state['catchment_raster'] = catch
-                                except Exception as e: st.error(f"Error cálculo: {e}")
+                                except Exception as e: st.error(f"Error: {e}")
 
-                                # 4. Visualización (CÓDIGO ORIGINAL QUE FUNCIONABA)
+                                # 4. Visualización (ESTO ES LO QUE FUNCIONABA)
                                 if catch is not None:
+                                    # Truco de memoria original
                                     catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
                                     shapes_gen = features.shapes(catch_int, transform=transform)
                                     geoms = [shape(geom) for geom, val in shapes_gen if val > 0]
@@ -481,18 +481,18 @@ if gdf_zona_seleccionada is not None:
                                         gdf_calc_4326 = gdf_c.to_crs("EPSG:4326")
                                         gdf_off_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
                                         
-                                        # CASO A: MASCARA (EL QUE RECUPERAMOS)
                                         if modo_viz == "Catchment (Mascara)":
+                                            # Centroide simple
+                                            c_lat = gdf_calc_4326.geometry.centroid.y.mean()
+                                            c_lon = gdf_calc_4326.geometry.centroid.x.mean()
+
                                             fig = px.choropleth_mapbox(
                                                 geojson=gdf_calc_4326.geometry.__geo_interface__,
-                                                locations=gdf_calc_4326.index, 
-                                                mapbox_style="carto-positron",
-                                                center={"lat": gdf_calc_4326.centroid.y.mean(), "lon": gdf_calc_4326.centroid.x.mean()},
-                                                zoom=10, 
-                                                opacity=0.5, 
-                                                color_discrete_sequence=["#0099FF"]
+                                                locations=gdf_calc_4326.index, mapbox_style="carto-positron",
+                                                center={"lat": c_lat, "lon": c_lon},
+                                                zoom=10, opacity=0.5, color_discrete_sequence=["#0099FF"]
                                             )
-                                            # Agregamos validación visual (borde verde)
+                                            # Validación Visual
                                             if not gdf_off_4326.empty:
                                                 poly = gdf_off_4326.geometry.iloc[0]
                                                 if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
@@ -502,23 +502,24 @@ if gdf_zona_seleccionada is not None:
                                             fig.update_layout(title="Catchment (Mascara)", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
 
-                                        # CASO B: LÍNEA DIVISORIA
                                         elif modo_viz == "Divisoria (Línea)":
                                             fig = go.Figure()
+                                            # Roja (Calculada)
                                             p_c = gdf_calc_4326.geometry.iloc[0]
                                             if p_c.geom_type == 'Polygon': xc, yc = p_c.exterior.coords.xy
                                             else: xc, yc = max(p_c.geoms, key=lambda a: a.area).exterior.coords.xy
-                                            fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Calculada"))
+                                            fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Calculada (DEM)"))
                                             
+                                            # Verde (Oficial)
                                             if not gdf_off_4326.empty:
                                                 p_o = gdf_off_4326.geometry.iloc[0]
                                                 if p_o.geom_type == 'Polygon': xo, yo = p_o.exterior.coords.xy
                                                 else: xo, yo = max(p_o.geoms, key=lambda a: a.area).exterior.coords.xy
-                                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
+                                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width':2, 'color':'#00FF00'}, name="Oficial (IGAC)"))
                                             
-                                            clat = gdf_calc_4326.centroid.y.mean()
-                                            clon = gdf_calc_4326.centroid.x.mean()
-                                            fig.update_layout(title="Comparativa", mapbox=dict(style="carto-positron", zoom=10, center={"lat": clat, "lon": clon}), height=600, margin=dict(l=0,r=0,t=30,b=0))
+                                            clat = gdf_calc_4326.geometry.centroid.y.mean()
+                                            clon = gdf_calc_4326.geometry.centroid.x.mean()
+                                            fig.update_layout(title="Comparativa de Divisorias", mapbox=dict(style="carto-positron", zoom=10, center={"lat": clat, "lon": clon}), height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
                                             
                             # --- MODO 3: VECTORES (LÍNEAS) ---
@@ -695,68 +696,72 @@ if gdf_zona_seleccionada is not None:
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
 
-            # --- TAB 7: AMENAZAS (SEPARADAS Y CLARAS) ---
+            # --- TAB 7: AMENAZAS (CORREGIDO) ---
             with tab7:
                 st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
                 
                 if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
-                    # Preparación de Matrices (Recorte para igualar dimensiones)
+                    # Recorte de seguridad para igualar matrices
                     min_h = min(slope_deg.shape[0], acc.shape[0])
                     min_w = min(slope_deg.shape[1], acc.shape[1])
+                    
                     s_core = slope_deg[:min_h, :min_w]
-                    a_core = np.log1p(acc[:min_h, :min_w]) 
+                    # Logaritmo para suavizar el flujo
+                    a_core = np.log1p(acc[:min_h, :min_w])
                     
-                    # --- CREACIÓN DE SUB-PESTAÑAS ---
-                    t_torr, t_inun = st.tabs(["🔴 Avenidas Torrenciales", "🔵 Inundación Plana"])
+                    t_torr, t_inun = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación Plana"])
                     
-                    # 1. AVENIDA TORRENCIAL (Fuerza = Pendiente Alta + Agua)
+                    # 1. AVENIDA TORRENCIAL
                     with t_torr:
-                        st.markdown("**Identificación de cauces con alta energía.**")
                         c1, c2 = st.columns([1, 3])
-                        
                         with c1:
-                            s_umb = st.slider("Pendiente Crítica (> °)", 10, 45, 25, key="s_torr")
-                            a_umb = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 6.0, 0.1, key="a_torr")
-                            st.warning("Zonas donde el agua baja rápido y canalizada.")
+                            st.write("**Configuración**")
+                            s_umb = st.slider("Pendiente Crítica (> °)", 10, 50, 25, key="s_t")
+                            a_umb = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 6.0, key="a_t")
+                            st.error("Zonas de alta energía (Pendiente + Agua).")
                         
                         with c2:
-                            risk_t = np.zeros_like(s_core, dtype=np.uint8)
-                            # Lógica: Pendiente MAYOR al umbral Y Agua MAYOR al umbral
+                            # Matriz binaria: 1 donde hay riesgo, 0 donde no
+                            risk_t = np.zeros_like(s_core)
                             mask_t = (s_core >= s_umb) & (a_core >= a_umb)
                             risk_t[mask_t] = 1
                             
-                            # Visualización: Solo Rojo
-                            fig_t = px.imshow(risk_t, color_continuous_scale=[[0, "rgba(0,0,0,0)"], [1, "red"]])
+                            # SOLUCIÓN DEL CUADRO SÓLIDO:
+                            # Usamos una escala de color donde 0 es transparente
+                            fig_t = px.imshow(
+                                risk_t, 
+                                color_continuous_scale=[[0, "rgba(0,0,0,0)"], [1, "red"]],
+                                zmin=0, zmax=1
+                            )
                             fig_t.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
                             fig_t.update_xaxes(visible=False); fig_t.update_yaxes(visible=False)
                             st.plotly_chart(fig_t, use_container_width=True)
 
-                    # 2. INUNDACIÓN (Empozamiento = Pendiente Baja + Agua)
+                    # 2. INUNDACIÓN
                     with t_inun:
-                        st.markdown("**Identificación de zonas propensas a desbordamiento lento.**")
                         c1, c2 = st.columns([1, 3])
-                        
                         with c1:
-                            s_flat = st.slider("Pendiente Plana (< °)", 0.5, 10.0, 3.0, 0.5, key="s_inun")
-                            a_umb_i = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 5.5, 0.1, key="a_inun")
-                            st.info("Zonas planas con alto flujo acumulado.")
+                            st.write("**Configuración**")
+                            s_flat = st.slider("Pendiente Plana (< °)", 0.5, 10.0, 3.0, key="s_i")
+                            a_umb_i = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 5.5, key="a_i")
+                            st.info("Zonas de empozamiento (Plano + Agua).")
                         
                         with c2:
-                            risk_i = np.zeros_like(s_core, dtype=np.uint8)
-                            # Lógica: Pendiente MENOR al umbral Y Agua MAYOR al umbral
+                            risk_i = np.zeros_like(s_core)
                             mask_i = (s_core <= s_flat) & (a_core >= a_umb_i)
                             risk_i[mask_i] = 1
                             
-                            # Visualización: Solo Azul
-                            fig_i = px.imshow(risk_i, color_continuous_scale=[[0, "rgba(0,0,0,0)"], [1, "#0099FF"]])
+                            fig_i = px.imshow(
+                                risk_i, 
+                                color_continuous_scale=[[0, "rgba(0,0,0,0)"], [1, "#0099FF"]],
+                                zmin=0, zmax=1
+                            )
                             fig_i.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
                             fig_i.update_xaxes(visible=False); fig_i.update_yaxes(visible=False)
                             st.plotly_chart(fig_i, use_container_width=True)
-
                 else:
-                    st.warning("⚠️ Primero debes calcular la Hidrología en la pestaña 'Hidrología'.")
-            
-                                
+                    st.warning("⚠️ Calcula primero la hidrología.")
+                                  
             # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
             with tab5:
                 st.subheader("Centro de Descargas")
