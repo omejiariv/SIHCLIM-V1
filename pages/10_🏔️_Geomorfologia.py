@@ -336,7 +336,7 @@ if gdf_zona_seleccionada is not None:
 
             # --- TAB 4: HIDROLOGÍA (ACTUALIZADO: COORDENADAS EXTREMAS) ---
             gdf_rios_export = None
-            catchment_raster_export = None
+            _raster_export = None
 
             with tab4:
                 st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
@@ -350,7 +350,7 @@ if gdf_zona_seleccionada is not None:
                         st.markdown("#### ⚙️ Configuración")
                         opciones_viz = [
                             "Vectores (Líneas)", 
-                            "Catchment (Mascara)",
+                            " (Mascara)",
                             "Divisoria (Línea)",
                             "Raster (Acumulación)" 
                         ]
@@ -470,9 +470,10 @@ if gdf_zona_seleccionada is not None:
                                 # Calcular Catchment con punto (session state o input)
                                 catch = None
                                 try:
-                                catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
-                                st.session_state['catchment_raster'] = catch # <--- GUARDAR EN SESIÓN
-                                except: pass
+                                    catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
+                                    st.session_state['catchment_raster'] = catch # Guardar para descarga
+                                except Exception as e:
+                                    st.error(f"Error calculando catchment: {e}")
 
                                 # Visualización (Idéntica a la versión blindada anterior)
                                 if catch is not None:
