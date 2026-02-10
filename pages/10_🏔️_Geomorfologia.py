@@ -696,71 +696,60 @@ if gdf_zona_seleccionada is not None:
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
 
-            # --- TAB 7: AMENAZAS (CORREGIDO) ---
+            # --- TAB 7: AMENAZAS (AVENIDA TORRENCIAL) ---
             with tab7:
-                st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
+                st.subheader("🚨 Mapa de Amenaza: Avenidas Torrenciales")
+                st.markdown("Identificación de zonas críticas donde convergen alta pendiente y alto flujo acumulado.")
                 
-                if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
-                    # Recorte de seguridad para igualar matrices
-                    min_h = min(slope_deg.shape[0], acc.shape[0])
-                    min_w = min(slope_deg.shape[1], acc.shape[1])
+                if 'acc' in locals() and acc is not None:
+                    c_par, c_vis = st.columns([1, 3])
                     
-                    s_core = slope_deg[:min_h, :min_w]
-                    # Logaritmo para suavizar el flujo
-                    a_core = np.log1p(acc[:min_h, :min_w])
-                    
-                    t_torr, t_inun = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación Plana"])
-                    
-                    # 1. AVENIDA TORRENCIAL
-                    with t_torr:
-                        c1, c2 = st.columns([1, 3])
-                        with c1:
-                            st.write("**Configuración**")
-                            s_umb = st.slider("Pendiente Crítica (> °)", 10, 50, 25, key="s_t")
-                            a_umb = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 6.0, key="a_t")
-                            st.error("Zonas de alta energía (Pendiente + Agua).")
+                    with c_par:
+                        st.markdown("#### Criterios")
+                        s_umb = st.slider("Pendiente Crítica (> Grados)", 15, 45, 30, help="Terreno propenso a inestabilidad.")
+                        a_umb = st.slider("Acumulación Log (> Umbral)", 1.0, 10.0, 5.5, 0.1, help="Define dónde comienza el 'cauce' con fuerza tractiva.")
                         
-                        with c2:
-                            # Matriz binaria: 1 donde hay riesgo, 0 donde no
-                            risk_t = np.zeros_like(s_core)
-                            mask_t = (s_core >= s_umb) & (a_core >= a_umb)
-                            risk_t[mask_t] = 1
-                            
-                            # SOLUCIÓN DEL CUADRO SÓLIDO:
-                            # Usamos una escala de color donde 0 es transparente
-                            fig_t = px.imshow(
-                                risk_t, 
-                                color_continuous_scale=[[0, "rgba(0,0,0,0)"], [1, "red"]],
-                                zmin=0, zmax=1
-                            )
-                            fig_t.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
-                            fig_t.update_xaxes(visible=False); fig_t.update_yaxes(visible=False)
-                            st.plotly_chart(fig_t, use_container_width=True)
+                        st.info("""
+                        **Semáforo de Riesgo:**
+                        * 🔴 **Muy Alta (Torrencial):** Pendiente > Crítica Y Flujo en Cauce. (El agua baja rápido y canalizada).
+                        * 🟠 **Alta (Ladera):** Pendiente > Crítica (Sin cauce mayor).
+                        * 🟡 **Media (Cauce Plano):** Flujo alto pero pendiente baja (Inundación lenta).
+                        """)
 
-                    # 2. INUNDACIÓN
-                    with t_inun:
-                        c1, c2 = st.columns([1, 3])
-                        with c1:
-                            st.write("**Configuración**")
-                            s_flat = st.slider("Pendiente Plana (< °)", 0.5, 10.0, 3.0, key="s_i")
-                            a_umb_i = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 5.5, key="a_i")
-                            st.info("Zonas de empozamiento (Plano + Agua).")
+                    with c_vis:
+                        # Asegurar dimensiones iguales
+                        min_h = min(slope_deg.shape[0], acc.shape[0])
+                        min_w = min(slope_deg.shape[1], acc.shape[1])
                         
-                        with c2:
-                            risk_i = np.zeros_like(s_core)
-                            mask_i = (s_core <= s_flat) & (a_core >= a_umb_i)
-                            risk_i[mask_i] = 1
-                            
-                            fig_i = px.imshow(
-                                risk_i, 
-                                color_continuous_scale=[[0, "rgba(0,0,0,0)"], [1, "#0099FF"]],
-                                zmin=0, zmax=1
-                            )
-                            fig_i.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
-                            fig_i.update_xaxes(visible=False); fig_i.update_yaxes(visible=False)
-                            st.plotly_chart(fig_i, use_container_width=True)
+                        s_core = slope_deg[:min_h, :min_w]
+                        a_core = np.log1p(acc[:min_h, :min_w])
+                        
+                        # Álgebra de Mapas
+                        risk = np.zeros_like(s_core, dtype=np.uint8)
+                        
+                        mask_steep = s_core >= s_umb
+                        mask_flow = a_core >= a_umb
+                        
+                        # Lógica de clasificación
+                        risk[mask_flow] = 1          # Cauce (Amarillo - Riesgo Inundación)
+                        risk[mask_steep] = 2         # Ladera inestable (Naranja)
+                        risk[mask_steep & mask_flow] = 3 # AVENIDA TORRENCIAL (Rojo)
+                        
+                        # Visualización
+                        colors = [
+                            [0.0, "rgba(0,0,0,0)"],   # Nada
+                            [0.33, "#FFD700"],        # Amarillo (Río plano)
+                            [0.66, "#FF8C00"],        # Naranja (Ladera)
+                            [1.0, "#FF0000"]          # Rojo (Torrencial)
+                        ]
+                        
+                        fig_risk = px.imshow(risk, color_continuous_scale=colors, title="Amenaza por Flujos Rápidos")
+                        fig_risk.update_layout(coloraxis_showscale=False, height=600, margin=dict(l=0,r=0,t=40,b=0))
+                        fig_risk.update_xaxes(visible=False); fig_risk.update_yaxes(visible=False)
+                        
+                        st.plotly_chart(fig_risk, use_container_width=True)
                 else:
-                    st.warning("⚠️ Calcula primero la hidrología.")
+                    st.warning("⚠️ Calcula primero la hidrología en la pestaña 'Hidrología'.")
                                   
             # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
             with tab5:
