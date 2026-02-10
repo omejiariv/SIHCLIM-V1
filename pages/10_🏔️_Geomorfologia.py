@@ -301,7 +301,7 @@ if gdf_zona_seleccionada is not None:
                         import tempfile
                         from shapely.geometry import shape
                         
-                        # 1. PREPARACIÓN HIDROLÓGICA (CORREGIDO)
+                        # 1. PREPARACIÓN HIDROLÓGICA (Corregido y Blindado)
                         grid = None; acc = None; fdir = None
                         
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
@@ -310,32 +310,49 @@ if gdf_zona_seleccionada is not None:
                                 dst.write(arr_elevacion.astype('float64'), 1)
                             try:
                                 grid = Grid.from_raster(tmp.name)
-                                dem_grid = grid.read_raster(tmp.name) # Leer normal
+                                dem_grid = grid.read_raster(tmp.name)
+                                
+                                # Procesos Hidrológicos
                                 pit_filled = grid.fill_pits(dem_grid)
                                 resolved = grid.resolve_flats(pit_filled)
                                 dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                                 fdir = grid.flowdir(resolved, dirmap=dirmap)
                                 acc = grid.accumulation(fdir, dirmap=dirmap)
-                            except Exception as e: 
-                                st.error(f"Error: {e}")
+                                
+                            except Exception as e: st.error(f"Error: {e}")
                             finally: 
-                                # CORRECCIÓN AQUÍ: El try debe ir en una línea nueva
                                 try: os.remove(tmp.name)
                                 except: pass
 
                         if grid is not None and acc is not None:
                             crs_actual = meta.get('crs', 'EPSG:3116')
 
-                            # --- INFO DE REFERENCIA (NUEVO) ---
-                            # Encontrar coordenadas de Altura Mínima y Máxima
-                            idx_min_h = np.argmin(dem_grid); y_min, x_min = np.unravel_index(idx_min_h, dem_grid.shape)
-                            idx_max_h = np.argmax(dem_grid); y_max, x_max = np.unravel_index(idx_max_h, dem_grid.shape)
+                            # --- CÁLCULO DE REFERENCIAS (FIX NaN) ---
+                            # Convertimos a numpy array puro y enmascaramos los NoData
+                            dem_arr = dem_grid.view(np.ndarray)
+                            # Asumimos que valores muy bajos o nodata son inválidos para la búsqueda
+                            dem_safe = np.where(dem_arr < -100, np.nan, dem_arr)
                             
-                            with st.expander("📍 Coordenadas de Referencia (Matriz)", expanded=False):
-                                c_ref1, c_ref2 = st.columns(2)
-                                c_ref1.info(f"**Punto Más Bajo (Posible Salida):**\n\nFila (Y): {y_min} | Col (X): {x_min}\nAltitud: {np.min(dem_grid):.1f} m")
-                                c_ref2.success(f"**Punto Más Alto:**\n\nFila (Y): {y_max} | Col (X): {x_max}\nAltitud: {np.max(dem_grid):.1f} m")
+                            # Búsqueda de índices ignorando NaNs
+                            try:
+                                # Mínimo (Salida teórica)
+                                idx_min_flat = np.nanargmin(dem_safe)
+                                y_min, x_min = np.unravel_index(idx_min_flat, dem_safe.shape)
+                                h_min = dem_safe[y_min, x_min]
+                                
+                                # Máximo (Cabecera)
+                                idx_max_flat = np.nanargmax(dem_safe)
+                                y_max, x_max = np.unravel_index(idx_max_flat, dem_safe.shape)
+                                h_max = dem_safe[y_max, x_max]
+                            except:
+                                y_min, x_min, h_min = 0, 0, 0
+                                y_max, x_max, h_max = 0, 0, 0
 
+                            with st.expander("📍 Coordenadas de Referencia (Matriz)", expanded=True):
+                                c_ref1, c_ref2 = st.columns(2)
+                                c_ref1.info(f"**Punto Más Bajo (Posible Salida):**\n\nFila (Y): {y_min} | Col (X): {x_min}\nAltitud: {h_min:.1f} m")
+                                c_ref2.success(f"**Punto Más Alto:**\n\nFila (Y): {y_max} | Col (X): {x_max}\nAltitud: {h_max:.1f} m")
+                                
                             # --- MODO 1: RASTER ---
                             if modo_viz == "Raster (Acumulación)":
                                 log_acc = np.log1p(acc)
