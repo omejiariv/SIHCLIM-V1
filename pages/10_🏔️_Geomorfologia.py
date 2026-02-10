@@ -8,6 +8,7 @@ from rasterio.io import MemoryFile
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 import os
 from shapely.geometry import shape, LineString, MultiLineString, Polygon
 from modules import selectors
@@ -18,6 +19,11 @@ try:
     PYSHEDS_AVAILABLE = True
 except ImportError:
     PYSHEDS_AVAILABLE = False
+
+try:
+    from modules import land_cover
+except ImportError:
+    land_cover = None
 
 # Configuración de Página
 st.set_page_config(page_title="Geomorfología Pro", page_icon="🏔️", layout="wide")
@@ -177,42 +183,89 @@ if gdf_zona_seleccionada is not None:
             h, w = arr_elevacion.shape
             factor = max(1, int(max(h, w) / 200)) # Mejor resolución para el 3D
 
-            # --- TAB 1: 3D (EXAGERACIÓN VISUAL, NO DE DATOS - SELECTOR DE COLOR) ---
+            # --- TAB 1: 3D Y CURVAS DE NIVEL ---
+            gdf_contours_export = None # Variable para exportar
+            
             with tab1:
-                col_ctrl, col_map = st.columns([1, 4])
-                with col_ctrl:
-                    st.markdown("##### 🎛️ Control 3D")
-                    exageracion = st.slider("Exageración Vertical:", 0.5, 5.0, 1.5, 0.1, key=f"slider_3d_{nombre_zona}")
+                c1, c2 = st.columns([1, 4])
+                with c1:
+                    st.markdown("#### Visualización")
+                    exag = st.slider("Exageración Vertical:", 0.5, 5.0, 1.5, 0.1, key="z_exag")
                     
-                    # 🎨 Nuevo Selector de Color
-                    paletas = {
-                        "Tierra (Natural)": "Earth",
-                        "Terreno (Verde/Café)": "bluyl", # Aprox a terreno
-                        "Viridis (Científico)": "Viridis",
-                        "Turbo (Alto Contraste)": "Turbo",
-                        "Agua (Azul/Verde)": "YlGnBu",
-                        "Magma (Oscuro)": "Magma"
-                    }
-                    paleta_nombre = st.selectbox("Paleta de Color:", list(paletas.keys()), index=0)
-                    paleta_codigo = paletas[paleta_nombre]
-                
-                with col_map:
+                    st.markdown("---")
+                    ver_curvas = st.toggle("Ver Curvas de Nivel", value=False)
+                    intervalo_curvas = st.select_slider("Intervalo (m):", options=[10, 20, 50, 100], value=50, disabled=not ver_curvas)
+                    
+                with c2:
+                    # Preparar Terreno 3D
                     arr_3d = arr_elevacion[::factor, ::factor]
                     
-                    # Usamos la paleta seleccionada
-                    fig_surf = go.Figure(data=[go.Surface(z=arr_3d, colorscale=paleta_codigo)])
+                    fig = go.Figure()
                     
-                    z_aspect = 0.2 * exageracion
-                    fig_surf.update_layout(
-                        title=f"Topografía 3D ({paleta_nombre})",
-                        autosize=True, height=650,
-                        scene=dict(
-                            xaxis_title='X', yaxis_title='Y', zaxis_title='Altitud (m)',
-                            aspectmode='manual', aspectratio=dict(x=1, y=1, z=z_aspect)
-                        ),
-                        margin=dict(l=10, r=10, b=10, t=40)
+                    # 1. Superficie 3D
+                    fig.add_trace(go.Surface(z=arr_3d, colorscale='Earth', showscale=False, name="Terreno"))
+                    
+                    # 2. Generación de Curvas de Nivel (Vectores 3D)
+                    if ver_curvas:
+                        try:
+                            # Usamos matplotlib para hallar los contornos matemáticos
+                            min_z, max_z = np.nanmin(arr_elevacion), np.nanmax(arr_elevacion)
+                            levels = np.arange(np.floor(min_z), np.ceil(max_z), intervalo_curvas)
+                            
+                            # Generar contornos sobre la matriz original
+                            contours_obj = plt.contour(arr_elevacion, levels=levels)
+                            
+                            lines_3d_x = []
+                            lines_3d_y = []
+                            lines_3d_z = []
+                            geoms_2d = [] # Para exportar shapefile
+                            
+                            # Extraer caminos
+                            for level, collection in zip(levels, contours_obj.collections):
+                                paths = collection.get_paths()
+                                for path in paths:
+                                    v = path.vertices
+                                    # Submuestreo para rendimiento visual (cada factor * 2)
+                                    # Nota: Plotly Surface usa índices reducidos, ajustamos coordenadas
+                                    x_plot = v[:, 1] / factor
+                                    y_plot = v[:, 0] / factor
+                                    z_plot = np.full(len(x_plot), level)
+                                    
+                                    # Añadir a listas de Plotly (con None para cortar líneas)
+                                    lines_3d_x.extend(x_plot); lines_3d_x.append(None)
+                                    lines_3d_y.extend(y_plot); lines_3d_y.append(None)
+                                    lines_3d_z.extend(z_plot); lines_3d_z.append(None)
+                                    
+                                    # Guardar geometría real para exportación (Coordenadas geográficas)
+                                    # Transformar Pixel -> Lat/Lon
+                                    xs_geo, ys_geo = rasterio.transform.xy(transform, v[:, 0], v[:, 1])
+                                    if len(xs_geo) > 1:
+                                        geoms_2d.append({'geometry': LineString(zip(xs_geo, ys_geo)), 'elevation': level})
+
+                            # Graficar trazas 3D sobre la superficie
+                            # Nota: Levantamos un poco (z + 2) para que no se entierren en el mesh
+                            fig.add_trace(go.Scatter3d(
+                                x=lines_3d_x, y=lines_3d_y, z=np.array(lines_3d_z) + 5,
+                                mode='lines',
+                                line=dict(color='white', width=2),
+                                name="Curvas de Nivel"
+                            ))
+                            
+                            # Preparar GeoDataFrame para descarga
+                            if geoms_2d:
+                                gdf_contours_export = gpd.GeoDataFrame(geoms_2d, crs=meta['crs'])
+
+                        except Exception as e:
+                            st.warning(f"No se pudieron generar curvas: {e}")
+                            plt.close() # Limpiar memoria matplotlib
+
+                    fig.update_layout(
+                        title="Terreno 3D + Geomorfología", 
+                        autosize=True, height=600, 
+                        scene=dict(aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.2*exag)),
+                        margin=dict(l=0, r=0, b=0, t=40)
                     )
-                    st.plotly_chart(fig_surf, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True)
 
             # --- TAB 2: PENDIENTES (ZOOM FULL) ---
             with tab2:
@@ -362,24 +415,55 @@ if gdf_zona_seleccionada is not None:
 
                             # --- MODO 2: CATCHMENT / DIVISORIA ---
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
-                                idx_max_acc = np.argmax(acc)
-                                y_auto, x_auto = np.unravel_index(idx_max_acc, acc.shape)
-                                
-                                # Calibración Manual
-                                with st.expander("🔧 Calibrar Punto de Desfogue", expanded=True):
-                                    st.caption("Ajusta las coordenadas para coincidir con la salida real del río.")
-                                    c_x, c_y = st.columns(2)
-                                    x_pour = c_x.number_input("Columna (X):", value=int(x_auto), min_value=0, max_value=acc.shape[1]-1, step=1)
-                                    y_pour = c_y.number_input("Fila (Y):", value=int(y_auto), min_value=0, max_value=acc.shape[0]-1, step=1)
+                                # 1. Punto Inicial (Automático Global)
+                                if 'x_pour_calib' not in st.session_state:
+                                    idx_max_acc = np.nanargmax(acc)
+                                    y_auto, x_auto = np.unravel_index(idx_max_acc, acc.shape)
+                                    st.session_state['x_pour_calib'] = int(x_auto)
+                                    st.session_state['y_pour_calib'] = int(y_auto)
 
-                                # Calcular Catchment
+                                # 2. Controles de Calibración
+                                with st.expander("🔧 Calibración de Punto de Desfogue", expanded=True):
+                                    c_coord, c_snap = st.columns([3, 1])
+                                    with c_coord:
+                                        c_x, c_y = st.columns(2)
+                                        # Usamos session_state para permitir actualizaciones desde el botón Snap
+                                        x_pour = c_x.number_input("Columna (X):", value=st.session_state['x_pour_calib'], min_value=0, max_value=acc.shape[1]-1, step=1, key="num_x")
+                                        y_pour = c_y.number_input("Fila (Y):", value=st.session_state['y_pour_calib'], min_value=0, max_value=acc.shape[0]-1, step=1, key="num_y")
+                                    
+                                    with c_snap:
+                                        st.write("") # Espacio
+                                        st.write("") 
+                                        if st.button("🧲 Atraer al Río", help="Busca el pixel con mayor flujo en un radio de 5 celdas alrededor del punto actual."):
+                                            # Lógica de SNAP
+                                            r = 5
+                                            y_curr, x_curr = y_pour, x_pour
+                                            # Definir ventana segura
+                                            y_start, y_end = max(0, y_curr-r), min(acc.shape[0], y_curr+r+1)
+                                            x_start, x_end = max(0, x_curr-r), min(acc.shape[1], x_curr+r+1)
+                                            
+                                            window = acc[y_start:y_end, x_start:x_end]
+                                            if window.size > 0:
+                                                # Encontrar máximo local
+                                                local_max_idx = np.unravel_index(np.argmax(window), window.shape)
+                                                # Convertir a coordenadas globales
+                                                new_y = y_start + local_max_idx[0]
+                                                new_x = x_start + local_max_idx[1]
+                                                
+                                                # Actualizar estado y recargar
+                                                st.session_state['x_pour_calib'] = int(new_x)
+                                                st.session_state['y_pour_calib'] = int(new_y)
+                                                st.toast(f"✅ Punto ajustado a: ({new_x}, {new_y})", icon="🎯")
+                                                st.rerun()
+
+                                # Calcular Catchment con punto (session state o input)
                                 catch = None
                                 try:
                                     catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
                                     catchment_raster_export = catch
                                 except: pass
 
-                                # Visualización
+                                # Visualización (Idéntica a la versión blindada anterior)
                                 if catch is not None:
                                     catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
                                     shapes_gen = features.shapes(catch_int, transform=transform)
@@ -397,14 +481,14 @@ if gdf_zona_seleccionada is not None:
                                                 center={"lat": gdf_calc_4326.centroid.y.mean(), "lon": gdf_calc_4326.centroid.x.mean()},
                                                 zoom=10, opacity=0.5, color_discrete_sequence=["#0099FF"]
                                             )
-                                            # Validación (Línea Verde)
+                                            # Validación
                                             if not gdf_off_4326.empty:
                                                 poly = gdf_off_4326.geometry.iloc[0]
                                                 if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
                                                 else: x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
                                                 fig.add_trace(go.Scattermapbox(mode="lines", lon=list(x), lat=list(y), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
                                             
-                                            fig.update_layout(title="Catchment", height=600, margin=dict(l=0,r=0,t=30,b=0))
+                                            fig.update_layout(title="Catchment (Mascara)", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
 
                                         elif modo_viz == "Divisoria (Línea)":
@@ -413,18 +497,18 @@ if gdf_zona_seleccionada is not None:
                                             p_c = gdf_calc_4326.geometry.iloc[0]
                                             if p_c.geom_type == 'Polygon': xc, yc = p_c.exterior.coords.xy
                                             else: xc, yc = max(p_c.geoms, key=lambda a: a.area).exterior.coords.xy
-                                            fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Calculada"))
+                                            fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Calculada (DEM)"))
                                             
                                             # Verde (Oficial)
                                             if not gdf_off_4326.empty:
                                                 p_o = gdf_off_4326.geometry.iloc[0]
                                                 if p_o.geom_type == 'Polygon': xo, yo = p_o.exterior.coords.xy
                                                 else: xo, yo = max(p_o.geoms, key=lambda a: a.area).exterior.coords.xy
-                                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
+                                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width':2, 'color':'#00FF00'}, name="Oficial (IGAC)"))
                                             
                                             clat = gdf_calc_4326.centroid.y.mean()
                                             clon = gdf_calc_4326.centroid.x.mean()
-                                            fig.update_layout(title="Comparativa", mapbox=dict(style="carto-positron", zoom=10, center={"lat": clat, "lon": clon}), height=600, margin=dict(l=0,r=0,t=30,b=0))
+                                            fig.update_layout(title="Comparativa de Divisorias", mapbox=dict(style="carto-positron", zoom=10, center={"lat": clat, "lon": clon}), height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
 
                             # --- MODO 3: VECTORES ---
@@ -523,35 +607,76 @@ if gdf_zona_seleccionada is not None:
 
                     with col_q:
                         st.markdown("**2. Caudal Pico (Q) - Método Racional**")
-                        # Q = 0.278 * C * I * A  (Q m3/s, I mm/h, A km2)
                         
+                        # --- CÁLCULO AUTOMÁTICO DE C (COBERTURAS) ---
+                        c_sugerido = 0.50 # Default
+                        detalle_cob = "No hay datos de cobertura."
+                        
+                        PATH_COB = "data/Cob25m_WGS84.tif"
+                        if land_cover and os.path.exists(PATH_COB):
+                            try:
+                                # Calcular estadísticas de cobertura para la zona
+                                stats_cob = land_cover.calcular_estadisticas_zona(gdf_zona_seleccionada, PATH_COB)
+                                if stats_cob:
+                                    # Ponderación simple según valores típicos del método racional
+                                    # Urbano: 0.85, Cultivo: 0.6, Pasto: 0.5, Bosque: 0.3, Agua: 1.0
+                                    c_pond = 0
+                                    for cob, pct in stats_cob.items():
+                                        peso = pct / 100.0
+                                        val_c = 0.5
+                                        if "Urbano" in cob or "Industrial" in cob: val_c = 0.85
+                                        elif "Cultivo" in cob: val_c = 0.60
+                                        elif "Pasto" in cob or "Herbácea" in cob: val_c = 0.45
+                                        elif "Bosque" in cob: val_c = 0.30
+                                        elif "Agua" in cob: val_c = 1.0
+                                        c_pond += val_c * peso
+                                    
+                                    c_sugerido = c_pond
+                                    # Texto resumen
+                                    top_3 = sorted(stats_cob.items(), key=lambda x: x[1], reverse=True)[:3]
+                                    detalle_cob = ", ".join([f"{k} ({v:.0f}%)" for k,v in top_3])
+                            except: pass
+
                         i_rain = st.slider("Intensidad de Lluvia (I) [mm/h]:", 10, 200, 50, 10)
-                        c_runoff = st.select_slider("Coeficiente de Escorrentía (C):", 
-                                                    options=[0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], 
-                                                    value=0.5,
-                                                    help="0.2: Bosque denso, 0.9: Urbano pavimentado")
+                        
+                        c_runoff = st.slider(
+                            "Coeficiente de Escorrentía (C):", 
+                            0.1, 1.0, float(c_sugerido), 0.05,
+                            help=f"Valor sugerido basado en coberturas satelitales: {c_sugerido:.2f}\nPredomina: {detalle_cob}"
+                        )
+                        
+                        if c_sugerido != 0.5:
+                            st.caption(f"🛰️ **C Calculado:** {c_sugerido:.2f} ({detalle_cob})")
                         
                         q_peak = 0.278 * c_runoff * i_rain * area_km2
                         
                         st.metric("Caudal Pico Estimado (Q)", f"{q_peak:.2f} m³/s")
                         st.caption("Fórmula: $Q = 0.278 \cdot C \cdot I \cdot A$")
-
+    
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
                                 
             # --- TAB 5: DESCARGAS ---
             with tab5:
                 st.subheader("Centro de Descargas")
-                c1, c2, c3, c4 = st.columns(4)
+                c1, c2, c3, c4, c5 = st.columns(5)
                 
                 # 1. DEM (TIF)
                 c1.download_button("📥 DEM (.tif)", to_tif(arr_elevacion, meta), f"DEM_{nombre_zona}.tif")
+
+                # 2 Curvas de Nivel (Vector)
+                if gdf_contours_export is not None:
+                    # Exportar a GeoJSON
+                    geojson_data = gdf_contours_export.to_json()
+                    c3.download_button("📥 Curvas Nivel (.json)", geojson_data, f"Curvas_{nombre_zona}.geojson", "application/json")
+                else:
+                    c3.info("Activa 'Ver Curvas' en Tab 3D para generar.")
                 
-                # 2. Pendientes (TIF)
+                # 3. Pendientes (TIF)
                 slope_meta = meta.copy(); slope_meta.update(dtype=rasterio.float32)
                 c2.download_button("📥 Pendientes (.tif)", to_tif(slope_deg, slope_meta), f"Slope_{nombre_zona}.tif")
                 
-                # 3. Datos Hipsométricos (CSV) - Recalculamos rápido para descargar
+                # 4. Datos Hipsométricos (CSV) - Recalculamos rápido para descargar
                 try:
                     elevs_sorted = np.sort(elevs_valid)[::-1]
                     n_px = len(elevs_sorted)
@@ -567,7 +692,7 @@ if gdf_zona_seleccionada is not None:
                 except:
                     c3.warning("Error generando CSV")
 
-                # 4. RÍOS (GEOJSON)
+                # 5. RÍOS (GEOJSON)
                 if gdf_rios_export is not None:
                     try:
                         # 🔥 CORRECCIÓN: Usamos meta['crs'] aquí también
