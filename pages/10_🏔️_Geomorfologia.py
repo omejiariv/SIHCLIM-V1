@@ -25,12 +25,16 @@ try:
 except ImportError:
     land_cover = None
 
-if 'gdf_contours' not in st.session_state: st.session_state['gdf_contours'] = None
-if 'catchment_raster' not in st.session_state: st.session_state['catchment_raster'] = None
-
 # Configuración de Página
 st.set_page_config(page_title="Geomorfología Pro", page_icon="🏔️", layout="wide")
 
+# --- INICIALIZACIÓN DE VARIABLES DE ESTADO ---
+# (Asegúrate de que este bloque tenga todas estas líneas)
+if 'gdf_contours' not in st.session_state: st.session_state['gdf_contours'] = None
+if 'catchment_raster' not in st.session_state: st.session_state['catchment_raster'] = None
+if 'gdf_rios' not in st.session_state: st.session_state['gdf_rios'] = None     # <--- NUEVO
+if 'df_indices' not in st.session_state: st.session_state['df_indices'] = None # <--- NUEVO
+    
 st.title("🏔️ Análisis Geomorfológico y Terreno 3D")
 st.markdown("""
 Esta herramienta utiliza el **Modelo Digital de Elevación (DEM)** para modelar el terreno, 
@@ -237,10 +241,9 @@ if gdf_zona_seleccionada is not None:
                                 name="Curvas de Nivel"
                             ))
                             
-                            # Guardar en Session State para la Tab de Descargas
                             if geoms_2d:
                                 st.session_state['gdf_contours'] = gpd.GeoDataFrame(geoms_2d, crs=meta['crs'])
-
+                            
                         except Exception as e:
                             st.warning(f"No se pudieron generar curvas: {e}")
                             plt.close()
@@ -523,22 +526,45 @@ if gdf_zona_seleccionada is not None:
                                             fig.update_layout(title="Comparativa de Divisorias", mapbox=dict(style="carto-positron", zoom=10, center={"lat": clat, "lon": clon}), height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
 
-                            # --- MODO 3: VECTORES ---
+                            # --- MODO 3: VECTORES (LÍNEAS) ---
                             elif modo_viz == "Vectores (Líneas)":
                                 gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, meta['crs'], nombre_zona)
+                                
                                 if gdf_rios is not None:
-                                    gdf_4326 = gdf_rios.to_crs("EPSG:4326")
-                                    lons, lats = [], []
-                                    for geom in gdf_4326.geometry:
-                                        if geom.geom_type == 'LineString': x, y = geom.xy; lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
-                                        elif geom.geom_type == 'MultiLineString': 
-                                            for g in geom.geoms: x, y = g.xy; lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                                    # 1. GUARDAR EN MEMORIA (Para que Tab 5 lo vea)
+                                    st.session_state['gdf_rios'] = gdf_rios 
                                     
-                                    fig = go.Figure(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width': 2, 'color': '#0077BE'}))
-                                    center = gdf_4326.geometry.centroid.iloc[0]
-                                    fig.update_layout(mapbox=dict(style="carto-positron", zoom=10, center={"lat": center.y, "lon": center.x}), height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False)
-                                    st.plotly_chart(fig, use_container_width=True)
-                                else: st.warning("Baja el umbral.")
+                                    # 2. VISUALIZAR
+                                    try:
+                                        gdf_4326 = gdf_rios.to_crs("EPSG:4326")
+                                        lons, lats = [], []
+                                        for geom in gdf_4326.geometry:
+                                            if geom.geom_type == 'LineString': 
+                                                x, y = geom.xy
+                                                lons.extend(list(x) + [None])
+                                                lats.extend(list(y) + [None])
+                                            elif geom.geom_type == 'MultiLineString': 
+                                                for g in geom.geoms: 
+                                                    x, y = g.xy
+                                                    lons.extend(list(x) + [None])
+                                                    lats.extend(list(y) + [None])
+                                        
+                                        fig = go.Figure(go.Scattermapbox(
+                                            mode="lines", lon=lons, lat=lats, 
+                                            line={'width': 2, 'color': '#0077BE'},
+                                            name="Red Hídrica"
+                                        ))
+                                        
+                                        center = gdf_4326.geometry.centroid.iloc[0]
+                                        fig.update_layout(
+                                            mapbox=dict(style="carto-positron", zoom=10, center={"lat": center.y, "lon": center.x}), 
+                                            height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False
+                                        )
+                                        st.plotly_chart(fig, use_container_width=True)
+                                    except Exception as e:
+                                        st.error(f"Error pintando ríos: {e}")
+                                else: 
+                                    st.warning("No se detectaron ríos. Baja el umbral de acumulación.")
 
             # --- TAB 6: ÍNDICES Y MODELACIÓN (FASE A + B) ---
             with tab6:
@@ -584,13 +610,19 @@ if gdf_zona_seleccionada is not None:
                     c4.metric("Densidad Drenaje", dd_str)
 
                     with st.expander("Ver Tabla Detallada de Parámetros"):
+                        # Creamos el DataFrame local 'df_morfo'
                         df_morfo = pd.DataFrame({
                             "Parámetro": ["Área", "Perímetro", "Longitud Axial", "Longitud Total Ríos", "Desnivel (H)", "Pendiente Media Cuenca", "Pendiente Aprox. Cauce"],
                             "Valor": [area_km2, perimetro_km, longitud_axial_km, longitud_rios_km, desnivel_m, slope_mean, pendiente_cauce_m_m * 100],
                             "Unidad": ["km²", "km", "km", "km", "m", "Grados", "%"]
                         })
+                        
                         st.dataframe(df_morfo.style.format({"Valor": "{:.3f}"}), use_container_width=True)
-
+                        
+                        # CORRECCIÓN: Guardamos 'df_morfo' en la llave 'df_indices' del session_state
+                        # Así la Tab 5 podrá encontrarlo para descargarlo
+                        st.session_state['df_indices'] = df_morfo 
+                    
                     st.markdown("---")
                     
                     # --- FASE B: HIDROLOGÍA SINTÉTICA ---
@@ -724,70 +756,77 @@ if gdf_zona_seleccionada is not None:
                     st.warning("⚠️ Calcula primero la hidrología en la pestaña 'Hidrología'.")
             
                                 
-            # --- TAB 5: DESCARGAS ---
+            # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
             with tab5:
                 st.subheader("Centro de Descargas")
-                c1, c2, c3, c4, c5 = st.columns(5)
+                st.caption("Descarga los productos generados en las pestañas anteriores.")
+                
+                # Definimos 7 columnas
+                c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
                 
                 # 1. DEM (TIF)
-                c1.download_button("📥 DEM (.tif)", to_tif(arr_elevacion, meta), f"DEM_{nombre_zona}.tif")
-
-                # 2 Curvas de Nivel (Vector)
-                if gdf_contours_export is not None:
-                    # Exportar a GeoJSON
-                    geojson_data = gdf_contours_export.to_json()
-                    c2.download_button("📥 Curvas Nivel (.json)", geojson_data, f"Curvas_{nombre_zona}.geojson", "application/json")
-                else:
-                    c2.info("Activa 'Ver Curvas' en Tab 3D para generar.")
+                with c1:
+                    st.write("🏔️ **DEM**")
+                    c1.download_button("💾 .TIF", to_tif(arr_elevacion, meta), f"DEM_{nombre_zona}.tif")
                 
+                # 2. Curvas de Nivel (Vector)
+                with c2:
+                    st.write("〰️ **Curvas**")
+                    if st.session_state['gdf_contours'] is not None:
+                        geojson = st.session_state['gdf_contours'].to_json()
+                        c2.download_button("💾 .JSON", geojson, f"Curvas_{nombre_zona}.geojson", "application/json")
+                    else:
+                        st.warning("⚠️ Ver Tab 3D")
+
                 # 3. Pendientes (TIF)
-                slope_meta = meta.copy(); slope_meta.update(dtype=rasterio.float32)
-                c3.download_button("📥 Pendientes (.tif)", to_tif(slope_deg, slope_meta), f"Slope_{nombre_zona}.tif")
-                
-                # 4. Datos Hipsométricos (CSV) - Recalculamos rápido para descargar
-                try:
-                    elevs_sorted = np.sort(elevs_valid)[::-1]
-                    n_px = len(elevs_sorted)
-                    area_pct = np.arange(1, n_px + 1) / n_px * 100
-                    # Submuestreo para CSV manejable (max 5000 filas)
-                    step = max(1, n_px // 5000)
-                    df_hypso_export = pd.DataFrame({
-                        "Porcentaje_Area": area_pct[::step],
-                        "Altitud_m": elevs_sorted[::step]
-                    })
-                    csv_hypso = df_hypso_export.to_csv(index=False).encode('utf-8')
-                    c4.download_button("📊 Curva Hipsométrica (.csv)", csv_hypso, f"Hipsometria_{nombre_zona}.csv", "text/csv")
-                except:
-                    c4.warning("Error generando CSV")
+                with c3:
+                    st.write("📐 **Pendiente**")
+                    slope_meta = meta.copy(); slope_meta.update(dtype=rasterio.float32)
+                    c3.download_button("💾 .TIF", to_tif(slope_deg, slope_meta), f"Slope_{nombre_zona}.tif")
 
-                # 5. RÍOS (GEOJSON)
-                if gdf_rios_export is not None:
+                # 4. Datos Hipsométricos (CSV)
+                with c4:
+                    st.write("📈 **Hipso**")
                     try:
-                        # 🔥 CORRECCIÓN: Usamos meta['crs'] aquí también
-                        crs_actual = meta.get('crs', 'EPSG:3116')
-                        gdf_export_4326 = gdf_rios_export.set_crs(crs_actual, allow_override=True).to_crs("EPSG:4326")
-                        json_str = gdf_export_4326.to_json()
-                        c5.download_button("🌊 Red Drenaje (.geojson)", json_str, f"Rios_{nombre_zona}.geojson", "application/json")
-                    except Exception as e:
-                        c4.error(f"Error proyec: {e}")
+                        # Recálculo rápido para descarga
+                        elevs_sort = np.sort(elevs_valid)[::-1]
+                        pcts = np.linspace(0, 100, len(elevs_sort))
+                        df_hyp = pd.DataFrame({"Porcentaje_Area": pcts, "Altitud": elevs_sort})
+                        csv_hyp = df_hyp.to_csv(index=False).encode('utf-8')
+                        c4.download_button("💾 .CSV", csv_hyp, f"Hipsometria_{nombre_zona}.csv", "text/csv")
+                    except:
+                        st.error("Error calc.")
 
-                # CSV Índices
-                try:
-                    csv_ind = df_indices.to_csv(index=False).encode('utf-8')
-                    c3.download_button("📊 Índices (.csv)", csv_ind, f"Indices_{nombre_zona}.csv", "text/csv")
-                except: pass
+                # 5. Ríos (GEOJSON)
+                with c5:
+                    st.write("🌊 **Ríos**")
+                    if st.session_state['gdf_rios'] is not None:
+                        rios_json = st.session_state['gdf_rios'].to_json()
+                        c5.download_button("💾 .JSON", rios_json, f"Rios_{nombre_zona}.geojson", "application/json")
+                    else:
+                        st.warning("⚠️ Ver Tab Hidro")
 
-                # Catchment Raster (NUEVO)
-                if catchment_raster_export is not None:
-                    # Convertimos el array de 0/1 a TIF
-                    catch_meta = meta.copy(); catch_meta.update(dtype=rasterio.uint8, nodata=0)
-                    c5.download_button(
-                        "🟦 Catchment (.tif)", 
-                        to_tif(catchment_raster_export.astype(np.uint8), catch_meta), 
-                        f"Catchment_{nombre_zona}.tif"
-                    )
-                else:
-                    c5.info("Calcula la cuenca en la pestaña 'Hidrología' para descargar.")
+                # 6. CSV Índices
+                with c6:
+                    st.write("📊 **Índices**")
+                    if st.session_state['df_indices'] is not None:
+                        csv_ind = st.session_state['df_indices'].to_csv(index=False).encode('utf-8')
+                        c6.download_button("💾 .CSV", csv_ind, f"Indices_{nombre_zona}.csv", "text/csv")
+                    else:
+                        st.warning("⚠️ Ver Tab Índices")
+
+                # 7. Catchment Raster
+                with c7:
+                    st.write("🟦 **Cuenca**")
+                    if st.session_state['catchment_raster'] is not None:
+                        catch_meta = meta.copy(); catch_meta.update(dtype=rasterio.uint8, nodata=0)
+                        c7.download_button(
+                            "💾 .TIF", 
+                            to_tif(st.session_state['catchment_raster'].astype(np.uint8), catch_meta), 
+                            f"Catchment_{nombre_zona}.tif"
+                        )
+                    else:
+                        st.warning("⚠️ Calc. Tab Hidro")
 
 else:
     st.info("👈 Selecciona una zona.")
