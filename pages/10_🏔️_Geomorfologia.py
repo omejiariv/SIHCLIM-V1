@@ -266,7 +266,7 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: HIDROLOGÍA AVANZADA (DRENAJE + DIVISORIA) ---
+            # --- TAB 4: HIDROLOGÍA AVANZADA (CORREGIDA: CATCHMENT VECTORIZADO) ---
             gdf_rios_export = None
             gdf_cuenca_export = None 
 
@@ -283,11 +283,12 @@ if gdf_zona_seleccionada is not None:
                         
                         modo_viz = st.radio("Visualización:", 
                                           ["Vectores (Líneas)", "Raster (Acumulación)", "Divisoria de Cuenca (Beta)"],
-                                          help="Vectores: Líneas limpias. Raster: Imagen cruda de flujo. Divisoria: Calcula el polígono de la cuenca.")
+                                          help="Vectores: Líneas limpias. Raster: Imagen cruda. Divisoria: Calcula el polígono drenante.")
                         
-                        umbral = 0 # Inicializar
+                        umbral = 0
                         if modo_viz == "Vectores (Líneas)":
-                            umbral = st.slider("Umbral Acumulación", 2, 5000, 100, 5, key=f"umb_{nombre_zona}")
+                            # Slider logarítmico 'simulado' para dar más control en valores bajos
+                            umbral = st.slider("Umbral Acumulación", 5, 5000, 100, 5, key=f"umb_{nombre_zona}")
                             st.caption(f"Mostrar cauces con > {umbral} celdas.")
                         
                         st.info("""
@@ -297,7 +298,10 @@ if gdf_zona_seleccionada is not None:
 
                     with c_map:
                         import tempfile
+                        from shapely.geometry import shape # Necesario para vectorizar la cuenca
+                        
                         # 1. PREPARACIÓN HIDROLÓGICA
+                        grid = None
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                             meta_temp = meta.copy(); meta_temp.update(driver='GTiff')
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
@@ -310,9 +314,9 @@ if gdf_zona_seleccionada is not None:
                                 
                                 # A. Relleno de Depresiones (Fill Pits)
                                 pit_filled = grid.fill_pits(dem_grid)
-                                # B. Resolver Planicies (Crucial para ríos grandes)
+                                # B. Resolver Planicies (Crucial)
                                 resolved = grid.resolve_flats(pit_filled)
-                                # C. Dirección de Flujo (N, NE, E, SE, S, SW, W, NW)
+                                # C. Dirección de Flujo 
                                 dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                                 fdir = grid.flowdir(resolved, dirmap=dirmap)
                                 # D. Acumulación
@@ -336,53 +340,60 @@ if gdf_zona_seleccionada is not None:
                                 fig.update_xaxes(showticklabels=False); fig.update_yaxes(showticklabels=False)
                                 st.plotly_chart(fig, use_container_width=True)
 
-                            # --- MODO 2: DIVISORIA DE CUENCA (NUEVO) ---
+                            # --- MODO 2: DIVISORIA DE CUENCA (CORREGIDO 🛠️) ---
                             elif modo_viz == "Divisoria de Cuenca (Beta)":
                                 st.markdown("##### 🏔️ Delimitación Automática de Cuenca")
                                 
                                 # 1. Encontrar Punto de Desfogue (Pour Point)
-                                # Asumimos que es el punto de mayor acumulación en el mapa
                                 acc_flat = acc.view(np.ndarray).flatten()
                                 idx_max = np.argmax(acc_flat)
-                                # Convertir índice lineal a coordenadas (y, x) del array
                                 y_idx, x_idx = np.unravel_index(idx_max, acc.shape)
                                 
                                 st.write(f"📍 Punto de Desfogue detectado en pixel: ({x_idx}, {y_idx})")
                                 
-                                # 2. Calcular Catchment (Cuenca)
+                                # 2. Calcular Catchment (Cuenca Raster)
                                 try:
-                                    catchment_grid = grid.catchment(x=x_idx, y=y_idx, fdir=fdir, dirmap=dirmap, xytype='index')
-                                    # Recortar al bounding box
-                                    grid.clip_to(catchment_grid)
-                                    poly_features = grid.polygons
+                                    # Esto devuelve una matriz de 0s y 1s
+                                    catch = grid.catchment(x=x_idx, y=y_idx, fdir=fdir, dirmap=dirmap, xytype='index')
                                     
-                                    if poly_features:
-                                        gdf_cuenca = gpd.GeoDataFrame.from_features(poly_features)
-                                        gdf_cuenca.set_crs(crs_actual, inplace=True)
+                                    # 3. Vectorizar el Raster (SOLUCIÓN AL ERROR)
+                                    # Usamos rasterio.features.shapes para convertir la "mancha" en polígono
+                                    shapes_gen = features.shapes(catch.astype(np.uint8), transform=transform)
+                                    
+                                    # Filtramos solo la geometría donde el valor es > 0 (la cuenca)
+                                    geometries = [shape(geom) for geom, val in shapes_gen if val > 0]
+                                    
+                                    if geometries:
+                                        # Crear GeoDataFrame con el polígono más grande (por si hay islas)
+                                        gdf_cuenca = gpd.GeoDataFrame({'geometry': geometries}, crs=crs_actual)
+                                        # Disolver por si acaso quedó fragmentado
+                                        gdf_cuenca = gdf_cuenca.dissolve()
+                                        
                                         gdf_cuenca_export = gdf_cuenca.copy()
                                         
                                         # Visualizar
                                         gdf_4326 = gdf_cuenca.to_crs("EPSG:4326")
+                                        
                                         fig = px.choropleth_mapbox(
                                             geojson=gdf_4326.geometry.__geo_interface__,
                                             locations=gdf_4326.index,
                                             mapbox_style="carto-positron",
                                             zoom=9,
                                             center={"lat": gdf_4326.centroid.y.mean(), "lon": gdf_4326.centroid.x.mean()},
-                                            opacity=0.5,
+                                            opacity=0.4,
                                             color_discrete_sequence=["red"]
                                         )
                                         fig.update_layout(title="Divisoria Calculada (Rojo)", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                         st.plotly_chart(fig, use_container_width=True)
-                                        st.success("✅ La línea roja representa la divisoria hidrológica calculada desde el DEM.")
+                                        st.success("✅ Divisoria calculada exitosamente.")
                                     else:
-                                        st.warning("No se pudo poligonizar la cuenca.")
+                                        st.warning("No se pudo generar la geometría de la cuenca.")
+                                        
                                 except Exception as e:
                                     st.error(f"Error calculando catchment: {e}")
 
                             # --- MODO 3: VECTORES (LÍNEAS) ---
                             else:
-                                # Usamos cache_id para refrescar si cambia la zona
                                 gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
                                 
                                 if gdf_rios is not None and not gdf_rios.empty:
@@ -390,7 +401,6 @@ if gdf_zona_seleccionada is not None:
                                     try:
                                         gdf_4326 = gdf_rios.to_crs("EPSG:4326")
                                         
-                                        # Extraer coordenadas para Plotly Lines (Más rápido que GeoJSON)
                                         lons, lats = [], []
                                         for geom in gdf_4326.geometry:
                                             if geom.geom_type == 'LineString':
@@ -417,7 +427,7 @@ if gdf_zona_seleccionada is not None:
                                             mapbox_zoom=10, height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False
                                         )
                                         st.plotly_chart(fig, use_container_width=True)
-                                        st.success(f"{len(gdf_rios)} tramos identificados.")
+                                        st.caption(f"Segmentos: {len(gdf_rios)}")
                                         
                                     except Exception as e:
                                         st.error(f"Error visualizando: {e}")
