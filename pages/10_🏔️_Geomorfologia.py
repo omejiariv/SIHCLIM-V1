@@ -270,9 +270,8 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: HIDROLOGÍA (CORREGIDO: NODATA + CATCHMENT) ---
+            # --- TAB 4: HIDROLOGÍA (ACTUALIZADO: COORDENADAS EXTREMAS) ---
             gdf_rios_export = None
-            gdf_cuenca_export = None
             catchment_raster_export = None
 
             with tab4:
@@ -285,316 +284,239 @@ if gdf_zona_seleccionada is not None:
                     
                     with c_conf:
                         st.markdown("#### ⚙️ Configuración")
-                        
-                        # ACTUALIZACIÓN: Nuevas opciones
                         opciones_viz = [
                             "Vectores (Líneas)", 
-                            "Catchment (Mascara)",  # La mancha azul
-                            "Divisoria (Línea)",    # El borde rojo
-                            "Raster (Acumulación)"  # Diagnóstico
+                            "Catchment (Mascara)",
+                            "Divisoria (Línea)",
+                            "Raster (Acumulación)" 
                         ]
                         modo_viz = st.radio("Visualización:", opciones_viz)
                         
                         umbral = 0
                         if modo_viz == "Vectores (Líneas)":
-                            # Rango optimizado
                             umbral = st.slider("Umbral Acumulación", 2, 2000, 50, 5, key=f"umb_{nombre_zona}")
-                            
-                            st.info("""
-                            **Guía de Interpretación:**
-                            * **< 50:** Muestra arroyos nacientes.
-                            * **> 500:** Muestra solo cauces principales.
-                            """)
-                            
-                            st.warning("""
-                            **Nota:** Si el río principal desaparece, es porque el recorte del mapa eliminó el agua que venía de arriba (caudal externo).
-                            """)
+                            st.info("Baja el valor (<50) para ver detalles finos.")
 
                     with c_map:
                         import tempfile
                         from shapely.geometry import shape
                         
                         # 1. PREPARACIÓN HIDROLÓGICA
-                        grid = None
-                        acc = None
-                        fdir = None
+                        grid = None; acc = None; fdir = None
                         
-                        # 1. PREPARACIÓN HIDROLÓGICA (Corregido: Sin cast agresivo)
-                        grid = None
-                        acc = None
-                        fdir = None
-                        
-                        # Mantenemos dtype='float64' para estabilidad, pero leemos normal
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
-                            meta_temp = meta.copy()
-                            meta_temp.update(driver='GTiff', dtype='float64') 
+                            meta_temp = meta.copy(); meta_temp.update(driver='GTiff', dtype='float64') 
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
                                 dst.write(arr_elevacion.astype('float64'), 1)
-                            
                             try:
                                 grid = Grid.from_raster(tmp.name)
-                                # LEER NORMAL (Conserva metadatos .nodata)
-                                dem_grid = grid.read_raster(tmp.name)
-                                
-                                # Operaciones estándar (Ahora dem_grid tiene .nodata, fill_pits funcionará)
+                                dem_grid = grid.read_raster(tmp.name) # Leer normal para conservar metadatos
                                 pit_filled = grid.fill_pits(dem_grid)
                                 resolved = grid.resolve_flats(pit_filled)
-                                
                                 dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                                 fdir = grid.flowdir(resolved, dirmap=dirmap)
                                 acc = grid.accumulation(fdir, dirmap=dirmap)
-                                
-                            except Exception as e:
-                                st.error(f"Error procesando hidrología: {e}")
-                                grid = None
-                            finally: 
-                                try: os.remove(tmp.name)
-                                except: pass
-                                try: os.remove(tmp.name)
-                                except: pass
+                            except Exception as e: st.error(f"Error: {e}")
+                            finally: try: os.remove(tmp.name); except: pass
 
                         if grid is not None and acc is not None:
                             crs_actual = meta.get('crs', 'EPSG:3116')
 
-                            # --- MODO 1: RASTER (DIAGNÓSTICO) ---
+                            # --- INFO DE REFERENCIA (NUEVO) ---
+                            # Encontrar coordenadas de Altura Mínima y Máxima
+                            idx_min_h = np.argmin(dem_grid); y_min, x_min = np.unravel_index(idx_min_h, dem_grid.shape)
+                            idx_max_h = np.argmax(dem_grid); y_max, x_max = np.unravel_index(idx_max_h, dem_grid.shape)
+                            
+                            with st.expander("📍 Coordenadas de Referencia (Matriz)", expanded=False):
+                                c_ref1, c_ref2 = st.columns(2)
+                                c_ref1.info(f"**Punto Más Bajo (Posible Salida):**\n\nFila (Y): {y_min} | Col (X): {x_min}\nAltitud: {np.min(dem_grid):.1f} m")
+                                c_ref2.success(f"**Punto Más Alto:**\n\nFila (Y): {y_max} | Col (X): {x_max}\nAltitud: {np.max(dem_grid):.1f} m")
+
+                            # --- MODO 1: RASTER ---
                             if modo_viz == "Raster (Acumulación)":
                                 log_acc = np.log1p(acc)
                                 fig = px.imshow(log_acc, color_continuous_scale='Blues', title="Acumulación de Flujo (Log)")
                                 fig.update_layout(height=600, margin=dict(l=0, r=0, t=30, b=0))
-                                fig.update_xaxes(showticklabels=False); fig.update_yaxes(showticklabels=False)
                                 st.plotly_chart(fig, use_container_width=True)
 
-                            # --- NUEVO BLOQUE: CATCHMENT Y DIVISORIA ---
+                            # --- MODO 2: CATCHMENT / DIVISORIA ---
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
-                                st.markdown("##### 🏔️ Delimitación Automática")
+                                idx_max_acc = np.argmax(acc)
+                                y_auto, x_auto = np.unravel_index(idx_max_acc, acc.shape)
                                 
-                                # 1. Punto de Desfogue (Automático + Manual)
-                                idx_max = np.argmax(acc)
-                                y_auto, x_auto = np.unravel_index(idx_max, acc.shape)
-                                
-                                # --- NUEVO: CONTROLES DE AJUSTE FINO ---
-                                with st.expander("📍 Calibrar Punto de Desfogue (Manual)", expanded=True):
-                                    st.caption("Si la línea roja (calculada) es más corta que la verde (oficial), mueve el punto de salida pixel por pixel.")
+                                # Calibración Manual
+                                with st.expander("🔧 Calibrar Punto de Desfogue", expanded=True):
+                                    st.caption("Ajusta las coordenadas para coincidir con la salida real del río.")
                                     c_x, c_y = st.columns(2)
-                                    # Usamos number_input para permitir ajustes precisos sobre el valor automático
-                                    x_pour = c_x.number_input("Coord X (Columna):", value=int(x_auto), min_value=0, max_value=acc.shape[1]-1, step=1, help="Mueve hacia Este/Oeste")
-                                    y_pour = c_y.number_input("Coord Y (Fila):", value=int(y_auto), min_value=0, max_value=acc.shape[0]-1, step=1, help="Mueve hacia Norte/Sur (Mayor valor = Más abajo)")
-                                    
-                                    if x_pour != int(x_auto) or y_pour != int(y_auto):
-                                        st.warning(f"🔧 Usando punto manual: ({x_pour}, {y_pour}) | Automático era: ({x_auto}, {y_auto})")
-                                
-                                # 2. Calcular Catchment (Raster)
+                                    x_pour = c_x.number_input("Columna (X):", value=int(x_auto), min_value=0, max_value=acc.shape[1]-1, step=1)
+                                    y_pour = c_y.number_input("Fila (Y):", value=int(y_auto), min_value=0, max_value=acc.shape[0]-1, step=1)
+
+                                # Calcular Catchment
                                 catch = None
                                 try:
-                                    # Ya no necesitamos conversiones extrañas. fdir tiene sus metadatos.
                                     catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
-                                    
-                                    # GUARDAR PARA DESCARGA
-                                    catchment_raster_export = catch 
-                                    
-                                except Exception as e:
-                                    st.error(f"Error calculando catchment: {e}")
+                                    catchment_raster_export = catch
+                                except: pass
 
-                                # 3. Visualización
+                                # Visualización
                                 if catch is not None:
-                                    # Corrección de memoria para rasterio
                                     catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
                                     shapes_gen = features.shapes(catch_int, transform=transform)
                                     geoms = [shape(geom) for geom, val in shapes_gen if val > 0]
                                     
                                     if geoms:
-                                        # Geometría Calculada (DEM)
                                         gdf_c = gpd.GeoDataFrame({'geometry': geoms}, crs=crs_actual).dissolve()
                                         gdf_calc_4326 = gdf_c.to_crs("EPSG:4326")
+                                        gdf_off_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
                                         
-                                        # Geometría Oficial (Validación) - Tu GeoJSON original
-                                        gdf_official_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
-                                        
-                                        # --- A. MASCARA AZUL (CATCHMENT) ---
                                         if modo_viz == "Catchment (Mascara)":
                                             fig = px.choropleth_mapbox(
                                                 geojson=gdf_calc_4326.geometry.__geo_interface__,
-                                                locations=gdf_calc_4326.index,
-                                                mapbox_style="carto-positron", 
-                                                zoom=10, 
+                                                locations=gdf_calc_4326.index, mapbox_style="carto-positron",
                                                 center={"lat": gdf_calc_4326.centroid.y.mean(), "lon": gdf_calc_4326.centroid.x.mean()},
-                                                opacity=0.5, color_discrete_sequence=["#0099FF"]
+                                                zoom=10, opacity=0.5, color_discrete_sequence=["#0099FF"]
                                             )
+                                            # Validación (Línea Verde)
+                                            if not gdf_off_4326.empty:
+                                                poly = gdf_off_4326.geometry.iloc[0]
+                                                if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
+                                                else: x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
+                                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(x), lat=list(y), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
                                             
-                                            # Agregar Borde Oficial (Validación)
-                                            if not gdf_official_4326.empty:
-                                                poly = gdf_official_4326.geometry.iloc[0]
-                                                # Manejo robusto de geometrías
-                                                if poly.geom_type == 'Polygon': 
-                                                    x, y = poly.exterior.coords.xy
-                                                elif poly.geom_type == 'MultiPolygon':
-                                                    # Tomamos el polígono más grande para visualizar
-                                                    largest = max(poly.geoms, key=lambda a: a.area)
-                                                    x, y = largest.exterior.coords.xy
-                                                else: x, y = [], []
-
-                                                fig.add_trace(go.Scattermapbox(
-                                                    mode="lines", lon=list(x), lat=list(y),
-                                                    line={'width': 2, 'color': '#00FF00'}, # Verde Neón Sólido (Mapbox no soporta dash)
-                                                    name="Límite Oficial (Validación)"
-                                                ))
-
-                                            fig.update_layout(
-                                                title="Catchment Calculado vs Oficial", 
-                                                height=600, 
-                                                margin=dict(l=0,r=0,t=30,b=0)
-                                            )
+                                            fig.update_layout(title="Catchment", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
-                                        
-                                        # --- B. DIVISORIA DE LINEA (ROJO VS VERDE) ---
+
                                         elif modo_viz == "Divisoria (Línea)":
                                             fig = go.Figure()
+                                            # Roja (Calculada)
+                                            p_c = gdf_calc_4326.geometry.iloc[0]
+                                            if p_c.geom_type == 'Polygon': xc, yc = p_c.exterior.coords.xy
+                                            else: xc, yc = max(p_c.geoms, key=lambda a: a.area).exterior.coords.xy
+                                            fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Calculada"))
                                             
-                                            # 1. Trazo Calculado (Rojo)
-                                            poly_calc = gdf_calc_4326.geometry.iloc[0]
-                                            if poly_calc.geom_type == 'Polygon': xc, yc = poly_calc.exterior.coords.xy
-                                            else: xc, yc = max(poly_calc.geoms, key=lambda a: a.area).exterior.coords.xy
+                                            # Verde (Oficial)
+                                            if not gdf_off_4326.empty:
+                                                p_o = gdf_off_4326.geometry.iloc[0]
+                                                if p_o.geom_type == 'Polygon': xo, yo = p_o.exterior.coords.xy
+                                                else: xo, yo = max(p_o.geoms, key=lambda a: a.area).exterior.coords.xy
+                                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
                                             
-                                            fig.add_trace(go.Scattermapbox(
-                                                mode="lines", lon=list(xc), lat=list(yc),
-                                                line={'width': 3, 'color': 'red'}, name="Divisoria Calculada (DEM)"
-                                            ))
-                                            
-                                            # 2. Trazo Oficial (Verde)
-                                            if not gdf_official_4326.empty:
-                                                poly_off = gdf_official_4326.geometry.iloc[0]
-                                                if poly_off.geom_type == 'Polygon': xo, yo = poly_off.exterior.coords.xy
-                                                elif poly_off.geom_type == 'MultiPolygon':
-                                                    largest = max(poly_off.geoms, key=lambda a: a.area)
-                                                    xo, yo = largest.exterior.coords.xy
-                                                else: xo, yo = [], []
-                                                
-                                                fig.add_trace(go.Scattermapbox(
-                                                    mode="lines", lon=list(xo), lat=list(yo),
-                                                    line={'width': 2, 'color': '#00FF00'}, # Verde brillante
-                                                    name="Límite Oficial (Validación)"
-                                                ))
-                                            
-                                            # Corrección del Error de Zoom (Todo dentro de mapbox=dict)
-                                            center_lat = gdf_calc_4326.centroid.y.mean()
-                                            center_lon = gdf_calc_4326.centroid.x.mean()
-                                            
-                                            fig.update_layout(
-                                                title="Comparativa de Divisorias",
-                                                mapbox=dict(
-                                                    style="carto-positron",
-                                                    zoom=10, # Ahora sí está en el lugar correcto
-                                                    center={"lat": center_lat, "lon": center_lon}
-                                                ),
-                                                height=600, 
-                                                margin=dict(l=0,r=0,t=30,b=0),
-                                                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
-                                            )
+                                            clat = gdf_calc_4326.centroid.y.mean()
+                                            clon = gdf_calc_4326.centroid.x.mean()
+                                            fig.update_layout(title="Comparativa", mapbox=dict(style="carto-positron", zoom=10, center={"lat": clat, "lon": clon}), height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
-                                    else:
-                                        st.warning("No se pudo vectorizar la cuenca calculada.")
-                                        
-                            # --- MODO 3: VECTORES (LÍNEAS) ---
-                            else:
-                                # Usamos fdir y acc tal cual vienen de grid (son compatibles)
-                                gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
-                                
-                                if gdf_rios is not None and not gdf_rios.empty:
-                                    gdf_rios_export = gdf_rios.copy()
-                                    try:
-                                        gdf_4326 = gdf_rios.to_crs("EPSG:4326")
-                                        
-                                        lons, lats = [], []
-                                        for geom in gdf_4326.geometry:
-                                            if geom.geom_type == 'LineString':
-                                                x, y = geom.xy
-                                                lons.extend(list(x) + [None])
-                                                lats.extend(list(y) + [None])
-                                            elif geom.geom_type == 'MultiLineString':
-                                                for g in geom.geoms:
-                                                    x, y = g.xy
-                                                    lons.extend(list(x) + [None])
-                                                    lats.extend(list(y) + [None])
 
-                                        fig = go.Figure()
-                                        fig.add_trace(go.Scattermapbox(
-                                            mode="lines", lon=lons, lat=lats,
-                                            line={'width': 2, 'color': '#0077BE'},
-                                            name="Ríos"
-                                        ))
-                                        
-                                        center = gdf_4326.geometry.centroid
-                                        fig.update_layout(
-                                            mapbox_style="carto-positron",
-                                            mapbox_center={"lat": center.y.mean(), "lon": center.x.mean()},
-                                            mapbox_zoom=10, height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False
-                                        )
-                                        st.plotly_chart(fig, use_container_width=True)
-                                        st.caption(f"Segmentos: {len(gdf_rios)}")
-                                        
-                                    except Exception as e:
-                                        st.error(f"Error visualizando: {e}")
-                                else:
-                                    st.warning(f"No se detectaron ríos con umbral {umbral}.")
+                            # --- MODO 3: VECTORES ---
+                            elif modo_viz == "Vectores (Líneas)":
+                                gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, meta['crs'], nombre_zona)
+                                if gdf_rios is not None:
+                                    gdf_4326 = gdf_rios.to_crs("EPSG:4326")
+                                    lons, lats = [], []
+                                    for geom in gdf_4326.geometry:
+                                        if geom.geom_type == 'LineString': x, y = geom.xy; lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                                        elif geom.geom_type == 'MultiLineString': 
+                                            for g in geom.geoms: x, y = g.xy; lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                                    
+                                    fig = go.Figure(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width': 2, 'color': '#0077BE'}))
+                                    center = gdf_4326.geometry.centroid.iloc[0]
+                                    fig.update_layout(mapbox=dict(style="carto-positron", zoom=10, center={"lat": center.y, "lon": center.x}), height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False)
+                                    st.plotly_chart(fig, use_container_width=True)
+                                else: st.warning("Baja el umbral.")
 
-            # --- TAB 6: ÍNDICES MORFOMÉTRICOS (NUEVO - FASE A) 📊 ---
+            # --- TAB 6: ÍNDICES Y MODELACIÓN (FASE A + B) ---
             with tab6:
-                st.subheader(f"📊 Parámetros Morfométricos: {nombre_zona}")
-                st.caption("Cálculos basados en la geometría oficial de la zona seleccionada.")
+                st.subheader(f"📊 Panel Hidrológico: {nombre_zona}")
                 
-                # Usamos la geometría del selector (gdf_zona_seleccionada) para consistencia
-                # Aseguramos proyección métrica (EPSG:3116 para Colombia es ideal para medir metros)
+                # Usamos la geometría oficial para cálculos base
                 try:
                     gdf_metric = gdf_zona_seleccionada.to_crs("EPSG:3116")
                     geom = gdf_metric.geometry.iloc[0]
                     
-                    # 1. Cálculos Geométricos
+                    # --- FASE A: MORFOMETRÍA ---
                     area_km2 = geom.area / 1e6
                     perimetro_km = geom.length / 1000
                     
-                    # 2. Índices de Forma
-                    # Índice de Gravelius (Kc): 0.282 * P / raiz(A)
-                    # Kc approx 1 -> Redonda. Kc > 1 -> Alargada.
-                    kc = 0.282 * perimetro_km / np.sqrt(area_km2)
+                    # Índices de Forma
+                    kc = 0.282 * perimetro_km / np.sqrt(area_km2) # Gravelius
+                    # Longitud Axial (Aprox. lado mayor del bounding box)
+                    bounds = geom.bounds
+                    longitud_axial_km = max(bounds[2]-bounds[0], bounds[3]-bounds[1]) / 1000
+                    kf = area_km2 / (longitud_axial_km ** 2) # Factor de Forma
                     
-                    # Factor de Forma (Kf) - Aproximación usando bounding box
-                    minx, miny, maxx, maxy = geom.bounds
-                    longitud_axial = (maxy - miny) / 1000 # km (aprox norte-sur)
-                    ancho_promedio = area_km2 / longitud_axial
-                    kf = ancho_promedio / longitud_axial
-                    
-                    # 3. Interpretación Automática
-                    forma_desc = "Redonda" if kc < 1.25 else ("Ovalada" if kc < 1.5 else "Alargada")
-                    respuesta_desc = "Rápida (Picos altos)" if kc < 1.25 else "Lenta (Amortiguada)"
-                    
-                    # 4. Visualización en Tarjetas
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Área (A)", f"{area_km2:.2f} km²")
-                    col2.metric("Perímetro (P)", f"{perimetro_km:.2f} km")
-                    col3.metric("Longitud Axial Aprox", f"{longitud_axial:.2f} km")
-                    
-                    st.markdown("---")
-                    st.subheader("Diagnóstico de Forma")
-                    
-                    c_ind1, c_ind2 = st.columns(2)
-                    with c_ind1:
-                        st.metric("Índice de Gravelius (Kc)", f"{kc:.3f}")
-                        st.info(f"**Forma:** {forma_desc}\n\n**Respuesta Hidrológica:** {respuesta_desc}")
-                    
-                    with c_ind2:
-                        st.metric("Factor de Forma (Kf)", f"{kf:.3f}")
-                        st.caption("Relación Ancho / Largo. Valores bajos indican cuencas alargadas.")
+                    # Densidad de Drenaje (Requiere ríos calculados)
+                    dd_str = "N/A (Calcule ríos primero)"
+                    longitud_rios_km = 0
+                    if 'gdf_rios' in locals() and gdf_rios is not None:
+                        gdf_rios_metric = gdf_rios.to_crs("EPSG:3116")
+                        longitud_rios_km = gdf_rios_metric.length.sum() / 1000
+                        dd = longitud_rios_km / area_km2
+                        dd_str = f"{dd:.2f} km/km²"
 
-                    # Tabla consolidada
-                    df_indices = pd.DataFrame({
-                        "Parámetro": ["Área", "Perímetro", "Gravelius (Kc)", "Factor Forma (Kf)", "Pendiente Media"],
-                        "Valor": [area_km2, perimetro_km, kc, kf, slope_mean],
-                        "Unidad": ["km²", "km", "-", "-", "Grados"]
-                    })
-                    st.dataframe(df_indices.style.format({"Valor": "{:.3f}"}), use_container_width=True)
+                    # Pendientes
+                    # Pendiente Media Cuenca (Sm) ya calculada globalmente como slope_mean
+                    # Pendiente Cauce Principal (Aproximación: Desnivel / Longitud Axial)
+                    desnivel_m = max_el - min_el
+                    pendiente_cauce_m_m = desnivel_m / (longitud_axial_km * 1000)
                     
+                    # Visualización Fase A
+                    st.markdown("##### 📐 Índices Morfométricos")
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Área (A)", f"{area_km2:.2f} km²")
+                    c2.metric("Perímetro (P)", f"{perimetro_km:.2f} km")
+                    c3.metric("Gravelius (Kc)", f"{kc:.3f}", help=">1: Alargada, ~1: Redonda")
+                    c4.metric("Densidad Drenaje", dd_str)
+
+                    with st.expander("Ver Tabla Detallada de Parámetros"):
+                        df_morfo = pd.DataFrame({
+                            "Parámetro": ["Área", "Perímetro", "Longitud Axial", "Longitud Total Ríos", "Desnivel (H)", "Pendiente Media Cuenca", "Pendiente Aprox. Cauce"],
+                            "Valor": [area_km2, perimetro_km, longitud_axial_km, longitud_rios_km, desnivel_m, slope_mean, pendiente_cauce_m_m * 100],
+                            "Unidad": ["km²", "km", "km", "km", "m", "Grados", "%"]
+                        })
+                        st.dataframe(df_morfo.style.format({"Valor": "{:.3f}"}), use_container_width=True)
+
+                    st.markdown("---")
+                    
+                    # --- FASE B: HIDROLOGÍA SINTÉTICA ---
+                    st.markdown("##### ⏱️ Tiempo de Concentración (Tc) y Caudales")
+                    st.caption("Estimaciones basadas en fórmulas empíricas (Método Racional).")
+                    
+                    col_tc, col_q = st.columns(2)
+                    
+                    with col_tc:
+                        st.markdown("**1. Tiempo de Concentración (Tc)**")
+                        # Kirpich: Tc (min) = 0.01947 * L^0.77 * S^-0.385 (L en metros, S en m/m)
+                        # Usamos longitud axial como proxy de longitud de cauce principal si no hay red detallada
+                        L_m = longitud_axial_km * 1000
+                        S_mm = pendiente_cauce_m_m
+                        
+                        if S_mm > 0:
+                            tc_kirpich_min = 0.01947 * (L_m**0.77) * (S_mm**-0.385)
+                            # California (aprox): Tc = 0.87 * (L^3 / H)^0.385 (L en km, H en m) -> resultado en horas
+                            tc_calif_hr = 0.87 * ((longitud_axial_km**3) / desnivel_m)**0.385
+                            
+                            st.info(f"⏱️ **Kirpich:** {tc_kirpich_min:.1f} min ({tc_kirpich_min/60:.2f} h)")
+                            st.write(f"⏱️ **California:** {tc_calif_hr*60:.1f} min ({tc_calif_hr:.2f} h)")
+                        else:
+                            st.warning("Pendiente nula, no se puede calcular Tc.")
+                            tc_kirpich_min = 0
+
+                    with col_q:
+                        st.markdown("**2. Caudal Pico (Q) - Método Racional**")
+                        # Q = 0.278 * C * I * A  (Q m3/s, I mm/h, A km2)
+                        
+                        i_rain = st.slider("Intensidad de Lluvia (I) [mm/h]:", 10, 200, 50, 10)
+                        c_runoff = st.select_slider("Coeficiente de Escorrentía (C):", 
+                                                    options=[0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], 
+                                                    value=0.5,
+                                                    help="0.2: Bosque denso, 0.9: Urbano pavimentado")
+                        
+                        q_peak = 0.278 * c_runoff * i_rain * area_km2
+                        
+                        st.metric("Caudal Pico Estimado (Q)", f"{q_peak:.2f} m³/s")
+                        st.caption("Fórmula: $Q = 0.278 \cdot C \cdot I \cdot A$")
+
                 except Exception as e:
-                    st.error(f"No se pudieron calcular índices geométricos: {e}")            
+                    st.error(f"Error en cálculos: {e}")
                                 
             # --- TAB 5: DESCARGAS ---
             with tab5:
