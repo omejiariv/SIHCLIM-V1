@@ -677,77 +677,123 @@ if gdf_zona_seleccionada is not None:
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
 
-            # --- TAB 7: AMENAZAS (VECTORIZADAS CON MAPA DE FONDO) ---
+            # --- TAB 7: AMENAZAS + ANÁLISIS AI (RASTER ROBUSTO) ---
             with tab7:
-                st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
+                st.subheader("🚨 Zonificación de Amenazas y Diagnóstico AI")
                 
-                if 'acc' in locals() and acc is not None:
-                    # Preparar datos
+                if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
+                    # 1. PREPARACIÓN DE MATRICES (Recorte seguro)
                     min_h = min(slope_deg.shape[0], acc.shape[0])
                     min_w = min(slope_deg.shape[1], acc.shape[1])
                     s_core = slope_deg[:min_h, :min_w]
                     a_core = np.log1p(acc[:min_h, :min_w])
                     
+                    # Función de "Inteligencia" para interpretar el mapa
+                    def analista_riesgos(mask_array, tipo_riesgo):
+                        total_pixels = mask_array.size
+                        risk_pixels = np.sum(mask_array)
+                        pct = (risk_pixels / total_pixels) * 100
+                        
+                        if pct == 0:
+                            return "✅ **Diagnóstico:** Zona segura bajo estos parámetros."
+                        
+                        nivel = "Bajo"
+                        accion = "Monitoreo preventivo."
+                        if pct > 1: 
+                            nivel = "Medio"
+                            accion = "Restricción de licencias en zonas de ribera."
+                        if pct > 5: 
+                            nivel = "Alto"
+                            accion = "ALERTA: Se requiere revisión estructural de cauces y reasentamientos."
+                        if pct > 15: 
+                            nivel = "CRÍTICO"
+                            accion = "URGENTE: Zona de muy alta susceptibilidad. Activar protocolos de emergencia."
+                            
+                        color_msg = "blue" if tipo_riesgo == "Inundación" else "red"
+                        
+                        return f"""
+                        <div style='padding:15px; background-color:rgba(240,242,246,0.5); border-left: 5px solid {color_msg}; border-radius:5px;'>
+                            <h5 style='color:{color_msg}; margin:0;'>🤖 Análisis de Riesgo ({tipo_riesgo})</h5>
+                            <p><strong>Cobertura de Amenaza:</strong> {pct:.2f}% del territorio analizado.</p>
+                            <p><strong>Nivel de Alerta:</strong> {nivel}</p>
+                            <p><strong>Recomendación:</strong> {accion}</p>
+                        </div>
+                        """
+
                     t1, t2 = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación Plana"])
                     
-                    # Función auxiliar para vectorizar y pintar con mapa base
-                    def pintar_amenaza_vector(mask_risk, color_hex, titulo):
-                        # 1. Vectorizar raster (Mask -> Polígonos)
-                        # 🔥 Forzamos array contiguo para evitar el error 'memoryview'
-                        mask_int = np.ascontiguousarray(mask_risk, dtype=np.uint8)
-                        shapes_risk = features.shapes(mask_int, transform=transform)
-                        # Filtrar solo los valores 1 (Riesgo)
-                        geoms_risk = [shape(g) for g, v in shapes_risk if v == 1]
-                        
-                        if geoms_risk:
-                            # 2. Crear GeoDataFrame
-                            gdf_r = gpd.GeoDataFrame({'geometry': geoms_risk}, crs=crs_actual)
-                            # Simplificar para velocidad (importante en web)
-                            gdf_r['geometry'] = gdf_r.simplify(10) 
-                            gdf_r = gdf_r.to_crs("EPSG:4326") # A Lat/Lon
-                            
-                            # 3. Mapa con Fondo (Mapbox)
-                            c_lat = gdf_r.centroid.y.mean()
-                            c_lon = gdf_r.centroid.x.mean()
-                            
-                            fig = px.choropleth_mapbox(
-                                geojson=gdf_r.geometry.__geo_interface__,
-                                locations=gdf_r.index,
-                                mapbox_style="carto-positron", # ¡AQUÍ ESTÁ LA BASE GEOGRÁFICA!
-                                center={"lat": c_lat, "lon": c_lon}, zoom=11,
-                                opacity=0.6, 
-                                color_discrete_sequence=[color_hex]
-                            )
-                            fig.update_layout(title=titulo, height=550, margin=dict(l=0,r=0,t=30,b=0))
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info("No se detectaron zonas de riesgo con estos parámetros.")
-
-                    # --- MAPA 1: TORRENCIALIDAD ---
+                    # --- CASO 1: AVENIDA TORRENCIAL ---
                     with t1:
                         c_p, c_m = st.columns([1, 3])
                         with c_p:
                             st.markdown("#### Configuración")
-                            s_umb = st.slider("Pendiente Crítica (> °)", 10, 50, 25, key="st")
-                            a_umb = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 6.0, key="at")
-                            st.error("Zonas de alta energía.")
+                            s_umb = st.slider("Pendiente Crítica (> °)", 10, 50, 25, key="st_slider")
+                            a_umb = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 6.0, key="at_slider")
+                            st.error("Zonas de Alta Energía (Pendiente + Caudal)")
+                            
                         with c_m:
+                            # Lógica
                             mask_t = (s_core >= s_umb) & (a_core >= a_umb)
-                            pintar_amenaza_vector(mask_t, "red", "Amenaza por Avenida Torrencial")
+                            risk_t = np.zeros_like(s_core, dtype=np.float32)
+                            risk_t[mask_t] = 1.0
+                            risk_t[~mask_t] = np.nan # Truco para transparencia total
+                            
+                            # Análisis AI
+                            st.markdown(analista_riesgos(mask_t, "Avenida Torrencial"), unsafe_allow_html=True)
+                            
+                            # Mapa Raster (El que te gustaba)
+                            fig_t = px.imshow(
+                                risk_t, 
+                                color_continuous_scale=[[0, "red"], [1, "red"]],
+                            )
+                            fig_t.update_traces(hoverinfo='skip', hovertemplate=None)
+                            fig_t.update_layout(
+                                title="Mapa de Calor: Avenidas Torrenciales",
+                                coloraxis_showscale=False,
+                                height=550, margin=dict(l=0,r=0,t=40,b=0),
+                                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
+                            )
+                            fig_t.update_xaxes(showticklabels=False, showgrid=False)
+                            fig_t.update_yaxes(showticklabels=False, showgrid=False)
+                            st.plotly_chart(fig_t, use_container_width=True)
 
-                    # --- MAPA 2: INUNDACIÓN ---
+                    # --- CASO 2: INUNDACIÓN ---
                     with t2:
                         c_p, c_m = st.columns([1, 3])
                         with c_p:
                             st.markdown("#### Configuración")
-                            s_flat = st.slider("Pendiente Plana (< °)", 0.5, 10.0, 3.0, key="si")
-                            a_umb_i = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 5.5, key="ai")
-                            st.info("Zonas de empozamiento.")
+                            s_flat = st.slider("Pendiente Plana (< °)", 0.5, 10.0, 3.0, key="si_slider")
+                            a_umb_i = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 5.5, key="ai_slider")
+                            st.info("Zonas de Empozamiento (Plano + Caudal)")
+                            
                         with c_m:
+                            # Lógica
                             mask_i = (s_core <= s_flat) & (a_core >= a_umb_i)
-                            pintar_amenaza_vector(mask_i, "#0099FF", "Amenaza por Inundación Lenta")
+                            risk_i = np.zeros_like(s_core, dtype=np.float32)
+                            risk_i[mask_i] = 1.0
+                            risk_i[~mask_i] = np.nan
+                            
+                            # Análisis AI
+                            st.markdown(analista_riesgos(mask_i, "Inundación"), unsafe_allow_html=True)
+                            
+                            # Mapa Raster
+                            fig_i = px.imshow(
+                                risk_i, 
+                                color_continuous_scale=[[0, "#0099FF"], [1, "#0099FF"]],
+                            )
+                            fig_i.update_traces(hoverinfo='skip')
+                            fig_i.update_layout(
+                                title="Mapa de Calor: Zonas Inundables",
+                                coloraxis_showscale=False,
+                                height=550, margin=dict(l=0,r=0,t=40,b=0),
+                                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
+                            )
+                            fig_i.update_xaxes(showticklabels=False, showgrid=False)
+                            fig_i.update_yaxes(showticklabels=False, showgrid=False)
+                            st.plotly_chart(fig_i, use_container_width=True)
+
                 else:
-                    st.warning("Calcula la hidrología primero.")
+                    st.warning("⚠️ Ve a la pestaña 'Hidrología' y calcula el mapa base primero.")
                                   
             # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
             with tab5:
