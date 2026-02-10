@@ -266,7 +266,7 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: HIDROLOGÍA AVANZADA (CORREGIDA: CATCHMENT VECTORIZADO) ---
+            # --- TAB 4: HIDROLOGÍA AVANZADA (CORREGIDO: CATCHMENT + SLIDER FINO) ---
             gdf_rios_export = None
             gdf_cuenca_export = None 
 
@@ -287,34 +287,34 @@ if gdf_zona_seleccionada is not None:
                         
                         umbral = 0
                         if modo_viz == "Vectores (Líneas)":
-                            # Slider logarítmico 'simulado' para dar más control en valores bajos
-                            umbral = st.slider("Umbral Acumulación", 5, 5000, 100, 5, key=f"umb_{nombre_zona}")
+                            # 🔥 AJUSTE DE ESCALA: Rango 2 a 500 para mayor precisión en cuencas pequeñas
+                            umbral = st.slider("Umbral Acumulación", 2, 500, 50, 1, key=f"umb_{nombre_zona}")
                             st.caption(f"Mostrar cauces con > {umbral} celdas.")
+                            st.info("💡 Valores bajos (10-50) revelan arroyos detallados. Valores altos (>200) dejan solo ríos principales.")
                         
-                        st.info("""
-                        **Nota Técnica:**
-                        El río principal puede aparecer cortado al inicio del mapa porque el recorte elimina el agua que viene de aguas arriba (Efecto de Borde).
-                        """)
+                        st.markdown("---")
+                        st.caption("Nota: El río principal puede aparecer cortado al inicio del mapa por el efecto de borde del recorte.")
 
                     with c_map:
                         import tempfile
-                        from shapely.geometry import shape # Necesario para vectorizar la cuenca
+                        from shapely.geometry import shape
                         
                         # 1. PREPARACIÓN HIDROLÓGICA
                         grid = None
+                        # Guardamos temporalmente float64 para asegurar compatibilidad de tipos
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
-                            meta_temp = meta.copy(); meta_temp.update(driver='GTiff')
+                            meta_temp = meta.copy(); meta_temp.update(driver='GTiff', dtype='float64')
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
-                                dst.write(arr_elevacion.astype(rasterio.float32), 1)
+                                dst.write(arr_elevacion.astype('float64'), 1)
                             
                             try:
                                 # Cargar Grid
                                 grid = Grid.from_raster(tmp.name)
                                 dem_grid = grid.read_raster(tmp.name)
                                 
-                                # A. Relleno de Depresiones (Fill Pits)
+                                # A. Relleno de Depresiones
                                 pit_filled = grid.fill_pits(dem_grid)
-                                # B. Resolver Planicies (Crucial)
+                                # B. Resolver Planicies
                                 resolved = grid.resolve_flats(pit_filled)
                                 # C. Dirección de Flujo 
                                 dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
@@ -340,35 +340,35 @@ if gdf_zona_seleccionada is not None:
                                 fig.update_xaxes(showticklabels=False); fig.update_yaxes(showticklabels=False)
                                 st.plotly_chart(fig, use_container_width=True)
 
-                            # --- MODO 2: DIVISORIA DE CUENCA (CORREGIDO 🛠️) ---
+                            # --- MODO 2: DIVISORIA DE CUENCA (CORREGIDO TIPOS DE DATOS 🛡️) ---
                             elif modo_viz == "Divisoria de Cuenca (Beta)":
                                 st.markdown("##### 🏔️ Delimitación Automática de Cuenca")
                                 
-                                # 1. Encontrar Punto de Desfogue (Pour Point)
-                                acc_flat = acc.view(np.ndarray).flatten()
-                                idx_max = np.argmax(acc_flat)
-                                y_idx, x_idx = np.unravel_index(idx_max, acc.shape)
+                                # 1. Encontrar Punto de Desfogue
+                                acc_view = acc.view(np.ndarray)
+                                idx_max = np.argmax(acc_view)
+                                y_idx, x_idx = np.unravel_index(idx_max, acc_view.shape)
                                 
-                                st.write(f"📍 Punto de Desfogue detectado en pixel: ({x_idx}, {y_idx})")
+                                # Convertir a enteros nativos de Python (solución al error memoryview/dtype)
+                                x_pour = int(x_idx)
+                                y_pour = int(y_idx)
                                 
-                                # 2. Calcular Catchment (Cuenca Raster)
+                                st.write(f"📍 Punto de Desfogue (Salida): ({x_pour}, {y_pour})")
+                                
+                                # 2. Calcular Catchment
                                 try:
-                                    # Esto devuelve una matriz de 0s y 1s
-                                    catch = grid.catchment(x=x_idx, y=y_idx, fdir=fdir, dirmap=dirmap, xytype='index')
+                                    # Pasamos coordenadas limpias
+                                    catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
                                     
-                                    # 3. Vectorizar el Raster (SOLUCIÓN AL ERROR)
-                                    # Usamos rasterio.features.shapes para convertir la "mancha" en polígono
-                                    shapes_gen = features.shapes(catch.astype(np.uint8), transform=transform)
+                                    # 3. Vectorizar
+                                    catch_int = catch.astype(np.uint8) # Asegurar tipo entero para shapes
+                                    shapes_gen = features.shapes(catch_int, transform=transform)
                                     
-                                    # Filtramos solo la geometría donde el valor es > 0 (la cuenca)
                                     geometries = [shape(geom) for geom, val in shapes_gen if val > 0]
                                     
                                     if geometries:
-                                        # Crear GeoDataFrame con el polígono más grande (por si hay islas)
                                         gdf_cuenca = gpd.GeoDataFrame({'geometry': geometries}, crs=crs_actual)
-                                        # Disolver por si acaso quedó fragmentado
                                         gdf_cuenca = gdf_cuenca.dissolve()
-                                        
                                         gdf_cuenca_export = gdf_cuenca.copy()
                                         
                                         # Visualizar
@@ -385,9 +385,9 @@ if gdf_zona_seleccionada is not None:
                                         )
                                         fig.update_layout(title="Divisoria Calculada (Rojo)", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                         st.plotly_chart(fig, use_container_width=True)
-                                        st.success("✅ Divisoria calculada exitosamente.")
+                                        st.success("✅ Divisoria calculada correctamente.")
                                     else:
-                                        st.warning("No se pudo generar la geometría de la cuenca.")
+                                        st.warning("No se pudo generar la geometría.")
                                         
                                 except Exception as e:
                                     st.error(f"Error calculando catchment: {e}")
