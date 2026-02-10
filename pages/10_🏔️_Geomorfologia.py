@@ -408,7 +408,7 @@ if gdf_zona_seleccionada is not None:
                                                 geojson=gdf_calc_4326.geometry.__geo_interface__,
                                                 locations=gdf_calc_4326.index,
                                                 mapbox_style="carto-positron", 
-                                                zoom=10, # Zoom inicial aproximado
+                                                zoom=10, 
                                                 center={"lat": gdf_calc_4326.centroid.y.mean(), "lon": gdf_calc_4326.centroid.x.mean()},
                                                 opacity=0.5, color_discrete_sequence=["#0099FF"]
                                             )
@@ -416,12 +416,18 @@ if gdf_zona_seleccionada is not None:
                                             # Agregar Borde Oficial (Validación)
                                             if not gdf_official_4326.empty:
                                                 poly = gdf_official_4326.geometry.iloc[0]
-                                                if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
-                                                else: x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
-                                                
+                                                # Manejo robusto de geometrías
+                                                if poly.geom_type == 'Polygon': 
+                                                    x, y = poly.exterior.coords.xy
+                                                elif poly.geom_type == 'MultiPolygon':
+                                                    # Tomamos el polígono más grande para visualizar
+                                                    largest = max(poly.geoms, key=lambda a: a.area)
+                                                    x, y = largest.exterior.coords.xy
+                                                else: x, y = [], []
+
                                                 fig.add_trace(go.Scattermapbox(
                                                     mode="lines", lon=list(x), lat=list(y),
-                                                    line={'width': 2, 'color': 'green', 'dash': 'dash'}, 
+                                                    line={'width': 2, 'color': '#00FF00'}, # Verde Neón Sólido (Mapbox no soporta dash)
                                                     name="Límite Oficial (Validación)"
                                                 ))
 
@@ -450,15 +456,18 @@ if gdf_zona_seleccionada is not None:
                                             if not gdf_official_4326.empty:
                                                 poly_off = gdf_official_4326.geometry.iloc[0]
                                                 if poly_off.geom_type == 'Polygon': xo, yo = poly_off.exterior.coords.xy
-                                                else: xo, yo = max(poly_off.geoms, key=lambda a: a.area).exterior.coords.xy
+                                                elif poly_off.geom_type == 'MultiPolygon':
+                                                    largest = max(poly_off.geoms, key=lambda a: a.area)
+                                                    xo, yo = largest.exterior.coords.xy
+                                                else: xo, yo = [], []
                                                 
                                                 fig.add_trace(go.Scattermapbox(
                                                     mode="lines", lon=list(xo), lat=list(yo),
-                                                    line={'width': 2, 'color': 'green', 'dash': 'dash'}, 
+                                                    line={'width': 2, 'color': '#00FF00'}, # Verde brillante
                                                     name="Límite Oficial (Validación)"
                                                 ))
                                             
-                                            # Corrección del Error de Zoom: Todo va dentro de mapbox=dict(...)
+                                            # Corrección del Error de Zoom (Todo dentro de mapbox=dict)
                                             center_lat = gdf_calc_4326.centroid.y.mean()
                                             center_lon = gdf_calc_4326.centroid.x.mean()
                                             
@@ -466,7 +475,7 @@ if gdf_zona_seleccionada is not None:
                                                 title="Comparativa de Divisorias",
                                                 mapbox=dict(
                                                     style="carto-positron",
-                                                    zoom=10,
+                                                    zoom=10, # Ahora sí está en el lugar correcto
                                                     center={"lat": center_lat, "lon": center_lon}
                                                 ),
                                                 height=600, 
