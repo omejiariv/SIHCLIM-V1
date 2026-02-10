@@ -319,7 +319,12 @@ if gdf_zona_seleccionada is not None:
                         acc = None
                         fdir = None
                         
-                        # Usamos float64 para precisión
+                        # 1. PREPARACIÓN HIDROLÓGICA (Corregido: Sin cast agresivo)
+                        grid = None
+                        acc = None
+                        fdir = None
+                        
+                        # Mantenemos dtype='float64' para estabilidad, pero leemos normal
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                             meta_temp = meta.copy()
                             meta_temp.update(driver='GTiff', dtype='float64') 
@@ -327,26 +332,24 @@ if gdf_zona_seleccionada is not None:
                                 dst.write(arr_elevacion.astype('float64'), 1)
                             
                             try:
-                                # Cargar Grid (NORMAL, SIN ASCONTIGUOUSARRAY AQUÍ PARA MANTENER METADATA)
                                 grid = Grid.from_raster(tmp.name)
+                                # LEER NORMAL (Conserva metadatos .nodata)
                                 dem_grid = grid.read_raster(tmp.name)
                                 
-                                # A. Relleno de Depresiones (Ahora funciona porque dem_grid tiene .nodata)
+                                # Operaciones estándar (Ahora dem_grid tiene .nodata, fill_pits funcionará)
                                 pit_filled = grid.fill_pits(dem_grid)
-                                # B. Resolver Planicies
                                 resolved = grid.resolve_flats(pit_filled)
                                 
-                                # C. Dirección de Flujo
                                 dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                                 fdir = grid.flowdir(resolved, dirmap=dirmap)
-                                
-                                # D. Acumulación
                                 acc = grid.accumulation(fdir, dirmap=dirmap)
                                 
                             except Exception as e:
                                 st.error(f"Error procesando hidrología: {e}")
                                 grid = None
-                            finally:
+                            finally: 
+                                try: os.remove(tmp.name)
+                                except: pass
                                 try: os.remove(tmp.name)
                                 except: pass
 
@@ -375,11 +378,10 @@ if gdf_zona_seleccionada is not None:
                                 # 2. Calcular Catchment (Raster)
                                 catch = None
                                 try:
-                                    # 🔥 SOLUCIÓN BLINDADA DE MEMORIA
-                                    fdir_array = np.ascontiguousarray(fdir, dtype=np.float64)
-                                    catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir_array, dirmap=dirmap, xytype='index')
+                                    # Ya no necesitamos conversiones extrañas. fdir tiene sus metadatos.
+                                    catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
                                     
-                                    # GUARDAR PARA DESCARGA (Esto conecta con tu botón en Tab 5)
+                                    # GUARDAR PARA DESCARGA
                                     catchment_raster_export = catch 
                                     
                                 except Exception as e:
@@ -387,56 +389,43 @@ if gdf_zona_seleccionada is not None:
 
                                 # 3. Visualización
                                 if catch is not None:
-                                    # Convertimos el raster a polígonos vectoriales
+                                    # Vectorizar (Raster -> Polígono)
                                     catch_int = catch.astype(np.uint8)
-                                    # Asegúrate de tener: from rasterio import features
                                     shapes_gen = features.shapes(catch_int, transform=transform)
                                     geoms = [shape(geom) for geom, val in shapes_gen if val > 0]
                                     
                                     if geoms:
-                                        # Creamos GeoDataFrame y disolvemos (unimos) geometrías
                                         gdf_c = gpd.GeoDataFrame({'geometry': geoms}, crs=crs_actual).dissolve()
                                         gdf_4326 = gdf_c.to_crs("EPSG:4326")
                                         
-                                        # A. OPCIÓN MASCARA (Mancha Azul)
+                                        # A. MASCARA AZUL
                                         if modo_viz == "Catchment (Mascara)":
                                             fig = px.choropleth_mapbox(
                                                 geojson=gdf_4326.geometry.__geo_interface__,
                                                 locations=gdf_4326.index,
                                                 mapbox_style="carto-positron", zoom=10,
                                                 center={"lat": gdf_4326.centroid.y.mean(), "lon": gdf_4326.centroid.x.mean()},
-                                                opacity=0.6, 
-                                                color_discrete_sequence=["#0099FF"] # Azul Catchment
+                                                opacity=0.5, color_discrete_sequence=["#0099FF"]
                                             )
                                             fig.update_layout(title="Catchment (Área Drenante)", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
                                         
-                                        # B. OPCIÓN DIVISORIA (Línea Roja)
+                                        # B. DIVISORIA ROJA
                                         elif modo_viz == "Divisoria (Línea)":
                                             fig = go.Figure()
-                                            
-                                            # Extraer coordenadas del borde exterior del polígono
+                                            # Extraer borde
                                             poly = gdf_4326.geometry.iloc[0]
-                                            # Manejo robusto de MultiPolígonos
-                                            if poly.geom_type == 'Polygon':
-                                                x, y = poly.exterior.coords.xy
-                                            elif poly.geom_type == 'MultiPolygon':
-                                                # Si hay islas, tomamos la más grande
-                                                largest_poly = max(poly.geoms, key=lambda a: a.area)
-                                                x, y = largest_poly.exterior.coords.xy
+                                            if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
+                                            else: x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
                                             
                                             fig.add_trace(go.Scattermapbox(
-                                                mode="lines", 
-                                                lon=list(x), lat=list(y),
-                                                line={'width': 3, 'color': 'red'}, 
-                                                name="Divisoria"
+                                                mode="lines", lon=list(x), lat=list(y),
+                                                line={'width': 3, 'color': 'red'}, name="Divisoria"
                                             ))
-                                            
-                                            center = gdf_4326.centroid.iloc[0]
                                             fig.update_layout(
-                                                title="Divisoria de Aguas (Watershed Divide)",
+                                                title="Divisoria de Aguas",
                                                 mapbox_style="carto-positron", zoom=10,
-                                                mapbox_center={"lat": center.y, "lon": center.x},
+                                                mapbox_center={"lat": gdf_4326.centroid.y.mean(), "lon": gdf_4326.centroid.x.mean()},
                                                 height=600, margin=dict(l=0,r=0,t=30,b=0)
                                             )
                                             st.plotly_chart(fig, use_container_width=True)
