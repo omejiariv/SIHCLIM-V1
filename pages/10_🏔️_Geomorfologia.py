@@ -190,66 +190,66 @@ if gdf_zona_seleccionada is not None:
             h, w = arr_elevacion.shape
             factor = max(1, int(max(h, w) / 200)) # Mejor resolución para el 3D
 
-            # --- TAB 1: 3D Y CURVAS DE NIVEL (CORREGIDO) ---
+            # --- TAB 1: 3D Y CURVAS DE NIVEL (NATIVAS + DESCARGA) ---
             with tab1:
                 c1, c2 = st.columns([1, 4])
                 with c1:
                     st.markdown("#### Visualización")
                     exag = st.slider("Exageración Vertical:", 0.5, 5.0, 1.5, 0.1, key="z_exag")
                     st.markdown("---")
-                    ver_curvas = st.toggle("Ver Curvas de Nivel", value=False)
-                    intervalo_curvas = st.select_slider("Intervalo (m):", options=[10, 20, 50, 100], value=50, disabled=not ver_curvas)
+                    ver_curvas = st.toggle("Ver Curvas de Nivel", value=True)
+                    intervalo_curvas = st.select_slider("Intervalo (m):", options=[10, 25, 50, 100], value=50)
                     
                 with c2:
                     # Preparar Terreno 3D
                     arr_3d = arr_elevacion[::factor, ::factor]
-                    fig = go.Figure()
                     
-                    # 1. Superficie 3D
-                    fig.add_trace(go.Surface(z=arr_3d, colorscale='Earth', showscale=False, name="Terreno"))
-                    
-                    # 2. Generación de Curvas de Nivel (Vectores 3D)
+                    # --- CONFIGURACIÓN DE CURVAS NATIVAS (VISUAL) ---
+                    contours_conf = dict(
+                        z=dict(
+                            show=ver_curvas,
+                            start=np.nanmin(arr_elevacion),
+                            end=np.nanmax(arr_elevacion),
+                            size=intervalo_curvas,
+                            color="white", # Color de la línea en el mapa
+                            usecolormap=False,
+                            project_z=False # False = Pegadas al terreno (lo que te gusta)
+                        )
+                    )
+
+                    fig = go.Figure(data=[go.Surface(
+                        z=arr_3d, 
+                        colorscale='Earth', 
+                        contours=contours_conf, # ¡Aquí está la magia visual!
+                        name="Terreno"
+                    )])
+
+                    # --- CÁLCULO SILENCIOSO PARA DESCARGA (VECTOR) ---
+                    # Esto ocurre en background solo para generar el archivo JSON
                     if ver_curvas:
                         try:
+                            # Usamos matplotlib solo para matemáticas, no para pintar
                             min_z, max_z = np.nanmin(arr_elevacion), np.nanmax(arr_elevacion)
                             levels = np.arange(np.floor(min_z), np.ceil(max_z), intervalo_curvas)
                             contours_obj = plt.contour(arr_elevacion, levels=levels)
                             
-                            lines_x, lines_y, lines_z = [], [], []
                             geoms_2d = [] 
-                            
                             for level, collection in zip(levels, contours_obj.collections):
                                 for path in collection.get_paths():
                                     v = path.vertices
-                                    x_plot = v[:, 1] / factor
-                                    y_plot = v[:, 0] / factor
-                                    # CORRECCIÓN: Sumamos el offset AQUÍ, antes de mezclar con None
-                                    z_plot = np.full(len(x_plot), level + 5) 
-                                    
-                                    lines_x.extend(x_plot); lines_x.append(None)
-                                    lines_y.extend(y_plot); lines_y.append(None)
-                                    lines_z.extend(z_plot); lines_z.append(None)
-                                    
-                                    # Guardar geometría real para exportación
+                                    if len(v) < 2: continue # Ignorar puntos
+                                    # Transformar Pixel -> Lat/Lon
                                     xs_geo, ys_geo = rasterio.transform.xy(transform, v[:, 0], v[:, 1])
-                                    if len(xs_geo) > 1:
-                                        geoms_2d.append({'geometry': LineString(zip(xs_geo, ys_geo)), 'elevation': level})
-
-                            fig.add_trace(go.Scatter3d(
-                                x=lines_x, y=lines_y, z=lines_z,
-                                mode='lines', line=dict(color='white', width=2),
-                                name="Curvas de Nivel"
-                            ))
+                                    geoms_2d.append({'geometry': LineString(zip(xs_geo, ys_geo)), 'elevation': level})
+                            
+                            plt.close() # Limpiar memoria
                             
                             if geoms_2d:
                                 st.session_state['gdf_contours'] = gpd.GeoDataFrame(geoms_2d, crs=meta['crs'])
-                            
-                        except Exception as e:
-                            st.warning(f"No se pudieron generar curvas: {e}")
-                            plt.close()
+                        except: pass
 
                     fig.update_layout(
-                        title="Terreno 3D + Geomorfología", autosize=True, height=600, 
+                        title="Terreno 3D (Curvas Nativas)", autosize=True, height=600, 
                         scene=dict(aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.2*exag)),
                         margin=dict(l=0, r=0, b=0, t=40)
                     )
@@ -427,58 +427,51 @@ if gdf_zona_seleccionada is not None:
                                 fig.update_layout(height=600, margin=dict(l=0, r=0, t=30, b=0))
                                 st.plotly_chart(fig, use_container_width=True)
 
-                            # --- MODO 2: CATCHMENT / DIVISORIA ---
+                            # --- MODO 2: CATCHMENT / DIVISORIA (CORREGIDO Y POTENCIADO) ---
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
-                                # 1. Punto Inicial (Automático Global)
+                                # 1. Punto Inicial
                                 if 'x_pour_calib' not in st.session_state:
-                                    idx_max_acc = np.nanargmax(acc)
-                                    y_auto, x_auto = np.unravel_index(idx_max_acc, acc.shape)
+                                    try:
+                                        idx_max_acc = np.nanargmax(acc)
+                                        y_auto, x_auto = np.unravel_index(idx_max_acc, acc.shape)
+                                    except: y_auto, x_auto = 0, 0
                                     st.session_state['x_pour_calib'] = int(x_auto)
                                     st.session_state['y_pour_calib'] = int(y_auto)
 
-                                # 2. Controles de Calibración
+                                # 2. Controles
                                 with st.expander("🔧 Calibración de Punto de Desfogue", expanded=True):
                                     c_coord, c_snap = st.columns([3, 1])
                                     with c_coord:
                                         c_x, c_y = st.columns(2)
-                                        # Usamos session_state para permitir actualizaciones desde el botón Snap
                                         x_pour = c_x.number_input("Columna (X):", value=st.session_state['x_pour_calib'], min_value=0, max_value=acc.shape[1]-1, step=1, key="num_x")
                                         y_pour = c_y.number_input("Fila (Y):", value=st.session_state['y_pour_calib'], min_value=0, max_value=acc.shape[0]-1, step=1, key="num_y")
                                     
                                     with c_snap:
-                                        st.write("") # Espacio
                                         st.write("") 
-                                        if st.button("🧲 Atraer al Río", help="Busca el pixel con mayor flujo en un radio de 5 celdas alrededor del punto actual."):
-                                            # Lógica de SNAP
-                                            r = 5
+                                        st.write("") 
+                                        # AUMENTO DE RADIO A 10 PIXELES
+                                        if st.button("🧲 Atraer (Snap)", help="Busca el cauce principal en un radio de 10 celdas."):
+                                            r = 10 # Radio aumentado para mejor captura
                                             y_curr, x_curr = y_pour, x_pour
-                                            # Definir ventana segura
-                                            y_start, y_end = max(0, y_curr-r), min(acc.shape[0], y_curr+r+1)
-                                            x_start, x_end = max(0, x_curr-r), min(acc.shape[1], x_curr+r+1)
+                                            y_s, y_e = max(0, y_curr-r), min(acc.shape[0], y_curr+r+1)
+                                            x_s, x_e = max(0, x_curr-r), min(acc.shape[1], x_curr+r+1)
                                             
-                                            window = acc[y_start:y_end, x_start:x_end]
+                                            window = acc[y_s:y_e, x_s:x_e]
                                             if window.size > 0:
-                                                # Encontrar máximo local
-                                                local_max_idx = np.unravel_index(np.argmax(window), window.shape)
-                                                # Convertir a coordenadas globales
-                                                new_y = y_start + local_max_idx[0]
-                                                new_x = x_start + local_max_idx[1]
-                                                
-                                                # Actualizar estado y recargar
-                                                st.session_state['x_pour_calib'] = int(new_x)
-                                                st.session_state['y_pour_calib'] = int(new_y)
-                                                st.toast(f"✅ Punto ajustado a: ({new_x}, {new_y})", icon="🎯")
+                                                loc_max = np.unravel_index(np.nanargmax(window), window.shape)
+                                                st.session_state['x_pour_calib'] = int(x_s + loc_max[1])
+                                                st.session_state['y_pour_calib'] = int(y_s + loc_max[0])
+                                                st.toast(f"✅ Ajustado a: ({st.session_state['x_pour_calib']}, {st.session_state['y_pour_calib']})", icon="🎯")
                                                 st.rerun()
 
-                                # Calcular Catchment con punto (session state o input)
+                                # 3. Cálculo
                                 catch = None
                                 try:
                                     catch = grid.catchment(x=x_pour, y=y_pour, fdir=fdir, dirmap=dirmap, xytype='index')
-                                    st.session_state['catchment_raster'] = catch # Guardar para descarga
-                                except Exception as e:
-                                    st.error(f"Error calculando catchment: {e}")
+                                    st.session_state['catchment_raster'] = catch
+                                except Exception as e: st.error(f"Error cálculo: {e}")
 
-                                # Visualización (Idéntica a la versión blindada anterior)
+                                # 4. Visualización (MASCARA + LINEA)
                                 if catch is not None:
                                     catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
                                     shapes_gen = features.shapes(catch_int, transform=transform)
@@ -489,6 +482,7 @@ if gdf_zona_seleccionada is not None:
                                         gdf_calc_4326 = gdf_c.to_crs("EPSG:4326")
                                         gdf_off_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
                                         
+                                        # --- A. CASO MASCARA (RECUPERADO) ---
                                         if modo_viz == "Catchment (Mascara)":
                                             fig = px.choropleth_mapbox(
                                                 geojson=gdf_calc_4326.geometry.__geo_interface__,
@@ -496,36 +490,34 @@ if gdf_zona_seleccionada is not None:
                                                 center={"lat": gdf_calc_4326.centroid.y.mean(), "lon": gdf_calc_4326.centroid.x.mean()},
                                                 zoom=10, opacity=0.5, color_discrete_sequence=["#0099FF"]
                                             )
-                                            # Validación
-                                            if not gdf_off_4326.empty:
+                                            if not gdf_off_4326.empty: # Validación visual
                                                 poly = gdf_off_4326.geometry.iloc[0]
                                                 if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
                                                 else: x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
                                                 fig.add_trace(go.Scattermapbox(mode="lines", lon=list(x), lat=list(y), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
                                             
-                                            fig.update_layout(title="Catchment (Mascara)", height=600, margin=dict(l=0,r=0,t=30,b=0))
+                                            fig.update_layout(title="Catchment (Área Drenante)", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
 
+                                        # --- B. CASO LINEA ---
                                         elif modo_viz == "Divisoria (Línea)":
                                             fig = go.Figure()
-                                            # Roja (Calculada)
                                             p_c = gdf_calc_4326.geometry.iloc[0]
                                             if p_c.geom_type == 'Polygon': xc, yc = p_c.exterior.coords.xy
                                             else: xc, yc = max(p_c.geoms, key=lambda a: a.area).exterior.coords.xy
                                             fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Calculada (DEM)"))
                                             
-                                            # Verde (Oficial)
                                             if not gdf_off_4326.empty:
                                                 p_o = gdf_off_4326.geometry.iloc[0]
                                                 if p_o.geom_type == 'Polygon': xo, yo = p_o.exterior.coords.xy
                                                 else: xo, yo = max(p_o.geoms, key=lambda a: a.area).exterior.coords.xy
-                                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width':2, 'color':'#00FF00'}, name="Oficial (IGAC)"))
+                                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
                                             
                                             clat = gdf_calc_4326.centroid.y.mean()
                                             clon = gdf_calc_4326.centroid.x.mean()
-                                            fig.update_layout(title="Comparativa de Divisorias", mapbox=dict(style="carto-positron", zoom=10, center={"lat": clat, "lon": clon}), height=600, margin=dict(l=0,r=0,t=30,b=0))
+                                            fig.update_layout(title="Comparativa Divisorias", mapbox=dict(style="carto-positron", zoom=10, center={"lat": clat, "lon": clon}), height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
-
+                                            
                             # --- MODO 3: VECTORES (LÍNEAS) ---
                             elif modo_viz == "Vectores (Líneas)":
                                 gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, meta['crs'], nombre_zona)
@@ -700,60 +692,63 @@ if gdf_zona_seleccionada is not None:
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
 
-            # --- TAB 7: AMENAZAS (AVENIDA TORRENCIAL) ---
+            # --- TAB 7: AMENAZAS (TORRENCIALIDAD E INUNDACIÓN) ---
             with tab7:
-                st.subheader("🚨 Mapa de Amenaza: Avenidas Torrenciales")
-                st.markdown("Identificación de zonas críticas donde convergen alta pendiente y alto flujo acumulado.")
+                st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
                 
                 if 'acc' in locals() and acc is not None:
                     c_par, c_vis = st.columns([1, 3])
                     
                     with c_par:
-                        st.markdown("#### Criterios")
-                        s_umb = st.slider("Pendiente Crítica (> Grados)", 15, 45, 30, help="Terreno propenso a inestabilidad.")
-                        a_umb = st.slider("Acumulación Log (> Umbral)", 1.0, 10.0, 5.5, 0.1, help="Define dónde comienza el 'cauce' con fuerza tractiva.")
+                        st.markdown("#### Parámetros")
+                        # Parámetros Torrencialidad
+                        st.markdown("**1. Avenida Torrencial**")
+                        s_umb = st.slider("Pendiente Alta (> Grados)", 15, 45, 25, help="Para flujos rápidos.")
+                        
+                        st.markdown("**2. Inundación Lenta**")
+                        s_flat = st.slider("Pendiente Plana (< Grados)", 0.5, 5.0, 2.0, 0.5, help="Zonas planas propensas a empozamiento.")
+                        
+                        st.markdown("---")
+                        a_umb = st.slider("Acumulación Agua (Log)", 4.0, 9.0, 6.0, 0.1, help="Define dónde está el río principal.")
                         
                         st.info("""
-                        **Semáforo de Riesgo:**
-                        * 🔴 **Muy Alta (Torrencial):** Pendiente > Crítica Y Flujo en Cauce. (El agua baja rápido y canalizada).
-                        * 🟠 **Alta (Ladera):** Pendiente > Crítica (Sin cauce mayor).
-                        * 🟡 **Media (Cauce Plano):** Flujo alto pero pendiente baja (Inundación lenta).
+                        **Leyenda:**
+                        * 🔴 **Avenida Torrencial:** Pendiente Alta + Río.
+                        * 🔵 **Inundación:** Pendiente Plana + Río.
+                        * 🟡 **Cauce Medio:** Río en pendiente media.
                         """)
 
                     with c_vis:
-                        # Asegurar dimensiones iguales
                         min_h = min(slope_deg.shape[0], acc.shape[0])
                         min_w = min(slope_deg.shape[1], acc.shape[1])
-                        
                         s_core = slope_deg[:min_h, :min_w]
                         a_core = np.log1p(acc[:min_h, :min_w])
                         
-                        # Álgebra de Mapas
                         risk = np.zeros_like(s_core, dtype=np.uint8)
                         
+                        mask_river = a_core >= a_umb
                         mask_steep = s_core >= s_umb
-                        mask_flow = a_core >= a_umb
+                        mask_flat = s_core <= s_flat
                         
-                        # Lógica de clasificación
-                        risk[mask_flow] = 1          # Cauce (Amarillo - Riesgo Inundación)
-                        risk[mask_steep] = 2         # Ladera inestable (Naranja)
-                        risk[mask_steep & mask_flow] = 3 # AVENIDA TORRENCIAL (Rojo)
+                        # Lógica de Clasificación
+                        risk[mask_river] = 1                # Cauce normal (Amarillo)
+                        risk[mask_river & mask_steep] = 2   # TORRENCIAL (Rojo)
+                        risk[mask_river & mask_flat] = 3    # INUNDACIÓN (Azul)
                         
-                        # Visualización
+                        # Colores: [0:Nada, 1:Amarillo, 2:Rojo, 3:Azul]
                         colors = [
-                            [0.0, "rgba(0,0,0,0)"],   # Nada
-                            [0.33, "#FFD700"],        # Amarillo (Río plano)
-                            [0.66, "#FF8C00"],        # Naranja (Ladera)
-                            [1.0, "#FF0000"]          # Rojo (Torrencial)
+                            [0.0, "rgba(0,0,0,0)"], 
+                            [0.33, "#FFD700"], # Amarillo
+                            [0.66, "#FF0000"], # Rojo
+                            [1.0, "#0099FF"]   # Azul
                         ]
                         
-                        fig_risk = px.imshow(risk, color_continuous_scale=colors, title="Amenaza por Flujos Rápidos")
+                        fig_risk = px.imshow(risk, color_continuous_scale=colors, title="Mapa de Amenazas Combinadas")
                         fig_risk.update_layout(coloraxis_showscale=False, height=600, margin=dict(l=0,r=0,t=40,b=0))
                         fig_risk.update_xaxes(visible=False); fig_risk.update_yaxes(visible=False)
-                        
                         st.plotly_chart(fig_risk, use_container_width=True)
                 else:
-                    st.warning("⚠️ Calcula primero la hidrología en la pestaña 'Hidrología'.")
+                    st.warning("⚠️ Calcula primero la hidrología.")
             
                                 
             # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
