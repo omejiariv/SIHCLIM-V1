@@ -427,7 +427,7 @@ if gdf_zona_seleccionada is not None:
                                 fig.update_layout(height=600, margin=dict(l=0, r=0, t=30, b=0))
                                 st.plotly_chart(fig, use_container_width=True)
 
-                            # --- MODO 2: CATCHMENT / DIVISORIA (VERSIÓN ORIGINAL RESTAURADA) ---
+                            # --- MODO 2: CATCHMENT / DIVISORIA (CÓDIGO ORIGINAL ESTABLE) ---
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
                                 # 1. Punto Inicial (Automático Global)
                                 if 'x_pour_calib' not in st.session_state:
@@ -443,6 +443,7 @@ if gdf_zona_seleccionada is not None:
                                     c_coord, c_snap = st.columns([3, 1])
                                     with c_coord:
                                         c_x, c_y = st.columns(2)
+                                        # Usamos session_state para permitir actualizaciones
                                         x_pour = c_x.number_input("Columna (X):", value=st.session_state['x_pour_calib'], min_value=0, max_value=acc.shape[1]-1, step=1, key="num_x")
                                         y_pour = c_y.number_input("Fila (Y):", value=st.session_state['y_pour_calib'], min_value=0, max_value=acc.shape[0]-1, step=1, key="num_y")
                                     
@@ -469,7 +470,7 @@ if gdf_zona_seleccionada is not None:
                                     st.session_state['catchment_raster'] = catch
                                 except Exception as e: st.error(f"Error: {e}")
 
-                                # 4. Visualización (ESTO ES LO QUE FUNCIONABA)
+                                # 4. Visualización
                                 if catch is not None:
                                     # Truco de memoria original
                                     catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
@@ -482,24 +483,23 @@ if gdf_zona_seleccionada is not None:
                                         gdf_off_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
                                         
                                         if modo_viz == "Catchment (Mascara)":
-                                            # Centroide simple
-                                            c_lat = gdf_calc_4326.geometry.centroid.y.mean()
-                                            c_lon = gdf_calc_4326.geometry.centroid.x.mean()
-
                                             fig = px.choropleth_mapbox(
                                                 geojson=gdf_calc_4326.geometry.__geo_interface__,
-                                                locations=gdf_calc_4326.index, mapbox_style="carto-positron",
-                                                center={"lat": c_lat, "lon": c_lon},
-                                                zoom=10, opacity=0.5, color_discrete_sequence=["#0099FF"]
+                                                locations=gdf_calc_4326.index, 
+                                                mapbox_style="carto-positron",
+                                                center={"lat": gdf_calc_4326.centroid.y.mean(), "lon": gdf_calc_4326.centroid.x.mean()},
+                                                zoom=10, 
+                                                opacity=0.5, 
+                                                color_discrete_sequence=["#0099FF"]
                                             )
-                                            # Validación Visual
+                                            # Validación
                                             if not gdf_off_4326.empty:
                                                 poly = gdf_off_4326.geometry.iloc[0]
                                                 if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
                                                 else: x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
                                                 fig.add_trace(go.Scattermapbox(mode="lines", lon=list(x), lat=list(y), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
                                             
-                                            fig.update_layout(title="Catchment (Mascara)", height=600, margin=dict(l=0,r=0,t=30,b=0))
+                                            fig.update_layout(title="Catchment (Área Drenante)", height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
 
                                         elif modo_viz == "Divisoria (Línea)":
@@ -517,51 +517,11 @@ if gdf_zona_seleccionada is not None:
                                                 else: xo, yo = max(p_o.geoms, key=lambda a: a.area).exterior.coords.xy
                                                 fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width':2, 'color':'#00FF00'}, name="Oficial (IGAC)"))
                                             
-                                            clat = gdf_calc_4326.geometry.centroid.y.mean()
-                                            clon = gdf_calc_4326.geometry.centroid.x.mean()
+                                            clat = gdf_calc_4326.centroid.y.mean()
+                                            clon = gdf_calc_4326.centroid.x.mean()
                                             fig.update_layout(title="Comparativa de Divisorias", mapbox=dict(style="carto-positron", zoom=10, center={"lat": clat, "lon": clon}), height=600, margin=dict(l=0,r=0,t=30,b=0))
                                             st.plotly_chart(fig, use_container_width=True)
                                             
-                            # --- MODO 3: VECTORES (LÍNEAS) ---
-                            elif modo_viz == "Vectores (Líneas)":
-                                gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, meta['crs'], nombre_zona)
-                                
-                                if gdf_rios is not None:
-                                    # 1. GUARDAR EN MEMORIA (Para que Tab 5 lo vea)
-                                    st.session_state['gdf_rios'] = gdf_rios 
-                                    
-                                    # 2. VISUALIZAR
-                                    try:
-                                        gdf_4326 = gdf_rios.to_crs("EPSG:4326")
-                                        lons, lats = [], []
-                                        for geom in gdf_4326.geometry:
-                                            if geom.geom_type == 'LineString': 
-                                                x, y = geom.xy
-                                                lons.extend(list(x) + [None])
-                                                lats.extend(list(y) + [None])
-                                            elif geom.geom_type == 'MultiLineString': 
-                                                for g in geom.geoms: 
-                                                    x, y = g.xy
-                                                    lons.extend(list(x) + [None])
-                                                    lats.extend(list(y) + [None])
-                                        
-                                        fig = go.Figure(go.Scattermapbox(
-                                            mode="lines", lon=lons, lat=lats, 
-                                            line={'width': 2, 'color': '#0077BE'},
-                                            name="Red Hídrica"
-                                        ))
-                                        
-                                        center = gdf_4326.geometry.centroid.iloc[0]
-                                        fig.update_layout(
-                                            mapbox=dict(style="carto-positron", zoom=10, center={"lat": center.y, "lon": center.x}), 
-                                            height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False
-                                        )
-                                        st.plotly_chart(fig, use_container_width=True)
-                                    except Exception as e:
-                                        st.error(f"Error pintando ríos: {e}")
-                                else: 
-                                    st.warning("No se detectaron ríos. Baja el umbral de acumulación.")
-
             # --- TAB 6: ÍNDICES Y MODELACIÓN (FASE A + B) ---
             with tab6:
                 st.subheader(f"📊 Panel Hidrológico: {nombre_zona}")
@@ -696,60 +656,84 @@ if gdf_zona_seleccionada is not None:
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
 
-            # --- TAB 7: AMENAZAS (AVENIDA TORRENCIAL) ---
+            # --- TAB 7: AMENAZAS (ESPEJOS LÓGICOS) ---
             with tab7:
-                st.subheader("🚨 Mapa de Amenaza: Avenidas Torrenciales")
-                st.markdown("Identificación de zonas críticas donde convergen alta pendiente y alto flujo acumulado.")
+                st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
                 
                 if 'acc' in locals() and acc is not None:
-                    c_par, c_vis = st.columns([1, 3])
+                    # Preparar datos comunes
+                    min_h = min(slope_deg.shape[0], acc.shape[0])
+                    min_w = min(slope_deg.shape[1], acc.shape[1])
+                    s_core = slope_deg[:min_h, :min_w]
+                    a_core = np.log1p(acc[:min_h, :min_w])
                     
-                    with c_par:
-                        st.markdown("#### Criterios")
-                        s_umb = st.slider("Pendiente Crítica (> Grados)", 15, 45, 30, help="Terreno propenso a inestabilidad.")
-                        a_umb = st.slider("Acumulación Log (> Umbral)", 1.0, 10.0, 5.5, 0.1, help="Define dónde comienza el 'cauce' con fuerza tractiva.")
-                        
-                        st.info("""
-                        **Semáforo de Riesgo:**
-                        * 🔴 **Muy Alta (Torrencial):** Pendiente > Crítica Y Flujo en Cauce. (El agua baja rápido y canalizada).
-                        * 🟠 **Alta (Ladera):** Pendiente > Crítica (Sin cauce mayor).
-                        * 🟡 **Media (Cauce Plano):** Flujo alto pero pendiente baja (Inundación lenta).
-                        """)
+                    # Pestañas para separar los mapas
+                    t1, t2 = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación Plana"])
+                    
+                    # --- ESPEJO 1: TU CÓDIGO ORIGINAL (Torrencial) ---
+                    with t1:
+                        st.markdown("**Identificación de zonas críticas donde convergen alta pendiente y alto flujo.**")
+                        c_par, c_vis = st.columns([1, 3])
+                        with c_par:
+                            st.markdown("#### Criterios")
+                            s_umb = st.slider("Pendiente Crítica (> Grados)", 15, 45, 30)
+                            a_umb = st.slider("Acumulación Log (> Umbral)", 1.0, 10.0, 5.5)
+                            
+                            st.info("""
+                            **Semáforo:**
+                            * 🔴 **Muy Alta:** Pendiente Alta + Flujo Alto.
+                            * 🟠 **Alta:** Pendiente Alta.
+                            * 🟡 **Media:** Flujo Alto (Plano).
+                            """)
+                        with c_vis:
+                            risk = np.zeros_like(s_core, dtype=np.uint8)
+                            mask_steep = s_core >= s_umb
+                            mask_flow = a_core >= a_umb
+                            
+                            risk[mask_flow] = 1          # Amarillo
+                            risk[mask_steep] = 2         # Naranja
+                            risk[mask_steep & mask_flow] = 3 # Rojo
+                            
+                            colors = [[0.0, "rgba(0,0,0,0)"], [0.33, "#FFD700"], [0.66, "#FF8C00"], [1.0, "#FF0000"]]
+                            
+                            fig_risk = px.imshow(risk, color_continuous_scale=colors)
+                            fig_risk.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
+                            fig_risk.update_xaxes(visible=False); fig_risk.update_yaxes(visible=False)
+                            st.plotly_chart(fig_risk, use_container_width=True)
 
-                    with c_vis:
-                        # Asegurar dimensiones iguales
-                        min_h = min(slope_deg.shape[0], acc.shape[0])
-                        min_w = min(slope_deg.shape[1], acc.shape[1])
-                        
-                        s_core = slope_deg[:min_h, :min_w]
-                        a_core = np.log1p(acc[:min_h, :min_w])
-                        
-                        # Álgebra de Mapas
-                        risk = np.zeros_like(s_core, dtype=np.uint8)
-                        
-                        mask_steep = s_core >= s_umb
-                        mask_flow = a_core >= a_umb
-                        
-                        # Lógica de clasificación
-                        risk[mask_flow] = 1          # Cauce (Amarillo - Riesgo Inundación)
-                        risk[mask_steep] = 2         # Ladera inestable (Naranja)
-                        risk[mask_steep & mask_flow] = 3 # AVENIDA TORRENCIAL (Rojo)
-                        
-                        # Visualización
-                        colors = [
-                            [0.0, "rgba(0,0,0,0)"],   # Nada
-                            [0.33, "#FFD700"],        # Amarillo (Río plano)
-                            [0.66, "#FF8C00"],        # Naranja (Ladera)
-                            [1.0, "#FF0000"]          # Rojo (Torrencial)
-                        ]
-                        
-                        fig_risk = px.imshow(risk, color_continuous_scale=colors, title="Amenaza por Flujos Rápidos")
-                        fig_risk.update_layout(coloraxis_showscale=False, height=600, margin=dict(l=0,r=0,t=40,b=0))
-                        fig_risk.update_xaxes(visible=False); fig_risk.update_yaxes(visible=False)
-                        
-                        st.plotly_chart(fig_risk, use_container_width=True)
+                    # --- ESPEJO 2: NUEVO CÓDIGO (Inundación) ---
+                    with t2:
+                        st.markdown("**Identificación de zonas planas propensas a empozamiento.**")
+                        c_par, c_vis = st.columns([1, 3])
+                        with c_par:
+                            st.markdown("#### Criterios")
+                            # Aquí la lógica es inversa: Buscamos pendiente BAJA
+                            s_flat = st.slider("Pendiente Plana (< Grados)", 0.5, 10.0, 3.0)
+                            a_umb_i = st.slider("Acumulación Río (> Log)", 1.0, 10.0, 5.5, key="a_flood")
+                            
+                            st.info("""
+                            **Semáforo:**
+                            * 🔵 **Inundación:** Pendiente Plana + Flujo Alto.
+                            * 🟡 **Río Normal:** Flujo Alto (Con pendiente).
+                            """)
+                        with c_vis:
+                            risk_i = np.zeros_like(s_core, dtype=np.uint8)
+                            mask_flat = s_core <= s_flat # Condición inversa
+                            mask_flow = a_core >= a_umb_i
+                            
+                            risk_i[mask_flow] = 1          # Amarillo (Río normal)
+                            risk_i[mask_flat & mask_flow] = 2 # AZUL (Inundación)
+                            
+                            # Escala de azules
+                            colors_i = [[0.0, "rgba(0,0,0,0)"], [0.5, "#FFD700"], [1.0, "#0099FF"]]
+                            
+                            fig_i = px.imshow(risk_i, color_continuous_scale=colors_i)
+                            fig_i.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
+                            fig_i.update_xaxes(visible=False); fig_i.update_yaxes(visible=False)
+                            st.plotly_chart(fig_i, use_container_width=True)
+
                 else:
-                    st.warning("⚠️ Calcula primero la hidrología en la pestaña 'Hidrología'.")
+                    st.warning("⚠️ Calcula primero la hidrología.")
                                   
             # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
             with tab5:
