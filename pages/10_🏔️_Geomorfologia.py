@@ -389,8 +389,11 @@ if gdf_zona_seleccionada is not None:
 
                                 # 3. Visualización
                                 if catch is not None:
-                                    # Vectorizar (Raster -> Polígono)
-                                    catch_int = catch.astype(np.uint8)
+                                    # 🔥 SOLUCIÓN DEFINITIVA AL ERROR MEMORYVIEW
+                                    # Rasterio exige un array contiguo, no una vista. Lo forzamos aquí:
+                                    catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
+                                    
+                                    # Ahora sí, vectorizamos con seguridad
                                     shapes_gen = features.shapes(catch_int, transform=transform)
                                     geoms = [shape(geom) for geom, val in shapes_gen if val > 0]
                                     
@@ -413,10 +416,10 @@ if gdf_zona_seleccionada is not None:
                                         # B. DIVISORIA ROJA
                                         elif modo_viz == "Divisoria (Línea)":
                                             fig = go.Figure()
-                                            # Extraer borde
+                                            # Extraer borde robusto
                                             poly = gdf_4326.geometry.iloc[0]
                                             if poly.geom_type == 'Polygon': x, y = poly.exterior.coords.xy
-                                            else: x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
+                                            elif poly.geom_type == 'MultiPolygon': x, y = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
                                             
                                             fig.add_trace(go.Scattermapbox(
                                                 mode="lines", lon=list(x), lat=list(y),
