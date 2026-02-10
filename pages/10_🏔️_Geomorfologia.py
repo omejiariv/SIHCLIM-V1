@@ -266,130 +266,163 @@ if gdf_zona_seleccionada is not None:
                 fig_hypso.update_layout(height=500, title="Curva Hipsométrica", xaxis_title="% Área", yaxis_title="Altitud")
                 st.plotly_chart(fig_hypso, use_container_width=True)
 
-            # --- TAB 4: RED DE DRENAJE (MODO DIAGNÓSTICO + VECTORES) ---
-            gdf_rios_export = None 
+            # --- TAB 4: HIDROLOGÍA AVANZADA (DRENAJE + DIVISORIA) ---
+            gdf_rios_export = None
+            gdf_cuenca_export = None 
+
             with tab4:
-                st.subheader("Red de Drenaje e Hidrología")
+                st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
                 
                 if not PYSHEDS_AVAILABLE:
-                    st.error("Instala `pysheds` para ver esto.")
+                    st.error("⚠️ Instala `pysheds` para usar este módulo.")
                 else:
-                    c_param, c_viz = st.columns([1, 3])
-                    with c_param:
-                        st.info("Configuración")
+                    c_conf, c_map = st.columns([1, 3])
+                    
+                    with c_conf:
+                        st.markdown("#### ⚙️ Configuración")
                         
-                        # Selector de Modo de Visualización
-                        modo_viz = st.radio("Ver como:", ["Vectores (Líneas)", "Raster (Acumulación)"], 
-                                          help="El Raster muestra la física cruda del flujo. Útil para ver si el río se corta.")
+                        modo_viz = st.radio("Visualización:", 
+                                          ["Vectores (Líneas)", "Raster (Acumulación)", "Divisoria de Cuenca (Beta)"],
+                                          help="Vectores: Líneas limpias. Raster: Imagen cruda de flujo. Divisoria: Calcula el polígono de la cuenca.")
                         
+                        umbral = 0 # Inicializar
                         if modo_viz == "Vectores (Líneas)":
-                            umbral = st.slider("Umbral Acumulación", 2, 5000, 100, 5, key=f"umb_rio_{nombre_zona}")
-                            st.caption(f"Se trazan líneas donde fluyen > {umbral} celdas.")
-                        else:
-                            st.info("Visualizando logaritmo de acumulación.")
+                            umbral = st.slider("Umbral Acumulación", 2, 5000, 100, 5, key=f"umb_{nombre_zona}")
+                            st.caption(f"Mostrar cauces con > {umbral} celdas.")
                         
-                        st.markdown("---")
-                        st.markdown("**¿Por qué se corta el río?**")
-                        st.caption("En zonas planas/urbanas, puentes o edificios en el DEM actúan como represas, cortando el flujo calculado.")
+                        st.info("""
+                        **Nota Técnica:**
+                        El río principal puede aparecer cortado al inicio del mapa porque el recorte elimina el agua que viene de aguas arriba (Efecto de Borde).
+                        """)
 
-                    with c_viz:
+                    with c_map:
                         import tempfile
-                        # 1. Procesamiento Hidrológico Robusto
+                        # 1. PREPARACIÓN HIDROLÓGICA
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                             meta_temp = meta.copy(); meta_temp.update(driver='GTiff')
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
-                                # Guardamos float32 para precisión
                                 dst.write(arr_elevacion.astype(rasterio.float32), 1)
                             
                             try:
+                                # Cargar Grid
                                 grid = Grid.from_raster(tmp.name)
                                 dem_grid = grid.read_raster(tmp.name)
                                 
-                                # A. Rellenar depresiones (Pre-procesamiento CRÍTICO)
-                                # Llenamos huecos donde el agua se estanca
+                                # A. Relleno de Depresiones (Fill Pits)
                                 pit_filled = grid.fill_pits(dem_grid)
-                                
-                                # B. Resolver Planicies (Vital para el Río Aburrá/Medellín)
-                                # Ayuda al agua a cruzar zonas planas
+                                # B. Resolver Planicies (Crucial para ríos grandes)
                                 resolved = grid.resolve_flats(pit_filled)
-                                
-                                # C. Dirección
+                                # C. Dirección de Flujo (N, NE, E, SE, S, SW, W, NW)
                                 dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                                 fdir = grid.flowdir(resolved, dirmap=dirmap)
-                                
                                 # D. Acumulación
                                 acc = grid.accumulation(fdir, dirmap=dirmap)
                                 
                             except Exception as e:
                                 st.error(f"Error hidrológico: {e}")
-                                acc = None
+                                grid = None
                             finally:
                                 try: os.remove(tmp.name)
                                 except: pass
 
-                        if acc is not None:
-                            # --- OPCIÓN A: VISUALIZACIÓN RASTER (DIAGNÓSTICO) ---
-                            if modo_viz == "Raster (Acumulación)":
-                                # Usamos Logaritmo porque la acumulación crece exponencialmente
-                                # Esto hace visible tanto los arroyos pequeños como el río principal
-                                log_acc = np.log1p(acc.view(np.ndarray))
-                                
-                                fig_rast = px.imshow(
-                                    log_acc, 
-                                    color_continuous_scale='Blues',
-                                    title="Mapa de Acumulación de Flujo (Logarítmico)",
-                                    labels={'color': 'Log(Flujo)'}
-                                )
-                                fig_rast.update_xaxes(showticklabels=False); fig_rast.update_yaxes(showticklabels=False)
-                                fig_rast.update_layout(height=650, margin={"r":0,"t":40,"l":0,"b":0})
-                                st.plotly_chart(fig_rast, use_container_width=True)
-                                st.success("💡 Si ves el río continuo aquí, pero no en vectores, baja el Umbral.")
+                        if grid is not None:
+                            crs_actual = meta.get('crs', 'EPSG:3116')
 
-                            # --- OPCIÓN B: VECTORES (LÍNEAS) ---
+                            # --- MODO 1: RASTER (DIAGNÓSTICO) ---
+                            if modo_viz == "Raster (Acumulación)":
+                                log_acc = np.log1p(acc.view(np.ndarray))
+                                fig = px.imshow(log_acc, color_continuous_scale='Blues', title="Acumulación de Flujo (Log)")
+                                fig.update_layout(height=600, margin=dict(l=0, r=0, t=30, b=0))
+                                fig.update_xaxes(showticklabels=False); fig.update_yaxes(showticklabels=False)
+                                st.plotly_chart(fig, use_container_width=True)
+
+                            # --- MODO 2: DIVISORIA DE CUENCA (NUEVO) ---
+                            elif modo_viz == "Divisoria de Cuenca (Beta)":
+                                st.markdown("##### 🏔️ Delimitación Automática de Cuenca")
+                                
+                                # 1. Encontrar Punto de Desfogue (Pour Point)
+                                # Asumimos que es el punto de mayor acumulación en el mapa
+                                acc_flat = acc.view(np.ndarray).flatten()
+                                idx_max = np.argmax(acc_flat)
+                                # Convertir índice lineal a coordenadas (y, x) del array
+                                y_idx, x_idx = np.unravel_index(idx_max, acc.shape)
+                                
+                                st.write(f"📍 Punto de Desfogue detectado en pixel: ({x_idx}, {y_idx})")
+                                
+                                # 2. Calcular Catchment (Cuenca)
+                                try:
+                                    catchment_grid = grid.catchment(x=x_idx, y=y_idx, fdir=fdir, dirmap=dirmap, xytype='index')
+                                    # Recortar al bounding box
+                                    grid.clip_to(catchment_grid)
+                                    poly_features = grid.polygons
+                                    
+                                    if poly_features:
+                                        gdf_cuenca = gpd.GeoDataFrame.from_features(poly_features)
+                                        gdf_cuenca.set_crs(crs_actual, inplace=True)
+                                        gdf_cuenca_export = gdf_cuenca.copy()
+                                        
+                                        # Visualizar
+                                        gdf_4326 = gdf_cuenca.to_crs("EPSG:4326")
+                                        fig = px.choropleth_mapbox(
+                                            geojson=gdf_4326.geometry.__geo_interface__,
+                                            locations=gdf_4326.index,
+                                            mapbox_style="carto-positron",
+                                            zoom=9,
+                                            center={"lat": gdf_4326.centroid.y.mean(), "lon": gdf_4326.centroid.x.mean()},
+                                            opacity=0.5,
+                                            color_discrete_sequence=["red"]
+                                        )
+                                        fig.update_layout(title="Divisoria Calculada (Rojo)", height=600, margin=dict(l=0,r=0,t=30,b=0))
+                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.success("✅ La línea roja representa la divisoria hidrológica calculada desde el DEM.")
+                                    else:
+                                        st.warning("No se pudo poligonizar la cuenca.")
+                                except Exception as e:
+                                    st.error(f"Error calculando catchment: {e}")
+
+                            # --- MODO 3: VECTORES (LÍNEAS) ---
                             else:
-                                crs_actual = meta.get('crs', 'EPSG:3116')
+                                # Usamos cache_id para refrescar si cambia la zona
                                 gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
                                 
                                 if gdf_rios is not None and not gdf_rios.empty:
                                     gdf_rios_export = gdf_rios.copy()
                                     try:
-                                        gdf_rios_4326 = gdf_rios.to_crs("EPSG:4326")
+                                        gdf_4326 = gdf_rios.to_crs("EPSG:4326")
                                         
+                                        # Extraer coordenadas para Plotly Lines (Más rápido que GeoJSON)
                                         lons, lats = [], []
-                                        for geom in gdf_rios_4326.geometry:
+                                        for geom in gdf_4326.geometry:
                                             if geom.geom_type == 'LineString':
-                                                xs, ys = geom.xy
-                                                lons.extend(list(xs) + [None])
-                                                lats.extend(list(ys) + [None])
+                                                x, y = geom.xy
+                                                lons.extend(list(x) + [None])
+                                                lats.extend(list(y) + [None])
                                             elif geom.geom_type == 'MultiLineString':
                                                 for g in geom.geoms:
-                                                    xs, ys = g.xy
-                                                    lons.extend(list(xs) + [None])
-                                                    lats.extend(list(ys) + [None])
+                                                    x, y = g.xy
+                                                    lons.extend(list(x) + [None])
+                                                    lats.extend(list(y) + [None])
 
-                                        fig_map = go.Figure()
-                                        fig_map.add_trace(go.Scattermapbox(
-                                            mode = "lines", lon = lons, lat = lats,
-                                            line = {'width': 2.5, 'color': '#0077BE'},
-                                            name = "Red Hídrica", hoverinfo='skip'
+                                        fig = go.Figure()
+                                        fig.add_trace(go.Scattermapbox(
+                                            mode="lines", lon=lons, lat=lats,
+                                            line={'width': 2, 'color': '#0077BE'},
+                                            name="Ríos"
                                         ))
                                         
-                                        # Centrar
-                                        center_lat = gdf_rios_4326.geometry.centroid.y.mean()
-                                        center_lon = gdf_rios_4326.geometry.centroid.x.mean()
-                                        
-                                        fig_map.update_layout(
+                                        center = gdf_4326.geometry.centroid
+                                        fig.update_layout(
                                             mapbox_style="carto-positron",
-                                            mapbox_center={"lat": center_lat, "lon": center_lon},
-                                            mapbox_zoom=10, 
-                                            margin={"r":0,"t":0,"l":0,"b":0}, height=650, showlegend=False
+                                            mapbox_center={"lat": center.y.mean(), "lon": center.x.mean()},
+                                            mapbox_zoom=10, height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False
                                         )
-                                        st.success(f"✅ {len(gdf_rios)} segmentos trazados.")
-                                        st.plotly_chart(fig_map, use_container_width=True)
+                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.success(f"{len(gdf_rios)} tramos identificados.")
+                                        
                                     except Exception as e:
                                         st.error(f"Error visualizando: {e}")
                                 else:
-                                    st.warning(f"No se detectaron ríos con umbral {umbral}. Intenta bajarlo.")
+                                    st.warning(f"No se detectaron ríos con umbral {umbral}.")
                                 
             # --- TAB 5: DESCARGAS ---
             with tab5:
