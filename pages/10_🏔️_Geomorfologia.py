@@ -368,12 +368,20 @@ if gdf_zona_seleccionada is not None:
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
                                 st.markdown("##### 🏔️ Delimitación Automática")
                                 
-                                # 1. Encontrar Punto de Desfogue
+                                # 1. Punto de Desfogue (Automático + Manual)
                                 idx_max = np.argmax(acc)
-                                y_idx, x_idx = np.unravel_index(idx_max, acc.shape)
-                                x_pour, y_pour = int(x_idx), int(y_idx)
+                                y_auto, x_auto = np.unravel_index(idx_max, acc.shape)
                                 
-                                st.caption(f"📍 Punto de salida detectado: Pixel ({x_pour}, {y_pour})")
+                                # --- NUEVO: CONTROLES DE AJUSTE FINO ---
+                                with st.expander("📍 Calibrar Punto de Desfogue (Manual)", expanded=True):
+                                    st.caption("Si la línea roja (calculada) es más corta que la verde (oficial), mueve el punto de salida pixel por pixel.")
+                                    c_x, c_y = st.columns(2)
+                                    # Usamos number_input para permitir ajustes precisos sobre el valor automático
+                                    x_pour = c_x.number_input("Coord X (Columna):", value=int(x_auto), min_value=0, max_value=acc.shape[1]-1, step=1, help="Mueve hacia Este/Oeste")
+                                    y_pour = c_y.number_input("Coord Y (Fila):", value=int(y_auto), min_value=0, max_value=acc.shape[0]-1, step=1, help="Mueve hacia Norte/Sur (Mayor valor = Más abajo)")
+                                    
+                                    if x_pour != int(x_auto) or y_pour != int(y_auto):
+                                        st.warning(f"🔧 Usando punto manual: ({x_pour}, {y_pour}) | Automático era: ({x_auto}, {y_auto})")
                                 
                                 # 2. Calcular Catchment (Raster)
                                 catch = None
