@@ -301,7 +301,7 @@ if gdf_zona_seleccionada is not None:
                         import tempfile
                         from shapely.geometry import shape
                         
-                        # 1. PREPARACIÓN HIDROLÓGICA
+                        # 1. PREPARACIÓN HIDROLÓGICA (CORREGIDO)
                         grid = None; acc = None; fdir = None
                         
                         with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
@@ -310,14 +310,18 @@ if gdf_zona_seleccionada is not None:
                                 dst.write(arr_elevacion.astype('float64'), 1)
                             try:
                                 grid = Grid.from_raster(tmp.name)
-                                dem_grid = grid.read_raster(tmp.name) # Leer normal para conservar metadatos
+                                dem_grid = grid.read_raster(tmp.name) # Leer normal
                                 pit_filled = grid.fill_pits(dem_grid)
                                 resolved = grid.resolve_flats(pit_filled)
                                 dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                                 fdir = grid.flowdir(resolved, dirmap=dirmap)
                                 acc = grid.accumulation(fdir, dirmap=dirmap)
-                            except Exception as e: st.error(f"Error: {e}")
-                            finally: try: os.remove(tmp.name); except: pass
+                            except Exception as e: 
+                                st.error(f"Error: {e}")
+                            finally: 
+                                # CORRECCIÓN AQUÍ: El try debe ir en una línea nueva
+                                try: os.remove(tmp.name)
+                                except: pass
 
                         if grid is not None and acc is not None:
                             crs_actual = meta.get('crs', 'EPSG:3116')
