@@ -359,7 +359,7 @@ if gdf_zona_seleccionada is not None:
                 * **Forma de 'S':** Cuenca madura en transición.
                 """)
 
-            # --- TAB 4: HIDROLOGÍA (SMART OUTLET DETECTION) ---
+            # --- TAB 4: HIDROLOGÍA (FUSIÓN: SMART DETECT + INFO DETALLADA) ---
             with tab4:
                 st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
                 
@@ -375,6 +375,7 @@ if gdf_zona_seleccionada is not None:
                     import tempfile
                     from shapely.geometry import shape, Point
                     from rasterio import features
+                    from rasterio.transform import rowcol # Vital para coordenadas de pixel
                     
                     grid = None; acc = None; fdir = None
                     crs_actual = meta.get('crs', 'EPSG:3116')
@@ -384,7 +385,6 @@ if gdf_zona_seleccionada is not None:
                             meta_temp = meta.copy(); meta_temp.update(driver='GTiff', dtype='float64') 
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
                                 dst.write(arr_elevacion.astype('float64'), 1)
-                            
                             grid = Grid.from_raster(tmp.name)
                             dem_grid = grid.read_raster(tmp.name)
                             pit_filled = grid.fill_pits(dem_grid)
@@ -397,99 +397,131 @@ if gdf_zona_seleccionada is not None:
                             try: os.remove(tmp.name)
                             except: pass
 
-                    # 2. INTELIGENCIA DE PUNTOS
+                    # 2. CÁLCULOS Y VISUALIZACIÓN
                     if grid is not None and acc is not None:
                         
-                        # --- DETECTOR INTELIGENTE DE SALIDA (SMART OUTLET) ---
-                        # Objetivo: Encontrar el punto más bajo PERO SOLO dentro del polígono oficial (verde)
-                        # para evitar seleccionar puntos aguas abajo fuera de la cuenca.
+                        # --- A. CÁLCULO DE PUNTOS CLAVE ---
                         
-                        r_smart, c_smart = 0, 0 # Coordenadas pixel por defecto
-                        
+                        # 1. Punto Medio (Oficial)
+                        lat_med, lon_med, r_med, c_med = 0, 0, 0, 0
+                        area_oficial = 0
                         if gdf_zona_seleccionada is not None:
-                            try:
-                                # 1. Rasterizar el polígono oficial para crear una máscara
-                                gdf_proj = gdf_zona_seleccionada.to_crs(meta['crs'])
-                                shapes = ((geom, 1) for geom in gdf_proj.geometry)
-                                mask_oficial = features.rasterize(
-                                    shapes=shapes, 
-                                    out_shape=arr_elevacion.shape, 
-                                    transform=transform,
-                                    fill=0,
-                                    dtype='uint8'
-                                )
-                                
-                                # 2. Enmascarar la elevación (poner NaN fuera de la cuenca)
-                                elev_masked = np.where(mask_oficial == 1, arr_elevacion, np.inf)
-                                
-                                # 3. Encontrar el mínimo en la elevación enmascarada
-                                idx_smart = np.argmin(elev_masked)
-                                r_smart, c_smart = np.unravel_index(idx_smart, elev_masked.shape)
-                                
-                                # 4. (Opcional) Refinar buscando acumulación alta cerca de ese punto bajo
-                                # Esto ayuda si el DEM tiene ruido en los bordes
-                                
-                            except Exception as e:
-                                st.warning(f"No se pudo aplicar máscara inteligente: {e}")
-                                # Fallback: Máxima acumulación global
-                                idx_max = np.argmax(acc)
-                                r_smart, c_smart = np.unravel_index(idx_max, acc.shape)
+                            # Geográfico
+                            gdf_oficial_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
+                            cent = gdf_oficial_4326.geometry.centroid.iloc[0]
+                            lat_med, lon_med = cent.y, cent.x
+                            area_oficial = gdf_zona_seleccionada.to_crs("EPSG:3116").area.sum() / 1e6
+                            # Pixel
+                            gdf_proj = gdf_zona_seleccionada.to_crs(meta['crs'])
+                            cp = gdf_proj.geometry.centroid.iloc[0]
+                            try: r_med, c_med = rowcol(transform, cp.x, cp.y)
+                            except: pass
+
+                        # 2. Punto Más Alto
+                        idx_max = np.nanargmax(arr_elevacion)
+                        r_high, c_high = np.unravel_index(idx_max, arr_elevacion.shape)
+                        lon_high, lat_high = rasterio.transform.xy(transform, r_high, c_high, offset='center')
+                        # Transformar a WGS84 para visualización
+                        if meta['crs'] != 'EPSG:4326':
+                            from pyproj import Transformer
+                            tr = Transformer.from_crs(meta['crs'], "EPSG:4326", always_xy=True)
+                            lon_high, lat_high = tr.transform(lon_high, lat_high)
+
+                        # 3. Punto Más Bajo (Global del recuadro)
+                        idx_min = np.nanargmin(arr_elevacion)
+                        r_low, c_low = np.unravel_index(idx_min, arr_elevacion.shape)
+                        lon_low, lat_low = rasterio.transform.xy(transform, r_low, c_low, offset='center')
+                        if meta['crs'] != 'EPSG:4326': lon_low, lat_low = tr.transform(lon_low, lat_low)
+
+                        # 4. SMART OUTLET (Punto más bajo DENTRO del polígono verde)
+                        r_smart, c_smart = r_low, c_low # Default al global
+                        try:
+                            if gdf_zona_seleccionada is not None:
+                                gdf_p = gdf_zona_seleccionada.to_crs(meta['crs'])
+                                shp = ((geom, 1) for geom in gdf_p.geometry)
+                                mask_of = features.rasterize(shapes=shp, out_shape=arr_elevacion.shape, transform=transform, fill=0, dtype='uint8')
+                                elev_m = np.where(mask_of == 1, arr_elevacion, np.inf)
+                                idx_s = np.argmin(elev_m)
+                                r_smart, c_smart = np.unravel_index(idx_s, elev_m.shape)
+                        except: pass
                         
-                        # --- CALIBRACIÓN MANUAL ---
+                        # Coordenadas del Smart
+                        lon_smart, lat_smart = rasterio.transform.xy(transform, r_smart, c_smart, offset='center')
+                        if meta['crs'] != 'EPSG:4326': lon_smart, lat_smart = tr.transform(lon_smart, lat_smart)
+
+                        # --- B. LA CAJA FANTÁSTICA (VISUALIZACIÓN) ---
+                        with st.expander("📍 Coordenadas y Puntos Clave (Detalle)", expanded=True):
+                            k1, k2, k3, k4 = st.columns(4)
+                            
+                            with k1:
+                                st.markdown("**1. Centro (Oficial)**")
+                                st.caption(f"{lat_med:.4f}, {lon_med:.4f}")
+                                st.markdown(f"**Pixel:** `X:{c_med} Y:{r_med}`")
+                                st.info(f"Área: {area_oficial:.2f} km²")
+                                
+                            with k2:
+                                st.markdown("**2. Punto Más Alto**")
+                                st.caption(f"{lat_high:.4f}, {lon_high:.4f}")
+                                st.markdown(f"**Pixel:** `X:{c_high} Y:{r_high}`")
+                                st.write(f"Elev: {arr_elevacion.max():.0f} m")
+                                
+                            with k3:
+                                st.markdown("**3. Punto Más Bajo**")
+                                st.caption(f"{lat_low:.4f}, {lon_low:.4f}")
+                                st.markdown(f"**Pixel:** `X:{c_low} Y:{r_low}`")
+                                if st.button("Usar Global", key="btn_glob"):
+                                    st.session_state['x_pour_calib'] = int(c_low)
+                                    st.session_state['y_pour_calib'] = int(r_low)
+                                    st.rerun()
+                                    
+                            with k4:
+                                st.markdown("🎯 **Salida Detectada**")
+                                st.caption(f"{lat_smart:.4f}, {lon_smart:.4f}")
+                                st.markdown(f"**Pixel:** `X:{c_smart} Y:{r_smart}`")
+                                if st.button("Usar Smart", type="primary", key="btn_smart"):
+                                    st.session_state['x_pour_calib'] = int(c_smart)
+                                    st.session_state['y_pour_calib'] = int(r_smart)
+                                    st.rerun()
+
+                        # --- C. CONTROLES MANUALES ---
                         if 'x_pour_calib' not in st.session_state:
                             st.session_state['x_pour_calib'] = int(c_smart)
                             st.session_state['y_pour_calib'] = int(r_smart)
 
-                        # Panel de Control
-                        with st.expander("📍 Ajuste de Salida (Outlet)", expanded=True):
-                            c1, c2 = st.columns([3, 1])
-                            with c1:
-                                st.markdown(f"**Detector Inteligente (Rio Chico):** Pixel `x:{c_smart}, y:{r_smart}`")
-                                st.caption("Este punto es el más bajo estrictamente DENTRO de tu polígono verde.")
-                                
-                                x_p = st.number_input("Pixel X:", value=st.session_state['x_pour_calib'])
-                                y_p = st.number_input("Pixel Y:", value=st.session_state['y_pour_calib'])
+                        if modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
+                            st.markdown("##### 🔧 Ajuste Fino")
+                            cc1, cc2 = st.columns([3, 1])
+                            with cc1:
+                                x_p = st.number_input("Pixel X (Columna):", value=st.session_state['x_pour_calib'])
+                                y_p = st.number_input("Pixel Y (Fila):", value=st.session_state['y_pour_calib'])
                                 st.session_state['x_pour_calib'] = x_p
                                 st.session_state['y_pour_calib'] = y_p
-                            
-                            with c2:
+                            with cc2:
                                 st.write("")
-                                if st.button("🎯 Usar Smart"):
-                                    st.session_state['x_pour_calib'] = int(c_smart)
-                                    st.session_state['y_pour_calib'] = int(r_smart)
-                                    st.rerun()
-                                if st.button("🧲 Atraer"):
-                                    # Imán de 30px
+                                st.write("")
+                                if st.button("🧲 Atraer al Río"):
                                     r = 30
                                     y0, y1 = max(0, y_p-r), min(acc.shape[0], y_p+r+1)
                                     x0, x1 = max(0, x_p-r), min(acc.shape[1], x_p+r+1)
                                     win = acc[y0:y1, x0:x1]
                                     if win.size > 0:
-                                        max_local = np.nanargmax(win)
-                                        ly, lx = np.unravel_index(max_local, win.shape)
+                                        m_idx = np.nanargmax(win)
+                                        ly, lx = np.unravel_index(m_idx, win.shape)
                                         st.session_state['x_pour_calib'] = int(x0 + lx)
                                         st.session_state['y_pour_calib'] = int(y0 + ly)
                                         st.rerun()
 
-                        # 3. VISUALIZACIÓN
+                        # --- D. MAPAS ---
                         fig = go.Figure()
                         
-                        # Polígono Oficial (Verde) - SIEMPRE
+                        # 1. Polígono Oficial (VERDE)
                         if gdf_zona_seleccionada is not None:
-                            gdf_oficial_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
                             poly = gdf_oficial_4326.geometry.iloc[0]
                             if poly.geom_type == 'Polygon': xo, yo = poly.exterior.coords.xy
                             else: xo, yo = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
-                            fig.add_trace(go.Scattermapbox(
-                                mode="lines", lon=list(xo), lat=list(yo),
-                                line={'width': 2, 'color': '#00FF00'}, name="Cuenca Oficial"
-                            ))
-                            # Centrar
-                            clat = gdf_oficial_4326.centroid.y.mean()
-                            clon = gdf_oficial_4326.centroid.x.mean()
-                        else: clat, clon = 0, 0
-
-                        # Capas Dinámicas
+                            fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width': 2, 'color': '#00FF00'}, name="Cuenca Oficial"))
+                        
+                        # 2. Capas según modo
                         if modo_viz == "Raster (Acumulación)":
                             fig = px.imshow(np.log1p(acc), color_continuous_scale='Blues')
                             fig.update_layout(dragmode='pan')
@@ -502,7 +534,7 @@ if gdf_zona_seleccionada is not None:
                                 lons, lats = [], []
                                 for geom in gdf_r.geometry:
                                     if geom.geom_type == 'LineString': x,y = geom.xy
-                                    else: x,y = geom.geoms[0].xy # Simplificación multiline
+                                    else: x,y = geom.geoms[0].xy 
                                     lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
                                 fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.5, 'color':'#0077BE'}, name="Ríos"))
 
@@ -518,23 +550,18 @@ if gdf_zona_seleccionada is not None:
                                     st.session_state['catchment_raster'] = catch
                                     
                                     if modo_viz == "Catchment (Mascara)":
-                                        fig.add_trace(go.Choroplethmapbox(
-                                            geojson=gdf_c_4326.geometry.__geo_interface__,
-                                            locations=gdf_c_4326.index, z=[1]*len(gdf_c_4326),
-                                            colorscale=[[0, '#3366CC'], [1, '#3366CC']], showscale=False,
-                                            marker_opacity=0.6, name="Calculada"
-                                        ))
+                                        fig.add_trace(go.Choroplethmapbox(geojson=gdf_c_4326.geometry.__geo_interface__, locations=gdf_c_4326.index, z=[1]*len(gdf_c_4326), colorscale=[[0, '#3366CC'], [1, '#3366CC']], showscale=False, marker_opacity=0.6, name="Calculada"))
                                     else:
                                         xc, yc = gdf_c_4326.geometry.iloc[0].exterior.coords.xy
                                         fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Divisoria Calc."))
                                     
-                                    # Punto Rojo
+                                    # Outlet Marker
                                     pt_gdf = gpd.GeoDataFrame({'geometry': [Point(meta['transform'] * (x_p+0.5, y_p+0.5))]}, crs=crs_actual).to_crs("EPSG:4326")
-                                    fig.add_trace(go.Scattermapbox(mode="markers", lon=[pt_gdf.geometry.iloc[0].x], lat=[pt_gdf.geometry.iloc[0].y], marker={'size':12, 'color':'red'}, name="Outlet"))
+                                    fig.add_trace(go.Scattermapbox(mode="markers", lon=[pt_gdf.geometry.iloc[0].x], lat=[pt_gdf.geometry.iloc[0].y], marker={'size':12, 'color':'red', 'symbol':'star'}, name="Outlet"))
                                     st.success(f"Área: {gdf_c.area.sum()/1e6:.2f} km²")
                             except Exception as e: st.error(str(e))
 
-                        fig.update_layout(mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": clat, "lon": clon}, height=600, margin=dict(l=0,r=0,t=0,b=0))
+                        fig.update_layout(mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": lat_med, "lon": lon_med}, height=600, margin=dict(l=0,r=0,t=0,b=0))
                         st.plotly_chart(fig, use_container_width=True)
                     else: st.warning("Procesando...")
                                             
