@@ -565,47 +565,63 @@ if gdf_zona_seleccionada is not None:
                             fig.update_layout(dragmode='pan')
                             
                         elif modo_viz == "Vectores (Líneas)":
+                            # --- BLOQUE BLINDADO: LECTURA DESDE BASE DE DATOS ---
                             try:
-                                # 1. Intentamos cargar desde la Base de Datos
+                                # 1. DETECTAR NOMBRE DE COLUMNA DE GEOMETRÍA
+                                # Intentamos leer solo 1 fila para ver cómo se llama la columna
+                                try:
+                                    test = gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry')
+                                    col_geom = 'geometry'
+                                except:
+                                    col_geom = 'geom' # Si falla, probamos el nombre alternativo de PostGIS
+
+                                # 2. CARGAR Y RECORTAR
+                                # Leemos la tabla usando el nombre de columna correcto
                                 query = "SELECT * FROM red_drenaje"
-                                # Usamos read_postgis para traer la geometría decodificada
-                                gdf_rios_bd = gpd.read_postgis(query, engine, geom_col='geometry')
+                                gdf_rios_bd = gpd.read_postgis(query, engine, geom_col=col_geom)
                                 
-                                # 2. Recortar (Clip) con la zona seleccionada
-                                # Esto es vital para no mostrar los ríos de todo el departamento
+                                # Asegurar que tenga sistema de coordenadas (WGS84 por defecto)
+                                if gdf_rios_bd.crs is None:
+                                    gdf_rios_bd.set_crs("EPSG:4326", inplace=True)
+                                    
+                                # Convertir al sistema métrico de la zona para poder recortar
                                 if gdf_rios_bd.crs != crs_actual:
                                     gdf_rios_bd = gdf_rios_bd.to_crs(crs_actual)
                                     
-                                gdf_rios = gpd.clip(gdf_rios_bd, gdf_zona_seleccionada.to_crs(crs_actual))
+                                # Recortar con la zona seleccionada (Buffer para asegurar bordes)
+                                mask_poly = gdf_zona_seleccionada.to_crs(crs_actual).buffer(100)
+                                gdf_rios = gpd.clip(gdf_rios_bd, mask_poly)
                                 
                                 if not gdf_rios.empty:
-                                    # 3. Visualizar Red Oficial
+                                    # 3. VISUALIZAR
                                     st.session_state['gdf_rios'] = gdf_rios
                                     gdf_r = gdf_rios.to_crs("EPSG:4326")
                                     lons, lats = [], []
                                     for geom in gdf_r.geometry:
-                                        if geom.geom_type == 'LineString': x,y = geom.xy
+                                        if geom.geom_type == 'LineString': 
+                                            x,y = geom.xy
+                                            lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
                                         elif geom.geom_type == 'MultiLineString':
                                             for g in geom.geoms:
                                                 x,y = g.xy
                                                 lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
-                                            continue
-                                        else: continue
-                                        lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
                                     
                                     fig.add_trace(go.Scattermapbox(
                                         mode="lines", lon=lons, lat=lats, 
-                                        line={'width': 1.5, 'color': '#0044FF'}, # Azul más intenso
-                                        name="Red Oficial (IGAC 1:25k)"
+                                        line={'width': 2, 'color': '#0044FF'}, # Azul intenso para diferenciar
+                                        name="Red Oficial (BD)"
                                     ))
-                                    st.success(f"✅ Visualizando Red Oficial (1:25k) desde Base de Datos. ({len(gdf_rios)} tramos)")
+                                    st.success(f"✅ Red cargada desde BD: {len(gdf_rios)} tramos.")
                                 else:
-                                    st.warning("⚠️ La capa oficial existe pero no tiene ríos dentro de esta zona.")
-                                    raise Exception("Zona vacía")
+                                    # Si llegamos aquí, la tabla existe pero NO TIENE RÍOS en esta zona
+                                    raise Exception("La capa de drenaje no cruza con la zona seleccionada.")
 
                             except Exception as e:
-                                # Fallback: Si falla la BD o está vacía, calculamos con el DEM
-                                # st.error(f"Debug DB: {e}") # Descomentar para ver errores de conexión
+                                # MOSTRAR EL ERROR EN PANTALLA (Vital para diagnóstico)
+                                st.warning(f"⚠️ No se pudo cargar la capa oficial: {e}")
+                                st.caption("🔄 Usando red calculada por el modelo (Fallback)...")
+                                
+                                # Fallback: Cálculo con DEM
                                 gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
                                 if gdf_rios is not None:
                                     st.session_state['gdf_rios'] = gdf_rios
@@ -615,8 +631,7 @@ if gdf_zona_seleccionada is not None:
                                         if geom.geom_type == 'LineString': x,y = geom.xy
                                         else: x,y = geom.geoms[0].xy 
                                         lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
-                                    fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.0, 'color':'#55AAFF'}, name="Ríos Calculados (DEM)"))
-                                    st.info("ℹ️ Usando red calculada por el modelo (Fallback).")
+                                    fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.0, 'color':'#55AAFF'}, name="Calculado (DEM)"))
                             # ---------------------------------------------------------
 
                         elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
