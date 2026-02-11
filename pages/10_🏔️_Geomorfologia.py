@@ -542,26 +542,15 @@ if gdf_zona_seleccionada is not None:
 
                         # 3. CAPAS DINÁMICAS
                         if modo_viz == "Raster (Acumulación)":
-                            fig.add_trace(go.Heatmap(z=np.log1p(acc), colorscale='Blues', showscale=False, opacity=0.6))
-                        
-                        elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
-                            try:
-                                catch = grid.catchment(x=xp, y=yp, fdir=fdir, dirmap=dirmap, xytype='index')
-                                catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
-                                shapes_gen = features.shapes(catch_int, transform=transform)
-                                geoms = [shape(g) for g, v in shapes_gen if v > 0]
-                                if geoms:
-                                    gdf_c = gpd.GeoDataFrame({'geometry': geoms}, crs=crs_actual).dissolve().to_crs("EPSG:4326")
-                                    if modo_viz=="Catchment (Mascara)":
-                                        fig.add_trace(go.Choroplethmapbox(geojson=gdf_c.geometry.__geo_interface__, locations=gdf_c.index, z=[1]*len(gdf_c), colorscale=[[0,'#3366CC'],[1,'#3366CC']], showscale=False, marker_opacity=0.5, name="Calculada"))
-                                    else:
-                                        xc, yc = gdf_c.geometry.iloc[0].exterior.coords.xy
-                                        fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Divisoria"))
-                                    
-                                    pt=gpd.GeoDataFrame({'geometry':[Point(meta['transform']*(xp+0.5, yp+0.5))]}, crs=crs_actual).to_crs("EPSG:4326")
-                                    fig.add_trace(go.Scattermapbox(mode="markers", lon=[pt.geometry.x.iloc[0]], lat=[pt.geometry.y.iloc[0]], marker={'size':12, 'color':'red'}, name="Outlet"))
-                                    st.success(f"Área: {gdf_c.to_crs('EPSG:3116').area.sum()/1e6:.2f} km²")
-                            except: pass
+                            # Lógica "Speed": Reducir resolución visual para velocidad extrema
+                            # [::5] significa "toma 1 fila de cada 5". Es instantáneo.
+                            fig.add_trace(go.Heatmap(
+                                z=np.log1p(acc[::5, ::5]), 
+                                colorscale='Blues', 
+                                showscale=False, 
+                                opacity=0.8,
+                                name="Acumulación (Rápida)"
+                            ))
 
                         # 4. CONFIGURACIÓN FINAL (LEYENDA ABAJO)
                         fig.update_layout(
