@@ -821,77 +821,69 @@ if gdf_zona_seleccionada is not None:
                     </div>
                     """, unsafe_allow_html=True)
 
-    # --- LÓGICA PRINCIPAL ---
-    if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
-        # Recortes de seguridad
-        min_h = min(slope_deg.shape[0], acc.shape[0])
-        min_w = min(slope_deg.shape[1], acc.shape[1])
-        s_core = slope_deg[:min_h, :min_w]
-        acc_raw = acc[:min_h, :min_w]
-        
-        # Log para visualización, pero RAW para cálculos físicos
-        a_core_log = np.log1p(acc_raw) 
-        
-        t1, t2 = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación (TWI)"])
-        
-        # 1. AVENIDA TORRENCIAL
-        with t1:
-            c1, c2 = st.columns([1, 3])
-            with c1:
-                st.markdown("#### Energía de Flujo")
-                # Rangos ajustados a la realidad andina
-                s_range = st.slider("Pendiente Crítica (°)", 0.0, 60.0, (5.0, 40.0), 
-                                  help="Rango donde el agua gana velocidad y transporta material.")
-                a_umb = st.slider("Caudal (Log)", 4.0, 9.0, 6.0)
-                st.error("Modelando Flujos Rápidos")
-                
-            with c2:
-                # El agua debe existir (a_umb) Y la pendiente debe permitir transporte (s_range)
-                mask_t = (s_core >= s_range[0]) & (s_core <= s_range[1]) & (a_core_log >= a_umb)
-                caja_analisis_ai(mask_t, "Avenida Torrencial")
-                mapa_con_fondo(mask_t, "red", "Amenaza: Flujo de Escombros / Av. Torrencial")
+                # --- LÓGICA PRINCIPAL (Ahora dentro de Tab 7 con 16 espacios) ---
+                if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
+                    # Recortes de seguridad
+                    min_h = min(slope_deg.shape[0], acc.shape[0])
+                    min_w = min(slope_deg.shape[1], acc.shape[1])
+                    s_core = slope_deg[:min_h, :min_w]
+                    acc_raw = acc[:min_h, :min_w]
+                    
+                    # Log para visualización, pero RAW para cálculos físicos
+                    a_core_log = np.log1p(acc_raw) 
+                    
+                    t1, t2 = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación (TWI)"])
+                    
+                    # 1. AVENIDA TORRENCIAL
+                    with t1:
+                        c1, c2 = st.columns([1, 3])
+                        with c1:
+                            st.markdown("#### Energía de Flujo")
+                            # Rangos ajustados a la realidad andina
+                            s_range = st.slider("Pendiente Crítica (°)", 0.0, 60.0, (5.0, 40.0), 
+                                              help="Rango donde el agua gana velocidad y transporta material.")
+                            a_umb = st.slider("Caudal (Log)", 4.0, 9.0, 6.0)
+                            st.error("Modelando Flujos Rápidos")
+                            
+                        with c2:
+                            # El agua debe existir (a_umb) Y la pendiente debe permitir transporte (s_range)
+                            mask_t = (s_core >= s_range[0]) & (s_core <= s_range[1]) & (a_core_log >= a_umb)
+                            caja_analisis_ai(mask_t, "Avenida Torrencial")
+                            mapa_con_fondo(mask_t, "red", "Amenaza: Flujo de Escombros / Av. Torrencial")
 
-        # 2. INUNDACIÓN (TWI CIENTÍFICO)
-        with t2:
-            c1, c2 = st.columns([1, 3])
-            with c1:
-                st.markdown("#### Índice Topográfico (TWI)")
-                with st.spinner("Calculando saturación de suelos..."):
-                    # 1. Pendiente en Radianes
-                    slope_rad = np.deg2rad(s_core)
-                    tan_slope = np.tan(slope_rad)
-                    # Evitar división por cero (pendientes planas = 0.001)
-                    tan_slope = np.where(tan_slope < 0.001, 0.001, tan_slope)
-                    
-                    # 2. CORRECCIÓN CIENTÍFICA: Área Específica
-                    # Asumimos resolución aprox de 30m (Sentinel/SRTM). 
-                    # Si acc es conteo de celdas, el área es acc * resolución.
-                    resolucion_pixel = 30.0  
-                    specific_catchment_area = acc_raw * resolucion_pixel
-                    
-                    # 3. Fórmula TWI = ln(a / tan(b))
-                    # Sumamos 1 al área para evitar log(0)
-                    twi = np.log((specific_catchment_area + 1) / tan_slope)
-                
-                # Slider ajustado a valores típicos de TWI (suelen estar entre 5 y 25)
-                twi_val = st.slider("Sensibilidad de Humedad", 5.0, 25.0, 10.0, 
-                                  help="Valores > 10 suelen indicar saturación/río.")
-                
-                strict_flat = st.checkbox("Restringir a zonas planas (< 5°)", value=True)
-                st.info("Modelando Empozamiento")
-                
-            with c2:
-                if strict_flat:
-                    mask_i = (twi >= twi_val) & (s_core <= 5)
+                    # 2. INUNDACIÓN (TWI CIENTÍFICO)
+                    with t2:
+                        c1, c2 = st.columns([1, 3])
+                        with c1:
+                            st.markdown("#### Índice Topográfico (TWI)")
+                            with st.spinner("Calculando saturación de suelos..."):
+                                slope_rad = np.deg2rad(s_core)
+                                tan_slope = np.tan(slope_rad)
+                                tan_slope = np.where(tan_slope < 0.001, 0.001, tan_slope)
+                                
+                                resolucion_pixel = 30.0  
+                                specific_catchment_area = acc_raw * resolucion_pixel
+                                
+                                twi = np.log((specific_catchment_area + 1) / tan_slope)
+                            
+                            twi_val = st.slider("Sensibilidad de Humedad", 5.0, 25.0, 10.0, 
+                                              help="Valores > 10 suelen indicar saturación/río.")
+                            
+                            strict_flat = st.checkbox("Restringir a zonas planas (< 5°)", value=True)
+                            st.info("Modelando Empozamiento")
+                            
+                        with c2:
+                            if strict_flat:
+                                mask_i = (twi >= twi_val) & (s_core <= 5)
+                            else:
+                                mask_i = (twi >= twi_val)
+                            
+                            caja_analisis_ai(mask_i, "Inundación Plana")
+                            mapa_con_fondo(mask_i, "#0099FF", f"Amenaza: Inundación (TWI > {twi_val})")
                 else:
-                    mask_i = (twi >= twi_val)
-                
-                caja_analisis_ai(mask_i, "Inundación Plana")
-                mapa_con_fondo(mask_i, "#0099FF", f"Amenaza: Inundación (TWI > {twi_val})")
-    else:
-        st.warning("⚠️ Ve a la pestaña 'Hidrología' primero para calcular el flujo de agua.")
+                    st.warning("⚠️ Ve a la pestaña 'Hidrología' primero para calcular el flujo de agua.")
 
-            # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
+            # --- TAB 5: DESCARGAS (ALINEADO A 12 ESPACIOS) ---
             with tab5:
                 st.subheader("Centro de Descargas")
                 st.caption("Descarga los productos generados en las pestañas anteriores.")
