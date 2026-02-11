@@ -109,7 +109,7 @@ with tab_aleph:
 
 st.divider()
 
-# --- 4. DATOS DEL GRÁFICO SUNBURST (BLOQUE CORREGIDO) ---
+# --- 4. DATOS DEL GRÁFICO SUNBURST (VERIFICADO: 28 ELEMENTOS) ---
 ids = [
     'SIHCLI-POTER', 
     'Clima e Hidrología', 'Aguas Subterráneas', 'Biodiversidad', 'Toma de Decisiones', 'Isoyetas HD', 'Herramientas',
@@ -137,9 +137,9 @@ parents = [
 values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8, 15, 5, 5, 5]
 
 def create_system_map():
-    # Verificación de seguridad para evitar que la app se rompa
+    # Validación simple
     if not (len(ids) == len(parents) == len(values)):
-        st.error(f"Error en datos del mapa: Ids({len(ids)}), Parents({len(parents)}), Values({len(values)})")
+        st.error("Error interno: Discrepancia en datos del mapa de navegación.")
         return None
         
     df = pd.DataFrame(dict(ids=ids, parents=parents, values=values))
@@ -226,6 +226,7 @@ with c2:
 st.divider()
 
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
+
 
 
 
