@@ -158,16 +158,6 @@ def create_system_map():
     )
     return fig
 
-# SECCIÓN DE RENDERIZADO
-c1, c2 = st.columns([1.8, 1.2])
-
-with c1:
-    try:
-        fig_map = create_system_map()
-        st.plotly_chart(fig_map, use_container_width=True)
-    except Exception as e:
-        st.error(f"Error dibujando mapa: {e}")
-
 # --- 5. LAYOUT PRINCIPAL (MAPA Y CAJAS LATERALES) ---
 c1, c2 = st.columns([1.8, 1.2])
 
@@ -233,4 +223,5 @@ with c2:
 # --- FOOTER ---
 st.divider()
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
+
 
