@@ -139,22 +139,21 @@ parents = [
 values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8, 15, 5, 5, 5]
 
 def create_system_map():
-    # 1. Debug: Si las listas no coinciden, avisa
     if not (len(ids) == len(parents) == len(values)):
-        st.error(f"⚠️ Error de Datos: Ids={len(ids)}, Parents={len(parents)}")
+        st.error(f"Error interno: Ids={len(ids)}, Parents={len(parents)}")
         return None
         
     df = pd.DataFrame(dict(ids=ids, parents=parents, values=values))
     
-    # 2. CORRECCIÓN CRÍTICA: Quitamos branchvalues='total' para evitar errores matemáticos silenciosos
+    # IMPORTANTE: Quitamos branchvalues='total' para evitar el error silencioso de Plotly
+    # cuando los valores no suman exactamente el 100%
     fig = px.sunburst(
         df, names='ids', parents='parents', values='values', 
-        # branchvalues='total', <--- ESTO CAUSABA EL ERROR SILENCIOSO
         color='parents', color_discrete_sequence=px.colors.qualitative.Pastel1
     )
     fig.update_layout(
         title={'text': "🗺️ Mapa de Navegación", 'y':0.95, 'x':0.5, 'xanchor': 'center'},
-        margin=dict(t=60, l=0, r=0, b=0), height=500
+        margin=dict(t=60, l=0, r=0, b=0), height=550
     )
     return fig
 
@@ -164,64 +163,58 @@ c1, c2 = st.columns([1.8, 1.2])
 with c1:
     fig_map = create_system_map()
     if fig_map: 
-        st.plotly_chart(fig_map, use_container_width=True)
+        st.plotly_chart(fig_map, use_container_width=True, key="unique_sunburst_chart")
 
 with c2:
     st.subheader("🛠️ Módulos")
     st.info("Seleccione una página en el menú lateral para comenzar.")
     
-    with st.expander("🗺️ Isoyetas HD (Escenarios & Pronósticos)", expanded=True):
+    with st.expander("🗺️ Isoyetas HD", expanded=True):
         st.write("""
-        **Generador Avanzado de Superficies Climáticas:**
-        * ✅ Interpolación RBF Normalizada.
-        * ✅ Pronóstico Climático Lineal.
-        * ✅ Descargas GIS (Raster/Vector).
+        **Generador Climático:**
+        * ✅ Interpolación RBF.
+        * ✅ Pronóstico Lineal.
         """)
-        st.caption("Estado: ✅ Operativo")
+        st.caption("✅ Operativo")
 
     with st.expander("🌦️ Clima e Hidrología"):
         st.write("""
-        **Tablero de Control Hidrometeorológico:**
-        * ✅ Monitoreo de series (Lluvia/Caudal).
-        * ✅ Índices ENSO/ONI y Tendencias.
+        **Tablero de Control:**
+        * ✅ Monitoreo Lluvia/Caudal.
+        * ✅ Índices ENSO.
         """)
-        st.caption("Estado: ✅ Operativo")
+        st.caption("✅ Operativo")
 
     with st.expander("🏔️ Geomorfología & Amenazas (NUEVO)", expanded=True):
         st.write("""
-        **Análisis del Terreno y Riesgos:**
-        * ✅ **DEM:** Visualización 3D y pendientes.
-        * ✅ **Red de Drenaje:** Delimitación y perfil.
-        * ✅ **Amenazas:** Avenidas torrenciales e Inundación (TWI).
+        **Análisis del Terreno:**
+        * ✅ DEM 3D y Drenaje.
+        * ✅ Amenazas Torrenciales.
         """)
-        st.caption("Estado: ✅ Operativo")    
+        st.caption("✅ Operativo")    
 
     with st.expander("💧 Aguas Subterráneas"):
         st.write("""
-        **Modelación Hidrogeológica Simplificada:**
+        **Hidrogeología:**
         * ✅ Balance Hídrico (Turc).
-        * ✅ Estimación de Recarga Potencial.
         """)
-        st.caption("Estado: ✅ Operativo")
+        st.caption("✅ Operativo")
 
     with st.expander("🍃 Biodiversidad"):
         st.write("""
-        **Inteligencia Biológica:**
+        **Biología:**
         * ✅ Monitor GBIF.
-        * ✅ Análisis Taxonómico y Funcional.
         """)
-        st.caption("Estado: ✅ Operativo")
+        st.caption("✅ Operativo")
 
     with st.expander("🎯 Toma de Decisiones"):
         st.write("""
-        **Planificación Estratégica:**
-        * ✅ Matriz de Priorización.
-        * ✅ Análisis Multicriterio (AHP).
+        **Estrategia:**
+        * ✅ Priorización AHP.
         """)
-        st.caption("Estado: ✅ Operativo")
+        st.caption("✅ Operativo")
 
 # --- FOOTER ---
 st.divider()
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
-
 
