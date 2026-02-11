@@ -681,6 +681,40 @@ if gdf_zona_seleccionada is not None:
             with tab7:
                 st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
 
+                # --- FUNCIÓN AUXILIAR PARA MAPA CON FONDO (PEGAR AL INICIO DE TAB 7) ---
+                def mapa_con_fondo(mask_binaria, color_hex, titulo):
+                    # Imports locales de seguridad
+                    from rasterio import features
+                    from shapely.geometry import shape
+                    
+                    # 1. CORRECCIÓN TÉCNICA: Forzar array contiguo (Evita error memoryview)
+                    mask_safe = np.ascontiguousarray(mask_binaria, dtype=np.uint8)
+                    
+                    # 2. Vectorizar (Raster -> Polígonos)
+                    shapes_gen = features.shapes(mask_safe, transform=transform)
+                    geoms = [shape(g) for g, v in shapes_gen if v == 1]
+                    
+                    if geoms:
+                        # Crear GeoDataFrame y Reproyectar a GPS (Lat/Lon)
+                        gdf = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
+                        gdf = gdf.to_crs("EPSG:4326") 
+                        
+                        # Visualizar con Mapbox (Fondo Geográfico)
+                        c_lat = gdf.centroid.y.mean()
+                        c_lon = gdf.centroid.x.mean()
+                        
+                        fig = px.choropleth_mapbox(
+                            geojson=gdf.geometry.__geo_interface__,
+                            locations=gdf.index,
+                            mapbox_style="carto-positron", # <--- EL FONDO QUE QUERÍAS
+                            center={"lat": c_lat, "lon": c_lon}, zoom=12,
+                            opacity=0.6, color_discrete_sequence=[color_hex]
+                        )
+                        fig.update_layout(title=titulo, height=550, margin=dict(l=0,r=0,t=30,b=0))
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("No se detectan zonas de riesgo con estos parámetros.")
+            
             def caja_analisis_ai(mask_riesgo, tipo):
                 # Análisis Estadístico
                 total = mask_riesgo.size
@@ -703,35 +737,6 @@ if gdf_zona_seleccionada is not None:
                 </div>
                 """, unsafe_allow_html=True)
 
-            def mapa_con_fondo(mask_binaria, color_hex, titulo):
-                # 1. CORRECCIÓN DEL ERROR 'MEMORYVIEW': Forzamos a array de numpy
-                mask_safe = np.array(mask_binaria, dtype=np.uint8)
-                
-                # 2. Vectorizar
-                shapes_gen = features.shapes(mask_safe, transform=transform)
-                geoms = [shape(g) for g, v in shapes_gen if v == 1]
-                
-                if geoms:
-                    # Crear GeoDataFrame
-                    gdf = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
-                    gdf = gdf.to_crs("EPSG:4326") # A Lat/Lon para el mapa
-                    
-                    # Mapa Mapbox
-                    c_lat = gdf.centroid.y.mean()
-                    c_lon = gdf.centroid.x.mean()
-                    
-                    fig = px.choropleth_mapbox(
-                        geojson=gdf.geometry.__geo_interface__,
-                        locations=gdf.index,
-                        mapbox_style="carto-positron", # <--- EL FONDO QUE QUERÍAS
-                        center={"lat": c_lat, "lon": c_lon}, zoom=12,
-                        opacity=0.6, color_discrete_sequence=[color_hex]
-                    )
-                    fig.update_layout(title=titulo, height=550, margin=dict(l=0,r=0,t=30,b=0))
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("No se detectan zonas de riesgo con estos parámetros.")                
-                
                 if 'acc' in locals() and acc is not None:
                     # Preparar datos comunes
                     min_h = min(slope_deg.shape[0], acc.shape[0])
@@ -769,8 +774,6 @@ if gdf_zona_seleccionada is not None:
                             colors = [[0.0, "rgba(0,0,0,0)"], [0.33, "#FFD700"], [0.66, "#FF8C00"], [1.0, "#FF0000"]]
 
                             caja_analisis_ai(mask_steep & mask_flow, "Avenida Torrencial") # <--- PEGAR AQUÍ
-                            
-                            fig_risk = px.imshow(risk, color_continuous_scale=colors)
                             
                             fig_risk = px.imshow(risk, color_continuous_scale=colors)
                             fig_risk.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
