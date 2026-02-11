@@ -271,11 +271,18 @@ if gdf_zona_seleccionada is not None:
                         except: pass
 
                     fig.update_layout(
-                        title="Terreno 3D (Curvas Nativas)", autosize=True, height=600, 
-                        scene=dict(aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.2*exag)),
+                        title="Terreno 3D (Curvas Nativas)", 
+                        autosize=True, 
+                        height=900, # <--- AUMENTADO DE 600 A 900
+                        scene=dict(
+                            aspectmode='manual', 
+                            aspectratio=dict(x=1, y=1, z=0.2*exag),
+                            # Cámara inicial más alejada para ver todo
+                            camera=dict(eye=dict(x=1.5, y=1.5, z=1.5))
+                        ),
                         margin=dict(l=0, r=0, b=0, t=40)
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
 
             # --- TAB 2: PENDIENTES (ZOOM FULL) ---
             with tab2:
@@ -330,7 +337,7 @@ if gdf_zona_seleccionada is not None:
                         xaxis_title="% Área Acumulada", yaxis_title="Altitud (m.s.n.m)",
                         height=450, margin=dict(l=0,r=0,t=40,b=0)
                     )
-                    st.plotly_chart(fig_hyp, use_container_width=True)
+                    st.plotly_chart(fig_hyp, use_container_width=True, config={'scrollZoom': True})
 
                 with c_hip2:
                     # GRÁFICO 2: Curva Adimensional (Relativa)
@@ -350,7 +357,7 @@ if gdf_zona_seleccionada is not None:
                         xaxis_title="Área Relativa (a/A)", yaxis_title="Altura Relativa (h/H)",
                         height=450, margin=dict(l=0,r=0,t=40,b=0)
                     )
-                    st.plotly_chart(fig_adim, use_container_width=True)
+                    st.plotly_chart(fig_adim, use_container_width=True, config={'scrollZoom': True})
                     
                 st.info("""
                 **Interpretación Adimensional:**
@@ -371,28 +378,42 @@ if gdf_zona_seleccionada is not None:
                     umbral = st.slider("Umbral Acumulación", 10, 5000, 100, 10)
 
                 with c_map:
-                    # 1. PROCESAMIENTO
+                    # 1. PROCESAMIENTO (LÓGICA REFORZADA)
                     import tempfile
                     from shapely.geometry import shape, Point
                     from rasterio import features
-                    from rasterio.transform import rowcol # Vital para coordenadas de pixel
+                    from rasterio.transform import rowcol
                     
                     grid = None; acc = None; fdir = None
                     crs_actual = meta.get('crs', 'EPSG:3116')
 
                     with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                         try:
+                            # Guardamos el DEM temporal
                             meta_temp = meta.copy(); meta_temp.update(driver='GTiff', dtype='float64') 
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
                                 dst.write(arr_elevacion.astype('float64'), 1)
+                            
+                            # Inicializamos Grid
                             grid = Grid.from_raster(tmp.name)
                             dem_grid = grid.read_raster(tmp.name)
+                            
+                            # --- CORRECCIÓN DE LÓGICA HIDROLÓGICA ---
+                            # 1. Rellenar depresiones (Pit Filling) - Fundamental para que el agua no se estanque arriba
                             pit_filled = grid.fill_pits(dem_grid)
+                            
+                            # 2. Resolver zonas planas (Flats) - Ayuda al agua a cruzar lagos/planos
                             resolved = grid.resolve_flats(pit_filled)
+                            
+                            # 3. Dirección de Flujo (Dirmap Estándar ESRI)
+                            # N, NE, E, SE, S, SW, W, NW -> (64, 128, 1, 2, 4, 8, 16, 32)
                             dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                             fdir = grid.flowdir(resolved, dirmap=dirmap)
+                            
+                            # 4. Acumulación
                             acc = grid.accumulation(fdir, dirmap=dirmap)
-                        except Exception as e: st.error(f"Error: {e}")
+                            
+                        except Exception as e: st.error(f"Error Hidrología: {e}")
                         finally: 
                             try: os.remove(tmp.name)
                             except: pass
@@ -544,6 +565,13 @@ if gdf_zona_seleccionada is not None:
                             fig.update_layout(dragmode='pan')
                             
                         elif modo_viz == "Vectores (Líneas)":
+                        ruta_geojson_rios = "ruta/a/tu/red_drenaje.geojson" # Cambia esto
+                        if os.path.exists(ruta_geojson_rios):
+                             gdf_rios_externo = gpd.read_file(ruta_geojson_rios)
+                             # Recortar con la zona seleccionada para no cargar todo el mapa
+                             gdf_rios = gpd.clip(gdf_rios_externo, gdf_zona_seleccionada.to_crs(gdf_rios_externo.crs))
+                             st.success("✅ Red de Drenaje Oficial (1:25k) cargada.")
+                        else:                            
                             gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
                             if gdf_rios is not None:
                                 st.session_state['gdf_rios'] = gdf_rios
@@ -579,7 +607,7 @@ if gdf_zona_seleccionada is not None:
                             except Exception as e: st.error(str(e))
 
                         fig.update_layout(mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": lat_med, "lon": lon_med}, height=600, margin=dict(l=0,r=0,t=0,b=0))
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
                     else: st.warning("Procesando...")
                                             
             # --- TAB 6: ÍNDICES Y MODELACIÓN (FASE A + B) ---
@@ -779,7 +807,7 @@ if gdf_zona_seleccionada is not None:
                         height=600, margin=dict(l=0,r=0,t=30,b=0),
                         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255,255,255,0.8)")
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
 
                 # --- ANÁLISIS AI ---
                 def caja_analisis_ai(mask_riesgo, tipo):
