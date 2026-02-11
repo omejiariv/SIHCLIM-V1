@@ -61,56 +61,92 @@ def limpiar_estaciones(df):
     
     return df.dropna(subset=['latitud', 'longitud']), "OK"
 
-def cargar_capa_gis_robusta(uploaded_file, nombre_tabla, engine):
-    """Carga archivos GIS, repara coordenadas y sube a BD manteniendo TODOS los campos."""
-    if uploaded_file is None: return
+def cargar_capa_gis_robusta(uploaded_files, nombre_tabla, engine):
+    """
+    Carga archivos GIS. Soporta:
+    1. Un solo archivo .zip o .geojson
+    2. Múltiples archivos (.shp, .dbf, .prj, .shx) seleccionados juntos.
+    """
+    if not uploaded_files: return
     
     status = st.status(f"🚀 Procesando {nombre_tabla}...", expanded=True)
+    tmp_dir = tempfile.mkdtemp()
+    gdf = None
+
     try:
-        suffix = os.path.splitext(uploaded_file.name)[1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            tmp_path = tmp_file.name
-        
-        gdf = None
-        if suffix == '.zip':
-            with tempfile.TemporaryDirectory() as tmp_dir:
+        # CASO A: Archivos Múltiples (Shapefile suelto: .shp, .dbf, etc.)
+        if isinstance(uploaded_files, list) and len(uploaded_files) > 1:
+            status.write(f"📂 Procesando {len(uploaded_files)} archivos componentes...")
+            shp_path = None
+            
+            # 1. Guardar todos los archivos en la carpeta temporal
+            for file in uploaded_files:
+                file_path = os.path.join(tmp_dir, file.name)
+                with open(file_path, "wb") as f:
+                    f.write(file.getvalue())
+                if file.name.lower().endswith(".shp"):
+                    shp_path = file_path
+            
+            # 2. Leer el .shp (GeoPandas buscará automáticamente los .dbf y .prj al lado)
+            if shp_path:
+                gdf = gpd.read_file(shp_path)
+            else:
+                status.error("❌ Se subieron varios archivos pero falta el .shp")
+                return
+
+        # CASO B: Un solo archivo (ZIP o GeoJSON)
+        else:
+            # Si es una lista de 1 elemento, sacamos el elemento
+            uploaded_file = uploaded_files[0] if isinstance(uploaded_files, list) else uploaded_files
+            suffix = os.path.splitext(uploaded_file.name)[1].lower()
+            tmp_path = os.path.join(tmp_dir, uploaded_file.name)
+            
+            with open(tmp_path, "wb") as f:
+                f.write(uploaded_file.getvalue())
+            
+            if suffix == '.zip':
                 with zipfile.ZipFile(tmp_path, 'r') as zip_ref:
                     zip_ref.extractall(tmp_dir)
+                # Buscar el .shp dentro del zip descomprimido
                 for root, dirs, files in os.walk(tmp_dir):
                     for file in files:
                         if file.endswith(".shp"):
                             gdf = gpd.read_file(os.path.join(root, file))
                             break
-        else:
-            gdf = gpd.read_file(tmp_path)
-            
+            else:
+                gdf = gpd.read_file(tmp_path)
+
+        # --- PROCESAMIENTO COMÚN ---
         if gdf is None:
-            status.error("No se pudo leer el archivo geográfico.")
+            status.error("No se pudo leer la información geográfica.")
             return
 
-        status.write(f"✅ Leído: {len(gdf)} registros.")
+        status.write(f"✅ Leído: {len(gdf)} registros. Columnas: {list(gdf.columns)}")
 
-        # REPROYECCIÓN OBLIGATORIA A WGS84
+        # Reproyección a WGS84
         if gdf.crs and gdf.crs.to_string() != "EPSG:4326":
             status.write("🔄 Reproyectando a WGS84 (EPSG:4326)...")
             gdf = gdf.to_crs("EPSG:4326")
         
-        # Normalización básica de columnas
+        # Normalización
         gdf.columns = [c.lower() for c in gdf.columns]
-
+        
+        # Subida
         status.write("📤 Subiendo a Base de Datos...")
         gdf.to_postgis(nombre_tabla, engine, if_exists='replace', index=False)
         
         status.update(label="¡Carga Exitosa!", state="complete", expanded=False)
-        st.success(f"Capa **{nombre_tabla}** actualizada.")
+        st.success(f"Capa **{nombre_tabla}** actualizada correctamente.")
         if len(gdf) > 0: st.balloons()
         
     except Exception as e:
         status.update(label="Error", state="error")
         st.error(f"Error crítico: {e}")
     finally:
-        if os.path.exists(tmp_path): os.remove(tmp_path)
+        # Limpieza robusta de carpeta temporal
+        try:
+            shutil.rmtree(tmp_dir)
+        except: pass
 
 def visor_tabla_simple(nombre_tabla):
     """Muestra una tabla editable básica."""
@@ -524,12 +560,25 @@ with tabs[12]:
         
     with sb2:
         st.markdown("### Cargar Capa de Drenaje")
-        st.warning("Sube el archivo `RedHidrica25k.geojson` o `.zip`.")
+        st.info("Opciones de carga:")
+        st.markdown("""
+        * **Opción A (Recomendada):** Arrastra **JUNTOS** los 4 archivos del Shapefile (`.shp`, `.dbf`, `.prj`, `.cpg` o `.shx`).
+        * **Opción B:** Sube un solo archivo `.zip` o `.geojson`.
+        """)
         
-        f = st.file_uploader("Archivo (ZIP/GeoJSON)", type=["zip", "geojson"], key="up_drenaje_file")
+        # CAMBIO CLAVE: accept_multiple_files=True
+        files = st.file_uploader(
+            "Arrastra aquí tus archivos", 
+            type=["zip", "geojson", "shp", "dbf", "prj", "cpg", "shx"], 
+            key="up_drenaje_multi",
+            accept_multiple_files=True 
+        )
         
         if st.button("🚀 Cargar Red de Drenaje", key="btn_load_drenaje"): 
-            cargar_capa_gis_robusta(f, "red_drenaje", engine)
+            if files:
+                cargar_capa_gis_robusta(files, "red_drenaje", engine)
+            else:
+                st.warning("⚠️ Debes seleccionar los archivos primero.")
 
 # ==============================================================================
 # TAB 13: ZONA DE PELIGRO (MANTENIDA)
@@ -593,6 +642,7 @@ with tabs[10]:
                     conn.commit()
                     st.success("Comando ejecutado.")
         except Exception as e: st.error(str(e))
+
 
 
 
