@@ -381,7 +381,7 @@ if gdf_zona_seleccionada is not None:
                 * **Forma de 'S':** Cuenca madura en transición.
                 """)
 
-            # --- TAB 4: HIDROLOGÍA (FUSIÓN: SMART DETECT + INFO DETALLADA) ---
+            # --- TAB 4: HIDROLOGÍA (STREAM BURNING , FUSIÓN: SMART DETECT + INFO DETALLADA) ---
             with tab4:
                 st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
                 
@@ -391,9 +391,13 @@ if gdf_zona_seleccionada is not None:
                     opciones_viz = ["Vectores (Líneas)", "Catchment (Mascara)", "Divisoria (Línea)", "Raster (Acumulación)"]
                     modo_viz = st.radio("Visualización:", opciones_viz)
                     umbral = st.slider("Umbral Acumulación", 10, 5000, 100, 10)
+                    
+                    st.divider()
+                    # NUEVO: OPCIÓN DE QUEMADO
+                    usar_burning = st.checkbox("🔥 Forzar drenaje oficial", value=True, help="Excava los ríos oficiales en el DEM para obligar al agua a seguir su curso real.")
 
                 with c_map:
-                    # 1. PROCESAMIENTO (LÓGICA REFORZADA)
+                    # 1. PROCESAMIENTO AVANZADO (CON STREAM BURNING)
                     import tempfile
                     from shapely.geometry import shape, Point
                     from rasterio import features
@@ -401,261 +405,165 @@ if gdf_zona_seleccionada is not None:
                     
                     grid = None; acc = None; fdir = None
                     crs_actual = meta.get('crs', 'EPSG:3116')
+                    
+                    # --- PASO A: OBTENER RÍOS OFICIALES PARA QUEMADO Y VISUALIZACIÓN ---
+                    gdf_rios_oficial = None
+                    try:
+                        # Intentamos cargar la red oficial de la BD
+                        q_rios = "SELECT * FROM red_drenaje"
+                        # Detectar columna geom
+                        try: gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry'); c_geom='geometry'
+                        except: c_geom='geom'
+                        
+                        gdf_all = gpd.read_postgis(q_rios, engine, geom_col=c_geom)
+                        if gdf_all.crs is None: gdf_all.set_crs("EPSG:4326", inplace=True)
+                        if gdf_all.crs != crs_actual: gdf_all = gdf_all.to_crs(crs_actual)
+                        
+                        # Recortar con buffer generoso
+                        mask_poly = gdf_zona_seleccionada.to_crs(crs_actual).buffer(200)
+                        gdf_rios_oficial = gpd.clip(gdf_all, mask_poly)
+                    except: pass # Si falla, seguimos sin ríos
 
+                    # --- PASO B: PREPARAR DEM (MODIFICAR ELEVACIÓN) ---
+                    dem_procesar = arr_elevacion.copy().astype('float64')
+                    
+                    if usar_burning and gdf_rios_oficial is not None and not gdf_rios_oficial.empty:
+                        try:
+                            # Rasterizar líneas de ríos (1 donde hay río, 0 donde no)
+                            shapes = ((g, 1) for g in gdf_rios_oficial.geometry)
+                            rio_mask = features.rasterize(shapes=shapes, out_shape=dem_procesar.shape, transform=transform, fill=0, all_touched=True)
+                            
+                            # QUEMADO: Restamos 50 metros donde hay río oficial
+                            # Esto crea un "cañón artificial" que atrapa el flujo
+                            dem_procesar = np.where(rio_mask == 1, dem_procesar - 50.0, dem_procesar)
+                            # st.toast("🔥 Red de drenaje oficial 'quemada' en el terreno.")
+                        except Exception as burn_err:
+                            st.warning(f"No se pudo aplicar el quemado: {burn_err}")
+
+                    # --- PASO C: PYSHEDS (FLUJO) ---
                     with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                         try:
-                            # Guardamos el DEM temporal
                             meta_temp = meta.copy(); meta_temp.update(driver='GTiff', dtype='float64') 
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
-                                dst.write(arr_elevacion.astype('float64'), 1)
+                                dst.write(dem_procesar, 1) # Escribimos el DEM (Normal o Quemado)
                             
-                            # Inicializamos Grid
                             grid = Grid.from_raster(tmp.name)
                             dem_grid = grid.read_raster(tmp.name)
-                            
-                            # --- CORRECCIÓN DE LÓGICA HIDROLÓGICA ---
-                            # 1. Rellenar depresiones (Pit Filling) - Fundamental para que el agua no se estanque arriba
                             pit_filled = grid.fill_pits(dem_grid)
-                            
-                            # 2. Resolver zonas planas (Flats) - Ayuda al agua a cruzar lagos/planos
                             resolved = grid.resolve_flats(pit_filled)
-                            
-                            # 3. Dirección de Flujo (Dirmap Estándar ESRI)
-                            # N, NE, E, SE, S, SW, W, NW -> (64, 128, 1, 2, 4, 8, 16, 32)
                             dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                             fdir = grid.flowdir(resolved, dirmap=dirmap)
-                            
-                            # 4. Acumulación
                             acc = grid.accumulation(fdir, dirmap=dirmap)
-                            
-                        except Exception as e: st.error(f"Error Hidrología: {e}")
+                        except Exception as e: st.error(f"Error: {e}")
                         finally: 
                             try: os.remove(tmp.name)
                             except: pass
 
-                    # 2. CÁLCULOS Y VISUALIZACIÓN (BLOQUE OPTIMIZADO)
+                    # 2. INTERFAZ Y VISUALIZACIÓN
                     if grid is not None and acc is not None:
                         
-                        # --- A. CÁLCULO DE PUNTOS CLAVE ---
+                        # Cálculos de puntos clave (igual que antes)...
+                        idx_max = np.nanargmax(acc)
+                        r_smart, c_smart = np.unravel_index(idx_max, acc.shape)
                         
-                        # 1. Punto Medio (Oficial)
-                        lat_med, lon_med, r_med, c_med = 0, 0, 0, 0
-                        area_oficial = 0
+                        # Si hay zona seleccionada, refinamos el SMART OUTLET
                         if gdf_zona_seleccionada is not None:
-                            # Geográfico
-                            gdf_oficial_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
-                            cent = gdf_oficial_4326.geometry.centroid.iloc[0]
-                            lat_med, lon_med = cent.y, cent.x
-                            area_oficial = gdf_zona_seleccionada.to_crs("EPSG:3116").area.sum() / 1e6
-                            # Pixel
-                            gdf_proj = gdf_zona_seleccionada.to_crs(meta['crs'])
-                            cp = gdf_proj.geometry.centroid.iloc[0]
-                            try: r_med, c_med = rowcol(transform, cp.x, cp.y)
-                            except: pass
-
-                        # 2. Punto Más Alto (Con corrección de NaN)
-                        idx_max = np.nanargmax(arr_elevacion)
-                        r_high, c_high = np.unravel_index(idx_max, arr_elevacion.shape)
-                        val_high = arr_elevacion[r_high, c_high] # Leemos el valor
-                        # Si sigue siendo nan por error de borde, buscamos el vecino válido más cercano
-                        if np.isnan(val_high): val_high = np.nanmax(arr_elevacion)
-                        
-                        lon_high, lat_high = rasterio.transform.xy(transform, r_high, c_high, offset='center')
-                        if meta['crs'] != 'EPSG:4326':
-                            from pyproj import Transformer
-                            tr = Transformer.from_crs(meta['crs'], "EPSG:4326", always_xy=True)
-                            lon_high, lat_high = tr.transform(lon_high, lat_high)
-
-                        # 3. Punto Más Bajo (Global del recuadro)
-                        idx_min = np.nanargmin(arr_elevacion)
-                        r_low, c_low = np.unravel_index(idx_min, arr_elevacion.shape)
-                        val_low = arr_elevacion[r_low, c_low]
-                        lon_low, lat_low = rasterio.transform.xy(transform, r_low, c_low, offset='center')
-                        if meta['crs'] != 'EPSG:4326': lon_low, lat_low = tr.transform(lon_low, lat_low)
-
-                        # 4. SMART OUTLET V2.0 (Basado en Acumulación, NO en Elevación)
-                        # Buscamos el pixel con MÁS AGUA dentro del polígono verde.
-                        r_smart, c_smart = r_low, c_low 
-                        try:
-                            if gdf_zona_seleccionada is not None:
+                            try:
                                 gdf_p = gdf_zona_seleccionada.to_crs(meta['crs'])
                                 shp = ((geom, 1) for geom in gdf_p.geometry)
-                                # Creamos máscara del polígono
                                 mask_of = features.rasterize(shapes=shp, out_shape=acc.shape, transform=transform, fill=0, dtype='uint8')
-                                
-                                # Aplicamos máscara a la ACUMULACIÓN (La clave del éxito)
-                                # Ponemos -1 fuera del polígono para que no interfiera
                                 acc_masked = np.where(mask_of == 1, acc, -1)
-                                
-                                # El máximo valor de acumulación DENTRO del polígono es la salida real del río
                                 idx_s = np.argmax(acc_masked)
                                 r_smart, c_smart = np.unravel_index(idx_s, acc_masked.shape)
-                        except Exception as e: 
-                            st.warning(f"Smart detect fallback: {e}")
-                        
-                        # Coordenadas del Smart
-                        lon_smart, lat_smart = rasterio.transform.xy(transform, r_smart, c_smart, offset='center')
-                        if meta['crs'] != 'EPSG:4326': lon_smart, lat_smart = tr.transform(lon_smart, lat_smart)
+                            except: pass
 
-                        # --- B. LA CAJA FANTÁSTICA (VISUALIZACIÓN) ---
-                        # Título dinámico con nombre de zona
-                        with st.expander(f"📍 Coordenadas y Puntos Clave: {nombre_zona}", expanded=True):
-                            k1, k2, k3, k4 = st.columns(4)
-                            
-                            with k1:
-                                st.markdown("**1. Centro (Oficial)**")
-                                st.caption(f"{lat_med:.4f}, {lon_med:.4f}")
-                                st.markdown(f"**Pixel:** `X:{c_med} Y:{r_med}`")
-                                st.info(f"Área: {area_oficial:.2f} km²")
-                                
-                            with k2:
-                                st.markdown("**2. Punto Más Alto**")
-                                st.caption(f"{lat_high:.4f}, {lon_high:.4f}")
-                                st.markdown(f"**Pixel:** `X:{c_high} Y:{r_high}`")
-                                st.write(f"Elev: {val_high:.0f} m") # Valor corregido
-                                
-                            with k3:
-                                st.markdown("**3. Punto Más Bajo**")
-                                st.caption(f"{lat_low:.4f}, {lon_low:.4f}")
-                                st.markdown(f"**Pixel:** `X:{c_low} Y:{r_low}`")
-                                st.write(f"Elev: {val_low:.0f} m")
-                                if st.button("Usar Global", key="btn_glob"):
-                                    st.session_state['x_pour_calib'] = int(c_low)
-                                    st.session_state['y_pour_calib'] = int(r_low)
-                                    st.rerun()
-                                    
-                            with k4:
-                                st.markdown("🎯 **Salida Detectada**")
-                                st.caption(f"{lat_smart:.4f}, {lon_smart:.4f}")
-                                st.markdown(f"**Pixel:** `X:{c_smart} Y:{r_smart}`")
-                                # Botón Primario para llamar la atención
-                                if st.button("Usar Salida Real", type="primary", key="btn_smart"):
-                                    st.session_state['x_pour_calib'] = int(c_smart)
-                                    st.session_state['y_pour_calib'] = int(r_smart)
-                                    st.rerun()
-
-                        # --- C. CONTROLES MANUALES ---
+                        # --- CONTROLES MANUALES (AHORA DESPLEGABLES) ---
                         if 'x_pour_calib' not in st.session_state:
                             st.session_state['x_pour_calib'] = int(c_smart)
                             st.session_state['y_pour_calib'] = int(r_smart)
 
-                        if modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
-                            st.markdown("##### 🔧 Ajuste Fino")
-                            cc1, cc2 = st.columns([3, 1])
-                            with cc1:
-                                x_p = st.number_input("Pixel X (Columna):", value=st.session_state['x_pour_calib'])
-                                y_p = st.number_input("Pixel Y (Fila):", value=st.session_state['y_pour_calib'])
-                                st.session_state['x_pour_calib'] = x_p
-                                st.session_state['y_pour_calib'] = y_p
-                            with cc2:
-                                st.write("")
-                                st.write("")
-                                if st.button("🧲 Atraer al Río"):
-                                    # Lógica de Imán mejorada: busca MAX acumulación local
-                                    r = 40 # Radio aumentado para mejor captura
-                                    y0, y1 = max(0, y_p-r), min(acc.shape[0], y_p+r+1)
-                                    x0, x1 = max(0, x_p-r), min(acc.shape[1], x_p+r+1)
-                                    win = acc[y0:y1, x0:x1]
-                                    if win.size > 0:
-                                        m_idx = np.nanargmax(win)
-                                        ly, lx = np.unravel_index(m_idx, win.shape)
-                                        # Convertir local a global
-                                        st.session_state['x_pour_calib'] = int(x0 + lx)
-                                        st.session_state['y_pour_calib'] = int(y0 + ly)
-                                        st.rerun()
+                        # TITULO DINÁMICO
+                        st.info(f"Análisis Hidrológico: **{nombre_zona}**")
 
-                        # --- D. MAPAS ---
+                        if modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
+                            # --- INTERVENCIÓN 3: EXPANDER PARA AJUSTE FINO ---
+                            with st.expander("🔧 Ajuste Fino del Punto de Cierre (Outlet)", expanded=False):
+                                st.write("Si la cuenca no coincide, mueve el punto rojo hacia el río oficial.")
+                                cc1, cc2 = st.columns([3, 1])
+                                with cc1:
+                                    x_p = st.number_input("Pixel X:", value=st.session_state['x_pour_calib'])
+                                    y_p = st.number_input("Pixel Y:", value=st.session_state['y_pour_calib'])
+                                    st.session_state['x_pour_calib'] = x_p
+                                    st.session_state['y_pour_calib'] = y_p
+                                with cc2:
+                                    st.write("")
+                                    st.write("")
+                                    if st.button("🧲 Atraer al Río"):
+                                        r = 40
+                                        y0, y1 = max(0, y_p-r), min(acc.shape[0], y_p+r+1)
+                                        x0, x1 = max(0, x_p-r), min(acc.shape[1], x_p+r+1)
+                                        win = acc[y0:y1, x0:x1]
+                                        if win.size > 0:
+                                            m_idx = np.nanargmax(win)
+                                            ly, lx = np.unravel_index(m_idx, win.shape)
+                                            st.session_state['x_pour_calib'] = int(x0 + lx)
+                                            st.session_state['y_pour_calib'] = int(y0 + ly)
+                                            st.rerun()
+
+                        # --- D. MAPAS (CON RÍOS OFICIALES SIEMPRE VISIBLES) ---
                         fig = go.Figure()
                         
-                        # 1. Polígono Oficial (VERDE)
+                        # CAPA BASE: Polígono Oficial (Verde)
                         if gdf_zona_seleccionada is not None:
-                            poly = gdf_oficial_4326.geometry.iloc[0]
+                            poly = gdf_zona_seleccionada.to_crs("EPSG:4326").geometry.iloc[0]
                             if poly.geom_type == 'Polygon': xo, yo = poly.exterior.coords.xy
                             else: xo, yo = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
-                            fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width': 2, 'color': '#00FF00'}, name="Cuenca Oficial"))
-                        
-                        # 2. Capas según modo
+                            fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width': 2, 'color': '#00FF00'}, name="Límite Oficial"))
+                            lat_med, lon_med = poly.centroid.y, poly.centroid.x
+                        else: lat_med, lon_med = 0, 0
+
+                        # CAPA RÍOS OFICIALES (EN TODOS LOS MODOS)
+                        if gdf_rios_oficial is not None and not gdf_rios_oficial.empty:
+                            gdf_r_viz = gdf_rios_oficial.to_crs("EPSG:4326")
+                            lons, lats, textos = [], [], []
+                            
+                            # Detectar nombre
+                            col_nom = next((c for c in gdf_r_viz.columns if c.lower() in ['nombre_geo', 'nombre', 'nmg']), None)
+
+                            for _, row in gdf_r_viz.iterrows():
+                                geom = row.geometry
+                                nom = str(row[col_nom]) if col_nom else "Río"
+                                if geom.geom_type in ['LineString', 'MultiLineString']:
+                                    if geom.geom_type == 'LineString': parts = [geom]
+                                    else: parts = geom.geoms
+                                    for part in parts:
+                                        x, y = part.xy
+                                        lons.extend(list(x) + [None])
+                                        lats.extend(list(y) + [None])
+                                        textos.extend([nom] * (len(x) + 1))
+                            
+                            fig.add_trace(go.Scattermapbox(
+                                mode="lines", lon=lons, lat=lats,
+                                line={'width': 1.5, 'color': '#0044FF'}, # Azul Oficial
+                                text=textos, hoverinfo='text',
+                                name="Red Drenaje Oficial"
+                            ))
+
+                        # CAPAS ESPECÍFICAS SEGÚN MODO
                         if modo_viz == "Raster (Acumulación)":
-                            fig = px.imshow(np.log1p(acc), color_continuous_scale='Blues')
-                            fig.update_layout(dragmode='pan')
+                            fig.add_trace(go.Heatmap(z=np.log1p(acc), colorscale='Blues', showscale=False, opacity=0.7))
                             
                         elif modo_viz == "Vectores (Líneas)":
-                            try:
-                                # 1. Detectar columna de geometría (geometry vs geom)
-                                try:
-                                    gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry')
-                                    col_geom = 'geometry'
-                                except:
-                                    col_geom = 'geom'
-
-                                # 2. Cargar Red Oficial (Incluyendo NOMBRE_GEO)
-                                # Nota: En la BD, las columnas suelen guardarse en minúsculas (nombre_geo)
-                                query = f"SELECT * FROM red_drenaje"
-                                gdf_rios_bd = gpd.read_postgis(query, engine, geom_col=col_geom)
-                                
-                                # Asegurar CRS
-                                if gdf_rios_bd.crs is None: gdf_rios_bd.set_crs("EPSG:4326", inplace=True)
-                                if gdf_rios_bd.crs != crs_actual: gdf_rios_bd = gdf_rios_bd.to_crs(crs_actual)
-                                    
-                                # Recortar con buffer de seguridad
-                                mask_poly = gdf_zona_seleccionada.to_crs(crs_actual).buffer(100)
-                                gdf_rios = gpd.clip(gdf_rios_bd, mask_poly)
-                                
-                                if not gdf_rios.empty:
-                                    st.session_state['gdf_rios'] = gdf_rios
-                                    gdf_r = gdf_rios.to_crs("EPSG:4326")
-                                    
-                                    # Intentar recuperar el nombre para el tooltip
-                                    # Buscamos 'nombre_geo' (normalizado) o 'nombre'
-                                    col_nombre = next((c for c in gdf_r.columns if c.lower() in ['nombre_geo', 'nmg', 'nombre']), None)
-                                    
-                                    # Visualización mejorada línea por línea para mantener atributos
-                                    # Nota: Iterar es lento si son muchos, pero permite tooltip. 
-                                    # Si es muy lento, usaremos el método rápido anterior.
-                                    
-                                    lons, lats, textos = [], [], []
-                                    for _, row in gdf_r.iterrows():
-                                        geom = row.geometry
-                                        nom = str(row[col_nombre]) if col_nombre else "Drenaje"
-                                        
-                                        if geom.geom_type == 'LineString': 
-                                            x, y = geom.xy
-                                            lons.extend(list(x) + [None])
-                                            lats.extend(list(y) + [None])
-                                            textos.extend([nom] * (len(x) + 1)) # Texto para cada punto
-                                        elif geom.geom_type == 'MultiLineString':
-                                            for g in geom.geoms:
-                                                x, y = g.xy
-                                                lons.extend(list(x) + [None])
-                                                lats.extend(list(y) + [None])
-                                                textos.extend([nom] * (len(x) + 1))
-
-                                    fig.add_trace(go.Scattermapbox(
-                                        mode="lines", 
-                                        lon=lons, lat=lats,
-                                        text=textos, # Tooltip con nombre del río
-                                        hoverinfo='text',
-                                        line={'width': 2, 'color': '#0044FF'},
-                                        name="Red Oficial (1:25k)"
-                                    ))
-                                    st.success(f"✅ Red Oficial Cargada: {len(gdf_rios)} tramos.")
-                                else:
-                                    raise Exception("Zona sin cobertura en capa oficial.")
-
-                            except Exception as e:
-                                st.warning(f"⚠️ {e}")
-                                # Fallback DEM
-                                gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
-                                if gdf_rios is not None:
-                                    st.session_state['gdf_rios'] = gdf_rios
-                                    gdf_r = gdf_rios.to_crs("EPSG:4326")
-                                    lons, lats = [], []
-                                    for geom in gdf_r.geometry:
-                                        if geom.geom_type == 'LineString': x,y = geom.xy
-                                        else: x,y = geom.geoms[0].xy 
-                                        lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
-                                    fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.0, 'color':'#55AAFF'}, name="Calculado (DEM)"))
-                            # ---------------------------------------------------------
+                            # También mostramos los calculados en celeste para comparar
+                            gdf_calc = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
+                            if gdf_calc is not None:
+                                gdf_rc = gdf_calc.to_crs("EPSG:4326")
+                                lc, lac = [], []
+                                for g in gdf_rc.geometry:
+                                    if g.geom_type=='LineString': x,y=g.xy
+                                    else: x,y=g.geoms[0].xy
+                                    lc.extend(list(x)+[None]); lac.extend(list(y)+[None])
+                                fig.add_trace(go.Scattermapbox(mode="lines", lon=lc, lat=lac, line={'width':1, 'color':'#55AAFF'}, name="Calculado (DEM)"))
 
                         elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
                             try:
@@ -664,23 +572,22 @@ if gdf_zona_seleccionada is not None:
                                 shapes_gen = features.shapes(catch_int, transform=transform)
                                 geoms = [shape(g) for g, v in shapes_gen if v > 0]
                                 if geoms:
-                                    gdf_c = gpd.GeoDataFrame({'geometry': geoms}, crs=crs_actual).dissolve()
-                                    gdf_c_4326 = gdf_c.to_crs("EPSG:4326")
+                                    gdf_c = gpd.GeoDataFrame({'geometry': geoms}, crs=crs_actual).dissolve().to_crs("EPSG:4326")
                                     st.session_state['catchment_raster'] = catch
                                     
                                     if modo_viz == "Catchment (Mascara)":
-                                        fig.add_trace(go.Choroplethmapbox(geojson=gdf_c_4326.geometry.__geo_interface__, locations=gdf_c_4326.index, z=[1]*len(gdf_c_4326), colorscale=[[0, '#3366CC'], [1, '#3366CC']], showscale=False, marker_opacity=0.6, name="Calculada"))
+                                        fig.add_trace(go.Choroplethmapbox(geojson=gdf_c.geometry.__geo_interface__, locations=gdf_c.index, z=[1]*len(gdf_c), colorscale=[[0, '#3366CC'], [1, '#3366CC']], showscale=False, marker_opacity=0.5, name="Cuenca Calculada"))
                                     else:
-                                        xc, yc = gdf_c_4326.geometry.iloc[0].exterior.coords.xy
+                                        xc, yc = gdf_c.geometry.iloc[0].exterior.coords.xy
                                         fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Divisoria Calc."))
                                     
                                     # Outlet Marker
-                                    pt_gdf = gpd.GeoDataFrame({'geometry': [Point(meta['transform'] * (x_p+0.5, y_p+0.5))]}, crs=crs_actual).to_crs("EPSG:4326")
-                                    fig.add_trace(go.Scattermapbox(mode="markers", lon=[pt_gdf.geometry.iloc[0].x], lat=[pt_gdf.geometry.iloc[0].y], marker={'size':12, 'color':'red', 'symbol':'star'}, name="Outlet"))
-                                    st.success(f"Área: {gdf_c.area.sum()/1e6:.2f} km²")
-                            except Exception as e: st.error(str(e))
+                                    pt = gpd.GeoDataFrame({'geometry': [Point(meta['transform']*(x_p+0.5, y_p+0.5))]}, crs=crs_actual).to_crs("EPSG:4326")
+                                    fig.add_trace(go.Scattermapbox(mode="markers", lon=[pt.geometry.x.iloc[0]], lat=[pt.geometry.y.iloc[0]], marker={'size':12, 'color':'red', 'symbol':'star'}, name="Punto de Cierre"))
+                                    st.success(f"Área: {gdf_c.to_crs('EPSG:3116').area.sum()/1e6:.2f} km²")
+                            except: pass
 
-                        fig.update_layout(mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": lat_med, "lon": lon_med}, height=600, margin=dict(l=0,r=0,t=0,b=0))
+                        fig.update_layout(mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": lat_med, "lon": lon_med}, height=700, margin=dict(l=0,r=0,t=0,b=0))
                         st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
                     else: st.warning("Procesando...")
                                             
@@ -822,7 +729,7 @@ if gdf_zona_seleccionada is not None:
             with tab7:
                 st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
 
-                # --- FUNCIÓN DE MAPA SUPERPUESTO ---
+                # --- FUNCIÓN DE MAPA SUPERPUESTO (CON RÍOS OFICIALES) ---
                 def mapa_amenaza_contexto(mask_binaria, color_amenaza, titulo, gdf_oficial):
                     from rasterio import features
                     from shapely.geometry import shape
@@ -835,52 +742,51 @@ if gdf_zona_seleccionada is not None:
                         poly = gdf_4326.geometry.iloc[0]
                         if poly.geom_type == 'Polygon': xo, yo = poly.exterior.coords.xy
                         else: xo, yo = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
-                        
-                        fig.add_trace(go.Scattermapbox(
-                            mode="lines", lon=list(xo), lat=list(yo),
-                            line={'width': 3, 'color': '#00FF00'}, name="Cuenca Oficial (Real)"
-                        ))
-                        
-                        # Centrar mapa
-                        c_lat = gdf_4326.centroid.y.mean()
-                        c_lon = gdf_4326.centroid.x.mean()
-                    else:
-                        c_lat, c_lon = 6.2, -75.5
+                        fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xo), lat=list(yo), line={'width': 3, 'color': '#00FF00'}, name="Cuenca Oficial"))
+                        c_lat, c_lon = gdf_4326.centroid.y.mean(), gdf_4326.centroid.x.mean()
+                    else: c_lat, c_lon = 6.2, -75.5
 
-                    # CAPA 2: Amenaza Vectorizada
+                    # CAPA 2: RED DE DRENAJE OFICIAL (AZUL)
+                    try:
+                        # Intentar leer ríos de la BD y recortar
+                        try: gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry'); c_g='geometry'
+                        except: c_g='geom'
+                        
+                        gdf_all_r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col=c_g)
+                        if gdf_all_r.crs is None: gdf_all_r.set_crs("EPSG:4326", inplace=True)
+                        if gdf_oficial is not None:
+                            # Recortar para no cargar todo antioquia
+                            mask_r = gdf_oficial.to_crs(gdf_all_r.crs).buffer(200)
+                            gdf_rios_clip = gpd.clip(gdf_all_r, mask_r).to_crs("EPSG:4326")
+                            
+                            lons, lats = [], []
+                            for geom in gdf_rios_clip.geometry:
+                                if geom.geom_type == 'LineString': x,y = geom.xy
+                                elif geom.geom_type == 'MultiLineString':
+                                    for g in geom.geoms: x,y = g.xy; lons.extend(list(x)+[None]); lats.extend(list(y)+[None]); continue
+                                else: continue
+                                lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                            
+                            fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width': 1.5, 'color': '#0044FF'}, name="Red Drenaje Oficial"))
+                    except: pass
+
+                    # CAPA 3: Amenaza Vectorizada
                     mask_safe = np.ascontiguousarray(mask_binaria, dtype=np.uint8)
                     shapes_gen = features.shapes(mask_safe, transform=transform)
                     geoms = [shape(g) for g, v in shapes_gen if v == 1]
                     
                     if geoms:
                         gdf_threat = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
-                        # Simplificación para rendimiento
                         gdf_threat = gdf_threat.to_crs("EPSG:3116")
-                        gdf_threat = gdf_threat[gdf_threat.geometry.area > 900] # Filtro ruido
-                        gdf_threat['geometry'] = gdf_threat.simplify(20)
-                        gdf_threat = gdf_threat.to_crs("EPSG:4326")
+                        gdf_threat = gdf_threat[gdf_threat.geometry.area > 900]
+                        gdf_threat['geometry'] = gdf_threat.simplify(20).to_crs("EPSG:4326")
                         
                         if not gdf_threat.empty:
-                            fig.add_trace(go.Choroplethmapbox(
-                                geojson=gdf_threat.geometry.__geo_interface__,
-                                locations=gdf_threat.index, z=[1]*len(gdf_threat),
-                                colorscale=[[0, color_amenaza], [1, color_amenaza]],
-                                showscale=False, marker_opacity=0.6, name="Zona de Amenaza"
-                            ))
-                        else:
-                            st.info("✅ Zona segura tras filtrar ruido.")
-                    else:
-                        st.info("✅ No se detectan amenazas con estos parámetros.")
+                            fig.add_trace(go.Choroplethmapbox(geojson=gdf_threat.geometry.__geo_interface__, locations=gdf_threat.index, z=[1]*len(gdf_threat), colorscale=[[0, color_amenaza], [1, color_amenaza]], showscale=False, marker_opacity=0.6, name="Zona Amenaza"))
+                        else: st.info("✅ Zona segura.")
+                    else: st.info("✅ Sin amenazas detectadas.")
 
-                    # Configuración Visual
-                    fig.update_layout(
-                        title=titulo,
-                        mapbox_style="carto-positron",
-                        mapbox_zoom=12,
-                        mapbox_center={"lat": c_lat, "lon": c_lon},
-                        height=600, margin=dict(l=0,r=0,t=30,b=0),
-                        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255,255,255,0.8)")
-                    )
+                    fig.update_layout(title=titulo, mapbox_style="carto-positron", mapbox_zoom=12, mapbox_center={"lat": c_lat, "lon": c_lon}, height=600, margin=dict(l=0,r=0,t=30,b=0))
                     st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
 
                 # --- ANÁLISIS AI ---
