@@ -62,8 +62,9 @@ def limpiar_estaciones(df):
     return df.dropna(subset=['latitud', 'longitud']), "OK"
 
 def cargar_capa_gis_robusta(uploaded_file, nombre_tabla, engine):
-    """Carga archivos GIS (ZIP/GeoJSON) a PostGIS."""
+    """Carga archivos GIS, repara coordenadas y sube a BD manteniendo TODOS los campos."""
     if uploaded_file is None: return
+    
     status = st.status(f"🚀 Procesando {nombre_tabla}...", expanded=True)
     try:
         suffix = os.path.splitext(uploaded_file.name)[1].lower()
@@ -88,21 +89,23 @@ def cargar_capa_gis_robusta(uploaded_file, nombre_tabla, engine):
             status.error("No se pudo leer el archivo geográfico.")
             return
 
+        status.write(f"✅ Leído: {len(gdf)} registros.")
+
+        # REPROYECCIÓN OBLIGATORIA A WGS84
         if gdf.crs and gdf.crs.to_string() != "EPSG:4326":
-            status.write("🔄 Reproyectando a WGS84...")
+            status.write("🔄 Reproyectando a WGS84 (EPSG:4326)...")
             gdf = gdf.to_crs("EPSG:4326")
         
+        # Normalización básica de columnas
         gdf.columns = [c.lower() for c in gdf.columns]
-        
-        # Mapeos específicos
-        if 'bocatomas' in nombre_tabla and 'nombre' in gdf.columns: gdf = gdf.rename(columns={'nombre': 'nom_bocatoma'})
-        
+
         status.write("📤 Subiendo a Base de Datos...")
         gdf.to_postgis(nombre_tabla, engine, if_exists='replace', index=False)
         
         status.update(label="¡Carga Exitosa!", state="complete", expanded=False)
-        st.success(f"✅ {nombre_tabla}: {len(gdf)} registros cargados.")
+        st.success(f"Capa **{nombre_tabla}** actualizada.")
         if len(gdf) > 0: st.balloons()
+        
     except Exception as e:
         status.update(label="Error", state="error")
         st.error(f"Error crítico: {e}")
@@ -125,6 +128,29 @@ def visor_tabla_simple(nombre_tabla):
             st.warning(f"La tabla '{nombre_tabla}' está vacía o no existe.")
     except Exception as e:
         st.error(f"Error leyendo tabla: {e}")
+
+def editor_tabla_gis(nombre_tabla, key_editor):
+    """Genera un editor de tabla para capas GIS excluyendo la columna de geometría pesada."""
+    try:
+        # Consultamos columnas excepto 'geometry' para que la tabla sea ligera y legible
+        q_cols = text(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{nombre_tabla}' AND column_name != 'geometry'")
+        cols = pd.read_sql(q_cols, engine)['column_name'].tolist()
+        if not cols:
+             st.warning(f"La tabla {nombre_tabla} existe pero no tiene columnas legibles.")
+             return
+
+        cols_str = ", ".join([f'"{c}"' for c in cols]) # Comillas para nombres seguros
+        
+        df = pd.read_sql(f"SELECT {cols_str} FROM {nombre_tabla} LIMIT 1000", engine)
+        st.info(f"Mostrando primeros 1000 registros de **{nombre_tabla}**. ({len(df.columns)} campos)")
+        
+        # KEY ÚNICA AQUÍ TAMBIÉN
+        df_editado = st.data_editor(df, key=key_editor, use_container_width=True, num_rows="dynamic")
+        
+        if st.button(f"💾 Guardar Cambios en {nombre_tabla}", key=f"btn_{key_editor}"):
+            st.warning("⚠️ Edición directa deshabilitada por seguridad en esta versión. Use la carga de archivos para cambios masivos.")
+    except Exception as e:
+        pass
 
 # --- 4. INTERFAZ PRINCIPAL (LISTA ACTUALIZADA) ---
 st.title("👑 Panel de Administración y Edición de Datos")
@@ -567,6 +593,7 @@ with tabs[10]:
                     conn.commit()
                     st.success("Comando ejecutado.")
         except Exception as e: st.error(str(e))
+
 
 
 
