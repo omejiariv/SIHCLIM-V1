@@ -131,10 +131,10 @@ st.title("👑 Panel de Administración Integral")
 st.markdown("---")
 
 tabs = st.tabs([
-    "📡 Estaciones", "🌧️ Lluvia", "📊 Índices", 
-    "🏠 Predios", "🌊 Cuencas", "🏙️ Municipios", "☁️ Coberturas", 
-    "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", 
-    "🛠️ SQL", "📚 Inventario", "🔥 ZONA PELIGRO"
+    "📡 Estaciones", "📊 Índices", "🏠 Predios", "🌊 Cuencas", 
+    "🏙️ Municipios", "🌲 Coberturas", "💧 Bocatomas", "⛰️ Hidrogeología", 
+    "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Lluvia", 
+    "〰️ Red Drenaje"
 ])
 
 # ==============================================================================
@@ -547,6 +547,31 @@ with tabs[12]:
             except Exception as e: st.error(f"Error: {e}")
 
 # ==============================================================================
+# TAB 12: RED DE DRENAJE (NUEVO)
+# ==============================================================================
+with tabs[12]: 
+    st.header("〰️ Red de Drenaje (Escala 1:25k)")
+    st.info("Gestiona la capa oficial de ríos y quebradas.")
+    
+    sb1, sb2 = st.tabs(["👁️ Ver Atributos", "📂 Cargar Archivo"])
+    
+    with sb1: 
+        # Reutilizamos tu función maestra editor_tabla_gis
+        editor_tabla_gis("red_drenaje", "ed_drenaje")
+        
+    with sb2:
+        st.markdown("### Cargar Capa de Drenaje")
+        st.warning("Sube el archivo `RedHidrica25k.geojson` o `.zip`.")
+        
+        # Key única para evitar conflictos
+        f = st.file_uploader("Archivo (ZIP/GeoJSON)", type=["zip", "geojson"], key="up_drenaje_file")
+        
+        if st.button("🚀 Cargar Red de Drenaje", key="btn_load_drenaje"): 
+            # Reutilizamos tu función maestra cargar_capa_gis_robusta
+            # Esto creará la tabla 'red_drenaje' en la base de datos automáticamente
+            cargar_capa_gis_robusta(f, "red_drenaje", engine)
+
+# ==============================================================================
 # TAB 10: SQL (HERRAMIENTA)
 # ==============================================================================
 with tabs[10]:
@@ -563,6 +588,7 @@ with tabs[10]:
                     conn.commit()
                     st.success("Comando ejecutado.")
         except Exception as e: st.error(str(e))
+
 
 
 
