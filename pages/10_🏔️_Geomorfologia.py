@@ -677,19 +677,19 @@ if gdf_zona_seleccionada is not None:
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
 
-            # --- TAB 7: AMENAZAS (CORREGIDO Y CALIBRADO) ---
+            # --- TAB 7: AMENAZAS (MODELACIÓN FÍSICA AVANZADA) ---
             with tab7:
                 st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
 
-                # --- FUNCIÓN DE MAPA SEGURA (Misma que tenías, funciona bien) ---
+                # --- 1. FUNCIÓN DE MAPA OPTIMIZADA (Anti-Pantalla Blanca) ---
                 def mapa_con_fondo(mask_binaria, color_hex, titulo):
                     from rasterio import features
                     from shapely.geometry import shape
                     
-                    # 1. Convertir máscara a uint8
+                    # A. Convertir a formato ligero
                     mask_safe = np.ascontiguousarray(mask_binaria, dtype=np.uint8)
                     
-                    # 2. Vectorizar
+                    # B. Vectorizar solo zonas activas
                     shapes_gen = features.shapes(mask_safe, transform=transform)
                     geoms = []
                     for g, v in shapes_gen:
@@ -700,18 +700,21 @@ if gdf_zona_seleccionada is not None:
                         st.info("✅ No se detectan zonas de riesgo con estos parámetros.")
                         return
 
-                    # 3. Crear GeoDataFrame
+                    # C. Crear DataFrame y Simplificar
                     gdf = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
                     
-                    # 4. SIMPLIFICACIÓN
                     try:
+                        # Proyectar a metros para medir área
                         if gdf.crs.to_string() != "EPSG:3116":
                             gdf = gdf.to_crs("EPSG:3116")
                         
-                        # Filtro de ruido y simplificación
+                        # FILTRO 1: Eliminar ruido (polígonos < 900m2)
                         gdf = gdf[gdf.geometry.area > 900]
+                        
+                        # FILTRO 2: Simplificar vértices (Tolerancia 20m)
                         gdf['geometry'] = gdf.simplify(tolerance=20)
                         
+                        # Volver a Lat/Lon para el mapa
                         gdf = gdf.to_crs("EPSG:4326")
                     except Exception as e:
                         st.warning(f"Aviso de proyección: {e}")
@@ -722,7 +725,7 @@ if gdf_zona_seleccionada is not None:
                         st.success("✅ Zona segura (Ruido filtrado).")
                         return
 
-                    # 5. Visualizar
+                    # D. Visualizar
                     c_lat = gdf.geometry.centroid.y.mean()
                     c_lon = gdf.geometry.centroid.x.mean()
                     
@@ -732,17 +735,13 @@ if gdf_zona_seleccionada is not None:
                         mapbox_style="carto-positron",
                         center={"lat": c_lat, "lon": c_lon}, 
                         zoom=12,
-                        opacity=0.5, # Un poco más transparente para ver el mapa
+                        opacity=0.5, 
                         color_discrete_sequence=[color_hex]
                     )
-                    fig.update_layout(
-                        title=titulo, 
-                        margin=dict(l=0,r=0,t=30,b=0), 
-                        height=550
-                    )
+                    fig.update_layout(title=titulo, margin=dict(l=0,r=0,t=30,b=0), height=550)
                     st.plotly_chart(fig, use_container_width=True)
 
-                # --- FUNCIÓN DE ANÁLISIS AI ---
+                # --- 2. FUNCIÓN DE DIAGNÓSTICO AI ---
                 def caja_analisis_ai(mask_riesgo, tipo):
                     total = mask_riesgo.size
                     afectado = np.sum(mask_riesgo)
@@ -750,92 +749,68 @@ if gdf_zona_seleccionada is not None:
                     
                     color = "red" if "Torrencial" in tipo else "#0099FF"
                     nivel = "Bajo" if pct < 1 else ("Medio" if pct < 5 else "CRÍTICO")
+                    criterio = "Energía cinética en canales de transporte." if "Torrencial" in tipo else "Saturación topográfica (TWI) alta."
                     
                     st.markdown(f"""
                     <div style="border-left: 5px solid {color}; padding: 15px; background-color: rgba(240,242,246,0.5); border-radius: 5px; margin-bottom: 20px;">
                         <strong style="color: {color}; font-size: 1.1em;">🤖 Diagnóstico Inteligente ({tipo})</strong>
                         <ul style="margin-bottom: 0;">
-                            <li><b>Cobertura de Amenaza:</b> {pct:.2f}% del área analizada.</li>
-                            <li><b>Nivel de Alerta:</b> {nivel}</li>
-                            <li><b>Criterio Físico:</b> {
-                                "Energía cinética alta en canales de transporte." if "Torrencial" in tipo 
-                                else "Saturación topográfica (TWI) alta."}</li>
+                            <li><b>Cobertura:</b> {pct:.2f}% del área.</li>
+                            <li><b>Nivel:</b> {nivel}</li>
+                            <li><b>Física:</b> {criterio}</li>
                         </ul>
                     </div>
                     """, unsafe_allow_html=True)
 
-                # --- LÓGICA PRINCIPAL ---
+                # --- 3. LÓGICA PRINCIPAL ---
                 if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
-                    # Recorte de seguridad
+                    # Recortes para alinear matrices
                     min_h = min(slope_deg.shape[0], acc.shape[0])
                     min_w = min(slope_deg.shape[1], acc.shape[1])
                     s_core = slope_deg[:min_h, :min_w]
-                    # Usamos acc puro para cálculos físicos y log para sliders visuales
-                    acc_raw = acc[:min_h, :min_w] 
-                    a_core_log = np.log1p(acc_raw)
+                    acc_raw = acc[:min_h, :min_w] # Acumulación pura para TWI
+                    a_core_log = np.log1p(acc_raw) # Log para sliders visuales
                     
                     t1, t2 = st.tabs(["🔴 Avenida Torrencial (Flash Flood)", "🔵 Inundación (TWI)"])
                     
-                    # 1. AVENIDA TORRENCIAL
-                    # Criterio mejorado: Zonas donde hay agua Y pendiente suficiente para mover sólidos,
-                    # pero NO acantilados verticales.
+                    # --- PESTAÑA 1: AVENIDA TORRENCIAL ---
                     with t1:
                         c1, c2 = st.columns([1, 3])
                         with c1:
                             st.markdown("#### Calibración de Energía")
-                            st.caption("Define el canal donde el agua gana velocidad peligrosa.")
-                            
-                            # Rango de pendiente: El peligro real está entre 5° y 30° aprox.
-                            s_range = st.slider(
-                                "Rango de Pendiente (°)", 
-                                0.0, 60.0, (5.0, 35.0), 
-                                help="Menos de 5° es inundación lenta. Más de 35° es caída libre/cascada."
-                            )
-                            
-                            a_umb = st.slider("Caudal Mínimo (Log)", 4.0, 9.0, 6.0, help="Tamaño del río necesario para generar el evento.")
-                            
-                            st.error("Modelando Zonas de Transporte y Abanicos")
+                            st.caption("Define canales con pendiente de transporte.")
+                            # Slider de RANGO (Min, Max)
+                            s_range = st.slider("Rango Pendiente (°)", 0.0, 60.0, (5.0, 35.0), help="Entre 5° y 35° ocurren los flujos de escombros.")
+                            a_umb = st.slider("Caudal Mínimo (Log)", 4.0, 9.0, 6.0)
+                            st.error("Zonas de Transporte Activo")
                             
                         with c2:
-                            # LÓGICA CORREGIDA:
-                            # 1. Debe haber suficiente agua (a_umb)
-                            # 2. La pendiente debe estar en el rango de transporte de sedimentos (s_range)
-                            mask_t = (s_core >= s_range[0]) & \
-                                     (s_core <= s_range[1]) & \
-                                     (a_core_log >= a_umb)
-                                     
+                            # Lógica física: Agua + Pendiente en rango de transporte
+                            mask_t = (s_core >= s_range[0]) & (s_core <= s_range[1]) & (a_core_log >= a_umb)
+                            
                             caja_analisis_ai(mask_t, "Avenida Torrencial")
-                            mapa_con_fondo(mask_t, "red", "Amenaza: Flujos Rápidos y Avenidas Torrenciales")
+                            mapa_con_fondo(mask_t, "red", "Amenaza: Avenida Torrencial")
 
-                    # 2. INUNDACIÓN (Mejorada con TWI)
+                    # --- PESTAÑA 2: INUNDACIÓN (TWI) ---
                     with t2:
                         c1, c2 = st.columns([1, 3])
                         with c1:
                             st.markdown("#### Índice Topográfico (TWI)")
-                            st.caption("Detecta zonas donde el agua se estanca por gravedad.")
+                            st.caption("Predicción de zonas de saturación.")
                             
-                            # Cálculo del TWI al vuelo
-                            # TWI = ln(a / tan(beta))
-                            with st.spinner("Calculando Índice de Humedad..."):
+                            # Cálculo TWI al vuelo
+                            with st.spinner("Calculando física de terreno..."):
                                 slope_rad = np.deg2rad(s_core)
                                 tan_slope = np.tan(slope_rad)
-                                # Evitar división por cero sumando un epsilon pequeño
-                                tan_slope = np.where(tan_slope < 0.001, 0.001, tan_slope)
-                                # Usamos acc_raw (acumulación real, no log) escalado por resolución si es necesario
-                                # Asumimos acc_raw como número de celdas.
+                                tan_slope = np.where(tan_slope < 0.001, 0.001, tan_slope) # Evitar div/0
                                 twi = np.log(acc_raw / tan_slope)
                             
-                            # El TWI suele ir de 5 (seco) a 25 (muy húmedo/río)
-                            twi_val = st.slider("Sensibilidad de Humedad (TWI)", 5.0, 25.0, 12.0, 
-                                                help="Valores más altos seleccionan solo el río. Valores más bajos incluyen la llanura de inundación.")
-                            
-                            st.info("Modelando Llanuras de Inundación")
-                            
-                            # Checkbox opcional para añadir criterio de pendiente estricta
-                            strict_flat = st.checkbox("Forzar solo zonas muy planas (< 3°)", value=True)
+                            twi_val = st.slider("Sensibilidad TWI", 5.0, 25.0, 12.0, help="Menor valor = Más área inundable.")
+                            strict_flat = st.checkbox("Forzar solo planos (< 3°)", value=True)
+                            st.info("Llanuras de Inundación")
 
                         with c2:
-                            # LÓGICA CORREGIDA:
+                            # Lógica física: TWI Alto + Pendiente Baja (Opcional)
                             if strict_flat:
                                 mask_i = (twi >= twi_val) & (s_core <= 3)
                             else:
