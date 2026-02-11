@@ -359,7 +359,7 @@ if gdf_zona_seleccionada is not None:
                 * **Forma de 'S':** Cuenca madura en transición.
                 """)
 
-# --- TAB 4: HIDROLOGÍA (PRECISIÓN GEOGRÁFICA) ---
+            # --- TAB 4: HIDROLOGÍA (CON COORDENADAS DE PIXEL) ---
             with tab4:
                 st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
                 
@@ -384,6 +384,7 @@ if gdf_zona_seleccionada is not None:
                     # 1. PREPARACIÓN DE DATOS (PYSHEDS)
                     import tempfile
                     from shapely.geometry import shape, Point
+                    from rasterio.transform import rowcol # Importante para convertir lat/lon a pixel
                     
                     grid = None
                     acc = None
@@ -415,23 +416,33 @@ if gdf_zona_seleccionada is not None:
                     # 2. LÓGICA DE GEOMETRÍA Y PUNTOS CLAVE
                     if grid is not None and acc is not None:
                         
-                        # --- CÁLCULO DE COORDENADAS REALES (LAT/LON) ---
-                        # A. Punto Medio (Centroide del Polígono Oficial)
+                        # --- CÁLCULOS DE COORDENADAS Y PIXELES ---
+                        
+                        # A. Punto Medio (Oficial)
                         if gdf_zona_seleccionada is not None:
+                            # 1. Geográfico (Lat/Lon)
                             gdf_oficial_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
                             centroide = gdf_oficial_4326.geometry.centroid.iloc[0]
                             lat_med, lon_med = centroide.y, centroide.x
                             area_oficial = gdf_zona_seleccionada.to_crs("EPSG:3116").area.sum() / 1e6
+                            
+                            # 2. Pixel (X, Y) - Convertimos la coordenada proyectada (3116) a pixel
+                            gdf_oficial_proj = gdf_zona_seleccionada.to_crs(meta['crs'])
+                            cent_proj = gdf_oficial_proj.geometry.centroid.iloc[0]
+                            # row = y, col = x
+                            try:
+                                r_med, c_med = rowcol(transform, cent_proj.x, cent_proj.y)
+                            except: r_med, c_med = 0, 0
                         else:
                             lat_med, lon_med = 0, 0
+                            r_med, c_med = 0, 0
                             area_oficial = 0
 
                         # B. Punto Más Alto (Elevación)
                         idx_max_elev = np.nanargmax(arr_elevacion)
                         y_high, x_high = np.unravel_index(idx_max_elev, arr_elevacion.shape)
-                        # Transformar pixel a coordenadas
+                        # Pixel a Lat/Lon
                         lon_high, lat_high = rasterio.transform.xy(transform, y_high, x_high, offset='center')
-                        # Asegurar que esté en 4326 para mostrar
                         if meta['crs'] != 'EPSG:4326':
                             from pyproj import Transformer
                             transf = Transformer.from_crs(meta['crs'], "EPSG:4326", always_xy=True)
@@ -444,28 +455,42 @@ if gdf_zona_seleccionada is not None:
                         if meta['crs'] != 'EPSG:4326':
                             lon_low, lat_low = transf.transform(lon_low, lat_low)
 
-                        # D. Punto de Máxima Acumulación (Salida calculada)
+                        # D. Salida Automática (Máxima Acumulación)
                         idx_max_acc = np.nanargmax(acc)
                         y_acc, x_acc = np.unravel_index(idx_max_acc, acc.shape)
+                        # Nota: x_acc es Columna, y_acc es Fila
 
-                        # --- VISUALIZADOR DE DATOS ---
+                        # --- VISUALIZADOR DE DATOS (CON PIXELES) ---
                         with st.expander("📍 Coordenadas y Puntos Clave", expanded=True):
                             c1, c2, c3, c4 = st.columns(4)
+                            
                             with c1:
                                 st.markdown("**Punto Medio (Oficial)**")
-                                st.caption(f"{lat_med:.5f}, {lon_med:.5f}")
-                                st.info(f"Área Oficial: {area_oficial:.2f} km²")
+                                st.caption(f"Lat: {lat_med:.4f}, Lon: {lon_med:.4f}")
+                                st.markdown(f"`📍 Pixel: x:{c_med}, y:{r_med}`")
+                                st.info(f"Área: {area_oficial:.2f} km²")
+                                
                             with c2:
                                 st.markdown("**Punto Más Alto**")
-                                st.caption(f"{lat_high:.5f}, {lon_high:.5f}")
+                                st.caption(f"Lat: {lat_high:.4f}, Lon: {lon_high:.4f}")
+                                st.markdown(f"`📍 Pixel: x:{x_high}, y:{y_high}`")
                                 st.write(f"Elev: {arr_elevacion.max():.0f} m")
+                                
                             with c3:
                                 st.markdown("**Punto Más Bajo**")
-                                st.caption(f"{lat_low:.5f}, {lon_low:.5f}")
+                                st.caption(f"Lat: {lat_low:.4f}, Lon: {lon_low:.4f}")
+                                st.markdown(f"`📍 Pixel: x:{x_low}, y:{y_low}`")
                                 st.write(f"Elev: {arr_elevacion.min():.0f} m")
+                                if st.button("Usar Bajo", key="btn_low"):
+                                    st.session_state['x_pour_calib'] = int(x_low)
+                                    st.session_state['y_pour_calib'] = int(y_low)
+                                    st.rerun()
+                                
                             with c4:
                                 st.markdown("**Salida Automática**")
-                                if st.button("Usar Auto-Detect", help="Usa el punto de máxima acumulación de agua"):
+                                st.caption("Max Acumulación de Flujo")
+                                st.markdown(f"`📍 Pixel: x:{x_acc}, y:{y_acc}`")
+                                if st.button("Usar Auto", key="btn_auto"):
                                     st.session_state['x_pour_calib'] = int(x_acc)
                                     st.session_state['y_pour_calib'] = int(y_acc)
                                     st.rerun()
@@ -479,8 +504,8 @@ if gdf_zona_seleccionada is not None:
                             st.markdown("##### 🔧 Mover Punto de Cierre (Outlet)")
                             c_adj, c_tools = st.columns([3, 1])
                             with c_adj:
-                                x_p = st.number_input("Pixel X:", value=st.session_state['x_pour_calib'])
-                                y_p = st.number_input("Pixel Y:", value=st.session_state['y_pour_calib'])
+                                x_p = st.number_input("Pixel X (Columna):", value=st.session_state['x_pour_calib'])
+                                y_p = st.number_input("Pixel Y (Fila):", value=st.session_state['y_pour_calib'])
                                 st.session_state['x_pour_calib'] = x_p
                                 st.session_state['y_pour_calib'] = y_p
                             with c_tools:
@@ -588,7 +613,7 @@ if gdf_zona_seleccionada is not None:
                         fig.update_layout(
                             mapbox_style="carto-positron",
                             mapbox_zoom=11,
-                            mapbox_center={"lat": lat_med, "lon": lon_med}, # Centrado en Punto Medio Oficial
+                            mapbox_center={"lat": lat_med, "lon": lon_med}, 
                             height=600,
                             margin=dict(l=0,r=0,t=0,b=0),
                             legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
