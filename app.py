@@ -118,7 +118,8 @@ ids = [
     'Modelo Turc', 'Recarga', 'Balance',
     'GBIF', 'Taxonomía', 'Amenazas',
     'Priorización', 'Multicriterio',
-    'Calidad', 'Auditoría'
+    'Calidad', 'Auditoría',
+    'Geomorfología', 'Morfometría', 'Drenaje', 'Elevación' # <--- NUEVOS
 ]
 
 parents = [
@@ -129,10 +130,11 @@ parents = [
     'Aguas Subterráneas', 'Aguas Subterráneas', 'Aguas Subterráneas',
     'Biodiversidad', 'Biodiversidad', 'Biodiversidad',
     'Toma de Decisiones', 'Toma de Decisiones',
-    'Herramientas', 'Herramientas'
+    'Herramientas', 'Herramientas',
+    'SIHCLI-POTER', 'Geomorfología', 'Geomorfología', 'Geomorfología' # <--- NUEVOS PADRES
 ]
 
-values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8]
+values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8, 15, 5, 5, 5]
 
 def create_system_map():
     if len(ids) != len(parents) or len(ids) != len(values): return None
@@ -180,6 +182,16 @@ with c2:
         """)
         st.caption("Estado: ✅ Operativo")
 
+    with st.expander("🏔️ Geomorfología & Amenazas (NUEVO)", expanded=True):
+        st.write("""
+        **Análisis del Terreno y Riesgos:**
+        * ✅ **Modelo Digital de Elevación (DEM):** Visualización 3D y análisis de pendientes.
+        * ✅ **Red de Drenaje:** Delimitación automática de cuencas y perfil de ríos.
+        * ✅ **Morfometría:** Cálculo de curva hipsométrica y factor de forma.
+        * ✅ **Amenazas:** Detección de zonas propensas a avenidas torrenciales e inundación (TWI).
+        """)
+        st.caption("Estado: ✅ Operativo (Motor PySheds)")    
+
     with st.expander("💧 Aguas Subterráneas"):
         st.write("""
         **Modelación Hidrogeológica Simplificada:**
@@ -208,4 +220,5 @@ with c2:
 
 # --- FOOTER ---
 st.divider()
+
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
