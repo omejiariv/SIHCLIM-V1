@@ -16,7 +16,6 @@ st.title("🌊 Sistema de Información Hidroclimática (SIHCLI-POTER)")
 st.markdown("**Sistema de Información Hidroclimática Integrada para la Gestión Integral del Agua y la Biodiversidad en el Norte de la Región Andina.**")
 
 # --- 3. PESTAÑAS DE INICIO (NUEVA ESTRUCTURA) ---
-# Se define la nueva estructura de pestañas solicitada
 tab_pres, tab_modulos, tab_clima, tab_aleph = st.tabs([
     "📘 Presentación del Sistema", 
     "🛠️ Módulos y Capacidades", 
@@ -33,7 +32,7 @@ with tab_pres:
         Este sistema no es solo un repositorio de datos; es un **cerebro analítico** diseñado para procesar, modelar y visualizar la complejidad hidrometeorológica de la región Andina. Su arquitectura modular permite desde el monitoreo en tiempo real hasta la proyección de escenarios de cambio climático a largo plazo.
         """)
 
-# --- PESTAÑA 2: MÓDULOS Y CAPACIDADES (NUEVA) ---
+# --- PESTAÑA 2: MÓDULOS Y CAPACIDADES ---
 with tab_modulos:
     # Sección A: Aplicaciones Clave
     with st.expander("🎯 Aplicaciones Clave", expanded=True):
@@ -81,15 +80,15 @@ with tab_clima:
         st.write("""
         La región Andina presenta uno de los sistemas climáticos más complejos del mundo. La interacción entre la Zona de Convergencia Intertropical (ZCIT), los vientos alisios y la topografía escarpada genera microclimas que cambian en distancias cortas. La región Andina es un mosaico climático de una complejidad fascinante. Aquí, la geografía no es solo un escenario, sino un actor protagonista que esculpe el clima kilómetro a kilómetro.
 
-La Verticalidad como Destino: En los Andes, viajar hacia arriba es como viajar hacia los polos. En pocos kilómetros lineales, pasamos del calor húmedo de los valles interandinos (bosque seco tropical) a la neblina perpetua de los bosques de niebla, y finalmente al gélido silencio de los páramos y las nieves perpetuas. Esta zonificación altitudinal (bien descrita por Holdridge) define la vocación del suelo y la biodiversidad.
+        **La Verticalidad como Destino:** En los Andes, viajar hacia arriba es como viajar hacia los polos. En pocos kilómetros lineales, pasamos del calor húmedo de los valles interandinos (bosque seco tropical) a la neblina perpetua de los bosques de niebla, y finalmente al gélido silencio de los páramos y las nieves perpetuas. Esta zonificación altitudinal (bien descrita por Holdridge) define la vocación del suelo y la biodiversidad.
 
-El Pulso de Dos Océanos: Colombia es un país anfibio, respirando la humedad que llega tanto del Pacífico (Chocó Biogeográfico) como de la Amazonía. Los vientos alisios chocan contra El Sistema Cordillerano de los Andes, descargando su humedad en las vertientes orientales y creando "remolinos de agua" que dan lugar a una Hidrodiversidad magica representada en los grandes ríos, quebradas, arroyos, caños, cañadas, acuiferos, lagunas, embalses y todo tipo de humedales.
+        **El Pulso de Dos Océanos:** Colombia es un país anfibio, respirando la humedad que llega tanto del Pacífico (Chocó Biogeográfico) como de la Amazonía. Los vientos alisios chocan contra El Sistema Cordillerano de los Andes, descargando su humedad en las vertientes orientales y creando "remolinos de agua" que dan lugar a una Hidrodiversidad magica representada en los grandes ríos, quebradas, arroyos, caños, cañadas, acuiferos, lagunas, embalses y todo tipo de humedales.
 
-La Variabilidad (ENSO): Este sistema complejo no es estático. Está sometido al latido irregular del Pacífico Ecuatorial:
-
-El Niño (Fase Cálida): Cuando el océano se calienta, la atmósfera sobre nosotros se estabiliza, las nubes se disipan y la sequía amenaza, trayendo consigo el riesgo de incendios y desabastecimiento.
-La Niña (Fase Fría): Cuando el océano se enfría, los vientos se aceleran y la humedad se condensa con furia, desbordando ríos y saturando laderas.
-Entender esta climatología no es solo leer termómetros; es comprender la interacción dinámica entre la montaña, el viento y el océano.
+        **La Variabilidad (ENSO):** Este sistema complejo no es estático. Está sometido al latido irregular del Pacífico Ecuatorial:
+        * **El Niño (Fase Cálida):** Cuando el océano se calienta, la atmósfera sobre nosotros se estabiliza, las nubes se disipan y la sequía amenaza, trayendo consigo el riesgo de incendios y desabastecimiento.
+        * **La Niña (Fase Fría):** Cuando el océano se enfría, los vientos se aceleran y la humedad se condensa con furia, desbordando ríos y saturando laderas.
+        
+        Entender esta climatología no es solo leer termómetros; es comprender la interacción dinámica entre la montaña, el viento y el océano.
         
         **SIHCLI-POTER** está diseñado específicamente para capturar esta variabilidad, integrando estaciones en tierra con modelos satelitales para llenar los vacíos de información en zonas de alta montaña.
         """)
@@ -109,7 +108,8 @@ with tab_aleph:
 
 st.divider()
 
-# --- 4. DATOS DEL GRÁFICO SUNBURST (VERIFICADO: 28 ELEMENTOS) ---
+# --- 4. DATOS DEL GRÁFICO SUNBURST ---
+# IDs: 28 Elementos
 ids = [
     'SIHCLI-POTER', 
     'Clima e Hidrología', 'Aguas Subterráneas', 'Biodiversidad', 'Toma de Decisiones', 'Isoyetas HD', 'Herramientas',
@@ -122,6 +122,7 @@ ids = [
     'Geomorfología', 'Morfometría', 'Drenaje', 'Elevación'
 ]
 
+# Parents: 28 Elementos
 parents = [
     '', 
     'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER',
@@ -134,12 +135,13 @@ parents = [
     'SIHCLI-POTER', 'Geomorfología', 'Geomorfología', 'Geomorfología'
 ]
 
+# Values: 28 Elementos
 values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8, 15, 5, 5, 5]
 
 def create_system_map():
-    # Validación simple
+    # Validación simple para evitar errores
     if not (len(ids) == len(parents) == len(values)):
-        st.error("Error interno: Discrepancia en datos del mapa de navegación.")
+        st.error(f"Error interno: Discrepancia en datos del mapa. Ids:{len(ids)}, Parents:{len(parents)}, Values:{len(values)}")
         return None
         
     df = pd.DataFrame(dict(ids=ids, parents=parents, values=values))
@@ -148,18 +150,19 @@ def create_system_map():
         color='parents', color_discrete_sequence=px.colors.qualitative.Pastel1
     )
     fig.update_layout(
-        title={'text': "🗺️ Mapa de Navegación", 'y':0.95, 'x':0.5, 'xanchor': 'center'},
+        title={'text': "🗺️ Mapa de Navegación del Sistema", 'y':0.95, 'x':0.5, 'xanchor': 'center'},
         margin=dict(t=60, l=0, r=0, b=0), height=600
     )
     fig.update_traces(hovertemplate='<b>%{label}</b><br>Sección: %{parent}<extra></extra>', textinfo='label+percent parent')
     return fig
-    
-# SECCIÓN DE RENDERIZADO EN APP.PY
+
+# --- 5. LAYOUT PRINCIPAL (MAPA Y CAJAS LATERALES) ---
 c1, c2 = st.columns([1.8, 1.2])
 
 with c1:
     fig_map = create_system_map()
-    if fig_map: st.plotly_chart(fig_map, use_container_width=True)
+    if fig_map: 
+        st.plotly_chart(fig_map, use_container_width=True)
 
 with c2:
     st.subheader("🛠️ Módulos")
@@ -168,65 +171,53 @@ with c2:
     with st.expander("🗺️ Isoyetas HD (Escenarios & Pronósticos)", expanded=True):
         st.write("""
         **Generador Avanzado de Superficies Climáticas:**
-        * ✅ Interpolación RBF Normalizada (Alta Definición).
-        * ✅ Análisis de Mínimos y Máximos Históricos.
-        * ✅ Mapa de Variabilidad Temporal (Desviación Estándar).
-        * ✅ Pronóstico Climático Lineal (2026-2040).
+        * ✅ Interpolación RBF Normalizada.
+        * ✅ Pronóstico Climático Lineal.
         * ✅ Descargas GIS (Raster/Vector).
         """)
-        st.caption("Estado: ✅ Operativo y Calibrado")
+        st.caption("Estado: ✅ Operativo")
 
     with st.expander("🌦️ Clima e Hidrología"):
         st.write("""
         **Tablero de Control Hidrometeorológico:**
-        * ✅ Monitoreo de series temporales (Precipitación, Nivel, Caudal).
-        * ✅ Cálculo de Anomalías e Índices Estandarizados.
-        * ✅ Seguimiento de Fenómenos Macroclimáticos (ENSO/ONI).
-        * ✅ Análisis de Tendencias (Mann-Kendall).
+        * ✅ Monitoreo de series (Lluvia/Caudal).
+        * ✅ Índices ENSO/ONI y Tendencias.
         """)
         st.caption("Estado: ✅ Operativo")
 
     with st.expander("🏔️ Geomorfología & Amenazas (NUEVO)", expanded=True):
         st.write("""
         **Análisis del Terreno y Riesgos:**
-        * ✅ **Modelo Digital de Elevación (DEM):** Visualización 3D y análisis de pendientes.
-        * ✅ **Red de Drenaje:** Delimitación automática de cuencas y perfil de ríos.
-        * ✅ **Morfometría:** Cálculo de curva hipsométrica y factor de forma.
-        * ✅ **Amenazas:** Detección de zonas propensas a avenidas torrenciales e inundación (TWI).
+        * ✅ **DEM:** Visualización 3D y pendientes.
+        * ✅ **Red de Drenaje:** Delimitación y perfil.
+        * ✅ **Amenazas:** Avenidas torrenciales e Inundación (TWI).
         """)
-        st.caption("Estado: ✅ Operativo (Motor PySheds)")    
+        st.caption("Estado: ✅ Operativo")    
 
     with st.expander("💧 Aguas Subterráneas"):
         st.write("""
         **Modelación Hidrogeológica Simplificada:**
-        * ✅ Balance Hídrico (Método de Turc).
-        * ✅ Estimación de Recarga Potencial de Acuíferos.
-        * ✅ Escenarios de Infiltración por Cobertura.
+        * ✅ Balance Hídrico (Turc).
+        * ✅ Estimación de Recarga Potencial.
         """)
         st.caption("Estado: ✅ Operativo")
 
     with st.expander("🍃 Biodiversidad"):
         st.write("""
-        **Inteligencia Biológica del Territorio:**
-        * ✅ Monitor de Registros Biológicos (Integración GBIF).
+        **Inteligencia Biológica:**
+        * ✅ Monitor GBIF.
         * ✅ Análisis Taxonómico y Funcional.
-        * ✅ Filtros por Estado de Amenaza (IUCN).
         """)
         st.caption("Estado: ✅ Operativo")
 
     with st.expander("🎯 Toma de Decisiones"):
         st.write("""
-        **Herramientas de Planificación Estratégica:**
-        * ✅ Matriz de Priorización Espacial.
-        * ✅ Análisis Multicriterio (AHP) para Inversiones.
+        **Planificación Estratégica:**
+        * ✅ Matriz de Priorización.
+        * ✅ Análisis Multicriterio (AHP).
         """)
         st.caption("Estado: ✅ Operativo")
 
 # --- FOOTER ---
 st.divider()
-
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
-
-
-
-
