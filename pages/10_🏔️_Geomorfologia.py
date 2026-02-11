@@ -565,40 +565,58 @@ if gdf_zona_seleccionada is not None:
                             fig.update_layout(dragmode='pan')
                             
                         elif modo_viz == "Vectores (Líneas)":
-                            # BLOQUE CORREGIDO: INDENTACIÓN ARREGLADA
-                            # ---------------------------------------------------------
-                            ruta_geojson_rios = "ruta/a/tu/red_drenaje.geojson" # <-- AQUÍ ESTABA EL ERROR
-                            
-                            if os.path.exists(ruta_geojson_rios):
-                                 try:
-                                     gdf_rios_externo = gpd.read_file(ruta_geojson_rios)
-                                     # Recortar con la zona seleccionada para optimizar
-                                     gdf_rios = gpd.clip(gdf_rios_externo, gdf_zona_seleccionada.to_crs(gdf_rios_externo.crs))
-                                     
-                                     # Visualizar Externo
-                                     gdf_r = gdf_rios.to_crs("EPSG:4326")
-                                     lons, lats = [], []
-                                     for geom in gdf_r.geometry:
-                                         if geom.geom_type == 'LineString': x,y = geom.xy
-                                         else: x,y = geom.geoms[0].xy 
-                                         lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
-                                     
-                                     fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.5, 'color':'#0077BE'}, name="Red Drenaje Oficial (25k)"))
-                                     st.success("✅ Visualizando Red Oficial 1:25k")
-                                 except Exception as e:
-                                     st.error(f"Error cargando capa externa: {e}")
-                            else:                            
-                                 # Fallback: Cálculo automático si no hay archivo
-                                 gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
-                                 if gdf_rios is not None:
-                                     st.session_state['gdf_rios'] = gdf_rios
-                                     gdf_r = gdf_rios.to_crs("EPSG:4326")
-                                     lons, lats = [], []
-                                     for geom in gdf_r.geometry:
-                                         if geom.geom_type == 'LineString': x,y = geom.xy
-                                         else: x,y = geom.geoms[0].xy 
-                                         lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
-                                     fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.5, 'color':'#0077BE'}, name="Ríos Calculados"))
+                            try:
+                                # 1. Intentamos cargar desde la Base de Datos
+                                query = "SELECT * FROM red_drenaje"
+                                # Usamos read_postgis para traer la geometría decodificada
+                                gdf_rios_bd = gpd.read_postgis(query, engine, geom_col='geometry')
+                                
+                                # 2. Recortar (Clip) con la zona seleccionada
+                                # Esto es vital para no mostrar los ríos de todo el departamento
+                                if gdf_rios_bd.crs != crs_actual:
+                                    gdf_rios_bd = gdf_rios_bd.to_crs(crs_actual)
+                                    
+                                gdf_rios = gpd.clip(gdf_rios_bd, gdf_zona_seleccionada.to_crs(crs_actual))
+                                
+                                if not gdf_rios.empty:
+                                    # 3. Visualizar Red Oficial
+                                    st.session_state['gdf_rios'] = gdf_rios
+                                    gdf_r = gdf_rios.to_crs("EPSG:4326")
+                                    lons, lats = [], []
+                                    for geom in gdf_r.geometry:
+                                        if geom.geom_type == 'LineString': x,y = geom.xy
+                                        elif geom.geom_type == 'MultiLineString':
+                                            for g in geom.geoms:
+                                                x,y = g.xy
+                                                lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                                            continue
+                                        else: continue
+                                        lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                                    
+                                    fig.add_trace(go.Scattermapbox(
+                                        mode="lines", lon=lons, lat=lats, 
+                                        line={'width': 1.5, 'color': '#0044FF'}, # Azul más intenso
+                                        name="Red Oficial (IGAC 1:25k)"
+                                    ))
+                                    st.success(f"✅ Visualizando Red Oficial (1:25k) desde Base de Datos. ({len(gdf_rios)} tramos)")
+                                else:
+                                    st.warning("⚠️ La capa oficial existe pero no tiene ríos dentro de esta zona.")
+                                    raise Exception("Zona vacía")
+
+                            except Exception as e:
+                                # Fallback: Si falla la BD o está vacía, calculamos con el DEM
+                                # st.error(f"Debug DB: {e}") # Descomentar para ver errores de conexión
+                                gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
+                                if gdf_rios is not None:
+                                    st.session_state['gdf_rios'] = gdf_rios
+                                    gdf_r = gdf_rios.to_crs("EPSG:4326")
+                                    lons, lats = [], []
+                                    for geom in gdf_r.geometry:
+                                        if geom.geom_type == 'LineString': x,y = geom.xy
+                                        else: x,y = geom.geoms[0].xy 
+                                        lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                                    fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.0, 'color':'#55AAFF'}, name="Ríos Calculados (DEM)"))
+                                    st.info("ℹ️ Usando red calculada por el modelo (Fallback).")
                             # ---------------------------------------------------------
 
                         elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
