@@ -677,143 +677,137 @@ if gdf_zona_seleccionada is not None:
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
 
-            # --- TAB 7: AMENAZAS (ESPEJOS LÓGICOS) ---
+# --- TAB 7: AMENAZAS (OPTIMIZADO Y BLINDADO) ---
             with tab7:
                 st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
 
-                # --- FUNCIÓN AUXILIAR PARA MAPA CON FONDO ---
+                # --- FUNCIÓN DE MAPA SEGURA (Geometría Simplificada) ---
                 def mapa_con_fondo(mask_binaria, color_hex, titulo):
                     from rasterio import features
                     from shapely.geometry import shape
                     
-                    # 1. Convertir máscara a formato seguro
+                    # 1. Convertir máscara a uint8 (Evita error de memoria)
                     mask_safe = np.ascontiguousarray(mask_binaria, dtype=np.uint8)
                     
-                    # 2. Vectorizar
+                    # 2. Vectorizar (Raster -> Polígonos)
+                    # Transformamos solo los pixeles con valor 1
                     shapes_gen = features.shapes(mask_safe, transform=transform)
-                    geoms = [shape(g) for g, v in shapes_gen if v == 1]
+                    geoms = []
+                    for g, v in shapes_gen:
+                        if v == 1:
+                            geoms.append(shape(g))
                     
                     if not geoms:
-                        st.info("No se detectan zonas de riesgo con estos parámetros.")
+                        st.info("✅ No se detectan zonas de riesgo con estos parámetros.")
                         return
 
                     # 3. Crear GeoDataFrame
                     gdf = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
                     
-                    # 4. OPTIMIZACIÓN AGRESIVA (SOLUCIÓN PANTALLA BLANCA)
+                    # 4. 🔥 SIMPLIFICACIÓN AGRESIVA (La clave para evitar pantalla blanca)
                     try:
-                        # Convertir a metros para medir áreas
+                        # Si no está en metros, proyectamos para poder simplificar en metros
                         if gdf.crs.to_string() != "EPSG:3116":
                             gdf = gdf.to_crs("EPSG:3116")
                         
-                        # A. Filtrar polígonos pequeños (Ruido < 900m2)
+                        # Filtro de ruido: Eliminar polígonos menores a 900m2 (3 pixeles aprox)
                         gdf = gdf[gdf.geometry.area > 900]
                         
-                        # B. Simplificar geometría (Tolerancia 20m)
+                        # Simplificar vértices (Tolerancia 20m) -> Reduce peso del archivo 90%
                         gdf['geometry'] = gdf.simplify(tolerance=20)
                         
-                        # Volver a Lat/Lon para el mapa
+                        # Reproyectar a Lat/Lon para el mapa web (Obligatorio)
                         gdf = gdf.to_crs("EPSG:4326")
-                    except: pass # Si falla la proyección, se intenta graficar tal cual
+                    except Exception as e:
+                        st.warning(f"Aviso de proyección: {e}")
+                        # Fallback: Intentar pasar a 4326 directo si falla lo anterior
+                        if gdf.crs.to_string() != "EPSG:4326":
+                            gdf = gdf.to_crs("EPSG:4326")
 
                     if gdf.empty:
-                        st.warning("Zonas muy pequeñas detectadas (ruido). Ajusta los sliders.")
+                        st.success("✅ Zona segura (Ruido filtrado).")
                         return
 
                     # 5. Visualizar
-                    # Centrar el mapa en la amenaza
+                    # Centrar mapa
                     c_lat = gdf.geometry.centroid.y.mean()
                     c_lon = gdf.geometry.centroid.x.mean()
                     
                     fig = px.choropleth_mapbox(
                         geojson=gdf.geometry.__geo_interface__,
                         locations=gdf.index,
-                        mapbox_style="carto-positron", # FONDO GEOGRÁFICO
-                        center={"lat": c_lat, "lon": c_lon}, zoom=11,
-                        opacity=0.6, color_discrete_sequence=[color_hex]
+                        mapbox_style="carto-positron", # Fondo Geográfico
+                        center={"lat": c_lat, "lon": c_lon}, 
+                        zoom=12,
+                        opacity=0.6, 
+                        color_discrete_sequence=[color_hex]
                     )
-                    fig.update_layout(title=titulo, margin=dict(l=0,r=0,t=30,b=0), height=550)
+                    fig.update_layout(
+                        title=titulo, 
+                        margin=dict(l=0,r=0,t=30,b=0), 
+                        height=550
+                    )
                     st.plotly_chart(fig, use_container_width=True)
-            
-            def caja_analisis_ai(mask_riesgo, tipo):
-                # Análisis Estadístico
-                total = mask_riesgo.size
-                afectado = np.sum(mask_riesgo)
-                pct = (afectado / total) * 100
-                
-                # Semáforo de Texto
-                color = "red" if "Torrencial" in tipo else "#0099FF"
-                nivel = "Bajo" if pct < 1 else ("Medio" if pct < 5 else "CRÍTICO")
-                
-                # Inyección HTML
-                st.markdown(f"""
-                <div style="border-left: 5px solid {color}; padding: 15px; background-color: #f0f2f6; border-radius: 5px; margin-bottom: 20px;">
-                    <strong style="color: {color}; font-size: 1.1em;">🤖 Diagnóstico Inteligente ({tipo})</strong>
-                    <ul style="margin-bottom: 0;">
-                        <li><b>Cobertura de Amenaza:</b> {pct:.2f}% del área analizada.</li>
-                        <li><b>Nivel de Alerta:</b> {nivel}</li>
-                        <li><b>Recomendación:</b> {"Revisar cauces y retirar estructuras" if pct > 1 else "Monitoreo preventivo"}.</li>
-                    </ul>
-                </div>
-                """, unsafe_allow_html=True)
 
-                if 'acc' in locals() and acc is not None:
-                    # Preparar datos comunes
+                # --- FUNCIÓN DE ANÁLISIS AI ---
+                def caja_analisis_ai(mask_riesgo, tipo):
+                    total = mask_riesgo.size
+                    afectado = np.sum(mask_riesgo)
+                    pct = (afectado / total) * 100
+                    
+                    color = "red" if "Torrencial" in tipo else "#0099FF"
+                    nivel = "Bajo" if pct < 1 else ("Medio" if pct < 5 else "CRÍTICO")
+                    
+                    st.markdown(f"""
+                    <div style="border-left: 5px solid {color}; padding: 15px; background-color: rgba(240,242,246,0.5); border-radius: 5px; margin-bottom: 20px;">
+                        <strong style="color: {color}; font-size: 1.1em;">🤖 Diagnóstico Inteligente ({tipo})</strong>
+                        <ul style="margin-bottom: 0;">
+                            <li><b>Cobertura de Amenaza:</b> {pct:.2f}% del área analizada.</li>
+                            <li><b>Nivel de Alerta:</b> {nivel}</li>
+                            <li><b>Acción:</b> {"Revisión Estructural" if pct > 1 else "Monitoreo"}.</li>
+                        </ul>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # --- LÓGICA PRINCIPAL ---
+                if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
+                    # Recorte de seguridad
                     min_h = min(slope_deg.shape[0], acc.shape[0])
                     min_w = min(slope_deg.shape[1], acc.shape[1])
                     s_core = slope_deg[:min_h, :min_w]
                     a_core = np.log1p(acc[:min_h, :min_w])
                     
-                    # Pestañas para separar los mapas
                     t1, t2 = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación Plana"])
                     
-                    # --- ESPEJO 1: (Torrencial) ---
+                    # 1. AVENIDA TORRENCIAL
                     with t1:
-                        st.markdown("**Identificación de zonas críticas...**")
-                        c_par, c_vis = st.columns([1, 3])
-                        
-                        with c_par:
-                            # ... (Sliders igual) ...
-                            s_umb = st.slider("Pendiente Crítica (> Grados)", 15, 45, 30)
-                            a_umb = st.slider("Acumulación Log (> Umbral)", 1.0, 10.0, 5.5)
-                            st.info("...") # Info igual
+                        c1, c2 = st.columns([1, 3])
+                        with c1:
+                            st.markdown("#### Parámetros")
+                            s_umb = st.slider("Pendiente Crítica (> °)", 10, 50, 25, key="st_slider")
+                            a_umb = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 6.0, key="at_slider")
+                            st.error("Zonas de Alta Energía")
+                        with c2:
+                            mask_t = (s_core >= s_umb) & (a_core >= a_umb)
+                            caja_analisis_ai(mask_t, "Avenida Torrencial")
+                            mapa_con_fondo(mask_t, "red", "Amenaza: Avenida Torrencial")
 
-                        with c_vis:
-                            # CÁLCULO DE MÁSCARAS (Esto sí se necesita)
-                            mask_steep = s_core >= s_umb
-                            mask_flow = a_core >= a_umb
-                            
-                            # (Borramos 'risk' y 'colors' que ya no se usan)
-
-                            # VISUALIZACIÓN
-                            caja_analisis_ai(mask_steep & mask_flow, "Avenida Torrencial")
-                            mapa_con_fondo(mask_steep & mask_flow, "red", "Amenaza: Avenida Torrencial")
-
-                    # --- ESPEJO 2: (Inundación) ---
+                    # 2. INUNDACIÓN
                     with t2:
-                        st.markdown("**Identificación de zonas planas...**")
-                        c_par, c_vis = st.columns([1, 3])
-                        
-                        with c_par:
-                            # ... (Sliders igual) ...
-                            s_flat = st.slider("Pendiente Plana (< Grados)", 0.5, 10.0, 3.0)
-                            a_umb_i = st.slider("Acumulación Río (> Log)", 1.0, 10.0, 5.5, key="a_flood")
-                            st.info("...") # Info igual
+                        c1, c2 = st.columns([1, 3])
+                        with c1:
+                            st.markdown("#### Parámetros")
+                            s_flat = st.slider("Pendiente Plana (< °)", 0.5, 10.0, 3.0, key="si_slider")
+                            a_umb_i = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 5.5, key="ai_slider")
+                            st.info("Zonas de Empozamiento")
+                        with c2:
+                            mask_i = (s_core <= s_flat) & (a_core >= a_umb_i)
+                            caja_analisis_ai(mask_i, "Inundación")
+                            mapa_con_fondo(mask_i, "#0099FF", "Amenaza: Inundación Lenta")
 
-                        with c_vis:
-                            # CÁLCULO DE MÁSCARAS
-                            mask_flat = s_core <= s_flat 
-                            mask_flow = a_core >= a_umb_i
-                            
-                            # (Borramos 'risk_i' y 'colors_i' que ya no se usan)
-
-                            # VISUALIZACIÓN
-                            caja_analisis_ai(mask_flat & mask_flow, "Inundación")
-                            mapa_con_fondo(mask_flat & mask_flow, "#0099FF", "Amenaza: Inundación Lenta")
-                            
                 else:
-                    st.warning("⚠️ Calcula primero la hidrología.")
-                                  
+                    st.warning("⚠️ Primero debes calcular la Hidrología en la pestaña 'Hidrología'.")
+
             # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
             with tab5:
                 st.subheader("Centro de Descargas")
