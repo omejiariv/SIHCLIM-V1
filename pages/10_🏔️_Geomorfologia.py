@@ -594,7 +594,7 @@ if gdf_zona_seleccionada is not None:
                             "Unidad": ["km²", "km", "km", "km", "m", "Grados", "%"]
                         })
                         
-                        st.dataframe(df_morfo.style.format({"Valor": "{:.3f}"}), use_container_width=True)
+                        st.dataframe(df_morfo.style.format({"Valor": "{:.2f}"}), use_container_width=True)
                         
                         # CORRECCIÓN: Guardamos 'df_morfo' en la llave 'df_indices' del session_state
                         # Así la Tab 5 podrá encontrarlo para descargarlo
@@ -681,46 +681,59 @@ if gdf_zona_seleccionada is not None:
             with tab7:
                 st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
 
-                # --- FUNCIÓN AUXILIAR PARA MAPA CON FONDO (PEGAR AL INICIO DE TAB 7) ---
+                # --- FUNCIÓN AUXILIAR PARA MAPA CON FONDO ---
                 def mapa_con_fondo(mask_binaria, color_hex, titulo):
                     from rasterio import features
                     from shapely.geometry import shape
                     
-                    # 1. Blindaje de Memoria
+                    # 1. Convertir máscara a formato seguro
                     mask_safe = np.ascontiguousarray(mask_binaria, dtype=np.uint8)
                     
                     # 2. Vectorizar
                     shapes_gen = features.shapes(mask_safe, transform=transform)
                     geoms = [shape(g) for g, v in shapes_gen if v == 1]
                     
-                    if geoms:
-                        gdf = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
-                        
-                        # 🔥 SOLUCIÓN PANTALLA BLANCA: Simplificación Geométrica
-                        # Esto reduce el peso del archivo sin perder la forma general
-                        try:
-                            if gdf.crs.to_string() != "EPSG:3116":
-                                gdf = gdf.to_crs("EPSG:3116") # Proyectar a metros
-                            gdf['geometry'] = gdf.simplify(15) # Simplificar (15 metros de tolerancia)
-                            gdf = gdf.to_crs("EPSG:4326") # Volver a Lat/Lon para el mapa
-                        except: pass
-
-                        # 3. Visualizar
-                        if not gdf.empty:
-                            c_lat = gdf.centroid.y.mean()
-                            c_lon = gdf.centroid.x.mean()
-                            
-                            fig = px.choropleth_mapbox(
-                                geojson=gdf.geometry.__geo_interface__,
-                                locations=gdf.index,
-                                mapbox_style="carto-positron", 
-                                center={"lat": c_lat, "lon": c_lon}, zoom=12,
-                                opacity=0.6, color_discrete_sequence=[color_hex]
-                            )
-                            fig.update_layout(title=titulo, height=550, margin=dict(l=0,r=0,t=30,b=0))
-                            st.plotly_chart(fig, use_container_width=True)
-                    else:
+                    if not geoms:
                         st.info("No se detectan zonas de riesgo con estos parámetros.")
+                        return
+
+                    # 3. Crear GeoDataFrame
+                    gdf = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
+                    
+                    # 4. OPTIMIZACIÓN AGRESIVA (SOLUCIÓN PANTALLA BLANCA)
+                    try:
+                        # Convertir a metros para medir áreas
+                        if gdf.crs.to_string() != "EPSG:3116":
+                            gdf = gdf.to_crs("EPSG:3116")
+                        
+                        # A. Filtrar polígonos pequeños (Ruido < 900m2)
+                        gdf = gdf[gdf.geometry.area > 900]
+                        
+                        # B. Simplificar geometría (Tolerancia 20m)
+                        gdf['geometry'] = gdf.simplify(tolerance=20)
+                        
+                        # Volver a Lat/Lon para el mapa
+                        gdf = gdf.to_crs("EPSG:4326")
+                    except: pass # Si falla la proyección, se intenta graficar tal cual
+
+                    if gdf.empty:
+                        st.warning("Zonas muy pequeñas detectadas (ruido). Ajusta los sliders.")
+                        return
+
+                    # 5. Visualizar
+                    # Centrar el mapa en la amenaza
+                    c_lat = gdf.geometry.centroid.y.mean()
+                    c_lon = gdf.geometry.centroid.x.mean()
+                    
+                    fig = px.choropleth_mapbox(
+                        geojson=gdf.geometry.__geo_interface__,
+                        locations=gdf.index,
+                        mapbox_style="carto-positron", # FONDO GEOGRÁFICO
+                        center={"lat": c_lat, "lon": c_lon}, zoom=11,
+                        opacity=0.6, color_discrete_sequence=[color_hex]
+                    )
+                    fig.update_layout(title=titulo, margin=dict(l=0,r=0,t=30,b=0), height=550)
+                    st.plotly_chart(fig, use_container_width=True)
             
             def caja_analisis_ai(mask_riesgo, tipo):
                 # Análisis Estadístico
@@ -774,12 +787,6 @@ if gdf_zona_seleccionada is not None:
                             mask_steep = s_core >= s_umb
                             mask_flow = a_core >= a_umb
                             
-                            risk[mask_flow] = 1          # Amarillo
-                            risk[mask_steep] = 2         # Naranja
-                            risk[mask_steep & mask_flow] = 3 # Rojo
-                            
-                            colors = [[0.0, "rgba(0,0,0,0)"], [0.33, "#FFD700"], [0.66, "#FF8C00"], [1.0, "#FF0000"]]
-
                             caja_analisis_ai(mask_steep & mask_flow, "Avenida Torrencial") # <--- PEGAR AQUÍ
                             mapa_con_fondo(mask_steep & mask_flow, "red", "Amenaza: Avenida Torrencial")
 
