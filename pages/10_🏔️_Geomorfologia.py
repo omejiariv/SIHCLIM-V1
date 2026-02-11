@@ -775,10 +775,7 @@ if gdf_zona_seleccionada is not None:
 
                             caja_analisis_ai(mask_steep & mask_flow, "Avenida Torrencial") # <--- PEGAR AQUÍ
                             
-                            fig_risk = px.imshow(risk, color_continuous_scale=colors)
-                            fig_risk.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
-                            fig_risk.update_xaxes(visible=False); fig_risk.update_yaxes(visible=False)
-                            st.plotly_chart(fig_risk, use_container_width=True)
+                            mapa_con_fondo(mask_steep & mask_flow, "red", "Amenaza: Avenida Torrencial")
 
                     # --- ESPEJO 2: NUEVO CÓDIGO (Inundación) ---
                     with t2:
@@ -802,10 +799,7 @@ if gdf_zona_seleccionada is not None:
                             
                             caja_analisis_ai(mask_flat & mask_flow, "Inundación") # <--- PEGAR AQUÍ
                             
-                            fig_i = px.imshow(risk_i, color_continuous_scale=colors_i)
-                            
-                            risk_i[mask_flow] = 1          # Amarillo (Río normal)
-                            risk_i[mask_flat & mask_flow] = 2 # AZUL (Inundación)
+                            mapa_con_fondo(mask_flat & mask_flow, "#0099FF", "Amenaza: Inundación Lenta")
                             
                             # Escala de azules
                             colors_i = [[0.0, "rgba(0,0,0,0)"], [0.5, "#FFD700"], [1.0, "#0099FF"]]
