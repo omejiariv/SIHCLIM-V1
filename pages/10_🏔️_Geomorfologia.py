@@ -359,7 +359,7 @@ if gdf_zona_seleccionada is not None:
                 * **Forma de 'S':** Cuenca madura en transición.
                 """)
 
-            # --- TAB 4: HIDROLOGÍA (REPARADO Y VISUALIZACIÓN ROBUSTA) ---
+# --- TAB 4: HIDROLOGÍA (PRECISIÓN GEOGRÁFICA) ---
             with tab4:
                 st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
                 
@@ -376,73 +376,98 @@ if gdf_zona_seleccionada is not None:
                     ]
                     modo_viz = st.radio("Visualización:", opciones_viz)
                     
-                    # Slider de umbral
                     umbral = st.slider("Umbral Acumulación", 
                                      min_value=10, max_value=5000, value=100, step=10, 
-                                     help="Celdas mínimas drenando a un punto para considerarlo río.")
+                                     help="Celdas mínimas para formar un río.")
 
                 with c_map:
                     # 1. PREPARACIÓN DE DATOS (PYSHEDS)
                     import tempfile
-                    from shapely.geometry import shape, LineString, MultiLineString, Point
+                    from shapely.geometry import shape, Point
                     
                     grid = None
                     acc = None
                     fdir = None
                     crs_actual = meta.get('crs', 'EPSG:3116')
 
-                    # Procesamiento
+                    # Procesamiento Raster
                     with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                         try:
-                            # Escribir raster temporal
                             meta_temp = meta.copy()
                             meta_temp.update(driver='GTiff', dtype='float64') 
                             with rasterio.open(tmp.name, 'w', **meta_temp) as dst:
                                 dst.write(arr_elevacion.astype('float64'), 1)
                             
-                            # Inicializar Grid
                             grid = Grid.from_raster(tmp.name)
                             dem_grid = grid.read_raster(tmp.name)
                             
-                            # Hidrología básica
                             pit_filled = grid.fill_pits(dem_grid)
                             resolved = grid.resolve_flats(pit_filled)
                             dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                             fdir = grid.flowdir(resolved, dirmap=dirmap)
                             acc = grid.accumulation(fdir, dirmap=dirmap)
-
                         except Exception as e:
-                            st.error(f"Error procesando hidrología: {e}")
+                            st.error(f"Error hidrología: {e}")
                         finally: 
                             try: os.remove(tmp.name)
                             except: pass
 
-                    # 2. LÓGICA DE INTERACCIÓN
+                    # 2. LÓGICA DE GEOMETRÍA Y PUNTOS CLAVE
                     if grid is not None and acc is not None:
                         
-                        # --- LOCALIZADOR DE PUNTOS ---
-                        with st.expander("📍 Localizador de Puntos Clave (Calibración)", expanded=False):
-                            c_info1, c_info2 = st.columns(2)
-                            
-                            # Puntos clave automáticos
-                            idx_max_acc = np.nanargmax(acc)
-                            y_acc, x_acc = np.unravel_index(idx_max_acc, acc.shape)
-                            
-                            idx_min_elev = np.nanargmin(arr_elevacion)
-                            y_low, x_low = np.unravel_index(idx_min_elev, arr_elevacion.shape)
+                        # --- CÁLCULO DE COORDENADAS REALES (LAT/LON) ---
+                        # A. Punto Medio (Centroide del Polígono Oficial)
+                        if gdf_zona_seleccionada is not None:
+                            gdf_oficial_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
+                            centroide = gdf_oficial_4326.geometry.centroid.iloc[0]
+                            lat_med, lon_med = centroide.y, centroide.x
+                            area_oficial = gdf_zona_seleccionada.to_crs("EPSG:3116").area.sum() / 1e6
+                        else:
+                            lat_med, lon_med = 0, 0
+                            area_oficial = 0
 
-                            with c_info1:
-                                st.metric("Máx. Acumulación (Auto)", f"x:{x_acc}, y:{y_acc}")
-                                if st.button("Usar este punto", key="btn_use_acc"):
+                        # B. Punto Más Alto (Elevación)
+                        idx_max_elev = np.nanargmax(arr_elevacion)
+                        y_high, x_high = np.unravel_index(idx_max_elev, arr_elevacion.shape)
+                        # Transformar pixel a coordenadas
+                        lon_high, lat_high = rasterio.transform.xy(transform, y_high, x_high, offset='center')
+                        # Asegurar que esté en 4326 para mostrar
+                        if meta['crs'] != 'EPSG:4326':
+                            from pyproj import Transformer
+                            transf = Transformer.from_crs(meta['crs'], "EPSG:4326", always_xy=True)
+                            lon_high, lat_high = transf.transform(lon_high, lat_high)
+
+                        # C. Punto Más Bajo (Elevación)
+                        idx_min_elev = np.nanargmin(arr_elevacion)
+                        y_low, x_low = np.unravel_index(idx_min_elev, arr_elevacion.shape)
+                        lon_low, lat_low = rasterio.transform.xy(transform, y_low, x_low, offset='center')
+                        if meta['crs'] != 'EPSG:4326':
+                            lon_low, lat_low = transf.transform(lon_low, lat_low)
+
+                        # D. Punto de Máxima Acumulación (Salida calculada)
+                        idx_max_acc = np.nanargmax(acc)
+                        y_acc, x_acc = np.unravel_index(idx_max_acc, acc.shape)
+
+                        # --- VISUALIZADOR DE DATOS ---
+                        with st.expander("📍 Coordenadas y Puntos Clave", expanded=True):
+                            c1, c2, c3, c4 = st.columns(4)
+                            with c1:
+                                st.markdown("**Punto Medio (Oficial)**")
+                                st.caption(f"{lat_med:.5f}, {lon_med:.5f}")
+                                st.info(f"Área Oficial: {area_oficial:.2f} km²")
+                            with c2:
+                                st.markdown("**Punto Más Alto**")
+                                st.caption(f"{lat_high:.5f}, {lon_high:.5f}")
+                                st.write(f"Elev: {arr_elevacion.max():.0f} m")
+                            with c3:
+                                st.markdown("**Punto Más Bajo**")
+                                st.caption(f"{lat_low:.5f}, {lon_low:.5f}")
+                                st.write(f"Elev: {arr_elevacion.min():.0f} m")
+                            with c4:
+                                st.markdown("**Salida Automática**")
+                                if st.button("Usar Auto-Detect", help="Usa el punto de máxima acumulación de agua"):
                                     st.session_state['x_pour_calib'] = int(x_acc)
                                     st.session_state['y_pour_calib'] = int(y_acc)
-                                    st.rerun()
-                            
-                            with c_info2:
-                                st.metric("Punto Más Bajo (Topografía)", f"x:{x_low}, y:{y_low}")
-                                if st.button("Usar este punto", key="btn_use_low"):
-                                    st.session_state['x_pour_calib'] = int(x_low)
-                                    st.session_state['y_pour_calib'] = int(y_low)
                                     st.rerun()
 
                         # --- CALIBRACIÓN MANUAL ---
@@ -451,78 +476,53 @@ if gdf_zona_seleccionada is not None:
                             st.session_state['y_pour_calib'] = int(y_acc)
 
                         if modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
-                            st.markdown("##### 🔧 Ajuste del Punto de Cierre (Outlet)")
-                            c_adj, c_tools = st.columns([2, 2])
-                            
+                            st.markdown("##### 🔧 Mover Punto de Cierre (Outlet)")
+                            c_adj, c_tools = st.columns([3, 1])
                             with c_adj:
-                                x_p = st.number_input("X (Columna):", value=st.session_state['x_pour_calib'], step=1)
-                                y_p = st.number_input("Y (Fila):", value=st.session_state['y_pour_calib'], step=1)
+                                x_p = st.number_input("Pixel X:", value=st.session_state['x_pour_calib'])
+                                y_p = st.number_input("Pixel Y:", value=st.session_state['y_pour_calib'])
                                 st.session_state['x_pour_calib'] = x_p
                                 st.session_state['y_pour_calib'] = y_p
-
                             with c_tools:
-                                st.info("Usa el imán para centrar en el río.")
-                                if st.button("🧲 IMÁN (Atraer al río)"):
-                                    # Radio de búsqueda aumentado a 30px
+                                st.write("")
+                                st.write("")
+                                if st.button("🧲 Atraer al Río"):
                                     r = 30
                                     y0, y1 = max(0, y_p-r), min(acc.shape[0], y_p+r+1)
                                     x0, x1 = max(0, x_p-r), min(acc.shape[1], x_p+r+1)
                                     win = acc[y0:y1, x0:x1]
-                                    
                                     if win.size > 0:
-                                        max_local_idx = np.nanargmax(win)
-                                        loc_y, loc_x = np.unravel_index(max_local_idx, win.shape)
-                                        st.session_state['x_pour_calib'] = int(x0 + loc_x)
-                                        st.session_state['y_pour_calib'] = int(y0 + loc_y)
-                                        st.success(f"Ajustado a: {st.session_state['x_pour_calib']}, {st.session_state['y_pour_calib']}")
+                                        max_local = np.nanargmax(win)
+                                        ly, lx = np.unravel_index(max_local, win.shape)
+                                        st.session_state['x_pour_calib'] = int(x0 + lx)
+                                        st.session_state['y_pour_calib'] = int(y0 + ly)
                                         st.rerun()
 
-                        # 3. VISUALIZACIÓN (MAPAS)
-                        
-                        # Preparar la Geometría Oficial (Verde) para todos los mapas
-                        if gdf_zona_seleccionada is not None:
-                             gdf_oficial_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
-                             center_lat = gdf_oficial_4326.centroid.y.mean()
-                             center_lon = gdf_oficial_4326.centroid.x.mean()
-                        else:
-                             center_lat, center_lon = 6.2, -75.5 # Default Antioquia
+                        # 3. VISUALIZACIÓN DE MAPAS
+                        fig = go.Figure()
 
-                        # A. RASTER (Interactivo)
+                        # CAPA 1: Polígono Oficial (Verde - Siempre visible)
+                        if gdf_zona_seleccionada is not None:
+                            poly = gdf_oficial_4326.geometry.iloc[0]
+                            if poly.geom_type == 'Polygon': xo, yo = poly.exterior.coords.xy
+                            else: xo, yo = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
+                            fig.add_trace(go.Scattermapbox(
+                                mode="lines", lon=list(xo), lat=list(yo),
+                                line={'width': 2, 'color': '#00FF00'}, name="Cuenca Oficial"
+                            ))
+
+                        # MODO A: Raster
                         if modo_viz == "Raster (Acumulación)":
                             log_acc = np.log1p(acc)
-                            fig = px.imshow(log_acc, color_continuous_scale='Blues', title="Acumulación de Flujo (Log)")
-                            # Habilitar zoom y aumentar tamaño
-                            fig.update_layout(
-                                height=700, 
-                                dragmode='pan',
-                                margin=dict(l=0,r=0,t=30,b=0)
-                            )
-                            fig.update_xaxes(showticklabels=False) 
-                            fig.update_yaxes(showticklabels=False)
-                            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
+                            fig = px.imshow(log_acc, color_continuous_scale='Blues')
+                            fig.update_layout(dragmode='pan')
 
-                        # B. VECTORES (LÍNEAS) - Lógica Robusta
+                        # MODO B: Vectores
                         elif modo_viz == "Vectores (Líneas)":
-                            # Llamada correcta con nombre_zona
                             gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
-                            
-                            fig = go.Figure()
-
-                            # 1. Capa Oficial (Verde)
-                            if gdf_zona_seleccionada is not None:
-                                poly = gdf_oficial_4326.geometry.iloc[0]
-                                if poly.geom_type == 'Polygon': xo, yo = poly.exterior.coords.xy
-                                else: xo, yo = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
-                                fig.add_trace(go.Scattermapbox(
-                                    mode="lines", lon=list(xo), lat=list(yo),
-                                    line={'width': 2, 'color': '#00FF00'}, name="Cuenca Oficial"
-                                ))
-
-                            # 2. Capa Ríos (Azul)
-                            if gdf_rios is not None and not gdf_rios.empty:
+                            if gdf_rios is not None:
                                 st.session_state['gdf_rios'] = gdf_rios
                                 gdf_rios_4326 = gdf_rios.to_crs("EPSG:4326")
-                                
                                 lons, lats = [], []
                                 for geom in gdf_rios_4326.geometry:
                                     if geom.geom_type == 'LineString':
@@ -534,38 +534,13 @@ if gdf_zona_seleccionada is not None:
                                             x, y = g.xy
                                             lons.extend(list(x) + [None])
                                             lats.extend(list(y) + [None])
-                                
                                 fig.add_trace(go.Scattermapbox(
                                     mode="lines", lon=lons, lat=lats,
                                     line={'width': 1.5, 'color': '#0077BE'}, name="Ríos Calculados"
                                 ))
-                            else:
-                                st.warning("⚠️ No se generaron ríos. Intenta BAJAR el umbral de acumulación.")
 
-                            fig.update_layout(
-                                title=f"Red Hídrica (Umbral: {umbral})",
-                                mapbox_style="carto-positron",
-                                mapbox_zoom=11, 
-                                mapbox_center={"lat": center_lat, "lon": center_lon},
-                                height=600, margin=dict(l=0,r=0,t=30,b=0)
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-                        # C. CATCHMENT (CUENCA)
+                        # MODO C: Catchment
                         elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
-                            fig = go.Figure()
-
-                            # 1. Capa Oficial (Verde) - SIEMPRE VISIBLE
-                            if gdf_zona_seleccionada is not None:
-                                poly = gdf_oficial_4326.geometry.iloc[0]
-                                if poly.geom_type == 'Polygon': xo, yo = poly.exterior.coords.xy
-                                else: xo, yo = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
-                                fig.add_trace(go.Scattermapbox(
-                                    mode="lines", lon=list(xo), lat=list(yo),
-                                    line={'width': 2, 'color': '#00FF00'}, name="Cuenca Oficial (Referencia)"
-                                ))
-
-                            # 2. Calcular Cuenca Dinámica
                             try:
                                 catch = grid.catchment(x=x_p, y=y_p, fdir=fdir, dirmap=dirmap, xytype='index')
                                 catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
@@ -575,18 +550,17 @@ if gdf_zona_seleccionada is not None:
                                 if geoms:
                                     gdf_c = gpd.GeoDataFrame({'geometry': geoms}, crs=crs_actual).dissolve()
                                     gdf_c_4326 = gdf_c.to_crs("EPSG:4326")
-                                    st.session_state['catchment_raster'] = catch # Guardar
-
-                                    # Visualizar según modo
+                                    st.session_state['catchment_raster'] = catch
+                                    
+                                    # Pintar Calculada
                                     if modo_viz == "Catchment (Mascara)":
                                         fig.add_trace(go.Choroplethmapbox(
                                             geojson=gdf_c_4326.geometry.__geo_interface__,
-                                            locations=gdf_c_4326.index,
-                                            z=[1]*len(gdf_c_4326), # Dummy value
-                                            colorscale=[[0, '#0099FF'], [1, '#0099FF']],
-                                            showscale=False, marker_opacity=0.5, name="Cuenca Calculada"
+                                            locations=gdf_c_4326.index, z=[1]*len(gdf_c_4326),
+                                            colorscale=[[0, '#3366CC'], [1, '#3366CC']], showscale=False,
+                                            marker_opacity=0.6, name="Cuenca Calculada"
                                         ))
-                                    else: # Divisoria Línea
+                                    else:
                                         poly_c = gdf_c_4326.geometry.iloc[0]
                                         if poly_c.geom_type == 'Polygon': xc, yc = poly_c.exterior.coords.xy
                                         else: xc, yc = max(poly_c.geoms, key=lambda a: a.area).exterior.coords.xy
@@ -595,35 +569,31 @@ if gdf_zona_seleccionada is not None:
                                             line={'width': 3, 'color': 'red'}, name="Divisoria Calculada"
                                         ))
                                     
-                                    # Área
-                                    area_km2 = gdf_c.area.sum() / 1e6
-                                    st.success(f"✅ Área Calculada: {area_km2:.2f} km²")
+                                    # Punto de Desfogue
+                                    aff = meta['transform']
+                                    coords_proy = aff * (x_p + 0.5, y_p + 0.5)
+                                    pt_gdf = gpd.GeoDataFrame({'geometry': [Point(coords_proy[0], coords_proy[1])]}, crs=crs_actual).to_crs("EPSG:4326")
+                                    fig.add_trace(go.Scattermapbox(
+                                        mode="markers", lon=[pt_gdf.geometry.iloc[0].x], lat=[pt_gdf.geometry.iloc[0].y],
+                                        marker={'size': 12, 'color': 'red', 'symbol': 'star'}, name="Punto de Cierre"
+                                    ))
+                                    
+                                    st.success(f"Área Calculada: {gdf_c.area.sum()/1e6:.2f} km²")
                                 else:
-                                    st.warning("⚠️ El punto seleccionado no genera cuenca (fuera de flujo).")
-
+                                    st.warning("Punto fuera de la red de drenaje.")
                             except Exception as e:
-                                st.error(f"Error calculando cuenca: {e}")
+                                st.error(str(e))
 
-                            # 3. Punto de Desfogue (Punto Rojo)
-                            affine = meta['transform']
-                            coords_proy = affine * (x_p + 0.5, y_p + 0.5)
-                            pt_gdf = gpd.GeoDataFrame({'geometry': [Point(coords_proy[0], coords_proy[1])]}, crs=crs_actual).to_crs("EPSG:4326")
-                            pt_lon = pt_gdf.geometry.iloc[0].x
-                            pt_lat = pt_gdf.geometry.iloc[0].y
-                            
-                            fig.add_trace(go.Scattermapbox(
-                                mode="markers", lon=[pt_lon], lat=[pt_lat],
-                                marker={'size': 12, 'color': 'red'}, name="Punto de Cierre"
-                            ))
-
-                            fig.update_layout(
-                                title="Comparativa: Oficial vs Calculada",
-                                mapbox_style="carto-positron",
-                                mapbox_zoom=11, 
-                                mapbox_center={"lat": center_lat, "lon": center_lon},
-                                height=600, margin=dict(l=0,r=0,t=30,b=0)
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
+                        # Configuración Final del Mapa
+                        fig.update_layout(
+                            mapbox_style="carto-positron",
+                            mapbox_zoom=11,
+                            mapbox_center={"lat": lat_med, "lon": lon_med}, # Centrado en Punto Medio Oficial
+                            height=600,
+                            margin=dict(l=0,r=0,t=0,b=0),
+                            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
 
                     else:
                         st.warning("Esperando cálculo hidrológico...")
