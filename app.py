@@ -139,22 +139,34 @@ parents = [
 values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8, 15, 5, 5, 5]
 
 def create_system_map():
-    # Validación simple para evitar errores
+    # 1. Debug: Si las listas no coinciden, avisa
     if not (len(ids) == len(parents) == len(values)):
-        st.error(f"Error interno: Discrepancia en datos del mapa. Ids:{len(ids)}, Parents:{len(parents)}, Values:{len(values)}")
+        st.error(f"⚠️ Error de Datos: Ids={len(ids)}, Parents={len(parents)}")
         return None
         
     df = pd.DataFrame(dict(ids=ids, parents=parents, values=values))
+    
+    # 2. CORRECCIÓN CRÍTICA: Quitamos branchvalues='total' para evitar errores matemáticos silenciosos
     fig = px.sunburst(
-        df, names='ids', parents='parents', values='values', branchvalues='total',
+        df, names='ids', parents='parents', values='values', 
+        # branchvalues='total', <--- ESTO CAUSABA EL ERROR SILENCIOSO
         color='parents', color_discrete_sequence=px.colors.qualitative.Pastel1
     )
     fig.update_layout(
-        title={'text': "🗺️ Mapa de Navegación del Sistema", 'y':0.95, 'x':0.5, 'xanchor': 'center'},
-        margin=dict(t=60, l=0, r=0, b=0), height=600
+        title={'text': "🗺️ Mapa de Navegación", 'y':0.95, 'x':0.5, 'xanchor': 'center'},
+        margin=dict(t=60, l=0, r=0, b=0), height=500
     )
-    fig.update_traces(hovertemplate='<b>%{label}</b><br>Sección: %{parent}<extra></extra>', textinfo='label+percent parent')
     return fig
+
+# SECCIÓN DE RENDERIZADO
+c1, c2 = st.columns([1.8, 1.2])
+
+with c1:
+    try:
+        fig_map = create_system_map()
+        st.plotly_chart(fig_map, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error dibujando mapa: {e}")
 
 # --- 5. LAYOUT PRINCIPAL (MAPA Y CAJAS LATERALES) ---
 c1, c2 = st.columns([1.8, 1.2])
@@ -221,3 +233,4 @@ with c2:
 # --- FOOTER ---
 st.divider()
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
+
