@@ -565,23 +565,41 @@ if gdf_zona_seleccionada is not None:
                             fig.update_layout(dragmode='pan')
                             
                         elif modo_viz == "Vectores (Líneas)":
-                        ruta_geojson_rios = "ruta/a/tu/red_drenaje.geojson" # Cambia esto
-                        if os.path.exists(ruta_geojson_rios):
-                             gdf_rios_externo = gpd.read_file(ruta_geojson_rios)
-                             # Recortar con la zona seleccionada para no cargar todo el mapa
-                             gdf_rios = gpd.clip(gdf_rios_externo, gdf_zona_seleccionada.to_crs(gdf_rios_externo.crs))
-                             st.success("✅ Red de Drenaje Oficial (1:25k) cargada.")
-                        else:                            
-                            gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
-                            if gdf_rios is not None:
-                                st.session_state['gdf_rios'] = gdf_rios
-                                gdf_r = gdf_rios.to_crs("EPSG:4326")
-                                lons, lats = [], []
-                                for geom in gdf_r.geometry:
-                                    if geom.geom_type == 'LineString': x,y = geom.xy
-                                    else: x,y = geom.geoms[0].xy 
-                                    lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
-                                fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.5, 'color':'#0077BE'}, name="Ríos"))
+                            # BLOQUE CORREGIDO: INDENTACIÓN ARREGLADA
+                            # ---------------------------------------------------------
+                            ruta_geojson_rios = "ruta/a/tu/red_drenaje.geojson" # <-- AQUÍ ESTABA EL ERROR
+                            
+                            if os.path.exists(ruta_geojson_rios):
+                                 try:
+                                     gdf_rios_externo = gpd.read_file(ruta_geojson_rios)
+                                     # Recortar con la zona seleccionada para optimizar
+                                     gdf_rios = gpd.clip(gdf_rios_externo, gdf_zona_seleccionada.to_crs(gdf_rios_externo.crs))
+                                     
+                                     # Visualizar Externo
+                                     gdf_r = gdf_rios.to_crs("EPSG:4326")
+                                     lons, lats = [], []
+                                     for geom in gdf_r.geometry:
+                                         if geom.geom_type == 'LineString': x,y = geom.xy
+                                         else: x,y = geom.geoms[0].xy 
+                                         lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                                     
+                                     fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.5, 'color':'#0077BE'}, name="Red Drenaje Oficial (25k)"))
+                                     st.success("✅ Visualizando Red Oficial 1:25k")
+                                 except Exception as e:
+                                     st.error(f"Error cargando capa externa: {e}")
+                            else:                            
+                                 # Fallback: Cálculo automático si no hay archivo
+                                 gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
+                                 if gdf_rios is not None:
+                                     st.session_state['gdf_rios'] = gdf_rios
+                                     gdf_r = gdf_rios.to_crs("EPSG:4326")
+                                     lons, lats = [], []
+                                     for geom in gdf_r.geometry:
+                                         if geom.geom_type == 'LineString': x,y = geom.xy
+                                         else: x,y = geom.geoms[0].xy 
+                                         lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                                     fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width':1.5, 'color':'#0077BE'}, name="Ríos Calculados"))
+                            # ---------------------------------------------------------
 
                         elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
                             try:
