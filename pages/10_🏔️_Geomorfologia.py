@@ -888,7 +888,6 @@ if gdf_zona_seleccionada is not None:
                 
                 caja_analisis_ai(mask_i, "Inundación Plana")
                 mapa_con_fondo(mask_i, "#0099FF", f"Amenaza: Inundación (TWI > {twi_val})")
-
     else:
         st.warning("⚠️ Ve a la pestaña 'Hidrología' primero para calcular el flujo de agua.")
 
@@ -966,5 +965,3 @@ if gdf_zona_seleccionada is not None:
 
 else:
     st.info("👈 Selecciona una zona.")
-
-
