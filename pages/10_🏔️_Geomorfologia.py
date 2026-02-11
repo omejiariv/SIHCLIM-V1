@@ -220,7 +220,7 @@ if gdf_zona_seleccionada is not None:
 
             tab1, tab2, tab3, tab4, tab6, tab7, tab5 = st.tabs([
                 "🗺️ 3D", "📐 Pendientes", "📈 Hipsometría", 
-                "🌊 Hidrología", "📊 Índices (Nuevo)", "🚨 Amenazas", "📥 Descargas"
+                "🌊 Hidrología", "📊 Índices Morfo-métricos", "🚨 Amenazas", "📥 Descargas"
             ])
             
             # Factor de reducción visual
@@ -385,7 +385,7 @@ if gdf_zona_seleccionada is not None:
             with tab4:
                 # 1. EVITAR CRASH (Anti-Bloqueo)
                 import sys
-                sys.setrecursionlimit(100000) # Límite aumentado drásticamente
+                sys.setrecursionlimit(30000) # Límite aumentado drásticamente
                 
                 st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
                 
