@@ -109,7 +109,7 @@ with tab_aleph:
 
 st.divider()
 
-# --- 4. DATOS DEL GRÁFICO SUNBURST ---
+# --- 4. DATOS DEL GRÁFICO SUNBURST (RECUPERADO) ---
 ids = [
     'SIHCLI-POTER', 
     'Clima e Hidrología', 'Aguas Subterráneas', 'Biodiversidad', 'Toma de Decisiones', 'Isoyetas HD', 'Herramientas',
@@ -118,8 +118,7 @@ ids = [
     'Modelo Turc', 'Recarga', 'Balance',
     'GBIF', 'Taxonomía', 'Amenazas',
     'Priorización', 'Multicriterio',
-    'Calidad', 'Auditoría',
-    'Geomorfología', 'Morfometría', 'Drenaje', 'Elevación' # <--- NUEVOS
+    'Calidad', 'Auditoría'
 ]
 
 parents = [
@@ -130,11 +129,10 @@ parents = [
     'Aguas Subterráneas', 'Aguas Subterráneas', 'Aguas Subterráneas',
     'Biodiversidad', 'Biodiversidad', 'Biodiversidad',
     'Toma de Decisiones', 'Toma de Decisiones',
-    'Herramientas', 'Herramientas',
-    'SIHCLI-POTER', 'Geomorfología', 'Geomorfología', 'Geomorfología' # <--- NUEVOS PADRES
+    'Herramientas', 'Herramientas'
 ]
 
-values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8, 15, 5, 5, 5]
+values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8]
 
 def create_system_map():
     if len(ids) != len(parents) or len(ids) != len(values): return None
@@ -150,16 +148,16 @@ def create_system_map():
     fig.update_traces(hovertemplate='<b>%{label}</b><br>Sección: %{parent}<extra></extra>', textinfo='label+percent parent')
     return fig
 
-# --- 5. LAYOUT PRINCIPAL ---
+# SECCIÓN DE RENDERIZADO EN APP.PY
 c1, c2 = st.columns([1.8, 1.2])
 
 with c1:
-    fig = create_system_map()
-    if fig: st.plotly_chart(fig, use_container_width=True)
+    fig_map = create_system_map()
+    if fig_map: st.plotly_chart(fig_map, use_container_width=True)
 
 with c2:
-    st.subheader("🛠️ Módulos (Aplicaciones Eco-Hidroclimáticas)")
-    st.markdown("Acceda a las capacidades analíticas del sistema:")
+    st.subheader("🛠️ Módulos")
+    st.info("Seleccione una página en el menú lateral para comenzar.")
     
     with st.expander("🗺️ Isoyetas HD (Escenarios & Pronósticos)", expanded=True):
         st.write("""
@@ -222,3 +220,4 @@ with c2:
 st.divider()
 
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
+
