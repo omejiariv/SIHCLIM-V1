@@ -58,25 +58,47 @@ DEM_PATH = os.path.join("data", "DemAntioquia_EPSG3116.tif")
 
 @st.cache_data(show_spinner="Procesando terreno...")
 def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
-    if _gdf_corte is None or _gdf_corte.empty: return None, None, None
+    if _gdf_corte is None or _gdf_corte.empty: 
+        return None, None, None
+    
     try:
-        if not os.path.exists(ruta_dem): return None, None, None
+        if not os.path.exists(ruta_dem): 
+            return None, None, None
+            
+        # 1. Blindaje de Geometría (Repara polígonos inválidos)
+        # Esto evita errores silenciosos al recortar
+        geometria_valida = _gdf_corte.copy()
+        geometria_valida['geometry'] = geometria_valida.buffer(0) 
+
         with rasterio.open(ruta_dem) as src:
             crs_dem = src.crs
-            gdf_proyectado = _gdf_corte.to_crs(crs_dem)
+            gdf_proyectado = geometria_valida.to_crs(crs_dem)
             geoms = gdf_proyectado.geometry.values
+            
             try:
                 out_image, out_transform = mask(src, geoms, crop=True)
             except ValueError:
                 return None, "OUT_OF_BOUNDS", None
-            
+                
             out_meta = src.meta.copy()
-            out_meta.update({"driver": "GTiff", "height": out_image.shape[1], "width": out_image.shape[2], "transform": out_transform, "count": 1})
+            out_meta.update({
+                "driver": "GTiff",
+                "height": out_image.shape[1],
+                "width": out_image.shape[2],
+                "transform": out_transform,
+                "count": 1
+            })
+            
             dem_array = out_image[0]
+            # Limpieza de datos NoData y valores erróneos profundos
             dem_array = np.where(dem_array == src.nodata, np.nan, dem_array)
             dem_array = np.where(dem_array < -100, np.nan, dem_array)
-            if np.isnan(dem_array).all(): return None, "EMPTY_DATA", None
+            
+            if np.isnan(dem_array).all(): 
+                return None, "EMPTY_DATA", None
+                
             return dem_array, out_meta, out_transform
+            
     except Exception as e:
         st.error(f"Error DEM: {e}")
         return None, None, None
@@ -485,7 +507,7 @@ if gdf_zona_seleccionada is not None:
 
                         # B. VECTORES (RÍOS)
                         elif modo_viz == "Vectores (Líneas)":
-                            gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona="Analisis")
+                            gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual)
                             if gdf_rios is not None:
                                 gdf_4326 = gdf_rios.to_crs("EPSG:4326")
                                 # ... (Código de ploteo de líneas igual al anterior) ...
@@ -799,65 +821,76 @@ if gdf_zona_seleccionada is not None:
                     </div>
                     """, unsafe_allow_html=True)
 
-                # --- 3. LÓGICA PRINCIPAL ---
-                if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
-                    # Recortes para alinear matrices
-                    min_h = min(slope_deg.shape[0], acc.shape[0])
-                    min_w = min(slope_deg.shape[1], acc.shape[1])
-                    s_core = slope_deg[:min_h, :min_w]
-                    acc_raw = acc[:min_h, :min_w] # Acumulación pura para TWI
-                    a_core_log = np.log1p(acc_raw) # Log para sliders visuales
+    # --- LÓGICA PRINCIPAL ---
+    if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
+        # Recortes de seguridad
+        min_h = min(slope_deg.shape[0], acc.shape[0])
+        min_w = min(slope_deg.shape[1], acc.shape[1])
+        s_core = slope_deg[:min_h, :min_w]
+        acc_raw = acc[:min_h, :min_w]
+        
+        # Log para visualización, pero RAW para cálculos físicos
+        a_core_log = np.log1p(acc_raw) 
+        
+        t1, t2 = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación (TWI)"])
+        
+        # 1. AVENIDA TORRENCIAL
+        with t1:
+            c1, c2 = st.columns([1, 3])
+            with c1:
+                st.markdown("#### Energía de Flujo")
+                # Rangos ajustados a la realidad andina
+                s_range = st.slider("Pendiente Crítica (°)", 0.0, 60.0, (5.0, 40.0), 
+                                  help="Rango donde el agua gana velocidad y transporta material.")
+                a_umb = st.slider("Caudal (Log)", 4.0, 9.0, 6.0)
+                st.error("Modelando Flujos Rápidos")
+                
+            with c2:
+                # El agua debe existir (a_umb) Y la pendiente debe permitir transporte (s_range)
+                mask_t = (s_core >= s_range[0]) & (s_core <= s_range[1]) & (a_core_log >= a_umb)
+                caja_analisis_ai(mask_t, "Avenida Torrencial")
+                mapa_con_fondo(mask_t, "red", "Amenaza: Flujo de Escombros / Av. Torrencial")
+
+        # 2. INUNDACIÓN (TWI CIENTÍFICO)
+        with t2:
+            c1, c2 = st.columns([1, 3])
+            with c1:
+                st.markdown("#### Índice Topográfico (TWI)")
+                with st.spinner("Calculando saturación de suelos..."):
+                    # 1. Pendiente en Radianes
+                    slope_rad = np.deg2rad(s_core)
+                    tan_slope = np.tan(slope_rad)
+                    # Evitar división por cero (pendientes planas = 0.001)
+                    tan_slope = np.where(tan_slope < 0.001, 0.001, tan_slope)
                     
-                    t1, t2 = st.tabs(["🔴 Avenida Torrencial (Flash Flood)", "🔵 Inundación (TWI)"])
+                    # 2. CORRECCIÓN CIENTÍFICA: Área Específica
+                    # Asumimos resolución aprox de 30m (Sentinel/SRTM). 
+                    # Si acc es conteo de celdas, el área es acc * resolución.
+                    resolucion_pixel = 30.0  
+                    specific_catchment_area = acc_raw * resolucion_pixel
                     
-                    # --- PESTAÑA 1: AVENIDA TORRENCIAL ---
-                    with t1:
-                        c1, c2 = st.columns([1, 3])
-                        with c1:
-                            st.markdown("#### Calibración de Energía")
-                            st.caption("Define canales con pendiente de transporte.")
-                            # Slider de RANGO (Min, Max)
-                            s_range = st.slider("Rango Pendiente (°)", 0.0, 60.0, (5.0, 35.0), help="Entre 5° y 35° ocurren los flujos de escombros.")
-                            a_umb = st.slider("Caudal Mínimo (Log)", 4.0, 9.0, 6.0)
-                            st.error("Zonas de Transporte Activo")
-                            
-                        with c2:
-                            # Lógica física: Agua + Pendiente en rango de transporte
-                            mask_t = (s_core >= s_range[0]) & (s_core <= s_range[1]) & (a_core_log >= a_umb)
-                            
-                            caja_analisis_ai(mask_t, "Avenida Torrencial")
-                            mapa_con_fondo(mask_t, "red", "Amenaza: Avenida Torrencial")
-
-                    # --- PESTAÑA 2: INUNDACIÓN (TWI) ---
-                    with t2:
-                        c1, c2 = st.columns([1, 3])
-                        with c1:
-                            st.markdown("#### Índice Topográfico (TWI)")
-                            st.caption("Predicción de zonas de saturación.")
-                            
-                            # Cálculo TWI al vuelo
-                            with st.spinner("Calculando física de terreno..."):
-                                slope_rad = np.deg2rad(s_core)
-                                tan_slope = np.tan(slope_rad)
-                                tan_slope = np.where(tan_slope < 0.001, 0.001, tan_slope) # Evitar div/0
-                                twi = np.log(acc_raw / tan_slope)
-                            
-                            twi_val = st.slider("Sensibilidad TWI", 5.0, 25.0, 12.0, help="Menor valor = Más área inundable.")
-                            strict_flat = st.checkbox("Forzar solo planos (< 3°)", value=False)
-                            st.info("Llanuras de Inundación")
-
-                        with c2:
-                            # Lógica física: TWI Alto + Pendiente Baja (Opcional)
-                            if strict_flat:
-                                mask_i = (twi >= twi_val) & (s_core <= 5)
-                            else:
-                                mask_i = (twi >= twi_val)
-                                
-                            caja_analisis_ai(mask_i, "Inundación Plana")
-                            mapa_con_fondo(mask_i, "#0099FF", f"Amenaza: Inundación (TWI > {twi_val})")
-
+                    # 3. Fórmula TWI = ln(a / tan(b))
+                    # Sumamos 1 al área para evitar log(0)
+                    twi = np.log((specific_catchment_area + 1) / tan_slope)
+                
+                # Slider ajustado a valores típicos de TWI (suelen estar entre 5 y 25)
+                twi_val = st.slider("Sensibilidad de Humedad", 5.0, 25.0, 10.0, 
+                                  help="Valores > 10 suelen indicar saturación/río.")
+                
+                strict_flat = st.checkbox("Restringir a zonas planas (< 5°)", value=True)
+                st.info("Modelando Empozamiento")
+                
+            with c2:
+                if strict_flat:
+                    mask_i = (twi >= twi_val) & (s_core <= 5)
                 else:
-                    st.warning("⚠️ Primero debes calcular la Hidrología en la pestaña 'Hidrología'.")
+                    mask_i = (twi >= twi_val)
+                
+                caja_analisis_ai(mask_i, "Inundación Plana")
+                mapa_con_fondo(mask_i, "#0099FF", f"Amenaza: Inundación (TWI > {twi_val})")
+
+    else:
+        st.warning("⚠️ Ve a la pestaña 'Hidrología' primero para calcular el flujo de agua.")
 
             # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
             with tab5:
