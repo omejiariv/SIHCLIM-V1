@@ -1,142 +1,44 @@
+# modules/impacto_serv_ecosist.py
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 import folium
 from streamlit_folium import st_folium
 from folium import plugins
-from folium.plugins import MarkerCluster, LocateControl
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
-# --- CONFIGURACIÓN DE DATOS SIGA-CAL ---
-def load_sigacal_data(file_path):
-    """Carga y limpia los datos de SIGA-CAL."""
-    df = pd.read_csv(file_path, sep=';', decimal=',')
-    # Limpieza de columnas de texto que deberían ser numéricas
-    for col in ['AreaAcu_ha', 'AreaAcuPer', 'S']:
-        if col in df.columns:
-            # Quitamos puntos de miles y cambiamos coma por punto
-            df[col] = df[col].astype(str).str.replace('.', '').str.replace(',', '.')
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    return df
-
-# --- LÓGICA DE LA PÁGINA ---
-def render_impact_analysis_page():
-    st.title("🛡️ Análisis de Impacto y Servicios Ecosistémicos")
-    st.markdown("""
-    Esta sección integra los resultados del modelo **SIGA-CAL** con la gestión de predios de **CuencaVerde**. 
-    Permite evaluar cómo las intervenciones de conservación impactan la retención de sedimentos y nutrientes en la cuenca del Río Grande.
-    """)
-
-    # 1. CARGA DE DATOS
+def render_sigacal_analysis(gdf_predios=None):
+    st.subheader("📊 Análisis de Servicios Ecosistémicos - Modelo SIGA-CAL")
+    
+    # Carga de datos con manejo de errores
     try:
-        df_sigacal = load_sigacal_data('SIGACAL_RioGrande_Omejia_V2.csv')
+        df_siga = pd.read_csv('SIGACAL_RioGrande_Omejia_V2.csv', sep=';', decimal=',')
+        for c in ['AreaAcu_ha', 'AreaAcuPer', 'S']:
+            if c in df_siga.columns:
+                df_siga[c] = df_siga[c].astype(str).str.replace('.', '').str.replace(',', '.')
+                df_siga[c] = pd.to_numeric(df_siga[c], errors='coerce')
     except Exception as e:
-        st.error(f"Error cargando datos de SIGA-CAL: {e}")
+        st.error(f"No se pudo cargar el archivo SIGA-CAL: {e}")
         return
 
-    # 2. TABS PRINCIPALES
-    tab_mapa, tab_indicadores, tab_comparativo = st.tabs([
-        "🌍 Mapa de Intervenciones", 
-        "📊 Indicadores SIGA-CAL", 
-        "🔄 Comparación SIHCLIM vs SIGA-CAL"
-    ])
+    # --- MÉTRICAS DE IMPACTO ---
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Máx. Retención Sedimentos", f"{df_siga['Dk_sedimentos_tru_acum'].max()*100:.1f}%")
+    m2.metric("Eficiencia Nitrógeno", f"{df_siga['Dk_N_tru_acum'].max()*100:.1f}%")
+    m3.metric("Flujo Base (Dk)", f"{df_siga['Dk_flujoBase_tru_acum'].mean():.3f}")
 
-    # --- PESTAÑA 1: MAPA INTERACTIVO (Basado en tu código de Visualizer) ---
-    with tab_mapa:
-        st.subheader("Distribución Espacial de Intervenciones")
-        
-        # Configuración inicial del mapa centrada en Río Grande (Norte de Antioquia)
-        location_center = [6.59, -75.45] 
-        zoom_level = 11
+    # --- GRÁFICO DE CURVA DE DESEMPEÑO ---
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df_siga['AreaAcu_ha'], y=df_siga['Dk_sedimentos_tru_acum'], name="Sedimentos", line=dict(color='brown')))
+    fig.add_trace(go.Scatter(x=df_siga['AreaAcu_ha'], y=df_siga['Dk_N_tru_acum'], name="Nitrógeno", line=dict(color='green')))
+    fig.update_layout(title="Curva de Eficiencia vs Área Acumulada", xaxis_title="Hectáreas", yaxis_title="Índice Dk")
+    st.plotly_chart(fig, use_container_width=True)
 
-        m = folium.Map(location=location_center, zoom_start=zoom_level, tiles="CartoDB positron")
-        
-        # Capas base adicionales
-        folium.TileLayer('openstreetmap', name='Callejero (OSM)').add_to(m)
-        folium.TileLayer(
-            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            attr='Esri', name='Satélite (Esri)'
-        ).add_to(m)
-
-        # Plugins solicitados
-        LocateControl(auto_start=False).add_to(m)
-        plugins.Fullscreen(position='topright').add_to(m)
-        plugins.Geocoder(position='topright').add_to(m)
-
-        # Aquí integrarías tus GeoJSON de predios y estaciones
-        # (Se asume que gdf_predios y gdf_filtered están en el session_state o contexto)
-        
-        folium.LayerControl().add_to(m)
-        st_folium(m, width="100%", height=500)
-
-    # --- PESTAÑA 2: INDICADORES SIGA-CAL (Procesando el CSV) ---
-    with tab_indicadores:
-        st.subheader("Eficiencia de Servicios Ecosistémicos (Acumulada)")
-        
-        # Métricas de Resumen
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Retención Sedimentos (Máx)", f"{df_sigacal['Dk_sedimentos_tru_acum'].max()*100:.2f}%")
-        m2.metric("Eficiencia Nitrógeno", f"{df_sigacal['Dk_N_tru_acum'].max()*100:.2f}%")
-        m3.metric("Eficiencia Fósforo", f"{df_sigacal['Dk_P_tru_acum'].max()*100:.2f}%")
-
-        # Gráfico de Curva de Desempeño
-        fig = go.Figure()
-        
-        metrics = {
-            'Dk_sedimentos_tru_acum': ('Sedimentos', 'brown'),
-            'Dk_N_tru_acum': ('Nitrógeno (N)', 'green'),
-            'Dk_P_tru_acum': ('Fósforo (P)', 'orange'),
-            'Dk_flujoBase_tru_acum': ('Flujo Base', 'blue')
-        }
-
-        for col, (label, color) in metrics.items():
-            fig.add_trace(go.Scatter(
-                x=df_sigacal['AreaAcu_ha'], 
-                y=df_sigacal[col],
-                mode='lines',
-                name=label,
-                line=dict(color=color, width=2)
-            ))
-
-        fig.update_layout(
-            title="Evolución de Eficiencias vs Área Drenada",
-            xaxis_title="Área Acumulada (ha)",
-            yaxis_title="Índice de Eficiencia (Dk)",
-            template="plotly_white",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # --- PESTAÑA 3: COMPARATIVO Y ESCENARIOS ---
-    with tab_comparativo:
-        st.subheader("Análisis de Coherencia: SIHCLIM vs SIGA-CAL")
-        
-        st.info("""
-        En esta sección comparamos los datos de escorrentía y recarga calculados en **SIHCLIM** con los índices de flujo base y retención de **SIGA-CAL**.
-        """)
-        
-        col_c1, col_c2 = st.columns(2)
-        
-        with col_c1:
-            st.write("**Parámetros SIHCLIM (Hidrología)**")
-            # Aquí irían los indicadores de tus módulos de infiltración/escorrentía
-            st.metric("Escorrentía Promedio", "450 mm/año", delta="-5% vs Histórico")
-            st.metric("Recarga Estimada", "120 mm/año")
-
-        with col_c2:
-            st.write("**Parámetros SIGA-CAL (Calidad)**")
-            # Datos extraídos del CSV
-            avg_dk_total = df_sigacal['Dk_total_tru_acum'].mean()
-            st.metric("Índice Total de Salud (Dk)", f"{avg_dk_total:.3f}")
-            st.metric("Estabilidad de Flujo", f"{df_sigacal['Dk_flujoBase_tru_acum'].mean():.3f}")
-
-        st.markdown("---")
-        st.write("### 💡 Recomendación de Intervención")
-        st.success("""
-        Basado en la curva de sedimentos, las zonas con un área acumulada entre 20,000 y 40,000 ha 
-        presentan la mayor tasa de cambio en retención. **Se recomienda priorizar predios en estas cotas.**
-        """)
-
-# Para ejecutar en tu archivo principal de Streamlit
-if __name__ == "__main__":
-    render_impact_analysis_page()
+    # --- MAPA DE LOCALIZACIÓN ---
+    st.markdown("### 🗺️ Localización de Intervenciones")
+    m = folium.Map(location=[6.59, -75.45], zoom_start=11, tiles="CartoDB positron")
+    plugins.Fullscreen().add_to(m)
+    
+    if gdf_predios is not None and not gdf_predios.empty:
+        folium.GeoJson(gdf_predios, name="Predios").add_to(m)
+    
+    st_folium(m, width="100%", height=400, key="mapa_siga")
