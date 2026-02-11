@@ -397,7 +397,7 @@ if gdf_zona_seleccionada is not None:
                             try: os.remove(tmp.name)
                             except: pass
 
-                    # 2. CÁLCULOS Y VISUALIZACIÓN
+                    # 2. CÁLCULOS Y VISUALIZACIÓN (BLOQUE OPTIMIZADO)
                     if grid is not None and acc is not None:
                         
                         # --- A. CÁLCULO DE PUNTOS CLAVE ---
@@ -417,11 +417,14 @@ if gdf_zona_seleccionada is not None:
                             try: r_med, c_med = rowcol(transform, cp.x, cp.y)
                             except: pass
 
-                        # 2. Punto Más Alto
+                        # 2. Punto Más Alto (Con corrección de NaN)
                         idx_max = np.nanargmax(arr_elevacion)
                         r_high, c_high = np.unravel_index(idx_max, arr_elevacion.shape)
+                        val_high = arr_elevacion[r_high, c_high] # Leemos el valor
+                        # Si sigue siendo nan por error de borde, buscamos el vecino válido más cercano
+                        if np.isnan(val_high): val_high = np.nanmax(arr_elevacion)
+                        
                         lon_high, lat_high = rasterio.transform.xy(transform, r_high, c_high, offset='center')
-                        # Transformar a WGS84 para visualización
                         if meta['crs'] != 'EPSG:4326':
                             from pyproj import Transformer
                             tr = Transformer.from_crs(meta['crs'], "EPSG:4326", always_xy=True)
@@ -430,27 +433,37 @@ if gdf_zona_seleccionada is not None:
                         # 3. Punto Más Bajo (Global del recuadro)
                         idx_min = np.nanargmin(arr_elevacion)
                         r_low, c_low = np.unravel_index(idx_min, arr_elevacion.shape)
+                        val_low = arr_elevacion[r_low, c_low]
                         lon_low, lat_low = rasterio.transform.xy(transform, r_low, c_low, offset='center')
                         if meta['crs'] != 'EPSG:4326': lon_low, lat_low = tr.transform(lon_low, lat_low)
 
-                        # 4. SMART OUTLET (Punto más bajo DENTRO del polígono verde)
-                        r_smart, c_smart = r_low, c_low # Default al global
+                        # 4. SMART OUTLET V2.0 (Basado en Acumulación, NO en Elevación)
+                        # Buscamos el pixel con MÁS AGUA dentro del polígono verde.
+                        r_smart, c_smart = r_low, c_low 
                         try:
                             if gdf_zona_seleccionada is not None:
                                 gdf_p = gdf_zona_seleccionada.to_crs(meta['crs'])
                                 shp = ((geom, 1) for geom in gdf_p.geometry)
-                                mask_of = features.rasterize(shapes=shp, out_shape=arr_elevacion.shape, transform=transform, fill=0, dtype='uint8')
-                                elev_m = np.where(mask_of == 1, arr_elevacion, np.inf)
-                                idx_s = np.argmin(elev_m)
-                                r_smart, c_smart = np.unravel_index(idx_s, elev_m.shape)
-                        except: pass
+                                # Creamos máscara del polígono
+                                mask_of = features.rasterize(shapes=shp, out_shape=acc.shape, transform=transform, fill=0, dtype='uint8')
+                                
+                                # Aplicamos máscara a la ACUMULACIÓN (La clave del éxito)
+                                # Ponemos -1 fuera del polígono para que no interfiera
+                                acc_masked = np.where(mask_of == 1, acc, -1)
+                                
+                                # El máximo valor de acumulación DENTRO del polígono es la salida real del río
+                                idx_s = np.argmax(acc_masked)
+                                r_smart, c_smart = np.unravel_index(idx_s, acc_masked.shape)
+                        except Exception as e: 
+                            st.warning(f"Smart detect fallback: {e}")
                         
                         # Coordenadas del Smart
                         lon_smart, lat_smart = rasterio.transform.xy(transform, r_smart, c_smart, offset='center')
                         if meta['crs'] != 'EPSG:4326': lon_smart, lat_smart = tr.transform(lon_smart, lat_smart)
 
                         # --- B. LA CAJA FANTÁSTICA (VISUALIZACIÓN) ---
-                        with st.expander("📍 Coordenadas y Puntos Clave (Detalle)", expanded=True):
+                        # Título dinámico con nombre de zona
+                        with st.expander(f"📍 Coordenadas y Puntos Clave: {nombre_zona}", expanded=True):
                             k1, k2, k3, k4 = st.columns(4)
                             
                             with k1:
@@ -463,12 +476,13 @@ if gdf_zona_seleccionada is not None:
                                 st.markdown("**2. Punto Más Alto**")
                                 st.caption(f"{lat_high:.4f}, {lon_high:.4f}")
                                 st.markdown(f"**Pixel:** `X:{c_high} Y:{r_high}`")
-                                st.write(f"Elev: {arr_elevacion.max():.0f} m")
+                                st.write(f"Elev: {val_high:.0f} m") # Valor corregido
                                 
                             with k3:
                                 st.markdown("**3. Punto Más Bajo**")
                                 st.caption(f"{lat_low:.4f}, {lon_low:.4f}")
                                 st.markdown(f"**Pixel:** `X:{c_low} Y:{r_low}`")
+                                st.write(f"Elev: {val_low:.0f} m")
                                 if st.button("Usar Global", key="btn_glob"):
                                     st.session_state['x_pour_calib'] = int(c_low)
                                     st.session_state['y_pour_calib'] = int(r_low)
@@ -478,7 +492,8 @@ if gdf_zona_seleccionada is not None:
                                 st.markdown("🎯 **Salida Detectada**")
                                 st.caption(f"{lat_smart:.4f}, {lon_smart:.4f}")
                                 st.markdown(f"**Pixel:** `X:{c_smart} Y:{r_smart}`")
-                                if st.button("Usar Smart", type="primary", key="btn_smart"):
+                                # Botón Primario para llamar la atención
+                                if st.button("Usar Salida Real", type="primary", key="btn_smart"):
                                     st.session_state['x_pour_calib'] = int(c_smart)
                                     st.session_state['y_pour_calib'] = int(r_smart)
                                     st.rerun()
@@ -500,13 +515,15 @@ if gdf_zona_seleccionada is not None:
                                 st.write("")
                                 st.write("")
                                 if st.button("🧲 Atraer al Río"):
-                                    r = 30
+                                    # Lógica de Imán mejorada: busca MAX acumulación local
+                                    r = 40 # Radio aumentado para mejor captura
                                     y0, y1 = max(0, y_p-r), min(acc.shape[0], y_p+r+1)
                                     x0, x1 = max(0, x_p-r), min(acc.shape[1], x_p+r+1)
                                     win = acc[y0:y1, x0:x1]
                                     if win.size > 0:
                                         m_idx = np.nanargmax(win)
                                         ly, lx = np.unravel_index(m_idx, win.shape)
+                                        # Convertir local a global
                                         st.session_state['x_pour_calib'] = int(x0 + lx)
                                         st.session_state['y_pour_calib'] = int(y0 + ly)
                                         st.rerun()
