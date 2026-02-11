@@ -109,7 +109,7 @@ with tab_aleph:
 
 st.divider()
 
-# --- 4. DATOS DEL GRÁFICO SUNBURST (RECUPERADO) ---
+# --- 4. DATOS DEL GRÁFICO SUNBURST ---
 ids = [
     'SIHCLI-POTER', 
     'Clima e Hidrología', 'Aguas Subterráneas', 'Biodiversidad', 'Toma de Decisiones', 'Isoyetas HD', 'Herramientas',
@@ -118,7 +118,8 @@ ids = [
     'Modelo Turc', 'Recarga', 'Balance',
     'GBIF', 'Taxonomía', 'Amenazas',
     'Priorización', 'Multicriterio',
-    'Calidad', 'Auditoría'
+    'Calidad', 'Auditoría',
+    'Geomorfología', 'Morfometría', 'Drenaje', 'Elevación'
 ]
 
 parents = [
@@ -129,22 +130,17 @@ parents = [
     'Aguas Subterráneas', 'Aguas Subterráneas', 'Aguas Subterráneas',
     'Biodiversidad', 'Biodiversidad', 'Biodiversidad',
     'Toma de Decisiones', 'Toma de Decisiones',
-    'Herramientas', 'Herramientas'
+    'Herramientas', 'Herramientas',
+    'SIHCLI-POTER', 'Geomorfología', 'Geomorfología', 'Geomorfología'
 ]
 
-values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8]
+values = [100, 20, 15, 15, 15, 20, 15, 5, 5, 5, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 7, 8, 7, 8, 15, 5, 5, 5]
 
 def create_system_map():
     if len(ids) != len(parents) or len(ids) != len(values): return None
     df = pd.DataFrame(dict(ids=ids, parents=parents, values=values))
-    fig = px.sunburst(
-        df, names='ids', parents='parents', values='values', branchvalues='total',
-        color='parents', color_discrete_sequence=px.colors.qualitative.Pastel1
-    )
-    fig.update_layout(
-        title={'text': "🗺️ Mapa de Navegación del Sistema", 'y':0.95, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top'},
-        font=dict(family="Arial", size=14), margin=dict(t=60, l=0, r=0, b=0), height=600, paper_bgcolor='rgba(0,0,0,0)',
-    )
+    fig = px.sunburst(df, names='ids', parents='parents', values='values', branchvalues='total', color='parents', color_discrete_sequence=px.colors.qualitative.Pastel1)
+    fig.update_layout(title={'text': "🗺️ Mapa de Navegación", 'y':0.95, 'x':0.5, 'xanchor': 'center'}, margin=dict(t=60, l=0, r=0, b=0), height=600)
     fig.update_traces(hovertemplate='<b>%{label}</b><br>Sección: %{parent}<extra></extra>', textinfo='label+percent parent')
     return fig
 
@@ -220,4 +216,5 @@ with c2:
 st.divider()
 
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
+
 
