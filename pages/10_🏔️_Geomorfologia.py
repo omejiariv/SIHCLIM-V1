@@ -767,50 +767,48 @@ if gdf_zona_seleccionada is not None:
                     # Pestañas para separar los mapas
                     t1, t2 = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación Plana"])
                     
-                    # --- ESPEJO 1: TU CÓDIGO ORIGINAL (Torrencial) ---
+                    # --- ESPEJO 1: (Torrencial) ---
                     with t1:
-                        st.markdown("**Identificación de zonas críticas donde convergen alta pendiente y alto flujo.**")
+                        st.markdown("**Identificación de zonas críticas...**")
                         c_par, c_vis = st.columns([1, 3])
+                        
                         with c_par:
-                            st.markdown("#### Criterios")
+                            # ... (Sliders igual) ...
                             s_umb = st.slider("Pendiente Crítica (> Grados)", 15, 45, 30)
                             a_umb = st.slider("Acumulación Log (> Umbral)", 1.0, 10.0, 5.5)
-                            
-                            st.info("""
-                            **Semáforo:**
-                            * 🔴 **Muy Alta:** Pendiente Alta + Flujo Alto.
-                            * 🟠 **Alta:** Pendiente Alta.
-                            * 🟡 **Media:** Flujo Alto (Plano).
-                            """)
+                            st.info("...") # Info igual
+
                         with c_vis:
-                            risk = np.zeros_like(s_core, dtype=np.uint8)
+                            # CÁLCULO DE MÁSCARAS (Esto sí se necesita)
                             mask_steep = s_core >= s_umb
                             mask_flow = a_core >= a_umb
                             
-                            caja_analisis_ai(mask_steep & mask_flow, "Avenida Torrencial") # <--- PEGAR AQUÍ
+                            # (Borramos 'risk' y 'colors' que ya no se usan)
+
+                            # VISUALIZACIÓN
+                            caja_analisis_ai(mask_steep & mask_flow, "Avenida Torrencial")
                             mapa_con_fondo(mask_steep & mask_flow, "red", "Amenaza: Avenida Torrencial")
 
-                    # --- ESPEJO 2: NUEVO CÓDIGO (Inundación) ---
+                    # --- ESPEJO 2: (Inundación) ---
                     with t2:
-                        st.markdown("**Identificación de zonas planas propensas a empozamiento.**")
+                        st.markdown("**Identificación de zonas planas...**")
                         c_par, c_vis = st.columns([1, 3])
+                        
                         with c_par:
-                            st.markdown("#### Criterios")
-                            # Aquí la lógica es inversa: Buscamos pendiente BAJA
+                            # ... (Sliders igual) ...
                             s_flat = st.slider("Pendiente Plana (< Grados)", 0.5, 10.0, 3.0)
                             a_umb_i = st.slider("Acumulación Río (> Log)", 1.0, 10.0, 5.5, key="a_flood")
-                            
-                            st.info("""
-                            **Semáforo:**
-                            * 🔵 **Inundación:** Pendiente Plana + Flujo Alto.
-                            * 🟡 **Río Normal:** Flujo Alto (Con pendiente).
-                            """)
+                            st.info("...") # Info igual
+
                         with c_vis:
-                            risk_i = np.zeros_like(s_core, dtype=np.uint8)
-                            mask_flat = s_core <= s_flat # Condición inversa
+                            # CÁLCULO DE MÁSCARAS
+                            mask_flat = s_core <= s_flat 
                             mask_flow = a_core >= a_umb_i
                             
-                            caja_analisis_ai(mask_flat & mask_flow, "Inundación") # <--- PEGAR AQUÍ
+                            # (Borramos 'risk_i' y 'colors_i' que ya no se usan)
+
+                            # VISUALIZACIÓN
+                            caja_analisis_ai(mask_flat & mask_flow, "Inundación")
                             mapa_con_fondo(mask_flat & mask_flow, "#0099FF", "Amenaza: Inundación Lenta")
                             
                 else:
