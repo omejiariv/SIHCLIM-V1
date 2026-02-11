@@ -452,51 +452,73 @@ if gdf_zona_seleccionada is not None:
 
                         # 3. VISUALIZACIÓN
                         # RASTER (SOLUCIÓN VELOZ Y VISIBLE)
-                        if modo_viz == "Raster (Acumulación)":
-                            # Usamos px.imshow puro porque Mapbox a veces tapa el raster
-                            # Downsampling [::5] para que sea INSTANTÁNEO
-                            fig = px.imshow(np.log1p(acc[::5, ::5]), color_continuous_scale='Blues', title="Mapa de Acumulación (Log)")
+                        elif modo_viz == "Raster (Acumulación)":
+                            # Cálculo dinámico para evitar "pixeles gigantes" pero mantener velocidad
+                            h, w = acc.shape
+                            # Si el mapa es mayor a 1000px, reducimos proporcionalmente. Si es chico, se ve original.
+                            factor = 1
+                            if h > 1000 or w > 1000:
+                                factor = int(max(h, w) / 800) 
+                            
+                            # Logaritmo para resaltar ríos principales
+                            log_acc = np.log1p(acc[::factor, ::factor])
+                            
+                            fig = px.imshow(
+                                log_acc, 
+                                color_continuous_scale='Blues', 
+                                title=f"Acumulación de Flujo (Reducción 1:{factor})",
+                            )
                             fig.update_layout(height=600)
                             st.plotly_chart(fig, use_container_width=True)
-                        
-                        # MAPAS GEOGRÁFICOS
-                        else:
-                            fig = go.Figure()
-                            
-                            # Oficial
-                            if gdf_zona_seleccionada is not None:
-                                poly = gdf_zona_seleccionada.to_crs("EPSG:4326").geometry.iloc[0]
-                                if poly.geom_type=='Polygon': x,y=poly.exterior.coords.xy
-                                else: x,y=max(poly.geoms,key=lambda a:a.area).exterior.coords.xy
-                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(x), lat=list(y), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
 
-                            # VECTORES (RÍOS)
+                        # VECTOR (Ríos)
                             if modo_viz == "Vectores (Líneas)":
-                                try:
-                                    # Intentar cargar de BD
-                                    try: r=gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry'); c='geometry'
-                                    except: c='geom'
-                                    r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col=c)
-                                    if r.crs is None: r.set_crs("EPSG:4326", inplace=True)
+                            try:
+                                # 1. Cargar Red (Detectando nombre de columna geométrica)
+                                try: r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col='geometry')
+                                except: r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col='geom')
+                                
+                                # 2. RECORTE ESTRICTO (CRÍTICO PARA NO BLOQUEAR)
+                                # Convertimos ambos a metros (EPSG:3116) para un recorte geométrico perfecto
+                                poly_metro = gdf_zona_seleccionada.to_crs("EPSG:3116")
+                                r_metro = r.to_crs("EPSG:3116")
+                                
+                                # Clip: Cortar ríos usando el polígono exacto
+                                r_recortado = gpd.clip(r_metro, poly_metro)
+                                
+                                if not r_recortado.empty:
+                                    # 3. Solo pasamos a WGS84 lo que quedó dentro (muy ligero)
+                                    gdf_viz = r_recortado.to_crs("EPSG:4326")
                                     
-                                    # Recortar
-                                    mask = gdf_zona_seleccionada.to_crs(r.crs).buffer(100)
-                                    r = gpd.clip(r, mask).to_crs("EPSG:4326")
+                                    # Extraer coordenadas para Plotly
+                                    lons, lats, textos = [], [], []
+                                    col_n = next((c for c in gdf_viz.columns if c.lower() in ['nombre_geo','nombre']), None)
                                     
-                                    l, lt, tx = [], [], []
-                                    col_n = next((x for x in r.columns if x.lower() in ['nombre_geo','nombre']), None)
-                                    for _, row in r.iterrows():
-                                        g=row.geometry; n=str(row[col_n]) if col_n else "Río"
-                                        if g.geom_type=='LineString': p=[g]
-                                        elif g.geom_type=='MultiLineString': p=g.geoms
+                                    for _, row in gdf_viz.iterrows():
+                                        geom = row.geometry
+                                        nom = str(row[col_n]) if col_n else "Drenaje"
+                                        if geom.geom_type == 'LineString': parts = [geom]
+                                        elif geom.geom_type == 'MultiLineString': parts = geom.geoms
                                         else: continue
-                                        for s in p: x,y=s.xy; l.extend(list(x)+[None]); lt.extend(list(y)+[None]); tx.extend([n]*(len(x)+1))
+                                        
+                                        for p in parts:
+                                            x, y = p.xy
+                                            lons.extend(list(x) + [None])
+                                            lats.extend(list(y) + [None])
+                                            textos.extend([nom] * (len(x) + 1))
                                     
-                                    fig.add_trace(go.Scattermapbox(mode="lines", lon=l, lat=lt, text=tx, hoverinfo='text', line={'width':1.5, 'color':'#0044FF'}, name="Red Drenaje"))
-                                except: 
-                                    st.caption("Usando red calculada (BD no disponible o vacía)")
-                                    # Fallback DEM si falla BD
-                                    pass
+                                    fig.add_trace(go.Scattermapbox(
+                                        mode="lines", lon=lons, lat=lats, text=textos, hoverinfo='text',
+                                        line={'width': 1.5, 'color': '#0044FF'}, name="Red Drenaje (Recortada)"
+                                    ))
+                                    st.success(f"✅ Visualizando {len(gdf_viz)} tramos de río dentro de la cuenca.")
+                                else:
+                                    st.warning("⚠️ No hay ríos oficiales DENTRO de este polígono.")
+                                    
+                            except Exception as e:
+                                st.warning(f"Usando cálculo manual (Error BD: {e})")
+                                # Fallback DEM (Tu código antiguo si falla la BD)
+                                pass
 
                             # CATCHMENT
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
