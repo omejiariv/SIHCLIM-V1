@@ -694,7 +694,7 @@ if gdf_zona_seleccionada is not None:
                     
                     fig = go.Figure()
 
-                    # CAPA 1: Polígono Oficial (Contexto Real)
+                    # CAPA 1: Polígono Oficial (Verde)
                     if gdf_oficial is not None:
                         gdf_4326 = gdf_oficial.to_crs("EPSG:4326")
                         poly = gdf_4326.geometry.iloc[0]
@@ -704,28 +704,32 @@ if gdf_zona_seleccionada is not None:
                         c_lat, c_lon = gdf_4326.centroid.y.mean(), gdf_4326.centroid.x.mean()
                     else: c_lat, c_lon = 6.2, -75.5
 
-                    # CAPA 2: RED DE DRENAJE OFICIAL (AZUL)
+                    # CAPA 2: RED DE DRENAJE (RECORTE EXACTO PARA NO BLOQUEAR)
                     try:
-                        # Intentar leer ríos de la BD y recortar
-                        try: gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry'); c_g='geometry'
-                        except: c_g='geom'
+                        # 1. Cargar BD
+                        try: r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col='geometry')
+                        except: r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col='geom')
                         
-                        gdf_all_r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col=c_g)
-                        if gdf_all_r.crs is None: gdf_all_r.set_crs("EPSG:4326", inplace=True)
+                        # 2. Recorte Estricto en Metros (Igual que en Hidrología)
                         if gdf_oficial is not None:
-                            # Recortar para no cargar todo antioquia
-                            mask_r = gdf_oficial.to_crs(gdf_all_r.crs).buffer(200)
-                            gdf_rios_clip = gpd.clip(gdf_all_r, mask_r).to_crs("EPSG:4326")
+                            poly_m = gdf_oficial.to_crs("EPSG:3116")
+                            r_m = r.to_crs("EPSG:3116")
                             
-                            lons, lats = [], []
-                            for geom in gdf_rios_clip.geometry:
-                                if geom.geom_type == 'LineString': x,y = geom.xy
-                                elif geom.geom_type == 'MultiLineString':
-                                    for g in geom.geoms: x,y = g.xy; lons.extend(list(x)+[None]); lats.extend(list(y)+[None]); continue
-                                else: continue
-                                lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                            # Clip exacto (elimina lo que sobre)
+                            r_clip = gpd.clip(r_m, poly_m)
                             
-                            fig.add_trace(go.Scattermapbox(mode="lines", lon=lons, lat=lats, line={'width': 1.5, 'color': '#0044FF'}, name="Red Drenaje Oficial"))
+                            if not r_clip.empty:
+                                # Solo convertimos a WGS84 lo que quedó dentro
+                                r_viz = r_clip.to_crs("EPSG:4326")
+                                l, lt = [], []
+                                for g in r_viz.geometry:
+                                    if g.geom_type=='LineString': x,y=g.xy
+                                    elif g.geom_type=='MultiLineString': 
+                                        for s in g.geoms: x,y=s.xy; l.extend(list(x)+[None]); lt.extend(list(y)+[None]); continue
+                                    else: continue
+                                    l.extend(list(x)+[None]); lt.extend(list(y)+[None])
+                                
+                                fig.add_trace(go.Scattermapbox(mode="lines", lon=l, lat=lt, line={'width':1.5, 'color':'#0044FF'}, name="Red Drenaje"))
                     except: pass
 
                     # CAPA 3: Amenaza Vectorizada
@@ -736,12 +740,13 @@ if gdf_zona_seleccionada is not None:
                     if geoms:
                         gdf_threat = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
                         gdf_threat = gdf_threat.to_crs("EPSG:3116")
+                        # Filtro de ruido: eliminamos polígonos menores a 900m2
                         gdf_threat = gdf_threat[gdf_threat.geometry.area > 900]
-                        gdf_threat['geometry'] = gdf_threat.simplify(20).to_crs("EPSG:4326")
                         
                         if not gdf_threat.empty:
+                            gdf_threat['geometry'] = gdf_threat.simplify(20).to_crs("EPSG:4326")
                             fig.add_trace(go.Choroplethmapbox(geojson=gdf_threat.geometry.__geo_interface__, locations=gdf_threat.index, z=[1]*len(gdf_threat), colorscale=[[0, color_amenaza], [1, color_amenaza]], showscale=False, marker_opacity=0.6, name="Zona Amenaza"))
-                        else: st.info("✅ Zona segura.")
+                        else: st.info("✅ Zona segura (Amenazas pequeñas filtradas).")
                     else: st.info("✅ Sin amenazas detectadas.")
 
                     fig.update_layout(title=titulo, mapbox_style="carto-positron", mapbox_zoom=12, mapbox_center={"lat": c_lat, "lon": c_lon}, height=600, margin=dict(l=0,r=0,t=30,b=0))
