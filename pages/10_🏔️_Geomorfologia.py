@@ -677,102 +677,143 @@ if gdf_zona_seleccionada is not None:
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
 
-# --- TAB 7: AMENAZAS + DIAGNÓSTICO AI (SOLUCIÓN RASTER) ---
+            # --- TAB 7: AMENAZAS (ESPEJOS LÓGICOS) ---
             with tab7:
-                st.subheader("🚨 Zonificación de Amenazas y Diagnóstico AI")
+                st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
+
+            def caja_analisis_ai(mask_riesgo, tipo):
+                # Análisis Estadístico
+                total = mask_riesgo.size
+                afectado = np.sum(mask_riesgo)
+                pct = (afectado / total) * 100
                 
-                # Validación de requisitos previos
-                if 'acc' in locals() and acc is not None and 'slope_deg' in locals():
+                # Semáforo de Texto
+                color = "red" if "Torrencial" in tipo else "#0099FF"
+                nivel = "Bajo" if pct < 1 else ("Medio" if pct < 5 else "CRÍTICO")
+                
+                # Inyección HTML
+                st.markdown(f"""
+                <div style="border-left: 5px solid {color}; padding: 15px; background-color: #f0f2f6; border-radius: 5px; margin-bottom: 20px;">
+                    <strong style="color: {color}; font-size: 1.1em;">🤖 Diagnóstico Inteligente ({tipo})</strong>
+                    <ul style="margin-bottom: 0;">
+                        <li><b>Cobertura de Amenaza:</b> {pct:.2f}% del área analizada.</li>
+                        <li><b>Nivel de Alerta:</b> {nivel}</li>
+                        <li><b>Recomendación:</b> {"Revisar cauces y retirar estructuras" if pct > 1 else "Monitoreo preventivo"}.</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
+
+            def mapa_con_fondo(mask_binaria, color_hex, titulo):
+                # 1. CORRECCIÓN DEL ERROR 'MEMORYVIEW': Forzamos a array de numpy
+                mask_safe = np.array(mask_binaria, dtype=np.uint8)
+                
+                # 2. Vectorizar
+                shapes_gen = features.shapes(mask_safe, transform=transform)
+                geoms = [shape(g) for g, v in shapes_gen if v == 1]
+                
+                if geoms:
+                    # Crear GeoDataFrame
+                    gdf = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
+                    gdf = gdf.to_crs("EPSG:4326") # A Lat/Lon para el mapa
                     
-                    # 1. ALINEACIÓN DE MATRICES (Recorte seguro para evitar errores de dimensión)
+                    # Mapa Mapbox
+                    c_lat = gdf.centroid.y.mean()
+                    c_lon = gdf.centroid.x.mean()
+                    
+                    fig = px.choropleth_mapbox(
+                        geojson=gdf.geometry.__geo_interface__,
+                        locations=gdf.index,
+                        mapbox_style="carto-positron", # <--- EL FONDO QUE QUERÍAS
+                        center={"lat": c_lat, "lon": c_lon}, zoom=12,
+                        opacity=0.6, color_discrete_sequence=[color_hex]
+                    )
+                    fig.update_layout(title=titulo, height=550, margin=dict(l=0,r=0,t=30,b=0))
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No se detectan zonas de riesgo con estos parámetros.")                
+                
+                if 'acc' in locals() and acc is not None:
+                    # Preparar datos comunes
                     min_h = min(slope_deg.shape[0], acc.shape[0])
                     min_w = min(slope_deg.shape[1], acc.shape[1])
-                    s_core = slope_deg[:min_h, :min_w]      # Pendiente recortada
-                    a_core = np.log1p(acc[:min_h, :min_w])  # Acumulación recortada
+                    s_core = slope_deg[:min_h, :min_w]
+                    a_core = np.log1p(acc[:min_h, :min_w])
                     
-                    # 2. FUNCIÓN DE ANÁLISIS (Local para esta pestaña)
-                    def generar_analisis_ai(mask_riesgo, nombre_amenaza):
-                        total_pix = mask_riesgo.size
-                        riesgo_pix = np.sum(mask_riesgo)
-                        pct = (riesgo_pix / total_pix) * 100
-                        
-                        if pct == 0: return st.info(f"✅ No se detectan zonas de {nombre_amenaza} con los parámetros actuales.")
-                        
-                        color = "red" if "Torrencial" in nombre_amenaza else "#0099FF"
-                        nivel = "Bajo" if pct < 1 else ("Medio" if pct < 5 else "ALTO")
-                        
-                        st.markdown(f"""
-                        <div style="border-left: 5px solid {color}; padding: 10px; background-color: rgba(240,242,246,0.5); border-radius: 5px; margin-bottom: 10px;">
-                            <strong style="color: {color};">🤖 Análisis de Riesgo ({nombre_amenaza})</strong><br>
-                            • <b>Cobertura:</b> {pct:.2f}% del territorio analizado.<br>
-                            • <b>Nivel de Alerta:</b> {nivel}<br>
-                            • <b>Interpretación:</b> Se identifican patrones de concentración que sugieren {nombre_amenaza.lower()}.
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                    # 3. INTERFAZ DE PESTAÑAS INTERNAS
+                    # Pestañas para separar los mapas
                     t1, t2 = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación Plana"])
                     
-                    # --- A. AVENIDA TORRENCIAL ---
+                    # --- ESPEJO 1: TU CÓDIGO ORIGINAL (Torrencial) ---
                     with t1:
-                        c_p, c_m = st.columns([1, 3])
-                        with c_p:
-                            st.markdown("#### Configuración")
-                            # Sliders con claves únicas para evitar conflictos
-                            s_umb = st.slider("Pendiente Crítica (> °)", 10, 50, 25, key="slider_s_torr")
-                            a_umb = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 6.0, key="slider_a_torr")
-                            st.caption("Zonas de alta energía (Pendiente fuerte + Mucha agua).")
-                        
-                        with c_m:
-                            # Lógica: Pendiente Alta Y Acumulación Alta
-                            mask_t = (s_core >= s_umb) & (a_core >= a_umb)
+                        st.markdown("**Identificación de zonas críticas donde convergen alta pendiente y alto flujo.**")
+                        c_par, c_vis = st.columns([1, 3])
+                        with c_par:
+                            st.markdown("#### Criterios")
+                            s_umb = st.slider("Pendiente Crítica (> Grados)", 15, 45, 30)
+                            a_umb = st.slider("Acumulación Log (> Umbral)", 1.0, 10.0, 5.5)
                             
-                            # Análisis de Texto
-                            generar_analisis_ai(mask_t, "Avenida Torrencial")
+                            st.info("""
+                            **Semáforo:**
+                            * 🔴 **Muy Alta:** Pendiente Alta + Flujo Alto.
+                            * 🟠 **Alta:** Pendiente Alta.
+                            * 🟡 **Media:** Flujo Alto (Plano).
+                            """)
+                        with c_vis:
+                            risk = np.zeros_like(s_core, dtype=np.uint8)
+                            mask_steep = s_core >= s_umb
+                            mask_flow = a_core >= a_umb
                             
-                            # Visualización Raster (Mapa de Calor)
-                            # Convertimos a float y usamos NaN para transparencia
-                            plot_arr = np.where(mask_t, 1.0, np.nan)
+                            risk[mask_flow] = 1          # Amarillo
+                            risk[mask_steep] = 2         # Naranja
+                            risk[mask_steep & mask_flow] = 3 # Rojo
                             
-                            fig_t = px.imshow(plot_arr, color_continuous_scale=[[0, "red"], [1, "red"]])
-                            fig_t.update_layout(
-                                title="Zonas Susceptibles (Rojo)", 
-                                coloraxis_showscale=False,
-                                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', # Fondo transparente
-                                margin=dict(l=0,r=0,t=40,b=0), height=500
-                            )
-                            fig_t.update_xaxes(visible=False); fig_t.update_yaxes(visible=False)
-                            st.plotly_chart(fig_t, use_container_width=True)
+                            colors = [[0.0, "rgba(0,0,0,0)"], [0.33, "#FFD700"], [0.66, "#FF8C00"], [1.0, "#FF0000"]]
 
-                    # --- B. INUNDACIÓN ---
+                            caja_analisis_ai(mask_steep & mask_flow, "Avenida Torrencial") # <--- PEGAR AQUÍ
+                            
+                            fig_risk = px.imshow(risk, color_continuous_scale=colors)
+                            
+                            fig_risk = px.imshow(risk, color_continuous_scale=colors)
+                            fig_risk.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
+                            fig_risk.update_xaxes(visible=False); fig_risk.update_yaxes(visible=False)
+                            st.plotly_chart(fig_risk, use_container_width=True)
+
+                    # --- ESPEJO 2: NUEVO CÓDIGO (Inundación) ---
                     with t2:
-                        c_p, c_m = st.columns([1, 3])
-                        with c_p:
-                            st.markdown("#### Configuración")
-                            s_flat = st.slider("Pendiente Plana (< °)", 0.5, 10.0, 3.0, key="slider_s_inun")
-                            a_umb_i = st.slider("Acumulación Río (> Log)", 4.0, 9.0, 5.5, key="slider_a_inun")
-                            st.caption("Zonas de empozamiento (Pendiente baja + Mucha agua).")
-                        
-                        with c_m:
-                            # Lógica: Pendiente Baja Y Acumulación Alta
-                            mask_i = (s_core <= s_flat) & (a_core >= a_umb_i)
+                        st.markdown("**Identificación de zonas planas propensas a empozamiento.**")
+                        c_par, c_vis = st.columns([1, 3])
+                        with c_par:
+                            st.markdown("#### Criterios")
+                            # Aquí la lógica es inversa: Buscamos pendiente BAJA
+                            s_flat = st.slider("Pendiente Plana (< Grados)", 0.5, 10.0, 3.0)
+                            a_umb_i = st.slider("Acumulación Río (> Log)", 1.0, 10.0, 5.5, key="a_flood")
                             
-                            generar_analisis_ai(mask_i, "Inundación Lenta")
+                            st.info("""
+                            **Semáforo:**
+                            * 🔵 **Inundación:** Pendiente Plana + Flujo Alto.
+                            * 🟡 **Río Normal:** Flujo Alto (Con pendiente).
+                            """)
+                        with c_vis:
+                            risk_i = np.zeros_like(s_core, dtype=np.uint8)
+                            mask_flat = s_core <= s_flat # Condición inversa
+                            mask_flow = a_core >= a_umb_i
                             
-                            plot_arr_i = np.where(mask_i, 1.0, np.nan)
+                            caja_analisis_ai(mask_flat & mask_flow, "Inundación") # <--- PEGAR AQUÍ
                             
-                            fig_i = px.imshow(plot_arr_i, color_continuous_scale=[[0, "#0099FF"], [1, "#0099FF"]])
-                            fig_i.update_layout(
-                                title="Zonas Susceptibles (Azul)", 
-                                coloraxis_showscale=False,
-                                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                                margin=dict(l=0,r=0,t=40,b=0), height=500
-                            )
+                            fig_i = px.imshow(risk_i, color_continuous_scale=colors_i)
+                            
+                            risk_i[mask_flow] = 1          # Amarillo (Río normal)
+                            risk_i[mask_flat & mask_flow] = 2 # AZUL (Inundación)
+                            
+                            # Escala de azules
+                            colors_i = [[0.0, "rgba(0,0,0,0)"], [0.5, "#FFD700"], [1.0, "#0099FF"]]
+                            
+                            fig_i = px.imshow(risk_i, color_continuous_scale=colors_i)
+                            fig_i.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
                             fig_i.update_xaxes(visible=False); fig_i.update_yaxes(visible=False)
                             st.plotly_chart(fig_i, use_container_width=True)
 
                 else:
-                    st.warning("⚠️ Primero debes calcular la Hidrología en la pestaña 'Hidrología'.")
+                    st.warning("⚠️ Calcula primero la hidrología.")
                                   
             # --- TAB 5: DESCARGAS (7 COLUMNAS COMPLETA) ---
             with tab5:
