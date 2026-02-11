@@ -25,6 +25,21 @@ try:
 except ImportError:
     land_cover = None
 
+import sys
+# Aseguramos que python encuentre los módulos
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+try:
+    from modules.db_manager import get_engine
+except ImportError:
+    # Fallback por si la estructura de carpetas varía
+    from db_manager import get_engine
+
+# Inicializar conexión
+engine = get_engine()
+
 # Configuración de Página
 st.set_page_config(page_title="Geomorfología Pro", page_icon="🏔️", layout="wide")
 
@@ -565,63 +580,71 @@ if gdf_zona_seleccionada is not None:
                             fig.update_layout(dragmode='pan')
                             
                         elif modo_viz == "Vectores (Líneas)":
-                            # --- BLOQUE BLINDADO: LECTURA DESDE BASE DE DATOS ---
                             try:
-                                # 1. DETECTAR NOMBRE DE COLUMNA DE GEOMETRÍA
-                                # Intentamos leer solo 1 fila para ver cómo se llama la columna
+                                # 1. Detectar columna de geometría (geometry vs geom)
                                 try:
-                                    test = gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry')
+                                    gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry')
                                     col_geom = 'geometry'
                                 except:
-                                    col_geom = 'geom' # Si falla, probamos el nombre alternativo de PostGIS
+                                    col_geom = 'geom'
 
-                                # 2. CARGAR Y RECORTAR
-                                # Leemos la tabla usando el nombre de columna correcto
-                                query = "SELECT * FROM red_drenaje"
+                                # 2. Cargar Red Oficial (Incluyendo NOMBRE_GEO)
+                                # Nota: En la BD, las columnas suelen guardarse en minúsculas (nombre_geo)
+                                query = f"SELECT * FROM red_drenaje"
                                 gdf_rios_bd = gpd.read_postgis(query, engine, geom_col=col_geom)
                                 
-                                # Asegurar que tenga sistema de coordenadas (WGS84 por defecto)
-                                if gdf_rios_bd.crs is None:
-                                    gdf_rios_bd.set_crs("EPSG:4326", inplace=True)
+                                # Asegurar CRS
+                                if gdf_rios_bd.crs is None: gdf_rios_bd.set_crs("EPSG:4326", inplace=True)
+                                if gdf_rios_bd.crs != crs_actual: gdf_rios_bd = gdf_rios_bd.to_crs(crs_actual)
                                     
-                                # Convertir al sistema métrico de la zona para poder recortar
-                                if gdf_rios_bd.crs != crs_actual:
-                                    gdf_rios_bd = gdf_rios_bd.to_crs(crs_actual)
-                                    
-                                # Recortar con la zona seleccionada (Buffer para asegurar bordes)
+                                # Recortar con buffer de seguridad
                                 mask_poly = gdf_zona_seleccionada.to_crs(crs_actual).buffer(100)
                                 gdf_rios = gpd.clip(gdf_rios_bd, mask_poly)
                                 
                                 if not gdf_rios.empty:
-                                    # 3. VISUALIZAR
                                     st.session_state['gdf_rios'] = gdf_rios
                                     gdf_r = gdf_rios.to_crs("EPSG:4326")
-                                    lons, lats = [], []
-                                    for geom in gdf_r.geometry:
+                                    
+                                    # Intentar recuperar el nombre para el tooltip
+                                    # Buscamos 'nombre_geo' (normalizado) o 'nombre'
+                                    col_nombre = next((c for c in gdf_r.columns if c.lower() in ['nombre_geo', 'nmg', 'nombre']), None)
+                                    
+                                    # Visualización mejorada línea por línea para mantener atributos
+                                    # Nota: Iterar es lento si son muchos, pero permite tooltip. 
+                                    # Si es muy lento, usaremos el método rápido anterior.
+                                    
+                                    lons, lats, textos = [], [], []
+                                    for _, row in gdf_r.iterrows():
+                                        geom = row.geometry
+                                        nom = str(row[col_nombre]) if col_nombre else "Drenaje"
+                                        
                                         if geom.geom_type == 'LineString': 
-                                            x,y = geom.xy
-                                            lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
+                                            x, y = geom.xy
+                                            lons.extend(list(x) + [None])
+                                            lats.extend(list(y) + [None])
+                                            textos.extend([nom] * (len(x) + 1)) # Texto para cada punto
                                         elif geom.geom_type == 'MultiLineString':
                                             for g in geom.geoms:
-                                                x,y = g.xy
-                                                lons.extend(list(x)+[None]); lats.extend(list(y)+[None])
-                                    
+                                                x, y = g.xy
+                                                lons.extend(list(x) + [None])
+                                                lats.extend(list(y) + [None])
+                                                textos.extend([nom] * (len(x) + 1))
+
                                     fig.add_trace(go.Scattermapbox(
-                                        mode="lines", lon=lons, lat=lats, 
-                                        line={'width': 2, 'color': '#0044FF'}, # Azul intenso para diferenciar
-                                        name="Red Oficial (BD)"
+                                        mode="lines", 
+                                        lon=lons, lat=lats,
+                                        text=textos, # Tooltip con nombre del río
+                                        hoverinfo='text',
+                                        line={'width': 2, 'color': '#0044FF'},
+                                        name="Red Oficial (1:25k)"
                                     ))
-                                    st.success(f"✅ Red cargada desde BD: {len(gdf_rios)} tramos.")
+                                    st.success(f"✅ Red Oficial Cargada: {len(gdf_rios)} tramos.")
                                 else:
-                                    # Si llegamos aquí, la tabla existe pero NO TIENE RÍOS en esta zona
-                                    raise Exception("La capa de drenaje no cruza con la zona seleccionada.")
+                                    raise Exception("Zona sin cobertura en capa oficial.")
 
                             except Exception as e:
-                                # MOSTRAR EL ERROR EN PANTALLA (Vital para diagnóstico)
-                                st.warning(f"⚠️ No se pudo cargar la capa oficial: {e}")
-                                st.caption("🔄 Usando red calculada por el modelo (Fallback)...")
-                                
-                                # Fallback: Cálculo con DEM
+                                st.warning(f"⚠️ {e}")
+                                # Fallback DEM
                                 gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
                                 if gdf_rios is not None:
                                     st.session_state['gdf_rios'] = gdf_rios
