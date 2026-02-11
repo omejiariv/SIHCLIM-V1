@@ -683,35 +683,42 @@ if gdf_zona_seleccionada is not None:
 
                 # --- FUNCIÓN AUXILIAR PARA MAPA CON FONDO (PEGAR AL INICIO DE TAB 7) ---
                 def mapa_con_fondo(mask_binaria, color_hex, titulo):
-                    # Imports locales de seguridad
                     from rasterio import features
                     from shapely.geometry import shape
                     
-                    # 1. CORRECCIÓN TÉCNICA: Forzar array contiguo (Evita error memoryview)
+                    # 1. Blindaje de Memoria
                     mask_safe = np.ascontiguousarray(mask_binaria, dtype=np.uint8)
                     
-                    # 2. Vectorizar (Raster -> Polígonos)
+                    # 2. Vectorizar
                     shapes_gen = features.shapes(mask_safe, transform=transform)
                     geoms = [shape(g) for g, v in shapes_gen if v == 1]
                     
                     if geoms:
-                        # Crear GeoDataFrame y Reproyectar a GPS (Lat/Lon)
                         gdf = gpd.GeoDataFrame({'geometry': geoms}, crs=meta['crs'])
-                        gdf = gdf.to_crs("EPSG:4326") 
                         
-                        # Visualizar con Mapbox (Fondo Geográfico)
-                        c_lat = gdf.centroid.y.mean()
-                        c_lon = gdf.centroid.x.mean()
-                        
-                        fig = px.choropleth_mapbox(
-                            geojson=gdf.geometry.__geo_interface__,
-                            locations=gdf.index,
-                            mapbox_style="carto-positron", # <--- EL FONDO QUE QUERÍAS
-                            center={"lat": c_lat, "lon": c_lon}, zoom=12,
-                            opacity=0.6, color_discrete_sequence=[color_hex]
-                        )
-                        fig.update_layout(title=titulo, height=550, margin=dict(l=0,r=0,t=30,b=0))
-                        st.plotly_chart(fig, use_container_width=True)
+                        # 🔥 SOLUCIÓN PANTALLA BLANCA: Simplificación Geométrica
+                        # Esto reduce el peso del archivo sin perder la forma general
+                        try:
+                            if gdf.crs.to_string() != "EPSG:3116":
+                                gdf = gdf.to_crs("EPSG:3116") # Proyectar a metros
+                            gdf['geometry'] = gdf.simplify(15) # Simplificar (15 metros de tolerancia)
+                            gdf = gdf.to_crs("EPSG:4326") # Volver a Lat/Lon para el mapa
+                        except: pass
+
+                        # 3. Visualizar
+                        if not gdf.empty:
+                            c_lat = gdf.centroid.y.mean()
+                            c_lon = gdf.centroid.x.mean()
+                            
+                            fig = px.choropleth_mapbox(
+                                geojson=gdf.geometry.__geo_interface__,
+                                locations=gdf.index,
+                                mapbox_style="carto-positron", 
+                                center={"lat": c_lat, "lon": c_lon}, zoom=12,
+                                opacity=0.6, color_discrete_sequence=[color_hex]
+                            )
+                            fig.update_layout(title=titulo, height=550, margin=dict(l=0,r=0,t=30,b=0))
+                            st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.info("No se detectan zonas de riesgo con estos parámetros.")
             
@@ -774,7 +781,6 @@ if gdf_zona_seleccionada is not None:
                             colors = [[0.0, "rgba(0,0,0,0)"], [0.33, "#FFD700"], [0.66, "#FF8C00"], [1.0, "#FF0000"]]
 
                             caja_analisis_ai(mask_steep & mask_flow, "Avenida Torrencial") # <--- PEGAR AQUÍ
-                            
                             mapa_con_fondo(mask_steep & mask_flow, "red", "Amenaza: Avenida Torrencial")
 
                     # --- ESPEJO 2: NUEVO CÓDIGO (Inundación) ---
@@ -798,17 +804,8 @@ if gdf_zona_seleccionada is not None:
                             mask_flow = a_core >= a_umb_i
                             
                             caja_analisis_ai(mask_flat & mask_flow, "Inundación") # <--- PEGAR AQUÍ
-                            
                             mapa_con_fondo(mask_flat & mask_flow, "#0099FF", "Amenaza: Inundación Lenta")
                             
-                            # Escala de azules
-                            colors_i = [[0.0, "rgba(0,0,0,0)"], [0.5, "#FFD700"], [1.0, "#0099FF"]]
-                            
-                            fig_i = px.imshow(risk_i, color_continuous_scale=colors_i)
-                            fig_i.update_layout(coloraxis_showscale=False, height=550, margin=dict(l=0,r=0,t=0,b=0))
-                            fig_i.update_xaxes(visible=False); fig_i.update_yaxes(visible=False)
-                            st.plotly_chart(fig_i, use_container_width=True)
-
                 else:
                     st.warning("⚠️ Calcula primero la hidrología.")
                                   
