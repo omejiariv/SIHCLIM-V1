@@ -507,7 +507,7 @@ if gdf_zona_seleccionada is not None:
 
                         # B. VECTORES (RÍOS)
                         elif modo_viz == "Vectores (Líneas)":
-                            gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual)
+                            gdf_rios = extraer_vectores_rios(grid, fdir, acc, umbral, crs_actual, nombre_zona)
                             if gdf_rios is not None:
                                 gdf_4326 = gdf_rios.to_crs("EPSG:4326")
                                 # ... (Código de ploteo de líneas igual al anterior) ...
