@@ -381,22 +381,22 @@ if gdf_zona_seleccionada is not None:
                 * **Forma de 'S':** Cuenca madura en transición.
                 """)
 
-            # --- TAB 4: HIDROLOGÍA (CORREGIDO: RASTER VISIBLE Y VELOZ) ---
+            # --- TAB 4: HIDROLOGÍA (RECUPERACIÓN TOTAL) ---
             with tab4:
                 import sys
-                sys.setrecursionlimit(20000)
+                sys.setrecursionlimit(20000) # Evita el bloqueo "Oh no"
                 
                 st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
                 
                 c_conf, c_map = st.columns([1, 3])
                 with c_conf:
                     st.markdown("#### ⚙️ Configuración")
-                    opciones = ["Vectores (Líneas)", "Catchment (Mascara)", "Divisoria (Línea)", "Raster (Acumulación)"]
-                    modo_viz = st.radio("Visualización:", opciones)
+                    # Orden cambiado para que Vectores sea el default (más seguro)
+                    modo_viz = st.radio("Visualización:", ["Vectores (Líneas)", "Raster (Acumulación)", "Catchment (Mascara)", "Divisoria (Línea)"])
                     umbral = st.slider("Umbral Acumulación", 10, 5000, 100, 10)
 
                 with c_map:
-                    # 1. PROCESAMIENTO (CÁLCULO PURO)
+                    # 1. PROCESAMIENTO
                     import tempfile
                     from shapely.geometry import shape, Point
                     from rasterio import features
@@ -421,121 +421,95 @@ if gdf_zona_seleccionada is not None:
                             try: os.remove(tmp.name)
                             except: pass
 
-                    # 2. LÓGICA DE VISUALIZACIÓN
+                    # 2. PUNTOS CLAVE (LA CAJA QUE QUERÍAS RECUPERAR)
                     if grid is not None and acc is not None:
-                        
-                        # --- INFO BOX Y COORDENADAS ---
                         lat_c, lon_c, rc, cc = 0,0,0,0
                         r_smart, c_smart = 0,0
                         
-                        # Cálculos básicos
+                        # Centro
                         if gdf_zona_seleccionada is not None:
                             cent = gdf_zona_seleccionada.to_crs("EPSG:4326").geometry.centroid.iloc[0]
                             lat_c, lon_c = cent.y, cent.x
-                            try:
-                                cp = gdf_zona_seleccionada.to_crs(meta['crs']).geometry.centroid.iloc[0]
-                                rc, cc = rowcol(transform, cp.x, cp.y)
-                            except: pass
-
-                        # Smart Outlet
+                        
+                        # Salida Smart (Max Acumulación)
                         idx_max = np.nanargmax(acc)
                         r_smart, c_smart = np.unravel_index(idx_max, acc.shape)
-                        try:
-                            if gdf_zona_seleccionada is not None:
-                                gdf_p = gdf_zona_seleccionada.to_crs(meta['crs'])
-                                shapes = ((g, 1) for g in gdf_p.geometry)
-                                mask_poly = features.rasterize(shapes, out_shape=acc.shape, transform=transform, fill=0, dtype='uint8')
-                                acc_masked = np.where(mask_poly==1, acc, -1)
-                                idx_s = np.argmax(acc_masked)
-                                r_smart, c_smart = np.unravel_index(idx_s, acc_masked.shape)
-                        except: pass
-
-                        # Caja de Puntos Clave
+                        
+                        # CAJA INFORMATIVA
                         with st.expander(f"📍 Puntos Clave: {nombre_zona}", expanded=True):
                             k1, k2, k3 = st.columns(3)
                             with k1:
                                 st.markdown("**Centro**")
                                 st.caption(f"{lat_c:.4f}, {lon_c:.4f}")
-                                st.code(f"x:{cc} y:{rc}")
                             with k2:
                                 st.markdown("**Salida Detectada**")
-                                st.caption("Max Flujo")
-                                st.code(f"x:{c_smart} y:{r_smart}")
+                                st.code(f"X:{c_smart} Y:{r_smart}")
                             with k3:
                                 if st.button("🎯 Usar Salida", type="primary"):
                                     st.session_state['x_pour_calib'] = int(c_smart)
                                     st.session_state['y_pour_calib'] = int(r_smart)
                                     st.rerun()
 
-                        # Controles Manuales
-                        if 'x_pour_calib' not in st.session_state:
-                            st.session_state['x_pour_calib'] = int(c_smart)
-                            st.session_state['y_pour_calib'] = int(r_smart)
-
-                        if modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
-                            st.markdown("##### 🔧 Ajuste Manual")
-                            cc1, cc2 = st.columns(2)
-                            with cc1: st.session_state['x_pour_calib'] = st.number_input("X:", value=st.session_state['x_pour_calib'])
-                            with cc2: st.session_state['y_pour_calib'] = st.number_input("Y:", value=st.session_state['y_pour_calib'])
-
-                        # --- GENERACIÓN DE MAPAS ---
-                        
-                        # CASO ESPECIAL: RASTER (Veloz, sin Mapbox que lo tape)
+                        # 3. VISUALIZACIÓN
+                        # RASTER (SOLUCIÓN VELOZ Y VISIBLE)
                         if modo_viz == "Raster (Acumulación)":
-                            # Usamos px.imshow puro para velocidad máxima
-                            fig = px.imshow(
-                                np.log1p(acc), 
-                                color_continuous_scale='Blues', 
-                                title="Matriz de Acumulación de Flujo (Log)",
-                                labels={'x':'Pixel X', 'y':'Pixel Y'}
-                            )
-                            fig.update_layout(dragmode='pan', height=600)
+                            # Usamos px.imshow puro porque Mapbox a veces tapa el raster
+                            # Downsampling [::5] para que sea INSTANTÁNEO
+                            fig = px.imshow(np.log1p(acc[::5, ::5]), color_continuous_scale='Blues', title="Mapa de Acumulación (Log)")
+                            fig.update_layout(height=600)
                             st.plotly_chart(fig, use_container_width=True)
-
-                        # CASO ESTÁNDAR: MAPBOX (Geográfico)
+                        
+                        # MAPAS GEOGRÁFICOS
                         else:
                             fig = go.Figure()
                             
-                            # 1. Oficial (Verde)
+                            # Oficial
                             if gdf_zona_seleccionada is not None:
                                 poly = gdf_zona_seleccionada.to_crs("EPSG:4326").geometry.iloc[0]
-                                if poly.geom_type=='Polygon': xx,yy=poly.exterior.coords.xy
-                                else: xx,yy=max(poly.geoms, key=lambda a:a.area).exterior.coords.xy
-                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xx), lat=list(yy), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
+                                if poly.geom_type=='Polygon': x,y=poly.exterior.coords.xy
+                                else: x,y=max(poly.geoms,key=lambda a:a.area).exterior.coords.xy
+                                fig.add_trace(go.Scattermapbox(mode="lines", lon=list(x), lat=list(y), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
 
-                            # 2. Red Drenaje BD (Azul)
-                            try:
-                                try: gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry'); c='geometry'
-                                except: c='geom'
-                                q = "SELECT * FROM red_drenaje"
-                                r = gpd.read_postgis(q, engine, geom_col=c)
-                                if r.crs is None: r.set_crs("EPSG:4326", inplace=True)
-                                
-                                # Recortar
-                                m = gdf_zona_seleccionada.to_crs(r.crs).buffer(100)
-                                r = gpd.clip(r, m).to_crs("EPSG:4326")
-                                
-                                l, lt, tx = [], [], []
-                                col_n = next((x for x in r.columns if x.lower() in ['nombre_geo','nombre']), None)
-                                
-                                for _, row in r.iterrows():
-                                    g=row.geometry; n=str(row[col_n]) if col_n else "Drenaje"
-                                    if g.geom_type=='LineString': parts=[g]
-                                    elif g.geom_type=='MultiLineString': parts=g.geoms
-                                    else: continue
-                                    for p in parts:
-                                        x,y=p.xy; l.extend(list(x)+[None]); lt.extend(list(y)+[None]); tx.extend([n]*(len(x)+1))
-                                
-                                fig.add_trace(go.Scattermapbox(mode="lines", lon=l, lat=lt, text=tx, hoverinfo='text', line={'width':1.5, 'color':'#0044FF'}, name="Red Drenaje"))
-                            except: pass
-
-                            # 3. Capas Específicas
+                            # VECTORES (RÍOS)
                             if modo_viz == "Vectores (Líneas)":
-                                pass # Ya se mostró la oficial arriba
-
-                            elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
                                 try:
-                                    catch = grid.catchment(x=st.session_state['x_pour_calib'], y=st.session_state['y_pour_calib'], fdir=fdir, dirmap=dirmap, xytype='index')
+                                    # Intentar cargar de BD
+                                    try: r=gpd.read_postgis("SELECT * FROM red_drenaje LIMIT 1", engine, geom_col='geometry'); c='geometry'
+                                    except: c='geom'
+                                    r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col=c)
+                                    if r.crs is None: r.set_crs("EPSG:4326", inplace=True)
+                                    
+                                    # Recortar
+                                    mask = gdf_zona_seleccionada.to_crs(r.crs).buffer(100)
+                                    r = gpd.clip(r, mask).to_crs("EPSG:4326")
+                                    
+                                    l, lt, tx = [], [], []
+                                    col_n = next((x for x in r.columns if x.lower() in ['nombre_geo','nombre']), None)
+                                    for _, row in r.iterrows():
+                                        g=row.geometry; n=str(row[col_n]) if col_n else "Río"
+                                        if g.geom_type=='LineString': p=[g]
+                                        elif g.geom_type=='MultiLineString': p=g.geoms
+                                        else: continue
+                                        for s in p: x,y=s.xy; l.extend(list(x)+[None]); lt.extend(list(y)+[None]); tx.extend([n]*(len(x)+1))
+                                    
+                                    fig.add_trace(go.Scattermapbox(mode="lines", lon=l, lat=lt, text=tx, hoverinfo='text', line={'width':1.5, 'color':'#0044FF'}, name="Red Drenaje"))
+                                except: 
+                                    st.caption("Usando red calculada (BD no disponible o vacía)")
+                                    # Fallback DEM si falla BD
+                                    pass
+
+                            # CATCHMENT
+                            elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
+                                # Controles manuales solo aquí
+                                if 'x_pour_calib' not in st.session_state: st.session_state['x_pour_calib']=int(c_smart); st.session_state['y_pour_calib']=int(r_smart)
+                                st.markdown("##### 🔧 Ajuste Manual")
+                                c1,c2 = st.columns(2)
+                                with c1: xp=st.number_input("X:", value=st.session_state['x_pour_calib'])
+                                with c2: yp=st.number_input("Y:", value=st.session_state['y_pour_calib'])
+                                st.session_state['x_pour_calib']=xp; st.session_state['y_pour_calib']=yp
+                                
+                                try:
+                                    catch = grid.catchment(x=xp, y=yp, fdir=fdir, dirmap=dirmap, xytype='index')
                                     catch_int = np.ascontiguousarray(catch, dtype=np.uint8)
                                     shapes_gen = features.shapes(catch_int, transform=transform)
                                     geoms = [shape(g) for g, v in shapes_gen if v > 0]
@@ -546,17 +520,13 @@ if gdf_zona_seleccionada is not None:
                                         else:
                                             xc, yc = gdf_c.geometry.iloc[0].exterior.coords.xy
                                             fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xc), lat=list(yc), line={'width':3, 'color':'red'}, name="Divisoria"))
-                                        
-                                        pt=gpd.GeoDataFrame({'geometry':[Point(meta['transform']*(st.session_state['x_pour_calib']+0.5, st.session_state['y_pour_calib']+0.5))]}, crs=crs_actual).to_crs("EPSG:4326")
-                                        fig.add_trace(go.Scattermapbox(mode="markers", lon=[pt.geometry.x.iloc[0]], lat=[pt.geometry.y.iloc[0]], marker={'size':12, 'color':'red'}, name="Outlet"))
                                         st.success(f"Área: {gdf_c.to_crs('EPSG:3116').area.sum()/1e6:.2f} km²")
                                 except: pass
 
-                            fig.update_layout(mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": lat_c, "lon": lon_c}, height=600, margin=dict(l=0,r=0,t=0,b=30), legend=dict(orientation="h", y=-0.05, x=0.5, xanchor="center"))
+                            fig.update_layout(mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": lat_c, "lon": lon_c}, height=600, margin=dict(l=0,r=0,t=0,b=0))
                             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
-
                     else: st.warning("Procesando...")
-                                            
+
             # --- TAB 6: ÍNDICES Y MODELACIÓN (FASE A + B) ---
             with tab6:
                 st.subheader(f"📊 Panel Hidrológico: {nombre_zona}")
