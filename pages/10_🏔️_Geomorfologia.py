@@ -385,7 +385,7 @@ if gdf_zona_seleccionada is not None:
             with tab4:
                 # 1. EVITAR CRASH (Anti-Bloqueo)
                 import sys
-                sys.setrecursionlimit(1000000) # Límite aumentado drásticamente
+                sys.setrecursionlimit(100000) # Límite aumentado drásticamente
                 
                 st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
                 
