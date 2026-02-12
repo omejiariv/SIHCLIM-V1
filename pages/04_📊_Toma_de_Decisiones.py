@@ -14,7 +14,7 @@ import os
 try:
     from modules.impacto_serv_ecosist import render_sigacal_analysis
 except ImportError:
-    st.error("No se encontró el módulo impacto_Serv_Ecosist en la carpeta modules.")
+    st.error("No se encontró el módulo impacto_serv_ecosist en la carpeta modules.")
 
 # --- SETUP INICIAL ---
 st.set_page_config(page_title="Matriz de Decisiones", page_icon="🎯", layout="wide")
@@ -75,49 +75,91 @@ with st.sidebar:
 
 # --- LÓGICA PRINCIPAL ---
 if gdf_zona is not None and not gdf_zona.empty:
-    # 2. CREACIÓN DE PESTAÑAS (Se crean aquí para que estén disponibles)
-# Definimos las pestañas para organizar el análisis
-tab_priorizacion, tab_analisis_hidro, tab_sigacal = st.tabs([
-    "🎯 Priorización de Áreas", 
-    "🗺️ Análisis Hidrológico", 
-    "💧 Impacto SIGA-CAL (Río Grande)"
-])
-
-with tab_priorizacion:
-    st.subheader("Análisis Multicriterio de Priorización")
-    c1, c2 = st.columns([3, 1])
+    engine = get_engine()
     
-    with c1:
-        # Aquí va tu mapa Plotly (go.Contour) que ya tienes
-        # Asegúrate de incluir una leyenda o colorbar
-        st.plotly_chart(fig, use_container_width=True)
+    # A. Carga de Estaciones y Precipitación
+    q_est = text("SELECT id_estacion, nombre, latitud, longitud, altitud FROM estaciones")
+    df_est = pd.read_sql(q_est, engine)
+    df_est = df_est.rename(columns={'latitud': 'latitude', 'longitud': 'longitude', 'altitud': 'alt_est'})
+    for c in ['latitude', 'longitude', 'alt_est']: df_est[c] = pd.to_numeric(df_est[c], errors='coerce')
+    df_est = df_est.dropna(subset=['latitude', 'longitude']).copy()
     
-    with c2:
-        st.write("#### ⚖️ Leyenda y Score")
-        st.write("**Rojo:** Prioridad Crítica")
-        st.write("**Verde:** Prioridad Baja (Conservada)")
-        st.metric("Score de la Zona", f"{np.nanmean(grid_Final):.2f}")
-        st.write(f"Basado en {pct_agua*100:.0f}% agua y {pct_bio*100:.0f}% bio.")
+    minx, miny, maxx, maxy = gdf_zona.total_bounds
+    mask = (df_est['longitude'].between(minx-0.1, maxx+0.1)) & (df_est['latitude'].between(miny-0.1, maxy+0.1))
+    df_filt = df_est[mask].copy()
 
-with tab_analisis_hidro:
-    st.subheader("🌊 Balance Hídrico Local (Sihcli-Poter)")
-    ch1, ch2 = st.columns(2)
-    
-    with ch1:
-        # Gráfico de barras de balance
-        fig_bal = go.Figure(data=[
-            go.Bar(name='Oferta (Ppt)', x=['Balance'], y=[np.nanmean(grid_P)]),
-            go.Bar(name='Pérdida (ETR)', x=['Balance'], y=[np.nanmean(grid_ETR)]),
-            go.Bar(name='Recarga (R)', x=['Balance'], y=[np.nanmean(grid_R)])
-        ])
-        st.plotly_chart(fig_bal, use_container_width=True)
-        
-    with ch2:
-        st.write("#### 📝 Análisis de Rendimiento")
-        rendimiento = (np.nanmean(grid_R) / np.nanmean(grid_P)) * 100
-        st.write(f"El rendimiento hídrico de esta zona es del **{rendimiento:.1f}%**.")
-        st.info("Zonas con rendimiento > 40% son fábricas de agua críticas para EPM.")
+    if not df_filt.empty:
+        ids_v = ",".join([f"'{x}'" for x in df_filt['id_estacion'].unique()])
+        q_ppt = text(f"SELECT id_estacion, AVG(valor)*12 as p_anual FROM precipitacion WHERE id_estacion IN ({ids_v}) GROUP BY id_estacion")
+        df_ppt = pd.read_sql(q_ppt, engine)
+        df_data = pd.merge(df_filt, df_ppt, on='id_estacion')
 
-with tab_sigacal:
-    # Llamamos al módulo que ya importaste arriba
-    render_sigacal_analysis(gdf_predios=context_layers.get('predios'))
+        if len(df_data) >= 3:
+            # B. Cálculos Hidrológicos (Turc)
+            gx, gy = np.mgrid[minx:maxx:100j, miny:maxy:100j]
+            pts = df_data[['longitude', 'latitude']].values
+            grid_P = interpolacion_segura(pts, df_data['p_anual'].values, gx, gy)
+            grid_Alt = interpolacion_segura(pts, df_data['alt_est'].values, gx, gy)
+            
+            grid_T = np.maximum(5, 30 - (0.0065 * grid_Alt))
+            L_t = 300 + 25*grid_T + 0.05*(grid_T**3)
+            grid_ETR = grid_P / np.sqrt(0.9 + (grid_P/L_t)**2)
+            grid_R = (grid_P - grid_ETR).clip(min=0)
+            
+            # Matriz de Priorización
+            norm_R = grid_R / np.nanmax(grid_R) if np.nanmax(grid_R) > 0 else grid_R
+            norm_Bio = grid_Alt / np.nanmax(grid_Alt) # Simplificado para bio
+            grid_Final = (norm_R * pct_agua) + (norm_Bio * pct_bio)
+
+            # C. RENDERIZADO DE PESTAÑAS (Indentado correctamente)
+            tab_priorizacion, tab_analisis_hidro, tab_sigacal = st.tabs([
+                "🎯 Priorización de Áreas", 
+                "🗺️ Análisis Hidrológico", 
+                "💧 Impacto SIGA-CAL (Río Grande)"
+            ])
+
+            with tab_priorizacion:
+                st.subheader("Análisis Multicriterio de Priorización")
+                col_m1, col_m2 = st.columns([3, 1])
+                with col_m1:
+                    fig = go.Figure(data=go.Contour(
+                        z=grid_Final.T, 
+                        x=np.linspace(minx, maxx, 100), 
+                        y=np.linspace(miny, maxy, 100),
+                        colorscale="RdYlGn",
+                        colorbar=dict(title="Prioridad")
+                    ))
+                    fig.update_layout(height=500, margin=dict(l=0,r=0,b=0,t=0))
+                    st.plotly_chart(fig, use_container_width=True)
+                with col_m2:
+                    st.metric("Prioridad Media", f"{np.nanmean(grid_Final):.2f}")
+                    st.write("**Leyenda:**")
+                    st.write("- 🟢 Baja (Estable)")
+                    st.write("- 🟡 Media (Vigilancia)")
+                    st.write("- 🔴 Alta (Intervención)")
+
+            with tab_analisis_hidro:
+                st.subheader("🌊 Balance Hídrico Local (Sihcli-Poter)")
+                ch1, ch2 = st.columns(2)
+                with ch1:
+                    fig_bal = go.Figure(data=[
+                        go.Bar(name='Oferta (Ppt)', x=['Balance'], y=[np.nanmean(grid_P)], marker_color='#3498db'),
+                        go.Bar(name='Pérdida (ETR)', x=['Balance'], y=[np.nanmean(grid_ETR)], marker_color='#e67e22'),
+                        go.Bar(name='Recarga (R)', x=['Balance'], y=[np.nanmean(grid_R)], marker_color='#2ecc71')
+                    ])
+                    st.plotly_chart(fig_bal, use_container_width=True)
+                with ch2:
+                    st.write("#### 📝 Análisis de Rendimiento")
+                    rendimiento = (np.nanmean(grid_R) / np.nanmean(grid_P)) * 100
+                    st.metric("Rendimiento Hídrico", f"{rendimiento:.1f}%")
+                    st.info("Este porcentaje representa la fracción de lluvia que se convierte en agua disponible.")
+
+            with tab_sigacal:
+                context_layers = get_clipped_context_layers(tuple(gdf_zona.total_bounds))
+                render_sigacal_analysis(gdf_predios=context_layers.get('predios'))
+
+        else:
+            st.warning("Datos insuficientes para interpolar.")
+else:
+    st.info("👈 Seleccione una zona en el menú lateral.")
+
