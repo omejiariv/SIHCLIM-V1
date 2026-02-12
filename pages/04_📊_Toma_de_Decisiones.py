@@ -76,79 +76,48 @@ with st.sidebar:
 # --- LÓGICA PRINCIPAL ---
 if gdf_zona is not None and not gdf_zona.empty:
     # 2. CREACIÓN DE PESTAÑAS (Se crean aquí para que estén disponibles)
-    tab_priorizacion, tab_analisis_hidro, tab_sigacal = st.tabs([
-        "🎯 Priorización de Áreas", 
-        "🗺️ Análisis Hidrológico", 
-        "💧 Impacto SIGA-CAL (Río Grande)"
-    ])
+# Definimos las pestañas para organizar el análisis
+tab_priorizacion, tab_analisis_hidro, tab_sigacal = st.tabs([
+    "🎯 Priorización de Áreas", 
+    "🗺️ Análisis Hidrológico", 
+    "💧 Impacto SIGA-CAL (Río Grande)"
+])
 
-    engine = get_engine()
-    try:
-        q_est = text("SELECT id_estacion, nombre, latitud, longitud, altitud FROM estaciones")
-        df_est = pd.read_sql(q_est, engine)
+with tab_priorizacion:
+    st.subheader("Análisis Multicriterio de Priorización")
+    c1, c2 = st.columns([3, 1])
+    
+    with c1:
+        # Aquí va tu mapa Plotly (go.Contour) que ya tienes
+        # Asegúrate de incluir una leyenda o colorbar
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with c2:
+        st.write("#### ⚖️ Leyenda y Score")
+        st.write("**Rojo:** Prioridad Crítica")
+        st.write("**Verde:** Prioridad Baja (Conservada)")
+        st.metric("Score de la Zona", f"{np.nanmean(grid_Final):.2f}")
+        st.write(f"Basado en {pct_agua*100:.0f}% agua y {pct_bio*100:.0f}% bio.")
+
+with tab_analisis_hidro:
+    st.subheader("🌊 Balance Hídrico Local (Sihcli-Poter)")
+    ch1, ch2 = st.columns(2)
+    
+    with ch1:
+        # Gráfico de barras de balance
+        fig_bal = go.Figure(data=[
+            go.Bar(name='Oferta (Ppt)', x=['Balance'], y=[np.nanmean(grid_P)]),
+            go.Bar(name='Pérdida (ETR)', x=['Balance'], y=[np.nanmean(grid_ETR)]),
+            go.Bar(name='Recarga (R)', x=['Balance'], y=[np.nanmean(grid_R)])
+        ])
+        st.plotly_chart(fig_bal, use_container_width=True)
         
-        if not df_est.empty:
-            df_est = df_est.rename(columns={'latitud': 'latitude', 'longitud': 'longitude', 'altitud': 'alt_est'})
-            for c in ['latitude', 'longitude', 'alt_est']: df_est[c] = pd.to_numeric(df_est[c], errors='coerce')
-            df_est = df_est.dropna(subset=['latitude', 'longitude'])
-            df_est['alt_est'] = df_est['alt_est'].fillna(alt_ref)
-            
-            minx, miny, maxx, maxy = gdf_zona.total_bounds
-            margin = 0.05
-            mask = ((df_est['longitude'] >= minx-margin) & (df_est['longitude'] <= maxx+margin) & 
-                    (df_est['latitude'] >= miny-margin) & (df_est['latitude'] <= maxy+margin))
-            df_filt = df_est[mask].copy()
-            
-            if not df_filt.empty:
-                ids_v = df_filt['id_estacion'].astype(str).str.strip().unique()
-                ids_s = ",".join([f"'{x}'" for x in ids_v])
-                q_ppt = text(f"SELECT id_estacion, AVG(valor)*12 as p_anual FROM precipitacion WHERE id_estacion IN ({ids_s}) GROUP BY id_estacion")
-                df_ppt = pd.read_sql(q_ppt, engine)
-                df_data = pd.merge(df_filt, df_ppt, on='id_estacion', how='inner')
-            else:
-                df_data = pd.DataFrame()
+    with ch2:
+        st.write("#### 📝 Análisis de Rendimiento")
+        rendimiento = (np.nanmean(grid_R) / np.nanmean(grid_P)) * 100
+        st.write(f"El rendimiento hídrico de esta zona es del **{rendimiento:.1f}%**.")
+        st.info("Zonas con rendimiento > 40% son fábricas de agua críticas para EPM.")
 
-            # --- RENDERIZADO DE PESTAÑAS ---
-            if len(df_data) >= 3:
-                with tab_priorizacion:
-                    # Lógica de cálculo (Turc y SMCA)
-                    gx, gy = np.mgrid[minx:maxx:100j, miny:maxy:100j]
-                    pts = df_data[['longitude', 'latitude']].values
-                    grid_P = interpolacion_segura(pts, df_data['p_anual'].values, gx, gy)
-                    grid_Alt = interpolacion_segura(pts, df_data['alt_est'].values, gx, gy)
-                    grid_T = np.maximum(5, 30 - (0.0065 * grid_Alt))
-                    L_t = 300 + 25*grid_T + 0.05*(grid_T**3)
-                    grid_ETR = grid_P / np.sqrt(0.9 + (grid_P/L_t)**2)
-                    grid_R = (grid_P - grid_ETR).clip(min=0)
-                    norm_R = grid_R / np.nanmax(grid_R) if np.nanmax(grid_R) > 0 else grid_R
-                    norm_Bio = ((grid_Alt * 0.7) + (grid_P * 0.3)) / np.nanmax((grid_Alt * 0.7) + (grid_P * 0.3))
-                    
-                    grid_Final = (norm_R * pct_agua) + (norm_Bio * pct_bio)
-                    grid_Final = np.where(grid_Final >= (umbral/100.0), grid_Final, np.nan)
-
-                    # Dibujar Mapa Plotly
-                    fig = go.Figure()
-                    fig.add_trace(go.Contour(z=grid_Final.T, x=np.linspace(minx, maxx, 100), y=np.linspace(miny, maxy, 100), colorscale="RdYlGn", opacity=0.7))
-                    
-                    context_layers = get_clipped_context_layers(tuple(gdf_zona.total_bounds))
-                    # (Aquí iría la función add_poly_layer que ya tienes para pintar municipios/predios)
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with tab_analisis_hidro:
-                    st.info("Aquí puedes añadir mapas específicos de Escurrimiento o Evapotranspiración.")
-                    st.write(f"Precipitación Promedio en la zona: {df_data['p_anual'].mean():.1f} mm/año")
-
-                with tab_sigacal:
-                    # 3. LLAMADA AL MÓDULO EXTERNO
-                    # Le pasamos los predios recortados para que el mapa sea coherente
-                    render_sigacal_analysis(gdf_predios=context_layers.get('predios'))
-
-            else:
-                st.warning("⚠️ Datos insuficientes para el análisis espacial.")
-
-    except Exception as e:
-        st.error(f"Error técnico: {e}")
-else:
-    st.info("👈 Seleccione una zona en el menú lateral.")
-
-
+with tab_sigacal:
+    # Llamamos al módulo que ya importaste arriba
+    render_sigacal_analysis(gdf_predios=context_layers.get('predios'))
