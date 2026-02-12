@@ -96,6 +96,30 @@ def render_sigacal_analysis(gdf_predios=None):
     
     st.plotly_chart(fig, use_container_width=True)
 
+    # --- ANÁLISIS DE IMPACTO ---
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_siga['AreaAcu_ha'], y=df_siga['Dk_sedimentos_tru_acum'], name="Retención Sedimentos", line=dict(color='brown', width=3)))
+        fig.update_layout(title="<b>Curva de Eficiencia: Retención de Sedimentos</b>", template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.write("#### 🛡️ Diagnóstico de la Cuenca")
+        avg_dk = df_siga['Dk_sedimentos_tru_acum'].mean()
+        if avg_dk < 0.4:
+            st.error(f"**Prioridad Alta:** La eficiencia media es baja ({avg_dk:.2f}). Se requieren intervenciones en la parte alta.")
+        else:
+            st.success(f"**Estado Estable:** Eficiencia media de {avg_dk:.2f}.")
+        
+        # Análisis de Cruce con Predios
+        if gdf_predios is not None and not gdf_predios.empty:
+            st.write(f"**Intervenciones detectadas:** {len(gdf_predios)} predios.")
+            st.info("Estos predios protegen áreas que aportan a la estabilidad del Flujo Base.")
+        else:
+            st.warning("No se detectan predios de CuencaVerde en el área de este modelo.")
+
     # 5. MAPA DE LOCALIZACIÓN (Integración con tus predios de CuencaVerde)
     st.markdown("---")
     st.markdown("### 🗺️ Contexto Espacial de Intervenciones")
