@@ -17,7 +17,7 @@ def render_sigacal_analysis(gdf_predios=None):
     
     # 1. LOCALIZACIÓN DEL ARCHIVO (Ruta robusta)
     # Buscamos el archivo en la raíz del proyecto
-    file_path = 'SIGACAL_RioGrande_Omejia_V2.csv'
+    file_path = 'SIGACAL_RioGrande_om_V2.csv'
     
     if not os.path.exists(file_path):
         st.error(f"⚠️ Archivo no encontrado: {file_path}. Asegúrate de que esté en la raíz del proyecto.")
