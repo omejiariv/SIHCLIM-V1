@@ -100,15 +100,26 @@ def render_sigacal_analysis(gdf_predios=None):
     st.markdown("---")
     st.markdown("### 🗺️ Contexto Espacial de Intervenciones")
     
-    # Centro de la cuenca Río Grande aprox.
     m = folium.Map(location=[6.59, -75.45], zoom_start=11, tiles="CartoDB positron")
-    
-    # Añadimos herramientas de mapa
     plugins.Fullscreen(position='topright').add_to(m)
     plugins.LocateControl(auto_start=False).add_to(m)
     
-    # Capa de predios (si vienen filtrados desde la página principal)
     if gdf_predios is not None and not gdf_predios.empty:
+        # --- CORRECCIÓN DINÁMICA DE FIELDS Y ALIASES ---
+        # Definimos los campos que queremos mostrar si existen en el GeoJSON
+        posibles_campos = ['nombre_pre', 'municipio', 'area_ha', 'vereda']
+        # Filtramos solo los que realmente existen en el archivo
+        fields_existentes = [f for f in posibles_campos if f in gdf_predios.columns]
+        
+        # Creamos los alias correspondientes con la misma longitud
+        mapa_alias = {
+            'nombre_pre': 'Predio:',
+            'municipio': 'Municipio:',
+            'area_ha': 'Área (ha):',
+            'vereda': 'Vereda:'
+        }
+        aliases_existentes = [mapa_alias[f] for f in fields_existentes]
+
         folium.GeoJson(
             gdf_predios, 
             name="Predios Intervenidos",
@@ -119,12 +130,12 @@ def render_sigacal_analysis(gdf_predios=None):
                 'fillOpacity': 0.6
             },
             tooltip=folium.GeoJsonTooltip(
-                fields=['nombre_pre'] if 'nombre_pre' in gdf_predios.columns else gdf_predios.columns[:2].tolist(),
-                aliases=['Predio:']
-            )
+                fields=fields_existentes,
+                aliases=aliases_existentes,
+                localize=True
+            ) if fields_existentes else None # Si no hay campos, no ponemos tooltip
         ).add_to(m)
     else:
         st.info("💡 No hay predios filtrados para mostrar en esta zona.")
 
-    # Renderizado del mapa
-    st_folium(m, width="100%", height=450, key="mapa_impacto_siga")
+    st_folium(m, width="100%", height=450, key="mapa_sigacal_final")
