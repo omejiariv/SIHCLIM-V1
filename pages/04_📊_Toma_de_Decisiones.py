@@ -151,3 +151,4 @@ if gdf_zona is not None and not gdf_zona.empty:
 else:
     st.info("👈 Seleccione una zona en el menú lateral.")
 
+
