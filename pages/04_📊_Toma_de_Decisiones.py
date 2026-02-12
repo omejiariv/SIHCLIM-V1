@@ -1,10 +1,13 @@
-# Módulo de Soporte a Decisiones (INTEGRADO CON SIGA-CAL)
+# Módulo de Soporte a Decisiones (VERSIÓN SÍNTESIS INTEGRADA)
 
 import streamlit as st
 import numpy as np
 import pandas as pd
 import geopandas as gpd
 import plotly.graph_objects as go
+import folium
+from streamlit_folium import st_folium
+from folium import plugins
 from sqlalchemy import create_engine, text
 from scipy.interpolate import griddata
 import sys
@@ -41,7 +44,11 @@ def get_clipped_context_layers(gdf_zona_bounds):
     roi_poly = box(minx, miny, maxx, maxy)
     roi_gdf = gpd.GeoDataFrame(geometry=[roi_poly], crs="EPSG:4326")
     base_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
-    files = {'municipios': "MunicipiosAntioquia.geojson", 'cuencas': "SubcuencasAinfluencia.geojson", 'predios': "PrediosEjecutados.geojson"}
+    files = {
+        'municipios': "MunicipiosAntioquia.geojson", 
+        'cuencas': "SubcuencasAinfluencia.geojson", 
+        'predios': "PrediosEjecutados.geojson"
+    }
     for key, fname in files.items():
         try:
             fpath = os.path.join(base_dir, fname)
@@ -77,7 +84,7 @@ with st.sidebar:
 if gdf_zona is not None and not gdf_zona.empty:
     engine = get_engine()
     
-    # A. Carga de Estaciones y Precipitación
+    # A. Carga de datos
     q_est = text("SELECT id_estacion, nombre, latitud, longitud, altitud FROM estaciones")
     df_est = pd.read_sql(q_est, engine)
     df_est = df_est.rename(columns={'latitud': 'latitude', 'longitud': 'longitude', 'altitud': 'alt_est'})
@@ -95,7 +102,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         df_data = pd.merge(df_filt, df_ppt, on='id_estacion')
 
         if len(df_data) >= 3:
-            # B. Cálculos Hidrológicos (Turc)
+            # B. Cálculos científicos (Sihcli-Poter)
             gx, gy = np.mgrid[minx:maxx:100j, miny:maxy:100j]
             pts = df_data[['longitude', 'latitude']].values
             grid_P = interpolacion_segura(pts, df_data['p_anual'].values, gx, gy)
@@ -106,12 +113,11 @@ if gdf_zona is not None and not gdf_zona.empty:
             grid_ETR = grid_P / np.sqrt(0.9 + (grid_P/L_t)**2)
             grid_R = (grid_P - grid_ETR).clip(min=0)
             
-            # Matriz de Priorización
             norm_R = grid_R / np.nanmax(grid_R) if np.nanmax(grid_R) > 0 else grid_R
-            norm_Bio = grid_Alt / np.nanmax(grid_Alt) # Simplificado para bio
+            norm_Bio = grid_Alt / np.nanmax(grid_Alt)
             grid_Final = (norm_R * pct_agua) + (norm_Bio * pct_bio)
 
-            # C. RENDERIZADO DE PESTAÑAS (Indentado correctamente)
+            # C. RENDERIZADO DE PESTAÑAS
             tab_priorizacion, tab_analisis_hidro, tab_sigacal = st.tabs([
                 "🎯 Priorización de Áreas", 
                 "🗺️ Análisis Hidrológico", 
@@ -119,47 +125,67 @@ if gdf_zona is not None and not gdf_zona.empty:
             ])
 
             with tab_priorizacion:
-                st.subheader("Análisis Multicriterio de Priorización")
-                col_m1, col_m2 = st.columns([3, 1])
-                with col_m1:
-                    fig = go.Figure(data=go.Contour(
-                        z=grid_Final.T, 
-                        x=np.linspace(minx, maxx, 100), 
-                        y=np.linspace(miny, maxy, 100),
-                        colorscale="RdYlGn",
-                        colorbar=dict(title="Prioridad")
-                    ))
-                    fig.update_layout(height=500, margin=dict(l=0,r=0,b=0,t=0))
-                    st.plotly_chart(fig, use_container_width=True)
-                with col_m2:
-                    st.metric("Prioridad Media", f"{np.nanmean(grid_Final):.2f}")
-                    st.write("**Leyenda:**")
-                    st.write("- 🟢 Baja (Estable)")
-                    st.write("- 🟡 Media (Vigilancia)")
-                    st.write("- 🔴 Alta (Intervención)")
+                st.subheader("🗺️ Síntesis Geoespacial de Priorización")
+                
+                # Mapa Base Integrado (Lógica de visualizer)
+                m = folium.Map(location=[(miny+maxy)/2, (minx+maxx)/2], zoom_start=11, tiles="CartoDB positron")
+                folium.TileLayer(
+                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri', name='Satélite (Esri)'
+                ).add_to(m)
+
+                # Capas de Contexto
+                context_layers = get_clipped_context_layers(tuple(gdf_zona.total_bounds))
+                
+                if context_layers['cuencas'] is not None:
+                    folium.GeoJson(context_layers['cuencas'], name="🌊 Red de Drenaje", 
+                                   style_function=lambda x: {'color': '#2980b9', 'weight': 1.5}).add_to(m)
+                
+                if context_layers['predios'] is not None:
+                    folium.GeoJson(context_layers['predios'], name="🏡 Predios CuencaVerde",
+                                   style_function=lambda x: {'fillColor': 'orange', 'color': 'darkorange', 'fillOpacity': 0.6}).add_to(m)
+
+                folium.LayerControl().add_to(m)
+                st_folium(m, width="100%", height=500, key="mapa_sintesis")
+
+                # Diagnóstico Integrado
+                with st.expander("🧐 Diagnóstico Integrado de la Zona", expanded=True):
+                    col_inf1, col_inf2 = st.columns(2)
+                    with col_inf1:
+                        st.markdown(f"""
+                        **Análisis Hidro-Climático:**
+                        * **Precipitación Media:** {np.nanmean(grid_P):.0f} mm/año.
+                        * **Rendimiento Estimado:** {(np.nanmean(grid_R)/np.nanmean(grid_P))*100:.1f}% de la lluvia.
+                        """)
+                    with col_inf2:
+                        st.markdown(f"""
+                        **Evaluación SMCA:**
+                        * **Score Prioridad:** {np.nanmean(grid_Final):.2f}/1.00.
+                        * **Factor Dominante:** {"Hídrico" if pct_agua > pct_bio else "Biodiversidad"}.
+                        """)
 
             with tab_analisis_hidro:
                 st.subheader("🌊 Balance Hídrico Local (Sihcli-Poter)")
-                ch1, ch2 = st.columns(2)
+                ch1, ch2 = st.columns([2, 1])
                 with ch1:
                     fig_bal = go.Figure(data=[
                         go.Bar(name='Oferta (Ppt)', x=['Balance'], y=[np.nanmean(grid_P)], marker_color='#3498db'),
                         go.Bar(name='Pérdida (ETR)', x=['Balance'], y=[np.nanmean(grid_ETR)], marker_color='#e67e22'),
                         go.Bar(name='Recarga (R)', x=['Balance'], y=[np.nanmean(grid_R)], marker_color='#2ecc71')
                     ])
+                    fig_bal.update_layout(height=400, title="Distribución de Masa de Agua (mm/año)")
                     st.plotly_chart(fig_bal, use_container_width=True)
                 with ch2:
-                    st.write("#### 📝 Análisis de Rendimiento")
-                    rendimiento = (np.nanmean(grid_R) / np.nanmean(grid_P)) * 100
-                    st.metric("Rendimiento Hídrico", f"{rendimiento:.1f}%")
-                    st.info("Este porcentaje representa la fracción de lluvia que se convierte en agua disponible.")
+                    st.write("#### 📝 Resumen del Balance")
+                    st.write(f"La evapotranspiración real (ETR) consume el **{(np.nanmean(grid_ETR)/np.nanmean(grid_P))*100:.1f}%** de la lluvia recibida.")
+                    st.metric("Rendimiento Hídrico", f"{np.nanmean(grid_R):.1f} mm")
 
             with tab_sigacal:
-                context_layers = get_clipped_context_layers(tuple(gdf_zona.total_bounds))
+                # Llamada al módulo externo
                 render_sigacal_analysis(gdf_predios=context_layers.get('predios'))
 
         else:
-            st.warning("Datos insuficientes para interpolar.")
+            st.warning("⚠️ Datos insuficientes para generar el análisis (Mínimo 3 estaciones).")
 else:
-    st.info("👈 Seleccione una zona en el menú lateral.")
+    st.info("👈 Seleccione una zona en el menú lateral para iniciar el análisis.")
 
