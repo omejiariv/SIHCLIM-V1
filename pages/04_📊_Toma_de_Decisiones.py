@@ -14,7 +14,7 @@ import os
 try:
     from modules.impacto_serv_ecosist import render_sigacal_analysis
 except ImportError:
-    st.error("No se encontró el módulo Impacto_Serv_Ecosist en la carpeta modules.")
+    st.error("No se encontró el módulo impacto_Serv_Ecosist en la carpeta modules.")
 
 # --- SETUP INICIAL ---
 st.set_page_config(page_title="Matriz de Decisiones", page_icon="🎯", layout="wide")
@@ -150,3 +150,4 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.error(f"Error técnico: {e}")
 else:
     st.info("👈 Seleccione una zona en el menú lateral.")
+
