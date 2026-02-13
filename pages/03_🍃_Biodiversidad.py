@@ -36,6 +36,17 @@ except Exception as e:
 def save_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
+@st.cache_resource(show_spinner=False)
+def get_raster_from_cloud(filename):
+    """Descarga rasters desde Supabase Storage a Memoria (BytesIO)"""
+    try:
+        client = init_supabase()
+        # Descargar del bucket 'rasters'
+        file_bytes = client.storage.from_("rasters").download(filename)
+        return io.BytesIO(file_bytes)
+    except Exception as e:
+        return None
+
 @st.cache_data(ttl=3600)
 def load_layer_cached(layer_name):
     file_map = {
@@ -427,4 +438,5 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
