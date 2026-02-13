@@ -38,13 +38,26 @@ def save_to_csv(df):
 
 @st.cache_resource(show_spinner=False)
 def get_raster_from_cloud(filename):
-    """Descarga rasters desde Supabase Storage a Memoria (BytesIO)"""
+    """Descarga rasters intentando varios buckets (rasters/coberturas)."""
     try:
         client = init_supabase()
-        # Descargar del bucket 'rasters'
-        file_bytes = client.storage.from_("rasters").download(filename)
-        return io.BytesIO(file_bytes)
+        
+        # Intento 1: Bucket 'rasters' (Estándar)
+        try:
+            file_bytes = client.storage.from_("rasters").download(filename)
+            return io.BytesIO(file_bytes)
+        except:
+            # Intento 2: Bucket 'coberturas' (Tu caso probable)
+            try:
+                file_bytes = client.storage.from_("coberturas").download(filename)
+                return io.BytesIO(file_bytes)
+            except Exception as e_inner:
+                # Si falla en ambos, mostramos el error real
+                st.error(f"Error descargando '{filename}': {e_inner}")
+                return None
+                
     except Exception as e:
+        st.error(f"Error crítico conectando a Supabase: {e}")
         return None
 
 @st.cache_data(ttl=3600)
@@ -438,5 +451,6 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
