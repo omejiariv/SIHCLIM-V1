@@ -127,73 +127,81 @@ def load_layer_cached(layer_name):
 @st.cache_data(show_spinner=False)
 def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file, _cov_file):
     """
-    Realiza la intersección raster corrigiendo proyecciones y rebobinando archivos.
+    Realiza la intersección raster forzando la proyección EPSG:3116 (Magna Sirgas).
     """
     try:
         if not _dem_file or not _ppt_file or not _cov_file:
             return None
 
-        # 1. REBOBINADO CRÍTICO (Resetear punteros de memoria)
+        # 1. REBOBINADO DE MEMORIA
         _dem_file.seek(0)
         _ppt_file.seek(0)
         _cov_file.seek(0)
 
-        # 2. VALIDACIÓN DE COORDENADAS DEL DEM
-        # Abrimos el DEM para chequear si sabe dónde está
-        crs_dem = None
-        with rasterio.open(_dem_file) as src:
-            crs_dem = src.crs
-            # Si el archivo no dice su proyección, asumimos EPSG:3116 (Colombia Magna Sirgas)
-            # Esto corrige el error "zona fuera del mapa"
-            if not crs_dem: 
-                crs_dem = "EPSG:3116" 
-            
-            # Verificación rápida de superposición
-            try:
-                # Convertimos la zona del usuario al sistema del mapa para ver si caen juntos
-                zona_reproj = _gdf_zona.to_crs(crs_dem)
-                if rasterio.coords.disjoint_bounds(src.bounds, zona_reproj.total_bounds):
-                    # st.warning("⚠️ La zona seleccionada no cae dentro del área del DEM.") # Debug
-                    return None
-            except:
-                pass # Si falla la validación, intentamos procesar igual
+        # 2. PREPARACIÓN DE GEOMETRÍA (Forzamos todo a EPSG:3116)
+        # Esto asegura que el recorte se haga en metros, coincidiendo con tus mapas
+        zona_magna = _gdf_zona.to_crs("EPSG:3116")
 
         # 3. GENERAR MAPA DE ZONAS DE VIDA
-        # Rebobinamos de nuevo por si acaso
-        _dem_file.seek(0)
+        # Nota: life_zones.py internamente usa WGS84, pero rasterio manejará la transformación
+        # si los archivos tienen el CRS correcto.
         
+        # TRUCO: Leemos el DEM primero para inyectarle el CRS si le falta
+        with rasterio.open(_dem_file) as src:
+            # Si no tiene CRS, le ponemos el de Colombia a la fuerza
+            if not src.crs:
+                _dem_override = MemoryFile(_dem_file.getvalue())
+                with _dem_override.open(driver='GTiff', crs="EPSG:3116", transform=src.transform, width=src.width, height=src.height, count=1, dtype=src.dtypes[0]) as dst:
+                    dst.write(src.read(1), 1)
+                _dem_file = _dem_override # Usamos el archivo corregido
+
+        _dem_file.seek(0) # Rebobinar tras el truco
+
+        # Generamos el mapa climático
         lz_arr, lz_profile, lz_names, _ = lz.generate_life_zone_map(
-            _dem_file, _ppt_file, mask_geometry=_gdf_zona, downscale_factor=4
+            _dem_file, _ppt_file, mask_geometry=zona_magna, downscale_factor=4
         )
         
-        if lz_arr is None or lz_profile is None: return None
+        if lz_arr is None: return None
 
         # 4. ALINEAR MAPA DE COBERTURAS
         with MemoryFile(_cov_file) as mem_cov:
             with mem_cov.open() as src_cov:
+                # Mismo truco: Si la cobertura no tiene CRS, asumimos 3116
+                src_crs = src_cov.crs if src_cov.crs else "EPSG:3116"
+                
                 cov_aligned = np.zeros_like(lz_arr, dtype=np.uint8)
                 
                 reproject(
                     source=rasterio.band(src_cov, 1),
                     destination=cov_aligned,
                     src_transform=src_cov.transform,
-                    src_crs=src_cov.crs if src_cov.crs else "EPSG:3116", # Forzamos también aquí
+                    src_crs=src_crs,
                     dst_transform=lz_profile['transform'],
                     dst_crs=lz_profile['crs'],
                     resampling=Resampling.nearest
                 )
 
-        # 5. CÁLCULO DE ÁREAS Y CRUCE
-        # Pixel area approx (grados^2 a hectáreas en el ecuador)
-        res_x = lz_profile['transform'][0]
-        pixel_area_ha = (res_x * 111132.0) ** 2 / 10000.0
+        # 5. CÁLCULO DE ÁREAS
+        # Calculamos el tamaño del pixel en hectáreas basado en la transformación
+        # Transform[0] suele ser el ancho del pixel en grados o metros
+        res_x = abs(lz_profile['transform'][0])
+        
+        # Si está en grados (aprox < 1), convertimos a metros. Si está en metros (> 1), usamos directo.
+        if res_x < 1: 
+            meters_per_pixel = res_x * 111132.0 # Aprox en el ecuador
+        else:
+            meters_per_pixel = res_x
+            
+        pixel_area_ha = (meters_per_pixel ** 2) / 10000.0
 
+        # 6. CRUCE DE DATOS
         df_cross = pd.DataFrame({
             'ZV_ID': lz_arr.flatten(),
             'COV_ID': cov_aligned.flatten()
         })
         
-        # Filtramos píxeles válidos (ignorar fondo 0)
+        # Quitamos el fondo (0)
         df_cross = df_cross[(df_cross['ZV_ID'] > 0) & (df_cross['COV_ID'] > 0)]
         
         if df_cross.empty: return None
@@ -201,14 +209,14 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file,
         resumen = df_cross.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
         resumen['Hectareas'] = resumen['Pixeles'] * pixel_area_ha
         
-        # Mapeo de Nombres
+        # Nombres
         resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz_names.get(x, f"ZV {x}"))
         resumen['Cobertura'] = resumen['COV_ID'].map(lambda x: lc.LAND_COVER_LEGEND.get(x, f"Clase {x}"))
         
         return resumen
 
     except Exception as e:
-        # st.error(f"Error interno en cruce espacial: {e}") # Descomentar para ver error real
+        # st.error(f"Error técnico: {e}") # Descomentar solo si sigue fallando
         return None
         
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
@@ -514,6 +522,7 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
