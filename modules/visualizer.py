@@ -3975,7 +3975,7 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
     import plotly.graph_objects as go
     from math import cos, radians
     # Asegúrate de importar tu módulo de lógica
-    import life_zones as lz 
+    from modules import life_zones as lz
     from modules.config import Config
 
     user_loc = kwargs.get("user_loc", user_loc)
@@ -6467,5 +6467,6 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         
         st.plotly_chart(fig, use_container_width=True)
         st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv")
+
 
 
