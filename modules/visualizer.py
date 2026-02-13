@@ -3964,21 +3964,35 @@ def display_enso_tab(**kwargs):
             st.info("No hay datos históricos cargados.")
 
 
-def display_life_zones_tab(
-    df_long, gdf_stations, gdf_subcuencas=None, user_loc=None, **kwargs
-):
+def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=None, **kwargs):
+    """
+    Visualizador de Zonas de Vida (Adaptado para Nube/Supabase).
+    Recibe los archivos raster como objetos BytesIO en **kwargs.
+    """
+    import streamlit as st
+    import numpy as np
+    import pandas as pd
+    import plotly.graph_objects as go
+    from math import cos, radians
+    # Asegúrate de importar tu módulo de lógica
+    import life_zones as lz 
+    from modules.config import Config
+
     user_loc = kwargs.get("user_loc", user_loc)
+    
+    # --- 1. EXTRACCIÓN DE RECURSOS EN MEMORIA ---
+    # Ya no usamos rutas de disco, recuperamos los bytes que pasamos desde el main
+    dem_file = kwargs.get("dem_file")
+    ppt_file = kwargs.get("ppt_file")
 
     st.subheader("🌱 Zonas de Vida (Sistema Holdridge)")
 
-    # --- SECCIÓN EDUCATIVA ---
+    # --- SECCIÓN EDUCATIVA (Mantenida intacta) ---
     with st.expander("📚 Conceptos, Metodología e Importancia (Sistema Holdridge)"):
         st.markdown(
             """
-
         <div style="font-size: 13px; line-height: 1.4;">
             <p><strong>Metodología:</strong> Clasificación ecológica basada en el cruce de Temperatura (estimada por Altura) y Precipitación anual.</p>
-
             Pisos Altitudinales: (Altuta vs Temperatura)
             1. PISO NIVAL (> 4500 msnm , <-1.5C): 1. Nieves perpetuas y roca desnuda.
             2. PISO ALPINO / SUPERPÁRAMO (3800 - 4500 msnm , >-1.5C): Tundra pluvial o húmeda. Vegetación escasa, transición a nieve.
@@ -3993,14 +4007,6 @@ def display_life_zones_tab(
             B. HUMEDO: (ppt > 1,2 ET), equilibrio o excedente hidrico
             c. MUY HUMEDO: (ppt > 2 ET), exceso hidrico
             C. Pluvial: Exceso extremo de lluvia (Chocó).
-
-            Clases:
-            Nival: 1; Tundra pluvial (tp-A): 2; Tundra húmeda (th-A): 3; Tundra seca (ts-A): 4; Páramo pluvial subalpino (pp-SA): 5; Páramo muy húmedo subalpino (pmh-SA): 6;
-            Páramo seco subalpino (ps-SA): 7; Bosque pluvial Montano (bp-M): 8; Bosque muy húmedo Montano (bmh-M): 9; Bosque húmedo Montano (bh-M): 10; Bosque seco Montano (bs-M): 11;
-            Monte espinoso Montano (me-M): 12; Bosque pluvial Premontano (bp-PM): 13, Bosque muy húmedo Premontano (bmh-PM): 14; Bosque húmedo Premontano (bh-PM): 15
-            Bosque seco Premontano (bs-PM): 16; Monte espinoso Premontano (me-PM): 17; Bosque pluvial Tropical (bp-T): 18; Bosque muy húmedo Tropical (bmh-T): 19;
-            Bosque húmedo Tropical (bh-T): 20; Bosque seco Tropical (bs-T): 21; Monte espinoso Tropical (me-T): 22; Zona Desconocida: 0
-
         </div>
         """,
             unsafe_allow_html=True,
@@ -4028,48 +4034,37 @@ def display_life_zones_tab(
 
         basin_geom = None
         if use_mask:
-            # --- CORRECCIÓN DE PRIORIDAD DE MÁSCARA ---
-            # 1. Prioridad ALTA: Verificar si hay una cuenca específica en memoria (desde Mapas Avanzados)
+            # Lógica de prioridades de máscara
             res_basin = st.session_state.get("basin_res")
             if res_basin and res_basin.get("ready"):
                 basin_geom = res_basin.get("gdf_cuenca", res_basin.get("gdf_union"))
-                st.success(
-                    f"✅ Máscara activa: {res_basin.get('names', 'Cuenca Específica')}"
-                )
-
-            # 2. Prioridad BAJA: Si no hay específica, usar la capa general de subcuencas (si existe)
+                st.success(f"✅ Máscara activa: {res_basin.get('names', 'Cuenca Específica')}")
             elif gdf_subcuencas is not None and not gdf_subcuencas.empty:
                 basin_geom = gdf_subcuencas
-                st.info(
-                    "ℹ️ Usando todas las subcuencas (Regional). Para una específica, ve a 'Mapas Avanzados'."
-                )
-
+                st.info("ℹ️ Usando todas las subcuencas (Regional).")
             else:
-                st.warning(
-                    "⚠️ No se detectó ninguna geometría para recortar. Se usará el mapa completo."
-                )
+                st.warning("⚠️ No se detectó ninguna geometría para recortar.")
 
         if st.button("Generar Mapa de Zonas de Vida"):
-            dem_path = getattr(Config, "DEM_FILE_PATH", "data/static/dem_antioquia.tif")
-            ppt_path = getattr(
-                Config, "PRECIP_RASTER_PATH", "data/static/ppt_anual_media.tif"
-            )
-
-            if not os.path.exists(dem_path) or not os.path.exists(ppt_path):
-                st.error(f"❌ Faltan archivos raster en: {dem_path} o {ppt_path}")
+            # --- VALIDACIÓN CRÍTICA (NUBE) ---
+            if not dem_file or not ppt_file:
+                st.error("❌ Error: No se han cargado los mapas base desde Supabase.")
+                st.info("Por favor verifica que los archivos .tif estén subidos en el Panel de Administración.")
             else:
-                with st.spinner("Generando mapa clasificado..."):
+                with st.spinner("Generando mapa clasificado (Procesando en Memoria)..."):
                     try:
+                        # Llamamos a la lógica enviando los OBJETOS EN MEMORIA (BytesIO)
                         lz_arr, profile, dynamic_legend, color_map = (
                             lz.generate_life_zone_map(
-                                dem_path,
-                                ppt_path,
+                                dem_file,   # BytesIO
+                                ppt_file,   # BytesIO
                                 mask_geometry=basin_geom,
                                 downscale_factor=downscale,
                             )
                         )
 
                         if lz_arr is not None:
+                            # Guardar en sesión
                             st.session_state.lz_raster_result = lz_arr
                             st.session_state.lz_profile = profile
                             st.session_state.lz_names = dynamic_legend
@@ -4091,31 +4086,23 @@ def display_life_zones_tab(
                             mask = z_flat > 0
 
                             if not np.any(mask):
-                                st.warning(
-                                    "El mapa se generó pero está vacío (quizás la máscara no coincide con el área del DEM)."
-                                )
+                                st.warning("El mapa se generó pero está vacío (revise la máscara).")
                             else:
                                 lat_clean = lat_flat[mask]
                                 lon_clean = lon_flat[mask]
                                 z_clean = z_flat[mask]
-
                                 center_lat = np.mean(lat_clean)
                                 center_lon = np.mean(lon_clean)
 
-                                # Área
+                                # Cálculo de Área Aprox
                                 meters_deg = 111132.0
                                 px_area_ha = (
                                     abs(dx * meters_deg * cos(radians(center_lat)))
                                     * abs(dy * meters_deg)
                                 ) / 10000.0
 
-                                colors_hex = [
-                                    color_map.get(v, "#808080") for v in z_clean
-                                ]
-                                hover_text = [
-                                    f"{dynamic_legend.get(v, 'ID '+str(v))}"
-                                    for v in z_clean
-                                ]
+                                colors_hex = [color_map.get(v, "#808080") for v in z_clean]
+                                hover_text = [f"{dynamic_legend.get(v, 'ID '+str(v))}" for v in z_clean]
 
                                 fig = go.Figure(
                                     go.Scattermapbox(
@@ -4133,32 +4120,23 @@ def display_life_zones_tab(
                                 )
 
                                 if user_loc:
-                                    fig.add_trace(
-                                        go.Scattermapbox(
-                                            lat=[user_loc[0]],
-                                            lon=[user_loc[1]],
-                                            mode="markers+text",
-                                            marker=go.scattermapbox.Marker(
-                                                size=15, color="black", symbol="star"
-                                            ),
-                                            text=["📍 TÚ ESTÁS AQUÍ"],
-                                            textposition="top center",
-                                        )
-                                    )
+                                    fig.add_trace(go.Scattermapbox(
+                                        lat=[user_loc[0]], lon=[user_loc[1]],
+                                        mode="markers+text",
+                                        marker=go.scattermapbox.Marker(size=15, color="black", symbol="star"),
+                                        text=["📍 TÚ ESTÁS AQUÍ"], textposition="top center"
+                                    ))
 
                                 fig.update_layout(
                                     mapbox_style="carto-positron",
-                                    mapbox=dict(
-                                        center=dict(lat=center_lat, lon=center_lon),
-                                        zoom=9,
-                                    ),
+                                    mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=9),
                                     height=600,
                                     margin={"r": 0, "t": 0, "l": 0, "b": 0},
                                     showlegend=False,
                                 )
                                 st.plotly_chart(fig)
 
-                                # Tabla
+                                # Tabla de Resultados
                                 unique, counts = np.unique(z_clean, return_counts=True)
                                 data = [
                                     {
@@ -4171,16 +4149,14 @@ def display_life_zones_tab(
                                 st.dataframe(
                                     pd.DataFrame(data)
                                     .sort_values("%", ascending=False)
-                                    .style.format({"Ha": "{:,.1f}", "%": "{:.1f}%"}),
+                                    .style.format({"Ha": "{:,.1f}", "%": "{:.1f}%"})
                                 )
 
+                                # Descarga TIFF
                                 tiff = lz.get_raster_bytes(lz_arr, profile)
                                 if tiff:
                                     st.download_button(
-                                        "📥 Descargar TIFF",
-                                        tiff,
-                                        "zonas_vida.tif",
-                                        "image/tiff",
+                                        "📥 Descargar TIFF", tiff, "zonas_vida.tif", "image/tiff"
                                     )
 
                     except Exception as e:
@@ -6491,4 +6467,5 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         
         st.plotly_chart(fig, use_container_width=True)
         st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv")
+
 
