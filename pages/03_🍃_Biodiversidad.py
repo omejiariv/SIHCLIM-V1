@@ -292,19 +292,34 @@ with tab_carbon:
         st.warning("👈 Por favor selecciona una zona en el menú lateral para iniciar.")
         st.stop()
 
-    # --- A. DIAGNÓSTICO TERRITORIAL ---
     st.subheader("🔍 Diagnóstico Territorial Integrado")
     
-    with st.spinner("🔄 Cruzando mapas de Clima (Holdridge) y Cobertura (Land Cover)..."):
-        # LLAMADA CORREGIDA: Pasamos _gdf_zona (el objeto) y nombre_seleccion (la clave de cache)
-        df_diagnostico = analizar_coberturas_por_zona_vida(gdf_zona, nombre_seleccion)
+    # 1. DESCARGA DE RECURSOS (NUBE)
+    with st.spinner("☁️ Descargando capas climáticas y de cobertura..."):
+        dem_bytes = get_raster_from_cloud("DemAntioquia_EPSG3116.tif")
+        ppt_bytes = get_raster_from_cloud("PPAMAnt.tif")
+        cov_bytes = get_raster_from_cloud("Cob25m_WGS84.tif") # Nombre exacto en bucket
 
+    # 2. PROCESAMIENTO
+    if dem_bytes and ppt_bytes and cov_bytes:
+        with st.spinner("🔄 Cruzando mapas de Clima (Holdridge) y Cobertura..."):
+            # AQUÍ ESTABA EL ERROR: Ahora pasamos 5 argumentos (incluyendo archivos y la clave)
+            df_diagnostico = analizar_coberturas_por_zona_vida(
+                gdf_zona, 
+                nombre_seleccion,  # Clave de cache
+                dem_bytes, 
+                ppt_bytes, 
+                cov_bytes
+            )
+    else:
+        st.error("❌ No se pudieron descargar los mapas base desde la nube.")
+        df_diagnostico = None
+
+    # 3. RESULTADOS
     if df_diagnostico is not None and not df_diagnostico.empty:
-        # IDs de Pastos/Degradados (Ajustar según land_cover.py)
-        # 7: Pastos, 3: Zonas degradadas, 11: Áreas abiertas
+        # IDs de Pastos/Degradados
         target_ids = [7, 3, 11] 
         df_potencial = df_diagnostico[df_diagnostico['COV_ID'].isin(target_ids)].copy()
-        
         total_potencial = df_potencial['Hectareas'].sum()
         
         c_kpi1, c_kpi2 = st.columns(2)
@@ -317,9 +332,9 @@ with tab_carbon:
                          orientation='h', title="Áreas Restaurables por Clima",
                          color_discrete_sequence=px.colors.qualitative.Pastel)
         st.plotly_chart(fig_bar, use_container_width=True)
-        
     else:
-        st.warning("No se pudo calcular el detalle espacial (Faltan rasters en BD). Se usarán valores estimados.")
+        if dem_bytes: # Solo mostrar advertencia si la descarga funcionó pero el cruce falló
+            st.warning("El diagnóstico espacial no arrojó resultados (posiblemente la zona está fuera del mapa).")
         df_potencial = pd.DataFrame()
         total_potencial = 0
 
@@ -330,7 +345,6 @@ with tab_carbon:
                          ["🔮 Proyección (Planificación)", "📏 Inventario (Línea Base)"], 
                          horizontal=True)
 
-    # MODO 1: PROYECCIÓN
     if "Proyección" in modo_calc:
         c1, c2 = st.columns([1, 2])
         with c1:
@@ -340,13 +354,10 @@ with tab_carbon:
             if opcion_area == "Manual":
                 area_ha = st.number_input("Área (Ha):", min_value=0.1, value=1.0)
             else:
-                area_ha = st.number_input("Área (Ha):", min_value=0.1, 
-                                          value=float(total_potencial) if total_potencial > 0 else 1.0,
-                                          disabled=True)
+                val_default = float(total_potencial) if total_potencial > 0 else 1.0
+                area_ha = st.number_input("Área (Ha):", min_value=0.1, value=val_default, disabled=True)
 
             anios_proj = st.slider("Horizonte (años):", 5, 50, 20)
-            tipo_bosque = st.selectbox("Modelo:", ["Bosque Húmedo Tropical (General)", "Bosque Seco Tropical"])
-            
             if st.button("🚀 Calcular Escenario", type="primary"):
                 df_proj = carbon_calculator.calcular_proyeccion_captura(area_ha, anios_proj)
                 st.session_state['df_carbon_proj'] = df_proj
@@ -366,7 +377,6 @@ with tab_carbon:
                               color_discrete_sequence=['#27ae60'])
                 st.plotly_chart(fig, use_container_width=True)
 
-    # MODO 2: INVENTARIO
     else:
         c_inv_1, c_inv_2 = st.columns([1, 2])
         with c_inv_1:
@@ -375,9 +385,20 @@ with tab_carbon:
             
             zv_sugerida = "bh-MB"
             if df_diagnostico is not None and not df_diagnostico.empty:
-                top_zv = df_diagnostico.groupby('Zona_Vida')['Hectareas'].sum().idxmax()
-                mapa_nombres = {"Bosque húmedo Premontano (bh-PM)": "bh-PM", "Bosque muy húmedo Montano Bajo (bmh-MB)": "bmh-MB"}
-                zv_sugerida = mapa_nombres.get(top_zv, "bh-MB")
+                try:
+                    top_zv = df_diagnostico.groupby('Zona_Vida')['Hectareas'].sum().idxmax()
+                    # Mapeo básico de nombres largos a códigos
+                    mapa_nombres = {
+                        "Bosque húmedo Premontano (bh-PM)": "bh-PM", 
+                        "Bosque muy húmedo Montano Bajo (bmh-MB)": "bmh-MB",
+                        "Bosque húmedo Tropical (bh-T)": "bh-T"
+                    }
+                    # Intenta buscar coincidencia parcial si no es exacta
+                    for k, v in mapa_nombres.items():
+                        if v in top_zv or top_zv in k:
+                            zv_sugerida = v
+                            break
+                except: pass
 
             opciones_zv = ["bh-MB", "bh-PM", "bh-T", "bmh-M", "bmh-MB", "bmh-PM", "bp-PM", "bs-T", "me-T"]
             idx_def = opciones_zv.index(zv_sugerida) if zv_sugerida in opciones_zv else 0
