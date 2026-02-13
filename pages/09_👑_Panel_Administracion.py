@@ -164,7 +164,7 @@ st.markdown("---")
 
 tabs = st.tabs([
     "📡 Estaciones", "🌧️ Lluvia", "📊 Índices", "🏠 Predios", "🌊 Cuencas", 
-    "🏙️ Municipios", "🌲 Coberturas", "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", , "🌧️ Red de Drenaje", , "🌧️ Zona de Peligro"
+    "🏙️ Municipios", "🌲 Coberturas", "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Red de Drenaje", "🌧️ Zona de Peligro"
 ])
 
 
@@ -1078,6 +1078,7 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
                 st.balloons()
             except Exception as e: st.error(f"Error: {e}")
     
+
 
 
 
