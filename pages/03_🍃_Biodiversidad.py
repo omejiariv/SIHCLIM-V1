@@ -38,41 +38,61 @@ def save_to_csv(df):
 
 # --- FUNCIÓN DETECTIVE (VERSIÓN DIAGNÓSTICO) ---
 
+# --- REEMPLAZAR LA FUNCIÓN get_raster_from_cloud POR ESTA VERSIÓN ---
+
 @st.cache_resource(show_spinner=False)
 def get_raster_from_cloud(filename):
     """
-    Descarga rasters. Si no encuentra el nombre exacto, 
-    busca coincidencias parecidas o muestra qué archivos existen realmente.
+    Buscador Profundo: Busca en la raíz y dentro de carpetas del bucket 'rasters'.
     """
     try:
         client = init_supabase()
-        bucket_name = "rasters" # Ya confirmamos que este bucket existe
+        bucket_name = "rasters" 
         
-        # 1. Obtener lista de archivos reales en el bucket
-        files_found = client.storage.from_(bucket_name).list()
+        # 1. Listar contenido raíz del bucket
+        items_root = client.storage.from_(bucket_name).list()
         
-        # Extraemos solo los nombres
-        real_filenames = [f['name'] for f in files_found]
+        # 2. Construir lista plana de archivos (buscando dentro de carpetas si es necesario)
+        all_files = []
+        for item in items_root:
+            if item['metadata'] is None: # Es una carpeta
+                folder_name = item['name']
+                # Listar contenido de la carpeta
+                sub_items = client.storage.from_(bucket_name).list(path=folder_name)
+                for sub in sub_items:
+                    all_files.append(f"{folder_name}/{sub['name']}")
+            else:
+                # Es un archivo en la raíz
+                all_files.append(item['name'])
+
+        # 3. Lógica de Búsqueda Flexible
+        # Buscamos si alguna parte del nombre coincide (ej: "DemAntioquia" en "Coberturas/DemAntioquia_v2.tif")
+        keyword = filename.split('_')[0].split('.')[0] # Ej: de "DemAntioquia_EPSG..." toma "DemAntioquia"
         
-        # CASO A: Coincidencia Exacta
-        if filename in real_filenames:
-            file_bytes = client.storage.from_(bucket_name).download(filename)
+        target_file = None
+        for real_name in all_files:
+            # Limpieza para comparar
+            clean_real = real_name.split('/')[-1] # Quitar nombre de carpeta
+            
+            # A. Coincidencia exacta
+            if filename == clean_real:
+                target_file = real_name
+                break
+            
+            # B. Coincidencia parcial (el "salvavidas")
+            if keyword.lower() in clean_real.lower() and filename.endswith('.tif'):
+                target_file = real_name
+                st.toast(f"⚠️ Archivo encontrado con nombre diferente: '{real_name}'")
+                break
+        
+        # 4. Descargar o Reportar
+        if target_file:
+            file_bytes = client.storage.from_(bucket_name).download(target_file)
             return io.BytesIO(file_bytes)
-
-        # CASO B: Búsqueda Inteligente (Ignorar mayúsculas o prefijos)
-        # Ejemplo: Si buscas "DemAntioquia_EPSG3116.tif" pero existe "DemAntioquia.tif"
-        keyword = filename.split('_')[0].lower() # "demantioquia"
-        for real_name in real_filenames:
-            if keyword in real_name.lower() and real_name.endswith('.tif'):
-                st.toast(f"⚠️ Usando '{real_name}' en lugar de '{filename}'")
-                file_bytes = client.storage.from_(bucket_name).download(real_name)
-                return io.BytesIO(file_bytes)
-
-        # CASO C: No encontrado -> MOSTRAR AL USUARIO QUÉ HAY
-        st.error(f"❌ Archivo '{filename}' NO encontrado.")
-        st.warning(f"📂 Contenido real del bucket '{bucket_name}': {real_filenames}")
-        st.info("👆 Copia uno de los nombres de arriba y renómbralo en tu PC o avísame para cambiar el código.")
-        return None
+        else:
+            # SI FALLA: Muestra qué hay realmente en el bucket para diagnosticar
+            st.warning(f"🔍 No encontré '{filename}'.\n📂 Archivos disponibles en 'rasters': {all_files}")
+            return None
 
     except Exception as e:
         st.error(f"Error de conexión con Storage: {e}")
@@ -469,6 +489,7 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
