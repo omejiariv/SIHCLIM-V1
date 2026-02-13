@@ -38,26 +38,43 @@ def save_to_csv(df):
 
 @st.cache_resource(show_spinner=False)
 def get_raster_from_cloud(filename):
-    """Descarga rasters intentando varios buckets (rasters/coberturas)."""
+    """
+    Buscador Inteligente: Escanea TODOS los buckets disponibles en Supabase
+    hasta encontrar el archivo.
+    """
     try:
         client = init_supabase()
         
-        # Intento 1: Bucket 'rasters' (Estándar)
-        try:
-            file_bytes = client.storage.from_("rasters").download(filename)
-            return io.BytesIO(file_bytes)
-        except:
-            # Intento 2: Bucket 'coberturas' (Tu caso probable)
+        # 1. Obtener lista real de buckets en tu proyecto
+        buckets_info = client.storage.list_buckets()
+        available_buckets = [b.name for b in buckets_info]
+        
+        if not available_buckets:
+            st.error("❌ No hay ningún Bucket creado en Supabase Storage.")
+            return None
+
+        # 2. Buscar el archivo en cada bucket
+        for bucket in available_buckets:
             try:
-                file_bytes = client.storage.from_("coberturas").download(filename)
-                return io.BytesIO(file_bytes)
-            except Exception as e_inner:
-                # Si falla en ambos, mostramos el error real
-                st.error(f"Error descargando '{filename}': {e_inner}")
-                return None
+                # Listamos los archivos dentro de este bucket
+                files_found = client.storage.from_(bucket).list()
+                file_names = [f['name'] for f in files_found]
                 
+                # ¿Está nuestro archivo aquí?
+                if filename in file_names:
+                    # ¡Lo tengo! Descargando...
+                    # st.toast(f"✅ Archivo encontrado en bucket: '{bucket}'") # Opcional: para saber dónde estaba
+                    file_bytes = client.storage.from_(bucket).download(filename)
+                    return io.BytesIO(file_bytes)
+            except:
+                continue # Si falla leer un bucket, probamos el siguiente
+        
+        # Si termina el ciclo y no retornó nada:
+        st.error(f"❌ El archivo '{filename}' no existe en ninguno de tus buckets: {available_buckets}")
+        return None
+
     except Exception as e:
-        st.error(f"Error crítico conectando a Supabase: {e}")
+        st.error(f"Error conectando al Storage: {e}")
         return None
 
 @st.cache_data(ttl=3600)
@@ -451,6 +468,7 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
