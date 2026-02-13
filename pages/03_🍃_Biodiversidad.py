@@ -10,6 +10,7 @@ import rasterio
 from rasterio.warp import reproject, Resampling
 import plotly.graph_objects as go
 import plotly.express as px
+from modules.admin_utils import init_supabase
 
 # --- IMPORTACIÓN DE MÓDULOS DEL SISTEMA ---
 try:
@@ -426,3 +427,4 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
