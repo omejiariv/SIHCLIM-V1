@@ -526,23 +526,33 @@ with tab_carbon:
     col_conf1, col_conf2 = st.columns([1, 2])
     
     with col_conf1:
-        # A. ESTRATEGIA (Aquí integramos Densidad/Sucesión)
+        # A. ESTRATEGIA (ACTUALIZADO: 10 MODELOS DEL EXCEL)
+        # Obtenemos las llaves del diccionario nuevo (STAND_I, STAND_II... CONS_RIO, etc.)
+        opciones_modelos = list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys())
+        
         estrategia = st.selectbox(
             "Estrategia de Intervención:",
-            options=["ACTIVA_ALTA", "ACTIVA_MEDIA", "PASIVA"],
+            options=opciones_modelos,
+            # Esta función lambda busca el nombre bonito ("1. Modelo Stand I...") para mostrarlo
             format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"],
-            help="Define la densidad de siembra y velocidad de crecimiento."
+            help="Selecciona uno de los 10 modelos calibrados (Restauración o Conservación)."
         )
         
-        # Mostrar descripción dinámica
-        desc = carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]["desc"]
-        st.caption(f"ℹ️ *{desc}*")
+        # Mostrar descripción dinámica y tipo de modelo
+        info_modelo = carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]
+        tipo_mod = info_modelo.get("tipo", "General").upper()
+        desc_mod = info_modelo.get("desc", "")
+        
+        # Caja azul informativa
+        st.info(f"**Tipo:** {tipo_mod}\n\nℹ️ {desc_mod}")
         
         # B. ÁREA
         tipo_area = st.radio("Definir Área:", ["Manual", "Todo el Potencial"], horizontal=True)
+        
         if tipo_area == "Manual":
-            area_input = st.number_input("Hectáreas:", min_value=0.1, value=1.0)
+            area_input = st.number_input("Hectáreas:", min_value=0.1, value=1.0, step=0.1)
         else:
+            # Usamos la variable total_potencial calculada arriba en el diagnóstico
             val_def = float(total_potencial) if total_potencial > 0 else 1.0
             area_input = st.number_input("Hectáreas:", value=val_def, disabled=True)
             
@@ -550,7 +560,7 @@ with tab_carbon:
         edad_proy = st.slider("Edad / Horizonte (Años):", 5, 50, 20, help="Tiempo de proyección del análisis.")
         
         calc_btn = st.button("🚀 Calcular Carbono", type="primary")
-
+        
     with col_conf2:
         # Lógica de Persistencia: Si se pulsa el botón, calculamos y guardamos.
         # Si no se pulsa, pero ya existe un cálculo previo, lo mostramos.
@@ -600,4 +610,5 @@ with tab_carbon:
         
         elif not calc_btn:
             st.info("👈 Configura los parámetros y pulsa 'Calcular Carbono' para ver la proyección.")
+
 
