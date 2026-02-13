@@ -670,96 +670,123 @@ with tab_carbon:
     
     st.divider()
 
-    # --- 3. CONFIGURACIÓN DEL PROYECTO ---
-    st.subheader("⚙️ Configuración del Proyecto")
+    # --- 4. CONFIGURACIÓN DEL ANÁLISIS ---
+    st.subheader("⚙️ Configuración del Análisis")
     
-    col_conf1, col_conf2 = st.columns([1, 2])
-    
-    with col_conf1:
-        # A. ESTRATEGIA (ACTUALIZADO: 10 MODELOS DEL EXCEL)
-        # Obtenemos las llaves del diccionario nuevo (STAND_I, STAND_II... CONS_RIO, etc.)
-        opciones_modelos = list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys())
-        
-        estrategia = st.selectbox(
-            "Estrategia de Intervención:",
-            options=opciones_modelos,
-            # Esta función lambda busca el nombre bonito ("1. Modelo Stand I...") para mostrarlo
-            format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"],
-            help="Selecciona uno de los 10 modelos calibrados (Restauración o Conservación)."
-        )
-        
-        # Mostrar descripción dinámica y tipo de modelo
-        info_modelo = carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]
-        tipo_mod = info_modelo.get("tipo", "General").upper()
-        desc_mod = info_modelo.get("desc", "")
-        
-        # Caja azul informativa
-        st.info(f"**Tipo:** {tipo_mod}\n\nℹ️ {desc_mod}")
-        
-        # B. ÁREA
-        tipo_area = st.radio("Definir Área:", ["Manual", "Todo el Potencial"], horizontal=True)
-        
-        if tipo_area == "Manual":
-            area_input = st.number_input("Hectáreas:", min_value=0.1, value=1.0, step=0.1)
-        else:
-            # Usamos la variable total_potencial calculada arriba en el diagnóstico
-            val_def = float(total_potencial) if total_potencial > 0 else 1.0
-            area_input = st.number_input("Hectáreas:", value=val_def, disabled=True)
+    enfoque = st.radio("Selecciona el enfoque metodológico:", ["🔮 Proyección (Planificación Ex-ante)", "📏 Inventario (Medición Ex-post)"], horizontal=True)
+
+    # ================= OPCIÓN A: PROYECCIÓN =================
+    if "Proyección" in enfoque:
+        col_conf1, col_conf2 = st.columns([1, 2])
+
+        with col_conf1: # <-- ¡Ahora está correctamente indentado dentro del IF!
+            # A. ESTRATEGIA (ACTUALIZADO: 10 MODELOS DEL EXCEL)
+            opciones_modelos = list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys())
             
-        # C. EDAD (Horizonte)
-        edad_proy = st.slider("Edad / Horizonte (Años):", 5, 50, 20, help="Tiempo de proyección del análisis.")
-        
-        calc_btn = st.button("🚀 Calcular Carbono", type="primary")
-        
-    with col_conf2:
-        # Lógica de Persistencia: Si se pulsa el botón, calculamos y guardamos.
-        # Si no se pulsa, pero ya existe un cálculo previo, lo mostramos.
-        if calc_btn:
-            # 1. Calcular
-            df_res = carbon_calculator.calcular_proyeccion_captura(
-                hectareas=area_input, 
-                anios=edad_proy, 
-                escenario_key=estrategia
+            estrategia = st.selectbox(
+                "Estrategia de Intervención:",
+                options=opciones_modelos,
+                format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"],
+                help="Selecciona uno de los 10 modelos calibrados (Restauración o Conservación)."
             )
-            # 2. Guardar en Memoria de Sesión (ESTO FALTABA)
-            st.session_state['carbon_results'] = {
-                'df': df_res,
-                'total': df_res['Proyecto_tCO2e_Acumulado'].iloc[-1],
-                'estrategia': estrategia,
-                'area': area_input
-            }
+            
+            # Mostrar descripción dinámica y tipo de modelo
+            info_modelo = carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]
+            tipo_mod = info_modelo.get("tipo", "General").upper()
+            desc_mod = info_modelo.get("desc", "")
+            
+            # Caja azul informativa
+            st.info(f"**Tipo:** {tipo_mod}\n\nℹ️ {desc_mod}")
+            
+            # B. ÁREA
+            tipo_area = st.radio("Definir Área:", ["Manual", "Todo el Potencial"], horizontal=True)
+            
+            if tipo_area == "Manual":
+                area_input = st.number_input("Hectáreas:", min_value=0.1, value=1.0, step=0.1)
+            else:
+                val_def = float(total_potencial) if total_potencial > 0 else 1.0
+                area_input = st.number_input("Hectáreas:", value=val_def, disabled=True)
+                
+            # C. EDAD (Horizonte)
+            edad_proy = st.slider("Edad / Horizonte (Años):", 5, 50, 20, help="Tiempo de proyección del análisis.")
+            
+            calc_btn = st.button("🚀 Calcular Carbono", type="primary")
+            
+        with col_conf2: # <-- ¡También está correctamente indentado!
+            # Lógica de Persistencia
+            if calc_btn:
+                df_res = carbon_calculator.calcular_proyeccion_captura(
+                    hectareas=area_input, 
+                    anios=edad_proy, 
+                    escenario_key=estrategia
+                )
+                st.session_state['carbon_results'] = {
+                    'df': df_res,
+                    'total': df_res['Proyecto_tCO2e_Acumulado'].iloc[-1],
+                    'estrategia': estrategia,
+                    'area': area_input
+                }
 
-        # Revisamos si hay resultados en memoria para mostrar
-        if 'carbon_results' in st.session_state:
-            res = st.session_state['carbon_results']
-            df_res = res['df']
-            total_c = res['total']
+            if 'carbon_results' in st.session_state:
+                res = st.session_state['carbon_results']
+                df_res = res['df']
+                total_c = res['total']
+                
+                tasa_prom = total_c / edad_proy
+                
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Captura Total", f"{total_c:,.0f} tCO2e")
+                m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
+                m3.metric("Valor (5 USD/t)", f"${(total_c*5):,.0f} USD")
+                
+                fig = px.area(df_res, x='Año', y='Proyecto_tCO2e_Acumulado',
+                              title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[res['estrategia']]['nombre']}",
+                              labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
+                              color_discrete_sequence=['#2ecc71'])
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                with st.expander("Ver Tabla Detallada"):
+                    st.dataframe(df_res)
             
-            # (Opcional) Advertencia si cambiaste parámetros pero no recalculaste
-            # if res['area'] != area_input or res['estrategia'] != estrategia:
-            #     st.caption("⚠️ *Los resultados mostrados corresponden al cálculo anterior. Pulsa 'Calcular' para actualizar.*")
+            elif not calc_btn:
+                st.info("👈 Configura los parámetros y pulsa 'Calcular Carbono' para ver la proyección.")
 
-            # Resultados Clave
-            tasa_prom = total_c / edad_proy
+    # ================= OPCIÓN B: INVENTARIO =================
+    else:
+        c_inv_1, c_inv_2 = st.columns([1, 2])
+        with c_inv_1:
+            st.info("Sube un archivo Excel/CSV con mediciones de campo. Requiere columnas: `DAP` (cm), `Altura` (m).")
+            up_file = st.file_uploader("Cargar Inventario Forestal", type=['csv', 'xlsx'])
             
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Captura Total", f"{total_c:,.0f} tCO2e")
-            m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
-            m3.metric("Valor (5 USD/t)", f"${(total_c*5):,.0f} USD")
+            opciones_zv = ["bh-MB", "bh-PM", "bh-T", "bmh-M", "bmh-MB", "bmh-PM", "bp-PM", "bs-T", "me-T"]
+            zona_vida_inv = st.selectbox("Ecuación (Zona de Vida Predominante):", opciones_zv, index=0)
             
-            # Gráfico de Curva S (Sigmoide)
-            fig = px.area(df_res, x='Año', y='Proyecto_tCO2e_Acumulado',
-                          title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[res['estrategia']]['nombre']}",
-                          labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
-                          color_discrete_sequence=['#2ecc71'])
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            with st.expander("Ver Tabla Detallada"):
-                st.dataframe(df_res)
-        
-        elif not calc_btn:
-            st.info("👈 Configura los parámetros y pulsa 'Calcular Carbono' para ver la proyección.")
+            btn_inv = st.button("🧮 Calcular Stock Actual", type="primary")
+
+        with c_inv_2:
+            if up_file and btn_inv:
+                try:
+                    if up_file.name.endswith('.csv'): df_inv = pd.read_csv(up_file)
+                    else: df_inv = pd.read_excel(up_file)
+                    
+                    df_res_inv, msg = carbon_calculator.calcular_inventario_forestal(df_inv, zona_vida_inv)
+                    
+                    if df_res_inv is not None:
+                        st.success("✅ Inventario Procesado")
+                        tot_carb = df_res_inv['CO2e_Total_tCO2e'].sum()
+                        
+                        i1, i2 = st.columns(2)
+                        i1.metric("Árboles Válidos", f"{len(df_res_inv)}")
+                        i2.metric("Stock Estimado", f"{tot_carb:,.2f} tCO2e")
+                        
+                        st.dataframe(df_res_inv.head())
+                        csv_inv = df_res_inv.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Descargar Reporte CSV", csv_inv, "reporte_inventario.csv", "text/csv")
+                    else:
+                        st.error(msg)
+                except Exception as e:
+                    st.error(f"Error procesando archivo: Revise que las columnas se llamen DAP y Altura. ({e})")
 
 # ==============================================================================
 # TAB 4: COMPARADOR DE ESCENARIOS (NUEVO)
@@ -833,6 +860,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
