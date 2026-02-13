@@ -521,26 +521,44 @@ with tab_carbon:
         calc_btn = st.button("🚀 Calcular Carbono", type="primary")
 
     with col_conf2:
+        # Lógica de Persistencia: Si se pulsa el botón, calculamos y guardamos.
+        # Si no se pulsa, pero ya existe un cálculo previo, lo mostramos.
         if calc_btn:
-            # Llamada al nuevo motor con estrategia
+            # 1. Calcular
             df_res = carbon_calculator.calcular_proyeccion_captura(
                 hectareas=area_input, 
                 anios=edad_proy, 
                 escenario_key=estrategia
             )
+            # 2. Guardar en Memoria de Sesión (ESTO FALTABA)
+            st.session_state['carbon_results'] = {
+                'df': df_res,
+                'total': df_res['Proyecto_tCO2e_Acumulado'].iloc[-1],
+                'estrategia': estrategia,
+                'area': area_input
+            }
+
+        # Revisamos si hay resultados en memoria para mostrar
+        if 'carbon_results' in st.session_state:
+            res = st.session_state['carbon_results']
+            df_res = res['df']
+            total_c = res['total']
             
+            # (Opcional) Advertencia si cambiaste parámetros pero no recalculaste
+            # if res['area'] != area_input or res['estrategia'] != estrategia:
+            #     st.caption("⚠️ *Los resultados mostrados corresponden al cálculo anterior. Pulsa 'Calcular' para actualizar.*")
+
             # Resultados Clave
-            total_c = df_res['Proyecto_tCO2e_Acumulado'].iloc[-1]
             tasa_prom = total_c / edad_proy
             
             m1, m2, m3 = st.columns(3)
             m1.metric("Captura Total", f"{total_c:,.0f} tCO2e")
-            m2.metric("Tasa Anual", f"{tasa_prom:,.0f} t/año")
+            m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
             m3.metric("Valor (5 USD/t)", f"${(total_c*5):,.0f} USD")
             
             # Gráfico de Curva S (Sigmoide)
             fig = px.area(df_res, x='Año', y='Proyecto_tCO2e_Acumulado',
-                          title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]['nombre']}",
+                          title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[res['estrategia']]['nombre']}",
                           labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
                           color_discrete_sequence=['#2ecc71'])
             
@@ -548,4 +566,6 @@ with tab_carbon:
             
             with st.expander("Ver Tabla Detallada"):
                 st.dataframe(df_res)
-
+        
+        elif not calc_btn:
+            st.info("👈 Configura los parámetros y pulsa 'Calcular Carbono' para ver la proyección.")
