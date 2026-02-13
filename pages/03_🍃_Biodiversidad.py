@@ -4,21 +4,26 @@ import streamlit as st
 import sys
 import os
 import pandas as pd
+import numpy as np
 import geopandas as gpd
+import rasterio
+from rasterio.warp import reproject, Resampling
 import plotly.graph_objects as go
 import plotly.express as px
 
-# --- IMPORTACIÓN DE MÓDULOS ---
+# --- IMPORTACIÓN DE MÓDULOS DEL SISTEMA ---
 try:
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors, config, gbif_connector, carbon_calculator
+    from modules import life_zones as lz 
+    from modules import land_cover as lc
 except Exception as e:
     st.error(f"Error crítico de importación: {e}")
     st.stop()
 
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Monitor de Biodiversidad", page_icon="🍃", layout="wide")
-st.title("🍃 Biodiversidad y Servicios Ecosistémicos")
+st.title("🍃 Biodiversidad y Servicios Ecosistémicos Integrados")
 
 # 2. SELECTOR ESPACIAL
 try:
@@ -51,6 +56,80 @@ def load_layer_cached(layer_name):
                 return gdf
         except: return None
     return None
+
+# --- MOTOR DE INTEGRACIÓN: ÁLGEBRA DE MAPAS ---
+@st.cache_data(show_spinner=False)
+def analizar_coberturas_por_zona_vida(gdf_zona):
+    """
+    Realiza la intersección raster entre Zonas de Vida y Coberturas.
+    Retorna un DataFrame con hectáreas por combinación.
+    """
+    try:
+        # 1. Rutas de Archivos Base
+        # Usamos los paths definidos en config o en session_state si se subieron manualmente
+        dem_path = st.session_state.get('dem_path', config.Config.DEM_FILE_PATH)
+        ppt_path = st.session_state.get('ppt_path', config.Config.PRECIP_RASTER_PATH)
+        cov_path = st.session_state.get('cov_path', config.Config.LAND_COVER_RASTER_PATH)
+
+        # 2. Generar Mapa de Zonas de Vida (Raster 1)
+        # Usamos un downscale moderado (4) para balancear velocidad/precisión
+        lz_arr, lz_profile, lz_names, _ = lz.generate_life_zone_map(
+            dem_path, ppt_path, mask_geometry=gdf_zona, downscale_factor=4
+        )
+        
+        if lz_arr is None: return None
+
+        # 3. Alinear Mapa de Coberturas (Raster 2) al Raster 1
+        # Esto es crucial: Reproyectar la cobertura para que coincida pixel a pixel con ZV
+        with rasterio.open(cov_path) as src_cov:
+            cov_aligned = np.zeros_like(lz_arr, dtype=np.uint8)
+            
+            reproject(
+                source=rasterio.band(src_cov, 1),
+                destination=cov_aligned,
+                src_transform=src_cov.transform,
+                src_crs=src_cov.crs,
+                dst_transform=lz_profile['transform'],
+                dst_crs=lz_profile['crs'],
+                resampling=Resampling.nearest # Nearest para datos categóricos
+            )
+
+        # 4. Cálculo de Áreas (Hectáreas)
+        # Tamaño de pixel en metros (aprox en el centro de la zona)
+        try:
+            centro = gdf_zona.to_crs("EPSG:3116").centroid.iloc[0] # Magna Sirgas
+            # Estimación simple basada en la resolución del transform (grados a metros)
+            res_x_deg = lz_profile['transform'][0]
+            meters_per_deg = 111132.0 
+            pixel_area_m2 = (res_x_deg * meters_per_deg) ** 2
+            pixel_area_ha = pixel_area_m2 / 10000.0
+        except:
+            pixel_area_ha = 1.0 # Fallback si falla la proyección
+
+        # 5. Cruce (Crosstab)
+        # Aplanamos arrays y creamos DataFrame
+        df_cross = pd.DataFrame({
+            'ZV_ID': lz_arr.flatten(),
+            'COV_ID': cov_aligned.flatten()
+        })
+        
+        # Filtramos nodata (0)
+        df_cross = df_cross[(df_cross['ZV_ID'] > 0) & (df_cross['COV_ID'] > 0)]
+        
+        # Agrupamos
+        resumen = df_cross.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
+        resumen['Hectareas'] = resumen['Pixeles'] * pixel_area_ha
+        
+        # 6. Enriquecer con Nombres
+        resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz_names.get(x, f"ZV {x}"))
+        # Usamos el diccionario de land_cover.py
+        resumen['Cobertura'] = resumen['COV_ID'].map(lambda x: lc.LAND_COVER_LEGEND.get(x, f"Clase {x}"))
+        
+        return resumen
+
+    except Exception as e:
+        st.warning(f"No se pudo realizar el cruce espacial detallado: {e}")
+        return None
 
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
 def detectar_zona_vida_dominante(gdf_zona):
@@ -212,117 +291,162 @@ with tab_tax:
         st.info("No hay datos de biodiversidad para mostrar estadísticas.")
 
 # ==============================================================================
-# TAB 3: CALCULADORA DE CARBONO (INTEGRACIÓN SISTÉMICA)
+# TAB 3: CALCULADORA DE CARBONO (SISTÉMICA)
 # ==============================================================================
 with tab_carbon:
     st.header("🌳 Estimación de Servicios Ecosistémicos (Carbono)")
     
-    # --- A. ANÁLISIS DEL SISTEMA (Contexto Automático) ---
-    st.info("🤖 **Análisis Sistémico:** El sistema ha detectado las condiciones de tu zona seleccionada.")
-    
-    c_sys_1, c_sys_2 = st.columns(2)
-    
-    # 1. DETECCIÓN DE ZONA DE VIDA (Conexión con life_zones.py)
-    zv_detectada = detectar_zona_vida_dominante(gdf_zona) if gdf_zona is not None else "bh-MB"
-    
-    with c_sys_1:
-        st.markdown(f"**📍 Zona de Vida Detectada:** `{zv_detectada}`")
-        st.caption("Basado en la altitud y precipitación de la geometría seleccionada.")
+    if gdf_zona is None:
+        st.warning("👈 Por favor selecciona una zona en el menú lateral para iniciar.")
+        st.stop()
 
-    # 2. DETECCIÓN DE ÁREA POTENCIAL (Conexión con land_cover.py)
-    area_potencial = 0
-    with c_sys_2:
-        # Intentamos calcular área de pastos en la zona
-        if gdf_zona is not None:
-            # Aquí idealmente llamaríamos a land_cover logic, simulamos por rapidez:
-            area_total_ha = gdf_zona.to_crs("+proj=cea").area.sum() / 10000
-            area_potencial = area_total_ha * 0.4 # Supuesto: 40% es pasto disponible
-            st.markdown(f"**🌾 Área Potencial Restauración:** `{area_potencial:,.1f} ha`")
-            st.caption("Área estimada de 'Pastos' disponible para conversión a bosque.")
-        else:
-            st.write("Selecciona una zona para calcular área.")
+    # --- A. DIAGNÓSTICO TERRITORIAL (EL CEREBRO DEL SISTEMA) ---
+    st.subheader("🔍 Diagnóstico Territorial Integrado")
+    
+    with st.spinner("🔄 Cruzando mapas de Clima (Holdridge) y Cobertura (Land Cover)..."):
+        df_diagnostico = analizar_coberturas_por_zona_vida(gdf_zona)
+
+    if df_diagnostico is not None and not df_diagnostico.empty:
+        # 1. Filtrar solo Pastos/Áreas Degradadas (Clase 7 y 3 usualmente)
+        # Ajusta los IDs según tu diccionario LAND_COVER_LEGEND en land_cover.py
+        # 7: Pastos, 3: Zonas degradadas, 10: Vegetación Herbácea (opcional)
+        target_ids = [7, 3, 11] 
+        df_potencial = df_diagnostico[df_diagnostico['COV_ID'].isin(target_ids)].copy()
+        
+        total_potencial = df_potencial['Hectareas'].sum()
+        
+        c_kpi1, c_kpi2 = st.columns(2)
+        c_kpi1.metric("Área Total Seleccionada", f"{(gdf_zona.to_crs('+proj=cea').area.sum()/10000):,.1f} ha")
+        c_kpi2.metric("Potencial Restauración (Pastos)", f"{total_potencial:,.1f} ha", 
+                      help="Suma de coberturas transformables (Pastos, Tierras degradadas) en todas las zonas de vida.")
+
+        # Gráfico de Distribución
+        fig_bar = px.bar(df_potencial, x='Hectareas', y='Zona_Vida', color='Cobertura', 
+                         orientation='h', title="Distribución de Áreas Restaurables por Clima",
+                         color_discrete_sequence=px.colors.qualitative.Pastel)
+        st.plotly_chart(fig_bar, use_container_width=True)
+        
+    else:
+        st.warning("No se pudo calcular el detalle espacial. Se usarán valores estimados.")
+        df_potencial = pd.DataFrame()
+        total_potencial = 0
 
     st.divider()
 
-    # --- B. INTERFAZ DE USUARIO ---
-    modo_calc = st.radio("Selecciona el tipo de análisis:", 
-                         ["🔮 Proyección (Restauración Futura)", "📏 Inventario (Medición en Campo)"], 
+    # --- B. HERRAMIENTAS DE CÁLCULO ---
+    modo_calc = st.radio("Selecciona el enfoque:", 
+                         ["🔮 Proyección (Planificación)", "📏 Inventario (Línea Base)"], 
                          horizontal=True)
-    
+
     # ---------------------------------------------------------
-    # MODO 1: PROYECCIÓN (Usa el Área Potencial detectada)
+    # MODO 1: PROYECCIÓN (ALIMENTADO POR EL DIAGNÓSTICO)
     # ---------------------------------------------------------
     if "Proyección" in modo_calc:
+        st.markdown("#### 🔮 Proyección de Captura (Modelo Von Bertalanffy)")
+        
         c1, c2 = st.columns([1, 2])
+        
         with c1:
-            st.subheader("Parámetros")
-            # El valor por defecto viene del sistema (land_cover), pero es editable
-            area_ha = st.number_input("Área a restaurar (Ha):", 
-                                      min_value=0.1, 
-                                      value=float(area_potencial) if area_potencial > 0 else 1.0, 
-                                      step=0.1,
-                                      help="Sugerido basado en la cobertura de pastos actual.")
+            st.markdown("**Configuración del Proyecto**")
             
+            # Selector inteligente de áreas
+            opcion_area = st.radio("Definir área a restaurar:", 
+                                   ["Manual", "Todo el Potencial Identificado"], index=1)
+            
+            if opcion_area == "Manual":
+                area_ha = st.number_input("Área (Ha):", min_value=0.1, value=1.0)
+            else:
+                area_ha = st.number_input("Área (Ha):", min_value=0.1, 
+                                          value=float(total_potencial) if total_potencial > 0 else 1.0,
+                                          disabled=True)
+                if not df_potencial.empty:
+                    st.caption("Desglose del área automática:")
+                    st.dataframe(df_potencial[['Zona_Vida', 'Hectareas']].groupby('Zona_Vida').sum(), height=150)
+
             anios_proj = st.slider("Horizonte (años):", 5, 50, 20)
-            tipo_bosque = st.selectbox("Modelo:", ["Bosque Húmedo Tropical (Restauración)", "Bosque Seco Tropical"])
             
-            if st.button("🚀 Proyectar Captura"):
+            # Aquí podríamos sofisticar: Seleccionar un modelo de crecimiento POR zona de vida.
+            # Por ahora, usamos el modelo general paramétrico.
+            tipo_bosque = st.selectbox("Modelo de Crecimiento:", 
+                                       ["Bosque Húmedo Tropical (General)", "Bosque Seco Tropical"])
+            
+            if st.button("🚀 Calcular Escenario", type="primary"):
+                # Llamada al motor
                 df_proj = carbon_calculator.calcular_proyeccion_captura(area_ha, anios_proj)
                 st.session_state['df_carbon_proj'] = df_proj
-        
+
         with c2:
             if 'df_carbon_proj' in st.session_state:
                 df = st.session_state['df_carbon_proj']
-                total = df['Proyecto_tCO2e_Acumulado'].iloc[-1]
+                total_c = df['Proyecto_tCO2e_Acumulado'].iloc[-1]
                 
-                st.metric("Potencial de Captura Total", f"{total:,.0f} tCO2e")
-                fig = px.area(df, x='Año', y='Proyecto_tCO2e_Acumulado', 
-                              title="Acumulación de Carbono en el Tiempo",
-                              color_discrete_sequence=['#2ecc71'])
+                # Tarjetas de Resultado
+                k1, k2, k3 = st.columns(3)
+                k1.metric("Total CO2e (20 años)", f"{total_c:,.0f} t")
+                k2.metric("Promedio Anual", f"{(total_c/anios_proj):,.0f} t/año")
+                k3.metric("Valor Potencial", f"${(total_c*5):,.0f} USD", help="@ 5 USD/t")
+
+                # Gráfico
+                fig = px.area(df, x='Año', y='Proyecto_tCO2e_Acumulado',
+                              title=f"Curva de Acumulación de Carbono ({area_ha:.1f} ha)",
+                              labels={'Proyecto_tCO2e_Acumulado': 'tCO2e Acumulado'},
+                              color_discrete_sequence=['#27ae60'])
+                # Añadir línea de meta o referencia si se quiere
                 st.plotly_chart(fig, use_container_width=True)
 
     # ---------------------------------------------------------
-    # MODO 2: INVENTARIO (Usa la Zona de Vida detectada)
+    # MODO 2: INVENTARIO (ALIMENTADO POR EL DIAGNÓSTICO)
     # ---------------------------------------------------------
     else:
-        st.subheader("📏 Calculadora de Stock (Inventario)")
-        st.info("Sube tu Excel de campo (DAP, Altura). El sistema seleccionará la ecuación científica adecuada.")
+        st.markdown("#### 📏 Inventario Forestal (Stock Actual)")
+        st.info("Calcula el carbono de árboles medidos en campo usando ecuaciones específicas para su Zona de Vida.")
         
         c_inv_1, c_inv_2 = st.columns([1, 2])
         
         with c_inv_1:
-            # EL GRAN CAMBIO: El selectbox ya selecciona automáticamente la ZV detectada
-            opciones_zv = ["bh-MB", "bh-PM", "bh-T", "bmh-M", "bmh-MB", "bmh-PM", "bp-PM"]
+            up_file = st.file_uploader("Cargar Excel (Columnas: DAP, Altura)", type=['csv', 'xlsx'])
             
-            idx_default = 0
-            if zv_detectada in opciones_zv:
-                idx_default = opciones_zv.index(zv_detectada)
-                
-            zona_vida = st.selectbox("Zona de Vida (Ecuación):", 
-                                     opciones_zv, 
-                                     index=idx_default,
-                                     help="Automáticamente seleccionada según la ubicación del proyecto.")
+            # Lógica inteligente: Si el diagnóstico detectó una zona dominante, la sugerimos
+            zv_sugerida = "bh-MB" # Default
+            if df_diagnostico is not None and not df_diagnostico.empty:
+                # Buscamos la ZV con mayor área
+                top_zv = df_diagnostico.groupby('Zona_Vida')['Hectareas'].sum().idxmax()
+                # Mapeo simple de nombres largos a códigos cortos (Debes ajustar según tus datos reales)
+                mapa_nombres = {
+                    "Bosque húmedo Premontano (bh-PM)": "bh-PM", 
+                    "Bosque muy húmedo Montano Bajo (bmh-MB)": "bmh-MB"
+                    # ... agregar más mapeos ...
+                }
+                zv_sugerida = mapa_nombres.get(top_zv, "bh-MB")
+
+            # Lista de códigos disponibles en la BD
+            opciones_zv = ["bh-MB", "bh-PM", "bh-T", "bmh-M", "bmh-MB", "bmh-PM", "bp-PM", "bs-T", "me-T"]
+            idx_def = opciones_zv.index(zv_sugerida) if zv_sugerida in opciones_zv else 0
             
-            up_file = st.file_uploader("Cargar Excel/CSV", type=['csv', 'xlsx'])
+            zona_vida = st.selectbox("Ecuación Alométrica (Zona de Vida):", 
+                                     opciones_zv, index=idx_def,
+                                     help=f"Sugerido por el sistema: {zv_sugerida}")
 
         with c_inv_2:
-            if up_file:
-                if up_file.name.endswith('.csv'):
-                    df_inv = pd.read_csv(up_file, sep=';' if ';' in up_file.getvalue().decode('latin1') else ',')
-                else:
-                    df_inv = pd.read_excel(up_file)
-                
-                if st.button("🧮 Calcular Stock Actual"):
+            if up_file and st.button("🧮 Procesar Inventario"):
+                try:
+                    if up_file.name.endswith('.csv'):
+                        df_inv = pd.read_csv(up_file, sep=';' if ';' in up_file.getvalue().decode('latin1') else ',')
+                    else:
+                        df_inv = pd.read_excel(up_file)
+                    
                     df_res, msg = carbon_calculator.calcular_inventario_forestal(df_inv, zona_vida)
                     
                     if df_res is not None:
-                        st.success(f"✅ Cálculo realizado usando coeficientes para **{zona_vida}**.")
+                        st.success("✅ Inventario procesado correctamente.")
                         st.dataframe(df_res.head())
                         
-                        total_carb = df_res['CO2e_Total_tCO2e'].sum()
-                        st.metric("Stock Total de Carbono", f"{total_carb:,.2f} tCO2e")
+                        tot_carb = df_res['CO2e_Total_tCO2e'].sum()
+                        st.metric("Stock Total Calculado", f"{tot_carb:,.2f} tCO2e")
                         
                         csv = df_res.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Bajar Resultado", csv, "carbono_calculado.csv", "text/csv")
+                        st.download_button("📥 Descargar Resultado", csv, "inventario_carb.csv", "text/csv")
                     else:
                         st.error(msg)
+                except Exception as e:
+                    st.error(f"Error: {e}")
