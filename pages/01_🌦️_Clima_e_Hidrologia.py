@@ -650,11 +650,19 @@ def main():
                         
                     fig.add_trace(go.Scatter(x=df_iso['lon'], y=df_iso['lat'], mode='markers', text=df_iso['nombre']))
                     st.plotly_chart(fig, use_container_width=True)
+                
                 else: 
                     st.warning("Datos insuficientes para interpolar (Mínimo 3 estaciones con datos en este año).")
             
+            # --- AQUÍ ESTABA EL ERROR: FALTABA ESTE BLOQUE EXCEPT ---
+            except Exception as e: 
+                st.error(f"Error en Isoyetas: {e}")
+        else: 
+            st.warning("Se requieren mín. 3 estaciones para calcular isoyetas.")
+
     elif selected_module == "📄 Reporte":
         st.header("Generación de Informe")
+        if st.button("📄 Crear PDF"):
         if st.button("📄 Crear PDF"):
             res = {"n_estaciones": len(stations_for_analysis), "rango": f"{year_range}"}
             pdf = generate_pdf_report(df_monthly_filtered, gdf_filtered, res)
@@ -665,6 +673,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
