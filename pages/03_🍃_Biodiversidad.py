@@ -128,129 +128,135 @@ def load_layer_cached(layer_name):
 @st.cache_data(show_spinner=False)
 def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file, _cov_file):
     """
-    Realiza la intersección usando la lógica de 'Cargar y Cortar DEM' probada en Geomorfología.
-    Alinea PPT y Coberturas al DEM recortado.
+    Estrategia Maestra:
+    1. Usa el DEM como grilla base (Patrón).
+    2. Recorta el DEM usando la geometría (Lógica Geomorfología).
+    3. 'Warpea' (deforma/alinea) la Lluvia y Cobertura para calzar pixel-a-pixel con el DEM recortado.
     """
     try:
         if not _dem_file or not _ppt_file or not _cov_file:
             return None
 
-        # 1. REBOBINADO DE MEMORIA
+        # 1. RESET DE MEMORIA
         _dem_file.seek(0)
         _ppt_file.seek(0)
         _cov_file.seek(0)
 
-        # 2. PROCESAR DEM (EL MAESTRO) - Lógica de tu código exitoso
+        # ---------------------------------------------------------
+        # PASO 1: PROCESAR EL DEM (EL PATRÓN)
+        # ---------------------------------------------------------
         dem_arr = None
-        out_transform = None
-        out_crs = None
+        out_meta = None
         
         with MemoryFile(_dem_file) as mem_dem:
             with mem_dem.open() as src_dem:
-                # A. Blindaje de Geometría
-                gdf_valid = _gdf_zona.copy()
-                gdf_valid['geometry'] = gdf_valid.buffer(0)
-                
-                # B. Proyección Dinámica (La clave del éxito)
-                # Convertimos el polígono al sistema del DEM (sea cual sea)
-                if src_dem.crs:
-                    gdf_proj = gdf_valid.to_crs(src_dem.crs)
-                else:
-                    # Si el DEM no tiene CRS, asumimos 3116 y forzamos al polígono
-                    gdf_proj = gdf_valid.to_crs("EPSG:3116")
-                
-                # C. Recorte con Mask
-                try:
-                    out_image, out_transform = mask(src_dem, gdf_proj.geometry, crop=True)
-                    dem_arr = out_image[0]
-                    out_crs = src_dem.crs if src_dem.crs else "EPSG:3116"
-                except ValueError:
-                    # Zona fuera del mapa
-                    return None
+                # A. Detección de CRS (Si falla, asumimos Magna Sirgas 3116)
+                crs_working = src_dem.crs
+                if not crs_working:
+                    # Forzamos EPSG:3116 si el archivo no tiene firma
+                    crs_working = rasterio.crs.CRS.from_string("EPSG:3116")
 
-                # Limpieza de NoData (Tu lógica)
+                # B. Proyectar Geometría al CRS del Raster (CRÍTICO)
+                # Esto soluciona el "zona fuera del mapa"
+                gdf_proj = _gdf_zona.to_crs(crs_working)
+                
+                # C. Blindaje de Geometría
+                geoms = [g for g in gdf_proj.geometry.values]
+                
+                # D. Recorte (Mask)
+                try:
+                    out_image, out_transform = mask(src_dem, geoms, crop=True)
+                    dem_arr = out_image[0]
+                except ValueError:
+                    return None # No hubo intersección
+
+                # E. Limpieza de NoData
                 dem_arr = np.where(dem_arr == src_dem.nodata, np.nan, dem_arr)
-                dem_arr = np.where(dem_arr < -100, np.nan, dem_arr) # Filtro de ruido
+                dem_arr = np.where(dem_arr < -100, np.nan, dem_arr)
+                
+                # Guardamos las propiedades de este recorte para usarlas de molde
+                out_shape = dem_arr.shape # (Alto, Ancho)
+                out_crs = crs_working
 
         if dem_arr is None or np.isnan(dem_arr).all():
             return None
 
-        # Guardamos la forma del DEM recortado para alinear los otros
-        out_shape = dem_arr.shape
+        # ---------------------------------------------------------
+        # PASO 2: ALINEAR OTROS MAPAS AL MOLDE DEL DEM
+        # ---------------------------------------------------------
         
-        # 3. ALINEAR PPT AL DEM RECORTADO
-        ppt_arr = np.zeros(out_shape, dtype=np.float32)
-        with MemoryFile(_ppt_file) as mem_ppt:
-            with mem_ppt.open() as src_ppt:
-                reproject(
-                    source=rasterio.band(src_ppt, 1),
-                    destination=ppt_arr,
-                    src_transform=src_ppt.transform,
-                    src_crs=src_ppt.crs,
-                    dst_transform=out_transform,
-                    dst_crs=out_crs,
-                    resampling=Resampling.bilinear
-                )
+        # Función auxiliar para alinear (Warping)
+        def alinear_raster(file_bytes, shape_destino, transform_destino, crs_destino, es_categorico=False):
+            with MemoryFile(file_bytes) as mem:
+                with mem.open() as src:
+                    destino = np.zeros(shape_destino, dtype=src.dtypes[0])
+                    reproject(
+                        source=rasterio.band(src, 1),
+                        destination=destino,
+                        src_transform=src.transform,
+                        src_crs=src.crs if src.crs else "EPSG:3116", # Fallback CRS
+                        dst_transform=transform_destino,
+                        dst_crs=crs_destino,
+                        resampling=Resampling.nearest if es_categorico else Resampling.bilinear
+                    )
+                    return destino
 
-        # 4. ALINEAR COBERTURA AL DEM RECORTADO
-        cov_arr = np.zeros(out_shape, dtype=np.uint8)
-        with MemoryFile(_cov_file) as mem_cov:
-            with mem_cov.open() as src_cov:
-                reproject(
-                    source=rasterio.band(src_cov, 1),
-                    destination=cov_arr,
-                    src_transform=src_cov.transform,
-                    src_crs=src_cov.crs,
-                    dst_transform=out_transform,
-                    dst_crs=out_crs,
-                    resampling=Resampling.nearest
-                )
-
-        # 5. CALCULAR ZONAS DE VIDA (VECTORIZADO)
-        # Usamos tu módulo lz pero aplicándolo pixel a pixel sobre los arrays ya recortados
-        # Esto evita tener que volver a proyectar geometrías dentro del módulo lz
+        # Alinear Lluvia (PPT)
+        ppt_arr = alinear_raster(_ppt_file, out_shape, out_transform, out_crs, es_categorico=False)
         
-        # Función vectorizada para velocidad
+        # Alinear Cobertura (COV) - Usamos Nearest para no interpolar clases (ej: bosque 3.5)
+        cov_arr = alinear_raster(_cov_file, out_shape, out_transform, out_crs, es_categorico=True)
+
+        # ---------------------------------------------------------
+        # PASO 3: CÁLCULO CIENTÍFICO (VECTORIZADO)
+        # ---------------------------------------------------------
+        
+        # Vectorizamos la función de clasificación de life_zones.py
+        # Esto hace que corra en milisegundos para millones de pixeles
         v_classify = np.vectorize(lz.classify_life_zone_alt_ppt)
         
-        # Rellenar NaNs para cálculo seguro
+        # Preparamos arrays seguros (sin Nans)
         dem_safe = np.nan_to_num(dem_arr, nan=-9999)
-        ppt_safe = np.nan_to_num(ppt_arr, nan=-9999)
+        ppt_safe = np.nan_to_num(ppt_arr, nan=0) # Asumimos 0 lluvia si falta dato
         
-        # Calculamos ID de Zona de Vida
-        lz_arr = v_classify(dem_safe, ppt_safe)
+        # Calculamos Zonas de Vida
+        zv_arr = v_classify(dem_safe, ppt_safe)
         
-        # Enmascarar donde no había DEM
-        lz_arr = np.where(np.isnan(dem_arr), 0, lz_arr)
-
-        # 6. CRUCE Y RESULTADOS
-        # Cálculo de área de pixel (aprox en metros si es proyectado, o grados convertidos)
+        # Enmascaramos (Donde el DEM era inválido, todo es inválido)
+        valid_mask = ~np.isnan(dem_arr) & (dem_arr > -100) & (cov_arr > 0)
+        
+        # ---------------------------------------------------------
+        # PASO 4: RESULTADOS
+        # ---------------------------------------------------------
+        
+        # Cálculo de Hectáreas
+        # Si el CRS es proyectado (metros), el transform[0] es el ancho en metros
         res_x = out_transform[0]
-        if abs(res_x) < 1: # Grados
+        if out_crs.is_geographic: # Si está en grados (EPSG:4326)
             pixel_area_ha = (abs(res_x) * 111132.0) ** 2 / 10000.0
-        else: # Metros
+        else: # Si está en metros (EPSG:3116)
             pixel_area_ha = (abs(res_x) ** 2) / 10000.0
 
-        df_cross = pd.DataFrame({
-            'ZV_ID': lz_arr.flatten(),
-            'COV_ID': cov_arr.flatten()
+        # Crear DataFrame plano
+        df = pd.DataFrame({
+            'ZV_ID': zv_arr[valid_mask].flatten(),
+            'COV_ID': cov_arr[valid_mask].flatten()
         })
         
-        df_cross = df_cross[(df_cross['ZV_ID'] > 0) & (df_cross['COV_ID'] > 0)]
-        
-        if df_cross.empty: return None
+        if df.empty: return None
 
-        resumen = df_cross.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
+        # Agrupar
+        resumen = df.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
         resumen['Hectareas'] = resumen['Pixeles'] * pixel_area_ha
         
-        # Mapeo de Nombres
+        # Poner nombres bonitos
         resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz.holdridge_int_to_name_simplified.get(x, f"ZV {x}"))
         resumen['Cobertura'] = resumen['COV_ID'].map(lambda x: lc.LAND_COVER_LEGEND.get(x, f"Clase {x}"))
         
         return resumen
 
     except Exception as e:
-        # st.error(f"Error en cruce: {e}") 
+        # st.error(f"Error en motor de cálculo: {e}") # Descomentar para debug
         return None
         
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
@@ -556,6 +562,7 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
