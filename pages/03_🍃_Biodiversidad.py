@@ -513,12 +513,37 @@ with tab_carbon:
         total_potencial = df_potencial['Hectareas'].sum()
         
         k1, k2 = st.columns(2)
-        k1.metric("Área Total Zona", f"{(gdf_zona.to_crs('+proj=cea').area.sum()/10000):,.1f} ha")
-        k2.metric("Potencial Restauración", f"{total_potencial:,.1f} ha", help="Pastos + Áreas Degradadas disponibles")
+        k1.metric("Área Total Zona", f"{(gdf_zona.to_crs('+proj=cea').area.sum()/10000):,.0f} ha")
+        k2.metric("Potencial Restauración", f"{total_potencial:,.0f} ha", help="Pastos + Áreas Degradadas disponibles")
     else:
         total_potencial = 0
 
     st.divider()
+
+    st.markdown("##### 🗺️ Mapa de Coberturas del Suelo")
+    
+    if gdf_zona is not None:
+        # Centro del mapa
+        centroid = gdf_zona.to_crs("+proj=cea").centroid.to_crs("EPSG:4326").iloc[0]
+        
+        fig_map = go.Figure()
+        
+        # 1. Polígono de la Zona (Contorno)
+        for idx, row in gdf_zona.iterrows():
+             if row.geometry.geom_type == 'Polygon':
+                 x, y = row.geometry.exterior.xy
+                 fig_map.add_trace(go.Scattermapbox(lon=list(x), lat=list(y), mode='lines', line=dict(color='yellow', width=2), name="Zona"))
+        
+        # 2. (Opcional) Si quieres ver cobertura, necesitaríamos vectorizar el raster 'cov_bytes'.
+        # Dado que eso es pesado, sugiero mostrar el contexto satelital por ahora.
+        
+        fig_map.update_layout(
+            mapbox_style="satellite", # Satélite para ver bosque real
+            mapbox=dict(center=dict(lat=centroid.y, lon=centroid.x), zoom=12),
+            margin={"r":0,"t":0,"l":0,"b":0},
+            height=350
+        )
+        st.plotly_chart(fig_map, use_container_width=True)
 
     # --- 3. CONFIGURACIÓN DEL PROYECTO ---
     st.subheader("⚙️ Configuración del Proyecto")
@@ -610,5 +635,79 @@ with tab_carbon:
         
         elif not calc_btn:
             st.info("👈 Configura los parámetros y pulsa 'Calcular Carbono' para ver la proyección.")
+
+# ==============================================================================
+# TAB 4: COMPARADOR DE ESCENARIOS (NUEVO)
+# ==============================================================================
+with tab_comparador:
+    st.header("⚖️ Comparativa de Escenarios de Carbono")
+    st.info("Selecciona múltiples modelos para visualizar sus diferencias en captura y retorno financiero.")
+    
+    col_comp1, col_comp2 = st.columns([1, 3])
+    
+    with col_comp1:
+        st.subheader("Configuración")
+        # Selector múltiple
+        modelos_disp = list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys())
+        seleccionados = st.multiselect(
+            "Modelos a comparar:", 
+            options=modelos_disp,
+            default=["STAND_I", "STAND_V", "CONS_RIO"], # Default: Alta, Pasiva y Conservación
+            format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"]
+        )
+        
+        area_comp = st.number_input("Área de Análisis (Ha):", value=100.0, min_value=1.0)
+        anios_comp = st.slider("Horizonte (Años):", 10, 50, 30)
+        precio_bono = st.number_input("Precio Bono (USD/t):", value=5.0)
+
+    with col_comp2:
+        if seleccionados:
+            # Construir DataFrame consolidado
+            df_consolidado = pd.DataFrame()
+            
+            resumen_final = []
+            
+            for mod in seleccionados:
+                # Calculamos la proyección para este modelo
+                df_temp = carbon_calculator.calcular_proyeccion_captura(area_comp, anios_comp, mod)
+                df_temp['Escenario'] = carbon_calculator.ESCENARIOS_CRECIMIENTO[mod]["nombre"]
+                
+                # Guardamos para el gráfico
+                df_consolidado = pd.concat([df_consolidado, df_temp])
+                
+                # Guardamos para la tabla resumen
+                total_c = df_temp['Proyecto_tCO2e_Acumulado'].iloc[-1]
+                resumen_final.append({
+                    "Escenario": carbon_calculator.ESCENARIOS_CRECIMIENTO[mod]["nombre"],
+                    "Total CO2e": total_c,
+                    "Valor (USD)": total_c * precio_bono
+                })
+            
+            # 1. Gráfico Multilínea
+            fig_comp = px.line(
+                df_consolidado, 
+                x='Año', 
+                y='Proyecto_tCO2e_Acumulado', 
+                color='Escenario',
+                title=f"Proyección Comparativa ({area_comp} ha)",
+                labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
+                line_shape='spline' # Curvas suaves
+            )
+            st.plotly_chart(fig_comp, use_container_width=True)
+            
+            # 2. Tabla Resumen
+            st.subheader("Resumen Financiero y Ambiental")
+            df_resumen = pd.DataFrame(resumen_final).set_index("Escenario")
+            
+            # Formateo bonito
+            st.dataframe(
+                df_resumen.style.format({"Total CO2e": "{:,.0f}", "Valor (USD)": "${:,.0f}"})
+                .background_gradient(cmap="Greens", subset=["Total CO2e"]),
+                use_container_width=True
+            )
+            
+        else:
+            st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
