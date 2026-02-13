@@ -122,26 +122,53 @@ def load_layer_cached(layer_name):
     return None
 
 
+# --- FUNCIÓN analizar_coberturas_por_zona_vida ---
+
 @st.cache_data(show_spinner=False)
 def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file, _cov_file):
     """
-    Realiza la intersección raster entre Zonas de Vida y Coberturas.
-    Recibe archivos en memoria (BytesIO) para evitar errores de ruta.
+    Realiza la intersección raster corrigiendo proyecciones y rebobinando archivos.
     """
     try:
-        # Validación de archivos
         if not _dem_file or not _ppt_file or not _cov_file:
             return None
 
-        # 1. Generar Mapa de Zonas de Vida (Raster 1)
+        # 1. REBOBINADO CRÍTICO (Resetear punteros de memoria)
+        _dem_file.seek(0)
+        _ppt_file.seek(0)
+        _cov_file.seek(0)
+
+        # 2. VALIDACIÓN DE COORDENADAS DEL DEM
+        # Abrimos el DEM para chequear si sabe dónde está
+        crs_dem = None
+        with rasterio.open(_dem_file) as src:
+            crs_dem = src.crs
+            # Si el archivo no dice su proyección, asumimos EPSG:3116 (Colombia Magna Sirgas)
+            # Esto corrige el error "zona fuera del mapa"
+            if not crs_dem: 
+                crs_dem = "EPSG:3116" 
+            
+            # Verificación rápida de superposición
+            try:
+                # Convertimos la zona del usuario al sistema del mapa para ver si caen juntos
+                zona_reproj = _gdf_zona.to_crs(crs_dem)
+                if rasterio.coords.disjoint_bounds(src.bounds, zona_reproj.total_bounds):
+                    # st.warning("⚠️ La zona seleccionada no cae dentro del área del DEM.") # Debug
+                    return None
+            except:
+                pass # Si falla la validación, intentamos procesar igual
+
+        # 3. GENERAR MAPA DE ZONAS DE VIDA
+        # Rebobinamos de nuevo por si acaso
+        _dem_file.seek(0)
+        
         lz_arr, lz_profile, lz_names, _ = lz.generate_life_zone_map(
             _dem_file, _ppt_file, mask_geometry=_gdf_zona, downscale_factor=4
         )
         
-        if lz_arr is None: return None
+        if lz_arr is None or lz_profile is None: return None
 
-        # 2. Alinear Mapa de Coberturas (Raster 2)
-        # Usamos MemoryFile para leer el BytesIO de cobertura
+        # 4. ALINEAR MAPA DE COBERTURAS
         with MemoryFile(_cov_file) as mem_cov:
             with mem_cov.open() as src_cov:
                 cov_aligned = np.zeros_like(lz_arr, dtype=np.uint8)
@@ -150,39 +177,38 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file,
                     source=rasterio.band(src_cov, 1),
                     destination=cov_aligned,
                     src_transform=src_cov.transform,
-                    src_crs=src_cov.crs,
+                    src_crs=src_cov.crs if src_cov.crs else "EPSG:3116", # Forzamos también aquí
                     dst_transform=lz_profile['transform'],
                     dst_crs=lz_profile['crs'],
                     resampling=Resampling.nearest
                 )
 
-        # 3. Cálculo de Áreas
-        try:
-            res_x_deg = lz_profile['transform'][0]
-            meters_per_deg = 111132.0 
-            pixel_area_m2 = (res_x_deg * meters_per_deg) ** 2
-            pixel_area_ha = pixel_area_m2 / 10000.0
-        except:
-            pixel_area_ha = 1.0
+        # 5. CÁLCULO DE ÁREAS Y CRUCE
+        # Pixel area approx (grados^2 a hectáreas en el ecuador)
+        res_x = lz_profile['transform'][0]
+        pixel_area_ha = (res_x * 111132.0) ** 2 / 10000.0
 
-        # 4. Cruce (Crosstab)
         df_cross = pd.DataFrame({
             'ZV_ID': lz_arr.flatten(),
             'COV_ID': cov_aligned.flatten()
         })
         
+        # Filtramos píxeles válidos (ignorar fondo 0)
         df_cross = df_cross[(df_cross['ZV_ID'] > 0) & (df_cross['COV_ID'] > 0)]
         
+        if df_cross.empty: return None
+
         resumen = df_cross.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
         resumen['Hectareas'] = resumen['Pixeles'] * pixel_area_ha
         
-        # 5. Enriquecer con Nombres
+        # Mapeo de Nombres
         resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz_names.get(x, f"ZV {x}"))
         resumen['Cobertura'] = resumen['COV_ID'].map(lambda x: lc.LAND_COVER_LEGEND.get(x, f"Clase {x}"))
         
         return resumen
 
     except Exception as e:
+        # st.error(f"Error interno en cruce espacial: {e}") # Descomentar para ver error real
         return None
         
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
@@ -488,6 +514,7 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
