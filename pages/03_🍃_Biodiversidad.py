@@ -9,6 +9,7 @@ import numpy as np
 import geopandas as gpd
 import rasterio
 from rasterio.warp import reproject, Resampling
+from rasterio.mask import mask
 import plotly.graph_objects as go
 import plotly.express as px
 from modules.admin_utils import init_supabase
@@ -127,7 +128,8 @@ def load_layer_cached(layer_name):
 @st.cache_data(show_spinner=False)
 def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file, _cov_file):
     """
-    Realiza la intersección raster forzando la proyección EPSG:3116 (Magna Sirgas).
+    Realiza la intersección usando la lógica de 'Cargar y Cortar DEM' probada en Geomorfología.
+    Alinea PPT y Coberturas al DEM recortado.
     """
     try:
         if not _dem_file or not _ppt_file or not _cov_file:
@@ -138,70 +140,102 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file,
         _ppt_file.seek(0)
         _cov_file.seek(0)
 
-        # 2. PREPARACIÓN DE GEOMETRÍA (Forzamos todo a EPSG:3116)
-        # Esto asegura que el recorte se haga en metros, coincidiendo con tus mapas
-        zona_magna = _gdf_zona.to_crs("EPSG:3116")
-
-        # 3. GENERAR MAPA DE ZONAS DE VIDA
-        # Nota: life_zones.py internamente usa WGS84, pero rasterio manejará la transformación
-        # si los archivos tienen el CRS correcto.
+        # 2. PROCESAR DEM (EL MAESTRO) - Lógica de tu código exitoso
+        dem_arr = None
+        out_transform = None
+        out_crs = None
         
-        # TRUCO: Leemos el DEM primero para inyectarle el CRS si le falta
-        with rasterio.open(_dem_file) as src:
-            # Si no tiene CRS, le ponemos el de Colombia a la fuerza
-            if not src.crs:
-                _dem_override = MemoryFile(_dem_file.getvalue())
-                with _dem_override.open(driver='GTiff', crs="EPSG:3116", transform=src.transform, width=src.width, height=src.height, count=1, dtype=src.dtypes[0]) as dst:
-                    dst.write(src.read(1), 1)
-                _dem_file = _dem_override # Usamos el archivo corregido
+        with MemoryFile(_dem_file) as mem_dem:
+            with mem_dem.open() as src_dem:
+                # A. Blindaje de Geometría
+                gdf_valid = _gdf_zona.copy()
+                gdf_valid['geometry'] = gdf_valid.buffer(0)
+                
+                # B. Proyección Dinámica (La clave del éxito)
+                # Convertimos el polígono al sistema del DEM (sea cual sea)
+                if src_dem.crs:
+                    gdf_proj = gdf_valid.to_crs(src_dem.crs)
+                else:
+                    # Si el DEM no tiene CRS, asumimos 3116 y forzamos al polígono
+                    gdf_proj = gdf_valid.to_crs("EPSG:3116")
+                
+                # C. Recorte con Mask
+                try:
+                    out_image, out_transform = mask(src_dem, gdf_proj.geometry, crop=True)
+                    dem_arr = out_image[0]
+                    out_crs = src_dem.crs if src_dem.crs else "EPSG:3116"
+                except ValueError:
+                    # Zona fuera del mapa
+                    return None
 
-        _dem_file.seek(0) # Rebobinar tras el truco
+                # Limpieza de NoData (Tu lógica)
+                dem_arr = np.where(dem_arr == src_dem.nodata, np.nan, dem_arr)
+                dem_arr = np.where(dem_arr < -100, np.nan, dem_arr) # Filtro de ruido
 
-        # Generamos el mapa climático
-        lz_arr, lz_profile, lz_names, _ = lz.generate_life_zone_map(
-            _dem_file, _ppt_file, mask_geometry=zona_magna, downscale_factor=4
-        )
+        if dem_arr is None or np.isnan(dem_arr).all():
+            return None
+
+        # Guardamos la forma del DEM recortado para alinear los otros
+        out_shape = dem_arr.shape
         
-        if lz_arr is None: return None
+        # 3. ALINEAR PPT AL DEM RECORTADO
+        ppt_arr = np.zeros(out_shape, dtype=np.float32)
+        with MemoryFile(_ppt_file) as mem_ppt:
+            with mem_ppt.open() as src_ppt:
+                reproject(
+                    source=rasterio.band(src_ppt, 1),
+                    destination=ppt_arr,
+                    src_transform=src_ppt.transform,
+                    src_crs=src_ppt.crs,
+                    dst_transform=out_transform,
+                    dst_crs=out_crs,
+                    resampling=Resampling.bilinear
+                )
 
-        # 4. ALINEAR MAPA DE COBERTURAS
+        # 4. ALINEAR COBERTURA AL DEM RECORTADO
+        cov_arr = np.zeros(out_shape, dtype=np.uint8)
         with MemoryFile(_cov_file) as mem_cov:
             with mem_cov.open() as src_cov:
-                # Mismo truco: Si la cobertura no tiene CRS, asumimos 3116
-                src_crs = src_cov.crs if src_cov.crs else "EPSG:3116"
-                
-                cov_aligned = np.zeros_like(lz_arr, dtype=np.uint8)
-                
                 reproject(
                     source=rasterio.band(src_cov, 1),
-                    destination=cov_aligned,
+                    destination=cov_arr,
                     src_transform=src_cov.transform,
-                    src_crs=src_crs,
-                    dst_transform=lz_profile['transform'],
-                    dst_crs=lz_profile['crs'],
+                    src_crs=src_cov.crs,
+                    dst_transform=out_transform,
+                    dst_crs=out_crs,
                     resampling=Resampling.nearest
                 )
 
-        # 5. CÁLCULO DE ÁREAS
-        # Calculamos el tamaño del pixel en hectáreas basado en la transformación
-        # Transform[0] suele ser el ancho del pixel en grados o metros
-        res_x = abs(lz_profile['transform'][0])
+        # 5. CALCULAR ZONAS DE VIDA (VECTORIZADO)
+        # Usamos tu módulo lz pero aplicándolo pixel a pixel sobre los arrays ya recortados
+        # Esto evita tener que volver a proyectar geometrías dentro del módulo lz
         
-        # Si está en grados (aprox < 1), convertimos a metros. Si está en metros (> 1), usamos directo.
-        if res_x < 1: 
-            meters_per_pixel = res_x * 111132.0 # Aprox en el ecuador
-        else:
-            meters_per_pixel = res_x
-            
-        pixel_area_ha = (meters_per_pixel ** 2) / 10000.0
+        # Función vectorizada para velocidad
+        v_classify = np.vectorize(lz.classify_life_zone_alt_ppt)
+        
+        # Rellenar NaNs para cálculo seguro
+        dem_safe = np.nan_to_num(dem_arr, nan=-9999)
+        ppt_safe = np.nan_to_num(ppt_arr, nan=-9999)
+        
+        # Calculamos ID de Zona de Vida
+        lz_arr = v_classify(dem_safe, ppt_safe)
+        
+        # Enmascarar donde no había DEM
+        lz_arr = np.where(np.isnan(dem_arr), 0, lz_arr)
 
-        # 6. CRUCE DE DATOS
+        # 6. CRUCE Y RESULTADOS
+        # Cálculo de área de pixel (aprox en metros si es proyectado, o grados convertidos)
+        res_x = out_transform[0]
+        if abs(res_x) < 1: # Grados
+            pixel_area_ha = (abs(res_x) * 111132.0) ** 2 / 10000.0
+        else: # Metros
+            pixel_area_ha = (abs(res_x) ** 2) / 10000.0
+
         df_cross = pd.DataFrame({
             'ZV_ID': lz_arr.flatten(),
-            'COV_ID': cov_aligned.flatten()
+            'COV_ID': cov_arr.flatten()
         })
         
-        # Quitamos el fondo (0)
         df_cross = df_cross[(df_cross['ZV_ID'] > 0) & (df_cross['COV_ID'] > 0)]
         
         if df_cross.empty: return None
@@ -209,14 +243,14 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file,
         resumen = df_cross.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
         resumen['Hectareas'] = resumen['Pixeles'] * pixel_area_ha
         
-        # Nombres
-        resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz_names.get(x, f"ZV {x}"))
+        # Mapeo de Nombres
+        resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz.holdridge_int_to_name_simplified.get(x, f"ZV {x}"))
         resumen['Cobertura'] = resumen['COV_ID'].map(lambda x: lc.LAND_COVER_LEGEND.get(x, f"Clase {x}"))
         
         return resumen
 
     except Exception as e:
-        # st.error(f"Error técnico: {e}") # Descomentar solo si sigue fallando
+        # st.error(f"Error en cruce: {e}") 
         return None
         
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
@@ -522,6 +556,7 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
