@@ -548,7 +548,29 @@ def main():
     # --- OTROS MÓDULOS ---
     elif selected_module == "🧪 Sesgo": viz.display_bias_correction_tab(**display_args)
     elif selected_module == "🌿 Cobertura": viz.display_land_cover_analysis_tab(**display_args)
-    elif selected_module == "🌱 Zonas Vida": viz.display_life_zones_tab(**display_args)
+
+    # --- ZONAS DE VIDA (CONECTADO A SUPABASE) ---
+    elif selected_module == "🌱 Zonas Vida":
+        # 1. Aseguramos tener los mapas en memoria
+        try:
+            # Usamos la función de carga que definimos antes (cargar_raster_db)
+            dem_bytes = cargar_raster_db("DemAntioquia_EPSG3116.tif")
+            pp_bytes = cargar_raster_db("PPAMAnt.tif")
+            
+            if dem_bytes and pp_bytes:
+                # 2. Inyectamos los archivos en memoria a los argumentos
+                # Esto sobreescribe cualquier ruta de texto vieja que tuviera display_args
+                display_args['dem_file'] = dem_bytes
+                display_args['ppt_file'] = pp_bytes
+                
+                # 3. Llamamos al visualizador
+                viz.display_life_zones_tab(**display_args)
+            else:
+                st.error("⚠️ No se encontraron los mapas 'DemAntioquia_EPSG3116.tif' o 'PPAMAnt.tif' en Supabase.")
+                st.info("Ve al Panel de Administración -> Pestaña Mapas y súbelos.")
+        except NameError:
+             st.error("Falta definir la función 'cargar_raster_db' al inicio del archivo.")
+    
     elif selected_module == "🌡️ Clima Futuro": viz.display_climate_scenarios_tab(**display_args)
     
     # --- ISOYETAS HD (Tu código original preservado) ---
@@ -559,30 +581,48 @@ def main():
         suavidad = col1.slider("Suavizado:", 0.0, 2.0, 0.5)
         
         ids_validos = tuple(gdf_filtered['id_estacion'].unique())
+        
         if len(ids_validos) > 2:
             try:
+                # --- CORRECCIÓN AQUÍ: Importamos explícitamente ---
+                from modules.db_manager import get_engine
+                from sqlalchemy import text
+                
                 engine = get_engine()
                 ids_sql = str(ids_validos) if len(ids_validos) > 1 else f"('{ids_validos[0]}')"
+                
                 q = text(f"""
                     SELECT e.nombre, e.latitud as lat, e.longitud as lon, SUM(p.valor) as valor
                     FROM precipitacion p JOIN estaciones e ON p.id_estacion = e.id_estacion
                     WHERE extract(year from p.fecha) = :y AND e.id_estacion IN {ids_sql}
                     GROUP BY e.id_estacion, e.nombre, e.latitud, e.longitud
                 """)
+                
                 df_iso = pd.read_sql(q, engine, params={"y": year_iso})
+                
                 if not df_iso.empty:
                     from scipy.interpolate import Rbf
+                    import plotly.graph_objects as go
+                    
+                    # Grid de interpolación
                     gx, gy = np.mgrid[minx:maxx:200j, miny:maxy:200j]
                     rbf = Rbf(df_iso['lon'], df_iso['lat'], df_iso['valor'], function='thin_plate', smooth=suavidad)
                     z = rbf(gx, gy)
+                    
                     fig = go.Figure(go.Contour(z=z.T, x=np.linspace(minx,maxx,200), y=np.linspace(miny,maxy,200), colorscale="Viridis"))
-                    viz.add_context_layers_ghost(fig, gdf_filtered) if hasattr(viz, 'add_context_layers_ghost') else None
+                    
+                    if hasattr(viz, 'add_context_layers_ghost'):
+                        viz.add_context_layers_ghost(fig, gdf_filtered)
+                        
                     fig.add_trace(go.Scatter(x=df_iso['lon'], y=df_iso['lat'], mode='markers', text=df_iso['nombre']))
                     st.plotly_chart(fig, use_container_width=True)
-                else: st.warning("Datos insuficientes.")
-            except Exception as e: st.error(f"Error: {e}")
-        else: st.warning("Se requieren mín. 3 estaciones.")
-
+                else: 
+                    st.warning("Datos insuficientes para interpolar.")
+            except Exception as e: 
+                st.error(f"Error en Isoyetas: {e}")
+        else: 
+            st.warning("Se requieren mín. 3 estaciones para calcular isoyetas.")
+            
     elif selected_module == "📄 Reporte":
         st.header("Generación de Informe")
         if st.button("📄 Crear PDF"):
@@ -595,6 +635,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
