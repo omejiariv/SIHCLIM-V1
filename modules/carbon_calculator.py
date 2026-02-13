@@ -3,84 +3,79 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
-from sqlalchemy import text
-from modules.db_manager import get_engine
 
-# --- CONSTANTES GLOBALES (Fuente: Valores_defecto.csv) ---
-FACTOR_C_CO2 = 3.666667  # Ratio molecular 44/12
-FRACCION_CARBONO = 0.47  # Fracción de carbono en biomasa
-FACTOR_RAIZ_R = 0.24     # Relación Raíz/Vástago (Modelo_RN.csv)
+# --- PARÁMETROS CIENTÍFICOS (Fuente: Excel 'Modelo_RN' y 'Stand_I') ---
+# Modelo Von Bertalanffy: B_t = A * (1 - exp(-k * t)) ^ (1 / (1 - m))
 
-@st.cache_data(ttl=3600)
-def get_growth_params(scenario_id='Bosque_Humedo_Tropical'):
-    """Obtiene parámetros A, b, m para Von Bertalanffy desde BD."""
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            query = text("SELECT * FROM carbon_growth_params WHERE scenario_id = :id")
-            result = pd.read_sql(query, conn, params={"id": scenario_id})
-            if not result.empty:
-                return result.iloc[0]
-    except Exception:
-        pass
-    # Fallback a valores del Excel "Modelo_RN.csv" si falla la BD
-    return pd.Series({'param_a': 130.57, 'param_b': 0.091, 'param_m': 0.6666})
+ESCENARIOS_CRECIMIENTO = {
+    "ACTIVA_ALTA": {
+        "nombre": "Restauración Activa (Alta Densidad)",
+        "densidad": 1667, # árb/ha
+        "A": 130.57,      # Asíntota (Biomasa máx t/ha) - Bosque Maduro
+        "k": 0.15,        # Tasa de crecimiento (Rápida por intervención humana)
+        "m": 0.6666,      # Constante alométrica (2/3)
+        "desc": "Siembra densa (>1500 arb/ha). Cierre de dosel rápido."
+    },
+    "ACTIVA_MEDIA": {
+        "nombre": "Restauración Activa (Enriquecimiento)",
+        "densidad": 1000,
+        "A": 130.57,
+        "k": 0.091,       # Tasa base del documento (Stand II)
+        "m": 0.6666,
+        "desc": "Siembra media (~1000 arb/ha) o enriquecimiento."
+    },
+    "PASIVA": {
+        "nombre": "Regeneración Natural (Sucesión)",
+        "densidad": 0,    # No se siembra
+        "A": 130.57,
+        "k": 0.05,        # Tasa lenta (depende de dispersión natural)
+        "m": 0.6666,
+        "desc": "Proceso de sucesión natural. Bajo costo, inicio lento."
+    }
+}
 
-@st.cache_data(ttl=3600)
-def get_soil_factor():
-    """Obtiene la tasa anual de captura en suelo (dSOC) desde BD."""
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            query = text("SELECT value FROM carbon_soil_factors WHERE parameter = 'dSOC'")
-            res = conn.execute(query).fetchone()
-            if res: return res[0]
-    except Exception:
-        pass
-    return 0.7050  # Valor por defecto del documento (tC/ha/año)
+FACTOR_C_CO2 = 3.666667
+DSOC_SUELO = 0.7050  # Captura suelo tC/ha/año (hasta año 20)
 
-# --- 1. MODELO DE PROYECCIÓN (Von Bertalanffy) ---
-def calcular_proyeccion_captura(hectareas, anios=30):
+def calcular_proyeccion_captura(hectareas, anios=30, escenario_key="ACTIVA_MEDIA"):
     """
-    Proyecta la captura de carbono a futuro.
-    Fórmula: Ct = A * [1 - exp(-b * t)] ^ (1 / (1-m))
+    Proyecta captura considerando la estrategia de siembra/regeneración.
     """
-    # 1. Obtener parámetros
-    params = get_growth_params()
-    A = params['param_a']
-    b = params['param_b']
-    m = params['param_m'] # Usualmente 2/3, lo que hace que el exponente sea 3
-    exponente = 1 / (1 - m)
+    # 1. Obtener parámetros del escenario seleccionado
+    params = ESCENARIOS_CRECIMIENTO.get(escenario_key, ESCENARIOS_CRECIMIENTO["ACTIVA_MEDIA"])
     
-    dSOC = get_soil_factor() # Captura suelo tC/ha/año
+    A = params['A']
+    k = params['k']
+    m = params['m']
+    exponente = 1 / (1 - m)
 
     # 2. Generar serie de tiempo
     years = np.arange(0, anios + 1)
     
-    # 3. Calcular Stock de Biomasa (tC/ha) acumulado al año t
-    # Nota: El modelo predice el STOCK acumulado, no el incremento anual directo
-    stock_biomasa_c_ha = A * np.power((1 - np.exp(-b * years)), exponente)
+    # 3. Calcular Stock Biomasa (Modelo Von Bertalanffy)
+    # B(t) = A * [1 - exp(-k*t)] ^ (1/(1-m))
+    stock_biomasa_c_ha = A * np.power((1 - np.exp(-k * years)), exponente)
     
-    # 4. Calcular Incrementos Anuales (Delta)
+    # 4. Calcular Incrementos (Captura Anual)
     delta_biomasa_c_ha = np.diff(stock_biomasa_c_ha, prepend=0)
     
-    # 5. Calcular Suelo (Lineal por 20 años según metodología MDL)
-    delta_suelo_c_ha = np.where(years <= 20, dSOC, 0)
-    delta_suelo_c_ha[0] = 0 # Año 0 no captura
+    # 5. Calcular Suelo (Solo primeros 20 años)
+    delta_suelo_c_ha = np.where(years <= 20, DSOC_SUELO, 0)
+    delta_suelo_c_ha[0] = 0
     
-    # 6. Consolidar DataFrame
+    # 6. Consolidar
     df = pd.DataFrame({
         'Año': years,
-        'Stock_Biomasa_tC_ha': stock_biomasa_c_ha,
+        'Stock_Acumulado_tC_ha': stock_biomasa_c_ha,
         'Captura_Anual_Biomasa_tC_ha': delta_biomasa_c_ha,
         'Captura_Anual_Suelo_tC_ha': delta_suelo_c_ha
     })
     
-    # Conversiones a CO2e y Totales
+    # Totales CO2e
     df['Captura_Total_tC_ha'] = df['Captura_Anual_Biomasa_tC_ha'] + df['Captura_Anual_Suelo_tC_ha']
     df['Captura_Total_tCO2e_ha'] = df['Captura_Total_tC_ha'] * FACTOR_C_CO2
     
-    # Escalado al área del proyecto
+    # Escalado al Proyecto
     df['Proyecto_tCO2e_Anual'] = df['Captura_Total_tCO2e_ha'] * hectareas
     df['Proyecto_tCO2e_Acumulado'] = df['Proyecto_tCO2e_Anual'].cumsum()
     
