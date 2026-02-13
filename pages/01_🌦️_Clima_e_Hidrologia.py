@@ -602,7 +602,7 @@ def main():
     
     elif selected_module == "🌡️ Clima Futuro": viz.display_climate_scenarios_tab(**display_args)
     
-    # --- ISOYETAS HD (Tu código original preservado) ---
+# --- ISOYETAS HD (CORREGIDO) ---
     elif selected_module == "✨ Mapas Isoyetas HD":
         st.header("🗺️ Isoyetas Alta Definición (RBF)")
         col1, col2 = st.columns([1,3])
@@ -613,7 +613,7 @@ def main():
         
         if len(ids_validos) > 2:
             try:
-                # --- CORRECCIÓN AQUÍ: Importamos explícitamente ---
+                # Importaciones necesarias
                 from modules.db_manager import get_engine
                 from sqlalchemy import text
                 
@@ -633,10 +633,11 @@ def main():
                     from scipy.interpolate import Rbf
                     import plotly.graph_objects as go
                     
+                    # --- DEFINICIÓN DE LÍMITES (CRUCIAL) ---
                     minx, miny, maxx, maxy = gdf_filtered.total_bounds
-                    # ------------------------------------------
+                    # ---------------------------------------
 
-                    # Ahora sí podemos crear el grid
+                    # Crear grid
                     gx, gy = np.mgrid[minx:maxx:200j, miny:maxy:200j]
                     
                     rbf = Rbf(df_iso['lon'], df_iso['lat'], df_iso['valor'], function='thin_plate', smooth=suavidad)
@@ -654,25 +655,26 @@ def main():
                 else: 
                     st.warning("Datos insuficientes para interpolar (Mínimo 3 estaciones con datos en este año).")
             
-            # --- AQUÍ ESTABA EL ERROR: FALTABA ESTE BLOQUE EXCEPT ---
             except Exception as e: 
                 st.error(f"Error en Isoyetas: {e}")
         else: 
             st.warning("Se requieren mín. 3 estaciones para calcular isoyetas.")
 
+    # --- REPORTE (SOLUCIONADO EL DUPLICADO) ---
     elif selected_module == "📄 Reporte":
         st.header("Generación de Informe")
         if st.button("📄 Crear PDF"):
-        if st.button("📄 Crear PDF"):
             res = {"n_estaciones": len(stations_for_analysis), "rango": f"{year_range}"}
             pdf = generate_pdf_report(df_monthly_filtered, gdf_filtered, res)
-            if pdf: st.download_button("Descargar PDF", pdf, "reporte_hidro.pdf", "application/pdf")
+            if pdf: 
+                st.download_button("Descargar PDF", pdf, "reporte_hidro.pdf", "application/pdf")
 
     st.markdown("""<style>.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }</style>""", unsafe_allow_html=True)
-
+    
 if __name__ == "__main__":
 
     main()
+
 
 
 
