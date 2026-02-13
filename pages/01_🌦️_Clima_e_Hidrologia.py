@@ -1,5 +1,6 @@
 # pages/01_🌦️_Clima_e_Hidrologia.py
 
+import io
 import os
 import sys
 
@@ -20,6 +21,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from sqlalchemy import text
 import geopandas as gpd
+from rasterio.io import MemoryFile
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="SIHCLI-POTER", page_icon="🌦️", layout="wide")
@@ -207,10 +209,13 @@ def main():
         
         # --- A. FUNCIONES AUXILIARES LOCALES ---
         def local_warper_force_4326(tif_path, bounds_wgs84, shape_out):
-            """Reproyección forzada a WGS84 para visualización."""
+            """Reproyección forzada a WGS84 (Compatible con Nube y Local)."""
             import rasterio
             from rasterio.warp import reproject, Resampling, calculate_default_transform
+            from rasterio.io import MemoryFile
             import os
+            import io
+            import numpy as np
             
             # Parche para Windows/PROJ
             if os.name == 'nt':
@@ -220,21 +225,40 @@ def main():
                 except: pass
 
             try:
-                with rasterio.open(tif_path) as src:
+                # --- LÓGICA CENTRAL (Para evitar errores de indentación al repetir) ---
+                def _core_process(src):
                     transform, width, height = calculate_default_transform(
                         src.crs, 'EPSG:4326', src.width, src.height, *src.bounds
                     )
                     minx, miny, maxx, maxy = bounds_wgs84
                     dst_transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, shape_out[0], shape_out[1])
                     destination = np.zeros(shape_out, dtype=np.float32)
+                    
                     reproject(
-                        source=rasterio.band(src, 1), destination=destination,
-                        src_transform=src.transform, src_crs=src.crs,
-                        dst_transform=dst_transform, dst_crs='EPSG:4326',
+                        source=rasterio.band(src, 1), 
+                        destination=destination,
+                        src_transform=src.transform, 
+                        src_crs=src.crs,
+                        dst_transform=dst_transform, 
+                        dst_crs='EPSG:4326',
                         resampling=Resampling.bilinear,
                         dst_nodata=np.nan
                     )
                     return destination
+
+                # --- APERTURA SEGÚN TIPO DE ARCHIVO ---
+                
+                # CASO 1: Archivo en Memoria (BytesIO desde Supabase)
+                if isinstance(tif_path, (io.BytesIO, bytes)) or hasattr(tif_path, 'read'):
+                    with MemoryFile(tif_path) as memfile:
+                        with memfile.open() as src:
+                            return _core_process(src)
+
+                # CASO 2: Ruta de archivo normal (String)
+                else:
+                    with rasterio.open(tif_path) as src:
+                        return _core_process(src)
+
             except Exception:
                 return None
 
@@ -261,24 +285,31 @@ def main():
         else:
             st.header("🌍 Modelación Hidrológica Distribuida (Aleph)")
             
-            # --- 0. CARGA DE RECURSOS (AQUÍ ESTABA EL ERROR) ---
-            # Inicializamos las variables ANTES de cualquier botón
-            dem_path = None
+            # --- 0. CARGA DE RECURSOS ---
+# --- 0. CARGA DE RECURSOS (NUBE SUPABASE) ---
+            # Inicializamos variables
+            dem_path = None # En este caso, será un objeto en memoria (BytesIO), no un "path" de texto
             cov_path = None
-            gdf_bocatomas = None # <--- ¡ESTA LÍNEA ES LA CLAVE!
+            gdf_bocatomas = None 
 
-            # A. Rasters
-            if os.path.exists(Config.DEM_FILE_PATH): dem_path = Config.DEM_FILE_PATH
-            else: 
-                try: dem_path = download_raster_to_temp(os.path.basename(Config.DEM_FILE_PATH))
-                except: pass
+            # A. Carga de Rasters desde BD (Sin archivos locales)
+            try:
+                # Usamos la función global cargar_raster_db definida al inicio del script
+                # (Si no está definida arriba, avísame para dártela)
+                dem_bytes = cargar_raster_db("DemAntioquia_EPSG3116.tif")
+                cov_bytes = cargar_raster_db("Cob25m_WGS84.tif") # Asegúrate de subir este también si lo usas
                 
-            if os.path.exists(Config.LAND_COVER_RASTER_PATH): cov_path = Config.LAND_COVER_RASTER_PATH
-            else:
-                try: cov_path = download_raster_to_temp("Cob25m_WGS84.tif")
-                except: pass
-
-            if not dem_path: st.error("⛔ Falta DEM. Verifique carpeta data/."); st.stop()
+                if dem_bytes:
+                    dem_path = dem_bytes # Asignamos el objeto bytes a la variable
+                else:
+                    st.error("⛔ Falta el DEM en la Base de Datos. Súbelo en el Panel Admin.")
+                    st.stop()
+                    
+                if cov_bytes:
+                    cov_path = cov_bytes
+            except NameError:
+                st.error("⚠️ La función 'cargar_raster_db' no está definida. Revisa el Paso 2 de las instrucciones.")
+                st.stop()
 
             # B. Bocatomas (Carga Segura)
             try:
@@ -564,6 +595,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
