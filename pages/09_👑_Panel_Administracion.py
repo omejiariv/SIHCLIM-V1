@@ -56,12 +56,12 @@ def check_password():
                 st.session_state.password_correct = True
                 st.rerun()
             else:
-                st.error("🚫 Acceso Denegado")
+#                st.error("🚫 Acceso Denegado")
                 return False
     return False
 
 if not check_password():
-    st.stop()
+#    st.stop()
 
 engine = get_engine()
 
@@ -1073,3 +1073,4 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
                 st.balloons()
             except Exception as e: st.error(f"Error: {e}")
     
+
