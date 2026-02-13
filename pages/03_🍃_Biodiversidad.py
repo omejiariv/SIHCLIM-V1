@@ -295,7 +295,7 @@ def detectar_zona_vida_dominante(gdf_zona):
         return "bh-MB"
 
 # --- DEFINICIÓN DE TABS PRINCIPALES ---
-tab_mapa, tab_tax, tab_carbon = st.tabs(["🗺️ Mapa & GBIF", "📊 Taxonomía", "🌳 Calculadora Carbono"])
+tab_mapa, tab_tax, tab_carbon, tab_comparador = st.tabs(["🗺️ Mapa & GBIF", "📊 Taxonomía", "🌳 Calculadora", "⚖️ Comparador"])
 
 # Variable global para datos de biodiversidad
 gdf_bio = pd.DataFrame()
@@ -708,6 +708,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
