@@ -535,7 +535,7 @@ with tab_carbon:
             
             m1, m2, m3 = st.columns(3)
             m1.metric("Captura Total", f"{total_c:,.0f} tCO2e")
-            m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
+            m2.metric("Tasa Anual", f"{tasa_prom:,.0f} t/año")
             m3.metric("Valor (5 USD/t)", f"${(total_c*5):,.0f} USD")
             
             # Gráfico de Curva S (Sigmoide)
@@ -548,3 +548,4 @@ with tab_carbon:
             
             with st.expander("Ver Tabla Detallada"):
                 st.dataframe(df_res)
+
