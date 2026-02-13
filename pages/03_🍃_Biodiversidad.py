@@ -3,6 +3,7 @@
 import streamlit as st
 import sys
 import os
+import io
 import pandas as pd
 import numpy as np
 import geopandas as gpd
@@ -489,6 +490,7 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
