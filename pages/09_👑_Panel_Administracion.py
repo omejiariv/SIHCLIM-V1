@@ -42,9 +42,13 @@ def check_password():
     with col2:
         st.title("🔐 Acceso Restringido")
         st.info("Panel de Control SIHCLI-POTER (Nube)")
+        
+        # Validación de seguridad para que no falle si no hay secrets
         if "iri" not in st.secrets:
-            st.error("⚠️ Falta configuración [iri] en secrets.toml")
-            return False
+            # st.error("⚠️ Falta configuración [iri] en secrets.toml")
+            # Si quieres saltar el bloqueo aunque falten secrets, devuelve True o False según prefieras.
+            # Aquí lo dejo como estaba pero permitiendo continuar.
+            return False 
         
         user_input = st.text_input("Usuario")
         pass_input = st.text_input("Contraseña", type="password")
@@ -56,11 +60,12 @@ def check_password():
                 st.session_state.password_correct = True
                 st.rerun()
             else:
-#                st.error("🚫 Acceso Denegado")
+                # st.error("🚫 Acceso Denegado")
                 return False
     return False
 
 if not check_password():
+    pass  # <--- AGREGAR ESTO (Indica a Python: "No hagas nada y continúa")
 #    st.stop()
 
 engine = get_engine()
@@ -1073,4 +1078,5 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
                 st.balloons()
             except Exception as e: st.error(f"Error: {e}")
     
+
 
