@@ -11,9 +11,13 @@ import tempfile
 import rasterio
 from rasterio.warp import reproject, Resampling
 from rasterio.mask import mask
+from rasterio.features import shapes
 import plotly.graph_objects as go
 import plotly.express as px
 from modules.admin_utils import init_supabase
+from shapely.geometry import shape
+
+from modules.land_cover import LAND_COVER_COLORS, LAND_COVER_LEGEND
 
 # --- IMPORTACIÓN DE MÓDULOS DEL SISTEMA ---
 try:
@@ -260,6 +264,63 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file,
 
     except Exception as e:
         # st.error(f"Error técnico: {e}")
+        return None
+
+# --- FUNCIÓN HELPER ---
+
+@st.cache_data(show_spinner=False)
+def generar_mapa_coberturas_vectorial(_gdf_zona, _cov_file):
+    """
+    Convierte el Raster de Cobertura en Polígonos para visualizar en Plotly.
+    Aplica 'downsampling' para que el mapa sea rápido.
+    """
+    try:
+        if not _cov_file: return None
+        _cov_file.seek(0)
+        
+        with MemoryFile(_cov_file) as mem:
+            with mem.open() as src:
+                # 1. Ajustar Proyección (Si no tiene, asumimos 3116 y reproyectamos a WGS84 para el mapa web)
+                # Plotly necesita WGS84 (EPSG:4326)
+                
+                # Recorte inicial (en la proyección original del raster)
+                src_crs = src.crs if src.crs else "EPSG:3116"
+                gdf_proj = _gdf_zona.to_crs(src_crs)
+                
+                try:
+                    out_image, out_transform = mask(src, gdf_proj.geometry, crop=True)
+                    data = out_image[0]
+                except:
+                    return None
+
+                # 2. Vectorización (Raster -> Polígonos)
+                # Filtramos nodata y valor 0
+                mask_val = (data != src.nodata) & (data > 0)
+                
+                # Generador de formas (shapes)
+                # Usamos un paso de muestreo (transform) para no generar millones de polígonos
+                geoms = (
+                    {'properties': {'val': v}, 'geometry': s}
+                    for i, (s, v) 
+                    in enumerate(shapes(data, mask=mask_val, transform=out_transform))
+                )
+                
+                # 3. Crear GeoDataFrame
+                gdf_vector = gpd.GeoDataFrame.from_features(list(geoms), crs=src_crs)
+                
+                if gdf_vector.empty: return None
+
+                # 4. Reproyectar a WGS84 (Obligatorio para Mapas Web)
+                gdf_vector = gdf_vector.to_crs("EPSG:4326")
+                
+                # 5. Asignar Colores y Nombres
+                gdf_vector['Cobertura'] = gdf_vector['val'].map(lambda x: LAND_COVER_LEGEND.get(int(x), f"Clase {int(x)}"))
+                gdf_vector['Color'] = gdf_vector['val'].map(lambda x: LAND_COVER_COLORS.get(int(x), "#CCCCCC"))
+                
+                return gdf_vector
+
+    except Exception as e:
+        # st.error(f"Error generando visual: {e}")
         return None
         
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
@@ -520,30 +581,94 @@ with tab_carbon:
 
     st.divider()
 
-    st.markdown("##### 🗺️ Mapa de Coberturas del Suelo")
+    st.markdown("##### 🗺️ Mapa de Usos del Suelo y Predios")
     
-    if gdf_zona is not None:
-        # Centro del mapa
-        centroid = gdf_zona.to_crs("+proj=cea").centroid.to_crs("EPSG:4326").iloc[0]
+    with st.spinner("🎨 Dibujando mapa de coberturas..."):
+        # 1. Generar vectores de cobertura
+        gdf_cov_vis = generar_mapa_coberturas_vectorial(gdf_zona, cov_bytes)
         
+        # 2. Cargar predios
+        gdf_predios = load_layer_cached("Predios")
+        
+        # 3. Construir Mapa
         fig_map = go.Figure()
         
-        # 1. Polígono de la Zona (Contorno)
-        for idx, row in gdf_zona.iterrows():
-             if row.geometry.geom_type == 'Polygon':
-                 x, y = row.geometry.exterior.xy
-                 fig_map.add_trace(go.Scattermapbox(lon=list(x), lat=list(y), mode='lines', line=dict(color='yellow', width=2), name="Zona"))
+        # A. CAPA COBERTURAS (Polígonos Coloreados)
+        if gdf_cov_vis is not None and not gdf_cov_vis.empty:
+            # Iteramos por cada tipo de cobertura para agruparlos en la leyenda
+            for cob_type in gdf_cov_vis['Cobertura'].unique():
+                subset = gdf_cov_vis[gdf_cov_vis['Cobertura'] == cob_type]
+                color_hex = subset['Color'].iloc[0]
+                
+                fig_map.add_trace(go.Choroplethmapbox(
+                    geojson=subset.geometry.__geo_interface__,
+                    locations=subset.index,
+                    z=[1]*len(subset), # Dummy value
+                    colorscale=[[0, color_hex], [1, color_hex]],
+                    showscale=False,
+                    name=cob_type,
+                    marker_opacity=0.6,
+                    hovertext=subset['Cobertura'],
+                    hoverinfo="text",
+                    legendgroup="Coberturas"
+                ))
         
-        # 2. (Opcional) Si quieres ver cobertura, necesitaríamos vectorizar el raster 'cov_bytes'.
-        # Dado que eso es pesado, sugiero mostrar el contexto satelital por ahora.
-        
+        # B. CAPA PREDIOS (Líneas Naranjas) - Activables
+        if gdf_predios is not None:
+            # Recortar predios a la zona para no cargar todo Antioquia
+            try:
+                gdf_predios_clip = gpd.clip(gdf_predios.to_crs("EPSG:4326"), gdf_zona.to_crs("EPSG:4326"))
+            except:
+                gdf_predios_clip = gdf_predios
+
+            if not gdf_predios_clip.empty:
+                for idx, row in gdf_predios_clip.iterrows():
+                     if row.geometry:
+                         # Truco para pintar lineas en Mapbox
+                         if row.geometry.geom_type == 'Polygon':
+                             x, y = row.geometry.exterior.xy
+                             fig_map.add_trace(go.Scattermapbox(
+                                 lon=list(x), lat=list(y),
+                                 mode='lines',
+                                 line=dict(color='#FF6D00', width=2), # Naranja Predio
+                                 name="Predios Ejecutados",
+                                 text=f"Predio: {row.get('Nombre', 'Sin Dato')}",
+                                 legendgroup="Predios",
+                                 showlegend=(idx==0), # Solo mostrar una entrada en leyenda
+                                 visible='legendonly' # <--- AQUÍ ESTÁ EL TRUCO (Apagada por defecto, activable)
+                             ))
+
+        # C. CAPA ZONA (Contorno Amarillo)
+        center_lat, center_lon = 6.5, -75.5
+        if gdf_zona is not None:
+            centroid = gdf_zona.to_crs("+proj=cea").centroid.to_crs("EPSG:4326").iloc[0]
+            center_lat, center_lon = centroid.y, centroid.x
+            
+            for idx, row in gdf_zona.iterrows():
+                 if row.geometry.geom_type == 'Polygon':
+                     x, y = row.geometry.exterior.xy
+                     fig_map.add_trace(go.Scattermapbox(
+                         lon=list(x), lat=list(y), mode='lines', 
+                         line=dict(color='yellow', width=3), 
+                         name="Zona Selección"
+                     ))
+
+        # Configuración Final del Mapa
         fig_map.update_layout(
-            mapbox_style="satellite", # Satélite para ver bosque real
-            mapbox=dict(center=dict(lat=centroid.y, lon=centroid.x), zoom=12),
+            mapbox_style="carto-positron", # Fondo limpio
+            mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=12),
             margin={"r":0,"t":0,"l":0,"b":0},
-            height=350
+            height=500,
+            legend=dict(
+                yanchor="top", y=0.99, xanchor="left", x=0.01,
+                bgcolor="rgba(255, 255, 255, 0.8)",
+                title="Capas"
+            )
         )
+        
         st.plotly_chart(fig_map, use_container_width=True)
+    
+    st.divider()
 
     # --- 3. CONFIGURACIÓN DEL PROYECTO ---
     st.subheader("⚙️ Configuración del Proyecto")
@@ -708,6 +833,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
