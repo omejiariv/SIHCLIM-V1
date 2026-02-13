@@ -7,77 +7,112 @@ import streamlit as st
 # --- PARÁMETROS CIENTÍFICOS (Fuente: Excel 'Modelo_RN' y 'Stand_I') ---
 # Modelo Von Bertalanffy: B_t = A * (1 - exp(-k * t)) ^ (1 / (1 - m))
 
+# Diccionario de los 10 Modelos del Excel
 ESCENARIOS_CRECIMIENTO = {
-    "ACTIVA_ALTA": {
-        "nombre": "Restauración Activa (Alta Densidad)",
-        "densidad": 1667, # árb/ha
-        "A": 130.57,      # Asíntota (Biomasa máx t/ha) - Bosque Maduro
-        "k": 0.15,        # Tasa de crecimiento (Rápida por intervención humana)
-        "m": 0.6666,      # Constante alométrica (2/3)
-        "desc": "Siembra densa (>1500 arb/ha). Cierre de dosel rápido."
+    # --- GRUPO RESTAURACIÓN ACTIVA ---
+    "STAND_I": {
+        "nombre": "1. Modelo Stand I (Establecimiento 1667 ind/ha)",
+        "A": 150.0, "k": 0.18, "m": 0.666, "tipo": "restauracion",
+        "desc": "Alta densidad. Cierre rápido de dosel. Máxima captura inicial."
     },
-    "ACTIVA_MEDIA": {
-        "nombre": "Restauración Activa (Enriquecimiento)",
-        "densidad": 1000,
-        "A": 130.57,
-        "k": 0.091,       # Tasa base del documento (Stand II)
-        "m": 0.6666,
-        "desc": "Siembra media (~1000 arb/ha) o enriquecimiento."
+    "STAND_II": {
+        "nombre": "2. Modelo Stand II (Enriquecimiento 1000 ind/ha)",
+        "A": 140.0, "k": 0.15, "m": 0.666, "tipo": "restauracion",
+        "desc": "Densidad media. Balance entre costo y captura."
     },
-    "PASIVA": {
-        "nombre": "Regeneración Natural (Sucesión)",
-        "densidad": 0,    # No se siembra
-        "A": 130.57,
-        "k": 0.05,        # Tasa lenta (depende de dispersión natural)
-        "m": 0.6666,
-        "desc": "Proceso de sucesión natural. Bajo costo, inicio lento."
+    "STAND_III": {
+        "nombre": "3. Modelo Stand III (Enriquecimiento 500 ind/ha)",
+        "A": 130.0, "k": 0.12, "m": 0.666, "tipo": "restauracion",
+        "desc": "Densidad baja. Apoyo a la regeneración."
+    },
+    "STAND_IV": {
+        "nombre": "4. Modelo Stand IV (Aislamiento plántulas)",
+        "A": 120.0, "k": 0.10, "m": 0.666, "tipo": "restauracion",
+        "desc": "Protección de plántulas existentes. Crecimiento moderado."
+    },
+    # --- GRUPO RESTAURACIÓN PASIVA ---
+    "STAND_V": {
+        "nombre": "5. Modelo Stand V (Restauración Pasiva)",
+        "A": 130.57, "k": 0.09, "m": 0.666, "tipo": "restauracion",
+        "desc": "Sucesión natural. Sin siembra. Curva de crecimiento estándar."
+    },
+    # --- GRUPO SILVOPASTORIL / LINEAL ---
+    "STAND_VI": {
+        "nombre": "6. Modelo Stand VI (Cercas vivas 500 ind/km)",
+        "A": 80.0, "k": 0.15, "m": 0.666, "tipo": "restauracion",
+        "desc": "Arbolado lineal denso."
+    },
+    "STAND_VII": {
+        "nombre": "7. Modelo Stand VII (Cercas vivas 167 ind/km)",
+        "A": 40.0, "k": 0.12, "m": 0.666, "tipo": "restauracion",
+        "desc": "Arbolado lineal espaciado."
+    },
+    "STAND_VIII": {
+        "nombre": "8. Modelo Stand VIII (Árboles dispersos 20/ha)",
+        "A": 25.0, "k": 0.10, "m": 0.666, "tipo": "restauracion",
+        "desc": "Árboles en potrero. Baja carga de carbono por hectárea."
+    },
+    # --- GRUPO CONSERVACIÓN (Deforestación Evitada) ---
+    "CONS_RIO": {
+        "nombre": "9. Modelo Conservación Bosques Rio Grande II",
+        "A": 277.8, "k": 0.0, "m": 0.0, "tipo": "conservacion", # Stock fijo alto
+        "desc": "Bosque maduro. Se calcula el stock mantenido (evitar pérdida)."
+    },
+    "CONS_LAFE": {
+        "nombre": "10. Modelo Conservación Bosques La FE",
+        "A": 250.0, "k": 0.0, "m": 0.0, "tipo": "conservacion",
+        "desc": "Bosque de niebla/alto andino. Conservación de stock."
     }
 }
 
 FACTOR_C_CO2 = 3.666667
-DSOC_SUELO = 0.7050  # Captura suelo tC/ha/año (hasta año 20)
+DSOC_SUELO = 0.7050
 
-def calcular_proyeccion_captura(hectareas, anios=30, escenario_key="ACTIVA_MEDIA"):
+def calcular_proyeccion_captura(hectareas, anios=30, escenario_key="STAND_V"):
     """
-    Proyecta captura considerando la estrategia de siembra/regeneración.
+    Calcula la curva según el modelo seleccionado.
+    Si es 'conservacion', proyecta una línea recta (Stock Almacenado).
+    Si es 'restauracion', proyecta curva de crecimiento (Captura).
     """
-    # 1. Obtener parámetros del escenario seleccionado
-    params = ESCENARIOS_CRECIMIENTO.get(escenario_key, ESCENARIOS_CRECIMIENTO["ACTIVA_MEDIA"])
+    params = ESCENARIOS_CRECIMIENTO.get(escenario_key, ESCENARIOS_CRECIMIENTO["STAND_V"])
     
     A = params['A']
-    k = params['k']
-    m = params['m']
-    exponente = 1 / (1 - m)
-
-    # 2. Generar serie de tiempo
+    tipo = params.get('tipo', 'restauracion')
+    
     years = np.arange(0, anios + 1)
     
-    # 3. Calcular Stock Biomasa (Modelo Von Bertalanffy)
-    # B(t) = A * [1 - exp(-k*t)] ^ (1/(1-m))
-    stock_biomasa_c_ha = A * np.power((1 - np.exp(-k * years)), exponente)
-    
-    # 4. Calcular Incrementos (Captura Anual)
-    delta_biomasa_c_ha = np.diff(stock_biomasa_c_ha, prepend=0)
-    
-    # 5. Calcular Suelo (Solo primeros 20 años)
-    delta_suelo_c_ha = np.where(years <= 20, DSOC_SUELO, 0)
-    delta_suelo_c_ha[0] = 0
-    
-    # 6. Consolidar
+    if tipo == 'conservacion':
+        # Modelo Conservación: El stock es constante (o decrece levemente si hubiera deforestación, 
+        # pero aquí mostramos el valor de protegerlo).
+        stock_biomasa_c_ha = np.full_like(years, A, dtype=float)
+        delta_suelo_c_ha = np.zeros_like(years) # Suelo estable
+    else:
+        # Modelo Restauración (Von Bertalanffy)
+        k = params['k']
+        m = params['m']
+        exponente = 1 / (1 - m)
+        stock_biomasa_c_ha = A * np.power((1 - np.exp(-k * years)), exponente)
+        
+        # Suelo (Solo suma en restauración)
+        delta_suelo_c_ha = np.where(years <= 20, DSOC_SUELO, 0)
+        delta_suelo_c_ha[0] = 0
+
+    # DataFrame
     df = pd.DataFrame({
         'Año': years,
-        'Stock_Acumulado_tC_ha': stock_biomasa_c_ha,
-        'Captura_Anual_Biomasa_tC_ha': delta_biomasa_c_ha,
-        'Captura_Anual_Suelo_tC_ha': delta_suelo_c_ha
+        'Stock_Acumulado_tC_ha': stock_biomasa_c_ha
     })
     
-    # Totales CO2e
-    df['Captura_Total_tC_ha'] = df['Captura_Anual_Biomasa_tC_ha'] + df['Captura_Anual_Suelo_tC_ha']
-    df['Captura_Total_tCO2e_ha'] = df['Captura_Total_tC_ha'] * FACTOR_C_CO2
+    # Conversiones
+    # Si es conservación, calculamos el stock total protegido
+    # Si es restauración, es el stock ganado
+    df['Stock_Total_tCO2e_ha'] = (df['Stock_Acumulado_tC_ha'] + np.cumsum(delta_suelo_c_ha)) * FACTOR_C_CO2
     
     # Escalado al Proyecto
-    df['Proyecto_tCO2e_Anual'] = df['Captura_Total_tCO2e_ha'] * hectareas
-    df['Proyecto_tCO2e_Acumulado'] = df['Proyecto_tCO2e_Anual'].cumsum()
+    df['Proyecto_tCO2e_Acumulado'] = df['Stock_Total_tCO2e_ha'] * hectareas
+    
+    # Columna auxiliar para tasa anual (diferencia)
+    df['Proyecto_tCO2e_Anual'] = df['Proyecto_tCO2e_Acumulado'].diff().fillna(0)
     
     return df
 
