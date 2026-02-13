@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import rasterio
 import streamlit as st
+import io
+from contextlib import contextmanager
 from rasterio.features import rasterize, shapes
 from rasterio.io import MemoryFile
 from rasterio.warp import Resampling, calculate_default_transform, reproject
@@ -43,122 +45,79 @@ holdridge_int_to_name_simplified = {
 # --- PALETA DE COLORES OFICIAL (HEX) ---
 holdridge_colors = {
     1: "#FFFFFF",  # Nival
-    2: "#B0E0E6",
-    3: "#87CEEB",
-    4: "#708090",  # Alpino
-    5: "#8A2BE2",
-    6: "#9370DB",
-    7: "#D8BFD8",  # Páramo
-    8: "#00008B",
-    9: "#006400",
-    10: "#228B22",
-    11: "#9ACD32",
-    12: "#F0E68C",  # Montano
-    13: "#0000CD",
-    14: "#008000",
-    15: "#32CD32",
-    16: "#FFFF00",
-    17: "#DAA520",  # Premontano
-    18: "#191970",
-    19: "#2E8B57",
-    20: "#7CFC00",
-    21: "#FFA500",
-    22: "#FF4500",  # Tropical
+    2: "#B0E0E6", 3: "#87CEEB", 4: "#708090",  # Alpino
+    5: "#8A2BE2", 6: "#9370DB", 7: "#D8BFD8",  # Páramo
+    8: "#00008B", 9: "#006400", 10: "#228B22", 11: "#9ACD32", 12: "#F0E68C",  # Montano
+    13: "#0000CD", 14: "#008000", 15: "#32CD32", 16: "#FFFF00", 17: "#DAA500",  # Premontano
+    18: "#191970", 19: "#2E8B57", 20: "#7CFC00", 21: "#FFA500", 22: "#FF4500",  # Tropical
     0: "#000000",
 }
 
+# --- FUNCIÓN AUXILIAR PARA ABRIR RASTERS (RUTA O MEMORIA) ---
+@contextmanager
+def open_raster_source(source):
+    """
+    Context manager inteligente:
+    - Si source es bytes/BytesIO: Usa MemoryFile.
+    - Si source es string (ruta): Usa rasterio.open estándar.
+    """
+    if isinstance(source, (io.BytesIO, bytes)) or hasattr(source, 'read'):
+        with MemoryFile(source) as memfile:
+            with memfile.open() as src:
+                yield src
+    else:
+        with rasterio.open(source) as src:
+            yield src
 
 def classify_life_zone_alt_ppt(altitude, ppt):
-    """
-    Clasifica una celda según su altitud (m) y precipitación anual (mm).
-    """
+    """Clasifica una celda según su altitud (m) y precipitación anual (mm)."""
     if pd.isna(altitude) or pd.isna(ppt) or altitude < 0 or ppt <= 0:
         return 0
 
-    # 1. NIVAL
-    if altitude >= 4500:
-        return 1
-    # 2. ALPINO
-    if altitude >= 3800:
-        if ppt >= 1000:
-            return 2
-        elif ppt >= 500:
-            return 3
-        else:
-            return 4
-    # 3. SUBALPINO (Páramo)
-    if altitude >= 3000:
-        if ppt >= 2000:
-            return 5
-        elif ppt >= 1000:
-            return 6
-        else:
-            return 7
-    # 4. MONTANO
+    # Lógica de clasificación (Misma que proporcionaste)
+    if altitude >= 4500: return 1
+    if altitude >= 3800: return 2 if ppt >= 1000 else (3 if ppt >= 500 else 4)
+    if altitude >= 3000: return 5 if ppt >= 2000 else (6 if ppt >= 1000 else 7)
     if altitude >= 2000:
-        if ppt >= 4000:
-            return 8
-        elif ppt >= 2000:
-            return 9
-        elif ppt >= 1000:
-            return 10
-        elif ppt >= 500:
-            return 11
-        else:
-            return 12
-    # 5. PREMONTANO
+        if ppt >= 4000: return 8
+        elif ppt >= 2000: return 9
+        elif ppt >= 1000: return 10
+        elif ppt >= 500: return 11
+        else: return 12
     if altitude >= 1000:
-        if ppt >= 4000:
-            return 13
-        elif ppt >= 2000:
-            return 14
-        elif ppt >= 1000:
-            return 15
-        elif ppt >= 500:
-            return 16
-        else:
-            return 17
-    # 6. TROPICAL
-    if ppt >= 8000:
-        return 18
-    elif ppt >= 4000:
-        return 19
-    elif ppt >= 2000:
-        return 20
-    elif ppt >= 1000:
-        return 21
-    else:
-        return 22
+        if ppt >= 4000: return 13
+        elif ppt >= 2000: return 14
+        elif ppt >= 1000: return 15
+        elif ppt >= 500: return 16
+        else: return 17
+    # Tropical
+    if ppt >= 8000: return 18
+    elif ppt >= 4000: return 19
+    elif ppt >= 2000: return 20
+    elif ppt >= 1000: return 21
+    else: return 22
 
-
-# Vectorización para rendimiento
 _vectorized_classify = np.vectorize(classify_life_zone_alt_ppt)
 
 
-def generate_life_zone_map(
-    dem_path, precip_raster_path, mask_geometry=None, downscale_factor=4
-):
+def generate_life_zone_map(dem_input, ppt_input, mask_geometry=None, downscale_factor=4):
     """
-    Genera mapa raster clasificado de Zonas de Vida y devuelve el array y el perfil.
+    Genera mapa raster clasificado de Zonas de Vida.
+    Soporta entradas como rutas de archivo O como objetos BytesIO (Supabase).
     """
     try:
         if downscale_factor is None or downscale_factor <= 0:
             downscale_factor = 1
         dst_crs = "EPSG:4326"
 
-        # 1. Procesar DEM
-        with rasterio.open(dem_path) as dem_src:
+        # 1. Procesar DEM (Usando el helper inteligente)
+        with open_raster_source(dem_input) as dem_src:
             dst_width = max(1, dem_src.width // downscale_factor)
             dst_height = max(1, dem_src.height // downscale_factor)
 
             dst_transform, dst_width, dst_height = calculate_default_transform(
-                dem_src.crs,
-                dst_crs,
-                dem_src.width,
-                dem_src.height,
-                *dem_src.bounds,
-                dst_width=dst_width,
-                dst_height=dst_height,
+                dem_src.crs, dst_crs, dem_src.width, dem_src.height, 
+                *dem_src.bounds, dst_width=dst_width, dst_height=dst_height
             )
 
             dem_resampled = np.empty((dst_height, dst_width), dtype=np.float32)
@@ -173,7 +132,7 @@ def generate_life_zone_map(
             )
 
         # 2. Procesar Precipitación
-        with rasterio.open(precip_raster_path) as ppt_src:
+        with open_raster_source(ppt_input) as ppt_src:
             ppt_resampled = np.empty((dst_height, dst_width), dtype=np.float32)
             reproject(
                 source=rasterio.band(ppt_src, 1),
@@ -188,9 +147,7 @@ def generate_life_zone_map(
         # 3. Clasificación
         dem_mask = np.isnan(dem_resampled)
         ppt_mask = np.isnan(ppt_resampled)
-        valid_mask = (
-            (~dem_mask) & (~ppt_mask) & (dem_resampled > -500) & (ppt_resampled >= 0)
-        )
+        valid_mask = (~dem_mask) & (~ppt_mask) & (dem_resampled > -500) & (ppt_resampled >= 0)
 
         classified_raster = np.zeros((dst_height, dst_width), dtype=np.int16)
 
@@ -244,58 +201,36 @@ def generate_life_zone_map(
         st.error(f"Error generando mapa: {e}")
         return None, None, None, None
 
-
-# --- NUEVAS FUNCIONES PARA DESCARGA (SHP/JSON/TIFF) ---
-
-
 def vectorize_raster_to_gdf(raster_array, transform, crs):
-    """
-    Convierte el Raster clasificado a un GeoDataFrame (Polígonos).
-    Útil para descargar como Shapefile o GeoJSON.
-    """
+    """Convierte el Raster clasificado a GeoDataFrame."""
     try:
-        # Extraer formas (polígonos) del raster donde el valor != 0
         mask = raster_array != 0
         results = (
             {"properties": {"id_zona": v}, "geometry": s}
-            for i, (s, v) in enumerate(
-                shapes(raster_array, mask=mask, transform=transform)
-            )
+            for i, (s, v) in enumerate(shapes(raster_array, mask=mask, transform=transform))
         )
-
-        # Crear lista de geometrías y atributos
         geoms = []
         ids = []
         for r in results:
             geoms.append(shape(r["geometry"]))
             ids.append(r["properties"]["id_zona"])
 
-        if not geoms:
-            return gpd.GeoDataFrame()
+        if not geoms: return gpd.GeoDataFrame()
 
-        # Crear GeoDataFrame
         gdf = gpd.GeoDataFrame({"id_zona": ids}, geometry=geoms, crs=crs)
-
-        # Agregar nombre de la zona
         gdf["zona_vida"] = gdf["id_zona"].map(holdridge_int_to_name_simplified)
-
         return gdf
     except Exception as e:
         st.error(f"Error vectorizando mapa: {e}")
         return gpd.GeoDataFrame()
 
-
 def get_raster_bytes(raster_array, profile):
-    """
-    Escribe el array raster a un objeto BytesIO (memoria) formato TIFF.
-    Útil para descargar con st.download_button.
-    """
+    """Escribe el array raster a un objeto BytesIO (memoria)."""
     try:
         mem_file = MemoryFile()
         with mem_file.open(**profile) as dataset:
             dataset.write(raster_array, 1)
-
-        return mem_file.read()  # Devuelve los bytes
+        return mem_file.read()
     except Exception as e:
         st.error(f"Error preparando descarga TIFF: {e}")
         return None
