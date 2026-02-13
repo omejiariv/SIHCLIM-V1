@@ -23,6 +23,11 @@ from sqlalchemy import text
 import geopandas as gpd
 from rasterio.io import MemoryFile
 
+try:
+    from modules.admin_utils import init_supabase
+except ImportError:
+    st.error("⚠️ Error crítico: No se encuentra modules.admin_utils")
+
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="SIHCLI-POTER", page_icon="🌦️", layout="wide")
 warnings.filterwarnings("ignore")
@@ -58,32 +63,28 @@ except Exception as e:
     st.error(f"❌ Error Crítico de Importación: {e}")
     st.stop()
 
-# --- FUNCIÓN MAESTRA DE CARGA (SOLUCIÓN A ERRORES 1 Y 2) ---
+# --- FUNCIÓN MAESTRA DE CARGA (VERSIÓN STORAGE / BUCKET) ---
+# Esta versión conecta con la pestaña "Coberturas" del Panel de Admin
 @st.cache_resource(show_spinner=False)
 def cargar_raster_db(filename):
     """
-    Descarga un archivo raster (TIF) desde la tabla 'system_assets' de Supabase
-    y lo devuelve como un objeto en memoria (BytesIO), listo para Rasterio.
+    Descarga un archivo raster (TIF) desde el Storage (Bucket 'rasters') de Supabase
+    y lo devuelve como un objeto en memoria (BytesIO).
     """
     try:
-        engine = get_engine()
-        if engine is None:
-            return None
-            
-        with engine.connect() as conn:
-            # Buscamos el binario por nombre
-            result = conn.execute(
-                text("SELECT file_data FROM system_assets WHERE filename = :f"),
-                {"f": filename}
-            ).fetchone()
-            
-            if result:
-                return io.BytesIO(result[0]) # Éxito: Devolvemos el archivo en RAM
-            else:
-                # Si no existe, retornamos None para manejar el error después
-                return None
+        # 1. Iniciamos cliente usando tus credenciales existentes
+        client = init_supabase()
+        
+        # 2. Descargamos los bytes del bucket 'rasters'
+        # (El Panel de Admin sube los archivos a este bucket por defecto)
+        file_bytes = client.storage.from_("rasters").download(filename)
+        
+        # 3. Devolvemos el objeto en memoria
+        return io.BytesIO(file_bytes)
+        
     except Exception as e:
-        st.error(f"Error descargando mapa '{filename}': {e}")
+        # Si falla (ej. archivo no existe), retornamos None
+        # st.error(f"Error descargando '{filename}' del Storage: {e}") 
         return None
 # -----------------------------------------------------------
 
@@ -674,6 +675,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
