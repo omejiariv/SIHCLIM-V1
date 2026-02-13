@@ -422,16 +422,36 @@ with tab_tax:
         st.info("No hay datos de biodiversidad para mostrar estadísticas.")
 
 # ==============================================================================
-# TAB 3: CALCULADORA DE CARBONO (SISTÉMICA)
+# TAB 3: CALCULADORA DE CARBONO (INTEGRADA & DOCUMENTADA)
 # ==============================================================================
 with tab_carbon:
     st.header("🌳 Estimación de Servicios Ecosistémicos (Carbono)")
     
-    if gdf_zona is None:
-        st.warning("👈 Por favor selecciona una zona en el menú lateral para iniciar.")
-        st.stop()
+    # --- 1. MARCO CONCEPTUAL (CAJA DE MENSAJE) ---
+    with st.expander("📘 Marco Conceptual y Metodológico (Ver Detalles)", expanded=False):
+        st.markdown("""
+        ### 🧠 Metodología de Estimación
+        Esta herramienta sigue los lineamientos del **IPCC (2006)** y las metodologías del Mecanismo de Desarrollo Limpio (**MDL AR-TOOL14**).
+        
+        **1. Ecuaciones Utilizadas:**
+        * **Crecimiento:** Modelo *Von Bertalanffy* para biomasa aérea.
+            $$B_t = A \\cdot (1 - e^{-k \\cdot t})^{\\frac{1}{1-m}}$$
+        * **Suelo:** Factor de acumulación lineal de Carbono Orgánico del Suelo (COS) durante los primeros 20 años ($0.705 \\, tC/ha/año$).
+        
+        **2. Fuentes de Datos:**
+        * **Coeficientes Alométricos:** *Álvarez et al. (2012)* para bosques naturales de Colombia.
+        * **Parámetros de Crecimiento:** Calibrados para *Bosque Húmedo Tropical* y *Bosque Seco Tropical* en la región andina.
+        
+        **3. Alcance y Utilidad:**
+        Permite estimar el potencial de mitigación (bonos de carbono) ex-ante para proyectos de **Restauración Activa** (siembra) y **Pasiva** (regeneración natural), facilitando la viabilidad financiera de proyectos ambientales.
+        """)
+        st.info("⚠️ **Nota:** Las estimaciones son aproximadas y deben validarse con mediciones directas en campo para certificación.")
 
-    st.subheader("🔍 Diagnóstico Territorial Integrado")
+    st.divider()
+    
+    if gdf_zona is None:
+        st.warning("👈 Por favor selecciona una zona en el menú lateral para iniciar el diagnóstico.")
+        st.stop()
     
     # 1. DESCARGA DE RECURSOS (NUBE)
     with st.spinner("☁️ Descargando capas climáticas y de cobertura..."):
@@ -461,121 +481,70 @@ with tab_carbon:
         df_potencial = df_diagnostico[df_diagnostico['COV_ID'].isin(target_ids)].copy()
         total_potencial = df_potencial['Hectareas'].sum()
         
-        c_kpi1, c_kpi2 = st.columns(2)
-        area_tot = gdf_zona.to_crs('+proj=cea').area.sum()/10000
-        c_kpi1.metric("Área Total Seleccionada", f"{area_tot:,.1f} ha")
-        c_kpi2.metric("Potencial Restauración", f"{total_potencial:,.1f} ha", 
-                      help="Suma de Pastos y Áreas abiertas en todas las zonas de vida.")
-
-        fig_bar = px.bar(df_potencial, x='Hectareas', y='Zona_Vida', color='Cobertura', 
-                         orientation='h', title="Áreas Restaurables por Clima",
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
-        st.plotly_chart(fig_bar, use_container_width=True)
+        k1, k2 = st.columns(2)
+        k1.metric("Área Total Zona", f"{(gdf_zona.to_crs('+proj=cea').area.sum()/10000):,.1f} ha")
+        k2.metric("Potencial Restauración", f"{total_potencial:,.1f} ha", help="Pastos + Áreas Degradadas disponibles")
     else:
-        if dem_bytes: # Solo mostrar advertencia si la descarga funcionó pero el cruce falló
-            st.warning("El diagnóstico espacial no arrojó resultados (posiblemente la zona está fuera del mapa).")
-        df_potencial = pd.DataFrame()
         total_potencial = 0
 
     st.divider()
 
-    # --- B. HERRAMIENTAS DE CÁLCULO ---
-    modo_calc = st.radio("Selecciona el enfoque:", 
-                         ["🔮 Proyección (Planificación)", "📏 Inventario (Línea Base)"], 
-                         horizontal=True)
-
-    if "Proyección" in modo_calc:
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.markdown("**Configuración**")
-            opcion_area = st.radio("Área a restaurar:", ["Manual", "Todo el Potencial"], index=1)
+    # --- 3. CONFIGURACIÓN DEL PROYECTO ---
+    st.subheader("⚙️ Configuración del Proyecto")
+    
+    col_conf1, col_conf2 = st.columns([1, 2])
+    
+    with col_conf1:
+        # A. ESTRATEGIA (Aquí integramos Densidad/Sucesión)
+        estrategia = st.selectbox(
+            "Estrategia de Intervención:",
+            options=["ACTIVA_ALTA", "ACTIVA_MEDIA", "PASIVA"],
+            format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"],
+            help="Define la densidad de siembra y velocidad de crecimiento."
+        )
+        
+        # Mostrar descripción dinámica
+        desc = carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]["desc"]
+        st.caption(f"ℹ️ *{desc}*")
+        
+        # B. ÁREA
+        tipo_area = st.radio("Definir Área:", ["Manual", "Todo el Potencial"], horizontal=True)
+        if tipo_area == "Manual":
+            area_input = st.number_input("Hectáreas:", min_value=0.1, value=1.0)
+        else:
+            val_def = float(total_potencial) if total_potencial > 0 else 1.0
+            area_input = st.number_input("Hectáreas:", value=val_def, disabled=True)
             
-            if opcion_area == "Manual":
-                area_ha = st.number_input("Área (Ha):", min_value=0.1, value=1.0)
-            else:
-                val_default = float(total_potencial) if total_potencial > 0 else 1.0
-                area_ha = st.number_input("Área (Ha):", min_value=0.1, value=val_default, disabled=True)
+        # C. EDAD (Horizonte)
+        edad_proy = st.slider("Edad / Horizonte (Años):", 5, 50, 20, help="Tiempo de proyección del análisis.")
+        
+        calc_btn = st.button("🚀 Calcular Carbono", type="primary")
 
-            anios_proj = st.slider("Horizonte (años):", 5, 50, 20)
-            if st.button("🚀 Calcular Escenario", type="primary"):
-                df_proj = carbon_calculator.calcular_proyeccion_captura(area_ha, anios_proj)
-                st.session_state['df_carbon_proj'] = df_proj
-
-        with c2:
-            if 'df_carbon_proj' in st.session_state:
-                df = st.session_state['df_carbon_proj']
-                total_c = df['Proyecto_tCO2e_Acumulado'].iloc[-1]
-                
-                k1, k2, k3 = st.columns(3)
-                k1.metric("Total CO2e", f"{total_c:,.0f} t")
-                k2.metric("Promedio Anual", f"{(total_c/anios_proj):,.0f} t/año")
-                k3.metric("Valor Potencial", f"${(total_c*5):,.0f} USD")
-
-                fig = px.area(df, x='Año', y='Proyecto_tCO2e_Acumulado',
-                              title=f"Curva de Acumulación ({area_ha:.1f} ha)",
-                              color_discrete_sequence=['#27ae60'])
-                st.plotly_chart(fig, use_container_width=True)
-
-    else:
-        c_inv_1, c_inv_2 = st.columns([1, 2])
-        with c_inv_1:
-            st.info("Sube Excel con columnas: DAP, Altura")
-            up_file = st.file_uploader("Cargar Archivo", type=['csv', 'xlsx'])
+    with col_conf2:
+        if calc_btn:
+            # Llamada al nuevo motor con estrategia
+            df_res = carbon_calculator.calcular_proyeccion_captura(
+                hectareas=area_input, 
+                anios=edad_proy, 
+                escenario_key=estrategia
+            )
             
-            zv_sugerida = "bh-MB"
-            if df_diagnostico is not None and not df_diagnostico.empty:
-                try:
-                    top_zv = df_diagnostico.groupby('Zona_Vida')['Hectareas'].sum().idxmax()
-                    # Mapeo básico de nombres largos a códigos
-                    mapa_nombres = {
-                        "Bosque húmedo Premontano (bh-PM)": "bh-PM", 
-                        "Bosque muy húmedo Montano Bajo (bmh-MB)": "bmh-MB",
-                        "Bosque húmedo Tropical (bh-T)": "bh-T"
-                    }
-                    # Intenta buscar coincidencia parcial si no es exacta
-                    for k, v in mapa_nombres.items():
-                        if v in top_zv or top_zv in k:
-                            zv_sugerida = v
-                            break
-                except: pass
-
-            opciones_zv = ["bh-MB", "bh-PM", "bh-T", "bmh-M", "bmh-MB", "bmh-PM", "bp-PM", "bs-T", "me-T"]
-            idx_def = opciones_zv.index(zv_sugerida) if zv_sugerida in opciones_zv else 0
+            # Resultados Clave
+            total_c = df_res['Proyecto_tCO2e_Acumulado'].iloc[-1]
+            tasa_prom = total_c / edad_proy
             
-            zona_vida = st.selectbox("Ecuación (Zona de Vida):", opciones_zv, index=idx_def, help=f"Sugerido: {zv_sugerida}")
-
-        with c_inv_2:
-            if up_file and st.button("🧮 Procesar"):
-                try:
-                    if up_file.name.endswith('.csv'):
-                        df_inv = pd.read_csv(up_file, sep=';' if ';' in up_file.getvalue().decode('latin1') else ',')
-                    else:
-                        df_inv = pd.read_excel(up_file)
-                    
-                    df_res, msg = carbon_calculator.calcular_inventario_forestal(df_inv, zona_vida)
-                    
-                    if df_res is not None:
-                        st.success("✅ Procesado.")
-                        tot_carb = df_res['CO2e_Total_tCO2e'].sum()
-                        st.metric("Stock Total", f"{tot_carb:,.2f} tCO2e")
-                        st.dataframe(df_res.head())
-                        csv = df_res.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Descargar", csv, "inventario.csv", "text/csv")
-                    else:
-                        st.error(msg)
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Captura Total", f"{total_c:,.0f} tCO2e")
+            m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
+            m3.metric("Valor (5 USD/t)", f"${(total_c*5):,.0f} USD")
+            
+            # Gráfico de Curva S (Sigmoide)
+            fig = px.area(df_res, x='Año', y='Proyecto_tCO2e_Acumulado',
+                          title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]['nombre']}",
+                          labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
+                          color_discrete_sequence=['#2ecc71'])
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            with st.expander("Ver Tabla Detallada"):
+                st.dataframe(df_res)
