@@ -194,17 +194,17 @@ st.markdown("---")
 
 tabs = st.tabs([
     "📡 Estaciones",        # 0
-    "📊 Índices",           # 1
-    "🏠 Predios",           # 2
-    "🌊 Cuencas",           # 3
-    "🏙️ Municipios",        # 4
-    "🌲 Coberturas",        # 5
-    "💧 Bocatomas",         # 6
-    "⛰️ Hidrogeología",     # 7
-    "🌱 Suelos",            # 8
-    "🛠️ SQL",               # 9
-    "📚 Inventario",        # 10
-    "🌧️ Lluvia",            # 11
+    "🌧️ Lluvia",            # 1
+    "📊 Índices",           # 2
+    "🏠 Predios",           # 3
+    "🌊 Cuencas",           # 4
+    "🏙️ Municipios",        # 5
+    "🌲 Coberturas",        # 6
+    "💧 Bocatomas",         # 7
+    "⛰️ Hidrogeología",     # 8
+    "🌱 Suelos",            # 9
+    "🛠️ SQL",               # 10
+    "📚 Inventario",        # 11
     "〰️ Red Drenaje",       # 12 (NUEVO)
     "💀 Zona de Peligro"    # 13 (NUEVO)
 ])
@@ -642,6 +642,7 @@ with tabs[10]:
                     conn.commit()
                     st.success("Comando ejecutado.")
         except Exception as e: st.error(str(e))
+
 
 
 
