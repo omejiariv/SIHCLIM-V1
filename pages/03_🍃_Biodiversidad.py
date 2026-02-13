@@ -476,6 +476,37 @@ with tab_carbon:
 
     # 3. RESULTADOS
     if df_diagnostico is not None and not df_diagnostico.empty:
+        
+        # --- VISUALIZACIÓN COMPLETA DEL DIAGNÓSTICO ---
+        st.markdown("##### 📊 Distribución de Coberturas por Zona de Vida")
+        
+        # 1. Gráfico de Barras Apiladas (Todas las coberturas, no solo potencial)
+        fig_diag = px.bar(
+            df_diagnostico, 
+            x='Hectareas', 
+            y='Zona_Vida', 
+            color='Cobertura', 
+            orientation='h',
+            title="Hectáreas por Cobertura y Clima",
+            color_discrete_sequence=px.colors.qualitative.Prism,
+            height=400
+        )
+        st.plotly_chart(fig_diag, use_container_width=True)
+        
+        # 2. Tabla de Datos (Pivot Table para mejor lectura)
+        with st.expander("Ver Tabla de Datos Detallada (Hectáreas)"):
+            pivot_diag = df_diagnostico.pivot_table(
+                index='Cobertura', 
+                columns='Zona_Vida', 
+                values='Hectareas', 
+                aggfunc='sum', 
+                fill_value=0
+            )
+            # Formato numérico
+            st.dataframe(pivot_diag.style.format("{:,.1f}"), use_container_width=True)
+        
+        st.divider()
+        
         # IDs de Pastos/Degradados
         target_ids = [7, 3, 11] 
         df_potencial = df_diagnostico[df_diagnostico['COV_ID'].isin(target_ids)].copy()
@@ -569,3 +600,4 @@ with tab_carbon:
         
         elif not calc_btn:
             st.info("👈 Configura los parámetros y pulsa 'Calcular Carbono' para ver la proyección.")
+
