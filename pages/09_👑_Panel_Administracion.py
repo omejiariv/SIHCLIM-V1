@@ -2,168 +2,133 @@
 
 import streamlit as st
 import pandas as pd
+import json
+import io
 import time
-import os
 import sys
+import os
 import tempfile
 import zipfile
 import geopandas as gpd
+import rasterio
 from sqlalchemy import text
+import folium
+from streamlit_folium import st_folium
+from shapely.geometry import shape
 import shutil
-from modules.admin_utils import parsear_fechas_espanol
 
-# --- 1. CONFIGURACIÓN E IMPORTACIONES ---
-st.set_page_config(page_title="Panel de Administración", page_icon="👑", layout="wide")
+from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
+from supabase import create_client
+
+
+# --- 1. CONFIGURACIÓN DE RUTAS E IMPORTACIONES ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
 
 try:
     from modules.db_manager import get_engine
 except ImportError:
-    st.error("⚠️ Error: No se encontró el módulo db_manager.")
+    from db_manager import get_engine
+
+st.set_page_config(page_title="Panel de Administración", page_icon="👑", layout="wide")
+
+# --- 2. AUTENTICACIÓN ---
+def check_password():
+    if st.session_state.get("password_correct", False):
+        return True
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🔐 Acceso Restringido")
+        st.info("Panel de Control SIHCLI-POTER (Nube)")
+        if "iri" not in st.secrets:
+            st.error("⚠️ Falta configuración [iri] en secrets.toml")
+            return False
+        
+        user_input = st.text_input("Usuario")
+        pass_input = st.text_input("Contraseña", type="password")
+        
+        if st.button("Ingresar"):
+            sec_user = st.secrets["iri"]["username"]
+            sec_pass = st.secrets["iri"]["password"]
+            if user_input == sec_user and pass_input == sec_pass:
+                st.session_state.password_correct = True
+                st.rerun()
+            else:
+                st.error("🚫 Acceso Denegado")
+                return False
+    return False
+
+if not check_password():
     st.stop()
 
-# Importación opcional de utilidades de nube
-try:
-    from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
-except ImportError:
-    get_raster_list, upload_raster_to_storage, delete_raster_from_storage = None, None, None
+engine = get_engine()
 
-# --- 2. GESTIÓN DE CONEXIÓN ---
-def get_connection():
-    engine = get_engine()
-    try: engine.dispose()
-    except: pass
-    return engine
+# --- 3. FUNCIONES AUXILIARES ---
 
-engine = get_connection()
-
-# --- 3. FUNCIONES AUXILIARES DE LIMPIEZA Y CARGA ---
-
-def limpiar_estaciones(df):
-    """Normaliza el CSV de estaciones."""
-    df.columns = df.columns.str.lower().str.strip()
-    mapa = {
-        'id_estacio': 'id_estacion', 'codigo': 'id_estacion', 'code': 'id_estacion',
-        'nom_est': 'nombre', 'station': 'nombre', 'name': 'nombre',
-        'longitud_geo': 'longitud', 'lon': 'longitud', 'lng': 'longitud',
-        'latitud_geo': 'latitud', 'lat': 'latitud',
-        'alt_est': 'altitud', 'elev': 'altitud'
-    }
-    df = df.rename(columns={k: v for k, v in mapa.items() if k in df.columns})
-    
-    req = ['id_estacion', 'latitud', 'longitud']
-    if not all(c in df.columns for c in req):
-        return None, f"Faltan columnas obligatorias: {req}"
-    
-    df['id_estacion'] = df['id_estacion'].astype(str).str.strip()
-    for c in ['latitud', 'longitud', 'altitud']:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c].astype(str).str.replace(',', '.'), errors='coerce')
-    
-    return df.dropna(subset=['latitud', 'longitud']), "OK"
-
-def cargar_capa_gis_robusta(uploaded_files, nombre_tabla, engine):
-    """
-    Carga archivos GIS. Soporta:
-    1. Un solo archivo .zip o .geojson
-    2. Múltiples archivos (.shp, .dbf, .prj, .shx) seleccionados juntos.
-    """
-    if not uploaded_files: return
+def cargar_capa_gis_robusta(uploaded_file, nombre_tabla, engine):
+    """Carga archivos GIS, repara coordenadas y sube a BD manteniendo TODOS los campos."""
+    if uploaded_file is None: return
     
     status = st.status(f"🚀 Procesando {nombre_tabla}...", expanded=True)
-    tmp_dir = tempfile.mkdtemp()
-    gdf = None
-
     try:
-        # CASO A: Archivos Múltiples (Shapefile suelto: .shp, .dbf, etc.)
-        if isinstance(uploaded_files, list) and len(uploaded_files) > 1:
-            status.write(f"📂 Procesando {len(uploaded_files)} archivos componentes...")
-            shp_path = None
-            
-            # 1. Guardar todos los archivos en la carpeta temporal
-            for file in uploaded_files:
-                file_path = os.path.join(tmp_dir, file.name)
-                with open(file_path, "wb") as f:
-                    f.write(file.getvalue())
-                if file.name.lower().endswith(".shp"):
-                    shp_path = file_path
-            
-            # 2. Leer el .shp (GeoPandas buscará automáticamente los .dbf y .prj al lado)
-            if shp_path:
-                gdf = gpd.read_file(shp_path)
-            else:
-                status.error("❌ Se subieron varios archivos pero falta el .shp")
-                return
-
-        # CASO B: Un solo archivo (ZIP o GeoJSON)
-        else:
-            # Si es una lista de 1 elemento, sacamos el elemento
-            uploaded_file = uploaded_files[0] if isinstance(uploaded_files, list) else uploaded_files
-            suffix = os.path.splitext(uploaded_file.name)[1].lower()
-            tmp_path = os.path.join(tmp_dir, uploaded_file.name)
-            
-            with open(tmp_path, "wb") as f:
-                f.write(uploaded_file.getvalue())
-            
-            if suffix == '.zip':
+        suffix = os.path.splitext(uploaded_file.name)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            tmp_path = tmp_file.name
+        
+        gdf = None
+        if suffix == '.zip':
+            with tempfile.TemporaryDirectory() as tmp_dir:
                 with zipfile.ZipFile(tmp_path, 'r') as zip_ref:
                     zip_ref.extractall(tmp_dir)
-                # Buscar el .shp dentro del zip descomprimido
                 for root, dirs, files in os.walk(tmp_dir):
                     for file in files:
                         if file.endswith(".shp"):
                             gdf = gpd.read_file(os.path.join(root, file))
                             break
-            else:
-                gdf = gpd.read_file(tmp_path)
-
-        # --- PROCESAMIENTO COMÚN ---
+        else:
+            gdf = gpd.read_file(tmp_path)
+            
         if gdf is None:
-            status.error("No se pudo leer la información geográfica.")
+            status.error("No se pudo leer el archivo geográfico.")
             return
 
         status.write(f"✅ Leído: {len(gdf)} registros. Columnas: {list(gdf.columns)}")
 
-        # Reproyección a WGS84
+        # REPROYECCIÓN OBLIGATORIA A WGS84
         if gdf.crs and gdf.crs.to_string() != "EPSG:4326":
             status.write("🔄 Reproyectando a WGS84 (EPSG:4326)...")
             gdf = gdf.to_crs("EPSG:4326")
         
-        # Normalización
+        # Normalización de columnas
         gdf.columns = [c.lower() for c in gdf.columns]
         
-        # Subida
-        status.write("📤 Subiendo a Base de Datos...")
+        # Mapeo inteligente (pero conservamos el resto de columnas)
+        rename_map = {}
+        if 'bocatomas' in nombre_tabla and 'nombre' in gdf.columns: rename_map['nombre'] = 'nom_bocatoma'
+        elif 'suelos' in nombre_tabla:
+            if 'gridcode' in gdf.columns: rename_map['gridcode'] = 'codigo'
+            if 'simbolo' in gdf.columns: rename_map['simbolo'] = 'codigo'
+        elif 'zonas_hidrogeologicas' in nombre_tabla and 'nombre' in gdf.columns: 
+            rename_map['nombre'] = 'nombre_zona'
+            
+        if rename_map:
+            gdf = gdf.rename(columns=rename_map)
+
+        status.write("📤 Subiendo a Base de Datos (Conservando todos los atributos)...")
         gdf.to_postgis(nombre_tabla, engine, if_exists='replace', index=False)
         
         status.update(label="¡Carga Exitosa!", state="complete", expanded=False)
-        st.success(f"Capa **{nombre_tabla}** actualizada correctamente.")
+        st.success(f"Capa **{nombre_tabla}** actualizada. {len(gdf)} registros con {len(gdf.columns)} campos.")
         if len(gdf) > 0: st.balloons()
         
     except Exception as e:
         status.update(label="Error", state="error")
         st.error(f"Error crítico: {e}")
     finally:
-        # Limpieza robusta de carpeta temporal
-        try:
-            shutil.rmtree(tmp_dir)
-        except: pass
-
-def visor_tabla_simple(nombre_tabla):
-    """Muestra una tabla editable básica."""
-    try:
-        # Excluir geometría para que sea rápido
-        q = text(f"SELECT * FROM {nombre_tabla} LIMIT 1000")
-        try:
-            df = pd.read_sql(q, engine)
-            if 'geom' in df.columns: df = df.drop(columns=['geom'])
-            if 'geometry' in df.columns: df = df.drop(columns=['geometry'])
-            
-            st.info(f"Mostrando primeros 1.000 registros de **{nombre_tabla}**.")
-            st.dataframe(df, use_container_width=True)
-        except:
-            st.warning(f"La tabla '{nombre_tabla}' está vacía o no existe.")
-    except Exception as e:
-        st.error(f"Error leyendo tabla: {e}")
+        if os.path.exists(tmp_path): os.remove(tmp_path)
 
 def editor_tabla_gis(nombre_tabla, key_editor):
     """Genera un editor de tabla para capas GIS excluyendo la columna de geometría pesada."""
@@ -186,364 +151,847 @@ def editor_tabla_gis(nombre_tabla, key_editor):
         if st.button(f"💾 Guardar Cambios en {nombre_tabla}", key=f"btn_{key_editor}"):
             st.warning("⚠️ Edición directa deshabilitada por seguridad en esta versión. Use la carga de archivos para cambios masivos.")
     except Exception as e:
-        pass
+        st.warning(f"La tabla '{nombre_tabla}' aún no tiene datos o no existe. Cargue un archivo primero.")
 
-# --- 4. INTERFAZ PRINCIPAL (LISTA ACTUALIZADA) ---
+# --- 4. INTERFAZ PRINCIPAL ---
 st.title("👑 Panel de Administración y Edición de Datos")
 st.markdown("---")
 
 tabs = st.tabs([
-    "📡 Estaciones",        # 0
-    "🌧️ Lluvia",            # 1
-    "📊 Índices",           # 2
-    "🏠 Predios",           # 3
-    "🌊 Cuencas",           # 4
-    "🏙️ Municipios",        # 5
-    "🌲 Coberturas",        # 6
-    "💧 Bocatomas",         # 7
-    "⛰️ Hidrogeología",     # 8
-    "🌱 Suelos",            # 9
-    "🛠️ SQL",               # 10
-    "📚 Inventario",        # 11
-    "〰️ Red Drenaje",       # 12 (NUEVO)
-    "💀 Zona de Peligro"    # 13 (NUEVO)
+    "📡 Estaciones", "📊 Índices", "🏠 Predios", "🌊 Cuencas", 
+    "🏙️ Municipios", "🌲 Coberturas", "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Lluvia"
 ])
 
-# ==============================================================================
-# TAB 0: ESTACIONES (CORREGIDO - GUARDA METADATOS)
-# ==============================================================================
-with tabs[0]:
-    st.header("📍 Catálogo de Estaciones")
-    t1, t2 = st.tabs(["👁️ Ver Datos", "🚀 Cargar (Reparador)"])
+
+# --- PESTAÑA DE CONFIGURACIÓN INICIAL (BLOQUE CORREGIDO) ---
+# Pega esto justo después de la línea: tabs = st.tabs([...])
+
+st.markdown("### 🛠️ Zona de Peligro: Reinicio del Sistema")
+with st.expander("Mostrar Controles de Reinicio de Base de Datos", expanded=True):
+    st.warning("⚠️ ESTA ACCIÓN ES IRREVERSIBLE. BORRARÁ TODOS LOS DATOS.")
     
-    with t1:
-        if st.button("🔄 Refrescar Tabla", key="ref_est"):
-            st.rerun()
-        visor_tabla_simple("estaciones")
+    # HE CAMBIADO EL NOMBRE DEL BOTÓN PARA FORZAR LA ACTUALIZACIÓN
+    if st.button("🔥 EJECUTAR REINICIO TOTAL (CASCADE) 🔥", key="btn_nuke_v3"):
+        try:
+            with engine.begin() as conn:
+                st.write("⏳ Iniciando secuencia de borrado...")
+                
+                # 1. BORRADO EN ORDEN INVERSO (Hijos primero, luego Padres)
+                # Usamos CASCADE en todo por seguridad
+                conn.execute(text("DROP TABLE IF EXISTS precipitacion CASCADE;"))
+                conn.execute(text("DROP TABLE IF EXISTS indices_climaticos CASCADE;"))
+                conn.execute(text("DROP TABLE IF EXISTS estaciones CASCADE;"))
+                
+                st.write("✅ Tablas eliminadas. Creando nueva estructura...")
+                
+                # 2. CREACIÓN DE TABLAS
+                # Estaciones (Padre)
+                conn.execute(text("""
+                    CREATE TABLE estaciones (
+                        id_estacion TEXT PRIMARY KEY,
+                        nombre TEXT,
+                        longitud FLOAT,
+                        latitud FLOAT,
+                        altitud FLOAT,
+                        municipio TEXT,
+                        departamento TEXT,
+                        subregion TEXT,
+                        corriente TEXT
+                    );
+                """))
+                
+                # Índices
+                conn.execute(text("""
+                    CREATE TABLE indices_climaticos (
+                        fecha DATE PRIMARY KEY,
+                        enso_año TEXT,
+                        enso_mes TEXT,
+                        anomalia_oni FLOAT,
+                        temp_sst FLOAT,
+                        temp_media FLOAT,
+                        soi FLOAT,
+                        iod FLOAT,
+                        fase_enso TEXT
+                    );
+                """))
+                
+                # Precipitacion (Hija)
+                conn.execute(text("""
+                    CREATE TABLE precipitacion (
+                        fecha DATE,
+                        id_estacion TEXT,
+                        valor FLOAT,
+                        origen TEXT,
+                        PRIMARY KEY (fecha, id_estacion),
+                        CONSTRAINT fk_estacion FOREIGN KEY (id_estacion) REFERENCES estaciones(id_estacion)
+                    );
+                    CREATE INDEX idx_precip_fecha ON precipitacion(fecha);
+                    CREATE INDEX idx_precip_estacion ON precipitacion(id_estacion);
+                """))
+                
+            st.success("✅ ¡BASE DE DATOS REINICIADA CORRECTAMENTE!")
+            st.balloons()
+            time.sleep(2)
+            st.rerun() # Recarga la página automáticamente
             
-    with t2:
-        st.info("Sube `mapaCVENSO.csv`. El sistema guardará: Municipio, Departamento, Subregión, etc.")
-        up = st.file_uploader("CSV Estaciones", type=["csv"], key="up_est_final")
+        except Exception as e:
+            st.error(f"❌ Error crítico: {e}")
+
+
+# ==============================================================================
+# TAB 0: GESTIÓN DE ESTACIONES (CON DESBLOQUEO DE TRANSACCIÓN)
+# ==============================================================================
+with tabs[0]: 
+    st.header("📍 Gestión de Estaciones")
+    
+    subtab_ver, subtab_carga = st.tabs(["👁️ Editor de Catálogo", "📂 Carga Masiva (CSV)"])
+    
+    # --- SUB-PESTAÑA 1: EDITOR ---
+    with subtab_ver:
+        st.info("Visualiza y edita las estaciones registradas.")
         
-        if up:
+        col_ref, col_msg = st.columns([1, 3])
+        if col_ref.button("🔄 Refrescar Tabla"):
+            st.cache_data.clear()
+            st.rerun()
+            
+        try:
+            # Consulta segura
+            df_est_db = pd.read_sql("SELECT * FROM estaciones ORDER BY id_estacion", engine)
+            st.dataframe(df_est_db, use_container_width=True)
+        except:
+            st.warning("No se pudo cargar la tabla de estaciones.")
+
+    # --- SUB-PESTAÑA 2: CARGA MASIVA (BLINDADA) ---
+    with subtab_carga:
+        st.markdown("### Cargar Archivo de Estaciones")
+        st.info("Sube `mapaCVENSO.csv`. El sistema limpiará las coordenadas automáticamente.")
+        up_est = st.file_uploader("Cargar CSV Estaciones", type=["csv"], key="up_est_csv_fix_v3")
+        
+        if up_est and st.button("🚀 Procesar Carga Masiva"):
             try:
-                # 1. Lectura
-                try: df_raw = pd.read_csv(up, sep=';')
-                except: up.seek(0); df_raw = pd.read_csv(up, sep=',')
+                # 1. Lectura Robusta (Detecta separador automáticamente)
+                try:
+                    df_new = pd.read_csv(up_est, sep=';', decimal=',')
+                    if len(df_new.columns) < 2: raise ValueError
+                except:
+                    up_est.seek(0)
+                    df_new = pd.read_csv(up_est, sep=',', decimal='.')
                 
-                # 2. Limpieza y Mapeo Extendido
-                df_raw.columns = df_raw.columns.str.lower().str.strip()
-                
-                # Mapeo de columnas esenciales y metadatos
-                mapa = {
+                # 2. Limpieza de Columnas
+                df_new.columns = df_new.columns.str.lower().str.strip()
+                rename_map = {
                     'id_estacio': 'id_estacion', 'codigo': 'id_estacion',
                     'nom_est': 'nombre', 'station': 'nombre',
                     'longitud_geo': 'longitud', 'lon': 'longitud',
                     'latitud_geo': 'latitud', 'lat': 'latitud',
-                    'alt_est': 'altitud', 'elev': 'altitud',
-                    # Metadatos
-                    'mun_nomb': 'municipio', 'municipio': 'municipio',
-                    'depto': 'departamento', 'departamento': 'departamento',
-                    'subregion': 'subregion', 'corriente': 'corriente'
+                    'alt_est': 'altitud', 'elev': 'altitud'
                 }
-                df_clean = df_raw.rename(columns={k: v for k, v in mapa.items() if k in df_raw.columns})
+                df_new = df_new.rename(columns={k: v for k, v in rename_map.items() if k in df_new.columns})
                 
-                # 3. Validación de Geometría
+                # 3. Validación y Conversión Numérica
                 req = ['id_estacion', 'latitud', 'longitud']
-                if not all(c in df_clean.columns for c in req):
-                    st.error(f"Faltan columnas obligatorias: {req}")
+                if not all(c in df_new.columns for c in req):
+                    st.error(f"Faltan columnas requeridas: {req}")
                 else:
-                    # Limpieza numérica
-                    df_clean['id_estacion'] = df_clean['id_estacion'].astype(str).str.strip()
+                    # Forzar conversión a números (limpia errores de tipeo)
                     for c in ['latitud', 'longitud', 'altitud']:
-                        if c in df_clean.columns:
-                            df_clean[c] = pd.to_numeric(df_clean[c].astype(str).str.replace(',', '.'), errors='coerce')
+                        if c in df_new.columns:
+                            df_new[c] = pd.to_numeric(
+                                df_new[c].astype(str).str.replace(',', '.'), errors='coerce'
+                            )
                     
-                    df_clean = df_clean.dropna(subset=['latitud', 'longitud'])
-                    
-                    # Rellenar columnas faltantes con texto vacío para que SQL no falle
-                    for col in ['municipio', 'departamento', 'subregion', 'corriente']:
-                        if col not in df_clean.columns:
-                            df_clean[col] = None
+                    # 4. INSERCIÓN BLINDADA (El secreto está aquí)
+                    with engine.connect() as conn:
+                        # PASO CRÍTICO: Rollback preventivo para desbloquear la BD
+                        try: conn.rollback() 
+                        except: pass
+                        
+                        # Iniciar transacción limpia
+                        trans = conn.begin()
+                        try:
+                            # Subir a tabla temporal
+                            df_new.to_sql('temp_est_load', conn, if_exists='replace', index=False)
+                            
+                            # Ejecutar UPSERT (Actualizar si existe, Insertar si no)
+                            conn.execute(text("""
+                                INSERT INTO estaciones (id_estacion, nombre, latitud, longitud, altitud)
+                                SELECT id_estacion, nombre, latitud, longitud, altitud FROM temp_est_load
+                                ON CONFLICT (id_estacion) DO UPDATE SET
+                                    nombre = EXCLUDED.nombre,
+                                    latitud = EXCLUDED.latitud,
+                                    longitud = EXCLUDED.longitud,
+                                    altitud = EXCLUDED.altitud;
+                            """))
+                            
+                            # Actualizar Geometrías para los mapas (PostGIS)
+                            try:
+                                conn.execute(text("UPDATE estaciones SET geom = ST_SetSRID(ST_MakePoint(longitud, latitud), 4326) WHERE longitud IS NOT NULL"))
+                            except: pass
+                            
+                            # Limpieza
+                            conn.execute(text("DROP TABLE IF EXISTS temp_est_load"))
+                            
+                            # Confirmar transacción
+                            trans.commit()
+                            
+                            st.success(f"✅ ¡Éxito! {len(df_new)} estaciones procesadas y guardadas.")
+                            st.balloons()
+                            
+                        except Exception as sql_err:
+                            trans.rollback() # Si falla algo, deshacemos para no bloquear
+                            st.error(f"Error SQL durante la carga: {sql_err}")
+                            
+            except Exception as ex:
+                st.error(f"Error procesando el archivo: {ex}")
 
-                    st.success(f"✅ Datos válidos: {len(df_clean)} estaciones.")
-                    st.dataframe(df_clean.head(), use_container_width=True)
-                    
-                    if st.button("💾 CONFIRMAR CARGA COMPLETA", type="primary", key="btn_conf_est_full"):
-                        with st.status("Guardando con metadatos...", expanded=True):
-                            with engine.connect() as conn:
-                                trans = conn.begin()
-                                try:
-                                    # A. Cargar a temporal
-                                    # Filtramos solo las columnas que nos interesan para no subir basura
-                                    cols_to_db = ['id_estacion', 'nombre', 'latitud', 'longitud', 'altitud', 'municipio', 'departamento', 'subregion', 'corriente']
-                                    # Aseguramos que existan en el df (aunque sean None)
-                                    df_final = df_clean[[c for c in cols_to_db if c in df_clean.columns]]
-                                    
-                                    df_final.to_sql('temp_est', conn, if_exists='replace', index=False)
-                                    
-                                    # B. Insertar/Actualizar con TODOS los campos
-                                    conn.execute(text("""
-                                        INSERT INTO estaciones (id_estacion, nombre, latitud, longitud, altitud, municipio, departamento, subregion, corriente)
-                                        SELECT id_estacion, nombre, latitud, longitud, altitud, municipio, departamento, subregion, corriente 
-                                        FROM temp_est
-                                        ON CONFLICT (id_estacion) DO UPDATE SET
-                                            nombre = EXCLUDED.nombre, 
-                                            latitud = EXCLUDED.latitud,
-                                            longitud = EXCLUDED.longitud, 
-                                            altitud = EXCLUDED.altitud,
-                                            municipio = EXCLUDED.municipio,
-                                            departamento = EXCLUDED.departamento,
-                                            subregion = EXCLUDED.subregion,
-                                            corriente = EXCLUDED.corriente;
-                                    """))
-                                    
-                                    # C. Geometría
-                                    conn.execute(text("ALTER TABLE estaciones ADD COLUMN IF NOT EXISTS geom GEOMETRY(POINT, 4326);"))
-                                    conn.execute(text("UPDATE estaciones SET geom = ST_SetSRID(ST_MakePoint(longitud, latitud), 4326) WHERE longitud IS NOT NULL"))
-                                    
-                                    conn.execute(text("DROP TABLE IF EXISTS temp_est"))
-                                    trans.commit()
-                                    st.success("✅ Estaciones guardadas con todos sus detalles.")
-                                    st.balloons()
-                                    time.sleep(2)
-                                    st.rerun()
-                                except Exception as e:
-                                    trans.rollback()
-                                    st.error(f"Error SQL: {e}")
-            except Exception as e: st.error(f"Error archivo: {e}")
 
 # ==============================================================================
-# TAB 1: LLUVIA (RECUPERADO EL VISOR DE DATOS)
+# TAB 1: GESTIÓN DE LLUVIA (VERSIÓN DIAGNÓSTICO & CORRECCIÓN)
 # ==============================================================================
 with tabs[1]:
-    st.header("🌧️ Gestión de Lluvia")
-    t1, t2 = st.tabs(["🔍 Explorador de Datos", "🚀 Carga Masiva"])
-    
-    with t1:
-        st.info("Consulta los datos cargados por Estación y Año.")
-        try:
-            # Selector de Estación
-            estaciones = pd.read_sql("SELECT id_estacion, nombre FROM estaciones ORDER BY id_estacion", engine)
-            if not estaciones.empty:
-                opciones = estaciones.apply(lambda x: f"{x['id_estacion']} - {x['nombre']}", axis=1)
-                sel_est_full = st.selectbox("Seleccionar Estación:", opciones)
-                id_sel = sel_est_full.split(" - ")[0]
-                
-                # Selector de Año (basado en datos reales)
-                anios = pd.read_sql(f"SELECT DISTINCT EXTRACT(YEAR FROM fecha)::int as anio FROM precipitacion WHERE id_estacion='{id_sel}' ORDER BY anio DESC", engine)
-                
-                if not anios.empty:
-                    anio_sel = st.selectbox("Seleccionar Año:", anios['anio'])
-                    
-                    # Mostrar Datos
-                    q_data = f"SELECT fecha, valor FROM precipitacion WHERE id_estacion='{id_sel}' AND EXTRACT(YEAR FROM fecha)={anio_sel} ORDER BY fecha"
-                    df_data = pd.read_sql(q_data, engine)
-                    
-                    c1, c2 = st.columns([1, 2])
-                    with c1:
-                        st.dataframe(df_data, use_container_width=True, height=400)
-                    with c2:
-                        if not df_data.empty:
-                            st.line_chart(df_data.set_index('fecha'))
-                else:
-                    st.warning("Esta estación no tiene datos de lluvia cargados.")
-            else:
-                st.warning("Carga primero las estaciones.")
-        except Exception as e: st.error(f"Error en explorador: {e}")
+    st.header("🌧️ Gestión de Lluvia e Índices")
 
-    with t2:
-        st.info("Carga la matriz `DatosPptnmes_ENSO.csv`.")
-        up_rain = st.file_uploader("Matriz de Lluvia", type=["csv"], key="up_rain_final")
+    # --- DIAGNÓSTICO RÁPIDO DE LA BASE DE DATOS ---
+    try:
+        count_rain = pd.read_sql("SELECT COUNT(*) as conteo FROM precipitacion", engine).iloc[0]['conteo']
+        count_est = pd.read_sql("SELECT COUNT(*) as conteo FROM estaciones", engine).iloc[0]['conteo']
         
-        if up_rain and st.button("🚀 Procesar Lluvia", key="btn_rain_proc"):
-            status = st.status("Procesando...", expanded=True)
-            try:
-                df = pd.read_csv(up_rain, sep=';', decimal=',')
-                if 'Fecha' in df.columns: df = df.rename(columns={'Fecha': 'fecha'})
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Estaciones en Catálogo", f"{count_est:,.0f}")
+        c2.metric("Registros de Lluvia Total", f"{count_rain:,.0f}")
+        
+        if count_rain == 0:
+            st.error("🚨 LA TABLA DE LLUVIA ESTÁ VACÍA. Debes cargar el archivo 'DatosPptnmes_ENSO.csv' en la pestaña 'Carga Masiva' de aquí abajo.")
+        else:
+            st.success("✅ Hay datos de lluvia cargados. Si no ves tu estación, verifica el Código.")
+            
+    except Exception as e:
+        st.error(f"Error conectando a BD: {e}")
+
+    # --- PESTAÑAS ---
+    t_explorar, t_carga = st.tabs(["🔍 Explorar y Editar Datos", "📂 Carga Masiva (Matriz)"])
+
+    # --- SUB-PESTAÑA 1: EXPLORADOR ---
+    with t_explorar:
+        st.info("Consulta y edición de datos históricos.")
+        try:
+            # 1. Selector de Estación (Traemos solo las que tienen datos si es posible, o todas)
+            # Usamos TRIM para limpiar espacios en blanco que suelen causar el error "No hay registros"
+            estaciones_list = pd.read_sql("SELECT id_estacion, nombre FROM estaciones ORDER BY nombre", engine)
+            
+            if estaciones_list.empty:
+                st.warning("⚠️ Primero carga el catálogo de estaciones.")
+            else:
+                # Crear opciones limpias
+                opciones = estaciones_list.apply(lambda x: f"{x['id_estacion'].strip()} - {x['nombre']}", axis=1)
+                sel_est = st.selectbox("Selecciona Estación:", opciones)
                 
-                df_long = df.melt(id_vars=['fecha'], var_name='id_estacion', value_name='valor')
-                df_long['fecha'] = parsear_fechas_espanol(df_long['fecha'])
-                df_long['valor'] = pd.to_numeric(df_long['valor'], errors='coerce')
-                df_long = df_long.dropna(subset=['fecha', 'valor'])
-                df_long['id_estacion'] = df_long['id_estacion'].astype(str).str.strip()
-                
-                status.write(f"📦 Cargando {len(df_long)} registros...")
-                
-                chunk = 10000
-                with engine.connect() as conn:
-                    # Crear estaciones faltantes si las hay
-                    ids = pd.DataFrame({'id_estacion': df_long['id_estacion'].unique()})
-                    ids['nombre'] = 'Estación ' + ids['id_estacion']
-                    ids.to_sql('temp_ids', conn, if_exists='replace', index=False)
-                    conn.execute(text("INSERT INTO estaciones (id_estacion, nombre) SELECT id_estacion, nombre FROM temp_ids ON CONFLICT (id_estacion) DO NOTHING"))
-                    conn.commit()
+                if sel_est:
+                    # Extraer código limpio
+                    cod_est = sel_est.split(" - ")[0].strip()
                     
-                    # ✅ CÓDIGO NUEVO: CARGA INTELIGENTE (UPSERT)
-                    
-                    # 1. Cargar todo a una tabla TEMPORAL (staging)
-                    # Esto es rápido y no genera conflictos
-                    status.write(f"⏳ Subiendo {len(df_long)} datos a tabla temporal...")
-                    df_long.to_sql('temp_precipitacion', conn, if_exists='replace', index=False)
-                    
-                    # 2. Ejecutar el "Merge" (Fusión) usando SQL puro
-                    # La magia está en "ON CONFLICT ... DO UPDATE"
-                    status.write("🔄 Fusionando datos (Insertando nuevos / Actualizando existentes)...")
-                    
-                    query_upsert = text("""
-                        INSERT INTO precipitacion (fecha, id_estacion, valor)
-                        SELECT fecha, id_estacion, valor
-                        FROM temp_precipitacion
-                        ON CONFLICT (fecha, id_estacion) 
-                        DO UPDATE SET valor = EXCLUDED.valor;
+                    # 2. Verificar años disponibles para ESA estación específica
+                    q_years = text(f"""
+                        SELECT DISTINCT EXTRACT(YEAR FROM fecha)::int as anio 
+                        FROM precipitacion 
+                        WHERE TRIM(id_estacion) = '{cod_est}' 
+                        ORDER BY anio DESC
                     """)
-                    conn.execute(query_upsert)
+                    df_years = pd.read_sql(q_years, engine)
                     
-                    # 3. Limpieza: Borrar la tabla temporal
-                    conn.execute(text("DROP TABLE IF EXISTS temp_precipitacion"))
-                    conn.commit() # ¡Importante confirmar los cambios!
+                    if df_years.empty:
+                        st.warning(f"⚠️ La estación {cod_est} existe en el catálogo pero NO tiene datos de lluvia asociados.")
+                        st.info("Prueba cargando el archivo de lluvias nuevamente.")
+                        # Mock para evitar error visual
+                        anios_disp = [2023]
+                    else:
+                        st.success(f"📅 Años con datos: {len(df_years)}")
+                        anios_disp = df_years['anio'].tolist()
+
+                    # 3. Selector de Año
+                    anio_sel = st.selectbox("Selecciona Año:", anios_disp)
+                    
+                    # 4. Consulta de Datos (Blindada con TRIM)
+                    query_data = text(f"""
+                        SELECT fecha, valor 
+                        FROM precipitacion 
+                        WHERE TRIM(id_estacion) = '{cod_est}' 
+                        AND EXTRACT(YEAR FROM fecha) = {anio_sel}
+                        ORDER BY fecha ASC
+                    """)
+                    df_lluvia_est = pd.read_sql(query_data, engine)
+                    
+                    col_edit, col_chart = st.columns([1, 2])
+                    
+                    with col_edit:
+                        st.write(f"**Datos:** {cod_est} - {anio_sel}")
+                        if df_lluvia_est.empty:
+                            st.write("Sin registros.")
+                        
+                        # Edición
+                        df_edited = st.data_editor(
+                            df_lluvia_est,
+                            num_rows="dynamic",
+                            key=f"ed_{cod_est}_{anio_sel}",
+                            column_config={
+                                "fecha": st.column_config.DateColumn("Fecha", format="YYYY-MM-DD"),
+                                "valor": st.column_config.NumberColumn("Valor (mm)")
+                            }
+                        )
+                        
+                        if st.button("💾 Guardar"):
+                            # Lógica de guardado simplificada (Insert/Update)
+                            if not df_edited.empty:
+                                with engine.begin() as conn:
+                                    conn.execute(text(f"DELETE FROM precipitacion WHERE id_estacion='{cod_est}' AND EXTRACT(YEAR FROM fecha)={anio_sel}"))
+                                    df_edited['id_estacion'] = cod_est
+                                    df_edited.to_sql('precipitacion', engine, if_exists='append', index=False)
+                                st.success("Guardado.")
+                                time.sleep(0.5)
+                                st.rerun()
+
+                    with col_chart:
+                        if not df_edited.empty:
+                            st.line_chart(df_edited.set_index('fecha')['valor'])
+
+        except Exception as e:
+            st.error(f"Error en explorador: {e}")
+
+    # --- SUB-PESTAÑA 2: CARGA MASIVA ---
+    with t_carga:
+        st.write("Sube `DatosPptnmes_ENSO.csv` (Matriz de Lluvia).")
+        up_rain = st.file_uploader("Cargar Matriz de Lluvia", type=["csv"], key="up_rain_reloaded")
+        
+        if up_rain:
+            if st.button("🚀 Procesar y Cargar Lluvia"):
+                status = st.status("Procesando...", expanded=True)
+                try:
+                    df = pd.read_csv(up_rain, sep=';', decimal=',')
+                    
+                    # Limpieza básica
+                    if 'fecha' not in df.columns and 'Fecha' in df.columns:
+                        df = df.rename(columns={'Fecha': 'fecha'})
+                        
+                    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+                    df = df.dropna(subset=['fecha'])
+                    
+                    # Melt (Pivot)
+                    est_cols = [c for c in df.columns if c != 'fecha']
+                    df_long = df.melt(id_vars=['fecha'], value_vars=est_cols, var_name='id_estacion', value_name='valor')
+                    
+                    # Limpieza de valores
+                    df_long['valor'] = pd.to_numeric(df_long['valor'], errors='coerce')
+                    df_long = df_long.dropna(subset=['valor'])
+                    # Limpieza de IDs (CRÍTICO: quitar espacios)
+                    df_long['id_estacion'] = df_long['id_estacion'].astype(str).str.strip()
+                    
+                    status.write(f"Cargando {len(df_long):,.0f} datos...")
+                    
+                    # Carga por lotes (Chunking) para no saturar memoria
+                    chunk_size = 50000
+                    total_chunks = (len(df_long) // chunk_size) + 1
+                    bar = status.progress(0)
+                    
+                    for i, start in enumerate(range(0, len(df_long), chunk_size)):
+                        batch = df_long.iloc[start : start + chunk_size]
+                        
+                        # Usamos tabla temporal para carga rápida
+                        batch.to_sql('temp_rain', engine, if_exists='replace', index=False)
+                        
+                        with engine.begin() as conn:
+                            # 1. Crear estaciones faltantes (Salvavidas FK)
+                            conn.execute(text("""
+                                INSERT INTO estaciones (id_estacion, nombre)
+                                SELECT DISTINCT id_estacion, 'Auto-Generada ' || id_estacion
+                                FROM temp_rain
+                                WHERE id_estacion NOT IN (SELECT id_estacion FROM estaciones)
+                            """))
+                            
+                            # 2. Insertar Lluvia
+                            conn.execute(text("""
+                                INSERT INTO precipitacion (fecha, id_estacion, valor)
+                                SELECT fecha, id_estacion, valor FROM temp_rain
+                                ON CONFLICT (fecha, id_estacion) DO UPDATE SET valor = EXCLUDED.valor
+                            """))
+                        
+                        bar.progress((i+1)/total_chunks)
+                    
+                    status.update(label="✅ ¡Carga Completa!", state="complete")
+                    st.balloons()
+                    time.sleep(2)
+                    st.rerun()
+                    
+                except Exception as ex:
+                    status.update(label="❌ Error", state="error")
+                    st.error(f"Detalle: {ex}")
+
+
+# ==============================================================================
+# TAB 2: ÍNDICES (CORREGIDO Y BLINDADO)
+# ==============================================================================
+with tabs[2]:
+    st.header("📊 Índices Climáticos (ENSO/ONI/SOI)")
+    
+    # Definición de pestañas internas
+    sb1, sb2 = st.tabs(["👁️ Ver Tabla Completa", "📂 Cargar/Actualizar CSV"])
+    
+    # --- SUB-PESTAÑA 1: VISUALIZACIÓN ---
+    with sb1: 
+        st.markdown("### 📋 Histórico Cargado")
+        try:
+            # Lectura cruda para evitar errores de nombres de columna
+            df_indices = pd.read_sql("SELECT * FROM indices_climaticos", engine)
+            
+            if df_indices.empty:
+                st.warning("⚠️ La tabla existe pero está vacía.")
+            else:
+                st.success(f"✅ Datos encontrados: {len(df_indices)} registros.")
                 
-                status.update(label="✅ Carga Completa", state="complete")
-                st.balloons()
+                # Limpieza de nombres (Eliminar BOM y espacios)
+                df_indices.columns = [c.replace('ï»¿', '').strip() for c in df_indices.columns]
+                
+                # Ordenamiento seguro en Python
+                col_fecha = next((c for c in df_indices.columns if 'fecha' in c.lower() or 'date' in c.lower()), None)
+                if col_fecha:
+                    try:
+                        df_indices[col_fecha] = pd.to_datetime(df_indices[col_fecha])
+                        df_indices = df_indices.sort_values(col_fecha, ascending=False)
+                    except: pass
+                
+                st.dataframe(df_indices, use_container_width=True)
+                
+        except Exception as e:
+            st.info("ℹ️ No hay datos de índices. Usa la pestaña de carga.")
+
+    # --- SUB-PESTAÑA 2: CARGA ---
+    with sb2:
+        st.markdown("### Cargar Archivo de Índices")
+        st.info("Sube el archivo `Indices_Globales.csv`.")
+        up_i = st.file_uploader("Seleccionar CSV", type=["csv"], key="up_ind_final_v2")
+        
+        if up_i and st.button("Procesar y Guardar", key="btn_save_ind_v2"):
+            try:
+                # Lectura robusta (utf-8-sig elimina BOM)
+                df = pd.read_csv(up_i, sep=None, engine='python', encoding='utf-8-sig')
+                
+                # Normalizar columnas
+                df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+                
+                # Guardar
+                df.to_sql('indices_climaticos', engine, if_exists='replace', index=False)
+                st.success(f"✅ Guardado correcto: {len(df)} registros.")
+                st.dataframe(df.head())
+                st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
 
 # ==============================================================================
-# TAB 2: ÍNDICES (CON VISOR)
+# TAB 3: PREDIOS
 # ==============================================================================
-with tabs[2]:
-    st.header("📊 Índices Climáticos")
-    t1, t2 = st.tabs(["👁️ Ver Datos", "🚀 Cargar CSV"])
-    
-    with t1:
-        if st.button("🔄 Refrescar", key="ref_ind"): st.rerun()
-        visor_tabla_simple("indices_climaticos")
+with tabs[3]:
+    st.header("🏠 Gestión de Predios")
+    st.info("Aquí administras la capa base de predios (Catastro).")
+
+    sb1, sb2 = st.tabs(["👁️ Tabla Completa", "📂 Carga GeoJSON"])
+
+    # --- SUB-PESTAÑA 1: VISUALIZAR ---
+    with sb1:
+        try:
+            # 1. Leemos la tabla cruda sin filtros
+            query_check = "SELECT * FROM predios LIMIT 5"
+            df_preview = pd.read_sql(query_check, engine)
+            
+            # Si no da error, traemos todo (excluyendo geometría pesada)
+            cols = [c for c in df_preview.columns if c != 'geometry']
+            cols_sql = ", ".join([f'"{c}"' for c in cols]) # Protegemos nombres
+            
+            df_predios = pd.read_sql(f"SELECT {cols_sql} FROM predios", engine)
+            
+            st.success(f"✅ Se encontraron {len(df_predios)} predios en la base de datos.")
+            st.dataframe(df_predios, use_container_width=True)
+            
+        except Exception as e:
+            st.warning("No se pudo leer la tabla 'predios'. Posiblemente aún no se ha cargado correctamente.")
+            st.error(f"Detalle técnico: {e}")
+
+    # --- SUB-PESTAÑA 2: CARGAR (AQUÍ ESTÁ LA MAGIA) ---
+    with sb2:
+        st.write("Sube el archivo `PrediosEjecutados.geojson`.")
+        up_file = st.file_uploader("GeoJSON Predios", type=["geojson", "json"], key="up_pred")
         
-    with t2:
-        up_ind = st.file_uploader("`Indices_Globales.csv`", type=["csv"], key="up_ind_final")
-        if up_ind and st.button("Cargar Índices", key="btn_ind"):
+        if up_file:
+            if st.button("🚀 Reemplazar Base de Datos de Predios"):
+                with st.spinner("Procesando geometría y normalizando datos..."):
+                    try:
+                        # 1. Leer el archivo
+                        import geopandas as gpd
+                        gdf = gpd.read_file(up_file)
+                        
+                        # 2. NORMALIZACIÓN (La Clave del Éxito)
+                        # Convertimos todos los nombres de columnas a minúsculas para evitar conflictos SQL
+                        gdf.columns = map(str.lower, gdf.columns)
+                        
+                        # 3. Verificar y corregir proyección
+                        if gdf.crs is None:
+                            gdf.set_crs(epsg=4326, inplace=True)
+                        else:
+                            gdf = gdf.to_crs(epsg=4326)
+                            
+                        # 4. Limpieza de geometrías
+                        # Convertimos MultiPolygon a Polygon si es necesario o arreglamos geometrías inválidas
+                        gdf['geometry'] = gdf.geometry.buffer(0) 
+                        
+                        # 5. SUBIDA A SUPABASE (PostGIS)
+                        # if_exists='replace' BORRA lo anterior y crea la tabla nueva limpia
+                        gdf.to_postgis("predios", engine, if_exists='replace', index=False)
+                        
+                        st.success("✅ ¡Carga Exitosa! La tabla 'predios' ha sido creada correctamente.")
+                        st.balloons()
+                        
+                        # Mostrar resumen de lo que se subió
+                        st.write("Resumen de columnas creadas (Minúsculas):")
+                        st.write(list(gdf.columns))
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error crítico subiendo predios: {e}")
+
+
+# ==============================================================================
+# TAB 4: CUENCAS (CARGADOR PRESERVANDO NOMBRES ORIGINALES EN SELECTOR)
+# ==============================================================================
+with tabs[4]:
+    st.header("🌊 Gestión de Cuencas")
+    sb1, sb2 = st.tabs(["👁️ Tabla Maestra", "📂 Carga GeoJSON (Full Data)"])
+    
+    with sb1:
+        try:
+            # Consultamos columnas para verificar qué hay en BD
+            cols_query = "SELECT column_name FROM information_schema.columns WHERE table_name = 'cuencas' AND column_name != 'geometry'"
+            cols_bd = pd.read_sql(cols_query, engine)['column_name'].tolist()
+            
+            if cols_bd:
+                cols_str = ", ".join([f'"{c}"' for c in cols_bd])
+                df_c = pd.read_sql(f"SELECT {cols_str} FROM cuencas LIMIT 500", engine)
+                st.markdown(f"**Muestra (500 registros):** | **Columnas BD:** {cols_bd}")
+                st.dataframe(df_c, use_container_width=True)
+            else:
+                st.info("La tabla 'cuencas' existe pero no tiene columnas legibles.")
+        except: 
+            st.warning("No hay datos cargados o la tabla no existe.")
+
+    with sb2:
+        st.info("Sube 'SubcuencasAinfluencia.geojson'. Verás los nombres de columna ORIGINALES (ej: N-NSS3).")
+        up_c = st.file_uploader("GeoJSON Cuencas", type=["geojson", "json"], key="up_cuen_v4_orig")
+        
+        if up_c:
             try:
-                df = pd.read_csv(up_ind, sep=None, engine='python', encoding='utf-8-sig')
-                df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
-                df.to_sql('indices_climaticos', engine, if_exists='replace', index=False)
-                st.success("✅ Índices cargados.")
-            except Exception as e: st.error(f"Error: {e}")
+                # 1. Leer archivo SIN TOCAR NOMBRES DE COLUMNAS
+                gdf_preview = gpd.read_file(up_c)
+                
+                # Lista exacta del archivo (Aquí aparecerá 'N-NSS3' con guion)
+                cols_originales = list(gdf_preview.columns)
+                
+                st.success(f"✅ Archivo leído. {len(gdf_preview)} registros.")
+                st.write(f"Columnas detectadas: {cols_originales}")
+                
+                st.markdown("##### 🛠️ Mapeo de Identificadores")
+                c1, c2 = st.columns(2)
+                
+                # Buscamos 'N-NSS3' tal cual, o 'subc_lbl'
+                # La búsqueda es insensible a mayúsculas para ayudar, pero el selector muestra el original
+                idx_nom = next((i for i, c in enumerate(cols_originales) if c.lower() in ['n-nss3', 'n_nss3', 'subc_lbl', 'nombre']), 0)
+                idx_id = next((i for i, c in enumerate(cols_originales) if c.lower() in ['cod', 'objectid', 'id']), 0)
+                
+                # SELECTORES (Muestran nombre original)
+                col_nombre_origen = c1.selectbox("📌 Columna de NOMBRE (Busca N-NSS3):", cols_originales, index=idx_nom, key="sel_cn_nom_orig")
+                col_id_origen = c2.selectbox("🔑 Columna de ID (Ej: COD):", cols_originales, index=idx_id, key="sel_cn_id_orig")
+                
+                if st.button("🚀 Guardar en Base de Datos", key="btn_save_cuen_orig"):
+                    status = st.status("Procesando...", expanded=True)
+                    
+                    # 2. Crear las columnas estándar para la App (nombre_cuenca, id_cuenca)
+                    # Tomamos los datos de las columnas que TÚ elegiste
+                    gdf_preview['nombre_cuenca'] = gdf_preview[col_nombre_origen].astype(str)
+                    gdf_preview['id_cuenca'] = gdf_preview[col_id_origen].astype(str)
+                    
+                    # 3. AHORA SÍ: Limpieza técnica para SQL (solo al momento de guardar)
+                    # Convertimos todo a minúsculas y guiones bajos para que PostGIS no falle
+                    # 'N-NSS3' se guardará como 'n_nss3' en la BD, pero sus datos ya están copiados en 'nombre_cuenca'
+                    gdf_preview.columns = [c.strip().lower().replace("-", "_").replace(" ", "_") for c in gdf_preview.columns]
+                    
+                    # 4. Reproyección
+                    if gdf_preview.crs and gdf_preview.crs.to_string() != "EPSG:4326":
+                        status.write("🔄 Reproyectando a WGS84...")
+                        gdf_preview = gdf_preview.to_crs("EPSG:4326")
+                    
+                    # 5. Guardar
+                    status.write("📤 Subiendo a Supabase...")
+                    gdf_preview.to_postgis("cuencas", engine, if_exists='replace', index=False)
+                    
+                    status.update(label="¡Carga Exitosa!", state="complete")
+                    st.success(f"✅ Tabla actualizada. Se mapeó **'{col_nombre_origen}'** → **'nombre_cuenca'**.")
+                    st.balloons()
+                    time.sleep(2)
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"Error procesando archivo: {e}")
+
 
 # ==============================================================================
-# TABS GIS (ESTANDARIZADOS CON VISOR)
+# TAB 5: MUNICIPIOS
 # ==============================================================================
-def render_gis_tab(title, table_name, file_key, btn_key):
-    st.header(title)
-    t1, t2 = st.tabs(["👁️ Ver Tabla", "📂 Cargar Archivo"])
-    with t1:
-        visor_tabla_simple(table_name)
-    with t2:
-        f = st.file_uploader("GeoJSON/ZIP", key=file_key)
-        if st.button("Cargar Capa", key=btn_key): cargar_capa_gis_robusta(f, table_name, engine)
+with tabs[5]:
+    st.header("🏙️ Municipios")
+    sb1, sb2 = st.tabs(["👁️ Ver y Editar Tabla", "📂 Cargar GeoJSON"])
+    
+    with sb1:
+        try:
+            df_m = pd.read_sql("SELECT * FROM municipios ORDER BY nombre_municipio", engine)
+            st.info(f"Gestionando {len(df_m)} municipios.")
+            
+            # Tabla editable
+            df_m_edit = st.data_editor(
+                df_m, 
+                key="editor_municipios", 
+                use_container_width=True,
+                height=500
+            )
+            
+            if st.button("💾 Guardar Cambios Municipios", key="btn_save_mun"):
+                df_m_edit.to_sql('municipios', engine, if_exists='replace', index=False)
+                st.success("✅ Municipios actualizados.")
+        except Exception as e:
+            st.warning("No hay municipios cargados.")
 
-with tabs[3]: render_gis_tab("🏠 Predios", "predios", "up_pred", "btn_pred")
-with tabs[4]: render_gis_tab("🌊 Cuencas", "cuencas", "up_cuen", "btn_cuen")
-with tabs[5]: render_gis_tab("🏙️ Municipios", "municipios", "up_mun", "btn_mun")
+    with sb2:
+        st.info("Carga el archivo de Municipios. Selecciona la columna correcta para evitar el error 'ANTIOQUIA'.")
+        up_m = st.file_uploader("GeoJSON Municipios", type=["geojson", "json"], key="up_mun_geo_smart")
+        
+        if up_m:
+            try:
+                gdf_m = gpd.read_file(up_m)
+                cols_m = list(gdf_m.columns)
+                
+                st.markdown("##### 🛠️ Mapeo de Columnas")
+                c1, c2 = st.columns(2)
+                
+                # Intentamos adivinar MPIO_CNMBR o NOMBRE_MUNICIPIO
+                idx_nom_m = next((i for i, c in enumerate(cols_m) if c.lower() in ['mpio_cnmbr', 'nombre_municipio', 'nombre']), 0)
+                idx_cod_m = next((i for i, c in enumerate(cols_m) if c.lower() in ['mpio_cdpmp', 'codigo', 'id_municipio']), 0)
+                
+                # EL USUARIO ELIGE LA VERDAD
+                col_nom_mun = c1.selectbox("📌 Columna NOMBRE MUNICIPIO:", cols_m, index=idx_nom_m, help="Selecciona la que dice 'Medellín', NO la que dice 'Antioquia'")
+                col_cod_mun = c2.selectbox("🔑 Columna CÓDIGO DANE:", cols_m, index=idx_cod_m)
+                
+                if st.button("🚀 Guardar Municipios", key="btn_save_mun_smart"):
+                    status = st.status("Procesando...", expanded=True)
+                    
+                    if gdf_m.crs and gdf_m.crs.to_string() != "EPSG:4326":
+                        gdf_m = gdf_m.to_crs("EPSG:4326")
+                        
+                    # Renombrado Estándar
+                    gdf_m = gdf_m.rename(columns={
+                        col_nom_mun: 'nombre_municipio', # ESTANDARIZADO
+                        col_cod_mun: 'id_municipio'
+                    })
+                    
+                    # Limpieza extra
+                    if 'departamento' not in gdf_m.columns:
+                        gdf_m['departamento'] = 'Antioquia' # Default si falta
+                        
+                    gdf_m.to_postgis('municipios', engine, if_exists='replace', index=False)
+                    
+                    status.update(label="¡Listo!", state="complete")
+                    st.success(f"✅ Municipios cargados. Mapeo: **{col_nom_mun}** → **nombre_municipio**")
+                    time.sleep(2)
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"Error: {e}")
+
 
 # ==============================================================================
-# ==============================================================================
-# TAB 6: COBERTURAS (RASTERS) - MEJORADA CON LISTA
+# TAB 6: GESTIÓN DE RASTERS EN LA NUBE (DEM + COBERTURAS)
 # ==============================================================================
 with tabs[6]:
-    st.header("☁️ Rasters & Coberturas")
-    st.info("Aquí se almacenan las imágenes satelitales (GeoTIFF) usadas para los modelos hidrológicos.")
-    
-    c1, c2 = st.columns(2)
-    
-    # --- COLUMNA IZQUIERDA: LISTA DE ARCHIVOS ---
-    with c1:
-        st.subheader("📂 Archivos en la Nube")
-        if get_raster_list:
-            with st.spinner("Consultando inventario..."):
-                try:
-                    files = get_raster_list() # Devuelve lista de diccionarios
-                    if files:
-                        # Convertimos a DataFrame para verlo bonito
-                        df_files = pd.DataFrame(files)
-                        
-                        # Seleccionamos y renombramos columnas útiles si existen
-                        cols_show = []
-                        if 'name' in df_files.columns: cols_show.append('name')
-                        if 'created_at' in df_files.columns: cols_show.append('created_at')
-                        if 'metadata' in df_files.columns: # A veces el tamaño viene aquí
-                            df_files['size_mb'] = df_files['metadata'].apply(lambda x: round(x.get('size', 0)/1024/1024, 2) if x else 0)
-                            cols_show.append('size_mb')
-                        
-                        st.dataframe(
-                            df_files[cols_show], 
-                            column_config={
-                                "name": "Nombre Archivo",
-                                "created_at": st.column_config.DatetimeColumn("Fecha Carga", format="D MMM YYYY, HH:mm"),
-                                "size_mb": st.column_config.NumberColumn("Tamaño (MB)")
-                            },
-                            use_container_width=True,
-                            hide_index=True
-                        )
-                    else:
-                        st.warning("⚠️ El bucket de almacenamiento está vacío.")
-                except Exception as e:
-                    st.error(f"Error conectando al almacenamiento: {e}")
+    st.header("☁️ Gestión de Rasters (DEM / Coberturas)")
+    st.info("Sube aquí los archivos .tif para que el modelo hidrológico los use.")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("📂 En la Nube")
+        rasters = get_raster_list()
+        if rasters:
+            df_r = pd.DataFrame(rasters)
+            if not df_r.empty and 'name' in df_r.columns:
+                st.dataframe(df_r[['name', 'created_at']], hide_index=True)
+                
+                to_del = st.selectbox("Eliminar:", df_r['name'])
+                if st.button("🗑️ Borrar Archivo"):
+                    ok, msg = delete_raster_from_storage(to_del)
+                    if ok: st.success(msg); time.sleep(1); st.rerun()
+                    else: st.error(msg)
+            else:
+                st.info("Bucket vacío o sin acceso.")
         else:
-            st.error("Módulo de conexión a Storage no disponible.")
-    
-    # --- COLUMNA DERECHA: SUBIDA ---
-    with c2:
-        st.subheader("⬆️ Subir Nuevo Raster")
-        st.markdown("""
-        **Archivos Requeridos:**
-        * ✅ `Cob25m_WGS84.tif` (Coberturas)
-        * ✅ `DemAntioquia_EPSG3116.tif` (Elevación)
-        * ✅ `PPAM.tif` (Lluvia Media - Opcional)
-        """)
-        
-        f = st.file_uploader("Seleccionar Archivo .tif", type=["tif", "tiff"], key="up_raster_main")
+            st.warning("No hay archivos cargados.")
+
+    with col2:
+        st.subheader("⬆️ Subir Archivo")
+        st.markdown("Requeridos: `DemAntioquia_EPSG3116.tif` y `Cob25m_WGS84.tif`")
+        f = st.file_uploader("GeoTIFF", type=["tif", "tiff"], key="up_cloud")
         
         if f:
-            # Botón con Key única
-            if st.button(f"Subir {f.name}", key="btn_up_raster_cloud") and upload_raster_to_storage:
-                with st.spinner(f"Subiendo {f.name} a la nube..."):
+            if st.button(f"🚀 Subir {f.name} a Supabase"):
+                with st.spinner("Subiendo..."):
                     bytes_data = f.getvalue()
                     ok, msg = upload_raster_to_storage(bytes_data, f.name)
-                    if ok: 
-                        st.success(f"✅ {msg}")
+                    if ok:
+                        st.success(msg)
+                        st.balloons()
                         time.sleep(2)
-                        st.rerun() # Recargar para ver el archivo en la lista de la izquierda
-                    else: 
-                        st.error(f"❌ {msg}")
+                        st.rerun()
+                    else:
+                        st.error(msg)
 
 # ==============================================================================
-# OTRAS CAPAS (CONSERVADAS)
+# TABS 7, 8, 9: GIS ROBUSTO + VISORES DE TABLA (CLAVES ÚNICAS AÑADIDAS)
 # ==============================================================================
-with tabs[7]: render_gis_tab("💧 Bocatomas", "bocatomas", "up_boca", "btn_boca")
-with tabs[8]: render_gis_tab("⛰️ Hidrogeología", "zonas_hidrogeologicas", "up_hidro", "btn_hidro")
-with tabs[9]: render_gis_tab("🌱 Suelos", "suelos", "up_suelo", "btn_suelo")
+with tabs[7]: # Bocatomas
+    st.header("💧 Bocatomas")
+    sb1, sb2 = st.tabs(["👁️ Ver Atributos", "📂 Cargar Archivo"])
+    with sb1: editor_tabla_gis("bocatomas", "ed_boca")
+    with sb2:
+        # AÑADIDA KEY ÚNICA PARA EVITAR ERROR
+        f = st.file_uploader("Archivo (ZIP/GeoJSON)", type=["zip", "geojson"], key="up_boca_file")
+        if st.button("Cargar", key="btn_load_boca"): cargar_capa_gis_robusta(f, "bocatomas", engine)
+
+with tabs[8]: # Hidro
+    st.header("⛰️ Hidrogeología")
+    sb1, sb2 = st.tabs(["👁️ Ver Atributos", "📂 Cargar Archivo"])
+    with sb1: editor_tabla_gis("zonas_hidrogeologicas", "ed_hidro")
+    with sb2:
+        # AÑADIDA KEY ÚNICA PARA EVITAR ERROR
+        f = st.file_uploader("Archivo (ZIP/GeoJSON)", type=["zip", "geojson"], key="up_hidro_file")
+        if st.button("Cargar", key="btn_load_hidro"): cargar_capa_gis_robusta(f, "zonas_hidrogeologicas", engine)
+
+with tabs[9]: # Suelos
+    st.header("🌱 Suelos")
+    sb1, sb2 = st.tabs(["👁️ Ver Atributos", "📂 Cargar Archivo"])
+    with sb1: editor_tabla_gis("suelos", "ed_suelo")
+    with sb2:
+        # AÑADIDA KEY ÚNICA PARA EVITAR ERROR
+        f = st.file_uploader("Archivo (ZIP/GeoJSON)", type=["zip", "geojson"], key="up_suelo_file")
+        if st.button("Cargar", key="btn_load_suelo"): cargar_capa_gis_robusta(f, "suelos", engine)
 
 # ==============================================================================
-# TAB 11: INVENTARIO (COMPLETO)
+# TAB 10: SQL
 # ==============================================================================
-with tabs[11]:
-    st.header("📚 Inventario de Archivos")
-    st.markdown("Lista maestra de todos los insumos requeridos por el sistema.")
+with tabs[10]:
+    st.header("🛠️ Consola SQL")
+    q = st.text_area("Query:")
+    if st.button("Ejecutar", key="btn_run_sql"):
+        try:
+            with engine.connect() as conn:
+                if q.strip().lower().startswith("select"):
+                    st.dataframe(pd.read_sql(text(q), conn))
+                else:
+                    conn.execute(text(q))
+                    conn.commit()
+                    st.success("Hecho.")
+        except Exception as e: st.error(str(e))
+
+# ==============================================================================
+# TAB 11: INVENTARIO DE ARCHIVOS (NUEVO)
+# ==============================================================================
+with tabs[11]: # Índice 10 porque es la pestaña número 11 (0-10)
+    st.header("📚 Inventario de Archivos del Sistema")
+    st.markdown("Documentación técnica de los archivos requeridos para la operación de la plataforma.")
     
-    data = [
-        {"Archivo": "mapaCVENSO.csv", "Tipo": "CSV", "Uso": "Catálogo maestro de estaciones (Ubicación)."},
-        {"Archivo": "DatosPptnmes_ENSO.csv", "Tipo": "CSV", "Uso": "Matriz histórica de lluvias (Filas=Fechas, Cols=Estaciones)."},
-        {"Archivo": "Indices_Globales.csv", "Tipo": "CSV", "Uso": "Índices ONI, SOI para pronósticos climáticos."},
-        {"Archivo": "PrediosEjecutados.geojson", "Tipo": "Vector", "Uso": "Polígonos de predios para consulta local."},
-        {"Archivo": "SubcuencasAinfluencia.geojson", "Tipo": "Vector", "Uso": "Límites de cuencas hidrográficas."},
-        {"Archivo": "Municipios.geojson", "Tipo": "Vector", "Uso": "División política administrativa."},
-        {"Archivo": "Cob25m_WGS84.tif", "Tipo": "Raster", "Uso": "Mapa de coberturas del suelo (Bosque, Cultivos, etc.)."},
-        {"Archivo": "DemAntioquia_EPSG3116.tif", "Tipo": "Raster", "Uso": "Modelo Digital de Elevación (Altitud/Pendiente)."},
-        {"Archivo": "Bocatomas.zip", "Tipo": "Shapefile", "Uso": "Puntos de captación de agua."},
-        {"Archivo": "Hidrogeologia.zip", "Tipo": "Shapefile", "Uso": "Unidades de acuíferos y permeabilidad."},
-        {"Archivo": "Suelos.zip", "Tipo": "Shapefile", "Uso": "Tipos de suelo y texturas."}
+    # Definimos la data del inventario manualmente según tu estructura
+    inventario_data = [
+        {
+            "Archivo": "mapaCVENSO.csv",
+            "Formato": ".csv",
+            "Tipo": "Metadatos Estaciones",
+            "Descripción": "Coordenadas, nombres y alturas de las estaciones.",
+            "Campos Clave": "id_estacion, nombre, latitud, longitud, altitud"
+        },
+        {
+            "Archivo": "Indices_Globales.csv",
+            "Formato": ".csv",
+            "Tipo": "Clima Global",
+            "Descripción": "Series históricas de índices macroclimáticos (ONI, SOI, etc).",
+            "Campos Clave": "año, mes, anomalia_oni, soi, iod, enso_mes"
+        },
+        {
+            "Archivo": "Predios Ejecutados.geojson",
+            "Formato": ".geojson",
+            "Tipo": "Vector (Polígonos)",
+            "Descripción": "Delimitación de predios intervenidos o gestionados.",
+            "Campos Clave": "PK_PREDIOS, NOMBRE_PRE, NOMB_MPIO, AREA_HA"
+        },
+        {
+            "Archivo": "SubcuencasAinfluencia.geojson",
+            "Formato": ".geojson",
+            "Tipo": "Vector (Polígonos)",
+            "Descripción": "Límites hidrográficos y zonas de influencia.",
+            "Campos Clave": "COD/OBJECTID, SUBC_LBL, Shape_Area, SZH, AH, ZH"
+        },
+        {
+            "Archivo": "Municipios.geojson",
+            "Formato": ".geojson",
+            "Tipo": "Vector (Polígonos)",
+            "Descripción": "División político-administrativa del departamento.",
+            "Campos Clave": "MPIO_CDPMP (Código DANE), MPIO_CNMBR (Nombre)"
+        },
+        {
+            "Archivo": "Cob25m_WGS84.tiff",
+            "Formato": ".tiff",
+            "Tipo": "Raster",
+            "Descripción": "Imagen satelital clasificada de coberturas vegetales.",
+            "Campos Clave": "N/A (Valores de píxel: 1=Bosque, 2=Cultivo, etc.)"
+        },
+        {
+            "Archivo": "Bocatomas_Ant.zip",
+            "Formato": ".zip (Shapefile)",
+            "Tipo": "Vector (Puntos)",
+            "Descripción": "Ubicación de captaciones de agua.",
+            "Campos Clave": "nombre_bocatoma, caudal, usuario"
+        },
+        {
+            "Archivo": "Zonas_PotHidrogeologico.geojson",
+            "Formato": ".geojson",
+            "Tipo": "Vector (Polígonos)",
+            "Descripción": "Clasificación del potencial de aguas subterráneas.",
+            "Campos Clave": "potencial, unidad_geologica"
+        },
+        {
+            "Archivo": "Suelos_Antioquia.geojson",
+            "Formato": ".geojson",
+            "Tipo": "Vector (Polígonos)",
+            "Descripción": "Unidades de suelo y capacidad agrológica.",
+            "Campos Clave": "unidad_suelo, textura, grupo_hidro"
+        }
     ]
-    st.dataframe(pd.DataFrame(data), use_container_width=True)
+    
+    # Crear DataFrame
+    df_inv = pd.DataFrame(inventario_data)
+    
+    # Mostrar tabla bonita
+    st.dataframe(
+        df_inv,
+        column_config={
+            "Archivo": st.column_config.TextColumn("Nombre Archivo", width="medium"),
+            "Descripción": st.column_config.TextColumn("Descripción", width="large"),
+            "Campos Clave": st.column_config.TextColumn("Campos / Columnas", width="large"),
+        },
+        hide_index=True,
+        use_container_width=True
+    )
 
 # ==============================================================================
 # TAB 12: RED DE DRENAJE (NUEVO)
@@ -624,29 +1072,4 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
                 st.success("✅ Base de datos reiniciada.")
                 st.balloons()
             except Exception as e: st.error(f"Error: {e}")
-                
-# ==============================================================================
-# TAB 10: SQL (HERRAMIENTA)
-# ==============================================================================
-with tabs[10]:
-    st.header("🛠️ Consola SQL")
-    st.info("Ejecuta consultas directas a la base de datos para diagnóstico.")
-    q = st.text_area("Query:", value="SELECT count(*) FROM estaciones")
-    if st.button("Ejecutar", key="btn_sql"):
-        try:
-            with engine.connect() as conn:
-                if q.strip().lower().startswith("select"):
-                    st.dataframe(pd.read_sql(text(q), conn))
-                else:
-                    conn.execute(text(q))
-                    conn.commit()
-                    st.success("Comando ejecutado.")
-        except Exception as e: st.error(str(e))
-
-
-
-
-
-
-
-
+    
