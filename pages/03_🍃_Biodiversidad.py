@@ -59,28 +59,26 @@ def load_layer_cached(layer_name):
 
 # --- MOTOR DE INTEGRACIÓN: ÁLGEBRA DE MAPAS ---
 @st.cache_data(show_spinner=False)
-def analizar_coberturas_por_zona_vida(gdf_zona):
+def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key):
     """
     Realiza la intersección raster entre Zonas de Vida y Coberturas.
     Retorna un DataFrame con hectáreas por combinación.
     """
     try:
         # 1. Rutas de Archivos Base
-        # Usamos los paths definidos en config o en session_state si se subieron manualmente
         dem_path = st.session_state.get('dem_path', config.Config.DEM_FILE_PATH)
         ppt_path = st.session_state.get('ppt_path', config.Config.PRECIP_RASTER_PATH)
         cov_path = st.session_state.get('cov_path', config.Config.LAND_COVER_RASTER_PATH)
 
         # 2. Generar Mapa de Zonas de Vida (Raster 1)
-        # Usamos un downscale moderado (4) para balancear velocidad/precisión
+        # Usamos _gdf_zona (el objeto original)
         lz_arr, lz_profile, lz_names, _ = lz.generate_life_zone_map(
-            dem_path, ppt_path, mask_geometry=gdf_zona, downscale_factor=4
+            dem_path, ppt_path, mask_geometry=_gdf_zona, downscale_factor=4
         )
         
         if lz_arr is None: return None
 
         # 3. Alinear Mapa de Coberturas (Raster 2) al Raster 1
-        # Esto es crucial: Reproyectar la cobertura para que coincida pixel a pixel con ZV
         with rasterio.open(cov_path) as src_cov:
             cov_aligned = np.zeros_like(lz_arr, dtype=np.uint8)
             
@@ -91,46 +89,40 @@ def analizar_coberturas_por_zona_vida(gdf_zona):
                 src_crs=src_cov.crs,
                 dst_transform=lz_profile['transform'],
                 dst_crs=lz_profile['crs'],
-                resampling=Resampling.nearest # Nearest para datos categóricos
+                resampling=Resampling.nearest
             )
 
         # 4. Cálculo de Áreas (Hectáreas)
-        # Tamaño de pixel en metros (aprox en el centro de la zona)
         try:
-            centro = gdf_zona.to_crs("EPSG:3116").centroid.iloc[0] # Magna Sirgas
-            # Estimación simple basada en la resolución del transform (grados a metros)
+            # Estimación simple basada en la resolución del transform
             res_x_deg = lz_profile['transform'][0]
             meters_per_deg = 111132.0 
             pixel_area_m2 = (res_x_deg * meters_per_deg) ** 2
             pixel_area_ha = pixel_area_m2 / 10000.0
         except:
-            pixel_area_ha = 1.0 # Fallback si falla la proyección
+            pixel_area_ha = 1.0
 
         # 5. Cruce (Crosstab)
-        # Aplanamos arrays y creamos DataFrame
         df_cross = pd.DataFrame({
             'ZV_ID': lz_arr.flatten(),
             'COV_ID': cov_aligned.flatten()
         })
         
-        # Filtramos nodata (0)
         df_cross = df_cross[(df_cross['ZV_ID'] > 0) & (df_cross['COV_ID'] > 0)]
         
-        # Agrupamos
         resumen = df_cross.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
         resumen['Hectareas'] = resumen['Pixeles'] * pixel_area_ha
         
         # 6. Enriquecer con Nombres
         resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz_names.get(x, f"ZV {x}"))
-        # Usamos el diccionario de land_cover.py
         resumen['Cobertura'] = resumen['COV_ID'].map(lambda x: lc.LAND_COVER_LEGEND.get(x, f"Clase {x}"))
         
         return resumen
 
     except Exception as e:
-        st.warning(f"No se pudo realizar el cruce espacial detallado: {e}")
+        # st.warning(f"Detalle técnico cruce: {e}") # Descomentar para debug
         return None
-
+        
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
 def detectar_zona_vida_dominante(gdf_zona):
     """
@@ -450,3 +442,4 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
