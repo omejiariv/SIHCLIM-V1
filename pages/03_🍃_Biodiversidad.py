@@ -121,44 +121,43 @@ def load_layer_cached(layer_name):
         except: return None
     return None
 
-# --- MOTOR DE INTEGRACIÓN: ÁLGEBRA DE MAPAS ---
+
 @st.cache_data(show_spinner=False)
-def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key):
+def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file, _cov_file):
     """
     Realiza la intersección raster entre Zonas de Vida y Coberturas.
-    Retorna un DataFrame con hectáreas por combinación.
+    Recibe archivos en memoria (BytesIO) para evitar errores de ruta.
     """
     try:
-        # 1. Rutas de Archivos Base
-        dem_path = st.session_state.get('dem_path', config.Config.DEM_FILE_PATH)
-        ppt_path = st.session_state.get('ppt_path', config.Config.PRECIP_RASTER_PATH)
-        cov_path = st.session_state.get('cov_path', config.Config.LAND_COVER_RASTER_PATH)
+        # Validación de archivos
+        if not _dem_file or not _ppt_file or not _cov_file:
+            return None
 
-        # 2. Generar Mapa de Zonas de Vida (Raster 1)
-        # Usamos _gdf_zona (el objeto original)
+        # 1. Generar Mapa de Zonas de Vida (Raster 1)
         lz_arr, lz_profile, lz_names, _ = lz.generate_life_zone_map(
-            dem_path, ppt_path, mask_geometry=_gdf_zona, downscale_factor=4
+            _dem_file, _ppt_file, mask_geometry=_gdf_zona, downscale_factor=4
         )
         
         if lz_arr is None: return None
 
-        # 3. Alinear Mapa de Coberturas (Raster 2) al Raster 1
-        with rasterio.open(cov_path) as src_cov:
-            cov_aligned = np.zeros_like(lz_arr, dtype=np.uint8)
-            
-            reproject(
-                source=rasterio.band(src_cov, 1),
-                destination=cov_aligned,
-                src_transform=src_cov.transform,
-                src_crs=src_cov.crs,
-                dst_transform=lz_profile['transform'],
-                dst_crs=lz_profile['crs'],
-                resampling=Resampling.nearest
-            )
+        # 2. Alinear Mapa de Coberturas (Raster 2)
+        # Usamos MemoryFile para leer el BytesIO de cobertura
+        with MemoryFile(_cov_file) as mem_cov:
+            with mem_cov.open() as src_cov:
+                cov_aligned = np.zeros_like(lz_arr, dtype=np.uint8)
+                
+                reproject(
+                    source=rasterio.band(src_cov, 1),
+                    destination=cov_aligned,
+                    src_transform=src_cov.transform,
+                    src_crs=src_cov.crs,
+                    dst_transform=lz_profile['transform'],
+                    dst_crs=lz_profile['crs'],
+                    resampling=Resampling.nearest
+                )
 
-        # 4. Cálculo de Áreas (Hectáreas)
+        # 3. Cálculo de Áreas
         try:
-            # Estimación simple basada en la resolución del transform
             res_x_deg = lz_profile['transform'][0]
             meters_per_deg = 111132.0 
             pixel_area_m2 = (res_x_deg * meters_per_deg) ** 2
@@ -166,7 +165,7 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key):
         except:
             pixel_area_ha = 1.0
 
-        # 5. Cruce (Crosstab)
+        # 4. Cruce (Crosstab)
         df_cross = pd.DataFrame({
             'ZV_ID': lz_arr.flatten(),
             'COV_ID': cov_aligned.flatten()
@@ -177,14 +176,13 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key):
         resumen = df_cross.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
         resumen['Hectareas'] = resumen['Pixeles'] * pixel_area_ha
         
-        # 6. Enriquecer con Nombres
+        # 5. Enriquecer con Nombres
         resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz_names.get(x, f"ZV {x}"))
         resumen['Cobertura'] = resumen['COV_ID'].map(lambda x: lc.LAND_COVER_LEGEND.get(x, f"Clase {x}"))
         
         return resumen
 
     except Exception as e:
-        # st.warning(f"Detalle técnico cruce: {e}") # Descomentar para debug
         return None
         
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
@@ -490,6 +488,7 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
