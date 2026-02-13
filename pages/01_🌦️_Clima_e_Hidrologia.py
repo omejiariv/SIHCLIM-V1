@@ -58,6 +58,35 @@ except Exception as e:
     st.error(f"❌ Error Crítico de Importación: {e}")
     st.stop()
 
+# --- FUNCIÓN MAESTRA DE CARGA (SOLUCIÓN A ERRORES 1 Y 2) ---
+@st.cache_resource(show_spinner=False)
+def cargar_raster_db(filename):
+    """
+    Descarga un archivo raster (TIF) desde la tabla 'system_assets' de Supabase
+    y lo devuelve como un objeto en memoria (BytesIO), listo para Rasterio.
+    """
+    try:
+        engine = get_engine()
+        if engine is None:
+            return None
+            
+        with engine.connect() as conn:
+            # Buscamos el binario por nombre
+            result = conn.execute(
+                text("SELECT file_data FROM system_assets WHERE filename = :f"),
+                {"f": filename}
+            ).fetchone()
+            
+            if result:
+                return io.BytesIO(result[0]) # Éxito: Devolvemos el archivo en RAM
+            else:
+                # Si no existe, retornamos None para manejar el error después
+                return None
+    except Exception as e:
+        st.error(f"Error descargando mapa '{filename}': {e}")
+        return None
+# -----------------------------------------------------------
+
 # --- 3. CARGA DE DATOS UNIFICADA (Con Caché) ---
 @st.cache_resource(show_spinner="📡 Consultando Sistema de Información...", ttl=3600)
 def load_all_data_cached():
@@ -604,11 +633,16 @@ def main():
                     from scipy.interpolate import Rbf
                     import plotly.graph_objects as go
                     
-                    # Grid de interpolación
+                    minx, miny, maxx, maxy = gdf_filtered.total_bounds
+                    # ------------------------------------------
+
+                    # Ahora sí podemos crear el grid
                     gx, gy = np.mgrid[minx:maxx:200j, miny:maxy:200j]
+                    
                     rbf = Rbf(df_iso['lon'], df_iso['lat'], df_iso['valor'], function='thin_plate', smooth=suavidad)
                     z = rbf(gx, gy)
                     
+                    # Visualización
                     fig = go.Figure(go.Contour(z=z.T, x=np.linspace(minx,maxx,200), y=np.linspace(miny,maxy,200), colorscale="Viridis"))
                     
                     if hasattr(viz, 'add_context_layers_ghost'):
@@ -617,11 +651,7 @@ def main():
                     fig.add_trace(go.Scatter(x=df_iso['lon'], y=df_iso['lat'], mode='markers', text=df_iso['nombre']))
                     st.plotly_chart(fig, use_container_width=True)
                 else: 
-                    st.warning("Datos insuficientes para interpolar.")
-            except Exception as e: 
-                st.error(f"Error en Isoyetas: {e}")
-        else: 
-            st.warning("Se requieren mín. 3 estaciones para calcular isoyetas.")
+                    st.warning("Datos insuficientes para interpolar (Mínimo 3 estaciones con datos en este año).")
             
     elif selected_module == "📄 Reporte":
         st.header("Generación de Informe")
@@ -635,6 +665,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
