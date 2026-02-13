@@ -7,6 +7,7 @@ import io
 import pandas as pd
 import numpy as np
 import geopandas as gpd
+import tempfile
 import rasterio
 from rasterio.warp import reproject, Resampling
 from rasterio.mask import mask
@@ -128,137 +129,137 @@ def load_layer_cached(layer_name):
 @st.cache_data(show_spinner=False)
 def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file, _cov_file):
     """
-    Implementación basada en el código exitoso de Geomorfología:
-    1. Usa buffer(0) para blindar geometría.
-    2. Detecta la proyección del DEM (o la deduce por sus coordenadas).
-    3. Proyecta la zona al sistema del DEM para garantizar el corte.
+    Estrategia 'Tierra Firme': Escribe los archivos en disco temporalmente
+    para garantizar que rasterio lea correctamente la georreferenciación.
     """
     try:
         if not _dem_file or not _ppt_file or not _cov_file:
             return None
 
-        # 1. RESET DE MEMORIA
-        _dem_file.seek(0)
-        _ppt_file.seek(0)
-        _cov_file.seek(0)
+        # 1. CREAR ARCHIVOS TEMPORALES (Simulamos estar en tu PC)
+        with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp_dem, \
+             tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp_ppt, \
+             tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp_cov:
+            
+            # Escribir bytes al disco
+            _dem_file.seek(0); tmp_dem.write(_dem_file.read())
+            _ppt_file.seek(0); tmp_ppt.write(_ppt_file.read())
+            _cov_file.seek(0); tmp_cov.write(_cov_file.read())
+            
+            # Guardamos rutas
+            path_dem, path_ppt, path_cov = tmp_dem.name, tmp_ppt.name, tmp_cov.name
 
-        # ---------------------------------------------------------
-        # PASO 1: PROCESAR EL DEM (USANDO TU LÓGICA DE GEOMORFOLOGÍA)
-        # ---------------------------------------------------------
-        dem_arr = None
-        out_meta = None
-        out_crs = None
-        
-        with MemoryFile(_dem_file) as mem_dem:
-            with mem_dem.open() as src_dem:
-                # A. Detectar CRS (Si falla, deducimos por coordenadas)
-                crs_dem = src_dem.crs
-                
-                # Si el archivo no reporta CRS, miramos si son metros o grados
-                if not crs_dem:
-                    # Si la coordenada X es grande (>1000), es proyectado (Magna Sirgas 3116)
-                    if src_dem.transform[2] > 1000:
-                        crs_dem = "EPSG:3116"
-                    else:
-                        crs_dem = "EPSG:4326"
+        try:
+            # ---------------------------------------------------------
+            # PASO 2: PROCESAR EL DEM (AHORA SÍ DESDE DISCO)
+            # ---------------------------------------------------------
+            dem_arr = None
+            out_meta = None
+            out_crs = None
+            
+            with rasterio.open(path_dem) as src_dem:
+                # A. Diagnóstico de CRS
+                crs_working = src_dem.crs
+                if not crs_working:
+                    # Si sigue sin tener CRS, es un archivo 'crudo'. Asumimos 3116.
+                    crs_working = rasterio.crs.CRS.from_string("EPSG:3116")
 
-                # B. Blindaje de Geometría (Tu código)
+                # B. Proyectar Geometría (Tu lógica exitosa)
                 gdf_valid = _gdf_zona.copy()
                 gdf_valid['geometry'] = gdf_valid.buffer(0)
+                gdf_proj = gdf_valid.to_crs(crs_working)
                 
-                # C. Proyectar Geometría al CRS del Raster
-                gdf_proj = gdf_valid.to_crs(crs_dem)
-                geoms = gdf_proj.geometry.values
-                
-                # D. Recorte (Mask)
+                # C. Verificar Superposición (Debug visual si falla)
+                # bounds_raster = src_dem.bounds
+                # bounds_zona = gdf_proj.total_bounds
+                # Si esto falla, aquí sabríamos por qué (pero mask lanzará ValueError)
+
+                # D. Recorte
                 try:
-                    out_image, out_transform = mask(src_dem, geoms, crop=True)
+                    out_image, out_transform = mask(src_dem, gdf_proj.geometry, crop=True)
                     dem_arr = out_image[0]
-                    out_crs = crs_dem
+                    out_shape = dem_arr.shape
+                    out_crs = crs_working
                 except ValueError:
-                    # Si falla, imprimimos coordenadas para diagnóstico rápido
-                    # st.warning(f"Zona fuera del mapa. Mapa: {src_dem.bounds}, Zona: {gdf_proj.total_bounds}")
+                    # st.error(f"Zona fuera del mapa. Raster: {src_dem.bounds}, Zona: {gdf_proj.total_bounds}")
                     return None
 
-                # E. Limpieza (Tu código)
+                # E. Limpieza
                 dem_arr = np.where(dem_arr == src_dem.nodata, np.nan, dem_arr)
-                dem_arr = np.where(dem_arr < -100, np.nan, dem_arr)
-                
-                if np.isnan(dem_arr).all():
-                    return None
+                dem_arr = np.where(dem_arr < -100, np.nan, dem_arr) # Filtro ruido
 
-                out_shape = dem_arr.shape
+            if dem_arr is None or np.isnan(dem_arr).all():
+                return None
 
-        # ---------------------------------------------------------
-        # PASO 2: ALINEAR OTROS MAPAS AL RECORTE DEL DEM
-        # ---------------------------------------------------------
-        
-        def alinear_raster(file_bytes, shape_dst, transform_dst, crs_dst, es_cat=False):
-            with MemoryFile(file_bytes) as mem:
-                with mem.open() as src:
-                    # Asumir CRS si falta
-                    src_crs = src.crs
-                    if not src_crs:
-                        src_crs = "EPSG:3116" if src.transform[2] > 1000 else "EPSG:4326"
-                        
+            # ---------------------------------------------------------
+            # PASO 3: ALINEAR OTROS MAPAS (DESDE DISCO)
+            # ---------------------------------------------------------
+            def alinear_desde_disco(path_raster, shape_dst, transform_dst, crs_dst, es_cat=False):
+                with rasterio.open(path_raster) as src:
+                    # Asignar CRS si falta
+                    crs_src = src.crs if src.crs else "EPSG:3116"
+                    
                     destino = np.zeros(shape_dst, dtype=src.dtypes[0])
                     reproject(
                         source=rasterio.band(src, 1),
                         destination=destino,
                         src_transform=src.transform,
-                        src_crs=src_crs,
+                        src_crs=crs_src,
                         dst_transform=transform_dst,
                         dst_crs=crs_dst,
                         resampling=Resampling.nearest if es_cat else Resampling.bilinear
                     )
                     return destino
 
-        # Alineamos PPT y Cobertura al mismo 'marco' que el DEM recortado
-        ppt_arr = alinear_raster(_ppt_file, out_shape, out_transform, out_crs)
-        cov_arr = alinear_raster(_cov_file, out_shape, out_transform, out_crs, es_cat=True)
+            ppt_arr = alinear_desde_disco(path_ppt, out_shape, out_transform, out_crs)
+            cov_arr = alinear_desde_disco(path_cov, out_shape, out_transform, out_crs, es_cat=True)
 
-        # ---------------------------------------------------------
-        # PASO 3: CÁLCULOS
-        # ---------------------------------------------------------
-        
-        # 1. Vectorizar Clasificación (Life Zones)
-        v_classify = np.vectorize(lz.classify_life_zone_alt_ppt)
-        
-        dem_safe = np.nan_to_num(dem_arr, nan=-9999)
-        ppt_safe = np.nan_to_num(ppt_arr, nan=0)
-        
-        zv_arr = v_classify(dem_safe, ppt_safe)
-        
-        # 2. Máscara de Validez
-        valid_mask = ~np.isnan(dem_arr) & (dem_arr > -100) & (cov_arr > 0)
-        
-        # 3. Cálculo de Área
-        res_x = out_transform[0]
-        # Si CRS es Geográfico (grados), convertir a metros aprox
-        if out_crs == "EPSG:4326" or (hasattr(out_crs, 'is_geographic') and out_crs.is_geographic):
-             pixel_area_ha = (abs(res_x) * 111132.0) ** 2 / 10000.0
-        else:
-             pixel_area_ha = (abs(res_x) ** 2) / 10000.0
+            # ---------------------------------------------------------
+            # PASO 4: CÁLCULOS
+            # ---------------------------------------------------------
+            v_classify = np.vectorize(lz.classify_life_zone_alt_ppt)
+            
+            dem_safe = np.nan_to_num(dem_arr, nan=-9999)
+            ppt_safe = np.nan_to_num(ppt_arr, nan=0)
+            
+            zv_arr = v_classify(dem_safe, ppt_safe)
+            
+            # Máscara estricta: Solo donde hay DEM válido Y Cobertura válida
+            valid_mask = ~np.isnan(dem_arr) & (dem_arr > -100) & (cov_arr > 0)
+            
+            # Área de pixel
+            res_x = out_transform[0]
+            if out_crs.is_geographic:
+                 pixel_area_ha = (abs(res_x) * 111132.0) ** 2 / 10000.0
+            else:
+                 pixel_area_ha = (abs(res_x) ** 2) / 10000.0
 
-        # 4. DataFrame Final
-        df = pd.DataFrame({
-            'ZV_ID': zv_arr[valid_mask].flatten(),
-            'COV_ID': cov_arr[valid_mask].flatten()
-        })
-        
-        if df.empty: return None
+            df = pd.DataFrame({
+                'ZV_ID': zv_arr[valid_mask].flatten(),
+                'COV_ID': cov_arr[valid_mask].flatten()
+            })
+            
+            if df.empty: return None
 
-        resumen = df.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
-        resumen['Hectareas'] = resumen['Pixeles'] * pixel_area_ha
-        
-        # Nombres
-        resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz.holdridge_int_to_name_simplified.get(x, f"ZV {x}"))
-        resumen['Cobertura'] = resumen['COV_ID'].map(lambda x: lc.LAND_COVER_LEGEND.get(x, f"Clase {x}"))
-        
-        return resumen
+            resumen = df.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
+            resumen['Hectareas'] = resumen['Pixeles'] * pixel_area_ha
+            
+            # Nombres
+            resumen['Zona_Vida'] = resumen['ZV_ID'].map(lambda x: lz.holdridge_int_to_name_simplified.get(x, f"ZV {x}"))
+            resumen['Cobertura'] = resumen['COV_ID'].map(lambda x: lc.LAND_COVER_LEGEND.get(x, f"Clase {x}"))
+            
+            return resumen
+
+        finally:
+            # LIMPIEZA: Borrar archivos temporales para no llenar el servidor
+            try:
+                os.remove(path_dem)
+                os.remove(path_ppt)
+                os.remove(path_cov)
+            except: pass
 
     except Exception as e:
-        # st.error(f"Error: {e}") 
+        # st.error(f"Error técnico: {e}")
         return None
         
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
@@ -564,6 +565,7 @@ with tab_carbon:
                         st.error(msg)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
