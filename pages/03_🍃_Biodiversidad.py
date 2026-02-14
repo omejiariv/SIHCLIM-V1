@@ -268,56 +268,68 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, _dem_file, _ppt_file,
 @st.cache_data(show_spinner=False)
 def generar_mapa_coberturas_vectorial(_gdf_zona, _cov_file):
     """
-    Convierte el Raster de Cobertura en Polígonos para visualizar en Plotly.
-    Aplica 'downsampling' para que el mapa sea rápido.
+    Convierte Raster a Polígonos usando 'Archivo Temporal' para garantizar 
+    la lectura del CRS, detectando dinámicamente si es WGS84 o Magna Sirgas.
     """
     try:
         if not _cov_file: return None
-        _cov_file.seek(0)
         
-        with MemoryFile(_cov_file) as mem:
-            with mem.open() as src:
-                # 1. Ajustar Proyección (Si no tiene, asumimos 3116 y reproyectamos a WGS84 para el mapa web)
-                # Plotly necesita WGS84 (EPSG:4326)
+        import tempfile
+        import os
+        from rasterio.features import shapes
+        from rasterio.mask import mask
+        import geopandas as gpd
+        import rasterio
+        
+        # 1. Bajar a Tierra (Temporal)
+        _cov_file.seek(0)
+        with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp_cov:
+            tmp_cov.write(_cov_file.read())
+            path_cov = tmp_cov.name
+            
+        try:
+            with rasterio.open(path_cov) as src:
+                # 2. Detector Automático de Proyección
+                src_crs = src.crs
+                if not src_crs:
+                    # Si la coordenada X es un grado (-75 aprox), es WGS84. Si es > 1000, es Magna.
+                    src_crs = "EPSG:3116" if src.transform[2] > 1000 else "EPSG:4326"
+                    
+                # 3. Preparar Geometría (Blindaje)
+                gdf_valid = _gdf_zona.copy()
+                gdf_valid['geometry'] = gdf_valid.buffer(0)
+                gdf_proj = gdf_valid.to_crs(src_crs)
                 
-                # Recorte inicial (en la proyección original del raster)
-                src_crs = src.crs if src.crs else "EPSG:3116"
-                gdf_proj = _gdf_zona.to_crs(src_crs)
-                
+                # 4. Recorte
                 try:
                     out_image, out_transform = mask(src, gdf_proj.geometry, crop=True)
                     data = out_image[0]
-                except:
-                    return None
-
-                # 2. Vectorización (Raster -> Polígonos)
-                # Filtramos nodata y valor 0
+                except ValueError:
+                    return None # Fuera de límites geográficos
+                    
+                # 5. Extraer Polígonos
                 mask_val = (data != src.nodata) & (data > 0)
+                geoms = ({'properties': {'val': v}, 'geometry': s} 
+                         for i, (s, v) in enumerate(shapes(data, mask=mask_val, transform=out_transform)))
                 
-                # Generador de formas (shapes)
-                # Usamos un paso de muestreo (transform) para no generar millones de polígonos
-                geoms = (
-                    {'properties': {'val': v}, 'geometry': s}
-                    for i, (s, v) 
-                    in enumerate(shapes(data, mask=mask_val, transform=out_transform))
-                )
-                
-                # 3. Crear GeoDataFrame
                 gdf_vector = gpd.GeoDataFrame.from_features(list(geoms), crs=src_crs)
-                
                 if gdf_vector.empty: return None
 
-                # 4. Reproyectar a WGS84 (Obligatorio para Mapas Web)
+                # 6. Estandarizar para el mapa Web (Obligatorio WGS84 para Plotly)
                 gdf_vector = gdf_vector.to_crs("EPSG:4326")
                 
-                # 5. Asignar Colores y Nombres
-                gdf_vector['Cobertura'] = gdf_vector['val'].map(lambda x: LAND_COVER_LEGEND.get(int(x), f"Clase {int(x)}"))
-                gdf_vector['Color'] = gdf_vector['val'].map(lambda x: LAND_COVER_COLORS.get(int(x), "#CCCCCC"))
+                # 7. Asignar Colores y Nombres según Diccionario Oficial
+                gdf_vector['Cobertura'] = gdf_vector['val'].map(lambda x: lc.LAND_COVER_LEGEND.get(int(x), f"Clase {int(x)}"))
+                gdf_vector['Color'] = gdf_vector['val'].map(lambda x: lc.LAND_COVER_COLORS.get(int(x), "#CCCCCC"))
                 
                 return gdf_vector
-
+                
+        finally:
+            # Limpiar memoria del servidor
+            try: os.remove(path_cov)
+            except: pass
+            
     except Exception as e:
-        # st.error(f"Error generando visual: {e}")
         return None
         
 # --- FUNCIÓN DE INTEGRACIÓN: DETECTAR ZONA DE VIDA ---
@@ -870,6 +882,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
