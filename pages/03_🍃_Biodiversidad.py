@@ -578,108 +578,108 @@ with tab_carbon:
 
     st.divider()
 
-        # --- MAPA ESPACIAL BLINDADO ---
-        st.markdown("##### 🗺️ Mapa de Usos del Suelo y Predios")
-        
-        with st.spinner("🎨 Dibujando mapa interactivo..."):
-            try:
-                fig_map = go.Figure()
-                center_lat, center_lon = 6.5, -75.5 
+    # --- MAPA ESPACIAL BLINDADO ---
+    st.markdown("##### 🗺️ Mapa de Usos del Suelo y Predios")
+    
+    with st.spinner("🎨 Dibujando mapa interactivo..."):
+        try:
+            fig_map = go.Figure()
+            center_lat, center_lon = 6.5, -75.5 
+            
+            if gdf_zona is not None and not gdf_zona.empty:
+                gdf_zona_wgs = gdf_zona.to_crs("EPSG:4326")
+                centroid = gdf_zona_wgs.geometry.centroid.iloc[0]
+                center_lat, center_lon = centroid.y, centroid.x
                 
-                if gdf_zona is not None and not gdf_zona.empty:
-                    gdf_zona_wgs = gdf_zona.to_crs("EPSG:4326")
-                    centroid = gdf_zona_wgs.geometry.centroid.iloc[0]
-                    center_lat, center_lon = centroid.y, centroid.x
-                    
-                    # 1. CAPA ZONA (Amarilla - Siempre visible)
-                    for idx, row in gdf_zona_wgs.iterrows():
-                        geoms = [row.geometry] if row.geometry.geom_type == 'Polygon' else list(row.geometry.geoms)
-                        for poly in geoms:
-                            x, y = poly.exterior.xy
-                            fig_map.add_trace(go.Scattermapbox(
-                                lon=list(x), lat=list(y), mode='lines', 
-                                line=dict(color='yellow', width=3),
-                                name="Zona Selección"
-                            ))
+                # 1. CAPA ZONA (Amarilla - Siempre visible)
+                for idx, row in gdf_zona_wgs.iterrows():
+                    geoms = [row.geometry] if row.geometry.geom_type == 'Polygon' else list(row.geometry.geoms)
+                    for poly in geoms:
+                        x, y = poly.exterior.xy
+                        fig_map.add_trace(go.Scattermapbox(
+                            lon=list(x), lat=list(y), mode='lines', 
+                            line=dict(color='yellow', width=3),
+                            name="Zona Selección"
+                        ))
 
-                    # 2. CAPA COBERTURAS (Método Robusto de Arrays Planos)
-                    if cov_bytes:
-                        gdf_cov_vis = generar_mapa_coberturas_vectorial(gdf_zona, cov_bytes)
-                        if gdf_cov_vis is not None and not gdf_cov_vis.empty:
-                            gdf_cov_vis['geometry'] = gdf_cov_vis['geometry'].simplify(0.001) # Optimizar
-                            
-                            for cob_type in gdf_cov_vis['Cobertura'].unique():
-                                subset = gdf_cov_vis[gdf_cov_vis['Cobertura'] == cob_type]
-                                color_hex = subset['Color'].iloc[0]
-                                
-                                # Extraer coordenadas separadas por None (El truco definitivo para Plotly)
-                                lons, lats = [], []
-                                for geom in subset.geometry:
-                                    if geom is None: continue
-                                    geoms = [geom] if geom.geom_type == 'Polygon' else list(geom.geoms)
-                                    for poly in geoms:
-                                        x, y = poly.exterior.xy
-                                        lons.extend(list(x) + [None])
-                                        lats.extend(list(y) + [None])
-                                        
-                                if lons:
-                                    fig_map.add_trace(go.Scattermapbox(
-                                        lon=lons, lat=lats, mode='lines', fill='toself',
-                                        fillcolor=color_hex, line=dict(width=0), opacity=0.6,
-                                        name=cob_type, legendgroup="Coberturas", 
-                                        visible='legendonly', # Apagado por defecto
-                                        hoverinfo="name", hovertext=cob_type
-                                    ))
-
-                    # 3. CAPA PREDIOS (Filtro espacial seguro en lugar de Clip)
-                    gdf_predios = load_layer_cached("Predios")
-                    if gdf_predios is not None and not gdf_predios.empty:
-                        gdf_pred_wgs = gdf_predios.to_crs("EPSG:4326")
+                # 2. CAPA COBERTURAS (Método Robusto de Arrays Planos)
+                if cov_bytes:
+                    gdf_cov_vis = generar_mapa_coberturas_vectorial(gdf_zona, cov_bytes)
+                    if gdf_cov_vis is not None and not gdf_cov_vis.empty:
+                        gdf_cov_vis['geometry'] = gdf_cov_vis['geometry'].simplify(0.001) # Optimizar
                         
-                        try:
-                            # Blindar geometrías y buscar intersecciones (más seguro que clip)
-                            gdf_pred_wgs['geometry'] = gdf_pred_wgs.geometry.buffer(0)
-                            gdf_zona_valid = gdf_zona_wgs.copy()
-                            gdf_zona_valid['geometry'] = gdf_zona_valid.geometry.buffer(0)
+                        for cob_type in gdf_cov_vis['Cobertura'].unique():
+                            subset = gdf_cov_vis[gdf_cov_vis['Cobertura'] == cob_type]
+                            color_hex = subset['Color'].iloc[0]
                             
-                            intersected = gpd.sjoin(gdf_pred_wgs, gdf_zona_valid, how='inner', predicate='intersects')
-                            gdf_pred_clip = gdf_pred_wgs.loc[intersected.index].drop_duplicates()
-                        except:
-                            gdf_pred_clip = gpd.GeoDataFrame() # Fallback silencioso
-
-                        if not gdf_pred_clip.empty:
-                            lons_p, lats_p = [], []
-                            for idx, row in gdf_pred_clip.iterrows():
-                                geom = row.geometry
+                            # Extraer coordenadas separadas por None (El truco definitivo para Plotly)
+                            lons, lats = [], []
+                            for geom in subset.geometry:
                                 if geom is None: continue
                                 geoms = [geom] if geom.geom_type == 'Polygon' else list(geom.geoms)
                                 for poly in geoms:
                                     x, y = poly.exterior.xy
-                                    lons_p.extend(list(x) + [None])
-                                    lats_p.extend(list(y) + [None])
+                                    lons.extend(list(x) + [None])
+                                    lats.extend(list(y) + [None])
                                     
-                            if lons_p:
+                            if lons:
                                 fig_map.add_trace(go.Scattermapbox(
-                                    lon=lons_p, lat=lats_p, mode='lines', 
-                                    line=dict(color='#FF6D00', width=2),
-                                    name="Predios Ejecutados", legendgroup="Predios",
+                                    lon=lons, lat=lats, mode='lines', fill='toself',
+                                    fillcolor=color_hex, line=dict(width=0), opacity=0.6,
+                                    name=cob_type, legendgroup="Coberturas", 
                                     visible='legendonly', # Apagado por defecto
-                                    hoverinfo="name", hovertext="Predio"
+                                    hoverinfo="name", hovertext=cob_type
                                 ))
 
-                fig_map.update_layout(
-                    mapbox_style="carto-positron", 
-                    mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=12),
-                    margin={"r":0,"t":0,"l":0,"b":0}, height=500,
-                    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.8)")
-                )
-                st.plotly_chart(fig_map, use_container_width=True)
-                
-            except Exception as e:
-                st.error(f"Error renderizando el mapa: {e}")
-                
-        st.divider()
+                # 3. CAPA PREDIOS (Filtro espacial seguro en lugar de Clip)
+                gdf_predios = load_layer_cached("Predios")
+                if gdf_predios is not None and not gdf_predios.empty:
+                    gdf_pred_wgs = gdf_predios.to_crs("EPSG:4326")
+                    
+                    try:
+                        # Blindar geometrías y buscar intersecciones (más seguro que clip)
+                        gdf_pred_wgs['geometry'] = gdf_pred_wgs.geometry.buffer(0)
+                        gdf_zona_valid = gdf_zona_wgs.copy()
+                        gdf_zona_valid['geometry'] = gdf_zona_valid.geometry.buffer(0)
+                        
+                        intersected = gpd.sjoin(gdf_pred_wgs, gdf_zona_valid, how='inner', predicate='intersects')
+                        gdf_pred_clip = gdf_pred_wgs.loc[intersected.index].drop_duplicates()
+                    except:
+                        gdf_pred_clip = gpd.GeoDataFrame() # Fallback silencioso
 
+                    if not gdf_pred_clip.empty:
+                        lons_p, lats_p = [], []
+                        for idx, row in gdf_pred_clip.iterrows():
+                            geom = row.geometry
+                            if geom is None: continue
+                            geoms = [geom] if geom.geom_type == 'Polygon' else list(geom.geoms)
+                            for poly in geoms:
+                                x, y = poly.exterior.xy
+                                lons_p.extend(list(x) + [None])
+                                lats_p.extend(list(y) + [None])
+                                
+                        if lons_p:
+                            fig_map.add_trace(go.Scattermapbox(
+                                lon=lons_p, lat=lats_p, mode='lines', 
+                                line=dict(color='#FF6D00', width=2),
+                                name="Predios Ejecutados", legendgroup="Predios",
+                                visible='legendonly', # Apagado por defecto
+                                hoverinfo="name", hovertext="Predio"
+                            ))
+
+            fig_map.update_layout(
+                mapbox_style="carto-positron", 
+                mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=12),
+                margin={"r":0,"t":0,"l":0,"b":0}, height=500,
+                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.8)")
+            )
+            st.plotly_chart(fig_map, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Error renderizando el mapa: {e}")
+            
+    st.divider()
+    
     # --- 4. CONFIGURACIÓN DEL ANÁLISIS ---
     st.subheader("⚙️ Configuración del Análisis")
     
@@ -870,6 +870,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
