@@ -43,10 +43,7 @@ except Exception as e:
 def save_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- FUNCIÓN DETECTIVE (VERSIÓN DIAGNÓSTICO) ---
-
-# --- REEMPLAZAR LA FUNCIÓN get_raster_from_cloud POR ESTA VERSIÓN ---
-
+# --- 
 @st.cache_resource(show_spinner=False)
 def get_raster_from_cloud(filename):
     """
@@ -873,6 +870,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
