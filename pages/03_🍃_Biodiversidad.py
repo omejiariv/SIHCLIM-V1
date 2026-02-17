@@ -709,79 +709,40 @@ with tab_forestal:
             estrategia = st.selectbox("Modelo de Intervención:", options=opciones_modelos, format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"])
             
             tipo_area = st.radio("Definir Área Forestal:", ["Manual", "Todo el Potencial"], horizontal=True)
-            area_input = st.number_input("Hectáreas (Bosque):", min_value=0.1, value=1.0, step=0.1) if tipo_area == "Manual" else st.number_input("Hectáreas (Bosque):", value=float(total_potencial) if total_potencial > 0 else 1.0, disabled=True)
+            val_def = float(total_potencial) if 'total_potencial' in locals() and total_potencial > 0 else 1.0
+            area_input = st.number_input("Hectáreas (Bosque):", min_value=0.1, value=1.0, step=0.1) if tipo_area == "Manual" else st.number_input("Hectáreas (Bosque):", value=val_def, disabled=True)
+            
             edad_proy = st.slider("Horizonte de Análisis (Años):", 5, 50, 20)
 
-            # --- IMPACTO POR PÉRDIDA ---
-            with st.expander("🔥 Simular Pérdida de Cobertura (Deforestación/Incendios)"):
-                st.caption("Evalúa el impacto de perder biomasa existente.")
-                area_perdida = st.number_input("Hectáreas Perdidas:", min_value=0.0, value=0.0, step=0.5)
-                estado_perdida = st.selectbox("Estado Sucesional Perdido:", list(carbon_calculator.STOCKS_SUCESION.keys()), index=4)
-                causa_perdida = st.selectbox("Causa principal:", list(carbon_calculator.CAUSAS_PERDIDA.keys()))
-
-            # 🚀 CÁLCULO REACTIVO INTEGRAL
+        with col_conf2:
+            # 🚀 CÁLCULO REACTIVO (SOLO BOSQUE)
             df_bosque = carbon_calculator.calcular_proyeccion_captura(area_input, edad_proy, estrategia)
-            df_perdida = carbon_calculator.calcular_emisiones_perdida(area_perdida, estado_perdida, causa_perdida, edad_proy)
+            total_c_bosque = df_bosque['Proyecto_tCO2e_Acumulado'].iloc[-1]
             precio_usd = 5.0 
-
-            if incluir_afolu or area_perdida > 0:
-                df_pastos = carbon_calculator.calcular_captura_pasturas(area_pastos, edad_proy, esc_pasto)
-                df_fuentes = carbon_calculator.calcular_emisiones_fuentes(v_leche, v_carne, cerdos, aves, humanos, edad_proy)
-                df_bal = carbon_calculator.calcular_balance_afolu(df_bosque, df_pastos, df_fuentes, df_perdida)
+            tasa_prom = total_c_bosque / edad_proy
+            
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Captura Total", f"{total_c_bosque:,.0f} tCO2e")
+            m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
+            m3.metric("Valor Potencial", f"${(total_c_bosque * precio_usd):,.0f} USD")
+            
+            fig = px.area(df_bosque, x='Año', y='Proyecto_tCO2e_Acumulado', title=f"Dinámica - {carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]['nombre']}", color_discrete_sequence=['#2ecc71'])
+            
+            # Usamos el nuevo estándar de Streamlit para evitar el warning
+            st.plotly_chart(fig, use_container_width=True)
+            
+            with st.expander("📊 Ver Tabla Financiera y Descargar Reporte"):
+                df_fin_bosque = df_bosque.copy()
+                df_fin_bosque['Valor_USD_Acumulado'] = df_fin_bosque['Proyecto_tCO2e_Acumulado'] * precio_usd
+                st.dataframe(df_fin_bosque.style.format({'Proyecto_tCO2e_Acumulado': '{:,.1f}', 'Valor_USD_Acumulado': '${:,.0f}'}))
                 
-                neto_final = df_bal['Balance_Neto_tCO2e'].iloc[-1]
-                
-                st.subheader("⚖️ Balance Neto de Emisiones (AFOLU)")
-                m1, m2, m3 = st.columns(3)
-                captura_total = df_bal['Captura_Bosque'].iloc[-1] + df_bal['Captura_Pastos'].iloc[-1]
-                emisiones_totales = df_bal['Emisiones_Fuentes'].iloc[-1] + df_bal['Emisiones_Perdida'].iloc[-1]
-                
-                m1.metric("Captura (Sumideros)", f"{captura_total:,.0f} tCO2e")
-                m2.metric("Emisiones (Fuentes/Pérdida)", f"{emisiones_totales:,.0f} tCO2e", delta_color="inverse")
-                estado = "🌿 Sumidero Neto" if neto_final > 0 else "⚠️ Emisor Neto"
-                m3.metric("Balance Final", f"{neto_final:,.0f} tCO2e", delta=estado, delta_color="normal" if neto_final > 0 else "inverse")
-                
-                # --- GRÁFICOS COMPARTIDOS ---
-                cg1, cg2 = st.columns([3, 1])
-                
-                with cg1:
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Bosque'], mode='lines', fill='tozeroy', name='Bosque', line=dict(color='#2ecc71')))
-                    color_pasto = '#f1c40f' if df_pastos['Pastura_tCO2e_Acumulado'].iloc[-1] > 0 else '#e67e22'
-                    fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Pastos'], mode='lines', fill='tozeroy', name='Pasturas', line=dict(color=color_pasto)))
-                    fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emisiones_Fuentes'], mode='lines', fill='tozeroy', name='Emisiones (Animales/Humanos)', line=dict(color='#e74c3c')))
-                    if area_perdida > 0:
-                        fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emisiones_Perdida'], mode='lines', fill='tozeroy', name='Pérdida/Deforestación', line=dict(color='#8e44ad')))
-                    fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Balance_Neto_tCO2e'], mode='lines', name='Balance Neto', line=dict(color='black', width=3, dash='dash')))
-                    fig.update_layout(title="Dinámica Integral (Tug-of-War)", xaxis_title="Año", yaxis_title="Acumulado (tCO2e)", hovermode="x unified", margin=dict(l=0, r=0, t=30, b=0))
-                    st.plotly_chart(fig, use_container_width=True)
-
-                with cg2:
-                    # Desglose de Gases (Pastel)
-                    ch4_pct = df_fuentes['CH4_tCO2e'].iloc[1] if df_fuentes['CH4_tCO2e'].sum() > 0 else 0
-                    n2o_pct = df_fuentes['N2O_tCO2e'].iloc[1] if df_fuentes['N2O_tCO2e'].sum() > 0 else 0
-                    co2_pct = (area_perdida * carbon_calculator.STOCKS_SUCESION.get(estado_perdida, 0) * 3.66) if area_perdida > 0 else 0
+                # Try/except rápido por si no tienes importado save_to_csv ahí
+                try:
+                    csv = save_to_csv(df_fin_bosque)
+                except:
+                    csv = df_fin_bosque.to_csv(index=False).encode('utf-8')
                     
-                    if ch4_pct > 0 or n2o_pct > 0 or co2_pct > 0:
-                        fig_pie = px.pie(
-                            values=[ch4_pct, n2o_pct, co2_pct], 
-                            names=["CH4 (Metano)", "N2O (Nitroso)", "CO2 (Pérdida)"],
-                            title="Desglose GEI",
-                            color_discrete_sequence=['#3498db', '#9b59b6', '#7f8c8d']
-                        )
-                        fig_pie.update_layout(showlegend=False, margin=dict(l=0, r=0, t=30, b=0))
-                        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                        st.plotly_chart(fig_pie, use_container_width=True)
-                    else:
-                        st.info("Sin emisiones para desglosar.")
-
-                # Tabla Financiera y Descarga
-                with st.expander("📊 Ver Tabla Financiera y Descargar Reporte"):
-                    df_financiero = df_bal.copy()
-                    df_financiero['Valor_USD_Acumulado'] = df_financiero['Balance_Neto_tCO2e'] * precio_usd
-                    st.dataframe(df_financiero.style.format({'Captura_Bosque': '{:,.1f}', 'Captura_Pastos': '{:,.1f}', 'Emisiones_Fuentes': '{:,.1f}', 'Emisiones_Perdida': '{:,.1f}', 'Balance_Neto_tCO2e': '{:,.1f}', 'Valor_USD_Acumulado': '${:,.0f}'}).background_gradient(cmap='RdYlGn', subset=['Balance_Neto_tCO2e']))
-                    csv = save_to_csv(df_financiero)
-                    st.download_button("📥 Descargar Reporte (CSV)", csv, "reporte_balance_afolu.csv", "text/csv")
+                st.download_button("📥 Descargar Reporte Forestal (CSV)", csv, "reporte_forestal.csv", "text/csv")
 
             else:
                 # Vista Clásica (Solo Bosque)
@@ -1008,5 +969,6 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
