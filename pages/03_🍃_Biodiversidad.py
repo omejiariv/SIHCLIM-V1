@@ -744,17 +744,6 @@ with tab_forestal:
                     
                 st.download_button("📥 Descargar Reporte Forestal (CSV)", csv, "reporte_forestal.csv", "text/csv")
 
-            else:
-                # Vista Clásica (Solo Bosque)
-                total_c_bosque = df_bosque['Proyecto_tCO2e_Acumulado'].iloc[-1]
-                tasa_prom = total_c_bosque / edad_proy
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Captura Total", f"{total_c_bosque:,.0f} tCO2e")
-                m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
-                m3.metric("Valor Potencial", f"${(total_c_bosque * precio_usd):,.0f} USD")
-                
-                fig = px.area(df_bosque, x='Año', y='Proyecto_tCO2e_Acumulado', title="Dinámica Forestal", color_discrete_sequence=['#2ecc71'])
-                st.plotly_chart(fig, use_container_width=True)
                 
     # ================= OPCIÓN B: INVENTARIO =================
     else:
@@ -969,6 +958,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
