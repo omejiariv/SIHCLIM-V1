@@ -180,18 +180,25 @@ GWP_N2O = 265  # 1 tonelada de Óxido Nitroso = 265 tCO2e
 
 # Factores de Emisión: Fermentación Entérica (kg CH4 / cabeza / año)
 # Fuente: IPCC 2006, Vol 4, Cap 10, Tabla 10.11 (América Latina)
+# Factores de Emisión (kg CH4 / cabeza / año) - IPCC 2006 América Latina
 EF_ENTERIC_LECHE = 72.0  # Vacas lecheras 
 EF_ENTERIC_CARNE = 56.0  # Otro tipo de ganado (cría, levante, ceba, doble propósito)
+EF_ENTERIC_CERDOS = 1.5  # Fermentación entérica baja en monogástricos
+EF_ENTERIC_AVES = 0.0    # Despreciable
 
 # Factores de Emisión: Gestión de Estiércol en Pasturas (kg CH4 / cabeza / año)
 # Fuente: IPCC 2006, Vol 4, Cap 10, Tabla 10.14 (Clima cálido/templado)
+# Gestión de Estiércol en Pasturas/Corrales (kg CH4 / cabeza / año)
 EF_ESTIERCOL_CH4_LECHE = 2.0  
 EF_ESTIERCOL_CH4_CARNE = 1.0
+EF_ESTIERCOL_CH4_CERDOS = 4.0 # Alto si hay lagunas de oxidación / pozos
+EF_ESTIERCOL_CH4_AVES = 0.02
 
-# Factores de Emisión: Óxido Nitroso (N2O) por Orina/Estiércol en Pasturas
-# Valor simplificado Nivel 1 (kg N2O / cabeza / año) asumiendo excreción típica en pastoreo
+# Óxido Nitroso (N2O) por Orina/Estiércol (kg N2O / cabeza / año)
 EF_ESTIERCOL_N2O_LECHE = 1.5 
 EF_ESTIERCOL_N2O_CARNE = 1.2
+EF_ESTIERCOL_N2O_CERDOS = 0.2
+EF_ESTIERCOL_N2O_AVES = 0.001
 
 # --- 2. ESCENARIOS DE PASTURAS Y SUELOS ---
 # Captura o pérdida de Carbono Orgánico del Suelo (COS) en tC/ha/año
@@ -220,37 +227,42 @@ ESCENARIOS_PASTURAS = {
 
 # --- 3. MOTORES DE CÁLCULO ---
 
-def calcular_emisiones_ganaderia(cabezas_leche, cabezas_carne, anios=20):
+def calcular_emisiones_ganaderia(vacas_leche, vacas_carne, cerdos=0, aves=0, anios=20):
     """
     Calcula las emisiones acumuladas de Gases de Efecto Invernadero (CH4 y N2O)
-    generadas por el hato ganadero durante el horizonte del proyecto.
+    generadas por bovinos, porcinos y aves.
     """
-    # 1. Emisiones Anuales de Metano (CH4) en kg
-    ch4_leche_anio = cabezas_leche * (EF_ENTERIC_LECHE + EF_ESTIERCOL_CH4_LECHE)
-    ch4_carne_anio = cabezas_carne * (EF_ENTERIC_CARNE + EF_ESTIERCOL_CH4_CARNE)
-    total_ch4_kg_anio = ch4_leche_anio + ch4_carne_anio
+    # 1. Metano (CH4) en kg
+    ch4_leche = vacas_leche * (EF_ENTERIC_LECHE + EF_ESTIERCOL_CH4_LECHE)
+    ch4_carne = vacas_carne * (EF_ENTERIC_CARNE + EF_ESTIERCOL_CH4_CARNE)
+    ch4_cerdos = cerdos * (EF_ENTERIC_CERDOS + EF_ESTIERCOL_CH4_CERDOS)
+    ch4_aves = aves * (EF_ENTERIC_AVES + EF_ESTIERCOL_CH4_AVES)
+    total_ch4_kg_anio = ch4_leche + ch4_carne + ch4_cerdos + ch4_aves
     
-    # 2. Emisiones Anuales de Óxido Nitroso (N2O) en kg
-    n2o_leche_anio = cabezas_leche * EF_ESTIERCOL_N2O_LECHE
-    n2o_carne_anio = cabezas_carne * EF_ESTIERCOL_N2O_CARNE
-    total_n2o_kg_anio = n2o_leche_anio + n2o_carne_anio
+    # 2. Óxido Nitroso (N2O) en kg
+    n2o_leche = vacas_leche * EF_ESTIERCOL_N2O_LECHE
+    n2o_carne = vacas_carne * EF_ESTIERCOL_N2O_CARNE
+    n2o_cerdos = cerdos * EF_ESTIERCOL_N2O_CERDOS
+    n2o_aves = aves * EF_ESTIERCOL_N2O_AVES
+    total_n2o_kg_anio = n2o_leche + n2o_carne + n2o_cerdos + n2o_aves
     
-    # 3. Conversión a tCO2e (Toneladas de CO2 equivalente)
-    emision_ch4_tco2e_anio = (total_ch4_kg_anio / 1000) * GWP_CH4
-    emision_n2o_tco2e_anio = (total_n2o_kg_anio / 1000) * GWP_N2O
-    emision_total_tco2e_anio = emision_ch4_tco2e_anio + emision_n2o_tco2e_anio
+    # 3. Conversión a tCO2e
+    emision_ch4_tco2e = (total_ch4_kg_anio / 1000) * GWP_CH4
+    emision_n2o_tco2e = (total_n2o_kg_anio / 1000) * GWP_N2O
+    emision_total_tco2e_anio = emision_ch4_tco2e + emision_n2o_tco2e
     
-    # 4. Proyección en el tiempo
+    # 4. Proyección
     years = np.arange(0, anios + 1)
     emisiones_anuales = np.full_like(years, emision_total_tco2e_anio, dtype=float)
-    emisiones_anuales[0] = 0 # El año 0 es la línea base (no acumula)
+    emisiones_anuales[0] = 0 
     
     df_emisiones = pd.DataFrame({
         'Año': years,
+        'Emisiones_CH4_tCO2e': (ch4_leche + ch4_carne + ch4_cerdos + ch4_aves) / 1000 * GWP_CH4,
+        'Emisiones_N2O_tCO2e': (n2o_leche + n2o_carne + n2o_cerdos + n2o_aves) / 1000 * GWP_N2O,
         'Emision_Anual_tCO2e': emisiones_anuales,
         'Emision_Acumulada_tCO2e': np.cumsum(emisiones_anuales)
     })
-    
     return df_emisiones
 
 def calcular_captura_pasturas(hectareas, anios=20, escenario_key="PASTO_MANEJADO"):
