@@ -365,7 +365,9 @@ def detectar_zona_vida_dominante(gdf_zona):
         return "bh-MB"
 
 # --- DEFINICIÓN DE TABS PRINCIPALES ---
-tab_mapa, tab_tax, tab_carbon, tab_comparador = st.tabs(["🗺️ Mapa & GBIF", "📊 Taxonomía", "🌳 Calculadora", "⚖️ Comparador"])
+tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador = st.tabs([
+    "🗺️ Mapa & GBIF", "🧬 Taxonomía", "🌲 Bosque e Inventarios", "⚖️ Metabolismo Territorial", "📈 Comparador"
+])
 
 # Variable global para datos de biodiversidad
 gdf_bio = pd.DataFrame()
@@ -494,7 +496,7 @@ with tab_tax:
 # ==============================================================================
 # TAB 3: CALCULADORA DE CARBONO (INTEGRADA & DOCUMENTADA)
 # ==============================================================================
-with tab_carbon:
+with tab_forestal:
     st.header("🌳 Estimación de Servicios Ecosistémicos (Carbono)")
     
     # --- 1. MARCO CONCEPTUAL (CAJA DE MENSAJE) ---
@@ -717,32 +719,6 @@ with tab_carbon:
                 estado_perdida = st.selectbox("Estado Sucesional Perdido:", list(carbon_calculator.STOCKS_SUCESION.keys()), index=4)
                 causa_perdida = st.selectbox("Causa principal:", list(carbon_calculator.CAUSAS_PERDIDA.keys()))
 
-            # --- COMPONENTE AFOLU (Selector Granular) ---
-            st.markdown("---")
-            st.markdown("##### 🐖 Componente Agrícola y Humano (AFOLU)")
-            incluir_afolu = st.checkbox("Integrar emisiones y pasturas", value=True)
-            
-            # Variables inicializadas en 0
-            esc_pasto, area_pastos = "PASTO_DEGRADADO", 0.0
-            v_leche, v_carne, cerdos, aves, humanos = 0, 0, 0, 0, 0
-            
-            if incluir_afolu:
-                fuentes_sel = st.multiselect("Fuentes a modelar:", ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"], default=["Pasturas", "Bovinos"])
-                
-                if "Pasturas" in fuentes_sel:
-                    esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
-                    area_pastos = st.number_input("Hectáreas (Pastos):", min_value=0.0, value=10.0, step=0.5)
-                if "Bovinos" in fuentes_sel:
-                    v_leche = st.number_input("Vacas Lecheras:", min_value=0, value=5)
-                    v_carne = st.number_input("Ganado Carne/Cría:", min_value=0, value=15)
-                if "Porcinos" in fuentes_sel:
-                    cerdos = st.number_input("Cerdos:", min_value=0, value=50, step=10)
-                if "Avicultura" in fuentes_sel:
-                    aves = st.number_input("Aves:", min_value=0, value=500, step=50)
-                if "Población Humana" in fuentes_sel:
-                    humanos = st.number_input("Personas (Cargas orgánicas):", min_value=0, value=10, help="GHG de aguas residuales y residuos sólidos rurales.")
-
-        with col_conf2:
             # 🚀 CÁLCULO REACTIVO INTEGRAL
             df_bosque = carbon_calculator.calcular_proyeccion_captura(area_input, edad_proy, estrategia)
             df_perdida = carbon_calculator.calcular_emisiones_perdida(area_perdida, estado_perdida, causa_perdida, edad_proy)
@@ -856,6 +832,111 @@ with tab_carbon:
                     st.error(f"Error procesando archivo: Revise que las columnas se llamen DAP y Altura. ({e})")
 
 # ==============================================================================
+# TAB 4: METABOLISMO TERRITORIAL (AFOLU COMPLETO)
+# ==============================================================================
+with tab_afolu:
+    st.header("⚖️ Modelo de Metabolismo Territorial (AFOLU)")
+    st.info("Simulador integral de cuenca: Integra la captura forestal con cargas pecuarias, humanas y eventos de cambio de cobertura en el tiempo.")
+    
+    col_a1, col_a2 = st.columns([1, 2.5])
+    
+    with col_a1:
+        st.subheader("1. Línea Base Forestal")
+        estrategia_af = st.selectbox("Bosque Existente/Planeado:", options=list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"])
+        area_af = st.number_input("Hectáreas (Bosque):", value=float(total_potencial) if 'total_potencial' in locals() and total_potencial > 0 else 100.0, step=10.0)
+        horizonte_af = st.slider("Horizonte de Análisis (Años):", 5, 50, 20, key="slider_afolu")
+        
+        st.markdown("---")
+        st.subheader("2. Actividades Agropecuarias y Humanas")
+        # El truco para "Todas"
+        opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"]
+        fuentes_sel = st.multiselect("Selecciona cargas a modelar:", opciones_fuentes, default=["Todas"])
+        
+        if "Todas" in fuentes_sel:
+            fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"]
+        else:
+            fuentes_activas = fuentes_sel
+
+        # Variables en 0 por defecto
+        esc_pasto, area_pastos = "PASTO_DEGRADADO", 0.0
+        v_leche, v_carne, cerdos, aves, humanos = 0, 0, 0, 0, 0
+        
+        if "Pasturas" in fuentes_activas:
+            esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
+            area_pastos = st.number_input("Ha de Pasturas:", value=50.0, step=5.0)
+        if "Bovinos" in fuentes_activas:
+            v_leche = st.number_input("Vacas Lecheras:", value=20, step=5)
+            v_carne = st.number_input("Ganado Carne/Cría:", value=50, step=10)
+        if "Porcinos" in fuentes_activas:
+            cerdos = st.number_input("Cerdos (Cabezas):", value=150, step=50)
+        if "Avicultura" in fuentes_activas:
+            aves = st.number_input("Aves (Galpones):", value=2000, step=500)
+        if "Población Humana" in fuentes_activas:
+            humanos = st.number_input("Humanos (Cargas Orgánicas):", value=50, help="Vertimientos en pozos sépticos o a cielo abierto.")
+
+        st.markdown("---")
+        st.subheader("3. Eventos en el Tiempo")
+        tipo_evento = st.radio("Simular alteración de cobertura:", ["Ninguno", "Pérdida (Deforestación/Incendio)", "Ganancia (Restauración Activa)"], horizontal=True)
+        area_ev, anio_ev, estado_ev, causa_ev = 0, 1, "BOSQUE_SECUNDARIO", "AGRICOLA"
+        
+        if tipo_evento != "Ninguno":
+            area_ev = st.number_input("Hectáreas Afectadas:", min_value=0.1, value=5.0, step=1.0)
+            anio_ev = st.slider("¿En qué año ocurre?", 1, horizonte_af, 5)
+            estado_ev = st.selectbox("Tipo de Cobertura:", list(carbon_calculator.STOCKS_SUCESION.keys()), index=4)
+            if "Pérdida" in tipo_evento:
+                causa_ev = st.selectbox("Causa:", list(carbon_calculator.CAUSAS_PERDIDA.keys()))
+                
+    with col_a2:
+        # CÁLCULOS REACTIVOS
+        df_bosque_af = carbon_calculator.calcular_proyeccion_captura(area_af, horizonte_af, estrategia_af)
+        df_pastos_af = carbon_calculator.calcular_captura_pasturas(area_pastos, horizonte_af, esc_pasto)
+        df_fuentes_af = carbon_calculator.calcular_emisiones_fuentes_detallado(v_leche, v_carne, cerdos, aves, humanos, horizonte_af)
+        
+        t_ev = "PERDIDA" if "Pérdida" in tipo_evento else "GANANCIA" if "Ganancia" in tipo_evento else "NADA"
+        df_evento_af = carbon_calculator.calcular_evento_cambio(area_ev if t_ev != "NADA" else 0, t_ev, estado_ev, causa_ev, anio_ev, horizonte_af)
+        
+        df_bal = carbon_calculator.calcular_balance_territorial(df_bosque_af, df_pastos_af, df_fuentes_af, df_evento_af)
+        
+        neto_final = df_bal['Balance_Neto_tCO2e'].iloc[-1]
+        usd_total = neto_final * 5.0 # PRECIO USD RECUPERADO
+        
+        # MÉTRICAS PRINCIPALES
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Captura (Sumideros)", f"{(df_bal['Captura_Bosque'].iloc[-1] + df_bal['Captura_Pastos'].iloc[-1] + df_bal['Evento_Ganancia'].iloc[-1]):,.0f} t")
+        m2.metric("Emisiones Totales", f"{(df_bal['Emision_Bovinos'].iloc[-1] + df_bal['Emision_Porcinos'].iloc[-1] + df_bal['Emision_Aves'].iloc[-1] + df_bal['Emision_Humanos'].iloc[-1] + df_bal['Evento_Perdida'].iloc[-1]):,.0f} t")
+        estado = "🌿 Sumidero" if neto_final > 0 else "⚠️ Emisor"
+        m3.metric("Balance Neto", f"{neto_final:,.0f} t", delta=estado, delta_color="normal" if neto_final > 0 else "inverse")
+        m4.metric("Valor del Carbono", f"${usd_total:,.0f} USD", help="A un precio referencial de $5 USD la tonelada.")
+        
+        # GRÁFICO MULTI-CURVAS
+        fig = go.Figure()
+        
+        # Curvas Positivas (Sumideros)
+        fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Bosque'], mode='lines', fill='tozeroy', name='Bosque Base', line=dict(color='#2ecc71')))
+        color_pasto = '#f1c40f' if df_pastos_af['Pastura_tCO2e_Acumulado'].iloc[-1] >= 0 else '#e67e22'
+        fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Pastos'], mode='lines', fill='tozeroy', name='Pasturas', line=dict(color=color_pasto)))
+        if "Ganancia" in tipo_evento:
+            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Evento_Ganancia'], mode='lines', fill='tozeroy', name='Restauración Nueva', line=dict(color='#00bc8c')))
+            
+        # Curvas Negativas (Fuentes Desglosadas)
+        if "Bovinos" in fuentes_activas:
+            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emision_Bovinos'], mode='lines', fill='tozeroy', name='Bovinos', line=dict(color='#e74c3c')))
+        if "Porcinos" in fuentes_activas:
+            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emision_Porcinos'], mode='lines', fill='tozeroy', name='Porcinos', line=dict(color='#e83e8c')))
+        if "Avicultura" in fuentes_activas:
+            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emision_Aves'], mode='lines', fill='tozeroy', name='Aves', line=dict(color='#fd7e14')))
+        if "Población Humana" in fuentes_activas:
+            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emision_Humanos'], mode='lines', fill='tozeroy', name='Humanos', line=dict(color='#6f42c1')))
+        if "Pérdida" in tipo_evento:
+            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Evento_Perdida'], mode='lines', fill='tozeroy', name='Deforestación/Pérdida', line=dict(color='#343a40')))
+            
+        # Línea de Balance
+        fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Balance_Neto_tCO2e'], mode='lines', name='Balance Neto Real', line=dict(color='black', width=4, dash='dot')))
+        
+        fig.update_layout(title="Metabolismo Territorial: Dinámica de GEI en la Cuenca", xaxis_title="Año", yaxis_title="Acumulado (tCO2e)", hovermode="x unified", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+
+# ==============================================================================
 # TAB 4: COMPARADOR DE ESCENARIOS (NUEVO)
 # ==============================================================================
 with tab_comparador:
@@ -927,19 +1008,4 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
