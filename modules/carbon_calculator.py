@@ -168,3 +168,139 @@ def calcular_inventario_forestal(df, zona_vida_code='bh-MB'):
     df['CO2e_Total_tCO2e'] = df['Carbono_Total_tC'] * FACTOR_C_CO2
     
     return df, "OK"
+
+# ==============================================================================
+# MÓDULO AFOLU: GANADERÍA Y PASTURAS (IPCC Nivel 1 - América Latina)
+# ==============================================================================
+
+# --- 1. PARÁMETROS GLOBALES IPCC ---
+# Potenciales de Calentamiento Global (AR5)
+GWP_CH4 = 28   # 1 tonelada de Metano = 28 tCO2e
+GWP_N2O = 265  # 1 tonelada de Óxido Nitroso = 265 tCO2e
+
+# Factores de Emisión: Fermentación Entérica (kg CH4 / cabeza / año)
+# Fuente: IPCC 2006, Vol 4, Cap 10, Tabla 10.11 (América Latina)
+EF_ENTERIC_LECHE = 72.0  # Vacas lecheras 
+EF_ENTERIC_CARNE = 56.0  # Otro tipo de ganado (cría, levante, ceba, doble propósito)
+
+# Factores de Emisión: Gestión de Estiércol en Pasturas (kg CH4 / cabeza / año)
+# Fuente: IPCC 2006, Vol 4, Cap 10, Tabla 10.14 (Clima cálido/templado)
+EF_ESTIERCOL_CH4_LECHE = 2.0  
+EF_ESTIERCOL_CH4_CARNE = 1.0
+
+# Factores de Emisión: Óxido Nitroso (N2O) por Orina/Estiércol en Pasturas
+# Valor simplificado Nivel 1 (kg N2O / cabeza / año) asumiendo excreción típica en pastoreo
+EF_ESTIERCOL_N2O_LECHE = 1.5 
+EF_ESTIERCOL_N2O_CARNE = 1.2
+
+# --- 2. ESCENARIOS DE PASTURAS Y SUELOS ---
+# Captura o pérdida de Carbono Orgánico del Suelo (COS) en tC/ha/año
+ESCENARIOS_PASTURAS = {
+    "PASTO_DEGRADADO": {
+        "nombre": "1. Pasto Degradado (Línea Base)",
+        "tasa_c_ha_anio": -0.5, # Emisor: Pierde carbono anualmente por erosión/compactación
+        "desc": "Pasturas sobrepastoreadas. Emite carbono del suelo."
+    },
+    "PASTO_MANEJADO": {
+        "nombre": "2. Pasto Mejorado (Manejo Rotacional)",
+        "tasa_c_ha_anio": 0.8,  # Sumidero: Gana carbono
+        "desc": "Pasturas con buen manejo, descanso adecuado y sin sobrecarga."
+    },
+    "SSP_BAJO": {
+        "nombre": "3. Silvopastoril (Baja Densidad)",
+        "tasa_c_ha_anio": 1.2,  # Sumidero mayor por raíces profundas
+        "desc": "Arreglo silvopastoril con árboles dispersos en potrero."
+    },
+    "SSP_INTENSIVO": {
+        "nombre": "4. Silvopastoril Intensivo (SSPi)",
+        "tasa_c_ha_anio": 2.5,  # Sumidero alto (Suelo + Arbustos forrajeros)
+        "desc": "SSPi con alta densidad de arbustos (ej. Leucaena, Botón de Oro) y maderables."
+    }
+}
+
+# --- 3. MOTORES DE CÁLCULO ---
+
+def calcular_emisiones_ganaderia(cabezas_leche, cabezas_carne, anios=20):
+    """
+    Calcula las emisiones acumuladas de Gases de Efecto Invernadero (CH4 y N2O)
+    generadas por el hato ganadero durante el horizonte del proyecto.
+    """
+    # 1. Emisiones Anuales de Metano (CH4) en kg
+    ch4_leche_anio = cabezas_leche * (EF_ENTERIC_LECHE + EF_ESTIERCOL_CH4_LECHE)
+    ch4_carne_anio = cabezas_carne * (EF_ENTERIC_CARNE + EF_ESTIERCOL_CH4_CARNE)
+    total_ch4_kg_anio = ch4_leche_anio + ch4_carne_anio
+    
+    # 2. Emisiones Anuales de Óxido Nitroso (N2O) en kg
+    n2o_leche_anio = cabezas_leche * EF_ESTIERCOL_N2O_LECHE
+    n2o_carne_anio = cabezas_carne * EF_ESTIERCOL_N2O_CARNE
+    total_n2o_kg_anio = n2o_leche_anio + n2o_carne_anio
+    
+    # 3. Conversión a tCO2e (Toneladas de CO2 equivalente)
+    emision_ch4_tco2e_anio = (total_ch4_kg_anio / 1000) * GWP_CH4
+    emision_n2o_tco2e_anio = (total_n2o_kg_anio / 1000) * GWP_N2O
+    emision_total_tco2e_anio = emision_ch4_tco2e_anio + emision_n2o_tco2e_anio
+    
+    # 4. Proyección en el tiempo
+    years = np.arange(0, anios + 1)
+    emisiones_anuales = np.full_like(years, emision_total_tco2e_anio, dtype=float)
+    emisiones_anuales[0] = 0 # El año 0 es la línea base (no acumula)
+    
+    df_emisiones = pd.DataFrame({
+        'Año': years,
+        'Emision_Anual_tCO2e': emisiones_anuales,
+        'Emision_Acumulada_tCO2e': np.cumsum(emisiones_anuales)
+    })
+    
+    return df_emisiones
+
+def calcular_captura_pasturas(hectareas, anios=20, escenario_key="PASTO_MANEJADO"):
+    """
+    Calcula la captura (o pérdida) de carbono en el suelo y biomasa menor
+    según el tipo de manejo de la pastura.
+    """
+    params = ESCENARIOS_PASTURAS.get(escenario_key, ESCENARIOS_PASTURAS["PASTO_MANEJADO"])
+    tasa_c = params['tasa_c_ha_anio']
+    
+    years = np.arange(0, anios + 1)
+    
+    # El IPCC asume que los cambios en el carbono del suelo (SOC) ocurren
+    # linealmente durante un periodo de transición de 20 años.
+    # Después del año 20, el suelo alcanza un nuevo equilibrio y la tasa es 0.
+    tasa_activa = np.where(years <= 20, tasa_c, 0)
+    tasa_activa[0] = 0 # Año 0 no acumula
+    
+    # tC a tCO2e
+    tasa_co2e_ha_anio = tasa_activa * FACTOR_C_CO2
+    captura_anual_proyecto = tasa_co2e_ha_anio * hectareas
+    
+    df_pastos = pd.DataFrame({
+        'Año': years,
+        'Pastura_tCO2e_Anual': captura_anual_proyecto,
+        'Pastura_tCO2e_Acumulado': np.cumsum(captura_anual_proyecto)
+    })
+    
+    return df_pastos
+
+def calcular_balance_afolu(df_forestal, df_pastos, df_emisiones):
+    """
+    Cruza los tres mundos (Bosque, Pastos y Vacas) para obtener el Balance Neto.
+    Si el balance es positivo, el predio es Sumidero (captura más de lo que emite).
+    Si es negativo, el predio es Emisor Neto.
+    """
+    df_balance = pd.DataFrame({'Año': df_forestal['Año']})
+    
+    # Sumideros (Positivos)
+    df_balance['Captura_Bosque'] = df_forestal['Proyecto_tCO2e_Acumulado']
+    df_balance['Captura_Pastos'] = df_pastos['Pastura_tCO2e_Acumulado']
+    
+    # Fuentes (Negativas) - Restamos las emisiones de la ganadería
+    df_balance['Emisiones_Ganado'] = -df_emisiones['Emision_Acumulada_tCO2e']
+    
+    # Balance Neto
+    df_balance['Balance_Neto_tCO2e'] = (
+        df_balance['Captura_Bosque'] + 
+        df_balance['Captura_Pastos'] + 
+        df_balance['Emisiones_Ganado']
+    )
+    
+    return df_balance
