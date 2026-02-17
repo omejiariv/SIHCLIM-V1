@@ -703,7 +703,6 @@ with tab_carbon:
 
         with col_conf1:
             st.markdown("##### 🌳 Componente Forestal")
-            # A. ESTRATEGIA FORESTAL
             opciones_modelos = list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys())
             estrategia = st.selectbox(
                 "Estrategia de Intervención Forestal:",
@@ -737,102 +736,70 @@ with tab_carbon:
                 area_pastos = st.number_input("Hectáreas (Pastos):", min_value=0.0, value=10.0, step=0.5)
                 
                 c_vacas1, c_vacas2 = st.columns(2)
-                vacas_leche = c_vacas1.number_input("Vacas Lecheras:", min_value=0, value=5, step=1, help="Mayor emisión de metano.")
+                vacas_leche = c_vacas1.number_input("Vacas Lecheras:", min_value=0, value=5, step=1, help="Mayor emisión de metano por fermentación entérica.")
                 vacas_carne = c_vacas2.number_input("Ganado Carne/Cría:", min_value=0, value=15, step=1)
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            calc_btn = st.button("🚀 Calcular Balance de Carbono", type="primary", use_container_width=True)
-            
         with col_conf2:
-            # Lógica de Cálculo y Persistencia
-            if calc_btn:
-                # 1. Calcular Bosque (Siempre)
-                df_bosque = carbon_calculator.calcular_proyeccion_captura(area_input, edad_proy, estrategia)
-                res_dict = {
-                    'df_bosque': df_bosque, 
-                    'total_bosque': df_bosque['Proyecto_tCO2e_Acumulado'].iloc[-1], 
-                    'estrategia': estrategia, 
-                    'afolu': incluir_afolu
-                }
-
-                # 2. Calcular AFOLU (Si está activado)
-                if incluir_afolu:
-                    df_pastos = carbon_calculator.calcular_captura_pasturas(area_pastos, edad_proy, esc_pasto)
-                    df_vacas = carbon_calculator.calcular_emisiones_ganaderia(vacas_leche, vacas_carne, edad_proy)
-                    df_balance = carbon_calculator.calcular_balance_afolu(df_bosque, df_pastos, df_vacas)
-                    
-                    res_dict.update({
-                        'df_pastos': df_pastos, 
-                        'df_vacas': df_vacas, 
-                        'df_balance': df_balance, 
-                        'neto': df_balance['Balance_Neto_tCO2e'].iloc[-1]
-                    })
-
-                st.session_state['carbon_results'] = res_dict
-
-            # --- RENDERIZADO DE RESULTADOS ---
-            if 'carbon_results' in st.session_state:
-                res = st.session_state['carbon_results']
-                
-                # Usar .get() evita el KeyError si quedó memoria de una versión antigua
-                if res.get('afolu', False):
-                    # VISTA AFOLU (BOSQUE + PASTOS + VACAS)
-                    df_bal = res['df_balance']
-                    neto_final = res['neto']
-                    
-                    st.subheader("⚖️ Balance Neto AFOLU")
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Captura Total (Bosque+Pasto)", f"{(df_bal['Captura_Bosque'].iloc[-1] + df_bal['Captura_Pastos'].iloc[-1]):,.0f} tCO2e")
-                    m2.metric("Emisiones (Ganado)", f"{df_bal['Emisiones_Ganado'].iloc[-1]:,.0f} tCO2e", delta_color="inverse")
-                    
-                    # Color del balance según si es sumidero o emisor
-                    estado = "🌿 Sumidero Neto" if neto_final > 0 else "⚠️ Emisor Neto"
-                    m3.metric("Balance Final", f"{neto_final:,.0f} tCO2e", delta=estado, delta_color="normal" if neto_final > 0 else "inverse")
-                    
-                    # Gráfico AFOLU Completo (Tug-of-war)
-                    fig = go.Figure()
-                    
-                    # Área Bosque (Positiva)
-                    fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Bosque'], mode='lines', fill='tozeroy', name='Bosque', line=dict(color='#2ecc71')))
-                    # Área Pastos (Puede ser positiva o negativa)
-                    color_pasto = '#f1c40f' if res['df_pastos']['Pastura_tCO2e_Acumulado'].iloc[-1] > 0 else '#e67e22'
-                    fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Pastos'], mode='lines', fill='tozeroy', name='Pasturas', line=dict(color=color_pasto)))
-                    # Área Emisiones (Negativa)
-                    fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emisiones_Ganado'], mode='lines', fill='tozeroy', name='Emisiones Ganado', line=dict(color='#e74c3c')))
-                    # Línea Balance Neto
-                    fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Balance_Neto_tCO2e'], mode='lines', name='Balance Neto', line=dict(color='black', width=3, dash='dash')))
-
-                    fig.update_layout(title="Dinámica de Carbono Integral (AFOLU)", xaxis_title="Año", yaxis_title="Acumulado (tCO2e)", hovermode="x unified")
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    with st.expander("Ver Tabla de Balance Detallada"):
-                        st.dataframe(df_bal.style.format("{:,.1f}"))
-
-                else:
-                    # VISTA CLÁSICA (SOLO BOSQUE)
-                    # Usamos res.get('nuevo', res.get('antiguo')) para total compatibilidad
-                    total_c = res.get('total_bosque', res.get('total', 0))
-                    df_render = res.get('df_bosque', res.get('df'))
-                    
-                    tasa_prom = total_c / edad_proy
-                    
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Captura Total", f"{total_c:,.0f} tCO2e")
-                    m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
-                    m3.metric("Valor (5 USD/t)", f"${(total_c*5):,.0f} USD")
-                    
-                    if df_render is not None:
-                        fig = px.area(df_render, x='Año', y='Proyecto_tCO2e_Acumulado',
-                                      title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[res['estrategia']]['nombre']}",
-                                      labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
-                                      color_discrete_sequence=['#2ecc71'])
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                        with st.expander("Ver Tabla Detallada"):
-                            st.dataframe(df_render)
+            # 🚀 MODO REACTIVO EN TIEMPO REAL (Sin botones de cálculo)
             
-            elif not calc_btn:
-                st.info("👈 Configura los parámetros y pulsa 'Calcular Balance de Carbono'.")
+            # 1. Calcular Bosque (Siempre ocurre)
+            df_bosque = carbon_calculator.calcular_proyeccion_captura(area_input, edad_proy, estrategia)
+            total_c_bosque = df_bosque['Proyecto_tCO2e_Acumulado'].iloc[-1]
+
+            if incluir_afolu:
+                # 2. Calcular AFOLU
+                df_pastos = carbon_calculator.calcular_captura_pasturas(area_pastos, edad_proy, esc_pasto)
+                df_vacas = carbon_calculator.calcular_emisiones_ganaderia(vacas_leche, vacas_carne, edad_proy)
+                df_bal = carbon_calculator.calcular_balance_afolu(df_bosque, df_pastos, df_vacas)
+                
+                neto_final = df_bal['Balance_Neto_tCO2e'].iloc[-1]
+                
+                st.subheader("⚖️ Balance Neto AFOLU")
+                m1, m2, m3 = st.columns(3)
+                captura_total = df_bal['Captura_Bosque'].iloc[-1] + df_bal['Captura_Pastos'].iloc[-1]
+                m1.metric("Captura (Bosque+Pasto)", f"{captura_total:,.0f} tCO2e")
+                m2.metric("Emisiones (Ganado)", f"{df_bal['Emisiones_Ganado'].iloc[-1]:,.0f} tCO2e", delta_color="inverse")
+                
+                # Evaluamos si el predio es sumidero positivo o emisor negativo
+                estado = "🌿 Sumidero Neto" if neto_final > 0 else "⚠️ Emisor Neto"
+                m3.metric("Balance Final", f"{neto_final:,.0f} tCO2e", delta=estado, delta_color="normal" if neto_final > 0 else "inverse")
+                
+                # Gráfico Tug-of-War (Tira y afloja)
+                fig = go.Figure()
+                
+                # Área Bosque (Positiva)
+                fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Bosque'], mode='lines', fill='tozeroy', name='Bosque', line=dict(color='#2ecc71')))
+                # Área Pastos (Dinámica: Amarillo/Naranja)
+                color_pasto = '#f1c40f' if df_pastos['Pastura_tCO2e_Acumulado'].iloc[-1] > 0 else '#e67e22'
+                fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Pastos'], mode='lines', fill='tozeroy', name='Pasturas', line=dict(color=color_pasto)))
+                # Área Emisiones Vacas (Negativa, Roja)
+                fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emisiones_Ganado'], mode='lines', fill='tozeroy', name='Emisiones Ganado', line=dict(color='#e74c3c')))
+                # Línea Negra del Saldo
+                fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Balance_Neto_tCO2e'], mode='lines', name='Balance Neto', line=dict(color='black', width=3, dash='dash')))
+
+                fig.update_layout(title="Dinámica de Carbono Integral (AFOLU)", xaxis_title="Año", yaxis_title="Acumulado (tCO2e)", hovermode="x unified")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                with st.expander("Ver Tabla de Balance Detallada"):
+                    st.dataframe(df_bal.style.format("{:,.1f}"))
+
+            else:
+                # 3. Vista Clásica (Solo Bosque)
+                tasa_prom = total_c_bosque / edad_proy
+                
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Captura Total", f"{total_c_bosque:,.0f} tCO2e")
+                m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
+                m3.metric("Valor (5 USD/t)", f"${(total_c_bosque*5):,.0f} USD")
+                
+                fig = px.area(df_bosque, x='Año', y='Proyecto_tCO2e_Acumulado',
+                              title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]['nombre']}",
+                              labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
+                              color_discrete_sequence=['#2ecc71'])
+                st.plotly_chart(fig, use_container_width=True)
+                
+                with st.expander("Ver Tabla Detallada"):
+                    st.dataframe(df_bosque)
                 
     # ================= OPCIÓN B: INVENTARIO =================
     else:
@@ -942,6 +909,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
