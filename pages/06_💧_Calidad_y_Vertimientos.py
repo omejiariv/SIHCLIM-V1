@@ -12,21 +12,28 @@ st.set_page_config(page_title="Calidad y Vertimientos", page_icon="💧", layout
 # ==============================================================================
 # ENCABEZADO Y CONTEXTO
 # ==============================================================================
-st.title("💧 Calidad del Agua y Metabolismo Hídrico")
+st.title("💧 Demanda, Calidad del Agua y Metabolismo Hídrico")
 st.markdown("""
-Modelo de simulación de cargas contaminantes (DBO, SST, Nutrientes), capacidad de asimilación 
-y dilución en la red hídrica. Integra descargas puntuales (urbanas, industriales) y difusas (agrícolas).
+Modelo integral del ciclo hidrosocial: Simulación de demanda sectorial, cargas contaminantes (DBO, SST, Nutrientes), 
+capacidad de asimilación y dilución en la red hídrica. Integra descargas puntuales y difusas.
 """)
 st.divider()
 
-# ==============================================================================
 # ESTRUCTURA DE PESTAÑAS
 # ==============================================================================
-tab_fuentes, tab_dilucion, tab_mitigacion = st.tabs([
+tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion = st.tabs([
+    "🚰 Demanda Hídrica",
     "🏭 Inventario de Cargas", 
     "🌊 Asimilación y Dilución", 
-    "🛡️ Escenarios de Mitigación (PTAR/BPA)"
+    "🛡️ Escenarios de Mitigación"
 ])
+
+# ------------------------------------------------------------------------------
+# TAB 0: DEMANDA HÍDRICA (NUEVO)
+# ------------------------------------------------------------------------------
+with tab_demanda:
+    st.header("🚰 Demanda Hídrica Sectorial")
+    st.info("Módulo en construcción: Aquí cruzaremos las proyecciones demográficas (Pág. 07) con las concesiones agrícolas e industriales para calcular el Índice de Uso del Agua (IUA).")
 
 # ------------------------------------------------------------------------------
 # TAB 1: INVENTARIO DE FUENTES CONTAMINANTES
