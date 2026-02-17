@@ -721,10 +721,10 @@ with tab_carbon:
             # C. EDAD (Horizonte)
             edad_proy = st.slider("Horizonte de Análisis (Años):", 5, 50, 20)
 
-            # --- NUEVO: COMPONENTE AFOLU (GANADERÍA Y PASTOS) ---
+            # --- COMPONENTE AFOLU (GANADERÍA Y PASTOS) ---
             st.markdown("---")
-            st.markdown("##### 🐄 Componente Ganadero (AFOLU)")
-            incluir_afolu = st.checkbox("Integrar pasturas y emisiones ganaderas", value=False)
+            st.markdown("##### 🐄 Componente Ganadero y Agrícola (AFOLU)")
+            incluir_afolu = st.checkbox("Integrar pasturas, ganadería, porcicultura y avicultura", value=False)
             
             if incluir_afolu:
                 opciones_pastos = list(carbon_calculator.ESCENARIOS_PASTURAS.keys())
@@ -735,21 +735,24 @@ with tab_carbon:
                 )
                 area_pastos = st.number_input("Hectáreas (Pastos):", min_value=0.0, value=10.0, step=0.5)
                 
+                st.caption("Inventario Animal (Cabezas):")
                 c_vacas1, c_vacas2 = st.columns(2)
-                vacas_leche = c_vacas1.number_input("Vacas Lecheras:", min_value=0, value=5, step=1, help="Mayor emisión de metano por fermentación entérica.")
+                vacas_leche = c_vacas1.number_input("Vacas Lecheras:", min_value=0, value=5, step=1)
                 vacas_carne = c_vacas2.number_input("Ganado Carne/Cría:", min_value=0, value=15, step=1)
+                
+                c_otros1, c_otros2 = st.columns(2)
+                cerdos = c_otros1.number_input("Cerdos (Porcicultura):", min_value=0, value=0, step=10)
+                aves = c_otros2.number_input("Aves (Galpones):", min_value=0, value=0, step=100)
 
         with col_conf2:
-            # 🚀 MODO REACTIVO EN TIEMPO REAL (Sin botones de cálculo)
-            
-            # 1. Calcular Bosque (Siempre ocurre)
+            # 🚀 MODO REACTIVO EN TIEMPO REAL
             df_bosque = carbon_calculator.calcular_proyeccion_captura(area_input, edad_proy, estrategia)
             total_c_bosque = df_bosque['Proyecto_tCO2e_Acumulado'].iloc[-1]
+            precio_usd = 5.0 # Precio estimativo del bono de carbono
 
             if incluir_afolu:
-                # 2. Calcular AFOLU
                 df_pastos = carbon_calculator.calcular_captura_pasturas(area_pastos, edad_proy, esc_pasto)
-                df_vacas = carbon_calculator.calcular_emisiones_ganaderia(vacas_leche, vacas_carne, edad_proy)
+                df_vacas = carbon_calculator.calcular_emisiones_ganaderia(vacas_leche, vacas_carne, cerdos, aves, edad_proy)
                 df_bal = carbon_calculator.calcular_balance_afolu(df_bosque, df_pastos, df_vacas)
                 
                 neto_final = df_bal['Balance_Neto_tCO2e'].iloc[-1]
@@ -758,48 +761,55 @@ with tab_carbon:
                 m1, m2, m3 = st.columns(3)
                 captura_total = df_bal['Captura_Bosque'].iloc[-1] + df_bal['Captura_Pastos'].iloc[-1]
                 m1.metric("Captura (Bosque+Pasto)", f"{captura_total:,.0f} tCO2e")
-                m2.metric("Emisiones (Ganado)", f"{df_bal['Emisiones_Ganado'].iloc[-1]:,.0f} tCO2e", delta_color="inverse")
+                m2.metric("Emisiones (Animales)", f"{df_bal['Emisiones_Ganado'].iloc[-1]:,.0f} tCO2e", delta_color="inverse")
                 
-                # Evaluamos si el predio es sumidero positivo o emisor negativo
                 estado = "🌿 Sumidero Neto" if neto_final > 0 else "⚠️ Emisor Neto"
                 m3.metric("Balance Final", f"{neto_final:,.0f} tCO2e", delta=estado, delta_color="normal" if neto_final > 0 else "inverse")
                 
-                # Gráfico Tug-of-War (Tira y afloja)
+                # Gráfico
                 fig = go.Figure()
-                
-                # Área Bosque (Positiva)
                 fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Bosque'], mode='lines', fill='tozeroy', name='Bosque', line=dict(color='#2ecc71')))
-                # Área Pastos (Dinámica: Amarillo/Naranja)
                 color_pasto = '#f1c40f' if df_pastos['Pastura_tCO2e_Acumulado'].iloc[-1] > 0 else '#e67e22'
                 fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Pastos'], mode='lines', fill='tozeroy', name='Pasturas', line=dict(color=color_pasto)))
-                # Área Emisiones Vacas (Negativa, Roja)
-                fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emisiones_Ganado'], mode='lines', fill='tozeroy', name='Emisiones Ganado', line=dict(color='#e74c3c')))
-                # Línea Negra del Saldo
+                fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emisiones_Ganado'], mode='lines', fill='tozeroy', name='Emisiones Animales', line=dict(color='#e74c3c')))
                 fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Balance_Neto_tCO2e'], mode='lines', name='Balance Neto', line=dict(color='black', width=3, dash='dash')))
 
                 fig.update_layout(title="Dinámica de Carbono Integral (AFOLU)", xaxis_title="Año", yaxis_title="Acumulado (tCO2e)", hovermode="x unified")
                 st.plotly_chart(fig, use_container_width=True)
                 
-                with st.expander("Ver Tabla de Balance Detallada"):
-                    st.dataframe(df_bal.style.format("{:,.1f}"))
+                # Tabla Financiera Detallada y Descarga
+                with st.expander("📊 Ver Tabla Financiera y Descargar Reporte"):
+                    df_financiero = df_bal.copy()
+                    df_financiero['Valor_USD_Acumulado'] = df_financiero['Balance_Neto_tCO2e'] * precio_usd
+                    
+                    st.dataframe(
+                        df_financiero.style.format({
+                            'Captura_Bosque': '{:,.1f}', 'Captura_Pastos': '{:,.1f}', 
+                            'Emisiones_Ganado': '{:,.1f}', 'Balance_Neto_tCO2e': '{:,.1f}',
+                            'Valor_USD_Acumulado': '${:,.0f}'
+                        }).background_gradient(cmap='RdYlGn', subset=['Balance_Neto_tCO2e'])
+                    )
+                    
+                    csv = df_financiero.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Descargar Reporte AFOLU (CSV)", csv, "reporte_balance_afolu.csv", "text/csv")
 
             else:
-                # 3. Vista Clásica (Solo Bosque)
+                # Vista Clásica
                 tasa_prom = total_c_bosque / edad_proy
-                
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Captura Total", f"{total_c_bosque:,.0f} tCO2e")
                 m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
-                m3.metric("Valor (5 USD/t)", f"${(total_c_bosque*5):,.0f} USD")
+                m3.metric("Valor Potencial", f"${(total_c_bosque * precio_usd):,.0f} USD")
                 
-                fig = px.area(df_bosque, x='Año', y='Proyecto_tCO2e_Acumulado',
-                              title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]['nombre']}",
-                              labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
-                              color_discrete_sequence=['#2ecc71'])
+                fig = px.area(df_bosque, x='Año', y='Proyecto_tCO2e_Acumulado', title=f"Dinámica - {carbon_calculator.ESCENARIOS_CRECIMIENTO[estrategia]['nombre']}", color_discrete_sequence=['#2ecc71'])
                 st.plotly_chart(fig, use_container_width=True)
                 
-                with st.expander("Ver Tabla Detallada"):
-                    st.dataframe(df_bosque)
+                with st.expander("📊 Ver Tabla Financiera y Descargar Reporte"):
+                    df_fin_bosque = df_bosque.copy()
+                    df_fin_bosque['Valor_USD_Acumulado'] = df_fin_bosque['Proyecto_tCO2e_Acumulado'] * precio_usd
+                    st.dataframe(df_fin_bosque.style.format({'Proyecto_tCO2e_Acumulado': '{:,.1f}', 'Valor_USD_Acumulado': '${:,.0f}'}))
+                    csv = df_fin_bosque.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Descargar Reporte Forestal (CSV)", csv, "reporte_forestal.csv", "text/csv")
                 
     # ================= OPCIÓN B: INVENTARIO =================
     else:
@@ -909,6 +919,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
