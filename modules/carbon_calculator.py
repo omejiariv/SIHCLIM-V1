@@ -185,6 +185,7 @@ EF_ENTERIC_LECHE = 72.0  # Vacas lecheras
 EF_ENTERIC_CARNE = 56.0  # Otro tipo de ganado (cría, levante, ceba, doble propósito)
 EF_ENTERIC_CERDOS = 1.5  # Fermentación entérica baja en monogástricos
 EF_ENTERIC_AVES = 0.0    # Despreciable
+EF_ENTERIC_HUMANOS = 0.0
 
 # Factores de Emisión: Gestión de Estiércol en Pasturas (kg CH4 / cabeza / año)
 # Fuente: IPCC 2006, Vol 4, Cap 10, Tabla 10.14 (Clima cálido/templado)
@@ -193,12 +194,14 @@ EF_ESTIERCOL_CH4_LECHE = 2.0
 EF_ESTIERCOL_CH4_CARNE = 1.0
 EF_ESTIERCOL_CH4_CERDOS = 4.0 # Alto si hay lagunas de oxidación / pozos
 EF_ESTIERCOL_CH4_AVES = 0.02
+EF_ESTIERCOL_CH4_HUMANOS = 1.5 # Fosas sépticas / aguas residuales rurales
 
 # Óxido Nitroso (N2O) por Orina/Estiércol (kg N2O / cabeza / año)
 EF_ESTIERCOL_N2O_LECHE = 1.5 
 EF_ESTIERCOL_N2O_CARNE = 1.2
 EF_ESTIERCOL_N2O_CERDOS = 0.2
 EF_ESTIERCOL_N2O_AVES = 0.001
+EF_ESTIERCOL_N2O_HUMANOS = 0.1
 
 # --- 2. ESCENARIOS DE PASTURAS Y SUELOS ---
 # Captura o pérdida de Carbono Orgánico del Suelo (COS) en tC/ha/año
@@ -225,94 +228,78 @@ ESCENARIOS_PASTURAS = {
     }
 }
 
+# Parámetros de Pérdida/Deforestación (tC/ha almacenado)
+STOCKS_SUCESION = {
+    "PASTO": 15.0, "RASTROJO_BAJO": 30.0, "RASTROJO_MEDIO": 60.0,
+    "RASTROJO_ALTO": 90.0, "BOSQUE_SECUNDARIO": 120.0, "BOSQUE_MADURO": 150.0
+}
+CAUSAS_PERDIDA = {
+    "INCENDIO": {"frac": 0.9, "gei": "Altas emisiones de CH4 y N2O por combustión."},
+    "AGRICOLA": {"frac": 0.8, "gei": "Oxidación rápida por remoción de biomasa."},
+    "PLAGAS": {"frac": 0.5, "gei": "Descomposición lenta (CO2 primario)."}
+}
+
 # --- 3. MOTORES DE CÁLCULO ---
 
-def calcular_emisiones_ganaderia(vacas_leche, vacas_carne, cerdos=0, aves=0, anios=20):
-    """
-    Calcula las emisiones acumuladas de Gases de Efecto Invernadero (CH4 y N2O)
-    generadas por bovinos, porcinos y aves.
-    """
-    # 1. Metano (CH4) en kg
-    ch4_leche = vacas_leche * (EF_ENTERIC_LECHE + EF_ESTIERCOL_CH4_LECHE)
-    ch4_carne = vacas_carne * (EF_ENTERIC_CARNE + EF_ESTIERCOL_CH4_CARNE)
-    ch4_cerdos = cerdos * (EF_ENTERIC_CERDOS + EF_ESTIERCOL_CH4_CERDOS)
-    ch4_aves = aves * (EF_ENTERIC_AVES + EF_ESTIERCOL_CH4_AVES)
-    total_ch4_kg_anio = ch4_leche + ch4_carne + ch4_cerdos + ch4_aves
+def calcular_emisiones_fuentes(vacas_l=0, vacas_c=0, cerdos=0, aves=0, humanos=0, anios=20):
+    """Calcula emisiones GEI detalladas por tipo de gas."""
+    # CH4
+    ch4_v = vacas_l * (EF_ENTERIC_LECHE + EF_ESTIERCOL_CH4_LECHE) + vacas_c * (EF_ENTERIC_CARNE + EF_ESTIERCOL_CH4_CARNE)
+    ch4_o = cerdos * (EF_ENTERIC_CERDOS + EF_ESTIERCOL_CH4_CERDOS) + aves * (EF_ENTERIC_AVES + EF_ESTIERCOL_CH4_AVES)
+    ch4_h = humanos * (EF_ENTERIC_HUMANOS + EF_ESTIERCOL_CH4_HUMANOS)
     
-    # 2. Óxido Nitroso (N2O) en kg
-    n2o_leche = vacas_leche * EF_ESTIERCOL_N2O_LECHE
-    n2o_carne = vacas_carne * EF_ESTIERCOL_N2O_CARNE
-    n2o_cerdos = cerdos * EF_ESTIERCOL_N2O_CERDOS
-    n2o_aves = aves * EF_ESTIERCOL_N2O_AVES
-    total_n2o_kg_anio = n2o_leche + n2o_carne + n2o_cerdos + n2o_aves
+    # N2O
+    n2o_v = vacas_l * EF_ESTIERCOL_N2O_LECHE + vacas_c * EF_ESTIERCOL_N2O_CARNE
+    n2o_o = cerdos * EF_ESTIERCOL_N2O_CERDOS + aves * EF_ESTIERCOL_N2O_AVES
+    n2o_h = humanos * EF_ESTIERCOL_N2O_HUMANOS
     
-    # 3. Conversión a tCO2e
-    emision_ch4_tco2e = (total_ch4_kg_anio / 1000) * GWP_CH4
-    emision_n2o_tco2e = (total_n2o_kg_anio / 1000) * GWP_N2O
-    emision_total_tco2e_anio = emision_ch4_tco2e + emision_n2o_tco2e
+    ch4_tco2e_anio = ((ch4_v + ch4_o + ch4_h) / 1000) * GWP_CH4
+    n2o_tco2e_anio = ((n2o_v + n2o_o + n2o_h) / 1000) * GWP_N2O
+    total_anio = ch4_tco2e_anio + n2o_tco2e_anio
     
-    # 4. Proyección
     years = np.arange(0, anios + 1)
-    emisiones_anuales = np.full_like(years, emision_total_tco2e_anio, dtype=float)
-    emisiones_anuales[0] = 0 
+    em_anuales = np.full_like(years, total_anio, dtype=float)
+    em_anuales[0] = 0 
     
-    df_emisiones = pd.DataFrame({
+    return pd.DataFrame({
         'Año': years,
-        'Emisiones_CH4_tCO2e': (ch4_leche + ch4_carne + ch4_cerdos + ch4_aves) / 1000 * GWP_CH4,
-        'Emisiones_N2O_tCO2e': (n2o_leche + n2o_carne + n2o_cerdos + n2o_aves) / 1000 * GWP_N2O,
-        'Emision_Anual_tCO2e': emisiones_anuales,
-        'Emision_Acumulada_tCO2e': np.cumsum(emisiones_anuales)
+        'CH4_tCO2e': ch4_tco2e_anio, 'N2O_tCO2e': n2o_tco2e_anio,
+        'Emision_Anual_tCO2e': em_anuales,
+        'Emision_Acumulada_tCO2e': np.cumsum(em_anuales)
     })
-    return df_emisiones
 
 def calcular_captura_pasturas(hectareas, anios=20, escenario_key="PASTO_MANEJADO"):
-    """
-    Calcula la captura (o pérdida) de carbono en el suelo y biomasa menor
-    según el tipo de manejo de la pastura.
-    """
-    params = ESCENARIOS_PASTURAS.get(escenario_key, ESCENARIOS_PASTURAS["PASTO_MANEJADO"])
-    tasa_c = params['tasa_c_ha_anio']
+    tasa_c = ESCENARIOS_PASTURAS.get(escenario_key, ESCENARIOS_PASTURAS["PASTO_MANEJADO"])['tasa_c_ha_anio']
+    years = np.arange(0, anios + 1)
+    tasa_activa = np.where(years <= 20, tasa_c, 0)
+    tasa_activa[0] = 0 
+    
+    captura_anual = tasa_activa * 3.666667 * hectareas
+    return pd.DataFrame({'Año': years, 'Pastura_tCO2e_Anual': captura_anual, 'Pastura_tCO2e_Acumulado': np.cumsum(captura_anual)})
+
+def calcular_emisiones_perdida(hectareas, estado="BOSQUE_SECUNDARIO", causa="AGRICOLA", anios=20):
+    """Calcula el pulso de emisiones al perder cobertura."""
+    stock_c = STOCKS_SUCESION.get(estado, 100.0)
+    fraccion = CAUSAS_PERDIDA.get(causa, {}).get("frac", 0.8)
+    
+    # Emisión total en tCO2e
+    emision_total_pulso = (stock_c * fraccion * 3.666667) * hectareas
     
     years = np.arange(0, anios + 1)
+    em_acumulada = np.full_like(years, emision_total_pulso, dtype=float)
+    em_acumulada[0] = 0 # Ocurre en el año 1
     
-    # El IPCC asume que los cambios en el carbono del suelo (SOC) ocurren
-    # linealmente durante un periodo de transición de 20 años.
-    # Después del año 20, el suelo alcanza un nuevo equilibrio y la tasa es 0.
-    tasa_activa = np.where(years <= 20, tasa_c, 0)
-    tasa_activa[0] = 0 # Año 0 no acumula
-    
-    # tC a tCO2e
-    tasa_co2e_ha_anio = tasa_activa * FACTOR_C_CO2
-    captura_anual_proyecto = tasa_co2e_ha_anio * hectareas
-    
-    df_pastos = pd.DataFrame({
-        'Año': years,
-        'Pastura_tCO2e_Anual': captura_anual_proyecto,
-        'Pastura_tCO2e_Acumulado': np.cumsum(captura_anual_proyecto)
-    })
-    
-    return df_pastos
+    return pd.DataFrame({'Año': years, 'Perdida_Acumulada_tCO2e': em_acumulada})
 
-def calcular_balance_afolu(df_forestal, df_pastos, df_emisiones):
-    """
-    Cruza los tres mundos (Bosque, Pastos y Vacas) para obtener el Balance Neto.
-    Si el balance es positivo, el predio es Sumidero (captura más de lo que emite).
-    Si es negativo, el predio es Emisor Neto.
-    """
-    df_balance = pd.DataFrame({'Año': df_forestal['Año']})
-    
-    # Sumideros (Positivos)
-    df_balance['Captura_Bosque'] = df_forestal['Proyecto_tCO2e_Acumulado']
+def calcular_balance_afolu(df_bosque, df_pastos, df_emisiones, df_perdida):
+    df_balance = pd.DataFrame({'Año': df_bosque['Año']})
+    df_balance['Captura_Bosque'] = df_bosque['Proyecto_tCO2e_Acumulado']
     df_balance['Captura_Pastos'] = df_pastos['Pastura_tCO2e_Acumulado']
+    df_balance['Emisiones_Fuentes'] = -df_emisiones['Emision_Acumulada_tCO2e']
+    df_balance['Emisiones_Perdida'] = -df_perdida['Perdida_Acumulada_tCO2e']
     
-    # Fuentes (Negativas) - Restamos las emisiones de la ganadería
-    df_balance['Emisiones_Ganado'] = -df_emisiones['Emision_Acumulada_tCO2e']
-    
-    # Balance Neto
     df_balance['Balance_Neto_tCO2e'] = (
-        df_balance['Captura_Bosque'] + 
-        df_balance['Captura_Pastos'] + 
-        df_balance['Emisiones_Ganado']
+        df_balance['Captura_Bosque'] + df_balance['Captura_Pastos'] + 
+        df_balance['Emisiones_Fuentes'] + df_balance['Emisiones_Perdida']
     )
-    
     return df_balance
