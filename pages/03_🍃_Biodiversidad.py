@@ -774,7 +774,8 @@ with tab_carbon:
             if 'carbon_results' in st.session_state:
                 res = st.session_state['carbon_results']
                 
-                if res['afolu']:
+                # Usar .get() evita el KeyError si quedó memoria de una versión antigua
+                if res.get('afolu', False):
                     # VISTA AFOLU (BOSQUE + PASTOS + VACAS)
                     df_bal = res['df_balance']
                     neto_final = res['neto']
@@ -809,7 +810,10 @@ with tab_carbon:
 
                 else:
                     # VISTA CLÁSICA (SOLO BOSQUE)
-                    total_c = res['total_bosque']
+                    # Usamos res.get('nuevo', res.get('antiguo')) para total compatibilidad
+                    total_c = res.get('total_bosque', res.get('total', 0))
+                    df_render = res.get('df_bosque', res.get('df'))
+                    
                     tasa_prom = total_c / edad_proy
                     
                     m1, m2, m3 = st.columns(3)
@@ -817,18 +821,19 @@ with tab_carbon:
                     m2.metric("Tasa Anual", f"{tasa_prom:,.1f} t/año")
                     m3.metric("Valor (5 USD/t)", f"${(total_c*5):,.0f} USD")
                     
-                    fig = px.area(res['df_bosque'], x='Año', y='Proyecto_tCO2e_Acumulado',
-                                  title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[res['estrategia']]['nombre']}",
-                                  labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
-                                  color_discrete_sequence=['#2ecc71'])
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                    with st.expander("Ver Tabla Detallada"):
-                        st.dataframe(res['df_bosque'])
+                    if df_render is not None:
+                        fig = px.area(df_render, x='Año', y='Proyecto_tCO2e_Acumulado',
+                                      title=f"Dinámica de Carbono - {carbon_calculator.ESCENARIOS_CRECIMIENTO[res['estrategia']]['nombre']}",
+                                      labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
+                                      color_discrete_sequence=['#2ecc71'])
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        with st.expander("Ver Tabla Detallada"):
+                            st.dataframe(df_render)
             
             elif not calc_btn:
                 st.info("👈 Configura los parámetros y pulsa 'Calcular Balance de Carbono'.")
-
+                
     # ================= OPCIÓN B: INVENTARIO =================
     else:
         c_inv_1, c_inv_2 = st.columns([1, 2])
@@ -937,6 +942,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
