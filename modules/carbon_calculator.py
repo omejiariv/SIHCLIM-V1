@@ -170,62 +170,33 @@ def calcular_inventario_forestal(df, zona_vida_code='bh-MB'):
     return df, "OK"
 
 # ==============================================================================
-# MÓDULO AFOLU: GANADERÍA Y PASTURAS (IPCC Nivel 1 - América Latina)
+# MÓDULO AFOLU: GANADERÍA, PASTURAS, HUMANOS Y DEFORESTACIÓN
 # ==============================================================================
 
 # --- 1. PARÁMETROS GLOBALES IPCC ---
-# Potenciales de Calentamiento Global (AR5)
-GWP_CH4 = 28   # 1 tonelada de Metano = 28 tCO2e
-GWP_N2O = 265  # 1 tonelada de Óxido Nitroso = 265 tCO2e
+GWP_CH4 = 28   
+GWP_N2O = 265  
 
-# Factores de Emisión: Fermentación Entérica (kg CH4 / cabeza / año)
-# Fuente: IPCC 2006, Vol 4, Cap 10, Tabla 10.11 (América Latina)
-# Factores de Emisión (kg CH4 / cabeza / año) - IPCC 2006 América Latina
-EF_ENTERIC_LECHE = 72.0  # Vacas lecheras 
-EF_ENTERIC_CARNE = 56.0  # Otro tipo de ganado (cría, levante, ceba, doble propósito)
-EF_ENTERIC_CERDOS = 1.5  # Fermentación entérica baja en monogástricos
-EF_ENTERIC_AVES = 0.0    # Despreciable
+# Factores de Emisión CH4 (kg/cabeza/año)
+EF_ENTERIC_LECHE, EF_ENTERIC_CARNE = 72.0, 56.0  
+EF_ENTERIC_CERDOS, EF_ENTERIC_AVES = 1.5, 0.0    
 EF_ENTERIC_HUMANOS = 0.0
 
-# Factores de Emisión: Gestión de Estiércol en Pasturas (kg CH4 / cabeza / año)
-# Fuente: IPCC 2006, Vol 4, Cap 10, Tabla 10.14 (Clima cálido/templado)
-# Gestión de Estiércol en Pasturas/Corrales (kg CH4 / cabeza / año)
-EF_ESTIERCOL_CH4_LECHE = 2.0  
-EF_ESTIERCOL_CH4_CARNE = 1.0
-EF_ESTIERCOL_CH4_CERDOS = 4.0 # Alto si hay lagunas de oxidación / pozos
-EF_ESTIERCOL_CH4_AVES = 0.02
+# Gestión de Estiércol / Aguas Residuales (kg CH4/cabeza/año)
+EF_ESTIERCOL_CH4_LECHE, EF_ESTIERCOL_CH4_CARNE = 2.0, 1.0
+EF_ESTIERCOL_CH4_CERDOS, EF_ESTIERCOL_CH4_AVES = 4.0, 0.02
 EF_ESTIERCOL_CH4_HUMANOS = 1.5 # Fosas sépticas / aguas residuales rurales
 
-# Óxido Nitroso (N2O) por Orina/Estiércol (kg N2O / cabeza / año)
-EF_ESTIERCOL_N2O_LECHE = 1.5 
-EF_ESTIERCOL_N2O_CARNE = 1.2
-EF_ESTIERCOL_N2O_CERDOS = 0.2
-EF_ESTIERCOL_N2O_AVES = 0.001
+# Óxido Nitroso (kg N2O/cabeza/año)
+EF_ESTIERCOL_N2O_LECHE, EF_ESTIERCOL_N2O_CARNE = 1.5, 1.2
+EF_ESTIERCOL_N2O_CERDOS, EF_ESTIERCOL_N2O_AVES = 0.2, 0.001
 EF_ESTIERCOL_N2O_HUMANOS = 0.1
 
-# --- 2. ESCENARIOS DE PASTURAS Y SUELOS ---
-# Captura o pérdida de Carbono Orgánico del Suelo (COS) en tC/ha/año
 ESCENARIOS_PASTURAS = {
-    "PASTO_DEGRADADO": {
-        "nombre": "1. Pasto Degradado (Línea Base)",
-        "tasa_c_ha_anio": -0.5, # Emisor: Pierde carbono anualmente por erosión/compactación
-        "desc": "Pasturas sobrepastoreadas. Emite carbono del suelo."
-    },
-    "PASTO_MANEJADO": {
-        "nombre": "2. Pasto Mejorado (Manejo Rotacional)",
-        "tasa_c_ha_anio": 0.8,  # Sumidero: Gana carbono
-        "desc": "Pasturas con buen manejo, descanso adecuado y sin sobrecarga."
-    },
-    "SSP_BAJO": {
-        "nombre": "3. Silvopastoril (Baja Densidad)",
-        "tasa_c_ha_anio": 1.2,  # Sumidero mayor por raíces profundas
-        "desc": "Arreglo silvopastoril con árboles dispersos en potrero."
-    },
-    "SSP_INTENSIVO": {
-        "nombre": "4. Silvopastoril Intensivo (SSPi)",
-        "tasa_c_ha_anio": 2.5,  # Sumidero alto (Suelo + Arbustos forrajeros)
-        "desc": "SSPi con alta densidad de arbustos (ej. Leucaena, Botón de Oro) y maderables."
-    }
+    "PASTO_DEGRADADO": {"nombre": "Pasto Degradado (Línea Base)", "tasa_c_ha_anio": -0.5},
+    "PASTO_MANEJADO": {"nombre": "Pasto Mejorado (Manejo Rotacional)", "tasa_c_ha_anio": 0.8},
+    "SSP_BAJO": {"nombre": "Silvopastoril (Baja Densidad)", "tasa_c_ha_anio": 1.2},
+    "SSP_INTENSIVO": {"nombre": "Silvopastoril Intensivo (SSPi)", "tasa_c_ha_anio": 2.5}
 }
 
 # Parámetros de Pérdida/Deforestación (tC/ha almacenado)
