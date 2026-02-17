@@ -468,7 +468,7 @@ with tab_mapa:
 # ==============================================================================
 # TAB 2: TAXONOMÍA
 # ==============================================================================
-with tab_tax:
+with tab_taxonomia:
     if not gdf_bio.empty:
         c1, c2 = st.columns([2,1])
         with c1:
@@ -1008,4 +1008,5 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
