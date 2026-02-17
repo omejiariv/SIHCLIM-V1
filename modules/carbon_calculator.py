@@ -212,32 +212,79 @@ CAUSAS_PERDIDA = {
 
 # --- 3. MOTORES DE CÁLCULO ---
 
-def calcular_emisiones_fuentes(vacas_l=0, vacas_c=0, cerdos=0, aves=0, humanos=0, anios=20):
-    """Calcula emisiones GEI detalladas por tipo de gas."""
-    # CH4
-    ch4_v = vacas_l * (EF_ENTERIC_LECHE + EF_ESTIERCOL_CH4_LECHE) + vacas_c * (EF_ENTERIC_CARNE + EF_ESTIERCOL_CH4_CARNE)
-    ch4_o = cerdos * (EF_ENTERIC_CERDOS + EF_ESTIERCOL_CH4_CERDOS) + aves * (EF_ENTERIC_AVES + EF_ESTIERCOL_CH4_AVES)
-    ch4_h = humanos * (EF_ENTERIC_HUMANOS + EF_ESTIERCOL_CH4_HUMANOS)
-    
-    # N2O
-    n2o_v = vacas_l * EF_ESTIERCOL_N2O_LECHE + vacas_c * EF_ESTIERCOL_N2O_CARNE
-    n2o_o = cerdos * EF_ESTIERCOL_N2O_CERDOS + aves * EF_ESTIERCOL_N2O_AVES
-    n2o_h = humanos * EF_ESTIERCOL_N2O_HUMANOS
-    
-    ch4_tco2e_anio = ((ch4_v + ch4_o + ch4_h) / 1000) * GWP_CH4
-    n2o_tco2e_anio = ((n2o_v + n2o_o + n2o_h) / 1000) * GWP_N2O
-    total_anio = ch4_tco2e_anio + n2o_tco2e_anio
-    
+def calcular_emisiones_fuentes_detallado(vacas_l=0, vacas_c=0, cerdos=0, aves=0, humanos=0, anios=20):
+    """Calcula emisiones separadas por cada fuente para graficar curvas independientes."""
     years = np.arange(0, anios + 1)
-    em_anuales = np.full_like(years, total_anio, dtype=float)
-    em_anuales[0] = 0 
     
-    return pd.DataFrame({
-        'Año': years,
-        'CH4_tCO2e': ch4_tco2e_anio, 'N2O_tCO2e': n2o_tco2e_anio,
-        'Emision_Anual_tCO2e': em_anuales,
-        'Emision_Acumulada_tCO2e': np.cumsum(em_anuales)
-    })
+    # Cálculos anuales en tCO2e para cada fuente
+    co2e_v = (((vacas_l * (EF_ENTERIC_LECHE + EF_ESTIERCOL_CH4_LECHE) + vacas_c * (EF_ENTERIC_CARNE + EF_ESTIERCOL_CH4_CARNE)) / 1000) * GWP_CH4) + \
+             (((vacas_l * EF_ESTIERCOL_N2O_LECHE + vacas_c * EF_ESTIERCOL_N2O_CARNE) / 1000) * GWP_N2O)
+             
+    co2e_p = ((cerdos * (EF_ENTERIC_CERDOS + EF_ESTIERCOL_CH4_CERDOS) / 1000) * GWP_CH4) + \
+             ((cerdos * EF_ESTIERCOL_N2O_CERDOS / 1000) * GWP_N2O)
+             
+    co2e_a = ((aves * (EF_ENTERIC_AVES + EF_ESTIERCOL_CH4_AVES) / 1000) * GWP_CH4) + \
+             ((aves * EF_ESTIERCOL_N2O_AVES / 1000) * GWP_N2O)
+             
+    co2e_h = ((humanos * (EF_ENTERIC_HUMANOS + EF_ESTIERCOL_CH4_HUMANOS) / 1000) * GWP_CH4) + \
+             ((humanos * EF_ESTIERCOL_N2O_HUMANOS / 1000) * GWP_N2O)
+             
+    # Arrays de acumulación (el año 0 es 0)
+    df = pd.DataFrame({'Año': years})
+    df['Bovinos_tCO2e'] = np.cumsum(np.where(years > 0, co2e_v, 0))
+    df['Porcinos_tCO2e'] = np.cumsum(np.where(years > 0, co2e_p, 0))
+    df['Aves_tCO2e'] = np.cumsum(np.where(years > 0, co2e_a, 0))
+    df['Humanos_tCO2e'] = np.cumsum(np.where(years > 0, co2e_h, 0))
+    
+    # Para el gráfico de pastel
+    df['CH4_Total_Anual'] = co2e_v + co2e_p + co2e_a + co2e_h # Simplificado para validación
+    
+    return df
+
+def calcular_evento_cambio(hectareas, tipo="PERDIDA", estado="BOSQUE_SECUNDARIO", causa="AGRICOLA", anio_evento=1, anios=20):
+    """Permite simular tanto pérdida (pulso de emisión) como ganancia (crecimiento) en un año específico."""
+    years = np.arange(0, anios + 1)
+    em_acumulada = np.zeros_like(years, dtype=float)
+    stock_c = STOCKS_SUCESION.get(estado, 100.0)
+    
+    if hectareas > 0 and anio_evento <= anios:
+        if tipo == "PERDIDA":
+            fraccion = CAUSAS_PERDIDA.get(causa, {}).get("frac", 0.8)
+            pulso = (stock_c * fraccion * 3.666667) * hectareas
+            em_acumulada = np.where(years >= anio_evento, pulso, 0)
+        else: # GANANCIA (Restauración de otra zona)
+            # Asume que llega al stock del estado seleccionado en 10 años
+            tasa_anual = (stock_c * 3.666667 * hectareas) / 10.0 
+            for i in range(len(years)):
+                if years[i] >= anio_evento:
+                    anios_crecimiento = min(years[i] - anio_evento + 1, 10)
+                    em_acumulada[i] = anios_crecimiento * tasa_anual
+
+    col_name = 'Perdida_tCO2e' if tipo == "PERDIDA" else 'Ganancia_tCO2e'
+    return pd.DataFrame({'Año': years, col_name: em_acumulada})
+
+def calcular_balance_territorial(df_bosque, df_pastos, df_fuentes, df_evento):
+    """Une todas las capas separadas para el balance total."""
+    df_bal = pd.DataFrame({'Año': df_bosque['Año']})
+    
+    # Sumideros (+)
+    df_bal['Captura_Bosque'] = df_bosque['Proyecto_tCO2e_Acumulado']
+    df_bal['Captura_Pastos'] = df_pastos['Pastura_tCO2e_Acumulado']
+    df_bal['Evento_Ganancia'] = df_evento.get('Ganancia_tCO2e', 0)
+    
+    # Fuentes (-)
+    df_bal['Emision_Bovinos'] = -df_fuentes['Bovinos_tCO2e']
+    df_bal['Emision_Porcinos'] = -df_fuentes['Porcinos_tCO2e']
+    df_bal['Emision_Aves'] = -df_fuentes['Aves_tCO2e']
+    df_bal['Emision_Humanos'] = -df_fuentes['Humanos_tCO2e']
+    df_bal['Evento_Perdida'] = -df_evento.get('Perdida_tCO2e', 0)
+    
+    df_bal['Balance_Neto_tCO2e'] = (
+        df_bal['Captura_Bosque'] + df_bal['Captura_Pastos'] + df_bal['Evento_Ganancia'] +
+        df_bal['Emision_Bovinos'] + df_bal['Emision_Porcinos'] + 
+        df_bal['Emision_Aves'] + df_bal['Emision_Humanos'] + df_bal['Evento_Perdida']
+    )
+    return df_bal
 
 def calcular_captura_pasturas(hectareas, anios=20, escenario_key="PASTO_MANEJADO"):
     tasa_c = ESCENARIOS_PASTURAS.get(escenario_key, ESCENARIOS_PASTURAS["PASTO_MANEJADO"])['tasa_c_ha_anio']
@@ -248,29 +295,3 @@ def calcular_captura_pasturas(hectareas, anios=20, escenario_key="PASTO_MANEJADO
     captura_anual = tasa_activa * 3.666667 * hectareas
     return pd.DataFrame({'Año': years, 'Pastura_tCO2e_Anual': captura_anual, 'Pastura_tCO2e_Acumulado': np.cumsum(captura_anual)})
 
-def calcular_emisiones_perdida(hectareas, estado="BOSQUE_SECUNDARIO", causa="AGRICOLA", anios=20):
-    """Calcula el pulso de emisiones al perder cobertura."""
-    stock_c = STOCKS_SUCESION.get(estado, 100.0)
-    fraccion = CAUSAS_PERDIDA.get(causa, {}).get("frac", 0.8)
-    
-    # Emisión total en tCO2e
-    emision_total_pulso = (stock_c * fraccion * 3.666667) * hectareas
-    
-    years = np.arange(0, anios + 1)
-    em_acumulada = np.full_like(years, emision_total_pulso, dtype=float)
-    em_acumulada[0] = 0 # Ocurre en el año 1
-    
-    return pd.DataFrame({'Año': years, 'Perdida_Acumulada_tCO2e': em_acumulada})
-
-def calcular_balance_afolu(df_bosque, df_pastos, df_emisiones, df_perdida):
-    df_balance = pd.DataFrame({'Año': df_bosque['Año']})
-    df_balance['Captura_Bosque'] = df_bosque['Proyecto_tCO2e_Acumulado']
-    df_balance['Captura_Pastos'] = df_pastos['Pastura_tCO2e_Acumulado']
-    df_balance['Emisiones_Fuentes'] = -df_emisiones['Emision_Acumulada_tCO2e']
-    df_balance['Emisiones_Perdida'] = -df_perdida['Perdida_Acumulada_tCO2e']
-    
-    df_balance['Balance_Neto_tCO2e'] = (
-        df_balance['Captura_Bosque'] + df_balance['Captura_Pastos'] + 
-        df_balance['Emisiones_Fuentes'] + df_balance['Emisiones_Perdida']
-    )
-    return df_balance
