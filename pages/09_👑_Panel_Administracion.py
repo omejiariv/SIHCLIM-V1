@@ -164,18 +164,15 @@ st.markdown("---")
 
 tabs = st.tabs([
     "📡 Estaciones", "🌧️ Lluvia", "📊 Índices", "🏠 Predios", "🌊 Cuencas", 
-    "🏙️ Municipios", "🌲 Coberturas", "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Red de Drenaje", "🌧️ Zona de Peligro"
+    "🏙️ Municipios", "🌲 Coberturas", "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Red de Drenaje", "🌧️ Zona de Peligro", "👥 Demografía"
 ])
 
-
 # --- PESTAÑA DE CONFIGURACIÓN INICIAL (BLOQUE CORREGIDO) ---
-# Pega esto justo después de la línea: tabs = st.tabs([...])
 
 st.markdown("### 🛠️ Zona de Peligro: Reinicio del Sistema")
 with st.expander("Mostrar Controles de Reinicio de Base de Datos", expanded=True):
     st.warning("⚠️ ESTA ACCIÓN ES IRREVERSIBLE. BORRARÁ TODOS LOS DATOS.")
     
-    # HE CAMBIADO EL NOMBRE DEL BOTÓN PARA FORZAR LA ACTUALIZACIÓN
     if st.button("🔥 EJECUTAR REINICIO TOTAL (CASCADE) 🔥", key="btn_nuke_v3"):
         try:
             with engine.begin() as conn:
@@ -1078,6 +1075,92 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
                 st.balloons()
             except Exception as e: st.error(f"Error: {e}")
     
+# ==============================================================================
+# TAB 14: GESTIÓN DEMOGRÁFICA
+# ==============================================================================
+with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
+    st.header("👥 Gestión de Datos Demográficos y Poblacionales")
+    st.markdown("""
+    Aquí puedes actualizar las bases de datos que alimentan los modelos de crecimiento y pirámides poblacionales.
+    **Instrucciones:** Selecciona el tipo de dato, descarga la plantilla vacía, diligénciala respetando los nombres de las columnas y súbela nuevamente.
+    """)
+    
+    # 1. Selector del tipo de datos a cargar
+    tipo_carga = st.radio(
+        "Selecciona la categoría de datos a actualizar:",
+        ["📈 Histórico y Proyecciones Macro (Regiones)", "🏗️ Estructura por Edades (Pirámides)"],
+        horizontal=True
+    )
+    
+    st.divider()
+    
+    # 2. Definición de Plantillas (Columnas requeridas) y Rutas de Guardado
+    if "Histórico" in tipo_carga:
+        cols_requeridas = ["Año", "Pob_Colombia", "Pob_Antioquia", "Pob_Amva", "Pob_Medellin"]
+        archivo_salida = "data/poblacion_historica_macro.parquet"
+        nombre_plantilla = "plantilla_historica_macro.csv"
+        desc_ayuda = "Debe contener el año y la población total para cada nivel territorial."
+    else:
+        cols_requeridas = ["Año", "Edad", "Male", "Female", "Total"]
+        archivo_salida = "data/poblacion_edades_piramide.parquet"
+        nombre_plantilla = "plantilla_edades_piramide.csv"
+        desc_ayuda = "Debe contener el año, la edad simple (0, 1, 2...) y la cantidad de Hombres, Mujeres y el Total."
+
+    col_down, col_up = st.columns([1, 2])
+    
+    # 3. Opción de Descargar Plantilla Vacía
+    with col_down:
+        st.subheader("1. Descargar Plantilla")
+        st.info(desc_ayuda)
+        
+        # Generar DataFrame vacío en memoria con las columnas requeridas
+        df_plantilla = pd.DataFrame(columns=cols_requeridas)
+        csv_plantilla = df_plantilla.to_csv(index=False).encode('utf-8')
+        
+        st.download_button(
+            label=f"📥 Descargar {nombre_plantilla}",
+            data=csv_plantilla,
+            file_name=nombre_plantilla,
+            mime='text/csv',
+            type="primary"
+        )
+        
+    # 4. Cargador del Archivo y Previsualización
+    with col_up:
+        st.subheader("2. Cargar Datos Diligenciados")
+        archivo_subido = st.file_uploader(f"Sube tu archivo Excel o CSV para '{tipo_carga}'", type=['csv', 'xlsx'])
+        
+        if archivo_subido is not None:
+            try:
+                # Leer dependiendo de la extensión
+                if archivo_subido.name.endswith('.csv'):
+                    df_nuevo = pd.read_csv(archivo_subido)
+                else:
+                    df_nuevo = pd.read_excel(archivo_subido)
+                
+                # Validación estricta de columnas
+                columnas_faltantes = [col for col in cols_requeridas if col not in df_nuevo.columns]
+                
+                if columnas_faltantes:
+                    st.error(f"❌ Error: El archivo no tiene la estructura correcta. Faltan las columnas: {', '.join(columnas_faltantes)}")
+                else:
+                    st.success(f"✅ Archivo leído correctamente: {len(df_nuevo)} registros encontrados.")
+                    
+                    with st.expander("👁️ Vista Previa de los Datos", expanded=True):
+                        st.dataframe(df_nuevo.head(10), use_container_width=True)
+                    
+                    # 5. Botón de Guardado Final
+                    if st.button("💾 Guardar y Actualizar Base de Datos (Parquet)", type="primary", use_container_width=True):
+                        import os
+                        os.makedirs("data", exist_ok=True) # Garantiza que la carpeta data exista
+                        
+                        # Guardamos en Parquet para máxima velocidad de lectura en la Pág 07
+                        df_nuevo.to_parquet(archivo_salida, index=False)
+                        st.balloons()
+                        st.success(f"¡Base de datos actualizada con éxito! Archivo guardado en: `{archivo_salida}`")
+                        
+            except Exception as e:
+                st.error(f"Ocurrió un error al procesar el archivo: {e}")
 
 
 
