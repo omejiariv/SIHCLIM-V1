@@ -18,30 +18,40 @@ proyecciones polinómicas/exponenciales y modelos jerárquicos de Downscaling te
 """)
 st.divider()
 
-# --- 1. LECTURA DE DATOS REALES (Sin Caché para que detecte los cambios al instante) ---
+# --- 1. LECTURA DE DATOS REALES (AHORA EN CSV PURO) ---
 def cargar_historico_real():
-    ruta = "data/poblacion_historica_macro.parquet"
+    ruta = "data/poblacion_historica_macro.csv"
     if os.path.exists(ruta):
-        df = pd.read_parquet(ruta)
-        # Limpiar nombres de columnas (Pob_Colombia -> Colombia)
-        df.columns = [c.replace('Pob_', '') for c in df.columns]
+        df = pd.read_csv(ruta)
+        # Limpia los nombres de las columnas para la interfaz (Pob_Colombia -> Colombia)
+        df.columns = [str(c).replace('Pob_', '') for c in df.columns]
         return df
     return pd.DataFrame()
 
 def cargar_piramides_real():
-    ruta = "data/poblacion_edades_piramide.parquet"
+    ruta = "data/poblacion_edades_piramide.csv"
     if os.path.exists(ruta):
-        return pd.read_parquet(ruta)
+        return pd.read_csv(ruta)
     return pd.DataFrame()
 
 df_real = cargar_historico_real()
 df_piramide = cargar_piramides_real()
 
-# Si no hay datos, mostramos advertencia y detenemos la ejecución limpia
+# Radar de depuración
 if df_real.empty:
-    st.warning("⚠️ No se encontraron datos históricos. Ve al 'Panel de Administración' -> 'Demografía' y carga tu archivo CSV con la historia desde 1912.")
+    st.warning("⚠️ No se encontraron datos históricos reales.")
+    st.info("💡 **Radar de diagnóstico:** Revisa si en tu Panel de Administración guardaste el archivo correctamente. Archivos actuales en la carpeta 'data/':")
+    try:
+        import os
+        archivos = os.listdir("data")
+        if archivos:
+            st.write(archivos)
+        else:
+            st.write("La carpeta 'data' existe, pero está vacía.")
+    except Exception:
+        st.write("La carpeta 'data' aún no ha sido creada. Debes guardar algo desde el Panel de Administración primero.")
     st.stop()
-
+    
 # Opciones dinámicas basadas en las columnas de tu CSV real (ignorando el Año)
 escala_opciones = [col for col in df_real.columns if col != "Año"]
 
