@@ -1096,17 +1096,18 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
     
     # 2. Definición de Plantillas (Columnas requeridas) y Rutas de Guardado
     if "Histórico" in tipo_carga:
-        cols_requeridas = ["Año", "Pob_Colombia", "Pob_Antioquia", "Pob_Amva", "Pob_Medellin"]
+        # ¡LA MAGIA ELÁSTICA! Solo exigimos estrictamente la columna "Año".
+        # Puedes poner 5 o 500 columnas adicionales de territorios y el sistema las aceptará.
+        cols_requeridas = ["Año"] 
         archivo_salida = "data/poblacion_historica_macro.parquet"
         nombre_plantilla = "plantilla_historica_macro.csv"
-        desc_ayuda = "Debe contener el año y la población total para cada nivel territorial."
+        desc_ayuda = "Debe contener una columna llamada 'Año' y cualquier cantidad de columnas adicionales para tus territorios (ej. Pob_mundial, Pob_Antioquia, Rionegro...)."
     else:
+        # Las pirámides sí requieren estructura rígida por la matemática del gráfico
         cols_requeridas = ["Año", "Edad", "Male", "Female", "Total"]
         archivo_salida = "data/poblacion_edades_piramide.parquet"
         nombre_plantilla = "plantilla_edades_piramide.csv"
         desc_ayuda = "Debe contener el año, la edad simple (0, 1, 2...) y la cantidad de Hombres, Mujeres y el Total."
-
-    col_down, col_up = st.columns([1, 2])
     
     # 3. Opción de Descargar Plantilla Vacía
     with col_down:
@@ -1161,6 +1162,7 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
                         
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar el archivo: {e}")
+
 
 
 
