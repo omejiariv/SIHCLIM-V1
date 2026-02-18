@@ -18,20 +18,20 @@ proyecciones polinómicas/exponenciales y modelos jerárquicos de Downscaling te
 """)
 st.divider()
 
-# --- 1. LECTURA DE DATOS REALES (AHORA EN CSV PURO) ---
+# --- 1. LECTURA DE DATOS REALES (LEYENDO DIRECTO TUS EXCEL DESDE GITHUB) ---
 def cargar_historico_real():
-    ruta = "data/poblacion_historica_macro.csv"
+    ruta = "data/Pob_Col_Ant_Amva_Med.xlsx"  # El nombre exacto que está en GitHub
     if os.path.exists(ruta):
-        df = pd.read_csv(ruta)
-        # Limpia los nombres de las columnas para la interfaz (Pob_Colombia -> Colombia)
+        df = pd.read_excel(ruta)  # Usamos read_excel en lugar de read_csv
+        # Limpia los nombres de las columnas para la interfaz
         df.columns = [str(c).replace('Pob_', '') for c in df.columns]
         return df
     return pd.DataFrame()
 
 def cargar_piramides_real():
-    ruta = "data/poblacion_edades_piramide.csv"
+    ruta = "data/PobCol1912_2100.xlsx"  # El nombre exacto que está en GitHub
     if os.path.exists(ruta):
-        return pd.read_csv(ruta)
+        return pd.read_excel(ruta)  # Usamos read_excel
     return pd.DataFrame()
 
 df_real = cargar_historico_real()
@@ -49,10 +49,10 @@ if df_real.empty:
         else:
             st.write("La carpeta 'data' existe, pero está vacía.")
     except Exception:
-        st.write("La carpeta 'data' aún no ha sido creada. Debes guardar algo desde el Panel de Administración primero.")
+        st.write("La carpeta 'data' aún no ha sido creada.")
     st.stop()
     
-# Opciones dinámicas basadas en las columnas de tu CSV real (ignorando el Año)
+# Opciones dinámicas basadas en las columnas de tu Excel real (ignorando el Año)
 escala_opciones = [col for col in df_real.columns if col != "Año"]
 
 # ==============================================================================
