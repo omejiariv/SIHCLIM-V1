@@ -122,45 +122,58 @@ with tab_modelos:
                 if mod == "Exponencial":
                     if opt_auto:
                         popt, _ = curve_fit(f_exp, t_data, p_data, p0=[p0_val, 0.01])
-                        y_pred, res_text.append(f"**Exp**: r={popt[1]:.4f}") = f_exp(t_total, *popt), None
-                    else: y_pred = f_exp(t_total, p0_val, r_man)
+                        y_pred = f_exp(t_total, *popt)
+                        res_text.append(f"**Exp**: r={popt[1]:.4f}") # ¡Línea corregida!
+                    else: 
+                        y_pred = f_exp(t_total, p0_val, r_man)
 
                 elif mod == "Logístico":
                     if opt_auto:
                         # Max de los datos * 2 como aproximación inicial de K
                         popt, _ = curve_fit(f_log, t_data, p_data, p0=[max(p_data)*2.0, p0_val, 0.01], maxfev=10000)
-                        y_pred, res_text.append(f"**Log**: K={popt[0]:,.0f}, r={popt[2]:.4f}") = f_log(t_total, *popt), None
-                    else: y_pred = f_log(t_total, k_man, p0_val, r_man)
+                        y_pred = f_log(t_total, *popt)
+                        res_text.append(f"**Log**: K={popt[0]:,.0f}, r={popt[2]:.4f}") # ¡Línea corregida!
+                    else: 
+                        y_pred = f_log(t_total, k_man, p0_val, r_man)
 
                 elif mod == "Gompertz":
                     if opt_auto:
                         popt, _ = curve_fit(f_gomp, t_data, p_data, p0=[max(p_data)*2.0, p0_val, 0.01], maxfev=10000)
                         y_pred = f_gomp(t_total, *popt)
-                    else: y_pred = f_gomp(t_total, k_man, p0_val, r_man)
+                    else: 
+                        y_pred = f_gomp(t_total, k_man, p0_val, r_man)
 
                 elif mod == "Geométrico":
                     if opt_auto:
                         popt, _ = curve_fit(f_geom, t_data, p_data, p0=[p0_val, 0.01])
                         y_pred = f_geom(t_total, *popt)
-                    else: y_pred = f_geom(t_total, p0_val, r_man)
+                    else: 
+                        y_pred = f_geom(t_total, p0_val, r_man)
 
                 elif mod == "Polinómico (Grado 2)":
                     if opt_auto:
                         popt, _ = curve_fit(f_poly2, t_data, p_data)
                         y_pred = f_poly2(t_total, *popt)
-                    else: y_pred = f_poly2(t_total, 10, 50, p0_val)
+                    else: 
+                        y_pred = f_poly2(t_total, 10, 50, p0_val)
 
                 elif mod == "Polinómico (Grado 3)":
-                    if opt_auto: popt, _ = curve_fit(f_poly3, t_data, p_data); y_pred = f_poly3(t_total, *popt)
-                    else: y_pred = f_poly3(t_total, 1, 10, 50, p0_val)
+                    if opt_auto: 
+                        popt, _ = curve_fit(f_poly3, t_data, p_data)
+                        y_pred = f_poly3(t_total, *popt)
+                    else: 
+                        y_pred = f_poly3(t_total, 1, 10, 50, p0_val)
 
                 elif mod == "Polinómico (Grado 4)":
-                    if opt_auto: popt, _ = curve_fit(f_poly4, t_data, p_data); y_pred = f_poly4(t_total, *popt)
-                    else: y_pred = f_poly4(t_total, 0.1, 1, 10, 50, p0_val)
+                    if opt_auto: 
+                        popt, _ = curve_fit(f_poly4, t_data, p_data)
+                        y_pred = f_poly4(t_total, *popt)
+                    else: 
+                        y_pred = f_poly4(t_total, 0.1, 1, 10, 50, p0_val)
 
                 fig2.add_trace(go.Scatter(x=anios_totales, y=y_pred, mode='lines', name=mod, line=dict(width=3, dash='dot' if opt_auto else 'solid')))
             except Exception as e:
-                pass # Si el modelo no logra ajustarse, lo ignoramos suavemente
+                pass # Si el modelo no logra ajustarse matemáticamente, lo ignoramos
 
         fig2.update_layout(title="Proyección y Ajuste de Modelos", xaxis_title="Año", yaxis_title="Población", hovermode="x unified", height=550)
         st.plotly_chart(fig2, use_container_width=True)
