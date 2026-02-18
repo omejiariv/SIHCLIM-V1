@@ -1108,6 +1108,8 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
         archivo_salida = "data/poblacion_edades_piramide.parquet"
         nombre_plantilla = "plantilla_edades_piramide.csv"
         desc_ayuda = "Debe contener el año, la edad simple (0, 1, 2...) y la cantidad de Hombres, Mujeres y el Total."
+
+   col_down, col_up = st.columns([1, 2])
     
     # 3. Opción de Descargar Plantilla Vacía
     with col_down:
@@ -1162,6 +1164,7 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
                         
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar el archivo: {e}")
+
 
 
 
