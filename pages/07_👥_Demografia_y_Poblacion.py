@@ -58,11 +58,12 @@ escala_opciones = [col for col in df_real.columns if col != "Año"]
 # ==============================================================================
 # ESTRUCTURA MAESTRA DE PESTAÑAS
 # ==============================================================================
-tab_datos, tab_modelos, tab_piramides, tab_anidados = st.tabs([
+tab_datos, tab_modelos, tab_piramides, tab_anidados, tab_espacial = st.tabs([
     "📊 1. Censos Multiescalar", 
     "📈 2. Modelos Evolutivos & Optimización", 
     "🏗️ 3. Estructura y Cohortes",
-    "🌍 4. Modelos Anidados (Downscaling)"
+    "🌍 4. Modelos Anidados (Downscaling)",
+    "🗺️ 5. Visor Espacial (DANE & Veredas)"
 ])
 
 # ------------------------------------------------------------------------------
@@ -268,3 +269,56 @@ with tab_anidados:
         
         fig_ani.update_layout(title=f"Downscaling Demográfico: {nivel_macro} ➔ {nivel_micro}", xaxis_title="Año", yaxis_title="Población", hovermode="x unified")
         st.plotly_chart(fig_ani, use_container_width=True)
+
+# ------------------------------------------------------------------------------
+# TAB 5: VISOR ESPACIAL (CENSOS DETALLADOS DANE Y VEREDAL)
+# ------------------------------------------------------------------------------
+with tab_espacial:
+    st.header("🗺️ Visor de Censos Detallados (DANE y Veredal)")
+    st.markdown("Exploración de bases de datos detalladas por Departamento, Municipio y Vereda para análisis cruzado.")
+    
+    visor_sel = st.selectbox(
+        "Selecciona la base de datos a explorar:", 
+        ["Departamentos de Colombia (DANE)", "Municipios de Colombia (DANE)", "Veredas de Antioquia"]
+    )
+    
+    if visor_sel == "Departamentos de Colombia (DANE)":
+        ruta_dept = "data/Departamentos_Colombia.xlsx"
+        if os.path.exists(ruta_dept):
+            # skiprows=7 ignora los títulos iniciales del DANE
+            df_dept = pd.read_excel(ruta_dept, skiprows=7) 
+            st.success(f"Base de datos departamental cargada ({len(df_dept)} registros).")
+            st.dataframe(df_dept, use_container_width=True)
+        else:
+            st.warning(f"⚠️ No se encontró el archivo en GitHub. Sube el archivo con el nombre exacto: `Departamentos_Colombia.xlsx` a la carpeta `data/`")
+            
+    elif visor_sel == "Municipios de Colombia (DANE)":
+        ruta_mpio = "data/Municipios_Colombia.xlsx"
+        if os.path.exists(ruta_mpio):
+            # skiprows=5 ignora los títulos iniciales del DANE
+            df_mpio = pd.read_excel(ruta_mpio, skiprows=5)
+            st.success(f"Base de datos municipal cargada ({len(df_mpio)} registros).")
+            st.dataframe(df_mpio, use_container_width=True)
+        else:
+            st.warning(f"⚠️ No se encontró el archivo en GitHub. Sube el archivo con el nombre exacto: `Municipios_Colombia.xlsx` a la carpeta `data/`")
+            
+    elif visor_sel == "Veredas de Antioquia":
+        ruta_ver = "data/veredas_Antioquia.xlsx"
+        if os.path.exists(ruta_ver):
+            df_ver = pd.read_excel(ruta_ver)
+            st.success(f"Base de datos veredal cargada ({len(df_ver)} registros).")
+            
+            col_v1, col_v2 = st.columns([2, 1])
+            with col_v1:
+                st.dataframe(df_ver, use_container_width=True)
+            with col_v2:
+                # Mini-gráfico automático para las Veredas
+                if 'Poblacion_hab' in df_ver.columns and 'Vereda' in df_ver.columns:
+                    st.subheader("📊 Top 15 Veredas")
+                    df_ver_clean = df_ver.dropna(subset=['Poblacion_hab'])
+                    df_top = df_ver_clean.sort_values(by='Poblacion_hab', ascending=False).head(15)
+                    fig_ver = px.bar(df_top, x='Poblacion_hab', y='Vereda', orientation='h', color='Municipio')
+                    fig_ver.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, height=400)
+                    st.plotly_chart(fig_ver, use_container_width=True)
+        else:
+            st.warning(f"⚠️ No se encontró el archivo en GitHub. Sube el archivo con el nombre exacto: `veredas_Antioquia.xlsx` a la carpeta `data/`")
