@@ -1094,18 +1094,15 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
     
     st.divider()
     
-    # 2. Definición de Plantillas (Columnas requeridas) y Rutas de Guardado
+    # 2. Definición de Plantillas (AHORA EN CSV PURO)
     if "Histórico" in tipo_carga:
-        # ¡LA MAGIA ELÁSTICA! Solo exigimos estrictamente la columna "Año".
-        # Puedes poner 5 o 500 columnas adicionales de territorios y el sistema las aceptará.
         cols_requeridas = ["Año"] 
-        archivo_salida = "data/poblacion_historica_macro.parquet"
+        archivo_salida = "data/poblacion_historica_macro.csv"  # <-- Cambiado a .csv
         nombre_plantilla = "plantilla_historica_macro.csv"
-        desc_ayuda = "Debe contener una columna llamada 'Año' y cualquier cantidad de columnas adicionales para tus territorios (ej. Pob_mundial, Pob_Antioquia, Rionegro...)."
+        desc_ayuda = "Debe contener una columna llamada 'Año' y columnas adicionales para tus territorios."
     else:
-        # Las pirámides sí requieren estructura rígida por la matemática del gráfico
         cols_requeridas = ["Año", "Edad", "Male", "Female", "Total"]
-        archivo_salida = "data/poblacion_edades_piramide.parquet"
+        archivo_salida = "data/poblacion_edades_piramide.csv"  # <-- Cambiado a .csv
         nombre_plantilla = "plantilla_edades_piramide.csv"
         desc_ayuda = "Debe contener el año, la edad simple (0, 1, 2...) y la cantidad de Hombres, Mujeres y el Total."
 
@@ -1116,15 +1113,14 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
         st.subheader("1. Descargar Plantilla")
         st.info(desc_ayuda)
         
-        # Generar DataFrame vacío en memoria con las columnas requeridas
         df_plantilla = pd.DataFrame(columns=cols_requeridas)
         csv_plantilla = df_plantilla.to_csv(index=False).encode('utf-8')
         
         st.download_button(
-            label=f"📥 Descargar {nombre_plantilla}",
-            data=csv_plantilla,
-            file_name=nombre_plantilla,
-            mime='text/csv',
+            label=f"📥 Descargar {nombre_plantilla}", 
+            data=csv_plantilla, 
+            file_name=nombre_plantilla, 
+            mime='text/csv', 
             type="primary"
         )
         
@@ -1135,39 +1131,28 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
         
         if archivo_subido is not None:
             try:
-                # Leer dependiendo de la extensión
                 if archivo_subido.name.endswith('.csv'):
                     df_nuevo = pd.read_csv(archivo_subido)
                 else:
                     df_nuevo = pd.read_excel(archivo_subido)
                 
-                # Validación estricta de columnas
                 columnas_faltantes = [col for col in cols_requeridas if col not in df_nuevo.columns]
                 
                 if columnas_faltantes:
                     st.error(f"❌ Error: El archivo no tiene la estructura correcta. Faltan las columnas: {', '.join(columnas_faltantes)}")
                 else:
                     st.success(f"✅ Archivo leído correctamente: {len(df_nuevo)} registros encontrados.")
-                    
                     with st.expander("👁️ Vista Previa de los Datos", expanded=True):
                         st.dataframe(df_nuevo.head(10), use_container_width=True)
                     
-                    # 5. Botón de Guardado Final
-                    if st.button("💾 Guardar y Actualizar Base de Datos (Parquet)", type="primary", use_container_width=True):
+                    # 5. Botón de Guardado Final (Guardando en CSV)
+                    if st.button("💾 Guardar y Actualizar Base de Datos", type="primary", use_container_width=True):
                         import os
-                        os.makedirs("data", exist_ok=True) # Garantiza que la carpeta data exista
+                        os.makedirs("data", exist_ok=True) 
                         
-                        # Guardamos en Parquet para máxima velocidad de lectura en la Pág 07
-                        df_nuevo.to_parquet(archivo_salida, index=False)
+                        df_nuevo.to_csv(archivo_salida, index=False) # <-- Cambiado a to_csv
                         st.balloons()
                         st.success(f"¡Base de datos actualizada con éxito! Archivo guardado en: `{archivo_salida}`")
                         
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar el archivo: {e}")
-
-
-
-
-
-
-
