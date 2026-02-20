@@ -57,30 +57,59 @@ def obtener_poblacion_actual(lugar_sel, nivel_sel):
     return float(pob_u), float(pob_r)
 
 # ==============================================================================
-# 🎛️ PANEL MAESTRO DE VARIABLES (Aplica a todas las pestañas)
+# 🎛️ PANEL MAESTRO DE VARIABLES (FILTROS EN CASCADA)
 # ==============================================================================
 st.subheader("📍 1. Configuración de la Unidad Territorial")
-col_m1, col_m2, col_m3 = st.columns([1, 1, 2])
 
-with col_m1:
-    nivel_sel = st.selectbox("Nivel Territorial:", ["Municipal", "Veredal"])
-with col_m2:
-    lugar_sel = "N/A"
-    if nivel_sel == "Municipal" and not df_mpios.empty:
-        opciones = sorted([str(x) for x in df_mpios['municipio'].unique() if pd.notna(x)])
-        idx = opciones.index('Rionegro') if 'Rionegro' in opciones else 0
-        lugar_sel = st.selectbox("Unidad:", opciones, index=idx)
-    elif nivel_sel == "Veredal" and not df_veredas.empty:
-        opciones = sorted([str(x) for x in df_veredas['Vereda'].dropna().unique()])
-        lugar_sel = st.selectbox("Unidad:", opciones)
+# Paso 1: Seleccionar el nivel de profundidad deseado
+nivel_sel = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Municipal", "Veredal"])
 
+lugar_sel = "N/A"
+
+# --- LÓGICA DE CASCADA MUNICIPAL ---
+if nivel_sel == "Municipal" and not df_mpios.empty:
+    col_f1, col_f2, col_f3 = st.columns(3)
+    
+    with col_f1:
+        deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
+        idx_ant = deptos.index("Antioquia") if "Antioquia" in deptos else 0
+        depto_sel = st.selectbox("1. Departamento:", deptos, index=idx_ant)
+        
+    with col_f2:
+        df_filtro1 = df_mpios[df_mpios['depto_nom'] == depto_sel]
+        if 'region' in df_filtro1.columns:
+            regiones = sorted([str(x) for x in df_filtro1['region'].unique() if pd.notna(x)])
+            region_sel = st.selectbox("2. Región (Filtro opcional):", ["Todas"] + regiones)
+        else:
+            region_sel = "Todas"
+            st.info("Columna de regiones no disponible.")
+            
+    with col_f3:
+        df_filtro2 = df_filtro1 if region_sel == "Todas" else df_filtro1[df_filtro1['region'] == region_sel]
+        mpios = sorted([str(x) for x in df_filtro2['municipio'].unique() if pd.notna(x)])
+        lugar_sel = st.selectbox("3. Municipio Objetivo:", mpios)
+
+# --- LÓGICA DE CASCADA VEREDAL ---
+elif nivel_sel == "Veredal" and not df_veredas.empty:
+    col_f1, col_f2 = st.columns(2)
+    
+    with col_f1:
+        mpios_v = sorted([str(x) for x in df_veredas['Municipio'].dropna().unique()])
+        mpio_sel = st.selectbox("1. Municipio Anfitrión:", mpios_v)
+        
+    with col_f2:
+        veredas = sorted([str(x) for x in df_veredas[df_veredas['Municipio'] == mpio_sel]['Vereda'].dropna().unique()])
+        lugar_sel = st.selectbox("2. Vereda Objetivo:", veredas)
+
+# --- EXTRACCIÓN AUTOMÁTICA DE POBLACIÓN ---
 pob_u_auto, pob_r_auto = obtener_poblacion_actual(lugar_sel, nivel_sel)
 
-with col_m3:
-    st.caption("Población base extraída automáticamente (Editable para simulaciones):")
-    col_p1, col_p2 = st.columns(2)
-    with col_p1: pob_urbana = st.number_input("Pob. Urbana:", min_value=0.0, value=pob_u_auto, step=100.0)
-    with col_p2: pob_rural = st.number_input("Pob. Rural:", min_value=0.0, value=pob_r_auto, step=100.0)
+st.caption(f"Población base extraída automáticamente para **{lugar_sel}** (Editable para simulación de escenarios):")
+col_p1, col_p2, col_p3 = st.columns([1, 1, 2])
+with col_p1: 
+    pob_urbana = st.number_input("Pob. Urbana (Hab):", min_value=0.0, value=pob_u_auto, step=100.0)
+with col_p2: 
+    pob_rural = st.number_input("Pob. Rural (Hab):", min_value=0.0, value=pob_r_auto, step=100.0)
 
 st.divider()
 
