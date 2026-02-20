@@ -17,10 +17,13 @@ Motor de Inferencia Demográfica: Agregación territorial dinámica, ajuste para
 """)
 st.divider()
 
-# --- 1. LECTURA DE DATOS MAESTROS (AUTODETECCIÓN INTELIGENTE) ---
+# --- 1. LECTURA DE DATOS MAESTROS (AUTODETECCIÓN Y LIMPIEZA PROFUNDA) ---
 def leer_csv_robusto(ruta):
     try:
-        return pd.read_csv(ruta, sep=None, engine='python')
+        df = pd.read_csv(ruta, sep=None, engine='python')
+        # EXORCISMO DEL BOM: Limpiamos los nombres de las columnas de caracteres invisibles
+        df.columns = df.columns.str.replace('\ufeff', '').str.strip()
+        return df
     except Exception:
         return pd.DataFrame()
 
@@ -31,7 +34,7 @@ def cargar_macro():
     if os.path.exists(ruta1): df = pd.read_excel(ruta1)
     elif os.path.exists(ruta2): df = leer_csv_robusto(ruta2)
     else: return pd.DataFrame()
-    df.columns = [str(c).replace('Pob_', '') for c in df.columns]
+    df.columns = [str(c).replace('Pob_', '').replace('\ufeff', '').strip() for c in df.columns]
     return df
 
 @st.cache_data
@@ -50,8 +53,6 @@ def cargar_edades():
     if os.path.exists(ruta):
         df = leer_csv_robusto(ruta)
         if not df.empty:
-            # Limpieza profunda para evitar errores en las pirámides > 2017
-            df.columns = [str(c).strip() for c in df.columns]
             if 'sexo' in df.columns: df['sexo'] = df['sexo'].astype(str).str.strip().str.lower()
             if 'area_geografica' in df.columns: df['area_geografica'] = df['area_geografica'].astype(str).str.strip()
             return df
@@ -69,29 +70,25 @@ df_veredas = cargar_veredas()
 
 # --- MOTOR DE AGREGACIÓN MATEMÁTICA ---
 def obtener_serie_historica(df_mp, df_ed, nivel, nombre_lugar, area_geo):
-    # LÓGICA ESPECIAL PARA EL NIVEL NACIONAL (Usa la base de Edades que es más larga)
     if nivel == "Nacional (Colombia)":
         if df_ed.empty: return pd.DataFrame(), 'Colombia'
-        # Diccionario de traducción DANE
         mapa_area = {"Total": "Total", "Urbano": "Cabecera", "Rural": "Centros Poblados y Rural Disperso"}
         area_ed = mapa_area.get(area_geo, "Total")
         
-        # Filtramos la base de edades
         df_f = df_ed[(df_ed['area_geografica'].str.lower() == area_ed.lower()) & (df_ed['sexo'] == 'total')].copy()
         if df_f.empty: return pd.DataFrame(), 'Colombia'
         
-        # Sumamos las columnas de edades (0 a 100) para obtener la población total de ese año
         edades_cols = [str(i) for i in range(101) if str(i) in df_f.columns]
+        # Forzamos conversión numérica por si hay datos contaminados con texto
+        df_f[edades_cols] = df_f[edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
         df_f['Poblacion'] = df_f[edades_cols].sum(axis=1)
         
         serie = df_f.groupby('año')['Poblacion'].sum().reset_index()
         serie.rename(columns={'Poblacion': 'Colombia'}, inplace=True)
         return serie, 'Colombia'
         
-    # LÓGICA PARA DEPARTAMENTOS Y MUNICIPIOS
     else:
         if df_mp.empty: return pd.DataFrame(), nombre_lugar
-        # Ignorar filas 'total' en la base y sumar matemáticamente
         if area_geo.lower() == "total":
             df_f = df_mp[df_mp['area_geografica'].str.lower().isin(['urbano', 'rural', 'cabecera', 'resto'])]
         else:
@@ -200,7 +197,6 @@ with tab_datos:
         st.warning(f"⚠️ Para visualizar escalas {nivel_sel} se requiere agregar dichas clasificaciones a la base de datos municipal o veredal.")
         
     else: 
-        # Nacional, Departamental, Municipal usan la nueva función que incluye df_edades
         df_plot, nombre_col = obtener_serie_historica(df_mpios, df_edades, nivel_sel, lugar_sel, area_sel)
         if not df_plot.empty:
             fig1 = px.line(df_plot, x="año", y=nombre_col, title=f"Crecimiento Histórico DANE: {nombre_col} ({area_sel})", markers=True)
@@ -283,13 +279,15 @@ with tab_modelos:
 # TAB 3: ESTRUCTURAS Y PIRÁMIDES (100 Años)
 # ------------------------------------------------------------------------------
 with tab_piramides:
-    st.header("🏗️ Pirámides Poblacionales (1950 - 2070)")
+    st.header("🏗️ Pirámides y Estructura Poblacional (1950 - 2070)")
     col_p1, col_p2 = st.columns([1, 3])
     
     with col_p1:
         if not df_edades.empty:
-            area_pir = st.selectbox("Área:", df_edades['area_geografica'].unique())
-            anio_pir = st.slider("Año de la Pirámide:", int(df_edades['año'].min()), int(df_edades['año'].max()), 2024)
+            area_pir = st.selectbox("Área Geográfica:", df_edades['area_geografica'].unique())
+            anio_pir = st.slider("Año de la Estructura:", int(df_edades['año'].min()), int(df_edades['año'].max()), 2024)
+            modo_pir = st.radio("Modo de Visualización:", ["Pirámide (Hombres vs Mujeres)", "Total (Ambos Sexos combinados)"])
+            
             df_f_pir = df_edades[(df_edades['año'] == anio_pir) & (df_edades['area_geografica'].str.lower() == area_pir.lower())]
         else: st.warning("Datos de edades no disponibles.")
         
@@ -297,17 +295,29 @@ with tab_piramides:
         if not df_edades.empty and not df_f_pir.empty:
             edades_cols = [str(i) for i in range(101) if str(i) in df_f_pir.columns]
             try:
-                # El uso de .sum(axis=0) protege contra errores de arrays vacíos > 2017
-                hombres = df_f_pir[df_f_pir['sexo'] == 'hombres'][edades_cols].sum(axis=0).values
-                mujeres = df_f_pir[df_f_pir['sexo'] == 'mujeres'][edades_cols].sum(axis=0).values
-                
                 fig_pir = go.Figure()
-                fig_pir.add_trace(go.Bar(y=edades_cols, x=hombres * -1, name='Hombres', orientation='h', marker=dict(color='#3498db'), hovertext=hombres))
-                fig_pir.add_trace(go.Bar(y=edades_cols, x=mujeres, name='Mujeres', orientation='h', marker=dict(color='#e74c3c'), hovertext=mujeres))
-                fig_pir.update_layout(title=f"Estructura Demográfica ({anio_pir})", barmode='relative', yaxis_title='Edad Simple', xaxis_title='Población', height=600)
+                
+                if modo_pir == "Pirámide (Hombres vs Mujeres)":
+                    # FORZAMOS NUMÉRICO (Evita que Python una textos si hay formatos raros post-2018)
+                    df_h = df_f_pir[df_f_pir['sexo'] == 'hombres'][edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+                    df_m = df_f_pir[df_f_pir['sexo'] == 'mujeres'][edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+                    hombres = df_h.sum(axis=0).values
+                    mujeres = df_m.sum(axis=0).values
+                    
+                    fig_pir.add_trace(go.Bar(y=edades_cols, x=hombres * -1, name='Hombres', orientation='h', marker=dict(color='#3498db'), hovertext=hombres))
+                    fig_pir.add_trace(go.Bar(y=edades_cols, x=mujeres, name='Mujeres', orientation='h', marker=dict(color='#e74c3c'), hovertext=mujeres))
+                    fig_pir.update_layout(title=f"Pirámide Demográfica ({anio_pir})", barmode='relative', yaxis_title='Edad Simple', xaxis_title='Población', height=600)
+                else:
+                    # HISTOGRAMA TOTAL
+                    df_t = df_f_pir[df_f_pir['sexo'] == 'total'][edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+                    total_pob = df_t.sum(axis=0).values
+                    
+                    fig_pir.add_trace(go.Bar(x=edades_cols, y=total_pob, name='Total Población', marker=dict(color='#9b59b6')))
+                    fig_pir.update_layout(title=f"Distribución Total por Edades ({anio_pir})", xaxis_title='Edad Simple', yaxis_title='Población', height=600)
+
                 st.plotly_chart(fig_pir, use_container_width=True)
             except Exception as e:
-                st.error(f"Error al graficar la pirámide: {e}")
+                st.error(f"Error al graficar la estructura: {e}")
 
 # ------------------------------------------------------------------------------
 # TAB 4: DOWNSCALING (EL PUENTE A LAS VEREDAS)
@@ -326,7 +336,6 @@ with tab_anidados:
                 micro_ver = st.selectbox("Vereda (Micro):", sorted(v_disp['Vereda'].unique()))
                 pob_v = v_disp[v_disp['Vereda'] == micro_ver]['Poblacion_hab'].values[0]
                 
-                # Obtenemos la población municipal desde los datos maestros con df_edades
                 df_mp_raw = obtener_serie_historica(df_mpios, df_edades, "Municipal", macro_mpio, "Total")[0]
                 pob_m = df_mp_raw['Poblacion'].iloc[-1] if not df_mp_raw.empty else pob_v * 10
                 
@@ -362,7 +371,6 @@ with tab_espacial:
     
     if visor_sel == "Departamentos de Colombia (DANE)":
         if not df_mpios.empty:
-            # MAGIA PURA: Agrupamos el archivo de municipios para generar la tabla de departamentos en tiempo real
             df_dept = df_mpios.groupby(['id_dp', 'depto_nom', 'año', 'area_geografica'])['Poblacion'].sum().reset_index()
             st.success(f"Base de datos departamental generada dinámicamente ({len(df_dept)} registros).")
             st.dataframe(df_dept, use_container_width=True)
