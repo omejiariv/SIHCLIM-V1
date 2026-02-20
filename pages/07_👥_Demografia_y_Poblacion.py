@@ -41,8 +41,10 @@ def cargar_municipios():
     ruta = "data/Pob_mpios_colombia.csv"
     if os.path.exists(ruta):
         df = leer_csv_robusto(ruta)
-        if not df.empty and 'depto_nom' in df.columns and 'municipio' in df.columns:
-            df.dropna(subset=['depto_nom', 'municipio'], inplace=True)
+        if not df.empty and 'municipio' in df.columns:
+            # Relajamos el filtro para soportar tu archivo sin id_dp
+            df.dropna(subset=['municipio'], inplace=True)
+            if 'region' in df.columns: df['region'] = df['region'].astype(str).str.strip()
             return df
     return pd.DataFrame()
 
@@ -67,24 +69,31 @@ df_mpios = cargar_municipios()
 df_edades = cargar_edades()
 df_veredas = cargar_veredas()
 
-# --- MOTOR DE AGREGACIÓN MATEMÁTICA ---
+# --- MOTOR DE AGREGACIÓN MATEMÁTICA (AHORA CON BUSCADOR FLEXIBLE Y REGIONES) ---
 def obtener_serie_historica(df_mp, df_ed, nivel, nombre_lugar, area_geo):
     if nivel == "Nacional (Colombia)":
         if df_ed.empty: return pd.DataFrame(), 'Colombia'
         
-        # Filtro dinámico de áreas evitando buscar la palabra "Total" para no generar pantalla blanca
+        # Filtro de Área Geográfica con .str.contains para evitar fallos por espacios o mayúsculas
+        areas_str = df_ed['area_geografica'].astype(str).str.lower()
         if area_geo.lower() == "total":
-            df_f = df_ed[df_ed['area_geografica'].str.lower().isin(['cabecera', 'centros poblados y rural disperso', 'urbano', 'rural'])].copy()
-        else:
-            mapa_area = {"urbano": "cabecera", "rural": "centros poblados y rural disperso"}
-            area_ed = mapa_area.get(area_geo.lower(), area_geo.lower())
-            df_f = df_ed[df_ed['area_geografica'].str.lower() == area_ed].copy()
+            # Tomamos solo las partes para sumar y evitar doble conteo si el archivo tiene 'Total'
+            df_f = df_ed[areas_str.str.contains('cabecera|urbano|rural|centro', na=False)].copy()
+            if df_f.empty: df_f = df_ed.copy()
+        elif area_geo.lower() == "urbano":
+            df_f = df_ed[areas_str.str.contains('cabecera|urbano', na=False)].copy()
+        else: # Rural
+            df_f = df_ed[areas_str.str.contains('centro|rural|resto', na=False)].copy()
             
         if df_f.empty: return pd.DataFrame(), 'Colombia'
         
-        # Filtro dinámico de sexo: suma solo hombres y mujeres (ignora filas total si existen o faltan)
-        df_f = df_f[df_f['sexo'].str.lower().isin(['hombres', 'mujeres'])]
-        
+        # Filtro de Sexo seguro
+        sexo_str = df_f['sexo'].astype(str).str.lower()
+        if sexo_str.isin(['hombres', 'mujeres']).any():
+            df_f = df_f[sexo_str.isin(['hombres', 'mujeres'])]
+        else:
+            df_f = df_f[sexo_str == 'total']
+            
         edades_cols = [str(i) for i in range(101) if str(i) in df_f.columns]
         df_f[edades_cols] = df_f[edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
         df_f['Poblacion'] = df_f[edades_cols].sum(axis=1)
@@ -93,14 +102,26 @@ def obtener_serie_historica(df_mp, df_ed, nivel, nombre_lugar, area_geo):
         serie.rename(columns={'Poblacion': 'Colombia'}, inplace=True)
         return serie, 'Colombia'
         
-    else:
+    else: # Regional, Departamental, Municipal
         if df_mp.empty: return pd.DataFrame(), nombre_lugar
+        
+        areas_str_mp = df_mp['area_geografica'].astype(str).str.lower()
         if area_geo.lower() == "total":
-            df_f = df_mp[df_mp['area_geografica'].str.lower().isin(['urbano', 'rural', 'cabecera', 'resto'])]
+            areas_validas = ['urbano', 'rural', 'cabecera', 'resto', 'centros poblados y rural disperso']
+            df_f = df_mp[areas_str_mp.isin(areas_validas)]
+            if df_f.empty: df_f = df_mp # Fallback si el usuario ya limpió el archivo
+        elif area_geo.lower() == "urbano":
+            df_f = df_mp[areas_str_mp.str.contains('urbano|cabecera', na=False)]
         else:
-            df_f = df_mp[df_mp['area_geografica'].str.lower() == area_geo.lower()]
+            df_f = df_mp[areas_str_mp.str.contains('rural|resto|centro', na=False)]
             
-        if nivel == "Departamental":
+        if nivel == "Regional":
+            if 'region' not in df_f.columns: return pd.DataFrame(), nombre_lugar
+            serie = df_f[df_f['region'] == nombre_lugar].groupby('año')['Poblacion'].sum().reset_index()
+            serie.rename(columns={'Poblacion': nombre_lugar}, inplace=True)
+            return serie, nombre_lugar
+        elif nivel == "Departamental":
+            if 'depto_nom' not in df_f.columns: return pd.DataFrame(), nombre_lugar
             serie = df_f[df_f['depto_nom'] == nombre_lugar].groupby('año')['Poblacion'].sum().reset_index()
             serie.rename(columns={'Poblacion': nombre_lugar}, inplace=True)
             return serie, nombre_lugar
@@ -146,15 +167,21 @@ with tab_datos:
                 lugar_sel = st.selectbox("Zona Macro/Global:", opciones)
             else: st.error("Archivo Macro no encontrado.")
             
+        elif nivel_sel == "Regional":
+            if not df_mpios.empty and 'region' in df_mpios.columns:
+                opciones = sorted([str(x) for x in df_mpios['region'].unique() if pd.notna(x)])
+                lugar_sel = st.selectbox("Región:", opciones)
+            else: st.warning("Columna 'region' no encontrada en el archivo de municipios.")
+            
         elif nivel_sel == "Departamental":
             if not df_mpios.empty and 'depto_nom' in df_mpios.columns:
-                opciones = sorted([str(x) for x in df_mpios['depto_nom'].unique()])
+                opciones = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
                 lugar_sel = st.selectbox("Departamento:", opciones)
             else: st.warning("Datos departamentales no disponibles.")
             
         elif nivel_sel == "Municipal":
             if not df_mpios.empty and 'municipio' in df_mpios.columns:
-                opciones = sorted([str(x) for x in df_mpios['municipio'].unique()])
+                opciones = sorted([str(x) for x in df_mpios['municipio'].unique() if pd.notna(x)])
                 idx = opciones.index('Medellín') if 'Medellín' in opciones else 0
                 lugar_sel = st.selectbox("Municipio:", opciones, index=idx)
             else: st.warning("Datos municipales no disponibles.")
@@ -165,8 +192,8 @@ with tab_datos:
                 lugar_sel = mpio_vereda
             else: st.error("Archivo de veredas no encontrado.")
             
-        elif nivel_sel in ["Regional", "Corregimental"]:
-            st.info(f"Buscador {nivel_sel} en construcción.")
+        elif nivel_sel == "Corregimental":
+            st.info(f"Buscador Corregimental en construcción.")
             
         else:
             lugar_sel = "Colombia"
@@ -176,9 +203,10 @@ with tab_datos:
         if nivel_sel == "Macro (Mundial/Histórico)":
             area_sel = "Total"
             st.info("Datos Macro agregados.")
-        elif nivel_sel in ["Regional", "Corregimental", "Veredal"]:
+        elif nivel_sel in ["Corregimental", "Veredal"]:
             area_sel = "Rural"
         else:
+            # Regional ahora permite Urbano/Rural/Total al igual que Municipal
             area_sel = st.selectbox("Área Geográfica:", ["Total", "Urbano", "Rural"])
         
     # --- LÓGICA DE GRAFICADO SEGÚN ESCALA ---
@@ -199,10 +227,11 @@ with tab_datos:
                 st.plotly_chart(fig1, use_container_width=True)
             else: st.warning("No hay datos veredales para este municipio.")
             
-    elif nivel_sel in ["Regional", "Corregimental"]:
-        st.warning(f"⚠️ Para visualizar escalas {nivel_sel} se requiere agregar dichas clasificaciones a la base de datos municipal o veredal.")
+    elif nivel_sel == "Corregimental":
+        st.warning(f"⚠️ Para visualizar escalas Corregimentales agregue la columna a la base de datos municipal.")
         
     else: 
+        # Funciona para Nacional, Regional, Departamental y Municipal
         df_plot, nombre_col = obtener_serie_historica(df_mpios, df_edades, nivel_sel, lugar_sel, area_sel)
         if not df_plot.empty:
             fig1 = px.line(df_plot, x="año", y=nombre_col, title=f"Crecimiento Histórico DANE: {nombre_col} ({area_sel})", markers=True)
@@ -219,7 +248,7 @@ with tab_modelos:
     
     if df_plot_model.empty or not nombre_col_model:
         st.info("👆 Selecciona una escala válida en el Tab 1 que contenga datos de serie de tiempo.")
-    elif nivel_sel in ["Veredal", "Regional", "Corregimental"]:
+    elif nivel_sel in ["Veredal", "Corregimental"]:
         st.error(f"❌ El motor de optimización requiere una serie de tiempo. La escala {nivel_sel} no posee historia validada.")
     else:
         col_opt1, col_opt2 = st.columns([1, 2.5])
@@ -313,7 +342,6 @@ with tab_piramides:
                     fig_pir.add_trace(go.Bar(y=edades_cols, x=mujeres, name='Mujeres', orientation='h', marker=dict(color='#e74c3c'), hovertext=mujeres))
                     fig_pir.update_layout(title=f"Pirámide Demográfica ({anio_pir})", barmode='relative', yaxis_title='Edad Simple', xaxis_title='Población', height=600)
                 else:
-                    # Cálculo robusto del total sumando Hombres y Mujeres dinámicamente
                     df_t = df_f_pir[df_f_pir['sexo'].isin(['hombres', 'mujeres'])][edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
                     total_pob = df_t.sum(axis=0).values
                     
@@ -370,11 +398,16 @@ with tab_anidados:
 # ------------------------------------------------------------------------------
 with tab_espacial:
     st.header("🗺️ Visor de Censos Detallados y Rankings")
-    st.markdown("Generación dinámica de bases de datos departamentales y municipales con análisis de ranking (Top/Bottom).")
+    st.markdown("Generación dinámica de bases de datos territoriales con análisis de ranking (Top/Bottom).")
     
     col_v_sel1, col_v_sel2 = st.columns(2)
     with col_v_sel1:
-        visor_sel = st.selectbox("Selecciona la base de datos a explorar:", ["Departamentos de Colombia (DANE)", "Municipios de Colombia (DANE)", "Veredas de Antioquia"])
+        visor_sel = st.selectbox("Selecciona la base de datos a explorar:", [
+            "Departamentos de Colombia (DANE)", 
+            "Regiones (Agrupación Municipal)", 
+            "Municipios de Colombia (DANE)", 
+            "Veredas de Antioquia"
+        ])
     with col_v_sel2:
         orden_ranking = st.radio("Filtro de Ranking:", ["Top 15 (Mayor Población)", "Bottom 15 (Menor Población)"], horizontal=True)
         es_top = "Top 15" in orden_ranking
@@ -391,7 +424,7 @@ with tab_espacial:
                 st.dataframe(df_dept, use_container_width=True)
             with col_v2:
                 max_anio = df_dept['año'].max()
-                df_rank = df_dept[(df_dept['año'] == max_anio) & (df_dept['area_geografica'].str.lower().isin(['urbano', 'rural']))]
+                df_rank = df_dept[(df_dept['año'] == max_anio) & (df_dept['area_geografica'].str.lower().isin(['urbano', 'rural', 'cabecera', 'resto']))]
                 df_rank = df_rank.groupby('depto_nom')['Poblacion'].sum().reset_index()
                 
                 df_plot = df_rank.nlargest(15, 'Poblacion') if es_top else df_rank.nsmallest(15, 'Poblacion')
@@ -401,6 +434,26 @@ with tab_espacial:
                 st.plotly_chart(fig, use_container_width=True)
         else: st.warning("⚠️ No hay datos municipales para generar la vista departamental.")
             
+    elif visor_sel == "Regiones (Agrupación Municipal)":
+        if not df_mpios.empty and 'region' in df_mpios.columns:
+            df_reg = df_mpios.groupby(['region', 'año', 'area_geografica'])['Poblacion'].sum().reset_index()
+            st.success(f"Base de datos regional generada dinámicamente ({len(df_reg)} registros).")
+            
+            col_v1, col_v2 = st.columns([2, 1.5])
+            with col_v1: 
+                st.dataframe(df_reg, use_container_width=True)
+            with col_v2:
+                max_anio = df_reg['año'].max()
+                df_rank = df_reg[(df_reg['año'] == max_anio) & (df_reg['area_geografica'].str.lower().isin(['urbano', 'rural', 'cabecera', 'resto']))]
+                df_rank = df_rank.groupby('region')['Poblacion'].sum().reset_index()
+                
+                df_plot = df_rank.nlargest(15, 'Poblacion') if es_top else df_rank.nsmallest(15, 'Poblacion')
+                
+                fig = px.bar(df_plot, x='Poblacion', y='region', orientation='h', color='Poblacion', title=f"Ranking Regional ({max_anio})")
+                fig.update_layout(yaxis={'categoryorder':'total ascending' if es_top else 'total descending'})
+                st.plotly_chart(fig, use_container_width=True)
+        else: st.warning("⚠️ No se encontró la columna 'region' en los datos municipales.")
+
     elif visor_sel == "Municipios de Colombia (DANE)":
         if not df_mpios.empty and 'municipio' in df_mpios.columns:
             st.success(f"Base de datos municipal cargada ({len(df_mpios)} registros).")
@@ -410,7 +463,7 @@ with tab_espacial:
                 st.dataframe(df_mpios, use_container_width=True)
             with col_v2:
                 max_anio = df_mpios['año'].max()
-                df_rank = df_mpios[(df_mpios['año'] == max_anio) & (df_mpios['area_geografica'].str.lower().isin(['urbano', 'rural']))]
+                df_rank = df_mpios[(df_mpios['año'] == max_anio) & (df_mpios['area_geografica'].str.lower().isin(['urbano', 'rural', 'cabecera', 'resto']))]
                 df_rank = df_rank.groupby('municipio')['Poblacion'].sum().reset_index()
                 
                 df_plot = df_rank.nlargest(15, 'Poblacion') if es_top else df_rank.nsmallest(15, 'Poblacion')
