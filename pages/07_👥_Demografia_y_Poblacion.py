@@ -19,35 +19,33 @@ proyecciones polinómicas/exponenciales y estructura por edades con resolución 
 st.divider()
 
 # --- 1. LECTURA DE DATOS MAESTROS ---
+def leer_csv_robusto(ruta):
+    """Intenta leer con coma, si falla o detecta solo 1 columna, lee con punto y coma."""
+    try:
+        df = pd.read_csv(ruta, sep=',')
+        if len(df.columns) < 2:
+            df = pd.read_csv(ruta, sep=';')
+        return df
+    except Exception:
+        try:
+            return pd.read_csv(ruta, sep=';')
+        except:
+            return pd.DataFrame()
+
 @st.cache_data
 def cargar_municipios():
     ruta = "data/Pob_mpios_colombia.csv"
     if os.path.exists(ruta):
-        return pd.read_csv(ruta)
+        return leer_csv_robusto(ruta)
     return pd.DataFrame()
 
 @st.cache_data
 def cargar_edades():
     ruta = "data/Pob_sexo_edad_Colombia_1950-2070.csv"
     if os.path.exists(ruta):
-        return pd.read_csv(ruta)
+        return leer_csv_robusto(ruta)
     return pd.DataFrame()
-
-@st.cache_data
-def cargar_veredas():
-    ruta = "data/veredas_Antioquia.xlsx"
-    if os.path.exists(ruta):
-        return pd.read_excel(ruta)
-    return pd.DataFrame()
-
-df_mpios = cargar_municipios()
-df_edades = cargar_edades()
-df_veredas = cargar_veredas()
-
-if df_mpios.empty or df_edades.empty:
-    st.warning("⚠️ Faltan datos maestros. Asegúrate de haber subido ambos archivos CSV en el Panel de Administración.")
-    st.stop()
-
+    
 # --- MOTOR DE AGREGACIÓN MATEMÁTICA ---
 def obtener_serie_historica(df, nivel, nombre_lugar, area_geo):
     df_filtrado = df[df['area_geografica'].str.lower() == area_geo.lower()]
