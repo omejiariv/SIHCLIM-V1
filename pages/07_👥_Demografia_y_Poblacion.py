@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -72,11 +71,19 @@ df_veredas = cargar_veredas()
 def obtener_serie_historica(df_mp, df_ed, nivel, nombre_lugar, area_geo):
     if nivel == "Nacional (Colombia)":
         if df_ed.empty: return pd.DataFrame(), 'Colombia'
-        mapa_area = {"Total": "Total", "Urbano": "Cabecera", "Rural": "Centros Poblados y Rural Disperso"}
-        area_ed = mapa_area.get(area_geo, "Total")
         
-        df_f = df_ed[(df_ed['area_geografica'].str.lower() == area_ed.lower()) & (df_ed['sexo'] == 'total')].copy()
+        # Filtro dinámico de áreas evitando buscar la palabra "Total" para no generar pantalla blanca
+        if area_geo.lower() == "total":
+            df_f = df_ed[df_ed['area_geografica'].str.lower().isin(['cabecera', 'centros poblados y rural disperso', 'urbano', 'rural'])].copy()
+        else:
+            mapa_area = {"urbano": "cabecera", "rural": "centros poblados y rural disperso"}
+            area_ed = mapa_area.get(area_geo.lower(), area_geo.lower())
+            df_f = df_ed[df_ed['area_geografica'].str.lower() == area_ed].copy()
+            
         if df_f.empty: return pd.DataFrame(), 'Colombia'
+        
+        # Filtro dinámico de sexo: suma solo hombres y mujeres (ignora filas total si existen o faltan)
+        df_f = df_f[df_f['sexo'].str.lower().isin(['hombres', 'mujeres'])]
         
         edades_cols = [str(i) for i in range(101) if str(i) in df_f.columns]
         df_f[edades_cols] = df_f[edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
@@ -306,7 +313,8 @@ with tab_piramides:
                     fig_pir.add_trace(go.Bar(y=edades_cols, x=mujeres, name='Mujeres', orientation='h', marker=dict(color='#e74c3c'), hovertext=mujeres))
                     fig_pir.update_layout(title=f"Pirámide Demográfica ({anio_pir})", barmode='relative', yaxis_title='Edad Simple', xaxis_title='Población', height=600)
                 else:
-                    df_t = df_f_pir[df_f_pir['sexo'] == 'total'][edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+                    # Cálculo robusto del total sumando Hombres y Mujeres dinámicamente
+                    df_t = df_f_pir[df_f_pir['sexo'].isin(['hombres', 'mujeres'])][edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
                     total_pob = df_t.sum(axis=0).values
                     
                     fig_pir.add_trace(go.Bar(x=edades_cols, y=total_pob, name='Total Población', marker=dict(color='#9b59b6')))
@@ -375,7 +383,6 @@ with tab_espacial:
 
     if visor_sel == "Departamentos de Colombia (DANE)":
         if not df_mpios.empty and 'depto_nom' in df_mpios.columns:
-            # Eliminada la dependencia de 'id_dp' para evitar KeyErrors
             df_dept = df_mpios.groupby(['depto_nom', 'año', 'area_geografica'])['Poblacion'].sum().reset_index()
             st.success(f"Base de datos departamental generada dinámicamente ({len(df_dept)} registros).")
             
