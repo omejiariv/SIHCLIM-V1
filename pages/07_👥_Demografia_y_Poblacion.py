@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,7 +22,6 @@ st.divider()
 def leer_csv_robusto(ruta):
     try:
         df = pd.read_csv(ruta, sep=None, engine='python')
-        # EXORCISMO DEL BOM: Limpiamos los nombres de las columnas de caracteres invisibles
         df.columns = df.columns.str.replace('\ufeff', '').str.strip()
         return df
     except Exception:
@@ -79,7 +79,6 @@ def obtener_serie_historica(df_mp, df_ed, nivel, nombre_lugar, area_geo):
         if df_f.empty: return pd.DataFrame(), 'Colombia'
         
         edades_cols = [str(i) for i in range(101) if str(i) in df_f.columns]
-        # Forzamos conversión numérica por si hay datos contaminados con texto
         df_f[edades_cols] = df_f[edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
         df_f['Poblacion'] = df_f[edades_cols].sum(axis=1)
         
@@ -116,7 +115,7 @@ tab_datos, tab_modelos, tab_piramides, tab_anidados, tab_espacial = st.tabs([
     "🗺️ 5. Visor Espacial"
 ])
 
-# Variables de seguridad inicializadas por defecto
+# Variables de seguridad
 df_plot_model = pd.DataFrame()
 nombre_col_model = ""
 col_anio_model = ""
@@ -298,7 +297,6 @@ with tab_piramides:
                 fig_pir = go.Figure()
                 
                 if modo_pir == "Pirámide (Hombres vs Mujeres)":
-                    # FORZAMOS NUMÉRICO (Evita que Python una textos si hay formatos raros post-2018)
                     df_h = df_f_pir[df_f_pir['sexo'] == 'hombres'][edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
                     df_m = df_f_pir[df_f_pir['sexo'] == 'mujeres'][edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
                     hombres = df_h.sum(axis=0).values
@@ -308,7 +306,6 @@ with tab_piramides:
                     fig_pir.add_trace(go.Bar(y=edades_cols, x=mujeres, name='Mujeres', orientation='h', marker=dict(color='#e74c3c'), hovertext=mujeres))
                     fig_pir.update_layout(title=f"Pirámide Demográfica ({anio_pir})", barmode='relative', yaxis_title='Edad Simple', xaxis_title='Población', height=600)
                 else:
-                    # HISTOGRAMA TOTAL
                     df_t = df_f_pir[df_f_pir['sexo'] == 'total'][edades_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
                     total_pob = df_t.sum(axis=0).values
                     
@@ -361,38 +358,74 @@ with tab_anidados:
             st.plotly_chart(fig_ani, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# TAB 5: VISOR ESPACIAL (CENSOS DETALLADOS DANE Y VEREDAL)
+# TAB 5: VISOR ESPACIAL (CENSOS DETALLADOS Y RANKINGS)
 # ------------------------------------------------------------------------------
 with tab_espacial:
-    st.header("🗺️ Visor de Censos Detallados")
-    st.markdown("Generación dinámica de bases de datos departamentales y municipales sin depender de múltiples archivos.")
+    st.header("🗺️ Visor de Censos Detallados y Rankings")
+    st.markdown("Generación dinámica de bases de datos departamentales y municipales con análisis de ranking (Top/Bottom).")
     
-    visor_sel = st.selectbox("Selecciona la base de datos a explorar:", ["Departamentos de Colombia (DANE)", "Municipios de Colombia (DANE)", "Veredas de Antioquia"])
+    col_v_sel1, col_v_sel2 = st.columns(2)
+    with col_v_sel1:
+        visor_sel = st.selectbox("Selecciona la base de datos a explorar:", ["Departamentos de Colombia (DANE)", "Municipios de Colombia (DANE)", "Veredas de Antioquia"])
+    with col_v_sel2:
+        orden_ranking = st.radio("Filtro de Ranking:", ["Top 15 (Mayor Población)", "Bottom 15 (Menor Población)"], horizontal=True)
+        es_top = "Top 15" in orden_ranking
     
+    st.divider()
+
     if visor_sel == "Departamentos de Colombia (DANE)":
-        if not df_mpios.empty:
-            df_dept = df_mpios.groupby(['id_dp', 'depto_nom', 'año', 'area_geografica'])['Poblacion'].sum().reset_index()
+        if not df_mpios.empty and 'depto_nom' in df_mpios.columns:
+            # Eliminada la dependencia de 'id_dp' para evitar KeyErrors
+            df_dept = df_mpios.groupby(['depto_nom', 'año', 'area_geografica'])['Poblacion'].sum().reset_index()
             st.success(f"Base de datos departamental generada dinámicamente ({len(df_dept)} registros).")
-            st.dataframe(df_dept, use_container_width=True)
+            
+            col_v1, col_v2 = st.columns([2, 1.5])
+            with col_v1: 
+                st.dataframe(df_dept, use_container_width=True)
+            with col_v2:
+                max_anio = df_dept['año'].max()
+                df_rank = df_dept[(df_dept['año'] == max_anio) & (df_dept['area_geografica'].str.lower().isin(['urbano', 'rural']))]
+                df_rank = df_rank.groupby('depto_nom')['Poblacion'].sum().reset_index()
+                
+                df_plot = df_rank.nlargest(15, 'Poblacion') if es_top else df_rank.nsmallest(15, 'Poblacion')
+                
+                fig = px.bar(df_plot, x='Poblacion', y='depto_nom', orientation='h', color='Poblacion', title=f"Ranking Departamental ({max_anio})")
+                fig.update_layout(yaxis={'categoryorder':'total ascending' if es_top else 'total descending'})
+                st.plotly_chart(fig, use_container_width=True)
         else: st.warning("⚠️ No hay datos municipales para generar la vista departamental.")
             
     elif visor_sel == "Municipios de Colombia (DANE)":
-        if not df_mpios.empty:
+        if not df_mpios.empty and 'municipio' in df_mpios.columns:
             st.success(f"Base de datos municipal cargada ({len(df_mpios)} registros).")
-            st.dataframe(df_mpios, use_container_width=True)
+            
+            col_v1, col_v2 = st.columns([2, 1.5])
+            with col_v1: 
+                st.dataframe(df_mpios, use_container_width=True)
+            with col_v2:
+                max_anio = df_mpios['año'].max()
+                df_rank = df_mpios[(df_mpios['año'] == max_anio) & (df_mpios['area_geografica'].str.lower().isin(['urbano', 'rural']))]
+                df_rank = df_rank.groupby('municipio')['Poblacion'].sum().reset_index()
+                
+                df_plot = df_rank.nlargest(15, 'Poblacion') if es_top else df_rank.nsmallest(15, 'Poblacion')
+                
+                fig = px.bar(df_plot, x='Poblacion', y='municipio', orientation='h', color='Poblacion', title=f"Ranking Municipal ({max_anio})")
+                fig.update_layout(yaxis={'categoryorder':'total ascending' if es_top else 'total descending'})
+                st.plotly_chart(fig, use_container_width=True)
         else: st.warning("⚠️ No se encontró el archivo de municipios.")
             
     elif visor_sel == "Veredas de Antioquia":
         if not df_veredas.empty:
             st.success(f"Base de datos veredal cargada ({len(df_veredas)} registros).")
-            col_v1, col_v2 = st.columns([2, 1])
-            with col_v1: st.dataframe(df_veredas, use_container_width=True)
+            
+            col_v1, col_v2 = st.columns([2, 1.5])
+            with col_v1: 
+                st.dataframe(df_veredas, use_container_width=True)
             with col_v2:
                 if 'Poblacion_hab' in df_veredas.columns and 'Vereda' in df_veredas.columns:
-                    st.subheader("📊 Top 15 Veredas")
                     df_ver_clean = df_veredas.dropna(subset=['Poblacion_hab'])
-                    df_top = df_ver_clean.sort_values(by='Poblacion_hab', ascending=False).head(15)
-                    fig_ver = px.bar(df_top, x='Poblacion_hab', y='Vereda', orientation='h', color='Municipio')
-                    fig_ver.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, height=400)
+                    df_plot = df_ver_clean.nlargest(15, 'Poblacion_hab') if es_top else df_ver_clean.nsmallest(15, 'Poblacion_hab')
+                    
+                    fig_ver = px.bar(df_plot, x='Poblacion_hab', y='Vereda', orientation='h', color='Poblacion_hab', title="Ranking Veredal (Dato Reciente)")
+                    fig_ver.update_layout(yaxis={'categoryorder':'total ascending' if es_top else 'total descending'})
                     st.plotly_chart(fig_ver, use_container_width=True)
         else: st.warning("⚠️ No se encontró el archivo de veredas.")
