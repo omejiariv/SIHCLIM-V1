@@ -19,7 +19,6 @@ st.divider()
 
 # --- 1. LECTURA DE DATOS MAESTROS (AUTODETECCIÓN INTELIGENTE) ---
 def leer_csv_robusto(ruta):
-    """Utiliza el motor de Python para autodetectar el separador exacto (, o ;)"""
     try:
         return pd.read_csv(ruta, sep=None, engine='python')
     except Exception:
@@ -48,7 +47,15 @@ def cargar_municipios():
 @st.cache_data
 def cargar_edades():
     ruta = "data/Pob_sexo_edad_Colombia_1950-2070.csv"
-    return leer_csv_robusto(ruta) if os.path.exists(ruta) else pd.DataFrame()
+    if os.path.exists(ruta):
+        df = leer_csv_robusto(ruta)
+        if not df.empty:
+            # Limpieza profunda para evitar errores en las pirámides > 2017
+            df.columns = [str(c).strip() for c in df.columns]
+            if 'sexo' in df.columns: df['sexo'] = df['sexo'].astype(str).str.strip().str.lower()
+            if 'area_geografica' in df.columns: df['area_geografica'] = df['area_geografica'].astype(str).str.strip()
+            return df
+    return pd.DataFrame()
 
 @st.cache_data
 def cargar_veredas():
@@ -61,27 +68,44 @@ df_edades = cargar_edades()
 df_veredas = cargar_veredas()
 
 # --- MOTOR DE AGREGACIÓN MATEMÁTICA ---
-def obtener_serie_historica(df, nivel, nombre_lugar, area_geo):
-    if df.empty: return pd.DataFrame(), nombre_lugar
-    
-    # Ignorar filas 'total' en la base y sumar matemáticamente
-    if area_geo.lower() == "total":
-        df_f = df[df['area_geografica'].str.lower().isin(['urbano', 'rural', 'cabecera', 'resto'])]
-    else:
-        df_f = df[df['area_geografica'].str.lower() == area_geo.lower()]
-        
+def obtener_serie_historica(df_mp, df_ed, nivel, nombre_lugar, area_geo):
+    # LÓGICA ESPECIAL PARA EL NIVEL NACIONAL (Usa la base de Edades que es más larga)
     if nivel == "Nacional (Colombia)":
+        if df_ed.empty: return pd.DataFrame(), 'Colombia'
+        # Diccionario de traducción DANE
+        mapa_area = {"Total": "Total", "Urbano": "Cabecera", "Rural": "Centros Poblados y Rural Disperso"}
+        area_ed = mapa_area.get(area_geo, "Total")
+        
+        # Filtramos la base de edades
+        df_f = df_ed[(df_ed['area_geografica'].str.lower() == area_ed.lower()) & (df_ed['sexo'] == 'total')].copy()
+        if df_f.empty: return pd.DataFrame(), 'Colombia'
+        
+        # Sumamos las columnas de edades (0 a 100) para obtener la población total de ese año
+        edades_cols = [str(i) for i in range(101) if str(i) in df_f.columns]
+        df_f['Poblacion'] = df_f[edades_cols].sum(axis=1)
+        
         serie = df_f.groupby('año')['Poblacion'].sum().reset_index()
         serie.rename(columns={'Poblacion': 'Colombia'}, inplace=True)
         return serie, 'Colombia'
-    elif nivel == "Departamental":
-        serie = df_f[df_f['depto_nom'] == nombre_lugar].groupby('año')['Poblacion'].sum().reset_index()
-        serie.rename(columns={'Poblacion': nombre_lugar}, inplace=True)
-        return serie, nombre_lugar
-    elif nivel == "Municipal":
-        serie = df_f[df_f['municipio'] == nombre_lugar].groupby('año')['Poblacion'].sum().reset_index()
-        serie.rename(columns={'Poblacion': nombre_lugar}, inplace=True)
-        return serie, nombre_lugar
+        
+    # LÓGICA PARA DEPARTAMENTOS Y MUNICIPIOS
+    else:
+        if df_mp.empty: return pd.DataFrame(), nombre_lugar
+        # Ignorar filas 'total' en la base y sumar matemáticamente
+        if area_geo.lower() == "total":
+            df_f = df_mp[df_mp['area_geografica'].str.lower().isin(['urbano', 'rural', 'cabecera', 'resto'])]
+        else:
+            df_f = df_mp[df_mp['area_geografica'].str.lower() == area_geo.lower()]
+            
+        if nivel == "Departamental":
+            serie = df_f[df_f['depto_nom'] == nombre_lugar].groupby('año')['Poblacion'].sum().reset_index()
+            serie.rename(columns={'Poblacion': nombre_lugar}, inplace=True)
+            return serie, nombre_lugar
+        elif nivel == "Municipal":
+            serie = df_f[df_f['municipio'] == nombre_lugar].groupby('año')['Poblacion'].sum().reset_index()
+            serie.rename(columns={'Poblacion': nombre_lugar}, inplace=True)
+            return serie, nombre_lugar
+            
     return pd.DataFrame(), nombre_lugar
 
 # ==============================================================================
@@ -95,7 +119,7 @@ tab_datos, tab_modelos, tab_piramides, tab_anidados, tab_espacial = st.tabs([
     "🗺️ 5. Visor Espacial"
 ])
 
-# Variables de seguridad inicializadas por defecto (Evitan el NameError)
+# Variables de seguridad inicializadas por defecto
 df_plot_model = pd.DataFrame()
 nombre_col_model = ""
 col_anio_model = ""
@@ -143,7 +167,7 @@ with tab_datos:
             
         else:
             lugar_sel = "Colombia"
-            st.info("Escala Nacional Seleccionada")
+            st.info("Extraído desde BD Edades (1950-2070)")
             
     with col_t3:
         if nivel_sel == "Macro (Mundial/Histórico)":
@@ -176,14 +200,14 @@ with tab_datos:
         st.warning(f"⚠️ Para visualizar escalas {nivel_sel} se requiere agregar dichas clasificaciones a la base de datos municipal o veredal.")
         
     else: 
-        if not df_mpios.empty and lugar_sel != "N/A":
-            df_plot, nombre_col = obtener_serie_historica(df_mpios, nivel_sel, lugar_sel, area_sel)
-            if not df_plot.empty:
-                fig1 = px.line(df_plot, x="año", y=nombre_col, title=f"Crecimiento Histórico DANE: {nombre_col} ({area_sel})", markers=True)
-                st.plotly_chart(fig1, use_container_width=True)
-                df_plot_model = df_plot
-                nombre_col_model = nombre_col
-                col_anio_model = "año"
+        # Nacional, Departamental, Municipal usan la nueva función que incluye df_edades
+        df_plot, nombre_col = obtener_serie_historica(df_mpios, df_edades, nivel_sel, lugar_sel, area_sel)
+        if not df_plot.empty:
+            fig1 = px.line(df_plot, x="año", y=nombre_col, title=f"Crecimiento Histórico DANE: {nombre_col} ({area_sel})", markers=True)
+            st.plotly_chart(fig1, use_container_width=True)
+            df_plot_model = df_plot
+            nombre_col_model = nombre_col
+            col_anio_model = "año"
 
 # ------------------------------------------------------------------------------
 # TAB 2: MODELOS Y OPTIMIZACIÓN MATEMÁTICA
@@ -191,11 +215,10 @@ with tab_datos:
 with tab_modelos:
     st.header("📈 Ajuste de Modelos Evolutivos")
     
-    # ESCUDO PROTECTOR: Verifica que haya datos válidos antes de intentar calcular
     if df_plot_model.empty or not nombre_col_model:
-        st.info("👆 Selecciona una escala válida en el Tab 1 (Censos Históricos) que contenga datos de serie de tiempo para habilitar el motor de optimización.")
+        st.info("👆 Selecciona una escala válida en el Tab 1 que contenga datos de serie de tiempo.")
     elif nivel_sel in ["Veredal", "Regional", "Corregimental"]:
-        st.error(f"❌ El motor de optimización requiere una serie de tiempo. La escala {nivel_sel} no posee historia temporal validada. Usa el Tab 4 para modelar estas zonas.")
+        st.error(f"❌ El motor de optimización requiere una serie de tiempo. La escala {nivel_sel} no posee historia validada.")
     else:
         col_opt1, col_opt2 = st.columns([1, 2.5])
         with col_opt1:
@@ -267,15 +290,16 @@ with tab_piramides:
         if not df_edades.empty:
             area_pir = st.selectbox("Área:", df_edades['area_geografica'].unique())
             anio_pir = st.slider("Año de la Pirámide:", int(df_edades['año'].min()), int(df_edades['año'].max()), 2024)
-            df_f_pir = df_edades[(df_edades['año'] == anio_pir) & (df_edades['area_geografica'] == area_pir)]
+            df_f_pir = df_edades[(df_edades['año'] == anio_pir) & (df_edades['area_geografica'].str.lower() == area_pir.lower())]
         else: st.warning("Datos de edades no disponibles.")
         
     with col_p2:
         if not df_edades.empty and not df_f_pir.empty:
-            edades_cols = [str(i) for i in range(101)]
+            edades_cols = [str(i) for i in range(101) if str(i) in df_f_pir.columns]
             try:
-                hombres = df_f_pir[df_f_pir['sexo'].str.lower() == 'hombres'][edades_cols].values.flatten()
-                mujeres = df_f_pir[df_f_pir['sexo'].str.lower() == 'mujeres'][edades_cols].values.flatten()
+                # El uso de .sum(axis=0) protege contra errores de arrays vacíos > 2017
+                hombres = df_f_pir[df_f_pir['sexo'] == 'hombres'][edades_cols].sum(axis=0).values
+                mujeres = df_f_pir[df_f_pir['sexo'] == 'mujeres'][edades_cols].sum(axis=0).values
                 
                 fig_pir = go.Figure()
                 fig_pir.add_trace(go.Bar(y=edades_cols, x=hombres * -1, name='Hombres', orientation='h', marker=dict(color='#3498db'), hovertext=hombres))
@@ -283,7 +307,7 @@ with tab_piramides:
                 fig_pir.update_layout(title=f"Estructura Demográfica ({anio_pir})", barmode='relative', yaxis_title='Edad Simple', xaxis_title='Población', height=600)
                 st.plotly_chart(fig_pir, use_container_width=True)
             except Exception as e:
-                st.error("Error al graficar la pirámide.")
+                st.error(f"Error al graficar la pirámide: {e}")
 
 # ------------------------------------------------------------------------------
 # TAB 4: DOWNSCALING (EL PUENTE A LAS VEREDAS)
@@ -302,8 +326,8 @@ with tab_anidados:
                 micro_ver = st.selectbox("Vereda (Micro):", sorted(v_disp['Vereda'].unique()))
                 pob_v = v_disp[v_disp['Vereda'] == micro_ver]['Poblacion_hab'].values[0]
                 
-                # Obtenemos la población de ese municipio desde los datos maestros para la matemática
-                df_mp_raw = obtener_serie_historica(df_mpios, "Municipal", macro_mpio, "Total")[0]
+                # Obtenemos la población municipal desde los datos maestros con df_edades
+                df_mp_raw = obtener_serie_historica(df_mpios, df_edades, "Municipal", macro_mpio, "Total")[0]
                 pob_m = df_mp_raw['Poblacion'].iloc[-1] if not df_mp_raw.empty else pob_v * 10
                 
                 share_calc = (pob_v / pob_m) * 100
@@ -331,26 +355,24 @@ with tab_anidados:
 # TAB 5: VISOR ESPACIAL (CENSOS DETALLADOS DANE Y VEREDAL)
 # ------------------------------------------------------------------------------
 with tab_espacial:
-    st.header("🗺️ Visor de Censos Detallados (DANE y Veredal)")
-    st.markdown("Exploración de bases de datos detalladas por Departamento, Municipio y Vereda para análisis cruzado.")
+    st.header("🗺️ Visor de Censos Detallados")
+    st.markdown("Generación dinámica de bases de datos departamentales y municipales sin depender de múltiples archivos.")
     
     visor_sel = st.selectbox("Selecciona la base de datos a explorar:", ["Departamentos de Colombia (DANE)", "Municipios de Colombia (DANE)", "Veredas de Antioquia"])
     
     if visor_sel == "Departamentos de Colombia (DANE)":
-        ruta_dept = "data/Departamentos_Colombia.xlsx"
-        if os.path.exists(ruta_dept):
-            df_dept = pd.read_excel(ruta_dept, skiprows=7) 
-            st.success(f"Base de datos departamental cargada ({len(df_dept)} registros).")
+        if not df_mpios.empty:
+            # MAGIA PURA: Agrupamos el archivo de municipios para generar la tabla de departamentos en tiempo real
+            df_dept = df_mpios.groupby(['id_dp', 'depto_nom', 'año', 'area_geografica'])['Poblacion'].sum().reset_index()
+            st.success(f"Base de datos departamental generada dinámicamente ({len(df_dept)} registros).")
             st.dataframe(df_dept, use_container_width=True)
-        else: st.warning("⚠️ No se encontró el archivo `Departamentos_Colombia.xlsx`.")
+        else: st.warning("⚠️ No hay datos municipales para generar la vista departamental.")
             
     elif visor_sel == "Municipios de Colombia (DANE)":
-        ruta_mpio = "data/Municipios_Colombia.xlsx"
-        if os.path.exists(ruta_mpio):
-            df_mpio_visor = pd.read_excel(ruta_mpio, skiprows=5)
-            st.success(f"Base de datos municipal cargada ({len(df_mpio_visor)} registros).")
-            st.dataframe(df_mpio_visor, use_container_width=True)
-        else: st.warning("⚠️ No se encontró el archivo `Municipios_Colombia.xlsx`.")
+        if not df_mpios.empty:
+            st.success(f"Base de datos municipal cargada ({len(df_mpios)} registros).")
+            st.dataframe(df_mpios, use_container_width=True)
+        else: st.warning("⚠️ No se encontró el archivo de municipios.")
             
     elif visor_sel == "Veredas de Antioquia":
         if not df_veredas.empty:
@@ -365,4 +387,4 @@ with tab_espacial:
                     fig_ver = px.bar(df_top, x='Poblacion_hab', y='Vereda', orientation='h', color='Municipio')
                     fig_ver.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, height=400)
                     st.plotly_chart(fig_ver, use_container_width=True)
-        else: st.warning("⚠️ No se encontró el archivo `veredas_Antioquia.xlsx`.")
+        else: st.warning("⚠️ No se encontró el archivo de veredas.")
