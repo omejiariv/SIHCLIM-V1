@@ -45,6 +45,22 @@ def cargar_edades():
     if os.path.exists(ruta):
         return leer_csv_robusto(ruta)
     return pd.DataFrame()
+
+@st.cache_data
+def cargar_veredas():
+    ruta = "data/veredas_Antioquia.xlsx"
+    if os.path.exists(ruta):
+        return pd.read_excel(ruta)
+    return pd.DataFrame()
+
+# ¡AQUÍ ESTÁ LA MAGIA QUE FALTABA! Las variables que cargan los datos:
+df_mpios = cargar_municipios()
+df_edades = cargar_edades()
+df_veredas = cargar_veredas()
+
+if df_mpios.empty or df_edades.empty:
+    st.warning("⚠️ Faltan datos maestros. Asegúrate de haber subido ambos archivos CSV en el Panel de Administración.")
+    st.stop()
     
 # --- MOTOR DE AGREGACIÓN MATEMÁTICA ---
 def obtener_serie_historica(df, nivel, nombre_lugar, area_geo):
