@@ -17,15 +17,13 @@ Motor de Inferencia Demográfica: Agregación territorial dinámica, ajuste para
 """)
 st.divider()
 
-# --- 1. LECTURA DE DATOS MAESTROS ---
+# --- 1. LECTURA DE DATOS MAESTROS (AUTODETECCIÓN INTELIGENTE) ---
 def leer_csv_robusto(ruta):
+    """Utiliza el motor de Python para autodetectar el separador exacto (, o ;)"""
     try:
-        df = pd.read_csv(ruta, sep=',')
-        if len(df.columns) < 2: df = pd.read_csv(ruta, sep=';')
-        return df
-    except:
-        try: return pd.read_csv(ruta, sep=';')
-        except: return pd.DataFrame()
+        return pd.read_csv(ruta, sep=None, engine='python')
+    except Exception:
+        return pd.DataFrame()
 
 @st.cache_data
 def cargar_macro():
@@ -42,9 +40,9 @@ def cargar_municipios():
     ruta = "data/Pob_mpios_colombia.csv"
     if os.path.exists(ruta):
         df = leer_csv_robusto(ruta)
-        # Limpieza vital: Eliminar filas vacías para evitar el TypeError
-        df.dropna(subset=['depto_nom', 'municipio'], inplace=True)
-        return df
+        if not df.empty and 'depto_nom' in df.columns and 'municipio' in df.columns:
+            df.dropna(subset=['depto_nom', 'municipio'], inplace=True)
+            return df
     return pd.DataFrame()
 
 @st.cache_data
@@ -66,7 +64,7 @@ df_veredas = cargar_veredas()
 def obtener_serie_historica(df, nivel, nombre_lugar, area_geo):
     if df.empty: return pd.DataFrame(), nombre_lugar
     
-    # SOLUCIÓN AL DOBLE CONTEO: Forzamos a ignorar filas 'total' en el CSV y sumamos solo urbano y rural.
+    # Ignorar filas 'total' en la base y sumar matemáticamente
     if area_geo.lower() == "total":
         df_f = df[df['area_geografica'].str.lower().isin(['urbano', 'rural', 'cabecera', 'resto'])]
     else:
@@ -97,6 +95,11 @@ tab_datos, tab_modelos, tab_piramides, tab_anidados, tab_espacial = st.tabs([
     "🗺️ 5. Visor Espacial"
 ])
 
+# Variables de seguridad inicializadas por defecto (Evitan el NameError)
+df_plot_model = pd.DataFrame()
+nombre_col_model = ""
+col_anio_model = ""
+
 # ------------------------------------------------------------------------------
 # TAB 1: CENSOS HISTÓRICOS Y AGREGACIÓN
 # ------------------------------------------------------------------------------
@@ -117,14 +120,17 @@ with tab_datos:
             else: st.error("Archivo Macro no encontrado.")
             
         elif nivel_sel == "Departamental":
-            # Corrección del TypeError (Convirtiendo a string seguro)
-            opciones = sorted([str(x) for x in df_mpios['depto_nom'].unique()])
-            lugar_sel = st.selectbox("Departamento:", opciones)
+            if not df_mpios.empty and 'depto_nom' in df_mpios.columns:
+                opciones = sorted([str(x) for x in df_mpios['depto_nom'].unique()])
+                lugar_sel = st.selectbox("Departamento:", opciones)
+            else: st.warning("Datos departamentales no disponibles.")
             
         elif nivel_sel == "Municipal":
-            opciones = sorted([str(x) for x in df_mpios['municipio'].unique()])
-            idx = opciones.index('Medellín') if 'Medellín' in opciones else 0
-            lugar_sel = st.selectbox("Municipio:", opciones, index=idx)
+            if not df_mpios.empty and 'municipio' in df_mpios.columns:
+                opciones = sorted([str(x) for x in df_mpios['municipio'].unique()])
+                idx = opciones.index('Medellín') if 'Medellín' in opciones else 0
+                lugar_sel = st.selectbox("Municipio:", opciones, index=idx)
+            else: st.warning("Datos municipales no disponibles.")
             
         elif nivel_sel == "Veredal":
             if not df_veredas.empty:
@@ -154,7 +160,7 @@ with tab_datos:
             df_plot = df_macro[["Año", lugar_sel]].dropna()
             fig1 = px.line(df_plot, x="Año", y=lugar_sel, title=f"Historia de Largo Plazo: {lugar_sel}", markers=True)
             st.plotly_chart(fig1, use_container_width=True)
-            df_plot_model = df_plot # Guardado para el Tab 2
+            df_plot_model = df_plot 
             nombre_col_model = lugar_sel
             col_anio_model = "Año"
             
@@ -169,22 +175,27 @@ with tab_datos:
     elif nivel_sel in ["Regional", "Corregimental"]:
         st.warning(f"⚠️ Para visualizar escalas {nivel_sel} se requiere agregar dichas clasificaciones a la base de datos municipal o veredal.")
         
-    else: # Nacional, Departamental, Municipal
-        df_plot, nombre_col = obtener_serie_historica(df_mpios, nivel_sel, lugar_sel, area_sel)
-        if not df_plot.empty:
-            fig1 = px.line(df_plot, x="año", y=nombre_col, title=f"Crecimiento Histórico DANE: {nombre_col} ({area_sel})", markers=True)
-            st.plotly_chart(fig1, use_container_width=True)
-            df_plot_model = df_plot
-            nombre_col_model = nombre_col
-            col_anio_model = "año"
+    else: 
+        if not df_mpios.empty and lugar_sel != "N/A":
+            df_plot, nombre_col = obtener_serie_historica(df_mpios, nivel_sel, lugar_sel, area_sel)
+            if not df_plot.empty:
+                fig1 = px.line(df_plot, x="año", y=nombre_col, title=f"Crecimiento Histórico DANE: {nombre_col} ({area_sel})", markers=True)
+                st.plotly_chart(fig1, use_container_width=True)
+                df_plot_model = df_plot
+                nombre_col_model = nombre_col
+                col_anio_model = "año"
 
 # ------------------------------------------------------------------------------
 # TAB 2: MODELOS Y OPTIMIZACIÓN MATEMÁTICA
 # ------------------------------------------------------------------------------
 with tab_modelos:
     st.header("📈 Ajuste de Modelos Evolutivos")
-    if nivel_sel in ["Veredal", "Regional", "Corregimental"]:
-        st.error(f"❌ El motor de optimización requiere una serie de tiempo. Escala {nivel_sel} no posee historia temporal validada.")
+    
+    # ESCUDO PROTECTOR: Verifica que haya datos válidos antes de intentar calcular
+    if df_plot_model.empty or not nombre_col_model:
+        st.info("👆 Selecciona una escala válida en el Tab 1 (Censos Históricos) que contenga datos de serie de tiempo para habilitar el motor de optimización.")
+    elif nivel_sel in ["Veredal", "Regional", "Corregimental"]:
+        st.error(f"❌ El motor de optimización requiere una serie de tiempo. La escala {nivel_sel} no posee historia temporal validada. Usa el Tab 4 para modelar estas zonas.")
     else:
         col_opt1, col_opt2 = st.columns([1, 2.5])
         with col_opt1:
@@ -291,8 +302,9 @@ with tab_anidados:
                 micro_ver = st.selectbox("Vereda (Micro):", sorted(v_disp['Vereda'].unique()))
                 pob_v = v_disp[v_disp['Vereda'] == micro_ver]['Poblacion_hab'].values[0]
                 
-                df_mp = obtener_serie_historica(df_mpios, "Municipal", macro_mpio, "Total")[0]
-                pob_m = df_mp['Poblacion'].iloc[-1] if not df_mp.empty else pob_v * 10
+                # Obtenemos la población de ese municipio desde los datos maestros para la matemática
+                df_mp_raw = obtener_serie_historica(df_mpios, "Municipal", macro_mpio, "Total")[0]
+                pob_m = df_mp_raw['Poblacion'].iloc[-1] if not df_mp_raw.empty else pob_v * 10
                 
                 share_calc = (pob_v / pob_m) * 100
                 st.metric("Población Veredal Actual", f"{pob_v:,.0f}")
@@ -302,7 +314,7 @@ with tab_anidados:
         else: st.error("Archivo de veredas requerido.")
 
     with col_a2:
-        if not df_veredas.empty and not v_disp.empty and not df_mp.empty:
+        if not df_veredas.empty and not v_disp.empty and not df_mp_raw.empty:
             t_ani = np.arange(2024, 2060)
             pob_macro = pob_m * (1 + 0.015)**(t_ani - 2020) 
             
