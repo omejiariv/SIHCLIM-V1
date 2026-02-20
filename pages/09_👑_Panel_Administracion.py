@@ -1096,10 +1096,10 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
     
     # 2. Definición de Plantillas y Columnas Requeridas
     if "Municipios" in tipo_carga:
-        cols_requeridas = ['id_dp', 'depto_nom', 'cod_mp', 'municipio', 'area_geografica', 'año', 'Poblacion']
+        cols_requeridas = ['depto_nom', 'cod_mp', 'municipio', 'area_geografica', 'año', 'Poblacion']
         archivo_salida = "data/Pob_mpios_colombia.csv"
         nombre_plantilla = "plantilla_mpios_colombia.csv"
-        desc_ayuda = "El archivo debe contener las columnas: id_dp, depto_nom, cod_mp, municipio, area_geografica (total/urbano/rural), año y Poblacion."
+        desc_ayuda = "El archivo debe contener las columnas: depto_nom, cod_mp, municipio, area_geografica (total/urbano/rural), año y Poblacion."
     else:
         # Genera automáticamente la lista de columnas ['dpnom', 'año', 'area_geografica', 'sexo', '0', '1', ..., '100']
         cols_requeridas = ['dpnom', 'año', 'area_geografica', 'sexo'] + [str(i) for i in range(101)]
@@ -1170,3 +1170,4 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
                         
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar el archivo: {e}")
+
