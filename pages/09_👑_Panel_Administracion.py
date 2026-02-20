@@ -1076,35 +1076,36 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
             except Exception as e: st.error(f"Error: {e}")
     
 # ==============================================================================
-# TAB 14: GESTIÓN DEMOGRÁFICA
+# TAB 14: GESTIÓN DEMOGRÁFICA (ACTUALIZADA PARA MUNICIPIOS Y EDADES HASTA 100)
 # ==============================================================================
 with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
     st.header("👥 Gestión de Datos Demográficos y Poblacionales")
     st.markdown("""
-    Aquí puedes actualizar las bases de datos que alimentan los modelos de crecimiento y pirámides poblacionales.
-    **Instrucciones:** Selecciona el tipo de dato, descarga la plantilla vacía, diligénciala respetando los nombres de las columnas y súbela nuevamente.
+    Aquí puedes actualizar las bases de datos maestras de Población Municipal y Estructura por Edades (1950-2070).
+    **Instrucciones:** Selecciona el tipo de dato, sube tu archivo asegurándote de que tenga los encabezados exactos.
     """)
     
     # 1. Selector del tipo de datos a cargar
     tipo_carga = st.radio(
-        "Selecciona la categoría de datos a actualizar:",
-        ["📈 Histórico y Proyecciones Macro (Regiones)", "🏗️ Estructura por Edades (Pirámides)"],
+        "Selecciona la base de datos a actualizar:",
+        ["📈 Población Histórica y Proyección por Municipios", "🏗️ Estructura por Edades (0 a 100 años)"],
         horizontal=True
     )
     
     st.divider()
     
-    # 2. Definición de Plantillas (AHORA EN CSV PURO)
-    if "Histórico" in tipo_carga:
-        cols_requeridas = ["Año"] 
-        archivo_salida = "data/poblacion_historica_macro.csv"  # <-- Cambiado a .csv
-        nombre_plantilla = "plantilla_historica_macro.csv"
-        desc_ayuda = "Debe contener una columna llamada 'Año' y columnas adicionales para tus territorios."
+    # 2. Definición de Plantillas y Columnas Requeridas
+    if "Municipios" in tipo_carga:
+        cols_requeridas = ['id_dp', 'depto_nom', 'cod_mp', 'municipio', 'area_geografica', 'año', 'Poblacion']
+        archivo_salida = "data/Pob_mpios_colombia.csv"
+        nombre_plantilla = "plantilla_mpios_colombia.csv"
+        desc_ayuda = "El archivo debe contener las columnas: id_dp, depto_nom, cod_mp, municipio, area_geografica (total/urbano/rural), año y Poblacion."
     else:
-        cols_requeridas = ["Año", "Edad", "Male", "Female", "Total"]
-        archivo_salida = "data/poblacion_edades_piramide.csv"  # <-- Cambiado a .csv
-        nombre_plantilla = "plantilla_edades_piramide.csv"
-        desc_ayuda = "Debe contener el año, la edad simple (0, 1, 2...) y la cantidad de Hombres, Mujeres y el Total."
+        # Genera automáticamente la lista de columnas ['dpnom', 'año', 'area_geografica', 'sexo', '0', '1', ..., '100']
+        cols_requeridas = ['dpnom', 'año', 'area_geografica', 'sexo'] + [str(i) for i in range(101)]
+        archivo_salida = "data/Pob_sexo_edad_Colombia_1950-2070.csv"
+        nombre_plantilla = "plantilla_sexo_edad.csv"
+        desc_ayuda = "El archivo debe contener: dpnom, año, area_geografica, sexo y una columna numérica para cada edad del 0 al 100."
 
     col_down, col_up = st.columns([1, 2])
     
@@ -1114,6 +1115,7 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
         st.info(desc_ayuda)
         
         df_plantilla = pd.DataFrame(columns=cols_requeridas)
+        # Se genera la plantilla estándar
         csv_plantilla = df_plantilla.to_csv(index=False).encode('utf-8')
         
         st.download_button(
@@ -1127,30 +1129,42 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
     # 4. Cargador del Archivo y Previsualización
     with col_up:
         st.subheader("2. Cargar Datos Diligenciados")
-        archivo_subido = st.file_uploader(f"Sube tu archivo Excel o CSV para '{tipo_carga}'", type=['csv', 'xlsx'])
+        archivo_subido = st.file_uploader(f"Sube tu archivo CSV o Excel para '{tipo_carga}'", type=['csv', 'xlsx'])
         
         if archivo_subido is not None:
             try:
                 if archivo_subido.name.endswith('.csv'):
-                    df_nuevo = pd.read_csv(archivo_subido)
+                    # Intentar leer con punto y coma (;) que es como vienen tus archivos
+                    try:
+                        df_nuevo = pd.read_csv(archivo_subido, sep=';')
+                        if len(df_nuevo.columns) < 2:  # Si falla y lee todo en 1 columna, intenta con coma (,)
+                            archivo_subido.seek(0)
+                            df_nuevo = pd.read_csv(archivo_subido, sep=',')
+                    except:
+                        archivo_subido.seek(0)
+                        df_nuevo = pd.read_csv(archivo_subido, sep=',')
                 else:
                     df_nuevo = pd.read_excel(archivo_subido)
+                
+                # Convertimos todas las columnas a string para evitar que '0', '1' se lean como enteros y rompan la validación
+                df_nuevo.columns = [str(col).strip() for col in df_nuevo.columns]
                 
                 columnas_faltantes = [col for col in cols_requeridas if col not in df_nuevo.columns]
                 
                 if columnas_faltantes:
-                    st.error(f"❌ Error: El archivo no tiene la estructura correcta. Faltan las columnas: {', '.join(columnas_faltantes)}")
+                    st.error(f"❌ Error: El archivo no tiene la estructura correcta. Faltan las siguientes columnas: {', '.join(columnas_faltantes[:10])} ... (Mostrando las primeras 10 faltantes)")
                 else:
-                    st.success(f"✅ Archivo leído correctamente: {len(df_nuevo)} registros encontrados.")
+                    st.success(f"✅ Archivo leído correctamente: {len(df_nuevo):,} registros encontrados.")
                     with st.expander("👁️ Vista Previa de los Datos", expanded=True):
                         st.dataframe(df_nuevo.head(10), use_container_width=True)
                     
-                    # 5. Botón de Guardado Final (Guardando en CSV)
+                    # 5. Botón de Guardado Final
                     if st.button("💾 Guardar y Actualizar Base de Datos", type="primary", use_container_width=True):
                         import os
                         os.makedirs("data", exist_ok=True) 
                         
-                        df_nuevo.to_csv(archivo_salida, index=False) # <-- Cambiado a to_csv
+                        # Guardamos estandarizado separado por comas internamente
+                        df_nuevo.to_csv(archivo_salida, index=False) 
                         st.balloons()
                         st.success(f"¡Base de datos actualizada con éxito! Archivo guardado en: `{archivo_salida}`")
                         
