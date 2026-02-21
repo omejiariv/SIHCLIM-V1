@@ -4,6 +4,9 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import warnings
+
+warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="Calidad y Vertimientos", page_icon="💧", layout="wide")
 
@@ -15,7 +18,7 @@ capacidad de asimilación y dilución en la red hídrica mediante balance de mas
 st.divider()
 
 # ==============================================================================
-# 🔌 CONECTOR A LA BASE DE DATOS DEMOGRÁFICA
+# 🔌 CONECTOR A BASES DE DATOS (DEMOGRAFÍA Y CONCESIONES SIRENA)
 # ==============================================================================
 def leer_csv_robusto(ruta):
     try:
@@ -40,21 +43,51 @@ def cargar_veredas():
     ruta = "data/veredas_Antioquia.xlsx"
     return pd.read_excel(ruta) if os.path.exists(ruta) else pd.DataFrame()
 
+@st.cache_data
+def cargar_concesiones():
+    ruta = "data/Concesiones_Corantioquia.csv"
+    if os.path.exists(ruta):
+        df = leer_csv_robusto(ruta)
+        if not df.empty:
+            df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
+            
+            # Autodetectar columna de caudal
+            col_caudal = [c for c in df.columns if 'caudal' in c and 'l/s' in c]
+            col_caudal = col_caudal[0] if col_caudal else 'caudal_(l/s)'
+            
+            if col_caudal in df.columns and 'uso' in df.columns and 'municipio' in df.columns:
+                df = df.dropna(subset=['uso', 'municipio', col_caudal]).copy()
+                df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
+                
+                # Normalizar nombres para facilitar el cruce
+                df['municipio'] = df['municipio'].astype(str).str.strip().str.title()
+                if 'vereda' in df.columns:
+                    df['vereda'] = df['vereda'].astype(str).str.strip().str.title()
+                
+                # Clasificador Inteligente de Sectores
+                def clasificar_uso(u):
+                    u = str(u).title().strip()
+                    if u in ['Domestico', 'Consumo Humano']: return 'Doméstico'
+                    elif u in ['Agricola', 'Pecuario', 'Acuicultura', 'Agroindustrial', 'Piscicola', 'Riego']: return 'Agrícola/Pecuario'
+                    elif u in ['Industrial', 'Mineria']: return 'Industrial'
+                    else: return 'Otros'
+                    
+                df['Sector_Sihcli'] = df['uso'].apply(clasificar_uso)
+                return df
+    return pd.DataFrame()
+
 df_mpios = cargar_municipios()
 df_veredas = cargar_veredas()
+df_concesiones = cargar_concesiones()
 
-# EXTRAER POBLACIÓN BASE (ÚLTIMO AÑO CENSAL)
+# EXTRAER POBLACIÓN BASE
 def obtener_poblacion_base(lugar_sel, nivel_sel):
     pob_u, pob_r, anio_base = 0.0, 0.0, 2020
-    
     if nivel_sel == "Veredal" and not df_veredas.empty:
         df_v = df_veredas[df_veredas['Vereda'] == lugar_sel]
         if not df_v.empty: pob_r = df_v['Poblacion_hab'].values[0]
-        anio_base = 2020 # Año asumido para el censo veredal estático
-        
     elif not df_mpios.empty and nivel_sel in ["Nacional (Colombia)", "Departamental", "Regional", "Municipal"]:
         anio_base = df_mpios['año'].max()
-        
         if nivel_sel == "Nacional (Colombia)": df_f = df_mpios[df_mpios['año'] == anio_base]
         elif nivel_sel == "Departamental": df_f = df_mpios[(df_mpios['depto_nom'] == lugar_sel) & (df_mpios['año'] == anio_base)]
         elif nivel_sel == "Regional": df_f = df_mpios[(df_mpios['region'] == lugar_sel) & (df_mpios['año'] == anio_base)]
@@ -67,27 +100,20 @@ def obtener_poblacion_base(lugar_sel, nivel_sel):
             
     return float(pob_u), float(pob_r), anio_base
 
-# MOTOR MATEMÁTICO UNIVERSAL
 def proyectar_curva(p_base, anios_array, anio_base, modelo, r, k):
-    """Aplica el modelo matemático seleccionado sobre un array de años."""
-    t = np.maximum(0, anios_array - anio_base) # Solo proyecta hacia el futuro
-    
+    t = np.maximum(0, anios_array - anio_base) 
     if modelo == "Logístico":
-        k_val = max(k, p_base * 1.05) # K siempre debe ser mayor a la pob base
+        k_val = max(k, p_base * 1.05) 
         return k_val / (1 + ((k_val - p_base) / p_base) * np.exp(-r * t))
-    elif modelo == "Exponencial":
-        return p_base * np.exp(r * t)
-    elif modelo == "Lineal (Tendencial)":
-        return p_base * (1 + r * t)
-    else: # Geométrico
-        return p_base * ((1 + r) ** t)
+    elif modelo == "Exponencial": return p_base * np.exp(r * t)
+    elif modelo == "Lineal (Tendencial)": return p_base * (1 + r * t)
+    else: return p_base * ((1 + r) ** t)
 
 # ==============================================================================
-# 🎛️ PANEL MAESTRO DE VARIABLES (CASCADA + MODELOS + TIEMPO)
+# 🎛️ PANEL MAESTRO DE VARIABLES
 # ==============================================================================
 st.subheader("📍 1. Configuración Territorial y Máquina del Tiempo")
 
-# --- 1.1 CASCADA TERRITORIAL ---
 nivel_sel = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Departamental", "Regional", "Municipal", "Veredal"])
 lugar_sel = "N/A"
 
@@ -127,33 +153,25 @@ elif nivel_sel == "Veredal" and not df_veredas.empty:
         veredas = sorted([str(x) for x in df_veredas[df_veredas['Municipio'] == mpio_sel]['Vereda'].dropna().unique()])
         lugar_sel = st.selectbox("2. Vereda:", veredas)
 
-# --- 1.2 MODELACIÓN TEMPORAL ---
 st.markdown("⚙️ **Parámetros de Proyección Demográfica**")
 pob_u_base, pob_r_base, anio_base = obtener_poblacion_base(lugar_sel, nivel_sel)
 pob_t_base = pob_u_base + pob_r_base
 
 col_t1, col_t2, col_t3, col_t4 = st.columns(4)
-with col_t1:
-    anio_analisis = st.slider("📅 Año a Simular:", min_value=anio_base, max_value=2060, value=2024, step=1)
-with col_t2:
-    modelo_sel = st.selectbox("Ecuación Evolutiva:", ["Logístico", "Geométrico", "Exponencial", "Lineal (Tendencial)"])
-with col_t3:
-    tasa_r = st.number_input("Tasa de Crecimiento (r) %:", value=1.50, step=0.1, format="%.2f") / 100.0
+with col_t1: anio_analisis = st.slider("📅 Año a Simular:", min_value=anio_base, max_value=2060, value=2024, step=1)
+with col_t2: modelo_sel = st.selectbox("Ecuación Evolutiva:", ["Logístico", "Geométrico", "Exponencial", "Lineal (Tendencial)"])
+with col_t3: tasa_r = st.number_input("Tasa de Crecimiento (r) %:", value=1.50, step=0.1) / 100.0
 with col_t4:
     k_man = st.number_input("Capacidad de Carga (K):", value=float(pob_t_base * 2.0), step=1000.0, disabled=(modelo_sel != "Logístico"))
-    if modelo_sel == "Logístico": st.caption(f"Debe ser > {pob_t_base:,.0f}")
 
-# Calcular población proyectada para el año específico
 factor_proy = proyectar_curva(pob_t_base, np.array([anio_analisis]), anio_base, modelo_sel, tasa_r, k_man)[0] / pob_t_base if pob_t_base > 0 else 1.0
 pob_u_auto = pob_u_base * factor_proy
 pob_r_auto = pob_r_base * factor_proy
 
 st.info(f"👥 Demografía dinámica proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
 col_p1, col_p2, col_p3 = st.columns([1, 1, 1.5])
-with col_p1: 
-    pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
-with col_p2: 
-    pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
+with col_p1: pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
+with col_p2: pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
 with col_p3:
     pob_total = pob_urbana + pob_rural
     st.metric(label="Población Total Estimada", value=f"{pob_total:,.0f} Hab.", delta=f"+ {pob_total - pob_t_base:,.0f} desde {anio_base}" if pob_total > pob_t_base else None)
@@ -161,49 +179,76 @@ with col_p3:
 st.divider()
 
 # ==============================================================================
-# PESTAÑAS Y GRÁFICAS EVOLUTIVAS
+# PESTAÑAS
 # ==============================================================================
 tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion = st.tabs([
-    "🚰 2. Demanda Hídrica",
+    "🚰 2. Demanda y Subregistro",
     "🏭 3. Inventario de Cargas", 
     "🌊 4. Asimilación y Dilución", 
     "🛡️ 5. Escenarios de Mitigación"
 ])
 
-# Arrays para proyecciones futuras en gráficas (30 años desde el análisis)
 anios_evo = np.arange(anio_analisis, anio_analisis + 31)
 factor_evo = proyectar_curva(pob_t_base, anios_evo, anio_base, modelo_sel, tasa_r, k_man) / pob_t_base if pob_t_base > 0 else np.ones_like(anios_evo)
-pob_evo = pob_total * (factor_evo / factor_proy) # Ajustamos a la curva desde el año seleccionado
+pob_evo = pob_total * (factor_evo / factor_proy)
 
 # ------------------------------------------------------------------------------
-# TAB 1: DEMANDA HÍDRICA
+# TAB 1: DEMANDA HÍDRICA (AHORA CON ANÁLISIS DE SUBREGISTRO SIRENA)
 # ------------------------------------------------------------------------------
 with tab_demanda:
-    st.header(f"🚰 Demanda Hídrica Sectorial ({anio_analisis})")
-    col_d1, col_d2 = st.columns([1, 2])
+    st.header(f"🚰 Metabolismo Hídrico y Nivel de Formalización")
+    col_d1, col_d2 = st.columns([1, 1.2])
     
     with col_d1:
-        st.subheader("Parámetros de Demanda")
+        st.subheader("1. Demanda Teórica (Requerimiento Real)")
         dotacion = st.number_input("Dotación Doméstica (L/hab/día):", value=120.0, step=5.0)
-        q_domestico = (pob_total * dotacion) / 86400
+        q_teorico_dom = (pob_total * dotacion) / 86400
+        st.metric(f"Caudal Doméstico Necesario ({anio_analisis})", f"{q_teorico_dom:.2f} L/s")
         
-        st.metric(f"Caudal Doméstico Requerido ({anio_analisis})", f"{q_domestico:.2f} L/s")
+        st.markdown("---")
+        st.subheader("2. Demanda Legal (Autorizada por Corantioquia)")
         
-        q_agricola = st.number_input("Concesiones Agrícolas / Riego (L/s):", value=45.0, step=5.0)
-        q_industrial = st.number_input("Concesiones Industriales (L/s):", value=20.0, step=2.0)
-        q_total_demanda = q_domestico + q_agricola + q_industrial
+        # CRUZAMOS LA BASE DE DATOS DE CORANTIOQUIA
+        q_legal_dom, q_legal_agr, q_legal_ind = 0.0, 0.0, 0.0
         
-        df_demanda = pd.DataFrame({"Sector": ["Doméstico", "Agrícola", "Industrial"], "Caudal (L/s)": [q_domestico, q_agricola, q_industrial]})
-        fig_pie = px.pie(df_demanda, values='Caudal (L/s)', names='Sector', hole=0.4, title=f"Distribución Actual")
-        st.plotly_chart(fig_pie, use_container_width=True)
-
+        if not df_concesiones.empty and lugar_sel != "N/A":
+            if nivel_sel == "Municipal":
+                df_filtro_c = df_concesiones[df_concesiones['municipio'].str.lower() == lugar_sel.lower()]
+            elif nivel_sel == "Veredal" and 'vereda' in df_concesiones.columns:
+                df_filtro_c = df_concesiones[df_concesiones['vereda'].str.lower() == lugar_sel.lower()]
+            else:
+                df_filtro_c = df_concesiones
+                
+            if not df_filtro_c.empty:
+                q_legal_dom = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Doméstico']['caudal_lps'].sum()
+                q_legal_agr = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Agrícola/Pecuario']['caudal_lps'].sum()
+                q_legal_ind = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Industrial']['caudal_lps'].sum()
+                
+        st.caption("Caudales extraídos de la base SIRENA:")
+        q_concesionado_dom = st.number_input("Caudal Doméstico Autorizado (L/s):", value=float(q_legal_dom), step=1.0)
+        q_agricola = st.number_input("Caudal Agrícola/Pecuario (L/s):", value=float(q_legal_agr), step=1.0)
+        q_industrial = st.number_input("Caudal Industrial Autorizado (L/s):", value=float(q_legal_ind), step=1.0)
+        
     with col_d2:
-        st.subheader(f"📈 Análisis Evolutivo ({modelo_sel})")
-        demanda_evo = (pob_evo * dotacion) / 86400
-        fig_evo_dem = go.Figure()
-        fig_evo_dem.add_trace(go.Scatter(x=anios_evo, y=demanda_evo, mode='lines', fill='tozeroy', name='Demanda (L/s)', line=dict(color='#2980b9', width=3)))
-        fig_evo_dem.update_layout(title="Evolución de Requerimientos Poblacionales (L/s)", xaxis_title="Año", yaxis_title="Caudal Doméstico (L/s)")
-        st.plotly_chart(fig_evo_dem, use_container_width=True)
+        st.subheader("📊 Análisis de Ilegalidad o Subregistro")
+        st.markdown("Comparativa entre lo que la población consume realmente frente a lo que tienen registrado ante la Corporación.")
+        
+        df_sub = pd.DataFrame({
+            "Naturaleza": ["Demanda Teórica (Real)", "Caudal Autorizado (Corantioquia)"],
+            "Caudal (L/s)": [q_teorico_dom, q_concesionado_dom]
+        })
+        
+        brecha = max(0, q_teorico_dom - q_concesionado_dom)
+        porc_legal = (q_concesionado_dom / q_teorico_dom * 100) if q_teorico_dom > 0 else 100
+        
+        fig_sub = px.bar(df_sub, x="Naturaleza", y="Caudal (L/s)", color="Naturaleza",
+                         color_discrete_sequence=["#e74c3c", "#2ecc71"],
+                         title=f"Brecha Hídrica: {brecha:,.1f} L/s extraídos sin registro")
+        fig_sub.add_hline(y=q_teorico_dom, line_dash="dash", line_color="black", annotation_text="Límite Real de Consumo")
+        st.plotly_chart(fig_sub, use_container_width=True)
+        
+        st.metric("Índice de Formalización (Sector Doméstico)", f"{min(porc_legal, 100):.1f}%", 
+                  delta="- Alerta de Ilegalidad Alta" if porc_legal < 50 else "+ Nivel de Formalización Óptimo")
 
 # ------------------------------------------------------------------------------
 # TAB 2: INVENTARIO DE CARGAS
@@ -236,8 +281,9 @@ with tab_fuentes:
     dbo_agricola = (ha_papa + ha_pastos) * 0.8 
     carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_cerdos + dbo_agricola
     
+    # Usamos los datos reales extraídos de la base de concesiones para calcular el caudal efluente
     coef_retorno = 0.85
-    q_efluente_lps = (q_domestico * coef_retorno) + (q_industrial * 0.8) + (vol_suero / 86400)
+    q_efluente_lps = (q_teorico_dom * coef_retorno) + (q_industrial * 0.8) + (vol_suero / 86400)
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
 
     col_g1, col_g2 = st.columns(2)
@@ -270,7 +316,7 @@ with tab_dilucion:
         
         st.markdown("---")
         st.subheader("Datos del Vertimiento Consolidado")
-        st.metric("Caudal del Efluente (Qe)", f"{q_efluente_lps:.1f} L/s")
+        st.metric("Caudal del Efluente (Qe)", f"{q_efluente_lps:,.1f} L/s")
         st.metric("Concentración DBO (Ce)", f"{conc_efluente_mg_l:,.1f} mg/L")
         
         c_mix = ((q_rio * c_rio) + (q_efluente_lps * conc_efluente_mg_l)) / (q_rio + q_efluente_lps)
