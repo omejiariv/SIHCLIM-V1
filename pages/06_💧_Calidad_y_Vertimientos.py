@@ -43,60 +43,51 @@ def cargar_veredas():
 df_mpios = cargar_municipios()
 df_veredas = cargar_veredas()
 
-# MAGIA TEMPORAL: Extrae datos históricos o proyecta al futuro
-def obtener_poblacion_dinamica(lugar_sel, nivel_sel, anio_obj, tasa_crec):
-    pob_u, pob_r = 0.0, 0.0
+# EXTRAER POBLACIÓN BASE (ÚLTIMO AÑO CENSAL)
+def obtener_poblacion_base(lugar_sel, nivel_sel):
+    pob_u, pob_r, anio_base = 0.0, 0.0, 2020
     
     if nivel_sel == "Veredal" and not df_veredas.empty:
         df_v = df_veredas[df_veredas['Vereda'] == lugar_sel]
-        if not df_v.empty: 
-            pob_r_base = df_v['Poblacion_hab'].values[0]
-            # Simulamos que el dato veredal es de 2020 para proyectar
-            anios_dif = anio_obj - 2020
-            pob_r = pob_r_base * ((1 + tasa_crec)**anios_dif) if anios_dif > 0 else pob_r_base
-        return 0.0, float(pob_r)
-
-    if not df_mpios.empty and nivel_sel in ["Nacional (Colombia)", "Departamental", "Regional", "Municipal"]:
-        max_hist = df_mpios['año'].max()
-        anio_base = min(anio_obj, max_hist) # Año a buscar en el histórico
+        if not df_v.empty: pob_r = df_v['Poblacion_hab'].values[0]
+        anio_base = 2020 # Año asumido para el censo veredal estático
         
-        # Filtro jerárquico
-        if nivel_sel == "Nacional (Colombia)":
-            df_f = df_mpios[df_mpios['año'] == anio_base]
-        elif nivel_sel == "Departamental":
-            df_f = df_mpios[(df_mpios['depto_nom'] == lugar_sel) & (df_mpios['año'] == anio_base)]
-        elif nivel_sel == "Regional":
-            df_f = df_mpios[(df_mpios['region'] == lugar_sel) & (df_mpios['año'] == anio_base)]
-        elif nivel_sel == "Municipal":
-            df_f = df_mpios[(df_mpios['municipio'] == lugar_sel) & (df_mpios['año'] == anio_base)]
+    elif not df_mpios.empty and nivel_sel in ["Nacional (Colombia)", "Departamental", "Regional", "Municipal"]:
+        anio_base = df_mpios['año'].max()
+        
+        if nivel_sel == "Nacional (Colombia)": df_f = df_mpios[df_mpios['año'] == anio_base]
+        elif nivel_sel == "Departamental": df_f = df_mpios[(df_mpios['depto_nom'] == lugar_sel) & (df_mpios['año'] == anio_base)]
+        elif nivel_sel == "Regional": df_f = df_mpios[(df_mpios['region'] == lugar_sel) & (df_mpios['año'] == anio_base)]
+        elif nivel_sel == "Municipal": df_f = df_mpios[(df_mpios['municipio'] == lugar_sel) & (df_mpios['año'] == anio_base)]
             
         if not df_f.empty:
             areas_str = df_f['area_geografica'].astype(str).str.lower()
             pob_u = df_f[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum()
             pob_r = df_f[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum()
             
-        # Si el año pedido es mayor al histórico, proyectamos matemáticamente
-        if anio_obj > max_hist:
-            factor_crecimiento = (1 + tasa_crec) ** (anio_obj - max_hist)
-            pob_u *= factor_crecimiento
-            pob_r *= factor_crecimiento
-            
-    return float(pob_u), float(pob_r)
+    return float(pob_u), float(pob_r), anio_base
+
+# MOTOR MATEMÁTICO UNIVERSAL
+def proyectar_curva(p_base, anios_array, anio_base, modelo, r, k):
+    """Aplica el modelo matemático seleccionado sobre un array de años."""
+    t = np.maximum(0, anios_array - anio_base) # Solo proyecta hacia el futuro
+    
+    if modelo == "Logístico":
+        k_val = max(k, p_base * 1.05) # K siempre debe ser mayor a la pob base
+        return k_val / (1 + ((k_val - p_base) / p_base) * np.exp(-r * t))
+    elif modelo == "Exponencial":
+        return p_base * np.exp(r * t)
+    elif modelo == "Lineal (Tendencial)":
+        return p_base * (1 + r * t)
+    else: # Geométrico
+        return p_base * ((1 + r) ** t)
 
 # ==============================================================================
-# 🎛️ PANEL MAESTRO DE VARIABLES (TEMPORALIDAD Y CASCADA)
+# 🎛️ PANEL MAESTRO DE VARIABLES (CASCADA + MODELOS + TIEMPO)
 # ==============================================================================
-st.subheader("📍 1. Configuración de la Unidad Territorial y Temporalidad")
+st.subheader("📍 1. Configuración Territorial y Máquina del Tiempo")
 
-# --- CONTROL DE TEMPORALIDAD ---
-col_t1, col_t2 = st.columns([1.5, 1])
-with col_t1:
-    anio_analisis = st.slider("📅 Año de Análisis (Máquina del Tiempo):", min_value=2005, max_value=2050, value=2024, step=1)
-with col_t2:
-    st.caption("Proyección Matemática (Si superas el censo base):")
-    tasa_crecimiento = st.number_input("Tasa de Crecimiento Anual (%):", value=1.50, step=0.1) / 100.0
-
-# --- CASCADA TERRITORIAL ---
+# --- 1.1 CASCADA TERRITORIAL ---
 nivel_sel = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Departamental", "Regional", "Municipal", "Veredal"])
 lugar_sel = "N/A"
 
@@ -136,10 +127,28 @@ elif nivel_sel == "Veredal" and not df_veredas.empty:
         veredas = sorted([str(x) for x in df_veredas[df_veredas['Municipio'] == mpio_sel]['Vereda'].dropna().unique()])
         lugar_sel = st.selectbox("2. Vereda:", veredas)
 
-# --- PANEL DE POBLACIÓN (URBANO, RURAL Y TOTAL) ---
-pob_u_auto, pob_r_auto = obtener_poblacion_dinamica(lugar_sel, nivel_sel, anio_analisis, tasa_crecimiento)
+# --- 1.2 MODELACIÓN TEMPORAL ---
+st.markdown("⚙️ **Parámetros de Proyección Demográfica**")
+pob_u_base, pob_r_base, anio_base = obtener_poblacion_base(lugar_sel, nivel_sel)
+pob_t_base = pob_u_base + pob_r_base
 
-st.info(f"👥 Demografía dinámica para **{lugar_sel}** en el año **{anio_analisis}**:")
+col_t1, col_t2, col_t3, col_t4 = st.columns(4)
+with col_t1:
+    anio_analisis = st.slider("📅 Año a Simular:", min_value=anio_base, max_value=2060, value=2024, step=1)
+with col_t2:
+    modelo_sel = st.selectbox("Ecuación Evolutiva:", ["Logístico", "Geométrico", "Exponencial", "Lineal (Tendencial)"])
+with col_t3:
+    tasa_r = st.number_input("Tasa de Crecimiento (r) %:", value=1.50, step=0.1, format="%.2f") / 100.0
+with col_t4:
+    k_man = st.number_input("Capacidad de Carga (K):", value=float(pob_t_base * 2.0), step=1000.0, disabled=(modelo_sel != "Logístico"))
+    if modelo_sel == "Logístico": st.caption(f"Debe ser > {pob_t_base:,.0f}")
+
+# Calcular población proyectada para el año específico
+factor_proy = proyectar_curva(pob_t_base, np.array([anio_analisis]), anio_base, modelo_sel, tasa_r, k_man)[0] / pob_t_base if pob_t_base > 0 else 1.0
+pob_u_auto = pob_u_base * factor_proy
+pob_r_auto = pob_r_base * factor_proy
+
+st.info(f"👥 Demografía dinámica proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
 col_p1, col_p2, col_p3 = st.columns([1, 1, 1.5])
 with col_p1: 
     pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
@@ -147,12 +156,12 @@ with col_p2:
     pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
 with col_p3:
     pob_total = pob_urbana + pob_rural
-    st.metric(label="Población Total", value=f"{pob_total:,.0f} Hab.")
+    st.metric(label="Población Total Estimada", value=f"{pob_total:,.0f} Hab.", delta=f"+ {pob_total - pob_t_base:,.0f} desde {anio_base}" if pob_total > pob_t_base else None)
 
 st.divider()
 
 # ==============================================================================
-# PESTAÑAS
+# PESTAÑAS Y GRÁFICAS EVOLUTIVAS
 # ==============================================================================
 tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion = st.tabs([
     "🚰 2. Demanda Hídrica",
@@ -161,8 +170,13 @@ tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion = st.tabs([
     "🛡️ 5. Escenarios de Mitigación"
 ])
 
+# Arrays para proyecciones futuras en gráficas (30 años desde el análisis)
+anios_evo = np.arange(anio_analisis, anio_analisis + 31)
+factor_evo = proyectar_curva(pob_t_base, anios_evo, anio_base, modelo_sel, tasa_r, k_man) / pob_t_base if pob_t_base > 0 else np.ones_like(anios_evo)
+pob_evo = pob_total * (factor_evo / factor_proy) # Ajustamos a la curva desde el año seleccionado
+
 # ------------------------------------------------------------------------------
-# TAB 1: DEMANDA HÍDRICA Y EVOLUCIÓN
+# TAB 1: DEMANDA HÍDRICA
 # ------------------------------------------------------------------------------
 with tab_demanda:
     st.header(f"🚰 Demanda Hídrica Sectorial ({anio_analisis})")
@@ -179,28 +193,20 @@ with tab_demanda:
         q_industrial = st.number_input("Concesiones Industriales (L/s):", value=20.0, step=2.0)
         q_total_demanda = q_domestico + q_agricola + q_industrial
         
-        df_demanda = pd.DataFrame({
-            "Sector": ["Doméstico", "Agrícola", "Industrial"],
-            "Caudal (L/s)": [q_domestico, q_agricola, q_industrial]
-        })
+        df_demanda = pd.DataFrame({"Sector": ["Doméstico", "Agrícola", "Industrial"], "Caudal (L/s)": [q_domestico, q_agricola, q_industrial]})
         fig_pie = px.pie(df_demanda, values='Caudal (L/s)', names='Sector', hole=0.4, title=f"Distribución Actual")
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with col_d2:
-        st.subheader("📈 Análisis Evolutivo de la Demanda Doméstica")
-        st.caption(f"Proyección desde {anio_analisis} hasta 30 años en el futuro.")
-        
-        anios_evo = np.arange(anio_analisis, anio_analisis + 31)
-        pob_evo = pob_total * (1 + tasa_crecimiento)**(anios_evo - anio_analisis)
+        st.subheader(f"📈 Análisis Evolutivo ({modelo_sel})")
         demanda_evo = (pob_evo * dotacion) / 86400
-        
         fig_evo_dem = go.Figure()
         fig_evo_dem.add_trace(go.Scatter(x=anios_evo, y=demanda_evo, mode='lines', fill='tozeroy', name='Demanda (L/s)', line=dict(color='#2980b9', width=3)))
         fig_evo_dem.update_layout(title="Evolución de Requerimientos Poblacionales (L/s)", xaxis_title="Año", yaxis_title="Caudal Doméstico (L/s)")
         st.plotly_chart(fig_evo_dem, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# TAB 2: INVENTARIO DE CARGAS Y EVOLUCIÓN
+# TAB 2: INVENTARIO DE CARGAS
 # ------------------------------------------------------------------------------
 with tab_fuentes:
     st.header(f"Inventario de Presiones y Cargas Contaminantes ({anio_analisis})")
@@ -241,9 +247,8 @@ with tab_fuentes:
         st.plotly_chart(fig_cargas, use_container_width=True)
 
     with col_g2:
-        st.subheader("📈 Evolución de Carga Orgánica (Impacto Poblacional)")
-        anios_evo = np.arange(anio_analisis, anio_analisis + 31)
-        pob_u_evo = pob_urbana * (1 + tasa_crecimiento)**(anios_evo - anio_analisis)
+        st.subheader(f"📈 Evolución de Carga Orgánica ({modelo_sel})")
+        pob_u_evo = pob_urbana * (factor_evo / factor_proy)
         dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_cerdos + dbo_agricola
         
         fig_dbo_evo = go.Figure()
