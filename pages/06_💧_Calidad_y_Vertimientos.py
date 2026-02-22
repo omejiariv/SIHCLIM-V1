@@ -27,11 +27,10 @@ def normalizar_texto(texto):
     return unicodedata.normalize('NFKD', texto_str).encode('ascii', 'ignore').decode('utf-8')
 
 # ==============================================================================
-# 🔌 CONECTOR A BASES DE DATOS
+# 🔌 CONECTOR A BASES DE DATOS (Soporte nativo para XLSX)
 # ==============================================================================
 def leer_csv_robusto(ruta):
     try:
-        # Forzamos lectura con punto y coma primero para el nuevo archivo
         df = pd.read_csv(ruta, sep=';', low_memory=False)
         if len(df.columns) < 5: df = pd.read_csv(ruta, sep=',', low_memory=False)
         df.columns = df.columns.str.replace('\ufeff', '').str.strip()
@@ -57,78 +56,85 @@ def cargar_veredas():
 
 @st.cache_data
 def cargar_concesiones():
-    ruta = "data/Concesiones_Corantioquia.csv"
-    if os.path.exists(ruta):
-        df = leer_csv_robusto(ruta)
-        if not df.empty:
-            df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
+    ruta_xlsx = "data/Concesiones_Corantioquia.xlsx"
+    ruta_csv = "data/Concesiones_Corantioquia.csv"
+    
+    df = pd.DataFrame()
+    # 1. Intentar cargar EXCEL primero (Tu nuevo formato)
+    if os.path.exists(ruta_xlsx):
+        df = pd.read_excel(ruta_xlsx)
+    # 2. Fallback a CSV si no existe el Excel
+    elif os.path.exists(ruta_csv):
+        df = leer_csv_robusto(ruta_csv)
+        
+    if not df.empty:
+        df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
+        
+        # Autodetectar columnas de forma segura para el NUEVO archivo
+        col_caudal = 'caudal_por_uso' if 'caudal_por_uso' in df.columns else ('caudal_usuario' if 'caudal_usuario' in df.columns else None)
+        if not col_caudal: 
+            cands = [c for c in df.columns if 'caudal' in c and 'acumulado' not in c]
+            col_caudal = cands[0] if cands else None
             
-            # Autodetectar columnas de forma segura para el NUEVO archivo
-            col_caudal = 'caudal_por_uso' if 'caudal_por_uso' in df.columns else ('caudal_usuario' if 'caudal_usuario' in df.columns else None)
-            if not col_caudal: # Fallback al archivo viejo
-                cands = [c for c in df.columns if 'caudal' in c and 'acumulado' not in c]
-                col_caudal = cands[0] if cands else None
-                
-            col_uso = 'uso' if 'uso' in df.columns else None
-            col_mpio = 'municipio' if 'municipio' in df.columns else None
-            col_vereda = 'vereda' if 'vereda' in df.columns else None
-            col_asunto = 'asunto' if 'asunto' in df.columns else None
-            col_cota = 'cota' if 'cota' in df.columns else None
-            col_estado = 'estado' if 'estado' in df.columns else None
+        col_uso = 'uso' if 'uso' in df.columns else None
+        col_mpio = 'municipio' if 'municipio' in df.columns else None
+        col_vereda = 'vereda' if 'vereda' in df.columns else None
+        col_asunto = 'asunto' if 'asunto' in df.columns else None
+        col_cota = 'cota' if 'cota' in df.columns else None
+        col_estado = 'estado' if 'estado' in df.columns else None
+        
+        if col_caudal and col_mpio:
+            df = df.dropna(subset=[col_mpio]).copy() 
             
-            # Solo exigimos Municipio y Caudal para no perder datos
-            if col_caudal and col_mpio:
-                df = df.dropna(subset=[col_mpio]).copy() # No borramos por 'uso' vacío
-                
-                # Conversión de caudales
-                if df[col_caudal].dtype == object:
-                    df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
-                df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
-                
-                # Cota a numérico
-                if col_cota:
-                    df['cota_num'] = pd.to_numeric(df[col_cota], errors='coerce').fillna(-1)
-                else:
-                    df['cota_num'] = -1
-                
-                # Normalización
-                df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
-                df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
-                
-                if col_vereda: 
-                    df['vereda'] = df[col_vereda].astype(str).str.strip().str.title()
-                    df['vereda_norm'] = df['vereda'].apply(normalizar_texto)
-                else:
-                    df['vereda_norm'] = ""
-                
-                # FILTRO SUBTERRÁNEO VS SUPERFICIAL (Regex Inteligente)
-                if col_asunto:
-                    df['tipo_agua'] = np.where(df[col_asunto].str.lower().str.contains('subterran|subterrán|pozo|aljibe', regex=True, na=False), 'Subterránea',
-                                      np.where(df[col_asunto].str.lower().str.contains('superficial|corriente', regex=True, na=False), 'Superficial', 'No Especificado'))
-                else:
-                    df['tipo_agua'] = 'No Especificado'
+            # Conversión de caudales
+            if df[col_caudal].dtype == object:
+                df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
+            df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
+            
+            # Cota a numérico
+            if col_cota:
+                df['cota_num'] = pd.to_numeric(df[col_cota], errors='coerce').fillna(-1)
+            else:
+                df['cota_num'] = -1
+            
+            # Normalización
+            df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
+            df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
+            
+            if col_vereda: 
+                df['vereda'] = df[col_vereda].astype(str).str.strip().str.title()
+                df['vereda_norm'] = df['vereda'].apply(normalizar_texto)
+            else:
+                df['vereda_norm'] = ""
+            
+            # FILTRO SUBTERRÁNEO VS SUPERFICIAL (Regex Inteligente)
+            if col_asunto:
+                df['tipo_agua'] = np.where(df[col_asunto].str.lower().str.contains('subterran|subterrán|pozo|aljibe', regex=True, na=False), 'Subterránea',
+                                  np.where(df[col_asunto].str.lower().str.contains('superficial|corriente', regex=True, na=False), 'Superficial', 'No Especificado'))
+            else:
+                df['tipo_agua'] = 'No Especificado'
 
-                # Rellenar usos nulos
-                if col_uso:
-                    df['uso_detalle'] = df[col_uso].fillna('Sin Información').astype(str).str.title().str.strip()
-                else:
-                    df['uso_detalle'] = 'Sin Información'
+            # Rellenar usos nulos
+            if col_uso:
+                df['uso_detalle'] = df[col_uso].fillna('Sin Información').astype(str).str.title().str.strip()
+            else:
+                df['uso_detalle'] = 'Sin Información'
 
-                def clasificar_uso_base(u):
-                    u = normalizar_texto(u)
-                    if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento', 'acueducto']): return 'Doméstico'
-                    elif any(x in u for x in ['agricola', 'pecuario', 'acuicultura', 'agroindustrial', 'riego', 'piscicola', 'silvicultura']): return 'Agrícola/Pecuario'
-                    elif any(x in u for x in ['industrial', 'mineria', 'minero', 'generacion de energia']): return 'Industrial'
-                    else: return 'Otros'
-                    
-                df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso_base)
+            def clasificar_uso_base(u):
+                u = normalizar_texto(u)
+                if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento', 'acueducto']): return 'Doméstico'
+                elif any(x in u for x in ['agricola', 'pecuario', 'acuicultura', 'agroindustrial', 'riego', 'piscicola', 'silvicultura']): return 'Agrícola/Pecuario'
+                elif any(x in u for x in ['industrial', 'mineria', 'minero', 'generacion de energia']): return 'Industrial'
+                else: return 'Otros'
                 
-                if col_estado:
-                    df['estado'] = df[col_estado].fillna('Desconocido').astype(str).str.title().str.strip()
-                else:
-                    df['estado'] = 'Desconocido'
-                    
-                return df
+            df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso_base)
+            
+            if col_estado:
+                df['estado'] = df[col_estado].fillna('Desconocido').astype(str).str.title().str.strip()
+            else:
+                df['estado'] = 'Desconocido'
+                
+            return df
     return pd.DataFrame()
 
 df_mpios = cargar_municipios()
@@ -221,7 +227,7 @@ factor_proy = proyectar_curva(pob_t_base, np.array([anio_analisis]), anio_base, 
 pob_u_auto = pob_u_base * factor_proy
 pob_r_auto = pob_r_base * factor_proy
 
-st.info(f"👥 Demografía proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
+st.info(f"👥 Demografía dinámica proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
 col_p1, col_p2, col_p3 = st.columns([1, 1, 1.5])
 with col_p1: pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
 with col_p2: pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
@@ -461,7 +467,7 @@ with tab_sirena:
                 df_agg = df_agg[df_agg['caudal_lps'] > 0]
                 
                 fig_exp = px.pie(df_agg, values='caudal_lps', names=agrupador, hole=0.4, title=f"Caudal total filtrado: {df_agg['caudal_lps'].sum():,.1f} L/s")
-                # Gráfico muestra Valores, NO porcentajes
+                # Gráfico muestra Valores (L/s), NO porcentajes
                 fig_exp.update_traces(textposition='inside', textinfo='value+label')
                 st.plotly_chart(fig_exp, use_container_width=True)
             else:
