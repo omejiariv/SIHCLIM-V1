@@ -22,7 +22,6 @@ st.divider()
 # 🧽 FUNCIÓN NORMALIZADORA (MATA-TILDES Y ESPACIOS)
 # ==============================================================================
 def normalizar_texto(texto):
-    """Convierte texto a minúsculas, quita espacios extra y elimina tildes/acentos"""
     if pd.isna(texto): return ""
     texto_str = str(texto).lower().strip()
     return unicodedata.normalize('NFKD', texto_str).encode('ascii', 'ignore').decode('utf-8')
@@ -63,13 +62,13 @@ def cargar_concesiones():
         if not df.empty:
             df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
             
-            # Autodetectar columnas de forma segura
             col_caudal = [c for c in df.columns if 'caudal' in c and 'acumulado' not in c]
             col_caudal = col_caudal[0] if col_caudal else next((c for c in df.columns if 'caudal' in c), None)
             col_uso = next((c for c in df.columns if 'uso' in c), None)
             col_mpio = next((c for c in df.columns if 'municipio' in c), None)
             col_vereda = next((c for c in df.columns if 'vereda' in c), None)
             col_asunto = next((c for c in df.columns if 'asunto' in c), None)
+            col_cota = next((c for c in df.columns if 'cota' in c), None)
             
             if col_caudal and col_uso and col_mpio:
                 df = df.dropna(subset=[col_uso, col_mpio, col_caudal]).copy()
@@ -78,7 +77,12 @@ def cargar_concesiones():
                     df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
                 df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
                 
-                # Normalizar municipio para visualización y para cruce interno
+                # Cota a numérico
+                if col_cota:
+                    df['cota_num'] = pd.to_numeric(df[col_cota], errors='coerce').fillna(-1)
+                else:
+                    df['cota_num'] = -1
+                
                 df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
                 df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
                 
@@ -88,9 +92,10 @@ def cargar_concesiones():
                 else:
                     df['vereda_norm'] = ""
                 
+                # FILTRO ROBUSTO SUBTERRÁNEO VS SUPERFICIAL (Ignora tildes)
                 if col_asunto:
-                    df['tipo_agua'] = np.where(df[col_asunto].str.lower().str.contains('subterranea'), 'Subterránea',
-                                      np.where(df[col_asunto].str.lower().str.contains('superficial'), 'Superficial', 'No Especificado'))
+                    df['tipo_agua'] = np.where(df[col_asunto].str.lower().str.contains('subterran|subterrán|pozo|aljibe', regex=True), 'Subterránea',
+                                      np.where(df[col_asunto].str.lower().str.contains('superficial|corriente', regex=True), 'Superficial', 'No Especificado'))
                 else:
                     df['tipo_agua'] = 'No Especificado'
 
@@ -196,7 +201,7 @@ factor_proy = proyectar_curva(pob_t_base, np.array([anio_analisis]), anio_base, 
 pob_u_auto = pob_u_base * factor_proy
 pob_r_auto = pob_r_base * factor_proy
 
-st.info(f"👥 Demografía proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
+st.info(f"👥 Demografía dinámica proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
 col_p1, col_p2, col_p3 = st.columns([1, 1, 1.5])
 with col_p1: pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
 with col_p2: pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
@@ -243,7 +248,7 @@ with tab_demanda:
         df_usos_detalle = pd.DataFrame()
         
         if not df_concesiones.empty and lugar_sel != "N/A":
-            lugar_norm = normalizar_texto(lugar_sel) # El truco mágico
+            lugar_norm = normalizar_texto(lugar_sel)
             
             if nivel_sel == "Municipal": df_filtro_c = df_concesiones[df_concesiones['municipio_norm'] == lugar_norm]
             elif nivel_sel == "Veredal" and 'vereda_norm' in df_concesiones.columns: df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
@@ -271,6 +276,15 @@ with tab_demanda:
     with col_d2:
         st.subheader("📊 Análisis de Ilegalidad o Subregistro")
         
+        # CAJA INTELIGENTE DE DIAGNÓSTICO
+        margen = 0.05 # 5% de margen de tolerancia
+        if q_concesionado_dom > q_teorico_dom * (1 + margen):
+            st.error(f"🔴 **Sobreconcesión:** Se han otorgado {q_concesionado_dom - q_teorico_dom:.1f} L/s adicionales a los estrictamente requeridos por la población.")
+        elif q_concesionado_dom < q_teorico_dom * (1 - margen):
+            st.warning(f"⚠️ **Riesgo de Ilegalidad / Subregistro:** La población necesita {q_teorico_dom - q_concesionado_dom:.1f} L/s que no aparecen registrados formalmente.")
+        else:
+            st.success(f"✅ **Equilibrio Hídrico:** El caudal otorgado ({q_concesionado_dom:.1f} L/s) suple adecuadamente la demanda poblacional ({q_teorico_dom:.1f} L/s).")
+
         df_chart = pd.DataFrame([
             {"Categoría": "Requerimiento Teórico", "Tipo": "Consumo Real Estimado", "Caudal (L/s)": q_teorico_dom},
             {"Categoría": "Registro SIRENA", "Tipo": "Concesión Superficial", "Caudal (L/s)": q_sup},
@@ -378,7 +392,7 @@ with tab_mitigacion:
     st.info("Próxima fase de desarrollo.")
 
 # ------------------------------------------------------------------------------
-# TAB 5: EXPLORADOR SIRENA (Data Mining)
+# TAB 5: EXPLORADOR SIRENA (Data Mining Avanzado)
 # ------------------------------------------------------------------------------
 with tab_sirena:
     st.header("📊 Explorador Avanzado de Concesiones (SIRENA)")
@@ -397,13 +411,24 @@ with tab_sirena:
             f_mpio = st.multiselect("Municipio(s):", sorted(df_concesiones['municipio'].unique()))
 
         df_exp = df_concesiones.copy()
+        
+        # SLIDER DE COTA INTELIGENTE
+        if 'cota_num' in df_exp.columns and df_exp['cota_num'].max() > 0:
+            df_exp_valid_cota = df_exp[df_exp['cota_num'] >= 0]
+            if not df_exp_valid_cota.empty:
+                max_cota = float(df_exp_valid_cota['cota_num'].max())
+                st.caption("Filtro de Elevación Topográfica:")
+                rango_cota = st.slider("Rango de Cota (m.s.n.m):", 0.0, max_cota, (0.0, max_cota))
+                df_exp = df_exp[(df_exp['cota_num'] >= rango_cota[0]) & (df_exp['cota_num'] <= rango_cota[1]) | (df_exp['cota_num'] == -1)]
+
+        # Aplicar los filtros
         if f_estado: df_exp = df_exp[df_exp['estado'].isin(f_estado)]
         if f_tipo: df_exp = df_exp[df_exp['tipo_agua'].isin(f_tipo)]
         if f_uso: df_exp = df_exp[df_exp['uso_detalle'].isin(f_uso)]
         if f_mpio: df_exp = df_exp[df_exp['municipio'].isin(f_mpio)]
         
         st.divider()
-        c_exp1, c_exp2 = st.columns([2, 1])
+        c_exp1, c_exp2 = st.columns([2, 1.5])
         with c_exp1:
             st.subheader(f"Registros Encontrados: {len(df_exp)}")
             st.dataframe(df_exp, use_container_width=True)
@@ -411,10 +436,17 @@ with tab_sirena:
             st.download_button("📥 Exportar Resultados (CSV)", data=csv_exp, file_name="Reporte_SIRENA.csv", mime="text/csv")
             
         with c_exp2:
-            st.subheader("Caudal por Fuente (L/s)")
+            st.subheader("Distribución de Caudales")
             if not df_exp.empty and df_exp['caudal_lps'].sum() > 0:
-                df_agg = df_exp.groupby('tipo_agua')['caudal_lps'].sum().reset_index()
-                fig_exp = px.pie(df_agg, values='caudal_lps', names='tipo_agua', hole=0.4, color_discrete_sequence=["#3498db", "#2ecc71"])
+                agrupador = st.selectbox("Agrupar gráfico por:", ["tipo_agua", "Sector_Sihcli", "uso_detalle", "municipio", "estado"], index=0)
+                
+                df_agg = df_exp.groupby(agrupador)['caudal_lps'].sum().reset_index()
+                # Filtrar valores en 0 para no ensuciar el gráfico
+                df_agg = df_agg[df_agg['caudal_lps'] > 0]
+                
+                fig_exp = px.pie(df_agg, values='caudal_lps', names=agrupador, hole=0.4, title=f"Caudal total: {df_agg['caudal_lps'].sum():,.1f} L/s")
+                # MAGIA: Forzar a que muestre el valor numérico (L/s) y no el porcentaje
+                fig_exp.update_traces(textposition='inside', textinfo='value+label')
                 st.plotly_chart(fig_exp, use_container_width=True)
             else:
                 st.warning("No hay caudal numérico para graficar con los filtros seleccionados.")
