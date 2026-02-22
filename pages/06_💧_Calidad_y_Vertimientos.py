@@ -18,11 +18,14 @@ capacidad de asimilación y dilución en la red hídrica mediante balance de mas
 st.divider()
 
 # ==============================================================================
-# 🔌 CONECTOR A BASES DE DATOS (DEMOGRAFÍA Y CONCESIONES SIRENA)
+# 🔌 CONECTOR A BASES DE DATOS (LECTURA INTELIGENTE Y DIFUSA)
 # ==============================================================================
 def leer_csv_robusto(ruta):
+    """Lee el CSV forzando la detección del separador correcto de Excel Colombia"""
     try:
-        df = pd.read_csv(ruta, sep=None, engine='python')
+        df = pd.read_csv(ruta, sep=';', low_memory=False)
+        if len(df.columns) < 2:
+            df = pd.read_csv(ruta, sep=',', low_memory=False)
         df.columns = df.columns.str.replace('\ufeff', '').str.strip()
         return df
     except Exception:
@@ -49,30 +52,36 @@ def cargar_concesiones():
     if os.path.exists(ruta):
         df = leer_csv_robusto(ruta)
         if not df.empty:
+            # Estandarizar columnas
             df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
             
-            # Autodetectar columna de caudal
-            col_caudal = [c for c in df.columns if 'caudal' in c and 'l/s' in c]
-            col_caudal = col_caudal[0] if col_caudal else 'caudal_(l/s)'
+            # CAZADOR DE COLUMNAS (Búsqueda difusa)
+            col_caudal = next((c for c in df.columns if 'caudal' in c), None)
+            col_uso = next((c for c in df.columns if 'uso' in c), None)
+            col_mpio = next((c for c in df.columns if 'municipio' in c), None)
+            col_vereda = next((c for c in df.columns if 'vereda' in c), None)
             
-            if col_caudal in df.columns and 'uso' in df.columns and 'municipio' in df.columns:
-                df = df.dropna(subset=['uso', 'municipio', col_caudal]).copy()
+            if col_caudal and col_uso and col_mpio:
+                df = df.dropna(subset=[col_uso, col_mpio, col_caudal]).copy()
+                
+                # Exorcismo de la coma decimal europea de Excel
+                if df[col_caudal].dtype == object:
+                    df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
                 df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
                 
-                # Normalizar nombres para facilitar el cruce
-                df['municipio'] = df['municipio'].astype(str).str.strip().str.title()
-                if 'vereda' in df.columns:
-                    df['vereda'] = df['vereda'].astype(str).str.strip().str.title()
+                # Normalización de textos
+                df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
+                if col_vereda: df['vereda'] = df[col_vereda].astype(str).str.strip().str.title()
                 
-                # Clasificador Inteligente de Sectores
+                # Agrupación Inteligente de Sectores Sihcli
                 def clasificar_uso(u):
                     u = str(u).title().strip()
-                    if u in ['Domestico', 'Consumo Humano']: return 'Doméstico'
-                    elif u in ['Agricola', 'Pecuario', 'Acuicultura', 'Agroindustrial', 'Piscicola', 'Riego']: return 'Agrícola/Pecuario'
-                    elif u in ['Industrial', 'Mineria']: return 'Industrial'
+                    if any(x in u for x in ['Domestico', 'Consumo Humano', 'Abastecimiento', 'Acueducto']): return 'Doméstico'
+                    elif any(x in u for x in ['Agricola', 'Pecuario', 'Acuicultura', 'Agroindustrial', 'Riego']): return 'Agrícola/Pecuario'
+                    elif any(x in u for x in ['Industrial', 'Mineria', 'Minero']): return 'Industrial'
                     else: return 'Otros'
                     
-                df['Sector_Sihcli'] = df['uso'].apply(clasificar_uso)
+                df['Sector_Sihcli'] = df[col_uso].apply(clasificar_uso)
                 return df
     return pd.DataFrame()
 
@@ -224,7 +233,7 @@ with tab_demanda:
                 q_legal_agr = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Agrícola/Pecuario']['caudal_lps'].sum()
                 q_legal_ind = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Industrial']['caudal_lps'].sum()
                 
-        st.caption("Caudales extraídos de la base SIRENA:")
+        st.caption(f"Caudales formales extraídos de SIRENA para **{lugar_sel}**:")
         q_concesionado_dom = st.number_input("Caudal Doméstico Autorizado (L/s):", value=float(q_legal_dom), step=1.0)
         q_agricola = st.number_input("Caudal Agrícola/Pecuario (L/s):", value=float(q_legal_agr), step=1.0)
         q_industrial = st.number_input("Caudal Industrial Autorizado (L/s):", value=float(q_legal_ind), step=1.0)
@@ -243,7 +252,7 @@ with tab_demanda:
         
         fig_sub = px.bar(df_sub, x="Naturaleza", y="Caudal (L/s)", color="Naturaleza",
                          color_discrete_sequence=["#e74c3c", "#2ecc71"],
-                         title=f"Brecha Hídrica: {brecha:,.1f} L/s extraídos sin registro")
+                         title=f"Brecha Hídrica: {brecha:,.1f} L/s extraídos sin registro formal")
         fig_sub.add_hline(y=q_teorico_dom, line_dash="dash", line_color="black", annotation_text="Límite Real de Consumo")
         st.plotly_chart(fig_sub, use_container_width=True)
         
