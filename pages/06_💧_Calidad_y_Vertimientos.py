@@ -60,17 +60,13 @@ def cargar_concesiones():
     ruta_csv = "data/Concesiones_Corantioquia.csv"
     
     df = pd.DataFrame()
-    # 1. Intentar cargar EXCEL primero (Tu nuevo formato)
-    if os.path.exists(ruta_xlsx):
-        df = pd.read_excel(ruta_xlsx)
-    # 2. Fallback a CSV si no existe el Excel
-    elif os.path.exists(ruta_csv):
-        df = leer_csv_robusto(ruta_csv)
+    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
+    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
         
     if not df.empty:
         df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
         
-        # Autodetectar columnas de forma segura para el NUEVO archivo
+        # Autodetectar columnas 
         col_caudal = 'caudal_por_uso' if 'caudal_por_uso' in df.columns else ('caudal_usuario' if 'caudal_usuario' in df.columns else None)
         if not col_caudal: 
             cands = [c for c in df.columns if 'caudal' in c and 'acumulado' not in c]
@@ -79,6 +75,8 @@ def cargar_concesiones():
         col_uso = 'uso' if 'uso' in df.columns else None
         col_mpio = 'municipio' if 'municipio' in df.columns else None
         col_vereda = 'vereda' if 'vereda' in df.columns else None
+        col_depto = 'departamento' if 'departamento' in df.columns else None
+        col_region = 'region' if 'region' in df.columns else None
         col_asunto = 'asunto' if 'asunto' in df.columns else None
         col_cota = 'cota' if 'cota' in df.columns else None
         col_estado = 'estado' if 'estado' in df.columns else None
@@ -91,34 +89,29 @@ def cargar_concesiones():
                 df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
             df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
             
-            # Cota a numérico
-            if col_cota:
-                df['cota_num'] = pd.to_numeric(df[col_cota], errors='coerce').fillna(-1)
-            else:
-                df['cota_num'] = -1
+            if col_cota: df['cota_num'] = pd.to_numeric(df[col_cota], errors='coerce').fillna(-1)
+            else: df['cota_num'] = -1
             
-            # Normalización
+            # Normalización de variables territoriales
             df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
             df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
             
             if col_vereda: 
                 df['vereda'] = df[col_vereda].astype(str).str.strip().str.title()
                 df['vereda_norm'] = df['vereda'].apply(normalizar_texto)
-            else:
-                df['vereda_norm'] = ""
+            else: df['vereda_norm'] = ""
+
+            if col_depto: df['departamento_norm'] = df[col_depto].apply(normalizar_texto)
+            if col_region: df['region_norm'] = df[col_region].apply(normalizar_texto)
             
-            # FILTRO SUBTERRÁNEO VS SUPERFICIAL (Regex Inteligente)
             if col_asunto:
                 df['tipo_agua'] = np.where(df[col_asunto].str.lower().str.contains('subterran|subterrán|pozo|aljibe', regex=True, na=False), 'Subterránea',
                                   np.where(df[col_asunto].str.lower().str.contains('superficial|corriente', regex=True, na=False), 'Superficial', 'No Especificado'))
             else:
                 df['tipo_agua'] = 'No Especificado'
 
-            # Rellenar usos nulos
-            if col_uso:
-                df['uso_detalle'] = df[col_uso].fillna('Sin Información').astype(str).str.title().str.strip()
-            else:
-                df['uso_detalle'] = 'Sin Información'
+            if col_uso: df['uso_detalle'] = df[col_uso].fillna('Sin Información').astype(str).str.title().str.strip()
+            else: df['uso_detalle'] = 'Sin Información'
 
             def clasificar_uso_base(u):
                 u = normalizar_texto(u)
@@ -129,10 +122,8 @@ def cargar_concesiones():
                 
             df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso_base)
             
-            if col_estado:
-                df['estado'] = df[col_estado].fillna('Desconocido').astype(str).str.title().str.strip()
-            else:
-                df['estado'] = 'Desconocido'
+            if col_estado: df['estado'] = df[col_estado].fillna('Desconocido').astype(str).str.title().str.strip()
+            else: df['estado'] = 'Desconocido'
                 
             return df
     return pd.DataFrame()
@@ -274,9 +265,23 @@ with tab_demanda:
         if not df_concesiones.empty and lugar_sel != "N/A":
             lugar_norm = normalizar_texto(lugar_sel)
             
-            if nivel_sel == "Municipal": df_filtro_c = df_concesiones[df_concesiones['municipio_norm'] == lugar_norm]
-            elif nivel_sel == "Veredal" and 'vereda_norm' in df_concesiones.columns: df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
-            else: df_filtro_c = pd.DataFrame()
+            # FILTRO DINÁMICO QUE AHORA INCLUYE NACIONAL, DEPARTAMENTAL Y REGIONAL
+            if nivel_sel == "Nacional (Colombia)": 
+                df_filtro_c = df_concesiones.copy()
+            elif nivel_sel == "Departamental": 
+                if 'departamento_norm' in df_concesiones.columns:
+                    df_filtro_c = df_concesiones[df_concesiones['departamento_norm'] == lugar_norm]
+                else: df_filtro_c = df_concesiones.copy() # Asume que toda la BD es del departamento
+            elif nivel_sel == "Regional":
+                if 'region_norm' in df_concesiones.columns:
+                    df_filtro_c = df_concesiones[df_concesiones['region_norm'] == lugar_norm]
+                else: df_filtro_c = pd.DataFrame()
+            elif nivel_sel == "Municipal": 
+                df_filtro_c = df_concesiones[df_concesiones['municipio_norm'] == lugar_norm]
+            elif nivel_sel == "Veredal" and 'vereda_norm' in df_concesiones.columns: 
+                df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
+            else: 
+                df_filtro_c = pd.DataFrame()
                 
             if not df_filtro_c.empty:
                 df_dom = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Doméstico']
@@ -297,9 +302,9 @@ with tab_demanda:
         st.write(f"- **Total Legal Doméstico:** {q_concesionado_dom:,.2f} L/s")
         
     with col_d2:
-        st.subheader("📊 Análisis de Ilegalidad o Subregistro")
+        # AÑADIDO: Claridad en el título (Uso Doméstico)
+        st.subheader("📊 Análisis de Ilegalidad o Subregistro (Uso Doméstico)")
         
-        # CAJA DIAGNÓSTICA INTELIGENTE
         margen = 0.05 
         if q_concesionado_dom > q_teorico_dom * (1 + margen):
             st.error(f"🔴 **Sobreconcesión:** Se han otorgado {q_concesionado_dom - q_teorico_dom:,.1f} L/s por encima del requerimiento teórico poblacional.")
@@ -329,7 +334,8 @@ with tab_demanda:
             csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
             st.download_button(label="📥 Descargar Desglose (CSV)", data=csv, file_name=f'Usos_SIRENA_{lugar_sel}.csv', mime='text/csv')
     else:
-        st.warning("No hay registros de concesiones para esta unidad territorial (o los nombres no coinciden).")
+        # AÑADIDO: Mensaje personalizado con el nombre de la unidad territorial
+        st.warning(f"⚠️ No hay registros de concesiones en la base de datos SIRENA para la unidad territorial: **{lugar_sel}**.")
 
 # ------------------------------------------------------------------------------
 # TAB 2: INVENTARIO DE CARGAS
@@ -419,6 +425,10 @@ with tab_mitigacion:
 # ------------------------------------------------------------------------------
 with tab_sirena:
     st.header("📊 Explorador Avanzado de Concesiones (SIRENA)")
+    
+    # AÑADIDO: Banner de Contexto para no confundir al usuario
+    st.info(f"📍 **Contexto Global Activo:** Estás navegando la base de datos bajo la lupa de: **{nivel_sel} - {lugar_sel}**. (Usa los filtros de abajo para búsquedas específicas independientes).")
+    
     st.markdown("Minería de datos sobre el universo total de resoluciones ambientales.")
     
     if not df_concesiones.empty:
@@ -435,7 +445,6 @@ with tab_sirena:
 
         df_exp = df_concesiones.copy()
         
-        # SLIDER DE COTA
         if 'cota_num' in df_exp.columns and df_exp['cota_num'].max() > 0:
             df_exp_valid_cota = df_exp[df_exp['cota_num'] >= 0]
             if not df_exp_valid_cota.empty:
@@ -444,7 +453,6 @@ with tab_sirena:
                 rango_cota = st.slider("Rango de Cota (m.s.n.m):", 0.0, max_cota, (0.0, max_cota))
                 df_exp = df_exp[((df_exp['cota_num'] >= rango_cota[0]) & (df_exp['cota_num'] <= rango_cota[1])) | (df_exp['cota_num'] == -1)]
 
-        # Filtros
         if f_estado: df_exp = df_exp[df_exp['estado'].isin(f_estado)]
         if f_tipo: df_exp = df_exp[df_exp['tipo_agua'].isin(f_tipo)]
         if f_uso: df_exp = df_exp[df_exp['uso_detalle'].isin(f_uso)]
@@ -467,7 +475,6 @@ with tab_sirena:
                 df_agg = df_agg[df_agg['caudal_lps'] > 0]
                 
                 fig_exp = px.pie(df_agg, values='caudal_lps', names=agrupador, hole=0.4, title=f"Caudal total filtrado: {df_agg['caudal_lps'].sum():,.1f} L/s")
-                # Gráfico muestra Valores (L/s), NO porcentajes
                 fig_exp.update_traces(textposition='inside', textinfo='value+label')
                 st.plotly_chart(fig_exp, use_container_width=True)
             else:
