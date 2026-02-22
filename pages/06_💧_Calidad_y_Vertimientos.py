@@ -31,8 +31,9 @@ def normalizar_texto(texto):
 # ==============================================================================
 def leer_csv_robusto(ruta):
     try:
+        # Forzamos lectura con punto y coma primero para el nuevo archivo
         df = pd.read_csv(ruta, sep=';', low_memory=False)
-        if len(df.columns) < 2: df = pd.read_csv(ruta, sep=',', low_memory=False)
+        if len(df.columns) < 5: df = pd.read_csv(ruta, sep=',', low_memory=False)
         df.columns = df.columns.str.replace('\ufeff', '').str.strip()
         return df
     except Exception: return pd.DataFrame()
@@ -62,17 +63,24 @@ def cargar_concesiones():
         if not df.empty:
             df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
             
-            col_caudal = [c for c in df.columns if 'caudal' in c and 'acumulado' not in c]
-            col_caudal = col_caudal[0] if col_caudal else next((c for c in df.columns if 'caudal' in c), None)
-            col_uso = next((c for c in df.columns if 'uso' in c), None)
-            col_mpio = next((c for c in df.columns if 'municipio' in c), None)
-            col_vereda = next((c for c in df.columns if 'vereda' in c), None)
-            col_asunto = next((c for c in df.columns if 'asunto' in c), None)
-            col_cota = next((c for c in df.columns if 'cota' in c), None)
-            
-            if col_caudal and col_uso and col_mpio:
-                df = df.dropna(subset=[col_uso, col_mpio, col_caudal]).copy()
+            # Autodetectar columnas de forma segura para el NUEVO archivo
+            col_caudal = 'caudal_por_uso' if 'caudal_por_uso' in df.columns else ('caudal_usuario' if 'caudal_usuario' in df.columns else None)
+            if not col_caudal: # Fallback al archivo viejo
+                cands = [c for c in df.columns if 'caudal' in c and 'acumulado' not in c]
+                col_caudal = cands[0] if cands else None
                 
+            col_uso = 'uso' if 'uso' in df.columns else None
+            col_mpio = 'municipio' if 'municipio' in df.columns else None
+            col_vereda = 'vereda' if 'vereda' in df.columns else None
+            col_asunto = 'asunto' if 'asunto' in df.columns else None
+            col_cota = 'cota' if 'cota' in df.columns else None
+            col_estado = 'estado' if 'estado' in df.columns else None
+            
+            # Solo exigimos Municipio y Caudal para no perder datos
+            if col_caudal and col_mpio:
+                df = df.dropna(subset=[col_mpio]).copy() # No borramos por 'uso' vacío
+                
+                # Conversión de caudales
                 if df[col_caudal].dtype == object:
                     df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
                 df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
@@ -83,6 +91,7 @@ def cargar_concesiones():
                 else:
                     df['cota_num'] = -1
                 
+                # Normalización
                 df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
                 df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
                 
@@ -92,22 +101,33 @@ def cargar_concesiones():
                 else:
                     df['vereda_norm'] = ""
                 
-                # FILTRO ROBUSTO SUBTERRÁNEO VS SUPERFICIAL (Ignora tildes)
+                # FILTRO SUBTERRÁNEO VS SUPERFICIAL (Regex Inteligente)
                 if col_asunto:
-                    df['tipo_agua'] = np.where(df[col_asunto].str.lower().str.contains('subterran|subterrán|pozo|aljibe', regex=True), 'Subterránea',
-                                      np.where(df[col_asunto].str.lower().str.contains('superficial|corriente', regex=True), 'Superficial', 'No Especificado'))
+                    df['tipo_agua'] = np.where(df[col_asunto].str.lower().str.contains('subterran|subterrán|pozo|aljibe', regex=True, na=False), 'Subterránea',
+                                      np.where(df[col_asunto].str.lower().str.contains('superficial|corriente', regex=True, na=False), 'Superficial', 'No Especificado'))
                 else:
                     df['tipo_agua'] = 'No Especificado'
+
+                # Rellenar usos nulos
+                if col_uso:
+                    df['uso_detalle'] = df[col_uso].fillna('Sin Información').astype(str).str.title().str.strip()
+                else:
+                    df['uso_detalle'] = 'Sin Información'
 
                 def clasificar_uso_base(u):
                     u = normalizar_texto(u)
                     if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento', 'acueducto']): return 'Doméstico'
-                    elif any(x in u for x in ['agricola', 'pecuario', 'acuicultura', 'agroindustrial', 'riego', 'piscicola']): return 'Agrícola/Pecuario'
-                    elif any(x in u for x in ['industrial', 'mineria', 'minero']): return 'Industrial'
+                    elif any(x in u for x in ['agricola', 'pecuario', 'acuicultura', 'agroindustrial', 'riego', 'piscicola', 'silvicultura']): return 'Agrícola/Pecuario'
+                    elif any(x in u for x in ['industrial', 'mineria', 'minero', 'generacion de energia']): return 'Industrial'
                     else: return 'Otros'
                     
-                df['Sector_Sihcli'] = df[col_uso].apply(clasificar_uso_base)
-                df['uso_detalle'] = df[col_uso].str.title().str.strip()
+                df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso_base)
+                
+                if col_estado:
+                    df['estado'] = df[col_estado].fillna('Desconocido').astype(str).str.title().str.strip()
+                else:
+                    df['estado'] = 'Desconocido'
+                    
                 return df
     return pd.DataFrame()
 
@@ -201,7 +221,7 @@ factor_proy = proyectar_curva(pob_t_base, np.array([anio_analisis]), anio_base, 
 pob_u_auto = pob_u_base * factor_proy
 pob_r_auto = pob_r_base * factor_proy
 
-st.info(f"👥 Demografía dinámica proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
+st.info(f"👥 Demografía proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
 col_p1, col_p2, col_p3 = st.columns([1, 1, 1.5])
 with col_p1: pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
 with col_p2: pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
@@ -227,11 +247,10 @@ factor_evo = proyectar_curva(pob_t_base, anios_evo, anio_base, modelo_sel, tasa_
 pob_evo = pob_total * (factor_evo / factor_proy)
 
 # ------------------------------------------------------------------------------
-# TAB 1: DEMANDA HÍDRICA (SUBREGISTRO Y TIPOS DE CONCESIÓN)
+# TAB 1: DEMANDA HÍDRICA (SUBREGISTRO Y DIAGNÓSTICO INTELIGENTE)
 # ------------------------------------------------------------------------------
 with tab_demanda:
     st.header(f"🚰 Metabolismo Hídrico y Formalización")
-    
     col_d1, col_d2 = st.columns([1, 1.5])
     
     with col_d1:
@@ -243,7 +262,6 @@ with tab_demanda:
         st.markdown("---")
         st.subheader("2. Demanda Legal (Autorizada)")
         
-        # CRUZAMOS LA BASE SIRENA USANDO EL MATA-TILDES (normalizar_texto)
         q_sup, q_sub, q_legal_agr, q_legal_ind = 0.0, 0.0, 0.0, 0.0
         df_usos_detalle = pd.DataFrame()
         
@@ -258,7 +276,6 @@ with tab_demanda:
                 df_dom = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Doméstico']
                 q_sup = df_dom[df_dom['tipo_agua'] == 'Superficial']['caudal_lps'].sum()
                 q_sub = df_dom[df_dom['tipo_agua'] == 'Subterránea']['caudal_lps'].sum()
-                
                 q_legal_agr = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Agrícola/Pecuario']['caudal_lps'].sum()
                 q_legal_ind = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Industrial']['caudal_lps'].sum()
                 
@@ -268,7 +285,7 @@ with tab_demanda:
                 
         q_concesionado_dom = q_sup + q_sub
         
-        st.caption(f"Caudales extraídos de SIRENA para **{lugar_sel}**:")
+        st.caption(f"Caudales formales extraídos de SIRENA para **{lugar_sel}**:")
         st.write(f"- **Superficial:** {q_sup:,.2f} L/s")
         st.write(f"- **Subterráneo:** {q_sub:,.2f} L/s")
         st.write(f"- **Total Legal Doméstico:** {q_concesionado_dom:,.2f} L/s")
@@ -276,14 +293,14 @@ with tab_demanda:
     with col_d2:
         st.subheader("📊 Análisis de Ilegalidad o Subregistro")
         
-        # CAJA INTELIGENTE DE DIAGNÓSTICO
-        margen = 0.05 # 5% de margen de tolerancia
+        # CAJA DIAGNÓSTICA INTELIGENTE
+        margen = 0.05 
         if q_concesionado_dom > q_teorico_dom * (1 + margen):
-            st.error(f"🔴 **Sobreconcesión:** Se han otorgado {q_concesionado_dom - q_teorico_dom:.1f} L/s adicionales a los estrictamente requeridos por la población.")
+            st.error(f"🔴 **Sobreconcesión:** Se han otorgado {q_concesionado_dom - q_teorico_dom:,.1f} L/s por encima del requerimiento teórico poblacional.")
         elif q_concesionado_dom < q_teorico_dom * (1 - margen):
-            st.warning(f"⚠️ **Riesgo de Ilegalidad / Subregistro:** La población necesita {q_teorico_dom - q_concesionado_dom:.1f} L/s que no aparecen registrados formalmente.")
+            st.warning(f"⚠️ **Riesgo de Ilegalidad / Subregistro:** La población necesita {q_teorico_dom - q_concesionado_dom:,.1f} L/s adicionales que no aparecen formalizados.")
         else:
-            st.success(f"✅ **Equilibrio Hídrico:** El caudal otorgado ({q_concesionado_dom:.1f} L/s) suple adecuadamente la demanda poblacional ({q_teorico_dom:.1f} L/s).")
+            st.success(f"✅ **Equilibrio Hídrico:** El caudal otorgado ({q_concesionado_dom:,.1f} L/s) suple adecuadamente la demanda poblacional ({q_teorico_dom:,.1f} L/s).")
 
         df_chart = pd.DataFrame([
             {"Categoría": "Requerimiento Teórico", "Tipo": "Consumo Real Estimado", "Caudal (L/s)": q_teorico_dom},
@@ -412,16 +429,16 @@ with tab_sirena:
 
         df_exp = df_concesiones.copy()
         
-        # SLIDER DE COTA INTELIGENTE
+        # SLIDER DE COTA
         if 'cota_num' in df_exp.columns and df_exp['cota_num'].max() > 0:
             df_exp_valid_cota = df_exp[df_exp['cota_num'] >= 0]
             if not df_exp_valid_cota.empty:
                 max_cota = float(df_exp_valid_cota['cota_num'].max())
                 st.caption("Filtro de Elevación Topográfica:")
                 rango_cota = st.slider("Rango de Cota (m.s.n.m):", 0.0, max_cota, (0.0, max_cota))
-                df_exp = df_exp[(df_exp['cota_num'] >= rango_cota[0]) & (df_exp['cota_num'] <= rango_cota[1]) | (df_exp['cota_num'] == -1)]
+                df_exp = df_exp[((df_exp['cota_num'] >= rango_cota[0]) & (df_exp['cota_num'] <= rango_cota[1])) | (df_exp['cota_num'] == -1)]
 
-        # Aplicar los filtros
+        # Filtros
         if f_estado: df_exp = df_exp[df_exp['estado'].isin(f_estado)]
         if f_tipo: df_exp = df_exp[df_exp['tipo_agua'].isin(f_tipo)]
         if f_uso: df_exp = df_exp[df_exp['uso_detalle'].isin(f_uso)]
@@ -436,19 +453,18 @@ with tab_sirena:
             st.download_button("📥 Exportar Resultados (CSV)", data=csv_exp, file_name="Reporte_SIRENA.csv", mime="text/csv")
             
         with c_exp2:
-            st.subheader("Distribución de Caudales")
+            st.subheader("Distribución de Caudales Netos")
             if not df_exp.empty and df_exp['caudal_lps'].sum() > 0:
                 agrupador = st.selectbox("Agrupar gráfico por:", ["tipo_agua", "Sector_Sihcli", "uso_detalle", "municipio", "estado"], index=0)
                 
                 df_agg = df_exp.groupby(agrupador)['caudal_lps'].sum().reset_index()
-                # Filtrar valores en 0 para no ensuciar el gráfico
                 df_agg = df_agg[df_agg['caudal_lps'] > 0]
                 
-                fig_exp = px.pie(df_agg, values='caudal_lps', names=agrupador, hole=0.4, title=f"Caudal total: {df_agg['caudal_lps'].sum():,.1f} L/s")
-                # MAGIA: Forzar a que muestre el valor numérico (L/s) y no el porcentaje
+                fig_exp = px.pie(df_agg, values='caudal_lps', names=agrupador, hole=0.4, title=f"Caudal total filtrado: {df_agg['caudal_lps'].sum():,.1f} L/s")
+                # Gráfico muestra Valores, NO porcentajes
                 fig_exp.update_traces(textposition='inside', textinfo='value+label')
                 st.plotly_chart(fig_exp, use_container_width=True)
             else:
                 st.warning("No hay caudal numérico para graficar con los filtros seleccionados.")
     else:
-        st.error("No se detectó la base de datos de Concesiones SIRENA o falta la columna de caudales.")
+        st.error("No se detectó la base de datos de Concesiones SIRENA.")
