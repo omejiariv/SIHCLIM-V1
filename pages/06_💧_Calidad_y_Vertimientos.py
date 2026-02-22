@@ -13,7 +13,7 @@ st.set_page_config(page_title="Calidad y Vertimientos", page_icon="💧", layout
 
 st.title("💧 Demanda, Calidad del Agua y Metabolismo Hídrico")
 st.markdown("""
-Modelo integral del ciclo hidrosocial: Simulación de demanda sectorial, cargas contaminantes (DBO, SST), 
+Modelo integral del ciclo hidrosocial: Simulación de demanda sectorial, eficiencia de sistemas, cargas contaminantes (DBO, SST), 
 capacidad de asimilación, análisis de formalización y minería de datos de concesiones (SIRENA).
 """)
 st.divider()
@@ -27,7 +27,7 @@ def normalizar_texto(texto):
     return unicodedata.normalize('NFKD', texto_str).encode('ascii', 'ignore').decode('utf-8')
 
 # ==============================================================================
-# 🔌 CONECTOR A BASES DE DATOS (Soporte nativo para XLSX)
+# 🔌 CONECTOR A BASES DE DATOS
 # ==============================================================================
 def leer_csv_robusto(ruta):
     try:
@@ -66,7 +66,6 @@ def cargar_concesiones():
     if not df.empty:
         df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
         
-        # Autodetectar columnas 
         col_caudal = 'caudal_por_uso' if 'caudal_por_uso' in df.columns else ('caudal_usuario' if 'caudal_usuario' in df.columns else None)
         if not col_caudal: 
             cands = [c for c in df.columns if 'caudal' in c and 'acumulado' not in c]
@@ -84,7 +83,6 @@ def cargar_concesiones():
         if col_caudal and col_mpio:
             df = df.dropna(subset=[col_mpio]).copy() 
             
-            # Conversión de caudales
             if df[col_caudal].dtype == object:
                 df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
             df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
@@ -92,7 +90,6 @@ def cargar_concesiones():
             if col_cota: df['cota_num'] = pd.to_numeric(df[col_cota], errors='coerce').fillna(-1)
             else: df['cota_num'] = -1
             
-            # Normalización de variables territoriales
             df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
             df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
             
@@ -162,77 +159,77 @@ def proyectar_curva(p_base, anios_array, anio_base, modelo, r, k):
     else: return p_base * ((1 + r) ** t)
 
 # ==============================================================================
-# 🎛️ PANEL MAESTRO DE VARIABLES
+# 🎛️ PANEL MAESTRO DE VARIABLES (DESPLEGABLE)
 # ==============================================================================
-st.subheader("📍 1. Configuración Territorial y Máquina del Tiempo")
+with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", expanded=True):
+    nivel_sel = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Departamental", "Regional", "Municipal", "Veredal"])
+    lugar_sel = "N/A"
 
-nivel_sel = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Departamental", "Regional", "Municipal", "Veredal"])
-lugar_sel = "N/A"
-
-if nivel_sel == "Nacional (Colombia)": lugar_sel = "Colombia"
-elif nivel_sel == "Departamental" and not df_mpios.empty:
-    deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
-    lugar_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
-elif nivel_sel == "Regional" and not df_mpios.empty:
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
+    if nivel_sel == "Nacional (Colombia)": lugar_sel = "Colombia"
+    elif nivel_sel == "Departamental" and not df_mpios.empty:
         deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
-        depto_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
-    with col_f2:
-        df_filtro = df_mpios[df_mpios['depto_nom'] == depto_sel]
-        regiones = sorted([str(x) for x in df_filtro['region'].unique() if pd.notna(x)]) if 'region' in df_filtro.columns else []
-        lugar_sel = st.selectbox("2. Región:", regiones) if regiones else "N/A"
-elif nivel_sel == "Municipal" and not df_mpios.empty:
-    col_f1, col_f2, col_f3 = st.columns(3)
-    with col_f1:
-        deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
-        depto_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
-    with col_f2:
-        df_filtro1 = df_mpios[df_mpios['depto_nom'] == depto_sel]
-        regiones = sorted([str(x) for x in df_filtro1['region'].unique() if pd.notna(x)]) if 'region' in df_filtro1.columns else []
-        region_sel = st.selectbox("2. Región (Opcional):", ["Todas"] + regiones)
-    with col_f3:
-        df_filtro2 = df_filtro1 if region_sel == "Todas" else df_filtro1[df_filtro1['region'] == region_sel]
-        mpios = sorted([str(x) for x in df_filtro2['municipio'].unique() if pd.notna(x)])
-        lugar_sel = st.selectbox("3. Municipio:", mpios)
-elif nivel_sel == "Veredal" and not df_veredas.empty:
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        mpios_v = sorted([str(x) for x in df_veredas['Municipio'].dropna().unique()])
-        mpio_sel = st.selectbox("1. Municipio Anfitrión:", mpios_v)
-    with col_f2:
-        veredas = sorted([str(x) for x in df_veredas[df_veredas['Municipio'] == mpio_sel]['Vereda'].dropna().unique()])
-        lugar_sel = st.selectbox("2. Vereda:", veredas)
+        lugar_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
+    elif nivel_sel == "Regional" and not df_mpios.empty:
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
+            depto_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
+        with col_f2:
+            df_filtro = df_mpios[df_mpios['depto_nom'] == depto_sel]
+            regiones = sorted([str(x) for x in df_filtro['region'].unique() if pd.notna(x)]) if 'region' in df_filtro.columns else []
+            lugar_sel = st.selectbox("2. Región:", regiones) if regiones else "N/A"
+    elif nivel_sel == "Municipal" and not df_mpios.empty:
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
+            depto_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
+        with col_f2:
+            df_filtro1 = df_mpios[df_mpios['depto_nom'] == depto_sel]
+            regiones = sorted([str(x) for x in df_filtro1['region'].unique() if pd.notna(x)]) if 'region' in df_filtro1.columns else []
+            region_sel = st.selectbox("2. Región (Opcional):", ["Todas"] + regiones)
+        with col_f3:
+            df_filtro2 = df_filtro1 if region_sel == "Todas" else df_filtro1[df_filtro1['region'] == region_sel]
+            mpios = sorted([str(x) for x in df_filtro2['municipio'].unique() if pd.notna(x)])
+            lugar_sel = st.selectbox("3. Municipio:", mpios)
+    elif nivel_sel == "Veredal" and not df_veredas.empty:
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            mpios_v = sorted([str(x) for x in df_veredas['Municipio'].dropna().unique()])
+            mpio_sel = st.selectbox("1. Municipio Anfitrión:", mpios_v)
+        with col_f2:
+            veredas = sorted([str(x) for x in df_veredas[df_veredas['Municipio'] == mpio_sel]['Vereda'].dropna().unique()])
+            lugar_sel = st.selectbox("2. Vereda:", veredas)
 
-st.markdown("⚙️ **Parámetros de Proyección Demográfica**")
-pob_u_base, pob_r_base, anio_base = obtener_poblacion_base(lugar_sel, nivel_sel)
-pob_t_base = pob_u_base + pob_r_base
+    st.markdown("⚙️ **Parámetros de Proyección Demográfica**")
+    pob_u_base, pob_r_base, anio_base = obtener_poblacion_base(lugar_sel, nivel_sel)
+    pob_t_base = pob_u_base + pob_r_base
 
-col_t1, col_t2, col_t3, col_t4 = st.columns(4)
-with col_t1: anio_analisis = st.slider("📅 Año a Simular:", min_value=anio_base, max_value=2060, value=2024, step=1)
-with col_t2: modelo_sel = st.selectbox("Ecuación Evolutiva:", ["Logístico", "Geométrico", "Exponencial", "Lineal (Tendencial)"])
-with col_t3: tasa_r = st.number_input("Tasa de Crecimiento (r) %:", value=1.50, step=0.1) / 100.0
-with col_t4: k_man = st.number_input("Capacidad de Carga (K):", value=float(max(pob_t_base * 2.0, 1000)), step=1000.0, disabled=(modelo_sel != "Logístico"))
+    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
+    with col_t1: anio_analisis = st.slider("📅 Año a Simular:", min_value=anio_base, max_value=2060, value=2024, step=1)
+    with col_t2: modelo_sel = st.selectbox("Ecuación Evolutiva:", ["Logístico", "Geométrico", "Exponencial", "Lineal (Tendencial)"])
+    with col_t3: tasa_r = st.number_input("Tasa de Crecimiento (r) %:", value=1.50, step=0.1) / 100.0
+    with col_t4: k_man = st.number_input("Capacidad de Carga (K):", value=float(max(pob_t_base * 2.0, 1000)), step=1000.0, disabled=(modelo_sel != "Logístico"))
 
-factor_proy = proyectar_curva(pob_t_base, np.array([anio_analisis]), anio_base, modelo_sel, tasa_r, k_man)[0] / pob_t_base if pob_t_base > 0 else 1.0
-pob_u_auto = pob_u_base * factor_proy
-pob_r_auto = pob_r_base * factor_proy
+    factor_proy = proyectar_curva(pob_t_base, np.array([anio_analisis]), anio_base, modelo_sel, tasa_r, k_man)[0] / pob_t_base if pob_t_base > 0 else 1.0
+    pob_u_auto = pob_u_base * factor_proy
+    pob_r_auto = pob_r_base * factor_proy
 
-st.info(f"👥 Demografía dinámica proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
-col_p1, col_p2, col_p3 = st.columns([1, 1, 1.5])
-with col_p1: pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
-with col_p2: pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
-with col_p3:
-    pob_total = pob_urbana + pob_rural
-    st.metric(label="Población Total Estimada", value=f"{pob_total:,.0f} Hab.", delta=f"+ {pob_total - pob_t_base:,.0f} desde {anio_base}" if pob_total > pob_t_base else None)
+    st.info(f"👥 Demografía proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
+    col_p1, col_p2, col_p3 = st.columns([1, 1, 1.5])
+    with col_p1: pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
+    with col_p2: pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
+    with col_p3:
+        pob_total = pob_urbana + pob_rural
+        st.metric(label="Población Total Estimada", value=f"{pob_total:,.0f} Hab.", delta=f"+ {pob_total - pob_t_base:,.0f} desde {anio_base}" if pob_total > pob_t_base else None)
 
-st.divider()
+# SÍNTESIS ACTIVA CONSTANTE
+st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{lugar_sel} ({nivel_sel})** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.** | 📈 Modelo: **{modelo_sel}**")
 
 # ==============================================================================
 # PESTAÑAS
 # ==============================================================================
 tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_sirena = st.tabs([
-    "🚰 2. Demanda y Subregistro",
+    "🚰 2. Demanda y Eficiencia",
     "🏭 3. Inventario de Cargas", 
     "🌊 4. Asimilación y Dilución", 
     "🛡️ 5. Escenarios",
@@ -244,20 +241,46 @@ factor_evo = proyectar_curva(pob_t_base, anios_evo, anio_base, modelo_sel, tasa_
 pob_evo = pob_total * (factor_evo / factor_proy)
 
 # ------------------------------------------------------------------------------
-# TAB 1: DEMANDA HÍDRICA (SUBREGISTRO Y DIAGNÓSTICO INTELIGENTE)
+# TAB 1: DEMANDA HÍDRICA Y EFICIENCIA (Caudal Necesario vs Efectivo)
 # ------------------------------------------------------------------------------
 with tab_demanda:
-    st.header(f"🚰 Metabolismo Hídrico y Formalización")
+    st.header(f"🚰 Demanda, Eficiencia de Sistemas y Formalización")
     col_d1, col_d2 = st.columns([1, 1.5])
     
     with col_d1:
-        st.subheader("1. Demanda Teórica")
-        dotacion = st.number_input("Dotación Doméstica (L/hab/día):", value=120.0, step=5.0)
-        q_teorico_dom = (pob_total * dotacion) / 86400
-        st.metric(f"Caudal Doméstico Necesario", f"{q_teorico_dom:.2f} L/s")
+        st.subheader("1. Demanda Teórica (Neto vs Bruto)")
+        
+        # DOMÉSTICO
+        st.markdown("**A. Uso Doméstico**")
+        col_d_dom1, col_d_dom2 = st.columns(2)
+        with col_d_dom1: dotacion = st.number_input("Dotación Neta (L/hab/d):", value=120.0, step=5.0)
+        with col_d_dom2: perd_dom = st.slider("Pérdidas del Acueducto (%):", 0.0, 100.0, 25.0, step=1.0, help="Fugas y evaporación en captación, aducción, tratamiento y distribución.")
+        
+        q_necesario_dom = (pob_total * dotacion) / 86400
+        q_efectivo_dom = q_necesario_dom / (1 - (perd_dom/100)) if perd_dom < 100 else q_necesario_dom
+        
+        col_res1, col_res2 = st.columns(2)
+        col_res1.metric(f"Neto (Necesario)", f"{q_necesario_dom:.2f} L/s", help="Caudal que se consume en la llave.")
+        col_res2.metric(f"Bruto (Efectivo)", f"{q_efectivo_dom:.2f} L/s", delta=f"Pérdida: {(q_efectivo_dom - q_necesario_dom):.2f} L/s", delta_color="inverse", help="Caudal real que debe extraerse de la fuente.")
+        
+        # AGRÍCOLA
+        st.markdown("**B. Uso Agrícola / Pecuario**")
+        col_d_agr1, col_d_agr2 = st.columns(2)
+        with col_d_agr1: q_necesario_agr = st.number_input("Demanda Neta Agrícola (L/s):", value=45.0, step=5.0)
+        with col_d_agr2: perd_agr = st.slider("Pérdidas Sist. de Riego (%):", 0.0, 100.0, 30.0, step=1.0)
+        q_efectivo_agr = q_necesario_agr / (1 - (perd_agr/100)) if perd_agr < 100 else q_necesario_agr
+        st.caption(f"Caudal Efectivo Agrícola a captar: **{q_efectivo_agr:.2f} L/s**")
+        
+        # INDUSTRIAL
+        st.markdown("**C. Uso Industrial**")
+        col_d_ind1, col_d_ind2 = st.columns(2)
+        with col_d_ind1: q_necesario_ind = st.number_input("Demanda Neta Industrial (L/s):", value=20.0, step=2.0)
+        with col_d_ind2: perd_ind = st.slider("Pérdidas de Industria (%):", 0.0, 100.0, 10.0, step=1.0)
+        q_efectivo_ind = q_necesario_ind / (1 - (perd_ind/100)) if perd_ind < 100 else q_necesario_ind
+        st.caption(f"Caudal Efectivo Industrial a captar: **{q_efectivo_ind:.2f} L/s**")
         
         st.markdown("---")
-        st.subheader("2. Demanda Legal (Autorizada)")
+        st.subheader("2. Demanda Legal (SIRENA)")
         
         q_sup, q_sub, q_legal_agr, q_legal_ind = 0.0, 0.0, 0.0, 0.0
         df_usos_detalle = pd.DataFrame()
@@ -265,23 +288,12 @@ with tab_demanda:
         if not df_concesiones.empty and lugar_sel != "N/A":
             lugar_norm = normalizar_texto(lugar_sel)
             
-            # FILTRO DINÁMICO QUE AHORA INCLUYE NACIONAL, DEPARTAMENTAL Y REGIONAL
-            if nivel_sel == "Nacional (Colombia)": 
-                df_filtro_c = df_concesiones.copy()
-            elif nivel_sel == "Departamental": 
-                if 'departamento_norm' in df_concesiones.columns:
-                    df_filtro_c = df_concesiones[df_concesiones['departamento_norm'] == lugar_norm]
-                else: df_filtro_c = df_concesiones.copy() # Asume que toda la BD es del departamento
-            elif nivel_sel == "Regional":
-                if 'region_norm' in df_concesiones.columns:
-                    df_filtro_c = df_concesiones[df_concesiones['region_norm'] == lugar_norm]
-                else: df_filtro_c = pd.DataFrame()
-            elif nivel_sel == "Municipal": 
-                df_filtro_c = df_concesiones[df_concesiones['municipio_norm'] == lugar_norm]
-            elif nivel_sel == "Veredal" and 'vereda_norm' in df_concesiones.columns: 
-                df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
-            else: 
-                df_filtro_c = pd.DataFrame()
+            if nivel_sel == "Nacional (Colombia)": df_filtro_c = df_concesiones.copy()
+            elif nivel_sel == "Departamental": df_filtro_c = df_concesiones[df_concesiones['departamento_norm'] == lugar_norm] if 'departamento_norm' in df_concesiones.columns else df_concesiones.copy()
+            elif nivel_sel == "Regional": df_filtro_c = df_concesiones[df_concesiones['region_norm'] == lugar_norm] if 'region_norm' in df_concesiones.columns else pd.DataFrame()
+            elif nivel_sel == "Municipal": df_filtro_c = df_concesiones[df_concesiones['municipio_norm'] == lugar_norm]
+            elif nivel_sel == "Veredal" and 'vereda_norm' in df_concesiones.columns: df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
+            else: df_filtro_c = pd.DataFrame()
                 
             if not df_filtro_c.empty:
                 df_dom = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Doméstico']
@@ -295,34 +307,34 @@ with tab_demanda:
                 df_usos_detalle = df_usos_detalle.sort_values(by='Caudal (L/s)', ascending=False)
                 
         q_concesionado_dom = q_sup + q_sub
-        
-        st.caption(f"Caudales formales extraídos de SIRENA para **{lugar_sel}**:")
-        st.write(f"- **Superficial:** {q_sup:,.2f} L/s")
-        st.write(f"- **Subterráneo:** {q_sub:,.2f} L/s")
+        st.write(f"- **Superficial Doméstico:** {q_sup:,.2f} L/s")
+        st.write(f"- **Subterráneo Doméstico:** {q_sub:,.2f} L/s")
         st.write(f"- **Total Legal Doméstico:** {q_concesionado_dom:,.2f} L/s")
         
     with col_d2:
-        # AÑADIDO: Claridad en el título (Uso Doméstico)
-        st.subheader("📊 Análisis de Ilegalidad o Subregistro (Uso Doméstico)")
+        st.subheader("📊 Análisis de Formalización (Uso Doméstico)")
+        st.caption("Compara la extracción Bruta necesaria vs lo Concesionado Legalmente.")
         
+        # DIAGNÓSTICO USANDO CAUDAL EFECTIVO
         margen = 0.05 
-        if q_concesionado_dom > q_teorico_dom * (1 + margen):
-            st.error(f"🔴 **Sobreconcesión:** Se han otorgado {q_concesionado_dom - q_teorico_dom:,.1f} L/s por encima del requerimiento teórico poblacional.")
-        elif q_concesionado_dom < q_teorico_dom * (1 - margen):
-            st.warning(f"⚠️ **Riesgo de Ilegalidad / Subregistro:** La población necesita {q_teorico_dom - q_concesionado_dom:,.1f} L/s adicionales que no aparecen formalizados.")
+        if q_concesionado_dom > q_efectivo_dom * (1 + margen):
+            st.error(f"🔴 **Sobreconcesión:** Otorgado {q_concesionado_dom - q_efectivo_dom:,.1f} L/s por encima de la extracción bruta requerida.")
+        elif q_concesionado_dom < q_efectivo_dom * (1 - margen):
+            st.warning(f"⚠️ **Riesgo de Subregistro:** Se requiere extraer {q_efectivo_dom - q_concesionado_dom:,.1f} L/s adicionales que no aparecen formalizados.")
         else:
-            st.success(f"✅ **Equilibrio Hídrico:** El caudal otorgado ({q_concesionado_dom:,.1f} L/s) suple adecuadamente la demanda poblacional ({q_teorico_dom:,.1f} L/s).")
+            st.success(f"✅ **Equilibrio Hídrico:** La concesión ({q_concesionado_dom:,.1f} L/s) cubre la demanda neta y las pérdidas del sistema ({q_efectivo_dom:,.1f} L/s).")
 
         df_chart = pd.DataFrame([
-            {"Categoría": "Requerimiento Teórico", "Tipo": "Consumo Real Estimado", "Caudal (L/s)": q_teorico_dom},
-            {"Categoría": "Registro SIRENA", "Tipo": "Concesión Superficial", "Caudal (L/s)": q_sup},
-            {"Categoría": "Registro SIRENA", "Tipo": "Concesión Subterránea", "Caudal (L/s)": q_sub}
+            {"Categoría": "Requerimiento (Demanda Efectiva)", "Componente": "Consumo Neto", "Caudal (L/s)": q_necesario_dom},
+            {"Categoría": "Requerimiento (Demanda Efectiva)", "Componente": "Pérdidas del Acueducto", "Caudal (L/s)": (q_efectivo_dom - q_necesario_dom)},
+            {"Categoría": "Registro SIRENA (Legal)", "Componente": "Concesión Superficial", "Caudal (L/s)": q_sup},
+            {"Categoría": "Registro SIRENA (Legal)", "Componente": "Concesión Subterránea", "Caudal (L/s)": q_sub}
         ])
         
-        fig_sub = px.bar(df_chart, x="Categoría", y="Caudal (L/s)", color="Tipo", 
-                         color_discrete_map={"Consumo Real Estimado": "#e74c3c", "Concesión Superficial": "#3498db", "Concesión Subterránea": "#2ecc71"},
-                         title="Comparativa: Realidad Demográfica vs Formalización")
-        fig_sub.add_hline(y=q_teorico_dom, line_dash="dash", line_color="black", annotation_text="Brecha de Subregistro")
+        fig_sub = px.bar(df_chart, x="Categoría", y="Caudal (L/s)", color="Componente", 
+                         color_discrete_map={"Consumo Neto": "#2980b9", "Pérdidas del Acueducto": "#e67e22", "Concesión Superficial": "#3498db", "Concesión Subterránea": "#2ecc71"},
+                         title="Demanda Bruta (Eficiencia) vs Permisos Otorgados")
+        fig_sub.add_hline(y=q_efectivo_dom, line_dash="dash", line_color="red", annotation_text="Límite Extracción Bruta")
         st.plotly_chart(fig_sub, use_container_width=True)
         
     st.divider()
@@ -334,8 +346,7 @@ with tab_demanda:
             csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
             st.download_button(label="📥 Descargar Desglose (CSV)", data=csv, file_name=f'Usos_SIRENA_{lugar_sel}.csv', mime='text/csv')
     else:
-        # AÑADIDO: Mensaje personalizado con el nombre de la unidad territorial
-        st.warning(f"⚠️ No hay registros de concesiones en la base de datos SIRENA para la unidad territorial: **{lugar_sel}**.")
+        st.warning(f"⚠️ No hay registros de concesiones en SIRENA para la unidad territorial: **{lugar_sel}**.")
 
 # ------------------------------------------------------------------------------
 # TAB 2: INVENTARIO DE CARGAS
@@ -368,7 +379,8 @@ with tab_fuentes:
     carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_cerdos + dbo_agricola
     
     coef_retorno = 0.85
-    q_efluente_lps = (q_teorico_dom * coef_retorno) + (q_legal_ind * 0.8) + (vol_suero / 86400)
+    # El vertimiento proviene del consumo NETO (lo que llega a las casas/fábricas)
+    q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400)
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
 
     col_g1, col_g2 = st.columns(2)
@@ -425,11 +437,7 @@ with tab_mitigacion:
 # ------------------------------------------------------------------------------
 with tab_sirena:
     st.header("📊 Explorador Avanzado de Concesiones (SIRENA)")
-    
-    # AÑADIDO: Banner de Contexto para no confundir al usuario
     st.info(f"📍 **Contexto Global Activo:** Estás navegando la base de datos bajo la lupa de: **{nivel_sel} - {lugar_sel}**. (Usa los filtros de abajo para búsquedas específicas independientes).")
-    
-    st.markdown("Minería de datos sobre el universo total de resoluciones ambientales.")
     
     if not df_concesiones.empty:
         col_e1, col_e2, col_e3, col_e4 = st.columns(4)
@@ -470,10 +478,8 @@ with tab_sirena:
             st.subheader("Distribución de Caudales Netos")
             if not df_exp.empty and df_exp['caudal_lps'].sum() > 0:
                 agrupador = st.selectbox("Agrupar gráfico por:", ["tipo_agua", "Sector_Sihcli", "uso_detalle", "municipio", "estado"], index=0)
-                
                 df_agg = df_exp.groupby(agrupador)['caudal_lps'].sum().reset_index()
                 df_agg = df_agg[df_agg['caudal_lps'] > 0]
-                
                 fig_exp = px.pie(df_agg, values='caudal_lps', names=agrupador, hole=0.4, title=f"Caudal total filtrado: {df_agg['caudal_lps'].sum():,.1f} L/s")
                 fig_exp.update_traces(textposition='inside', textinfo='value+label')
                 st.plotly_chart(fig_exp, use_container_width=True)
