@@ -421,70 +421,9 @@ with tab_mitigacion:
     st.header("🛡️ Simulador de Intervenciones")
     st.info("Próxima fase de desarrollo.")
 
-# ------------------------------------------------------------------------------
-# TAB 5: EXPLORADOR SIRENA (Data Mining Avanzado)
-# ------------------------------------------------------------------------------
-with tab_sirena:
-    st.header("📊 Explorador Avanzado de Concesiones (SIRENA)")
-    
-    # AÑADIDO: Banner de Contexto para no confundir al usuario
-    st.info(f"📍 **Contexto Global Activo:** Estás navegando la base de datos bajo la lupa de: **{nivel_sel} - {lugar_sel}**. (Usa los filtros de abajo para búsquedas específicas independientes).")
-    
-    st.markdown("Minería de datos sobre el universo total de resoluciones ambientales.")
-    
-    if not df_concesiones.empty:
-        col_e1, col_e2, col_e3, col_e4 = st.columns(4)
-        with col_e1: 
-            edos = df_concesiones['estado'].dropna().unique() if 'estado' in df_concesiones.columns else []
-            f_estado = st.multiselect("Estado del Trámite:", edos, default=["Activo"] if "Activo" in edos else None)
-        with col_e2:
-            f_tipo = st.multiselect("Fuente de Agua:", df_concesiones['tipo_agua'].unique())
-        with col_e3:
-            f_uso = st.multiselect("Uso Detallado:", sorted(df_concesiones['uso_detalle'].unique()))
-        with col_e4:
-            f_mpio = st.multiselect("Municipio(s):", sorted(df_concesiones['municipio'].unique()))
-
-        df_exp = df_concesiones.copy()
-        
-        if 'cota_num' in df_exp.columns and df_exp['cota_num'].max() > 0:
-            df_exp_valid_cota = df_exp[df_exp['cota_num'] >= 0]
-            if not df_exp_valid_cota.empty:
-                max_cota = float(df_exp_valid_cota['cota_num'].max())
-                st.caption("Filtro de Elevación Topográfica:")
-                rango_cota = st.slider("Rango de Cota (m.s.n.m):", 0.0, max_cota, (0.0, max_cota))
-                df_exp = df_exp[((df_exp['cota_num'] >= rango_cota[0]) & (df_exp['cota_num'] <= rango_cota[1])) | (df_exp['cota_num'] == -1)]
-
-        if f_estado: df_exp = df_exp[df_exp['estado'].isin(f_estado)]
-        if f_tipo: df_exp = df_exp[df_exp['tipo_agua'].isin(f_tipo)]
-        if f_uso: df_exp = df_exp[df_exp['uso_detalle'].isin(f_uso)]
-        if f_mpio: df_exp = df_exp[df_exp['municipio'].isin(f_mpio)]
-        
-        st.divider()
-        c_exp1, c_exp2 = st.columns([2, 1.5])
-        with c_exp1:
-            st.subheader(f"Registros Encontrados: {len(df_exp)}")
-            st.dataframe(df_exp, use_container_width=True)
-            csv_exp = df_exp.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Exportar Resultados (CSV)", data=csv_exp, file_name="Reporte_SIRENA.csv", mime="text/csv")
-            
-        with c_exp2:
-            st.subheader("Distribución de Caudales Netos")
-            if not df_exp.empty and df_exp['caudal_lps'].sum() > 0:
-                agrupador = st.selectbox("Agrupar gráfico por:", ["tipo_agua", "Sector_Sihcli", "uso_detalle", "municipio", "estado"], index=0)
-                
-                df_agg = df_exp.groupby(agrupador)['caudal_lps'].sum().reset_index()
-                df_agg = df_agg[df_agg['caudal_lps'] > 0]
-                
-                fig_exp = px.pie(df_agg, values='caudal_lps', names=agrupador, hole=0.4, title=f"Caudal total filtrado: {df_agg['caudal_lps'].sum():,.1f} L/s")
-                fig_exp.update_traces(textposition='inside', textinfo='value+label')
-                st.plotly_chart(fig_exp, use_container_width=True)
-            else:
-                st.warning("No hay caudal numérico para graficar con los filtros seleccionados.")
-    else:
-        st.error("No se detectó la base de datos de Concesiones SIRENA.")
 
 # ------------------------------------------------------------------------------
-# TAB 6: MAPA DE CALOR ESPACIAL Y TOPOLÓGICO
+# TAB 5: MAPA DE CALOR ESPACIAL Y TOPOLÓGICO
 # ------------------------------------------------------------------------------
 with tab_mapa:
     st.header("🗺️ Mapa de Calor y Análisis Espacial")
@@ -545,3 +484,65 @@ with tab_mapa:
                 st.warning("Las coordenadas espaciales registradas en la base de datos de esta entidad presentan errores o no son compatibles para generar el mapa.")
         else:
             st.warning("No hay base de datos disponible para esta variable.")
+
+# ------------------------------------------------------------------------------
+# TAB 6: EXPLORADOR SIRENA (Data Mining Avanzado)
+# ------------------------------------------------------------------------------
+with tab_sirena:
+    st.header("📊 Explorador Avanzado de Concesiones (SIRENA)")
+    
+    # AÑADIDO: Banner de Contexto para no confundir al usuario
+    st.info(f"📍 **Contexto Global Activo:** Estás navegando la base de datos bajo la lupa de: **{nivel_sel} - {lugar_sel}**. (Usa los filtros de abajo para búsquedas específicas independientes).")
+    
+    st.markdown("Minería de datos sobre el universo total de resoluciones ambientales.")
+    
+    if not df_concesiones.empty:
+        col_e1, col_e2, col_e3, col_e4 = st.columns(4)
+        with col_e1: 
+            edos = df_concesiones['estado'].dropna().unique() if 'estado' in df_concesiones.columns else []
+            f_estado = st.multiselect("Estado del Trámite:", edos, default=["Activo"] if "Activo" in edos else None)
+        with col_e2:
+            f_tipo = st.multiselect("Fuente de Agua:", df_concesiones['tipo_agua'].unique())
+        with col_e3:
+            f_uso = st.multiselect("Uso Detallado:", sorted(df_concesiones['uso_detalle'].unique()))
+        with col_e4:
+            f_mpio = st.multiselect("Municipio(s):", sorted(df_concesiones['municipio'].unique()))
+
+        df_exp = df_concesiones.copy()
+        
+        if 'cota_num' in df_exp.columns and df_exp['cota_num'].max() > 0:
+            df_exp_valid_cota = df_exp[df_exp['cota_num'] >= 0]
+            if not df_exp_valid_cota.empty:
+                max_cota = float(df_exp_valid_cota['cota_num'].max())
+                st.caption("Filtro de Elevación Topográfica:")
+                rango_cota = st.slider("Rango de Cota (m.s.n.m):", 0.0, max_cota, (0.0, max_cota))
+                df_exp = df_exp[((df_exp['cota_num'] >= rango_cota[0]) & (df_exp['cota_num'] <= rango_cota[1])) | (df_exp['cota_num'] == -1)]
+
+        if f_estado: df_exp = df_exp[df_exp['estado'].isin(f_estado)]
+        if f_tipo: df_exp = df_exp[df_exp['tipo_agua'].isin(f_tipo)]
+        if f_uso: df_exp = df_exp[df_exp['uso_detalle'].isin(f_uso)]
+        if f_mpio: df_exp = df_exp[df_exp['municipio'].isin(f_mpio)]
+        
+        st.divider()
+        c_exp1, c_exp2 = st.columns([2, 1.5])
+        with c_exp1:
+            st.subheader(f"Registros Encontrados: {len(df_exp)}")
+            st.dataframe(df_exp, use_container_width=True)
+            csv_exp = df_exp.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Exportar Resultados (CSV)", data=csv_exp, file_name="Reporte_SIRENA.csv", mime="text/csv")
+            
+        with c_exp2:
+            st.subheader("Distribución de Caudales Netos")
+            if not df_exp.empty and df_exp['caudal_lps'].sum() > 0:
+                agrupador = st.selectbox("Agrupar gráfico por:", ["tipo_agua", "Sector_Sihcli", "uso_detalle", "municipio", "estado"], index=0)
+                
+                df_agg = df_exp.groupby(agrupador)['caudal_lps'].sum().reset_index()
+                df_agg = df_agg[df_agg['caudal_lps'] > 0]
+                
+                fig_exp = px.pie(df_agg, values='caudal_lps', names=agrupador, hole=0.4, title=f"Caudal total filtrado: {df_agg['caudal_lps'].sum():,.1f} L/s")
+                fig_exp.update_traces(textposition='inside', textinfo='value+label')
+                st.plotly_chart(fig_exp, use_container_width=True)
+            else:
+                st.warning("No hay caudal numérico para graficar con los filtros seleccionados.")
+    else:
+        st.error("No se detectó la base de datos de Concesiones SIRENA.")
