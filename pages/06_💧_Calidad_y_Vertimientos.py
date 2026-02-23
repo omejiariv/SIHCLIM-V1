@@ -231,12 +231,13 @@ st.divider()
 # ==============================================================================
 # PESTAÑAS
 # ==============================================================================
-tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_sirena = st.tabs([
-    "🚰 2. Demanda y Subregistro",
+tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena = st.tabs([
+    "🚰 2. Demanda y Eficiencia",
     "🏭 3. Inventario de Cargas", 
     "🌊 4. Asimilación y Dilución", 
-    "🛡️ 5. Escenarios",
-    "📊 6. Explorador SIRENA"
+    "🛡️ 5. Escenarios de Mitigación",
+    "🗺️ 6. Mapa de Calor (Visor)",
+    "📊 7. Explorador SIRENA"
 ])
 
 anios_evo = np.arange(anio_analisis, anio_analisis + 31)
@@ -481,3 +482,66 @@ with tab_sirena:
                 st.warning("No hay caudal numérico para graficar con los filtros seleccionados.")
     else:
         st.error("No se detectó la base de datos de Concesiones SIRENA.")
+
+# ------------------------------------------------------------------------------
+# TAB 6: MAPA DE CALOR ESPACIAL Y TOPOLÓGICO
+# ------------------------------------------------------------------------------
+with tab_mapa:
+    st.header("🗺️ Mapa de Calor y Análisis Espacial")
+    st.markdown("Distribución territorial de cargas hídricas en el área seleccionada.")
+    
+    var_mapa = st.selectbox("Variable a cartografiar:", [
+        "1. Cargas Contaminantes DBO Teóricas (Topología por Municipio)",
+        "2. Caudal Requerido Teórico (Topología por Municipio)",
+        "3. Densidad de Puntos de Concesión (Coordenadas SIRENA)", 
+        "4. Densidad de Puntos de Vertimiento (Coordenadas CAR)"
+    ])
+    
+    if "Teórica" in var_mapa:
+        st.caption("Mapa de calor jerárquico (Treemap) basado en los cálculos matemáticos municipales.")
+        df_agg = pd.DataFrame()
+        
+        # Filtra municipios según el contexto
+        if nivel_sel_interno == "Nacional (Colombia)": df_m = df_mpios[df_mpios['año'] == anio_base].copy()
+        elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)":
+            car_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
+            mpios_car = set()
+            if not df_concesiones.empty: mpios_car.update(df_concesiones[df_concesiones['car_norm'] == car_norm]['municipio_norm'].unique())
+            df_m = df_mpios[(df_mpios['municipio_norm'].isin(mpios_car)) & (df_mpios['año'] == anio_base)].copy()
+        elif nivel_sel_interno == "Municipal": df_m = df_mpios[(df_mpios['municipio_norm'] == normalizar_texto(lugar_sel)) & (df_mpios['año'] == anio_base)].copy()
+        else: df_m = df_mpios[df_mpios['año'] == anio_base].copy() 
+            
+        if not df_m.empty:
+            df_agg = df_m.groupby('municipio')['Poblacion'].sum().reset_index()
+            df_agg['Poblacion_Proy'] = df_agg['Poblacion'] * factor_proy
+            
+            if "Caudal" in var_mapa:
+                df_agg['Valor'] = (df_agg['Poblacion_Proy'] * dotacion) / 86400
+                fig_tree = px.treemap(df_agg, path=[px.Constant(lugar_sel), 'municipio'], values='Valor', color='Valor', color_continuous_scale='Blues', title="Caudal Doméstico Requerido (L/s)")
+            else:
+                df_agg['Valor'] = df_agg['Poblacion_Proy'] * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))
+                fig_tree = px.treemap(df_agg, path=[px.Constant(lugar_sel), 'municipio'], values='Valor', color='Valor', color_continuous_scale='Reds', title="Carga Orgánica DBO (kg/día) aportada por Municipio")
+                
+            fig_tree.update_traces(textinfo="label+value")
+            st.plotly_chart(fig_tree, use_container_width=True)
+            
+    else:
+        st.caption("Mapa de densidad térmica 2D basado en coordenadas MAGNA-SIRGAS o WGS84.")
+        df_map = df_concesiones.copy() if "Concesión" in var_mapa else df_vertimientos.copy()
+        
+        if not df_map.empty:
+            lugar_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
+            if nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_map.columns: df_map = df_map[df_map['car_norm'] == lugar_norm]
+            elif nivel_sel_interno == "Municipal": df_map = df_map[df_map['municipio_norm'] == lugar_norm]
+            
+            # Filtro para ignorar coordenadas atípicas (evita mapas rotos)
+            df_map = df_map[(df_map['coordenada_x'] > 1000) & (df_map['coordenada_y'] > 1000)]
+            col_z = 'caudal_lps' if "Concesión" in var_mapa else 'caudal_vert_lps'
+            
+            if not df_map.empty:
+                fig_dens = px.density_contour(df_map, x="coordenada_x", y="coordenada_y", z=col_z, histfunc="sum", fill=True, colorscale="Viridis", title=f"Densidad Espacial de Caudales (L/s)")
+                st.plotly_chart(fig_dens, use_container_width=True)
+            else:
+                st.warning("Las coordenadas espaciales registradas en la base de datos de esta entidad presentan errores o no son compatibles para generar el mapa.")
+        else:
+            st.warning("No hay base de datos disponible para esta variable.")
