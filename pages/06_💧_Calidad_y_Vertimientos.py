@@ -414,7 +414,8 @@ with tab_fuentes:
     carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_cerdos + dbo_agricola
     
     coef_retorno = 0.85
-    q_efluente_lps = (q_teorico_dom * coef_retorno) + (q_legal_ind * 0.8) + (vol_suero / 86400)
+    # CORRECCIÓN: Ahora lee las nuevas variables q_necesario_dom y q_necesario_ind de la Pestaña 1
+    q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400)
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
 
     col_g1, col_g2 = st.columns(2)
@@ -427,10 +428,8 @@ with tab_fuentes:
         st.subheader(f"📈 Evolución de Carga Orgánica ({modelo_sel})")
         pob_u_evo = pob_urbana * (factor_evo / factor_proy)
         dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_cerdos + dbo_agricola
-        
         fig_dbo_evo = go.Figure()
         fig_dbo_evo.add_trace(go.Scatter(x=anios_evo, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
-        fig_dbo_evo.update_layout(title="Proyección de Vertimientos (DBO5 Total)", xaxis_title="Año", yaxis_title="Carga Contaminante (kg/día)")
         st.plotly_chart(fig_dbo_evo, use_container_width=True)
 
 # ------------------------------------------------------------------------------
