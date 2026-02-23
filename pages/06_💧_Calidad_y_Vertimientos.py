@@ -528,7 +528,9 @@ with tab_mitigacion:
     
     q_efectivo_esc = q_necesario_dom / (1 - (esc_perdidas/100)) if esc_perdidas < 100 else q_necesario_dom
     dbo_urbana_esc = pob_urbana * 0.050 * (1 - (esc_cobertura/100 * esc_eficiencia/100))
-    carga_total_esc = dbo_urbana_esc + dbo_rural + dbo_suero + dbo_cerdos + dbo_agricola
+    
+    # ⚠️ CORRECCIÓN: Actualizado con las variables pecuarias (bovinos y porcinos)
+    carga_total_esc = dbo_urbana_esc + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_agricola
     
     col_er1, col_er2 = st.columns([1, 1.5])
     with col_er1:
