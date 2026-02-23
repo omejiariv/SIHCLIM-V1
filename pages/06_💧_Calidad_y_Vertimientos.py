@@ -168,6 +168,7 @@ st.subheader("📍 1. Configuración Territorial y Máquina del Tiempo")
 
 nivel_sel = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Departamental", "Regional", "Municipal", "Veredal"])
 lugar_sel = "N/A"
+nivel_sel_interno = nivel_sel
 
 if nivel_sel == "Nacional (Colombia)": lugar_sel = "Colombia"
 elif nivel_sel == "Departamental" and not df_mpios.empty:
