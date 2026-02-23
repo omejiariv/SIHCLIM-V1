@@ -128,6 +128,45 @@ def cargar_concesiones():
             return df
     return pd.DataFrame()
 
+# ... (aquí arriba termina la función cargar_concesiones) ...
+
+@st.cache_data
+def cargar_vertimientos():
+    ruta_xlsx = "data/Vertimientos_Cornare.xlsx"
+    ruta_csv = "data/Vertimientos_Cornare.csv"
+    
+    df = pd.DataFrame()
+    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
+    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
+        
+    if not df.empty:
+        df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
+        col_caudal = next((c for c in df.columns if 'caudal' in c), None)
+        col_mpio = 'municipio' if 'municipio' in df.columns else None
+        col_tipo = next((c for c in df.columns if 'tipo' in c and 've' in c), None) 
+        col_car = 'car' if 'car' in df.columns else None
+        col_x, col_y = ('coordenada_x' if 'coordenada_x' in df.columns else None), ('coordenada_y' if 'coordenada_y' in df.columns else None)
+        
+        if col_caudal and col_mpio:
+            df = df.dropna(subset=[col_mpio]).copy() 
+            if df[col_caudal].dtype == object: df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
+            df['caudal_vert_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
+            
+            if col_x: df['coordenada_x'] = pd.to_numeric(df[col_x], errors='coerce').fillna(0)
+            if col_y: df['coordenada_y'] = pd.to_numeric(df[col_y], errors='coerce').fillna(0)
+
+            df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
+            df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
+            
+            if col_car: df['car_norm'] = df[col_car].astype(str).str.strip().apply(normalizar_texto)
+            else: df['car_norm'] = "sin_car"
+                
+            if col_tipo: df['tipo_vertimiento'] = df[col_tipo].fillna('No Especificado').astype(str).str.title().str.strip()
+            else: df['tipo_vertimiento'] = 'No Especificado'
+            return df
+    return pd.DataFrame()
+
+
 df_mpios = cargar_municipios()
 df_veredas = cargar_veredas()
 df_concesiones = cargar_concesiones()
