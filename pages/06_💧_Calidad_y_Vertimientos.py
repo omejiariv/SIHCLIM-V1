@@ -562,7 +562,12 @@ with tab_mapa:
             df_map = df_map[(df_map['coordenada_x'] > 1000) & (df_map['coordenada_y'] > 1000)]
             
             if not df_map.empty and df_map[col_z].sum() > 0:
-                fig_dens = px.density_contour(df_map, x="coordenada_x", y="coordenada_y", z=col_z, histfunc="sum", fill=True, colorscale="Viridis", title=f"Densidad Espacial de Caudales (L/s)")
+                # 1. Dibujamos los contornos sin el argumento 'fill'
+                fig_dens = px.density_contour(df_map, x="coordenada_x", y="coordenada_y", z=col_z, histfunc="sum", title=f"Densidad Espacial de Caudales (L/s)")
+                
+                # 2. Le inyectamos el color y el relleno mágicamente aquí:
+                fig_dens.update_traces(contours_coloring="fill", colorscale="Viridis")
+                
                 st.plotly_chart(fig_dens, use_container_width=True)
             else:
                 st.warning("Las coordenadas espaciales registradas en la base de datos presentan errores, están vacías o no son numéricas.")
