@@ -285,13 +285,14 @@ st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{lugar_sel} ({nivel_
 # ==============================================================================
 # PESTAÑAS
 # ==============================================================================
-tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena = st.tabs([
+tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena, tab_extern = st.tabs([
     "🚰 2. Demanda y Eficiencia",
     "🏭 3. Inventario de Cargas", 
     "🌊 4. Asimilación y Dilución", 
     "🛡️ 5. Escenarios de Mitigación",
     "🗺️ 6. Mapa de Calor (Visor)",
-    "📊 7. Explorador Ambiental"
+    "📊 7. Explorador Ambiental",
+    "⚠️ 8. Externalidades (NUEVO)"
 ])
 
 anios_evo = np.arange(anio_analisis, anio_analisis + 31)
@@ -392,49 +393,67 @@ with tab_demanda:
     else: st.warning(f"⚠️ El territorio **{lugar_sel}** no registra datos formales.")
 
 # ------------------------------------------------------------------------------
-# TAB 2: INVENTARIO DE CARGAS
+# TAB 2: INVENTARIO DE CARGAS (CON MÓDULO PECUARIO DETALLADO)
 # ------------------------------------------------------------------------------
 with tab_fuentes:
     st.header(f"Inventario de Cargas Contaminantes ({anio_analisis})")
+    
+    st.markdown("### 🏘️ Saneamiento Básico y Agroindustria")
     col1, col2, col3 = st.columns(3)
-
     with col1:
-        st.subheader("🏘️ Saneamiento Básico")
-        cobertura_ptar = st.slider("Cobertura de Tratamiento (PTAR) %:", 0, 100, 15)
+        cobertura_ptar = st.slider("Cobertura de Tratamiento PTAR Urbana %:", 0, 100, 15)
         eficiencia_ptar = st.slider("Remoción DBO en PTAR %:", 0, 100, 80)
-
     with col2:
-        st.subheader("🐄 Agroindustria")
-        vol_suero = st.number_input("Sueros Lácteos (L/día):", min_value=0, value=2000, step=500)
-        cerdos_agua = st.number_input("Porcinos (Cabezas):", min_value=0, value=1500, step=100)
-
+        vol_suero = st.number_input("Sueros Lácteos Vertidos (L/día):", min_value=0, value=2000, step=500)
     with col3:
-        st.subheader("🍓 Agricultura")
         ha_papa = st.number_input("Cultivos Limpios [Ha]:", min_value=0.0, value=50.0, step=5.0)
         ha_pastos = st.number_input("Pastos Fertilizados [Ha]:", min_value=0.0, value=200.0, step=10.0)
 
     st.markdown("---")
+    st.markdown(f"### 🐄🚜 Análisis Sectorial Pecuario para: **{lugar_sel}**")
+    st.info("Simula el inventario ganadero y porcícola para calcular su huella contaminante exacta en el territorio seleccionado.")
+    
+    col_pec1, col_pec2 = st.columns(2)
+    with col_pec1:
+        st.subheader("Sector Bovino")
+        cabezas_bovinos = st.number_input("Inventario Bovino (Cabezas):", min_value=0, value=5000, step=500)
+        sistema_bovino = st.radio("Sistema de Producción Bovino:", ["Extensivo (A campo abierto)", "Estabulado (Confinado)"])
+        # Factor: Un bovino produce mucha DBO, pero en extensivo solo una parte llega al agua.
+        factor_dbo_bov = 0.8 if "Estabulado" in sistema_bovino else 0.15 
+        
+    with col_pec2:
+        st.subheader("Sector Porcícola")
+        cabezas_porcinos = st.number_input("Inventario Porcino (Cabezas):", min_value=0, value=1500, step=100)
+        tratamiento_porc = st.slider("Eficiencia Tratamiento Porcícola (Biodigestores/Estercoleros) %:", 0, 100, 20)
+        factor_dbo_porc = 0.150 * (1 - (tratamiento_porc/100))
+
+    # CÁLCULOS MATEMÁTICOS DE CARGAS
     dbo_urbana = pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100)) 
     dbo_rural = pob_rural * 0.040 
     dbo_suero = vol_suero * 0.035 
-    dbo_cerdos = cerdos_agua * 0.150 
     dbo_agricola = (ha_papa + ha_pastos) * 0.8 
-    carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_cerdos + dbo_agricola
+    dbo_bovinos = cabezas_bovinos * factor_dbo_bov
+    dbo_porcinos = cabezas_porcinos * factor_dbo_porc
+    
+    carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_agricola
     
     coef_retorno = 0.85
-    q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400)
+    q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400) + ((cabezas_porcinos * 40)/86400)
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
 
     col_g1, col_g2 = st.columns(2)
     with col_g1:
-        df_cargas = pd.DataFrame({"Fuente": ["Pob. Urbana", "Pob. Rural", "Lácteos", "Porcicultura", "Agrícola"], "DBO_kg_dia": [dbo_urbana, dbo_rural, dbo_suero, dbo_cerdos, dbo_agricola]})
-        fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Pastel)
+        df_cargas = pd.DataFrame({
+            "Fuente": ["Pob. Urbana", "Pob. Rural", "Agroindustria (Lácteos)", "Agricultura", "Bovinos", "Porcinos"], 
+            "DBO_kg_dia": [dbo_urbana, dbo_rural, dbo_suero, dbo_agricola, dbo_bovinos, dbo_porcinos]
+        })
+        fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
         st.plotly_chart(fig_cargas, use_container_width=True)
 
     with col_g2:
         st.subheader(f"📈 Evolución de Carga Orgánica ({modelo_sel})")
         pob_u_evo = pob_urbana * (factor_evo / factor_proy)
-        dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_cerdos + dbo_agricola
+        dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_agricola
         fig_dbo_evo = go.Figure()
         fig_dbo_evo.add_trace(go.Scatter(x=anios_evo, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
         st.plotly_chart(fig_dbo_evo, use_container_width=True)
@@ -533,17 +552,16 @@ with tab_mapa:
     st.info(f"📍 **Enfoque Espacial:** Mostrando datos para **{nivel_sel_visual} - {lugar_sel}**.")
     
     var_mapa = st.selectbox("Variable a cartografiar:", [
-        "1. Cargas Contaminantes DBO Teóricas (Topología por Municipio)",
-        "2. Caudal Requerido Teórico (Topología por Municipio)",
-        "3. Densidad de Puntos de Concesión (Coordenadas)", 
-        "4. Densidad de Puntos de Vertimiento (Coordenadas)"
+        "1. Densidad de Puntos de Concesión (Coordenadas)", 
+        "2. Densidad de Puntos de Vertimiento (Coordenadas)",
+        "3. Cargas Contaminantes DBO Teóricas (Topología por Municipio)",
+        "4. Caudal Requerido Teórico (Topología por Municipio)"
     ])
     
     if "Teórica" in var_mapa:
-        st.caption("Mapa de calor jerárquico (Treemap) basado en los cálculos matemáticos poblacionales.")
+        st.caption("Mapa de calor jerárquico (Treemap) basado en cálculos poblacionales.")
         df_agg = pd.DataFrame()
         
-        # Sincronización Topológica (Treemap)
         if nivel_sel_interno == "Nacional (Colombia)": df_m = df_mpios[df_mpios['año'] == anio_base].copy()
         elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)":
             car_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
@@ -571,42 +589,41 @@ with tab_mapa:
             st.plotly_chart(fig_tree, use_container_width=True)
             
     else:
-        st.caption("Mapa de densidad térmica 2D basado en las coordenadas reportadas en las resoluciones.")
+        st.caption("Mapa de densidad térmica 2D (Resuelve automáticamente conflictos entre WGS84 y MAGNA-SIRGAS).")
         df_map = df_concesiones.copy() if "Concesión" in var_mapa else df_vertimientos.copy()
         
         if not df_map.empty:
             lugar_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
-            
-            # Sincronización Espacial (Coordenadas X, Y)
-            if nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_map.columns: 
-                df_map = df_map[df_map['car_norm'] == lugar_norm]
-            elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_map.columns:
-                df_map = df_map[df_map['departamento_norm'] == normalizar_texto(lugar_sel)]
-            elif nivel_sel_interno == "Regional" and 'region_norm' in df_map.columns:
-                df_map = df_map[df_map['region_norm'] == normalizar_texto(lugar_sel)]
-            elif nivel_sel_interno == "Municipal": 
-                df_map = df_map[df_map['municipio_norm'] == lugar_norm]
-            elif nivel_sel_interno == "Veredal" and 'vereda_norm' in df_map.columns:
-                df_map = df_map[df_map['vereda_norm'] == lugar_norm]
+            if nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_map.columns: df_map = df_map[df_map['car_norm'] == lugar_norm]
+            elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_map.columns: df_map = df_map[df_map['departamento_norm'] == normalizar_texto(lugar_sel)]
+            elif nivel_sel_interno == "Regional" and 'region_norm' in df_map.columns: df_map = df_map[df_map['region_norm'] == normalizar_texto(lugar_sel)]
+            elif nivel_sel_interno == "Municipal": df_map = df_map[df_map['municipio_norm'] == lugar_norm]
+            elif nivel_sel_interno == "Veredal" and 'vereda_norm' in df_map.columns: df_map = df_map[df_map['vereda_norm'] == lugar_norm]
             
             col_z = 'caudal_lps' if "Concesión" in var_mapa else 'caudal_vert_lps'
-            
-            # Limpieza Numérica para el Gráfico
             df_map['coordenada_x'] = pd.to_numeric(df_map['coordenada_x'], errors='coerce')
             df_map['coordenada_y'] = pd.to_numeric(df_map['coordenada_y'], errors='coerce')
             df_map[col_z] = pd.to_numeric(df_map[col_z], errors='coerce')
             df_map = df_map.dropna(subset=['coordenada_x', 'coordenada_y', col_z])
             
-            # Filtro para evitar puntos nulos o errores de tipeo que rompan el mapa
-            df_map = df_map[(df_map['coordenada_x'] > 1000) & (df_map['coordenada_y'] > 1000)]
+            # AUTO-DETECTOR DE COORDENADAS (WGS84 vs MAGNA)
+            mask_magna = (df_map['coordenada_x'] > 100000) & (df_map['coordenada_y'] > 100000)
+            mask_wgs84 = (df_map['coordenada_x'] < 0) & (df_map['coordenada_x'] > -85) & (df_map['coordenada_y'] > -5)
+            
+            if mask_magna.sum() > mask_wgs84.sum():
+                df_map = df_map[mask_magna]
+                sistema_coords = "MAGNA-SIRGAS"
+            else:
+                df_map = df_map[mask_wgs84]
+                sistema_coords = "Geográficas WGS84"
             
             if not df_map.empty and df_map[col_z].sum() > 0:
-                # El parche del 'fill' aplicado correctamente
+                st.success(f"Proyección espacial detectada para este territorio: **{sistema_coords}**")
                 fig_dens = px.density_contour(df_map, x="coordenada_x", y="coordenada_y", z=col_z, histfunc="sum", title=f"Densidad Espacial de Caudales (L/s)")
                 fig_dens.update_traces(contours_coloring="fill", colorscale="Viridis")
                 st.plotly_chart(fig_dens, use_container_width=True)
             else:
-                st.warning("Las coordenadas espaciales en esta jurisdicción presentan errores o no son compatibles para generar el mapa topográfico.")
+                st.warning("No hay suficientes coordenadas válidas para generar un mapa en esta jurisdicción.")
         else:
             st.warning("No hay base de datos disponible para esta variable.")
 
@@ -639,3 +656,55 @@ with tab_sirena:
                 st.plotly_chart(fig_exp, use_container_width=True)
     else:
         st.warning("No se ha cargado correctamente la base de datos oficial.")
+
+# ------------------------------------------------------------------------------
+# TAB 7: ANÁLISIS SECTORIAL DE EXTERNALIDADES (NUEVO)
+# ------------------------------------------------------------------------------
+with tab_extern:
+    st.header("⚠️ Análisis Sectorial de Externalidades Ambientales")
+    st.markdown(f"Evaluación del impacto indirecto (Huella Ecológica) de las cargas en **{lugar_sel}**.")
+    
+    col_ext1, col_ext2 = st.columns([1, 1.2])
+    
+    with col_ext1:
+        st.subheader("Gases de Efecto Invernadero (GEI)")
+        st.caption("La DBO no tratada se descompone en condiciones anaerobias generando gas Metano (CH4).")
+        
+        # Factor estándar IPCC: 0.25 kg CH4 por cada kg de DBO anaerobia
+        factor_ch4 = 0.25 
+        ch4_urbano = dbo_urbana * factor_ch4
+        ch4_porcino = dbo_porcinos * factor_ch4
+        ch4_total = ch4_urbano + ch4_porcino
+        
+        st.metric("Emisiones de Metano (CH4) en Aguas Residuales", f"{ch4_total:,.1f} kg/día", help="Proviene principalmente de aguas urbanas no tratadas y estercoleros porcinos.")
+        
+        df_ch4 = pd.DataFrame({
+            "Sector": ["Saneamiento Urbano", "Producción Porcícola"],
+            "CH4 (kg/día)": [ch4_urbano, ch4_porcino]
+        })
+        fig_ch4 = px.pie(df_ch4, values="CH4 (kg/día)", names="Sector", hole=0.5, color_discrete_sequence=["#95a5a6", "#d35400"], title="Aportantes de Metano")
+        st.plotly_chart(fig_ch4, use_container_width=True)
+        
+    with col_ext2:
+        st.subheader("Riesgo de Eutrofización (Nutrientes)")
+        st.caption("Aporte estimado de Nitrógeno Total (NT) y Fósforo (PT) a los cuerpos de agua.")
+        
+        # Estimaciones teóricas de arrastre
+        n_urbano = pob_urbana * 0.012 * (1 - (cobertura_ptar/100 * 0.3)) # Las PTAR convencionales remueven poco N
+        n_agricola = (ha_papa * 1.5) + (ha_pastos * 0.5)
+        p_urbano = pob_urbana * 0.003
+        
+        df_nutrientes = pd.DataFrame({
+            "Contaminante": ["Nitrógeno (NT)", "Nitrógeno (NT)", "Fósforo (PT)"],
+            "Fuente": ["Aguas Residuales Domésticas", "Escorrentía Agrícola", "Aguas Residuales Domésticas"],
+            "Carga (kg/día)": [n_urbano, n_agricola, p_urbano]
+        })
+        
+        fig_nutr = px.bar(df_nutrientes, x="Contaminante", y="Carga (kg/día)", color="Fuente", barmode="stack", color_discrete_sequence=["#3498db", "#2ecc71"], title="Balance de Nutrientes Críticos")
+        st.plotly_chart(fig_nutr, use_container_width=True)
+        
+        if n_urbano + n_agricola > 500:
+            st.error("🔴 **Alerta de Eutrofización:** Alta carga de Nitrógeno detectada. Riesgo de proliferación de algas tóxicas y pérdida de oxígeno disuelto en reservorios aguas abajo.")
+        else:
+            st.success("✅ **Carga de Nutrientes Moderada:** El ecosistema tiene margen de asimilación.")
+            
