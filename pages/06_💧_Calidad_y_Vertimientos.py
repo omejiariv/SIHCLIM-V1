@@ -459,12 +459,43 @@ with tab_dilucion:
         st.plotly_chart(fig_gauge, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# TAB 4: ESCENARIOS
+# TAB 4: ESCENARIOS DE MITIGACIÓN (NUEVO)
 # ------------------------------------------------------------------------------
 with tab_mitigacion:
-    st.header("🛡️ Simulador de Intervenciones")
-    st.info("Próxima fase de desarrollo.")
-
+    st.header("🛡️ Simulador de Escenarios de Mitigación (CuencaVerde)")
+    st.markdown("¿Qué impacto logramos si intervenimos el territorio? Ajusta las metas del proyecto y observa el resultado.")
+    
+    col_e1, col_e2, col_e3 = st.columns(3)
+    with col_e1:
+        st.subheader("Eficiencia de Redes")
+        esc_perdidas = st.slider("Reducir pérdidas de acueducto a (%):", 0.0, 100.0, float(max(0, perd_dom - 10)), help="Evitar fugas reduce la extracción del río.")
+    with col_e2:
+        st.subheader("Saneamiento")
+        esc_cobertura = st.slider("Aumentar Cobertura PTAR a (%):", 0.0, 100.0, float(min(100, cobertura_ptar + 30)))
+    with col_e3:
+        st.subheader("Tecnología PTAR")
+        esc_eficiencia = st.slider("Mejorar Remoción DBO a (%):", 0.0, 100.0, float(min(100, eficiencia_ptar + 10)))
+        
+    st.divider()
+    
+    # Recálculos
+    q_efectivo_esc = q_necesario_dom / (1 - (esc_perdidas/100)) if esc_perdidas < 100 else q_necesario_dom
+    dbo_urbana_esc = pob_urbana * 0.050 * (1 - (esc_cobertura/100 * esc_eficiencia/100))
+    carga_total_esc = dbo_urbana_esc + dbo_rural + dbo_suero + dbo_cerdos + dbo_agricola
+    
+    col_er1, col_er2 = st.columns([1, 1.5])
+    with col_er1:
+        st.metric("Extracción Bruta de Agua", f"{q_efectivo_esc:.1f} L/s", delta=f"{q_efectivo_esc - q_efectivo_dom:.1f} L/s (Agua salvada en la fuente)", delta_color="inverse")
+        st.metric("Carga Contaminante DBO", f"{carga_total_esc:.1f} kg/día", delta=f"{carga_total_esc - carga_total_dbo:.1f} kg/día (Contaminación evitada)", delta_color="inverse")
+    
+    with col_er2:
+        df_esc = pd.DataFrame({
+            "Escenario": ["1. Situación Actual", "1. Situación Actual", "2. Con Proyecto CuencaVerde", "2. Con Proyecto CuencaVerde"],
+            "Variable": ["Extracción de Agua (L/s)", "Carga DBO (kg/día)", "Extracción de Agua (L/s)", "Carga DBO (kg/día)"],
+            "Valor": [q_efectivo_dom, carga_total_dbo, q_efectivo_esc, carga_total_esc]
+        })
+        fig_esc = px.bar(df_esc, x="Variable", y="Valor", color="Escenario", barmode="group", title="Impacto del Proyecto Ambiental", color_discrete_sequence=["#e74c3c", "#2ecc71"])
+        st.plotly_chart(fig_esc, use_container_width=True)
 
 # ------------------------------------------------------------------------------
 # TAB 5: MAPA DE CALOR ESPACIAL Y TOPOLÓGICO
