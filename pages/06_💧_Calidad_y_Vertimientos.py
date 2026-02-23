@@ -131,6 +131,7 @@ def cargar_concesiones():
 df_mpios = cargar_municipios()
 df_veredas = cargar_veredas()
 df_concesiones = cargar_concesiones()
+df_vertimientos = cargar_vertimientos()
 
 # FUNCIONES MATEMÁTICAS
 def obtener_poblacion_base(lugar_sel, nivel_sel):
@@ -246,44 +247,54 @@ factor_evo = proyectar_curva(pob_t_base, anios_evo, anio_base, modelo_sel, tasa_
 pob_evo = pob_total * (factor_evo / factor_proy)
 
 # ------------------------------------------------------------------------------
-# TAB 1: DEMANDA HÍDRICA (SUBREGISTRO Y DIAGNÓSTICO INTELIGENTE)
+# TAB 1: DEMANDA HÍDRICA Y EFICIENCIA
 # ------------------------------------------------------------------------------
 with tab_demanda:
-    st.header(f"🚰 Metabolismo Hídrico y Formalización")
+    st.header(f"🚰 Demanda, Eficiencia de Sistemas y Formalización")
     col_d1, col_d2 = st.columns([1, 1.5])
     
     with col_d1:
-        st.subheader("1. Demanda Teórica")
-        dotacion = st.number_input("Dotación Doméstica (L/hab/día):", value=120.0, step=5.0)
-        q_teorico_dom = (pob_total * dotacion) / 86400
-        st.metric(f"Caudal Doméstico Necesario", f"{q_teorico_dom:.2f} L/s")
+        st.subheader("1. Demanda Teórica (Neto vs Bruto)")
+        
+        st.markdown("**A. Uso Doméstico**")
+        col_d_dom1, col_d_dom2 = st.columns(2)
+        with col_d_dom1: dotacion = st.number_input("Dotación Neta (L/hab/d):", value=120.0, step=5.0)
+        with col_d_dom2: perd_dom = st.slider("Pérdidas del Acueducto (%):", 0.0, 100.0, 25.0, step=1.0)
+        q_necesario_dom = (pob_total * dotacion) / 86400
+        q_efectivo_dom = q_necesario_dom / (1 - (perd_dom/100)) if perd_dom < 100 else q_necesario_dom
+        col_res1, col_res2 = st.columns(2)
+        col_res1.metric("Neto (Necesario)", f"{q_necesario_dom:.2f} L/s")
+        col_res2.metric("Bruto (Efectivo)", f"{q_efectivo_dom:.2f} L/s", delta=f"Pérdida: {(q_efectivo_dom - q_necesario_dom):.2f} L/s", delta_color="inverse")
+        
+        st.markdown("**B. Uso Agrícola / Pecuario**")
+        col_d_agr1, col_d_agr2 = st.columns(2)
+        with col_d_agr1: q_necesario_agr = st.number_input("Demanda Neta Agrícola (L/s):", value=45.0, step=5.0)
+        with col_d_agr2: perd_agr = st.slider("Pérdidas Sist. de Riego (%):", 0.0, 100.0, 30.0, step=1.0)
+        q_efectivo_agr = q_necesario_agr / (1 - (perd_agr/100)) if perd_agr < 100 else q_necesario_agr
+        st.caption(f"Caudal Bruto Agrícola a captar: **{q_efectivo_agr:.2f} L/s**")
+        
+        st.markdown("**C. Uso Industrial**")
+        col_d_ind1, col_d_ind2 = st.columns(2)
+        with col_d_ind1: q_necesario_ind = st.number_input("Demanda Neta Industrial (L/s):", value=20.0, step=2.0)
+        with col_d_ind2: perd_ind = st.slider("Pérdidas de Industria (%):", 0.0, 100.0, 10.0, step=1.0)
+        q_efectivo_ind = q_necesario_ind / (1 - (perd_ind/100)) if perd_ind < 100 else q_necesario_ind
+        st.caption(f"Caudal Bruto Industrial a captar: **{q_efectivo_ind:.2f} L/s**")
         
         st.markdown("---")
-        st.subheader("2. Demanda Legal (Autorizada)")
-        
+        st.subheader("2. Demanda Legal (SIRENA)")
         q_sup, q_sub, q_legal_agr, q_legal_ind = 0.0, 0.0, 0.0, 0.0
         df_usos_detalle = pd.DataFrame()
         
         if not df_concesiones.empty and lugar_sel != "N/A":
-            lugar_norm = normalizar_texto(lugar_sel)
+            lugar_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
             
-            # FILTRO DINÁMICO QUE AHORA INCLUYE NACIONAL, DEPARTAMENTAL Y REGIONAL
-            if nivel_sel == "Nacional (Colombia)": 
-                df_filtro_c = df_concesiones.copy()
-            elif nivel_sel == "Departamental": 
-                if 'departamento_norm' in df_concesiones.columns:
-                    df_filtro_c = df_concesiones[df_concesiones['departamento_norm'] == lugar_norm]
-                else: df_filtro_c = df_concesiones.copy() # Asume que toda la BD es del departamento
-            elif nivel_sel == "Regional":
-                if 'region_norm' in df_concesiones.columns:
-                    df_filtro_c = df_concesiones[df_concesiones['region_norm'] == lugar_norm]
-                else: df_filtro_c = pd.DataFrame()
-            elif nivel_sel == "Municipal": 
-                df_filtro_c = df_concesiones[df_concesiones['municipio_norm'] == lugar_norm]
-            elif nivel_sel == "Veredal" and 'vereda_norm' in df_concesiones.columns: 
-                df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
-            else: 
-                df_filtro_c = pd.DataFrame()
+            if nivel_sel_interno == "Nacional (Colombia)": df_filtro_c = df_concesiones.copy()
+            elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)": df_filtro_c = df_concesiones[df_concesiones['car_norm'] == lugar_norm] if 'car_norm' in df_concesiones.columns else pd.DataFrame()
+            elif nivel_sel_interno == "Departamental": df_filtro_c = df_concesiones[df_concesiones['departamento_norm'] == lugar_norm] if 'departamento_norm' in df_concesiones.columns else df_concesiones.copy()
+            elif nivel_sel_interno == "Regional": df_filtro_c = df_concesiones[df_concesiones['region_norm'] == lugar_norm] if 'region_norm' in df_concesiones.columns else pd.DataFrame()
+            elif nivel_sel_interno == "Municipal": df_filtro_c = df_concesiones[df_concesiones['municipio_norm'] == lugar_norm]
+            elif nivel_sel_interno == "Veredal" and 'vereda_norm' in df_concesiones.columns: df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
+            else: df_filtro_c = pd.DataFrame()
                 
             if not df_filtro_c.empty:
                 df_dom = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Doméstico']
@@ -297,47 +308,41 @@ with tab_demanda:
                 df_usos_detalle = df_usos_detalle.sort_values(by='Caudal (L/s)', ascending=False)
                 
         q_concesionado_dom = q_sup + q_sub
-        
-        st.caption(f"Caudales formales extraídos de SIRENA para **{lugar_sel}**:")
-        st.write(f"- **Superficial:** {q_sup:,.2f} L/s")
-        st.write(f"- **Subterráneo:** {q_sub:,.2f} L/s")
+        st.write(f"- **Superficial Doméstico:** {q_sup:,.2f} L/s")
+        st.write(f"- **Subterráneo Doméstico:** {q_sub:,.2f} L/s")
         st.write(f"- **Total Legal Doméstico:** {q_concesionado_dom:,.2f} L/s")
         
     with col_d2:
-        # AÑADIDO: Claridad en el título (Uso Doméstico)
-        st.subheader("📊 Análisis de Ilegalidad o Subregistro (Uso Doméstico)")
-        
+        st.subheader("📊 Análisis de Formalización (Uso Doméstico)")
         margen = 0.05 
-        if q_concesionado_dom > q_teorico_dom * (1 + margen):
-            st.error(f"🔴 **Sobreconcesión:** Se han otorgado {q_concesionado_dom - q_teorico_dom:,.1f} L/s por encima del requerimiento teórico poblacional.")
-        elif q_concesionado_dom < q_teorico_dom * (1 - margen):
-            st.warning(f"⚠️ **Riesgo de Ilegalidad / Subregistro:** La población necesita {q_teorico_dom - q_concesionado_dom:,.1f} L/s adicionales que no aparecen formalizados.")
-        else:
-            st.success(f"✅ **Equilibrio Hídrico:** El caudal otorgado ({q_concesionado_dom:,.1f} L/s) suple adecuadamente la demanda poblacional ({q_teorico_dom:,.1f} L/s).")
+        if q_concesionado_dom > q_efectivo_dom * (1 + margen): st.error(f"🔴 **Sobreconcesión:** Otorgado {q_concesionado_dom - q_efectivo_dom:,.1f} L/s por encima de la extracción bruta requerida.")
+        elif q_concesionado_dom < q_efectivo_dom * (1 - margen): st.warning(f"⚠️ **Riesgo de Subregistro:** Se requiere extraer {q_efectivo_dom - q_concesionado_dom:,.1f} L/s adicionales que no aparecen formalizados en la corporación.")
+        else: st.success(f"✅ **Equilibrio Hídrico:** La concesión ({q_concesionado_dom:,.1f} L/s) cubre perfectamente la demanda y las pérdidas del sistema.")
 
         df_chart = pd.DataFrame([
-            {"Categoría": "Requerimiento Teórico", "Tipo": "Consumo Real Estimado", "Caudal (L/s)": q_teorico_dom},
-            {"Categoría": "Registro SIRENA", "Tipo": "Concesión Superficial", "Caudal (L/s)": q_sup},
-            {"Categoría": "Registro SIRENA", "Tipo": "Concesión Subterránea", "Caudal (L/s)": q_sub}
+            {"Categoría": "Demanda Efectiva (Bruta)", "Componente": "Consumo Neto", "Caudal (L/s)": q_necesario_dom},
+            {"Categoría": "Demanda Efectiva (Bruta)", "Componente": "Pérdidas de Acueducto", "Caudal (L/s)": (q_efectivo_dom - q_necesario_dom)},
+            {"Categoría": "Registro SIRENA (Legal)", "Componente": "Concesión Superficial", "Caudal (L/s)": q_sup},
+            {"Categoría": "Registro SIRENA (Legal)", "Componente": "Concesión Subterránea", "Caudal (L/s)": q_sub}
         ])
+        fig_sub = px.bar(df_chart, x="Categoría", y="Caudal (L/s)", color="Componente", color_discrete_map={"Consumo Neto": "#2980b9", "Pérdidas de Acueducto": "#e67e22", "Concesión Superficial": "#3498db", "Concesión Subterránea": "#2ecc71"}, title="Demanda Bruta vs Permisos Otorgados")
+        fig_sub.add_hline(y=q_efectivo_dom, line_dash="dash", line_color="red", annotation_text="Límite Extracción Bruta")
         
-        fig_sub = px.bar(df_chart, x="Categoría", y="Caudal (L/s)", color="Tipo", 
-                         color_discrete_map={"Consumo Real Estimado": "#e74c3c", "Concesión Superficial": "#3498db", "Concesión Subterránea": "#2ecc71"},
-                         title="Comparativa: Realidad Demográfica vs Formalización")
-        fig_sub.add_hline(y=q_teorico_dom, line_dash="dash", line_color="black", annotation_text="Brecha de Subregistro")
+        # Ajuste para evitar el warning de ancho de contenedor
         st.plotly_chart(fig_sub, use_container_width=True)
         
     st.divider()
-    st.subheader("📋 Consolidado de Todos los Usos Registrados (SIRENA)")
+    st.subheader("📋 Consolidado de Todos los Usos Registrados")
     if not df_usos_detalle.empty:
-        col_t1, col_t2 = st.columns([2,1])
-        with col_t1: st.dataframe(df_usos_detalle, use_container_width=True)
-        with col_t2:
+        c1, c2 = st.columns([2,1])
+        with c1: 
+            # ¡Solución Mágica de Arrow! Convertimos la tabla a texto puro para que Streamlit no colapse
+            st.dataframe(df_usos_detalle.astype(str), use_container_width=True)
+        with c2:
             csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
-            st.download_button(label="📥 Descargar Desglose (CSV)", data=csv, file_name=f'Usos_SIRENA_{lugar_sel}.csv', mime='text/csv')
-    else:
-        # AÑADIDO: Mensaje personalizado con el nombre de la unidad territorial
-        st.warning(f"⚠️ No hay registros de concesiones en la base de datos SIRENA para la unidad territorial: **{lugar_sel}**.")
+            st.download_button("📥 Descargar Desglose (CSV)", data=csv, file_name=f'Usos_SIRENA_{lugar_sel}.csv', mime='text/csv')
+    else: 
+        st.warning(f"⚠️ El territorio **{lugar_sel}** no registra datos formales en la corporación.")
 
 # ------------------------------------------------------------------------------
 # TAB 2: INVENTARIO DE CARGAS
@@ -474,18 +479,27 @@ with tab_mapa:
             if nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_map.columns: df_map = df_map[df_map['car_norm'] == lugar_norm]
             elif nivel_sel_interno == "Municipal": df_map = df_map[df_map['municipio_norm'] == lugar_norm]
             
-            # Filtro para ignorar coordenadas atípicas (evita mapas rotos)
-            df_map = df_map[(df_map['coordenada_x'] > 1000) & (df_map['coordenada_y'] > 1000)]
             col_z = 'caudal_lps' if "Concesión" in var_mapa else 'caudal_vert_lps'
             
-            if not df_map.empty:
+            # BLINDAJE NUMÉRICO OBLIGATORIO PARA EVITAR TYPE-ERRORS
+            df_map['coordenada_x'] = pd.to_numeric(df_map['coordenada_x'], errors='coerce')
+            df_map['coordenada_y'] = pd.to_numeric(df_map['coordenada_y'], errors='coerce')
+            df_map[col_z] = pd.to_numeric(df_map[col_z], errors='coerce')
+            
+            # Borrar filas que no tengan coordenadas válidas o caudal
+            df_map = df_map.dropna(subset=['coordenada_x', 'coordenada_y', col_z])
+            
+            # Filtro para ignorar coordenadas atípicas (evita que el mapa se rompa)
+            df_map = df_map[(df_map['coordenada_x'] > 1000) & (df_map['coordenada_y'] > 1000)]
+            
+            if not df_map.empty and df_map[col_z].sum() > 0:
                 fig_dens = px.density_contour(df_map, x="coordenada_x", y="coordenada_y", z=col_z, histfunc="sum", fill=True, colorscale="Viridis", title=f"Densidad Espacial de Caudales (L/s)")
                 st.plotly_chart(fig_dens, use_container_width=True)
             else:
-                st.warning("Las coordenadas espaciales registradas en la base de datos de esta entidad presentan errores o no son compatibles para generar el mapa.")
+                st.warning("Las coordenadas espaciales registradas en la base de datos presentan errores, están vacías o no son numéricas.")
         else:
             st.warning("No hay base de datos disponible para esta variable.")
-
+            
 # ------------------------------------------------------------------------------
 # TAB 6: EXPLORADOR SIRENA (Data Mining Avanzado)
 # ------------------------------------------------------------------------------
@@ -528,7 +542,7 @@ with tab_sirena:
         c_exp1, c_exp2 = st.columns([2, 1.5])
         with c_exp1:
             st.subheader(f"Registros Encontrados: {len(df_exp)}")
-            st.dataframe(df_exp, use_container_width=True)
+            st.dataframe(df_exp.astype(str), width="stretch")
             csv_exp = df_exp.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Exportar Resultados (CSV)", data=csv_exp, file_name="Reporte_SIRENA.csv", mime="text/csv")
             
