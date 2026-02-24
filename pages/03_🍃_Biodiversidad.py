@@ -1001,11 +1001,16 @@ with tab_afolu:
             df_fuentes_af['Total_Emisiones'] += emision_anual_vehiculos
         
         # 5. Cálculo de eventos de pérdida/ganancia
-        t_ev = "PERDIDA" if "Pérdida" in tipo_evento else "GANANCIA"
+        area_ev_segura = float(area_evento) if 'area_evento' in locals() else 0.0
+        tipo_ev_seguro = str(tipo_evento) if 'tipo_evento' in locals() else "Pérdida"
         anio_ev_int = int(anio_evento) if 'anio_evento' in locals() else 5 
-        df_evento_af = carbon_calculator.calcular_evento_cambio(area_evento, t_ev, anio_ev_int, h_anios)
+        
+        t_ev = "PERDIDA" if "Pérdida" in tipo_ev_seguro else "GANANCIA"
+        
+        df_evento_af = carbon_calculator.calcular_evento_cambio(area_ev_segura, t_ev, anio_ev_int, h_anios)
 
-        # =====================================================================        
+        # =====================================================================
+        
         df_bal = carbon_calculator.calcular_balance_territorial(df_bosque_af, df_pastos_af, df_fuentes_af, df_evento_af)
         
         neto_final = df_bal['Balance_Neto_tCO2e'].iloc[-1]
@@ -1119,6 +1124,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
