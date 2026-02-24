@@ -1,6 +1,10 @@
+# modules/data_processor.py
+
 import geopandas as gpd
 import pandas as pd
 import streamlit as st
+import os
+import unicodedata
 from shapely import wkt
 from sqlalchemy import create_engine, text
 
@@ -176,5 +180,47 @@ def complete_series(df):
     df = df.sort_values(Config.DATE_COL)
     df[Config.PRECIPITATION_COL] = df[Config.PRECIPITATION_COL].interpolate(method="linear", limit_direction="both")
 
+    return df
+
+
+def normalizar_texto(texto):
+    if pd.isna(texto): return ""
+    texto_str = str(texto).lower().strip()
+    return unicodedata.normalize('NFKD', texto_str).encode('ascii', 'ignore').decode('utf-8')
+
+def leer_csv_robusto(ruta):
+    try:
+        df = pd.read_csv(ruta, sep=';', low_memory=False)
+        if len(df.columns) < 5: df = pd.read_csv(ruta, sep=',', low_memory=False)
+        df.columns = df.columns.str.replace('\ufeff', '').str.strip()
+        return df
+    except Exception: return pd.DataFrame()
+
+# =====================================================================
+# CARGADORES CENTRALIZADOS DEL ICA (EL ALEPH DE DATOS)
+# =====================================================================
+@st.cache_data
+def cargar_censo_ica(tipo):
+    """
+    Carga el censo oficial. 'tipo' puede ser: 'bovino', 'porcino', 'aviar'
+    """
+    archivos = {
+        'bovino': "data/censos_ICA/Censo_ICA_Bovinos_2023",
+        'porcino': "data/censos_ICA/Censo_ICA_Porcinos_2023",
+        'aviar': "data/censos_ICA/Censo_ICA_Aves_2025"
+    }
+    
+    if tipo not in archivos: return pd.DataFrame()
+    
+    ruta_base = archivos[tipo]
+    df = pd.DataFrame()
+    
+    if os.path.exists(ruta_base + ".xlsx"): df = pd.read_excel(ruta_base + ".xlsx")
+    elif os.path.exists(ruta_base + ".csv"): df = leer_csv_robusto(ruta_base + ".csv")
+    
+    if not df.empty:
+        df.columns = df.columns.str.upper().str.replace(' ', '_').str.strip()
+        if 'MUNICIPIO' in df.columns:
+            df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
     return df
 
