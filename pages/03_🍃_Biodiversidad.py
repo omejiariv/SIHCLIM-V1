@@ -832,22 +832,32 @@ with tab_afolu:
     st.header("⚖️ Modelo de Metabolismo Territorial (AFOLU)")
     st.info("Simulador integral de cuenca: Integra la captura forestal con cargas pecuarias, humanas y eventos de cambio de cobertura en el tiempo.")
     
+    # -------------------------------------------------------------------------
+    # 🌐 ALEPH FORESTAL (SUMIDERO)
+    # Extraer ID 9 (Bosque) de los cálculos satelitales si están disponibles
+    # -------------------------------------------------------------------------
+    area_bosque_real = 100.0
+    try:
+        if 'df_diagnostico' in locals() and df_diagnostico is not None:
+            area_bosque_real = df_diagnostico[df_diagnostico['COV_ID'] == 9]['Hectareas'].sum()
+    except: pass
+
     col_a1, col_a2 = st.columns([1, 2.5])
     
     with col_a1:
-        st.subheader("1. Línea Base Forestal")
+        st.subheader("1. Línea Base Forestal (Sumidero Principal)")
         estrategia_af = st.selectbox("Bosque Existente/Planeado:", options=list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"])
-        area_af = st.number_input("Hectáreas (Bosque):", value=float(total_potencial) if 'total_potencial' in locals() and total_potencial > 0 else 100.0, step=10.0)
+        
+        # Ahora lee el satélite por defecto
+        area_af = st.number_input("Hectáreas (Bosque Satélite):", value=float(area_bosque_real) if area_bosque_real > 0 else 100.0, step=10.0)
         horizonte_af = st.slider("Horizonte de Análisis (Años):", 5, 50, 20, key="slider_afolu")
         
         st.markdown("---")
-        st.subheader("2. Actividades Agropecuarias y Humanas")
-
-        # --- IMPORTAR LOS DATOS CENTRALES ---
-        # Asegúrate de tener cargar_veredas y cargar_municipios disponibles
+        
+        # -------------------------------------------------------------------------
+        # 🌐 ALEPH PECUARIO Y DEMOGRÁFICO (FUENTES DE EMISIÓN)
+        # -------------------------------------------------------------------------
         from modules.data_processor import cargar_censo_ica, normalizar_texto
-        # Si las funciones de población están en Vertimientos o data_processor, impórtalas:
-        # from modules.data_processor import cargar_veredas, cargar_municipios 
         
         municipio_actual = normalizar_texto(nombre_seleccion) if 'nombre_seleccion' in locals() else ""
         
@@ -863,26 +873,25 @@ with tab_afolu:
             col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
             aves_reales = int(df_aves[df_aves['MUNICIPIO_NORM'] == municipio_actual][col_aves].sum())
 
-        # 2. Motor Demográfico Rural (El Aleph Veredal)
+        # 2. Motor Demográfico Rural
         poblacion_rural_calculada = 0
         
-        # Intento A: Leer de la memoria global (Si el usuario ya pasó por Vertimientos)
+        # Intento A: Leer de la memoria global
         if 'aleph_pob_rural' in st.session_state and st.session_state.get('aleph_territorio_origen', '') == municipio_actual:
             poblacion_rural_calculada = float(st.session_state['aleph_pob_rural'])
         else:
             # Intento B: Calcular desde la base de Veredas
             try:
-                # Ajusta la ruta a donde tengas tu cargar_veredas()
                 df_veredas = pd.read_excel("data/veredas_Antioquia.xlsx") 
                 df_v_filt = df_veredas[df_veredas['Municipio'].astype(str).apply(normalizar_texto) == municipio_actual]
                 if not df_v_filt.empty:
                     poblacion_rural_calculada = int(df_v_filt['Poblacion_hab'].sum())
             except: pass
             
-            # Intento C: Respaldo con DANE (Si la base de veredas falla o no tiene el municipio)
+            # Intento C: Respaldo con DANE
             if poblacion_rural_calculada == 0:
                 try:
-                    df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False) # Ajusta tu ruta
+                    df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False)
                     df_m_filt = df_mpios[(df_mpios['municipio'].astype(str).apply(normalizar_texto) == municipio_actual)]
                     if not df_m_filt.empty:
                         anio_max = df_m_filt['año'].max()
@@ -892,11 +901,13 @@ with tab_afolu:
                 except: pass
 
         if poblacion_rural_calculada == 0: poblacion_rural_calculada = 50 # Último recurso
+        
+        # Conexión Aleph de Pasturas Satelitales
+        aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
 
         # --- INTERFAZ DINÁMICA ---
-        st.markdown("---")
-        st.subheader("2. Actividades Agropecuarias y Humanas (Datos Oficiales)")
-        st.info(f"📍 **Conexión Aleph:** Datos censales (ICA) y poblacionales (DANE/Veredas) extraídos automáticamente para **{nombre_seleccion}**.")
+        st.subheader("2. Actividades Agropecuarias y Humanas")
+        st.info(f"📍 **Conexión Aleph:** Datos censales (ICA) y poblacionales (DANE/Veredas) extraídos para **{nombre_seleccion}**.")
 
         opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"]
         fuentes_sel = st.multiselect("Selecciona cargas a modelar:", opciones_fuentes, default=["Todas"])
@@ -904,7 +915,6 @@ with tab_afolu:
 
         esc_pasto, area_pastos = "PASTO_DEGRADADO", 0.0
         v_leche, v_carne, cerdos, aves, humanos = 0, 0, 0, 0, 0
-        aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
         
         if "Pasturas" in fuentes_activas:
             esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
@@ -1057,6 +1067,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
