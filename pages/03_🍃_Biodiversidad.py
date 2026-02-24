@@ -876,66 +876,94 @@ with tab_afolu:
             col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
             aves_reales = int(df_aves[df_aves['MUNICIPIO_NORM'] == municipio_actual][col_aves].sum())
 
-        # 2. Motor Demográfico Rural
+        # 2. Motor Demográfico (El Aleph DANE/Veredal)
         poblacion_rural_calculada = 0
+        poblacion_urbana_calculada = 0
         
         # Intento A: Leer de la memoria global
         if 'aleph_pob_rural' in st.session_state and st.session_state.get('aleph_territorio_origen', '') == municipio_actual:
             poblacion_rural_calculada = float(st.session_state['aleph_pob_rural'])
+            poblacion_urbana_calculada = float(st.session_state.get('aleph_pob_urbana', 0))
         else:
-            # Intento B: Calcular desde la base de Veredas
+            # Intento B: Calcular desde la base de Veredas (Rural)
             try:
                 df_veredas = pd.read_excel("data/veredas_Antioquia.xlsx") 
                 df_v_filt = df_veredas[df_veredas['Municipio'].astype(str).apply(normalizar_texto) == municipio_actual]
-                if not df_v_filt.empty:
-                    poblacion_rural_calculada = int(df_v_filt['Poblacion_hab'].sum())
+                if not df_v_filt.empty: poblacion_rural_calculada = int(df_v_filt['Poblacion_hab'].sum())
             except: pass
             
-            # Intento C: Respaldo con DANE
-            if poblacion_rural_calculada == 0:
-                try:
-                    df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False)
-                    df_m_filt = df_mpios[(df_mpios['municipio'].astype(str).apply(normalizar_texto) == municipio_actual)]
-                    if not df_m_filt.empty:
-                        anio_max = df_m_filt['año'].max()
-                        df_m_filt = df_m_filt[df_m_filt['año'] == anio_max]
-                        areas_str = df_m_filt['area_geografica'].astype(str).str.lower()
-                        poblacion_rural_calculada = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
-                except: pass
+            # Intento C: Respaldo con DANE (Rural y Urbana)
+            try:
+                df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False)
+                df_m_filt = df_mpios[(df_mpios['municipio'].astype(str).apply(normalizar_texto) == municipio_actual)]
+                if not df_m_filt.empty:
+                    anio_max = df_m_filt['año'].max()
+                    df_m_filt = df_m_filt[df_m_filt['año'] == anio_max]
+                    areas_str = df_m_filt['area_geografica'].astype(str).str.lower()
+                    
+                    pob_rur_dane = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
+                    pob_urb_dane = int(df_m_filt[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum())
+                    
+                    if poblacion_rural_calculada == 0: poblacion_rural_calculada = pob_rur_dane
+                    if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = pob_urb_dane
+            except: pass
 
-        if poblacion_rural_calculada == 0: poblacion_rural_calculada = 50 # Último recurso
-        
+        if poblacion_rural_calculada == 0: poblacion_rural_calculada = 50 
+        if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = 1000 # Valor por defecto
+
         # Conexión Aleph de Pasturas Satelitales
         aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
 
-        # --- INTERFAZ DINÁMICA ---
-        st.subheader("2. Actividades Agropecuarias y Humanas")
-        st.info(f"📍 **Conexión Aleph:** Datos censales (ICA) y poblacionales (DANE/Veredas) extraídos para **{nombre_seleccion}**.")
+        # --- INTERFAZ DINÁMICA: SECTOR RURAL Y AGROPECUARIO ---
+        st.subheader("2. Actividades Agropecuarias y Humanas (Rural)")
+        st.info(f"📍 **Conexión Aleph:** Datos censales (ICA) y poblacionales (DANE) extraídos para **{nombre_seleccion}**.")
 
-        opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"]
-        fuentes_sel = st.multiselect("Selecciona cargas a modelar:", opciones_fuentes, default=["Todas"])
-        fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"] if "Todas" in fuentes_sel else fuentes_sel
+        opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"]
+        fuentes_sel = st.multiselect("Selecciona cargas rurales a modelar:", opciones_fuentes, default=["Todas"])
+        fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"] if "Todas" in fuentes_sel else fuentes_sel
 
         esc_pasto, area_pastos = "PASTO_DEGRADADO", 0.0
-        v_leche, v_carne, cerdos, aves, humanos = 0, 0, 0, 0, 0
+        v_leche, v_carne, cerdos, aves, humanos_rurales = 0, 0, 0, 0, 0
         
-        if "Pasturas" in fuentes_activas:
-            esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
-            area_pastos = st.number_input("Ha de Pasturas (Modelo Satelital):", value=aleph_pastos, step=5.0)
+        c_r1, c_r2, c_r3 = st.columns(3)
+        with c_r1:
+            if "Pasturas" in fuentes_activas:
+                esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
+                area_pastos = st.number_input("Ha de Pasturas (Satélite):", value=aleph_pastos, step=5.0)
+            if "Bovinos" in fuentes_activas:
+                v_leche = st.number_input("Vacas Lecheras (ICA):", value=int(bovinos_reales * 0.4), step=10)
+        with c_r2:
+            if "Bovinos" in fuentes_activas:
+                v_carne = st.number_input("Ganado Carne/Cría (ICA):", value=int(bovinos_reales * 0.6), step=10)
+            if "Porcinos" in fuentes_activas:
+                cerdos = st.number_input("Cerdos Cabezas (ICA):", value=porcinos_reales, step=50)
+        with c_r3:
+            if "Avicultura" in fuentes_activas:
+                aves = st.number_input("Aves Galpones (ICA):", value=aves_reales, step=500)
+            if "Población Rural" in fuentes_activas:
+                humanos_rurales = st.number_input("Humanos Rurales (Censo):", value=int(poblacion_rural_calculada), step=10)
+
+        # --- INTERFAZ DINÁMICA: SECTOR URBANO Y MOVILIDAD ---
+        st.markdown("---")
+        st.subheader("3. Actividades Urbanas (Ciudades y Movilidad)")
+        
+        col_u1, col_u2, col_u3 = st.columns(3)
+        with col_u1:
+            humanos_urbanos = st.number_input("Población Urbana (Censo):", value=int(poblacion_urbana_calculada), step=100)
+        
+        with col_u2:
+            # Slider de densidad de vehículos adaptado a tu investigación
+            tasa_motorizacion = st.slider("Motorización (Vehículos / 1000 hab):", 
+                                          min_value=10, max_value=1500, value=333, step=10, 
+                                          help="Promedio LATAM: ~100. Medellín: ~333. Laureles: ~739. El Poblado: ~1250.")
+        with col_u3:
+            # Calcula el parque automotor estimado basado en la población urbana real y la tasa elegida
+            total_vehiculos = int((humanos_urbanos * tasa_motorizacion) / 1000)
+            vehiculos = st.number_input("Parque Automotor (Cálculo):", value=total_vehiculos, step=100)
             
-        if "Bovinos" in fuentes_activas:
-            v_leche = st.number_input("Vacas Lecheras (ICA):", value=int(bovinos_reales * 0.4), step=10)
-            v_carne = st.number_input("Ganado Carne/Cría (ICA):", value=int(bovinos_reales * 0.6), step=10)
-            
-        if "Porcinos" in fuentes_activas:
-            cerdos = st.number_input("Cerdos Cabezas (ICA):", value=porcinos_reales, step=50)
-            
-        if "Avicultura" in fuentes_activas:
-            aves = st.number_input("Aves Galpones (ICA):", value=aves_reales, step=500)
-            
-        if "Población Humana" in fuentes_activas:
-            humanos = st.number_input("Humanos Rurales (Censo):", value=int(poblacion_rural_calculada), step=10, help="Suma de la población rural/veredal estimada para el cálculo de aguas residuales in situ.")
-            
+        # Parámetro de cálculo para el modelo de Carbono
+        st.caption(f"🚗 *Nota Ambiental:* Se estima que este parque automotor genera aproximadamente **{(vehiculos * 4.5 * 365) / 1000:,.0f} toneladas de CO2e al año** (asumiendo 4.5 kg CO2e/vehículo/día).")
+
         st.markdown("---")
         st.subheader("3. Eventos en el Tiempo")
         tipo_evento = st.radio("Simular alteración de cobertura:", ["Ninguno", "Pérdida (Deforestación/Incendio)", "Ganancia (Restauración Activa)"], horizontal=True)
@@ -1070,6 +1098,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
