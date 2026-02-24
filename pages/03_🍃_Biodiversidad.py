@@ -836,42 +836,65 @@ with tab_afolu:
         
         st.markdown("---")
         st.subheader("2. Actividades Agropecuarias y Humanas")
-        # El truco para "Todas"
+
+        # --- IMPORTAR LOS DATOS CENTRALES ---
+        from modules.data_processor import cargar_censo_ica, normalizar_texto
+        
+        # Leemos el nombre del municipio que el usuario seleccionó en el sidebar
+        municipio_actual = normalizar_texto(nombre_seleccion) if 'nombre_seleccion' in locals() else ""
+        
+        # Extraemos los datos del ICA para este municipio específico
+        df_bov = cargar_censo_ica('bovino')
+        df_porc = cargar_censo_ica('porcino')
+        df_aves = cargar_censo_ica('aviar')
+        
+        bovinos_reales, porcinos_reales, aves_reales = 0, 0, 0
+        
+        if not df_bov.empty:
+            bovinos_reales = int(df_bov[df_bov['MUNICIPIO_NORM'] == municipio_actual]['TOTALBOVINOS'].sum())
+        if not df_porc.empty:
+            porcinos_reales = int(df_porc[df_porc['MUNICIPIO_NORM'] == municipio_actual]['TOTAL_CERDOS'].sum())
+        if not df_aves.empty:
+            col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
+            aves_reales = int(df_aves[df_aves['MUNICIPIO_NORM'] == municipio_actual][col_aves].sum())
+
+        st.markdown("---")
+        st.subheader("2. Actividades Agropecuarias y Humanas (Datos Oficiales)")
+        st.info(f"📍 **Conexión Aleph:** Datos censales extraídos automáticamente para **{nombre_seleccion}**.")
+
         opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"]
         fuentes_sel = st.multiselect("Selecciona cargas a modelar:", opciones_fuentes, default=["Todas"])
         
-        if "Todas" in fuentes_sel:
-            fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"]
-        else:
-            fuentes_activas = fuentes_sel
+        fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"] if "Todas" in fuentes_sel else fuentes_sel
 
-        # Variables en 0 por defecto
-        # Conexión Aleph Espacial: Extraer datos de memoria si están disponibles
-        aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
-        # Simularemos una proporción rápida si no tenemos conectada la base ICA aquí todavía
-        # (En la versión final, importaremos cargar_censo_bovino() aquí también)
-        
+        # Variables base
         esc_pasto, area_pastos = "PASTO_DEGRADADO", 0.0
         v_leche, v_carne, cerdos, aves, humanos = 0, 0, 0, 0, 0
         
+        # Conexión con el análisis satelital de coberturas
+        aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
+        
+        # --- INTERFAZ DINÁMICA ---
         if "Pasturas" in fuentes_activas:
-            esc_pasto = st.selectbox("Manejo de Pastos:", 
-                list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
-            area_pastos = st.number_input("Ha de Pasturas (Satélite):", value=aleph_pastos, step=5.0)
+            esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
+            area_pastos = st.number_input("Ha de Pasturas (Modelo Satelital):", value=aleph_pastos, step=5.0)
             
         if "Bovinos" in fuentes_activas:
-            st.info("💡 Consejo: Los datos pecuarios oficiales del ICA se cargan en la pestaña de Vertimientos.")
-            v_leche = st.number_input("Vacas Lecheras:", value=20, step=5)
-            v_carne = st.number_input("Ganado Carne/Cría:", value=50, step=10)
+            # Asumimos un 40% de lecheras y 60% cría/engorde del total oficial
+            v_leche = st.number_input("Vacas Lecheras (ICA):", value=int(bovinos_reales * 0.4), step=10)
+            v_carne = st.number_input("Ganado Carne/Cría (ICA):", value=int(bovinos_reales * 0.6), step=10)
             
         if "Porcinos" in fuentes_activas:
-            cerdos = st.number_input("Cerdos (Cabezas):", value=150, step=50)
+            cerdos = st.number_input("Cerdos Cabezas (ICA):", value=porcinos_reales, step=50)
             
         if "Avicultura" in fuentes_activas:
-            aves = st.number_input("Aves (Galpones):", value=2000, step=500)
+            aves = st.number_input("Aves Galpones (ICA):", value=aves_reales, step=500)
             
         if "Población Humana" in fuentes_activas:
-            humanos = st.number_input("Humanos (Rurales):", value=50, help="Vertimientos en pozos sépticos o a cielo abierto.")
+            # Extraemos la población de la memoria global si ya se calculó en Vertimientos
+            pob_rural_aleph = float(st.session_state.get('aleph_pob_rural', 50.0))
+            humanos = st.number_input("Humanos Rurales:", value=pob_rural_aleph, help="Vertimientos en pozos sépticos o a cielo abierto.")
+            
 
         st.markdown("---")
         st.subheader("3. Eventos en el Tiempo")
@@ -1007,6 +1030,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
