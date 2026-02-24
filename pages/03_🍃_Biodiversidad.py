@@ -977,14 +977,31 @@ with tab_afolu:
                 causa_ev = st.selectbox("Causa:", list(carbon_calculator.CAUSAS_PERDIDA.keys()))
                 
     with col_a2:
-        # CÁLCULOS REACTIVOS
-        df_bosque_af = carbon_calculator.calcular_proyeccion_captura(area_af, horizonte_af, estrategia_af)
-        df_pastos_af = carbon_calculator.calcular_captura_pasturas(area_pastos, horizonte_af, esc_pasto)
-        df_fuentes_af = carbon_calculator.calcular_emisiones_fuentes_detallado(v_leche, v_carne, cerdos, aves, humanos, horizonte_af)
+
+        # =====================================================================
+        # CÁLCULOS REACTIVOS (Con integración de Vehículos)
+        # =====================================================================
+        df_bosque_af = carbon_calculator.calcular_proyeccion_captura(area_af, estrategia_af, horizonte_af)
+        df_pastos_af = carbon_calculator.calcular_captura_pasturas(area_pastos, esc_pasto, horizonte_af)
         
-        t_ev = "PERDIDA" if "Pérdida" in tipo_evento else "GANANCIA" if "Ganancia" in tipo_evento else "NADA"
-        df_evento_af = carbon_calculator.calcular_evento_cambio(area_ev if t_ev != "NADA" else 0, t_ev, estado_ev, causa_ev, anio_ev, horizonte_af)
+        # 1. Consolidar humanos (Rurales + Urbanos) para la función original
+        humanos_totales = humanos_rurales + humanos_urbanos
         
+        # 2. Calcular emisiones pecuarias y humanas
+        df_fuentes_af = carbon_calculator.calcular_emisiones_fuentes_detallado(v_leche, v_carne, cerdos, aves, humanos_totales, horizonte_af)
+        
+        # 3. Inyectar las emisiones del Parque Automotor directamente en el DataFrame
+        # Factor: 4.5 kg CO2e / vehículo / día -> a toneladas por año
+        emision_anual_vehiculos = (vehiculos * 4.5 * 365) / 1000.0
+        
+        if 'Total_Emisiones' in df_fuentes_af.columns:
+            df_fuentes_af['Emision_Vehiculos'] = emision_anual_vehiculos
+            df_fuentes_af['Total_Emisiones'] += emision_anual_vehiculos
+        
+        # Cálculo de eventos de pérdida/ganancia
+        t_ev = "PERDIDA" if "Pérdida" in tipo_evento else "GANANCIA"
+        df_evento_af = carbon_calculator.calcular_evento_cambio(area_evento, t_ev, anio_evento, horizonte_af)
+        # =====================================================================        
         df_bal = carbon_calculator.calcular_balance_territorial(df_bosque_af, df_pastos_af, df_fuentes_af, df_evento_af)
         
         neto_final = df_bal['Balance_Neto_tCO2e'].iloc[-1]
@@ -1098,6 +1115,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
