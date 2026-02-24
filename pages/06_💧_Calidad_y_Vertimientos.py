@@ -619,7 +619,7 @@ with tab_mitigacion:
         st.plotly_chart(fig_esc, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# TAB 5: MAPA DE CALOR (VISOR ESPACIAL SINCRONIZADO)
+# TAB 5: MAPA DE CALOR (VISOR ESPACIAL CON FONDO MAPBOX)
 # ------------------------------------------------------------------------------
 with tab_mapa:
     st.header("🗺️ Mapa de Calor y Análisis Espacial")
@@ -663,7 +663,7 @@ with tab_mapa:
             st.plotly_chart(fig_tree, use_container_width=True)
             
     else:
-        st.caption("Mapa de densidad térmica 2D (Resuelve automáticamente conflictos entre WGS84 y MAGNA-SIRGAS).")
+        st.caption("Mapa de densidad sobre cartografía base (Convierte MAGNA-SIRGAS a WGS84 en tiempo real).")
         df_map = df_concesiones.copy() if "Concesión" in var_mapa else df_vertimientos.copy()
         
         if not df_map.empty:
@@ -680,22 +680,43 @@ with tab_mapa:
             df_map[col_z] = pd.to_numeric(df_map[col_z], errors='coerce')
             df_map = df_map.dropna(subset=['coordenada_x', 'coordenada_y', col_z])
             
-            # AUTO-DETECTOR DE COORDENADAS (WGS84 vs MAGNA)
             mask_magna = (df_map['coordenada_x'] > 100000) & (df_map['coordenada_y'] > 100000)
             mask_wgs84 = (df_map['coordenada_x'] < 0) & (df_map['coordenada_x'] > -85) & (df_map['coordenada_y'] > -5)
             
-            if mask_magna.sum() > mask_wgs84.sum():
-                df_map = df_map[mask_magna]
-                sistema_coords = "MAGNA-SIRGAS"
-            else:
-                df_map = df_map[mask_wgs84]
-                sistema_coords = "Geográficas WGS84"
+            df_plot = df_map[mask_magna | mask_wgs84].copy()
             
-            if not df_map.empty and df_map[col_z].sum() > 0:
-                st.success(f"Proyección espacial detectada para este territorio: **{sistema_coords}**")
-                fig_dens = px.density_contour(df_map, x="coordenada_x", y="coordenada_y", z=col_z, histfunc="sum", title=f"Densidad Espacial de Caudales (L/s)")
-                fig_dens.update_traces(contours_coloring="fill", colorscale="Viridis")
-                st.plotly_chart(fig_dens, use_container_width=True)
+            if not df_plot.empty and df_plot[col_z].sum() > 0:
+                try:
+                    import pyproj
+                    # EPSG:3116 es el origen Magna-Sirgas central (muy común en Antioquia)
+                    transformer = pyproj.Transformer.from_crs("epsg:3116", "epsg:4326", always_xy=True)
+                    
+                    def to_wgs84(row):
+                        if row['coordenada_x'] > 100000: # Es plana
+                            lon, lat = transformer.transform(row['coordenada_x'], row['coordenada_y'])
+                            return pd.Series({'lon': lon, 'lat': lat})
+                        else: # Ya es WGS84
+                            return pd.Series({'lon': row['coordenada_x'], 'lat': row['coordenada_y']})
+                            
+                    with st.spinner("Proyectando coordenadas a satélite..."):
+                        coords = df_plot.apply(to_wgs84, axis=1)
+                        df_plot['lon'] = coords['lon']
+                        df_plot['lat'] = coords['lat']
+                        # Limpiar errores de proyección
+                        df_plot = df_plot[(df_plot['lon'] >= -85) & (df_plot['lon'] <= -60) & (df_plot['lat'] >= -5) & (df_plot['lat'] <= 15)]
+                    
+                    fig_dens = px.density_mapbox(df_plot, lat='lat', lon='lon', z=col_z, radius=12,
+                                                 center=dict(lat=df_plot['lat'].mean(), lon=df_plot['lon'].mean()),
+                                                 zoom=8, mapbox_style="carto-positron", 
+                                                 title=f"Densidad Espacial de Caudales (L/s)",
+                                                 color_continuous_scale="Viridis")
+                    st.plotly_chart(fig_dens, use_container_width=True)
+                    
+                except ImportError:
+                    st.error("💡 Para habilitar el mapa de fondo real, debes instalar 'pyproj'. Usando mapa base temporal.")
+                    fig_dens = px.density_contour(df_plot, x="coordenada_x", y="coordenada_y", z=col_z, histfunc="sum", title="Densidad (Sin mapa de fondo)")
+                    fig_dens.update_traces(contours_coloring="fill", colorscale="Viridis")
+                    st.plotly_chart(fig_dens, use_container_width=True)
             else:
                 st.warning("No hay suficientes coordenadas válidas para generar un mapa en esta jurisdicción.")
         else:
