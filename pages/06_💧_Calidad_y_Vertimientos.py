@@ -265,8 +265,7 @@ def proyectar_curva(p_base, anios_array, anio_base, modelo, r, k):
 # 🎛️ PANEL MAESTRO DE VARIABLES (DESPLEGABLE Y DINÁMICO)
 # ==============================================================================
 with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", expanded=True):
-    nivel_sel_visual = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Jurisdicción Ambiental (CAR)", "Departamental", "Regional", "Municipal", "Veredal"], key="sel_nivel_maestro")
-    lugar_sel = "N/A"
+    nivel_sel_visual = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Jurisdicción Ambiental (CAR)", "Departamental", "Regional", "Municipal", "Cuenca Hidrográfica", "Veredal"], key="sel_nivel_maestro")
     nivel_sel_interno = nivel_sel_visual
 
     if nivel_sel_visual == "Nacional (Colombia)": lugar_sel = "Colombia"
@@ -302,6 +301,10 @@ with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", exp
             mpios = sorted([str(x) for x in df_territorio['municipio'].dropna().unique() if str(x).strip() != ''])
             lugar_sel = st.selectbox("Municipio (Antioquia):", mpios, key="sel_mpio")
         else: st.warning("No se detectó la tabla territorial."); lugar_sel = "N/A"
+
+    elif nivel_sel_visual == "Cuenca Hidrográfica":
+        st.warning("🚧 Módulo en construcción: Requiere archivo 'cuencas_mpios_proporcion.csv' con el % de área municipal en cada cuenca.")
+        lugar_sel = "N/A"    
             
     elif nivel_sel_visual == "Veredal" and not df_veredas.empty:
         col_f1, col_f2 = st.columns(2)
@@ -615,35 +618,40 @@ with tab_dilucion:
         st.plotly_chart(fig_gauge, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# TAB 4: ESCENARIOS DE MITIGACIÓN
+# TAB 4: ESCENARIOS DE MITIGACIÓN (HOLÍSTICOS)
 # ------------------------------------------------------------------------------
 with tab_mitigacion:
-    st.header("🛡️ Simulador de Escenarios Ambientales (CuencaVerde)")
-    st.markdown("Modifica las variables y observa el impacto ambiental del proyecto sobre el territorio.")
+    st.header("🛡️ Simulador de Escenarios de Intervención (CuencaVerde)")
+    st.markdown("Combina infraestructura gris (PTAR) con soluciones basadas en la naturaleza y agroecología.")
     
+    st.subheader("A. Saneamiento Urbano")
     col_e1, col_e2, col_e3 = st.columns(3)
-    with col_e1:
-        st.subheader("1. Fugas de Redes")
-        esc_perdidas = st.slider("Reducir pérdidas a (%):", 0.0, 100.0, float(max(0, perd_dom - 10)))
-    with col_e2:
-        st.subheader("2. Saneamiento")
-        esc_cobertura = st.slider("Aumentar Cobertura PTAR a (%):", 0.0, 100.0, float(min(100, cobertura_ptar + 30)))
-    with col_e3:
-        st.subheader("3. Tecnología PTAR")
-        esc_eficiencia = st.slider("Mejorar Remoción DBO a (%):", 0.0, 100.0, float(min(100, eficiencia_ptar + 10)))
+    with col_e1: esc_perdidas = st.slider("Fugas Acueducto (%):", 0.0, 100.0, float(max(0, perd_dom - 10)))
+    with col_e2: esc_cobertura = st.slider("Cobertura PTAR Urbana (%):", 0.0, 100.0, float(min(100, cobertura_ptar + 30)))
+    with col_e3: esc_eficiencia = st.slider("Remoción DBO PTAR (%):", 0.0, 100.0, float(min(100, eficiencia_ptar + 10)))
         
+    st.subheader("B. Intervención Rural y Agroindustrial")
+    col_e4, col_e5, col_e6 = st.columns(3)
+    with col_e4: esc_biodigestores = st.slider("Cerdos con Biodigestor (%):", 0.0, 100.0, float(min(100, tratamiento_porc + 40)))
+    with col_e5: esc_gallinaza = st.slider("Manejo de Gallinaza (%):", 0.0, 100.0, float(min(100, tratamiento_aves + 20)))
+    with col_e6: esc_suero = st.slider("Suero Recuperado (Economía Circular) %:", 0.0, 100.0, 50.0)
+
     st.divider()
     
+    # Cálculos del nuevo escenario
     q_efectivo_esc = q_necesario_dom / (1 - (esc_perdidas/100)) if esc_perdidas < 100 else q_necesario_dom
-    dbo_urbana_esc = pob_urbana * 0.050 * (1 - (esc_cobertura/100 * esc_eficiencia/100))
     
-    # ⚠️ CORRECCIÓN: Actualizado con las variables pecuarias (bovinos y porcinos)
-    carga_total_esc = dbo_urbana_esc + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_agricola
+    dbo_urbana_esc = pob_urbana * 0.050 * (1 - (esc_cobertura/100 * esc_eficiencia/100))
+    dbo_porcinos_esc = cabezas_porcinos * (0.150 * (1 - (esc_biodigestores/100)))
+    dbo_aves_esc = cabezas_aves * (0.015 * (1 - (esc_gallinaza/100)))
+    dbo_suero_esc = vol_suero * (1 - (esc_suero/100)) * 0.035
+    
+    carga_total_esc = dbo_urbana_esc + dbo_rural + dbo_suero_esc + dbo_bovinos + dbo_porcinos_esc + dbo_aves_esc + dbo_agricola
     
     col_er1, col_er2 = st.columns([1, 1.5])
     with col_er1:
-        st.metric("Agua de la fuente extraída (Bruta)", f"{q_efectivo_esc:.1f} L/s", delta=f"{q_efectivo_esc - q_efectivo_dom:.1f} L/s (Agua conservada en río)", delta_color="inverse")
-        st.metric("Materia Orgánica al Río", f"{carga_total_esc:.1f} kg/día", delta=f"{carga_total_esc - carga_total_dbo:.1f} kg/día (Contaminación evitada)", delta_color="inverse")
+        st.metric("Agua extraída de la fuente", f"{q_efectivo_esc:,.1f} L/s", delta=f"{q_efectivo_esc - q_efectivo_dom:,.1f} L/s (Agua conservada)", delta_color="inverse")
+        st.metric("Materia Orgánica Total al Río", f"{carga_total_esc:,.1f} kg/día", delta=f"{carga_total_esc - carga_total_dbo:,.1f} kg/día (Contaminación evitada)", delta_color="inverse")
     
     with col_er2:
         df_esc = pd.DataFrame({
@@ -651,9 +659,9 @@ with tab_mitigacion:
             "Variable": ["Extracción de Agua (L/s)", "Carga DBO (kg/día)", "Extracción de Agua (L/s)", "Carga DBO (kg/día)"],
             "Valor": [q_efectivo_dom, carga_total_dbo, q_efectivo_esc, carga_total_esc]
         })
-        fig_esc = px.bar(df_esc, x="Variable", y="Valor", color="Escenario", barmode="group", title="Impacto del Proyecto Ambiental", color_discrete_sequence=["#e74c3c", "#2ecc71"])
+        fig_esc = px.bar(df_esc, x="Variable", y="Valor", color="Escenario", barmode="group", title="Impacto Integral del Proyecto", color_discrete_sequence=["#e74c3c", "#2ecc71"])
         st.plotly_chart(fig_esc, use_container_width=True)
-
+        
 # ------------------------------------------------------------------------------
 # TAB 5: MAPA DE CALOR (VISOR ESPACIAL CON FONDO MAPBOX)
 # ------------------------------------------------------------------------------
