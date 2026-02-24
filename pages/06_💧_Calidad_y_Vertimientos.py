@@ -435,10 +435,20 @@ with tab_demanda:
     else: st.warning(f"⚠️ El territorio **{lugar_sel}** no registra datos formales.")
 
 # ------------------------------------------------------------------------------
-# TAB 2: INVENTARIO DE CARGAS (CON CENSO OFICIAL ICA 2023)
+# TAB 2: INVENTARIO DE CARGAS (CONECTADO AL ALEPH)
 # ------------------------------------------------------------------------------
 with tab_fuentes:
     st.header(f"Inventario de Cargas Contaminantes ({anio_analisis})")
+    
+    # Lógica de recepción del Aleph (Sincronización con Biodiversidad)
+    aleph_activo = 'aleph_ha_pastos' in st.session_state and st.session_state['aleph_territorio_origen'] == lugar_sel
+    
+    if aleph_activo:
+        st.info(f"🌐 **Conexión Aleph:** Las áreas agrícolas y de pastos para **{lugar_sel}** han sido extraídas automáticamente del modelo satelital de la página de Biodiversidad.")
+    
+    # Valores por defecto. Si el Aleph está activo, usa el satélite, si no, usa el valor manual
+    val_def_papa = float(st.session_state.get('aleph_ha_agricola', 50.0)) if aleph_activo else 50.0
+    val_def_pastos = float(st.session_state.get('aleph_ha_pastos', 200.0)) if aleph_activo else 200.0
     
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -450,8 +460,9 @@ with tab_fuentes:
         vol_suero = st.number_input("Sueros Lácteos Vertidos (L/día):", min_value=0, value=2000, step=500)
     with col3:
         st.markdown("### 🍓 Agricultura")
-        ha_papa = st.number_input("Cultivos Limpios [Ha]:", min_value=0.0, value=50.0, step=5.0)
-        ha_pastos = st.number_input("Pastos Fertilizados [Ha]:", min_value=0.0, value=200.0, step=10.0)
+        # Si el Aleph está activo, las cajas se desactivan (disabled=True) para priorizar el dato espacial
+        ha_papa = st.number_input("Cultivos / Mosaico [Ha]:", min_value=0.0, value=val_def_papa, step=5.0, disabled=aleph_activo)
+        ha_pastos = st.number_input("Pastos [Ha]:", min_value=0.0, value=val_def_pastos, step=10.0, disabled=aleph_activo)
 
     st.markdown("---")
     st.markdown(f"### 🐄🚜 Censo Pecuario ICA (2023) para: **{lugar_sel}**")
