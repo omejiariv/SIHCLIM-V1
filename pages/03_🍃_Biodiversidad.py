@@ -489,12 +489,18 @@ with tab_taxonomia:
                 st.warning("Datos taxonómicos insuficientes.")
         
         with c2:
-            st.markdown("##### Especies Amenazadas")
-            if not threatened.empty:
-                st.warning(f"⚠️ {n_threat} especies en riesgo.")
-                st.dataframe(threatened[['Nombre Científico', 'Nombre Común', 'Amenaza IUCN']].drop_duplicates(), use_container_width=True, hide_index=True)
-            else:
-                st.success("✅ No se detectaron especies en categorías críticas (CR, EN, VU) en esta zona.")
+        st.markdown("##### Especies Amenazadas")
+        if not threatened.empty:
+            st.warning(f"⚠️ {n_threat} especies en riesgo.")
+            
+            # Escudo protector contra columnas faltantes en GBIF
+            cols_mostrar = ['Nombre Científico', 'Amenaza IUCN']
+            if 'Nombre Común' in threatened.columns:
+                cols_mostrar.insert(1, 'Nombre Común') # Lo añade solo si existe
+                
+            st.dataframe(threatened[cols_mostrar].drop_duplicates(), use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ No se detectaron especies en categorías críticas (CR, EN, VU) en esta zona.")
         
         st.markdown("##### Detalle de Registros")
         st.dataframe(gdf_bio.drop(columns='geometry', errors='ignore'), use_container_width=True)
@@ -1051,6 +1057,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
