@@ -150,8 +150,8 @@ def cargar_vertimientos():
 
 @st.cache_data
 def cargar_censo_bovino():
-    ruta_xlsx = "data/Censo_ICA_Bovinos_2023.xlsx"
-    ruta_csv = "data/Censo_ICA_Bovinos_2023.csv"
+    ruta_xlsx = "data/censos_ICA/Censo_ICA_Bovinos_2023.xlsx"
+    ruta_csv = "data/censos_ICA/Censo_ICA_Bovinos_2023.csv"
     df = pd.DataFrame()
     if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
     elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
@@ -162,8 +162,20 @@ def cargar_censo_bovino():
 
 @st.cache_data
 def cargar_censo_porcino():
-    ruta_xlsx = "data/Censo_ICA_Porcinos_2023.xlsx"
-    ruta_csv = "data/Censo_ICA_Porcinos_2023.csv"
+    ruta_xlsx = "data/censos_ICA/Censo_ICA_Porcinos_2023.xlsx"
+    ruta_csv = "data/censos_ICA/Censo_ICA_Porcinos_2023.csv"
+    df = pd.DataFrame()
+    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
+    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
+    if not df.empty:
+        df.columns = df.columns.str.upper().str.replace(' ', '_').str.strip()
+        df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
+    return df
+
+@st.cache_data
+def cargar_censo_aviar():
+    ruta_xlsx = "data/censos_ICA/Censo_ICA_Aves_2025.xlsx"
+    ruta_csv = "data/censos_ICA/Censo_ICA_Aves_2025.csv"
     df = pd.DataFrame()
     if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
     elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
@@ -191,14 +203,14 @@ def cargar_territorio_maestro():
         return df
     return pd.DataFrame()
 
-# Asegúrate de que tu bloque de llamadas quede así:
 df_mpios = cargar_municipios()
 df_veredas = cargar_veredas()
 df_concesiones = cargar_concesiones()
 df_vertimientos = cargar_vertimientos()
 df_territorio = cargar_territorio_maestro()
-df_bovinos = cargar_censo_bovino()   # 👈 Censo ICA integrado
-df_porcinos = cargar_censo_porcino() # 👈 Censo ICA integrado
+df_bovinos = cargar_censo_bovino()
+df_porcinos = cargar_censo_porcino()
+df_aves = cargar_censo_aviar() # 👈 ¡Nuevo integrante!
 
 # ==============================================================================
 # MOTOR MATEMÁTICO POBLACIONAL (MEJORADO CON CRUCE TERRITORIAL)
@@ -324,17 +336,15 @@ with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", exp
 
 st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{lugar_sel} ({nivel_sel_visual})** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.**")
 
-# ==============================================================================
-# PESTAÑAS
-# ==============================================================================
-tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena, tab_extern = st.tabs([
+tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena, tab_extern, tab_lactosuero = st.tabs([
     "🚰 2. Demanda y Eficiencia",
     "🏭 3. Inventario de Cargas", 
     "🌊 4. Asimilación y Dilución", 
     "🛡️ 5. Escenarios de Mitigación",
     "🗺️ 6. Mapa de Calor (Visor)",
     "📊 7. Explorador Ambiental",
-    "⚠️ 8. Externalidades (NUEVO)"
+    "⚠️ 8. Externalidades",
+    "🥛 9. Economía Circular" # 👈 La nueva pestaña
 ])
 
 anios_evo = np.arange(anio_analisis, anio_analisis + 31)
@@ -484,36 +494,43 @@ with tab_fuentes:
     if not mpios_activos: mpios_activos = [lugar_n]
 
     # EXTRACCIÓN DE BASES DE DATOS ICA
-    total_bovinos, total_porcinos, default_trat_porc = 0, 0, 20
-    if not df_bovinos.empty:
-        total_bovinos = int(df_bovinos[df_bovinos['MUNICIPIO_NORM'].isin(mpios_activos)]['TOTALBOVINOS'].sum())
+# EXTRACCIÓN DE BASES DE DATOS ICA
+    total_bovinos, total_porcinos, total_aves, default_trat_porc = 0, 0, 0, 20
+    if not df_bovinos.empty: total_bovinos = int(df_bovinos[df_bovinos['MUNICIPIO_NORM'].isin(mpios_activos)]['TOTALBOVINOS'].sum())
     
     if not df_porcinos.empty:
         df_p_f = df_porcinos[df_porcinos['MUNICIPIO_NORM'].isin(mpios_activos)]
         if not df_p_f.empty:
             total_porcinos = int(df_p_f['TOTAL_CERDOS'].sum())
-            # Auto-calcular eficiencia según el nivel de tecnificación del municipio
-            tecnificados = df_p_f['TOTAL_PORCINOS__TECNIFICADA'].sum() + df_p_f['TOTAL_PORCINOS__COMERCIAL_INDUSTRIAL_-_2021'].sum()
-            if total_porcinos > 0:
-                default_trat_porc = int((tecnificados / total_porcinos) * 85) # Si todos son tecnificados, asume 85% de remoción
-    
-    # Fallback de seguridad si el municipio no está en el censo
+            tecnificados = df_p_f['TOTAL_PORCINOS__TECNIFICADA'].sum() + df_p_f['TOTAL_PORCINOS__COMERCIAL_INDUSTRIAL_-_2021'].sum() if 'TOTAL_PORCINOS__TECNIFICADA' in df_p_f.columns else 0
+            if total_porcinos > 0: default_trat_porc = int((tecnificados / total_porcinos) * 85)
+            
+    if not df_aves.empty:
+        col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
+        if col_aves in df_aves.columns:
+            total_aves = int(df_aves[df_aves['MUNICIPIO_NORM'].isin(mpios_activos)][col_aves].sum())
+
     if total_bovinos == 0: total_bovinos = int(pob_rural * 1.5)
     if total_porcinos == 0: total_porcinos = int(pob_rural * 0.8)
 
-    col_pec1, col_pec2 = st.columns(2)
+    col_pec1, col_pec2, col_pec3 = st.columns(3)
     with col_pec1:
-        st.subheader("Sector Bovino Oficial")
-        cabezas_bovinos = st.number_input("Inventario Bovino (Cabezas):", min_value=0, value=total_bovinos, step=100)
-        sistema_bovino = st.radio("Sistema de Producción Bovino:", ["Extensivo (A campo abierto)", "Estabulado (Confinado)"])
+        st.subheader("Sector Bovino")
+        cabezas_bovinos = st.number_input("Bovinos (Cabezas):", min_value=0, value=total_bovinos, step=100)
+        sistema_bovino = st.radio("Sistema Bovino:", ["Extensivo", "Estabulado"])
         factor_dbo_bov = 0.8 if "Estabulado" in sistema_bovino else 0.15 
         
     with col_pec2:
-        st.subheader("Sector Porcícola Oficial")
-        cabezas_porcinos = st.number_input("Inventario Porcino (Cabezas):", min_value=0, value=total_porcinos, step=100)
-        st.caption("La eficiencia se ha autocalculado según la proporción de granjas Tecnificadas vs Traspatio del ICA.")
-        tratamiento_porc = st.slider("Eficiencia Tratamiento Porcícola (Biodigestores/Estercoleros) %:", 0, 100, default_trat_porc)
+        st.subheader("Sector Porcícola")
+        cabezas_porcinos = st.number_input("Porcinos (Cabezas):", min_value=0, value=total_porcinos, step=100)
+        tratamiento_porc = st.slider("Eficiencia Biodigestor %:", 0, 100, default_trat_porc)
         factor_dbo_porc = 0.150 * (1 - (tratamiento_porc/100))
+        
+    with col_pec3:
+        st.subheader("Sector Avícola")
+        cabezas_aves = st.number_input("Aves (Galpones):", min_value=0, value=total_aves, step=1000)
+        tratamiento_aves = st.slider("Manejo Gallinaza %:", 0, 100, 75)
+        factor_dbo_aves = 0.015 * (1 - (tratamiento_aves/100)) # Factor aprox 15g DBO/ave
 
     dbo_urbana = pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100)) 
     dbo_rural = pob_rural * 0.040 
@@ -521,15 +538,17 @@ with tab_fuentes:
     dbo_agricola = (ha_papa + ha_pastos) * 0.8 
     dbo_bovinos = cabezas_bovinos * factor_dbo_bov
     dbo_porcinos = cabezas_porcinos * factor_dbo_porc
-    carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_agricola
+    dbo_aves = cabezas_aves * factor_dbo_aves
+    
+    carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
     
     coef_retorno = 0.85
     q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400) + ((cabezas_porcinos * 40)/86400)
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
 
     df_cargas = pd.DataFrame({
-        "Fuente": ["Pob. Urbana", "Pob. Rural", "Agroindustria (Lácteos)", "Agricultura", "Bovinos", "Porcinos"], 
-        "DBO_kg_dia": [dbo_urbana, dbo_rural, dbo_suero, dbo_agricola, dbo_bovinos, dbo_porcinos]
+        "Fuente": ["Urbana", "Rural", "Agroindustria", "Agricultura", "Bovinos", "Porcinos", "Avicultura"], 
+        "DBO_kg_dia": [dbo_urbana, dbo_rural, dbo_suero, dbo_agricola, dbo_bovinos, dbo_porcinos, dbo_aves]
     })
 
     col_g1, col_g2 = st.columns(2)
@@ -796,6 +815,10 @@ with tab_extern:
     n_porc = cabezas_porcinos * 0.08 * (1 - (tratamiento_porc/100 * 0.5))
     p_porc = cabezas_porcinos * 0.02 * (1 - (tratamiento_porc/100 * 0.4))
     k_porc = cabezas_porcinos * 0.05 * (1 - (tratamiento_porc/100 * 0.2))
+
+    n_aves = cabezas_aves * 0.0015 * (1 - (tratamiento_aves/100 * 0.6))
+    p_aves = cabezas_aves * 0.0005 * (1 - (tratamiento_aves/100 * 0.6))
+    k_aves = cabezas_aves * 0.0006 * (1 - (tratamiento_aves/100 * 0.6))    
     
     n_agr = (ha_papa * 1.5) + (ha_pastos * 0.5)
     p_agr = (ha_papa * 0.3) + (ha_pastos * 0.1)
@@ -814,12 +837,15 @@ with tab_extern:
         co2e_bov = (cabezas_bovinos * 0.16 * 28 * 365) / 1000 # ~60kg CH4/vaca/año
         # Porcinos: Manejo de estiércol (Lagunas anaerobias generan mucho CH4)
         co2e_porc = (dbo_porcinos_ext * 0.25 * 28 * 365) / 1000
+        # Aves: Manejo de Gallinaza (Compost)
+        co2e_aves = (dbo_aves * 0.25 * 28 * 365) / 1000
+        
         # Agrícola: Emisiones de N2O por fertilización nitrogenada
         co2e_agr = (n_agr * 0.01 * 265 * 365) / 1000 
         
         df_co2e = pd.DataFrame({
-            "Sector": ["Saneamiento Doméstico", "Ganadería Bovina", "Porcicultura", "Agricultura"],
-            "tCO2e_año": [co2e_dom, co2e_bov, co2e_porc, co2e_agr]
+        "Sector": ["Saneamiento Doméstico", "Ganadería Bovina", "Porcicultura", "Avicultura", "Agricultura"],
+        "tCO2e_año": [co2e_dom, co2e_bov, co2e_porc, co2e_aves, co2e_agr]
         })
         
         st.metric("Emisiones Totales del Territorio", f"{df_co2e['tCO2e_año'].sum():,.0f} Ton CO2e/año", help="Toneladas de Dióxido de Carbono equivalente al año.")
@@ -845,12 +871,12 @@ with tab_extern:
             {"Sector": "Agrícola", "Nutriente": "Nitrógeno (N)", "Carga_kg_dia": n_agr},
             {"Sector": "Agrícola", "Nutriente": "Fósforo (P)", "Carga_kg_dia": p_agr},
             {"Sector": "Agrícola", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_agr}
+            {"Sector": "Avicultura", "Nutriente": "Nitrógeno (N)", "Carga_kg_dia": n_aves},
+            {"Sector": "Avicultura", "Nutriente": "Fósforo (P)", "Carga_kg_dia": p_aves},
+            {"Sector": "Avicultura", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_aves},
         ])
-        
-        fig_nutr = px.bar(df_nutrientes, x="Nutriente", y="Carga_kg_dia", color="Sector", barmode="stack", title="Aporte Sectorial de Nutrientes (kg/día)")
-        st.plotly_chart(fig_nutr, use_container_width=True)
-        
-        n_total = n_dom + n_bov + n_porc + n_agr
+    
+        n_total = n_dom + n_bov + n_porc + n_aves + n_agr
         if n_total > 1000:
             st.error(f"🔴 **Riesgo Severo de Eutrofización:** Carga de Nitrógeno crítica ({n_total:,.0f} kg/día). Alta probabilidad de blooms algales e hipoxia en el cuerpo receptor.")
         elif n_total > 300:
@@ -876,3 +902,64 @@ with tab_extern:
     with col_t2:
         csv_ext = df_pivot.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Descargar Reporte de Externalidades (CSV)", data=csv_ext, file_name=f"Externalidades_NPK_CO2_{lugar_sel}.csv", mime='text/csv')
+
+# ------------------------------------------------------------------------------
+# TAB 9: ECONOMÍA CIRCULAR (VALORIZACIÓN DE LACTOSUERO)
+# ------------------------------------------------------------------------------
+with tab_lactosuero:
+    st.header("🥛 Economía Circular: Valorización Industrial de Lactosueros")
+    st.markdown(f"Evaluación del potencial tecnológico y mitigación ambiental para la cuenca lechera de **{lugar_sel}**.")
+    
+    # Extraer específicamente las vacas en edad de producción del censo ICA
+    vacas_adultas = 0
+    if not df_bovinos.empty and 'HEMBRAS>3AÑOS' in df_bovinos.columns:
+        vacas_adultas = int(df_bovinos[df_bovinos['MUNICIPIO_NORM'].isin(mpios_activos)]['HEMBRAS>3AÑOS'].sum())
+    if vacas_adultas == 0: vacas_adultas = int(cabezas_bovinos * 0.45) # Estimado si no hay datos
+    
+    col_l1, col_l2 = st.columns([1, 1.3])
+    with col_l1:
+        st.subheader("⚙️ Parámetros de la Industria Quesera")
+        vacas_ordeno = st.number_input("Vacas en Ordeño (Hembras > 3 años - ICA):", min_value=0, value=int(vacas_adultas * 0.6), step=100, help="Asume un 60% de hembras adultas en lactancia activa.")
+        litros_vaca = st.slider("Producción Media (L/vaca/día):", 5.0, 30.0, 12.0, step=0.5)
+        pct_queso = st.slider("% de Leche destinada a Quesería Local:", 0.0, 100.0, 30.0, step=1.0)
+        
+        leche_total = vacas_ordeno * litros_vaca
+        leche_queso = leche_total * (pct_queso / 100.0)
+        # La regla de oro: 100L leche -> 10kg queso + 90L suero
+        suero_generado = leche_queso * 0.90 
+        
+        st.markdown("---")
+        st.metric("🥛 Leche Acopiada Estimada", f"{leche_total:,.0f} L/día")
+        st.metric("🧀 Leche hacia Queserías", f"{leche_queso:,.0f} L/día")
+        st.metric("⚠️ Lactosuero Generado", f"{suero_generado:,.0f} L/día", delta="Residuo Altamente Contaminante", delta_color="inverse")
+        
+        df_suero = pd.DataFrame({
+            "Destino": ["Queso (Producto Útil)", "Lactosuero (Residuo/Subproducto)"],
+            "Volumen (L/día)": [leche_queso * 0.10, suero_generado]
+        })
+        fig_suero = px.pie(df_suero, values="Volumen (L/día)", names="Destino", hole=0.5, color_discrete_sequence=["#f1c40f", "#e67e22"])
+        fig_suero.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(fig_suero, use_container_width=True)
+
+    with col_l2:
+        st.subheader("🔄 Potencial Tecnológico (Transformación a WPC)")
+        st.info("El suero contiene proteínas y lactosa de altísimo valor. Mediante plantas de **Ultrafiltración (UF)** y secado, se obtiene Proteína de Suero Concentrada (WPC) comercial.")
+        
+        # Rendimiento tecnológico: 1000 L de suero generan aprox. 6.5 a 7 kg de WPC al 80%
+        kg_proteina = (suero_generado / 1000) * 6.8 
+        precio_kg_wpc = 8.5 # Precio internacional USD/kg aprox
+        ingresos_anuales = (kg_proteina * precio_kg_wpc) * 365
+        
+        # Impacto Ambiental Evitado (El suero tiene aprox. 35,000 mg/L de DBO)
+        dbo_suero_evitada = suero_generado * 0.035 # kg/día
+        
+        c_res1, c_res2 = st.columns(2)
+        c_res1.metric("Proteína Extraíble (WPC 80%)", f"{kg_proteina:,.1f} kg/día")
+        c_res2.metric("Nuevos Ingresos Potenciales", f"${ingresos_anuales:,.0f} USD/año")
+        
+        st.success(f"🌱 **Impacto Hídrico Evitado:** Si este suero se procesa en lugar de arrojarse al campo o alcantarillado, el territorio evita la contaminación equivalente a **{dbo_suero_evitada:,.0f} kg de DBO/día**. ¡Esto equivale a las aguas residuales de una ciudad de {(dbo_suero_evitada/0.050):,.0f} habitantes!")
+        
+        # Integración con el Aleph: Sincroniza el dato si quieren usarlo en la pestaña de inventario
+        if st.button("🔌 Sincronizar suero con el Inventario General (Aleph)"):
+            st.session_state['aleph_vol_suero'] = float(suero_generado)
+            st.toast("✅ ¡Volumen de suero inyectado en la memoria global de Sihcli-Poter!")
