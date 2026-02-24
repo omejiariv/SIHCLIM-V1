@@ -846,21 +846,32 @@ with tab_afolu:
             fuentes_activas = fuentes_sel
 
         # Variables en 0 por defecto
+        # Conexión Aleph Espacial: Extraer datos de memoria si están disponibles
+        aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
+        # Simularemos una proporción rápida si no tenemos conectada la base ICA aquí todavía
+        # (En la versión final, importaremos cargar_censo_bovino() aquí también)
+        
         esc_pasto, area_pastos = "PASTO_DEGRADADO", 0.0
         v_leche, v_carne, cerdos, aves, humanos = 0, 0, 0, 0, 0
         
         if "Pasturas" in fuentes_activas:
-            esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
-            area_pastos = st.number_input("Ha de Pasturas:", value=50.0, step=5.0)
+            esc_pasto = st.selectbox("Manejo de Pastos:", 
+                list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
+            area_pastos = st.number_input("Ha de Pasturas (Satélite):", value=aleph_pastos, step=5.0)
+            
         if "Bovinos" in fuentes_activas:
+            st.info("💡 Consejo: Los datos pecuarios oficiales del ICA se cargan en la pestaña de Vertimientos.")
             v_leche = st.number_input("Vacas Lecheras:", value=20, step=5)
             v_carne = st.number_input("Ganado Carne/Cría:", value=50, step=10)
+            
         if "Porcinos" in fuentes_activas:
             cerdos = st.number_input("Cerdos (Cabezas):", value=150, step=50)
+            
         if "Avicultura" in fuentes_activas:
             aves = st.number_input("Aves (Galpones):", value=2000, step=500)
+            
         if "Población Humana" in fuentes_activas:
-            humanos = st.number_input("Humanos (Cargas Orgánicas):", value=50, help="Vertimientos en pozos sépticos o a cielo abierto.")
+            humanos = st.number_input("Humanos (Rurales):", value=50, help="Vertimientos en pozos sépticos o a cielo abierto.")
 
         st.markdown("---")
         st.subheader("3. Eventos en el Tiempo")
@@ -996,6 +1007,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
