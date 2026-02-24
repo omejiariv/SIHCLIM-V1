@@ -979,18 +979,20 @@ with tab_afolu:
     with col_a2:
 
         # =====================================================================
-        # CÁLCULOS REACTIVOS (Con integración de Vehículos)
+        # CÁLCULOS REACTIVOS (Blindados y con integración de Vehículos)
         # =====================================================================
-        df_bosque_af = carbon_calculator.calcular_proyeccion_captura(area_af, estrategia_af, horizonte_af)
-        df_pastos_af = carbon_calculator.calcular_captura_pasturas(area_pastos, esc_pasto, horizonte_af)
+        # 1. Blindaje de tipos de datos (Forzamos a números enteros)
+        h_anios = int(horizonte_af)
+        humanos_totales = int(humanos_rurales + humanos_urbanos)
+
+        # 2. Cálculos de captura forestal y pasturas
+        df_bosque_af = carbon_calculator.calcular_proyeccion_captura(area_af, estrategia_af, h_anios)
+        df_pastos_af = carbon_calculator.calcular_captura_pasturas(area_pastos, esc_pasto, h_anios)
         
-        # 1. Consolidar humanos (Rurales + Urbanos) para la función original
-        humanos_totales = humanos_rurales + humanos_urbanos
+        # 3. Calcular emisiones pecuarias y humanas conjuntas
+        df_fuentes_af = carbon_calculator.calcular_emisiones_fuentes_detallado(v_leche, v_carne, cerdos, aves, humanos_totales, h_anios)
         
-        # 2. Calcular emisiones pecuarias y humanas
-        df_fuentes_af = carbon_calculator.calcular_emisiones_fuentes_detallado(v_leche, v_carne, cerdos, aves, humanos_totales, horizonte_af)
-        
-        # 3. Inyectar las emisiones del Parque Automotor directamente en el DataFrame
+        # 4. Inyectar las emisiones del Parque Automotor directamente
         # Factor: 4.5 kg CO2e / vehículo / día -> a toneladas por año
         emision_anual_vehiculos = (vehiculos * 4.5 * 365) / 1000.0
         
@@ -998,9 +1000,11 @@ with tab_afolu:
             df_fuentes_af['Emision_Vehiculos'] = emision_anual_vehiculos
             df_fuentes_af['Total_Emisiones'] += emision_anual_vehiculos
         
-        # Cálculo de eventos de pérdida/ganancia
+        # 5. Cálculo de eventos de pérdida/ganancia
         t_ev = "PERDIDA" if "Pérdida" in tipo_evento else "GANANCIA"
-        df_evento_af = carbon_calculator.calcular_evento_cambio(area_evento, t_ev, anio_evento, horizonte_af)
+        anio_ev_int = int(anio_evento) if 'anio_evento' in locals() else 5 # Blindaje adicional
+        df_evento_af = carbon_calculator.calcular_evento_cambio(area_evento, t_ev, anio_ev_int, h_anios)
+
         # =====================================================================        
         df_bal = carbon_calculator.calcular_balance_territorial(df_bosque_af, df_pastos_af, df_fuentes_af, df_evento_af)
         
@@ -1115,6 +1119,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
