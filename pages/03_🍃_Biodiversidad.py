@@ -445,10 +445,18 @@ with tab_mapa:
 
         # D. PUNTOS DE BIODIVERSIDAD (VERDE)
         if not gdf_bio.empty:
+            # Blindaje inteligente contra columnas faltantes en GBIF
+            if 'Nombre Común' in gdf_bio.columns:
+                hover_text = gdf_bio['Nombre Común']
+            elif 'Nombre Científico' in gdf_bio.columns:
+                hover_text = gdf_bio['Nombre Científico']
+            else:
+                hover_text = "Registro Biológico"
+
             fig.add_trace(go.Scattermapbox(
-                lon=gdf_bio['lon'], lat=gdf_bio['lat'], 
-                mode='markers', marker=dict(size=7, color='rgb(0, 200, 100)'), 
-                text=gdf_bio['Nombre Común'], name='Biodiversidad'
+                lon=gdf_bio['lon'], lat=gdf_bio['lat'],
+                mode='markers', marker=dict(size=7, color='rgb(0, 200, 100)'),
+                text=hover_text, name='Biodiversidad'
             ))
 
         fig.update_layout(
@@ -995,6 +1003,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
