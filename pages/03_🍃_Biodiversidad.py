@@ -574,52 +574,45 @@ with tab_forestal:
         st.plotly_chart(fig_diag, use_container_width=True)
         
         # 2. Tabla de Datos (Pivot Table para mejor lectura)
+# 2. Tabla de Datos (Pivot Table para mejor lectura)
         with st.expander("Ver Tabla de Datos Detallada (Hectáreas)"):
             pivot_diag = df_diagnostico.pivot_table(
-                index='Cobertura', 
-                columns='Zona_Vida', 
-                values='Hectareas', 
-                aggfunc='sum', 
+                index='Cobertura',
+                columns='Zona_Vida',
+                values='Hectareas',
+                aggfunc='sum',
                 fill_value=0
             )
             # Formato numérico
             st.dataframe(pivot_diag.style.format("{:,.1f}"), use_container_width=True)
-        
-# =====================================================================
-        # 🌐 CONEXIÓN AL ALEPH (ST.SESSION_STATE)
-        # Sincroniza las áreas calculadas por el satélite con la Pestaña de Vertimientos
+            
+        st.divider()
+
+        # =====================================================================
+        # 🌐 CONEXIÓN AL ALEPH (ST.SESSION_STATE) - AHORA VISIBLE Y BLINDADO
         # =====================================================================
         try:
             area_agricola_total = 0.0
             area_urbana_total = 0.0
             area_pastos_total = 0.0
             
-            # Iteramos sobre el DataFrame df_diagnostico que tiene el cálculo exacto
             for index, row in df_diagnostico.iterrows():
                 cov_id = int(row['COV_ID'])
                 hectareas = float(row['Hectareas'])
                 
-                # Clasificación basada en tu land_cover.py:
-                # 5: Cultivos transitorios, 6: Cultivos permanentes, 8: Áreas Agrícolas Heterogéneas
-                if cov_id in [5, 6, 8]:
-                    area_agricola_total += hectareas
-                # 7: Pastos, 10: Vegetación Herbácea
-                elif cov_id in [7, 10]:
-                    area_pastos_total += hectareas
-                # 1: Urbano, 2: Industrial, 3: Degradadas, 4: Verdes artificializadas
-                elif cov_id in [1, 2, 3, 4]:
-                    area_urbana_total += hectareas
+                if cov_id in [5, 6, 8]: area_agricola_total += hectareas
+                elif cov_id in [7, 10]: area_pastos_total += hectareas
+                elif cov_id in [1, 2, 3, 4]: area_urbana_total += hectareas
             
-            # Inyectamos los datos en el sistema nervioso de Streamlit
             st.session_state['aleph_ha_agricola'] = area_agricola_total
             st.session_state['aleph_ha_pastos'] = area_pastos_total
             st.session_state['aleph_area_urbana'] = area_urbana_total
-            st.session_state['aleph_territorio_origen'] = nombre_seleccion
+            st.session_state['aleph_territorio_origen'] = str(nombre_seleccion)
             
-            st.success(f"🌐 **El Aleph activo:** Las áreas de {nombre_seleccion} ({area_agricola_total:.1f} Ha Agrícolas y {area_pastos_total:.1f} Ha en Pastos) han sido enviadas al simulador de Calidad de Agua.")
+            st.success(f"🌐 **El Aleph activo:** Las áreas de {nombre_seleccion} ({area_agricola_total:,.1f} Ha Agrícolas y {area_pastos_total:,.1f} Ha en Pastos) han sido enviadas al simulador de Calidad de Agua.")
             
         except Exception as e:
-            pass # Falla silenciosa para no romper la app si algo sale mal
+            st.error(f"Error de conexión en Aleph: {e}")
         # =====================================================================
         
         st.divider()
@@ -1003,6 +996,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
