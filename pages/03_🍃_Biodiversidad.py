@@ -979,15 +979,15 @@ with tab_afolu:
     with col_a2:
 
         # =====================================================================
-        # CÁLCULOS REACTIVOS (Blindados y con integración de Vehículos)
+        # CÁLCULOS REACTIVOS (Con orden de parámetros corregido)
         # =====================================================================
-        # 1. Blindaje de tipos de datos (Forzamos a números enteros)
+        # 1. Blindaje de tipos de datos
         h_anios = int(horizonte_af)
         humanos_totales = int(humanos_rurales + humanos_urbanos)
 
-        # 2. Cálculos de captura forestal y pasturas
-        df_bosque_af = carbon_calculator.calcular_proyeccion_captura(area_af, estrategia_af, h_anios)
-        df_pastos_af = carbon_calculator.calcular_captura_pasturas(area_pastos, esc_pasto, h_anios)
+        # 2. Cálculos de captura forestal y pasturas (ORDEN CORREGIDO: Área, Años, Escenario)
+        df_bosque_af = carbon_calculator.calcular_proyeccion_captura(area_af, h_anios, estrategia_af)
+        df_pastos_af = carbon_calculator.calcular_captura_pasturas(area_pastos, h_anios, esc_pasto)
         
         # 3. Calcular emisiones pecuarias y humanas conjuntas
         df_fuentes_af = carbon_calculator.calcular_emisiones_fuentes_detallado(v_leche, v_carne, cerdos, aves, humanos_totales, h_anios)
@@ -1002,7 +1002,7 @@ with tab_afolu:
         
         # 5. Cálculo de eventos de pérdida/ganancia
         t_ev = "PERDIDA" if "Pérdida" in tipo_evento else "GANANCIA"
-        anio_ev_int = int(anio_evento) if 'anio_evento' in locals() else 5 # Blindaje adicional
+        anio_ev_int = int(anio_evento) if 'anio_evento' in locals() else 5 
         df_evento_af = carbon_calculator.calcular_evento_cambio(area_evento, t_ev, anio_ev_int, h_anios)
 
         # =====================================================================        
@@ -1119,6 +1119,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
