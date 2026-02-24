@@ -440,13 +440,20 @@ with tab_demanda:
 with tab_fuentes:
     st.header(f"Inventario de Cargas Contaminantes ({anio_analisis})")
     
-    # Lógica de recepción del Aleph (Sincronización con Biodiversidad)
-    aleph_activo = 'aleph_ha_pastos' in st.session_state and st.session_state['aleph_territorio_origen'] == lugar_sel
-    
+    # Lógica de recepción del Aleph (Blindada contra mayúsculas/minúsculas)
+    aleph_activo = False
+    if 'aleph_ha_pastos' in st.session_state and 'aleph_territorio_origen' in st.session_state:
+        origen_aleph = normalizar_texto(st.session_state['aleph_territorio_origen'])
+        destino_actual = normalizar_texto(lugar_sel)
+        
+        # Si el usuario está analizando el mismo municipio en ambas páginas
+        if origen_aleph == destino_actual:
+            aleph_activo = True
+
     if aleph_activo:
-        st.info(f"🌐 **Conexión Aleph:** Las áreas agrícolas y de pastos para **{lugar_sel}** han sido extraídas automáticamente del modelo satelital de la página de Biodiversidad.")
+        st.success(f"🌐 **Conexión Aleph:** Las áreas agrícolas y de pastos para **{lugar_sel}** han sido extraídas automáticamente del modelo satelital de la página de Biodiversidad.")
     
-    # Valores por defecto. Si el Aleph está activo, usa el satélite, si no, usa el valor manual
+    # Extraer valores del satélite, o usar manuales por defecto
     val_def_papa = float(st.session_state.get('aleph_ha_agricola', 50.0)) if aleph_activo else 50.0
     val_def_pastos = float(st.session_state.get('aleph_ha_pastos', 200.0)) if aleph_activo else 200.0
     
@@ -460,7 +467,6 @@ with tab_fuentes:
         vol_suero = st.number_input("Sueros Lácteos Vertidos (L/día):", min_value=0, value=2000, step=500)
     with col3:
         st.markdown("### 🍓 Agricultura")
-        # Si el Aleph está activo, las cajas se desactivan (disabled=True) para priorizar el dato espacial
         ha_papa = st.number_input("Cultivos / Mosaico [Ha]:", min_value=0.0, value=val_def_papa, step=5.0, disabled=aleph_activo)
         ha_pastos = st.number_input("Pastos [Ha]:", min_value=0.0, value=val_def_pastos, step=10.0, disabled=aleph_activo)
 
