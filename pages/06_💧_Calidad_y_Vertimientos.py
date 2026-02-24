@@ -870,10 +870,10 @@ with tab_extern:
             {"Sector": "Porcinos", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_porc},
             {"Sector": "Agrícola", "Nutriente": "Nitrógeno (N)", "Carga_kg_dia": n_agr},
             {"Sector": "Agrícola", "Nutriente": "Fósforo (P)", "Carga_kg_dia": p_agr},
-            {"Sector": "Agrícola", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_agr}
+            {"Sector": "Agrícola", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_agr},
             {"Sector": "Avicultura", "Nutriente": "Nitrógeno (N)", "Carga_kg_dia": n_aves},
             {"Sector": "Avicultura", "Nutriente": "Fósforo (P)", "Carga_kg_dia": p_aves},
-            {"Sector": "Avicultura", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_aves},
+            {"Sector": "Avicultura", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_aves}
         ])
     
         n_total = n_dom + n_bov + n_porc + n_aves + n_agr
