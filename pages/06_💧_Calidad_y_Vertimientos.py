@@ -201,7 +201,7 @@ df_bovinos = cargar_censo_bovino()   # 👈 Censo ICA integrado
 df_porcinos = cargar_censo_porcino() # 👈 Censo ICA integrado
 
 # ==============================================================================
-# MOTOR MATEMÁTICO POBLACIONAL
+# MOTOR MATEMÁTICO POBLACIONAL (MEJORADO CON CRUCE TERRITORIAL)
 # ==============================================================================
 def obtener_poblacion_base(lugar_sel, nivel_sel):
     pob_u, pob_r, anio_base = 0.0, 0.0, 2020
@@ -213,17 +213,25 @@ def obtener_poblacion_base(lugar_sel, nivel_sel):
         anio_base = df_mpios['año'].max()
         df_f = pd.DataFrame()
         
-        if nivel_sel == "Nacional (Colombia)": df_f = df_mpios[df_mpios['año'] == anio_base]
-        elif nivel_sel == "Departamental": df_f = df_mpios[(df_mpios['depto_nom'] == lugar_sel) & (df_mpios['año'] == anio_base)]
-        elif nivel_sel == "Regional": df_f = df_mpios[(df_mpios['region'] == lugar_sel) & (df_mpios['año'] == anio_base)]
-        elif nivel_sel == "Municipal": df_f = df_mpios[(df_mpios['municipio'] == lugar_sel) & (df_mpios['año'] == anio_base)]
-        elif nivel_sel == "Jurisdicción Ambiental (CAR)":
-            if lugar_sel.startswith("CAR:"):
-                car_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
-                mpios_car = set()
-                if not df_concesiones.empty and 'car_norm' in df_concesiones.columns: mpios_car.update(df_concesiones[df_concesiones['car_norm'] == car_norm]['municipio_norm'].unique())
-                if not df_vertimientos.empty and 'car_norm' in df_vertimientos.columns: mpios_car.update(df_vertimientos[df_vertimientos['car_norm'] == car_norm]['municipio_norm'].unique())
-                df_f = df_mpios[(df_mpios['municipio_norm'].isin(mpios_car)) & (df_mpios['año'] == anio_base)]
+        if nivel_sel == "Nacional (Colombia)": 
+            df_f = df_mpios[df_mpios['año'] == anio_base]
+        elif nivel_sel == "Municipal": 
+            lugar_n = normalizar_texto(lugar_sel)
+            df_f = df_mpios[(df_mpios['municipio_norm'] == lugar_n) & (df_mpios['año'] == anio_base)]
+        elif nivel_sel in ["Jurisdicción Ambiental (CAR)", "Regional", "Departamental"]:
+            mpios_activos = []
+            if not df_territorio.empty:
+                if nivel_sel == "Jurisdicción Ambiental (CAR)":
+                    car_name = lugar_sel.replace("CAR: ", "")
+                    mpios_activos = df_territorio[df_territorio['car'] == car_name]['municipio_norm'].tolist()
+                elif nivel_sel == "Regional":
+                    mpios_activos = df_territorio[df_territorio['region'] == lugar_sel]['municipio_norm'].tolist()
+                elif nivel_sel == "Departamental":
+                    mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == lugar_sel]['municipio_norm'].tolist()
+            
+            # Cruce mágico: Suma solo los municipios que encontró en la tabla maestra
+            if mpios_activos:
+                df_f = df_mpios[(df_mpios['municipio_norm'].isin(mpios_activos)) & (df_mpios['año'] == anio_base)]
             
         if not df_f.empty:
             areas_str = df_f['area_geografica'].astype(str).str.lower()
@@ -245,7 +253,7 @@ def proyectar_curva(p_base, anios_array, anio_base, modelo, r, k):
 # 🎛️ PANEL MAESTRO DE VARIABLES (DESPLEGABLE Y DINÁMICO)
 # ==============================================================================
 with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", expanded=True):
-    nivel_sel_visual = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Jurisdicción Ambiental (CAR)", "Departamental", "Regional", "Municipal", "Veredal"])
+    nivel_sel_visual = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Jurisdicción Ambiental (CAR)", "Departamental", "Regional", "Municipal", "Veredal"], key="sel_nivel_maestro")
     lugar_sel = "N/A"
     nivel_sel_interno = nivel_sel_visual
 
@@ -253,12 +261,13 @@ with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", exp
     
     elif nivel_sel_visual == "Jurisdicción Ambiental (CAR)":
         if not df_territorio.empty and 'car' in df_territorio.columns:
-            cars = sorted(df_territorio['car'].dropna().unique())
+            # Escudo protector contra celdas vacías en Excel
+            cars = sorted([str(x) for x in df_territorio['car'].dropna().unique() if str(x).strip() != ''])
             col_f1, col_f2 = st.columns(2)
-            with col_f1: car_sel = st.selectbox("1. Autoridad Ambiental (CAR):", cars)
+            with col_f1: car_sel = st.selectbox("1. Autoridad Ambiental (CAR):", cars, key="sel_car")
             with col_f2:
-                mpios_car = sorted(df_territorio[df_territorio['car'] == car_sel]['municipio'].unique())
-                sub_sel = st.selectbox("2. Municipio (Opcional):", ["Toda la Jurisdicción"] + mpios_car)
+                mpios_car = sorted([str(x) for x in df_territorio[df_territorio['car'] == car_sel]['municipio'].dropna().unique()])
+                sub_sel = st.selectbox("2. Municipio (Opcional):", ["Toda la Jurisdicción"] + mpios_car, key="sel_car_mpio")
             
             if sub_sel == "Toda la Jurisdicción": lugar_sel = f"CAR: {car_sel}"
             else: 
@@ -267,29 +276,29 @@ with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", exp
         else: st.warning("No se detectó la tabla territorial maestra."); lugar_sel = "N/A"
 
     elif nivel_sel_visual == "Departamental" and not df_mpios.empty:
-        deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
-        lugar_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
+        deptos = sorted([str(x) for x in df_mpios['depto_nom'].dropna().unique() if str(x).strip() != ''])
+        lugar_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0, key="sel_depto")
         
     elif nivel_sel_visual == "Regional":
         if not df_territorio.empty and 'region' in df_territorio.columns:
-            regiones = sorted(df_territorio['region'].dropna().unique())
-            lugar_sel = st.selectbox("Región (Antioquia):", regiones)
+            regiones = sorted([str(x) for x in df_territorio['region'].dropna().unique() if str(x).strip() != ''])
+            lugar_sel = st.selectbox("Región (Antioquia):", regiones, key="sel_region")
         else: st.warning("No se detectó la tabla territorial."); lugar_sel = "N/A"
             
     elif nivel_sel_visual == "Municipal":
         if not df_territorio.empty and 'municipio' in df_territorio.columns:
-            mpios = sorted(df_territorio['municipio'].dropna().unique())
-            lugar_sel = st.selectbox("Municipio (Antioquia):", mpios)
+            mpios = sorted([str(x) for x in df_territorio['municipio'].dropna().unique() if str(x).strip() != ''])
+            lugar_sel = st.selectbox("Municipio (Antioquia):", mpios, key="sel_mpio")
         else: st.warning("No se detectó la tabla territorial."); lugar_sel = "N/A"
             
     elif nivel_sel_visual == "Veredal" and not df_veredas.empty:
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             mpios_v = sorted([str(x) for x in df_veredas['Municipio'].dropna().unique()])
-            mpio_sel = st.selectbox("1. Municipio Anfitrión:", mpios_v)
+            mpio_sel = st.selectbox("1. Municipio Anfitrión:", mpios_v, key="sel_ver_mpio")
         with col_f2:
             veredas = sorted([str(x) for x in df_veredas[df_veredas['Municipio'] == mpio_sel]['Vereda'].dropna().unique()])
-            lugar_sel = st.selectbox("2. Vereda:", veredas)
+            lugar_sel = st.selectbox("2. Vereda:", veredas, key="sel_vereda")
 
     st.markdown("⚙️ **Parámetros de Proyección Demográfica**")
     pob_u_base, pob_r_base, anio_base = obtener_poblacion_base(lugar_sel, nivel_sel_interno)
