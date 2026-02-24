@@ -149,6 +149,30 @@ def cargar_vertimientos():
     return pd.DataFrame()
 
 @st.cache_data
+def cargar_censo_bovino():
+    ruta_xlsx = "data/Censo_ICA_Bovinos_2023.xlsx"
+    ruta_csv = "data/Censo_ICA_Bovinos_2023.csv"
+    df = pd.DataFrame()
+    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
+    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
+    if not df.empty:
+        df.columns = df.columns.str.upper().str.replace(' ', '_').str.strip()
+        df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
+    return df
+
+@st.cache_data
+def cargar_censo_porcino():
+    ruta_xlsx = "data/Censo_ICA_Porcinos_2023.xlsx"
+    ruta_csv = "data/Censo_ICA_Porcinos_2023.csv"
+    df = pd.DataFrame()
+    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
+    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
+    if not df.empty:
+        df.columns = df.columns.str.upper().str.replace(' ', '_').str.strip()
+        df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
+    return df
+
+@st.cache_data
 def cargar_territorio_maestro():
     ruta_xlsx = "data/depto_region_car_territ_mpios.xlsx"
     ruta_csv = "data/depto_region_car_territ_mpios.csv"
@@ -167,11 +191,14 @@ def cargar_territorio_maestro():
         return df
     return pd.DataFrame()
 
+# Asegúrate de que tu bloque de llamadas quede así:
 df_mpios = cargar_municipios()
 df_veredas = cargar_veredas()
 df_concesiones = cargar_concesiones()
 df_vertimientos = cargar_vertimientos()
-df_territorio = cargar_territorio_maestro() # 👈 ¡El nuevo cerebro territorial!
+df_territorio = cargar_territorio_maestro()
+df_bovinos = cargar_censo_bovino()   # 👈 Censo ICA integrado
+df_porcinos = cargar_censo_porcino() # 👈 Censo ICA integrado
 
 # ==============================================================================
 # MOTOR MATEMÁTICO POBLACIONAL
@@ -225,50 +252,36 @@ with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", exp
     if nivel_sel_visual == "Nacional (Colombia)": lugar_sel = "Colombia"
     
     elif nivel_sel_visual == "Jurisdicción Ambiental (CAR)":
-        cars = set()
-        if not df_concesiones.empty and 'car' in df_concesiones.columns: cars.update(df_concesiones['car'].dropna().unique())
-        if not df_vertimientos.empty and 'car' in df_vertimientos.columns: cars.update(df_vertimientos['car'].dropna().unique())
-        
-        if cars: 
+        if not df_territorio.empty and 'car' in df_territorio.columns:
+            cars = sorted(df_territorio['car'].dropna().unique())
             col_f1, col_f2 = st.columns(2)
-            with col_f1: car_sel = st.selectbox("1. Autoridad Ambiental (CAR):", sorted(list(cars)))
+            with col_f1: car_sel = st.selectbox("1. Autoridad Ambiental (CAR):", cars)
             with col_f2:
-                mpios_car = set()
-                if not df_concesiones.empty and 'car_norm' in df_concesiones.columns: mpios_car.update(df_concesiones[df_concesiones['car_norm'] == normalizar_texto(car_sel)]['municipio'].dropna().unique())
-                if not df_vertimientos.empty and 'car_norm' in df_vertimientos.columns: mpios_car.update(df_vertimientos[df_vertimientos['car_norm'] == normalizar_texto(car_sel)]['municipio'].dropna().unique())
-                sub_sel = st.selectbox("2. Municipio (Opcional):", ["Toda la Jurisdicción"] + sorted(list(mpios_car)))
+                mpios_car = sorted(df_territorio[df_territorio['car'] == car_sel]['municipio'].unique())
+                sub_sel = st.selectbox("2. Municipio (Opcional):", ["Toda la Jurisdicción"] + mpios_car)
             
             if sub_sel == "Toda la Jurisdicción": lugar_sel = f"CAR: {car_sel}"
             else: 
                 lugar_sel = sub_sel
                 nivel_sel_interno = "Municipal"
-        else: st.warning("No se detectó el campo 'CAR' en las bases de datos."); lugar_sel = "N/A"
+        else: st.warning("No se detectó la tabla territorial maestra."); lugar_sel = "N/A"
 
     elif nivel_sel_visual == "Departamental" and not df_mpios.empty:
         deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
         lugar_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
-    elif nivel_sel_visual == "Regional" and not df_mpios.empty:
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
-            depto_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
-        with col_f2:
-            df_filtro = df_mpios[df_mpios['depto_nom'] == depto_sel]
-            regiones = sorted([str(x) for x in df_filtro['region'].unique() if pd.notna(x)]) if 'region' in df_filtro.columns else []
-            lugar_sel = st.selectbox("2. Región:", regiones) if regiones else "N/A"
-    elif nivel_sel_visual == "Municipal" and not df_mpios.empty:
-        col_f1, col_f2, col_f3 = st.columns(3)
-        with col_f1:
-            deptos = sorted([str(x) for x in df_mpios['depto_nom'].unique() if pd.notna(x)])
-            depto_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0)
-        with col_f2:
-            df_filtro1 = df_mpios[df_mpios['depto_nom'] == depto_sel]
-            regiones = sorted([str(x) for x in df_filtro1['region'].unique() if pd.notna(x)]) if 'region' in df_filtro1.columns else []
-            region_sel = st.selectbox("2. Región (Opcional):", ["Todas"] + regiones)
-        with col_f3:
-            df_filtro2 = df_filtro1 if region_sel == "Todas" else df_filtro1[df_filtro1['region'] == region_sel]
-            mpios = sorted([str(x) for x in df_filtro2['municipio'].unique() if pd.notna(x)])
-            lugar_sel = st.selectbox("3. Municipio:", mpios)
+        
+    elif nivel_sel_visual == "Regional":
+        if not df_territorio.empty and 'region' in df_territorio.columns:
+            regiones = sorted(df_territorio['region'].dropna().unique())
+            lugar_sel = st.selectbox("Región (Antioquia):", regiones)
+        else: st.warning("No se detectó la tabla territorial."); lugar_sel = "N/A"
+            
+    elif nivel_sel_visual == "Municipal":
+        if not df_territorio.empty and 'municipio' in df_territorio.columns:
+            mpios = sorted(df_territorio['municipio'].dropna().unique())
+            lugar_sel = st.selectbox("Municipio (Antioquia):", mpios)
+        else: st.warning("No se detectó la tabla territorial."); lugar_sel = "N/A"
+            
     elif nivel_sel_visual == "Veredal" and not df_veredas.empty:
         col_f1, col_f2 = st.columns(2)
         with col_f1:
@@ -292,7 +305,7 @@ with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", exp
     pob_u_auto = pob_u_base * factor_proy
     pob_r_auto = pob_r_base * factor_proy
 
-    st.info(f"👥 Demografía proyectada para **{lugar_sel}** en el año **{anio_analisis}**:")
+    st.info(f"👥 Demografía dinámica para **{lugar_sel}** en el año **{anio_analisis}**:")
     col_p1, col_p2, col_p3 = st.columns([1, 1, 1.5])
     with col_p1: pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
     with col_p2: pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
@@ -413,62 +426,92 @@ with tab_demanda:
     else: st.warning(f"⚠️ El territorio **{lugar_sel}** no registra datos formales.")
 
 # ------------------------------------------------------------------------------
-# TAB 2: INVENTARIO DE CARGAS (CON MÓDULO PECUARIO DETALLADO)
+# TAB 2: INVENTARIO DE CARGAS (CON CENSO OFICIAL ICA 2023)
 # ------------------------------------------------------------------------------
 with tab_fuentes:
     st.header(f"Inventario de Cargas Contaminantes ({anio_analisis})")
     
-    st.markdown("### 🏘️ Saneamiento Básico y Agroindustria")
     col1, col2, col3 = st.columns(3)
     with col1:
+        st.markdown("### 🏘️ Saneamiento")
         cobertura_ptar = st.slider("Cobertura de Tratamiento PTAR Urbana %:", 0, 100, 15)
         eficiencia_ptar = st.slider("Remoción DBO en PTAR %:", 0, 100, 80)
     with col2:
+        st.markdown("### 🏭 Agroindustria")
         vol_suero = st.number_input("Sueros Lácteos Vertidos (L/día):", min_value=0, value=2000, step=500)
     with col3:
+        st.markdown("### 🍓 Agricultura")
         ha_papa = st.number_input("Cultivos Limpios [Ha]:", min_value=0.0, value=50.0, step=5.0)
         ha_pastos = st.number_input("Pastos Fertilizados [Ha]:", min_value=0.0, value=200.0, step=10.0)
 
     st.markdown("---")
-    st.markdown(f"### 🐄🚜 Análisis Sectorial Pecuario para: **{lugar_sel}**")
-    st.info("Simula el inventario ganadero y porcícola para calcular su huella contaminante exacta en el territorio seleccionado.")
+    st.markdown(f"### 🐄🚜 Censo Pecuario ICA (2023) para: **{lugar_sel}**")
     
+    # MOTOR DE CRUCE TERRITORIAL
+    mpios_activos = []
+    lugar_n = normalizar_texto(lugar_sel.replace("CAR: ", ""))
+    if not df_territorio.empty:
+        if nivel_sel_interno == "Jurisdicción Ambiental (CAR)": mpios_activos = df_territorio[df_territorio['car'].str.upper() == lugar_sel.replace("CAR: ", "").upper()]['municipio_norm'].tolist()
+        elif nivel_sel_interno == "Departamental": mpios_activos = df_territorio[df_territorio['depto_nom'].apply(normalizar_texto) == lugar_n]['municipio_norm'].tolist()
+        elif nivel_sel_interno == "Regional": mpios_activos = df_territorio[df_territorio['region'].apply(normalizar_texto) == lugar_n]['municipio_norm'].tolist()
+        elif nivel_sel_interno == "Municipal": mpios_activos = [lugar_n]
+    if not mpios_activos: mpios_activos = [lugar_n]
+
+    # EXTRACCIÓN DE BASES DE DATOS ICA
+    total_bovinos, total_porcinos, default_trat_porc = 0, 0, 20
+    if not df_bovinos.empty:
+        total_bovinos = int(df_bovinos[df_bovinos['MUNICIPIO_NORM'].isin(mpios_activos)]['TOTALBOVINOS'].sum())
+    
+    if not df_porcinos.empty:
+        df_p_f = df_porcinos[df_porcinos['MUNICIPIO_NORM'].isin(mpios_activos)]
+        if not df_p_f.empty:
+            total_porcinos = int(df_p_f['TOTAL_CERDOS'].sum())
+            # Auto-calcular eficiencia según el nivel de tecnificación del municipio
+            tecnificados = df_p_f['TOTAL_PORCINOS__TECNIFICADA'].sum() + df_p_f['TOTAL_PORCINOS__COMERCIAL_INDUSTRIAL_-_2021'].sum()
+            if total_porcinos > 0:
+                default_trat_porc = int((tecnificados / total_porcinos) * 85) # Si todos son tecnificados, asume 85% de remoción
+    
+    # Fallback de seguridad si el municipio no está en el censo
+    if total_bovinos == 0: total_bovinos = int(pob_rural * 1.5)
+    if total_porcinos == 0: total_porcinos = int(pob_rural * 0.8)
+
     col_pec1, col_pec2 = st.columns(2)
     with col_pec1:
-        st.subheader("Sector Bovino")
-        cabezas_bovinos = st.number_input("Inventario Bovino (Cabezas):", min_value=0, value=5000, step=500)
+        st.subheader("Sector Bovino Oficial")
+        cabezas_bovinos = st.number_input("Inventario Bovino (Cabezas):", min_value=0, value=total_bovinos, step=100)
         sistema_bovino = st.radio("Sistema de Producción Bovino:", ["Extensivo (A campo abierto)", "Estabulado (Confinado)"])
-        # Factor: Un bovino produce mucha DBO, pero en extensivo solo una parte llega al agua.
         factor_dbo_bov = 0.8 if "Estabulado" in sistema_bovino else 0.15 
         
     with col_pec2:
-        st.subheader("Sector Porcícola")
-        cabezas_porcinos = st.number_input("Inventario Porcino (Cabezas):", min_value=0, value=1500, step=100)
-        tratamiento_porc = st.slider("Eficiencia Tratamiento Porcícola (Biodigestores/Estercoleros) %:", 0, 100, 20)
+        st.subheader("Sector Porcícola Oficial")
+        cabezas_porcinos = st.number_input("Inventario Porcino (Cabezas):", min_value=0, value=total_porcinos, step=100)
+        st.caption("La eficiencia se ha autocalculado según la proporción de granjas Tecnificadas vs Traspatio del ICA.")
+        tratamiento_porc = st.slider("Eficiencia Tratamiento Porcícola (Biodigestores/Estercoleros) %:", 0, 100, default_trat_porc)
         factor_dbo_porc = 0.150 * (1 - (tratamiento_porc/100))
 
-    # CÁLCULOS MATEMÁTICOS DE CARGAS
     dbo_urbana = pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100)) 
     dbo_rural = pob_rural * 0.040 
     dbo_suero = vol_suero * 0.035 
     dbo_agricola = (ha_papa + ha_pastos) * 0.8 
     dbo_bovinos = cabezas_bovinos * factor_dbo_bov
     dbo_porcinos = cabezas_porcinos * factor_dbo_porc
-    
     carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_agricola
     
     coef_retorno = 0.85
     q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400) + ((cabezas_porcinos * 40)/86400)
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
 
+    df_cargas = pd.DataFrame({
+        "Fuente": ["Pob. Urbana", "Pob. Rural", "Agroindustria (Lácteos)", "Agricultura", "Bovinos", "Porcinos"], 
+        "DBO_kg_dia": [dbo_urbana, dbo_rural, dbo_suero, dbo_agricola, dbo_bovinos, dbo_porcinos]
+    })
+
     col_g1, col_g2 = st.columns(2)
     with col_g1:
-        df_cargas = pd.DataFrame({
-            "Fuente": ["Pob. Urbana", "Pob. Rural", "Agroindustria (Lácteos)", "Agricultura", "Bovinos", "Porcinos"], 
-            "DBO_kg_dia": [dbo_urbana, dbo_rural, dbo_suero, dbo_agricola, dbo_bovinos, dbo_porcinos]
-        })
         fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
         st.plotly_chart(fig_cargas, use_container_width=True)
+        csv_cargas = df_cargas.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Descargar Datos de Cargas (CSV)", data=csv_cargas, file_name=f"Inventario_Cargas_{lugar_sel}.csv", mime='text/csv')
 
     with col_g2:
         st.subheader(f"📈 Evolución de Carga Orgánica ({modelo_sel})")
@@ -477,7 +520,7 @@ with tab_fuentes:
         fig_dbo_evo = go.Figure()
         fig_dbo_evo.add_trace(go.Scatter(x=anios_evo, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
         st.plotly_chart(fig_dbo_evo, use_container_width=True)
-
+        
 # ------------------------------------------------------------------------------
 # TAB 3: ASIMILACIÓN Y DILUCIÓN
 # ------------------------------------------------------------------------------
