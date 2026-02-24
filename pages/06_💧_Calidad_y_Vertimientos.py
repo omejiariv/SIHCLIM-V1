@@ -148,10 +148,30 @@ def cargar_vertimientos():
             return df
     return pd.DataFrame()
 
+@st.cache_data
+def cargar_territorio_maestro():
+    ruta_xlsx = "data/depto_region_car_territ_mpios.xlsx"
+    ruta_csv = "data/depto_region_car_territ_mpios.csv"
+    df = pd.DataFrame()
+    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
+    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
+        
+    if not df.empty:
+        df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
+        if 'municipio' in df.columns:
+            df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto)
+        if 'car' in df.columns:
+            df['car'] = df['car'].astype(str).str.upper()
+        if 'region' in df.columns:
+            df['region'] = df['region'].astype(str).str.title()
+        return df
+    return pd.DataFrame()
+
 df_mpios = cargar_municipios()
 df_veredas = cargar_veredas()
 df_concesiones = cargar_concesiones()
 df_vertimientos = cargar_vertimientos()
+df_territorio = cargar_territorio_maestro() # 👈 ¡El nuevo cerebro territorial!
 
 # ==============================================================================
 # MOTOR MATEMÁTICO POBLACIONAL
