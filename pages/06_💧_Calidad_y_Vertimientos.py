@@ -732,53 +732,109 @@ with tab_sirena:
         st.warning("No se ha cargado correctamente la base de datos oficial.")
 
 # ------------------------------------------------------------------------------
-# TAB 7: ANÁLISIS SECTORIAL DE EXTERNALIDADES (NUEVO)
+# TAB 7: ANÁLISIS SECTORIAL DE EXTERNALIDADES (NIVEL AVANZADO)
 # ------------------------------------------------------------------------------
 with tab_extern:
     st.header("⚠️ Análisis Sectorial de Externalidades Ambientales")
-    st.markdown(f"Evaluación del impacto indirecto (Huella Ecológica) de las cargas en **{lugar_sel}**.")
+    st.markdown(f"Evaluación avanzada de Huella de Carbono y Balance de Nutrientes (NPK) en **{lugar_sel}**.")
     
+    # 1. RE-CÁLCULO INTERNO (Para evitar errores de variables huérfanas)
+    dbo_domestica = pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100)) + (pob_rural * 0.040)
+    dbo_bovinos_ext = cabezas_bovinos * factor_dbo_bov
+    dbo_porcinos_ext = cabezas_porcinos * factor_dbo_porc
+    dbo_agricola_ext = (ha_papa + ha_pastos) * 0.8
+    dbo_agroind_ext = vol_suero * 0.035
+    
+    # 2. MODELO DE NUTRIENTES (Nitrógeno, Fósforo, Potasio)
+    # Factores de excreción y escorrentía aproximados (kg/día)
+    n_dom = pob_urbana * 0.012 * (1 - (cobertura_ptar/100 * 0.3)) + (pob_rural * 0.012)
+    p_dom = pob_urbana * 0.003 * (1 - (cobertura_ptar/100 * 0.2)) + (pob_rural * 0.003)
+    k_dom = pob_urbana * 0.005 + (pob_rural * 0.005)
+    
+    n_bov = cabezas_bovinos * 0.15 * 0.2 # Solo el 20% llega a cuerpos de agua (escorrentía)
+    p_bov = cabezas_bovinos * 0.04 * 0.2
+    k_bov = cabezas_bovinos * 0.12 * 0.2
+    
+    n_porc = cabezas_porcinos * 0.08 * (1 - (tratamiento_porc/100 * 0.5))
+    p_porc = cabezas_porcinos * 0.02 * (1 - (tratamiento_porc/100 * 0.4))
+    k_porc = cabezas_porcinos * 0.05 * (1 - (tratamiento_porc/100 * 0.2))
+    
+    n_agr = (ha_papa * 1.5) + (ha_pastos * 0.5)
+    p_agr = (ha_papa * 0.3) + (ha_pastos * 0.1)
+    k_agr = (ha_papa * 1.2) + (ha_pastos * 0.4)
+
     col_ext1, col_ext2 = st.columns([1, 1.2])
     
     with col_ext1:
-        st.subheader("Gases de Efecto Invernadero (GEI)")
-        st.caption("La DBO no tratada se descompone en condiciones anaerobias generando gas Metano (CH4).")
+        st.subheader("Huella de Carbono (Gases Efecto Invernadero)")
+        st.caption("Conversión de Metano (CH4) y Óxido Nitroso (N2O) a Toneladas de CO2 equivalente (tCO2e/año).")
         
-        # Factor estándar IPCC: 0.25 kg CH4 por cada kg de DBO anaerobia
-        factor_ch4 = 0.25 
-        ch4_urbano = dbo_urbana * factor_ch4
-        ch4_porcino = dbo_porcinos * factor_ch4
-        ch4_total = ch4_urbano + ch4_porcino
+        # Factores IPCC: CH4 a CO2e (x 28), N2O a CO2e (x 265)
+        # Doméstico: Principalmente CH4 de fosas sépticas y PTAR sin captura.
+        co2e_dom = (dbo_domestica * 0.25 * 28 * 365) / 1000 
+        # Bovinos: Fermentación entérica (muy alta) + estiércol
+        co2e_bov = (cabezas_bovinos * 0.16 * 28 * 365) / 1000 # ~60kg CH4/vaca/año
+        # Porcinos: Manejo de estiércol (Lagunas anaerobias generan mucho CH4)
+        co2e_porc = (dbo_porcinos_ext * 0.25 * 28 * 365) / 1000
+        # Agrícola: Emisiones de N2O por fertilización nitrogenada
+        co2e_agr = (n_agr * 0.01 * 265 * 365) / 1000 
         
-        st.metric("Emisiones de Metano (CH4) en Aguas Residuales", f"{ch4_total:,.1f} kg/día", help="Proviene principalmente de aguas urbanas no tratadas y estercoleros porcinos.")
-        
-        df_ch4 = pd.DataFrame({
-            "Sector": ["Saneamiento Urbano", "Producción Porcícola"],
-            "CH4 (kg/día)": [ch4_urbano, ch4_porcino]
+        df_co2e = pd.DataFrame({
+            "Sector": ["Saneamiento Doméstico", "Ganadería Bovina", "Porcicultura", "Agricultura"],
+            "tCO2e_año": [co2e_dom, co2e_bov, co2e_porc, co2e_agr]
         })
-        fig_ch4 = px.pie(df_ch4, values="CH4 (kg/día)", names="Sector", hole=0.5, color_discrete_sequence=["#95a5a6", "#d35400"], title="Aportantes de Metano")
-        st.plotly_chart(fig_ch4, use_container_width=True)
+        
+        st.metric("Emisiones Totales del Territorio", f"{df_co2e['tCO2e_año'].sum():,.0f} Ton CO2e/año", help="Toneladas de Dióxido de Carbono equivalente al año.")
+        
+        fig_co2 = px.pie(df_co2e, values="tCO2e_año", names="Sector", hole=0.4, title="Distribución de la Huella de Carbono")
+        fig_co2.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(fig_co2, use_container_width=True)
         
     with col_ext2:
-        st.subheader("Riesgo de Eutrofización (Nutrientes)")
-        st.caption("Aporte estimado de Nitrógeno Total (NT) y Fósforo (PT) a los cuerpos de agua.")
+        st.subheader("Balance de Nutrientes (Eutrofización)")
+        st.caption("Cargas diarias de N-P-K aportadas por cada sector a la cuenca.") 
         
-        # Estimaciones teóricas de arrastre
-        n_urbano = pob_urbana * 0.012 * (1 - (cobertura_ptar/100 * 0.3)) # Las PTAR convencionales remueven poco N
-        n_agricola = (ha_papa * 1.5) + (ha_pastos * 0.5)
-        p_urbano = pob_urbana * 0.003
+        df_nutrientes = pd.DataFrame([
+            {"Sector": "Doméstico", "Nutriente": "Nitrógeno (N)", "Carga_kg_dia": n_dom},
+            {"Sector": "Doméstico", "Nutriente": "Fósforo (P)", "Carga_kg_dia": p_dom},
+            {"Sector": "Doméstico", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_dom},
+            {"Sector": "Bovinos", "Nutriente": "Nitrógeno (N)", "Carga_kg_dia": n_bov},
+            {"Sector": "Bovinos", "Nutriente": "Fósforo (P)", "Carga_kg_dia": p_bov},
+            {"Sector": "Bovinos", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_bov},
+            {"Sector": "Porcinos", "Nutriente": "Nitrógeno (N)", "Carga_kg_dia": n_porc},
+            {"Sector": "Porcinos", "Nutriente": "Fósforo (P)", "Carga_kg_dia": p_porc},
+            {"Sector": "Porcinos", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_porc},
+            {"Sector": "Agrícola", "Nutriente": "Nitrógeno (N)", "Carga_kg_dia": n_agr},
+            {"Sector": "Agrícola", "Nutriente": "Fósforo (P)", "Carga_kg_dia": p_agr},
+            {"Sector": "Agrícola", "Nutriente": "Potasio (K)", "Carga_kg_dia": k_agr}
+        ])
         
-        df_nutrientes = pd.DataFrame({
-            "Contaminante": ["Nitrógeno (NT)", "Nitrógeno (NT)", "Fósforo (PT)"],
-            "Fuente": ["Aguas Residuales Domésticas", "Escorrentía Agrícola", "Aguas Residuales Domésticas"],
-            "Carga (kg/día)": [n_urbano, n_agricola, p_urbano]
-        })
-        
-        fig_nutr = px.bar(df_nutrientes, x="Contaminante", y="Carga (kg/día)", color="Fuente", barmode="stack", color_discrete_sequence=["#3498db", "#2ecc71"], title="Balance de Nutrientes Críticos")
+        fig_nutr = px.bar(df_nutrientes, x="Nutriente", y="Carga_kg_dia", color="Sector", barmode="stack", title="Aporte Sectorial de Nutrientes (kg/día)")
         st.plotly_chart(fig_nutr, use_container_width=True)
         
-        if n_urbano + n_agricola > 500:
-            st.error("🔴 **Alerta de Eutrofización:** Alta carga de Nitrógeno detectada. Riesgo de proliferación de algas tóxicas y pérdida de oxígeno disuelto en reservorios aguas abajo.")
+        n_total = n_dom + n_bov + n_porc + n_agr
+        if n_total > 1000:
+            st.error(f"🔴 **Riesgo Severo de Eutrofización:** Carga de Nitrógeno crítica ({n_total:,.0f} kg/día). Alta probabilidad de blooms algales e hipoxia en el cuerpo receptor.")
+        elif n_total > 300:
+            st.warning(f"⚠️ **Riesgo Moderado:** Carga de Nitrógeno de {n_total:,.0f} kg/día. Se requiere monitoreo de calidad del agua.")
         else:
-            st.success("✅ **Carga de Nutrientes Moderada:** El ecosistema tiene margen de asimilación.")
-            
+            st.success(f"✅ **Carga Estable:** El aporte de nutrientes ({n_total:,.0f} kg N/día) está dentro de límites asimilables.")
+
+    st.divider()
+    st.subheader("📋 Consolidado de Externalidades")
+    
+    col_t1, col_t2 = st.columns([2, 1])
+    with col_t1:
+        # Pivot table para una visualización elegante
+        df_pivot = df_nutrientes.pivot(index='Sector', columns='Nutriente', values='Carga_kg_dia').reset_index()
+        df_pivot = pd.merge(df_pivot, df_co2e, on='Sector', how='left')
+        df_pivot.rename(columns={'tCO2e_año': 'Huella_Carbono (tCO2e/año)'}, inplace=True)
+        df_pivot.fillna(0, inplace=True)
+        
+        st.dataframe(df_pivot.style.format({
+            "Nitrógeno (N)": "{:,.1f}", "Fósforo (P)": "{:,.1f}", "Potasio (K)": "{:,.1f}", "Huella_Carbono (tCO2e/año)": "{:,.0f}"
+        }), use_container_width=True)
+        
+    with col_t2:
+        csv_ext = df_pivot.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Descargar Reporte de Externalidades (CSV)", data=csv_ext, file_name=f"Externalidades_NPK_CO2_{lugar_sel}.csv", mime='text/csv')
