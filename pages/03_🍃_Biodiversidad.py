@@ -838,49 +838,73 @@ with tab_afolu:
         st.subheader("2. Actividades Agropecuarias y Humanas")
 
         # --- IMPORTAR LOS DATOS CENTRALES ---
+        # Asegúrate de tener cargar_veredas y cargar_municipios disponibles
         from modules.data_processor import cargar_censo_ica, normalizar_texto
+        # Si las funciones de población están en Vertimientos o data_processor, impórtalas:
+        # from modules.data_processor import cargar_veredas, cargar_municipios 
         
-        # Leemos el nombre del municipio que el usuario seleccionó en el sidebar
         municipio_actual = normalizar_texto(nombre_seleccion) if 'nombre_seleccion' in locals() else ""
         
-        # Extraemos los datos del ICA para este municipio específico
+        # 1. Cargar Censos Agropecuarios
         df_bov = cargar_censo_ica('bovino')
         df_porc = cargar_censo_ica('porcino')
         df_aves = cargar_censo_ica('aviar')
         
         bovinos_reales, porcinos_reales, aves_reales = 0, 0, 0
-        
-        if not df_bov.empty:
-            bovinos_reales = int(df_bov[df_bov['MUNICIPIO_NORM'] == municipio_actual]['TOTALBOVINOS'].sum())
-        if not df_porc.empty:
-            porcinos_reales = int(df_porc[df_porc['MUNICIPIO_NORM'] == municipio_actual]['TOTAL_CERDOS'].sum())
+        if not df_bov.empty: bovinos_reales = int(df_bov[df_bov['MUNICIPIO_NORM'] == municipio_actual]['TOTALBOVINOS'].sum())
+        if not df_porc.empty: porcinos_reales = int(df_porc[df_porc['MUNICIPIO_NORM'] == municipio_actual]['TOTAL_CERDOS'].sum())
         if not df_aves.empty:
             col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
             aves_reales = int(df_aves[df_aves['MUNICIPIO_NORM'] == municipio_actual][col_aves].sum())
 
+        # 2. Motor Demográfico Rural (El Aleph Veredal)
+        poblacion_rural_calculada = 0
+        
+        # Intento A: Leer de la memoria global (Si el usuario ya pasó por Vertimientos)
+        if 'aleph_pob_rural' in st.session_state and st.session_state.get('aleph_territorio_origen', '') == municipio_actual:
+            poblacion_rural_calculada = float(st.session_state['aleph_pob_rural'])
+        else:
+            # Intento B: Calcular desde la base de Veredas
+            try:
+                # Ajusta la ruta a donde tengas tu cargar_veredas()
+                df_veredas = pd.read_excel("data/veredas_Antioquia.xlsx") 
+                df_v_filt = df_veredas[df_veredas['Municipio'].astype(str).apply(normalizar_texto) == municipio_actual]
+                if not df_v_filt.empty:
+                    poblacion_rural_calculada = int(df_v_filt['Poblacion_hab'].sum())
+            except: pass
+            
+            # Intento C: Respaldo con DANE (Si la base de veredas falla o no tiene el municipio)
+            if poblacion_rural_calculada == 0:
+                try:
+                    df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False) # Ajusta tu ruta
+                    df_m_filt = df_mpios[(df_mpios['municipio'].astype(str).apply(normalizar_texto) == municipio_actual)]
+                    if not df_m_filt.empty:
+                        anio_max = df_m_filt['año'].max()
+                        df_m_filt = df_m_filt[df_m_filt['año'] == anio_max]
+                        areas_str = df_m_filt['area_geografica'].astype(str).str.lower()
+                        poblacion_rural_calculada = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
+                except: pass
+
+        if poblacion_rural_calculada == 0: poblacion_rural_calculada = 50 # Último recurso
+
+        # --- INTERFAZ DINÁMICA ---
         st.markdown("---")
         st.subheader("2. Actividades Agropecuarias y Humanas (Datos Oficiales)")
-        st.info(f"📍 **Conexión Aleph:** Datos censales extraídos automáticamente para **{nombre_seleccion}**.")
+        st.info(f"📍 **Conexión Aleph:** Datos censales (ICA) y poblacionales (DANE/Veredas) extraídos automáticamente para **{nombre_seleccion}**.")
 
         opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"]
         fuentes_sel = st.multiselect("Selecciona cargas a modelar:", opciones_fuentes, default=["Todas"])
-        
         fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Humana"] if "Todas" in fuentes_sel else fuentes_sel
 
-        # Variables base
         esc_pasto, area_pastos = "PASTO_DEGRADADO", 0.0
         v_leche, v_carne, cerdos, aves, humanos = 0, 0, 0, 0, 0
-        
-        # Conexión con el análisis satelital de coberturas
         aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
         
-        # --- INTERFAZ DINÁMICA ---
         if "Pasturas" in fuentes_activas:
             esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
             area_pastos = st.number_input("Ha de Pasturas (Modelo Satelital):", value=aleph_pastos, step=5.0)
             
         if "Bovinos" in fuentes_activas:
-            # Asumimos un 40% de lecheras y 60% cría/engorde del total oficial
             v_leche = st.number_input("Vacas Lecheras (ICA):", value=int(bovinos_reales * 0.4), step=10)
             v_carne = st.number_input("Ganado Carne/Cría (ICA):", value=int(bovinos_reales * 0.6), step=10)
             
@@ -891,11 +915,8 @@ with tab_afolu:
             aves = st.number_input("Aves Galpones (ICA):", value=aves_reales, step=500)
             
         if "Población Humana" in fuentes_activas:
-            # Extraemos la población de la memoria global si ya se calculó en Vertimientos
-            pob_rural_aleph = float(st.session_state.get('aleph_pob_rural', 50.0))
-            humanos = st.number_input("Humanos Rurales:", value=pob_rural_aleph, help="Vertimientos en pozos sépticos o a cielo abierto.")
+            humanos = st.number_input("Humanos Rurales (Censo):", value=int(poblacion_rural_calculada), step=10, help="Suma de la población rural/veredal estimada para el cálculo de aguas residuales in situ.")
             
-
         st.markdown("---")
         st.subheader("3. Eventos en el Tiempo")
         tipo_evento = st.radio("Simular alteración de cobertura:", ["Ninguno", "Pérdida (Deforestación/Incendio)", "Ganancia (Restauración Activa)"], horizontal=True)
@@ -1030,6 +1051,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
