@@ -479,6 +479,7 @@ with tab_mapa:
 with tab_taxonomia:
     if not gdf_bio.empty:
         c1, c2 = st.columns([2,1])
+        
         with c1:
             st.markdown("##### Estructura Taxonómica")
             if 'Reino' in gdf_bio.columns and 'Familia' in gdf_bio.columns:
@@ -489,21 +490,23 @@ with tab_taxonomia:
                 st.warning("Datos taxonómicos insuficientes.")
         
         with c2:
-        st.markdown("##### Especies Amenazadas")
-        if not threatened.empty:
-            st.warning(f"⚠️ {n_threat} especies en riesgo.")
-            
-            # Escudo protector contra columnas faltantes en GBIF
-            cols_mostrar = ['Nombre Científico', 'Amenaza IUCN']
-            if 'Nombre Común' in threatened.columns:
-                cols_mostrar.insert(1, 'Nombre Común') # Lo añade solo si existe
+            st.markdown("##### Especies Amenazadas")
+            if not threatened.empty:
+                st.warning(f"⚠️ {n_threat} especies en riesgo.")
                 
-            st.dataframe(threatened[cols_mostrar].drop_duplicates(), use_container_width=True, hide_index=True)
-        else:
-            st.success("✅ No se detectaron especies en categorías críticas (CR, EN, VU) en esta zona.")
+                # Escudo protector contra columnas faltantes en GBIF
+                cols_mostrar = ['Nombre Científico', 'Amenaza IUCN']
+                if 'Nombre Común' in threatened.columns:
+                    cols_mostrar.insert(1, 'Nombre Común') # Lo añade solo si existe
+                    
+                st.dataframe(threatened[cols_mostrar].drop_duplicates(), use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ No se detectaron especies en categorías críticas (CR, EN, VU) en esta zona.")
         
+        st.markdown("---")
         st.markdown("##### Detalle de Registros")
         st.dataframe(gdf_bio.drop(columns='geometry', errors='ignore'), use_container_width=True)
+        
     else:
         st.info("No hay datos de biodiversidad para mostrar estadísticas.")
 
@@ -1067,6 +1070,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
