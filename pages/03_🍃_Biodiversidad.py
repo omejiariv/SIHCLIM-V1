@@ -838,28 +838,31 @@ with tab_afolu:
     # -------------------------------------------------------------------------
     from modules.data_processor import cargar_censo_ica, normalizar_texto, cargar_territorio_maestro
     
-    # Capturamos exactamente las variables que envía tu menú lateral (Sidebar)
     nivel_sel = st.session_state.get('nivel_agregacion', st.session_state.get('nivel_seleccion', 'Por Municipio'))
-    nombre_sel = st.session_state.get('territorio_seleccionado', st.session_state.get('nombre_seleccion', 'Territorio Desconocido'))
+    nombre_sel = st.session_state.get('territorio_seleccionado', st.session_state.get('nombre_seleccion', 'Desconocido'))
     nombre_sel_norm = normalizar_texto(nombre_sel)
     
     df_territorio = cargar_territorio_maestro()
     mpios_activos = []
     es_departamento = False
     
-    # --- MOTOR DE AGREGACIÓN ---
-    if "departamento" in nivel_sel.lower() or "antioquia" in nombre_sel_norm:
+    # Limpiamos palabras trampa para que la búsqueda en el Excel sea exitosa
+    termino_busqueda = nombre_sel_norm.replace("region", "").replace("provincia", "").replace("car:", "").strip()
+    
+    # Motor de Agregación Flexible
+    if "departamento" in nivel_sel.lower() or "antioquia" in termino_busqueda:
         es_departamento = True
     elif not df_territorio.empty and "regi" in nivel_sel.lower():
-        # Busca en el nuevo Excel todos los municipios que pertenecen a esta región
-        mpios_activos = df_territorio[df_territorio['region_norm'] == nombre_sel_norm]['municipio_norm'].tolist()
-    elif not df_territorio.empty and "car" in nivel_sel.lower():
-        car_name = nombre_sel.replace("CAR: ", "")
-        mpios_activos = df_territorio[df_territorio['car'].astype(str).apply(normalizar_texto) == normalizar_texto(car_name)]['municipio_norm'].tolist()
+        # Busca si 'oriente' está contenido dentro del nombre de la región en el Excel
+        mask = df_territorio['region_norm'].astype(str).str.contains(termino_busqueda, na=False)
+        mpios_activos = df_territorio[mask]['municipio_norm'].tolist()
+    elif not df_territorio.empty and ("car" in nivel_sel.lower() or "jurisdicci" in nivel_sel.lower()):
+        mask = df_territorio['car'].astype(str).str.lower().apply(normalizar_texto).str.contains(termino_busqueda, na=False)
+        mpios_activos = df_territorio[mask]['municipio_norm'].tolist()
         
-    # Fallback si es un solo municipio o el Valle de Aburrá
+    # Fallback de seguridad
     if not mpios_activos and not es_departamento:
-        if "aburra" in nombre_sel_norm:
+        if "aburra" in termino_busqueda:
             mpios_activos = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
         else:
             mpios_activos = [nombre_sel_norm]
@@ -1055,68 +1058,67 @@ with tab_afolu:
         df_evento_af = carbon_calculator.calcular_evento_cambio(area_evento, t_ev, anio_ev_int, h_anios)
 
         # =====================================================================
-        # 5. BALANCE Y GRÁFICA FINAL
+        # 5. BALANCE Y GRÁFICA FINAL (BLINDADO ANTI-ERRORES)
         # =====================================================================
         df_bal = carbon_calculator.calcular_balance_territorial(df_bosque_af, df_pastos_af, df_fuentes_af, df_evento_af)
         
-        neto_final = df_bal['Balance_Neto_tCO2e'].iloc[-1]
-        usd_total = neto_final * 5.0 # PRECIO USD RECUPERADO
+        # Función escudo: Si la columna no existe, devuelve 0
+        def v_seguro(df, col):
+            return df[col].iloc[-1] if col in df.columns else 0
+
+        neto_final = v_seguro(df_bal, 'Balance_Neto_tCO2e')
+        usd_total = neto_final * 5.0
         
-        # MÉTRICAS PRINCIPALES (Cálculo seguro unificado)
+        val_bosque = v_seguro(df_bal, 'Captura_Bosque')
+        val_pastos = v_seguro(df_bal, 'Captura_Pastos')
+        val_ganancia = v_seguro(df_bal, 'Evento_Ganancia')
+        val_perdida = v_seguro(df_bal, 'Evento_Perdida')
+        
+        captura_total = val_bosque + val_pastos + val_ganancia
+        emision_total = v_seguro(df_fuentes_af, 'Total_Emisiones') + val_perdida
+        
+        # MÉTRICAS PRINCIPALES
+        st.markdown(f"### 📊 {titulo_dinamico}")
         m1, m2, m3, m4 = st.columns(4)
-        captura_total = df_bal['Captura_Bosque'].iloc[-1] + df_bal['Captura_Pastos'].iloc[-1] + df_bal.get('Evento_Ganancia', df_evento_af['Evento_Ganancia']).iloc[-1]
-        
-        # Usamos el Total_Emisiones directo para evitar errores si las columnas cambian
-        emision_total = df_fuentes_af['Total_Emisiones'].iloc[-1] + df_bal.get('Evento_Perdida', df_evento_af['Evento_Perdida']).iloc[-1]
-        
         m1.metric("Captura (Sumideros)", f"{captura_total:,.0f} t")
         m2.metric("Emisiones Totales", f"{emision_total:,.0f} t")
         estado = "🌿 Sumidero" if neto_final > 0 else "⚠️ Emisor"
         m3.metric("Balance Neto", f"{neto_final:,.0f} t", delta=estado, delta_color="normal" if neto_final > 0 else "inverse")
-        m4.metric("Valor del Carbono", f"${usd_total:,.0f} USD", help="A un precio referencial de $5 USD la tonelada.")
+        m4.metric("Valor del Carbono", f"${usd_total:,.0f} USD")
         
-        # GRÁFICO MULTI-CURVAS
+        # GRÁFICO MULTI-CURVAS INTELIGENTE
         fig = go.Figure()
         
-        # Curvas Positivas (Sumideros)
-        fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Bosque'], mode='lines', fill='tozeroy', name='Bosque Base', line=dict(color='#2ecc71')))
-        color_pasto = '#f1c40f' if df_pastos_af['Pastura_tCO2e_Acumulado'].iloc[-1] >= 0 else '#e67e22'
-        fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Pastos'], mode='lines', fill='tozeroy', name='Pasturas', line=dict(color=color_pasto)))
-        
-        if "Ganancia" in tipo_evento:
-            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal.get('Evento_Ganancia', df_evento_af['Evento_Ganancia']), mode='lines', fill='tozeroy', name='Restauración Nueva', line=dict(color='#00bc8c')))
-            
-        # Curvas Negativas (Fuentes Desglosadas)
-        # Extraemos los datos de df_fuentes_af para asegurar que leemos los nuevos cálculos urbanos
-        if "Bovinos" in fuentes_activas:
-            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af['Emision_Bovinos'], mode='lines', fill='tozeroy', name='Bovinos', line=dict(color='#e74c3c')))
-        if "Porcinos" in fuentes_activas:
-            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af['Emision_Porcinos'], mode='lines', fill='tozeroy', name='Porcinos', line=dict(color='#e83e8c')))
-        if "Avicultura" in fuentes_activas:
-            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af['Emision_Aves'], mode='lines', fill='tozeroy', name='Aves', line=dict(color='#fd7e14')))
-        if "Población Rural" in fuentes_activas:
-            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af.get('Humanos_Rurales (Aguas Residuales)', df_fuentes_af.get('Emision_Humanos', df_fuentes_af['Año']*0)), mode='lines', fill='tozeroy', name='Humanos Rurales', line=dict(color='#6f42c1')))
-            
-        # ¡Nuevas curvas de impacto urbano!
-        if humanos_urbanos > 0:
-            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af.get('Vertimientos_Urbanos', df_fuentes_af['Año']*0), mode='lines', fill='tozeroy', name='Vertimientos Urbanos', line=dict(color='#17a2b8')))
-            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af.get('Residuos_Solidos', df_fuentes_af['Año']*0), mode='lines', fill='tozeroy', name='Residuos Sólidos', line=dict(color='#795548')))
-            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af.get('Parque_Automotor', df_fuentes_af['Año']*0), mode='lines', fill='tozeroy', name='Parque Automotor', line=dict(color='#34495e')))
+        # Función escudo para graficar: Si la curva no existe, la ignora silenciosamente
+        def agregar_curva(fig, df, col, nombre, color):
+            if col in df.columns:
+                fig.add_trace(go.Scatter(x=df['Año'], y=df[col], mode='lines', fill='tozeroy', name=nombre, line=dict(color=color)))
 
-        if "Pérdida" in tipo_evento:
-            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal.get('Evento_Perdida', df_evento_af['Evento_Perdida']), mode='lines', fill='tozeroy', name='Deforestación/Pérdida', line=dict(color='#343a40')))
-            
-        # Línea de Balance
-        fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Balance_Neto_tCO2e'], mode='lines', name='Balance Neto Real', line=dict(color='black', width=4, dash='dot')))
+        # Curvas de Sumidero
+        agregar_curva(fig, df_bal, 'Captura_Bosque', 'Bosque Base', '#2ecc71')
+        color_pasto = '#f1c40f' if val_pastos >= 0 else '#e67e22'
+        agregar_curva(fig, df_bal, 'Captura_Pastos', 'Pasturas', color_pasto)
+        agregar_curva(fig, df_bal, 'Evento_Ganancia', 'Restauración Nueva', '#00bc8c')
         
-        # ¡Aquí se inyecta tu Título Dinámico!
-        fig.update_layout(
-            title=titulo_dinamico, 
-            xaxis_title="Año", 
-            yaxis_title="Acumulado (tCO2e)", 
-            hovermode="x unified", 
-            height=500
-        )
+        # Curvas de Emisión Agropecuaria
+        agregar_curva(fig, df_fuentes_af, 'Emision_Bovinos', 'Bovinos', '#e74c3c')
+        agregar_curva(fig, df_fuentes_af, 'Emision_Porcinos', 'Porcinos', '#e83e8c')
+        agregar_curva(fig, df_fuentes_af, 'Emision_Aves', 'Aves', '#fd7e14')
+        
+        # Curvas de Emisión Urbana y Humana
+        col_humanos = 'Humanos_Rurales (Aguas Residuales)' if 'Humanos_Rurales (Aguas Residuales)' in df_fuentes_af.columns else 'Emision_Humanos'
+        agregar_curva(fig, df_fuentes_af, col_humanos, 'Humanos Rurales', '#6f42c1')
+        agregar_curva(fig, df_fuentes_af, 'Vertimientos_Urbanos', 'Vertimientos Urbanos', '#17a2b8')
+        agregar_curva(fig, df_fuentes_af, 'Residuos_Solidos', 'Residuos Sólidos', '#795548')
+        agregar_curva(fig, df_fuentes_af, 'Parque_Automotor', 'Parque Automotor', '#34495e')
+        
+        agregar_curva(fig, df_bal, 'Evento_Perdida', 'Deforestación/Pérdida', '#343a40')
+        
+        # Línea de Balance Neto
+        if 'Balance_Neto_tCO2e' in df_bal.columns:
+            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Balance_Neto_tCO2e'], mode='lines', name='Balance Neto Real', line=dict(color='black', width=4, dash='dot')))
+        
+        fig.update_layout(xaxis_title="Año", yaxis_title="Acumulado (tCO2e)", hovermode="x unified", height=500)
         st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
@@ -1191,6 +1193,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
