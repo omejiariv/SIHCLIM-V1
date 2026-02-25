@@ -854,13 +854,19 @@ with tab_afolu:
     
     if "antioquia" in nombre_sel_norm:
         es_departamento = True
-    elif "aburra" in nombre_sel_norm:
-        mpios_activos = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
-    elif 'mpios_activos' in st.session_state and isinstance(st.session_state['mpios_activos'], list):
-        # Si el sidebar general ya guardó una lista regional, la usamos
-        mpios_activos = [normalizar_texto(m) for m in st.session_state['mpios_activos']]
-    else:
-        mpios_activos = [nombre_sel_norm] # Caso base: 1 solo municipio
+    elif 'gdf_zona' in st.session_state and st.session_state.gdf_zona is not None:
+        # Extraemos los nombres exactos de los municipios que componen la región seleccionada
+        if 'MPIO_CNMBR' in st.session_state.gdf_zona.columns:
+            mpios_activos = st.session_state.gdf_zona['MPIO_CNMBR'].astype(str).str.lower().apply(normalizar_texto).tolist()
+        elif 'mpio_cnmbr' in st.session_state.gdf_zona.columns:
+            mpios_activos = st.session_state.gdf_zona['mpio_cnmbr'].astype(str).str.lower().apply(normalizar_texto).tolist()
+            
+    # Fallback por si la capa geográfica no tiene los nombres
+    if not mpios_activos and not es_departamento:
+        if "aburra" in nombre_sel_norm:
+            mpios_activos = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
+        else:
+            mpios_activos = [nombre_sel_norm]
 
     # 2. EXTRACCIÓN Y SUMA AGROPECUARIA (ICA)
     df_bov = cargar_censo_ica('bovino')
@@ -1020,20 +1026,34 @@ with tab_afolu:
     with col_a2:
  
         # =====================================================================
-        # CÁLCULOS REACTIVOS (Con orden de parámetros corregido)
+        # CÁLCULOS REACTIVOS (Con Desglose Urbano y Movilidad)
         # =====================================================================
         h_anios = int(horizonte_af)
-        humanos_totales = int(humanos_rurales + humanos_urbanos)
 
         df_bosque_af = carbon_calculator.calcular_proyeccion_captura(area_af, h_anios, estrategia_af)
         df_pastos_af = carbon_calculator.calcular_captura_pasturas(area_pastos, h_anios, esc_pasto)
-        df_fuentes_af = carbon_calculator.calcular_emisiones_fuentes_detallado(v_leche, v_carne, cerdos, aves, humanos_totales, h_anios)
         
-        # Simplemente sumamos la variable que ya calculamos arriba
-        if 'Total_Emisiones' in df_fuentes_af.columns:
-            df_fuentes_af['Emision_Vehiculos'] = emision_anual_vehiculos
-            df_fuentes_af['Total_Emisiones'] += emision_anual_vehiculos
+        # 1. Calculamos solo las emisiones pecuarias con la función base (enviamos 0 humanos para no mezclarlos)
+        df_fuentes_af = carbon_calculator.calcular_emisiones_fuentes_detallado(v_leche, v_carne, cerdos, aves, 0, h_anios)
         
+        # 2. Factores de Emisión IPCC aproximados (toneladas CO2e / año)
+        # Aguas residuales (Metano/Óxido Nitroso): ~0.05 ton CO2e por habitante al año
+        emision_rural_anual = humanos_rurales * 0.05 
+        emision_urbana_anual = humanos_urbanos * 0.05
+        # Residuos sólidos (Metano en relleno): ~0.15 ton CO2e por tonelada de basura
+        emision_basura_anual = basura_anual_ton * 0.15
+        
+        # 3. Inyectar las nuevas curvas como columnas independientes
+        df_fuentes_af['Humanos_Rurales (Aguas Residuales)'] = emision_rural_anual
+        df_fuentes_af['Vertimientos_Urbanos'] = emision_urbana_anual
+        df_fuentes_af['Residuos_Solidos'] = emision_basura_anual
+        df_fuentes_af['Parque_Automotor'] = emision_anual_vehiculos
+        
+        # 4. Recalcular el Total de Emisiones sumando todas las columnas (excepto 'Año')
+        columnas_fuentes = [c for c in df_fuentes_af.columns if c not in ['Año', 'Total_Emisiones']]
+        df_fuentes_af['Total_Emisiones'] = df_fuentes_af[columnas_fuentes].sum(axis=1)
+        
+        # 5. Eventos de Cambio de Cobertura
         t_ev = "PERDIDA" if "Pérdida" in tipo_evento else "GANANCIA"
         anio_ev_int = int(anio_evento) if 'anio_evento' in locals() else 5 
         df_evento_af = carbon_calculator.calcular_evento_cambio(area_evento, t_ev, anio_ev_int, h_anios)
@@ -1153,6 +1173,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
