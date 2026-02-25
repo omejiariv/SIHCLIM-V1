@@ -834,33 +834,50 @@ with tab_forestal:
 with tab_afolu:
     
     # -------------------------------------------------------------------------
-    # 🌐 1. INTELIGENCIA ESPACIAL Y CEREBRO MAESTRO
+    # 🌐 1. CAPTURA ABSOLUTA DE VARIABLES Y CEREBRO ESPACIAL
     # -------------------------------------------------------------------------
     from modules.data_processor import cargar_censo_ica, normalizar_texto, cargar_territorio_maestro
     
-    nivel_sel = st.session_state.get('nivel_agregacion', st.session_state.get('nivel_seleccion', 'Por Municipio'))
-    nombre_sel = st.session_state.get('territorio_seleccionado', st.session_state.get('nombre_seleccion', 'Desconocido'))
+    # 1.1 El "Cazador" de variables locales (Evita el 'Desconocido')
+    try: 
+        nivel_sel = nivel_seleccion # Intenta leer tu variable local del sidebar
+    except NameError: 
+        nivel_sel = st.session_state.get('nivel_seleccion', st.session_state.get('nivel_agregacion', 'Por Municipio'))
+        
+    try: 
+        nombre_sel = nombre_seleccion # Intenta leer tu variable local del sidebar
+    except NameError: 
+        nombre_sel = st.session_state.get('nombre_seleccion', st.session_state.get('territorio_seleccionado', 'Desconocido'))
+
     nombre_sel_norm = normalizar_texto(nombre_sel)
+    termino_busqueda = nombre_sel_norm.replace("region", "").replace("provincia", "").replace("car", "").strip()
     
+    # 1.2 Conexión a la nueva base maestra
     df_territorio = cargar_territorio_maestro()
+    
+    # Blindaje: Si el procesador no creó las columnas norm, las creamos aquí en vivo
+    if not df_territorio.empty:
+        if 'region_norm' not in df_territorio.columns and 'region' in df_territorio.columns:
+            df_territorio['region_norm'] = df_territorio['region'].astype(str).apply(normalizar_texto)
+        if 'municipio_norm' not in df_territorio.columns and 'municipio' in df_territorio.columns:
+            df_territorio['municipio_norm'] = df_territorio['municipio'].astype(str).apply(normalizar_texto)
+            
     mpios_activos = []
     es_departamento = False
     
-    # Limpiamos palabras trampa para que la búsqueda en el Excel sea exitosa
-    termino_busqueda = nombre_sel_norm.replace("region", "").replace("provincia", "").replace("car:", "").strip()
-    
-    # Motor de Agregación Flexible
+    # 1.3 Motor de Agregación Flexible
     if "departamento" in nivel_sel.lower() or "antioquia" in termino_busqueda:
         es_departamento = True
     elif not df_territorio.empty and "regi" in nivel_sel.lower():
-        # Busca si 'oriente' está contenido dentro del nombre de la región en el Excel
+        # Busca el término (ej. 'oriente') dentro de la columna region_norm de tu nuevo excel
         mask = df_territorio['region_norm'].astype(str).str.contains(termino_busqueda, na=False)
         mpios_activos = df_territorio[mask]['municipio_norm'].tolist()
     elif not df_territorio.empty and ("car" in nivel_sel.lower() or "jurisdicci" in nivel_sel.lower()):
-        mask = df_territorio['car'].astype(str).str.lower().apply(normalizar_texto).str.contains(termino_busqueda, na=False)
-        mpios_activos = df_territorio[mask]['municipio_norm'].tolist()
+        if 'car' in df_territorio.columns:
+            mask = df_territorio['car'].astype(str).apply(normalizar_texto).str.contains(termino_busqueda, na=False)
+            mpios_activos = df_territorio[mask]['municipio_norm'].tolist()
         
-    # Fallback de seguridad
+    # Fallback si no encontró nada o la base falló
     if not mpios_activos and not es_departamento:
         if "aburra" in termino_busqueda:
             mpios_activos = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
@@ -878,7 +895,10 @@ with tab_afolu:
     titulo_dinamico = f"Metabolismo Territorial: Dinámica de GEI en {prefijo} {nombre_sel}"
 
     st.header(f"⚖️ {titulo_dinamico}")
-    st.info("Simulador integral de cuenca: Integra la captura forestal con cargas pecuarias, humanas y eventos de cambio de cobertura en el tiempo.")
+    
+    # Un pequeño indicador visual para que tú sepas si está leyendo la base bien
+    if es_departamento: st.success(f"📍 Mapeando Departamento Completo")
+    else: st.info(f"📍 Agrupando {len(mpios_activos)} municipio(s): {', '.join(mpios_activos[:5])}{'...' if len(mpios_activos)>5 else ''}")
 
     # -------------------------------------------------------------------------
     # 🌐 2. EXTRACCIÓN Y SUMA DE DATOS (BOSQUE, ICA, DANE)
@@ -893,7 +913,7 @@ with tab_afolu:
     df_porc = cargar_censo_ica('porcino')
     df_aves = cargar_censo_ica('aviar')
     
-    # Motor de sumatoria masiva para regiones enteras
+    # Motor de sumatoria masiva
     def filtrar_y_sumar(df, columna_mpio, columna_valor):
         if df.empty or columna_valor not in df.columns: return 0
         if es_departamento:
@@ -925,7 +945,6 @@ with tab_afolu:
     if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = 1000 
     aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
 
-    # ¡AQUÍ REVIVIMOS LA DIVISIÓN DE PANTALLA! (El código que ya tienes sigue desde aquí)
     col_a1, col_a2 = st.columns([1, 2.5])
     
     with col_a1:
@@ -1193,6 +1212,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
