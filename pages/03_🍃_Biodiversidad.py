@@ -836,8 +836,7 @@ with tab_afolu:
     st.info("Simulador integral de cuenca: Integra la captura forestal con cargas pecuarias, humanas y eventos de cambio de cobertura en el tiempo.")
     
     # -------------------------------------------------------------------------
-    # 🌐 ALEPH FORESTAL (SUMIDERO)
-    # Extraer ID 9 (Bosque) de los cálculos satelitales si están disponibles
+    # 🌐 ALEPH FORESTAL Y DEMOGRÁFICO
     # -------------------------------------------------------------------------
     area_bosque_real = 100.0
     try:
@@ -845,79 +844,63 @@ with tab_afolu:
             area_bosque_real = df_diagnostico[df_diagnostico['COV_ID'] == 9]['Hectareas'].sum()
     except: pass
 
-    col_a1, col_a2 = st.columns([1, 2.5])
+    from modules.data_processor import cargar_censo_ica, normalizar_texto
+    municipio_actual = normalizar_texto(nombre_seleccion) if 'nombre_seleccion' in locals() else ""
     
-    with col_a1:
-        st.subheader("1. Línea Base Forestal (Sumidero Principal)")
-        estrategia_af = st.selectbox("Bosque Existente/Planeado:", options=list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"])
-        
-        # Ahora lee el satélite por defecto
-        area_af = st.number_input("Hectáreas (Bosque Satélite):", value=float(area_bosque_real) if area_bosque_real > 0 else 100.0, step=10.0)
-        horizonte_af = st.slider("Horizonte de Análisis (Años):", 5, 50, 20, key="slider_afolu")
-        
-        st.markdown("---")
-        
-        # -------------------------------------------------------------------------
-        # 🌐 ALEPH PECUARIO Y DEMOGRÁFICO (FUENTES DE EMISIÓN)
-        # -------------------------------------------------------------------------
-        from modules.data_processor import cargar_censo_ica, normalizar_texto
-        
-        municipio_actual = normalizar_texto(nombre_seleccion) if 'nombre_seleccion' in locals() else ""
-        
-        # 1. Cargar Censos Agropecuarios
-        df_bov = cargar_censo_ica('bovino')
-        df_porc = cargar_censo_ica('porcino')
-        df_aves = cargar_censo_ica('aviar')
-        
-        bovinos_reales, porcinos_reales, aves_reales = 0, 0, 0
-        if not df_bov.empty: bovinos_reales = int(df_bov[df_bov['MUNICIPIO_NORM'] == municipio_actual]['TOTALBOVINOS'].sum())
-        if not df_porc.empty: porcinos_reales = int(df_porc[df_porc['MUNICIPIO_NORM'] == municipio_actual]['TOTAL_CERDOS'].sum())
-        if not df_aves.empty:
-            col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
-            aves_reales = int(df_aves[df_aves['MUNICIPIO_NORM'] == municipio_actual][col_aves].sum())
+    df_bov = cargar_censo_ica('bovino')
+    df_porc = cargar_censo_ica('porcino')
+    df_aves = cargar_censo_ica('aviar')
+    
+    bovinos_reales, porcinos_reales, aves_reales = 0, 0, 0
+    if not df_bov.empty: bovinos_reales = int(df_bov[df_bov['MUNICIPIO_NORM'] == municipio_actual]['TOTALBOVINOS'].sum())
+    if not df_porc.empty: porcinos_reales = int(df_porc[df_porc['MUNICIPIO_NORM'] == municipio_actual]['TOTAL_CERDOS'].sum())
+    if not df_aves.empty:
+        col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
+        aves_reales = int(df_aves[df_aves['MUNICIPIO_NORM'] == municipio_actual][col_aves].sum())
 
-        # 2. Motor Demográfico (El Aleph DANE/Veredal)
-        poblacion_rural_calculada = 0
-        poblacion_urbana_calculada = 0
-        
-        # Intento A: Leer de la memoria global
-        if 'aleph_pob_rural' in st.session_state and st.session_state.get('aleph_territorio_origen', '') == municipio_actual:
-            poblacion_rural_calculada = float(st.session_state['aleph_pob_rural'])
-            poblacion_urbana_calculada = float(st.session_state.get('aleph_pob_urbana', 0))
-        else:
-            # Intento B: Calcular desde la base de Veredas (Rural)
-            try:
-                df_veredas = pd.read_excel("data/veredas_Antioquia.xlsx") 
-                df_v_filt = df_veredas[df_veredas['Municipio'].astype(str).apply(normalizar_texto) == municipio_actual]
-                if not df_v_filt.empty: poblacion_rural_calculada = int(df_v_filt['Poblacion_hab'].sum())
-            except: pass
-            
-            # Intento C: Respaldo con DANE (Rural y Urbana)
-            try:
-                df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False)
-                df_m_filt = df_mpios[(df_mpios['municipio'].astype(str).apply(normalizar_texto) == municipio_actual)]
-                if not df_m_filt.empty:
-                    anio_max = df_m_filt['año'].max()
-                    df_m_filt = df_m_filt[df_m_filt['año'] == anio_max]
-                    areas_str = df_m_filt['area_geografica'].astype(str).str.lower()
-                    
-                    pob_rur_dane = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
-                    pob_urb_dane = int(df_m_filt[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum())
-                    
-                    if poblacion_rural_calculada == 0: poblacion_rural_calculada = pob_rur_dane
-                    if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = pob_urb_dane
-            except: pass
+    poblacion_rural_calculada, poblacion_urbana_calculada = 0, 0
+    if 'aleph_pob_rural' in st.session_state and st.session_state.get('aleph_territorio_origen', '') == municipio_actual:
+        poblacion_rural_calculada = float(st.session_state['aleph_pob_rural'])
+        poblacion_urbana_calculada = float(st.session_state.get('aleph_pob_urbana', 0))
+    else:
+        try:
+            df_veredas = pd.read_excel("data/veredas_Antioquia.xlsx") 
+            df_v_filt = df_veredas[df_veredas['Municipio'].astype(str).apply(normalizar_texto) == municipio_actual]
+            if not df_v_filt.empty: poblacion_rural_calculada = int(df_v_filt['Poblacion_hab'].sum())
+        except: pass
+        try:
+            df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False)
+            df_m_filt = df_mpios[(df_mpios['municipio'].astype(str).apply(normalizar_texto) == municipio_actual)]
+            if not df_m_filt.empty:
+                anio_max = df_m_filt['año'].max()
+                df_m_filt = df_m_filt[df_m_filt['año'] == anio_max]
+                areas_str = df_m_filt['area_geografica'].astype(str).str.lower()
+                pob_rur_dane = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
+                pob_urb_dane = int(df_m_filt[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum())
+                if poblacion_rural_calculada == 0: poblacion_rural_calculada = pob_rur_dane
+                if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = pob_urb_dane
+        except: pass
 
-        if poblacion_rural_calculada == 0: poblacion_rural_calculada = 50 
-        if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = 1000 # Valor por defecto
+    if poblacion_rural_calculada == 0: poblacion_rural_calculada = 50 
+    if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = 1000 
+    aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
 
-        # Conexión Aleph de Pasturas Satelitales
-        aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
+    # =========================================================================
+    # 🌲 MÓDULO 1: BOSQUES (Desplegable)
+    # =========================================================================
+    with st.expander("🌳 1. Línea Base Forestal (Sumidero Principal)", expanded=True):
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            estrategia_af = st.selectbox("Bosque Existente/Planeado:", options=list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"])
+            area_af = st.number_input("Hectáreas (Bosque Satélite):", value=float(area_bosque_real) if area_bosque_real > 0 else 100.0, step=10.0)
+        with col_b2:
+            horizonte_af = st.slider("Horizonte de Análisis (Años):", 5, 50, 20, key="slider_afolu")
 
-        # --- INTERFAZ DINÁMICA: SECTOR RURAL Y AGROPECUARIO ---
-        st.subheader("2. Actividades Agropecuarias y Humanas (Rural)")
+    # =========================================================================
+    # 🐄 MÓDULO 2: RURAL Y AGROPECUARIO (Desplegable)
+    # =========================================================================
+    with st.expander("🌾 2. Actividades Agropecuarias y Humanas (Rural)", expanded=False):
         st.info(f"📍 **Conexión Aleph:** Datos censales (ICA) y poblacionales (DANE) extraídos para **{nombre_seleccion}**.")
-
         opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"]
         fuentes_sel = st.multiselect("Selecciona cargas rurales a modelar:", opciones_fuentes, default=["Todas"])
         fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"] if "Todas" in fuentes_sel else fuentes_sel
@@ -965,13 +948,13 @@ with tab_afolu:
         st.caption(f"🚗 *Nota Ambiental:* Se estima que este parque automotor genera aproximadamente **{(vehiculos * 4.5 * 365) / 1000:,.0f} toneladas de CO2e al año** (asumiendo 4.5 kg CO2e/vehículo/día).")
 
         st.markdown("---")
-        st.subheader("3. Eventos en el Tiempo")
+        st.subheader("4. Eventos en el Tiempo")
         tipo_evento = st.radio("Simular alteración de cobertura:", ["Ninguno", "Pérdida (Deforestación/Incendio)", "Ganancia (Restauración Activa)"], horizontal=True)
-        area_ev, anio_ev, estado_ev, causa_ev = 0, 1, "BOSQUE_SECUNDARIO", "AGRICOLA"
+        area_evento, anio_evento, estado_ev, causa_ev = 0.0, 1, "BOSQUE_SECUNDARIO", "AGRICOLA"
         
         if tipo_evento != "Ninguno":
-            area_ev = st.number_input("Hectáreas Afectadas:", min_value=0.1, value=5.0, step=1.0)
-            anio_ev = st.slider("¿En qué año ocurre?", 1, horizonte_af, 5)
+            area_evento = st.number_input("Hectáreas Afectadas:", min_value=0.1, value=5.0, step=1.0)
+            anio_evento = st.slider("¿En qué año ocurre?", 1, int(horizonte_af), 5)
             estado_ev = st.selectbox("Tipo de Cobertura:", list(carbon_calculator.STOCKS_SUCESION.keys()), index=4)
             if "Pérdida" in tipo_evento:
                 causa_ev = st.selectbox("Causa:", list(carbon_calculator.CAUSAS_PERDIDA.keys()))
@@ -981,33 +964,21 @@ with tab_afolu:
         # =====================================================================
         # CÁLCULOS REACTIVOS (Con orden de parámetros corregido)
         # =====================================================================
-        # 1. Blindaje de tipos de datos
         h_anios = int(horizonte_af)
         humanos_totales = int(humanos_rurales + humanos_urbanos)
 
-        # 2. Cálculos de captura forestal y pasturas (ORDEN CORREGIDO: Área, Años, Escenario)
         df_bosque_af = carbon_calculator.calcular_proyeccion_captura(area_af, h_anios, estrategia_af)
         df_pastos_af = carbon_calculator.calcular_captura_pasturas(area_pastos, h_anios, esc_pasto)
-        
-        # 3. Calcular emisiones pecuarias y humanas conjuntas
         df_fuentes_af = carbon_calculator.calcular_emisiones_fuentes_detallado(v_leche, v_carne, cerdos, aves, humanos_totales, h_anios)
         
-        # 4. Inyectar las emisiones del Parque Automotor directamente
-        # Factor: 4.5 kg CO2e / vehículo / día -> a toneladas por año
-        emision_anual_vehiculos = (vehiculos * 4.5 * 365) / 1000.0
-        
+        # Simplemente sumamos la variable que ya calculamos arriba
         if 'Total_Emisiones' in df_fuentes_af.columns:
             df_fuentes_af['Emision_Vehiculos'] = emision_anual_vehiculos
             df_fuentes_af['Total_Emisiones'] += emision_anual_vehiculos
         
-        # 5. Cálculo de eventos de pérdida/ganancia
-        area_ev_segura = float(area_evento) if 'area_evento' in locals() else 0.0
-        tipo_ev_seguro = str(tipo_evento) if 'tipo_evento' in locals() else "Pérdida"
+        t_ev = "PERDIDA" if "Pérdida" in tipo_evento else "GANANCIA"
         anio_ev_int = int(anio_evento) if 'anio_evento' in locals() else 5 
-        
-        t_ev = "PERDIDA" if "Pérdida" in tipo_ev_seguro else "GANANCIA"
-        
-        df_evento_af = carbon_calculator.calcular_evento_cambio(area_ev_segura, t_ev, anio_ev_int, h_anios)
+        df_evento_af = carbon_calculator.calcular_evento_cambio(area_evento, t_ev, anio_ev_int, h_anios)
 
         # =====================================================================
         
@@ -1124,6 +1095,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
