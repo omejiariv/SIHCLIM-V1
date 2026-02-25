@@ -229,27 +229,25 @@ def cargar_territorio_maestro():
     """
     Carga la base de datos maestra que relaciona municipios con regiones y CARs.
     """
-    # Nombres comunes para este archivo en tu proyecto
-    rutas = [
-        "data/territorio_maestro.xlsx", 
-        "data/territorio_maestro.csv",
-        "data/divipola.xlsx",
-        "data/divipola.csv"
-    ]
+    import os
+    import pandas as pd
     
+    rutas = ["data/territorio_maestro.xlsx", "data/territorio_maestro.csv"]
     df = pd.DataFrame()
     for ruta in rutas:
         if os.path.exists(ruta):
-            if ruta.endswith('.xlsx'): 
-                df = pd.read_excel(ruta)
-            else: 
-                df = leer_csv_robusto(ruta)
+            if ruta.endswith('.xlsx'): df = pd.read_excel(ruta)
+            else: df = pd.read_csv(ruta)
             break
             
     if not df.empty:
-        # Normalizamos las columnas para evitar errores de mayúsculas/espacios
+        # Convertimos todo a minúsculas y quitamos espacios
         df.columns = df.columns.str.lower().str.strip()
+        
+        # Normalizamos las columnas clave para que el motor de agregación las entienda
         if 'municipio' in df.columns:
             df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto)
+        if 'region' in df.columns:
+            df['region_norm'] = df['region'].astype(str).apply(normalizar_texto)
             
     return df
