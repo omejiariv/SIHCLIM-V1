@@ -892,7 +892,7 @@ with tab_afolu:
     elif "car" in nivel_sel.lower() or "jurisdicci" in nivel_sel.lower(): prefijo = "la Jurisdicción de"
     else: prefijo = "el territorio de"
     
-    titulo_dinamico = f"Metabolismo Territorial: Dinámica de GEI en {prefijo} {nombre_sel}"
+    titulo_dinamico = f"Metabolismo Territorial: Dinámica de GEI en {nombre_sel}"
 
     st.header(f"⚖️ {titulo_dinamico}")
     
@@ -1212,6 +1212,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
