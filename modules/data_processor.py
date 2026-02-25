@@ -224,3 +224,32 @@ def cargar_censo_ica(tipo):
             df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
     return df
 
+@st.cache_data
+def cargar_territorio_maestro():
+    """
+    Carga la base de datos maestra que relaciona municipios con regiones y CARs.
+    """
+    # Nombres comunes para este archivo en tu proyecto
+    rutas = [
+        "data/territorio_maestro.xlsx", 
+        "data/territorio_maestro.csv",
+        "data/divipola.xlsx",
+        "data/divipola.csv"
+    ]
+    
+    df = pd.DataFrame()
+    for ruta in rutas:
+        if os.path.exists(ruta):
+            if ruta.endswith('.xlsx'): 
+                df = pd.read_excel(ruta)
+            else: 
+                df = leer_csv_robusto(ruta)
+            break
+            
+    if not df.empty:
+        # Normalizamos las columnas para evitar errores de mayúsculas/espacios
+        df.columns = df.columns.str.lower().str.strip()
+        if 'municipio' in df.columns:
+            df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto)
+            
+    return df
