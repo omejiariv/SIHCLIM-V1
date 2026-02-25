@@ -478,7 +478,7 @@ with tab_mapa:
 # ==============================================================================
 with tab_taxonomia:
     if not gdf_bio.empty:
-        c1, c2 = st.columns([2,1])
+        c1, c2 = st.columns([2, 1])
         
         with c1:
             st.markdown("##### Estructura Taxonómica")
@@ -499,17 +499,21 @@ with tab_taxonomia:
                 if 'Nombre Común' in threatened.columns:
                     cols_mostrar.insert(1, 'Nombre Común') # Lo añade solo si existe
                     
-               st.dataframe(threatened[cols_mostrar].astype(str).drop_duplicates(), width="stretch", hide_index=True)
+                # <-- ¡Alineación corregida y escudo Arrow aplicado!
+                st.dataframe(threatened[cols_mostrar].astype(str).drop_duplicates(), width="stretch", hide_index=True)
             else:
                 st.success("✅ No se detectaron especies en categorías críticas (CR, EN, VU) en esta zona.")
         
         st.markdown("---")
         st.markdown("##### Detalle de Registros")
-        st.dataframe(gdf_bio.drop(columns='geometry', errors='ignore'), use_container_width=True)
+        
+        # <-- Escudo Arrow y actualización de ancho (width) para la tabla general
+        df_mostrar = gdf_bio.drop(columns=['geometry'], errors='ignore').astype(str)
+        st.dataframe(df_mostrar, width="stretch", hide_index=True)
         
     else:
         st.info("No hay datos de biodiversidad para mostrar estadísticas.")
-
+        
 # ==============================================================================
 # TAB 3: CALCULADORA DE CARBONO (INTEGRADA & DOCUMENTADA)
 # ==============================================================================
@@ -1212,6 +1216,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
