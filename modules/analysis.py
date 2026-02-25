@@ -1,5 +1,6 @@
 # modules/analysis.py
 
+import scipy.spatial.distance
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -1217,5 +1218,6 @@ def calculate_hydrological_statistics(series_mensual, runoff_coeff, area_km2, q_
 
     except Exception:
         pass
+
 
     return stats_dict
