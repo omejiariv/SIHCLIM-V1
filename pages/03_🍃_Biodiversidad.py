@@ -836,7 +836,8 @@ with tab_afolu:
     st.info("Simulador integral de cuenca: Integra la captura forestal con cargas pecuarias, humanas y eventos de cambio de cobertura en el tiempo.")
     
     # -------------------------------------------------------------------------
-    # 🌐 ALEPH FORESTAL Y DEMOGRÁFICO
+# -------------------------------------------------------------------------
+    # 🌐 ALEPH FORESTAL Y DEMOGRÁFICO (CON MOTOR DE AGREGACIÓN REGIONAL)
     # -------------------------------------------------------------------------
     area_bosque_real = 100.0
     try:
@@ -845,47 +846,81 @@ with tab_afolu:
     except: pass
 
     from modules.data_processor import cargar_censo_ica, normalizar_texto
-    municipio_actual = normalizar_texto(nombre_seleccion) if 'nombre_seleccion' in locals() else ""
+    nombre_sel_norm = normalizar_texto(nombre_seleccion) if 'nombre_seleccion' in locals() else ""
     
+    # 1. INTELIGENCIA ESPACIAL: Determinar la lista de municipios a sumar
+    mpios_activos = []
+    es_departamento = False
+    
+    if "antioquia" in nombre_sel_norm:
+        es_departamento = True
+    elif "aburra" in nombre_sel_norm:
+        mpios_activos = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
+    elif 'mpios_activos' in st.session_state and isinstance(st.session_state['mpios_activos'], list):
+        # Si el sidebar general ya guardó una lista regional, la usamos
+        mpios_activos = [normalizar_texto(m) for m in st.session_state['mpios_activos']]
+    else:
+        mpios_activos = [nombre_sel_norm] # Caso base: 1 solo municipio
+
+    # 2. EXTRACCIÓN Y SUMA AGROPECUARIA (ICA)
     df_bov = cargar_censo_ica('bovino')
     df_porc = cargar_censo_ica('porcino')
     df_aves = cargar_censo_ica('aviar')
     
-    bovinos_reales, porcinos_reales, aves_reales = 0, 0, 0
-    if not df_bov.empty: bovinos_reales = int(df_bov[df_bov['MUNICIPIO_NORM'] == municipio_actual]['TOTALBOVINOS'].sum())
-    if not df_porc.empty: porcinos_reales = int(df_porc[df_porc['MUNICIPIO_NORM'] == municipio_actual]['TOTAL_CERDOS'].sum())
-    if not df_aves.empty:
-        col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
-        aves_reales = int(df_aves[df_aves['MUNICIPIO_NORM'] == municipio_actual][col_aves].sum())
+    def filtrar_y_sumar(df, columna_mpio, columna_valor):
+        if df.empty or columna_valor not in df.columns: return 0
+        if es_departamento:
+            if 'DEPARTAMENTO' in df.columns:
+                return df[df['DEPARTAMENTO'].astype(str).str.lower().str.contains('antioquia')][columna_valor].sum()
+            return df[columna_valor].sum() # Asume que toda la base es Antioquia
+        return df[df[columna_mpio].isin(mpios_activos)][columna_valor].sum()
 
+    bovinos_reales = int(filtrar_y_sumar(df_bov, 'MUNICIPIO_NORM', 'TOTALBOVINOS'))
+    porcinos_reales = int(filtrar_y_sumar(df_porc, 'MUNICIPIO_NORM', 'TOTAL_CERDOS'))
+    
+    col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if not df_aves.empty and 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
+    aves_reales = int(filtrar_y_sumar(df_aves, 'MUNICIPIO_NORM', col_aves))
+
+    # 3. EXTRACCIÓN Y SUMA DEMOGRÁFICA (DANE / VEREDAS)
     poblacion_rural_calculada, poblacion_urbana_calculada = 0, 0
-    if 'aleph_pob_rural' in st.session_state and st.session_state.get('aleph_territorio_origen', '') == municipio_actual:
+    
+    if 'aleph_pob_rural' in st.session_state and st.session_state.get('aleph_territorio_origen', '') == nombre_seleccion:
         poblacion_rural_calculada = float(st.session_state['aleph_pob_rural'])
         poblacion_urbana_calculada = float(st.session_state.get('aleph_pob_urbana', 0))
     else:
-        try:
-            df_veredas = pd.read_excel("data/veredas_Antioquia.xlsx") 
-            df_v_filt = df_veredas[df_veredas['Municipio'].astype(str).apply(normalizar_texto) == municipio_actual]
-            if not df_v_filt.empty: poblacion_rural_calculada = int(df_v_filt['Poblacion_hab'].sum())
-        except: pass
+        # Intento DANE Principal
         try:
             df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False)
-            df_m_filt = df_mpios[(df_mpios['municipio'].astype(str).apply(normalizar_texto) == municipio_actual)]
+            if es_departamento:
+                df_m_filt = df_mpios[df_mpios['depto_nom'].astype(str).str.lower().str.contains('antioquia')]
+            else:
+                df_m_filt = df_mpios[df_mpios['municipio'].astype(str).apply(normalizar_texto).isin(mpios_activos)]
+                
             if not df_m_filt.empty:
                 anio_max = df_m_filt['año'].max()
                 df_m_filt = df_m_filt[df_m_filt['año'] == anio_max]
                 areas_str = df_m_filt['area_geografica'].astype(str).str.lower()
-                pob_rur_dane = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
-                pob_urb_dane = int(df_m_filt[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum())
-                if poblacion_rural_calculada == 0: poblacion_rural_calculada = pob_rur_dane
-                if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = pob_urb_dane
+                poblacion_rural_calculada = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
+                poblacion_urbana_calculada = int(df_m_filt[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum())
         except: pass
+        
+        # Fallback Veredas (Solo para Rural) si DANE no cargó
+        if poblacion_rural_calculada == 0:
+            try:
+                df_veredas = pd.read_excel("data/veredas_Antioquia.xlsx") 
+                if es_departamento:
+                    poblacion_rural_calculada = int(df_veredas['Poblacion_hab'].sum())
+                else:
+                    df_v_filt = df_veredas[df_veredas['Municipio'].astype(str).apply(normalizar_texto).isin(mpios_activos)]
+                    poblacion_rural_calculada = int(df_v_filt['Poblacion_hab'].sum())
+            except: pass
 
+    # Blindaje final
     if poblacion_rural_calculada == 0: poblacion_rural_calculada = 50 
     if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = 1000 
+    
     aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
-
-    # =========================================================================
+    
     col_a1, col_a2 = st.columns([1, 2.5])
     
     with col_a1:
@@ -1118,6 +1153,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
