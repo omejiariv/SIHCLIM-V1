@@ -499,7 +499,7 @@ with tab_taxonomia:
                 if 'Nombre Común' in threatened.columns:
                     cols_mostrar.insert(1, 'Nombre Común') # Lo añade solo si existe
                     
-                st.dataframe(threatened[cols_mostrar].drop_duplicates(), use_container_width=True, hide_index=True)
+               st.dataframe(threatened[cols_mostrar].astype(str).drop_duplicates(), width="stretch", hide_index=True)
             else:
                 st.success("✅ No se detectaron especies en categorías críticas (CR, EN, VU) en esta zona.")
         
@@ -1212,6 +1212,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
