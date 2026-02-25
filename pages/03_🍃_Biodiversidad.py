@@ -838,29 +838,26 @@ with tab_afolu:
     # -------------------------------------------------------------------------
     from modules.data_processor import cargar_censo_ica, normalizar_texto, cargar_territorio_maestro
     
-    nivel_sel = st.session_state.get('nivel_seleccion', 'Municipal')
-    nombre_sel = st.session_state.get('nombre_seleccion', 'Desconocido')
+    # Capturamos exactamente las variables que envía tu menú lateral (Sidebar)
+    nivel_sel = st.session_state.get('nivel_agregacion', st.session_state.get('nivel_seleccion', 'Por Municipio'))
+    nombre_sel = st.session_state.get('territorio_seleccionado', st.session_state.get('nombre_seleccion', 'Territorio Desconocido'))
     nombre_sel_norm = normalizar_texto(nombre_sel)
     
     df_territorio = cargar_territorio_maestro()
     mpios_activos = []
     es_departamento = False
     
-    # Lógica de detección regional: Combina la base de datos maestra con el mapa interactivo
-    if nivel_sel == "Departamental" or "antioquia" in nombre_sel_norm:
+    # --- MOTOR DE AGREGACIÓN ---
+    if "departamento" in nivel_sel.lower() or "antioquia" in nombre_sel_norm:
         es_departamento = True
-    elif not df_territorio.empty and nivel_sel == "Regional":
-        mpios_activos = df_territorio[df_territorio['region'].astype(str).apply(normalizar_texto) == nombre_sel_norm]['municipio_norm'].tolist()
-    elif not df_territorio.empty and nivel_sel == "Jurisdicción Ambiental (CAR)":
+    elif not df_territorio.empty and "regi" in nivel_sel.lower():
+        # Busca en el nuevo Excel todos los municipios que pertenecen a esta región
+        mpios_activos = df_territorio[df_territorio['region_norm'] == nombre_sel_norm]['municipio_norm'].tolist()
+    elif not df_territorio.empty and "car" in nivel_sel.lower():
         car_name = nombre_sel.replace("CAR: ", "")
         mpios_activos = df_territorio[df_territorio['car'].astype(str).apply(normalizar_texto) == normalizar_texto(car_name)]['municipio_norm'].tolist()
-    elif 'gdf_zona' in st.session_state and st.session_state.gdf_zona is not None and not mpios_activos:
-        if 'MPIO_CNMBR' in st.session_state.gdf_zona.columns:
-            mpios_activos = st.session_state.gdf_zona['MPIO_CNMBR'].astype(str).str.lower().apply(normalizar_texto).tolist()
-        elif 'mpio_cnmbr' in st.session_state.gdf_zona.columns:
-            mpios_activos = st.session_state.gdf_zona['mpio_cnmbr'].astype(str).str.lower().apply(normalizar_texto).tolist()
-            
-    # Fallback de seguridad final (por si todo lo anterior falla)
+        
+    # Fallback si es un solo municipio o el Valle de Aburrá
     if not mpios_activos and not es_departamento:
         if "aburra" in nombre_sel_norm:
             mpios_activos = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
@@ -868,11 +865,13 @@ with tab_afolu:
             mpios_activos = [nombre_sel_norm]
 
     # --- TÍTULO DINÁMICO ---
-    prefijos = {
-        "Municipal": "el Municipio de", "Regional": "la Región", "Departamental": "el Departamento de",
-        "Jurisdicción Ambiental (CAR)": "la Jurisdicción", "Cuenca Hidrográfica": "la Cuenca", "Veredal": "la Vereda"
-    }
-    prefijo = prefijos.get(nivel_sel, "el territorio de")
+    if "municipio" in nivel_sel.lower(): prefijo = "el Municipio de"
+    elif "regi" in nivel_sel.lower(): prefijo = "la Región"
+    elif "departamento" in nivel_sel.lower(): prefijo = "el Departamento de"
+    elif "cuenca" in nivel_sel.lower(): prefijo = "la Cuenca"
+    elif "car" in nivel_sel.lower() or "jurisdicci" in nivel_sel.lower(): prefijo = "la Jurisdicción de"
+    else: prefijo = "el territorio de"
+    
     titulo_dinamico = f"Metabolismo Territorial: Dinámica de GEI en {prefijo} {nombre_sel}"
 
     st.header(f"⚖️ {titulo_dinamico}")
@@ -1056,16 +1055,22 @@ with tab_afolu:
         df_evento_af = carbon_calculator.calcular_evento_cambio(area_evento, t_ev, anio_ev_int, h_anios)
 
         # =====================================================================
-        
+        # 5. BALANCE Y GRÁFICA FINAL
+        # =====================================================================
         df_bal = carbon_calculator.calcular_balance_territorial(df_bosque_af, df_pastos_af, df_fuentes_af, df_evento_af)
         
         neto_final = df_bal['Balance_Neto_tCO2e'].iloc[-1]
         usd_total = neto_final * 5.0 # PRECIO USD RECUPERADO
         
-        # MÉTRICAS PRINCIPALES
+        # MÉTRICAS PRINCIPALES (Cálculo seguro unificado)
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Captura (Sumideros)", f"{(df_bal['Captura_Bosque'].iloc[-1] + df_bal['Captura_Pastos'].iloc[-1] + df_bal['Evento_Ganancia'].iloc[-1]):,.0f} t")
-        m2.metric("Emisiones Totales", f"{(df_bal['Emision_Bovinos'].iloc[-1] + df_bal['Emision_Porcinos'].iloc[-1] + df_bal['Emision_Aves'].iloc[-1] + df_bal['Emision_Humanos'].iloc[-1] + df_bal['Evento_Perdida'].iloc[-1]):,.0f} t")
+        captura_total = df_bal['Captura_Bosque'].iloc[-1] + df_bal['Captura_Pastos'].iloc[-1] + df_bal.get('Evento_Ganancia', df_evento_af['Evento_Ganancia']).iloc[-1]
+        
+        # Usamos el Total_Emisiones directo para evitar errores si las columnas cambian
+        emision_total = df_fuentes_af['Total_Emisiones'].iloc[-1] + df_bal.get('Evento_Perdida', df_evento_af['Evento_Perdida']).iloc[-1]
+        
+        m1.metric("Captura (Sumideros)", f"{captura_total:,.0f} t")
+        m2.metric("Emisiones Totales", f"{emision_total:,.0f} t")
         estado = "🌿 Sumidero" if neto_final > 0 else "⚠️ Emisor"
         m3.metric("Balance Neto", f"{neto_final:,.0f} t", delta=estado, delta_color="normal" if neto_final > 0 else "inverse")
         m4.metric("Valor del Carbono", f"${usd_total:,.0f} USD", help="A un precio referencial de $5 USD la tonelada.")
@@ -1077,25 +1082,41 @@ with tab_afolu:
         fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Bosque'], mode='lines', fill='tozeroy', name='Bosque Base', line=dict(color='#2ecc71')))
         color_pasto = '#f1c40f' if df_pastos_af['Pastura_tCO2e_Acumulado'].iloc[-1] >= 0 else '#e67e22'
         fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Captura_Pastos'], mode='lines', fill='tozeroy', name='Pasturas', line=dict(color=color_pasto)))
+        
         if "Ganancia" in tipo_evento:
-            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Evento_Ganancia'], mode='lines', fill='tozeroy', name='Restauración Nueva', line=dict(color='#00bc8c')))
+            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal.get('Evento_Ganancia', df_evento_af['Evento_Ganancia']), mode='lines', fill='tozeroy', name='Restauración Nueva', line=dict(color='#00bc8c')))
             
         # Curvas Negativas (Fuentes Desglosadas)
+        # Extraemos los datos de df_fuentes_af para asegurar que leemos los nuevos cálculos urbanos
         if "Bovinos" in fuentes_activas:
-            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emision_Bovinos'], mode='lines', fill='tozeroy', name='Bovinos', line=dict(color='#e74c3c')))
+            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af['Emision_Bovinos'], mode='lines', fill='tozeroy', name='Bovinos', line=dict(color='#e74c3c')))
         if "Porcinos" in fuentes_activas:
-            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emision_Porcinos'], mode='lines', fill='tozeroy', name='Porcinos', line=dict(color='#e83e8c')))
+            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af['Emision_Porcinos'], mode='lines', fill='tozeroy', name='Porcinos', line=dict(color='#e83e8c')))
         if "Avicultura" in fuentes_activas:
-            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emision_Aves'], mode='lines', fill='tozeroy', name='Aves', line=dict(color='#fd7e14')))
-        if "Población Humana" in fuentes_activas:
-            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Emision_Humanos'], mode='lines', fill='tozeroy', name='Humanos', line=dict(color='#6f42c1')))
+            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af['Emision_Aves'], mode='lines', fill='tozeroy', name='Aves', line=dict(color='#fd7e14')))
+        if "Población Rural" in fuentes_activas:
+            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af.get('Humanos_Rurales (Aguas Residuales)', df_fuentes_af.get('Emision_Humanos', df_fuentes_af['Año']*0)), mode='lines', fill='tozeroy', name='Humanos Rurales', line=dict(color='#6f42c1')))
+            
+        # ¡Nuevas curvas de impacto urbano!
+        if humanos_urbanos > 0:
+            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af.get('Vertimientos_Urbanos', df_fuentes_af['Año']*0), mode='lines', fill='tozeroy', name='Vertimientos Urbanos', line=dict(color='#17a2b8')))
+            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af.get('Residuos_Solidos', df_fuentes_af['Año']*0), mode='lines', fill='tozeroy', name='Residuos Sólidos', line=dict(color='#795548')))
+            fig.add_trace(go.Scatter(x=df_fuentes_af['Año'], y=df_fuentes_af.get('Parque_Automotor', df_fuentes_af['Año']*0), mode='lines', fill='tozeroy', name='Parque Automotor', line=dict(color='#34495e')))
+
         if "Pérdida" in tipo_evento:
-            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Evento_Perdida'], mode='lines', fill='tozeroy', name='Deforestación/Pérdida', line=dict(color='#343a40')))
+            fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal.get('Evento_Perdida', df_evento_af['Evento_Perdida']), mode='lines', fill='tozeroy', name='Deforestación/Pérdida', line=dict(color='#343a40')))
             
         # Línea de Balance
         fig.add_trace(go.Scatter(x=df_bal['Año'], y=df_bal['Balance_Neto_tCO2e'], mode='lines', name='Balance Neto Real', line=dict(color='black', width=4, dash='dot')))
         
-        fig.update_layout(title="Metabolismo Territorial: Dinámica de GEI en la Cuenca", xaxis_title="Año", yaxis_title="Acumulado (tCO2e)", hovermode="x unified", height=500)
+        # ¡Aquí se inyecta tu Título Dinámico!
+        fig.update_layout(
+            title=titulo_dinamico, 
+            xaxis_title="Año", 
+            yaxis_title="Acumulado (tCO2e)", 
+            hovermode="x unified", 
+            height=500
+        )
         st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
@@ -1170,6 +1191,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
