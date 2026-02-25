@@ -186,8 +186,8 @@ def cargar_censo_aviar():
 
 @st.cache_data
 def cargar_territorio_maestro():
-    ruta_xlsx = "data/depto_region_car_territ_mpios.xlsx"
-    ruta_csv = "data/depto_region_car_territ_mpios.csv"
+    ruta_xlsx = "data/territorio_maestro.xlsx"
+    ruta_csv = "data/territorio_maestro.csv"
     df = pd.DataFrame()
     if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
     elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
