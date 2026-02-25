@@ -232,22 +232,38 @@ def cargar_territorio_maestro():
     import os
     import pandas as pd
     
-    rutas = ["data/territorio_maestro.xlsx", "data/territorio_maestro.csv"]
+    # Busca primero el nuevo archivo nacional, si no está, busca el antiguo de Antioquia
+    rutas = [
+        "data/territorio_maestro.xlsx", 
+        "data/territorio_maestro.csv",
+        "data/depto_region_car_territ_mpios.xlsx",
+        "data/depto_region_car_territ_mpios.csv"
+    ]
+    
     df = pd.DataFrame()
     for ruta in rutas:
         if os.path.exists(ruta):
-            if ruta.endswith('.xlsx'): df = pd.read_excel(ruta)
-            else: df = pd.read_csv(ruta)
+            if ruta.endswith('.xlsx'): 
+                df = pd.read_excel(ruta)
+            else: 
+                try:
+                    df = leer_csv_robusto(ruta) # Usa tu función robusta si existe
+                except:
+                    df = pd.read_csv(ruta)
             break
             
     if not df.empty:
-        # Convertimos todo a minúsculas y quitamos espacios
-        df.columns = df.columns.str.lower().str.strip()
+        # 1. Normalización idéntica a tu código original
+        df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
         
-        # Normalizamos las columnas clave para que el motor de agregación las entienda
         if 'municipio' in df.columns:
             df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto)
+        if 'car' in df.columns:
+            df['car'] = df['car'].astype(str).str.upper()
         if 'region' in df.columns:
+            df['region'] = df['region'].astype(str).str.title()
+            
+            # 2. Nueva columna clave para el motor de agregación
             df['region_norm'] = df['region'].astype(str).apply(normalizar_texto)
             
     return df
