@@ -1,3 +1,5 @@
+# modules/water_quality,py
+
 import pandas as pd
 import numpy as np
 
@@ -59,3 +61,65 @@ def calcular_cargas_organicas(pob_urb, pob_rur, ptar_cob, vol_suero_ldia, cerdos
     })
     
     return df_cargas
+
+def calcular_streeter_phelps(L0, D0, T_agua, v_ms, H_m, dist_max_km=50, paso_km=0.5):
+    """
+    Simula la Curva de Caída de Oxígeno (Sag Curve) mediante el modelo Streeter-Phelps.
+    
+    Parámetros:
+    - L0: DBO última de la mezcla en el punto de vertimiento (mg/L)
+    - D0: Déficit inicial de oxígeno de la mezcla (mg/L)
+    - T_agua: Temperatura del agua (°C)
+    - v_ms: Velocidad media del río (m/s)
+    - H_m: Profundidad media del río (m)
+    - dist_max_km: Distancia aguas abajo a simular (km)
+    
+    Retorna:
+    - DataFrame con la simulación espacial del Oxígeno Disuelto.
+    """
+    # 1. Constantes y Corrección por Temperatura
+    # k1 (Tasa de Desoxigenación): Típicamente 0.23 d^-1 a 20°C para vertimientos mixtos
+    k1_20 = 0.23 
+    k1_T = k1_20 * (1.047 ** (T_agua - 20))
+    
+    # k2 (Tasa de Reaireación): Fórmula empírica de O'Connor-Dobbins
+    # k2_20 = 3.93 * v^0.5 / H^1.5 (en base e, días^-1)
+    k2_20 = (3.93 * (v_ms ** 0.5)) / (H_m ** 1.5) if H_m > 0 else 0.1
+    k2_T = k2_20 * (1.024 ** (T_agua - 20))
+    
+    # Evitar singularidad matemática si k1 == k2
+    if abs(k1_T - k2_T) < 0.001: 
+        k2_T += 0.001
+        
+    # 2. Oxígeno Disuelto de Saturación (Fórmula empírica a nivel del mar)
+    OD_sat = 14.652 - 0.41022 * T_agua + 0.007991 * (T_agua ** 2) - 0.000077774 * (T_agua ** 3)
+    
+    # 3. Vectorización Espacial y Temporal
+    distancias_km = np.arange(0, dist_max_km + paso_km, paso_km)
+    
+    # Tiempo de viaje en días = (Distancia en metros) / (Metros recorridos por día)
+    tiempos_dias = (distancias_km * 1000) / (v_ms * 86400) if v_ms > 0 else distancias_km * 0
+    
+    # 4. Ecuación Maestra de Streeter-Phelps
+    # D(t) = (k1*L0 / (k2-k1)) * (e^(-k1*t) - e^(-k2*t)) + D0 * e^(-k2*t)
+    term1 = (k1_T * L0) / (k2_T - k1_T)
+    term2 = np.exp(-k1_T * tiempos_dias) - np.exp(-k2_T * tiempos_dias)
+    term3 = D0 * np.exp(-k2_T * tiempos_dias)
+    
+    deficit_t = term1 * term2 + term3
+    od_t = OD_sat - deficit_t
+    
+    # Blindaje ecológico: El oxígeno no puede ser negativo
+    od_t = np.maximum(od_t, 0)
+    
+    # Ensamblar tabla de salida
+    df_sag = pd.DataFrame({
+        'Distancia_km': distancias_km,
+        'Tiempo_dias': tiempos_dias,
+        'Oxigeno_Disuelto_mgL': od_t,
+        'Deficit_OD_mgL': deficit_t,
+        'Limite_Critico': 4.0,  # 4 mg/L es el umbral para conservación de fauna acuática
+        'OD_Saturacion': OD_sat
+    })
+    
+    return df_sag
