@@ -832,12 +832,54 @@ with tab_forestal:
 # TAB 4: METABOLISMO TERRITORIAL (AFOLU COMPLETO)
 # ==============================================================================
 with tab_afolu:
-    st.header("⚖️ Modelo de Metabolismo Territorial (AFOLU)")
-    st.info("Simulador integral de cuenca: Integra la captura forestal con cargas pecuarias, humanas y eventos de cambio de cobertura en el tiempo.")
     
     # -------------------------------------------------------------------------
-# -------------------------------------------------------------------------
-    # 🌐 ALEPH FORESTAL Y DEMOGRÁFICO (CON MOTOR DE AGREGACIÓN REGIONAL)
+    # 🌐 1. INTELIGENCIA ESPACIAL Y CEREBRO MAESTRO
+    # -------------------------------------------------------------------------
+    from modules.data_processor import cargar_censo_ica, normalizar_texto, cargar_territorio_maestro
+    
+    nivel_sel = st.session_state.get('nivel_seleccion', 'Municipal')
+    nombre_sel = st.session_state.get('nombre_seleccion', 'Desconocido')
+    nombre_sel_norm = normalizar_texto(nombre_sel)
+    
+    df_territorio = cargar_territorio_maestro()
+    mpios_activos = []
+    es_departamento = False
+    
+    # Lógica de detección regional: Combina la base de datos maestra con el mapa interactivo
+    if nivel_sel == "Departamental" or "antioquia" in nombre_sel_norm:
+        es_departamento = True
+    elif not df_territorio.empty and nivel_sel == "Regional":
+        mpios_activos = df_territorio[df_territorio['region'].astype(str).apply(normalizar_texto) == nombre_sel_norm]['municipio_norm'].tolist()
+    elif not df_territorio.empty and nivel_sel == "Jurisdicción Ambiental (CAR)":
+        car_name = nombre_sel.replace("CAR: ", "")
+        mpios_activos = df_territorio[df_territorio['car'].astype(str).apply(normalizar_texto) == normalizar_texto(car_name)]['municipio_norm'].tolist()
+    elif 'gdf_zona' in st.session_state and st.session_state.gdf_zona is not None and not mpios_activos:
+        if 'MPIO_CNMBR' in st.session_state.gdf_zona.columns:
+            mpios_activos = st.session_state.gdf_zona['MPIO_CNMBR'].astype(str).str.lower().apply(normalizar_texto).tolist()
+        elif 'mpio_cnmbr' in st.session_state.gdf_zona.columns:
+            mpios_activos = st.session_state.gdf_zona['mpio_cnmbr'].astype(str).str.lower().apply(normalizar_texto).tolist()
+            
+    # Fallback de seguridad final (por si todo lo anterior falla)
+    if not mpios_activos and not es_departamento:
+        if "aburra" in nombre_sel_norm:
+            mpios_activos = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
+        else:
+            mpios_activos = [nombre_sel_norm]
+
+    # --- TÍTULO DINÁMICO ---
+    prefijos = {
+        "Municipal": "el Municipio de", "Regional": "la Región", "Departamental": "el Departamento de",
+        "Jurisdicción Ambiental (CAR)": "la Jurisdicción", "Cuenca Hidrográfica": "la Cuenca", "Veredal": "la Vereda"
+    }
+    prefijo = prefijos.get(nivel_sel, "el territorio de")
+    titulo_dinamico = f"Metabolismo Territorial: Dinámica de GEI en {prefijo} {nombre_sel}"
+
+    st.header(f"⚖️ {titulo_dinamico}")
+    st.info("Simulador integral de cuenca: Integra la captura forestal con cargas pecuarias, humanas y eventos de cambio de cobertura en el tiempo.")
+
+    # -------------------------------------------------------------------------
+    # 🌐 2. EXTRACCIÓN Y SUMA DE DATOS (BOSQUE, ICA, DANE)
     # -------------------------------------------------------------------------
     area_bosque_real = 100.0
     try:
@@ -845,88 +887,43 @@ with tab_afolu:
             area_bosque_real = df_diagnostico[df_diagnostico['COV_ID'] == 9]['Hectareas'].sum()
     except: pass
 
-    from modules.data_processor import cargar_censo_ica, normalizar_texto
-    nombre_sel_norm = normalizar_texto(nombre_seleccion) if 'nombre_seleccion' in locals() else ""
-    
-    # 1. INTELIGENCIA ESPACIAL: Determinar la lista de municipios a sumar
-    mpios_activos = []
-    es_departamento = False
-    
-    if "antioquia" in nombre_sel_norm:
-        es_departamento = True
-    elif 'gdf_zona' in st.session_state and st.session_state.gdf_zona is not None:
-        # Extraemos los nombres exactos de los municipios que componen la región seleccionada
-        if 'MPIO_CNMBR' in st.session_state.gdf_zona.columns:
-            mpios_activos = st.session_state.gdf_zona['MPIO_CNMBR'].astype(str).str.lower().apply(normalizar_texto).tolist()
-        elif 'mpio_cnmbr' in st.session_state.gdf_zona.columns:
-            mpios_activos = st.session_state.gdf_zona['mpio_cnmbr'].astype(str).str.lower().apply(normalizar_texto).tolist()
-            
-    # Fallback por si la capa geográfica no tiene los nombres
-    if not mpios_activos and not es_departamento:
-        if "aburra" in nombre_sel_norm:
-            mpios_activos = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
-        else:
-            mpios_activos = [nombre_sel_norm]
-
-    # 2. EXTRACCIÓN Y SUMA AGROPECUARIA (ICA)
     df_bov = cargar_censo_ica('bovino')
     df_porc = cargar_censo_ica('porcino')
     df_aves = cargar_censo_ica('aviar')
     
+    # Motor de sumatoria masiva para regiones enteras
     def filtrar_y_sumar(df, columna_mpio, columna_valor):
         if df.empty or columna_valor not in df.columns: return 0
         if es_departamento:
             if 'DEPARTAMENTO' in df.columns:
                 return df[df['DEPARTAMENTO'].astype(str).str.lower().str.contains('antioquia')][columna_valor].sum()
-            return df[columna_valor].sum() # Asume que toda la base es Antioquia
+            return df[columna_valor].sum()
         return df[df[columna_mpio].isin(mpios_activos)][columna_valor].sum()
 
     bovinos_reales = int(filtrar_y_sumar(df_bov, 'MUNICIPIO_NORM', 'TOTALBOVINOS'))
     porcinos_reales = int(filtrar_y_sumar(df_porc, 'MUNICIPIO_NORM', 'TOTAL_CERDOS'))
-    
     col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if not df_aves.empty and 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
     aves_reales = int(filtrar_y_sumar(df_aves, 'MUNICIPIO_NORM', col_aves))
 
-    # 3. EXTRACCIÓN Y SUMA DEMOGRÁFICA (DANE / VEREDAS)
     poblacion_rural_calculada, poblacion_urbana_calculada = 0, 0
+    try:
+        df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False)
+        if es_departamento: df_m_filt = df_mpios[df_mpios['depto_nom'].astype(str).str.lower().str.contains('antioquia')]
+        else: df_m_filt = df_mpios[df_mpios['municipio'].astype(str).apply(normalizar_texto).isin(mpios_activos)]
+            
+        if not df_m_filt.empty:
+            anio_max = df_m_filt['año'].max()
+            df_m_filt = df_m_filt[df_m_filt['año'] == anio_max]
+            areas_str = df_m_filt['area_geografica'].astype(str).str.lower()
+            poblacion_rural_calculada = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
+            poblacion_urbana_calculada = int(df_m_filt[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum())
+    except: pass
     
-    if 'aleph_pob_rural' in st.session_state and st.session_state.get('aleph_territorio_origen', '') == nombre_seleccion:
-        poblacion_rural_calculada = float(st.session_state['aleph_pob_rural'])
-        poblacion_urbana_calculada = float(st.session_state.get('aleph_pob_urbana', 0))
-    else:
-        # Intento DANE Principal
-        try:
-            df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False)
-            if es_departamento:
-                df_m_filt = df_mpios[df_mpios['depto_nom'].astype(str).str.lower().str.contains('antioquia')]
-            else:
-                df_m_filt = df_mpios[df_mpios['municipio'].astype(str).apply(normalizar_texto).isin(mpios_activos)]
-                
-            if not df_m_filt.empty:
-                anio_max = df_m_filt['año'].max()
-                df_m_filt = df_m_filt[df_m_filt['año'] == anio_max]
-                areas_str = df_m_filt['area_geografica'].astype(str).str.lower()
-                poblacion_rural_calculada = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
-                poblacion_urbana_calculada = int(df_m_filt[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum())
-        except: pass
-        
-        # Fallback Veredas (Solo para Rural) si DANE no cargó
-        if poblacion_rural_calculada == 0:
-            try:
-                df_veredas = pd.read_excel("data/veredas_Antioquia.xlsx") 
-                if es_departamento:
-                    poblacion_rural_calculada = int(df_veredas['Poblacion_hab'].sum())
-                else:
-                    df_v_filt = df_veredas[df_veredas['Municipio'].astype(str).apply(normalizar_texto).isin(mpios_activos)]
-                    poblacion_rural_calculada = int(df_v_filt['Poblacion_hab'].sum())
-            except: pass
-
-    # Blindaje final
     if poblacion_rural_calculada == 0: poblacion_rural_calculada = 50 
     if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = 1000 
-    
     aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
-    
+
+    # ¡AQUÍ REVIVIMOS LA DIVISIÓN DE PANTALLA! (El código que ya tienes sigue desde aquí)
     col_a1, col_a2 = st.columns([1, 2.5])
     
     with col_a1:
@@ -1173,6 +1170,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
