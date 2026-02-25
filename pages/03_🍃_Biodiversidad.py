@@ -886,67 +886,90 @@ with tab_afolu:
     aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
 
     # =========================================================================
-    # 🌲 MÓDULO 1: BOSQUES (Desplegable)
-    # =========================================================================
-    with st.expander("🌳 1. Línea Base Forestal (Sumidero Principal)", expanded=True):
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            estrategia_af = st.selectbox("Bosque Existente/Planeado:", options=list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"])
-            area_af = st.number_input("Hectáreas (Bosque Satélite):", value=float(area_bosque_real) if area_bosque_real > 0 else 100.0, step=10.0)
-        with col_b2:
-            horizonte_af = st.slider("Horizonte de Análisis (Años):", 5, 50, 20, key="slider_afolu")
+    col_a1, col_a2 = st.columns([1, 2.5])
+    
+    with col_a1:
+        # =========================================================================
+        # 🌲 MÓDULO 1: BOSQUES (Desplegable)
+        # =========================================================================
+        with st.expander("🌳 1. Línea Base Forestal (Sumidero Principal)", expanded=True):
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                estrategia_af = st.selectbox("Bosque Existente/Planeado:", options=list(carbon_calculator.ESCENARIOS_CRECIMIENTO.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_CRECIMIENTO[x]["nombre"])
+                area_af = st.number_input("Hectáreas (Bosque Satélite):", value=float(area_bosque_real) if area_bosque_real > 0 else 100.0, step=10.0)
+            with col_b2:
+                horizonte_af = st.slider("Horizonte de Análisis (Años):", 5, 50, 20, key="slider_afolu")
 
-    # =========================================================================
-    # 🐄 MÓDULO 2: RURAL Y AGROPECUARIO (Desplegable)
-    # =========================================================================
-    with st.expander("🌾 2. Actividades Agropecuarias y Humanas (Rural)", expanded=False):
-        st.info(f"📍 **Conexión Aleph:** Datos censales (ICA) y poblacionales (DANE) extraídos para **{nombre_seleccion}**.")
-        opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"]
-        fuentes_sel = st.multiselect("Selecciona cargas rurales a modelar:", opciones_fuentes, default=["Todas"])
-        fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"] if "Todas" in fuentes_sel else fuentes_sel
+        # =========================================================================
+        # 🐄 MÓDULO 2: RURAL Y AGROPECUARIO (Desplegable)
+        # =========================================================================
+        with st.expander("🌾 2. Actividades Agropecuarias y Humanas (Rural)", expanded=False):
+            st.info(f"📍 **Conexión Aleph:** Datos extraídos para **{nombre_seleccion}**.")
+            opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"]
+            fuentes_sel = st.multiselect("Selecciona cargas rurales a modelar:", opciones_fuentes, default=["Todas"])
+            fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"] if "Todas" in fuentes_sel else fuentes_sel
 
-        esc_pasto, area_pastos = "PASTO_DEGRADADO", 0.0
-        v_leche, v_carne, cerdos, aves, humanos_rurales = 0, 0, 0, 0, 0
-        
-        c_r1, c_r2, c_r3 = st.columns(3)
-        with c_r1:
-            if "Pasturas" in fuentes_activas:
-                esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
-                area_pastos = st.number_input("Ha de Pasturas (Satélite):", value=aleph_pastos, step=5.0)
-            if "Bovinos" in fuentes_activas:
-                v_leche = st.number_input("Vacas Lecheras (ICA):", value=int(bovinos_reales * 0.4), step=10)
-        with c_r2:
-            if "Bovinos" in fuentes_activas:
-                v_carne = st.number_input("Ganado Carne/Cría (ICA):", value=int(bovinos_reales * 0.6), step=10)
-            if "Porcinos" in fuentes_activas:
-                cerdos = st.number_input("Cerdos Cabezas (ICA):", value=porcinos_reales, step=50)
-        with c_r3:
-            if "Avicultura" in fuentes_activas:
-                aves = st.number_input("Aves Galpones (ICA):", value=aves_reales, step=500)
-            if "Población Rural" in fuentes_activas:
-                humanos_rurales = st.number_input("Humanos Rurales (Censo):", value=int(poblacion_rural_calculada), step=10)
-
-        # --- INTERFAZ DINÁMICA: SECTOR URBANO Y MOVILIDAD ---
-        st.markdown("---")
-        st.subheader("3. Actividades Urbanas (Ciudades y Movilidad)")
-        
-        col_u1, col_u2, col_u3 = st.columns(3)
-        with col_u1:
-            humanos_urbanos = st.number_input("Población Urbana (Censo):", value=int(poblacion_urbana_calculada), step=100)
-        
-        with col_u2:
-            # Slider de densidad de vehículos adaptado a tu investigación
-            tasa_motorizacion = st.slider("Motorización (Vehículos / 1000 hab):", 
-                                          min_value=10, max_value=1500, value=333, step=10, 
-                                          help="Promedio LATAM: ~100. Medellín: ~333. Laureles: ~739. El Poblado: ~1250.")
-        with col_u3:
-            # Calcula el parque automotor estimado basado en la población urbana real y la tasa elegida
-            total_vehiculos = int((humanos_urbanos * tasa_motorizacion) / 1000)
-            vehiculos = st.number_input("Parque Automotor (Cálculo):", value=total_vehiculos, step=100)
+            esc_pasto, area_pastos = "PASTO_DEGRADADO", 0.0
+            v_leche, v_carne, cerdos, aves, humanos_rurales = 0, 0, 0, 0, 0
             
-        # Parámetro de cálculo para el modelo de Carbono
-        st.caption(f"🚗 *Nota Ambiental:* Se estima que este parque automotor genera aproximadamente **{(vehiculos * 4.5 * 365) / 1000:,.0f} toneladas de CO2e al año** (asumiendo 4.5 kg CO2e/vehículo/día).")
+            c_r1, c_r2, c_r3 = st.columns(3)
+            with c_r1:
+                if "Pasturas" in fuentes_activas:
+                    esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
+                    area_pastos = st.number_input("Ha de Pasturas (Satélite):", value=aleph_pastos, step=5.0)
+                if "Bovinos" in fuentes_activas:
+                    v_leche = st.number_input("Vacas Lecheras (ICA):", value=int(bovinos_reales * 0.4), step=10)
+            with c_r2:
+                if "Bovinos" in fuentes_activas:
+                    v_carne = st.number_input("Ganado Carne/Cría (ICA):", value=int(bovinos_reales * 0.6), step=10)
+                if "Porcinos" in fuentes_activas:
+                    cerdos = st.number_input("Cerdos Cabezas (ICA):", value=porcinos_reales, step=50)
+            with c_r3:
+                if "Avicultura" in fuentes_activas:
+                    aves = st.number_input("Aves Galpones (ICA):", value=aves_reales, step=500)
+                if "Población Rural" in fuentes_activas:
+                    humanos_rurales = st.number_input("Humanos Rurales (Censo):", value=int(poblacion_rural_calculada), step=10)
 
+        # =========================================================================
+        # 🏙️ MÓDULO 3: URBANO Y MOVILIDAD (Desplegable)
+        # =========================================================================
+        with st.expander("🏙️ 3. Actividades Urbanas (Ciudades y Movilidad)", expanded=False):
+            col_u1, col_u2, col_u3 = st.columns(3)
+            
+            with col_u1:
+                st.markdown("##### 👥 Demografía y Agua")
+                humanos_urbanos = st.number_input("Población Urbana:", value=int(poblacion_urbana_calculada), step=100)
+                vertimientos_m3 = (humanos_urbanos * 150) / 1000
+                st.metric("Agua Residual Generada", f"{vertimientos_m3:,.1f} m³/día")
+                
+            with col_u2:
+                st.markdown("##### 🗑️ Residuos Sólidos")
+                tasa_basura = st.slider("Generación (kg/hab-día):", min_value=0.0, max_value=1.5, value=0.7, step=0.1, help="Promedio Colombia: 0.6 - 0.8 kg diarios por persona.")
+                basura_anual_ton = (humanos_urbanos * tasa_basura * 365) / 1000
+                st.metric("Basura al Relleno", f"{basura_anual_ton:,.0f} ton/año")
+                
+            with col_u3:
+                st.markdown("##### 🚗 Parque Automotor")
+                tasa_motorizacion = st.slider("Densidad (Vehículos/1000 hab):", min_value=10, max_value=1500, value=333, step=10, help="Medellín: ~333. Laureles: ~739. El Poblado: ~1250.")
+                vehiculos = int((humanos_urbanos * tasa_motorizacion) / 1000)
+                st.metric("Vehículos Estimados", f"{vehiculos:,.0f} unds")
+
+            st.markdown("---")
+            st.markdown("##### ⛽ Física de Emisiones Vehiculares")
+            col_v1, col_v2, col_v3 = st.columns(3)
+            
+            with col_v1:
+                km_galon = st.slider("Rendimiento (km/galón):", min_value=1.0, max_value=100.0, value=40.0, step=1.0, help="SUV/Camioneta: 25-30 km/gal. Sedán: 40-50 km/gal. Híbrido: 70-90 km/gal.")
+            with col_v2:
+                km_anual = st.slider("Recorrido Medio Anual (km):", min_value=0, max_value=50000, value=12000, step=1000, help="Uso ocasional: 5,000 km/año. Promedio LATAM: 12,000 km/año. Taxis: 35,000+ km/año.")
+            with col_v3:
+                galones_anuales = vehiculos * (km_anual / km_galon) if km_galon > 0 else 0
+                emision_anual_vehiculos = (galones_anuales * 8.887) / 1000.0 
+                st.info(f"☁️ **Impacto Total:** El parque automotor consume **{galones_anuales:,.0f}** galones/año, emitiendo **{emision_anual_vehiculos:,.0f} ton CO2e/año**.")
+
+        # =========================================================================
+        # 4. EVENTOS EN EL TIEMPO
+        # =========================================================================
         st.markdown("---")
         st.subheader("4. Eventos en el Tiempo")
         tipo_evento = st.radio("Simular alteración de cobertura:", ["Ninguno", "Pérdida (Deforestación/Incendio)", "Ganancia (Restauración Activa)"], horizontal=True)
@@ -960,7 +983,7 @@ with tab_afolu:
                 causa_ev = st.selectbox("Causa:", list(carbon_calculator.CAUSAS_PERDIDA.keys()))
                 
     with col_a2:
-
+ 
         # =====================================================================
         # CÁLCULOS REACTIVOS (Con orden de parámetros corregido)
         # =====================================================================
@@ -1095,6 +1118,7 @@ with tab_comparador:
             
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
+
 
 
 
