@@ -569,53 +569,138 @@ with tab_fuentes:
         fig_dbo_evo.add_trace(go.Scatter(x=anios_evo, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
         st.plotly_chart(fig_dbo_evo, use_container_width=True)
         
-# ------------------------------------------------------------------------------
-# TAB 3: ASIMILACIÓN Y DILUCIÓN
-# ------------------------------------------------------------------------------
-with tab_dilucion:
-    st.header(f"🌊 Modelo de Dilución y Capacidad de Asimilación ({anio_analisis})")
-    col_a1, col_a2 = st.columns([1, 1.5])
-    
-    with col_a1:
-        st.subheader("1. Cuerpo Receptor (Río)")
-        q_rio = st.number_input("Caudal del Río aguas arriba (L/s):", value=1500.0, step=100.0)
-        c_rio = st.number_input("Concentración DBO aguas arriba (mg/L):", value=2.0, step=0.5)
-        
+        # =====================================================================
+        # 🌊 MÓDULO AVANZADO: ASIMILACIÓN Y CURVA DE OXÍGENO (STREETER-PHELPS)
+        # =====================================================================
         st.markdown("---")
-        st.subheader("2. Vertimientos al Cauce")
+        st.header("🌊 4. Capacidad de Asimilación del Río Receptor")
+        st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígeno Disuelto (OD) aguas abajo del vertimiento principal de la zona seleccionada.")
         
-        q_vert_dom, q_vert_ind = 0.0, 0.0
-        if not df_vertimientos.empty and lugar_sel != "N/A":
-            lugar_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
-            if nivel_sel_interno == "Jurisdicción Ambiental (CAR)": df_filtro_v = df_vertimientos[df_vertimientos['car_norm'] == lugar_norm] if 'car_norm' in df_vertimientos.columns else pd.DataFrame()
-            elif nivel_sel_interno == "Departamental": df_filtro_v = df_vertimientos[df_vertimientos['departamento_norm'] == lugar_norm] if 'departamento_norm' in df_vertimientos.columns else df_vertimientos.copy()
-            elif nivel_sel_interno == "Municipal": df_filtro_v = df_vertimientos[df_vertimientos['municipio_norm'] == lugar_norm]
-            else: df_filtro_v = pd.DataFrame()
-                
-            if not df_filtro_v.empty:
-                q_vert_dom = df_filtro_v[df_filtro_v['tipo_vertimiento'].str.contains('Domestico|Municipal', case=False, na=False)]['caudal_vert_lps'].sum()
-                q_vert_ind = df_filtro_v[df_filtro_v['tipo_vertimiento'].str.contains('Industrial|Agroindustrial', case=False, na=False)]['caudal_vert_lps'].sum()
-                
-        q_vert_total_legal = q_vert_dom + q_vert_ind
+        from modules.water_quality import calcular_streeter_phelps
+
+        # 1. Parámetros Físicos del Río (Interactivos)
+        with st.expander("⚙️ Características Físicas y Climáticas del Río", expanded=True):
+            cr1, cr2, cr3 = st.columns(3)
+            with cr1:
+                q_rio = st.number_input("Caudal del Río (m³/s):", min_value=0.1, value=5.0, step=0.5, help="Caudal medio en el punto de vertimiento.")
+                t_agua = st.slider("Temperatura del Agua (°C):", min_value=10.0, max_value=35.0, value=22.0, step=0.5)
+            with cr2:
+                v_rio = st.slider("Velocidad del Flujo (m/s):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, help="Ríos rápidos reairean mejor.")
+                h_rio = st.slider("Profundidad Media (m):", min_value=0.2, max_value=5.0, value=1.0, step=0.2, help="Ríos pandas (poco profundos) capturan más oxígeno.")
+            with cr3:
+                od_rio_arriba = st.slider("Oxígeno Disuelto Aguas Arriba (mg/L):", min_value=0.0, max_value=12.0, value=7.5, step=0.5)
+                dist_sim = st.slider("Distancia a Simular (km):", min_value=5, max_value=150, value=50, step=5)
+
+        # 2. Balance de Masas (Mezcla Río + Vertimiento)
+        # Nota: Aquí usamos la variable de carga total que ya calculaste en las pestañas anteriores.
+        # Asumo que tienes una variable que suma toda la DBO (ej. carga_dbo_total). 
+        # Si tu variable se llama diferente, cámbiala en la línea de abajo.
         
-        st.caption("Comparativa de Descargas:")
-        st.write(f"- **Efluente Teórico Generado:** {q_efluente_lps:,.1f} L/s")
-        st.write(f"- **Vertimiento Legal (CAR):** {q_vert_total_legal:,.1f} L/s")
+        try:
+            # Intentamos leer la carga calculada en el flujo normal de tu script
+            carga_vertimiento_kg_dia = carga_dbo_total # <--- Ajusta este nombre si es necesario
+        except NameError:
+            # Fallback seguro por si la variable tiene otro nombre temporalmente
+            carga_vertimiento_kg_dia = 5000.0 
+            
+        # Asumimos un caudal de vertimiento de las aguas residuales (ej. 150 L/hab/dia convertido a m3/s)
+        # Para simplificar el balance inicial, usamos un caudal de vertimiento base (0.2 m3/s)
+        q_vertimiento = 0.2 
+        q_mezcla = q_rio + q_vertimiento
         
-        tipo_modelo = st.radio("Caudal efluente a utilizar en la mezcla:", ["Usar Caudal Teórico (Peor Escenario)", "Usar Caudal Formalizado (Legal)"])
-        q_modelo = q_efluente_lps if "Teórico" in tipo_modelo else q_vert_total_legal
+        # Concentración de DBO del vertimiento (mg/L) = (kg/dia * 1000) / (m3/s * 86400)
+        dbo_vert_mgL = (carga_vertimiento_kg_dia * 1000) / (q_vertimiento * 86400)
         
-        c_mix = ((q_rio * c_rio) + (q_modelo * conc_efluente_mg_l)) / (q_rio + q_modelo) if (q_rio + q_modelo) > 0 else 0
+        # DBO del río limpio aguas arriba (asumimos río sano = 2 mg/L)
+        dbo_rio_arriba = 2.0 
         
-    with col_a2:
-        st.subheader("Impacto Aguas Abajo (Balance de Masas)")
-        fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number+delta", value = c_mix, title = {'text': "DBO5 Final en el Río (mg/L)", 'font': {'size': 20}},
-            delta = {'reference': 5.0, 'increasing': {'color': "red"}, 'decreasing': {'color': "green"}},
-            gauge = {'axis': {'range': [None, max(20, c_mix + 5)]}, 'bar': {'color': "black"},
-                     'steps': [{'range': [0, 3], 'color': "#2ecc71"}, {'range': [3, 5], 'color': "#f1c40f"}, {'range': [5, 10], 'color': "#e67e22"}, {'range': [10, 100], 'color': "#e74c3c"}],
-                     'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 5.0}}))
-        st.plotly_chart(fig_gauge, use_container_width=True)
+        # BALANCE DE DBO (Ecuación de Mezcla)
+        L0_mezcla = ((q_rio * dbo_rio_arriba) + (q_vertimiento * dbo_vert_mgL)) / q_mezcla
+        
+        # BALANCE DE OXÍGENO
+        # Asumimos que el vertimiento residual no tiene oxígeno (0 mg/L)
+        od_mezcla = ((q_rio * od_rio_arriba) + (q_vertimiento * 0.0)) / q_mezcla
+        
+        # Oxígeno de saturación (para calcular el déficit inicial D0)
+        od_sat = 14.652 - 0.41022 * t_agua + 0.007991 * (t_agua ** 2) - 0.000077774 * (t_agua ** 3)
+        D0_mezcla = max(0, od_sat - od_mezcla)
+
+        # 3. Ejecutar el Motor Matemático
+        df_sag = calcular_streeter_phelps(
+            L0=L0_mezcla, 
+            D0=D0_mezcla, 
+            T_agua=t_agua, 
+            v_ms=v_rio, 
+            H_m=h_rio, 
+            dist_max_km=dist_sim, 
+            paso_km=0.5
+        )
+
+        # 4. Encontrar el Punto Crítico (Donde el oxígeno es mínimo)
+        punto_critico = df_sag.loc[df_sag['Oxigeno_Disuelto_mgL'].idxmin()]
+        od_minimo = punto_critico['Oxigeno_Disuelto_mgL']
+        km_critico = punto_critico['Distancia_km']
+        
+        # 5. Dibujar la Curva de Oxígeno
+        import plotly.graph_objects as go
+        
+        fig_sag = go.Figure()
+        
+        # Curva principal del Oxígeno
+        fig_sag.add_trace(go.Scatter(
+            x=df_sag['Distancia_km'], 
+            y=df_sag['Oxigeno_Disuelto_mgL'], 
+            mode='lines', 
+            name='Oxígeno Disuelto (OD)', 
+            line=dict(color='#3498db', width=4)
+        ))
+        
+        # Línea de Saturación (El máximo posible según la temperatura)
+        fig_sag.add_trace(go.Scatter(
+            x=df_sag['Distancia_km'], 
+            y=df_sag['OD_Saturacion'], 
+            mode='lines', 
+            name='Saturación Ideal', 
+            line=dict(color='rgba(52, 152, 219, 0.3)', width=2, dash='dash')
+        ))
+        
+        # Línea de Límite Ecológico (4 mg/L)
+        fig_sag.add_trace(go.Scatter(
+            x=df_sag['Distancia_km'], 
+            y=df_sag['Limite_Critico'], 
+            mode='lines', 
+            name='Límite Fauna Acuática (4 mg/L)', 
+            line=dict(color='#e74c3c', width=2, dash='dot')
+        ))
+        
+        # Marcador del Punto Crítico
+        fig_sag.add_trace(go.Scatter(
+            x=[km_critico], 
+            y=[od_minimo], 
+            mode='markers+text', 
+            name='Punto Crítico',
+            marker=dict(color='red', size=12, symbol='x'),
+            text=[f"{od_minimo:.1f} mg/L"],
+            textposition="bottom center"
+        ))
+
+        fig_sag.update_layout(
+            title=f"Curva de Oxígeno Disuelto - Río Receptor ({t_agua}°C)",
+            xaxis_title="Distancia Aguas Abajo (km)",
+            yaxis_title="Concentración (mg/L)",
+            hovermode="x unified",
+            height=450,
+            yaxis=dict(range=[0, od_sat + 1])
+        )
+
+        # Mostrar métricas y gráfica
+        m_r1, m_r2, m_r3 = st.columns(3)
+        m_r1.metric("DBO Total Mezcla (L0)", f"{L0_mezcla:.1f} mg/L")
+        estado_rio = "⚠️ Zona Anóxica Muerte Peces" if od_minimo < 4.0 else "✅ Saludable"
+        m_r2.metric("OD Mínimo Crítico", f"{od_minimo:.1f} mg/L", delta=estado_rio, delta_color="normal" if od_minimo >= 4.0 else "inverse")
+        m_r3.metric("Ubicación del Impacto Crítico", f"Km {km_critico:.1f}")
+
+        st.plotly_chart(fig_sag, use_container_width=True)
 
 # ------------------------------------------------------------------------------
 # TAB 4: ESCENARIOS DE MITIGACIÓN (HOLÍSTICOS)
@@ -972,135 +1057,3 @@ with tab_lactosuero:
             st.session_state['aleph_vol_suero'] = float(suero_generado)
             st.toast("✅ ¡Volumen de suero inyectado en la memoria global de Sihcli-Poter!")
 
-# =====================================================================
-        # 🌊 MÓDULO AVANZADO: ASIMILACIÓN Y CURVA DE OXÍGENO (STREETER-PHELPS)
-        # =====================================================================
-        st.markdown("---")
-        st.header("🌊 4. Capacidad de Asimilación del Río Receptor")
-        st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígeno Disuelto (OD) aguas abajo del vertimiento principal de la zona seleccionada.")
-        
-        from modules.water_quality import calcular_streeter_phelps
-
-        # 1. Parámetros Físicos del Río (Interactivos)
-        with st.expander("⚙️ Características Físicas y Climáticas del Río", expanded=True):
-            cr1, cr2, cr3 = st.columns(3)
-            with cr1:
-                q_rio = st.number_input("Caudal del Río (m³/s):", min_value=0.1, value=5.0, step=0.5, help="Caudal medio en el punto de vertimiento.")
-                t_agua = st.slider("Temperatura del Agua (°C):", min_value=10.0, max_value=35.0, value=22.0, step=0.5)
-            with cr2:
-                v_rio = st.slider("Velocidad del Flujo (m/s):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, help="Ríos rápidos reairean mejor.")
-                h_rio = st.slider("Profundidad Media (m):", min_value=0.2, max_value=5.0, value=1.0, step=0.2, help="Ríos pandas (poco profundos) capturan más oxígeno.")
-            with cr3:
-                od_rio_arriba = st.slider("Oxígeno Disuelto Aguas Arriba (mg/L):", min_value=0.0, max_value=12.0, value=7.5, step=0.5)
-                dist_sim = st.slider("Distancia a Simular (km):", min_value=5, max_value=150, value=50, step=5)
-
-        # 2. Balance de Masas (Mezcla Río + Vertimiento)
-        # Nota: Aquí usamos la variable de carga total que ya calculaste en las pestañas anteriores.
-        # Asumo que tienes una variable que suma toda la DBO (ej. carga_dbo_total). 
-        # Si tu variable se llama diferente, cámbiala en la línea de abajo.
-        
-        try:
-            # Intentamos leer la carga calculada en el flujo normal de tu script
-            carga_vertimiento_kg_dia = carga_dbo_total # <--- Ajusta este nombre si es necesario
-        except NameError:
-            # Fallback seguro por si la variable tiene otro nombre temporalmente
-            carga_vertimiento_kg_dia = 5000.0 
-            
-        # Asumimos un caudal de vertimiento de las aguas residuales (ej. 150 L/hab/dia convertido a m3/s)
-        # Para simplificar el balance inicial, usamos un caudal de vertimiento base (0.2 m3/s)
-        q_vertimiento = 0.2 
-        q_mezcla = q_rio + q_vertimiento
-        
-        # Concentración de DBO del vertimiento (mg/L) = (kg/dia * 1000) / (m3/s * 86400)
-        dbo_vert_mgL = (carga_vertimiento_kg_dia * 1000) / (q_vertimiento * 86400)
-        
-        # DBO del río limpio aguas arriba (asumimos río sano = 2 mg/L)
-        dbo_rio_arriba = 2.0 
-        
-        # BALANCE DE DBO (Ecuación de Mezcla)
-        L0_mezcla = ((q_rio * dbo_rio_arriba) + (q_vertimiento * dbo_vert_mgL)) / q_mezcla
-        
-        # BALANCE DE OXÍGENO
-        # Asumimos que el vertimiento residual no tiene oxígeno (0 mg/L)
-        od_mezcla = ((q_rio * od_rio_arriba) + (q_vertimiento * 0.0)) / q_mezcla
-        
-        # Oxígeno de saturación (para calcular el déficit inicial D0)
-        od_sat = 14.652 - 0.41022 * t_agua + 0.007991 * (t_agua ** 2) - 0.000077774 * (t_agua ** 3)
-        D0_mezcla = max(0, od_sat - od_mezcla)
-
-        # 3. Ejecutar el Motor Matemático
-        df_sag = calcular_streeter_phelps(
-            L0=L0_mezcla, 
-            D0=D0_mezcla, 
-            T_agua=t_agua, 
-            v_ms=v_rio, 
-            H_m=h_rio, 
-            dist_max_km=dist_sim, 
-            paso_km=0.5
-        )
-
-        # 4. Encontrar el Punto Crítico (Donde el oxígeno es mínimo)
-        punto_critico = df_sag.loc[df_sag['Oxigeno_Disuelto_mgL'].idxmin()]
-        od_minimo = punto_critico['Oxigeno_Disuelto_mgL']
-        km_critico = punto_critico['Distancia_km']
-        
-        # 5. Dibujar la Curva de Oxígeno
-        import plotly.graph_objects as go
-        
-        fig_sag = go.Figure()
-        
-        # Curva principal del Oxígeno
-        fig_sag.add_trace(go.Scatter(
-            x=df_sag['Distancia_km'], 
-            y=df_sag['Oxigeno_Disuelto_mgL'], 
-            mode='lines', 
-            name='Oxígeno Disuelto (OD)', 
-            line=dict(color='#3498db', width=4)
-        ))
-        
-        # Línea de Saturación (El máximo posible según la temperatura)
-        fig_sag.add_trace(go.Scatter(
-            x=df_sag['Distancia_km'], 
-            y=df_sag['OD_Saturacion'], 
-            mode='lines', 
-            name='Saturación Ideal', 
-            line=dict(color='rgba(52, 152, 219, 0.3)', width=2, dash='dash')
-        ))
-        
-        # Línea de Límite Ecológico (4 mg/L)
-        fig_sag.add_trace(go.Scatter(
-            x=df_sag['Distancia_km'], 
-            y=df_sag['Limite_Critico'], 
-            mode='lines', 
-            name='Límite Fauna Acuática (4 mg/L)', 
-            line=dict(color='#e74c3c', width=2, dash='dot')
-        ))
-        
-        # Marcador del Punto Crítico
-        fig_sag.add_trace(go.Scatter(
-            x=[km_critico], 
-            y=[od_minimo], 
-            mode='markers+text', 
-            name='Punto Crítico',
-            marker=dict(color='red', size=12, symbol='x'),
-            text=[f"{od_minimo:.1f} mg/L"],
-            textposition="bottom center"
-        ))
-
-        fig_sag.update_layout(
-            title=f"Curva de Oxígeno Disuelto - Río Receptor ({t_agua}°C)",
-            xaxis_title="Distancia Aguas Abajo (km)",
-            yaxis_title="Concentración (mg/L)",
-            hovermode="x unified",
-            height=450,
-            yaxis=dict(range=[0, od_sat + 1])
-        )
-
-        # Mostrar métricas y gráfica
-        m_r1, m_r2, m_r3 = st.columns(3)
-        m_r1.metric("DBO Total Mezcla (L0)", f"{L0_mezcla:.1f} mg/L")
-        estado_rio = "⚠️ Zona Anóxica Muerte Peces" if od_minimo < 4.0 else "✅ Saludable"
-        m_r2.metric("OD Mínimo Crítico", f"{od_minimo:.1f} mg/L", delta=estado_rio, delta_color="normal" if od_minimo >= 4.0 else "inverse")
-        m_r3.metric("Ubicación del Impacto Crítico", f"Km {km_critico:.1f}")
-
-        st.plotly_chart(fig_sag, use_container_width=True)
