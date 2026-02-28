@@ -137,7 +137,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         import numpy as np
         import pandas as pd
         
-        st.subheader("🌐 Inteligencia Corporativa: Neutralidad, Resiliencia y Calidad (WRI)")
+        st.subheader("🌐 Inteligencia Territorial: Neutralidad, Resiliencia y Calidad (WRI)")
         st.markdown("Transforma las métricas biofísicas de la cuenca en indicadores estandarizados y evalúa su viabilidad futura.")
         
         # --- 1. MÁQUINA DEL TIEMPO (PROYECCIONES) ---
@@ -383,5 +383,6 @@ if gdf_zona is not None and not gdf_zona.empty:
             * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
             * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
             """)
+
 
 
