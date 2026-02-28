@@ -1325,3 +1325,90 @@ with tab_lactosuero:
             st.session_state['aleph_vol_suero'] = float(suero_generado)
             st.toast("✅ ¡Volumen de suero inyectado en la memoria global de Sihcli-Poter!")
 
+# =========================================================================
+# 5. VIAJE AL SUBSUELO: CALIDAD DEL AGUA SUBTERRÁNEA (LIXIVIACIÓN)
+# =========================================================================
+st.markdown("---")
+st.header("⏬ 5. Vulnerabilidad y Calidad del Acuífero")
+st.info("Simula el viaje de la contaminación difusa que escapa de la escorrentía superficial, se infiltra a través del perfil del suelo y llega al nivel freático, afectando eventualmente los nacimientos y el caudal base del río.")
+
+with st.expander("🪨 Filtro del Suelo y Termodinámica de Recarga", expanded=True):
+    cg1, cg2, cg3 = st.columns(3)
+    
+    with cg1:
+        st.markdown("##### 🌧️ Recarga Hídrica (El Vehículo)")
+        
+        # 1. Recuperar datos del Aleph (Mapas Avanzados) o usar default regional
+        recarga_mm_default = 350.0 
+        if 'aleph_recarga_mm' in st.session_state:
+            recarga_mm_default = float(st.session_state['aleph_recarga_mm'])
+            
+        recarga_anual_mm = st.number_input(
+            "Recarga Real (mm/año):", 
+            min_value=10.0, max_value=5000.0, value=recarga_mm_default, step=50.0,
+            help="Lámina de agua que logra infiltrarse hasta el acuífero."
+        )
+        
+        # 2. Calcular Área Aferente
+        area_km2 = 100.0 # Default
+        if 'aleph_area_km2' in st.session_state:
+            area_km2 = float(st.session_state['aleph_area_km2'])
+        elif not df_cuencas_mpios.empty and nivel_sel_visual == "Cuenca Hidrográfica":
+            # Si no ha corrido el Aleph, estimamos el área con el CSV de proporciones
+            area_km2 = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]['Area_Ha'].sum() / 100.0
+            
+        st.caption(f"Área aferente de recarga: **{area_km2:,.1f} km²**")
+        volumen_recarga_m3 = recarga_anual_mm * area_km2 * 1000
+        st.metric("Volumen de Infiltración Anual", f"{volumen_recarga_m3:,.0f} m³")
+
+    with cg2:
+        st.markdown("##### 💩 Fracción de Lixiviación")
+        factor_lixiviacion = st.slider(
+            "% de Carga que llega al Acuífero:", 
+            min_value=0.0, max_value=50.0, value=15.0, step=1.0,
+            help="El suelo actúa como filtro natural. Arcillas retienen más, suelos arenosos y kársticos dejan pasar más contaminantes."
+        ) / 100.0
+        
+        # 3. Extraer la carga difusa total (calculada en la sección 2: Humanos + Vacas + Cerdos)
+        # Asegurarnos de que la variable existe por si se ejecuta en otro orden
+        carga_difusa_dia = carga_difusa_total_kg if 'carga_difusa_total_kg' in locals() else 1000.0
+        
+        carga_difusa_anual_kg = carga_difusa_dia * 365
+        masa_lixiviada_kg = carga_difusa_anual_kg * factor_lixiviacion
+        
+        st.metric(
+            "Masa Contaminante Infiltrada", 
+            f"{masa_lixiviada_kg:,.0f} kg/año", 
+            f"Filtro retuvo {(carga_difusa_anual_kg - masa_lixiviada_kg):,.0f} kg", 
+            delta_color="normal"
+        )
+
+    with cg3:
+        st.markdown("##### 🧪 Concentración Freática")
+        
+        # 4. Mezcla Subterránea: C = Masa / Volumen
+        # Convertimos: (kg * 1,000,000 mg/kg) / (m3 * 1000 L/m3) = mg/L
+        if volumen_recarga_m3 > 0:
+            concentracion_acuifero = (masa_lixiviada_kg * 1000) / volumen_recarga_m3
+        else:
+            concentracion_acuifero = 0.0
+            
+        # Alertas de Calidad
+        if concentracion_acuifero < 3.0:
+            estado_pozos = "✅ Seguro / Base Limpia"
+            color_alerta = "normal"
+        elif concentracion_acuifero < 10.0:
+            estado_pozos = "⚠️ Riesgo Moderado"
+            color_alerta = "off"
+        else:
+            estado_pozos = "🚨 Acuífero Contaminado"
+            color_alerta = "inverse"
+            
+        st.metric(
+            "Impacto en Pozos/Nacimientos", 
+            f"{concentracion_acuifero:.2f} mg/L", 
+            estado_pozos, 
+            delta_color=color_alerta
+        )
+        st.caption("Esta concentración es la que emergerá como **Caudal Base** en las épocas de estiaje, afectando el río de forma retardada.")
+
