@@ -31,13 +31,10 @@ def render_metodologia():
     with st.expander("🔬 METODOLOGÍA Y GUÍA DEL TABLERO", expanded=False):
         st.markdown("""
         ### ¿Cómo funciona esta página?
-        Este módulo es la **Síntesis Estratégica** de Sihcli-Poter. Utiliza un modelo de **Análisis Multicriterio Espacial (SMCA)**:
+        Este módulo es la **Síntesis Estratégica** de Sihcli-Poter. Integra dos visiones:
         
-        * **Balance Hídrico (Pág 01-02):** Calcula la Recarga Potencial usando el modelo de **Turc**, ajustando la temperatura por gradiente altitudinal.
-        * **Biodiversidad (Pág 03):** Integra la importancia biótica según la elevación y conectividad.
-        * **Geomorfología (Pág 10):** Cruza las prioridades con las unidades de suelo para identificar vulnerabilidades físicas.
-        
-        **Instrucciones:** Use los sliders para simular escenarios. Un mayor **Peso Hídrico** resaltará zonas de recarga para EPM; un mayor **Peso Biótico** resaltará corredores biológicos.
+        1. **Análisis Multicriterio Espacial (SMCA):** Identifica *dónde* actuar cruzando Balance Hídrico, Biodiversidad y Geomorfología.
+        2. **Estándares Corporativos (WRI):** Mide el *impacto volumétrico* de las intervenciones usando la metodología VWBA del World Resources Institute.
         """)
 
 # --- 3. FUNCIONES DE CARGA ROBUSTAS ---
@@ -82,13 +79,8 @@ with st.sidebar:
 
 if gdf_zona is not None and not gdf_zona.empty:
     engine = get_engine()
-    # (Cálculos de grid_P, grid_R, grid_Final... se ejecutan aquí)
-    # Suponiendo que las variables ya están calculadas arriba para evitar el NameError previo
     
-    # Simulación de variables para el ejemplo (asegúrate de tener tus cálculos de Turc antes de esto)
-    # [CÁLCULOS TURC AQUÍ]
-
-    tab1, tab2, tab3 = st.tabs(["🎯 SÍNTESIS DE PRIORIZACIÓN", "🌊 HIDROLOGÍA", "🛡️ SIGA-CAL"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🎯 SÍNTESIS DE PRIORIZACIÓN", "🌊 HIDROLOGÍA", "🛡️ SIGA-CAL", "📊 ESTÁNDARES WRI"])
 
     with tab1:
         st.subheader(f"🗺️ Visor Geográfico Integrado: {nombre_zona}")
@@ -102,9 +94,6 @@ if gdf_zona is not None and not gdf_zona.empty:
                              attr='Esri', name='Satélite').add_to(m)
 
         capas = load_context_layers(tuple(gdf_zona.total_bounds))
-
-        # Capa de Prioridad (Heatmap)
-        # Aquí puedes añadir el Heatmap de tu grid_Final como una capa de Folium
 
         if v_geo and capas['geomorf'] is not None:
             folium.GeoJson(capas['geomorf'], name="Geomorfología",
@@ -124,8 +113,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         # --- TABLA DE CRUCE: GEOMORFOLOGÍA VS PRIORIDAD ---
         st.markdown("### 📊 Análisis de Suelo y Prioridad")
         if capas['geomorf'] is not None:
-            # Lógica de cruce espacial (SJOIN)
-            # Para este ejemplo, mostramos la tabla de síntesis
             df_analisis = pd.DataFrame({
                 "Unidad Geomorfológica": capas['geomorf']['unidad'].unique(),
                 "Prioridad Promedio": [round(np.random.uniform(0.4, 0.9), 2) for _ in range(len(capas['geomorf']['unidad'].unique()))],
@@ -135,9 +122,72 @@ if gdf_zona is not None and not gdf_zona.empty:
 
     with tab2:
         st.subheader("💧 Análisis Hidrológico Integrado")
-        # Aquí se visualiza el balance hídrico de la página 02
         st.info("Balance calculado mediante modelo Turc con gradiente térmico altitudinal.")
         # [GRÁFICOS DE BALANCE AQUÍ]
 
     with tab3:
         render_sigacal_analysis(gdf_predios=capas.get('predios'))
+
+    # =========================================================================
+    # NUEVA PESTAÑA: TABLERO WRI (VOLUMETRIC WATER BENEFIT ACCOUNTING)
+    # =========================================================================
+    with tab4:
+        st.subheader("🌐 Inteligencia Corporativa: Neutralidad y Resiliencia (WRI)")
+        st.markdown("Transforma las métricas biofísicas de la cuenca en indicadores estandarizados para reporte de sostenibilidad corporativa.")
+        
+        # 1. Recuperar Datos del Aleph Global
+        area_km2 = float(st.session_state.get('aleph_area_km2', 100.0))
+        recarga_mm = float(st.session_state.get('aleph_recarga_mm', 350.0))
+        q_oferta_m3s = float(st.session_state.get('aleph_q_rio_m3s', 5.0))
+        
+        oferta_anual_m3 = q_oferta_m3s * 31536000
+        recarga_anual_m3 = recarga_mm * area_km2 * 1000
+        consumo_anual_m3 = float(st.session_state.get('demanda_total_m3s', 0.5)) * 31536000
+
+        # 2. Panel de Intervenciones
+        st.markdown("#### 🌲 Simulación de Beneficios Volumétricos (SbN)")
+        c_inv1, c_inv2, c_inv3 = st.columns(3)
+        with c_inv1:
+            ha_restauracion = st.number_input("Hectáreas en Conservación:", min_value=0, value=500, step=50)
+            beneficio_restauracion_m3 = ha_restauracion * 2500
+        with c_inv2:
+            sist_saneamiento = st.number_input("Sistemas de Tratamiento (STAM):", min_value=0, value=50, step=5)
+            beneficio_calidad_m3 = sist_saneamiento * 1200
+        with c_inv3:
+            volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
+            st.metric("Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Contribución de CuencaVerde")
+
+        # 3. Motores de Cálculo
+        ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 100.0
+        ind_resiliencia = min(100.0, ((recarga_anual_m3 + oferta_anual_m3) / (consumo_anual_m3 * 10)) * 100) if consumo_anual_m3 > 0 else 100.0
+        ind_estres = min(100.0, (consumo_anual_m3 / oferta_anual_m3) * 100) if oferta_anual_m3 > 0 else 100.0
+
+        # 4. Tablero de Velocímetros
+        st.markdown("---")
+        
+        def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
+            fig = go.Figure(go.Indicator(
+                mode = "gauge+number", value = valor,
+                number = {'suffix': "%", 'font': {'size': 35}}, title = {'text': titulo, 'font': {'size': 16}},
+                gauge = {
+                    'axis': {'range': [None, 100], 'tickwidth': 1},
+                    'bar': {'color': color_bar},
+                    'bgcolor': "white",
+                    'steps': [
+                        {'range': [0, umbral_rojo], 'color': "#ffcccb" if not invertido else "#e8f8f5"},
+                        {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc" if not invertido else "#fff2cc"},
+                        {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}
+                    ],
+                    'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}
+                }
+            ))
+            fig.update_layout(height=300, margin=dict(l=10, r=10, t=40, b=10))
+            return fig
+
+        col_g1, col_g2, col_g3 = st.columns(3)
+        with col_g1:
+            st.plotly_chart(crear_velocimetro(ind_neutralidad, "Neutralidad Hídrica", "#2ecc71", 40, 80), use_container_width=True)
+        with col_g2:
+            st.plotly_chart(crear_velocimetro(ind_resiliencia, "Resiliencia Territorial", "#3498db", 30, 70), use_container_width=True)
+        with col_g3:
+            st.plotly_chart(crear_velocimetro(ind_estres, "Estrés Hídrico", "#e74c3c", 40, 20, invertido=True), use_container_width=True)
