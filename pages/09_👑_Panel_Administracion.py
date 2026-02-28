@@ -1077,7 +1077,7 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
 # ==============================================================================
 # TAB 14: GESTIÓN DEMOGRÁFICA (ACTUALIZADA PARA MUNICIPIOS Y EDADES HASTA 100)
 # ==============================================================================
-with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
+with tabs[14]:
     st.header("👥 Gestión de Datos Demográficos y Poblacionales")
     st.markdown("""
     Aquí puedes actualizar las bases de datos maestras de Población Municipal y Estructura por Edades (1950-2070).
@@ -1173,7 +1173,7 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
 # =====================================================================
 # TAB 15: MÓDULO DE CARGA ESPACIAL (SHAPEFILE -> GEOJSON -> SUPABASE)
 # =====================================================================
-with tab15:
+with tabs[15]:
 
     st.subheader("🗺️ Aduana SIG: Estandarización y Carga a Supabase")
     st.info("Sube los múltiples archivos de una capa Shapefile (.shp, .shx, .dbf, .prj). El sistema la convertirá al estándar web (GeoJSON WGS84) y la subirá automáticamente al bucket público de Supabase.")
@@ -1240,5 +1240,6 @@ with tab15:
                         st.error(f"❌ Error durante el proceso: {str(e)}")
         else:
             st.warning("⚠️ Debes incluir obligatoriamente el archivo que termina en '.shp'.")
+
 
 
