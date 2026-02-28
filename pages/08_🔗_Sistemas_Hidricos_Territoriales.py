@@ -14,6 +14,10 @@ Evalúa cómo los embalses integran las cuencas propias con los trasvases artifi
 """)
 st.divider()
 
+# Ruta actualizada apuntando a la nueva subcarpeta
+ruta_embalses = 'data/Puntos_de_interes/Embalses_9377.geojson'
+gdf_embalses = gpd.read_file(ruta_embalses)
+
 # =========================================================================
 # 1. BASE DE DATOS ESTRUCTURAL DE EMBALSES (Memoria del Sistema)
 # =========================================================================
