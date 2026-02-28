@@ -1180,7 +1180,7 @@ with tabs[15]:
     from supabase import create_client
 
     st.subheader("🗺️ Aduana SIG y Explorador de Nube")
-    st.info("Sube Shapefiles para convertirlos a GeoJSON, o sube GeoJSON directamente. Explora los archivos ya alojados en tu Bucket público.")
+    st.info("Sube Shapefiles para convertirlos a GeoJSON, sube GeoJSON directamente, o carga archivos tabulares (Excel/CSV). Explora los archivos ya alojados en tu Bucket público.")
 
     # 1. Búsqueda inteligente de las credenciales de Supabase
     url_supabase = None
@@ -1222,18 +1222,17 @@ with tabs[15]:
         if carpeta_destino == "otro":
             carpeta_destino = st.text_input("Escribe el nombre de la nueva carpeta (sin espacios ni tildes):")
 
-        # Cargador Múltiple (Ahora acepta GeoJSON)
+        # Cargador Múltiple (Acepta GeoJSON, Shapefiles y Tabulares)
         st.caption("⚠️ Recuerda borrar (con la X) los archivos anteriores antes de subir nuevos.")
-        archivos_sig = st.file_uploader("Sube archivos (.shp, .shx, .dbf) o directamente (.geojson)", accept_multiple_files=True, key="sig_uploader")
+        archivos_sig = st.file_uploader("Sube archivos (.shp, .shx, .dbf), directos (.geojson) o Excel/CSV", accept_multiple_files=True, key="sig_uploader")
 
         if archivos_sig:
             if st.button("🚀 Procesar y Subir a Supabase"):
                 with st.spinner("Procesando y subiendo a la nube..."):
                     try:
-                        # CASO 1: Archivos GeoJSON directos
+                        # --- CASO 1: Archivos GeoJSON directos ---
                         archivos_geojson = [f for f in archivos_sig if f.name.endswith('.geojson') or f.name.endswith('.json')]
                         for f_geo in archivos_geojson:
-                            # Los leemos para asegurarnos de que la proyección es WGS84 por seguridad
                             gdf = gpd.read_file(f_geo)
                             if gdf.crs and gdf.crs.to_string() != "EPSG:4326":
                                 gdf = gdf.to_crs(epsg=4326)
@@ -1242,19 +1241,18 @@ with tabs[15]:
                                 
                             geojson_bytes = gdf.to_json().encode('utf-8')
                             ruta_supabase = f"{carpeta_destino}/{f_geo.name}"
-                            
                             cliente_supabase.storage.from_(nombre_bucket).upload(
                                 file=geojson_bytes, path=ruta_supabase, file_options={"content-type": "application/json", "upsert": "true"}
                             )
-                            st.success(f"✅ Archivo '{f_geo.name}' subido correctamente.")
+                            st.success(f"✅ Mapa '{f_geo.name}' subido correctamente.")
 
-                        # CASO 2: Archivos Shapefile
+                        # --- CASO 2: Archivos Shapefile ---
                         archivo_shp = next((f for f in archivos_sig if f.name.endswith('.shp')), None)
                         if archivo_shp:
                             with tempfile.TemporaryDirectory() as tmpdir:
                                 # Guardar archivos del shapefile en temporal
                                 for f in archivos_sig:
-                                    if not f.name.endswith('.geojson'):
+                                    if not f.name.endswith('.geojson') and not f.name.endswith(('.xlsx', '.xls', '.csv', '.txt')):
                                         filepath = os.path.join(tmpdir, f.name)
                                         with open(filepath, "wb") as f_out:
                                             f_out.write(f.getvalue())
@@ -1276,6 +1274,20 @@ with tabs[15]:
                                     file=geojson_bytes, path=ruta_supabase, file_options={"content-type": "application/json", "upsert": "true"}
                                 )
                                 st.success(f"✅ Shapefile '{archivo_shp.name}' transformado y subido como '{nombre_limpio}'.")
+
+                        # --- CASO 3: Archivos Tabulares y Excel (censos_ICA, etc.) ---
+                        archivos_excel = [f for f in archivos_sig if f.name.endswith(('.xlsx', '.xls', '.csv', '.txt'))]
+                        for f_excel in archivos_excel:
+                            bytes_data = f_excel.getvalue()
+                            ruta_supabase = f"{carpeta_destino}/{f_excel.name}"
+                            
+                            # Detectar el tipo de archivo para que Supabase lo entienda
+                            ctype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if f_excel.name.endswith(('.xlsx', '.xls')) else "text/csv" if f_excel.name.endswith('.csv') else "text/plain"
+                            
+                            cliente_supabase.storage.from_(nombre_bucket).upload(
+                                file=bytes_data, path=ruta_supabase, file_options={"content-type": ctype, "upsert": "true"}
+                            )
+                            st.success(f"✅ Documento '{f_excel.name}' subido en su formato original.")
                                 
                     except Exception as e:
                         st.error(f"❌ Error durante el proceso: {str(e)}")
@@ -1299,4 +1311,5 @@ with tabs[15]:
                 else:
                     st.warning("La carpeta no existe o está vacía.")
             except Exception as e:
-                st.error("No se pudo listar los archivos. ¿Aseguraste que el bucket sea público?")
+                st.error(f"No se pudo listar los archivos. ¿Aseguraste que el bucket sea público? Detalle: {e}")
+
