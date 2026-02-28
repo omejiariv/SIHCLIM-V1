@@ -606,6 +606,28 @@ st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígen
 
 from modules.water_quality import calcular_streeter_phelps
 
+# -------------------------------------------------------------------------
+    # 🏔️ MOTOR HIPSOMÉTRICO (Escalamiento de Caudal por Altitud)
+    # -------------------------------------------------------------------------
+    def escalar_caudal_por_altitud(q_total_salida, altitud_vertimiento):
+        """
+        Escala el caudal de la desembocadura al punto exacto de vertimiento.
+        """
+        # ⚠️ AQUÍ PUEDES REEMPLAZAR CON TU ECUACIÓN REAL DE LA CUENCA ⚠️
+        # Ejemplo Genérico: Asumimos una cuenca que va de 2800 msnm a 1000 msnm
+        altitud_max = 2800.0 # Nacimiento
+        altitud_min = 1000.0 # Desembocadura
+        
+        alt_segura = max(altitud_min, min(altitud_max, float(altitud_vertimiento)))
+        
+        # Fracción de Área (Ejemplo lineal inverso). 
+        # Si tienes la ecuación polinómica del área acumulada, ponla aquí:
+        fraccion_area = (altitud_max - alt_segura) / (altitud_max - altitud_min) 
+        
+        # Caudal proporcional al área aportante
+        q_local = q_total_salida * fraccion_area
+        return max(0.01, q_local) # Nunca cero para no romper la matemática de Streeter-Phelps
+
 # 1. Parámetros Físicos del Río (Interactivos)
 with st.expander("⚙️ Características Físicas y Climáticas del Río", expanded=True):
     cr1, cr2, cr3 = st.columns(3)
