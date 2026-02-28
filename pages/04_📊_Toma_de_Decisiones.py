@@ -164,21 +164,29 @@ if gdf_zona is not None and not gdf_zona.empty:
         # --- 2. INTEGRACIÓN CARTOGRÁFICA (PREDIOS EJECUTADOS) ---
         st.markdown("---")
         st.markdown(f"#### 🌲 Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
-        st.info("El sistema lee directamente la cartografía de intervenciones (GeoJSON) y permite sumar simulaciones futuras sobre la línea base.")
+        st.info("El sistema realiza un geoprocesamiento en vivo (clip espacial) para calcular las hectáreas exactas de los predios que caen dentro de los límites de la cuenca seleccionada.")
         
-        # Cálculo de Hectáreas Reales desde el SIG
+        # Cálculo de Hectáreas Reales desde el SIG (Intersección Estricta)
         ha_reales_sig = 0.0
-        if capas.get('predios') is not None and not capas['predios'].empty:
-            if 'AREA_HA' in capas['predios'].columns:
-                ha_reales_sig = capas['predios']['AREA_HA'].sum()
-            else:
-                try: # Fallback: Calcular área si la columna no existe (proyectando a magna sirgas)
-                    ha_reales_sig = capas['predios'].to_crs(epsg=3116).area.sum() / 10000.0
-                except: pass
+        if capas.get('predios') is not None and not capas['predios'].empty and gdf_zona is not None and not gdf_zona.empty:
+            try:
+                # 1. Asegurar que ambos tengan el mismo CRS (EPSG:4326)
+                gdf_zona_4326 = gdf_zona.to_crs("EPSG:4326") if gdf_zona.crs != "EPSG:4326" else gdf_zona
+                predios_4326 = capas['predios'].to_crs("EPSG:4326") if capas['predios'].crs != "EPSG:4326" else capas['predios']
+                
+                # 2. Intersección espacial (Clip): Corta los predios exactamente con la silueta de la cuenca
+                predios_en_cuenca = gpd.clip(predios_4326, gdf_zona_4326)
+                
+                if not predios_en_cuenca.empty:
+                    # 3. Proyectar a un sistema métrico (Magna Sirgas EPSG:3116) para medir el área real
+                    # El área en EPSG:3116 se da en metros cuadrados, dividimos por 10,000 para hectáreas
+                    ha_reales_sig = predios_en_cuenca.to_crs(epsg=3116).area.sum() / 10000.0
+            except Exception as e:
+                pass # Fallback silencioso: si la geometría tiene errores topológicos, el área será 0.0
                 
         c_inv1, c_inv2, c_inv3 = st.columns(3)
         with c_inv1:
-            st.metric("✅ Área Conservada (SIG)", f"{ha_reales_sig:,.1f} ha", "Línea base actual")
+            st.metric("✅ Área Restaurada/Conservada/BPAs", f"{ha_reales_sig:,.1f} ha", "Línea base actual (SIG)")
             ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0)
             ha_total = ha_reales_sig + ha_simuladas
             beneficio_restauracion_m3 = ha_total * 2500
@@ -190,7 +198,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         with c_inv3:
             volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
             st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Total compensado")
-
+            
         # --- 3. MOTORES DE CÁLCULO (INCLUYENDO CALIDAD) ---
         ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 100.0
         ind_resiliencia = min(100.0, ((recarga_anual_m3 + oferta_anual_m3) / (consumo_anual_m3 * 10)) * 100) if consumo_anual_m3 > 0 else 100.0
@@ -375,4 +383,5 @@ if gdf_zona is not None and not gdf_zona.empty:
             * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
             * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
             """)
+
 
