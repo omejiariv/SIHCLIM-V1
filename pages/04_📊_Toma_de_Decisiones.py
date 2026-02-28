@@ -128,43 +128,78 @@ if gdf_zona is not None and not gdf_zona.empty:
     with tab3:
         render_sigacal_analysis(gdf_predios=capas.get('predios'))
 
-# =========================================================================
-    # TABLERO WRI Y RANKING TERRITORIAL
+    # =========================================================================
+    # TABLERO WRI, CALIDAD Y PROYECCIONES
     # =========================================================================
     with tab4:
-        import plotly.express as px # Importación segura local
+        import plotly.express as px
+        import plotly.graph_objects as go
+        import numpy as np
+        import pandas as pd
         
-        st.subheader("🌐 Inteligencia Corporativa: Neutralidad y Resiliencia (WRI)")
-        st.markdown("Transforma las métricas biofísicas de la cuenca en indicadores estandarizados para reporte de sostenibilidad corporativa.")
+        st.subheader("🌐 Inteligencia Corporativa: Neutralidad, Resiliencia y Calidad (WRI)")
+        st.markdown("Transforma las métricas biofísicas de la cuenca en indicadores estandarizados y evalúa su viabilidad futura.")
         
-        # 1. Recuperar Datos del Aleph Global
+        # --- 1. MÁQUINA DEL TIEMPO (PROYECCIONES) ---
+        st.markdown("#### ⏳ Máquina del Tiempo (Análisis de Tendencias)")
+        anio_analisis = st.slider("Seleccione el Año de Evaluación (Actual o Futuro):", min_value=1970, max_value=2050, value=2025, step=1)
+        
+        # Factor de crecimiento/decrecimiento simulado
+        # Población/Demanda crece ~1.5% anual. Recarga disminuye ~0.5% anual por Cambio Climático.
+        delta_anios = anio_analisis - 2025
+        factor_demanda = (1 + 0.015) ** delta_anios
+        factor_clima = (1 - 0.005) ** delta_anios
+        
+        # Recuperar Datos Base del Aleph
         area_km2 = float(st.session_state.get('aleph_area_km2', 100.0))
-        recarga_mm = float(st.session_state.get('aleph_recarga_mm', 350.0))
-        q_oferta_m3s = float(st.session_state.get('aleph_q_rio_m3s', 5.0))
+        recarga_mm_base = float(st.session_state.get('aleph_recarga_mm', 350.0))
+        q_oferta_m3s_base = float(st.session_state.get('aleph_q_rio_m3s', 5.0))
+        demanda_m3s_base = float(st.session_state.get('demanda_total_m3s', 0.5))
         
-        oferta_anual_m3 = q_oferta_m3s * 31536000
-        recarga_anual_m3 = recarga_mm * area_km2 * 1000
-        consumo_anual_m3 = float(st.session_state.get('demanda_total_m3s', 0.5)) * 31536000
+        # Aplicar Proyección Temporal
+        oferta_anual_m3 = (q_oferta_m3s_base * factor_clima) * 31536000
+        recarga_anual_m3 = (recarga_mm_base * factor_clima) * area_km2 * 1000
+        consumo_anual_m3 = (demanda_m3s_base * factor_demanda) * 31536000
 
-        # 2. Panel de Intervenciones
-        st.markdown(f"#### 🌲 Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
+        # --- 2. INTEGRACIÓN CARTOGRÁFICA (PREDIOS EJECUTADOS) ---
+        st.markdown("---")
+        st.markdown(f"#### 🌲 Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
+        st.info("El sistema lee directamente la cartografía de intervenciones (GeoJSON) y permite sumar simulaciones futuras sobre la línea base.")
+        
+        # Cálculo de Hectáreas Reales desde el SIG
+        ha_reales_sig = 0.0
+        if capas.get('predios') is not None and not capas['predios'].empty:
+            if 'AREA_HA' in capas['predios'].columns:
+                ha_reales_sig = capas['predios']['AREA_HA'].sum()
+            else:
+                try: # Fallback: Calcular área si la columna no existe (proyectando a magna sirgas)
+                    ha_reales_sig = capas['predios'].to_crs(epsg=3116).area.sum() / 10000.0
+                except: pass
+                
         c_inv1, c_inv2, c_inv3 = st.columns(3)
         with c_inv1:
-            ha_restauracion = st.number_input("Hectáreas en Conservación:", min_value=0, value=500, step=50)
-            beneficio_restauracion_m3 = ha_restauracion * 2500
+            st.metric("✅ Área Conservada (SIG)", f"{ha_reales_sig:,.1f} ha", "Línea base actual")
+            ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0)
+            ha_total = ha_reales_sig + ha_simuladas
+            beneficio_restauracion_m3 = ha_total * 2500
+            
         with c_inv2:
-            sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM):", min_value=0, value=50, step=5, help="Sistemas modulares (PTAR/Sépticos) que evitan contaminación.")
+            sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM):", min_value=0, value=50, step=5, help="PTAR o sépticos modulares. Cada uno suma beneficio volumétrico por evitar contaminación.")
             beneficio_calidad_m3 = sist_saneamiento * 1200
+            
         with c_inv3:
             volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
-            st.metric("Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Contribución SbN")
+            st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Total compensado")
 
-        # 3. Motores de Cálculo
+        # --- 3. MOTORES DE CÁLCULO (INCLUYENDO CALIDAD) ---
         ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 100.0
         ind_resiliencia = min(100.0, ((recarga_anual_m3 + oferta_anual_m3) / (consumo_anual_m3 * 10)) * 100) if consumo_anual_m3 > 0 else 100.0
         ind_estres = min(100.0, (consumo_anual_m3 / oferta_anual_m3) * 100) if oferta_anual_m3 > 0 else 100.0
-
-        # Función auxiliar para etiquetas gigantes
+        
+        # NUEVO ÍNDICE: Calidad de Agua (Basado en dilución y saneamiento)
+        factor_dilucion = (oferta_anual_m3 / (consumo_anual_m3 + 1)) 
+        ind_calidad = min(100.0, max(0.0, 50.0 + (factor_dilucion * 0.5) + (sist_saneamiento * 0.05)))
+        
         def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
             if not invertido:
                 if valor < umbral_rojo: return "🔴 CRÍTICO", "#c0392b"
@@ -175,14 +210,14 @@ if gdf_zona is not None and not gdf_zona.empty:
                 elif valor < umbral_rojo: return "🟡 MODERADO", "#f39c12"
                 else: return "🔴 CRÍTICO", "#c0392b"
 
-        # 4. Tablero de Velocímetros
+        # --- 4. TABLERO DE VELOCÍMETROS ---
         st.markdown("---")
-        st.subheader("🧭 Tablero de Seguridad Hídrica")
+        st.subheader(f"🧭 Tablero de Seguridad Hídrica Integral ({anio_analisis})")
         
         def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
             fig = go.Figure(go.Indicator(
                 mode = "gauge+number", value = valor,
-                number = {'suffix': "%", 'font': {'size': 30}}, title = {'text': titulo, 'font': {'size': 16}},
+                number = {'suffix': "%", 'font': {'size': 26}}, title = {'text': titulo, 'font': {'size': 14}},
                 gauge = {
                     'axis': {'range': [None, 100], 'tickwidth': 1},
                     'bar': {'color': color_bar},
@@ -195,35 +230,73 @@ if gdf_zona is not None and not gdf_zona.empty:
                     'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}
                 }
             ))
-            fig.update_layout(height=260, margin=dict(l=10, r=10, t=30, b=10))
+            fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10))
             return fig
 
-        col_g1, col_g2, col_g3 = st.columns(3)
+        col_g1, col_g2, col_g3, col_g4 = st.columns(4)
         
-        # Evaluaciones cualitativas
         est_neu, col_neu = evaluar_indice(ind_neutralidad, 40, 80)
         est_res, col_res = evaluar_indice(ind_resiliencia, 30, 70)
         est_est, col_est = evaluar_indice(ind_estres, 40, 20, invertido=True)
+        est_cal, col_cal = evaluar_indice(ind_calidad, 40, 70)
 
         with col_g1: 
-            st.plotly_chart(crear_velocimetro(ind_neutralidad, "Neutralidad Hídrica", "#2ecc71", 40, 80), use_container_width=True)
-            st.markdown(f"<h3 style='text-align: center; color: {col_neu}; margin-top:-20px;'>{est_neu}</h3>", unsafe_allow_html=True)
-            st.markdown("<div style='text-align: center; font-size: 13px; color: gray;'>Escala: <40% Crítico | 40-80% Vuln. | >80% Óptimo</div>", unsafe_allow_html=True)
-            st.info(f"💧 **Base:** Huella de consumo ({consumo_anual_m3/1e6:.1f}M m³) vs Devuelto ({volumen_repuesto_m3/1e6:.1f}M m³).")
+            st.plotly_chart(crear_velocimetro(ind_neutralidad, "Neutralidad", "#2ecc71", 40, 80), use_container_width=True)
+            st.markdown(f"<h4 style='text-align: center; color: {col_neu}; margin-top:-20px;'>{est_neu}</h4>", unsafe_allow_html=True)
+            st.info(f"VWBA: {volumen_repuesto_m3/1e6:.1f}M / {consumo_anual_m3/1e6:.1f}M m³")
 
         with col_g2: 
-            st.plotly_chart(crear_velocimetro(ind_resiliencia, "Resiliencia Territorial", "#3498db", 30, 70), use_container_width=True)
-            st.markdown(f"<h3 style='text-align: center; color: {col_res}; margin-top:-20px;'>{est_res}</h3>", unsafe_allow_html=True)
-            st.markdown("<div style='text-align: center; font-size: 13px; color: gray;'>Escala: <30% Crítico | 30-70% Vuln. | >70% Óptimo</div>", unsafe_allow_html=True)
-            st.info(f"🛡️ **Base:** Recarga Acuíferos ({recarga_anual_m3/1e6:.1f}M m³) + Oferta vs Presión de Sequía.")
+            st.plotly_chart(crear_velocimetro(ind_resiliencia, "Resiliencia", "#3498db", 30, 70), use_container_width=True)
+            st.markdown(f"<h4 style='text-align: center; color: {col_res}; margin-top:-20px;'>{est_res}</h4>", unsafe_allow_html=True)
+            st.info(f"Reserva: {recarga_anual_m3/1e6:.1f}M m³")
 
         with col_g3: 
             st.plotly_chart(crear_velocimetro(ind_estres, "Estrés Hídrico", "#e74c3c", 40, 20, invertido=True), use_container_width=True)
-            st.markdown(f"<h3 style='text-align: center; color: {col_est}; margin-top:-20px;'>{est_est}</h3>", unsafe_allow_html=True)
-            st.markdown("<div style='text-align: center; font-size: 13px; color: gray;'>Escala: <20% Holgado | 20-40% Mod. | >40% Crítico</div>", unsafe_allow_html=True)
-            st.info(f"📊 **Base:** Oferta extraída ({consumo_anual_m3/1e6:.1f}M m³) de la oferta total ({oferta_anual_m3/1e6:.1f}M m³).")
+            st.markdown(f"<h4 style='text-align: center; color: {col_est}; margin-top:-20px;'>{est_est}</h4>", unsafe_allow_html=True)
+            st.info(f"Extracción: {consumo_anual_m3/1e6:.1f}M m³")
+            
+        with col_g4:
+            st.plotly_chart(crear_velocimetro(ind_calidad, "Calidad del Agua", "#9b59b6", 40, 70), use_container_width=True)
+            st.markdown(f"<h4 style='text-align: center; color: {col_cal}; margin-top:-20px;'>{est_cal}</h4>", unsafe_allow_html=True)
+            st.info(f"Capacidad de dilución actual.")
 
-        # 5. RANKING Y GRÁFICO DE CAJAS
+        # --- 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (GRÁFICO DE LÍNEAS) ---
+        st.markdown("---")
+        st.subheader("📈 Proyección de Seguridad Hídrica (2020 - 2050)")
+        st.caption("Evolución de los indicadores asumiendo un crecimiento poblacional (+1.5%/año) y pérdida de recarga por Cambio Climático (-0.5%/año).")
+        
+        anios_proj = list(range(2020, 2051, 5))
+        datos_proj = []
+        for a in anios_proj:
+            f_dem = (1 + 0.015) ** (a - 2025)
+            f_cli = (1 - 0.005) ** (a - 2025)
+            
+            o_m3 = (q_oferta_m3s_base * f_cli) * 31536000
+            r_m3 = (recarga_mm_base * f_cli) * area_km2 * 1000
+            c_m3 = (demanda_m3s_base * f_dem) * 31536000
+            
+            n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
+            r = min(100.0, ((r_m3 + o_m3) / (c_m3 * 10)) * 100) if c_m3 > 0 else 100.0
+            e = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
+            
+            fac_dil = (o_m3 / (c_m3 + 1))
+            cal = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (sist_saneamiento * 0.05)))
+            
+            datos_proj.extend([
+                {"Año": a, "Indicador": "Neutralidad", "Valor": n},
+                {"Año": a, "Indicador": "Resiliencia", "Valor": r},
+                {"Año": a, "Indicador": "Estrés Hídrico", "Valor": e},
+                {"Año": a, "Indicador": "Calidad", "Valor": cal}
+            ])
+            
+        df_tendencias = pd.DataFrame(datos_proj)
+        fig_line = px.line(df_tendencias, x="Año", y="Valor", color="Indicador", markers=True,
+                           color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Estrés Hídrico": "#e74c3c", "Calidad": "#9b59b6"})
+        fig_line.add_vline(x=anio_analisis, line_dash="dash", line_color="black", annotation_text=f"Año Seleccionado ({anio_analisis})")
+        fig_line.update_layout(height=350, yaxis_title="Índice (%)", xaxis_title="Año Proyectado", legend_title="Indicador WRI")
+        st.plotly_chart(fig_line, use_container_width=True)
+
+        # --- 6. RANKING TERRITORIAL Y BOXPLOTS ---
         st.markdown("---")
         st.subheader("🏆 Ranking Territorial y Dispersión de Índices")
         
@@ -233,22 +306,25 @@ if gdf_zona is not None and not gdf_zona.empty:
                 lista_cuencas = capas['cuencas']['SUBC_LBL'].dropna().unique().tolist()
                 
         if not lista_cuencas:
-            lista_cuencas = ["Río Chico", "Río Grande", "Quebrada La Mosca", "Río Buey", "Pantaniíllo", "La Fe", "Piedras Blancas"]
+            lista_cuencas = ["Río Chico", "Río Grande", "Quebrada La Mosca", "Río Buey", "Pantaniíllo"]
             
         np.random.seed(42) 
         datos_ranking = []
         for c in lista_cuencas:
-            n = np.random.uniform(10, 90) if c != nombre_zona else ind_neutralidad
-            r = np.random.uniform(20, 95) if c != nombre_zona else ind_resiliencia
-            e = np.random.uniform(5, 60) if c != nombre_zona else ind_estres
-            score_urgencia = (e * 0.6) + ((100 - r) * 0.4)
+            # Algoritmo de ranking simulado (en prod se conecta a los calculos base reales por cuenca)
+            n_val = np.random.uniform(10, 90) if c != nombre_zona else ind_neutralidad
+            r_val = np.random.uniform(20, 95) if c != nombre_zona else ind_resiliencia
+            e_val = np.random.uniform(5, 60) if c != nombre_zona else ind_estres
+            c_val = np.random.uniform(30, 100) if c != nombre_zona else ind_calidad
+            score_urgencia = (e_val * 0.5) + ((100 - r_val) * 0.3) + ((100 - c_val) * 0.2)
             
             datos_ranking.append({
                 "Territorio": c,
                 "Urgencia Intervención": score_urgencia,
-                "Neutralidad (%)": n,
-                "Resiliencia (%)": r,
-                "Estrés Hídrico (%)": e
+                "Neutralidad (%)": n_val,
+                "Resiliencia (%)": r_val,
+                "Estrés Hídrico (%)": e_val,
+                "Calidad de Agua (%)": c_val
             })
             
         df_ranking = pd.DataFrame(datos_ranking).sort_values(by="Urgencia Intervención", ascending=False)
@@ -258,25 +334,22 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.dataframe(
                 df_ranking.style.background_gradient(cmap="Reds", subset=["Urgencia Intervención", "Estrés Hídrico (%)"])
                 .background_gradient(cmap="Blues", subset=["Resiliencia (%)"])
-                .background_gradient(cmap="Greens", subset=["Neutralidad (%)"])
-                .format({"Urgencia Intervención": "{:.1f}", "Neutralidad (%)": "{:.1f}%", "Resiliencia (%)": "{:.1f}%", "Estrés Hídrico (%)": "{:.1f}%"}),
+                .background_gradient(cmap="Greens", subset=["Neutralidad (%)", "Calidad de Agua (%)"])
+                .format({"Urgencia Intervención": "{:.1f}", "Neutralidad (%)": "{:.1f}%", "Resiliencia (%)": "{:.1f}%", "Estrés Hídrico (%)": "{:.1f}%", "Calidad de Agua (%)": "{:.1f}%"}),
                 use_container_width=True, hide_index=True
             )
-            
-            # --- PETICIÓN 2: BOTÓN DE DESCARGA ---
             csv_ranking = df_ranking.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Descargar Ranking (CSV)", csv_ranking, "Ranking_Territorial_WRI.csv", "text/csv")
 
         with c_box:
-            # --- PETICIÓN 3: GRÁFICO DE CAJAS ---
-            df_melt = df_ranking.melt(id_vars=["Territorio"], value_vars=["Neutralidad (%)", "Resiliencia (%)", "Estrés Hídrico (%)"], var_name="Índice", value_name="Valor (%)")
+            df_melt = df_ranking.melt(id_vars=["Territorio"], value_vars=["Neutralidad (%)", "Resiliencia (%)", "Estrés Hídrico (%)", "Calidad de Agua (%)"], var_name="Índice", value_name="Valor (%)")
             fig_box = px.box(df_melt, x="Índice", y="Valor (%)", color="Índice", points="all",
                              title="Distribución Regional de Indicadores",
-                             color_discrete_map={"Neutralidad (%)": "#2ecc71", "Resiliencia (%)": "#3498db", "Estrés Hídrico (%)": "#e74c3c"})
+                             color_discrete_map={"Neutralidad (%)": "#2ecc71", "Resiliencia (%)": "#3498db", "Estrés Hídrico (%)": "#e74c3c", "Calidad de Agua (%)": "#9b59b6"})
             fig_box.update_layout(height=350, showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
             st.plotly_chart(fig_box, use_container_width=True)
 
-        # 6. GLOSARIO METODOLÓGICO Y FUENTES
+        # 7. GLOSARIO METODOLÓGICO Y FUENTES
         st.markdown("---")
         with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded=False):
             st.markdown("""
@@ -294,9 +367,12 @@ if gdf_zona is not None and not gdf_zona.empty:
             * **Estrés Hídrico (Indicador Falkenmark / ODS 6.4.2):**
               * **Concepto:** Porcentaje de la oferta total anual que está siendo extraída por los diversos sectores económicos.
               * **Interpretación:** Valores $>40\%$ denotan estrés severo (competencia intensa por el recurso). Valores $<20\%$ indican un sistema holgado.
+
+            * **Calidad de Agua (WQI):** Índice modificado basado en la capacidad de dilución natural (Oferta vs Extracción) y mitigación sanitaria (STAM).
               
             ### 🌐 Fuentes y Estándares de Referencia
             * **WRI (World Resources Institute):** [Volumetric Water Benefit Accounting (VWBA) - Metodología Oficial](https://www.wri.org/research/volumetric-water-benefit-accounting-vwba-implementing-guidelines)
             * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
             * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
             """)
+
