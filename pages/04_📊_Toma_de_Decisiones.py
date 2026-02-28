@@ -276,10 +276,27 @@ if gdf_zona is not None and not gdf_zona.empty:
             fig_box.update_layout(height=350, showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
             st.plotly_chart(fig_box, use_container_width=True)
 
-        # 6. GLOSARIO (Igual que antes)
+        # 6. GLOSARIO METODOLÓGICO Y FUENTES
         st.markdown("---")
         with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded=False):
             st.markdown("""
             ### 📖 Glosario de Indicadores
-            ... *(Tu texto previo del glosario va aquí)* ...
+            
+            * **Neutralidad Hídrica (Volumetric Water Benefit VWBA):**
+              * **Concepto:** Mide si el volumen de agua restituido a la cuenca mediante Soluciones Basadas en la Naturaleza (SbN) compensa la Huella Hídrica del consumo humano/industrial.
+              * **Interpretación:** Un 100% indica que se está reponiendo cada gota extraída. Valores $<40\%$ son críticos e implican deuda ecológica.
+              * **Fórmula:** $\\frac{\\sum Beneficios\\ Volumétricos\\ (m^3/a)}{Consumo\\ Total\\ (m^3/a)} \\times 100$
+              
+            * **Resiliencia Territorial:**
+              * **Concepto:** Capacidad del ecosistema (aguas subterráneas + escorrentía) para soportar eventos de sequía (El Niño) sin colapsar el suministro.
+              * **Interpretación:** Zonas con alta recarga de acuíferos ($>70\%$) son buffers climáticos naturales. 
+              
+            * **Estrés Hídrico (Indicador Falkenmark / ODS 6.4.2):**
+              * **Concepto:** Porcentaje de la oferta total anual que está siendo extraída por los diversos sectores económicos.
+              * **Interpretación:** Valores $>40\%$ denotan estrés severo (competencia intensa por el recurso). Valores $<20\%$ indican un sistema holgado.
+              
+            ### 🌐 Fuentes y Estándares de Referencia
+            * **WRI (World Resources Institute):** [Volumetric Water Benefit Accounting (VWBA) - Metodología Oficial](https://www.wri.org/research/volumetric-water-benefit-accounting-vwba-implementing-guidelines)
+            * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
+            * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
             """)
