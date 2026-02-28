@@ -17,21 +17,37 @@ Evalúa cómo los embalses integran las cuencas propias con los trasvases artifi
 st.divider()
 
 # =========================================================================
-# 0. CARGA DE CARTOGRAFÍA (Puntos de Interés)
+# 0. CARGA DE CARTOGRAFÍA (Desde Supabase en la Nube)
 # =========================================================================
-# Construcción segura de la ruta apuntando a la nueva subcarpeta
-base_dir = os.path.dirname(os.path.abspath(__file__))
-ruta_embalses = os.path.join(base_dir, '..', 'data', 'Puntos_de_interes', 'Embalses_9377.geojson')
+# 1. Buscamos la URL base de tu Supabase en los secretos
+url_supabase = None
+if "SUPABASE_URL" in st.secrets:
+    url_supabase = st.secrets["SUPABASE_URL"]
+elif "supabase" in st.secrets:
+    url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
+    url_supabase = st.secrets["iri"]["SUPABASE_URL"]
+elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
+    url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
 
-# Inicializamos la variable en None por seguridad
 gdf_embalses = None 
 
-if os.path.exists(ruta_embalses):
-    gdf_embalses = gpd.read_file(ruta_embalses)
-    # Opcional: Mostrar un pequeño mensaje de éxito en la barra lateral para saber que funcionó
-    st.sidebar.success(f"✅ Capa de Embalses conectada ({len(gdf_embalses)} registros)")
+if url_supabase:
+    # 2. Construimos el enlace web directo y público al GeoJSON
+    nombre_bucket = "sihcli_maestros"
+    # IMPORTANTE: Verifica que el nombre del archivo sea exactamente este en Supabase
+    nombre_archivo = "Embalses_9377.geojson" 
+    
+    ruta_embalses_nube = f"{url_supabase}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/{nombre_archivo}"
+    
+    try:
+        # Leemos el archivo directo desde la URL de Supabase
+        gdf_embalses = gpd.read_file(ruta_embalses_nube)
+        st.sidebar.success(f"✅ Embalses conectados desde la Nube ({len(gdf_embalses)} registros)")
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ No se pudo cargar la capa desde la nube. Revisa si el nombre del archivo es correcto. Detalle: {e}")
 else:
-    st.sidebar.warning("⚠️ No se encontró la capa de embalses. Verifique la ruta en Puntos_de_interes.")
+    st.sidebar.error("❌ No se encontró la URL de Supabase en los secretos.")
 
 # =========================================================================
 # 1. BASE DE DATOS ESTRUCTURAL DE EMBALSES (Memoria del Sistema)
