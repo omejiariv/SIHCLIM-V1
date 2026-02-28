@@ -580,16 +580,26 @@ from modules.water_quality import calcular_streeter_phelps
 # 1. Parámetros Físicos del Río (Interactivos)
 with st.expander("⚙️ Características Físicas y Climáticas del Río", expanded=True):
     cr1, cr2, cr3 = st.columns(3)
+    
     with cr1:
-        q_rio = st.number_input("Caudal del Río (m³/s):", min_value=0.1, value=5.0, step=0.5, help="Caudal medio en el punto de vertimiento.")
+        # 🌐 RECEPTOR DEL SUB-ALEPH
+        if 'aleph_q_rio_m3s' in st.session_state and st.session_state['aleph_q_rio_m3s'] > 0:
+            q_calculado = float(st.session_state['aleph_q_rio_m3s'])
+            st.success(f"🌐 **Caudal Hidrológico Conectado:** {q_calculado:.2f} m³/s (Calculado desde Balance Hídrico)")
+            q_rio = st.number_input("Caudal del Río (m³/s) [Bloqueado por Aleph]:", value=q_calculado, disabled=True)
+        else:
+            q_rio = st.number_input("Caudal del Río (m³/s):", min_value=0.1, value=5.0, step=0.5, help="Cálculo manual. Ve a Aguas Subterráneas para cálculo climático.")
+            
         t_agua = st.slider("Temperatura del Agua (°C):", min_value=10.0, max_value=35.0, value=22.0, step=0.5)
+        
     with cr2:
         v_rio = st.slider("Velocidad del Flujo (m/s):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, help="Ríos rápidos reairean mejor.")
         h_rio = st.slider("Profundidad Media (m):", min_value=0.2, max_value=5.0, value=1.0, step=0.2, help="Ríos pandas (poco profundos) capturan más oxígeno.")
+        
     with cr3:
         od_rio_arriba = st.slider("Oxígeno Disuelto Aguas Arriba (mg/L):", min_value=0.0, max_value=12.0, value=7.5, step=0.5)
         dist_sim = st.slider("Distancia a Simular (km):", min_value=5, max_value=150, value=50, step=5)
-
+        
 # 2. Balance de Masas (Mezcla Río + Vertimiento)
 # Conectado automáticamente a tu variable maestra de cargas
 try:
