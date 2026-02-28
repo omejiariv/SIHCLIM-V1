@@ -3,6 +3,8 @@
 import io
 import pandas as pd
 import streamlit as st
+import unicodedata
+import os
 
 # --- FUNCIÓN PARA CORRECCIÓN NUMÉRICA ---
 @st.cache_data
@@ -56,4 +58,44 @@ def add_folium_download_button(map_object, file_name):
         file_name=file_name,
         mime="text/html",
         key=f"dl_map_{file_name.replace('.', '_')}",
+
     )
+
+# ==============================================================================
+# 🧽 FUNCIONES MAESTRAS DE LIMPIEZA Y LECTURA (CENTRALIZADAS)
+# ==============================================================================
+
+def normalizar_texto(texto):
+    """
+    Mata-tildes y espacios: Convierte cualquier texto a minúsculas, 
+    sin tildes y sin espacios en blanco a los lados. Ideal para cruzar bases de datos.
+    """
+    if pd.isna(texto): return ""
+    texto_str = str(texto).lower().strip()
+    return unicodedata.normalize('NFKD', texto_str).encode('ascii', 'ignore').decode('utf-8')
+
+@st.cache_data
+def leer_csv_robusto(ruta):
+    """
+    Lector blindado: Intenta leer el archivo detectando automáticamente el separador.
+    Si falla, intenta con punto y coma (;), comas (,) y diferentes codificaciones.
+    """
+    if not os.path.exists(ruta):
+        return pd.DataFrame()
+        
+    try:
+        # Intento 1: Detección automática (ideal para la mayoría)
+        df = pd.read_csv(ruta, sep=None, engine='python')
+        df.columns = df.columns.str.replace('\ufeff', '').str.strip()
+        return df
+    except Exception:
+        try:
+            # Intento 2: Forzar separador latinoamericano/europeo (;)
+            df = pd.read_csv(ruta, sep=';', low_memory=False)
+            if len(df.columns) < 3: # Si leyó todo en una sola columna, el separador era coma
+                df = pd.read_csv(ruta, sep=',', low_memory=False)
+            df.columns = df.columns.str.replace('\ufeff', '').str.strip()
+            return df
+        except Exception as e:
+            print(f"Error crítico leyendo {ruta}: {e}")
+            return pd.DataFrame()
