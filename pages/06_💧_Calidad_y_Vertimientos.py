@@ -221,7 +221,7 @@ df_aves = cargar_censo_aviar()
 df_cuencas_mpios = cargar_cuencas_mpios()
 
 # ==============================================================================
-# MOTOR MATEMÁTICO POBLACIONAL (MEJORADO CON CRUCE TERRITORIAL)
+# MOTOR MATEMÁTICO POBLACIONAL (MEJORADO CON CRUCE TERRITORIAL PROPORCIONAL)
 # ==============================================================================
 def obtener_poblacion_base(lugar_sel, nivel_sel):
     pob_u, pob_r, anio_base = 0.0, 0.0, 2020
@@ -249,10 +249,31 @@ def obtener_poblacion_base(lugar_sel, nivel_sel):
                 elif nivel_sel == "Departamental":
                     mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == lugar_sel]['municipio_norm'].tolist()
             
-            # Cruce mágico: Suma solo los municipios que encontró en la tabla maestra
             if mpios_activos:
                 df_f = df_mpios[(df_mpios['municipio_norm'].isin(mpios_activos)) & (df_mpios['año'] == anio_base)]
+        
+        # 🌐 NUEVA LÓGICA: CÁLCULO PROPORCIONAL PARA CUENCAS HIDROGRÁFICAS
+        elif nivel_sel == "Cuenca Hidrográfica" and not df_cuencas_mpios.empty:
+            df_interseccion = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]
             
+            if not df_interseccion.empty:
+                for _, row in df_interseccion.iterrows():
+                    mpio_n = normalizar_texto(row['Municipio'])
+                    pct_area = row['Porcentaje'] / 100.0 # Porcentaje del municipio en la cuenca
+                    
+                    df_m = df_mpios[(df_mpios['municipio_norm'] == mpio_n) & (df_mpios['año'] == anio_base)]
+                    if not df_m.empty:
+                        areas_str = df_m['area_geografica'].astype(str).str.lower()
+                        p_u = df_m[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum()
+                        p_r = df_m[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum()
+                        
+                        # Sumamos solo la fracción de población que vive dentro de la cuenca
+                        pob_u += (p_u * pct_area)
+                        pob_r += (p_r * pct_area)
+                        
+                return float(pob_u), float(pob_r), anio_base # Retorno directo tras calcular proporciones
+        
+        # Lógica original para los demás niveles territoriales
         if not df_f.empty:
             areas_str = df_f['area_geografica'].astype(str).str.lower()
             pob_u = df_f[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum()
