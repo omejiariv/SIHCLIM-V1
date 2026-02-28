@@ -486,6 +486,13 @@ with tab_demanda:
             elif nivel_sel_interno == "Regional": df_filtro_c = df_concesiones[df_concesiones['region_norm'] == lugar_norm] if 'region_norm' in df_concesiones.columns else pd.DataFrame()
             elif nivel_sel_interno == "Municipal": df_filtro_c = df_concesiones[df_concesiones['municipio_norm'] == lugar_norm]
             elif nivel_sel_interno == "Veredal" and 'vereda_norm' in df_concesiones.columns: df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
+            # 🌐 NUEVA LÓGICA: CRUCE ESPACIAL PARA CUENCAS
+            elif nivel_sel_interno == "Cuenca Hidrográfica" and not df_cuencas_mpios.empty:
+                mpios_en_cuenca = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]['Municipio'].apply(normalizar_texto).tolist()
+                if mpios_en_cuenca:
+                    df_filtro_c = df_concesiones[df_concesiones['municipio_norm'].isin(mpios_en_cuenca)]
+                else:
+                    df_filtro_c = pd.DataFrame()
             else: df_filtro_c = pd.DataFrame()
                 
             if not df_filtro_c.empty:
@@ -819,69 +826,82 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
         dist_sim = st.slider("Distancia a Simular (km):", min_value=5, max_value=150, value=50, step=5)
         
 # =========================================================================
-# 2. Balance de Masas (Mezcla Río + Vertimiento) Parámetros del Vertimiento (La Carga Contaminante)
+# 2. Balance de Masas (Mezcla Río + Vertimiento) Parámetros del Vertimiento Y VERTIMIENTO HIPOTÉTICO
 # =========================================================================
-with st.expander("🏭 Características del Vertimiento Principal", expanded=True):
-    cv1, cv2, cv3 = st.columns(3)
+
+# 2.1 Calcular Carga Difusa Base (El "Fondo" del Río)
+pob_u, pob_r, _ = obtener_poblacion_base(lugar_sel, nivel_sel_visual)
+bov, por, ave = obtener_censo_pecuario(lugar_sel, nivel_sel_visual)
+
+# Factores de Emisión Típicos (kg DBO/día por individuo)
+dbo_hab = (pob_u + pob_r) * 0.054
+dbo_bov = bov * 0.600
+dbo_por = por * 0.200
+carga_difusa_total_kg = dbo_hab + dbo_bov + dbo_por
+
+# Asumimos que solo un % de la carga difusa llega efectivamente al cauce en este punto (Atenuación natural)
+factor_escorrentia = 0.15 
+dbo_rio_arriba_fondo = max(1.0, ((carga_difusa_total_kg * factor_escorrentia) * 1000) / (q_rio * 86400))
+
+with st.expander("🏭 Presión Antrópica y Vertimiento Hipotético", expanded=True):
+    st.markdown("##### 🐄 1. Carga Difusa Base (Cuenca Aguas Arriba)")
+    cd1, cd2, cd3 = st.columns(3)
+    cd1.metric("Población Humana", f"{pob_u + pob_r:,.0f} hab", f"{dbo_hab:,.0f} kg DBO/d", delta_color="inverse")
+    cd2.metric("Censo Ganadero", f"{bov:,.0f} bovinos", f"{dbo_bov:,.0f} kg DBO/d", delta_color="inverse")
+    cd3.metric("Impacto en Río (Fondo)", f"{dbo_rio_arriba_fondo:.1f} mg/L DBO", "Concentración base antes del vertimiento puntual", delta_color="off")
     
+    st.markdown("---")
+    st.markdown("##### 🧪 2. Simulador de Vertimiento Hipotético (Puntual)")
+    st.caption("Modela el impacto de una nueva industria, un tubo roto o una nueva PTAR.")
+    
+    cv1, cv2, cv3 = st.columns(3)
     with cv1:
-        st.markdown("##### 🚰 Volumen de Descarga")
         q_vertimiento = st.number_input(
             "Caudal del Vertimiento (m³/s):", 
-            min_value=0.001, max_value=50.0, value=0.200, step=0.05, format="%.3f",
-            help="Volumen total de aguas residuales que ingresan al río en este punto."
+            min_value=0.000, max_value=50.0, value=0.150, step=0.05, format="%.3f"
         )
-    
     with cv2:
-        st.markdown("##### 🔥 Termodinámica")
-        # Por defecto, las aguas residuales suelen estar unos grados por encima de la temperatura ambiente
         t_vert_defecto = min(35.0, t_sugerida + 3.0) if 't_sugerida' in locals() else 25.0
-        
         t_vertimiento = st.slider(
-            "Temperatura del Vertimiento (°C):", 
-            min_value=10.0, max_value=60.0, value=float(t_vert_defecto), step=0.5,
-            help="Las descargas industriales o domésticas suelen ser más calientes que el río, afectando el oxígeno."
+            "Temperatura del Efluente (°C):", 
+            min_value=10.0, max_value=60.0, value=float(t_vert_defecto), step=0.5
         )
-        
     with cv3:
-        st.markdown("##### 💩 Carga Orgánica (DBO)")
-        # Simulación de la carga que luego conectarás con el motor pecuario/humano
-        carga_vertimiento_kg_dia = st.number_input(
-            "Carga Inyectada (kg DBO/día):",
-            min_value=1.0, value=5000.0, step=100.0
+        # Aquí el usuario decide qué tan sucia viene el agua (Ej: Agua cruda = 300 mg/L, PTAR = 40 mg/L)
+        dbo_vert_mgL = st.number_input(
+            "Concentración DBO (mg/L):",
+            min_value=0.0, max_value=5000.0, value=250.0, step=10.0,
+            help="Agua residual doméstica cruda ~250 mg/L. Agua tratada (PTAR) ~40 mg/L. Suero lácteo ~35,000 mg/L."
         )
-        # Concentración de DBO del vertimiento (mg/L) = (kg/dia * 1000) / (m3/s * 86400)
-        dbo_vert_mgL = (carga_vertimiento_kg_dia * 1000) / (q_vertimiento * 86400)
-        st.caption("Concentración resultante:")
-        st.metric("DBO del Efluente", f"{dbo_vert_mgL:.1f} mg/L")
+        carga_puntual_kg = (dbo_vert_mgL * q_vertimiento * 86400) / 1000
+        st.caption(f"Carga Inyectada: **{carga_puntual_kg:,.1f} kg/día**")
 
 # =========================================================================
-# 3. Termodinámica y Balance de Masas (Mezcla Río + Vertimiento)
+# 3. Termodinámica y Balance de Masas (Mezcla)
 # =========================================================================
 q_mezcla = q_rio + q_vertimiento
 
-# 🌡️ ECUACIÓN DE MEZCLA TÉRMICA (Conservación de Energía)
-t_mezcla = ((q_rio * t_agua) + (q_vertimiento * t_vertimiento)) / q_mezcla
+# Evitar división por cero si el usuario apaga todo
+if q_mezcla > 0:
+    t_mezcla = ((q_rio * t_agua) + (q_vertimiento * t_vertimiento)) / q_mezcla
+    L0_mezcla = ((q_rio * dbo_rio_arriba_fondo) + (q_vertimiento * dbo_vert_mgL)) / q_mezcla
+    od_mezcla = ((q_rio * od_rio_arriba) + (q_vertimiento * 0.0)) / q_mezcla
+else:
+    t_mezcla, L0_mezcla, od_mezcla = t_agua, dbo_rio_arriba_fondo, od_rio_arriba
 
-# BALANCE DE DBO (Ecuación de Conservación de Masa)
-dbo_rio_arriba = 2.0 # Asumimos río relativamente limpio antes del vertimiento
-L0_mezcla = ((q_rio * dbo_rio_arriba) + (q_vertimiento * dbo_vert_mgL)) / q_mezcla
-
-# BALANCE DE OXÍGENO
-od_mezcla = ((q_rio * od_rio_arriba) + (q_vertimiento * 0.0)) / q_mezcla
-
-# Oxígeno de saturación basado en la NUEVA temperatura de mezcla
 od_sat = 14.652 - 0.41022 * t_mezcla + 0.007991 * (t_mezcla ** 2) - 0.000077774 * (t_mezcla ** 3)
 D0_mezcla = max(0, od_sat - od_mezcla)
 
-# Métrica visual para el usuario sobre el impacto térmico
-st.info(f"🌡️ **Física de la Mezcla:** Al inyectar {q_vertimiento} m³/s a {t_vertimiento}°C, la temperatura del río pasa de {t_agua}°C a **{t_mezcla:.2f}°C**. El Oxígeno de Saturación baja a {od_sat:.2f} mg/L.")
+# Métrica de la Mezcla
+if q_vertimiento > 0:
+    st.info(f"🧬 **Física de la Mezcla:** Al inyectar el vertimiento, la DBO del río salta de {dbo_rio_arriba_fondo:.1f} a **{L0_mezcla:.1f} mg/L**, y la temperatura se ajusta a **{t_mezcla:.1f}°C**.")
 
-# 3. Ejecutar el Motor Matemático
+# 4. Motor Streeter-Phelps
+# Mantenemos tu llamada original asegurando que use las variables de mezcla
 df_sag = calcular_streeter_phelps(
     L0=L0_mezcla, 
     D0=D0_mezcla, 
-    T_agua=t_agua, 
+    T_agua=t_mezcla,  # Usamos la temperatura ya mezclada
     v_ms=v_rio, 
     H_m=h_rio, 
     dist_max_km=dist_sim, 
