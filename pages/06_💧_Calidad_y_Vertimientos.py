@@ -578,19 +578,22 @@ st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígen
 from modules.water_quality import calcular_streeter_phelps
 
 # 1. Parámetros Físicos del Río (Interactivos)
-with st.expander("⚙️ Características Físicas y Climáticas del Río", expanded=True):
-    cr1, cr2, cr3 = st.columns(3)
-    
-    with cr1:
-        # 🌐 RECEPTOR DEL SUB-ALEPH
-        if 'aleph_q_rio_m3s' in st.session_state and st.session_state['aleph_q_rio_m3s'] > 0:
-            q_calculado = float(st.session_state['aleph_q_rio_m3s'])
-            st.success(f"🌐 **Caudal Hidrológico Conectado:** {q_calculado:.2f} m³/s (Calculado desde Balance Hídrico)")
-            q_rio = st.number_input("Caudal del Río (m³/s) [Bloqueado por Aleph]:", value=q_calculado, disabled=True)
-        else:
-            q_rio = st.number_input("Caudal del Río (m³/s):", min_value=0.1, value=5.0, step=0.5, help="Cálculo manual. Ve a Aguas Subterráneas para cálculo climático.")
+    with st.expander("⚙️ Características Físicas y Climáticas del Río", expanded=True):
+        cr1, cr2, cr3 = st.columns(3)
+        
+        with cr1:
+            # 1. Nuevo campo estratégico: Altitud
+            h_descarga = st.number_input("Altitud de Descarga (msnm):", min_value=0, max_value=5000, value=1500, step=50, help="Elevación del vertimiento. A futuro, este valor escalará el caudal usando la curva hipsométrica de la cuenca.")
             
-        t_agua = st.slider("Temperatura del Agua (°C):", min_value=10.0, max_value=35.0, value=22.0, step=0.5)
+            # 2. Recepción "Suave" del Aleph (Sugiere, pero no bloquea)
+            q_default = 5.0
+            if 'aleph_q_rio_m3s' in st.session_state and st.session_state['aleph_q_rio_m3s'] > 0:
+                q_default = float(st.session_state['aleph_q_rio_m3s'])
+                st.caption(f"💡 Caudal base de la cuenca: **{q_default:.2f} m³/s** (Según Balance Hídrico)")
+                
+            q_rio = st.number_input("Caudal del Río (m³/s):", min_value=0.01, value=q_default, step=0.5, help="Ajusta este valor para simular caudales críticos de estiaje (ej. 7Q10) o periodos de lluvia.")
+                
+            t_agua = st.slider("Temperatura del Agua (°C):", min_value=10.0, max_value=35.0, value=22.0, step=0.5)
         
     with cr2:
         v_rio = st.slider("Velocidad del Flujo (m/s):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, help="Ríos rápidos reairean mejor.")
