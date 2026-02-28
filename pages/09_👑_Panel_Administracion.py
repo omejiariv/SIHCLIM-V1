@@ -1183,30 +1183,59 @@ with tabs[15]:
     st.info("Sube Shapefiles para convertirlos a GeoJSON, sube GeoJSON directamente, o carga archivos tabulares (Excel/CSV). Explora los archivos ya alojados en tu Bucket público.")
 
     # 1. Búsqueda inteligente de las credenciales de Supabase
-    url_supabase = None
-    key_supabase = None
-    if "SUPABASE_URL" in st.secrets:
-        url_supabase = st.secrets["SUPABASE_URL"]
-        key_supabase = st.secrets["SUPABASE_KEY"]
-    elif "supabase" in st.secrets:
-        url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
-        key_supabase = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
-    elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
-        url_supabase = st.secrets["iri"]["SUPABASE_URL"]
-        key_supabase = st.secrets["iri"]["SUPABASE_KEY"]
-    elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
-        url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-        key_supabase = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-    else:
-        url_supabase = os.environ.get("SUPABASE_URL")
-        key_supabase = os.environ.get("SUPABASE_KEY")
+# =========================================================================
+# 0. CARGA DE CARTOGRAFÍA (Desde Supabase en la Nube)
+# =========================================================================
+import geopandas as gpd
+import requests
+import tempfile
+import os
 
-    if not url_supabase or not key_supabase:
-        st.error("❌ No se encontraron credenciales de Supabase.")
-        st.stop()
+# 1. Buscamos la URL base de tu Supabase en los secretos
+url_base = None
+if "SUPABASE_URL" in st.secrets:
+    url_base = st.secrets["SUPABASE_URL"]
+elif "supabase" in st.secrets:
+    url_base = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
+    url_base = st.secrets["iri"]["SUPABASE_URL"]
+elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
+    url_base = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
 
-    cliente_supabase = create_client(url_supabase, key_supabase)
-    nombre_bucket = 'sihcli_maestros' # <-- Asegúrate que sea el nombre exacto de tu bucket
+gdf_embalses = None 
+
+if url_base and url_base.startswith("http"):
+    # Limpiamos la URL para evitar dobles barras
+    url_limpia = url_base.strip().strip("'").strip('"').rstrip('/')
+    
+    nombre_bucket = "sihcli_maestros"
+    nombre_archivo = "Embalses_9377.geojson" 
+    
+    # URL directa y pura al archivo
+    ruta_embalses_nube = f"{url_limpia}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/{nombre_archivo}"
+    
+    try:
+        # 2. Descarga limpia mediante 'requests' (Evita el error 400 de Geopandas)
+        respuesta = requests.get(ruta_embalses_nube)
+        respuesta.raise_for_status() # Lanza error detallado si es 404 o 400 real
+        
+        # 3. Guardamos el archivo en la memoria temporal de Streamlit
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp:
+            tmp.write(respuesta.content)
+            tmp_path = tmp.name
+            
+        # 4. Geopandas lee el archivo local sin pelear con el servidor
+        gdf_embalses = gpd.read_file(tmp_path)
+        
+        st.sidebar.success(f"✅ Embalses cargados ({len(gdf_embalses)} registros)")
+        
+    except requests.exceptions.HTTPError as e:
+        st.sidebar.error(f"⚠️ El enlace no existe o el bucket no es público. Detalle: {e}")
+        st.sidebar.markdown(f"🔍 [Probar enlace manualmente]({ruta_embalses_nube})")
+    except Exception as e:
+        st.sidebar.error(f"⚠️ Error leyendo la geometría: {e}")
+else:
+    st.sidebar.error("❌ La URL de Supabase no se encontró en los secretos.")
 
     # Dividimos la pantalla en dos columnas
     col_carga, col_visor = st.columns([1.2, 1])
@@ -1312,4 +1341,5 @@ with tabs[15]:
                     st.warning("La carpeta no existe o está vacía.")
             except Exception as e:
                 st.error(f"No se pudo listar los archivos. ¿Aseguraste que el bucket sea público? Detalle: {e}")
+
 
