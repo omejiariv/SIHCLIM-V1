@@ -4,6 +4,8 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
+import os
+import geopandas as gpd
 
 st.set_page_config(page_title="Metabolismo Complejo", page_icon="🔗", layout="wide")
 
@@ -14,9 +16,22 @@ Evalúa cómo los embalses integran las cuencas propias con los trasvases artifi
 """)
 st.divider()
 
-# Ruta actualizada apuntando a la nueva subcarpeta
-ruta_embalses = 'data/Puntos_de_interes/Embalses_9377.geojson'
-gdf_embalses = gpd.read_file(ruta_embalses)
+# =========================================================================
+# 0. CARGA DE CARTOGRAFÍA (Puntos de Interés)
+# =========================================================================
+# Construcción segura de la ruta apuntando a la nueva subcarpeta
+base_dir = os.path.dirname(os.path.abspath(__file__))
+ruta_embalses = os.path.join(base_dir, '..', 'data', 'Puntos_de_interes', 'Embalses_9377.geojson')
+
+# Inicializamos la variable en None por seguridad
+gdf_embalses = None 
+
+if os.path.exists(ruta_embalses):
+    gdf_embalses = gpd.read_file(ruta_embalses)
+    # Opcional: Mostrar un pequeño mensaje de éxito en la barra lateral para saber que funcionó
+    st.sidebar.success(f"✅ Capa de Embalses conectada ({len(gdf_embalses)} registros)")
+else:
+    st.sidebar.warning("⚠️ No se encontró la capa de embalses. Verifique la ruta en Puntos_de_interes.")
 
 # =========================================================================
 # 1. BASE DE DATOS ESTRUCTURAL DE EMBALSES (Memoria del Sistema)
