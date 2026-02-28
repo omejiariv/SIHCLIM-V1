@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import os
 import unicodedata
 import warnings
+from modules.utils import normalizar_texto, leer_csv_robusto
 
 warnings.filterwarnings("ignore")
 
@@ -29,13 +30,6 @@ def normalizar_texto(texto):
 # ==============================================================================
 # 🔌 CONECTORES A BASES DE DATOS
 # ==============================================================================
-def leer_csv_robusto(ruta):
-    try:
-        df = pd.read_csv(ruta, sep=';', low_memory=False)
-        if len(df.columns) < 5: df = pd.read_csv(ruta, sep=',', low_memory=False)
-        df.columns = df.columns.str.replace('\ufeff', '').str.strip()
-        return df
-    except Exception: return pd.DataFrame()
 
 @st.cache_data
 def cargar_municipios():
