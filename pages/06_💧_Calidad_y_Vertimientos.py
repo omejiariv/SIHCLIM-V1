@@ -633,16 +633,31 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
     cr1, cr2, cr3 = st.columns(3)
         
     with cr1:
-        # 1. Nuevo campo estratégico: Altitud
-        h_descarga = st.number_input("Altitud de Descarga (msnm):", min_value=0, max_value=5000, value=1500, step=50, help="Elevación del vertimiento. A futuro, este valor escalará el caudal usando la curva hipsométrica de la cuenca.")
+        # 1. Selector de Altitud (El gatillo hipsométrico)
+        h_descarga = st.number_input(
+            "Altitud de Descarga (msnm):", 
+            min_value=0, max_value=5000, value=1500, step=50, 
+            help="Elevación del vertimiento. A mayor altitud, menor es el área aferente (aportante) y por tanto menor el caudal disponible para dilución."
+        )
             
-        # 2. Recepción "Suave" del Aleph (Sugiere, pero no bloquea)
+        # 2. Recepción y Transformación del Aleph
         q_default = 5.0
         if 'aleph_q_rio_m3s' in st.session_state and st.session_state['aleph_q_rio_m3s'] > 0:
-            q_default = float(st.session_state['aleph_q_rio_m3s'])
-            st.caption(f"💡 Caudal base de la cuenca: **{q_default:.2f} m³/s** (Según Balance Hídrico)")
+            q_cuenca_total = float(st.session_state['aleph_q_rio_m3s'])
+            # ¡Magia Hipsométrica Aplicada!
+            q_escalado = escalar_caudal_por_altitud(q_cuenca_total, h_descarga)
+            q_default = q_escalado
                 
-        q_rio = st.number_input("Caudal del Río (m³/s):", min_value=0.01, value=q_default, step=0.5, help="Ajusta este valor para simular caudales críticos de estiaje (ej. 7Q10) o periodos de lluvia.")
+            # Tooltip visual dinámico para el usuario
+            st.caption(f"🌊 **Q Salida Cuenca:** {q_cuenca_total:.2f} m³/s")
+            st.info(f"📉 **Q Local (a {h_descarga} msnm):** {q_escalado:.2f} m³/s")
+                
+        # 3. Caudal Final (Sugerido por la ciencia, pero editable por el experto)
+        q_rio = st.number_input(
+            "Caudal del Río Local (m³/s):", 
+            min_value=0.01, value=float(q_default), step=0.1, 
+            help="Caudal en el punto exacto de descarga. El sistema lo calcula automáticamente usando la curva hipsométrica, pero puedes ajustarlo manualmente para simular el 7Q10 (Caudal mínimo de estiaje)."
+        )
                 
         t_agua = st.slider("Temperatura del Agua (°C):", min_value=10.0, max_value=35.0, value=22.0, step=0.5)
         
