@@ -607,11 +607,10 @@ st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígen
 from modules.water_quality import calcular_streeter_phelps
 
 # -------------------------------------------------------------------------
-# 🏔️ MOTOR HIPSOMÉTRICO DINÁMICO (Cálculo en vivo con DEM)
+# 🏔️ MOTOR HIPSOMÉTRICO DINÁMICO (Función Inversa A(H) y Límites Auto)
 # -------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def obtener_datos_hipso_dinamicos(nombre_cuenca):
-    """Extrae la cuenca y calcula la hipsometría on-the-fly usando el DEM y analysis.py"""
     import geopandas as gpd
     import os
     from modules.analysis import calculate_hypsometric_curve
@@ -622,67 +621,82 @@ def obtener_datos_hipso_dinamicos(nombre_cuenca):
     ruta_cuencas = os.path.join(project_root, 'data', 'SubcuencasAinfluencia.geojson')
     
     try:
-        # 1. Cargar el polígono de la cuenca seleccionada
         gdf_cuencas = gpd.read_file(ruta_cuencas)
         gdf_zona = gdf_cuencas[gdf_cuencas['SUBC_LBL'] == nombre_cuenca]
         
-        if gdf_zona.empty:
-            return None
+        if gdf_zona.empty: return None
             
-        # 2. Conectar al DEM usando tu función maestra de analysis.py
         dem_path = Config.DEM_FILE_PATH
-        resultados = calculate_hypsometric_curve(gdf_zona, dem_path=dem_path)
-        return resultados
-    except Exception as e:
+        return calculate_hypsometric_curve(gdf_zona, dem_path=dem_path)
+    except Exception:
         return None
 
-def calcular_area_aportante(altitud_vertimiento, nombre_cuenca):
+def calcular_area_inversa(altitud_vertimiento, res_hipso):
     import numpy as np
     
-    # 1. Intentar cálculo dinámico con el DEM
-    if nombre_cuenca != "N/A" and nombre_cuenca != "Generica":
-        res_hipso = obtener_datos_hipso_dinamicos(nombre_cuenca)
+    if res_hipso and res_hipso.get("source") == "DEM Real":
+        elevs = res_hipso["elevations"]
+        areas = res_hipso["area_percent"]
         
-        if res_hipso and res_hipso.get("source") == "DEM Real":
-            # Invertimos los arreglos porque np.interp requiere que la X (altitud) sea ascendente
-            alt_asc = res_hipso["elevations"][::-1]
-            area_asc = res_hipso["area_percent"][::-1]
-            
-            alt_segura = np.clip(altitud_vertimiento, alt_asc.min(), alt_asc.max())
-            pct_area = np.interp(alt_segura, alt_asc, area_asc)
-            
-            fuente = f"🏔️ Cálculo Dinámico DEM ({nombre_cuenca})"
-            
-            # Rescatamos la hermosa ecuación polinómica que genera tu archivo analysis.py
-            ecuacion_texto = res_hipso.get("equation", "N/A")
-            if ecuacion_texto != "N/A":
-                ecuacion_latex = r"\text{" + ecuacion_texto.replace(' ', r'\ ') + r"}"
-            else:
-                ecuacion_latex = r"A_{aportante}(\%) = f_{interp}(H_{descarga})"
-                
-            return pct_area / 100.0, fuente, ecuacion_latex
-            
-    # 2. Fallback Analítico (Por si falla el DEM o no hay cuenca seleccionada)
+        # 1. Ajuste Polinómico Inverso: Área en función de la Altitud A(H)
+        # Usamos grado 3 para capturar la forma de la cuenca
+        coeffs = np.polyfit(elevs, areas, 3)
+        poly_ah = np.poly1d(coeffs)
+        
+        # 2. Cálculo del porcentaje
+        pct_area = poly_ah(altitud_vertimiento)
+        # Restringimos entre 0% y 100% por seguridad en los extremos del polinomio
+        pct_area = np.clip(pct_area, 0.0, 100.0) 
+        
+        # 3. Construcción de la Ecuación LaTeX visible A(H)
+        c3, c2, c1, c0 = coeffs
+        ecuacion_latex = rf"A(H) = {c3:.2e}H^3 {c2:+.2e}H^2 {c1:+.2e}H {c0:+.2f}"
+        
+        fuente = "🏔️ Función Hipsométrica Inversa (Basada en DEM)"
+        return pct_area / 100.0, fuente, ecuacion_latex
+
+    # Fallback Analítico si falla el mapa
     alt_max, alt_min = 2800.0, 1000.0
     alt_segura = np.clip(altitud_vertimiento, alt_min, alt_max)
     fraccion_area = (alt_max - alt_segura) / (alt_max - alt_min)
-    
-    fuente = "📐 Modelo Analítico Aproximado (Lineal)"
-    ecuacion = r"A_{aportante} = \frac{H_{max} - H_{descarga}}{H_{max} - H_{min}}"
-    return fraccion_area, fuente, ecuacion
+    ecuacion = r"A(H) = \frac{H_{max} - H}{H_{max} - H_{min}}"
+    return fraccion_area, "📐 Fallback Analítico", ecuacion
 
 # =========================================================================
 # 1. Parámetros Físicos del Río (Interactivos y Visibles)
 # =========================================================================
+# 1.1 Extraer topografía ANTES de renderizar la interfaz para ajustar límites
+nombre_c = lugar_sel if nivel_sel_visual == "Cuenca Hidrográfica" else "Generica"
+h_min_cuenca, h_max_cuenca, h_med_cuenca = 1000.0, 2800.0, 1500.0
+
+res_hipso_actual = obtener_datos_hipso_dinamicos(nombre_c)
+
+if res_hipso_actual and res_hipso_actual.get("source") == "DEM Real":
+    import numpy as np
+    elevs_reales = res_hipso_actual["elevations"]
+    if len(elevs_reales) > 0:
+        h_min_cuenca = float(np.min(elevs_reales))
+        h_max_cuenca = float(np.max(elevs_reales))
+        h_med_cuenca = float(np.mean(elevs_reales))
+
+# 1.2 Renderizar la interfaz con los valores exactos
 with st.expander("⚙️ Características Físicas y Climáticas del Río", expanded=True):
     cr1, cr2, cr3 = st.columns(3)
     
     with cr1:
         st.markdown("##### 📍 Posición del Vertimiento")
+        
+        # Mostrar métricas topográficas visibles al usuario
+        st.caption(f"**Topografía ({nombre_c}):** Mín: {h_min_cuenca:.0f} m | Med: {h_med_cuenca:.0f} m | Máx: {h_max_cuenca:.0f} m")
+        
+        # Selector numérico 100% dinámico acotado a la realidad de la cuenca
         h_descarga = st.number_input(
-            "Altitud de Descarga (msnm):", 
-            min_value=0, max_value=5000, value=2150, step=10, 
-            help="A mayor altitud, menor es el área aferente y por tanto menor el caudal de dilución."
+            "Altitud de Descarga (H):", 
+            min_value=h_min_cuenca, 
+            max_value=h_max_cuenca, 
+            value=h_med_cuenca, 
+            step=10.0, 
+            help="A mayor altitud, menor área aportante y menor caudal disponible."
         )
         
         # Recuperar caudal del Aleph
@@ -690,18 +704,14 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
         if 'aleph_q_rio_m3s' in st.session_state and st.session_state['aleph_q_rio_m3s'] > 0:
             q_base_cuenca = float(st.session_state['aleph_q_rio_m3s'])
             
-        # 🔥 EJECUTAR MOTOR HIPSOMÉTRICO DINÁMICO 🔥
-        nombre_c = lugar_sel if nivel_sel_visual == "Cuenca Hidrográfica" else "Generica"
-        frac_area, fuente_hipso, eq_hipso = calcular_area_aportante(h_descarga, nombre_c)
+        # Ejecutar nuevo motor inverso A(H)
+        frac_area, fuente_hipso, eq_hipso = calcular_area_inversa(h_descarga, res_hipso_actual)
+        q_rio = max(0.01, q_base_cuenca * frac_area)
         
-        q_rio = max(0.01, q_base_cuenca * frac_area) # Caudal final real
-        
-        # --- LA MAGIA VISUAL ---
+        # Magia Visual y Ecuación matemática
         st.caption(fuente_hipso)
-        st.latex(eq_hipso) # Imprime TU ecuación polinómica real
-        st.latex(r"Q_{local} = Q_{total} \times A_{aportante}")
+        st.latex(eq_hipso)
         
-        # Métrica Dinámica (Reacciona instantáneamente)
         reduccion = 100 - (frac_area * 100)
         st.metric(
             "Caudal Local Escalado (Q)", 
