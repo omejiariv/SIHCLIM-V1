@@ -1174,91 +1174,129 @@ with tabs[14]:
 # TAB 15: MÓDULO DE CARGA ESPACIAL (SHAPEFILE -> GEOJSON -> SUPABASE)
 # =====================================================================
 with tabs[15]:
+    import tempfile
+    import os
+    import geopandas as gpd
+    from supabase import create_client
 
-    st.subheader("🗺️ Aduana SIG: Estandarización y Carga a Supabase")
-    st.info("Sube los múltiples archivos de una capa Shapefile (.shp, .shx, .dbf, .prj). El sistema la convertirá al estándar web (GeoJSON WGS84) y la subirá automáticamente al bucket público de Supabase.")
+    st.subheader("🗺️ Aduana SIG y Explorador de Nube")
+    st.info("Sube Shapefiles para convertirlos a GeoJSON, o sube GeoJSON directamente. Explora los archivos ya alojados en tu Bucket público.")
 
-    # 1. Selector de Carpeta Destino en Supabase
-    carpeta_destino = st.selectbox(
-        "Selecciona la carpeta de destino en Supabase:",
-        ["Puntos_de_interes", "censos_ICA", "limites_administrativos", "otro"]
-    )
+    # 1. Búsqueda inteligente de las credenciales de Supabase
+    url_supabase = None
+    key_supabase = None
+    if "SUPABASE_URL" in st.secrets:
+        url_supabase = st.secrets["SUPABASE_URL"]
+        key_supabase = st.secrets["SUPABASE_KEY"]
+    elif "supabase" in st.secrets:
+        url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+        key_supabase = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
+    elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
+        url_supabase = st.secrets["iri"]["SUPABASE_URL"]
+        key_supabase = st.secrets["iri"]["SUPABASE_KEY"]
+    elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
+        url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+        key_supabase = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+    else:
+        url_supabase = os.environ.get("SUPABASE_URL")
+        key_supabase = os.environ.get("SUPABASE_KEY")
 
-    if carpeta_destino == "otro":
-        carpeta_destino = st.text_input("Escribe el nombre de la nueva carpeta (sin espacios ni tildes):")
+    if not url_supabase or not key_supabase:
+        st.error("❌ No se encontraron credenciales de Supabase.")
+        st.stop()
 
-    # 2. Cargador Múltiple
-    archivos_sig = st.file_uploader("Selecciona todos los archivos del Shapefile al mismo tiempo", accept_multiple_files=True, key="sig_uploader")
+    cliente_supabase = create_client(url_supabase, key_supabase)
+    nombre_bucket = 'sihcli_maestros' # <-- Asegúrate que sea el nombre exacto de tu bucket
 
-    if archivos_sig:
-        archivo_shp = next((f for f in archivos_sig if f.name.endswith('.shp')), None)
-        
-        if archivo_shp:
+    # Dividimos la pantalla en dos columnas
+    col_carga, col_visor = st.columns([1.2, 1])
+
+    with col_carga:
+        st.markdown("### 📤 Carga de Archivos")
+        # Selector de Carpeta Destino
+        carpeta_destino = st.selectbox(
+            "Selecciona la carpeta de destino en Supabase:",
+            ["Puntos_de_interes", "censos_ICA", "limites_administrativos", "otro"]
+        )
+
+        if carpeta_destino == "otro":
+            carpeta_destino = st.text_input("Escribe el nombre de la nueva carpeta (sin espacios ni tildes):")
+
+        # Cargador Múltiple (Ahora acepta GeoJSON)
+        st.caption("⚠️ Recuerda borrar (con la X) los archivos anteriores antes de subir nuevos.")
+        archivos_sig = st.file_uploader("Sube archivos (.shp, .shx, .dbf) o directamente (.geojson)", accept_multiple_files=True, key="sig_uploader")
+
+        if archivos_sig:
             if st.button("🚀 Procesar y Subir a Supabase"):
-                with st.spinner("Ensamblando, reproyectando y subiendo a la nube..."):
+                with st.spinner("Procesando y subiendo a la nube..."):
                     try:
-                        # A. ENSAMBLAJE Y TRANSFORMACIÓN LOCAL EN MEMORIA TEMPORAL
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            for f in archivos_sig:
-                                filepath = os.path.join(tmpdir, f.name)
-                                with open(filepath, "wb") as f_out:
-                                    f_out.write(f.getvalue())
-                            
-                            ruta_shp_temporal = os.path.join(tmpdir, archivo_shp.name)
-                            gdf = gpd.read_file(ruta_shp_temporal)
-                            
-                            # Estandarización a WGS84 (EPSG:4326)
-                            if gdf.crs is None:
-                                gdf.set_crs(epsg=3116, inplace=True)
-                            if gdf.crs.to_string() != "EPSG:4326":
+                        # CASO 1: Archivos GeoJSON directos
+                        archivos_geojson = [f for f in archivos_sig if f.name.endswith('.geojson') or f.name.endswith('.json')]
+                        for f_geo in archivos_geojson:
+                            # Los leemos para asegurarnos de que la proyección es WGS84 por seguridad
+                            gdf = gpd.read_file(f_geo)
+                            if gdf.crs and gdf.crs.to_string() != "EPSG:4326":
                                 gdf = gdf.to_crs(epsg=4326)
+                            elif gdf.crs is None:
+                                gdf.set_crs(epsg=4326, inplace=True)
                                 
-                            # Convertir a bytes de GeoJSON
                             geojson_bytes = gdf.to_json().encode('utf-8')
-                            nombre_limpio = archivo_shp.name.replace('.shp', '.geojson')
+                            ruta_supabase = f"{carpeta_destino}/{f_geo.name}"
                             
-                            # B. SUBIDA A SUPABASE (Conector Robusto)
-                            url_supabase = None
-                            key_supabase = None
-                            
-                            # 1. Búsqueda inteligente de las credenciales
-                            if "SUPABASE_URL" in st.secrets:
-                                url_supabase = st.secrets["SUPABASE_URL"]
-                                key_supabase = st.secrets["SUPABASE_KEY"]
-                            elif "supabase" in st.secrets:
-                                url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
-                                key_supabase = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
-                            elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
-                                url_supabase = st.secrets["iri"]["SUPABASE_URL"]
-                                key_supabase = st.secrets["iri"]["SUPABASE_KEY"]
-                            elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
-                                url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-                                key_supabase = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-                            else:
-                                # Fallback final: buscar en las variables de entorno del sistema (típico de .env)
-                                url_supabase = os.environ.get("SUPABASE_URL")
-                                key_supabase = os.environ.get("SUPABASE_KEY")
-
-                            if not url_supabase or not key_supabase:
-                                st.error("❌ No se encontraron las credenciales de Supabase en los secretos (secrets.toml).")
-                                st.stop()
-
-                            # 2. Creación del cliente
-                            cliente_supabase = create_client(url_supabase, key_supabase)
-                            
-                            # 3. Subida del archivo
-                            nombre_bucket = 'sihcli_maestros' # <-- Asegúrate de que tu bucket se llame exactamente así
-                            ruta_supabase = f"{carpeta_destino}/{nombre_limpio}"
-                            
-                            res = cliente_supabase.storage.from_(nombre_bucket).upload(
-                                file=geojson_bytes,
-                                path=ruta_supabase,
-                                file_options={"content-type": "application/json", "upsert": "true"}
+                            cliente_supabase.storage.from_(nombre_bucket).upload(
+                                file=geojson_bytes, path=ruta_supabase, file_options={"content-type": "application/json", "upsert": "true"}
                             )
-                            
-                            st.success(f"✅ ¡Éxito! Capa '{nombre_limpio}' procesada y subida a Supabase en '{ruta_supabase}'.")
-                            
+                            st.success(f"✅ Archivo '{f_geo.name}' subido correctamente.")
+
+                        # CASO 2: Archivos Shapefile
+                        archivo_shp = next((f for f in archivos_sig if f.name.endswith('.shp')), None)
+                        if archivo_shp:
+                            with tempfile.TemporaryDirectory() as tmpdir:
+                                # Guardar archivos del shapefile en temporal
+                                for f in archivos_sig:
+                                    if not f.name.endswith('.geojson'):
+                                        filepath = os.path.join(tmpdir, f.name)
+                                        with open(filepath, "wb") as f_out:
+                                            f_out.write(f.getvalue())
+                                
+                                ruta_shp_temporal = os.path.join(tmpdir, archivo_shp.name)
+                                gdf = gpd.read_file(ruta_shp_temporal)
+                                
+                                # Estandarización a WGS84
+                                if gdf.crs is None:
+                                    gdf.set_crs(epsg=3116, inplace=True)
+                                if gdf.crs.to_string() != "EPSG:4326":
+                                    gdf = gdf.to_crs(epsg=4326)
+                                    
+                                geojson_bytes = gdf.to_json().encode('utf-8')
+                                nombre_limpio = archivo_shp.name.replace('.shp', '.geojson')
+                                ruta_supabase = f"{carpeta_destino}/{nombre_limpio}"
+                                
+                                cliente_supabase.storage.from_(nombre_bucket).upload(
+                                    file=geojson_bytes, path=ruta_supabase, file_options={"content-type": "application/json", "upsert": "true"}
+                                )
+                                st.success(f"✅ Shapefile '{archivo_shp.name}' transformado y subido como '{nombre_limpio}'.")
+                                
                     except Exception as e:
                         st.error(f"❌ Error durante el proceso: {str(e)}")
-        else:
-            st.warning("⚠️ Debes incluir obligatoriamente el archivo que termina en '.shp'.")
+
+    with col_visor:
+        st.markdown(f"### 🗄️ Archivos en la Nube")
+        st.info(f"Explorando el bucket: **{nombre_bucket}/{carpeta_destino}**")
+        
+        if st.button("🔄 Refrescar Directorio"):
+            try:
+                # Consulta en vivo a Supabase para listar los archivos
+                archivos_nube = cliente_supabase.storage.from_(nombre_bucket).list(carpeta_destino)
+                
+                if archivos_nube:
+                    nombres = [a['name'] for a in archivos_nube if a['name'] != '.emptyFolderPlaceholder']
+                    if nombres:
+                        for n in nombres:
+                            st.markdown(f"- 📄 `{n}`")
+                    else:
+                        st.warning("La carpeta está creada pero no tiene archivos.")
+                else:
+                    st.warning("La carpeta no existe o está vacía.")
+            except Exception as e:
+                st.error("No se pudo listar los archivos. ¿Aseguraste que el bucket sea público?")
