@@ -1,3 +1,5 @@
+# pages/96_⚙️_Generador.py
+
 import streamlit as st
 import geopandas as gpd
 import pandas as pd
