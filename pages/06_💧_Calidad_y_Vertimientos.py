@@ -684,43 +684,74 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
     cr1, cr2, cr3 = st.columns(3)
     
     with cr1:
-        st.markdown("##### 📍 Posición del Vertimiento")
+        st.markdown("##### 📍 Posición y Clima del Vertimiento")
         
-        # Mostrar métricas topográficas visibles al usuario
+        # Mostrar métricas topográficas
         st.caption(f"**Topografía ({nombre_c}):** Mín: {h_min_cuenca:.0f} m | Med: {h_med_cuenca:.0f} m | Máx: {h_max_cuenca:.0f} m")
         
-        # Selector numérico 100% dinámico acotado a la realidad de la cuenca
+        # Selector Hipsométrico
         h_descarga = st.number_input(
             "Altitud de Descarga (H):", 
             min_value=h_min_cuenca, 
             max_value=h_max_cuenca, 
             value=h_med_cuenca, 
             step=10.0, 
-            help="A mayor altitud, menor área aportante y menor caudal disponible."
+            help="A mayor altitud, menor área aportante (menos caudal) y menor temperatura del agua."
         )
         
-        # Recuperar caudal del Aleph
+        # 🌊 MOTOR HIPSOMÉTRICO
         q_base_cuenca = 5.0
         if 'aleph_q_rio_m3s' in st.session_state and st.session_state['aleph_q_rio_m3s'] > 0:
             q_base_cuenca = float(st.session_state['aleph_q_rio_m3s'])
             
-        # Ejecutar nuevo motor inverso A(H)
         frac_area, fuente_hipso, eq_hipso = calcular_area_inversa(h_descarga, res_hipso_actual)
         q_rio = max(0.01, q_base_cuenca * frac_area)
         
-        # Magia Visual y Ecuación matemática
-        st.caption(fuente_hipso)
-        st.latex(eq_hipso)
+        # 🌡️ MOTOR TÉRMICO (IDEAM)
+        t_sugerida = 28.0 - (0.006 * h_descarga)
         
-        reduccion = 100 - (frac_area * 100)
-        st.metric(
-            "Caudal Local Escalado (Q)", 
-            f"{q_rio:.2f} m³/s", 
-            f"-{reduccion:.1f}% vs Desembocadura ({q_base_cuenca:.1f})", 
-            delta_color="normal"
+        if h_descarga < 1000: piso_termico = "Piso: Cálido"
+        elif h_descarga < 2000: piso_termico = "Piso: Templado"
+        elif h_descarga < 3000: piso_termico = "Piso: Frío"
+        elif h_descarga < 4000: piso_termico = "Piso: Páramo"
+        else: piso_termico = "Piso: Nival"
+        
+        # Ajuste dinámico de los límites del slider de temperatura (+/- 2 grados para permitir simulaciones extremas)
+        t_min_posible = max(0.0, 28.0 - (0.006 * h_max_cuenca)) - 2.0
+        t_max_posible = min(35.0, 28.0 - (0.006 * h_min_cuenca)) + 2.0
+        
+        # --- EXHIBICIÓN DE LA CIENCIA EN DOS COLUMNAS ---
+        c_m1, c_m2 = st.columns(2)
+        with c_m1:
+            st.caption(fuente_hipso)
+            st.latex(eq_hipso)
+            reduccion = 100 - (frac_area * 100)
+            st.metric(
+                "Caudal Local (Q)", 
+                f"{q_rio:.2f} m³/s", 
+                f"-{reduccion:.1f}% vs Salida", 
+                delta_color="normal"
+            )
+            
+        with c_m2:
+            st.caption("🌡️ Gradiente Térmico")
+            st.latex(r"T = 28 - 0.006 \cdot H")
+            st.metric(
+                "Temp. Natural", 
+                f"{t_sugerida:.1f} °C", 
+                piso_termico, 
+                delta_color="off"
+            )
+            
+        # El slider obedece a la montaña
+        t_agua = st.slider(
+            "Temperatura del Agua (°C):", 
+            min_value=float(np.floor(t_min_posible)), 
+            max_value=float(np.ceil(t_max_posible)), 
+            value=float(t_sugerida), 
+            step=0.5, 
+            help="Sugerida por la altitud. Puedes ajustarla para simular el efecto de una isla de calor urbano o descargas térmicas industriales."
         )
-        
-        t_agua = st.slider("Temperatura del Agua (°C):", min_value=10.0, max_value=35.0, value=22.0, step=0.5)
         
     with cr2:
         st.markdown("##### 🌊 Hidráulica")
