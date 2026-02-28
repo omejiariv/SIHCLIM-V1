@@ -179,16 +179,26 @@ if gdf_zona is not None and not gdf_zona.empty:
                 
                 if not predios_en_cuenca.empty:
                     # 3. Proyectar a un sistema métrico (Magna Sirgas EPSG:3116) para medir el área real
-                    # El área en EPSG:3116 se da en metros cuadrados, dividimos por 10,000 para hectáreas
                     ha_reales_sig = predios_en_cuenca.to_crs(epsg=3116).area.sum() / 10000.0
             except Exception as e:
-                pass # Fallback silencioso: si la geometría tiene errores topológicos, el área será 0.0
+                pass # Fallback silencioso
+                
+        # 🎚️ EL BOTÓN DE "REALIDAD ALTERNATIVA" (Escenario Contrafactual)
+        st.markdown("##### ⚙️ Escenario Base vs. Proyectado")
+        activar_sig = st.toggle("✅ Incluir Área Restaurada/Conservada del SIG en el cálculo WRI", value=True, 
+                                help="Apaga este interruptor para simular el escenario contrafactual: ¿Cómo estarían los índices si no se hubieran realizado estas intervenciones?")
+        
+        # Si el usuario apaga el interruptor, la base para el cálculo se vuelve 0
+        ha_base_calculo = ha_reales_sig if activar_sig else 0.0
                 
         c_inv1, c_inv2, c_inv3 = st.columns(3)
         with c_inv1:
+            # Mostramos el dato real siempre, pero el estado del interruptor define si se suma o no
             st.metric("✅ Área Restaurada/Conservada/BPAs", f"{ha_reales_sig:,.1f} ha", "Línea base actual (SIG)")
             ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0)
-            ha_total = ha_reales_sig + ha_simuladas
+            
+            # El cálculo total usa la variable controlada por el interruptor
+            ha_total = ha_base_calculo + ha_simuladas
             beneficio_restauracion_m3 = ha_total * 2500
             
         with c_inv2:
@@ -383,6 +393,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
             * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
             """)
+
 
 
 
