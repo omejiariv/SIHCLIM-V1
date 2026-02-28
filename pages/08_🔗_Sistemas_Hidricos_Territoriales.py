@@ -36,7 +36,7 @@ if url_supabase:
     # 2. Construimos el enlace web directo y público al GeoJSON
     nombre_bucket = "sihcli_maestros"
     # IMPORTANTE: Verifica que el nombre del archivo sea exactamente este en Supabase
-    nombre_archivo = "Embalses_9377.geojson" 
+    nombre_archivo = "embalses_CV_9377.geojson"
     
     ruta_embalses_nube = f"{url_supabase}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/{nombre_archivo}"
     
