@@ -275,6 +275,61 @@ def obtener_poblacion_base(lugar_sel, nivel_sel):
             
     return float(pob_u), float(pob_r), anio_base
 
+# ==============================================================================
+# 🐄 MOTOR MATEMÁTICO PECUARIO (Censo ICA Proporcional al Territorio)
+# ==============================================================================
+def obtener_censo_pecuario(lugar_sel, nivel_sel):
+    import numpy as np
+    
+    # Función auxiliar para sumar animales proporcionalmente
+    def calcular_animales(df_censo, mpios_lista=None, df_interseccion=None):
+        if df_censo.empty: return 0.0
+        
+        # Buscar la columna que contenga el total (suele llamarse TOTAL, POB_TOTAL, etc.)
+        col_total = next((c for c in df_censo.columns if 'TOTAL' in c.upper() or 'INVENTARIO' in c.upper()), None)
+        if not col_total: return 0.0 # Si no encuentra columna, retorna 0
+        
+        df_censo[col_total] = pd.to_numeric(df_censo[col_total], errors='coerce').fillna(0)
+        total_animales = 0.0
+        
+        # 🌐 LÓGICA PROPORCIONAL PARA CUENCAS
+        if df_interseccion is not None:
+            for _, row in df_interseccion.iterrows():
+                mpio_n = normalizar_texto(row['Municipio'])
+                pct_area = row['Porcentaje'] / 100.0
+                df_m = df_censo[df_censo['MUNICIPIO_NORM'] == mpio_n]
+                if not df_m.empty:
+                    total_animales += (df_m[col_total].sum() * pct_area)
+        
+        # Lógica para municipios enteros (CAR, Depto, etc.)
+        elif mpios_lista is not None:
+            df_f = df_censo[df_censo['MUNICIPIO_NORM'].isin(mpios_lista)]
+            if not df_f.empty:
+                total_animales = df_f[col_total].sum()
+        
+        return float(total_animales)
+
+    # Identificar la jurisdicción territorial seleccionada
+    mpios_activos = None
+    df_intersec = None
+    
+    if nivel_sel == "Municipal":
+        mpios_activos = [normalizar_texto(lugar_sel)]
+    elif nivel_sel == "Cuenca Hidrográfica" and not df_cuencas_mpios.empty:
+        df_intersec = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]
+    elif nivel_sel in ["Jurisdicción Ambiental (CAR)", "Regional", "Departamental"] and not df_territorio.empty:
+        if nivel_sel == "Jurisdicción Ambiental (CAR)":
+            mpios_activos = df_territorio[df_territorio['car'] == lugar_sel.replace("CAR: ", "")]['municipio_norm'].tolist()
+        elif nivel_sel == "Departamental":
+            mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == lugar_sel]['municipio_norm'].tolist()
+
+    # Ejecutar el conteo para cada especie
+    total_bovinos = calcular_animales(df_bovinos, mpios_activos, df_intersec)
+    total_porcinos = calcular_animales(df_porcinos, mpios_activos, df_intersec)
+    total_aves = calcular_animales(df_aves, mpios_activos, df_intersec)
+    
+    return total_bovinos, total_porcinos, total_aves
+
 def proyectar_curva(p_base, anios_array, anio_base, modelo, r, k):
     t = np.maximum(0, anios_array - anio_base) 
     if modelo == "Logístico":
