@@ -600,6 +600,14 @@ if gdf_zona is not None:
                             "Lluvia_mm": round(ppt,0), "Recarga_mm": round(recarga,0),
                             "Q_Medio_m3s": round((ppt-etr)*area*1000/31536000, 3)
                         })
+                        
+                        # 🌐 INYECCIÓN AL SUB-ALEPH (Memoria Global)
+                        # Guardamos el caudal de la primera cuenca analizada para que viaje a Calidad de Agua
+                        if i == 0: 
+                            st.session_state['aleph_q_rio_m3s'] = q_medio
+                            st.session_state['aleph_lluvia_mm'] = ppt
+
+                        
                         prog.progress((i+1)/len(gdf_all))
                     
                     # Guardar
@@ -608,4 +616,5 @@ if gdf_zona is not None:
                     st.dataframe(pd.DataFrame(res).head())
                     
             except Exception as e:
+
                 st.error(f"Error en reporte: {e}")
