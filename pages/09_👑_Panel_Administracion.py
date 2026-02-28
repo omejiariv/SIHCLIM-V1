@@ -20,7 +20,6 @@ import shutil
 from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
 from supabase import create_client
 
-
 # --- 1. CONFIGURACIÓN DE RUTAS E IMPORTACIONES ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -1171,3 +1170,69 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar el archivo: {e}")
 
+# =====================================================================
+# MÓDULO DE CARGA ESPACIAL: SHAPEFILE -> GEOJSON -> SUPABASE
+# =====================================================================
+
+st.markdown("---")
+st.subheader("🗺️ Aduana SIG: Estandarización y Carga a Supabase")
+st.info("Sube los múltiples archivos de una capa Shapefile (.shp, .shx, .dbf, .prj). El sistema la convertirá al estándar web (GeoJSON WGS84) y la subirá automáticamente al bucket público de Supabase.")
+
+# 1. Selector de Carpeta Destino en Supabase
+carpeta_destino = st.selectbox(
+    "Selecciona la carpeta de destino en Supabase:",
+    ["Puntos_de_interes", "censos_ICA", "limites_administrativos", "otro"]
+)
+
+if carpeta_destino == "otro":
+    carpeta_destino = st.text_input("Escribe el nombre de la nueva carpeta (sin espacios ni tildes):")
+
+# 2. Cargador Múltiple
+archivos_sig = st.file_uploader("Selecciona los archivos del Shapefile", accept_multiple_files=True, key="sig_uploader")
+
+if archivos_sig:
+    archivo_shp = next((f for f in archivos_sig if f.name.endswith('.shp')), None)
+    
+    if archivo_shp:
+        if st.button("🚀 Procesar y Subir a Supabase"):
+            with st.spinner("Ensamblando, reproyectando y subiendo a la nube..."):
+                try:
+                    # A. ENSAMBLAJE Y TRANSFORMACIÓN LOCAL EN MEMORIA TEMPORAL
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        for f in archivos_sig:
+                            filepath = os.path.join(tmpdir, f.name)
+                            with open(filepath, "wb") as f_out:
+                                f_out.write(f.getvalue())
+                        
+                        ruta_shp_temporal = os.path.join(tmpdir, archivo_shp.name)
+                        gdf = gpd.read_file(ruta_shp_temporal)
+                        
+                        # Estandarización a WGS84 (EPSG:4326)
+                        if gdf.crs is None:
+                            gdf.set_crs(epsg=3116, inplace=True)
+                        if gdf.crs.to_string() != "EPSG:4326":
+                            gdf = gdf.to_crs(epsg=4326)
+                            
+                        # Convertir a bytes de GeoJSON
+                        geojson_bytes = gdf.to_json().encode('utf-8')
+                        nombre_limpio = archivo_shp.name.replace('.shp', '.geojson')
+                        
+                        # B. SUBIDA A SUPABASE
+                        # Asume que tu cliente de supabase está inicializado como `supabase`
+                        # y que tu bucket se llama 'sihcli_maestros' (Ajusta el nombre del bucket si es otro)
+                        nombre_bucket = 'sihcli_maestros' 
+                        ruta_supabase = f"{carpeta_destino}/{nombre_limpio}"
+                        
+                        # Subir archivo sobrescribiendo si ya existe
+                        res = supabase.storage.from_(nombre_bucket).upload(
+                            file=geojson_bytes,
+                            path=ruta_supabase,
+                            file_options={"content-type": "application/json", "upsert": "true"}
+                        )
+                        
+                        st.success(f"✅ ¡Éxito! Capa '{nombre_limpio}' ({len(gdf)} registros) procesada y subida a Supabase en '{ruta_supabase}'.")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error durante el proceso: {str(e)}")
+    else:
+        st.warning("⚠️ Debes incluir obligatoriamente el archivo que termina en '.shp'.")
