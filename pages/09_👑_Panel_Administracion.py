@@ -1209,7 +1209,7 @@ if url_base and url_base.startswith("http"):
     url_limpia = url_base.strip().strip("'").strip('"').rstrip('/')
     
     nombre_bucket = "sihcli_maestros"
-    nombre_archivo = "Embalses_9377.geojson" 
+    nombre_archivo = "embalses_CV_9377.geojson" 
     
     # URL directa y pura al archivo
     ruta_embalses_nube = f"{url_limpia}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/{nombre_archivo}"
@@ -1341,5 +1341,6 @@ else:
                     st.warning("La carpeta no existe o está vacía.")
             except Exception as e:
                 st.error(f"No se pudo listar los archivos. ¿Aseguraste que el bucket sea público? Detalle: {e}")
+
 
 
