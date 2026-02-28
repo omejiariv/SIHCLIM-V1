@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from scipy.optimize import curve_fit
 import warnings
 import os
+from modules.utils import normalizar_texto, leer_csv_robusto
 
 warnings.filterwarnings("ignore") 
 
@@ -18,13 +19,6 @@ Motor de Inferencia Demográfica: Agregación territorial dinámica, ajuste para
 st.divider()
 
 # --- 1. LECTURA DE DATOS MAESTROS ---
-def leer_csv_robusto(ruta):
-    try:
-        df = pd.read_csv(ruta, sep=None, engine='python')
-        df.columns = df.columns.str.replace('\ufeff', '').str.strip()
-        return df
-    except Exception:
-        return pd.DataFrame()
 
 @st.cache_data
 def cargar_macro():
