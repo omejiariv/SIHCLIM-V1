@@ -818,32 +818,64 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
         od_rio_arriba = st.slider("OD Aguas Arriba (mg/L):", min_value=0.0, max_value=12.0, value=7.5, step=0.5)
         dist_sim = st.slider("Distancia a Simular (km):", min_value=5, max_value=150, value=50, step=5)
         
-# 2. Balance de Masas (Mezcla Río + Vertimiento)
-# Conectado automáticamente a tu variable maestra de cargas
-try:
-    carga_vertimiento_kg_dia = carga_total_dbo 
-except NameError:
-    carga_vertimiento_kg_dia = 5000.0 
+# =========================================================================
+# 2. Balance de Masas (Mezcla Río + Vertimiento) Parámetros del Vertimiento (La Carga Contaminante)
+# =========================================================================
+with st.expander("🏭 Características del Vertimiento Principal", expanded=True):
+    cv1, cv2, cv3 = st.columns(3)
     
-# Asumimos un caudal de vertimiento base (0.2 m3/s)
-q_vertimiento = 0.2 
+    with cv1:
+        st.markdown("##### 🚰 Volumen de Descarga")
+        q_vertimiento = st.number_input(
+            "Caudal del Vertimiento (m³/s):", 
+            min_value=0.001, max_value=50.0, value=0.200, step=0.05, format="%.3f",
+            help="Volumen total de aguas residuales que ingresan al río en este punto."
+        )
+    
+    with cv2:
+        st.markdown("##### 🔥 Termodinámica")
+        # Por defecto, las aguas residuales suelen estar unos grados por encima de la temperatura ambiente
+        t_vert_defecto = min(35.0, t_sugerida + 3.0) if 't_sugerida' in locals() else 25.0
+        
+        t_vertimiento = st.slider(
+            "Temperatura del Vertimiento (°C):", 
+            min_value=10.0, max_value=60.0, value=float(t_vert_defecto), step=0.5,
+            help="Las descargas industriales o domésticas suelen ser más calientes que el río, afectando el oxígeno."
+        )
+        
+    with cv3:
+        st.markdown("##### 💩 Carga Orgánica (DBO)")
+        # Simulación de la carga que luego conectarás con el motor pecuario/humano
+        carga_vertimiento_kg_dia = st.number_input(
+            "Carga Inyectada (kg DBO/día):",
+            min_value=1.0, value=5000.0, step=100.0
+        )
+        # Concentración de DBO del vertimiento (mg/L) = (kg/dia * 1000) / (m3/s * 86400)
+        dbo_vert_mgL = (carga_vertimiento_kg_dia * 1000) / (q_vertimiento * 86400)
+        st.caption("Concentración resultante:")
+        st.metric("DBO del Efluente", f"{dbo_vert_mgL:.1f} mg/L")
+
+# =========================================================================
+# 3. Termodinámica y Balance de Masas (Mezcla Río + Vertimiento)
+# =========================================================================
 q_mezcla = q_rio + q_vertimiento
 
-# Concentración de DBO del vertimiento (mg/L) = (kg/dia * 1000) / (m3/s * 86400)
-dbo_vert_mgL = (carga_vertimiento_kg_dia * 1000) / (q_vertimiento * 86400)
+# 🌡️ ECUACIÓN DE MEZCLA TÉRMICA (Conservación de Energía)
+t_mezcla = ((q_rio * t_agua) + (q_vertimiento * t_vertimiento)) / q_mezcla
 
-# DBO del río limpio aguas arriba (asumimos río sano = 2 mg/L)
-dbo_rio_arriba = 2.0 
-
-# BALANCE DE DBO (Ecuación de Mezcla)
+# BALANCE DE DBO (Ecuación de Conservación de Masa)
+dbo_rio_arriba = 2.0 # Asumimos río relativamente limpio antes del vertimiento
 L0_mezcla = ((q_rio * dbo_rio_arriba) + (q_vertimiento * dbo_vert_mgL)) / q_mezcla
 
 # BALANCE DE OXÍGENO
 od_mezcla = ((q_rio * od_rio_arriba) + (q_vertimiento * 0.0)) / q_mezcla
 
-# Oxígeno de saturación
-od_sat = 14.652 - 0.41022 * t_agua + 0.007991 * (t_agua ** 2) - 0.000077774 * (t_agua ** 3)
+# Oxígeno de saturación basado en la NUEVA temperatura de mezcla
+od_sat = 14.652 - 0.41022 * t_mezcla + 0.007991 * (t_mezcla ** 2) - 0.000077774 * (t_mezcla ** 3)
 D0_mezcla = max(0, od_sat - od_mezcla)
+
+# Métrica visual para el usuario sobre el impacto térmico
+st.info(f"🌡️ **Física de la Mezcla:** Al inyectar {q_vertimiento} m³/s a {t_vertimiento}°C, la temperatura del río pasa de {t_agua}°C a **{t_mezcla:.2f}°C**. El Oxígeno de Saturación baja a {od_sat:.2f} mg/L.")
 
 # 3. Ejecutar el Motor Matemático
 df_sag = calcular_streeter_phelps(
