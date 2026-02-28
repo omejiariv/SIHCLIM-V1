@@ -607,66 +607,119 @@ st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígen
 from modules.water_quality import calcular_streeter_phelps
 
 # -------------------------------------------------------------------------
-# 🏔️ MOTOR HIPSOMÉTRICO (Escalamiento de Caudal por Altitud)
+# 🏔️ MOTOR HIPSOMÉTRICO DINÁMICO (Cálculo en vivo con DEM)
 # -------------------------------------------------------------------------
-def escalar_caudal_por_altitud(q_total_salida, altitud_vertimiento):
-    """
-    Escala el caudal de la desembocadura al punto exacto de vertimiento.
-    """
-    # ⚠️ AQUÍ PUEDES REEMPLAZAR CON TU ECUACIÓN REAL DE LA CUENCA ⚠️
-    # Ejemplo Genérico: Asumimos una cuenca que va de 2800 msnm a 1000 msnm
-    altitud_max = 2800.0 # Nacimiento
-    altitud_min = 1000.0 # Desembocadura
+@st.cache_data(show_spinner=False)
+def obtener_datos_hipso_dinamicos(nombre_cuenca):
+    """Extrae la cuenca y calcula la hipsometría on-the-fly usando el DEM y analysis.py"""
+    import geopandas as gpd
+    import os
+    from modules.analysis import calculate_hypsometric_curve
+    from modules.config import Config
+    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+    ruta_cuencas = os.path.join(project_root, 'data', 'SubcuencasAinfluencia.geojson')
+    
+    try:
+        # 1. Cargar el polígono de la cuenca seleccionada
+        gdf_cuencas = gpd.read_file(ruta_cuencas)
+        gdf_zona = gdf_cuencas[gdf_cuencas['SUBC_LBL'] == nombre_cuenca]
         
-    alt_segura = max(altitud_min, min(altitud_max, float(altitud_vertimiento)))
-        
-    # Fracción de Área (Ejemplo lineal inverso). 
-    # Si tienes la ecuación polinómica del área acumulada, ponla aquí:
-    fraccion_area = (altitud_max - alt_segura) / (altitud_max - altitud_min) 
-        
-    # Caudal proporcional al área aportante
-    q_local = q_total_salida * fraccion_area
-    return max(0.01, q_local) # Nunca cero para no romper la matemática de Streeter-Phelps
+        if gdf_zona.empty:
+            return None
+            
+        # 2. Conectar al DEM usando tu función maestra de analysis.py
+        dem_path = Config.DEM_FILE_PATH
+        resultados = calculate_hypsometric_curve(gdf_zona, dem_path=dem_path)
+        return resultados
+    except Exception as e:
+        return None
 
-# 1. Parámetros Físicos del Río (Interactivos)
+def calcular_area_aportante(altitud_vertimiento, nombre_cuenca):
+    import numpy as np
+    
+    # 1. Intentar cálculo dinámico con el DEM
+    if nombre_cuenca != "N/A" and nombre_cuenca != "Generica":
+        res_hipso = obtener_datos_hipso_dinamicos(nombre_cuenca)
+        
+        if res_hipso and res_hipso.get("source") == "DEM Real":
+            # Invertimos los arreglos porque np.interp requiere que la X (altitud) sea ascendente
+            alt_asc = res_hipso["elevations"][::-1]
+            area_asc = res_hipso["area_percent"][::-1]
+            
+            alt_segura = np.clip(altitud_vertimiento, alt_asc.min(), alt_asc.max())
+            pct_area = np.interp(alt_segura, alt_asc, area_asc)
+            
+            fuente = f"🏔️ Cálculo Dinámico DEM ({nombre_cuenca})"
+            
+            # Rescatamos la hermosa ecuación polinómica que genera tu archivo analysis.py
+            ecuacion_texto = res_hipso.get("equation", "N/A")
+            if ecuacion_texto != "N/A":
+                ecuacion_latex = r"\text{" + ecuacion_texto.replace(' ', r'\ ') + r"}"
+            else:
+                ecuacion_latex = r"A_{aportante}(\%) = f_{interp}(H_{descarga})"
+                
+            return pct_area / 100.0, fuente, ecuacion_latex
+            
+    # 2. Fallback Analítico (Por si falla el DEM o no hay cuenca seleccionada)
+    alt_max, alt_min = 2800.0, 1000.0
+    alt_segura = np.clip(altitud_vertimiento, alt_min, alt_max)
+    fraccion_area = (alt_max - alt_segura) / (alt_max - alt_min)
+    
+    fuente = "📐 Modelo Analítico Aproximado (Lineal)"
+    ecuacion = r"A_{aportante} = \frac{H_{max} - H_{descarga}}{H_{max} - H_{min}}"
+    return fraccion_area, fuente, ecuacion
+
+# =========================================================================
+# 1. Parámetros Físicos del Río (Interactivos y Visibles)
+# =========================================================================
 with st.expander("⚙️ Características Físicas y Climáticas del Río", expanded=True):
     cr1, cr2, cr3 = st.columns(3)
-        
+    
     with cr1:
-        # 1. Selector de Altitud (El gatillo hipsométrico)
+        st.markdown("##### 📍 Posición del Vertimiento")
         h_descarga = st.number_input(
             "Altitud de Descarga (msnm):", 
-            min_value=0, max_value=5000, value=1500, step=50, 
-            help="Elevación del vertimiento. A mayor altitud, menor es el área aferente (aportante) y por tanto menor el caudal disponible para dilución."
+            min_value=0, max_value=5000, value=2150, step=10, 
+            help="A mayor altitud, menor es el área aferente y por tanto menor el caudal de dilución."
         )
-            
-        # 2. Recepción y Transformación del Aleph
-        q_default = 5.0
+        
+        # Recuperar caudal del Aleph
+        q_base_cuenca = 5.0
         if 'aleph_q_rio_m3s' in st.session_state and st.session_state['aleph_q_rio_m3s'] > 0:
-            q_cuenca_total = float(st.session_state['aleph_q_rio_m3s'])
-            # ¡Magia Hipsométrica Aplicada!
-            q_escalado = escalar_caudal_por_altitud(q_cuenca_total, h_descarga)
-            q_default = q_escalado
-                
-            # Tooltip visual dinámico para el usuario
-            st.caption(f"🌊 **Q Salida Cuenca:** {q_cuenca_total:.2f} m³/s")
-            st.info(f"📉 **Q Local (a {h_descarga} msnm):** {q_escalado:.2f} m³/s")
-                
-        # 3. Caudal Final (Sugerido por la ciencia, pero editable por el experto)
-        q_rio = st.number_input(
-            "Caudal del Río Local (m³/s):", 
-            min_value=0.01, value=float(q_default), step=0.1, 
-            help="Caudal en el punto exacto de descarga. El sistema lo calcula automáticamente usando la curva hipsométrica, pero puedes ajustarlo manualmente para simular el 7Q10 (Caudal mínimo de estiaje)."
+            q_base_cuenca = float(st.session_state['aleph_q_rio_m3s'])
+            
+        # 🔥 EJECUTAR MOTOR HIPSOMÉTRICO DINÁMICO 🔥
+        nombre_c = lugar_sel if nivel_sel_visual == "Cuenca Hidrográfica" else "Generica"
+        frac_area, fuente_hipso, eq_hipso = calcular_area_aportante(h_descarga, nombre_c)
+        
+        q_rio = max(0.01, q_base_cuenca * frac_area) # Caudal final real
+        
+        # --- LA MAGIA VISUAL ---
+        st.caption(fuente_hipso)
+        st.latex(eq_hipso) # Imprime TU ecuación polinómica real
+        st.latex(r"Q_{local} = Q_{total} \times A_{aportante}")
+        
+        # Métrica Dinámica (Reacciona instantáneamente)
+        reduccion = 100 - (frac_area * 100)
+        st.metric(
+            "Caudal Local Escalado (Q)", 
+            f"{q_rio:.2f} m³/s", 
+            f"-{reduccion:.1f}% vs Desembocadura ({q_base_cuenca:.1f})", 
+            delta_color="normal"
         )
-                
+        
         t_agua = st.slider("Temperatura del Agua (°C):", min_value=10.0, max_value=35.0, value=22.0, step=0.5)
         
     with cr2:
-        v_rio = st.slider("Velocidad del Flujo (m/s):", min_value=0.1, max_value=3.0, value=0.5, step=0.1, help="Ríos rápidos reairean mejor.")
-        h_rio = st.slider("Profundidad Media (m):", min_value=0.2, max_value=5.0, value=1.0, step=0.2, help="Ríos pandas (poco profundos) capturan más oxígeno.")
+        st.markdown("##### 🌊 Hidráulica")
+        v_rio = st.slider("Velocidad del Flujo (m/s):", min_value=0.1, max_value=3.0, value=0.5, step=0.1)
+        h_rio = st.slider("Profundidad Media (m):", min_value=0.2, max_value=5.0, value=1.0, step=0.2)
         
     with cr3:
-        od_rio_arriba = st.slider("Oxígeno Disuelto Aguas Arriba (mg/L):", min_value=0.0, max_value=12.0, value=7.5, step=0.5)
+        st.markdown("##### 🧪 Condición Inicial")
+        od_rio_arriba = st.slider("OD Aguas Arriba (mg/L):", min_value=0.0, max_value=12.0, value=7.5, step=0.5)
         dist_sim = st.slider("Distancia a Simular (km):", min_value=5, max_value=150, value=50, step=5)
         
 # 2. Balance de Masas (Mezcla Río + Vertimiento)
