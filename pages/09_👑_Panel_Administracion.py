@@ -162,11 +162,11 @@ st.title("👑 Panel de Administración y Edición de Datos")
 st.markdown("---")
 
 tabs = st.tabs([
-    "📡 Estaciones", "🌧️ Lluvia", "📊 Índices", "🏠 Predios", "🌊 Cuencas", 
-    "🏙️ Municipios", "🌲 Coberturas", "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Red de Drenaje", "🌧️ Zona de Peligro", "👥 Demografía", "🗺️ Aduana SIG"
+    "📡 Estaciones", "🌧️ Lluvia", "📊 Índices", "🏠 Predios", "🌊 Cuencas", "🏙️ Municipios", "🌲 Coberturas",
+    "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Red de Drenaje", "🌧️ Zona de Peligro", "👥 Demografía", "🗺️ Aduana SIG"
 ])
 
-# --- PESTAÑA DE CONFIGURACIÓN INICIAL (BLOQUE CORREGIDO) ---
+# --- PESTAÑA DE CONFIGURACIÓN INICIAL
 
 st.markdown("### 🛠️ Zona de Peligro: Reinicio del Sistema")
 with st.expander("Mostrar Controles de Reinicio de Base de Datos", expanded=True):
@@ -1173,11 +1173,7 @@ with tabs[14]:  # (Asegúrate de que esta variable coincida con tu st.tabs)
 # =====================================================================
 # TAB 15: MÓDULO DE CARGA ESPACIAL (SHAPEFILE -> GEOJSON -> SUPABASE)
 # =====================================================================
-with tab15: # Asegúrate de que este número coincida con tu nueva pestaña
-    import tempfile
-    import os
-    import geopandas as gpd
-    from supabase import create_client
+with tab15:
 
     st.subheader("🗺️ Aduana SIG: Estandarización y Carga a Supabase")
     st.info("Sube los múltiples archivos de una capa Shapefile (.shp, .shx, .dbf, .prj). El sistema la convertirá al estándar web (GeoJSON WGS84) y la subirá automáticamente al bucket público de Supabase.")
@@ -1244,4 +1240,5 @@ with tab15: # Asegúrate de que este número coincida con tu nueva pestaña
                         st.error(f"❌ Error durante el proceso: {str(e)}")
         else:
             st.warning("⚠️ Debes incluir obligatoriamente el archivo que termina en '.shp'.")
+
 
