@@ -1,4 +1,4 @@
-# pages/Sistemas_Hídricos_Territoriales
+# pages/Sistemas_Hídricos_Territoriales.py
 
 import streamlit as st
 import plotly.graph_objects as go
