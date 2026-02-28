@@ -203,6 +203,13 @@ def cargar_territorio_maestro():
         return df
     return pd.DataFrame()
 
+@st.cache_data
+def cargar_cuencas_mpios():
+    ruta = "data/cuencas_mpios_proporcion.csv"
+    if os.path.exists(ruta):
+        return leer_csv_robusto(ruta)
+    return pd.DataFrame()
+
 df_mpios = cargar_municipios()
 df_veredas = cargar_veredas()
 df_concesiones = cargar_concesiones()
@@ -210,7 +217,8 @@ df_vertimientos = cargar_vertimientos()
 df_territorio = cargar_territorio_maestro()
 df_bovinos = cargar_censo_bovino()
 df_porcinos = cargar_censo_porcino()
-df_aves = cargar_censo_aviar() # 👈 ¡Nuevo integrante!
+df_aves = cargar_censo_aviar()
+df_cuencas_mpios = cargar_cuencas_mpios()
 
 # ==============================================================================
 # MOTOR MATEMÁTICO POBLACIONAL (MEJORADO CON CRUCE TERRITORIAL)
@@ -303,8 +311,14 @@ with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", exp
         else: st.warning("No se detectó la tabla territorial."); lugar_sel = "N/A"
 
     elif nivel_sel_visual == "Cuenca Hidrográfica":
-        st.warning("🚧 Módulo en construcción: Requiere archivo 'cuencas_mpios_proporcion.csv' con el % de área municipal en cada cuenca.")
-        lugar_sel = "N/A"    
+        if not df_cuencas_mpios.empty and 'Subcuenca' in df_cuencas_mpios.columns:
+            # Lee las cuencas del archivo y crea el menú desplegable
+            cuencas_list = sorted([str(x) for x in df_cuencas_mpios['Subcuenca'].dropna().unique()])
+            lugar_sel = st.selectbox("1. Seleccione la Cuenca Hidrográfica:", cuencas_list, key="sel_cuenca")
+            nivel_sel_interno = "Cuenca Hidrográfica"
+        else: 
+            st.error("❌ Archivo de cuencas no encontrado. Revisa la carpeta data/")
+            lugar_sel = "N/A"
             
     elif nivel_sel_visual == "Veredal" and not df_veredas.empty:
         col_f1, col_f2 = st.columns(2)
