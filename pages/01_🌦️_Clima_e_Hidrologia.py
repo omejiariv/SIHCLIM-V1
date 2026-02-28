@@ -315,8 +315,7 @@ def main():
         else:
             st.header("🌍 Modelación Hidrológica Distribuida (Aleph)")
             
-            # --- 0. CARGA DE RECURSOS ---
-# --- 0. CARGA DE RECURSOS (NUBE SUPABASE) ---
+            # --- 0. CARGA DE RECURSOS (NUBE SUPABASE) ---
             # Inicializamos variables
             dem_path = None # En este caso, será un objeto en memoria (BytesIO), no un "path" de texto
             cov_path = None
@@ -568,12 +567,15 @@ def main():
                             k5.metric("Recarga Real", f"{v_rec_real:.0f} mm", "Acuífero")
                             k5.metric("Volumen Recarga", f"{(v_rec_real * area_km2 * 1000):.2e} m³", "Anual")
                             
+                            # 🌐 INYECCIÓN AL ALEPH (Memoria Global para Calidad de Agua Subterránea)
+                            st.session_state['aleph_recarga_mm'] = float(v_rec_real)
+                            st.session_state['aleph_area_km2'] = float(area_km2)
+                            
                         except Exception as e:
                             st.warning(f"Cálculos parciales: {e}")
 
                     except Exception as e:
                         st.error(f"Error crítico: {e}")
-
 
     # --- OTROS MÓDULOS ---
     elif selected_module == "🧪 Sesgo": viz.display_bias_correction_tab(**display_args)
@@ -675,6 +677,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
