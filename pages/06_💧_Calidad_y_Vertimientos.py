@@ -7,6 +7,9 @@ import os
 import unicodedata
 import warnings
 from modules.utils import normalizar_texto, leer_csv_robusto
+import requests
+import io
+import geopandas as gpd
 
 warnings.filterwarnings("ignore")
 
@@ -30,6 +33,54 @@ def normalizar_texto(texto):
 # ==============================================================================
 # 🔌 CONECTORES A BASES DE DATOS
 # ==============================================================================
+
+# --- CONECTOR CLOUD: SUPABASE (CONCESIONES Y VERTIMIENTOS) ---
+@st.cache_data(ttl=3600, show_spinner=False)
+def cargar_datos_calidad_nube(tipo_archivo="concesion"):
+    """
+    Busca en Supabase el archivo más reciente de concesiones o vertimientos.
+    tipo_archivo: "concesion" o "vertimiento"
+    """
+    
+    # 1. Credenciales
+    url_base = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url")
+    key_supabase = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key")
+    
+    if not url_base or not key_supabase:
+        return pd.DataFrame()
+        
+    url_limpia = url_base.strip().strip("'").strip('"').rstrip('/')
+    
+    try:
+        from supabase import create_client
+        cliente = create_client(url_base, key_supabase)
+        
+        # 2. Listar archivos en la carpeta
+        archivos = cliente.storage.from_("sihcli_maestros").list("concesiones_y_vertimientos")
+        if not archivos: return pd.DataFrame()
+        
+        # 3. Buscar el archivo que coincida con la palabra clave
+        nombre_archivo = next((a['name'] for a in archivos if tipo_archivo.lower() in a['name'].lower() and a['name'] != '.emptyFolderPlaceholder'), None)
+        
+        if nombre_archivo:
+            ruta_descarga = f"{url_limpia}/storage/v1/object/public/sihcli_maestros/concesiones_y_vertimientos/{nombre_archivo}"
+            res = requests.get(ruta_descarga)
+            
+            if res.status_code == 200:
+                # 4. Leer según la extensión
+                if nombre_archivo.endswith(('.xlsx', '.xls')):
+                    return pd.read_excel(io.BytesIO(res.content))
+                elif nombre_archivo.endswith('.csv'):
+                    return pd.read_csv(io.BytesIO(res.content), low_memory=False)
+                elif nombre_archivo.endswith('.geojson'):
+                    with open(f"/tmp/{nombre_archivo}", "wb") as f: f.write(res.content)
+                    return pd.DataFrame(gpd.read_file(f"/tmp/{nombre_archivo}").drop(columns='geometry'))
+    except Exception as e:
+        st.sidebar.warning(f"Error conectando a Supabase ({tipo_archivo}): {e}")
+        
+    return pd.DataFrame()
+
+# -------------------------------------------------------------------------
 
 @st.cache_data
 def cargar_municipios():
@@ -206,8 +257,14 @@ def cargar_cuencas_mpios():
 
 df_mpios = cargar_municipios()
 df_veredas = cargar_veredas()
-df_concesiones = cargar_concesiones()
-df_vertimientos = cargar_vertimientos()
+# Intentamos cargar de la nube primero. Si falla o está vacío, cae al archivo local.
+df_concesiones = cargar_datos_calidad_nube("concesion")
+if df_concesiones.empty:
+    df_concesiones = cargar_concesiones() # Tu función original de respaldo
+
+df_vertimientos = cargar_datos_calidad_nube("vertimiento")
+if df_vertimientos.empty:
+    df_vertimientos = cargar_vertimientos() # Tu función original de respaldo
 df_territorio = cargar_territorio_maestro()
 df_bovinos = cargar_censo_bovino()
 df_porcinos = cargar_censo_porcino()
