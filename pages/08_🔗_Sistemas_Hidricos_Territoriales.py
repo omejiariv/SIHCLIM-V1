@@ -50,30 +50,69 @@ else:
     st.sidebar.error("❌ No se encontró la URL de Supabase en los secretos.")
 
 # =========================================================================
-# 1. BASE DE DATOS ESTRUCTURAL DE EMBALSES (Memoria del Sistema)
+# 1. BASE DE DATOS ESTRUCTURAL DE EMBALSES (Fusión Mapa + Modelo)
 # =========================================================================
-# Datos paramétricos basados en las características reales de los sistemas de EPM
+import pandas as pd
+
+# A. Datos paramétricos base (Los caudales operativos son dinámicos/simulados por ahora)
 sistemas_embalses = {
     "La Fe": {
-        "capacidad_util_Mm3": 11.5,
+        "capacidad_util_Mm3": 11.5, # Valor por defecto (se actualizará con el mapa)
         "cuenca_propia": "Quebrada Espíritu Santo",
         "oferta_natural_m3s": 1.2,
         "trasvases": {"Pantanillo": 1.5, "Río Buey": 3.0, "Piedras": 0.8},
-        "demanda_acueducto_m3s": 5.0, # Planta Manantiales / Ayurá
+        "demanda_acueducto_m3s": 5.0, 
         "evaporacion_m3s": 0.1,
         "caudal_ecologico_m3s": 0.3
     },
     "Río Grande II": {
-        "capacidad_util_Mm3": 220.0,
+        "capacidad_util_Mm3": 220.0, # Valor por defecto (se actualizará con el mapa)
         "cuenca_propia": "Río Grande + Quebrada Las Ánimas",
         "oferta_natural_m3s": 15.0,
         "trasvases": {"Río Chico": 5.0},
-        "demanda_acueducto_m3s": 6.5, # Planta Manantiales
-        "generacion_energia_m3s": 12.0, # Turbinado
+        "demanda_acueducto_m3s": 6.5, 
+        "generacion_energia_m3s": 12.0, 
         "evaporacion_m3s": 0.5,
         "caudal_ecologico_m3s": 1.0
     }
 }
+
+# B. INYECCIÓN DE DATOS ESPACIALES AL MODELO MATEMÁTICO
+if gdf_embalses is not None and not gdf_embalses.empty:
+    # 1. Buscamos automáticamente cuáles son las columnas de Nombre y Volumen en tu Shapefile
+    col_nombre = next((c for c in gdf_embalses.columns if 'nom' in c.lower() or 'proyect' in c.lower() or 'embalse' in c.lower()), None)
+    col_vol = next((c for c in gdf_embalses.columns if 'vol' in c.lower() or 'cap' in c.lower()), None)
+    
+    if col_nombre and col_vol:
+        def inyectar_capacidad_real(nombre_nodo, texto_busqueda):
+            try:
+                # Filtramos el mapa buscando el texto (ej. "fe" o "grande") ignorando mayúsculas
+                match = gdf_embalses[gdf_embalses[col_nombre].astype(str).str.contains(texto_busqueda, case=False, na=False)]
+                
+                if not match.empty:
+                    # Extraemos el valor de la columna de volumen del primer resultado
+                    vol_real = match.iloc[0][col_vol]
+                    
+                    if pd.notnull(vol_real) and float(vol_real) > 0:
+                        # Convertimos a Millones de m3 si el mapa lo tiene en m3 (ajuste automático clásico)
+                        if float(vol_real) > 10000: 
+                            vol_real = float(vol_real) / 1000000
+                            
+                        # ¡Sobrescribimos la memoria del sistema con el dato del mapa!
+                        sistemas_embalses[nombre_nodo]["capacidad_util_Mm3"] = round(float(vol_real), 2)
+                        return True
+            except Exception as e:
+                pass
+            return False
+
+        # Ejecutamos la inyección para nuestros dos nodos principales
+        exito_fe = inyectar_capacidad_real("La Fe", "fe")
+        exito_rg = inyectar_capacidad_real("Río Grande II", "grande")
+        
+        if exito_fe or exito_rg:
+            st.sidebar.success("🔗 Capacidades inyectadas directamente desde el mapa oficial.")
+        else:
+            st.sidebar.info("ℹ️ Se leyó el mapa, pero no se encontraron las columnas exactas de volumen para inyectar.")
 
 # =========================================================================
 # 2. PANEL DE OPERACIÓN (Centro de Control)
