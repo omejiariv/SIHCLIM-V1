@@ -50,27 +50,26 @@ else:
     st.sidebar.error("❌ No se encontró la URL de Supabase en los secretos.")
 
 # =========================================================================
-# 1. BASE DE DATOS ESTRUCTURAL: NEXO AGUA-ENERGÍA
+# 1. BASE DE DATOS ESTRUCTURAL: NEXO AGUA-ENERGÍA Y TAMAÑO
 # =========================================================================
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
 
-# A. Datos paramétricos (Estructura Ampliada con factor energético)
-# factor_energia_kwh_m3: kWh generados (o consumidos) por cada m3 de agua. 
-# Valores positivos = Generación (Turbinas). Valores negativos = Consumo (Bombas).
+# A. Datos paramétricos (Estructura Ampliada)
 sistemas_embalses = {
     "La Fe": {
         "capacidad_util_Mm3": 11.5, 
         "afluentes_naturales": {"Quebrada Espíritu Santo": 1.2},
-        "trasvases": {"Pantanillo": 1.5, "Río Buey": 3.0, "Piedras": 0.8}, # Bombeos
+        "trasvases": {"Pantanillo": 1.5, "Río Buey": 3.0, "Piedras": 0.8},
         "demanda_acueducto_m3s": 5.0, 
         "generacion_energia_m3s": 0.0,
         "evaporacion_m3s": 0.1,
         "caudal_ecologico_m3s": 0.3,
-        "factor_energia_kwh_m3": 0.0, # No genera
-        "costo_bombeo_kwh_m3": 0.85   # Alto costo de bombeo por m3
+        "factor_energia_kwh_m3": 0.0, 
+        "costo_bombeo_kwh_m3": 0.85,
+        "ha_conservadas_base": 300.0  # <--- Base dinámica
     },
     "Río Grande II": {
         "capacidad_util_Mm3": 220.0, 
@@ -80,8 +79,9 @@ sistemas_embalses = {
         "generacion_energia_m3s": 12.0, 
         "evaporacion_m3s": 0.5,
         "caudal_ecologico_m3s": 1.0,
-        "factor_energia_kwh_m3": 0.65, # Generación moderada
-        "costo_bombeo_kwh_m3": 0.0
+        "factor_energia_kwh_m3": 0.65,
+        "costo_bombeo_kwh_m3": 0.0,
+        "ha_conservadas_base": 1500.0 # <--- Base dinámica
     },
     "El Peñol (Guatapé)": {
         "capacidad_util_Mm3": 1070.0, 
@@ -91,8 +91,9 @@ sistemas_embalses = {
         "generacion_energia_m3s": 30.0, 
         "evaporacion_m3s": 1.5,
         "caudal_ecologico_m3s": 2.0,
-        "factor_energia_kwh_m3": 1.2, # Alta generación por cadena de embalses
-        "costo_bombeo_kwh_m3": 0.0
+        "factor_energia_kwh_m3": 1.2,
+        "costo_bombeo_kwh_m3": 0.0,
+        "ha_conservadas_base": 5000.0 # <--- Base dinámica
     },
     "Punchiná (San Carlos)": {
         "capacidad_util_Mm3": 68.0, 
@@ -102,8 +103,9 @@ sistemas_embalses = {
         "generacion_energia_m3s": 45.0, 
         "evaporacion_m3s": 0.3,
         "caudal_ecologico_m3s": 4.0,
-        "factor_energia_kwh_m3": 2.5, # Caída brutal = mucha energía por m3
-        "costo_bombeo_kwh_m3": 0.0
+        "factor_energia_kwh_m3": 2.5,
+        "costo_bombeo_kwh_m3": 0.0,
+        "ha_conservadas_base": 1000.0 # <--- Base dinámica
     },
     "Hidroituango": {
         "capacidad_util_Mm3": 2720.0, 
@@ -112,9 +114,10 @@ sistemas_embalses = {
         "demanda_acueducto_m3s": 0.0, 
         "generacion_energia_m3s": 900.0, 
         "evaporacion_m3s": 5.0,
-        "caudal_ecologico_m3s": 200.0, # Vital para el Bajo Cauca
+        "caudal_ecologico_m3s": 200.0, 
         "factor_energia_kwh_m3": 0.9,
-        "costo_bombeo_kwh_m3": 0.0
+        "costo_bombeo_kwh_m3": 0.0,
+        "ha_conservadas_base": 10000.0 # <--- Base dinámica
     }
 }
 
@@ -134,7 +137,6 @@ if gdf_embalses is not None and not gdf_embalses.empty:
                         sistemas_embalses[nombre_nodo]["capacidad_util_Mm3"] = round(float(vol_real), 2)
             except: pass
 
-        # Buscamos en el mapa los nuevos gigantes
         inyectar_capacidad_real("La Fe", "fe")
         inyectar_capacidad_real("Río Grande II", "grande")
         inyectar_capacidad_real("El Peñol (Guatapé)", "peñol|guatap")
@@ -193,17 +195,13 @@ sum_entradas = sum(afluentes_inputs.values()) + sum(trasvases_inputs.values())
 sum_salidas = val_acueducto + val_turbinado + val_ecologico + datos_nodo["evaporacion_m3s"]
 balance = sum_entradas - sum_salidas
 
-# --- HUELLA ENERGÉTICA (NEXO AGUA-ENERGÍA) ---
-# 1 m3/s = 3600 m3/hora. 
+# --- HUELLA ENERGÉTICA ---
 m3_hora_turbinados = val_turbinado * 3600
 m3_hora_bombeados = sum(trasvases_inputs.values()) * 3600
-
-# Potencia en kW (simplificada con el factor de diseño)
 potencia_generada_kw = m3_hora_turbinados * datos_nodo["factor_energia_kwh_m3"]
 potencia_consumida_kw = m3_hora_bombeados * datos_nodo["costo_bombeo_kwh_m3"]
-balance_energetico_MW = (potencia_generada_kw - potencia_consumida_kw) / 1000 # Pasar a Megavatios
+balance_energetico_MW = (potencia_generada_kw - potencia_consumida_kw) / 1000
 
-# Valorización (Aprox $350 COP el kWh en bolsa)
 ingreso_hora_cop = potencia_generada_kw * 350
 costo_hora_cop = potencia_consumida_kw * 350
 
@@ -211,34 +209,31 @@ c1, c2, c3, c4 = st.columns(4)
 c1.metric("Balance Hídrico (ΔS/Δt)", f"{balance:+.1f} m³/s", "Llenándose 📈" if balance > 0 else "Vaciándose 📉" if balance < 0 else "Estable ⚖️")
 c2.metric("Energía Generada", f"{potencia_generada_kw/1000:,.1f} MW", f"${ingreso_hora_cop/1e6:,.1f} Millones/hora", delta_color="normal")
 c3.metric("Energía Consumida", f"{potencia_consumida_kw/1000:,.1f} MW", f"-${costo_hora_cop/1e6:,.1f} Millones/hora", delta_color="inverse")
-c4.metric("Balance Energético Neto", f"{balance_energetico_MW:,.1f} MW", "Superávit ⚡" if balance_energetico_MW > 0 else "Déficit 🔴" if balance_energetico_MW < 0 else "Neutro")
+c4.metric("Balance Neto", f"{balance_energetico_MW:,.1f} MW", "Superávit ⚡" if balance_energetico_MW > 0 else "Déficit 🔴" if balance_energetico_MW < 0 else "Neutro")
 
 st.markdown("---")
-st.subheader("🕸️ Topología del Metabolismo (Agua y Energía)")
+# MEJORA 4: TÍTULO DINÁMICO
+st.subheader(f"🕸️ Topología del Metabolismo: {nodo_seleccionado} (Agua y Energía)")
 
-# Construcción Dinámica del Grafo Sankey
 labels = [f"Embalse {nodo_seleccionado}"]
 source, target, value, color = [], [], [], []
 idx = 1
 
-# Nodos de Entrada Natural (Verdes)
 for nombre, q in afluentes_inputs.items():
     if q > 0:
         labels.append(nombre); source.append(idx); target.append(0); value.append(q); color.append("rgba(46, 204, 113, 0.6)")
         idx += 1
 
-# Nodos de Entrada Trasvases (Rojos - Consumen Energía)
 for nombre, q in trasvases_inputs.items():
     if q > 0:
         labels.append(f"Bombeo {nombre} ⚡(-)"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.8)")
         idx += 1
 
-# Nodos de Salida (Azules y Amarillos)
 if val_acueducto > 0:
     labels.append("Acueducto (Valle Aburrá)"); source.append(0); target.append(idx); value.append(val_acueducto); color.append("rgba(52, 152, 219, 0.6)")
     idx += 1
 if val_turbinado > 0:
-    labels.append("Generación Energía ⚡(+)"); source.append(0); target.append(idx); value.append(val_turbinado); color.append("rgba(241, 196, 15, 0.8)")
+    labels.append("Generación ⚡(+)"); source.append(0); target.append(idx); value.append(val_turbinado); color.append("rgba(241, 196, 15, 0.8)")
     idx += 1
 if val_ecologico > 0:
     labels.append("Río Abajo (Ecológico)"); source.append(0); target.append(idx); value.append(val_ecologico); color.append("rgba(149, 165, 166, 0.6)")
@@ -246,7 +241,9 @@ if val_ecologico > 0:
 if datos_nodo["evaporacion_m3s"] > 0:
     labels.append("Evaporación"); source.append(0); target.append(idx); value.append(datos_nodo["evaporacion_m3s"]); color.append("rgba(189, 195, 199, 0.3)")
 
+# MEJORA 3: LETRAS GRANDES Y LEGIBLES EN EL SANKEY
 fig_sankey = go.Figure(data=[go.Sankey(
+    textfont=dict(size=15, color="black", family="Arial Black"), # Letra nítida, gruesa y oscura
     node=dict(pad=20, thickness=30, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
     link=dict(source=source, target=target, value=value, color=color)
 )])
@@ -254,12 +251,12 @@ fig_sankey.update_layout(height=450, margin=dict(l=0, r=0, t=30, b=0))
 st.plotly_chart(fig_sankey, use_container_width=True)
 
 # =========================================================================
-# 4. TABLERO WRI: NEUTRALIDAD, RESILIENCIA Y CALIDAD (INTEGRADO)
+# 4. TABLERO WRI: NEUTRALIDAD, RESILIENCIA Y CALIDAD
 # =========================================================================
 st.markdown("---")
-st.subheader("🌐 Inteligencia Territorial: Neutralidad, Resiliencia y Calidad (WRI)")
+# MEJORA 4: TÍTULO DINÁMICO
+st.subheader(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}")
 
-# --- 1. MÁQUINA DEL TIEMPO (PROYECCIONES) ---
 anio_analisis = st.slider("Seleccione el Año de Evaluación (Actual o Futuro):", min_value=2024, max_value=2050, value=2025, step=1)
 
 delta_anios = anio_analisis - 2025
@@ -267,18 +264,18 @@ factor_demanda = (1 + 0.015) ** delta_anios
 factor_clima = (1 - 0.005) ** delta_anios
 
 q_oferta_m3s_base = sum_entradas
-demanda_m3s_base = val_acueducto + (val_turbinado * 0.1) # Asumimos que la turbinación devuelve el 90% al río, solo el 10% "impacta" el estrés local.
+demanda_m3s_base = val_acueducto + (val_turbinado * 0.1) 
 capacidad_embalse_m3 = datos_nodo["capacidad_util_Mm3"] * 1000000
 
 oferta_anual_m3 = (q_oferta_m3s_base * factor_clima) * 31536000
 consumo_anual_m3 = (demanda_m3s_base * factor_demanda) * 31536000
 
-# --- 2. INTEGRACIÓN DE SbN ---
 activar_sig = st.toggle("✅ Incluir Área Restaurada/Conservada en el cálculo WRI", value=True)
 
 c_inv1, c_inv2, c_inv3 = st.columns(3)
 with c_inv1:
-    ha_simuladas = st.number_input("➕ Hectáreas Conservadas / BPAs:", min_value=0.0, value=1500.0, step=50.0)
+    # MEJORA 2: VALOR POR DEFECTO DINÁMICO
+    ha_simuladas = st.number_input("➕ Hectáreas Conservadas / BPAs:", min_value=0.0, value=float(datos_nodo["ha_conservadas_base"]), step=50.0)
     beneficio_restauracion_m3 = (ha_simuladas if activar_sig else 0.0) * 2500 
 with c_inv2:
     sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM):", min_value=0, value=120, step=5)
@@ -287,7 +284,6 @@ with c_inv3:
     volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
     st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año")
 
-# --- 3. MOTORES DE CÁLCULO WRI ---
 ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 100.0
 ind_resiliencia = min(100.0, ((capacidad_embalse_m3 + oferta_anual_m3) / ((consumo_anual_m3+1) * 2)) * 100)
 ind_estres = min(100.0, (consumo_anual_m3 / oferta_anual_m3) * 100) if oferta_anual_m3 > 0 else 100.0
@@ -299,7 +295,13 @@ def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
     else:
         return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
-# --- 4. TABLERO DE VELOCÍMETROS ---
+# MEJORA 1: GENERADOR DE LEYENDAS INTERPRETATIVAS
+def generar_leyenda(u_r, u_v, inv):
+    if not inv:
+        return f"🔴 &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 &gt; {u_v}%"
+    else:
+        return f"🟢 &lt; {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 &gt; {u_r}%"
+
 st.markdown("---")
 def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
     fig = go.Figure(go.Indicator(
@@ -323,7 +325,10 @@ for col, ind, tit, col_h, u_r, u_v, inv in zip(
         est, color_txt = evaluar_indice(ind, u_r, u_v, inv)
         st.plotly_chart(crear_velocimetro(ind, tit, col_h, u_r, u_v, inv), use_container_width=True)
         st.markdown(f"<h4 style='text-align: center; color: {color_txt}; margin-top:-20px;'>{est}</h4>", unsafe_allow_html=True)
-        
+        # INYECCIÓN DE LA LEYENDA BAJO EL VELOCÍMETRO
+        leyenda = generar_leyenda(u_r, u_v, inv)
+        st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{leyenda}</div>", unsafe_allow_html=True)
+
 # --- 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA ---
 st.markdown("---")
 st.subheader(f"📈 Proyección de Seguridad Hídrica del Sistema {nodo_seleccionado} (2024 - 2050)")
