@@ -443,6 +443,14 @@ pob_evo = pob_total * (factor_evo / factor_proy)
 # ------------------------------------------------------------------------------
 with tab_demanda:
     st.header(f"🚰 Demanda, Eficiencia de Sistemas y Formalización")
+    
+    # --- CONEXIÓN CON DEMOGRAFÍA (MEMORIA GLOBAL) ---
+    # Si la página de Demografía envió un dato, lo usamos. Si no, usamos el del selector espacial actual.
+    if 'poblacion_total' in st.session_state:
+        pob_total = st.session_state['poblacion_total']
+        st.info(f"👥 Población base inyectada desde el Modelo Demográfico: **{pob_total:,.0f} habitantes**.")
+    # ------------------------------------------------
+    
     col_d1, col_d2 = st.columns([1, 1.5])
     
     with col_d1:
@@ -537,6 +545,33 @@ with tab_demanda:
             csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Descargar Desglose (CSV)", data=csv, file_name=f'Usos_{lugar_sel}.csv', mime='text/csv')
     else: st.warning(f"⚠️ El territorio **{lugar_sel}** no registra datos formales.")
+
+    # =========================================================================
+    # NUEVA SECCIÓN: HUELLA HÍDRICA TERRITORIAL (CONSOLIDADO WRI)
+    # =========================================================================
+    st.divider()
+    st.subheader("👣 Huella Hídrica Territorial (Metabolismo de Extracción)")
+    st.markdown("Consolidación de las demandas brutas efectivas (Doméstica + Agrícola + Industrial) para evaluar el nivel de estrés del territorio.")
+    
+    # 1. Sumamos las demandas efectivas (lo que realmente se saca del río)
+    caudal_total_efectivo_L_s = q_efectivo_dom + q_efectivo_agr + q_efectivo_ind
+    
+    # 2. Convertimos a m3/s para el estándar de los modelos topológicos y WRI
+    caudal_total_m3_s = caudal_total_efectivo_L_s / 1000
+    
+    c_h1, c_h2, c_h3, c_h4 = st.columns(4)
+    c_h1.metric("💧 Doméstica", f"{q_efectivo_dom:,.1f} L/s")
+    c_h2.metric("🌾 Agrícola/Pecuaria", f"{q_efectivo_agr:,.1f} L/s")
+    c_h3.metric("🏭 Industrial", f"{q_efectivo_ind:,.1f} L/s")
+    c_h4.metric("🌊 Extracción Total Continua", f"{caudal_total_m3_s:,.3f} m³/s", delta_color="inverse")
+    
+    col_btn1, col_btn2 = st.columns([1, 2])
+    with col_btn1:
+        if st.button("🚀 Exportar Huella Total al Modelo WRI", use_container_width=True):
+            st.session_state['demanda_total_m3s'] = caudal_total_m3_s
+            st.success("✅ ¡Dato inyectado en la Memoria Global! Dirígete a 'Sistemas Hídricos' o 'Toma de Decisiones'.")
+    with col_btn2:
+        st.caption("Al hacer clic, el valor de extracción se convierte en la variable de 'Demanda' en los cálculos de Estrés Hídrico y Resiliencia del sistema.")
 
 # ------------------------------------------------------------------------------
 # TAB 2: INVENTARIO DE CARGAS (CONECTADO AL ALEPH)
