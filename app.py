@@ -1,3 +1,5 @@
+# app.py
+
 import streamlit as st
 import plotly.express as px
 import pandas as pd
@@ -217,5 +219,6 @@ with c2:
 # --- FOOTER ---
 st.divider()
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
+
 
 
