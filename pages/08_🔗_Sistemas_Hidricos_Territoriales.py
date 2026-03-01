@@ -143,6 +143,39 @@ if gdf_embalses is not None and not gdf_embalses.empty:
         inyectar_capacidad_real("Punchiná (San Carlos)", "punchin|carlos")
         inyectar_capacidad_real("Hidroituango", "ituango")
 
+        # -----------------------------------------------------------------
+        # C. INYECCIÓN DE PREDIOS CONSERVADOS (SbN) DESDE SUPABASE
+        # -----------------------------------------------------------------
+        try:
+            # Construimos la ruta directa a tu archivo de Predios
+            ruta_predios = f"{url_limpia}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/PrediosEjecutados.geojson"
+            import requests
+            import tempfile
+            
+            res_predios = requests.get(ruta_predios)
+            if res_predios.status_code == 200:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp_p:
+                    tmp_p.write(res_predios.content)
+                    tmp_path_p = tmp_p.name
+                
+                gdf_predios = gpd.read_file(tmp_path_p)
+                
+                # Sumar por embalse leyendo tus columnas reales 'EMBALSE' y 'AREA_HA'
+                if 'EMBALSE' in gdf_predios.columns and 'AREA_HA' in gdf_predios.columns:
+                    resumen_predios = gdf_predios.groupby('EMBALSE')['AREA_HA'].sum().to_dict()
+                    
+                    # Mapear el resultado al diccionario del modelo
+                    for embalse_mapa, ha_total in resumen_predios.items():
+                        nombre_mapa_limpio = str(embalse_mapa).lower().strip()
+                        for nombre_nodo in sistemas_embalses.keys():
+                            # Coincidencia inteligente (ej. "La Fe" con "La Fe")
+                            if nombre_mapa_limpio in nombre_nodo.lower() or (nombre_mapa_limpio == "riogrande ii" and "grande" in nombre_nodo.lower()):
+                                sistemas_embalses[nombre_nodo]["ha_conservadas_base"] = float(ha_total)
+                                
+                    st.sidebar.success("🌲 Áreas de conservación (PrediosEjecutados) inyectadas desde la nube.")
+        except Exception as e:
+            st.sidebar.warning(f"No se pudo cargar la capa de predios: {e}")
+
 # =========================================================================
 # 2. PANEL DE OPERACIONES Y CONTROLES
 # =========================================================================
@@ -371,3 +404,107 @@ with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
     st.markdown("La variación de almacenamiento en el tiempo se rige por la ecuación de continuidad:")
     st.latex(r"\frac{\Delta S}{\Delta t} = I_{nat} + \sum I_{trasvases} - O_{urb} - O_{eco} - O_{energia} - E_{vap}")
     st.markdown("Si $\\frac{\\Delta S}{\\Delta t}$ es negativo de forma sostenida (ej. durante un fenómeno de El Niño donde $I_{nat} \\approx 0$), el volumen útil del embalse se agota, generando racionamiento en la metrópolis externa.")
+
+# =========================================================================
+# NUEVA SECCIÓN: HUELLA HÍDRICA TERRITORIAL (CENSOS ICA + DANE)
+# =========================================================================
+st.markdown("---")
+st.header("💧 Metabolismo Hídrico: Presión Demográfica y Agropecuaria")
+st.info("Cálculo de la demanda hídrica real integrando la población humana y los inventarios pecuarios alojados en la nube.")
+
+col_h1, col_h2 = st.columns([1, 1.5])
+
+with col_h1:
+    st.subheader("1. Conexión a Censos ICA (Supabase)")
+    
+    # Buscamos la URL y Llave base de Supabase
+    url_base = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url") or st.secrets.get("supabase", {}).get("SUPABASE_URL")
+    key_supabase = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key") or st.secrets.get("supabase", {}).get("SUPABASE_KEY")
+
+    if url_base and key_supabase:
+        from supabase import create_client
+        cliente_supabase = create_client(url_base, key_supabase)
+        
+        try:
+            # Listar archivos Excel/CSV en la carpeta censos_ICA en vivo
+            archivos_ica = cliente_supabase.storage.from_("sihcli_maestros").list("censos_ICA")
+            lista_archivos = [a['name'] for a in archivos_ica if a['name'] != '.emptyFolderPlaceholder']
+            
+            if lista_archivos:
+                archivo_seleccionado = st.selectbox("Seleccione el Censo ICA a evaluar:", lista_archivos)
+                
+                if st.button("📥 Analizar Censo y Calcular Huella"):
+                    with st.spinner("Descargando y procesando matriz ICA..."):
+                        url_limpia = url_base.strip().strip("'").strip('"').rstrip('/')
+                        ruta_censo = f"{url_limpia}/storage/v1/object/public/sihcli_maestros/censos_ICA/{archivo_seleccionado}"
+                        
+                        import requests
+                        import io
+                        res_censo = requests.get(ruta_censo)
+                        
+                        if res_censo.status_code == 200:
+                            if archivo_seleccionado.endswith(('.xlsx', '.xls')):
+                                df_ica = pd.read_excel(io.BytesIO(res_censo.content))
+                            else:
+                                df_ica = pd.read_csv(io.BytesIO(res_censo.content))
+                            
+                            st.success(f"✅ Matriz ICA cargada: {len(df_ica)} registros.")
+                            st.session_state['df_ica_cargado'] = df_ica
+                        else:
+                            st.error("Error al descargar el archivo del bucket.")
+            else:
+                st.warning("No hay censos ICA subidos en la carpeta de Supabase.")
+        except Exception as e:
+            st.error(f"Error conectando al bucket: {e}")
+    else:
+        st.warning("Faltan credenciales de Supabase en secrets para leer los censos.")
+
+with col_h2:
+    st.subheader("2. Calculadora de Huella Hídrica Total")
+    
+    # Parámetros estándar de consumo
+    c_p1, c_p2, c_p3 = st.columns(3)
+    consumo_humano_ld = c_p1.number_input("Humano (L/hab/día):", value=150)
+    consumo_bovino_ld = c_p2.number_input("Bovino (L/cabeza/día):", value=40)
+    consumo_porcino_ld = c_p3.number_input("Porcino (L/cabeza/día):", value=15)
+    
+    # 1. Recuperar población humana de la página actual
+    pob_humana = 0
+    if 'df_plot' in locals() and not df_plot.empty and 'Poblacion_hab' in df_plot.columns:
+        pob_humana = df_plot['Poblacion_hab'].sum()
+    elif 'df_veredas' in locals() and not df_veredas.empty and 'Poblacion_hab' in df_veredas.columns:
+        pob_humana = df_veredas['Poblacion_hab'].sum()
+        
+    # 2. Recuperar inventario animal del Censo ICA
+    cabezas_bovinas = 0
+    cabezas_porcinas = 0
+    if 'df_ica_cargado' in st.session_state:
+        df_ica = st.session_state['df_ica_cargado']
+        # Buscar columnas clave heurísticamente
+        cols_bov = [c for c in df_ica.columns if 'bovin' in str(c).lower() or 'vaca' in str(c).lower()]
+        cols_por = [c for c in df_ica.columns if 'porcin' in str(c).lower() or 'cerdo' in str(c).lower()]
+        if cols_bov: cabezas_bovinas = df_ica[cols_bov[0]].sum()
+        if cols_por: cabezas_porcinas = df_ica[cols_por[0]].sum()
+        
+    c_i1, c_i2, c_i3 = st.columns(3)
+    pob_humana = c_i1.number_input("Población Humana:", value=int(pob_humana))
+    cabezas_bovinas = c_i2.number_input("Inventario Bovino:", value=int(cabezas_bovinas))
+    cabezas_porcinas = c_i3.number_input("Inventario Porcino:", value=int(cabezas_porcinas))
+    
+    st.markdown("### 📊 Demanda Metabólica Equivalente")
+    
+    demanda_humana_m3_dia = (pob_humana * consumo_humano_ld) / 1000
+    demanda_agro_m3_dia = ((cabezas_bovinas * consumo_bovino_ld) + (cabezas_porcinas * consumo_porcino_ld)) / 1000
+    demanda_total_m3_dia = demanda_humana_m3_dia + demanda_agro_m3_dia
+    
+    # Convertir a m3/s para cruzarlo con el WRI
+    demanda_total_m3_s = demanda_total_m3_dia / 86400  
+    
+    c_m1, c_m2, c_m3 = st.columns(3)
+    c_m1.metric("Urbana/Humana (m³/día)", f"{demanda_humana_m3_dia:,.1f}")
+    c_m2.metric("Agropecuaria (m³/día)", f"{demanda_agro_m3_dia:,.1f}")
+    c_m3.metric("Demanda Continua", f"{demanda_total_m3_s:,.3f} m³/s", delta_color="inverse")
+    
+    if st.button("💾 Enviar Demanda al WRI (Sistemas Hídricos)"):
+        st.session_state['demanda_total_m3s'] = demanda_total_m3_s
+        st.success("Dato inyectado en la memoria global. ¡Ve a la página de Sistemas Hídricos Territoriales para ver el impacto!")
