@@ -301,19 +301,36 @@ capacidad_embalse_m3 = datos_nodo["capacidad_util_Mm3"] * 1000000
 oferta_anual_m3 = (q_oferta_m3s_base * factor_clima) * 31536000
 consumo_anual_m3 = (demanda_m3s_base * factor_demanda) * 31536000
 
-activar_sig = st.toggle("✅ Incluir Área Restaurada/Conservada en el cálculo WRI", value=True)
+# --- 2. INTEGRACIÓN CARTOGRÁFICA (PREDIOS EJECUTADOS SbN) ---
+st.markdown("---")
+st.markdown(f"#### 🌲 Beneficios Volumétricos (SbN) en el Sistema: **{nodo_seleccionado}**")
+
+# Recuperamos las hectáreas reales que la Cirugía 1 inyectó desde Supabase
+ha_reales_sig = float(datos_nodo.get("ha_conservadas_base", 0.0))
+
+st.markdown("##### ⚙️ Escenario Base vs. Proyectado")
+activar_sig = st.toggle("✅ Incluir Área Restaurada/Conservada del SIG en el cálculo WRI", value=True, 
+                        help="Apaga este interruptor para simular el escenario contrafactual: ¿Cómo estarían los índices si no se hubieran realizado estas intervenciones?")
+
+# Si el usuario apaga el interruptor, la base para el cálculo se vuelve 0
+ha_base_calculo = ha_reales_sig if activar_sig else 0.0
 
 c_inv1, c_inv2, c_inv3 = st.columns(3)
 with c_inv1:
-    ha_simuladas = st.number_input("➕ Hectáreas Conservadas / BPAs:", min_value=0.0, value=float(datos_nodo["ha_conservadas_base"]), step=50.0)
-    beneficio_restauracion_m3 = (ha_simuladas if activar_sig else 0.0) * 2500 
+    st.metric("✅ Área Restaurada/Conservada (SIG)", f"{ha_reales_sig:,.1f} ha", "Línea base actual")
+    ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0)
+    
+    ha_total = ha_base_calculo + ha_simuladas
+    beneficio_restauracion_m3 = ha_total * 2500 
+    
 with c_inv2:
     sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM):", min_value=0, value=120, step=5)
     beneficio_calidad_m3 = (sist_saneamiento * 1200) if activar_sig else 0
 with c_inv3:
     volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
-    st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año")
+    st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
 
+# --- 3. MOTORES DE CÁLCULO WRI ---
 ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 100.0
 ind_resiliencia = min(100.0, ((capacidad_embalse_m3 + oferta_anual_m3) / ((consumo_anual_m3+1) * 2)) * 100)
 ind_estres = min(100.0, (consumo_anual_m3 / oferta_anual_m3) * 100) if oferta_anual_m3 > 0 else 100.0
@@ -325,11 +342,12 @@ def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
     else:
         return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
+# Generador de Leyendas Interpretativas (CON NOMBRES)
 def generar_leyenda(u_r, u_v, inv):
     if not inv:
-        return f"🔴 &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 &gt; {u_v}%"
+        return f"🔴 <b>Crítico</b> &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> &gt; {u_v}%"
     else:
-        return f"🟢 &lt; {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 &gt; {u_r}%"
+        return f"🟢 <b>Holgado</b> &lt; {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Moderado</b> {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 <b>Severo</b> &gt; {u_r}%"
 
 st.markdown("---")
 def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
@@ -354,10 +372,11 @@ for col, ind, tit, col_h, u_r, u_v, inv in zip(
         est, color_txt = evaluar_indice(ind, u_r, u_v, inv)
         st.plotly_chart(crear_velocimetro(ind, tit, col_h, u_r, u_v, inv), use_container_width=True)
         st.markdown(f"<h4 style='text-align: center; color: {color_txt}; margin-top:-20px;'>{est}</h4>", unsafe_allow_html=True)
+        # Inyectar leyenda interpretativa
         leyenda = generar_leyenda(u_r, u_v, inv)
         st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{leyenda}</div>", unsafe_allow_html=True)
 
-# Ajuste 4: Se añade la caja desplegable con el glosario
+# Caja desplegable con el glosario
 with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded=False):
     st.markdown("""
     ### 📖 Glosario de Indicadores
