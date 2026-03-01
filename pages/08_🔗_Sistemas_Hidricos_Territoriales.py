@@ -69,7 +69,7 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 0.3,
         "factor_energia_kwh_m3": 0.0, 
         "costo_bombeo_kwh_m3": 0.85,
-        "ha_conservadas_base": 300.0  
+        "ha_conservadas_base": 3600.0
     },
     "Río Grande II": {
         "capacidad_util_Mm3": 220.0, 
