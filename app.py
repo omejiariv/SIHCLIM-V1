@@ -185,7 +185,7 @@ with c2:
         """)
         st.caption("✅ Operativo")
 
-    with st.expander("🏔️ Geomorfología & Amenazas (NUEVO)", expanded=True):
+    with st.expander("🏔️ Geomorfología & Amenazas", expanded=True):
         st.write("""
         **Análisis del Terreno:**
         * ✅ DEM 3D y Drenaje.
@@ -217,4 +217,5 @@ with c2:
 # --- FOOTER ---
 st.divider()
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
+
 
