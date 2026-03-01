@@ -54,22 +54,24 @@ else:
 # =========================================================================
 import pandas as pd
 
-# A. Datos paramétricos base (Los caudales operativos son dinámicos/simulados por ahora)
+# A. Datos paramétricos (Estructura corregida hidrológicamente)
 sistemas_embalses = {
     "La Fe": {
-        "capacidad_util_Mm3": 11.5, # Valor por defecto (se actualizará con el mapa)
-        "cuenca_propia": "Quebrada Espíritu Santo",
-        "oferta_natural_m3s": 1.2,
-        "trasvases": {"Pantanillo": 1.5, "Río Buey": 3.0, "Piedras": 0.8},
+        "capacidad_util_Mm3": 11.5, 
+        "afluentes_naturales": {"Quebrada Espíritu Santo": 1.2},
+        "trasvases": {"Pantanillo": 1.5, "Río Buey": 3.0, "Piedras": 0.8}, # Estos sí son bombeos externos
         "demanda_acueducto_m3s": 5.0, 
         "evaporacion_m3s": 0.1,
         "caudal_ecologico_m3s": 0.3
     },
     "Río Grande II": {
-        "capacidad_util_Mm3": 220.0, # Valor por defecto (se actualizará con el mapa)
-        "cuenca_propia": "Río Grande + Quebrada Las Ánimas",
-        "oferta_natural_m3s": 15.0,
-        "trasvases": {"Río Chico": 5.0},
+        "capacidad_util_Mm3": 220.0, 
+        "afluentes_naturales": {
+            "Río Grande": 10.0, 
+            "Río Chico": 3.0, 
+            "Quebrada Las Ánimas": 2.0
+        },
+        "trasvases": {}, # Cero bombeos externos artificiales
         "demanda_acueducto_m3s": 6.5, 
         "generacion_energia_m3s": 12.0, 
         "evaporacion_m3s": 0.5,
@@ -79,86 +81,64 @@ sistemas_embalses = {
 
 # B. INYECCIÓN DE DATOS ESPACIALES AL MODELO MATEMÁTICO
 if gdf_embalses is not None and not gdf_embalses.empty:
-    # 1. Buscamos automáticamente cuáles son las columnas de Nombre y Volumen en tu Shapefile
     col_nombre = next((c for c in gdf_embalses.columns if 'nom' in c.lower() or 'proyect' in c.lower() or 'embalse' in c.lower()), None)
     col_vol = next((c for c in gdf_embalses.columns if 'vol' in c.lower() or 'cap' in c.lower()), None)
     
     if col_nombre and col_vol:
         def inyectar_capacidad_real(nombre_nodo, texto_busqueda):
             try:
-                # Filtramos el mapa buscando el texto (ej. "fe" o "grande") ignorando mayúsculas
                 match = gdf_embalses[gdf_embalses[col_nombre].astype(str).str.contains(texto_busqueda, case=False, na=False)]
-                
                 if not match.empty:
-                    # Extraemos el valor de la columna de volumen del primer resultado
                     vol_real = match.iloc[0][col_vol]
-                    
                     if pd.notnull(vol_real) and float(vol_real) > 0:
-                        # Convertimos a Millones de m3 si el mapa lo tiene en m3 (ajuste automático clásico)
-                        if float(vol_real) > 10000: 
-                            vol_real = float(vol_real) / 1000000
-                            
-                        # ¡Sobrescribimos la memoria del sistema con el dato del mapa!
+                        if float(vol_real) > 10000: vol_real = float(vol_real) / 1000000
                         sistemas_embalses[nombre_nodo]["capacidad_util_Mm3"] = round(float(vol_real), 2)
                         return True
-            except Exception as e:
-                pass
+            except Exception as e: pass
             return False
 
-        # Ejecutamos la inyección para nuestros dos nodos principales
         exito_fe = inyectar_capacidad_real("La Fe", "fe")
         exito_rg = inyectar_capacidad_real("Río Grande II", "grande")
-        
-        if exito_fe or exito_rg:
-            st.sidebar.success("🔗 Capacidades inyectadas directamente desde el mapa oficial.")
-        else:
-            st.sidebar.info("ℹ️ Se leyó el mapa, pero no se encontraron las columnas exactas de volumen para inyectar.")
 
 # =========================================================================
-# 2. PANEL DE OPERACIÓN (Centro de Control)
+# 2. PANEL DE OPERACIONES (Inputs Dinámicos)
 # =========================================================================
-st.sidebar.header("🎛️ Centro de Operaciones")
-sistema_sel = st.sidebar.selectbox("Seleccione el Nodo Principal:", list(sistemas_embalses.keys()))
+st.sidebar.markdown("### 🎛️ Centro de Operaciones")
+nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", list(sistemas_embalses.keys()))
 
-datos = sistemas_embalses[sistema_sel]
+datos_nodo = sistemas_embalses[nodo_seleccionado]
 
-st.subheader(f"💧 Balance de Masa en Tiempo Real: Embalse {sistema_sel}")
-st.info(f"**Capacidad Útil Máxima:** {datos['capacidad_util_Mm3']} Millones de m³")
+st.markdown(f"### 💧 Balance de Masa en Tiempo Real: Embalse {nodo_seleccionado}")
+st.info(f"**Capacidad Útil Máxima:** {datos_nodo['capacidad_util_Mm3']} Millones de m³")
 
-# Controles interactivos simulando la operación de válvulas y clima
-c_in, c_out = st.columns(2)
+col_in, col_out = st.columns(2)
 
-with c_in:
+# --- ENTRADAS DINÁMICAS ---
+with col_in:
     st.markdown("#### 📥 ENTRADAS (Inflows)")
-    oferta_natural = st.slider(
-        f"Oferta Natural ({datos['cuenca_propia']}) [m³/s]:", 
-        0.0, datos['oferta_natural_m3s'] * 2, datos['oferta_natural_m3s'], step=0.1
-    )
     
-    caudales_trasvases = {}
-    st.caption("Bombas y Túneles (Trasvases Externos):")
-    for nombre_t, caudal_t in datos['trasvases'].items():
-        caudales_trasvases[nombre_t] = st.slider(f"Bombeo desde {nombre_t} [m³/s]:", 0.0, caudal_t * 1.5, caudal_t, step=0.1)
+    # 1. Afluentes Naturales (Dinámicos)
+    st.caption("Aportes Naturales de la Cuenca (Gravedad):")
+    afluentes_inputs = {}
+    for nombre_afluente, caudal_base in datos_nodo["afluentes_naturales"].items():
+        afluentes_inputs[nombre_afluente] = st.slider(
+            f"{nombre_afluente} [m³/s]:", 
+            0.0, float(caudal_base * 3), float(caudal_base), step=0.1, key=f"in_{nombre_afluente}"
+        )
+    
+    # 2. Trasvases / Bombeos (Dinámicos)
+    trasvases_inputs = {}
+    if datos_nodo["trasvases"]:
+        st.caption("Bombas y Túneles (Trasvases Externos):")
+        for cuenca, caudal in datos_nodo["trasvases"].items():
+            trasvases_inputs[cuenca] = st.slider(
+                f"Bombeo desde {cuenca} [m³/s]:", 
+                0.0, float(caudal * 2), float(caudal), step=0.1, key=f"tras_{cuenca}"
+            )
+    else:
+        st.caption("Bombas y Túneles (Trasvases Externos):")
+        st.write("*(Sistema sin dependencia de trasvases artificiales)*")
         
-    total_entradas = oferta_natural + sum(caudales_trasvases.values())
-
-with c_out:
-    st.markdown("#### 📤 SALIDAS (Outflows)")
-    demanda_urbana = st.slider("Extracción Acueducto (Valle de Aburrá) [m³/s]:", 0.0, datos['demanda_acueducto_m3s'] * 1.5, datos['demanda_acueducto_m3s'], step=0.1)
-    
-    # Manejo específico si tiene turbinado de energía (como Río Grande II)
-    energia = 0.0
-    if "generacion_energia_m3s" in datos:
-        energia = st.slider("Caudal Turbinado (Energía) [m³/s]:", 0.0, datos['generacion_energia_m3s'] * 1.5, datos['generacion_energia_m3s'], step=0.5)
-        
-    evaporacion = datos['evaporacion_m3s']
-    caudal_ecologico = st.number_input("Caudal Ecológico / Vertimiento [m³/s]:", value=datos['caudal_ecologico_m3s'])
-    
-    total_salidas = demanda_urbana + energia + evaporacion + caudal_ecologico
-
-# Ecuación de Balance: dS/dt = In - Out
-balance_neto = total_entradas - total_salidas
-
 # =========================================================================
 # 3. METRICA DE VARIACIÓN DE ALMACENAMIENTO (dS/dt)
 # =========================================================================
