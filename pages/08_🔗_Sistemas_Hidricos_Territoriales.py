@@ -69,7 +69,7 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 0.3,
         "factor_energia_kwh_m3": 0.0, 
         "costo_bombeo_kwh_m3": 0.85,
-        "ha_conservadas_base": 300.0  # <--- Base dinámica
+        "ha_conservadas_base": 300.0  
     },
     "Río Grande II": {
         "capacidad_util_Mm3": 220.0, 
@@ -81,7 +81,7 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 1.0,
         "factor_energia_kwh_m3": 0.65,
         "costo_bombeo_kwh_m3": 0.0,
-        "ha_conservadas_base": 1500.0 # <--- Base dinámica
+        "ha_conservadas_base": 4500.0 # Ajustado según indicación
     },
     "El Peñol (Guatapé)": {
         "capacidad_util_Mm3": 1070.0, 
@@ -93,7 +93,7 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 2.0,
         "factor_energia_kwh_m3": 1.2,
         "costo_bombeo_kwh_m3": 0.0,
-        "ha_conservadas_base": 5000.0 # <--- Base dinámica
+        "ha_conservadas_base": 0.0 # Corrección: Sin intervenciones registradas
     },
     "Punchiná (San Carlos)": {
         "capacidad_util_Mm3": 68.0, 
@@ -105,7 +105,7 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 4.0,
         "factor_energia_kwh_m3": 2.5,
         "costo_bombeo_kwh_m3": 0.0,
-        "ha_conservadas_base": 1000.0 # <--- Base dinámica
+        "ha_conservadas_base": 0.0 # Corrección: Sin intervenciones registradas
     },
     "Hidroituango": {
         "capacidad_util_Mm3": 2720.0, 
@@ -117,7 +117,7 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 200.0, 
         "factor_energia_kwh_m3": 0.9,
         "costo_bombeo_kwh_m3": 0.0,
-        "ha_conservadas_base": 10000.0 # <--- Base dinámica
+        "ha_conservadas_base": 0.0 # Corrección: Sin intervenciones registradas
     }
 }
 
@@ -240,12 +240,11 @@ costo_hora_cop = potencia_consumida_kw * 350
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Balance Hídrico (ΔS/Δt)", f"{balance:+.1f} m³/s", "Llenándose 📈" if balance > 0 else "Vaciándose 📉" if balance < 0 else "Estable ⚖️")
-c2.metric("Energía Generada", f"{potencia_generada_kw/1000:,.1f} MW", f"${ingreso_hora_cop/1e6:,.1f} Millones/hora", delta_color="normal")
-c3.metric("Energía Consumida", f"{potencia_consumida_kw/1000:,.1f} MW", f"-${costo_hora_cop/1e6:,.1f} Millones/hora", delta_color="inverse")
+c2.metric("Energía Generada", f"{potencia_generada_kw/1000:,.1f} MW", f"${ingreso_hora_cop/1e6:,.1f} M/hora", delta_color="normal")
+c3.metric("Energía Consumida", f"{potencia_consumida_kw/1000:,.1f} MW", f"-${costo_hora_cop/1e6:,.1f} M/hora", delta_color="inverse")
 c4.metric("Balance Neto", f"{balance_energetico_MW:,.1f} MW", "Superávit ⚡" if balance_energetico_MW > 0 else "Déficit 🔴" if balance_energetico_MW < 0 else "Neutro")
 
 st.markdown("---")
-# MEJORA 4: TÍTULO DINÁMICO
 st.subheader(f"🕸️ Topología del Metabolismo: {nodo_seleccionado} (Agua y Energía)")
 
 labels = [f"Embalse {nodo_seleccionado}"]
@@ -263,31 +262,30 @@ for nombre, q in trasvases_inputs.items():
         idx += 1
 
 if val_acueducto > 0:
-    labels.append("Acueducto (Valle Aburrá)"); source.append(0); target.append(idx); value.append(val_acueducto); color.append("rgba(52, 152, 219, 0.6)")
+    labels.append("Acueducto (Aburrá)"); source.append(0); target.append(idx); value.append(val_acueducto); color.append("rgba(52, 152, 219, 0.6)")
     idx += 1
 if val_turbinado > 0:
     labels.append("Generación ⚡(+)"); source.append(0); target.append(idx); value.append(val_turbinado); color.append("rgba(241, 196, 15, 0.8)")
     idx += 1
 if val_ecologico > 0:
-    labels.append("Río Abajo (Ecológico)"); source.append(0); target.append(idx); value.append(val_ecologico); color.append("rgba(149, 165, 166, 0.6)")
+    labels.append("Río Abajo (Eco)"); source.append(0); target.append(idx); value.append(val_ecologico); color.append("rgba(149, 165, 166, 0.6)")
     idx += 1
 if datos_nodo["evaporacion_m3s"] > 0:
     labels.append("Evaporación"); source.append(0); target.append(idx); value.append(datos_nodo["evaporacion_m3s"]); color.append("rgba(189, 195, 199, 0.3)")
 
-# MEJORA 3: LETRAS GRANDES Y LEGIBLES EN EL SANKEY
+# Ajuste 2: Se añaden márgenes (b=50) para que Evaporación no quede cortada en pantalla completa
 fig_sankey = go.Figure(data=[go.Sankey(
-    textfont=dict(size=15, color="black", family="Arial Black"), # Letra nítida, gruesa y oscura
+    textfont=dict(size=15, color="black", family="Arial Black"), 
     node=dict(pad=20, thickness=30, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
     link=dict(source=source, target=target, value=value, color=color)
 )])
-fig_sankey.update_layout(height=450, margin=dict(l=0, r=0, t=30, b=0))
+fig_sankey.update_layout(height=480, margin=dict(l=20, r=20, t=30, b=50))
 st.plotly_chart(fig_sankey, use_container_width=True)
 
 # =========================================================================
 # 4. TABLERO WRI: NEUTRALIDAD, RESILIENCIA Y CALIDAD
 # =========================================================================
 st.markdown("---")
-# MEJORA 4: TÍTULO DINÁMICO
 st.subheader(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}")
 
 anio_analisis = st.slider("Seleccione el Año de Evaluación (Actual o Futuro):", min_value=2024, max_value=2050, value=2025, step=1)
@@ -307,7 +305,6 @@ activar_sig = st.toggle("✅ Incluir Área Restaurada/Conservada en el cálculo 
 
 c_inv1, c_inv2, c_inv3 = st.columns(3)
 with c_inv1:
-    # MEJORA 2: VALOR POR DEFECTO DINÁMICO
     ha_simuladas = st.number_input("➕ Hectáreas Conservadas / BPAs:", min_value=0.0, value=float(datos_nodo["ha_conservadas_base"]), step=50.0)
     beneficio_restauracion_m3 = (ha_simuladas if activar_sig else 0.0) * 2500 
 with c_inv2:
@@ -328,7 +325,6 @@ def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
     else:
         return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
-# MEJORA 1: GENERADOR DE LEYENDAS INTERPRETATIVAS
 def generar_leyenda(u_r, u_v, inv):
     if not inv:
         return f"🔴 &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 &gt; {u_v}%"
@@ -358,11 +354,38 @@ for col, ind, tit, col_h, u_r, u_v, inv in zip(
         est, color_txt = evaluar_indice(ind, u_r, u_v, inv)
         st.plotly_chart(crear_velocimetro(ind, tit, col_h, u_r, u_v, inv), use_container_width=True)
         st.markdown(f"<h4 style='text-align: center; color: {color_txt}; margin-top:-20px;'>{est}</h4>", unsafe_allow_html=True)
-        # INYECCIÓN DE LA LEYENDA BAJO EL VELOCÍMETRO
         leyenda = generar_leyenda(u_r, u_v, inv)
         st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{leyenda}</div>", unsafe_allow_html=True)
 
-# --- 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA ---
+# Ajuste 4: Se añade la caja desplegable con el glosario
+with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded=False):
+    st.markdown("""
+    ### 📖 Glosario de Indicadores
+    
+    * **Neutralidad Hídrica (Volumetric Water Benefit VWBA):**
+      * **Concepto:** Mide si el volumen de agua restituido a la cuenca mediante Soluciones Basadas en la Naturaleza (SbN) compensa la Huella Hídrica del consumo humano/industrial.
+      * **Interpretación:** Un 100% indica que se está reponiendo cada gota extraída. Valores $<40\%$ son críticos e implican deuda ecológica.
+      * **Fórmula:** $\\frac{\\sum Beneficios\\ Volumétricos\\ (m^3/a)}{Consumo\\ Total\\ (m^3/a)} \\times 100$
+      
+    * **Resiliencia Territorial:**
+      * **Concepto:** Capacidad del ecosistema (aguas subterráneas + escorrentía + buffer del embalse) para soportar eventos de sequía (El Niño) sin colapsar el suministro.
+      * **Interpretación:** Zonas con alta resiliencia ($>70\%$) son buffers climáticos naturales y estructurales. 
+      
+    * **Estrés Hídrico (Indicador Falkenmark / ODS 6.4.2):**
+      * **Concepto:** Porcentaje de la oferta total anual que está siendo extraída por los diversos sectores económicos.
+      * **Interpretación:** Valores $>40\%$ denotan estrés severo (competencia intensa por el recurso). Valores $<20\%$ indican un sistema holgado.
+
+    * **Calidad de Agua (WQI):** * Índice modificado basado en la capacidad de dilución natural (Oferta vs Extracción) y mitigación sanitaria (STAM).
+      
+    ### 🌐 Fuentes y Estándares de Referencia
+    * **WRI (World Resources Institute):** [Volumetric Water Benefit Accounting (VWBA) - Metodología Oficial](https://www.wri.org/research/volumetric-water-benefit-accounting-vwba-implementing-guidelines)
+    * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
+    * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
+    """)
+
+# =========================================================================
+# 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA
+# =========================================================================
 st.markdown("---")
 st.subheader(f"📈 Proyección de Seguridad Hídrica del Sistema {nodo_seleccionado} (2024 - 2050)")
 st.caption("Evolución de los indicadores asumiendo un crecimiento poblacional (+1.5%/año) y pérdida de escorrentía por Cambio Climático (-0.5%/año).")
@@ -377,7 +400,7 @@ for a in anios_proj:
     c_m3 = (demanda_m3s_base * f_dem) * 31536000
     
     n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
-    r = min(100.0, ((capacidad_embalse_m3 + o_m3) / (c_m3 * 2)) * 100) if c_m3 > 0 else 100.0
+    r = min(100.0, ((capacidad_embalse_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
     e = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
     
     fac_dil = (o_m3 / (c_m3 + 1))
@@ -398,15 +421,71 @@ fig_line.update_layout(height=350, yaxis_title="Índice (%)", xaxis_title="Año 
 st.plotly_chart(fig_line, use_container_width=True)
 
 # =========================================================================
-# 6. MATEMÁTICA Y CIENCIA
+# 6. RANKING TERRITORIAL Y DISPERSIÓN
 # =========================================================================
-with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
-    st.markdown("La variación de almacenamiento en el tiempo se rige por la ecuación de continuidad:")
-    st.latex(r"\frac{\Delta S}{\Delta t} = I_{nat} + \sum I_{trasvases} - O_{urb} - O_{eco} - O_{energia} - E_{vap}")
-    st.markdown("Si $\\frac{\\Delta S}{\\Delta t}$ es negativo de forma sostenida (ej. durante un fenómeno de El Niño donde $I_{nat} \\approx 0$), el volumen útil del embalse se agota, generando racionamiento en la metrópolis externa.")
+# Ajuste 3: Incorporación del Ranking de Nodos
+st.markdown("---")
+st.subheader("🏆 Ranking Territorial y Dispersión de Índices (Todos los Nodos)")
+st.info("El sistema evalúa de forma cruzada el estado base de todos los embalses para identificar qué territorio requiere intervención prioritaria.")
+
+datos_ranking = []
+for nombre, param in sistemas_embalses.items():
+    # Cálculo base para el ranking, asumiendo su oferta y demanda estándar
+    o_base = sum(param["afluentes_naturales"].values()) + sum(param["trasvases"].values())
+    d_base = param["demanda_acueducto_m3s"] + (param["generacion_energia_m3s"] * 0.1)
+    
+    o_m3 = o_base * 31536000
+    c_m3 = d_base * 31536000
+    cap_m3 = param["capacidad_util_Mm3"] * 1000000
+    
+    # Si es el nodo actual, usamos los valores dinámicos calculados arriba
+    if nombre == nodo_seleccionado:
+        n_val = ind_neutralidad
+        r_val = ind_resiliencia
+        e_val = ind_estres
+        c_val = ind_calidad
+    else:
+        # Valores por defecto para los demás
+        vol_rep = param["ha_conservadas_base"] * 2500 + (120 * 1200) 
+        n_val = min(100.0, (vol_rep / c_m3) * 100) if c_m3 > 0 else 100.0
+        r_val = min(100.0, ((cap_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
+        e_val = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
+        fac_dil = (o_m3 / (c_m3 + 1))
+        c_val = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (120 * 0.05)))
+        
+    urgencia = (e_val * 0.5) + ((100 - r_val) * 0.3) + ((100 - c_val) * 0.2)
+    
+    datos_ranking.append({
+        "Territorio": nombre,
+        "Urgencia Intervención": urgencia,
+        "Neutralidad (%)": n_val,
+        "Resiliencia (%)": r_val,
+        "Estrés Hídrico (%)": e_val,
+        "Calidad de Agua (%)": c_val
+    })
+
+df_ranking = pd.DataFrame(datos_ranking).sort_values(by="Urgencia Intervención", ascending=False)
+
+c_tbl, c_box = st.columns([1.2, 1])
+with c_tbl:
+    st.dataframe(
+        df_ranking.style.background_gradient(cmap="Reds", subset=["Urgencia Intervención", "Estrés Hídrico (%)"])
+        .background_gradient(cmap="Blues", subset=["Resiliencia (%)"])
+        .background_gradient(cmap="Greens", subset=["Neutralidad (%)", "Calidad de Agua (%)"])
+        .format({"Urgencia Intervención": "{:.1f}", "Neutralidad (%)": "{:.1f}%", "Resiliencia (%)": "{:.1f}%", "Estrés Hídrico (%)": "{:.1f}%", "Calidad de Agua (%)": "{:.1f}%"}),
+        use_container_width=True, hide_index=True
+    )
+
+with c_box:
+    df_melt = df_ranking.melt(id_vars=["Territorio"], value_vars=["Neutralidad (%)", "Resiliencia (%)", "Estrés Hídrico (%)", "Calidad de Agua (%)"], var_name="Índice", value_name="Valor (%)")
+    fig_box = px.box(df_melt, x="Índice", y="Valor (%)", color="Índice", points="all",
+                     title="Distribución Regional de Indicadores",
+                     color_discrete_map={"Neutralidad (%)": "#2ecc71", "Resiliencia (%)": "#3498db", "Estrés Hídrico (%)": "#e74c3c", "Calidad de Agua (%)": "#9b59b6"})
+    fig_box.update_layout(height=350, showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
+    st.plotly_chart(fig_box, use_container_width=True)
 
 # =========================================================================
-# NUEVA SECCIÓN: HUELLA HÍDRICA TERRITORIAL (CENSOS ICA + DANE)
+# 7. HUELLA HÍDRICA TERRITORIAL (CENSOS ICA + DANE)
 # =========================================================================
 st.markdown("---")
 st.header("💧 Metabolismo Hídrico: Presión Demográfica y Agropecuaria")
@@ -508,3 +587,11 @@ with col_h2:
     if st.button("💾 Enviar Demanda al WRI (Sistemas Hídricos)"):
         st.session_state['demanda_total_m3s'] = demanda_total_m3_s
         st.success("Dato inyectado en la memoria global. ¡Ve a la página de Sistemas Hídricos Territoriales para ver el impacto!")
+
+# =========================================================================
+# 8. MATEMÁTICA Y CIENCIA
+# =========================================================================
+with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
+    st.markdown("La variación de almacenamiento en el tiempo se rige por la ecuación de continuidad:")
+    st.markdown("$$\\frac{\\Delta S}{\\Delta t} = I_{nat} + \\sum I_{trasvases} - O_{urb} - O_{eco} - O_{energia} - E_{vap}$$")
+    st.markdown("Si $\\frac{\\Delta S}{\\Delta t}$ es negativo de forma sostenida (ej. durante un fenómeno de El Niño donde $I_{nat} \\approx 0$), el volumen útil del embalse se agota, generando racionamiento en la metrópolis externa.")
