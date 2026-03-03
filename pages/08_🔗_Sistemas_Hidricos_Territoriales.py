@@ -439,17 +439,22 @@ with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded
     * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
     """)
 
-# --- OPTIMIZADOR DE INVERSIONES Y METAS (INGENIERÍA INVERSA) ---
+# --- OPTIMIZADOR DE INVERSIONES Y METAS (PORTAFOLIO INTEGRAL) ---
 st.markdown("<br>", unsafe_allow_html=True)
-with st.expander("🎯 Portafolio de Inversión y Optimización de Brechas", expanded=False):
-    st.markdown("Combina estrategias (SbN, Saneamiento, Eficiencia) y estima el presupuesto necesario para alcanzar tu meta de Neutralidad Hídrica.")
+st.subheader("💼 Portafolios de Inversión Multi-Objetivo")
+
+# -------------------------------------------------------------------------
+# PORTAFOLIO 1: CANTIDAD (NEUTRALIDAD HÍDRICA)
+# -------------------------------------------------------------------------
+with st.expander("🎯 1. Optimización de Brechas: Oferta y Demanda (Neutralidad)", expanded=False):
+    st.markdown("Combina estrategias (SbN, Saneamiento, Eficiencia) y estima el presupuesto necesario para compensar la Huella Hídrica.")
     
     col_m1, col_m2 = st.columns([1, 2.5])
     with col_m1:
         meta_neutralidad = st.slider("🎯 Objetivo de Neutralidad (%)", 10.0, 100.0, 100.0, 5.0)
         st.markdown("**Costos Unitarios (Millones COP):**")
         costo_ha = st.number_input("Restauración (1 ha):", value=8.5, step=0.5)
-        costo_stam = st.number_input("Saneamiento (1 STAM):", value=15.0, step=1.0)
+        costo_stam_n = st.number_input("Saneamiento (1 STAM):", value=15.0, step=1.0)
         costo_lps = st.number_input("Eficiencia (1 L/s ahorrado):", value=120.0, step=10.0)
     
     with col_m2:
@@ -461,48 +466,104 @@ with st.expander("🎯 Portafolio de Inversión y Optimización de Brechas", exp
         else:
             st.warning(f"⚠️ **Déficit para la meta:** Faltan compensar **{brecha_m3/1e6:,.2f} Mm³/año**.")
             
-            st.markdown("🎚️ **Diseña tu Mix de Intervención (% de aporte por estrategia):**")
+            st.markdown("🎚️ **Diseña tu Mix de Intervención (% de aporte):**")
             c_mix1, c_mix2, c_mix3 = st.columns(3)
             pct_a = c_mix1.number_input("% Restauración", 0, 100, 40)
-            pct_b = c_mix2.number_input("% Saneamiento", 0, 100, 40)
+            pct_b = c_mix2.number_input("% Saneamiento", 0, 100, 40, key="pct_b_neut")
             pct_c = c_mix3.number_input("% Eficiencia", 0, 100, 20)
             
             total_pct = pct_a + pct_b + pct_c
             if total_pct != 100:
                 st.error(f"La suma de las estrategias debe ser 100%. Actual: {total_pct}%")
             else:
-                # Matemáticas del mix
                 vol_a = brecha_m3 * (pct_a / 100.0)
                 vol_b = brecha_m3 * (pct_b / 100.0)
                 vol_c = brecha_m3 * (pct_c / 100.0)
                 
                 ha_req = vol_a / 2500.0
                 stam_req = vol_b / 1200.0
-                lps_req = (vol_c * 1000) / 31536000 # Convertir m3/año a L/s
+                lps_req = (vol_c * 1000) / 31536000 
                 
                 inv_a = ha_req * costo_ha
-                inv_b = stam_req * costo_stam
+                inv_b = stam_req * costo_stam_n
                 inv_c = lps_req * costo_lps
                 inv_total = inv_a + inv_b + inv_c
                 
                 st.markdown("📊 **Requerimientos Físicos y Presupuesto:**")
                 c_op1, c_op2, c_op3, c_op4 = st.columns(4)
                 
-                # Evitar división por cero
                 costo_L_a = (inv_a * 1000000) / (vol_a * 1000) if vol_a > 0 else 0
                 costo_L_b = (inv_b * 1000000) / (vol_b * 1000) if vol_b > 0 else 0
                 costo_L_c = (inv_c * 1000000) / (vol_c * 1000) if vol_c > 0 else 0
                 
                 c_op1.metric("🌲 Restaurar (ha)", f"{ha_req:,.1f}", f"${inv_a:,.0f} Millones")
                 c_op1.caption(f"**Costo Eficiencia:** ${costo_L_a:,.1f} COP por Litro")
-                
                 c_op2.metric("🚽 Saneamiento (STAM)", f"{stam_req:,.0f}", f"${inv_b:,.0f} Millones")
                 c_op2.caption(f"**Costo Eficiencia:** ${costo_L_b:,.1f} COP por Litro")
-                
                 c_op3.metric("🚰 Eficiencia (L/s)", f"{lps_req:,.1f}", f"${inv_c:,.0f} Millones")
                 c_op3.caption(f"**Costo Eficiencia:** ${costo_L_c:,.1f} COP por Litro")
+                c_op4.metric("💰 INVERSIÓN (CANTIDAD)", f"${inv_total:,.0f} M", "Millones COP", delta_color="off")
+
+# -------------------------------------------------------------------------
+# PORTAFOLIO 2: CALIDAD (SANEAMIENTO Y REMOCIÓN DBO)
+# -------------------------------------------------------------------------
+with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO5)", expanded=False):
+    st.markdown("Combina infraestructura gris y verde para estimar el presupuesto necesario para limpiar la cuenca.")
+    
+    # Lee la carga del metabolismo (Sección 6) a través de la memoria global
+    carga_total_ton = st.session_state.get('carga_total_ton', 1000.0)
+    carga_removida_actual = 0.0 
+    
+    col_c1, col_c2 = st.columns([1, 2.5])
+    with col_c1:
+        meta_remocion = st.slider("🎯 Meta de Remoción de DBO (%)", 10.0, 100.0, 85.0, 5.0)
+        st.markdown("**Costos Unitarios (Millones COP por Ton/año):**")
+        costo_ptar = st.number_input("PTAR Urbana (1 Ton DBO/a):", value=150.0, step=10.0)
+        costo_stam_c = st.number_input("STAM Rural (1 Ton DBO/a):", value=45.0, step=5.0)
+        costo_sbn = st.number_input("SbN/Filtros (1 Ton DBO/a):", value=12.0, step=2.0)
+    
+    with col_c2:
+        carga_objetivo_remover = (meta_remocion / 100.0) * carga_total_ton
+        brecha_ton = carga_objetivo_remover - carga_removida_actual
+        
+        if brecha_ton <= 0:
+            st.success(f"✅ ¡El sistema cumple o supera la meta del {meta_remocion}% de remoción!")
+        else:
+            st.warning(f"⚠️ **Déficit de Saneamiento:** Faltan remover **{brecha_ton:,.1f} Toneladas/año** de DBO5. *(Base: {carga_total_ton:,.0f} Ton)*")
+            
+            st.markdown("🎚️ **Diseña tu Mix de Mitigación (% de aporte):**")
+            c_mix_c1, c_mix_c2, c_mix_c3 = st.columns(3)
+            pct_ptar = c_mix_c1.number_input("% PTAR Urbana", 0, 100, 50)
+            pct_stam = c_mix_c2.number_input("% STAM Rural", 0, 100, 30, key="pct_stam_cal")
+            pct_sbn = c_mix_c3.number_input("% SbN / Humedales", 0, 100, 20)
+            
+            total_pct_c = pct_ptar + pct_stam + pct_sbn
+            if total_pct_c != 100:
+                st.error(f"La suma debe ser 100%. Actual: {total_pct_c}%")
+            else:
+                ton_ptar = brecha_ton * (pct_ptar / 100.0)
+                ton_stam = brecha_ton * (pct_stam / 100.0)
+                ton_sbn = brecha_ton * (pct_sbn / 100.0)
                 
-                c_op4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M", "Millones COP", delta_color="off")
+                inv_ptar = ton_ptar * costo_ptar
+                inv_stam = ton_stam * costo_stam_c
+                inv_sbn = ton_sbn * costo_sbn
+                inv_total_c = inv_ptar + inv_stam + inv_sbn
+                
+                st.markdown("📊 **Requerimientos Físicos y Presupuesto:**")
+                c_op_c1, c_op_c2, c_op_c3, c_op_c4 = st.columns(4)
+                
+                costo_kg_ptar = (inv_ptar * 1000000) / (ton_ptar * 1000) if ton_ptar > 0 else 0
+                costo_kg_stam = (inv_stam * 1000000) / (ton_stam * 1000) if ton_stam > 0 else 0
+                costo_kg_sbn = (inv_sbn * 1000000) / (ton_sbn * 1000) if ton_sbn > 0 else 0
+                
+                c_op_c1.metric("🏙️ PTAR Urbana", f"{ton_ptar:,.0f} Ton", f"${inv_ptar:,.0f} Millones")
+                c_op_c1.caption(f"**Eficiencia:** ${costo_kg_ptar:,.0f} COP/Kg DBO")
+                c_op_c2.metric("🏡 STAM Rural", f"{ton_stam:,.0f} Ton", f"${inv_stam:,.0f} Millones")
+                c_op_c2.caption(f"**Eficiencia:** ${costo_kg_stam:,.0f} COP/Kg DBO")
+                c_op_c3.metric("🌿 SbN / Humedales", f"{ton_sbn:,.0f} Ton", f"${inv_sbn:,.0f} Millones")
+                c_op_c3.caption(f"**Eficiencia:** ${costo_kg_sbn:,.0f} COP/Kg DBO")
+                c_op_c4.metric("💰 INVERSIÓN (CALIDAD)", f"${inv_total_c:,.0f} M", "Millones COP", delta_color="off")
 
 # =========================================================================
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
