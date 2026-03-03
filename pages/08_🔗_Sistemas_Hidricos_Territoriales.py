@@ -439,6 +439,40 @@ with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded
     * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
     """)
 
+# --- OPTIMIZADOR DE METAS (INGENIERÍA INVERSA) ---
+st.markdown("<br>", unsafe_allow_html=True)
+with st.expander("🎯 Calculadora de Brechas y Metas (Ingeniería Inversa)", expanded=False):
+    st.markdown("Estima la magnitud de las acciones requeridas para alcanzar un objetivo específico de **Neutralidad Hídrica** en el territorio.")
+    
+    col_m1, col_m2 = st.columns([1, 2])
+    with col_m1:
+        meta_neutralidad = st.slider("Objetivo de Neutralidad (%)", min_value=10.0, max_value=100.0, value=100.0, step=5.0)
+    
+    with col_m2:
+        # Matemática Inversa: V_requerido = (Meta / 100) * Consumo_Total
+        vol_requerido_m3 = (meta_neutralidad / 100.0) * consumo_anual_m3
+        brecha_m3 = vol_requerido_m3 - volumen_repuesto_m3
+        
+        if brecha_m3 <= 0:
+            st.success(f"✅ ¡El sistema ya cumple o supera la meta del {meta_neutralidad}% con las acciones actuales!")
+        else:
+            st.warning(f"⚠️ **Déficit para la meta:** Faltan compensar **{brecha_m3/1e6:,.2f} Mm³/año**.")
+            st.markdown("**Menú de Opciones Equivalentes (Elige cómo cerrar la brecha):**")
+            
+            # 1. Cuántas hectáreas SbN equivalen a esa brecha (2500 m3/ha)
+            ha_requeridas = brecha_m3 / 2500.0
+            # 2. Cuántos STAM equivalen (1200 m3/STAM)
+            stam_requeridos = brecha_m3 / 1200.0
+            # 3. Reducción de consumo poblacional (Ajuste de eficiencia)
+            # Población = demanda_m3s_base * 86400 / 150 (aprox)
+            poblacion_aprox = (demanda_m3s_base * 86400 * 1000) / 150 if demanda_m3s_base > 0 else 1
+            ahorro_necesario_litros_dia = (brecha_m3 * 1000) / (365 * poblacion_aprox)
+            
+            c_op1, c_op2, c_op3 = st.columns(3)
+            c_op1.metric("🌲 Opción A: Restauración", f"+{ha_requeridas:,.0f} ha", "Conservación/BPA", delta_color="inverse")
+            c_op2.metric("🚽 Opción B: Saneamiento", f"+{stam_requeridos:,.0f} STAM", "Sistemas de Tratamiento", delta_color="inverse")
+            c_op3.metric("🚰 Opción C: Eficiencia", f"-{ahorro_necesario_litros_dia:,.0f} L", "Ahorro por habitante/día", delta_color="normal")
+
 # =========================================================================
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
 # =========================================================================
@@ -571,68 +605,76 @@ with tab_escenarios:
         st.info("👈 Seleccione al menos una curva climática para visualizar.")
 
 # =========================================================================
-# 6. RANKING TERRITORIAL Y DISPERSIÓN
+# 6. METABOLISMO TERRITORIAL: DEMANDA Y CARGAS CONTAMINANTES
 # =========================================================================
-# Ajuste 3: Incorporación del Ranking de Nodos
 st.markdown("---")
-st.subheader("🏆 Ranking Territorial y Dispersión de Índices (Todos los Nodos)")
-st.info("El sistema evalúa de forma cruzada el estado base de todos los embalses para identificar qué territorio requiere intervención prioritaria.")
+st.header("💧 Metabolismo Hídrico: Presión Demográfica y Agropecuaria")
+st.info("Cálculo integrado de demandas de agua y estimación de cargas contaminantes (Toneladas/año de DBO5) generadas por el sistema territorial.")
 
-datos_ranking = []
-for nombre, param in sistemas_embalses.items():
-    # Cálculo base para el ranking, asumiendo su oferta y demanda estándar
-    o_base = sum(param["afluentes_naturales"].values()) + sum(param["trasvases"].values())
-    d_base = param["demanda_acueducto_m3s"] + (param["generacion_energia_m3s"] * 0.1)
+# Recuperar población de la memoria si existe
+pob_humana_memoria = st.session_state.get('poblacion_total', 4000000)
+
+st.markdown("### 1. Inventario Poblacional y Módulos de Consumo")
+c_p1, c_p2, c_p3, c_p4 = st.columns(4)
+pob_humana = c_p1.number_input("👥 Humanos (Hab):", value=int(pob_humana_memoria), step=1000)
+cabezas_bovinas = c_p2.number_input("🐄 Bovinos (Cabezas):", value=150000, step=1000)
+cabezas_porcinas = c_p3.number_input("🐖 Porcinos (Cabezas):", value=80000, step=1000)
+cabezas_aves = c_p4.number_input("🐔 Aves (Unidades):", value=500000, step=5000)
+
+with st.expander("⚙️ Ajustar Módulos de Consumo (Litros/día por individuo)"):
+    c_d1, c_d2, c_d3, c_d4 = st.columns(4)
+    dot_hum = c_d1.number_input("Dotación Humana:", value=150)
+    dot_bov = c_d2.number_input("Dotación Bovina:", value=40)
+    dot_por = c_d3.number_input("Dotación Porcina:", value=15)
+    dot_ave = c_d4.number_input("Dotación Aves:", value=0.3)
+
+st.markdown("### 2. Balance Metabólico (Agua Extraída vs Carga Vertida)")
+
+# A. Cálculo de Demandas Hídricas
+dem_hum_m3_dia = (pob_humana * dot_hum) / 1000
+dem_bov_m3_dia = (cabezas_bovinas * dot_bov) / 1000
+dem_por_m3_dia = (cabezas_porcinas * dot_por) / 1000
+dem_ave_m3_dia = (cabezas_aves * dot_ave) / 1000
+
+dem_total_m3_dia = dem_hum_m3_dia + dem_bov_m3_dia + dem_por_m3_dia + dem_ave_m3_dia
+dem_total_m3_s = dem_total_m3_dia / 86400
+
+# B. Cálculo de Cargas Contaminantes (Factores de DBO5 aprox en kg/año por individuo)
+# Humano: ~18 kg/año | Bovino: ~292 kg/año | Porcino: ~91 kg/año | Ave: ~5 kg/año
+carga_hum_ton = (pob_humana * 18.25) / 1000
+carga_bov_ton = (cabezas_bovinas * 292.0) / 1000
+carga_por_ton = (cabezas_porcinas * 91.25) / 1000
+carga_ave_ton = (cabezas_aves * 5.47) / 1000
+
+carga_total_ton = carga_hum_ton + carga_bov_ton + carga_por_ton + carga_ave_ton
+
+# --- VISUALIZACIÓN ---
+c_res1, c_res2 = st.columns([1, 1.5])
+
+with c_res1:
+    st.metric("💧 Extracción Total Continua", f"{dem_total_m3_s:,.2f} m³/s")
+    st.metric("☣️ Carga Total Generada (DBO5)", f"{carga_total_ton:,.0f} Ton/año")
     
-    o_m3 = o_base * 31536000
-    c_m3 = d_base * 31536000
-    cap_m3 = param["capacidad_util_Mm3"] * 1000000
+    if st.button("🚀 Exportar a Memoria (WRI)", use_container_width=True):
+        st.session_state['demanda_total_m3s'] = dem_total_m3_s
+        st.session_state['carga_total_ton'] = carga_total_ton
+        st.success("✅ Extracción y Cargas guardadas en el cerebro del sistema.")
+
+with c_res2:
+    # Gráfico de barras apiladas comparando Demanda vs Cargas
+    df_metab = pd.DataFrame([
+        {"Sector": "Humano", "Demanda (Mm³/año)": (dem_hum_m3_dia * 365)/1e6, "Carga DBO (Ton/año)": carga_hum_ton},
+        {"Sector": "Bovino", "Demanda (Mm³/año)": (dem_bov_m3_dia * 365)/1e6, "Carga DBO (Ton/año)": carga_bov_ton},
+        {"Sector": "Porcino", "Demanda (Mm³/año)": (dem_por_m3_dia * 365)/1e6, "Carga DBO (Ton/año)": carga_por_ton},
+        {"Sector": "Aves", "Demanda (Mm³/año)": (dem_ave_m3_dia * 365)/1e6, "Carga DBO (Ton/año)": carga_ave_ton}
+    ])
     
-    # Si es el nodo actual, usamos los valores dinámicos calculados arriba
-    if nombre == nodo_seleccionado:
-        n_val = ind_neutralidad
-        r_val = ind_resiliencia
-        e_val = ind_estres
-        c_val = ind_calidad
-    else:
-        # Valores por defecto para los demás
-        vol_rep = param["ha_conservadas_base"] * 2500 + (120 * 1200) 
-        n_val = min(100.0, (vol_rep / c_m3) * 100) if c_m3 > 0 else 100.0
-        r_val = min(100.0, ((cap_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
-        e_val = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
-        fac_dil = (o_m3 / (c_m3 + 1))
-        c_val = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (120 * 0.05)))
-        
-    urgencia = (e_val * 0.5) + ((100 - r_val) * 0.3) + ((100 - c_val) * 0.2)
-    
-    datos_ranking.append({
-        "Territorio": nombre,
-        "Urgencia Intervención": urgencia,
-        "Neutralidad (%)": n_val,
-        "Resiliencia (%)": r_val,
-        "Estrés Hídrico (%)": e_val,
-        "Calidad de Agua (%)": c_val
-    })
-
-df_ranking = pd.DataFrame(datos_ranking).sort_values(by="Urgencia Intervención", ascending=False)
-
-c_tbl, c_box = st.columns([1.2, 1])
-with c_tbl:
-    st.dataframe(
-        df_ranking.style.background_gradient(cmap="Reds", subset=["Urgencia Intervención", "Estrés Hídrico (%)"])
-        .background_gradient(cmap="Blues", subset=["Resiliencia (%)"])
-        .background_gradient(cmap="Greens", subset=["Neutralidad (%)", "Calidad de Agua (%)"])
-        .format({"Urgencia Intervención": "{:.1f}", "Neutralidad (%)": "{:.1f}%", "Resiliencia (%)": "{:.1f}%", "Estrés Hídrico (%)": "{:.1f}%", "Calidad de Agua (%)": "{:.1f}%"}),
-        use_container_width=True, hide_index=True
-    )
-
-with c_box:
-    df_melt = df_ranking.melt(id_vars=["Territorio"], value_vars=["Neutralidad (%)", "Resiliencia (%)", "Estrés Hídrico (%)", "Calidad de Agua (%)"], var_name="Índice", value_name="Valor (%)")
-    fig_box = px.box(df_melt, x="Índice", y="Valor (%)", color="Índice", points="all",
-                     title="Distribución Regional de Indicadores",
-                     color_discrete_map={"Neutralidad (%)": "#2ecc71", "Resiliencia (%)": "#3498db", "Estrés Hídrico (%)": "#e74c3c", "Calidad de Agua (%)": "#9b59b6"})
-    fig_box.update_layout(height=350, showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
-    st.plotly_chart(fig_box, use_container_width=True)
+    import plotly.express as px
+    fig_metab = px.bar(df_metab, x="Sector", y=["Demanda (Mm³/año)", "Carga DBO (Ton/año)"], 
+                       barmode='group', title="Huella Hídrica y de Carbono/Orgánica por Sector",
+                       color_discrete_map={"Demanda (Mm³/año)": "#3498db", "Carga DBO (Ton/año)": "#8e44ad"})
+    fig_metab.update_layout(height=350, margin=dict(t=30, b=0, l=0, r=0), legend_title_text="Variable")
+    st.plotly_chart(fig_metab, use_container_width=True)
 
 # =========================================================================
 # 8. HUELLA HÍDRICA TERRITORIAL (CONEXIÓN CENSOS ICA + DANE + MEMORIA GLOBAL)
