@@ -446,13 +446,13 @@ st.markdown("---")
 st.subheader(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_seleccionado} (2024 - 2050)")
 st.caption("Simulación a largo plazo que integra crecimiento poblacional, pérdida base por Cambio Climático y la variabilidad cíclica/extrema del fenómeno ENSO.")
 
-# Creamos dos pestañas para no perder el resumen general y ganar el análisis profundo
+# --- CREACIÓN DE LAS DOS PESTAÑAS INTERNAS ---
 tab_resumen, tab_escenarios = st.tabs(["📊 Resumen Multivariado (Onda ENSO)", "🔬 Explorador de Escenarios (Cono de Incertidumbre)"])
 
 anios_proj = list(range(2024, 2051))
 
 # -------------------------------------------------------------------------
-# PESTAÑA 1: TU GRÁFICA ACTUAL (INTACTA)
+# PESTAÑA 1: TU GRÁFICA ACTUAL (ONDA DINÁMICA)
 # -------------------------------------------------------------------------
 with tab_resumen:
     col_t1, col_t2 = st.columns(2)
@@ -495,7 +495,7 @@ with tab_resumen:
     st.plotly_chart(fig_line1, use_container_width=True)
 
 # -------------------------------------------------------------------------
-# PESTAÑA 2: EL NUEVO LABORATORIO DE ESCENARIOS (CURVAS SELECCIONABLES)
+# PESTAÑA 2: EL EXPLORADOR DE ESCENARIOS (CONO DE INCERTIDUMBRE)
 # -------------------------------------------------------------------------
 with tab_escenarios:
     st.markdown("Analiza la dispersión de futuros posibles para un solo indicador bajo intensidades climáticas sostenidas.")
@@ -530,14 +530,12 @@ with tab_escenarios:
         for nombre_esc in curvas_sel:
             val_esc = diccionario_escenarios[nombre_esc]
             
-            # Asignar la anomalía según si es onda o línea constante
             f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) if val_esc == "onda" else val_esc
             f_cli_total = f_cc_base + f_enso
             
             o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
             c_m3 = (demanda_m3s_base * f_dem) * 31536000
             
-            # Calcular solo el indicador seleccionado
             if ind_sel == "Neutralidad": val = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
             elif ind_sel == "Resiliencia": val = min(100.0, ((capacidad_embalse_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
             elif ind_sel == "Estrés Hídrico": val = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
@@ -550,20 +548,18 @@ with tab_escenarios:
     if datos_esc:
         df_esc = pd.DataFrame(datos_esc)
         
-        # Paleta de colores fija para que cada escenario tenga sentido (Rojo = Niño Severo, Azul = Niña Fuerte)
         color_map = {
-            "Onda Dinámica (Ciclo de 4.5 años)": "#9b59b6",  # Morado
-            "Condición Neutra (Línea Base)": "#34495e",       # Gris Oscuro
+            "Onda Dinámica (Ciclo de 4.5 años)": "#9b59b6",  
+            "Condición Neutra (Línea Base)": "#34495e",       
             "🟡 El Niño Moderado Constante (-15%)": "#f1c40f",
             "🔴 El Niño Severo Constante (-35%)": "#e74c3c",
             "🟢 La Niña Moderada Constante (+15%)": "#2ecc71",
             "🔵 La Niña Fuerte Constante (+35%)": "#3498db"
         }
         
-        fig_esc = px.line(df_esc, x="Año", y="Valor (%)", color="Escenario Climático", color_discrete_map=color_map, markers=False)
-        fig_esc.update_traces(line=dict(width=3)) # Líneas más gruesas
+        fig_esc = px.line(df_esc, x="Año", y="Valor (%)", color="Escenario Climático", color_discrete_map=color_map)
+        fig_esc.update_traces(line=dict(width=3)) 
         
-        # Marcadores visuales de riesgo
         if ind_sel == "Estrés Hídrico":
             fig_esc.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Estrés Crítico (>40%)")
         elif ind_sel == "Resiliencia":
