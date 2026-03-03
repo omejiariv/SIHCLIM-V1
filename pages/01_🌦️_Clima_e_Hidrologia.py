@@ -228,7 +228,46 @@ def main():
         viz.display_stats_tab(**display_args)
         st.markdown("---")
         viz.display_station_table_tab(**display_args)
-    elif selected_module == "🔮 Pronóstico Climático": viz.display_climate_forecast_tab(**display_args)
+   
+    elif selected_module == "🔮 Pronóstico Climático": 
+        # 1. Llamada original al visualizador (Mantiene intacto lo que ya tenías)
+        viz.display_climate_forecast_tab(**display_args)
+        
+        # =========================================================================
+        # 2. NUEVA SECCIÓN: EMISOR CLIMÁTICO (ENSO) HACIA EL METABOLISMO
+        # =========================================================================
+        st.markdown("---")
+        st.subheader("📡 Emisor Climático: Conexión con el Metabolismo Territorial")
+        st.info("Integra el pronóstico atmosférico con la realidad terrestre. Exporta un escenario de anomalía climática a la Memoria Global para evaluar su impacto en la seguridad hídrica (WRI) y los embalses.")
+        
+        col_enso1, col_enso2 = st.columns([1.5, 1])
+        with col_enso1:
+            escenario_enso = st.selectbox("🌊 Seleccione el Escenario Climático a Simular:", 
+                                         ["Condiciones Neutras (Histórico Promedio)", 
+                                          "🟡 El Niño Moderado (-15% Lluvia / Oferta)", 
+                                          "🔴 El Niño Severo (-35% Lluvia / Oferta)", 
+                                          "🟢 La Niña Moderada (+15% Lluvia / Oferta)", 
+                                          "🔵 La Niña Fuerte (+35% Lluvia / Oferta)"])
+            
+            # Asignación del multiplicador matemático (factor_clima_enso)
+            factor_clima = 1.0
+            if "Niño Moderado" in escenario_enso: factor_clima = 0.85
+            elif "Niño Severo" in escenario_enso: factor_clima = 0.65
+            elif "Niña Moderada" in escenario_enso: factor_clima = 1.15
+            elif "Niña Fuerte" in escenario_enso: factor_clima = 1.35
+            
+        with col_enso2:
+            st.metric("Factor de Anomalía de Oferta Natural", f"{factor_clima}x", 
+                      f"{(factor_clima-1)*100:+.0f}% respecto a la base", 
+                      delta_color="normal" if factor_clima >= 1 else "inverse")
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            if st.button("🚀 Enviar Escenario al Modelo WRI", use_container_width=True):
+                # Guardamos las variables en el cerebro del sistema (st.session_state)
+                st.session_state['factor_clima_enso'] = factor_clima
+                st.session_state['nombre_escenario_enso'] = escenario_enso
+                st.success(f"✅ ¡Escenario guardado! Ve a la página de 'Sistemas Hídricos Territoriales' para ver cómo este clima afecta el metabolismo.")
+                
     elif selected_module == "📉 Tendencias": viz.display_trends_and_forecast_tab(**display_args)
     elif selected_module == "⚠️ Anomalías": viz.display_anomalies_tab(**display_args)
     elif selected_module == "🔗 Correlación": viz.display_correlation_tab(**display_args)
@@ -677,6 +716,7 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
 
