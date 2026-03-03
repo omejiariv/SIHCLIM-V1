@@ -487,9 +487,21 @@ with st.expander("🎯 Portafolio de Inversión y Optimización de Brechas", exp
                 
                 st.markdown("📊 **Requerimientos Físicos y Presupuesto:**")
                 c_op1, c_op2, c_op3, c_op4 = st.columns(4)
-                c_op1.metric("🌲 Restaurar (ha)", f"{ha_req:,.1f}", f"${inv_a:,.0f} M")
-                c_op2.metric("🚽 Saneamiento (STAM)", f"{stam_req:,.0f}", f"${inv_b:,.0f} M")
-                c_op3.metric("🚰 Eficiencia (L/s)", f"{lps_req:,.1f}", f"${inv_c:,.0f} M")
+                
+                # Evitar división por cero
+                costo_L_a = (inv_a * 1000000) / (vol_a * 1000) if vol_a > 0 else 0
+                costo_L_b = (inv_b * 1000000) / (vol_b * 1000) if vol_b > 0 else 0
+                costo_L_c = (inv_c * 1000000) / (vol_c * 1000) if vol_c > 0 else 0
+                
+                c_op1.metric("🌲 Restaurar (ha)", f"{ha_req:,.1f}", f"${inv_a:,.0f} Millones")
+                c_op1.caption(f"**Costo Eficiencia:** ${costo_L_a:,.1f} COP por Litro")
+                
+                c_op2.metric("🚽 Saneamiento (STAM)", f"{stam_req:,.0f}", f"${inv_b:,.0f} Millones")
+                c_op2.caption(f"**Costo Eficiencia:** ${costo_L_b:,.1f} COP por Litro")
+                
+                c_op3.metric("🚰 Eficiencia (L/s)", f"{lps_req:,.1f}", f"${inv_c:,.0f} Millones")
+                c_op3.caption(f"**Costo Eficiencia:** ${costo_L_c:,.1f} COP por Litro")
+                
                 c_op4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M", "Millones COP", delta_color="off")
 
 # =========================================================================
@@ -630,53 +642,53 @@ st.markdown("---")
 st.header(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}")
 st.info("Cálculo integrado de extracción hídrica, cargas orgánicas vertidas (DBO5) y generación de residuos sólidos (Lixiviados/Emisiones).")
 
-# --- CONEXIÓN DINÁMICA CON EL NODO SELECCIONADO ---
-# Valores por defecto inteligentes según el embalse seleccionado
-if nodo_seleccionado == "La Fe": def_pob, def_bov, def_por, def_ave = 450000, 15000, 8000, 250000
-elif "Grande" in nodo_seleccionado: def_pob, def_bov, def_por, def_ave = 1200000, 85000, 45000, 800000
-elif "Peñol" in nodo_seleccionado: def_pob, def_bov, def_por, def_ave = 150000, 40000, 15000, 120000
-elif "Ituango" in nodo_seleccionado: def_pob, def_bov, def_por, def_ave = 350000, 250000, 60000, 300000
-else: def_pob, def_bov, def_por, def_ave = 80000, 25000, 10000, 50000
+# --- CONEXIÓN DINÁMICA CON EL NODO SELECCIONADO (CON LÓGICA DE TRASVASE) ---
+# def_pob_res = Habitantes en la cuenca (Generan DBO y RS locales)
+# def_pob_ext = Población de la ciudad abastecida (Solo extraen agua)
+if nodo_seleccionado == "La Fe": def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 15000, 450000, 5000, 2000, 150000
+elif "Grande" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 45000, 1200000, 85000, 45000, 800000
+elif "Peñol" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 25000, 0, 40000, 15000, 120000
+elif "Ituango" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 35000, 0, 250000, 60000, 300000
+else: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 20000, 0, 25000, 10000, 50000
 
-st.markdown("### 1. Inventario Poblacional y Módulos Físicos")
+st.markdown("### 1. Inventario Poblacional (Diferenciado) y Módulos")
 c_p1, c_p2, c_p3, c_p4 = st.columns(4)
-pob_humana = c_p1.number_input("👥 Humanos (Hab):", value=def_pob, step=1000)
-cabezas_bovinas = c_p2.number_input("🐄 Bovinos (Cabezas):", value=def_bov, step=1000)
-cabezas_porcinas = c_p3.number_input("🐖 Porcinos (Cabezas):", value=def_por, step=1000)
-cabezas_aves = c_p4.number_input("🐔 Aves (Unidades):", value=def_ave, step=5000)
+pob_residente = c_p1.number_input("🏘️ Pob. Residente (Cuenca):", value=def_pob_res, step=1000, help="Generan DBO y residuos en la zona.")
+pob_externa = c_p2.number_input("🏙️ Pob. Externa (Trasvase):", value=def_pob_ext, step=50000, help="Gente en otra ciudad que consume agua de este embalse.")
+cabezas_bovinas = c_p3.number_input("🐄 Bovinos (Cabezas):", value=def_bov, step=1000)
+cabezas_porcinas = c_p4.number_input("🐖 Porcinos (Cabezas):", value=def_por, step=1000)
 
 with st.expander("⚙️ Ajustar Módulos de Consumo y Generación (Agua y Residuos)"):
-    st.markdown("**Agua (Litros/día):**")
     c_d1, c_d2, c_d3, c_d4 = st.columns(4)
-    dot_hum = c_d1.number_input("Dotación Humana:", value=150)
-    dot_bov = c_d2.number_input("Dotación Bovina:", value=40)
-    dot_por = c_d3.number_input("Dotación Porcina:", value=15)
-    dot_ave = c_d4.number_input("Dotación Aves:", value=0.3)
+    dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150)
+    dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40)
+    dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15)
+    cabezas_aves = c_d4.number_input("🐔 Aves (Unidades):", value=def_ave, step=5000)
     
-    st.markdown("**Residuos Sólidos Urbanos (RSU):**")
+    st.markdown("**Residuos Sólidos (Aplicable solo a Población Residente):**")
     c_rs1, c_rs2 = st.columns(2)
-    kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1, help="Promedio nacional en Colombia es ~0.78 kg")
-    pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0, help="Fracción fermentable que genera lixiviados y metano")
+    kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1)
+    pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0)
 
 st.markdown("### 2. Balance Metabólico Integral")
 
-# A. Cálculo de Demandas Hídricas
-dem_hum_m3_dia = (pob_humana * dot_hum) / 1000
+# A. EXTRACCIÓN de Agua - Demandas Hídricas- (Suma a residentes y ciudad externa)
+pob_total_agua = pob_residente + pob_externa
+dem_hum_m3_dia = (pob_total_agua * dot_hum) / 1000
 dem_bov_m3_dia = (cabezas_bovinas * dot_bov) / 1000
 dem_por_m3_dia = (cabezas_porcinas * dot_por) / 1000
-dem_ave_m3_dia = (cabezas_aves * dot_ave) / 1000
-
+dem_ave_m3_dia = (cabezas_aves * 0.3) / 1000
 dem_total_m3_s = (dem_hum_m3_dia + dem_bov_m3_dia + dem_por_m3_dia + dem_ave_m3_dia) / 86400
 
-# B. Cálculo de Cargas Contaminantes (DBO5)
-carga_hum_ton = (pob_humana * 18.25) / 1000
+# B. CARGA ORGÁNICA (Solo penaliza la Población Residente en la cuenca)
+carga_hum_ton = (pob_residente * 18.25) / 1000
 carga_bov_ton = (cabezas_bovinas * 292.0) / 1000
 carga_por_ton = (cabezas_porcinas * 91.25) / 1000
 carga_ave_ton = (cabezas_aves * 5.47) / 1000
 carga_total_ton = carga_hum_ton + carga_bov_ton + carga_por_ton + carga_ave_ton
 
-# C. Cálculo de Residuos Sólidos
-rs_total_ton_ano = (pob_humana * kg_rs_hab * 365) / 1000
+# C. RESIDUOS SÓLIDOS LOCALES
+rs_total_ton_ano = (pob_residente * kg_rs_hab * 365) / 1000
 rs_org_ton_ano = rs_total_ton_ano * (pct_organico / 100.0)
 rs_inorg_ton_ano = rs_total_ton_ano - rs_org_ton_ano
 
