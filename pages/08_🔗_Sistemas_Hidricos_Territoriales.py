@@ -185,21 +185,30 @@ if gdf_embalses is not None and not gdf_embalses.empty:
 # =========================================================================
 st.sidebar.markdown("### 🎛️ Centro de Operaciones")
 nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", list(sistemas_embalses.keys()))
-
 datos_nodo = sistemas_embalses[nodo_seleccionado]
 
+# --- ☁️ MOTOR CLIMÁTICO LOCAL (ENSO) ---
+st.sidebar.markdown("### 🌍 Motor Climático (ENSO)")
+escenario_enso = st.sidebar.select_slider(
+    "Fase actual del Pacífico:",
+    options=["Niño Severo", "Niño Moderado", "Neutro", "Niña Moderada", "Niña Fuerte"],
+    value="Neutro"
+)
+
+# Acoplamiento Termodinámico (Precipitación vs Evaporación)
+if escenario_enso == "Niño Severo": factor_p, factor_et = 0.65, 1.40
+elif escenario_enso == "Niño Moderado": factor_p, factor_et = 0.85, 1.20
+elif escenario_enso == "Neutro": factor_p, factor_et = 1.0, 1.0
+elif escenario_enso == "Niña Moderada": factor_p, factor_et = 1.15, 0.85
+else: factor_p, factor_et = 1.35, 0.70  # Niña Fuerte
+
 st.markdown(f"### 💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}")
-
-# --- ☁️ CONEXIÓN CON MEMORIA CLIMÁTICA (ENSO) ---
-factor_clima_enso = st.session_state.get('factor_clima_enso', 1.0)
-nombre_escenario = st.session_state.get('nombre_escenario_enso', 'Condiciones Neutras')
-
-if factor_clima_enso < 1.0:
-    st.error(f"⚠️ **Alerta Climática Activa:** {nombre_escenario}. La oferta hídrica natural de los ríos ha sido penalizada en un {(1-factor_clima_enso)*100:.0f}%.")
-elif factor_clima_enso > 1.0:
-    st.info(f"🌧️ **Condición Climática Activa:** {nombre_escenario}. La oferta natural se ha incrementado en un {(factor_clima_enso-1)*100:.0f}%.")
+if factor_p < 1.0:
+    st.error(f"⚠️ **{escenario_enso}:** Oferta Hídrica **{(factor_p-1)*100:+.0f}%** | Evaporación (ET) **{(factor_et-1)*100:+.0f}%** debido a anomalía térmica.")
+elif factor_p > 1.0:
+    st.info(f"🌧️ **{escenario_enso}:** Oferta Hídrica **{(factor_p-1)*100:+.0f}%** | Evaporación (ET) reducida al **{(factor_et)*100:.0f}%**.")
 else:
-    st.info(f"**Capacidad Útil Máxima:** {datos_nodo['capacidad_util_Mm3']:,.1f} Millones de m³ (Clima Neutro Histórico)")
+    st.info(f"**Capacidad Útil Máxima:** {datos_nodo['capacidad_util_Mm3']:,.1f} Mm³ (Condiciones Climáticas Históricas)")
 
 col_in, col_out = st.columns(2)
 
@@ -211,19 +220,9 @@ with col_in:
     st.markdown("#### 📥 ENTRADAS (Inflows)")
     st.caption("Aportes Naturales de la Cuenca (Afectados por ENSO):")
     for nombre, caudal in datos_nodo["afluentes_naturales"].items():
-        # ¡LA MAGIA! Multiplicamos el caudal histórico por el factor climático
-        caudal_afectado = float(caudal * factor_clima_enso)
+        caudal_afectado = float(caudal * factor_p)
         max_val = float(caudal * 3) if caudal > 0 else 10.0
-        
-        # El slider arranca en el caudal ya penalizado/beneficiado por el clima
-        afluentes_inputs[nombre] = st.slider(
-            f"{nombre} [m³/s]:", 
-            min_value=0.0, 
-            max_value=max_val, 
-            value=caudal_afectado, 
-            step=0.1, 
-            key=f"in_{nombre}"
-        )
+        afluentes_inputs[nombre] = st.slider(f"{nombre} [m³/s]:", 0.0, max_val, caudal_afectado, 0.1, key=f"in_{nombre}")
     
     st.caption("Bombas y Túneles (Trasvases Externos):")
     if datos_nodo["trasvases"]:
@@ -232,27 +231,21 @@ with col_in:
     else:
         st.write("*(Sistema impulsado 100% por gravedad)*")
 
-# --- SALIDAS DINÁMICAS (AFECTADAS POR LA DEMOGRAFÍA/ECONOMÍA) ---
+# --- SALIDAS DINÁMICAS ---
 with col_out:
     st.markdown("#### 📤 SALIDAS (Outflows)")
     
-    # --- 👥 CONEXIÓN CON MEMORIA METABÓLICA (CALIDAD Y VERTIMIENTOS) ---
-    # Buscamos si el usuario exportó la Huella Hídrica Total. Si no, usamos el valor por defecto del embalse.
-    demanda_memoria = st.session_state.get('demanda_total_m3s', datos_nodo["demanda_acueducto_m3s"])
+    # Acoplamiento Evaporativo (El Niño evapora más rápido el embalse)
+    evaporacion_dinamica = datos_nodo["evaporacion_m3s"] * factor_et
+    st.metric("Evaporación Directa (Afectada por T°)", f"{evaporacion_dinamica:.2f} m³/s", f"{(evaporacion_dinamica - datos_nodo['evaporacion_m3s']):+.2f} m³/s", delta_color="inverse")
     
-    val_acueducto = 0.0
+    # Extracción Consuntiva conectada a la memoria
+    demanda_memoria = st.session_state.get('demanda_total_m3s', datos_nodo["demanda_acueducto_m3s"])
     max_acueducto = float(max(demanda_memoria, datos_nodo["demanda_acueducto_m3s"]) * 2)
     
+    val_acueducto = 0.0
     if max_acueducto > 0:
-        val_acueducto = st.slider(
-            "Extracción Consuntiva (Multi-Sector) [m³/s]:", 
-            min_value=0.0, 
-            max_value=max_acueducto, 
-            value=float(demanda_memoria), 
-            step=0.1
-        )
-        if 'demanda_total_m3s' in st.session_state:
-            st.caption("*(Dato inyectado desde Huella Hídrica / Calidad)*")
+        val_acueducto = st.slider("Extracción Consuntiva (Multi-Sector) [m³/s]:", 0.0, max_acueducto, float(demanda_memoria), 0.1)
     
     val_turbinado = 0.0
     if datos_nodo["generacion_energia_m3s"] > 0:
@@ -261,7 +254,9 @@ with col_out:
         
     val_ecologico = st.number_input("Caudal Ecológico / Vertimiento [m³/s]:", min_value=0.0, value=float(datos_nodo["caudal_ecologico_m3s"]), step=1.0)
 
-# (A partir de aquí debe seguir tu código original: # ========================================================================= # 3. CÁLCULO DE BALANCE Y ENERGÍA ...)
+# Corrección vital para el cálculo de balance (Sección 3)
+# Asegúrate de que la variable sum_salidas use la nueva evaporación
+sum_salidas = val_acueducto + val_turbinado + val_ecologico + evaporacion_dinamica
 
 # =========================================================================
 # 3. CÁLCULO DE BALANCE Y ENERGÍA
@@ -445,19 +440,28 @@ with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded
     """)
 
 # =========================================================================
-# 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA
+# 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (MODELACIÓN INTERANUAL)
 # =========================================================================
 st.markdown("---")
-st.subheader(f"📈 Proyección de Seguridad Hídrica del Sistema {nodo_seleccionado} (2024 - 2050)")
-st.caption("Evolución de los indicadores asumiendo un crecimiento poblacional (+1.5%/año) y pérdida de escorrentía por Cambio Climático (-0.5%/año).")
+st.subheader(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_seleccionado} (2024 - 2050)")
+st.caption("Simulación estocástica que integra crecimiento poblacional (+1.5%/año), pérdida base por Cambio Climático (-0.5%/año) y la **variabilidad cíclica interanual del fenómeno ENSO** (Ciclos de 4-5 años).")
 
-anios_proj = list(range(2024, 2051, 2))
+anios_proj = list(range(2024, 2051)) # Año a año para ver bien la onda
 datos_proj = []
+
 for a in anios_proj:
-    f_dem = (1 + 0.015) ** (a - 2025)
-    f_cli = (1 - 0.005) ** (a - 2025)
+    delta_a = a - 2024
+    f_dem = (1 + 0.015) ** delta_a
+    f_cc_base = (1 - 0.005) ** delta_a # Pérdida base por Cambio Climático
     
-    o_m3 = (q_oferta_m3s_base * f_cli) * 31536000
+    # 🌊 MODELACIÓN ENSO (Onda Senoidal + Ruido)
+    # Simula un ciclo de ~4.5 años. Amplitud de ±25% en la lluvia.
+    # El seno genera la alternancia natural entre Niña (+) y Niño (-)
+    f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
+    
+    f_cli_total = f_cc_base + f_enso # Clima = Tendencia + Variabilidad
+    
+    o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
     c_m3 = (demanda_m3s_base * f_dem) * 31536000
     
     n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
@@ -467,18 +471,24 @@ for a in anios_proj:
     fac_dil = (o_m3 / (c_m3 + 1))
     cal = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (sist_saneamiento * 0.05)))
     
+    # Etiquetar el año para el tooltip del gráfico
+    estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
+    
     datos_proj.extend([
-        {"Año": a, "Indicador": "Neutralidad", "Valor": n},
-        {"Año": a, "Indicador": "Resiliencia", "Valor": r},
-        {"Año": a, "Indicador": "Estrés Hídrico", "Valor": e},
-        {"Año": a, "Indicador": "Calidad", "Valor": cal}
+        {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
+        {"Año": a, "Indicador": "Resiliencia", "Valor (%)": r, "Fase ENSO": estado_enso},
+        {"Año": a, "Indicador": "Estrés Hídrico", "Valor (%)": e, "Fase ENSO": estado_enso},
+        {"Año": a, "Indicador": "Calidad", "Valor (%)": cal, "Fase ENSO": estado_enso}
     ])
     
 df_tendencias = pd.DataFrame(datos_proj)
-fig_line = px.line(df_tendencias, x="Año", y="Valor", color="Indicador", markers=True,
+fig_line = px.line(df_tendencias, x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
                    color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Estrés Hídrico": "#e74c3c", "Calidad": "#9b59b6"})
-fig_line.add_vline(x=anio_analisis, line_dash="dash", line_color="black", annotation_text=f"Año ({anio_analisis})")
-fig_line.update_layout(height=350, yaxis_title="Índice (%)", xaxis_title="Año Proyectado", legend_title="Indicador WRI")
+                   
+# Resaltar la zona de Estrés Crítico en el fondo
+fig_line.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Zona de Estrés Crítico (>40%)", annotation_position="top left")
+
+fig_line.update_layout(height=400, yaxis_title="Índice (%)", xaxis_title="Año Proyectado", legend_title="Indicador WRI", hovermode="x unified")
 st.plotly_chart(fig_line, use_container_width=True)
 
 # =========================================================================
