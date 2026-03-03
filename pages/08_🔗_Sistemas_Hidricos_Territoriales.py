@@ -444,22 +444,38 @@ with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded
 # =========================================================================
 st.markdown("---")
 st.subheader(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_seleccionado} (2024 - 2050)")
-st.caption("Simulación estocástica que integra crecimiento poblacional (+1.5%/año), pérdida base por Cambio Climático (-0.5%/año) y la **variabilidad cíclica interanual del fenómeno ENSO** (Ciclos de 4-5 años).")
+st.caption("Simulación estocástica a largo plazo para evaluar la resiliencia del sistema ante distintas presiones futuras.")
 
-anios_proj = list(range(2024, 2051)) # Año a año para ver bien la onda
+# --- INTERRUPTORES DE ESCENARIOS (TOGGLES) ---
+col_t1, col_t2 = st.columns(2)
+with col_t1:
+    activar_cc = st.toggle("🌡️ Incluir Cambio Climático", value=True, help="Aplica una pérdida gradual del -0.5% anual en la escorrentía base.")
+with col_t2:
+    activar_enso = st.toggle("🌊 Incluir Variabilidad ENSO", value=True, help="Superpone una onda sintética (ciclos de 4.5 años) simulando la ocurrencia histórica de eventos Niño/Niña.")
+
+anios_proj = list(range(2024, 2051))
 datos_proj = []
 
 for a in anios_proj:
     delta_a = a - 2024
+    
+    # 1. Presión Demográfica (Siempre activa, crece 1.5% anual)
     f_dem = (1 + 0.015) ** delta_a
-    f_cc_base = (1 - 0.005) ** delta_a # Pérdida base por Cambio Climático
     
-    # 🌊 MODELACIÓN ENSO (Onda Senoidal + Ruido)
-    # Simula un ciclo de ~4.5 años. Amplitud de ±25% en la lluvia.
-    # El seno genera la alternancia natural entre Niña (+) y Niño (-)
-    f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
+    # 2. Factor Cambio Climático (Tendencia a la baja)
+    f_cc_base = (1 - 0.005) ** delta_a if activar_cc else 1.0
     
-    f_cli_total = f_cc_base + f_enso # Clima = Tendencia + Variabilidad
+    # 3. Factor ENSO (Onda interanual sintética)
+    f_enso = 0.0
+    estado_enso = "Neutro ⚖️"
+    
+    if activar_enso:
+        # Onda senoidal: Amplitud de 25% con un periodo de 4.5 años
+        f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
+        estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
+    
+    # Clima Total = Tendencia Base + Variabilidad
+    f_cli_total = f_cc_base + f_enso 
     
     o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
     c_m3 = (demanda_m3s_base * f_dem) * 31536000
@@ -470,9 +486,6 @@ for a in anios_proj:
     
     fac_dil = (o_m3 / (c_m3 + 1))
     cal = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (sist_saneamiento * 0.05)))
-    
-    # Etiquetar el año para el tooltip del gráfico
-    estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
     
     datos_proj.extend([
         {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
@@ -485,7 +498,6 @@ df_tendencias = pd.DataFrame(datos_proj)
 fig_line = px.line(df_tendencias, x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
                    color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Estrés Hídrico": "#e74c3c", "Calidad": "#9b59b6"})
                    
-# Resaltar la zona de Estrés Crítico en el fondo
 fig_line.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Zona de Estrés Crítico (>40%)", annotation_position="top left")
 
 fig_line.update_layout(height=400, yaxis_title="Índice (%)", xaxis_title="Año Proyectado", legend_title="Indicador WRI", hovermode="x unified")
