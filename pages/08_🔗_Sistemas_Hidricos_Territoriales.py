@@ -440,68 +440,139 @@ with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded
     """)
 
 # =========================================================================
-# 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (MODELACIÓN INTERANUAL)
+# 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
 # =========================================================================
 st.markdown("---")
 st.subheader(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_seleccionado} (2024 - 2050)")
-st.caption("Simulación estocástica a largo plazo para evaluar la resiliencia del sistema ante distintas presiones futuras.")
+st.caption("Simulación a largo plazo que integra crecimiento poblacional, pérdida base por Cambio Climático y la variabilidad cíclica/extrema del fenómeno ENSO.")
 
-# --- INTERRUPTORES DE ESCENARIOS (TOGGLES) ---
-col_t1, col_t2 = st.columns(2)
-with col_t1:
-    activar_cc = st.toggle("🌡️ Incluir Cambio Climático", value=True, help="Aplica una pérdida gradual del -0.5% anual en la escorrentía base.")
-with col_t2:
-    activar_enso = st.toggle("🌊 Incluir Variabilidad ENSO", value=True, help="Superpone una onda sintética (ciclos de 4.5 años) simulando la ocurrencia histórica de eventos Niño/Niña.")
+# Creamos dos pestañas para no perder el resumen general y ganar el análisis profundo
+tab_resumen, tab_escenarios = st.tabs(["📊 Resumen Multivariado (Onda ENSO)", "🔬 Explorador de Escenarios (Cono de Incertidumbre)"])
 
 anios_proj = list(range(2024, 2051))
-datos_proj = []
 
-for a in anios_proj:
-    delta_a = a - 2024
-    
-    # 1. Presión Demográfica (Siempre activa, crece 1.5% anual)
-    f_dem = (1 + 0.015) ** delta_a
-    
-    # 2. Factor Cambio Climático (Tendencia a la baja)
-    f_cc_base = (1 - 0.005) ** delta_a if activar_cc else 1.0
-    
-    # 3. Factor ENSO (Onda interanual sintética)
-    f_enso = 0.0
-    estado_enso = "Neutro ⚖️"
-    
-    if activar_enso:
-        # Onda senoidal: Amplitud de 25% con un periodo de 4.5 años
-        f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
-        estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
-    
-    # Clima Total = Tendencia Base + Variabilidad
-    f_cli_total = f_cc_base + f_enso 
-    
-    o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
-    c_m3 = (demanda_m3s_base * f_dem) * 31536000
-    
-    n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
-    r = min(100.0, ((capacidad_embalse_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
-    e = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
-    
-    fac_dil = (o_m3 / (c_m3 + 1))
-    cal = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (sist_saneamiento * 0.05)))
-    
-    datos_proj.extend([
-        {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
-        {"Año": a, "Indicador": "Resiliencia", "Valor (%)": r, "Fase ENSO": estado_enso},
-        {"Año": a, "Indicador": "Estrés Hídrico", "Valor (%)": e, "Fase ENSO": estado_enso},
-        {"Año": a, "Indicador": "Calidad", "Valor (%)": cal, "Fase ENSO": estado_enso}
-    ])
-    
-df_tendencias = pd.DataFrame(datos_proj)
-fig_line = px.line(df_tendencias, x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
-                   color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Estrés Hídrico": "#e74c3c", "Calidad": "#9b59b6"})
-                   
-fig_line.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Zona de Estrés Crítico (>40%)", annotation_position="top left")
+# -------------------------------------------------------------------------
+# PESTAÑA 1: TU GRÁFICA ACTUAL (INTACTA)
+# -------------------------------------------------------------------------
+with tab_resumen:
+    col_t1, col_t2 = st.columns(2)
+    with col_t1: activar_cc = st.toggle("🌡️ Incluir Cambio Climático", value=True, key="t1_cc")
+    with col_t2: activar_enso = st.toggle("🌊 Incluir Variabilidad ENSO", value=True, key="t1_enso")
 
-fig_line.update_layout(height=400, yaxis_title="Índice (%)", xaxis_title="Año Proyectado", legend_title="Indicador WRI", hovermode="x unified")
-st.plotly_chart(fig_line, use_container_width=True)
+    datos_proj = []
+    for a in anios_proj:
+        delta_a = a - 2024
+        f_dem = (1 + 0.015) ** delta_a
+        f_cc_base = (1 - 0.005) ** delta_a if activar_cc else 1.0
+        
+        f_enso = 0.0
+        estado_enso = "Neutro ⚖️"
+        if activar_enso:
+            f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
+            estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
+        
+        f_cli_total = f_cc_base + f_enso 
+        o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
+        c_m3 = (demanda_m3s_base * f_dem) * 31536000
+        
+        n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
+        r = min(100.0, ((capacidad_embalse_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
+        e = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
+        fac_dil = (o_m3 / (c_m3 + 1))
+        cal = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (sist_saneamiento * 0.05)))
+        
+        datos_proj.extend([
+            {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
+            {"Año": a, "Indicador": "Resiliencia", "Valor (%)": r, "Fase ENSO": estado_enso},
+            {"Año": a, "Indicador": "Estrés Hídrico", "Valor (%)": e, "Fase ENSO": estado_enso},
+            {"Año": a, "Indicador": "Calidad", "Valor (%)": cal, "Fase ENSO": estado_enso}
+        ])
+        
+    fig_line1 = px.line(pd.DataFrame(datos_proj), x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
+                       color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Estrés Hídrico": "#e74c3c", "Calidad": "#9b59b6"})
+    fig_line1.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Zona Crítica (>40%)", annotation_position="top left")
+    fig_line1.update_layout(height=400, hovermode="x unified")
+    st.plotly_chart(fig_line1, use_container_width=True)
+
+# -------------------------------------------------------------------------
+# PESTAÑA 2: EL NUEVO LABORATORIO DE ESCENARIOS (CURVAS SELECCIONABLES)
+# -------------------------------------------------------------------------
+with tab_escenarios:
+    st.markdown("Analiza la dispersión de futuros posibles para un solo indicador bajo intensidades climáticas sostenidas.")
+    
+    col_e1, col_e2 = st.columns([1, 2])
+    with col_e1:
+        ind_sel = st.selectbox("🎯 Seleccione el Indicador a Evaluar:", ["Estrés Hídrico", "Resiliencia", "Neutralidad", "Calidad"])
+        activar_cc_esc = st.toggle("🌡️ Sumar Efecto Cambio Climático", value=True, key="t2_cc")
+    
+    with col_e2:
+        diccionario_escenarios = {
+            "Onda Dinámica (Ciclo de 4.5 años)": "onda",
+            "Condición Neutra (Línea Base)": 0.0,
+            "🟡 El Niño Moderado Constante (-15%)": -0.15,
+            "🔴 El Niño Severo Constante (-35%)": -0.35,
+            "🟢 La Niña Moderada Constante (+15%)": 0.15,
+            "🔵 La Niña Fuerte Constante (+35%)": 0.35
+        }
+        
+        curvas_sel = st.multiselect(
+            "🌊 Curvas Climáticas a Superponer:", 
+            list(diccionario_escenarios.keys()), 
+            default=["Onda Dinámica (Ciclo de 4.5 años)", "Condición Neutra (Línea Base)", "🔴 El Niño Severo Constante (-35%)"]
+        )
+
+    datos_esc = []
+    for a in anios_proj:
+        delta_a = a - 2024
+        f_dem = (1 + 0.015) ** delta_a
+        f_cc_base = (1 - 0.005) ** delta_a if activar_cc_esc else 1.0
+        
+        for nombre_esc in curvas_sel:
+            val_esc = diccionario_escenarios[nombre_esc]
+            
+            # Asignar la anomalía según si es onda o línea constante
+            f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) if val_esc == "onda" else val_esc
+            f_cli_total = f_cc_base + f_enso
+            
+            o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
+            c_m3 = (demanda_m3s_base * f_dem) * 31536000
+            
+            # Calcular solo el indicador seleccionado
+            if ind_sel == "Neutralidad": val = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
+            elif ind_sel == "Resiliencia": val = min(100.0, ((capacidad_embalse_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
+            elif ind_sel == "Estrés Hídrico": val = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
+            else: 
+                fac_dil = (o_m3 / (c_m3 + 1))
+                val = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (sist_saneamiento * 0.05)))
+                
+            datos_esc.append({"Año": a, "Escenario Climático": nombre_esc, "Valor (%)": val})
+            
+    if datos_esc:
+        df_esc = pd.DataFrame(datos_esc)
+        
+        # Paleta de colores fija para que cada escenario tenga sentido (Rojo = Niño Severo, Azul = Niña Fuerte)
+        color_map = {
+            "Onda Dinámica (Ciclo de 4.5 años)": "#9b59b6",  # Morado
+            "Condición Neutra (Línea Base)": "#34495e",       # Gris Oscuro
+            "🟡 El Niño Moderado Constante (-15%)": "#f1c40f",
+            "🔴 El Niño Severo Constante (-35%)": "#e74c3c",
+            "🟢 La Niña Moderada Constante (+15%)": "#2ecc71",
+            "🔵 La Niña Fuerte Constante (+35%)": "#3498db"
+        }
+        
+        fig_esc = px.line(df_esc, x="Año", y="Valor (%)", color="Escenario Climático", color_discrete_map=color_map, markers=False)
+        fig_esc.update_traces(line=dict(width=3)) # Líneas más gruesas
+        
+        # Marcadores visuales de riesgo
+        if ind_sel == "Estrés Hídrico":
+            fig_esc.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Estrés Crítico (>40%)")
+        elif ind_sel == "Resiliencia":
+            fig_esc.add_hrect(y0=0, y1=50, fillcolor="red", opacity=0.05, layer="below", annotation_text="Colapso Hídrico (<50%)")
+            
+        fig_esc.update_layout(height=450, hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
+        st.plotly_chart(fig_esc, use_container_width=True)
+    else:
+        st.info("👈 Seleccione al menos una curva climática para visualizar.")
 
 # =========================================================================
 # 6. RANKING TERRITORIAL Y DISPERSIÓN
