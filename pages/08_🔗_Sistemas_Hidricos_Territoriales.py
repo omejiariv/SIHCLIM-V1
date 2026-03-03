@@ -181,7 +181,7 @@ if gdf_embalses is not None and not gdf_embalses.empty:
             st.sidebar.warning(f"No se pudo cargar la capa de predios: {e}")
 
 # =========================================================================
-# 2. PANEL DE OPERACIONES Y CONTROLES
+# 2. PANEL DE OPERACIONES Y CONTROLES (RECEPTOR CLIMÁTICO Y METABÓLICO)
 # =========================================================================
 st.sidebar.markdown("### 🎛️ Centro de Operaciones")
 nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", list(sistemas_embalses.keys()))
@@ -189,20 +189,41 @@ nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", list(s
 datos_nodo = sistemas_embalses[nodo_seleccionado]
 
 st.markdown(f"### 💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}")
-st.info(f"**Capacidad Útil Máxima:** {datos_nodo['capacidad_util_Mm3']:,.1f} Millones de m³")
+
+# --- ☁️ CONEXIÓN CON MEMORIA CLIMÁTICA (ENSO) ---
+factor_clima_enso = st.session_state.get('factor_clima_enso', 1.0)
+nombre_escenario = st.session_state.get('nombre_escenario_enso', 'Condiciones Neutras')
+
+if factor_clima_enso < 1.0:
+    st.error(f"⚠️ **Alerta Climática Activa:** {nombre_escenario}. La oferta hídrica natural de los ríos ha sido penalizada en un {(1-factor_clima_enso)*100:.0f}%.")
+elif factor_clima_enso > 1.0:
+    st.info(f"🌧️ **Condición Climática Activa:** {nombre_escenario}. La oferta natural se ha incrementado en un {(factor_clima_enso-1)*100:.0f}%.")
+else:
+    st.info(f"**Capacidad Útil Máxima:** {datos_nodo['capacidad_util_Mm3']:,.1f} Millones de m³ (Clima Neutro Histórico)")
 
 col_in, col_out = st.columns(2)
 
-# --- ENTRADAS DINÁMICAS ---
+# --- ENTRADAS DINÁMICAS (AFECTADAS POR EL CLIMA) ---
 afluentes_inputs = {}
 trasvases_inputs = {}
 
 with col_in:
     st.markdown("#### 📥 ENTRADAS (Inflows)")
-    st.caption("Aportes Naturales de la Cuenca (Gravedad):")
+    st.caption("Aportes Naturales de la Cuenca (Afectados por ENSO):")
     for nombre, caudal in datos_nodo["afluentes_naturales"].items():
+        # ¡LA MAGIA! Multiplicamos el caudal histórico por el factor climático
+        caudal_afectado = float(caudal * factor_clima_enso)
         max_val = float(caudal * 3) if caudal > 0 else 10.0
-        afluentes_inputs[nombre] = st.slider(f"{nombre} [m³/s]:", 0.0, max_val, float(caudal), 0.1, key=f"in_{nombre}")
+        
+        # El slider arranca en el caudal ya penalizado/beneficiado por el clima
+        afluentes_inputs[nombre] = st.slider(
+            f"{nombre} [m³/s]:", 
+            min_value=0.0, 
+            max_value=max_val, 
+            value=caudal_afectado, 
+            step=0.1, 
+            key=f"in_{nombre}"
+        )
     
     st.caption("Bombas y Túneles (Trasvases Externos):")
     if datos_nodo["trasvases"]:
@@ -211,12 +232,27 @@ with col_in:
     else:
         st.write("*(Sistema impulsado 100% por gravedad)*")
 
-# --- SALIDAS DINÁMICAS ---
+# --- SALIDAS DINÁMICAS (AFECTADAS POR LA DEMOGRAFÍA/ECONOMÍA) ---
 with col_out:
     st.markdown("#### 📤 SALIDAS (Outflows)")
+    
+    # --- 👥 CONEXIÓN CON MEMORIA METABÓLICA (CALIDAD Y VERTIMIENTOS) ---
+    # Buscamos si el usuario exportó la Huella Hídrica Total. Si no, usamos el valor por defecto del embalse.
+    demanda_memoria = st.session_state.get('demanda_total_m3s', datos_nodo["demanda_acueducto_m3s"])
+    
     val_acueducto = 0.0
-    if datos_nodo["demanda_acueducto_m3s"] > 0:
-        val_acueducto = st.slider("Extracción Acueducto [m³/s]:", 0.0, float(datos_nodo["demanda_acueducto_m3s"] * 2), float(datos_nodo["demanda_acueducto_m3s"]), 0.1)
+    max_acueducto = float(max(demanda_memoria, datos_nodo["demanda_acueducto_m3s"]) * 2)
+    
+    if max_acueducto > 0:
+        val_acueducto = st.slider(
+            "Extracción Consuntiva (Multi-Sector) [m³/s]:", 
+            min_value=0.0, 
+            max_value=max_acueducto, 
+            value=float(demanda_memoria), 
+            step=0.1
+        )
+        if 'demanda_total_m3s' in st.session_state:
+            st.caption("*(Dato inyectado desde Huella Hídrica / Calidad)*")
     
     val_turbinado = 0.0
     if datos_nodo["generacion_energia_m3s"] > 0:
@@ -224,6 +260,8 @@ with col_out:
         val_turbinado = st.slider("Caudal Turbinado (Energía) [m³/s]:", 0.0, max_turb, float(datos_nodo["generacion_energia_m3s"]), 1.0)
         
     val_ecologico = st.number_input("Caudal Ecológico / Vertimiento [m³/s]:", min_value=0.0, value=float(datos_nodo["caudal_ecologico_m3s"]), step=1.0)
+
+# (A partir de aquí debe seguir tu código original: # ========================================================================= # 3. CÁLCULO DE BALANCE Y ENERGÍA ...)
 
 # =========================================================================
 # 3. CÁLCULO DE BALANCE Y ENERGÍA
