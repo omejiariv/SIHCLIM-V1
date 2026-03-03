@@ -1106,6 +1106,51 @@ with tab_mitigacion:
         })
         fig_esc = px.bar(df_esc, x="Variable", y="Valor", color="Escenario", barmode="group", title="Impacto Integral del Proyecto", color_discrete_sequence=["#e74c3c", "#2ecc71"])
         st.plotly_chart(fig_esc, use_container_width=True)
+
+# -------------------------------------------------------------------------
+    # PORTAFOLIO DE INVERSIÓN (SANEAMIENTO Y SbN) EN CALIDAD
+    # -------------------------------------------------------------------------
+    st.markdown("---")
+    with st.expander("🎯 Portafolio de Inversión Financiera (Mitigación)", expanded=False):
+        st.markdown("Simula el costo de alcanzar tus metas de reducción de carga contaminante (DBO/SST) combinando infraestructura gris (PTAR) e infraestructura verde (SbN).")
+        
+        col_m1, col_m2 = st.columns([1, 2.5])
+        with col_m1:
+            meta_remocion = st.slider("🎯 Meta de Remoción de Carga (%)", 10.0, 100.0, 85.0, 5.0)
+            st.markdown("**Costos Unitarios (Millones COP):**")
+            costo_ptar = st.number_input("PTAR Centralizada (por Ton/año removida):", value=150.0, step=10.0)
+            costo_stam_calidad = st.number_input("STAM Rural (por Ton/año removida):", value=45.0, step=5.0)
+            costo_sbn = st.number_input("SbN/Filtros Verdes (por Ton/año removida):", value=12.0, step=2.0)
+        
+        with col_m2:
+            # Asumimos que carga_total_ton viene calculada de las pestañas anteriores
+            carga_actual = st.session_state.get('carga_total_ton', 1000.0)
+            carga_a_remover = carga_actual * (meta_remocion / 100.0)
+            
+            st.info(f"⚖️ Para cumplir la meta del {meta_remocion}%, debes remover **{carga_a_remover:,.1f} Toneladas/año** del sistema hídrico.")
+            
+            st.markdown("🎚️ **Mix de Mitigación (% de aporte por estrategia):**")
+            c_mix1, c_mix2, c_mix3 = st.columns(3)
+            pct_ptar = c_mix1.number_input("% PTAR Urbana", 0, 100, 50)
+            pct_stam = c_mix2.number_input("% STAM Rural", 0, 100, 30)
+            pct_sbn = c_mix3.number_input("% SbN (Humedales/Riparios)", 0, 100, 20)
+            
+            if (pct_ptar + pct_stam + pct_sbn) != 100:
+                st.error("La suma debe ser exactamente 100%.")
+            else:
+                ton_ptar = carga_a_remover * (pct_ptar / 100.0)
+                ton_stam = carga_a_remover * (pct_stam / 100.0)
+                ton_sbn = carga_a_remover * (pct_sbn / 100.0)
+                
+                inv_ptar = ton_ptar * costo_ptar
+                inv_stam = ton_stam * costo_stam_calidad
+                inv_sbn = ton_sbn * costo_sbn
+                
+                c_op1, c_op2, c_op3, c_op4 = st.columns(4)
+                c_op1.metric("🏙️ PTAR Urbana", f"{ton_ptar:,.0f} Ton", f"${inv_ptar:,.0f} M")
+                c_op2.metric("🏡 STAM Rural", f"{ton_stam:,.0f} Ton", f"${inv_stam:,.0f} M")
+                c_op3.metric("🌿 SbN / Humedales", f"{ton_sbn:,.0f} Ton", f"${inv_sbn:,.0f} M")
+                c_op4.metric("💰 INVERSIÓN TOTAL", f"${(inv_ptar+inv_stam+inv_sbn):,.0f} M", "Millones COP", delta_color="off")
         
 # ------------------------------------------------------------------------------
 # TAB 5: MAPA DE CALOR (VISOR ESPACIAL CON FONDO MAPBOX)
