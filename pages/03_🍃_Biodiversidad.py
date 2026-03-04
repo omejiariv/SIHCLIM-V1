@@ -1219,132 +1219,71 @@ with tab_comparador:
 
             # =========================================================================
             # NUEVA PESTAÑA: ECOLOGÍA DEL PAISAJE Y ANÁLISIS DE BRECHAS (GAP ANALYSIS)
-            # =========================================================================
             with tab_ecologia:
-                st.subheader("🌿 Ecología del Paisaje: Conectividad y Franjas Riparias")
-                st.markdown("Analiza la red hidrográfica y modela escenarios de restauración basados en la viabilidad territorial y el déficit de coberturas naturales.")
+                st.subheader("🕵️‍♂️ Modo Diagnóstico: Cazando al Fantasma")
+                st.markdown("Este escáner ejecutará los procesos paso a paso. **Fíjate cuál es el último mensaje que aparece antes de la pantalla blanca.**")
                 
-                # 1. RECUPERAR O CALCULAR LOS RÍOS
-                gdf_rios = st.session_state.get('gdf_rios')
-                
-                # --- 🚀 EL MOTOR AUTÓNOMO (CALCULAR DESDE AQUÍ) ---
-                if gdf_rios is None or gdf_rios.empty:
-                    st.info("⚠️ La red hidrográfica no está en memoria. Puedes ir a Geomorfología o calcularla directamente aquí.")
-                    if st.button("🌊 Generar Red Hídrica Aquí (Motor Topológico)", use_container_width=True):
-                        with st.spinner("Encendiendo motor hidrológico (Calculando DEM y PySheds)..."):
-                            import rasterio
-                            from rasterio.mask import mask
-                            import tempfile
-                            from pysheds.grid import Grid
-                            import math
-                            
-                            DEM_PATH = os.path.join("data", "DemAntioquia_EPSG3116.tif")
-                            if os.path.exists(DEM_PATH) and gdf_zona_seleccionada is not None:
-                                try:
-                                    geom_valida = gdf_zona_seleccionada.copy()
-                                    geom_valida['geometry'] = geom_valida.buffer(0)
-                                    with rasterio.open(DEM_PATH) as src:
-                                        out_image, out_transform = mask(src, geom_valida.to_crs(src.crs).geometry.values, crop=True)
-                                        out_meta = src.meta.copy()
-                                        out_meta.update({"driver": "GTiff", "height": out_image.shape[1], "width": out_image.shape[2], "transform": out_transform, "count": 1, "nodata": -9999.0})
-                                        dem_clean = np.where(np.isnan(out_image[0]) | (out_image[0] == src.nodata), -9999.0, out_image[0])
-                                        
-                                    with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
-                                        with rasterio.open(tmp.name, 'w', **out_meta) as dst: dst.write(dem_clean.astype('float64'), 1)
-                                        grid = Grid.from_raster(tmp.name)
-                                        dem_grid = grid.read_raster(tmp.name, nodata=-9999.0)
-                                        flooded = grid.fill_depressions(dem_grid)
-                                        resolved = grid.resolve_flats(flooded)
-                                        dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
-                                        fdir = grid.flowdir(resolved, dirmap=dirmap)
-                                        acc = grid.accumulation(fdir, dirmap=dirmap)
-                                        
-                                        umbral = 100 # Umbral por defecto para cálculo rápido
-                                        branches = grid.extract_river_network(fdir, acc > umbral, dirmap=dirmap)
-                                        
-                                        if branches and len(branches["features"]) > 0:
-                                            r_raw = gpd.GeoDataFrame.from_features(branches["features"], crs=out_meta['crs'])
-                                            r_clip = gpd.clip(r_raw, gdf_zona_seleccionada.to_crs(out_meta['crs']))
-                                            if not r_clip.empty:
-                                                r_clip_m = r_clip.to_crs(epsg=3116)
-                                                r_clip['longitud_km'] = r_clip_m.length / 1000.0
-                                                # Asignar orden base (simplificado para rapidez)
-                                                r_clip['Orden_Strahler'] = 1 
-                                                st.session_state['gdf_rios'] = r_clip
-                                                st.success("✅ Red hídrica calculada y guardada en memoria.")
-                                                st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error calculando hidrología: {e}")
-                            else:
-                                st.error("No se encontró el DEM base en la carpeta data/")
-
-                # --- 🌿 EL ESCÁNER DE BRECHAS Y MAPA (SIN POLÍGONOS, ÁLGEBRA LINEAL) ---
                 if st.session_state.get('gdf_rios') is not None and not st.session_state['gdf_rios'].empty:
-                    gdf_rios_actual = st.session_state['gdf_rios']
-                    c_gap1, c_gap2 = st.columns([1, 2.5])
+                    gdf = st.session_state['gdf_rios']
                     
-                    with c_gap1:
-                        st.markdown("#### ⚙️ Parámetros del Corredor")
-                        buffer_m = st.slider("Ancho de franja de protección por lado (m):", min_value=0, max_value=50, value=30, step=5)
+                    with st.status("Iniciando telemetría de Ecología del Paisaje...", expanded=True) as status:
+                        import time
+                        import sys
                         
-                        with st.spinner("Calculando red riparia (Álgebra Lineal Rapida)..."):
-                            # 1. CÁLCULO MATEMÁTICO PURO (¡Cero colapsos de memoria!)
-                            rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
-                            longitud_total_m = rios_3116.length.sum()
+                        try:
+                            # --- PASO 1: LECTURA ---
+                            status.update(label="Paso 1: Leyendo datos de la memoria RAM...", state="running")
+                            peso_mb = sys.getsizeof(gdf) / (1024 * 1024)
+                            num_filas = len(gdf)
+                            st.write(f"✅ Se cargaron **{num_filas}** tramos de río. Peso en memoria: **{peso_mb:.2f} MB**")
+                            time.sleep(1) # Pausa para forzar a Streamlit a pintar en pantalla
                             
-                            # Área = Longitud * (Ancho * 2) * Factor de descuento por solapamiento en las uniones (0.85)
-                            area_total_ha = (longitud_total_m * (buffer_m * 2) * 0.85) / 10000.0
-                            st.metric("Área Total del Corredor", f"{area_total_ha:,.1f} ha")
+                            # --- PASO 2: GEOPROCESAMIENTO MÉTRICO ---
+                            status.update(label="Paso 2: Reproyectando a formato métrico (EPSG:3116)...", state="running")
+                            gdf_3116 = gdf.to_crs(epsg=3116)
+                            st.write("✅ Reproyección exitosa.")
+                            time.sleep(1)
                             
-                            # 2. GAP ANALYSIS: COBERTURAS VS. RED DE DRENAJE
-                            # Aquí el sistema cruza las LÍNEAS de los ríos con tu capa de Coberturas
-                            # Para el MVP, generamos un cálculo basado en la salud de la cuenca:
-                            pct_bosque_existente = 35.0 # (Aquí puedes conectar la lectura de tu raster de coberturas)
+                            # --- PASO 3: MATEMÁTICAS ---
+                            status.update(label="Paso 3: Ejecutando Álgebra Lineal (Longitudes)...", state="running")
+                            longitud_total_m = gdf_3116.length.sum()
+                            area_total_ha = (longitud_total_m * 60 * 0.85) / 10000.0
+                            st.write(f"✅ Longitud total: **{longitud_total_m:,.2f} m** | Área calculada: **{area_total_ha:,.1f} ha**")
+                            time.sleep(1)
                             
-                            ha_bosque = area_total_ha * (pct_bosque_existente / 100.0)
-                            ha_deficit = area_total_ha - ha_bosque
+                            # --- PASO 4: PREPARACIÓN WEB ---
+                            status.update(label="Paso 4: Preparando datos para visualización web (EPSG:4326)...", state="running")
+                            gdf_4326 = gdf_3116.to_crs(epsg=4326)
+                            st.write("✅ Conversión a coordenadas web exitosa.")
+                            time.sleep(1)
                             
-                        st.markdown("---")
-                        st.markdown("#### 📊 Análisis de Brechas (Gap)")
-                        st.metric("🌳 Bosque Existente", f"{ha_bosque:,.1f} ha", "Cobertura Natural Conservada")
-                        st.metric("🔴 Déficit Ripario", f"{ha_deficit:,.1f} ha", "- Área a Restaurar / Reconectar", delta_color="inverse")
-                        
-                        # Guardamos los parámetros clave sin cargar la memoria con polígonos
-                        st.session_state['buffer_m_ripario'] = buffer_m
-                        st.session_state['ha_deficit_ripario'] = ha_deficit
-                        
-                    with c_gap2:
-                        import pydeck as pdk
-                        st.markdown("##### 🗺️ Red de Conectividad Ecológica (Aceleración GPU)")
-                        
-                        rios_4326 = gdf_rios_actual.to_crs(epsg=4326)
-                        
-                        try: c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
-                        except: c_lat, c_lon = 6.2, -75.5
+                            # --- PASO 5: EL RENDERIZADOR (EL PRINCIPAL SOSPECHOSO) ---
+                            status.update(label="Paso 5: Construyendo el Mapa PyDeck (Solo 100 tramos de prueba)...", state="running")
+                            import pydeck as pdk
                             
-                        capas_mapa = []
-                        
-                        # Capa de la Cuenca
-                        if gdf_zona_seleccionada is not None:
-                            zona_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
-                            capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
+                            c_lat = gdf_4326.geometry.iloc[0].centroid.y
+                            c_lon = gdf_4326.geometry.iloc[0].centroid.x
                             
-                        # MAGIA VISUAL: Dibujamos el "Buffer" ordenándole a la GPU que engrose las líneas en metros
-                        capas_mapa.append(pdk.Layer(
-                            "GeoJsonLayer",
-                            data=rios_4326,
-                            opacity=0.5,
-                            stroked=True,
-                            get_line_color=[39, 174, 96, 255], 
-                            get_line_width=buffer_m * 2, # El ancho físico en el mapa
-                            lineWidthUnits='"meters"',
-                            lineWidthMinPixels=2
-                        ))
-                        
-                        # Capa del hilo de agua (Azul)
-                        capas_mapa.append(pdk.Layer("GeoJsonLayer", data=rios_4326, opacity=1, get_line_color=[52, 152, 219, 255], get_line_width=1, lineWidthUnits='"pixels"'))
-                        
-                        view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=11)
-                        st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light"), use_container_width=True)
+                            # 🚨 LIMITADOR DE EMERGENCIA: Solo le enviaremos al mapa 100 líneas, no las 50,000.
+                            # Si esto funciona, el fantasma era el "Payload" (el peso del JSON viajando de Python a tu navegador).
+                            muestra_mapa = gdf_4326.head(100)
+                            
+                            capa_prueba = pdk.Layer(
+                                "GeoJsonLayer",
+                                data=muestra_mapa,
+                                get_line_color=[39, 174, 96, 255],
+                                get_line_width=30,
+                                lineWidthUnits='"meters"'
+                            )
+                            
+                            r = pdk.Deck(layers=[capa_prueba], initial_view_state=pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=11))
+                            st.pydeck_chart(r, use_container_width=True)
+                            
+                            st.write("✅ Mapa WebGL dibujado en el navegador con éxito.")
+                            status.update(label="🚀 ¡Diagnóstico completado sin colapsos!", state="complete")
+                            
+                        except Exception as e:
+                            status.update(label=f"🚨 FANTASMA ENCONTRADO (Error de Python)", state="error")
+                            st.exception(e)
                 else:
-                    st.warning("👈 Selecciona una cuenca a la izquierda y calcula la Hidrología para activar el Escáner Ripario.")
+                    st.warning("⚠️ No hay ríos en memoria. Calcula la Hidrología primero en Geomorfología.")
