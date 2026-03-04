@@ -545,13 +545,32 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.subheader("🎯 Priorización Predial: Inteligencia de Negociación")
         st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
 
-        # Recuperar datos desde Biodiversidad
+        # 1. Recuperar datos desde Biodiversidad
         rios_strahler = st.session_state.get('gdf_rios')
         buffer_m = st.session_state.get('buffer_m_ripario', 30) # 30m por defecto
         
+        # 2. CARGAR LA CAPA DE PREDIOS (¡El bloque que faltaba!)
+        capa_predios = None
+        ruta_geojson_adquiridos = "data/PREDIOS_ADQUIRIDOS_ANTIOQUIA.geojson"
+        ruta_shp_ant = "data/Predios_Ant.shp"
+        
+        try:
+            if gdf_zona is not None:
+                bbox = tuple(gdf_zona.to_crs(epsg=4326).total_bounds)
+                if os.path.exists(ruta_geojson_adquiridos):
+                    capa_predios = gpd.read_file(ruta_geojson_adquiridos, bbox=bbox)
+                elif os.path.exists(ruta_shp_ant):
+                    capa_predios = gpd.read_file(ruta_shp_ant, bbox=bbox)
+                else:
+                    # Fallback si no existen los locales, busca en memoria
+                    capa_predios = capas.get('predios') if 'capas' in locals() else None
+        except Exception as e:
+            st.warning(f"No se pudo cargar la capa de predios local: {e}")
+
+        # 3. EJECUTAR EL MOTOR DE CRUCE
         if rios_strahler is not None and not rios_strahler.empty:
             
-            # Verificamos si logramos cargar la capa de predios en los pasos anteriores de Toma de Decisiones
+            # Verificamos si logramos cargar la capa de predios
             if capa_predios is not None and not capa_predios.empty:
                 # ---------------------------------------------------------
                 # RUTA A: CON MAPA DE PREDIOS (CRUCE ESPACIAL AL VUELO)
@@ -559,14 +578,14 @@ if gdf_zona is not None and not gdf_zona.empty:
                 st.success(f"✅ Estructura predial detectada. Calculando impacto ripario ({buffer_m}m por lado)...")
                 with st.spinner("Ejecutando cruce espacial avanzado..."):
                     try:
-                        # 1. Proyectamos a metros
+                        # Proyectamos a metros
                         predios_3116 = capa_predios.to_crs(epsg=3116)
                         rios_3116 = rios_strahler.to_crs(epsg=3116)
                         
-                        # 2. Truco Anti-Colapso: Hacemos el buffer individual por cada línea, sin fusionarlos (sin dissolve)
+                        # Truco Anti-Colapso: Hacemos el buffer individual por cada línea
                         buffer_tramos = gpd.GeoDataFrame(geometry=rios_3116.buffer(buffer_m, resolution=1), crs="EPSG:3116")
                         
-                        # 3. Cruzamos los predios con esos mini-polígonos
+                        # Cruzamos los predios con esos mini-polígonos
                         predios_en_buffer = gpd.overlay(predios_3116, buffer_tramos, how='intersection')
                         
                         if not predios_en_buffer.empty:
@@ -610,7 +629,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 # ---------------------------------------------------------
                 # RUTA B: SIN PREDIOS (PRIORIZACIÓN ECOLÓGICA POR TRAMOS)
                 # ---------------------------------------------------------
-                st.info("ℹ️ No se detectó mapa predial. Activando **Priorización Ecológica por Tramos Hídricos**.")
+                st.info("ℹ️ No se detectó mapa predial en la zona. Activando **Priorización Ecológica por Tramos Hídricos**.")
                 with st.spinner("Analizando jerarquía de conectividad del paisaje..."):
                     datos_tramos = []
                     for idx, row in rios_strahler.iterrows():
