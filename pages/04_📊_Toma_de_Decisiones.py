@@ -538,124 +538,106 @@ if gdf_zona is not None and not gdf_zona.empty:
             * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
             """)
 
-# =========================================================================
-        # NUEVA SECCIÓN: PRIORIZACIÓN PREDIAL PARA CONECTIVIDAD RIPARIA
+        # =========================================================================
+        # PRIORIZACIÓN PREDIAL PARA CONECTIVIDAD RIPARIA
         # =========================================================================
         st.markdown("---")
         st.subheader("🎯 Priorización Predial: Inteligencia de Negociación")
-        st.markdown("Cruza las necesidades de restauración riparia (Gap Analysis) con la estructura predial para identificar qué propiedades ofrecen el mayor retorno de inversión ecosistémico (ROI) y deben ser priorizadas para acuerdos de conservación.")
+        st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
 
-        # Recuperar el buffer ripario y los ríos con su orden de Strahler
-        buffer_ripario = st.session_state.get('buffer_ripario_4326')
+        # Recuperar datos desde Biodiversidad
         rios_strahler = st.session_state.get('gdf_rios')
+        buffer_m = st.session_state.get('buffer_m_ripario', 30) # 30m por defecto
         
-        # Recuperar la capa de predios (LECTURA INTELIGENTE CON BBOX)
-        capa_predios = None
-        
-        # Archivos que mencionaste en la carpeta data/
-        ruta_geojson_adquiridos = "data/PREDIOS_ADQUIRIDOS_ANTIOQUIA.geojson"
-        ruta_geojson_ejecutados = "data/PrediosEjecutados.geojson"
-        ruta_shp_ant = "data/Predios_Ant.shp"
-        
-        with st.spinner("Cargando estructura predial..."):
-            if gdf_zona is not None:
-                bbox = tuple(gdf_zona.to_crs(epsg=4326).total_bounds)
-                
-                # Intentamos leer el GeoJSON principal primero
-                if os.path.exists(ruta_geojson_adquiridos):
-                    capa_predios = gpd.read_file(ruta_geojson_adquiridos, bbox=bbox)
-                # Si no existe, buscamos el SHP
-                elif os.path.exists(ruta_shp_ant):
-                    capa_predios = gpd.read_file(ruta_shp_ant, bbox=bbox)
-                # Fallback a la base de datos
-                else:
-                    capa_predios = capas.get('predios')
-        
-        if buffer_ripario is not None:
+        if rios_strahler is not None and not rios_strahler.empty:
+            
+            # Verificamos si logramos cargar la capa de predios en los pasos anteriores de Toma de Decisiones
             if capa_predios is not None and not capa_predios.empty:
-                # =========================================================
-                # RUTA A: CON INFORMACIÓN CATASTRAL (PREDIOS)
-                # =========================================================
-                st.success("✅ Estructura predial detectada. Calculando ROI de negociación...")
-                with st.spinner("Ejecutando cruce espacial avanzado (Predios vs. Corredores)..."):
+                # ---------------------------------------------------------
+                # RUTA A: CON MAPA DE PREDIOS (CRUCE ESPACIAL AL VUELO)
+                # ---------------------------------------------------------
+                st.success(f"✅ Estructura predial detectada. Calculando impacto ripario ({buffer_m}m por lado)...")
+                with st.spinner("Ejecutando cruce espacial avanzado..."):
                     try:
+                        # 1. Proyectamos a metros
                         predios_3116 = capa_predios.to_crs(epsg=3116)
-                        buffer_3116 = buffer_ripario.to_crs(epsg=3116)
-                        predios_en_buffer = gpd.overlay(predios_3116, buffer_3116, how='intersection')
+                        rios_3116 = rios_strahler.to_crs(epsg=3116)
+                        
+                        # 2. Truco Anti-Colapso: Hacemos el buffer individual por cada línea, sin fusionarlos (sin dissolve)
+                        buffer_tramos = gpd.GeoDataFrame(geometry=rios_3116.buffer(buffer_m, resolution=1), crs="EPSG:3116")
+                        
+                        # 3. Cruzamos los predios con esos mini-polígonos
+                        predios_en_buffer = gpd.overlay(predios_3116, buffer_tramos, how='intersection')
                         
                         if not predios_en_buffer.empty:
                             predios_en_buffer['Area_Riparia_ha'] = predios_en_buffer.geometry.area / 10000.0
-                            datos_ranking = []
-                            col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID'] if col in predios_en_buffer.columns), None)
                             
-                            for idx, row in predios_en_buffer.iterrows():
-                                id_predio = row[col_id] if col_id else f"Predio_{idx}"
-                                area_ha = row['Area_Riparia_ha']
-                                score = area_ha * 100 
+                            # Identificar la columna que tiene el nombre o matrícula del predio
+                            col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID'] if col in predios_en_buffer.columns), None)
+                            if col_id is None:
+                                predios_en_buffer['ID_Predio'] = predios_en_buffer.index
+                                col_id = 'ID_Predio'
                                 
+                            # Si un predio grande toca el río muchas veces, sumamos todas sus áreas afectadas
+                            predios_agrupados = predios_en_buffer.groupby(col_id).agg({'Area_Riparia_ha': 'sum'}).reset_index()
+                            
+                            datos_ranking = []
+                            for idx, row in predios_agrupados.iterrows():
+                                area_ha = row['Area_Riparia_ha']
                                 datos_ranking.append({
-                                    "ID Predial": id_predio,
-                                    "Área Total Predio (ha)": row.get('Area', 0) / 10000.0 if 'Area' in row else 0,
+                                    "Identificador Predial": row[col_id],
                                     "Área a Negociar (Buffer ha)": area_ha,
-                                    "Índice Prioridad": score,
-                                    "Estado": "Pendiente de Abordaje"
+                                    "Índice de Prioridad (ROI)": area_ha * 100,
+                                    "Estado": "Sin Contactar"
                                 })
                                 
-                            df_prioridad = pd.DataFrame(datos_ranking).sort_values(by="Índice Prioridad", ascending=False)
+                            df_prioridad = pd.DataFrame(datos_ranking).sort_values(by="Índice de Prioridad (ROI)", ascending=False)
                             
                             c_rank1, c_rank2 = st.columns([2, 1])
                             with c_rank1:
                                 st.markdown("##### 📋 Top 10 Predios Estratégicos")
-                                st.dataframe(df_prioridad.head(10).style.background_gradient(cmap="YlOrRd", subset=["Índice Prioridad"]).format({"Área a Negociar (Buffer ha)": "{:.2f}", "Índice Prioridad": "{:.0f}", "Área Total Predio (ha)": "{:.2f}"}), use_container_width=True, hide_index=True)
-                            
+                                st.dataframe(df_prioridad.head(10).style.background_gradient(cmap="YlOrRd", subset=["Índice de Prioridad (ROI)"]).format({"Área a Negociar (Buffer ha)": "{:.2f}", "Índice de Prioridad (ROI)": "{:.0f}"}), use_container_width=True, hide_index=True)
                             with c_rank2:
                                 st.markdown("##### 💡 Resumen Operativo")
-                                st.metric("Predios Impactados", f"{len(df_prioridad)}")
-                                st.metric("Top 3 Predios Concentran", f"{(df_prioridad.head(3)['Área a Negociar (Buffer ha)'].sum() / df_prioridad['Área a Negociar (Buffer ha)'].sum() * 100):.1f}%", "del esfuerzo")
+                                st.metric("Predios Involucrados", f"{len(df_prioridad)}")
                                 csv_predios = df_prioridad.to_csv(index=False).encode('utf-8')
-                                st.download_button("📥 Descargar Plan de Negociación (CSV)", csv_predios, "Priorizacion_Predial.csv", "text/csv", use_container_width=True)
+                                st.download_button("📥 Descargar Plan de Negociación (CSV)", csv_predios, "Priorizacion_Predial.csv", "text/csv")
+                        else:
+                            st.info("Ninguno de los predios cargados intercepta la red hidrográfica calculada.")
                     except Exception as e:
-                        st.error(f"Error en el geoprocesamiento predial: {e}")
-            
+                        st.error(f"Error en el cruce geográfico: {e}")
             else:
-                # =========================================================
+                # ---------------------------------------------------------
                 # RUTA B: SIN PREDIOS (PRIORIZACIÓN ECOLÓGICA POR TRAMOS)
-                # =========================================================
-                st.info("ℹ️ No se detectó mapa predial local ni en base de datos. Activando **Priorización Ecológica por Tramos Hídricos**.")
+                # ---------------------------------------------------------
+                st.info("ℹ️ No se detectó mapa predial. Activando **Priorización Ecológica por Tramos Hídricos**.")
                 with st.spinner("Analizando jerarquía de conectividad del paisaje..."):
-                    if rios_strahler is not None and not rios_strahler.empty:
-                        # Evaluamos los segmentos de río basándonos en Orden de Strahler y Longitud
-                        datos_tramos = []
-                        for idx, row in rios_strahler.iterrows():
-                            orden = row.get('Orden_Strahler', 1)
-                            longitud = row.get('longitud_km', 0)
-                            
-                            # Fórmula de Prioridad Ecológica: Ríos de mayor orden y más largos son conectores críticos
-                            score_ecologico = (orden * 50) + (longitud * 10)
-                            
-                            datos_tramos.append({
-                                "ID Tramo": f"Segmento Hídrico {idx+1}",
-                                "Orden de Strahler": orden,
-                                "Longitud (Km)": longitud,
-                                "Importancia Ecológica": score_ecologico,
-                                "Rol en Conectividad": "Corredor Principal" if orden >= 3 else "Conector Secundario" if orden == 2 else "Área de Nacimiento"
-                            })
-                            
-                        df_tramos = pd.DataFrame(datos_tramos).sort_values(by="Importancia Ecológica", ascending=False)
+                    datos_tramos = []
+                    for idx, row in rios_strahler.iterrows():
+                        orden = row.get('Orden_Strahler', 1)
+                        longitud = row.get('longitud_km', 0)
                         
-                        c_tram1, c_tram2 = st.columns([2, 1])
-                        with c_tram1:
-                            st.markdown("##### 🌿 Tramos Críticos para Restauración (Top 10)")
-                            st.dataframe(df_tramos.head(10).style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format({"Longitud (Km)": "{:.2f}", "Importancia Ecológica": "{:.0f}"}), use_container_width=True, hide_index=True)
-                            
-                        with c_tram2:
-                            st.markdown("##### 💡 Resumen Ecológico")
-                            tramos_clave = df_tramos[df_tramos['Orden de Strahler'] >= 2]
-                            st.metric("Tramos Estratégicos (> Orden 1)", f"{len(tramos_clave)} segmentos")
-                            st.metric("Km Estratégicos", f"{tramos_clave['Longitud (Km)'].sum():.2f} km")
-                            st.caption("Estrategia: Al no contar con información predial, la prioridad de siembra se dirige a los tramos de mayor Orden de Strahler, ya que estos actúan como las arterias principales de movilidad de fauna.")
-                    else:
-                        st.warning("No se encontraron los datos de la red hídrica para priorizar.")
+                        # Ríos de mayor orden y más largos son conectores críticos
+                        score_ecologico = (orden * 50) + (longitud * 10)
+                        
+                        datos_tramos.append({
+                            "ID Tramo": f"Segmento Hídrico {idx+1}",
+                            "Orden de Strahler": orden,
+                            "Longitud (Km)": longitud,
+                            "Importancia Ecológica": score_ecologico,
+                            "Rol en Conectividad": "Corredor Principal" if orden >= 3 else "Conector Secundario" if orden == 2 else "Área de Nacimiento"
+                        })
+                        
+                    df_tramos = pd.DataFrame(datos_tramos).sort_values(by="Importancia Ecológica", ascending=False)
+                    
+                    c_tram1, c_tram2 = st.columns([2, 1])
+                    with c_tram1:
+                        st.markdown("##### 🌿 Tramos Críticos para Restauración (Top 10)")
+                        st.dataframe(df_tramos.head(10).style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format({"Longitud (Km)": "{:.2f}", "Importancia Ecológica": "{:.0f}"}), use_container_width=True, hide_index=True)
+                    with c_tram2:
+                        st.markdown("##### 💡 Resumen Ecológico")
+                        tramos_clave = df_tramos[df_tramos['Orden de Strahler'] >= 2]
+                        st.metric("Tramos Estratégicos (> Orden 1)", f"{len(tramos_clave)} segmentos")
+                        st.caption("Estrategia: Al no contar con información predial, la prioridad de siembra se dirige a los tramos de mayor Orden de Strahler, ya que estos actúan como las arterias principales de movilidad de fauna.")
         else:
-            st.info("💡 Asegúrate de haber calculado la franja riparia en la página de **Biodiversidad** primero.")
-
+            st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
