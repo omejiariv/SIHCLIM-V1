@@ -1217,34 +1217,79 @@ with tab_comparador:
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
 
-            # =========================================================================
-            # ECOLOGÍA DEL PAISAJE (MODO SEGURO - CERO GRÁFICOS)
-            # =========================================================================
-            with tab_ecologia:
-                st.subheader("🌿 Ecología del Paisaje (Modo Seguro)")
-                st.info("🛠️ **Prueba de Aislamiento:** Si logras leer este panel y jugar con los números sin que la pantalla se ponga blanca, el error era 100% el motor del mapa. Si se pone blanca de todos modos, el error está en otra pestaña (Ej. GBIF).")
+# =========================================================================
+# TAB 6: ECOLOGÍA DEL PAISAJE (CONECTIVIDAD RIPARIA)
+# =========================================================================
+
+with tab_ecologia:
+    st.subheader("🌿 Ecología del Paisaje: Conectividad y Franjas Riparias")
+    st.markdown("Analiza la red hidrográfica y modela escenarios de restauración basados en la viabilidad territorial y el déficit de coberturas naturales.")
+    
+    if st.session_state.get('gdf_rios') is not None and not st.session_state['gdf_rios'].empty:
+        gdf_rios_actual = st.session_state['gdf_rios']
+        c_gap1, c_gap2 = st.columns([1, 2.5])
+        
+        with c_gap1:
+            st.markdown("#### ⚙️ Parámetros del Corredor")
+            buffer_m = st.slider("Ancho de franja de protección por lado (m):", min_value=0, max_value=50, value=30, step=5)
+            
+            with st.spinner("Calculando red riparia (Álgebra Lineal Rápida)..."):
+                # 1. CÁLCULO MATEMÁTICO PURO (¡Cero colapsos de memoria!)
+                rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
+                longitud_total_m = rios_3116.length.sum()
                 
-                if st.session_state.get('gdf_rios') is not None and not st.session_state['gdf_rios'].empty:
-                    gdf_rios_actual = st.session_state['gdf_rios']
-                    
-                    buffer_m = st.slider("Ancho de franja de protección por lado (m):", min_value=0, max_value=50, value=30, step=5)
-                    
-                    # Cálculos matemáticos puros (sin geometrías complejas)
-                    rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
-                    longitud_total_m = rios_3116.length.sum()
-                    area_total_ha = (longitud_total_m * (buffer_m * 2) * 0.85) / 10000.0
-                    
-                    pct_bosque_existente = 35.0 
-                    ha_bosque = area_total_ha * (pct_bosque_existente / 100.0)
-                    ha_deficit = area_total_ha - ha_bosque
-                    
-                    st.markdown("### 📊 Resultados Matemáticos")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Longitud Total Ríos", f"{longitud_total_m:,.0f} m")
-                    c2.metric("Área Corredor", f"{area_total_ha:,.1f} ha")
-                    c3.metric("Déficit a Restaurar", f"{ha_deficit:,.1f} ha")
-                    
-                    # NO DIBUJAMOS MAPAS AQUÍ.
-                    
-                else:
-                    st.warning("No hay datos de ríos en memoria. Ve a Geomorfología primero.")
+                # Área = Longitud * (Ancho * 2) * Factor de descuento por cruces (0.85)
+                area_total_ha = (longitud_total_m * (buffer_m * 2) * 0.85) / 10000.0
+                st.metric("Área Total del Corredor", f"{area_total_ha:,.1f} ha")
+                
+                # 2. GAP ANALYSIS: COBERTURAS VS. RED DE DRENAJE
+                pct_bosque_existente = 35.0 
+                ha_bosque = area_total_ha * (pct_bosque_existente / 100.0)
+                ha_deficit = area_total_ha - ha_bosque
+                
+            st.markdown("---")
+            st.markdown("#### 📊 Análisis de Brechas (Gap)")
+            st.metric("🌳 Bosque Existente", f"{ha_bosque:,.1f} ha", "Cobertura Natural")
+            st.metric("🔴 Déficit Ripario", f"{ha_deficit:,.1f} ha", "- Área a Restaurar", delta_color="inverse")
+            
+            # Guardamos los parámetros para Toma de Decisiones
+            st.session_state['buffer_m_ripario'] = buffer_m
+            st.session_state['ha_deficit_ripario'] = ha_deficit
+            
+        with c_gap2:
+            import pydeck as pdk
+            st.markdown("##### 🗺️ Red de Conectividad Ecológica (Aceleración GPU)")
+            
+            rios_4326 = gdf_rios_actual.to_crs(epsg=4326)
+            
+            try: 
+                c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
+            except: 
+                c_lat, c_lon = 6.2, -75.5
+                
+            capas_mapa = []
+            
+            # Capa de la Cuenca
+            if gdf_zona is not None:
+                zona_4326 = gdf_zona.to_crs("EPSG:4326")
+                capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
+                
+            # MAGIA VISUAL: PyDeck engrosa las líneas en metros automáticamente
+            capas_mapa.append(pdk.Layer(
+                "GeoJsonLayer",
+                data=rios_4326,
+                opacity=0.5,
+                stroked=True,
+                get_line_color=[39, 174, 96, 255], 
+                get_line_width=buffer_m * 2,
+                lineWidthUnits='"meters"',
+                lineWidthMinPixels=2
+            ))
+            
+            # Capa del hilo de agua (Azul)
+            capas_mapa.append(pdk.Layer("GeoJsonLayer", data=rios_4326, opacity=1, get_line_color=[52, 152, 219, 255], get_line_width=1, lineWidthUnits='"pixels"'))
+            
+            view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=11)
+            st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light"), use_container_width=True)
+    else:
+        st.warning("👈 Selecciona una cuenca a la izquierda y calcula la Hidrología en Geomorfología para activar el Escáner Ripario.")
