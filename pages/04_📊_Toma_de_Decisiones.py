@@ -549,19 +549,27 @@ if gdf_zona is not None and not gdf_zona.empty:
         buffer_ripario = st.session_state.get('buffer_ripario_4326')
         rios_strahler = st.session_state.get('gdf_rios')
         
-        # Recuperar la capa de predios (LECTURA INTELIGENTE PARA CAPAS GIGANTES)
+        # Recuperar la capa de predios (LECTURA INTELIGENTE CON BBOX)
         capa_predios = None
-        ruta_shp_local = "data/Predios_Ant.shp"
+        
+        # Archivos que mencionaste en la carpeta data/
+        ruta_geojson_adquiridos = "data/PREDIOS_ADQUIRIDOS_ANTIOQUIA.geojson"
+        ruta_geojson_ejecutados = "data/PrediosEjecutados.geojson"
+        ruta_shp_ant = "data/Predios_Ant.shp"
         
         with st.spinner("Cargando estructura predial..."):
-            if os.path.exists(ruta_shp_local) and gdf_zona is not None:
-                # TRUCO PRO: bbox le dice a GeoPandas que no cargue los 500MB, 
-                # solo el cuadrito (bounding box) de tu zona de estudio.
-                # Envolvemos en tuple() para evitar el error de validación de Fiona
-                bbox = tuple(gdf_zona.to_crs(epsg=4326).total_bounds) 
-                capa_predios = gpd.read_file(ruta_shp_local, bbox=bbox)
-            else:
-                capa_predios = capas.get('predios') # Fallback a la base de datos
+            if gdf_zona is not None:
+                bbox = tuple(gdf_zona.to_crs(epsg=4326).total_bounds)
+                
+                # Intentamos leer el GeoJSON principal primero
+                if os.path.exists(ruta_geojson_adquiridos):
+                    capa_predios = gpd.read_file(ruta_geojson_adquiridos, bbox=bbox)
+                # Si no existe, buscamos el SHP
+                elif os.path.exists(ruta_shp_ant):
+                    capa_predios = gpd.read_file(ruta_shp_ant, bbox=bbox)
+                # Fallback a la base de datos
+                else:
+                    capa_predios = capas.get('predios')
         
         if buffer_ripario is not None and capa_predios is not None and not capa_predios.empty:
             with st.spinner("Ejecutando cruce espacial avanzado (Predios vs. Corredores)..."):
@@ -625,6 +633,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                     st.error(f"Error en el geoprocesamiento predial: {e}")
         else:
             st.info("💡 Para generar el ranking predial, asegúrate de haber calculado la franja en **Biodiversidad** y de tener activada la capa cartográfica de **Predios**.")
+
 
 
 
