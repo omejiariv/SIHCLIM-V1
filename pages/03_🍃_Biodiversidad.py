@@ -1218,72 +1218,33 @@ with tab_comparador:
             st.warning("Selecciona al menos un modelo para comparar.")
 
             # =========================================================================
-            # NUEVA PESTAÑA: ECOLOGÍA DEL PAISAJE Y ANÁLISIS DE BRECHAS (GAP ANALYSIS)
+            # ECOLOGÍA DEL PAISAJE (MODO SEGURO - CERO GRÁFICOS)
+            # =========================================================================
             with tab_ecologia:
-                st.subheader("🕵️‍♂️ Modo Diagnóstico: Cazando al Fantasma")
-                st.markdown("Este escáner ejecutará los procesos paso a paso. **Fíjate cuál es el último mensaje que aparece antes de la pantalla blanca.**")
+                st.subheader("🌿 Ecología del Paisaje (Modo Seguro)")
+                st.info("🛠️ **Prueba de Aislamiento:** Si logras leer este panel y jugar con los números sin que la pantalla se ponga blanca, el error era 100% el motor del mapa. Si se pone blanca de todos modos, el error está en otra pestaña (Ej. GBIF).")
                 
                 if st.session_state.get('gdf_rios') is not None and not st.session_state['gdf_rios'].empty:
-                    gdf = st.session_state['gdf_rios']
+                    gdf_rios_actual = st.session_state['gdf_rios']
                     
-                    with st.status("Iniciando telemetría de Ecología del Paisaje...", expanded=True) as status:
-                        import time
-                        import sys
-                        
-                        try:
-                            # --- PASO 1: LECTURA ---
-                            status.update(label="Paso 1: Leyendo datos de la memoria RAM...", state="running")
-                            peso_mb = sys.getsizeof(gdf) / (1024 * 1024)
-                            num_filas = len(gdf)
-                            st.write(f"✅ Se cargaron **{num_filas}** tramos de río. Peso en memoria: **{peso_mb:.2f} MB**")
-                            time.sleep(1) # Pausa para forzar a Streamlit a pintar en pantalla
-                            
-                            # --- PASO 2: GEOPROCESAMIENTO MÉTRICO ---
-                            status.update(label="Paso 2: Reproyectando a formato métrico (EPSG:3116)...", state="running")
-                            gdf_3116 = gdf.to_crs(epsg=3116)
-                            st.write("✅ Reproyección exitosa.")
-                            time.sleep(1)
-                            
-                            # --- PASO 3: MATEMÁTICAS ---
-                            status.update(label="Paso 3: Ejecutando Álgebra Lineal (Longitudes)...", state="running")
-                            longitud_total_m = gdf_3116.length.sum()
-                            area_total_ha = (longitud_total_m * 60 * 0.85) / 10000.0
-                            st.write(f"✅ Longitud total: **{longitud_total_m:,.2f} m** | Área calculada: **{area_total_ha:,.1f} ha**")
-                            time.sleep(1)
-                            
-                            # --- PASO 4: PREPARACIÓN WEB ---
-                            status.update(label="Paso 4: Preparando datos para visualización web (EPSG:4326)...", state="running")
-                            gdf_4326 = gdf_3116.to_crs(epsg=4326)
-                            st.write("✅ Conversión a coordenadas web exitosa.")
-                            time.sleep(1)
-                            
-                            # --- PASO 5: EL RENDERIZADOR (EL PRINCIPAL SOSPECHOSO) ---
-                            status.update(label="Paso 5: Construyendo el Mapa PyDeck (Solo 100 tramos de prueba)...", state="running")
-                            import pydeck as pdk
-                            
-                            c_lat = gdf_4326.geometry.iloc[0].centroid.y
-                            c_lon = gdf_4326.geometry.iloc[0].centroid.x
-                            
-                            # 🚨 LIMITADOR DE EMERGENCIA: Solo le enviaremos al mapa 100 líneas, no las 50,000.
-                            # Si esto funciona, el fantasma era el "Payload" (el peso del JSON viajando de Python a tu navegador).
-                            muestra_mapa = gdf_4326.head(100)
-                            
-                            capa_prueba = pdk.Layer(
-                                "GeoJsonLayer",
-                                data=muestra_mapa,
-                                get_line_color=[39, 174, 96, 255],
-                                get_line_width=30,
-                                lineWidthUnits='"meters"'
-                            )
-                            
-                            r = pdk.Deck(layers=[capa_prueba], initial_view_state=pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=11))
-                            st.pydeck_chart(r, use_container_width=True)
-                            
-                            st.write("✅ Mapa WebGL dibujado en el navegador con éxito.")
-                            status.update(label="🚀 ¡Diagnóstico completado sin colapsos!", state="complete")
-                            
-                        except Exception as e:
-                            status.update(label=f"🚨 FANTASMA ENCONTRADO (Error de Python)", state="error")
-                            st.exception(e)
+                    buffer_m = st.slider("Ancho de franja de protección por lado (m):", min_value=0, max_value=50, value=30, step=5)
+                    
+                    # Cálculos matemáticos puros (sin geometrías complejas)
+                    rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
+                    longitud_total_m = rios_3116.length.sum()
+                    area_total_ha = (longitud_total_m * (buffer_m * 2) * 0.85) / 10000.0
+                    
+                    pct_bosque_existente = 35.0 
+                    ha_bosque = area_total_ha * (pct_bosque_existente / 100.0)
+                    ha_deficit = area_total_ha - ha_bosque
+                    
+                    st.markdown("### 📊 Resultados Matemáticos")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Longitud Total Ríos", f"{longitud_total_m:,.0f} m")
+                    c2.metric("Área Corredor", f"{area_total_ha:,.1f} ha")
+                    c3.metric("Déficit a Restaurar", f"{ha_deficit:,.1f} ha")
+                    
+                    # NO DIBUJAMOS MAPAS AQUÍ.
+                    
                 else:
-                    st.warning("⚠️ No hay ríos en memoria. Calcula la Hidrología primero en Geomorfología.")
+                    st.warning("No hay datos de ríos en memoria. Ve a Geomorfología primero.")
