@@ -550,7 +550,17 @@ if gdf_zona is not None and not gdf_zona.empty:
         rios_strahler = st.session_state.get('gdf_rios')
         
         # Recuperar la capa de predios (De la BD local o la que cargaste)
-        capa_predios = capas.get('predios') # Asumiendo que tu sistema central carga los shapefiles aquí
+        capa_predios = None
+        ruta_shp_local = "data/Predios_Ant.shp"
+        
+        with st.spinner("Cargando estructura predial..."):
+            if os.path.exists(ruta_shp_local) and gdf_zona is not None:
+                # TRUCO PRO: bbox le dice a GeoPandas que no cargue los 500MB, 
+                # solo el cuadrito (bounding box) de tu zona de estudio. ¡Ahorra 99% de RAM!
+                bbox = gdf_zona.to_crs(epsg=4326).total_bounds 
+                capa_predios = gpd.read_file(ruta_shp_local, bbox=bbox)
+            else:
+                capa_predios = capas.get('predios') # Fallback a la base de datos
         
         if buffer_ripario is not None and capa_predios is not None and not capa_predios.empty:
             with st.spinner("Ejecutando cruce espacial avanzado (Predios vs. Corredores)..."):
@@ -614,6 +624,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                     st.error(f"Error en el geoprocesamiento predial: {e}")
         else:
             st.info("💡 Para generar el ranking predial, asegúrate de haber calculado la franja en **Biodiversidad** y de tener activada la capa cartográfica de **Predios**.")
+
 
 
 
