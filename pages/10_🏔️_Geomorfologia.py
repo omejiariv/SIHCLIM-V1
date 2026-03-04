@@ -332,6 +332,7 @@ if gdf_zona_seleccionada is not None:
                 st.dataframe(df_slopes.T, use_container_width=True)
 
             # --- TAB 3: HIPSOMETRÍA (ESTÁNDAR Y ADIMENSIONAL) ---
+# --- TAB 3: HIPSOMETRÍA (ESTÁNDAR Y ADIMENSIONAL) ---
             with tab3:
                 # Datos base
                 elevs_sorted = np.sort(elevs_valid)[::-1]
@@ -356,8 +357,6 @@ if gdf_zona_seleccionada is not None:
 
                 with c_hip2:
                     # GRÁFICO 2: Curva Adimensional (Relativa)
-                    # Eje Y: (h - h_min) / (h_max - h_min)
-                    # Eje X: a / A
                     h_min, h_max = np.min(elevs_sorted), np.max(elevs_sorted)
                     h_rel = (elevs_sorted[idx] - h_min) / (h_max - h_min)
                     a_rel = x_pct[idx] / 100.0 # De 0 a 1
@@ -373,30 +372,6 @@ if gdf_zona_seleccionada is not None:
                         height=450, margin=dict(l=0,r=0,t=40,b=0)
                     )
                     st.plotly_chart(fig_adim, use_container_width=True, config={'scrollZoom': True})
-
-                # --- ECUACIÓN HIPSOMÉTRICA MATEMÁTICA ---
-                st.markdown("---")
-                st.markdown("#### 🧮 Ecuación Hipsométrica $A(h)$")
-                st.caption("Modelo matemático que relaciona la altitud ($h$) con el porcentaje de área acumulada ($A$). Permite calcular qué porcentaje de la cuenca se inundaría o afectaría a una cota específica.")
-                
-                # Ajuste polinómico de 3er grado: Area(%) = f(Elevación)
-                # Invertimos X e Y para que sea A(h)
-                z_poly = np.polyfit(elevs_sorted[idx], x_pct[idx], 3)
-                
-                col_eq1, col_eq2 = st.columns([2, 1])
-                with col_eq1:
-                    st.latex(f"A(h) = {z_poly[0]:.2e} \\cdot h^3 {z_poly[1]:+.2e} \\cdot h^2 {z_poly[2]:+.2e} \\cdot h {z_poly[3]:+.2e}")
-                
-                with col_eq2:
-                    # Calcular la precisión estadística (R^2)
-                    p_func = np.poly1d(z_poly)
-                    y_pred = p_func(elevs_sorted[idx])
-                    y_real = x_pct[idx]
-                    ss_res = np.sum((y_real - y_pred) ** 2)
-                    ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
-                    r2 = 1 - (ss_res / ss_tot)
-                    
-                    st.metric("Precisión del Ajuste ($R^2$)", f"{r2:.4f}")               
                     
                 st.info("""
                 **Interpretación Adimensional:**
@@ -404,7 +379,29 @@ if gdf_zona_seleccionada is not None:
                 * **Curva Concava (Debajo de la recta):** Cuenca vieja, sedimentada y estabilizada.
                 * **Forma de 'S':** Cuenca madura en transición.
                 """)
-
+                
+                # --- ECUACIÓN HIPSOMÉTRICA MATEMÁTICA ---
+                st.markdown("---")
+                st.markdown("#### 🧮 Ecuación Hipsométrica $A(h)$")
+                st.caption("Modelo matemático que relaciona la altitud ($h$) con el porcentaje de área acumulada ($A$). Permite calcular qué porcentaje de la cuenca se inundaría o afectaría a una cota específica.")
+                
+                # Ajuste polinómico de 3er grado: Area(%) = f(Elevación)
+                z_poly = np.polyfit(elevs_sorted[idx], x_pct[idx], 3)
+                
+                col_eq1, col_eq2 = st.columns([2, 1])
+                with col_eq1:
+                    st.latex(f"A(h) = {z_poly[0]:.3e} \\cdot h^3 {z_poly[1]:+.3e} \\cdot h^2 {z_poly[2]:+.3e} \\cdot h {z_poly[3]:+.3e}")
+                
+                with col_eq2:
+                    p_func = np.poly1d(z_poly)
+                    y_pred = p_func(elevs_sorted[idx])
+                    y_real = x_pct[idx]
+                    ss_res = np.sum((y_real - y_pred) ** 2)
+                    ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
+                    r2 = 1 - (ss_res / ss_tot)
+                    
+                    st.metric("Precisión del Ajuste ($R^2$)", f"{r2:.4f}")
+                    
             # --- TAB 4: HIDROLOGÍA (VERSIÓN FINAL INTEGRADA Y CORREGIDA) ---
             with tab4:
                 import sys
