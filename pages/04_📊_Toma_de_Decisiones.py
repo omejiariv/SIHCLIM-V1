@@ -542,7 +542,9 @@ if gdf_zona is not None and not gdf_zona.empty:
         # PRIORIZACIÓN PREDIAL PARA CONECTIVIDAD RIPARIA
         # =========================================================================
         st.markdown("---")
-        st.subheader("🎯 Priorización Predial: Inteligencia de Negociación")
+        nombre_zona_td = st.session_state.get('nombre_seleccion', 'el Territorio')
+        
+        st.subheader(f"🎯 Priorización Predial: Inteligencia de Negociación en {nombre_zona_td.title()}")
         st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
 
         # 1. Recuperar datos desde Biodiversidad
@@ -669,7 +671,8 @@ if gdf_zona is not None and not gdf_zona.empty:
             # 🗺️ EL MAPA TÁCTICO DE NEGOCIACIÓN (Aceleración GPU)
             # =========================================================
             st.markdown("---")
-            st.markdown("##### 🗺️ Visor Táctico de Conectividad y Predios")
+            nombre_zona_td = st.session_state.get('nombre_seleccion', 'el Territorio')
+            st.markdown(f"##### 🗺️ Visor Táctico de Conectividad y Predios en {nombre_zona_td.title()}")
             
             import pydeck as pdk
             
@@ -737,4 +740,5 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         else:
             st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
+
 
