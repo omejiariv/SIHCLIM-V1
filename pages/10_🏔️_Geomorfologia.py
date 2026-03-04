@@ -465,39 +465,44 @@ if gdf_zona_seleccionada is not None:
                                     gdf_streams_m = gdf_streams.to_crs(epsg=3116)
                                     gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
                                     
+                                    # --- 🌟 MAGIA MATEMÁTICA: LEY DE ÁREAS DE HORTON ---
+                                    # En lugar de topología frágil, usamos física de fluidos logarítmica.
                                     try:
-                                        # 1. Calcular Strahler Raster
-                                        strahler_raster = grid.stream_order(fdir, dirmap=dirmap)
-                                        # Aislar solo la red para evitar ruido de las montañas
-                                        strahler_limpio = np.where(acc > umbral, strahler_raster, 0)
-                                        
+                                        inv_affine = ~grid.affine
                                         orden_list = []
-                                        transf = meta['transform']
+                                        import math
                                         
-                                        # Iteramos sobre las geometrías (soportando líneas y multilíneas)
+                                        Ra = 4.5 # Relación de Área de Horton estándar
+                                        
                                         for geom in gdf_streams.geometry:
-                                            orders = []
+                                            acc_vals = []
                                             lineas = [geom] if geom.geom_type == 'LineString' else list(geom.geoms) if geom.geom_type == 'MultiLineString' else []
                                             
                                             for linea in lineas:
                                                 if linea.is_empty: continue
-                                                xs, ys = linea.xy
-                                                # Convertir coordenadas geográficas a índices de matriz exactos
-                                                rows, cols = rasterio.transform.rowcol(transf, xs, ys)
-                                                
-                                                for r, c in zip(rows, cols):
-                                                    # Ventana 3x3 para atrapar el río aunque haya un ligero desfase
-                                                    rmin, rmax = max(0, r-1), min(strahler_limpio.shape[0], r+2)
-                                                    cmin, cmax = max(0, c-1), min(strahler_limpio.shape[1], c+2)
+                                                for p in list(linea.coords):
+                                                    try:
+                                                        c_f, r_f = inv_affine * p
+                                                        c, r = int(round(c_f)), int(round(r_f))
+                                                        # Leemos la acumulación en el río
+                                                        rmin, rmax = max(0, r-1), min(acc.shape[0], r+2)
+                                                        cmin, cmax = max(0, c-1), min(acc.shape[1], c+2)
+                                                        window = acc[rmin:rmax, cmin:cmax]
+                                                        if window.size > 0:
+                                                            acc_vals.append(np.max(window))
+                                                    except: pass
                                                     
-                                                    window = strahler_limpio[rmin:rmax, cmin:cmax]
-                                                    if window.size > 0:
-                                                        val = np.max(window)
-                                                        if val > 0: orders.append(val)
-                                                        
-                                            # Asignar el orden máximo encontrado en todo el tramo
-                                            orden = int(max(orders)) if orders else 1
-                                            orden_list.append(orden)
+                                            if acc_vals:
+                                                acc_max = max(acc_vals)
+                                                if acc_max >= umbral:
+                                                    # Fórmula de Horton
+                                                    orden = int(math.floor(math.log(acc_max / umbral, Ra))) + 1
+                                                else:
+                                                    orden = 1
+                                            else:
+                                                orden = 1
+                                                
+                                            orden_list.append(max(1, orden))
                                             
                                         gdf_streams['Orden_Strahler'] = orden_list
                                         
@@ -605,29 +610,38 @@ if gdf_zona_seleccionada is not None:
                                 r_viz = st.session_state.get('gdf_rios')
                                 if r_viz is not None and not r_viz.empty:
                                     r_viz_4326 = r_viz.to_crs("EPSG:4326")
-                                    l, lt, tx = [], [], []
                                     
-                                    for _, row in r_viz_4326.iterrows():
-                                        g = row.geometry
-                                        orden = row.get('Orden_Strahler', 1)
-                                        n = f"Río Orden {orden}"
-                                        
-                                        if g.geom_type == 'LineString': p = [g]
-                                        elif g.geom_type == 'MultiLineString': p = g.geoms
-                                        else: continue
-                                        
-                                        for s in p: 
-                                            x, y = s.xy
-                                            l.extend(list(x) + [None])
-                                            lt.extend(list(y) + [None])
-                                            tx.extend([n] * (len(x) + 1))
+                                    # Paleta de colores hidro: de claro a oscuro según jerarquía
+                                    colores_orden = {1: '#85C1E9', 2: '#3498DB', 3: '#2874A6', 4: '#1A5276', 5: '#0E2F44'}
                                     
-                                    # El color variará según el orden gracias al hover
-                                    fig.add_trace(go.Scattermapbox(mode="lines", lon=l, lat=lt, text=tx, hoverinfo='text', line={'width': 2, 'color': '#0044FF'}, name="Red Drenaje (Modelo)"))
-                                    st.success(f"✅ {len(r_viz)} tramos de río calculados. Deslice el ratón sobre ellos para ver su Orden de Strahler.")
+                                    # Dibujamos iterando orden por orden
+                                    for orden in sorted(r_viz_4326['Orden_Strahler'].unique()):
+                                        l, lt, tx = [], [], []
+                                        tramos = r_viz_4326[r_viz_4326['Orden_Strahler'] == orden]
+                                        color = colores_orden.get(orden, '#0E2F44')
+                                        grosor = 1 + (orden * 0.8) # Más grueso a medida que sube el orden
+                                        
+                                        for _, row in tramos.iterrows():
+                                            g = row.geometry
+                                            n = f"Río Orden {orden}"
+                                            
+                                            if g.geom_type == 'LineString': p = [g]
+                                            elif g.geom_type == 'MultiLineString': p = g.geoms
+                                            else: continue
+                                            
+                                            for s in p: 
+                                                x, y = s.xy
+                                                l.extend(list(x) + [None])
+                                                lt.extend(list(y) + [None])
+                                                tx.extend([n] * (len(x) + 1))
+                                        
+                                        fig.add_trace(go.Scattermapbox(mode="lines", lon=l, lat=lt, text=tx, hoverinfo='text', line={'width': grosor, 'color': color}, name=f"Orden {orden}"))
+                                    
+                                    max_o = int(r_viz_4326['Orden_Strahler'].max())
+                                    st.success(f"✅ Red generada exitosamente (Ley de Horton). Se detectaron hasta ríos de Orden {max_o}.")
                                 else:
-                                    st.warning(f"No se detectaron ríos con un umbral de {umbral}. Disminuya el valor del control deslizante para forzar la aparición de arroyos menores.")
-
+                                    st.warning("No hay ríos visibles. Disminuya el umbral de acumulación.")
+                                    
                             # 3. CATCHMENT / DIVISORIA
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
                                 if 'x_pour_calib' not in st.session_state: st.session_state['x_pour_calib']=int(c_smart); st.session_state['y_pour_calib']=int(r_smart)
