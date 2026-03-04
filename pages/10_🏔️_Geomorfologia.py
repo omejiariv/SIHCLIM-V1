@@ -469,18 +469,12 @@ if gdf_zona_seleccionada is not None:
                                     gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
                                     
                                     try:
-                                        # 1. Calculamos Strahler
+                                        # 1. Calculamos Strahler globalmente
                                         strahler_raster = grid.stream_order(fdir, dirmap=dirmap)
-                                        
-                                        # 2. TRUCO DE MAGIA: Apagamos el "ruido" de la montaña
-                                        # Solo los píxeles que son red de drenaje conservan su orden, el resto es 0
-                                        red_binaria = (acc > umbral)
-                                        strahler_limpio = np.where(red_binaria, strahler_raster, 0)
-                                        
                                         inv_affine = ~grid.affine
                                         orden_list = []
                                         
-                                        # Iteramos sobre las geometrías (soportando líneas y multilíneas por el recorte)
+                                        # Iteramos sobre las geometrías
                                         for geom in gdf_streams.geometry:
                                             orders = []
                                             lineas = [geom] if geom.geom_type == 'LineString' else list(geom.geoms) if geom.geom_type == 'MultiLineString' else []
@@ -488,13 +482,20 @@ if gdf_zona_seleccionada is not None:
                                             for linea in lineas:
                                                 for p in list(linea.coords):
                                                     try:
-                                                        c, r = inv_affine * p
-                                                        # int(round()) para caer exactamente en el centro del píxel
-                                                        val = strahler_limpio[int(round(r)), int(round(c))]
-                                                        if val > 0: orders.append(val)
+                                                        c_float, r_float = inv_affine * p
+                                                        c, r = int(round(c_float)), int(round(r_float))
+                                                        
+                                                        # 🌟 TRUCO 3x3: Buscamos en los píxeles vecinos para no fallar el cauce
+                                                        rmin, rmax = max(0, r-1), min(strahler_raster.shape[0], r+2)
+                                                        cmin, cmax = max(0, c-1), min(strahler_raster.shape[1], c+2)
+                                                        
+                                                        window = strahler_raster[rmin:rmax, cmin:cmax]
+                                                        if window.size > 0:
+                                                            # Guardamos el orden más alto de ese pedacito de 3x3
+                                                            orders.append(np.max(window))
                                                     except: pass
                                                     
-                                            # Usamos MAX en lugar de MODE para garantizar el orden máximo del tramo
+                                            # El orden de este segmento de río será el máximo encontrado en toda su longitud
                                             orden = int(max(orders)) if orders else 1
                                             orden_list.append(orden)
                                             
@@ -519,7 +520,7 @@ if gdf_zona_seleccionada is not None:
                         finally: 
                             try: os.remove(tmp.name)
                             except: pass
-
+                                
                     # 2. LÓGICA DE VISUALIZACIÓN
                     if grid is not None and acc is not None:
                         
