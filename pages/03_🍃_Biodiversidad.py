@@ -365,8 +365,8 @@ def detectar_zona_vida_dominante(gdf_zona):
         return "bh-MB"
 
 # --- DEFINICIÓN DE TABS PRINCIPALES ---
-tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador = st.tabs([
-    "🗺️ Mapa & GBIF", "🧬 Taxonomía", "🌲 Bosque e Inventarios", "⚖️ Metabolismo Territorial", "📈 Comparador", "🌿 Ecología del Paisaje"
+tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador, tab_ecologia = st.tabs([
+    "🗺️ Mapa & GBIF", "🧬 Taxonomía", "🌲 Bosque e Inventarios", "⚖️ Metabolismo (AFOLU)", "📊 Comparador", "🌿 Ecología del Paisaje"
 ])
 
 # Variable global para datos de biodiversidad
@@ -1304,6 +1304,7 @@ with tab_comparador:
                         
                 else:
                     st.info("⚠️ El motor de Ecología del Paisaje requiere los datos físicos del territorio. Por favor, ve a la herramienta **Geomorfología** y calcula la red de drenaje primero.")
+
 
 
 
