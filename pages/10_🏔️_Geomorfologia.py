@@ -373,6 +373,30 @@ if gdf_zona_seleccionada is not None:
                         height=450, margin=dict(l=0,r=0,t=40,b=0)
                     )
                     st.plotly_chart(fig_adim, use_container_width=True, config={'scrollZoom': True})
+
+                # --- ECUACIÓN HIPSOMÉTRICA MATEMÁTICA ---
+                st.markdown("---")
+                st.markdown("#### 🧮 Ecuación Hipsométrica $A(h)$")
+                st.caption("Modelo matemático que relaciona la altitud ($h$) con el porcentaje de área acumulada ($A$). Permite calcular qué porcentaje de la cuenca se inundaría o afectaría a una cota específica.")
+                
+                # Ajuste polinómico de 3er grado: Area(%) = f(Elevación)
+                # Invertimos X e Y para que sea A(h)
+                z_poly = np.polyfit(elevs_sorted[idx], x_pct[idx], 3)
+                
+                col_eq1, col_eq2 = st.columns([2, 1])
+                with col_eq1:
+                    st.latex(f"A(h) = {z_poly[0]:.2e} \\cdot h^3 {z_poly[1]:+.2e} \\cdot h^2 {z_poly[2]:+.2e} \\cdot h {z_poly[3]:+.2e}")
+                
+                with col_eq2:
+                    # Calcular la precisión estadística (R^2)
+                    p_func = np.poly1d(z_poly)
+                    y_pred = p_func(elevs_sorted[idx])
+                    y_real = x_pct[idx]
+                    ss_res = np.sum((y_real - y_pred) ** 2)
+                    ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
+                    r2 = 1 - (ss_res / ss_tot)
+                    
+                    st.metric("Precisión del Ajuste ($R^2$)", f"{r2:.4f}")               
                     
                 st.info("""
                 **Interpretación Adimensional:**
@@ -408,26 +432,33 @@ if gdf_zona_seleccionada is not None:
 
                     with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                         try:
-                            meta_t = meta.copy(); meta_t.update(driver='GTiff', dtype='float64') 
-                            with rasterio.open(tmp.name, 'w', **meta_t) as dst: dst.write(arr_elevacion.astype('float64'), 1)
+                            # 1. Blindaje de bordes: Convertimos NaN a -9999 para que PySheds reconozca las paredes
+                            meta_t = meta.copy()
+                            meta_t.update(driver='GTiff', dtype='float64', nodata=-9999.0)
+                            dem_clean = np.where(np.isnan(arr_elevacion), -9999.0, arr_elevacion)
+                            
+                            with rasterio.open(tmp.name, 'w', **meta_t) as dst: 
+                                dst.write(dem_clean.astype('float64'), 1)
+                            
                             grid = Grid.from_raster(tmp.name)
-                            dem_grid = grid.read_raster(tmp.name)
-                            pit_filled = grid.fill_pits(dem_grid)
-                            resolved = grid.resolve_flats(pit_filled)
+                            dem_grid = grid.read_raster(tmp.name, nodata=-9999.0)
+                            
+                            # --- 🌟 LA CURA PARA LOS RÍOS ROTOS ---
+                            # Usamos fill_depressions (más poderoso) en lugar de fill_pits
+                            flooded = grid.fill_depressions(dem_grid)
+                            resolved = grid.resolve_flats(flooded)
+                            
                             dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                             fdir = grid.flowdir(resolved, dirmap=dirmap)
                             acc = grid.accumulation(fdir, dirmap=dirmap)
                             
-                            # --- 🌟 MAGIA ESPACIAL: VECTORIZACIÓN Y STRAHLER ---
+                            # Vectorización y Strahler
                             branches = grid.extract_river_network(fdir, acc > umbral, dirmap=dirmap)
                             if branches and len(branches["features"]) > 0:
                                 gdf_streams = gpd.GeoDataFrame.from_features(branches["features"], crs=crs_actual)
-                                
-                                # Longitud real en kilómetros (Proyectado a Magna Sirgas EPSG:3116)
                                 gdf_streams_m = gdf_streams.to_crs(epsg=3116)
                                 gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
                                 
-                                # Cálculo del Orden de Strahler mediante lectura de píxeles
                                 try:
                                     strahler_raster = grid.stream_order(fdir, dirmap=dirmap)
                                     inv_affine = ~grid.affine
@@ -444,12 +475,9 @@ if gdf_zona_seleccionada is not None:
                                         orden_list.append(int(statistics.mode(orders)) if orders else 1)
                                     gdf_streams['Orden_Strahler'] = orden_list
                                 except Exception as e:
-                                    gdf_streams['Orden_Strahler'] = 1 # Fallback de seguridad
+                                    gdf_streams['Orden_Strahler'] = 1 
                                     
-                                # Guardamos los ríos en el cerebro global
                                 st.session_state['gdf_rios'] = gdf_streams
-                                
-                                # Resumen estadístico agrupado por Orden
                                 df_strahler = gdf_streams.groupby('Orden_Strahler').agg(
                                     Num_Segmentos=('geometry', 'count'),
                                     Longitud_Km=('longitud_km', 'sum')
@@ -458,7 +486,6 @@ if gdf_zona_seleccionada is not None:
                             else:
                                 st.session_state['gdf_rios'] = None
                                 st.session_state['geomorfo_strahler_df'] = None
-                            # -----------------------------------------------------
                         except Exception as e: 
                             st.warning(f"Error procesando hidrología: {e}")
                         finally: 
