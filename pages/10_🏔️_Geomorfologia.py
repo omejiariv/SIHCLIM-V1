@@ -418,7 +418,7 @@ if gdf_zona_seleccionada is not None:
                     # Raster de primero en la lista para probar fácil
                     opciones = ["Vectores (Líneas)", "Raster (Acumulación)", "Catchment (Mascara)", "Divisoria (Línea)"]
                     modo_viz = st.radio("Visualización:", opciones)
-                    umbral = st.slider("Umbral Acumulación", 10, 5000, 100, 10)
+                    umbral = st.slider("Umbral Acumulación", 5, 5000, 100, 5)
 
                 with c_map:
                     # 1. PROCESAMIENTO (CÁLCULO PURO)
