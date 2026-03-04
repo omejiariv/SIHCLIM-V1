@@ -469,10 +469,16 @@ if gdf_zona_seleccionada is not None:
                                     gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
                                     
                                     try:
+                                        # 1. Calculamos Strahler
                                         strahler_raster = grid.stream_order(fdir, dirmap=dirmap)
+                                        
+                                        # 2. TRUCO DE MAGIA: Apagamos el "ruido" de la montaña
+                                        # Solo los píxeles que son red de drenaje conservan su orden, el resto es 0
+                                        red_binaria = (acc > umbral)
+                                        strahler_limpio = np.where(red_binaria, strahler_raster, 0)
+                                        
                                         inv_affine = ~grid.affine
                                         orden_list = []
-                                        import statistics
                                         
                                         # Iteramos sobre las geometrías (soportando líneas y multilíneas por el recorte)
                                         for geom in gdf_streams.geometry:
@@ -483,11 +489,14 @@ if gdf_zona_seleccionada is not None:
                                                 for p in list(linea.coords):
                                                     try:
                                                         c, r = inv_affine * p
-                                                        val = strahler_raster[int(r), int(c)]
+                                                        # int(round()) para caer exactamente en el centro del píxel
+                                                        val = strahler_limpio[int(round(r)), int(round(c))]
                                                         if val > 0: orders.append(val)
                                                     except: pass
                                                     
-                                            orden_list.append(int(statistics.mode(orders)) if orders else 1)
+                                            # Usamos MAX en lugar de MODE para garantizar el orden máximo del tramo
+                                            orden = int(max(orders)) if orders else 1
+                                            orden_list.append(orden)
                                             
                                         gdf_streams['Orden_Strahler'] = orden_list
                                     except Exception as e:
@@ -552,17 +561,28 @@ if gdf_zona_seleccionada is not None:
 
                         # --- MAPAS ---
                         
-                        # CASO A: RASTER (USAMOS IF AQUÍ PARA QUE SEA LA PRIMERA OPCIÓN LÓGICA)
+                        # CASO A: RASTER (RECORTE EXACTO AL POLÍGONO)
                         if modo_viz == "Raster (Acumulación)":
-                            # Cálculo dinámico: Si el mapa es gigante (>1000px), reducimos resolución
-                            h, w = acc.shape
+                            # Máscara para ocultar el agua fuera de la cuenca
+                            acc_viz = acc.copy()
+                            try:
+                                if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
+                                    gdf_p = gdf_zona_seleccionada.to_crs(meta['crs'])
+                                    shapes = ((g, 1) for g in gdf_p.geometry)
+                                    mask_poly = features.rasterize(shapes, out_shape=acc.shape, transform=transform, fill=0, dtype='uint8')
+                                    # Ponemos np.nan (nulo) a lo que está fuera para que sea transparente
+                                    acc_viz = np.where(mask_poly == 1, acc_viz, np.nan)
+                            except Exception as e: pass
+
+                            # Cálculo dinámico de resolución
+                            h, w = acc_viz.shape
                             factor = 1
                             if h > 1000 or w > 1000: factor = int(max(h, w) / 800)
                             
                             fig = px.imshow(
-                                np.log1p(acc[::factor, ::factor]), 
+                                np.log1p(acc_viz[::factor, ::factor]), 
                                 color_continuous_scale='Blues', 
-                                title=f"Acumulación de Flujo (Escala 1:{factor})",
+                                title=f"Acumulación de Flujo: {nombre_zona}",
                             )
                             fig.update_layout(height=600)
                             st.plotly_chart(fig, use_container_width=True)
