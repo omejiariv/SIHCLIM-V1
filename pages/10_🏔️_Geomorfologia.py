@@ -469,37 +469,41 @@ if gdf_zona_seleccionada is not None:
                                     gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
                                     
                                     try:
-                                        # 1. Calculamos Strahler globalmente
+                                        # 1. Calcular Strahler Raster
                                         strahler_raster = grid.stream_order(fdir, dirmap=dirmap)
-                                        inv_affine = ~grid.affine
-                                        orden_list = []
+                                        # Aislar solo la red para evitar ruido de las montañas
+                                        strahler_limpio = np.where(acc > umbral, strahler_raster, 0)
                                         
-                                        # Iteramos sobre las geometrías
+                                        orden_list = []
+                                        transf = meta['transform']
+                                        
+                                        # Iteramos sobre las geometrías (soportando líneas y multilíneas)
                                         for geom in gdf_streams.geometry:
                                             orders = []
                                             lineas = [geom] if geom.geom_type == 'LineString' else list(geom.geoms) if geom.geom_type == 'MultiLineString' else []
                                             
                                             for linea in lineas:
-                                                for p in list(linea.coords):
-                                                    try:
-                                                        c_float, r_float = inv_affine * p
-                                                        c, r = int(round(c_float)), int(round(r_float))
-                                                        
-                                                        # 🌟 TRUCO 3x3: Buscamos en los píxeles vecinos para no fallar el cauce
-                                                        rmin, rmax = max(0, r-1), min(strahler_raster.shape[0], r+2)
-                                                        cmin, cmax = max(0, c-1), min(strahler_raster.shape[1], c+2)
-                                                        
-                                                        window = strahler_raster[rmin:rmax, cmin:cmax]
-                                                        if window.size > 0:
-                                                            # Guardamos el orden más alto de ese pedacito de 3x3
-                                                            orders.append(np.max(window))
-                                                    except: pass
+                                                if linea.is_empty: continue
+                                                xs, ys = linea.xy
+                                                # Convertir coordenadas geográficas a índices de matriz exactos
+                                                rows, cols = rasterio.transform.rowcol(transf, xs, ys)
+                                                
+                                                for r, c in zip(rows, cols):
+                                                    # Ventana 3x3 para atrapar el río aunque haya un ligero desfase
+                                                    rmin, rmax = max(0, r-1), min(strahler_limpio.shape[0], r+2)
+                                                    cmin, cmax = max(0, c-1), min(strahler_limpio.shape[1], c+2)
                                                     
-                                            # El orden de este segmento de río será el máximo encontrado en toda su longitud
+                                                    window = strahler_limpio[rmin:rmax, cmin:cmax]
+                                                    if window.size > 0:
+                                                        val = np.max(window)
+                                                        if val > 0: orders.append(val)
+                                                        
+                                            # Asignar el orden máximo encontrado en todo el tramo
                                             orden = int(max(orders)) if orders else 1
                                             orden_list.append(orden)
                                             
                                         gdf_streams['Orden_Strahler'] = orden_list
+                                        
                                     except Exception as e:
                                         gdf_streams['Orden_Strahler'] = 1 
                                         
