@@ -538,6 +538,82 @@ if gdf_zona is not None and not gdf_zona.empty:
             * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
             """)
 
+# =========================================================================
+        # NUEVA SECCIÓN: PRIORIZACIÓN PREDIAL PARA CONECTIVIDAD RIPARIA
+        # =========================================================================
+        st.markdown("---")
+        st.subheader("🎯 Priorización Predial: Inteligencia de Negociación")
+        st.markdown("Cruza las necesidades de restauración riparia (Gap Analysis) con la estructura predial para identificar qué propiedades ofrecen el mayor retorno de inversión ecosistémico (ROI) y deben ser priorizadas para acuerdos de conservación.")
+
+        # Recuperar el buffer ripario y los ríos con su orden de Strahler
+        buffer_ripario = st.session_state.get('buffer_ripario_4326')
+        rios_strahler = st.session_state.get('gdf_rios')
+        
+        # Recuperar la capa de predios (De la BD local o la que cargaste)
+        capa_predios = capas.get('predios') # Asumiendo que tu sistema central carga los shapefiles aquí
+        
+        if buffer_ripario is not None and capa_predios is not None and not capa_predios.empty:
+            with st.spinner("Ejecutando cruce espacial avanzado (Predios vs. Corredores)..."):
+                try:
+                    # 1. Asegurar proyección métrica para cálculos exactos de área
+                    predios_3116 = capa_predios.to_crs(epsg=3116)
+                    buffer_3116 = buffer_ripario.to_crs(epsg=3116)
+                    
+                    # 2. INTERSECCIÓN ESPACIAL (Recortar predios que tocan el buffer)
+                    predios_en_buffer = gpd.overlay(predios_3116, buffer_3116, how='intersection')
+                    
+                    if not predios_en_buffer.empty:
+                        # 3. Calcular el área exacta que ese predio le aporta al corredor
+                        predios_en_buffer['Area_Riparia_ha'] = predios_en_buffer.geometry.area / 10000.0
+                        
+                        # 4. Construir la Tabla de Prioridades
+                        datos_ranking = []
+                        # Buscar la columna que contenga el identificador del predio (Matrícula, Código o Nombre)
+                        col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID'] if col in predios_en_buffer.columns), None)
+                        
+                        for idx, row in predios_en_buffer.iterrows():
+                            id_predio = row[col_id] if col_id else f"Predio_{idx}"
+                            area_ha = row['Area_Riparia_ha']
+                            
+                            # CÁLCULO DEL ÍNDICE DE PRIORIDAD (ROI ECOLÓGICO)
+                            # Premisa: Mayor área dentro de la zona de protección = Mayor puntaje
+                            # En el futuro se cruzará aquí con el Orden de Strahler del río vecino
+                            score = area_ha * 100 
+                            
+                            datos_ranking.append({
+                                "ID Predial": id_predio,
+                                "Área Total Predio (ha)": row.get('Area', 0) / 10000.0 if 'Area' in row else 0, # O la columna real
+                                "Área a Negociar (Buffer ha)": area_ha,
+                                "Índice Prioridad": score,
+                                "Estado": "Pendiente de Abordaje"
+                            })
+                            
+                        df_prioridad = pd.DataFrame(datos_ranking).sort_values(by="Índice Prioridad", ascending=False)
+                        
+                        # 5. Visualización del Tablero de Negociación
+                        c_rank1, c_rank2 = st.columns([2, 1])
+                        
+                        with c_rank1:
+                            st.markdown("##### 📋 Top 10 Predios Estratégicos")
+                            st.dataframe(
+                                df_prioridad.head(10).style.background_gradient(cmap="YlOrRd", subset=["Índice Prioridad"])
+                                .format({"Área a Negociar (Buffer ha)": "{:.2f}", "Índice Prioridad": "{:.0f}", "Área Total Predio (ha)": "{:.2f}"}),
+                                use_container_width=True, hide_index=True
+                            )
+                        
+                        with c_rank2:
+                            st.markdown("##### 💡 Resumen Operativo")
+                            st.metric("Predios Impactados", f"{len(df_prioridad)}")
+                            st.metric("Top 3 Predios Concentran", f"{(df_prioridad.head(3)['Área a Negociar (Buffer ha)'].sum() / df_prioridad['Área a Negociar (Buffer ha)'].sum() * 100):.1f}%", "del esfuerzo")
+                            st.caption("Estrategia: Abordar primero a los propietarios en la parte superior del ranking maximiza los kilómetros de corredor conectados con el menor número de acuerdos legales.")
+                            
+                            csv_predios = df_prioridad.to_csv(index=False).encode('utf-8')
+                            st.download_button("📥 Exportar Lista de Negociación (CSV)", csv_predios, "Priorizacion_Predial_Riparia.csv", "text/csv", use_container_width=True)
+                            
+                except Exception as e:
+                    st.error(f"Error en el geoprocesamiento predial: {e}")
+        else:
+            st.info("💡 Para generar el ranking predial, asegúrate de haber calculado la franja en **Biodiversidad** y de tener activada la capa cartográfica de **Predios**.")
 
 
 
