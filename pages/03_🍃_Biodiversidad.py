@@ -1285,24 +1285,24 @@ with tab_comparador:
                     
                     with c_gap1:
                         st.markdown("#### ⚙️ Parámetros del Corredor")
-                        buffer_m = st.slider("Ancho de franja de protección (m):", min_value=0, max_value=50, value=30, step=5)
+                        buffer_m = st.slider("Ancho de franja de protección por lado (m):", min_value=0, max_value=50, value=30, step=5)
                         
-                        with st.spinner("Calculando red riparia (Geoprocesamiento optimizado)..."):
-                            # 1. CÁLCULO MATEMÁTICO (ULTRA RÁPIDO)
-                            rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
-                            
-                            # unary_union es 100x más rápido y estable que dissolve() para redes complejas
-                            buffer_geoseries = rios_3116.buffer(buffer_m, resolution=1)
-                            union_geom = buffer_geoseries.unary_union 
-                            
-                            gdf_buffer_exacto = gpd.GeoDataFrame(geometry=[union_geom], crs="EPSG:3116")
-                            area_total_ha = gdf_buffer_exacto.area.sum() / 10000.0
-                            
-                            # 2. CÁLCULO VISUAL (SIMPLIFICACIÓN LIGERA)
-                            gdf_viz = gdf_buffer_exacto.copy()
-                            # Reducimos los vértices redundantes para el mapa web
-                            gdf_viz['geometry'] = gdf_viz.geometry.simplify(tolerance=10.0, preserve_topology=False)
-                            gdf_buffer_4326 = gdf_viz.to_crs("EPSG:4326")
+                        # 1. CÁLCULO MATEMÁTICO (ULTRA LIGERO)
+                        # Calculamos el área de manera matemática sin intentar dibujar o fusionar el polígono gigante
+                        rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
+                        
+                        try:
+                            # Intentamos la unión rápida para evitar doble contabilidad en cruces
+                            area_total_ha = rios_3116.buffer(buffer_m, resolution=1).unary_union.area / 10000.0
+                            # Guardamos una versión del buffer en memoria (muy simplificada) solo para cruce de predios
+                            buffer_cruce = gpd.GeoDataFrame(geometry=[rios_3116.buffer(buffer_m, resolution=1).unary_union.simplify(5.0)], crs="EPSG:3116")
+                            st.session_state['buffer_ripario_3116'] = buffer_cruce
+                        except:
+                            # Si la red es TAN masiva que colapsa la unión, usamos una aproximación matemática:
+                            # Area = Longitud Total * Ancho (descontando un 10% estimado por solapamiento en las uniones)
+                            long_total_m = rios_3116.length.sum()
+                            area_total_ha = (long_total_m * (buffer_m * 2) * 0.9) / 10000.0
+                            st.session_state['buffer_ripario_3116'] = None # Desactiva cruce predial exacto temporalmente
                             
                         st.metric("Área Total del Corredor", f"{area_total_ha:,.1f} ha")
                         
@@ -1315,61 +1315,42 @@ with tab_comparador:
                         st.metric("🌳 Bosque Existente", f"{ha_bosque:,.1f} ha", "Conservar")
                         st.metric("🔴 Déficit Ripario", f"{ha_deficit:,.1f} ha", "- Restaurar", delta_color="inverse")
                         
-                        st.session_state['buffer_ripario_3116'] = gdf_buffer_exacto
-                        st.session_state['buffer_ripario_4326'] = gdf_buffer_4326
                         st.session_state['ha_deficit_ripario'] = ha_deficit
                         
                     with c_gap2:
                         import pydeck as pdk
+                        st.markdown("##### 🗺️ Visualización GPU (Cero Colapsos)")
                         
-                        st.markdown("##### 🗺️ Visualización de Corredores (GPU Accelerated)")
+                        # PREPARAMOS LAS LÍNEAS EN LUGAR DE LOS POLÍGONOS (El navegador lo dibuja sin esfuerzo)
+                        rios_4326 = gdf_rios_actual.to_crs(epsg=4326)
                         
-                        try:
-                            c_lat, c_lon = gdf_buffer_4326.centroid.y.mean(), gdf_buffer_4326.centroid.x.mean()
-                        except:
-                            c_lat, c_lon = 6.2, -75.5 # Coordenadas por defecto
+                        try: c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
+                        except: c_lat, c_lon = 6.2, -75.5
                             
                         capas_mapa = []
                         
-                        # 1. Capa de la Cuenca (Línea)
+                        # Capa de la Cuenca
                         if gdf_zona_seleccionada is not None:
                             zona_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
-                            capa_cuenca = pdk.Layer(
-                                "GeoJsonLayer",
-                                data=zona_4326,
-                                opacity=1,
-                                stroked=True,
-                                get_line_color=[0, 200, 0, 255],
-                                get_line_width=3,
-                                filled=False,
-                            )
-                            capas_mapa.append(capa_cuenca)
+                            capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
                             
-                        # 2. Capa del Corredor Ripario (Polígono Verde Relleno)
-                        if not gdf_buffer_4326.empty:
-                            capa_buffer = pdk.Layer(
-                                "GeoJsonLayer",
-                                data=gdf_buffer_4326,
-                                opacity=0.7,
-                                stroked=False,
-                                filled=True,
-                                get_fill_color=[39, 174, 96, 150], # Verde esmeralda con transparencia
-                                pickable=True
-                            )
-                            capas_mapa.append(capa_buffer)
-                            
-                        # Configurar la vista inicial
-                        view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=11, pitch=0)
+                        # MAGIA: Capa del Corredor (PathLayer con grosor dinámico en metros)
+                        capas_mapa.append(pdk.Layer(
+                            "GeoJsonLayer",
+                            data=rios_4326,
+                            opacity=0.6,
+                            stroked=True,
+                            get_line_color=[39, 174, 96, 255], # Verde
+                            # Aquí está el truco: Ancho de línea basado en metros físicos del mapa (buffer * 2)
+                            get_line_width=buffer_m * 2, 
+                            lineWidthUnits='"meters"',
+                            lineWidthMinPixels=2
+                        ))
                         
-                        # Renderizar con motor PyDeck (No colapsa el navegador)
-                        r = pdk.Deck(
-                            layers=capas_mapa,
-                            initial_view_state=view_state,
-                            map_style="light", # Estilo claro para resaltar el verde
-                            tooltip={"html": f"<b>Corredor Ripario:</b> {buffer_m} metros"}
-                        )
-                        st.pydeck_chart(r, use_container_width=True)
+                        # Capa de los ríos centrales (Azul) para que se vea el agua por dentro del bosque
+                        capas_mapa.append(pdk.Layer("GeoJsonLayer", data=rios_4326, opacity=1, get_line_color=[52, 152, 219, 255], get_line_width=2, lineWidthUnits='"pixels"'))
+                        
+                        view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=11)
+                        st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light"), use_container_width=True)
                 else:
-                    # Mensaje si no hay ríos ni cuenca seleccionada
-                    st.warning("👈 **Paso 1:** Selecciona un municipio o cuenca en el panel izquierdo (Filtros Geográficos).\n\n🌊 **Paso 2:** Haz clic en el botón 'Generar Red Hídrica Aquí' o calcúlala en la pestaña de Geomorfología.")
-
+                    st.warning("👈 Selecciona una cuenca a la izquierda y calcula la Hidrología en Geomorfología para activar el Escáner Ripario.")
