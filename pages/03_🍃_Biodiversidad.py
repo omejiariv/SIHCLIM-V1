@@ -1287,21 +1287,23 @@ with tab_comparador:
                         st.markdown("#### ⚙️ Parámetros del Corredor")
                         buffer_m = st.slider("Ancho de franja de protección (m):", min_value=0, max_value=50, value=30, step=5)
                         
-                        # 1. CÁLCULO MATEMÁTICO (EXACTO)
-                        rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
-                        # resolution=1 hace el buffer más cuadrado, eliminando miles de vértices curvos
-                        buffer_geom_exacto = rios_3116.buffer(buffer_m, resolution=1)
-                        gdf_buffer_exacto = gpd.GeoDataFrame(geometry=buffer_geom_exacto, crs="EPSG:3116").dissolve()
-                        
-                        area_total_ha = gdf_buffer_exacto.area.sum() / 10000.0
-                        
-                        # 2. CÁLCULO VISUAL (SIMPLIFICACIÓN EXTREMA PARA EL NAVEGADOR)
-                        gdf_viz = gdf_buffer_exacto.copy()
-                        # tolerance=50.0 significa que cualquier vértice a menos de 50 metros de otro se borra. 
-                        # preserve_topology=False permite que el algoritmo sea aún más agresivo.
-                        gdf_viz['geometry'] = gdf_viz.geometry.simplify(tolerance=50.0, preserve_topology=False)
-                        gdf_buffer_4326 = gdf_viz.to_crs("EPSG:4326")
-                        
+                        with st.spinner("Calculando red riparia (Geoprocesamiento optimizado)..."):
+                            # 1. CÁLCULO MATEMÁTICO (ULTRA RÁPIDO)
+                            rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
+                            
+                            # unary_union es 100x más rápido y estable que dissolve() para redes complejas
+                            buffer_geoseries = rios_3116.buffer(buffer_m, resolution=1)
+                            union_geom = buffer_geoseries.unary_union 
+                            
+                            gdf_buffer_exacto = gpd.GeoDataFrame(geometry=[union_geom], crs="EPSG:3116")
+                            area_total_ha = gdf_buffer_exacto.area.sum() / 10000.0
+                            
+                            # 2. CÁLCULO VISUAL (SIMPLIFICACIÓN LIGERA)
+                            gdf_viz = gdf_buffer_exacto.copy()
+                            # Reducimos los vértices redundantes para el mapa web
+                            gdf_viz['geometry'] = gdf_viz.geometry.simplify(tolerance=10.0, preserve_topology=False)
+                            gdf_buffer_4326 = gdf_viz.to_crs("EPSG:4326")
+                            
                         st.metric("Área Total del Corredor", f"{area_total_ha:,.1f} ha")
                         
                         pct_bosque_existente = 35.0 # (Conectaremos el raster después)
@@ -1313,8 +1315,8 @@ with tab_comparador:
                         st.metric("🌳 Bosque Existente", f"{ha_bosque:,.1f} ha", "Conservar")
                         st.metric("🔴 Déficit Ripario", f"{ha_deficit:,.1f} ha", "- Restaurar", delta_color="inverse")
                         
-                        # Guardamos en memoria el EXACTO para cálculos en Toma de Decisiones, y el 4326 para el mapa local
                         st.session_state['buffer_ripario_3116'] = gdf_buffer_exacto
+                        st.session_state['buffer_ripario_4326'] = gdf_buffer_4326
                         st.session_state['ha_deficit_ripario'] = ha_deficit
                         
                     with c_gap2:
@@ -1370,3 +1372,4 @@ with tab_comparador:
                 else:
                     # Mensaje si no hay ríos ni cuenca seleccionada
                     st.warning("👈 **Paso 1:** Selecciona un municipio o cuenca en el panel izquierdo (Filtros Geográficos).\n\n🌊 **Paso 2:** Haz clic en el botón 'Generar Red Hídrica Aquí' o calcúlala en la pestaña de Geomorfología.")
+
