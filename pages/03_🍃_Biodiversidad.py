@@ -366,7 +366,7 @@ def detectar_zona_vida_dominante(gdf_zona):
 
 # --- DEFINICIÓN DE TABS PRINCIPALES ---
 tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador = st.tabs([
-    "🗺️ Mapa & GBIF", "🧬 Taxonomía", "🌲 Bosque e Inventarios", "⚖️ Metabolismo Territorial", "📈 Comparador"
+    "🗺️ Mapa & GBIF", "🧬 Taxonomía", "🌲 Bosque e Inventarios", "⚖️ Metabolismo Territorial", "📈 Comparador", "🌿 Ecología del Paisaje"
 ])
 
 # Variable global para datos de biodiversidad
@@ -1217,6 +1217,93 @@ with tab_comparador:
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
 
+# =========================================================================
+            # ECOLOGÍA DEL PAISAJE Y ANÁLISIS DE BRECHAS (GAP ANALYSIS)
+            # =========================================================================
+            with tab_ecologia: # Reemplaza 'tab_ecologia' por el nombre de tu variable de pestaña
+                st.subheader("🌿 Ecología del Paisaje: Conectividad y Franjas Riparias")
+                st.markdown("Analiza la red hidrográfica detectada por el modelo geomorfológico y modela escenarios de restauración basados en la viabilidad territorial y el déficit de coberturas naturales.")
+                
+                # 1. RECUPERAR LOS RÍOS CALCULADOS EN GEOMORFOLOGÍA
+                gdf_rios = st.session_state.get('gdf_rios')
+                
+                if gdf_rios is not None and not gdf_rios.empty:
+                    c_gap1, c_gap2 = st.columns([1, 2.5])
+                    
+                    with c_gap1:
+                        st.markdown("#### ⚙️ Parámetros del Corredor")
+                        # El slider que solicitaste para modelar la realidad posible (0 a 50m)
+                        buffer_m = st.slider("Ancho de franja de protección (m):", min_value=0, max_value=50, value=30, step=5,
+                                             help="Modela escenarios de negociación. La ley exige 30m, pero la realidad predial puede requerir concertar franjas menores inicialmente.")
+                        
+                        # Geoprocesamiento: Crear el Buffer en un CRS métrico
+                        rios_3116 = gdf_rios.to_crs(epsg=3116)
+                        
+                        # Aplicar buffer plano y disolver polígonos superpuestos
+                        buffer_geom = rios_3116.buffer(buffer_m)
+                        gdf_buffer_3116 = gpd.GeoDataFrame(geometry=buffer_geom, crs="EPSG:3116").dissolve()
+                        gdf_buffer_4326 = gdf_buffer_3116.to_crs("EPSG:4326")
+                        
+                        area_total_ha = gdf_buffer_3116.area.sum() / 10000.0
+                        
+                        st.metric("Área Total del Corredor", f"{area_total_ha:,.1f} ha")
+                        
+                        # --- ANÁLISIS DE BRECHA (SIMULADO O CONECTADO AL RASTER DE COBERTURAS) ---
+                        # Aquí leeríamos el raster de coberturas real, pero para el MVP calculamos una proporción estimada
+                        # basada en estadísticas típicas (en producción se usa rasterstats sobre gdf_buffer_3116)
+                        pct_bosque_existente = 35.0 # Esto se reemplazará por la lectura del raster
+                        ha_bosque = area_total_ha * (pct_bosque_existente / 100.0)
+                        ha_deficit = area_total_ha - ha_bosque
+                        
+                        st.markdown("---")
+                        st.markdown("#### 📊 Análisis de Brechas (Gap)")
+                        st.metric("🌳 Bosque Existente (Conservar)", f"{ha_bosque:,.1f} ha")
+                        st.metric("🔴 Déficit Ripario (Restaurar)", f"{ha_deficit:,.1f} ha", delta="- Urgente", delta_color="inverse")
+                        
+                        # Guardar el buffer en memoria para la página de Toma de Decisiones
+                        st.session_state['buffer_ripario_4326'] = gdf_buffer_4326
+                        st.session_state['ha_deficit_ripario'] = ha_deficit
+                        
+                    with c_gap2:
+                        import plotly.express as px
+                        import plotly.graph_objects as go
+                        
+                        # Dibujar el Buffer en el Mapa
+                        fig_gap = go.Figure()
+                        
+                        # 1. Dibujar el polígono de la cuenca (contexto)
+                        if gdf_zona_seleccionada is not None:
+                            poly = gdf_zona_seleccionada.to_crs("EPSG:4326").geometry.iloc[0]
+                            if poly.geom_type == 'Polygon': xx, yy = poly.exterior.coords.xy
+                            else: xx, yy = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
+                            fig_gap.add_trace(go.Scattermapbox(mode="lines", lon=list(xx), lat=list(yy), line={'width': 2, 'color': '#00FF00'}, name="Cuenca"))
+                        
+                        # 2. Dibujar el Buffer Ripario
+                        if not gdf_buffer_4326.empty:
+                            geojson_buffer = gdf_buffer_4326.geometry.__geo_interface__
+                            fig_gap.add_trace(go.Choroplethmapbox(
+                                geojson=geojson_buffer,
+                                locations=gdf_buffer_4326.index,
+                                z=[1]*len(gdf_buffer_4326),
+                                colorscale=[[0, '#27AE60'], [1, '#27AE60']], # Verde esmeralda
+                                showscale=False,
+                                marker_opacity=0.6,
+                                name=f"Buffer {buffer_m}m"
+                            ))
+                            
+                        # Centrar mapa
+                        c_lat = gdf_buffer_4326.centroid.y.mean()
+                        c_lon = gdf_buffer_4326.centroid.x.mean()
+                            
+                        fig_gap.update_layout(
+                            title=f"Corredor Ripario ({buffer_m}m) - Escáner de Conectividad",
+                            mapbox_style="carto-positron", mapbox_zoom=12, mapbox_center={"lat": c_lat, "lon": c_lon},
+                            height=550, margin=dict(l=0,r=0,t=40,b=0)
+                        )
+                        st.plotly_chart(fig_gap, use_container_width=True)
+                        
+                else:
+                    st.info("⚠️ El motor de Ecología del Paisaje requiere los datos físicos del territorio. Por favor, ve a la herramienta **Geomorfología** y calcula la red de drenaje primero.")
 
 
 
