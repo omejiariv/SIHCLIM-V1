@@ -1268,7 +1268,13 @@ with tab_ecologia:
             import pydeck as pdk
             st.markdown("##### 🗺️ Red de Conectividad Ecológica (Aceleración GPU)")
             
-            rios_4326 = gdf_rios_actual.to_crs(epsg=4326)
+            # Creamos una copia para añadirle los nombres que leerá el Tooltip
+            rios_4326 = gdf_rios_actual.to_crs(epsg=4326).copy()
+            rios_4326['ID_Tramo'] = ["Segmento Hídrico " + str(i+1) for i in range(len(rios_4326))]
+            
+            # Redondear valores para que el tooltip se vea elegante
+            if 'longitud_km' in rios_4326.columns:
+                rios_4326['longitud_km'] = rios_4326['longitud_km'].round(2)
             
             try: 
                 c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
@@ -1277,28 +1283,39 @@ with tab_ecologia:
                 
             capas_mapa = []
             
-            # Capa de la Cuenca
             if gdf_zona is not None:
                 zona_4326 = gdf_zona.to_crs("EPSG:4326")
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
                 
-            # MAGIA VISUAL: PyDeck engrosa las líneas en metros automáticamente
+            # MAGIA VISUAL: Añadimos 'pickable=True' para que el mapa detecte el ratón
             capas_mapa.append(pdk.Layer(
                 "GeoJsonLayer",
                 data=rios_4326,
-                opacity=0.5,
+                opacity=0.6,
                 stroked=True,
                 get_line_color=[39, 174, 96, 255], 
                 get_line_width=buffer_m * 2,
                 lineWidthUnits='"meters"',
-                lineWidthMinPixels=2
+                lineWidthMinPixels=2,
+                pickable=True, # <-- Clave para la interactividad
+                autoHighlight=True # Hace que el río brille al pasar el ratón
             ))
             
-            # Capa del hilo de agua (Azul)
             capas_mapa.append(pdk.Layer("GeoJsonLayer", data=rios_4326, opacity=1, get_line_color=[52, 152, 219, 255], get_line_width=1, lineWidthUnits='"pixels"'))
             
             view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=11)
-            st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light"), use_container_width=True)
+            
+            # DISEÑO DEL TOOLTIP
+            tooltip = {
+                "html": "<b>{ID_Tramo}</b><br/>Orden de Strahler: <b>{Orden_Strahler}</b><br/>Longitud: {longitud_km} km",
+                "style": {"backgroundColor": "steelblue", "color": "white"}
+            }
+            
+            st.pydeck_chart(pdk.Deck(
+                layers=capas_mapa, 
+                initial_view_state=view_state, 
+                map_style="light",
+                tooltip=tooltip # <-- Conectamos el Tooltip al mapa
+            ), use_container_width=True)
     else:
         st.warning("👈 Selecciona una cuenca a la izquierda y calcula la Hidrología en Geomorfología para activar el Escáner Ripario.")
-
