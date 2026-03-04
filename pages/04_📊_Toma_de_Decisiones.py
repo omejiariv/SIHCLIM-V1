@@ -651,8 +651,14 @@ if gdf_zona is not None and not gdf_zona.empty:
                     
                     c_tram1, c_tram2 = st.columns([2, 1])
                     with c_tram1:
-                        st.markdown("##### 🌿 Tramos Críticos para Restauración (Top 10)")
+                        # Recuperamos el nombre del territorio actual
+                        nombre_zona = st.session_state.get('nombre_seleccion', 'el territorio')
+                        
+                        # Inyectamos el nombre en el título
+                        st.markdown(f"##### 🌿 Tramos Críticos para Restauración en {nombre_zona.title()} (Top 10)")
+                        
                         st.dataframe(df_tramos.head(10).style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format({"Longitud (Km)": "{:.2f}", "Importancia Ecológica": "{:.0f}"}), use_container_width=True, hide_index=True)
+
                     with c_tram2:
                         st.markdown("##### 💡 Resumen Ecológico")
                         tramos_clave = df_tramos[df_tramos['Orden de Strahler'] >= 2]
@@ -660,3 +666,4 @@ if gdf_zona is not None and not gdf_zona.empty:
                         st.caption("Estrategia: Al no contar con información predial, la prioridad de siembra se dirige a los tramos de mayor Orden de Strahler, ya que estos actúan como las arterias principales de movilidad de fauna.")
         else:
             st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
+
