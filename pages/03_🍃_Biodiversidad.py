@@ -1220,13 +1220,21 @@ with tab_comparador:
 # =========================================================================
 # TAB 6: ECOLOGÍA DEL PAISAJE (CONECTIVIDAD RIPARIA)
 # =========================================================================
-
 with tab_ecologia:
-    st.subheader("🌿 Ecología del Paisaje: Conectividad y Franjas Riparias")
+    
+    # --- 🔄 DETECTOR DE CAMBIO DE CUENCA (El solucionador de la memoria pegada) ---
+    if st.session_state.get('ultima_cuenca_ecologia') != nombre_seleccion:
+        st.session_state['gdf_rios'] = None # Borra los ríos de la cuenca anterior
+        st.session_state['buffer_m_ripario'] = None
+        st.session_state['ultima_cuenca_ecologia'] = nombre_seleccion
+
+    # --- 🏷️ TÍTULO DINÁMICO ---
+    st.subheader(f"🌿 Ecología del Paisaje: Conectividad y Franjas Riparias en {nombre_seleccion.title()}")
     st.markdown("Analiza la red hidrográfica y modela escenarios de restauración basados en la viabilidad territorial y el déficit de coberturas naturales.")
     
     if st.session_state.get('gdf_rios') is not None and not st.session_state['gdf_rios'].empty:
         gdf_rios_actual = st.session_state['gdf_rios']
+        
         c_gap1, c_gap2 = st.columns([1, 2.5])
         
         with c_gap1:
@@ -1293,3 +1301,4 @@ with tab_ecologia:
             st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light"), use_container_width=True)
     else:
         st.warning("👈 Selecciona una cuenca a la izquierda y calcula la Hidrología en Geomorfología para activar el Escáner Ripario.")
+
