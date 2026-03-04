@@ -667,6 +667,10 @@ if gdf_zona_seleccionada is not None:
                                 except: pass
 
                             fig.update_layout(mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": lat_c, "lon": lon_c}, height=600, margin=dict(l=0,r=0,t=0,b=0))
+                            
+                            # 🌟 Guardamos el mapa en la memoria para poder descargarlo luego
+                            st.session_state['fig_mapa_hidro'] = fig 
+                            
                             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
 
                     else: st.warning("Procesando...")
@@ -759,6 +763,31 @@ if gdf_zona_seleccionada is not None:
                             fig_str.update_layout(height=250, margin=dict(t=30, b=0, l=0, r=0), 
                                                   xaxis=dict(tickmode='linear', dtick=1))
                             st.plotly_chart(fig_str, use_container_width=True)
+                            
+                        # --- GLOSARIO Y METODOLOGÍA (NUEVO) ---
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        with st.expander("📚 Fundamentos Teóricos: Geometría Fractal y Leyes de Horton-Strahler", expanded=False):
+                            st.markdown("""
+                            ### 🌊 Jerarquización de la Red de Drenaje
+                            La cuantificación de la red hídrica transforma la geografía cualitativa en modelos matemáticos predictivos. Nuestro motor utiliza la física de fluidos y la topología para clasificar el territorio:
+                            
+                            * **Orden de Strahler (1957):** Sistema de clasificación topológica donde los nacimientos (sin afluentes) son de Orden 1. Cuando dos cauces del mismo orden se unen, forman uno de orden superior ($n+1$). Es el estándar mundial para dimensionar infraestructura verde y franjas riparias.
+                            * **Leyes de Horton (1945):** Descubiertas por Robert E. Horton, demuestran que las cuencas crecen con patrones fractales (crecimiento geométrico). En nuestro modelo, para evitar la "fragmentación" de líneas vectoriales al recortar los polígonos, usamos la **Ley de las Áreas**, deduciendo el orden jerárquico directamente del volumen de agua acumulada, garantizando precisión matemática continua.
+                            
+                            ### 📐 Relación de Bifurcación ($R_b$)
+                            Es el cociente entre el número de cauces de un orden dado y el número de cauces del orden inmediatamente superior ($R_b = N_u / N_{u+1}$). 
+                            * **Interpretación (< 3.0):** Cuencas muy planas o altamente alteradas.
+                            * **Interpretación (3.0 - 5.0):** Rango natural de estabilidad geológica. Cuencas sobre sustratos homogéneos donde la red de drenaje se desarrolló sin un control tectónico fuerte.
+                            * **Interpretación (> 5.0):** Cuencas escarpadas, alargadas o con fuerte control estructural (fallas). Indican un **alto riesgo torrencial**, ya que el agua viaja rápidamente por cauces estrechos generando picos de crecida severos.
+                            
+                            ### 🌿 Utilidad en Soluciones Basadas en la Naturaleza (SbN)
+                            Tener los kilómetros exactos por orden permite costear presupuestos de conservación. Un cauce de Orden 1 (nacimiento) puede requerir 30 metros de aislamiento ripario, mientras que un Orden 4 requiere más de 50 metros. La suma de estas áreas define el presupuesto exacto de restauración territorial.
+                            
+                            **Referencias Clave:**
+                            1. Horton, R. E. (1945). *Erosional development of streams and their drainage basins; hydrophysical approach to quantitative morphology*. Geological society of America bulletin, 56(3), 275-370.
+                            2. Strahler, A. N. (1957). *Quantitative analysis of watershed geomorphology*. Eos, Transactions American Geophysical Union, 38(6), 913-920.
+                            3. Schumm, S. A. (1956). *Evolution of drainage systems and slopes in badlands at Perth Amboy, New Jersey*. Geological society of America bulletin, 67(5), 597-646.
+                            """)
                     
                     # --- FASE B: HIDROLOGÍA SINTÉTICA ---
                     st.markdown("##### ⏱️ Tiempo de Concentración (Tc) y Caudales")
@@ -1044,6 +1073,25 @@ if gdf_zona_seleccionada is not None:
                         )
                     else:
                         st.warning("⚠️ Calc. Tab Hidro")
+
+                # --- DESCARGA DE MAPAS INTERACTIVOS ---
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("#### 🌐 Mapas Interactivos (HTML)")
+                st.caption("Descarga los mapas renderizados para abrirlos en cualquier navegador web sin necesidad de internet, conservando el zoom, los colores de Horton y la interactividad.")
+                
+                if 'fig_mapa_hidro' in st.session_state and st.session_state['fig_mapa_hidro'] is not None:
+                    # Convertir la figura de Plotly a código HTML puro
+                    html_mapa = st.session_state['fig_mapa_hidro'].to_html(include_plotlyjs='cdn')
+                    
+                    st.download_button(
+                        label="📥 Descargar Mapa de Hidrología y Red de Drenaje (HTML)",
+                        data=html_mapa,
+                        file_name=f"Mapa_Hidrologia_Drenaje_{nombre_zona}.html",
+                        mime="text/html",
+                        use_container_width=True
+                    )
+                else:
+                    st.info("💡 Ve a la pestaña **🌊 Hidrología**, asegúrate de que el mapa se haya dibujado y vuelve aquí para habilitar la descarga.")
 
 else:
     st.info("👈 Selecciona una zona.")
