@@ -176,13 +176,44 @@ if gdf_zona is not None and not gdf_zona.empty:
                                 help="Apaga este interruptor para simular el escenario contrafactual.")
         
         ha_base_calculo = ha_reales_sig if activar_sig else 0.0
+        
+        # --- 🌟 CONEXIÓN CON BOSQUES RIPARIOS (GEOMORFOLOGÍA) ---
+        ha_riparias_potenciales = 0.0
+        sumar_riparias = False
+        df_str = st.session_state.get('geomorfo_strahler_df')
+        
+        if df_str is not None and not df_str.empty:
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.expander("🌿 Infraestructura Verde: Potencial de Reforestación Riparia", expanded=True):
+                st.markdown("El modelo detectó una red hidrográfica calculada por la Ley de Horton. Dimensiona las franjas forestales protectoras (buffer) para integrarlas como **Soluciones Basadas en la Naturaleza (SbN)** al cálculo WRI.")
                 
+                c_rip1, c_rip2, c_rip3 = st.columns(3)
+                ancho_buffer = c_rip1.number_input("Ancho de Aislamiento por lado (m):", min_value=5, max_value=100, value=30, step=5, key="td_buffer_rip")
+                
+                longitud_total_km = df_str['Longitud_Km'].sum()
+                c_rip2.metric("Longitud Total de Cauces", f"{longitud_total_km:,.2f} km")
+                
+                # Fórmula Hectáreas: (Longitud (m) * Ancho_Total (m)) / 10,000
+                ha_riparias_potenciales = (longitud_total_km * 1000 * (ancho_buffer * 2)) / 10000.0
+                c_rip3.metric("Potencial Ripario (SbN)", f"{ha_riparias_potenciales:,.1f} ha", "Área disponible para restauración", delta_color="normal")
+                
+                sumar_riparias = st.checkbox("📥 Incorporar estas hectáreas riparias a la simulación financiera WRI", value=True, key="td_sumar_rip")
+        else:
+            st.info("💡 **Tip:** Visita el módulo de **Geomorfología** y calcula la red de drenaje para desbloquear el diseño automático de corredores riparios.")
+        
+        # --- RESUMEN DE BENEFICIOS VOLUMÉTRICOS ---
+        st.markdown("<br>", unsafe_allow_html=True)
         c_inv1, c_inv2, c_inv3 = st.columns(3)
         with c_inv1:
-            st.metric("✅ Área Restaurada/Conservada (SIG)", f"{ha_reales_sig:,.1f} ha")
-            ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0, key="td_ha_sim")
-            ha_total = ha_base_calculo + ha_simuladas
+            st.metric("✅ Área Conservada (Base SIG)", f"{ha_reales_sig:,.1f} ha")
+            ha_simuladas = st.number_input("➕ Adicionar Hectáreas Extra (Manual):", min_value=0.0, value=0.0, step=10.0, key="td_ha_sim")
+            
+            # El cálculo final suma el SIG, las manuales y las riparias detectadas por el algoritmo
+            ha_total = ha_base_calculo + ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
             beneficio_restauracion_m3 = ha_total * 2500
+            
+            if sumar_riparias and ha_riparias_potenciales > 0:
+                st.caption(f"*(Incluye {ha_riparias_potenciales:,.1f} ha riparias)*")
             
         with c_inv2:
             sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM/PTAR):", min_value=0, value=50, step=5, key="td_stam")
@@ -492,6 +523,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
             * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
             """)
+
 
 
 
