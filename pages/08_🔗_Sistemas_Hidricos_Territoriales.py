@@ -722,19 +722,22 @@ mem_porcinos = st.session_state.get('ica_porcinos_proy', def_por)
 mem_aves = st.session_state.get('ica_aves_proy', def_ave)
 
 c_p1, c_p2, c_p3, c_p4 = st.columns(4)
-pob_residente = c_p1.number_input("🏘️ Pob. Residente (Cuenca):", value=int(mem_pob_res), step=1000)
-pob_externa = c_p2.number_input("🏙️ Pob. Externa (Trasvase):", value=int(def_pob_ext), step=50000)
-cabezas_bovinas = c_p3.number_input("🐄 Bovinos (Censo ICA):", value=int(mem_bovinos), step=1000)
-cabezas_porcinas = c_p4.number_input("🐖 Porcinos (Censo ICA):", value=int(mem_porcinos), step=1000)
+pob_residente = c_p1.number_input("🏘️ Pob. Residente (Cuenca):", value=int(mem_pob_res), step=1000, key="sh_pob_residente")
+pob_externa = c_p2.number_input("🏙️ Pob. Externa (Trasvase):", value=int(def_pob_ext), step=50000, key="sh_pob_externa")
+cabezas_bovinas = c_p3.number_input("🐄 Bovinos (Censo ICA):", value=int(mem_bovinos), step=1000, key="sh_bovinos_ica")
+cabezas_porcinas = c_p4.number_input("🐖 Porcinos (Censo ICA):", value=int(mem_porcinos), step=1000, key="sh_porcinos_ica")
 
 with st.expander("⚙️ Ajustar Módulos de Consumo y Generación (Agua y Residuos)"):
     c_d1, c_d2, c_d3, c_d4 = st.columns(4)
-    dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150)
-    dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40)
-    dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15)
-    cabezas_aves = c_d4.number_input("🐔 Aves (Censo ICA):", value=int(mem_aves), step=5000)
+    dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150, key="sh_dot_hum")
+    dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40, key="sh_dot_bov")
+    dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15, key="sh_dot_por")
+    cabezas_aves = c_d4.number_input("🐔 Aves (Censo ICA):", value=int(mem_aves), step=5000, key="sh_aves_ica")
     
     st.markdown("**Residuos Sólidos (Aplicable solo a Población Residente):**")
+    c_rs1, c_rs2 = st.columns(2)
+    kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1, key="sh_rs_generacion")
+    pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0, key="sh_rs_fraccion")
 
 with st.expander("⚙️ Ajustar Módulos de Consumo y Generación (Agua y Residuos)"):
     c_d1, c_d2, c_d3, c_d4 = st.columns(4)
