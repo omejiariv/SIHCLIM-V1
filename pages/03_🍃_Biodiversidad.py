@@ -1318,34 +1318,55 @@ with tab_comparador:
                         st.session_state['ha_deficit_ripario'] = ha_deficit
                         
                     with c_gap2:
-                        import plotly.express as px
-                        import plotly.graph_objects as go
+                        import pydeck as pdk
                         
-                        fig_gap = go.Figure()
+                        st.markdown("##### 🗺️ Visualización de Corredores (GPU Accelerated)")
                         
-                        if gdf_zona_seleccionada is not None:
-                            poly = gdf_zona_seleccionada.to_crs("EPSG:4326").geometry.iloc[0]
-                            if poly.geom_type == 'Polygon': xx, yy = poly.exterior.coords.xy
-                            else: xx, yy = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
-                            fig_gap.add_trace(go.Scattermapbox(mode="lines", lon=list(xx), lat=list(yy), line={'width': 2, 'color': '#00FF00'}, name="Cuenca"))
-                        
-                        if not gdf_buffer_4326.empty:
-                            # Al estar simplificado a 50m, este JSON pesará kilobytes en lugar de megabytes
-                            geojson_buffer = gdf_buffer_4326.geometry.__geo_interface__
-                            fig_gap.add_trace(go.Choroplethmapbox(
-                                geojson=geojson_buffer, locations=gdf_buffer_4326.index, z=[1]*len(gdf_buffer_4326),
-                                colorscale=[[0, '#27AE60'], [1, '#27AE60']], showscale=False, marker_opacity=0.6, name=f"Buffer {buffer_m}m"
-                            ))
-                            
-                        # Si por algún motivo el centroid falla por la simplificación extrema, usamos un try/except
                         try:
                             c_lat, c_lon = gdf_buffer_4326.centroid.y.mean(), gdf_buffer_4326.centroid.x.mean()
                         except:
-                            c_lat, c_lon = 6.2, -75.5 # Coordenadas de Antioquia por defecto
+                            c_lat, c_lon = 6.2, -75.5 # Coordenadas por defecto
                             
-                        fig_gap.update_layout(
-                            title=f"Corredor Ripario ({buffer_m}m) - Escáner de Conectividad (Vista Simplificada)",
-                            mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": c_lat, "lon": c_lon},
-                            height=550, margin=dict(l=0,r=0,t=40,b=0)
+                        capas_mapa = []
+                        
+                        # 1. Capa de la Cuenca (Línea)
+                        if gdf_zona_seleccionada is not None:
+                            zona_4326 = gdf_zona_seleccionada.to_crs("EPSG:4326")
+                            capa_cuenca = pdk.Layer(
+                                "GeoJsonLayer",
+                                data=zona_4326,
+                                opacity=1,
+                                stroked=True,
+                                get_line_color=[0, 200, 0, 255],
+                                get_line_width=3,
+                                filled=False,
+                            )
+                            capas_mapa.append(capa_cuenca)
+                            
+                        # 2. Capa del Corredor Ripario (Polígono Verde Relleno)
+                        if not gdf_buffer_4326.empty:
+                            capa_buffer = pdk.Layer(
+                                "GeoJsonLayer",
+                                data=gdf_buffer_4326,
+                                opacity=0.7,
+                                stroked=False,
+                                filled=True,
+                                get_fill_color=[39, 174, 96, 150], # Verde esmeralda con transparencia
+                                pickable=True
+                            )
+                            capas_mapa.append(capa_buffer)
+                            
+                        # Configurar la vista inicial
+                        view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=11, pitch=0)
+                        
+                        # Renderizar con motor PyDeck (No colapsa el navegador)
+                        r = pdk.Deck(
+                            layers=capas_mapa,
+                            initial_view_state=view_state,
+                            map_style="light", # Estilo claro para resaltar el verde
+                            tooltip={"html": f"<b>Corredor Ripario:</b> {buffer_m} metros"}
                         )
-                        st.plotly_chart(fig_gap, use_container_width=True)
+                        st.pydeck_chart(r, use_container_width=True)
+                else:
+                    # Mensaje si no hay ríos ni cuenca seleccionada
+                    st.warning("👈 **Paso 1:** Selecciona un municipio o cuenca en el panel izquierdo (Filtros Geográficos).\n\n🌊 **Paso 2:** Haz clic en el botón 'Generar Red Hídrica Aquí' o calcúlala en la pestaña de Geomorfología.")
