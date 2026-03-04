@@ -664,7 +664,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             # =========================================================
             st.markdown("---")
             # 🏷️ CORRECCIÓN TÍTULO 3
-            st.markdown(f"##### 🗺️ Visor Táctico de Conectividad y Predios en {nombre_zona_td.title()}")
+            st.markdown(f"##### 🗺️ Visor Táctico de Conectividad y Predios en: **{nombre_zona}**")
             
             import pydeck as pdk
             
@@ -726,3 +726,4 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         else:
             st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
+
