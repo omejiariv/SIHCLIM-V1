@@ -1217,50 +1217,98 @@ with tab_comparador:
         else:
             st.warning("Selecciona al menos un modelo para comparar.")
 
-# =========================================================================
-            # ECOLOGÍA DEL PAISAJE Y ANÁLISIS DE BRECHAS (GAP ANALYSIS)
             # =========================================================================
-            with tab_ecologia: # Reemplaza 'tab_ecologia' por el nombre de tu variable de pestaña
+            # NUEVA PESTAÑA: ECOLOGÍA DEL PAISAJE Y ANÁLISIS DE BRECHAS (GAP ANALYSIS)
+            # =========================================================================
+            with tab_ecologia:
                 st.subheader("🌿 Ecología del Paisaje: Conectividad y Franjas Riparias")
-                st.markdown("Analiza la red hidrográfica detectada por el modelo geomorfológico y modela escenarios de restauración basados en la viabilidad territorial y el déficit de coberturas naturales.")
+                st.markdown("Analiza la red hidrográfica y modela escenarios de restauración basados en la viabilidad territorial y el déficit de coberturas naturales.")
                 
-                # 1. RECUPERAR LOS RÍOS CALCULADOS EN GEOMORFOLOGÍA
+                # 1. RECUPERAR O CALCULAR LOS RÍOS
                 gdf_rios = st.session_state.get('gdf_rios')
                 
-                if gdf_rios is not None and not gdf_rios.empty:
+                # --- 🚀 EL MOTOR AUTÓNOMO (CALCULAR DESDE AQUÍ) ---
+                if gdf_rios is None or gdf_rios.empty:
+                    st.info("⚠️ La red hidrográfica no está en memoria. Puedes ir a Geomorfología o calcularla directamente aquí.")
+                    if st.button("🌊 Generar Red Hídrica Aquí (Motor Topológico)", use_container_width=True):
+                        with st.spinner("Encendiendo motor hidrológico (Calculando DEM y PySheds)..."):
+                            import rasterio
+                            from rasterio.mask import mask
+                            import tempfile
+                            from pysheds.grid import Grid
+                            import math
+                            
+                            DEM_PATH = os.path.join("data", "DemAntioquia_EPSG3116.tif")
+                            if os.path.exists(DEM_PATH) and gdf_zona_seleccionada is not None:
+                                try:
+                                    geom_valida = gdf_zona_seleccionada.copy()
+                                    geom_valida['geometry'] = geom_valida.buffer(0)
+                                    with rasterio.open(DEM_PATH) as src:
+                                        out_image, out_transform = mask(src, geom_valida.to_crs(src.crs).geometry.values, crop=True)
+                                        out_meta = src.meta.copy()
+                                        out_meta.update({"driver": "GTiff", "height": out_image.shape[1], "width": out_image.shape[2], "transform": out_transform, "count": 1, "nodata": -9999.0})
+                                        dem_clean = np.where(np.isnan(out_image[0]) | (out_image[0] == src.nodata), -9999.0, out_image[0])
+                                        
+                                    with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
+                                        with rasterio.open(tmp.name, 'w', **out_meta) as dst: dst.write(dem_clean.astype('float64'), 1)
+                                        grid = Grid.from_raster(tmp.name)
+                                        dem_grid = grid.read_raster(tmp.name, nodata=-9999.0)
+                                        flooded = grid.fill_depressions(dem_grid)
+                                        resolved = grid.resolve_flats(flooded)
+                                        dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
+                                        fdir = grid.flowdir(resolved, dirmap=dirmap)
+                                        acc = grid.accumulation(fdir, dirmap=dirmap)
+                                        
+                                        umbral = 100 # Umbral por defecto para cálculo rápido
+                                        branches = grid.extract_river_network(fdir, acc > umbral, dirmap=dirmap)
+                                        
+                                        if branches and len(branches["features"]) > 0:
+                                            r_raw = gpd.GeoDataFrame.from_features(branches["features"], crs=out_meta['crs'])
+                                            r_clip = gpd.clip(r_raw, gdf_zona_seleccionada.to_crs(out_meta['crs']))
+                                            if not r_clip.empty:
+                                                r_clip_m = r_clip.to_crs(epsg=3116)
+                                                r_clip['longitud_km'] = r_clip_m.length / 1000.0
+                                                # Asignar orden base (simplificado para rapidez)
+                                                r_clip['Orden_Strahler'] = 1 
+                                                st.session_state['gdf_rios'] = r_clip
+                                                st.success("✅ Red hídrica calculada y guardada en memoria.")
+                                                st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error calculando hidrología: {e}")
+                            else:
+                                st.error("No se encontró el DEM base en la carpeta data/")
+
+                # --- 🌿 EL ESCÁNER DE BRECHAS Y MAPA ---
+                if st.session_state.get('gdf_rios') is not None and not st.session_state['gdf_rios'].empty:
+                    gdf_rios_actual = st.session_state['gdf_rios']
                     c_gap1, c_gap2 = st.columns([1, 2.5])
                     
                     with c_gap1:
                         st.markdown("#### ⚙️ Parámetros del Corredor")
-                        # El slider que solicitaste para modelar la realidad posible (0 a 50m)
-                        buffer_m = st.slider("Ancho de franja de protección (m):", min_value=0, max_value=50, value=30, step=5,
-                                             help="Modela escenarios de negociación. La ley exige 30m, pero la realidad predial puede requerir concertar franjas menores inicialmente.")
+                        buffer_m = st.slider("Ancho de franja de protección (m):", min_value=0, max_value=50, value=30, step=5)
                         
-                        # Geoprocesamiento: Crear el Buffer en un CRS métrico
-                        rios_3116 = gdf_rios.to_crs(epsg=3116)
-                        
-                        # Aplicar buffer plano y disolver polígonos superpuestos
-                        buffer_geom = rios_3116.buffer(buffer_m)
+                        # --- 🛡️ ANTÍDOTO CONTRA LA PANTALLA BLANCA ---
+                        rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
+                        # 1. resolution=2 crea curvas con menos vértices
+                        buffer_geom = rios_3116.buffer(buffer_m, resolution=2)
                         gdf_buffer_3116 = gpd.GeoDataFrame(geometry=buffer_geom, crs="EPSG:3116").dissolve()
-                        gdf_buffer_4326 = gdf_buffer_3116.to_crs("EPSG:4326")
+                        # 2. simplify() elimina detalles milimétricos que colapsan Plotly
+                        gdf_buffer_3116['geometry'] = gdf_buffer_3116.geometry.simplify(5.0) 
                         
+                        gdf_buffer_4326 = gdf_buffer_3116.to_crs("EPSG:4326")
                         area_total_ha = gdf_buffer_3116.area.sum() / 10000.0
                         
                         st.metric("Área Total del Corredor", f"{area_total_ha:,.1f} ha")
                         
-                        # --- ANÁLISIS DE BRECHA (SIMULADO O CONECTADO AL RASTER DE COBERTURAS) ---
-                        # Aquí leeríamos el raster de coberturas real, pero para el MVP calculamos una proporción estimada
-                        # basada en estadísticas típicas (en producción se usa rasterstats sobre gdf_buffer_3116)
-                        pct_bosque_existente = 35.0 # Esto se reemplazará por la lectura del raster
+                        pct_bosque_existente = 35.0 # (Conectaremos el raster después)
                         ha_bosque = area_total_ha * (pct_bosque_existente / 100.0)
                         ha_deficit = area_total_ha - ha_bosque
                         
                         st.markdown("---")
                         st.markdown("#### 📊 Análisis de Brechas (Gap)")
-                        st.metric("🌳 Bosque Existente (Conservar)", f"{ha_bosque:,.1f} ha")
-                        st.metric("🔴 Déficit Ripario (Restaurar)", f"{ha_deficit:,.1f} ha", delta="- Urgente", delta_color="inverse")
+                        st.metric("🌳 Bosque Existente", f"{ha_bosque:,.1f} ha", "Conservar")
+                        st.metric("🔴 Déficit Ripario", f"{ha_deficit:,.1f} ha", "- Restaurar", delta_color="inverse")
                         
-                        # Guardar el buffer en memoria para la página de Toma de Decisiones
                         st.session_state['buffer_ripario_4326'] = gdf_buffer_4326
                         st.session_state['ha_deficit_ripario'] = ha_deficit
                         
@@ -1268,32 +1316,22 @@ with tab_comparador:
                         import plotly.express as px
                         import plotly.graph_objects as go
                         
-                        # Dibujar el Buffer en el Mapa
                         fig_gap = go.Figure()
                         
-                        # 1. Dibujar el polígono de la cuenca (contexto)
                         if gdf_zona_seleccionada is not None:
                             poly = gdf_zona_seleccionada.to_crs("EPSG:4326").geometry.iloc[0]
                             if poly.geom_type == 'Polygon': xx, yy = poly.exterior.coords.xy
                             else: xx, yy = max(poly.geoms, key=lambda a: a.area).exterior.coords.xy
                             fig_gap.add_trace(go.Scattermapbox(mode="lines", lon=list(xx), lat=list(yy), line={'width': 2, 'color': '#00FF00'}, name="Cuenca"))
                         
-                        # 2. Dibujar el Buffer Ripario
                         if not gdf_buffer_4326.empty:
                             geojson_buffer = gdf_buffer_4326.geometry.__geo_interface__
                             fig_gap.add_trace(go.Choroplethmapbox(
-                                geojson=geojson_buffer,
-                                locations=gdf_buffer_4326.index,
-                                z=[1]*len(gdf_buffer_4326),
-                                colorscale=[[0, '#27AE60'], [1, '#27AE60']], # Verde esmeralda
-                                showscale=False,
-                                marker_opacity=0.6,
-                                name=f"Buffer {buffer_m}m"
+                                geojson=geojson_buffer, locations=gdf_buffer_4326.index, z=[1]*len(gdf_buffer_4326),
+                                colorscale=[[0, '#27AE60'], [1, '#27AE60']], showscale=False, marker_opacity=0.6, name=f"Buffer {buffer_m}m"
                             ))
                             
-                        # Centrar mapa
-                        c_lat = gdf_buffer_4326.centroid.y.mean()
-                        c_lon = gdf_buffer_4326.centroid.x.mean()
+                        c_lat, c_lon = gdf_buffer_4326.centroid.y.mean(), gdf_buffer_4326.centroid.x.mean()
                             
                         fig_gap.update_layout(
                             title=f"Corredor Ripario ({buffer_m}m) - Escáner de Conectividad",
@@ -1301,35 +1339,3 @@ with tab_comparador:
                             height=550, margin=dict(l=0,r=0,t=40,b=0)
                         )
                         st.plotly_chart(fig_gap, use_container_width=True)
-                        
-                else:
-                    st.info("⚠️ El motor de Ecología del Paisaje requiere los datos físicos del territorio. Por favor, ve a la herramienta **Geomorfología** y calcula la red de drenaje primero.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
