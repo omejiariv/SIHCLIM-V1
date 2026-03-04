@@ -664,6 +664,77 @@ if gdf_zona is not None and not gdf_zona.empty:
                         tramos_clave = df_tramos[df_tramos['Orden de Strahler'] >= 2]
                         st.metric("Tramos Estratégicos (> Orden 1)", f"{len(tramos_clave)} segmentos")
                         st.caption("Estrategia: Al no contar con información predial, la prioridad de siembra se dirige a los tramos de mayor Orden de Strahler, ya que estos actúan como las arterias principales de movilidad de fauna.")
+
+            # =========================================================
+            # 🗺️ EL MAPA TÁCTICO DE NEGOCIACIÓN (Aceleración GPU)
+            # =========================================================
+            st.markdown("---")
+            st.markdown("##### 🗺️ Visor Táctico de Conectividad y Predios")
+            
+            import pydeck as pdk
+            
+            # Preparar los ríos
+            rios_4326 = rios_strahler.to_crs(epsg=4326).copy()
+            rios_4326['ID_Tramo'] = ["Segmento " + str(i+1) for i in range(len(rios_4326))]
+            if 'longitud_km' in rios_4326.columns: 
+                rios_4326['longitud_km'] = rios_4326['longitud_km'].round(2)
+            
+            try: c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
+            except: c_lat, c_lon = 6.2, -75.5
+            
+            capas_mapa = []
+            
+            # 1. Capa de la Cuenca
+            if gdf_zona is not None:
+                zona_4326 = gdf_zona.to_crs("EPSG:4326")
+                capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
+            
+            # 2. Capa de Ríos (Verde brillante)
+            capas_mapa.append(pdk.Layer(
+                "GeoJsonLayer",
+                data=rios_4326,
+                opacity=0.6,
+                stroked=True,
+                get_line_color=[39, 174, 96, 255], 
+                get_line_width=buffer_m * 2,
+                lineWidthUnits='"meters"',
+                lineWidthMinPixels=2,
+                pickable=True,
+                autoHighlight=True
+            ))
+            
+            # 3. Capa de Predios (Naranja - ¡Solo si existen y cruzaron el río!)
+            if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
+                # Recuperamos los predios originales completos en 4326 usando los IDs que cruzaron
+                col_id_pred = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'ID_Predio'] if col in predios_en_buffer.columns), None)
+                if col_id_pred and capa_predios is not None:
+                    # Filtramos la capa original para dibujar el predio completo
+                    ids_afectados = predios_en_buffer[col_id_pred].unique()
+                    predios_a_dibujar = capa_predios[capa_predios[col_id_pred].isin(ids_afectados)].to_crs(epsg=4326)
+                    
+                    capas_mapa.append(pdk.Layer(
+                        "GeoJsonLayer",
+                        data=predios_a_dibujar,
+                        opacity=0.4,
+                        stroked=True,
+                        filled=True,
+                        get_fill_color=[255, 165, 0, 150],   # Naranja relleno
+                        get_line_color=[255, 140, 0, 255],   # Naranja borde
+                        get_line_width=2,
+                        pickable=True,
+                        autoHighlight=True
+                    ))
+            
+            view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=12)
+            
+            # Tooltip inteligente genérico
+            tooltip = {
+                "html": "<b>Detalle de Mapa:</b><br/>{ID_Tramo} <br/>Orden: {Orden_Strahler}<br/>ID Predio: {MATRICULA} {COD_CATAST} {FICHA}",
+                "style": {"backgroundColor": "steelblue", "color": "white"}
+            }
+            
+            st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
+
         else:
             st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
 
