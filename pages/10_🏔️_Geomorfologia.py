@@ -410,7 +410,7 @@ if gdf_zona_seleccionada is not None:
                 import sys
                 sys.setrecursionlimit(20000) # Estabilidad
                 
-                st.subheader("🌊 Hidrología: Red de Drenaje y Cuencas")
+                st.subheader(f"🌊 Hidrología: Red de Drenaje y Cuencas - {nombre_zona}")
                 
                 c_conf, c_map = st.columns([1, 3])
                 with c_conf:
@@ -455,34 +455,53 @@ if gdf_zona_seleccionada is not None:
                             # Vectorización y Strahler
                             branches = grid.extract_river_network(fdir, acc > umbral, dirmap=dirmap)
                             if branches and len(branches["features"]) > 0:
-                                gdf_streams = gpd.GeoDataFrame.from_features(branches["features"], crs=crs_actual)
-                                gdf_streams_m = gdf_streams.to_crs(epsg=3116)
-                                gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
+                                gdf_streams_raw = gpd.GeoDataFrame.from_features(branches["features"], crs=crs_actual)
                                 
-                                try:
-                                    strahler_raster = grid.stream_order(fdir, dirmap=dirmap)
-                                    inv_affine = ~grid.affine
-                                    orden_list = []
-                                    import statistics
-                                    for geom in gdf_streams.geometry:
-                                        orders = []
-                                        for p in list(geom.coords):
-                                            try:
-                                                c, r = inv_affine * p
-                                                val = strahler_raster[int(r), int(c)]
-                                                if val > 0: orders.append(val)
-                                            except: pass
-                                        orden_list.append(int(statistics.mode(orders)) if orders else 1)
-                                    gdf_streams['Orden_Strahler'] = orden_list
-                                except Exception as e:
-                                    gdf_streams['Orden_Strahler'] = 1 
+                                # --- ✂️ EL BISTURÍ ESPACIAL: RECORTE ESTRICTO A LA CUENCA ---
+                                if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
+                                    zona_crs = gdf_zona_seleccionada.to_crs(crs_actual)
+                                    gdf_streams = gpd.clip(gdf_streams_raw, zona_crs)
+                                else:
+                                    gdf_streams = gdf_streams_raw
+                                
+                                if not gdf_streams.empty:
+                                    gdf_streams_m = gdf_streams.to_crs(epsg=3116)
+                                    gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
                                     
-                                st.session_state['gdf_rios'] = gdf_streams
-                                df_strahler = gdf_streams.groupby('Orden_Strahler').agg(
-                                    Num_Segmentos=('geometry', 'count'),
-                                    Longitud_Km=('longitud_km', 'sum')
-                                ).reset_index()
-                                st.session_state['geomorfo_strahler_df'] = df_strahler
+                                    try:
+                                        strahler_raster = grid.stream_order(fdir, dirmap=dirmap)
+                                        inv_affine = ~grid.affine
+                                        orden_list = []
+                                        import statistics
+                                        
+                                        # Iteramos sobre las geometrías (soportando líneas y multilíneas por el recorte)
+                                        for geom in gdf_streams.geometry:
+                                            orders = []
+                                            lineas = [geom] if geom.geom_type == 'LineString' else list(geom.geoms) if geom.geom_type == 'MultiLineString' else []
+                                            
+                                            for linea in lineas:
+                                                for p in list(linea.coords):
+                                                    try:
+                                                        c, r = inv_affine * p
+                                                        val = strahler_raster[int(r), int(c)]
+                                                        if val > 0: orders.append(val)
+                                                    except: pass
+                                                    
+                                            orden_list.append(int(statistics.mode(orders)) if orders else 1)
+                                            
+                                        gdf_streams['Orden_Strahler'] = orden_list
+                                    except Exception as e:
+                                        gdf_streams['Orden_Strahler'] = 1 
+                                        
+                                    st.session_state['gdf_rios'] = gdf_streams
+                                    df_strahler = gdf_streams.groupby('Orden_Strahler').agg(
+                                        Num_Segmentos=('geometry', 'count'),
+                                        Longitud_Km=('longitud_km', 'sum')
+                                    ).reset_index()
+                                    st.session_state['geomorfo_strahler_df'] = df_strahler
+                                else:
+                                    st.session_state['gdf_rios'] = None
+                                    st.session_state['geomorfo_strahler_df'] = None
                             else:
                                 st.session_state['gdf_rios'] = None
                                 st.session_state['geomorfo_strahler_df'] = None
