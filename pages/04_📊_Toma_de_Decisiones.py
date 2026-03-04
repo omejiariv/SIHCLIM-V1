@@ -240,7 +240,15 @@ if gdf_zona is not None and not gdf_zona.empty:
                 vol_requerido_m3 = (meta_neutralidad / 100.0) * consumo_anual_m3
                 brecha_m3 = vol_requerido_m3 - volumen_repuesto_m3
                 
-                if brecha_m3 <= 0: st.success("✅ ¡Se cumple la meta de Neutralidad!")
+                # --- ⚖️ CONTABILIDAD ESTRICTA: Cobrar los Proyectos Simulados ---
+                ha_proyectos_simulados = ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
+                costo_proyectos_simulados = ha_proyectos_simulados * costo_ha
+                
+                if brecha_m3 <= 0: 
+                    st.success("✅ ¡Se cumple la meta de Neutralidad!")
+                    # Aún si se cumple la meta, mostramos cuánto costó la simulación para llegar allí
+                    if costo_proyectos_simulados > 0:
+                        st.info(f"💰 Inversión en proyectos simulados (Riparios/Manuales): **${costo_proyectos_simulados:,.0f} Millones**")
                 else:
                     st.warning(f"⚠️ Faltan compensar **{brecha_m3/1e6:,.2f} Mm³/año**.")
                     c_mix1, c_mix2, c_mix3 = st.columns(3)
@@ -252,15 +260,21 @@ if gdf_zona is not None and not gdf_zona.empty:
                         ha_req = (brecha_m3 * (pct_a/100)) / 2500.0
                         stam_req = (brecha_m3 * (pct_b/100)) / 1200.0
                         lps_req = ((brecha_m3 * (pct_c/100)) * 1000) / 31536000 
-                        inv_total = (ha_req*costo_ha) + (stam_req*costo_stam_n) + (lps_req*costo_lps)
                         
-                        st.markdown("📊 **Requerimientos Físicos y Presupuesto:**")
+                        # INVERSIÓN TOTAL = Lo que falta para la brecha + Lo que ya pusimos en la simulación
+                        inv_brecha = (ha_req*costo_ha) + (stam_req*costo_stam_n) + (lps_req*costo_lps)
+                        inv_total = inv_brecha + costo_proyectos_simulados
+                        
+                        st.markdown("📊 **Requerimientos Físicos y Presupuesto Final:**")
                         c_op1, c_op2, c_op3, c_op4 = st.columns(4)
-                        c_op1.metric("🌲 Restaurar", f"{ha_req:,.1f} ha")
+                        
+                        # Sumamos las ha simuladas a las requeridas para mostrar el esfuerzo territorial total
+                        c_op1.metric("🌲 Restaurar Total", f"{(ha_req + ha_proyectos_simulados):,.1f} ha", help="Incluye Riparias/Manuales + Brecha")
                         c_op2.metric("🚽 Saneamiento", f"{stam_req:,.0f} STAM")
                         c_op3.metric("🚰 Eficiencia", f"{lps_req:,.1f} L/s")
-                        c_op4.metric("💰 INVERSIÓN", f"${inv_total:,.0f} M")
-                    else: st.error("La suma debe ser 100%.")
+                        c_op4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M", help="Suma el costo de la brecha más los proyectos riparios/manuales simulados.")
+                    else: 
+                        st.error("La suma debe ser 100%.")
 
         # Portafolio 2: Calidad
         with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO5)", expanded=False):
@@ -523,6 +537,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
             * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
             """)
+
 
 
 
