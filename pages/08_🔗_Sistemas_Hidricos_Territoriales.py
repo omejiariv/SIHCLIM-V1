@@ -713,11 +713,28 @@ elif "Ituango" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por,
 else: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 20000, 0, 25000, 10000, 50000
 
 st.markdown("### 1. Inventario Poblacional (Diferenciado) y Módulos")
+
+# --- CONEXIÓN CON MEMORIA GLOBAL (CENSOS ICA Y DEMOGRAFÍA) ---
+# Intentamos leer la memoria. Si no hay nada (el usuario no ha pasado por las otras páginas), usamos el valor por defecto de la cuenca.
+mem_pob_res = st.session_state.get('pob_residente_proy', def_pob_res)
+mem_bovinos = st.session_state.get('ica_bovinos_proy', def_bov)
+mem_porcinos = st.session_state.get('ica_porcinos_proy', def_por)
+mem_aves = st.session_state.get('ica_aves_proy', def_ave)
+
 c_p1, c_p2, c_p3, c_p4 = st.columns(4)
-pob_residente = c_p1.number_input("🏘️ Pob. Residente (Cuenca):", value=def_pob_res, step=1000, help="Generan DBO y residuos en la zona.")
-pob_externa = c_p2.number_input("🏙️ Pob. Externa (Trasvase):", value=def_pob_ext, step=50000, help="Gente en otra ciudad que consume agua de este embalse.")
-cabezas_bovinas = c_p3.number_input("🐄 Bovinos (Cabezas):", value=def_bov, step=1000)
-cabezas_porcinas = c_p4.number_input("🐖 Porcinos (Cabezas):", value=def_por, step=1000)
+pob_residente = c_p1.number_input("🏘️ Pob. Residente (Cuenca):", value=int(mem_pob_res), step=1000)
+pob_externa = c_p2.number_input("🏙️ Pob. Externa (Trasvase):", value=int(def_pob_ext), step=50000)
+cabezas_bovinas = c_p3.number_input("🐄 Bovinos (Censo ICA):", value=int(mem_bovinos), step=1000)
+cabezas_porcinas = c_p4.number_input("🐖 Porcinos (Censo ICA):", value=int(mem_porcinos), step=1000)
+
+with st.expander("⚙️ Ajustar Módulos de Consumo y Generación (Agua y Residuos)"):
+    c_d1, c_d2, c_d3, c_d4 = st.columns(4)
+    dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150)
+    dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40)
+    dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15)
+    cabezas_aves = c_d4.number_input("🐔 Aves (Censo ICA):", value=int(mem_aves), step=5000)
+    
+    st.markdown("**Residuos Sólidos (Aplicable solo a Población Residente):**")
 
 with st.expander("⚙️ Ajustar Módulos de Consumo y Generación (Agua y Residuos)"):
     c_d1, c_d2, c_d3, c_d4 = st.columns(4)
