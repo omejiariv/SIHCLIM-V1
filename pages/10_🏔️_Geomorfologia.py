@@ -417,7 +417,50 @@ if gdf_zona_seleccionada is not None:
                             dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                             fdir = grid.flowdir(resolved, dirmap=dirmap)
                             acc = grid.accumulation(fdir, dirmap=dirmap)
-                        except: pass
+                            
+                            # --- 🌟 MAGIA ESPACIAL: VECTORIZACIÓN Y STRAHLER ---
+                            branches = grid.extract_river_network(fdir, acc > umbral, dirmap=dirmap)
+                            if branches and len(branches["features"]) > 0:
+                                gdf_streams = gpd.GeoDataFrame.from_features(branches["features"], crs=crs_actual)
+                                
+                                # Longitud real en kilómetros (Proyectado a Magna Sirgas EPSG:3116)
+                                gdf_streams_m = gdf_streams.to_crs(epsg=3116)
+                                gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
+                                
+                                # Cálculo del Orden de Strahler mediante lectura de píxeles
+                                try:
+                                    strahler_raster = grid.stream_order(fdir, dirmap=dirmap)
+                                    inv_affine = ~grid.affine
+                                    orden_list = []
+                                    import statistics
+                                    for geom in gdf_streams.geometry:
+                                        orders = []
+                                        for p in list(geom.coords):
+                                            try:
+                                                c, r = inv_affine * p
+                                                val = strahler_raster[int(r), int(c)]
+                                                if val > 0: orders.append(val)
+                                            except: pass
+                                        orden_list.append(int(statistics.mode(orders)) if orders else 1)
+                                    gdf_streams['Orden_Strahler'] = orden_list
+                                except Exception as e:
+                                    gdf_streams['Orden_Strahler'] = 1 # Fallback de seguridad
+                                    
+                                # Guardamos los ríos en el cerebro global
+                                st.session_state['gdf_rios'] = gdf_streams
+                                
+                                # Resumen estadístico agrupado por Orden
+                                df_strahler = gdf_streams.groupby('Orden_Strahler').agg(
+                                    Num_Segmentos=('geometry', 'count'),
+                                    Longitud_Km=('longitud_km', 'sum')
+                                ).reset_index()
+                                st.session_state['geomorfo_strahler_df'] = df_strahler
+                            else:
+                                st.session_state['gdf_rios'] = None
+                                st.session_state['geomorfo_strahler_df'] = None
+                            # -----------------------------------------------------
+                        except Exception as e: 
+                            st.warning(f"Error procesando hidrología: {e}")
                         finally: 
                             try: os.remove(tmp.name)
                             except: pass
@@ -489,36 +532,33 @@ if gdf_zona_seleccionada is not None:
                                 else: xx,yy=max(poly.geoms, key=lambda a:a.area).exterior.coords.xy
                                 fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xx), lat=list(yy), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
 
-                            # 2. VECTORES (LÓGICA RECORTADA)
+                            # 2. VECTORES (LÍNEAS CALCULADAS EN VIVO)
                             if modo_viz == "Vectores (Líneas)":
-                                try:
-                                    try: r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col='geometry')
-                                    except: r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col='geom')
+                                r_viz = st.session_state.get('gdf_rios')
+                                if r_viz is not None and not r_viz.empty:
+                                    r_viz_4326 = r_viz.to_crs("EPSG:4326")
+                                    l, lt, tx = [], [], []
                                     
-                                    # RECORTE EXACTO EN METROS (Vital para no bloquear)
-                                    poly_m = gdf_zona_seleccionada.to_crs("EPSG:3116")
-                                    r_m = r.to_crs("EPSG:3116")
-                                    r_clip = gpd.clip(r_m, poly_m)
+                                    for _, row in r_viz_4326.iterrows():
+                                        g = row.geometry
+                                        orden = row.get('Orden_Strahler', 1)
+                                        n = f"Río Orden {orden}"
+                                        
+                                        if g.geom_type == 'LineString': p = [g]
+                                        elif g.geom_type == 'MultiLineString': p = g.geoms
+                                        else: continue
+                                        
+                                        for s in p: 
+                                            x, y = s.xy
+                                            l.extend(list(x) + [None])
+                                            lt.extend(list(y) + [None])
+                                            tx.extend([n] * (len(x) + 1))
                                     
-                                    if not r_clip.empty:
-                                        # Solo convertimos a WGS84 lo que quedó (poquito)
-                                        r_viz = r_clip.to_crs("EPSG:4326")
-                                        
-                                        l, lt, tx = [], [], []
-                                        col_n = next((x for x in r_viz.columns if x.lower() in ['nombre_geo','nombre']), None)
-                                        
-                                        for _, row in r_viz.iterrows():
-                                            g=row.geometry; n=str(row[col_n]) if col_n else "Drenaje"
-                                            if g.geom_type=='LineString': p=[g]
-                                            elif g.geom_type=='MultiLineString': p=g.geoms
-                                            else: continue
-                                            for s in p: x,y=s.xy; l.extend(list(x)+[None]); lt.extend(list(y)+[None]); tx.extend([n]*(len(x)+1))
-                                        
-                                        fig.add_trace(go.Scattermapbox(mode="lines", lon=l, lat=lt, text=tx, hoverinfo='text', line={'width':1.5, 'color':'#0044FF'}, name="Red Drenaje"))
-                                        st.success(f"✅ {len(r_viz)} tramos de río visibles.")
-                                    else:
-                                        st.warning("Sin ríos oficiales dentro del polígono.")
-                                except Exception as e: st.error(f"Error BD: {e}")
+                                    # El color variará según el orden gracias al hover
+                                    fig.add_trace(go.Scattermapbox(mode="lines", lon=l, lat=lt, text=tx, hoverinfo='text', line={'width': 2, 'color': '#0044FF'}, name="Red Drenaje (Modelo)"))
+                                    st.success(f"✅ {len(r_viz)} tramos de río calculados. Deslice el ratón sobre ellos para ver su Orden de Strahler.")
+                                else:
+                                    st.warning(f"No se detectaron ríos con un umbral de {umbral}. Disminuya el valor del control deslizante para forzar la aparición de arroyos menores.")
 
                             # 3. CATCHMENT / DIVISORIA
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
@@ -572,9 +612,9 @@ if gdf_zona_seleccionada is not None:
                     # Densidad de Drenaje (Requiere ríos calculados)
                     dd_str = "N/A (Calcule ríos primero)"
                     longitud_rios_km = 0
-                    if 'gdf_rios' in locals() and gdf_rios is not None:
-                        gdf_rios_metric = gdf_rios.to_crs("EPSG:3116")
-                        longitud_rios_km = gdf_rios_metric.length.sum() / 1000
+                    if st.session_state.get('gdf_rios') is not None:
+                        gdf_rios_st = st.session_state['gdf_rios']
+                        longitud_rios_km = gdf_rios_st['longitud_km'].sum()
                         dd = longitud_rios_km / area_km2
                         dd_str = f"{dd:.2f} km/km²"
 
