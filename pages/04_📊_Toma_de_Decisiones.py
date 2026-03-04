@@ -571,7 +571,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 else:
                     capa_predios = capas.get('predios')
         
-        if buffer_ripario is not None
+        if buffer_ripario is not None:
             if capa_predios is not None and not capa_predios.empty:
                 # =========================================================
                 # RUTA A: CON INFORMACIÓN CATASTRAL (PREDIOS)
@@ -658,3 +658,4 @@ if gdf_zona is not None and not gdf_zona.empty:
                         st.warning("No se encontraron los datos de la red hídrica para priorizar.")
         else:
             st.info("💡 Asegúrate de haber calculado la franja riparia en la página de **Biodiversidad** primero.")
+
