@@ -1074,24 +1074,80 @@ if gdf_zona_seleccionada is not None:
                     else:
                         st.warning("⚠️ Calc. Tab Hidro")
 
-                # --- DESCARGA DE MAPAS INTERACTIVOS ---
+                # --- DESCARGA AVANZADA DE MAPAS Y VECTORES SIG ---
                 st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown("#### 🌐 Mapas Interactivos (HTML)")
-                st.caption("Descarga los mapas renderizados para abrirlos en cualquier navegador web sin necesidad de internet, conservando el zoom, los colores de Horton y la interactividad.")
+                st.markdown("#### 🌐 Mapas Interactivos y Vectores SIG")
+                st.caption("Exporta la red de drenaje calculada con sus atributos (Orden de Strahler, Longitud) para software SIG (QGIS/ArcGIS) o como un mapa web interactivo.")
                 
-                if 'fig_mapa_hidro' in st.session_state and st.session_state['fig_mapa_hidro'] is not None:
-                    # Convertir la figura de Plotly a código HTML puro
-                    html_mapa = st.session_state['fig_mapa_hidro'].to_html(include_plotlyjs='cdn')
-                    
-                    st.download_button(
-                        label="📥 Descargar Mapa de Hidrología y Red de Drenaje (HTML)",
-                        data=html_mapa,
-                        file_name=f"Mapa_Hidrologia_Drenaje_{nombre_zona}.html",
-                        mime="text/html",
-                        use_container_width=True
-                    )
-                else:
-                    st.info("💡 Ve a la pestaña **🌊 Hidrología**, asegúrate de que el mapa se haya dibujado y vuelve aquí para habilitar la descarga.")
+                col_d1, col_d2, col_d3 = st.columns(3)
+                
+                # 1. HTML Interactivo
+                with col_d1:
+                    if 'fig_mapa_hidro' in st.session_state and st.session_state['fig_mapa_hidro'] is not None:
+                        html_mapa = st.session_state['fig_mapa_hidro'].to_html(include_plotlyjs='cdn')
+                        st.download_button(
+                            label="📥 Mapa Interactivo (HTML)",
+                            data=html_mapa,
+                            file_name=f"Mapa_Hidrologia_{nombre_zona}.html",
+                            mime="text/html",
+                            use_container_width=True
+                        )
+                    else:
+                        st.info("⚠️ Genera el mapa en Tab Hidrología primero.")
+                
+                # 2. GeoJSON
+                with col_d2:
+                    if st.session_state.get('gdf_rios') is not None:
+                        rios_json = st.session_state['gdf_rios'].to_crs("EPSG:4326").to_json()
+                        st.download_button(
+                            label="📥 Red de Drenaje (GeoJSON)",
+                            data=rios_json,
+                            file_name=f"Red_Drenaje_Strahler_{nombre_zona}.geojson",
+                            mime="application/json",
+                            use_container_width=True
+                        )
+                    else:
+                        st.info("⚠️ Calcula los ríos en Tab Hidrología primero.")
+                        
+                # 3. Shapefile (ZIP)
+                with col_d3:
+                    if st.session_state.get('gdf_rios') is not None:
+                        import tempfile
+                        import zipfile
+                        from io import BytesIO
+                        
+                        # Función para empaquetar el Shapefile al vuelo
+                        def create_shp_zip():
+                            temp_dir = tempfile.mkdtemp()
+                            base_name = f"Drenaje_{nombre_zona}".replace(" ", "_")
+                            shp_path = os.path.join(temp_dir, f"{base_name}.shp")
+                            
+                            # Preparar GDF: Los Shapefiles solo soportan nombres de columnas de hasta 10 caracteres
+                            gdf_export = st.session_state['gdf_rios'].to_crs("EPSG:4326").copy()
+                            if 'Orden_Strahler' in gdf_export.columns:
+                                gdf_export = gdf_export.rename(columns={'Orden_Strahler': 'Orden_Stra'})
+                            if 'longitud_km' in gdf_export.columns:
+                                gdf_export = gdf_export.rename(columns={'longitud_km': 'Long_km'})
+                                
+                            gdf_export.to_file(shp_path, driver='ESRI Shapefile')
+                            
+                            # Comprimir la carpeta en un ZIP
+                            zip_buffer = BytesIO()
+                            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                                for root, dirs, files in os.walk(temp_dir):
+                                    for file in files:
+                                        zip_file.write(os.path.join(root, file), arcname=file)
+                            return zip_buffer.getvalue()
+                            
+                        st.download_button(
+                            label="📥 Red de Drenaje (Shapefile .zip)",
+                            data=create_shp_zip(),
+                            file_name=f"Shapefile_Drenaje_{nombre_zona}.zip",
+                            mime="application/zip",
+                            use_container_width=True
+                        )
+                    else:
+                        st.info("⚠️ Calcula los ríos en Tab Hidrología primero.")
 
 else:
     st.info("👈 Selecciona una zona.")
