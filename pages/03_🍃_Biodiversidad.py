@@ -1287,16 +1287,20 @@ with tab_comparador:
                         st.markdown("#### ⚙️ Parámetros del Corredor")
                         buffer_m = st.slider("Ancho de franja de protección (m):", min_value=0, max_value=50, value=30, step=5)
                         
-                        # --- 🛡️ ANTÍDOTO CONTRA LA PANTALLA BLANCA ---
+                        # 1. CÁLCULO MATEMÁTICO (EXACTO)
                         rios_3116 = gdf_rios_actual.to_crs(epsg=3116)
-                        # 1. resolution=2 crea curvas con menos vértices
-                        buffer_geom = rios_3116.buffer(buffer_m, resolution=2)
-                        gdf_buffer_3116 = gpd.GeoDataFrame(geometry=buffer_geom, crs="EPSG:3116").dissolve()
-                        # 2. simplify() elimina detalles milimétricos que colapsan Plotly
-                        gdf_buffer_3116['geometry'] = gdf_buffer_3116.geometry.simplify(5.0) 
+                        # resolution=1 hace el buffer más cuadrado, eliminando miles de vértices curvos
+                        buffer_geom_exacto = rios_3116.buffer(buffer_m, resolution=1)
+                        gdf_buffer_exacto = gpd.GeoDataFrame(geometry=buffer_geom_exacto, crs="EPSG:3116").dissolve()
                         
-                        gdf_buffer_4326 = gdf_buffer_3116.to_crs("EPSG:4326")
-                        area_total_ha = gdf_buffer_3116.area.sum() / 10000.0
+                        area_total_ha = gdf_buffer_exacto.area.sum() / 10000.0
+                        
+                        # 2. CÁLCULO VISUAL (SIMPLIFICACIÓN EXTREMA PARA EL NAVEGADOR)
+                        gdf_viz = gdf_buffer_exacto.copy()
+                        # tolerance=50.0 significa que cualquier vértice a menos de 50 metros de otro se borra. 
+                        # preserve_topology=False permite que el algoritmo sea aún más agresivo.
+                        gdf_viz['geometry'] = gdf_viz.geometry.simplify(tolerance=50.0, preserve_topology=False)
+                        gdf_buffer_4326 = gdf_viz.to_crs("EPSG:4326")
                         
                         st.metric("Área Total del Corredor", f"{area_total_ha:,.1f} ha")
                         
@@ -1309,7 +1313,8 @@ with tab_comparador:
                         st.metric("🌳 Bosque Existente", f"{ha_bosque:,.1f} ha", "Conservar")
                         st.metric("🔴 Déficit Ripario", f"{ha_deficit:,.1f} ha", "- Restaurar", delta_color="inverse")
                         
-                        st.session_state['buffer_ripario_4326'] = gdf_buffer_4326
+                        # Guardamos en memoria el EXACTO para cálculos en Toma de Decisiones, y el 4326 para el mapa local
+                        st.session_state['buffer_ripario_3116'] = gdf_buffer_exacto
                         st.session_state['ha_deficit_ripario'] = ha_deficit
                         
                     with c_gap2:
@@ -1325,17 +1330,22 @@ with tab_comparador:
                             fig_gap.add_trace(go.Scattermapbox(mode="lines", lon=list(xx), lat=list(yy), line={'width': 2, 'color': '#00FF00'}, name="Cuenca"))
                         
                         if not gdf_buffer_4326.empty:
+                            # Al estar simplificado a 50m, este JSON pesará kilobytes en lugar de megabytes
                             geojson_buffer = gdf_buffer_4326.geometry.__geo_interface__
                             fig_gap.add_trace(go.Choroplethmapbox(
                                 geojson=geojson_buffer, locations=gdf_buffer_4326.index, z=[1]*len(gdf_buffer_4326),
                                 colorscale=[[0, '#27AE60'], [1, '#27AE60']], showscale=False, marker_opacity=0.6, name=f"Buffer {buffer_m}m"
                             ))
                             
-                        c_lat, c_lon = gdf_buffer_4326.centroid.y.mean(), gdf_buffer_4326.centroid.x.mean()
+                        # Si por algún motivo el centroid falla por la simplificación extrema, usamos un try/except
+                        try:
+                            c_lat, c_lon = gdf_buffer_4326.centroid.y.mean(), gdf_buffer_4326.centroid.x.mean()
+                        except:
+                            c_lat, c_lon = 6.2, -75.5 # Coordenadas de Antioquia por defecto
                             
                         fig_gap.update_layout(
-                            title=f"Corredor Ripario ({buffer_m}m) - Escáner de Conectividad",
-                            mapbox_style="carto-positron", mapbox_zoom=12, mapbox_center={"lat": c_lat, "lon": c_lon},
+                            title=f"Corredor Ripario ({buffer_m}m) - Escáner de Conectividad (Vista Simplificada)",
+                            mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": c_lat, "lon": c_lon},
                             height=550, margin=dict(l=0,r=0,t=40,b=0)
                         )
                         st.plotly_chart(fig_gap, use_container_width=True)
