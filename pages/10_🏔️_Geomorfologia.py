@@ -648,6 +648,36 @@ if gdf_zona_seleccionada is not None:
                     
                     st.markdown("---")
                     
+                    # --- PANEL DE STRAHLER Y RIPARIOS (INFRAESTRUCTURA VERDE) ---
+                    if st.session_state.get('geomorfo_strahler_df') is not None:
+                        st.markdown("##### 🌊 Red de Drenaje y Potencial Ripario (Strahler)")
+                        df_str = st.session_state['geomorfo_strahler_df']
+                        
+                        c_str1, c_str2 = st.columns([1, 1.5])
+                        with c_str1:
+                            st.dataframe(df_str.style.format({'Longitud_Km': '{:.2f}'}), use_container_width=True, hide_index=True)
+                            
+                            # Cálculo de la Relación de Bifurcación (Rb) - Indicador clave de estabilidad
+                            rb_list = []
+                            for i in range(len(df_str)-1):
+                                n_u = df_str['Num_Segmentos'].iloc[i]
+                                n_u_next = df_str['Num_Segmentos'].iloc[i+1]
+                                if n_u_next > 0: rb_list.append(n_u / n_u_next)
+                            rb_mean = sum(rb_list)/len(rb_list) if rb_list else 0
+                            
+                            st.metric("Relación de Bifurcación ($R_b$)", f"{rb_mean:.2f}", 
+                                      help="Si Rb está entre 3 y 5, la cuenca es geológicamente estable. Valores altos indican riesgo de crecientes súbitas.")
+                            
+                        with c_str2:
+                            import plotly.express as px
+                            fig_str = px.bar(df_str, x='Orden_Strahler', y='Longitud_Km', 
+                                             title="Longitud de Ríos por Orden de Strahler",
+                                             labels={'Orden_Strahler': 'Orden', 'Longitud_Km': 'Longitud (Km)'},
+                                             color='Orden_Strahler', color_continuous_scale='Blues')
+                            fig_str.update_layout(height=250, margin=dict(t=30, b=0, l=0, r=0), 
+                                                  xaxis=dict(tickmode='linear', dtick=1))
+                            st.plotly_chart(fig_str, use_container_width=True)
+                    
                     # --- FASE B: HIDROLOGÍA SINTÉTICA ---
                     st.markdown("##### ⏱️ Tiempo de Concentración (Tc) y Caudales")
                     st.caption("Estimaciones basadas en fórmulas empíricas (Método Racional).")
