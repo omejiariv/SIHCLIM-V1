@@ -542,16 +542,17 @@ if gdf_zona is not None and not gdf_zona.empty:
         # PRIORIZACIÓN PREDIAL PARA CONECTIVIDAD RIPARIA
         # =========================================================================
         st.markdown("---")
-        nombre_zona_td = st.session_state.get('nombre_seleccion', 'el Territorio')
         
+        # 🏷️ CORRECCIÓN 1: Inyectamos el nombre dinámico directamente desde tu selector
+        nombre_zona_td = nombre_seleccion if 'nombre_seleccion' in locals() else "el Territorio"
         st.subheader(f"🎯 Priorización Predial: Inteligencia de Negociación en {nombre_zona_td.title()}")
         st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
 
-        # 1. Recuperar datos desde Biodiversidad
+        # 1. Recuperar datos
         rios_strahler = st.session_state.get('gdf_rios')
-        buffer_m = st.session_state.get('buffer_m_ripario', 30) # 30m por defecto
+        buffer_m = st.session_state.get('buffer_m_ripario', 30) 
         
-        # 2. CARGAR LA CAPA DE PREDIOS (¡El bloque que faltaba!)
+        # 2. CARGAR LA CAPA DE PREDIOS
         capa_predios = None
         ruta_geojson_adquiridos = "data/PREDIOS_ADQUIRIDOS_ANTIOQUIA.geojson"
         ruta_shp_ant = "data/Predios_Ant.shp"
@@ -564,7 +565,6 @@ if gdf_zona is not None and not gdf_zona.empty:
                 elif os.path.exists(ruta_shp_ant):
                     capa_predios = gpd.read_file(ruta_shp_ant, bbox=bbox)
                 else:
-                    # Fallback si no existen los locales, busca en memoria
                     capa_predios = capas.get('predios') if 'capas' in locals() else None
         except Exception as e:
             st.warning(f"No se pudo cargar la capa de predios local: {e}")
@@ -572,34 +572,34 @@ if gdf_zona is not None and not gdf_zona.empty:
         # 3. EJECUTAR EL MOTOR DE CRUCE
         if rios_strahler is not None and not rios_strahler.empty:
             
-            # Verificamos si logramos cargar la capa de predios
+            # 🛠️ CORRECCIÓN 2: EL "ANCLA" DE SINCRONIZACIÓN
+            # Reseteamos el índice de la tabla para que la matemática y el mapa hablen el mismo idioma
+            rios_strahler = rios_strahler.reset_index(drop=True)
+            # Creamos un ID ÚNICO y permanente para cada tramo
+            rios_strahler['ID_Tramo'] = ["Segmento " + str(i+1) for i in range(len(rios_strahler))]
+            if 'longitud_km' in rios_strahler.columns:
+                rios_strahler['longitud_km'] = rios_strahler['longitud_km'].round(2)
+            
             if capa_predios is not None and not capa_predios.empty:
                 # ---------------------------------------------------------
-                # RUTA A: CON MAPA DE PREDIOS (CRUCE ESPACIAL AL VUELO)
+                # RUTA A: CON MAPA DE PREDIOS 
                 # ---------------------------------------------------------
                 st.success(f"✅ Estructura predial detectada. Calculando impacto ripario ({buffer_m}m por lado)...")
                 with st.spinner("Ejecutando cruce espacial avanzado..."):
                     try:
-                        # Proyectamos a metros
                         predios_3116 = capa_predios.to_crs(epsg=3116)
                         rios_3116 = rios_strahler.to_crs(epsg=3116)
                         
-                        # Truco Anti-Colapso: Hacemos el buffer individual por cada línea
                         buffer_tramos = gpd.GeoDataFrame(geometry=rios_3116.buffer(buffer_m, resolution=1), crs="EPSG:3116")
-                        
-                        # Cruzamos los predios con esos mini-polígonos
                         predios_en_buffer = gpd.overlay(predios_3116, buffer_tramos, how='intersection')
                         
                         if not predios_en_buffer.empty:
                             predios_en_buffer['Area_Riparia_ha'] = predios_en_buffer.geometry.area / 10000.0
-                            
-                            # Identificar la columna que tiene el nombre o matrícula del predio
                             col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID'] if col in predios_en_buffer.columns), None)
                             if col_id is None:
                                 predios_en_buffer['ID_Predio'] = predios_en_buffer.index
                                 col_id = 'ID_Predio'
                                 
-                            # Si un predio grande toca el río muchas veces, sumamos todas sus áreas afectadas
                             predios_agrupados = predios_en_buffer.groupby(col_id).agg({'Area_Riparia_ha': 'sum'}).reset_index()
                             
                             datos_ranking = []
@@ -631,18 +631,16 @@ if gdf_zona is not None and not gdf_zona.empty:
                 # ---------------------------------------------------------
                 # RUTA B: SIN PREDIOS (PRIORIZACIÓN ECOLÓGICA POR TRAMOS)
                 # ---------------------------------------------------------
-                st.info("ℹ️ No se detectó mapa predial en la zona. Activando **Priorización Ecológica por Tramos Hídricos**.")
+                st.info("ℹ️ No se detectó mapa predial. Activando **Priorización Ecológica por Tramos Hídricos**.")
                 with st.spinner("Analizando jerarquía de conectividad del paisaje..."):
                     datos_tramos = []
                     for idx, row in rios_strahler.iterrows():
                         orden = row.get('Orden_Strahler', 1)
                         longitud = row.get('longitud_km', 0)
-                        
-                        # Ríos de mayor orden y más largos son conectores críticos
                         score_ecologico = (orden * 50) + (longitud * 10)
                         
                         datos_tramos.append({
-                            "ID Tramo": f"Segmento Hídrico {idx+1}",
+                            "ID Tramo": row['ID_Tramo'], # <- Usamos el ID Anclado
                             "Orden de Strahler": orden,
                             "Longitud (Km)": longitud,
                             "Importancia Ecológica": score_ecologico,
@@ -653,46 +651,36 @@ if gdf_zona is not None and not gdf_zona.empty:
                     
                     c_tram1, c_tram2 = st.columns([2, 1])
                     with c_tram1:
-                        # Recuperamos el nombre del territorio actual
-                        nombre_zona = st.session_state.get('nombre_seleccion', 'el territorio')
-                        
-                        # Inyectamos el nombre en el título
-                        st.markdown(f"##### 🌿 Tramos Críticos para Restauración en {nombre_zona.title()} (Top 10)")
-                        
+                        st.markdown(f"##### 🌿 Tramos Críticos para Restauración en {nombre_zona_td.title()} (Top 10)")
                         st.dataframe(df_tramos.head(10).style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format({"Longitud (Km)": "{:.2f}", "Importancia Ecológica": "{:.0f}"}), use_container_width=True, hide_index=True)
-
                     with c_tram2:
                         st.markdown("##### 💡 Resumen Ecológico")
                         tramos_clave = df_tramos[df_tramos['Orden de Strahler'] >= 2]
                         st.metric("Tramos Estratégicos (> Orden 1)", f"{len(tramos_clave)} segmentos")
-                        st.caption("Estrategia: Al no contar con información predial, la prioridad de siembra se dirige a los tramos de mayor Orden de Strahler, ya que estos actúan como las arterias principales de movilidad de fauna.")
+                        st.caption("Estrategia: Al no contar con información predial, la prioridad de siembra se dirige a los tramos de mayor Orden de Strahler.")
 
             # =========================================================
-            # 🗺️ EL MAPA TÁCTICO DE NEGOCIACIÓN (Aceleración GPU)
+            # 🗺️ EL MAPA TÁCTICO DE NEGOCIACIÓN 
             # =========================================================
             st.markdown("---")
-            nombre_zona_td = st.session_state.get('nombre_seleccion', 'el Territorio')
+            # 🏷️ CORRECCIÓN TÍTULO 3
             st.markdown(f"##### 🗺️ Visor Táctico de Conectividad y Predios en {nombre_zona_td.title()}")
             
             import pydeck as pdk
             
-            # Preparar los ríos
+            # El mapa ahora lee la tabla maestra que ya tiene el 'ID_Tramo' correcto
             rios_4326 = rios_strahler.to_crs(epsg=4326).copy()
-            rios_4326['ID_Tramo'] = ["Segmento " + str(i+1) for i in range(len(rios_4326))]
-            if 'longitud_km' in rios_4326.columns: 
-                rios_4326['longitud_km'] = rios_4326['longitud_km'].round(2)
             
             try: c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
             except: c_lat, c_lon = 6.2, -75.5
             
             capas_mapa = []
             
-            # 1. Capa de la Cuenca
             if gdf_zona is not None:
                 zona_4326 = gdf_zona.to_crs("EPSG:4326")
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
             
-            # 2. Capa de Ríos (Verde brillante)
+            # Capa de Ríos
             capas_mapa.append(pdk.Layer(
                 "GeoJsonLayer",
                 data=rios_4326,
@@ -706,12 +694,10 @@ if gdf_zona is not None and not gdf_zona.empty:
                 autoHighlight=True
             ))
             
-            # 3. Capa de Predios (Naranja - ¡Solo si existen y cruzaron el río!)
+            # Capa de Predios
             if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
-                # Recuperamos los predios originales completos en 4326 usando los IDs que cruzaron
                 col_id_pred = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'ID_Predio'] if col in predios_en_buffer.columns), None)
                 if col_id_pred and capa_predios is not None:
-                    # Filtramos la capa original para dibujar el predio completo
                     ids_afectados = predios_en_buffer[col_id_pred].unique()
                     predios_a_dibujar = capa_predios[capa_predios[col_id_pred].isin(ids_afectados)].to_crs(epsg=4326)
                     
@@ -721,8 +707,8 @@ if gdf_zona is not None and not gdf_zona.empty:
                         opacity=0.4,
                         stroked=True,
                         filled=True,
-                        get_fill_color=[255, 165, 0, 150],   # Naranja relleno
-                        get_line_color=[255, 140, 0, 255],   # Naranja borde
+                        get_fill_color=[255, 165, 0, 150],
+                        get_line_color=[255, 140, 0, 255],
                         get_line_width=2,
                         pickable=True,
                         autoHighlight=True
@@ -730,9 +716,9 @@ if gdf_zona is not None and not gdf_zona.empty:
             
             view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=12)
             
-            # Tooltip inteligente genérico
+            # Tooltip unificado que soporta información tanto de ríos como de predios
             tooltip = {
-                "html": "<b>Detalle de Mapa:</b><br/>{ID_Tramo} <br/>Orden: {Orden_Strahler}<br/>ID Predio: {MATRICULA} {COD_CATAST} {FICHA}",
+                "html": "<b>Detalle de Selección:</b><br/>{ID_Tramo} {MATRICULA} {COD_CATAST}<br/>Orden de Strahler: {Orden_Strahler}<br/>Longitud: {longitud_km} km",
                 "style": {"backgroundColor": "steelblue", "color": "white"}
             }
             
@@ -740,5 +726,3 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         else:
             st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
-
-
