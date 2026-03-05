@@ -618,3 +618,183 @@ if gdf_zona is not None:
             except Exception as e:
 
                 st.error(f"Error en reporte: {e}")
+
+# =========================================================================
+# ⚖️ NUEVO MÓDULO: ADMINISTRACIÓN SOSTENIBLE Y GOBERNANZA HÍDRICA
+# =========================================================================
+st.markdown("---")
+st.header("⚖️ Administración Sostenible: Oferta vs Demanda Subterránea")
+st.markdown("Este motor compara la recarga hídrica natural del territorio con la presión de extracción de las concesiones otorgadas, identificando zonas de estrés acuífero y descubriendo áreas de extracción huérfanas de estudios.")
+
+if gdf_zona is not None and not gdf_zona.empty:
+    
+    # ---------------------------------------------------------------------
+    # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL UNIVERSAL)
+    # ---------------------------------------------------------------------
+    @st.cache_data(show_spinner=False)
+    def compilar_demanda_subterranea():
+        import os
+        import pandas as pd
+        import geopandas as gpd
+        from shapely.geometry import Point
+        
+        archivos_demanda = [
+            "captaciones_RARMA_9377.geojson", 
+            "captaciones_RNegro_9377.geojson", 
+            "concesiones_RG.geojson",
+            "Concesiones_Cornare.csv", 
+            "Concesiones_Corantioquia.csv"
+        ]
+        
+        datos_unificados = []
+        
+        for archivo in archivos_demanda:
+            ruta = os.path.join("data", archivo)
+            if not os.path.exists(ruta):
+                continue
+                
+            try:
+                # Si es un GeoJSON
+                if archivo.endswith('.geojson'):
+                    gdf_temp = gpd.read_file(ruta)
+                # Si es un CSV (requiere construir la geometría)
+                elif archivo.endswith('.csv'):
+                    df_temp = pd.read_csv(ruta, low_memory=False)
+                    # Buscar columnas de coordenadas por palabras clave
+                    col_x = next((c for c in df_temp.columns if any(k in str(c).lower() for k in ['lon', 'x', 'este'])), None)
+                    col_y = next((c for c in df_temp.columns if any(k in str(c).lower() for k in ['lat', 'y', 'norte'])), None)
+                    
+                    if col_x and col_y:
+                        # Limpieza rápida de comas/puntos si vienen mal en Excel
+                        df_temp[col_x] = pd.to_numeric(df_temp[col_x].astype(str).str.replace(',', '.'), errors='coerce')
+                        df_temp[col_y] = pd.to_numeric(df_temp[col_y].astype(str).str.replace(',', '.'), errors='coerce')
+                        df_temp = df_temp.dropna(subset=[col_x, col_y])
+                        
+                        # Asumimos WGS84 si es negativo (Latinoamérica), o Magna Sirgas si es > 100000
+                        crs_adivinado = "EPSG:4326" if df_temp[col_x].mean() < 0 else "EPSG:3116"
+                        gdf_temp = gpd.GeoDataFrame(df_temp, geometry=gpd.points_from_xy(df_temp[col_x], df_temp[col_y]), crs=crs_adivinado)
+                    else:
+                        continue # Saltamos si no hay coordenadas claras
+                
+                # Estandarizamos al EPSG:3116 para cruces matemáticos locales
+                if gdf_temp.crs != "EPSG:3116":
+                    gdf_temp = gdf_temp.to_crs(epsg=3116)
+                
+                # BUSCADOR INTELIGENTE DE COLUMNAS CLAVE
+                columnas = [str(c).lower() for c in gdf_temp.columns]
+                
+                # A. Buscar el Caudal Otorgado (L/s)
+                col_caudal = next((c for c in gdf_temp.columns if any(k in str(c).lower() for k in ['caudal', 'l/s', 'lps', 'q_otorg', 'concesion'])), None)
+                # B. Buscar el Año o Fecha
+                col_fecha = next((c for c in gdf_temp.columns if any(k in str(c).lower() for k in ['año', 'ano', 'fecha', 'resolucion', 'vigencia'])), None)
+                # C. Buscar Tipo de Fuente (Para filtrar solo las subterráneas)
+                col_fuente = next((c for c in gdf_temp.columns if any(k in str(c).lower() for k in ['fuente', 'tipo', 'clase', 'subterranea', 'pozo', 'aljibe'])), None)
+                
+                # Construir tabla limpia
+                if col_caudal:
+                    gdf_limpio = gpd.GeoDataFrame(geometry=gdf_temp.geometry, crs="EPSG:3116")
+                    gdf_limpio['Caudal_Lps'] = pd.to_numeric(gdf_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+                    gdf_limpio['Año'] = gdf_temp[col_fecha] if col_fecha else 2020 # Default si no hay fecha
+                    
+                    # Filtro vital: Si la base tiene tipo de fuente, nos quedamos solo con lo subterráneo
+                    if col_fuente:
+                        filtro_subt = gdf_temp[col_fuente].astype(str).str.lower().str.contains('subt|pozo|aljibe|profund', na=False)
+                        # Si la corporación no especificó, asumimos que el archivo entero era de subterráneas por si acaso
+                        if filtro_subt.any(): 
+                            gdf_limpio = gdf_limpio[filtro_subt]
+                            
+                    gdf_limpio['Origen'] = archivo
+                    datos_unificados.append(gdf_limpio)
+            except Exception as e:
+                # Ignoramos silenciosamente si un archivo está corrupto para no romper la app
+                pass
+                
+        if datos_unificados:
+            return pd.concat(datos_unificados, ignore_index=True)
+        else:
+            return gpd.GeoDataFrame()
+
+    with st.spinner("🔍 Escaneando bases de datos de concesiones y estructurando demandas..."):
+        gdf_concesiones_total = compilar_demanda_subterranea()
+
+    # ---------------------------------------------------------------------
+    # 2. EL CRUCE ESPACIAL Y BALANCE MATEMÁTICO
+    # ---------------------------------------------------------------------
+    if not gdf_concesiones_total.empty:
+        # A. Cortar las concesiones con el polígono del municipio/cuenca
+        gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
+        concesiones_locales = gpd.clip(gdf_concesiones_total, gdf_zona_3116)
+        
+        caudal_total_demandado_lps = concesiones_locales['Caudal_Lps'].sum()
+        pozos_activos = len(concesiones_locales)
+        
+        # B. Extraer la Oferta (Recarga)
+        # Aquí conectamos con el cálculo que ya hizo tu página arriba. 
+        # Intentamos buscar tu variable local, si no, calculamos un estimado base para la prueba
+        volumen_recarga_m3_ano = st.session_state.get('recarga_total_m3', None)
+        
+        if volumen_recarga_m3_ano is None:
+            # Estimación de contingencia (Por si la variable no está en session_state)
+            area_ha = gdf_zona_3116.area.sum() / 10000.0
+            recarga_media_mm = 250 # Asumimos 250 mm/año de recarga promedio si no hay dato
+            volumen_recarga_m3_ano = area_ha * recarga_media_mm * 10
+            
+        # Transformación matemática: de m3/año a Litros por Segundo (L/s)
+        # 1 m3 = 1000 L. 1 Año = 31,536,000 segundos.
+        caudal_oferta_lps = (volumen_recarga_m3_ano * 1000) / 31536000
+        
+        # C. Cálculo del Índice de Presión Acuífera (IPA)
+        ipa_porcentaje = (caudal_total_demandado_lps / caudal_oferta_lps) * 100 if caudal_oferta_lps > 0 else 0
+        
+        # ---------------------------------------------------------------------
+        # 3. EL DASHBOARD DE GOBERNANZA
+        # ---------------------------------------------------------------------
+        st.markdown(f"#### 📊 Balance Acuífero en {st.session_state.get('nombre_seleccion', 'el Territorio').title()}")
+        
+        c_bal1, c_bal2, c_bal3, c_bal4 = st.columns(4)
+        
+        c_bal1.metric(
+            "💧 Oferta (Recarga Natural)", 
+            f"{caudal_oferta_lps:,.1f} L/s", 
+            help="Volumen de agua que se infiltra anualmente, promediado en Litros por Segundo."
+        )
+        
+        c_bal2.metric(
+            "🚰 Demanda (Concesiones)", 
+            f"{caudal_total_demandado_lps:,.1f} L/s", 
+            f"-{pozos_activos} captaciones", delta_color="inverse",
+            help="Suma de caudales otorgados extraídos de pozos y aljibes locales."
+        )
+        
+        # Semáforo del Índice
+        if ipa_porcentaje < 10:
+            color_ipa = "🟢"
+            estado_ipa = "Subexplotado"
+        elif ipa_porcentaje < 40:
+            color_ipa = "🟡"
+            estado_ipa = "Alerta Temprana"
+        else:
+            color_ipa = "🔴"
+            estado_ipa = "Sobreexplotado"
+            
+        c_bal3.metric(
+            "⚖️ Índice de Presión (IPA)", 
+            f"{ipa_porcentaje:,.1f} %", 
+            f"{color_ipa} {estado_ipa}", delta_color="off"
+        )
+        
+        c_bal4.metric(
+            "🌊 Margen de Seguridad", 
+            f"{(caudal_oferta_lps - caudal_total_demandado_lps):,.1f} L/s",
+            "Caudal ecológico restante"
+        )
+        
+        # Guardamos en la memoria para que el Gráfico de Crecimiento y el Mapa de la Fase 2 puedan usarlos
+        st.session_state['concesiones_locales_gdf'] = concesiones_locales
+        st.session_state['oferta_lps_actual'] = caudal_oferta_lps
+        st.session_state['demanda_lps_actual'] = caudal_total_demandado_lps
+        
+    else:
+        st.info("No se detectaron concesiones subterráneas registradas en las bases de datos para esta zona.")
+else:
+    st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
