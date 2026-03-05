@@ -1311,14 +1311,20 @@ with tabs[15]:
                             st.markdown(f"📄 `{n}`")
                             
                         with c_del:
-                            # Es VITAL que la 'key' del botón sea única, por eso usamos el nombre del archivo
                             if st.button("🗑️", key=f"del_{n}_{carpeta_destino}", help="Borrar archivo de la nube"):
                                 ruta_borrar = f"{carpeta_destino}/{n}"
                                 try:
                                     # Orden de borrado a Supabase
-                                    cliente_supabase.storage.from_(nombre_bucket).remove([ruta_borrar])
-                                    st.toast(f"✅ Archivo '{n}' eliminado con éxito.", icon="🗑️")
-                                    st.rerun() # Reinicia la pantalla para actualizar la lista mágicamente
+                                    respuesta = cliente_supabase.storage.from_(nombre_bucket).remove([ruta_borrar])
+                                    
+                                    # Supabase devuelve una lista vacía [] si el RLS bloqueó el borrado en secreto
+                                    if isinstance(respuesta, list) and len(respuesta) == 0:
+                                        st.error("🔒 Bloqueo de Seguridad (RLS): Supabase denegó el borrado. Debes autorizar el permiso 'DELETE' en las políticas de tu Bucket.")
+                                    else:
+                                        st.toast(f"✅ Archivo '{n}' eliminado con éxito.", icon="🗑️")
+                                        import time
+                                        time.sleep(0.5) # Damos medio segundo para que Supabase actualice su memoria
+                                        st.rerun() 
                                 except Exception as e:
                                     st.error(f"Error al intentar borrar: {e}")
                 else:
@@ -1328,3 +1334,4 @@ with tabs[15]:
                 
         except Exception as e:
             st.error(f"No se pudo conectar con el explorador. Detalle: {e}")
+
