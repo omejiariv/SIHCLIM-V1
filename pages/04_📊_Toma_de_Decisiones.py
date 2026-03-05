@@ -545,7 +545,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         
         # 🏷️ CORRECCIÓN 1: Inyectamos el nombre dinámico directamente desde tu selector
         nombre_zona_td = nombre_seleccion if 'nombre_seleccion' in locals() else "el Territorio"
-        st.subheader(f"🎯 Priorización Predial: Inteligencia de Negociación en {nombre_zona_td.title()}")
+        st.subheader(f"🎯 Priorización Predial: Inteligencia de Negociación en {nombre_zona}")
         st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
 
         # 1. Recuperar datos
@@ -651,7 +651,8 @@ if gdf_zona is not None and not gdf_zona.empty:
                     
                     c_tram1, c_tram2 = st.columns([2, 1])
                     with c_tram1:
-                        st.markdown(f"##### 🌿 Tramos Críticos para Restauración en {nombre_zona_td.title()} (Top 10)")
+                        st.markdown(f"##### 🌿 Tramos Críticos para Restauración en: **{nombre_zona}** (Top 10)")
+                        st.markdown(f"##### 🗺️ Visor Táctico de Conectividad y Predios en: **{nombre_zona}**")
                         st.dataframe(df_tramos.head(10).style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format({"Longitud (Km)": "{:.2f}", "Importancia Ecológica": "{:.0f}"}), use_container_width=True, hide_index=True)
                     with c_tram2:
                         st.markdown("##### 💡 Resumen Ecológico")
@@ -726,4 +727,5 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         else:
             st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
+
 
