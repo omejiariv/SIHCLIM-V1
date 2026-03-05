@@ -628,110 +628,47 @@ st.markdown("Este motor compara la recarga natural con la extracción. Utiliza *
 
 if gdf_zona is not None and not gdf_zona.empty:
     
+# ---------------------------------------------------------------------
+    # 1. CONEXIÓN A LA BASE MAESTRA EN SUPABASE
     # ---------------------------------------------------------------------
-    # 1. EL LECTOR INTELIGENTE Y MOTOR DE IMPUTACIÓN
-    # ---------------------------------------------------------------------
-    @st.cache_data(show_spinner=False)
-    def compilar_demanda_subterranea():
-        import os
-        import pandas as pd
+    @st.cache_data(show_spinner=False, ttl=3600)
+    def cargar_concesiones_maestras():
         import geopandas as gpd
-        import unicodedata
+        import io
+        from supabase import create_client
         
-        def normalizar(texto):
-            if pd.isna(texto): return ""
-            return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+        # 1. Buscar credenciales
+        url_sb = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url") or st.secrets.get("iri", {}).get("SUPABASE_URL")
+        key_sb = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key") or st.secrets.get("iri", {}).get("SUPABASE_KEY")
+        
+        if not url_sb or not key_sb:
+            return gpd.GeoDataFrame()
             
-        datos_espaciales = []
-        datos_huerfanos = [] # Para los que no tienen coordenadas
-        
-        if not os.path.exists("data"): return gpd.GeoDataFrame(), pd.DataFrame()
-        
-        archivos_data = os.listdir("data")
-        archivos_demanda = [f for f in archivos_data if any(k in f.lower() for k in ['concesion', 'captacion', 'pozo', 'subterranea', 'agua'])]
-        
-        for archivo in archivos_demanda:
-            ruta = os.path.join("data", archivo)
-            try:
-                if archivo.endswith(('.geojson', '.shp')):
-                    gdf_temp = gpd.read_file(ruta)
-                    if not gdf_temp.empty:
-                        gdf_temp['Origen'] = archivo
-                        gdf_temp['Caudal_Lps'] = 1.5 # Imputación por defecto si es shapefile
-                        datos_espaciales.append(gdf_temp.to_crs(epsg=3116))
-                        
-                elif archivo.endswith(('.csv', '.xlsx', '.xls')):
-                    if archivo.endswith('.csv'):
-                        try: df_temp = pd.read_csv(ruta, sep=None, engine='python', low_memory=False)
-                        except: df_temp = pd.read_csv(ruta, sep=';', low_memory=False)
-                    else:
-                        df_temp = pd.read_excel(ruta)
-                        
-                    cols_lower = [str(c).lower().strip() for c in df_temp.columns]
-                    
-                    # FILTRO DE AGUAS SUBTERRÁNEAS (CORANTIOQUIA)
-                    col_asunto = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if 'asunto' in c_low), None)
-                    if col_asunto:
-                        df_temp = df_temp[df_temp[col_asunto].astype(str).str.lower().str.contains('subterranea|pozo', na=False)]
-                        
-                    # DETECCIÓN DE COLUMNAS CLAVE
-                    col_x = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['coordenada_x', 'x', 'lon', 'longitud']), None)
-                    col_y = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['coordenada_y', 'y', 'lat', 'latitud']), None)
-                    col_caudal = next((c for c, c_l in zip(df_temp.columns, cols_lower) if any(k in c_l for k in ['caudal_por_uso', 'caudal', 'l/s', 'lps'])), None)
-                    col_mun = next((c for c, c_l in zip(df_temp.columns, cols_lower) if 'municipio' in c_l), None)
-                    
-                    # IMPUTACIÓN HEURÍSTICA DE CAUDAL (El rescate de los ceros)
-                    if col_caudal:
-                        df_temp['Caudal_Lps'] = pd.to_numeric(df_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce')
-                    else:
-                        df_temp['Caudal_Lps'] = np.nan
-                    
-                    # 💡 REGLA DE ORO: Si está en cero o vacío, asignamos 1.5 L/s presuntos.
-                    df_temp['Caudal_Lps'] = df_temp['Caudal_Lps'].fillna(1.5).replace(0, 1.5)
-                    
-                    # Normalizamos la columna de municipio para cruzarla luego
-                    if col_mun: df_temp['Municipio_Norm'] = df_temp[col_mun].apply(normalizar)
-                    else: df_temp['Municipio_Norm'] = ""
-                    
-                    # SEPARAR LOS BUENOS DE LOS HUÉRFANOS
-                    if col_x and col_y:
-                        df_temp[col_x] = pd.to_numeric(df_temp[col_x].astype(str).str.replace(',', '.'), errors='coerce')
-                        df_temp[col_y] = pd.to_numeric(df_temp[col_y].astype(str).str.replace(',', '.'), errors='coerce')
-                        
-                        df_con_coords = df_temp.dropna(subset=[col_x, col_y])
-                        df_sin_coords = df_temp[df_temp[col_x].isna() | df_temp[col_y].isna()]
-                        
-                        # Guardamos los huérfanos
-                        if not df_sin_coords.empty: datos_huerfanos.append(df_sin_coords)
-                        
-                        # Convertimos los buenos a geometría
-                        if not df_con_coords.empty:
-                            mean_x = df_con_coords[col_x].mean()
-                            mean_y = df_con_coords[col_y].mean()
-                            
-                            if 0 < mean_x < 15 and -80 < mean_y < -65: crs_ad, geom = "EPSG:4326", gpd.points_from_xy(df_con_coords[col_y], df_con_coords[col_x]) 
-                            elif -80 < mean_x < -65 and 0 < mean_y < 15: crs_ad, geom = "EPSG:4326", gpd.points_from_xy(df_con_coords[col_x], df_con_coords[col_y])
-                            elif mean_x > 3000000 or mean_y > 3000000: crs_ad, geom = "EPSG:9377", gpd.points_from_xy(df_con_coords[col_x], df_con_coords[col_y])
-                            else: crs_ad, geom = "EPSG:3116", gpd.points_from_xy(df_con_coords[col_x], df_con_coords[col_y])
-                                
-                            gdf_temp = gpd.GeoDataFrame(df_con_coords, geometry=geom, crs=crs_ad)
-                            gdf_temp['Origen'] = archivo
-                            datos_espaciales.append(gdf_temp.to_crs(epsg=3116))
-                    else:
-                        # Si el archivo entero no tiene coordenadas, todos son huérfanos
-                        datos_huerfanos.append(df_temp)
-                        
-            except Exception as e:
-                pass
+        try:
+            cliente = create_client(url_sb, key_sb)
+            
+            # Ajusta la ruta dependiendo de dónde subiste el archivo en la Aduana SIG
+            # Si lo pusiste en Puntos_de_interes, déjalo así:
+            ruta_archivo = "Puntos_de_interes/Metabolismo_Hidrico_Antioquia_Maestro.geojson"
+            
+            bytes_archivo = cliente.storage.from_("sihcli_maestros").download(ruta_archivo)
+            gdf_maestro = gpd.read_file(io.BytesIO(bytes_archivo))
+            
+            # FILTRO CRUCIAL: Solo queremos las subterráneas para esta página
+            gdf_subt = gdf_maestro[gdf_maestro['Tipo_Fuente'] == 'Subterranea'].copy()
+            
+            if not gdf_subt.empty and gdf_subt.crs != "EPSG:3116":
+                gdf_subt = gdf_subt.to_crs(epsg=3116)
                 
-        gdf_final = pd.concat(datos_espaciales, ignore_index=True) if datos_espaciales else gpd.GeoDataFrame()
-        df_huerf_final = pd.concat(datos_huerfanos, ignore_index=True) if datos_huerfanos else pd.DataFrame()
-        
-        return gdf_final, df_huerf_final
+            return gdf_subt
+            
+        except Exception as e:
+            st.error(f"❌ Error descargando la base maestra: {e}")
+            return gpd.GeoDataFrame()
 
-    with st.spinner("🔍 Aplicando Imputación Heurística a bases de datos ambientales..."):
-        st.cache_data.clear() 
-        gdf_concesiones, df_huerfanos = compilar_demanda_subterranea()
+    with st.spinner("📥 Conectando con Supabase y descargando el Metabolismo Hídrico..."):
+        gdf_concesiones = cargar_concesiones_maestras()
+        df_huerfanos = pd.DataFrame() # Anulamos esto porque el maestro ya tiene la imputación integrada
 
     # ---------------------------------------------------------------------
     # 2. EL BALANCE ESPACIAL Y DOCUMENTAL
@@ -810,3 +747,4 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
