@@ -630,6 +630,8 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     # ---------------------------------------------------------------------
     # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL BLINDADO Y CORREGIDO)
+# ---------------------------------------------------------------------
+    # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL ESPECÍFICO)
     # ---------------------------------------------------------------------
     @st.cache_data(show_spinner=False)
     def compilar_demanda_subterranea():
@@ -638,7 +640,9 @@ if gdf_zona is not None and not gdf_zona.empty:
         import geopandas as gpd
         
         datos_unificados = []
-        if not os.path.exists("data"): return gpd.GeoDataFrame()
+        concesiones_sin_coordenadas = 0 # Contador para nuestro diagnóstico
+        
+        if not os.path.exists("data"): return gpd.GeoDataFrame(), 0
         
         archivos_data = os.listdir("data")
         archivos_demanda = [f for f in archivos_data if any(k in f.lower() for k in ['concesion', 'captacion', 'pozo', 'subterranea', 'agua'])]
@@ -648,9 +652,11 @@ if gdf_zona is not None and not gdf_zona.empty:
             gdf_temp = None
             
             try:
+                # --- LECTURA GEOJSON / SHAPEFILE ---
                 if archivo.endswith(('.geojson', '.shp')):
                     gdf_temp = gpd.read_file(ruta)
                     
+                # --- LECTURA EXCEL / CSV (CORANTIOQUIA / CORNARE) ---
                 elif archivo.endswith(('.csv', '.xlsx', '.xls')):
                     if archivo.endswith('.csv'):
                         try: df_temp = pd.read_csv(ruta, sep=None, engine='python', low_memory=False)
@@ -659,71 +665,82 @@ if gdf_zona is not None and not gdf_zona.empty:
                         df_temp = pd.read_excel(ruta)
                         
                     cols_lower = [str(c).lower().strip() for c in df_temp.columns]
-                    col_x = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['x', 'lon', 'long', 'longitud', 'este', 'coord_x', 'coordenada_x']), None)
-                    col_y = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['y', 'lat', 'latitud', 'norte', 'coord_y', 'coordenada_y']), None)
+                    
+                    # 💡 EL DESCUBRIMIENTO: FILTRADO POR ASUNTO (CORANTIOQUIA)
+                    col_asunto = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if 'asunto' in c_low), None)
+                    if col_asunto:
+                        # Nos quedamos SOLAMENTE con las filas que digan "subterranea" (ignorando mayúsculas)
+                        df_temp = df_temp[df_temp[col_asunto].astype(str).str.lower().str.contains('subterranea|pozo', na=False)]
+                        
+                    # Búsqueda de coordenadas basada en tu archivo (coordenada_X, coordenada_Y)
+                    col_x = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['coordenada_x', 'x', 'lon', 'longitud']), None)
+                    col_y = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['coordenada_y', 'y', 'lat', 'latitud']), None)
                     
                     if col_x and col_y:
+                        total_subterraneas = len(df_temp)
                         df_temp[col_x] = pd.to_numeric(df_temp[col_x].astype(str).str.replace(',', '.'), errors='coerce')
                         df_temp[col_y] = pd.to_numeric(df_temp[col_y].astype(str).str.replace(',', '.'), errors='coerce')
-                        df_temp = df_temp.dropna(subset=[col_x, col_y])
                         
-                        if not df_temp.empty:
-                            # 🛠️ DETECTOR ANTI-OCÉANOS (Corrige coordenadas invertidas automáticamente)
-                            mean_x = df_temp[col_x].mean()
-                            mean_y = df_temp[col_y].mean()
+                        # Limpiamos las filas que no tienen coordenadas
+                        df_temp_limpio = df_temp.dropna(subset=[col_x, col_y])
+                        
+                        # Sumamos cuántas perdimos por culpa de la corporación
+                        concesiones_sin_coordenadas += (total_subterraneas - len(df_temp_limpio))
+                        
+                        if not df_temp_limpio.empty:
+                            mean_x = df_temp_limpio[col_x].mean()
+                            mean_y = df_temp_limpio[col_y].mean()
                             
+                            # Corrector de coordenadas invertidas o diferentes orígenes
                             if 0 < mean_x < 15 and -80 < mean_y < -65:
-                                # ¡Están al revés! WGS84 invertido
                                 crs_adivinado = "EPSG:4326"
-                                geom = gpd.points_from_xy(df_temp[col_y], df_temp[col_x]) 
+                                geom = gpd.points_from_xy(df_temp_limpio[col_y], df_temp_limpio[col_x]) 
                             elif -80 < mean_x < -65 and 0 < mean_y < 15:
-                                # Correcto WGS84
                                 crs_adivinado = "EPSG:4326"
-                                geom = gpd.points_from_xy(df_temp[col_x], df_temp[col_y])
+                                geom = gpd.points_from_xy(df_temp_limpio[col_x], df_temp_limpio[col_y])
                             elif mean_x > 3000000 or mean_y > 3000000:
-                                crs_adivinado = "EPSG:9377" # CTM12
-                                geom = gpd.points_from_xy(df_temp[col_x], df_temp[col_y])
+                                crs_adivinado = "EPSG:9377" 
+                                geom = gpd.points_from_xy(df_temp_limpio[col_x], df_temp_limpio[col_y])
                             else:
-                                crs_adivinado = "EPSG:3116" # Magna Sirgas
-                                geom = gpd.points_from_xy(df_temp[col_x], df_temp[col_y])
+                                crs_adivinado = "EPSG:3116" 
+                                geom = gpd.points_from_xy(df_temp_limpio[col_x], df_temp_limpio[col_y])
                                 
-                            gdf_temp = gpd.GeoDataFrame(df_temp, geometry=geom, crs=crs_adivinado)
-                
+                            gdf_temp = gpd.GeoDataFrame(df_temp_limpio, geometry=geom, crs=crs_adivinado)
+
+                # --- UNIFICACIÓN DE GEOMETRÍAS ---
                 if gdf_temp is not None and not gdf_temp.empty:
                     if gdf_temp.crs != "EPSG:3116":
                         gdf_temp = gdf_temp.to_crs(epsg=3116)
                     
                     cols_lower = [str(c).lower().strip() for c in gdf_temp.columns]
-                    col_caudal = next((c for c, c_l in zip(gdf_temp.columns, cols_lower) if any(k in c_l for k in ['caudal', 'l/s', 'lps', 'otorgado'])), None)
-                    col_fuente = next((c for c, c_l in zip(gdf_temp.columns, cols_lower) if any(k in c_l for k in ['fuente', 'tipo', 'clase', 'agua'])), None)
+                    
+                    # Búsqueda exacta del caudal según tu archivo (caudal_por_uso)
+                    col_caudal = next((c for c, c_l in zip(gdf_temp.columns, cols_lower) if any(k in c_l for k in ['caudal_por_uso', 'caudal', 'l/s'])), None)
                     
                     gdf_limpio = gpd.GeoDataFrame(geometry=gdf_temp.geometry, crs="EPSG:3116")
                     
-                    if col_caudal: gdf_limpio['Caudal_Lps'] = pd.to_numeric(gdf_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-                    else: gdf_limpio['Caudal_Lps'] = 0.0 
-                        
-                    es_archivo_subt = 'subterranea' in archivo.lower() or 'pozo' in archivo.lower()
-                    if not es_archivo_subt and col_fuente:
-                        filtro_subt = gdf_temp[col_fuente].astype(str).str.lower().str.contains('subt|pozo|aljibe|profund', na=False)
-                        if filtro_subt.any(): gdf_limpio = gdf_limpio[filtro_subt]
-                    elif not es_archivo_subt and not col_fuente:
-                        continue
+                    if col_caudal: 
+                        gdf_limpio['Caudal_Lps'] = pd.to_numeric(gdf_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+                    else: 
+                        gdf_limpio['Caudal_Lps'] = 0.0 
                         
                     gdf_limpio['Origen'] = archivo
-                    if not gdf_limpio.empty:
-                        datos_unificados.append(gdf_limpio)
+                    datos_unificados.append(gdf_limpio)
                         
             except Exception as e:
                 pass
                 
-        if datos_unificados: return pd.concat(datos_unificados, ignore_index=True)
-        else: return gpd.GeoDataFrame()
+        if datos_unificados: 
+            return pd.concat(datos_unificados, ignore_index=True), concesiones_sin_coordenadas
+        else: 
+            return gpd.GeoDataFrame(), concesiones_sin_coordenadas
 
-    with st.spinner("🔍 Estructurando demandas (Corrigiendo proyecciones)..."):
+    with st.spinner("🔍 Extrayendo información de las Corporaciones Autónomas..."):
         st.cache_data.clear() 
-        gdf_concesiones_total = compilar_demanda_subterranea()
+        gdf_concesiones_total, perdidas_por_coordenadas = compilar_demanda_subterranea()
+        
         if not gdf_concesiones_total.empty:
-            st.caption(f"ℹ️ **Telemetría:** Base global cargada con **{len(gdf_concesiones_total):,.0f}** captaciones subterráneas mapeadas.")
+            st.caption(f"ℹ️ **Telemetría:** {len(gdf_concesiones_total):,.0f} captaciones mapeadas con éxito. ⚠️ **Alerta de Datos:** Se omitieron **{perdidas_por_coordenadas:,.0f}** registros de la base original porque carecían de coordenadas espaciales.")
 
     # ---------------------------------------------------------------------
     # 2. EL CRUCE ESPACIAL Y BALANCE MATEMÁTICO (CORREGIDO)
@@ -776,3 +793,4 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se detectaron concesiones subterráneas registradas en las bases de datos globales.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
