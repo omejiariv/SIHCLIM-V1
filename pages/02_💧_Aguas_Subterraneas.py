@@ -620,7 +620,7 @@ if gdf_zona is not None:
                 st.error(f"Error en reporte: {e}")
 
 # =========================================================================
-# ⚖️ NUEVO MÓDULO: ADMINISTRACIÓN SOSTENIBLE Y GOBERNANZA HÍDRICA
+# ⚖️ ADMINISTRACIÓN SOSTENIBLE Y GOBERNANZA HÍDRICA
 # =========================================================================
 st.markdown("---")
 st.header("⚖️ Administración Sostenible: Oferta vs Demanda Subterránea")
@@ -629,9 +629,7 @@ st.markdown("Este motor compara la recarga hídrica natural del territorio con l
 if gdf_zona is not None and not gdf_zona.empty:
     
     # ---------------------------------------------------------------------
-    # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL UNIVERSAL)
-# ---------------------------------------------------------------------
-    # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL BLINDADO)
+    # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL BLINDADO Y CORREGIDO)
     # ---------------------------------------------------------------------
     @st.cache_data(show_spinner=False)
     def compilar_demanda_subterranea():
@@ -642,7 +640,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         datos_unificados = []
         if not os.path.exists("data"): return gpd.GeoDataFrame()
         
-        # 1. Busca dinámicamente cualquier archivo relacionado en la carpeta
         archivos_data = os.listdir("data")
         archivos_demanda = [f for f in archivos_data if any(k in f.lower() for k in ['concesion', 'captacion', 'pozo', 'subterranea', 'agua'])]
         
@@ -651,21 +648,17 @@ if gdf_zona is not None and not gdf_zona.empty:
             gdf_temp = None
             
             try:
-                # --- LECTURA GEOJSON / SHAPEFILE ---
                 if archivo.endswith(('.geojson', '.shp')):
                     gdf_temp = gpd.read_file(ruta)
                     
-                # --- LECTURA CSV / EXCEL ---
                 elif archivo.endswith(('.csv', '.xlsx', '.xls')):
                     if archivo.endswith('.csv'):
                         try: df_temp = pd.read_csv(ruta, sep=None, engine='python', low_memory=False)
-                        except: df_temp = pd.read_csv(ruta, sep=';', low_memory=False) # Fallback para CSVs separados por punto y coma
+                        except: df_temp = pd.read_csv(ruta, sep=';', low_memory=False)
                     else:
                         df_temp = pd.read_excel(ruta)
                         
                     cols_lower = [str(c).lower().strip() for c in df_temp.columns]
-                    
-                    # Búsqueda estricta de coordenadas (evita confundir 'expediente' con 'este')
                     col_x = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['x', 'lon', 'long', 'longitud', 'este', 'coord_x', 'coordenada_x']), None)
                     col_y = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['y', 'lat', 'latitud', 'norte', 'coord_y', 'coordenada_y']), None)
                     
@@ -675,146 +668,111 @@ if gdf_zona is not None and not gdf_zona.empty:
                         df_temp = df_temp.dropna(subset=[col_x, col_y])
                         
                         if not df_temp.empty:
-                            # Detector Inteligente de Proyección (WGS84 vs Magna Sirgas vs CTM12)
+                            # 🛠️ DETECTOR ANTI-OCÉANOS (Corrige coordenadas invertidas automáticamente)
                             mean_x = df_temp[col_x].mean()
-                            if mean_x < 0: crs_adivinado = "EPSG:4326" # Grados decimales (WGS84)
-                            elif mean_x > 3000000: crs_adivinado = "EPSG:9377" # Origen Nacional CTM12
-                            else: crs_adivinado = "EPSG:3116" # Magna Sirgas origen central
+                            mean_y = df_temp[col_y].mean()
                             
-                            gdf_temp = gpd.GeoDataFrame(df_temp, geometry=gpd.points_from_xy(df_temp[col_x], df_temp[col_y]), crs=crs_adivinado)
+                            if 0 < mean_x < 15 and -80 < mean_y < -65:
+                                # ¡Están al revés! WGS84 invertido
+                                crs_adivinado = "EPSG:4326"
+                                geom = gpd.points_from_xy(df_temp[col_y], df_temp[col_x]) 
+                            elif -80 < mean_x < -65 and 0 < mean_y < 15:
+                                # Correcto WGS84
+                                crs_adivinado = "EPSG:4326"
+                                geom = gpd.points_from_xy(df_temp[col_x], df_temp[col_y])
+                            elif mean_x > 3000000 or mean_y > 3000000:
+                                crs_adivinado = "EPSG:9377" # CTM12
+                                geom = gpd.points_from_xy(df_temp[col_x], df_temp[col_y])
+                            else:
+                                crs_adivinado = "EPSG:3116" # Magna Sirgas
+                                geom = gpd.points_from_xy(df_temp[col_x], df_temp[col_y])
+                                
+                            gdf_temp = gpd.GeoDataFrame(df_temp, geometry=geom, crs=crs_adivinado)
                 
-                # --- PROCESAMIENTO ESPACIAL Y LIMPIEZA ---
                 if gdf_temp is not None and not gdf_temp.empty:
-                    # Estandarizar proyección geométrica
                     if gdf_temp.crs != "EPSG:3116":
                         gdf_temp = gdf_temp.to_crs(epsg=3116)
                     
                     cols_lower = [str(c).lower().strip() for c in gdf_temp.columns]
-                    
-                    # Buscar Caudal Otorgado
                     col_caudal = next((c for c, c_l in zip(gdf_temp.columns, cols_lower) if any(k in c_l for k in ['caudal', 'l/s', 'lps', 'otorgado'])), None)
                     col_fuente = next((c for c, c_l in zip(gdf_temp.columns, cols_lower) if any(k in c_l for k in ['fuente', 'tipo', 'clase', 'agua'])), None)
                     
                     gdf_limpio = gpd.GeoDataFrame(geometry=gdf_temp.geometry, crs="EPSG:3116")
                     
-                    # Rescatamos los pozos sin caudal registrado
-                    if col_caudal:
-                        gdf_limpio['Caudal_Lps'] = pd.to_numeric(gdf_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-                    else:
-                        gdf_limpio['Caudal_Lps'] = 0.0 
+                    if col_caudal: gdf_limpio['Caudal_Lps'] = pd.to_numeric(gdf_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+                    else: gdf_limpio['Caudal_Lps'] = 0.0 
                         
-                    # Filtro de Subterráneas (Confía en el nombre del archivo)
                     es_archivo_subt = 'subterranea' in archivo.lower() or 'pozo' in archivo.lower()
-                    
                     if not es_archivo_subt and col_fuente:
                         filtro_subt = gdf_temp[col_fuente].astype(str).str.lower().str.contains('subt|pozo|aljibe|profund', na=False)
-                        if filtro_subt.any():
-                            gdf_limpio = gdf_limpio[filtro_subt]
+                        if filtro_subt.any(): gdf_limpio = gdf_limpio[filtro_subt]
                     elif not es_archivo_subt and not col_fuente:
-                        # Si no dice que es subterránea en el título y no tiene columna de fuente, lo saltamos para no sumar ríos.
                         continue
                         
                     gdf_limpio['Origen'] = archivo
-                    
                     if not gdf_limpio.empty:
                         datos_unificados.append(gdf_limpio)
                         
             except Exception as e:
-                pass # Ignoramos errores de un archivo específico
+                pass
                 
-        if datos_unificados:
-            return pd.concat(datos_unificados, ignore_index=True)
-        else:
-            return gpd.GeoDataFrame()
+        if datos_unificados: return pd.concat(datos_unificados, ignore_index=True)
+        else: return gpd.GeoDataFrame()
 
-    with st.spinner("🔍 Escaneando bases de datos de concesiones y estructurando demandas..."):
-        # Limpiamos caché para forzar la relectura con el nuevo código
+    with st.spinner("🔍 Estructurando demandas (Corrigiendo proyecciones)..."):
         st.cache_data.clear() 
         gdf_concesiones_total = compilar_demanda_subterranea()
-        
-        # Telemetría para el usuario:
         if not gdf_concesiones_total.empty:
             st.caption(f"ℹ️ **Telemetría:** Base global cargada con **{len(gdf_concesiones_total):,.0f}** captaciones subterráneas mapeadas.")
 
     # ---------------------------------------------------------------------
-    # 2. EL CRUCE ESPACIAL Y BALANCE MATEMÁTICO
+    # 2. EL CRUCE ESPACIAL Y BALANCE MATEMÁTICO (CORREGIDO)
     # ---------------------------------------------------------------------
     if not gdf_concesiones_total.empty:
-        # A. Cortar las concesiones con el polígono del municipio/cuenca
         gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
-        concesiones_locales = gpd.clip(gdf_concesiones_total, gdf_zona_3116)
+        gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0) # Forzar geometría válida
+        
+        # 🛠️ CRUCE INDUSTRIAL: Usamos Spatial Join en lugar de Clip
+        try:
+            concesiones_locales = gpd.sjoin(gdf_concesiones_total, gdf_zona_3116, how='inner', predicate='intersects')
+        except:
+            concesiones_locales = gpd.clip(gdf_concesiones_total, gdf_zona_3116) # Fallback
         
         caudal_total_demandado_lps = concesiones_locales['Caudal_Lps'].sum()
         pozos_activos = len(concesiones_locales)
         
-        # B. Extraer la Oferta (Recarga)
-        # Aquí conectamos con el cálculo que ya hizo tu página arriba. 
-        # Intentamos buscar tu variable local, si no, calculamos un estimado base para la prueba
-        volumen_recarga_m3_ano = st.session_state.get('recarga_total_m3', None)
-        
-        if volumen_recarga_m3_ano is None:
-            # Estimación de contingencia (Por si la variable no está en session_state)
-            area_ha = gdf_zona_3116.area.sum() / 10000.0
-            recarga_media_mm = 250 # Asumimos 250 mm/año de recarga promedio si no hay dato
-            volumen_recarga_m3_ano = area_ha * recarga_media_mm * 10
+        # 🛠️ CÁLCULO DE OFERTA A PRUEBA DE BALAS
+        volumen_recarga_m3_ano = st.session_state.get('recarga_total_m3', 0.0)
+        if volumen_recarga_m3_ano == 0.0:
+            # Si la memoria falla, calculamos la recarga al vuelo (250mm promedio)
+            area_m2 = gdf_zona_3116.area.sum()
+            volumen_recarga_m3_ano = area_m2 * 0.25 # 0.25 metros = 250 mm
             
-        # Transformación matemática: de m3/año a Litros por Segundo (L/s)
-        # 1 m3 = 1000 L. 1 Año = 31,536,000 segundos.
         caudal_oferta_lps = (volumen_recarga_m3_ano * 1000) / 31536000
-        
-        # C. Cálculo del Índice de Presión Acuífera (IPA)
         ipa_porcentaje = (caudal_total_demandado_lps / caudal_oferta_lps) * 100 if caudal_oferta_lps > 0 else 0
         
         # ---------------------------------------------------------------------
         # 3. EL DASHBOARD DE GOBERNANZA
         # ---------------------------------------------------------------------
-        st.markdown(f"#### 📊 Balance Acuífero en {st.session_state.get('nombre_seleccion', 'el Territorio').title()}")
+        # 🏷️ TÍTULO DINÁMICO CORREGIDO
+        nombre_zona_as = nombre_seleccion if 'nombre_seleccion' in locals() else st.session_state.get('nombre_seleccion', 'el Territorio')
+        st.markdown(f"#### 📊 Balance Acuífero en {nombre_zona_as.title()}")
         
         c_bal1, c_bal2, c_bal3, c_bal4 = st.columns(4)
         
-        c_bal1.metric(
-            "💧 Oferta (Recarga Natural)", 
-            f"{caudal_oferta_lps:,.1f} L/s", 
-            help="Volumen de agua que se infiltra anualmente, promediado en Litros por Segundo."
-        )
+        c_bal1.metric("💧 Oferta (Recarga Natural)", f"{caudal_oferta_lps:,.1f} L/s")
+        c_bal2.metric("🚰 Demanda (Concesiones)", f"{caudal_total_demandado_lps:,.1f} L/s", f"-{pozos_activos} captaciones", delta_color="inverse")
         
-        c_bal2.metric(
-            "🚰 Demanda (Concesiones)", 
-            f"{caudal_total_demandado_lps:,.1f} L/s", 
-            f"-{pozos_activos} captaciones", delta_color="inverse",
-            help="Suma de caudales otorgados extraídos de pozos y aljibes locales."
-        )
-        
-        # Semáforo del Índice
-        if ipa_porcentaje < 10:
-            color_ipa = "🟢"
-            estado_ipa = "Subexplotado"
-        elif ipa_porcentaje < 40:
-            color_ipa = "🟡"
-            estado_ipa = "Alerta Temprana"
-        else:
-            color_ipa = "🔴"
-            estado_ipa = "Sobreexplotado"
+        if ipa_porcentaje < 10: color_ipa, estado_ipa = "🟢", "Subexplotado"
+        elif ipa_porcentaje < 40: color_ipa, estado_ipa = "🟡", "Alerta Temprana"
+        else: color_ipa, estado_ipa = "🔴", "Sobreexplotado"
             
-        c_bal3.metric(
-            "⚖️ Índice de Presión (IPA)", 
-            f"{ipa_porcentaje:,.1f} %", 
-            f"{color_ipa} {estado_ipa}", delta_color="off"
-        )
+        c_bal3.metric("⚖️ Índice de Presión (IPA)", f"{ipa_porcentaje:,.1f} %", f"{color_ipa} {estado_ipa}", delta_color="off")
+        c_bal4.metric("🌊 Margen de Seguridad", f"{(caudal_oferta_lps - caudal_total_demandado_lps):,.1f} L/s", "Caudal ecológico")
         
-        c_bal4.metric(
-            "🌊 Margen de Seguridad", 
-            f"{(caudal_oferta_lps - caudal_total_demandado_lps):,.1f} L/s",
-            "Caudal ecológico restante"
-        )
-        
-        # Guardamos en la memoria para que el Gráfico de Crecimiento y el Mapa de la Fase 2 puedan usarlos
         st.session_state['concesiones_locales_gdf'] = concesiones_locales
-        st.session_state['oferta_lps_actual'] = caudal_oferta_lps
-        st.session_state['demanda_lps_actual'] = caudal_total_demandado_lps
         
     else:
-        st.info("No se detectaron concesiones subterráneas registradas en las bases de datos para esta zona.")
+        st.info("No se detectaron concesiones subterráneas registradas en las bases de datos globales.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
-
