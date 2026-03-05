@@ -630,84 +630,97 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     # ---------------------------------------------------------------------
     # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL UNIVERSAL)
+# ---------------------------------------------------------------------
+    # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL BLINDADO)
     # ---------------------------------------------------------------------
     @st.cache_data(show_spinner=False)
     def compilar_demanda_subterranea():
         import os
         import pandas as pd
         import geopandas as gpd
-        from shapely.geometry import Point
-        
-        archivos_demanda = [
-            "captaciones_RARMA_9377.geojson", 
-            "captaciones_RNegro_9377.geojson", 
-            "concesiones_RG.geojson",
-            "Concesiones_Cornare.csv", 
-            "Concesiones_Corantioquia.csv"
-        ]
         
         datos_unificados = []
+        if not os.path.exists("data"): return gpd.GeoDataFrame()
+        
+        # 1. Busca dinámicamente cualquier archivo relacionado en la carpeta
+        archivos_data = os.listdir("data")
+        archivos_demanda = [f for f in archivos_data if any(k in f.lower() for k in ['concesion', 'captacion', 'pozo', 'subterranea', 'agua'])]
         
         for archivo in archivos_demanda:
             ruta = os.path.join("data", archivo)
-            if not os.path.exists(ruta):
-                continue
-                
+            gdf_temp = None
+            
             try:
-                # Si es un GeoJSON
-                if archivo.endswith('.geojson'):
+                # --- LECTURA GEOJSON / SHAPEFILE ---
+                if archivo.endswith(('.geojson', '.shp')):
                     gdf_temp = gpd.read_file(ruta)
-                # Si es un CSV (requiere construir la geometría)
-                elif archivo.endswith('.csv'):
-                    df_temp = pd.read_csv(ruta, low_memory=False)
-                    # Buscar columnas de coordenadas por palabras clave
-                    col_x = next((c for c in df_temp.columns if any(k in str(c).lower() for k in ['lon', 'x', 'este'])), None)
-                    col_y = next((c for c in df_temp.columns if any(k in str(c).lower() for k in ['lat', 'y', 'norte'])), None)
+                    
+                # --- LECTURA CSV / EXCEL ---
+                elif archivo.endswith(('.csv', '.xlsx', '.xls')):
+                    if archivo.endswith('.csv'):
+                        try: df_temp = pd.read_csv(ruta, sep=None, engine='python', low_memory=False)
+                        except: df_temp = pd.read_csv(ruta, sep=';', low_memory=False) # Fallback para CSVs separados por punto y coma
+                    else:
+                        df_temp = pd.read_excel(ruta)
+                        
+                    cols_lower = [str(c).lower().strip() for c in df_temp.columns]
+                    
+                    # Búsqueda estricta de coordenadas (evita confundir 'expediente' con 'este')
+                    col_x = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['x', 'lon', 'long', 'longitud', 'este', 'coord_x', 'coordenada_x']), None)
+                    col_y = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['y', 'lat', 'latitud', 'norte', 'coord_y', 'coordenada_y']), None)
                     
                     if col_x and col_y:
-                        # Limpieza rápida de comas/puntos si vienen mal en Excel
                         df_temp[col_x] = pd.to_numeric(df_temp[col_x].astype(str).str.replace(',', '.'), errors='coerce')
                         df_temp[col_y] = pd.to_numeric(df_temp[col_y].astype(str).str.replace(',', '.'), errors='coerce')
                         df_temp = df_temp.dropna(subset=[col_x, col_y])
                         
-                        # Asumimos WGS84 si es negativo (Latinoamérica), o Magna Sirgas si es > 100000
-                        crs_adivinado = "EPSG:4326" if df_temp[col_x].mean() < 0 else "EPSG:3116"
-                        gdf_temp = gpd.GeoDataFrame(df_temp, geometry=gpd.points_from_xy(df_temp[col_x], df_temp[col_y]), crs=crs_adivinado)
-                    else:
-                        continue # Saltamos si no hay coordenadas claras
-                
-                # Estandarizamos al EPSG:3116 para cruces matemáticos locales
-                if gdf_temp.crs != "EPSG:3116":
-                    gdf_temp = gdf_temp.to_crs(epsg=3116)
-                
-                # BUSCADOR INTELIGENTE DE COLUMNAS CLAVE
-                columnas = [str(c).lower() for c in gdf_temp.columns]
-                
-                # A. Buscar el Caudal Otorgado (L/s)
-                col_caudal = next((c for c in gdf_temp.columns if any(k in str(c).lower() for k in ['caudal', 'l/s', 'lps', 'q_otorg', 'concesion'])), None)
-                # B. Buscar el Año o Fecha
-                col_fecha = next((c for c in gdf_temp.columns if any(k in str(c).lower() for k in ['año', 'ano', 'fecha', 'resolucion', 'vigencia'])), None)
-                # C. Buscar Tipo de Fuente (Para filtrar solo las subterráneas)
-                col_fuente = next((c for c in gdf_temp.columns if any(k in str(c).lower() for k in ['fuente', 'tipo', 'clase', 'subterranea', 'pozo', 'aljibe'])), None)
-                
-                # Construir tabla limpia
-                if col_caudal:
-                    gdf_limpio = gpd.GeoDataFrame(geometry=gdf_temp.geometry, crs="EPSG:3116")
-                    gdf_limpio['Caudal_Lps'] = pd.to_numeric(gdf_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-                    gdf_limpio['Año'] = gdf_temp[col_fecha] if col_fecha else 2020 # Default si no hay fecha
-                    
-                    # Filtro vital: Si la base tiene tipo de fuente, nos quedamos solo con lo subterráneo
-                    if col_fuente:
-                        filtro_subt = gdf_temp[col_fuente].astype(str).str.lower().str.contains('subt|pozo|aljibe|profund', na=False)
-                        # Si la corporación no especificó, asumimos que el archivo entero era de subterráneas por si acaso
-                        if filtro_subt.any(): 
-                            gdf_limpio = gdf_limpio[filtro_subt]
+                        if not df_temp.empty:
+                            # Detector Inteligente de Proyección (WGS84 vs Magna Sirgas vs CTM12)
+                            mean_x = df_temp[col_x].mean()
+                            if mean_x < 0: crs_adivinado = "EPSG:4326" # Grados decimales (WGS84)
+                            elif mean_x > 3000000: crs_adivinado = "EPSG:9377" # Origen Nacional CTM12
+                            else: crs_adivinado = "EPSG:3116" # Magna Sirgas origen central
                             
+                            gdf_temp = gpd.GeoDataFrame(df_temp, geometry=gpd.points_from_xy(df_temp[col_x], df_temp[col_y]), crs=crs_adivinado)
+                
+                # --- PROCESAMIENTO ESPACIAL Y LIMPIEZA ---
+                if gdf_temp is not None and not gdf_temp.empty:
+                    # Estandarizar proyección geométrica
+                    if gdf_temp.crs != "EPSG:3116":
+                        gdf_temp = gdf_temp.to_crs(epsg=3116)
+                    
+                    cols_lower = [str(c).lower().strip() for c in gdf_temp.columns]
+                    
+                    # Buscar Caudal Otorgado
+                    col_caudal = next((c for c, c_l in zip(gdf_temp.columns, cols_lower) if any(k in c_l for k in ['caudal', 'l/s', 'lps', 'otorgado'])), None)
+                    col_fuente = next((c for c, c_l in zip(gdf_temp.columns, cols_lower) if any(k in c_l for k in ['fuente', 'tipo', 'clase', 'agua'])), None)
+                    
+                    gdf_limpio = gpd.GeoDataFrame(geometry=gdf_temp.geometry, crs="EPSG:3116")
+                    
+                    # Rescatamos los pozos sin caudal registrado
+                    if col_caudal:
+                        gdf_limpio['Caudal_Lps'] = pd.to_numeric(gdf_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+                    else:
+                        gdf_limpio['Caudal_Lps'] = 0.0 
+                        
+                    # Filtro de Subterráneas (Confía en el nombre del archivo)
+                    es_archivo_subt = 'subterranea' in archivo.lower() or 'pozo' in archivo.lower()
+                    
+                    if not es_archivo_subt and col_fuente:
+                        filtro_subt = gdf_temp[col_fuente].astype(str).str.lower().str.contains('subt|pozo|aljibe|profund', na=False)
+                        if filtro_subt.any():
+                            gdf_limpio = gdf_limpio[filtro_subt]
+                    elif not es_archivo_subt and not col_fuente:
+                        # Si no dice que es subterránea en el título y no tiene columna de fuente, lo saltamos para no sumar ríos.
+                        continue
+                        
                     gdf_limpio['Origen'] = archivo
-                    datos_unificados.append(gdf_limpio)
+                    
+                    if not gdf_limpio.empty:
+                        datos_unificados.append(gdf_limpio)
+                        
             except Exception as e:
-                # Ignoramos silenciosamente si un archivo está corrupto para no romper la app
-                pass
+                pass # Ignoramos errores de un archivo específico
                 
         if datos_unificados:
             return pd.concat(datos_unificados, ignore_index=True)
@@ -715,7 +728,13 @@ if gdf_zona is not None and not gdf_zona.empty:
             return gpd.GeoDataFrame()
 
     with st.spinner("🔍 Escaneando bases de datos de concesiones y estructurando demandas..."):
+        # Limpiamos caché para forzar la relectura con el nuevo código
+        st.cache_data.clear() 
         gdf_concesiones_total = compilar_demanda_subterranea()
+        
+        # Telemetría para el usuario:
+        if not gdf_concesiones_total.empty:
+            st.caption(f"ℹ️ **Telemetría:** Base global cargada con **{len(gdf_concesiones_total):,.0f}** captaciones subterráneas mapeadas.")
 
     # ---------------------------------------------------------------------
     # 2. EL CRUCE ESPACIAL Y BALANCE MATEMÁTICO
@@ -798,3 +817,4 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se detectaron concesiones subterráneas registradas en las bases de datos para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
