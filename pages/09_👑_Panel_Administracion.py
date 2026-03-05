@@ -1293,19 +1293,38 @@ with tabs[15]:
         st.markdown(f"### 🗄️ Archivos en la Nube")
         st.info(f"Explorando el bucket: **{nombre_bucket}/{carpeta_destino}**")
         
-        if st.button("🔄 Refrescar Directorio"):
-            try:
-                # Consulta en vivo a Supabase para listar los archivos
-                archivos_nube = cliente_supabase.storage.from_(nombre_bucket).list(carpeta_destino)
+        # Eliminamos el botón de "Refrescar" porque ahora la consulta será en vivo y automática
+        try:
+            # Consulta en vivo a Supabase para listar los archivos
+            archivos_nube = cliente_supabase.storage.from_(nombre_bucket).list(carpeta_destino)
+            
+            if archivos_nube:
+                nombres = [a['name'] for a in archivos_nube if a['name'] != '.emptyFolderPlaceholder' and a['name'] != '.emptyFolder']
                 
-                if archivos_nube:
-                    nombres = [a['name'] for a in archivos_nube if a['name'] != '.emptyFolderPlaceholder']
-                    if nombres:
-                        for n in nombres:
-                            st.markdown(f"- 📄 `{n}`")
-                    else:
-                        st.warning("La carpeta está creada pero no tiene archivos.")
+                if nombres:
+                    st.markdown("**Archivos disponibles:**")
+                    for n in nombres:
+                        # Creamos dos micro-columnas: una para el nombre y otra para el botón de borrar
+                        c_file, c_del = st.columns([5, 1])
+                        
+                        with c_file:
+                            st.markdown(f"📄 `{n}`")
+                            
+                        with c_del:
+                            # Es VITAL que la 'key' del botón sea única, por eso usamos el nombre del archivo
+                            if st.button("🗑️", key=f"del_{n}_{carpeta_destino}", help="Borrar archivo de la nube"):
+                                ruta_borrar = f"{carpeta_destino}/{n}"
+                                try:
+                                    # Orden de borrado a Supabase
+                                    cliente_supabase.storage.from_(nombre_bucket).remove([ruta_borrar])
+                                    st.toast(f"✅ Archivo '{n}' eliminado con éxito.", icon="🗑️")
+                                    st.rerun() # Reinicia la pantalla para actualizar la lista mágicamente
+                                except Exception as e:
+                                    st.error(f"Error al intentar borrar: {e}")
                 else:
-                    st.warning("La carpeta no existe o está vacía.")
-            except Exception as e:
-                st.error(f"No se pudo listar los archivos. Detalle: {e}")
+                    st.warning("La carpeta está creada pero no tiene archivos.")
+            else:
+                st.warning("La carpeta no existe o está vacía.")
+                
+        except Exception as e:
+            st.error(f"No se pudo conectar con el explorador. Detalle: {e}")
