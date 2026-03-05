@@ -397,16 +397,16 @@ def proyectar_curva(p_base, anios_array, anio_base, modelo, r, k):
     else: return p_base * ((1 + r) ** t)
 
 # --- EXPORTAR PROYECCIONES ICA A LA MEMORIA GLOBAL ---
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.info("💡 Envíe estas proyecciones matemáticas al módulo de Sistemas Hídricos para evaluar su impacto en el embalse.")
-        if st.button("💾 Enviar Proyección ICA al Modelo WRI", use_container_width=True):
-            # Asegúrate de que los nombres de estas variables coincidan con las que usas en tu código de Calidad
-            # Aquí asumo que tus variables calculadas se llaman bovinos_proyectados, etc.
-            st.session_state['ica_bovinos_proy'] = bovinos_proyectados
-            st.session_state['ica_porcinos_proy'] = porcinos_proyectados
-            st.session_state['ica_aves_proy'] = aves_proyectadas
-            st.success("✅ ¡Proyecciones del Censo ICA guardadas en el cerebro del sistema!")
+st.markdown("<br>", unsafe_allow_html=True)
+st.info("💡 Envíe estas proyecciones matemáticas al módulo de Sistemas Hídricos para evaluar su impacto en el embalse.")
 
+if st.button("💾 Enviar Proyección ICA al Modelo WRI", use_container_width=True):
+    # Asegúrate de que los nombres de estas variables coincidan con las que usas
+    st.session_state['ica_bovinos_proy'] = bovinos_proyectados
+    st.session_state['ica_porcinos_proy'] = porcinos_proyectados
+    st.session_state['ica_aves_proy'] = aves_proyectadas
+    st.success("✅ ¡Proyecciones del Censo ICA guardadas en el cerebro del sistema!")
+    
 # ==============================================================================
 # 🎛️ PANEL MAESTRO DE VARIABLES (DESPLEGABLE Y DINÁMICO)
 # ==============================================================================
