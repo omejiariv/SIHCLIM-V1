@@ -370,7 +370,7 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         # --- 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR ENSO) ---
         st.markdown("---")
-        st.subheader(f"📈 Proyección Dinámica de Seguridad Hídrica (2024 - 2050)")
+        st.subheader(f"📈 Proyección Dinámica de Seguridad Hídrica (2024 - 2050) - {nombre_zona}")
         
         tab_resumen, tab_escenarios = st.tabs(["📊 Resumen Multivariado (Onda ENSO)", "🔬 Explorador de Escenarios (Cono)"])
         anios_proj = list(range(2024, 2051))
@@ -460,7 +460,7 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         # --- 6. RANKING TERRITORIAL Y BOXPLOTS (INTACTO) ---
         st.markdown("---")
-        st.subheader("🏆 Ranking Territorial y Dispersión de Índices")
+        st.subheader("🏆 Ranking Territorial y Dispersión de Índices - {nombre_zona}")
         
         lista_cuencas = []
         if capas['cuencas'] is not None and not capas['cuencas'].empty:
@@ -727,5 +727,6 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         else:
             st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
+
 
 
