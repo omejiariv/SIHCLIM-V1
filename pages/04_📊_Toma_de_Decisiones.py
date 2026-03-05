@@ -460,7 +460,7 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         # --- 6. RANKING TERRITORIAL Y BOXPLOTS (INTACTO) ---
         st.markdown("---")
-        st.subheader("🏆 Ranking Territorial y Dispersión de Índices - {nombre_zona}")
+        st.subheader(f"🏆 Ranking Territorial y Dispersión de Índices - {nombre_zona}")
         
         lista_cuencas = []
         if capas['cuencas'] is not None and not capas['cuencas'].empty:
@@ -727,6 +727,7 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         else:
             st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
+
 
 
 
