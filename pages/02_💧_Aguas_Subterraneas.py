@@ -620,43 +620,46 @@ if gdf_zona is not None:
                 st.error(f"Error en reporte: {e}")
 
 # =========================================================================
-# ⚖️ ADMINISTRACIÓN SOSTENIBLE Y GOBERNANZA HÍDRICA
+# ⚖️ NUEVO MÓDULO: ADMINISTRACIÓN SOSTENIBLE Y GOBERNANZA HÍDRICA
 # =========================================================================
 st.markdown("---")
 st.header("⚖️ Administración Sostenible: Oferta vs Demanda Subterránea")
-st.markdown("Este motor compara la recarga hídrica natural del territorio con la presión de extracción de las concesiones otorgadas, identificando zonas de estrés acuífero y descubriendo áreas de extracción huérfanas de estudios.")
+st.markdown("Este motor compara la recarga natural con la extracción. Utiliza **Imputación Heurística** para corregir vacíos de información en las bases de datos ambientales (caudales en cero y pozos sin coordenadas).")
 
 if gdf_zona is not None and not gdf_zona.empty:
     
     # ---------------------------------------------------------------------
-    # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL BLINDADO Y CORREGIDO)
-# ---------------------------------------------------------------------
-    # 1. EL LECTOR INTELIGENTE DE CONCESIONES (ETL ESPECÍFICO)
+    # 1. EL LECTOR INTELIGENTE Y MOTOR DE IMPUTACIÓN
     # ---------------------------------------------------------------------
     @st.cache_data(show_spinner=False)
     def compilar_demanda_subterranea():
         import os
         import pandas as pd
         import geopandas as gpd
+        import unicodedata
         
-        datos_unificados = []
-        concesiones_sin_coordenadas = 0 # Contador para nuestro diagnóstico
+        def normalizar(texto):
+            if pd.isna(texto): return ""
+            return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+            
+        datos_espaciales = []
+        datos_huerfanos = [] # Para los que no tienen coordenadas
         
-        if not os.path.exists("data"): return gpd.GeoDataFrame(), 0
+        if not os.path.exists("data"): return gpd.GeoDataFrame(), pd.DataFrame()
         
         archivos_data = os.listdir("data")
         archivos_demanda = [f for f in archivos_data if any(k in f.lower() for k in ['concesion', 'captacion', 'pozo', 'subterranea', 'agua'])]
         
         for archivo in archivos_demanda:
             ruta = os.path.join("data", archivo)
-            gdf_temp = None
-            
             try:
-                # --- LECTURA GEOJSON / SHAPEFILE ---
                 if archivo.endswith(('.geojson', '.shp')):
                     gdf_temp = gpd.read_file(ruta)
-                    
-                # --- LECTURA EXCEL / CSV (CORANTIOQUIA / CORNARE) ---
+                    if not gdf_temp.empty:
+                        gdf_temp['Origen'] = archivo
+                        gdf_temp['Caudal_Lps'] = 1.5 # Imputación por defecto si es shapefile
+                        datos_espaciales.append(gdf_temp.to_crs(epsg=3116))
+                        
                 elif archivo.endswith(('.csv', '.xlsx', '.xls')):
                     if archivo.endswith('.csv'):
                         try: df_temp = pd.read_csv(ruta, sep=None, engine='python', low_memory=False)
@@ -666,104 +669,114 @@ if gdf_zona is not None and not gdf_zona.empty:
                         
                     cols_lower = [str(c).lower().strip() for c in df_temp.columns]
                     
-                    # 💡 EL DESCUBRIMIENTO: FILTRADO POR ASUNTO (CORANTIOQUIA)
+                    # FILTRO DE AGUAS SUBTERRÁNEAS (CORANTIOQUIA)
                     col_asunto = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if 'asunto' in c_low), None)
                     if col_asunto:
-                        # Nos quedamos SOLAMENTE con las filas que digan "subterranea" (ignorando mayúsculas)
                         df_temp = df_temp[df_temp[col_asunto].astype(str).str.lower().str.contains('subterranea|pozo', na=False)]
                         
-                    # Búsqueda de coordenadas basada en tu archivo (coordenada_X, coordenada_Y)
+                    # DETECCIÓN DE COLUMNAS CLAVE
                     col_x = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['coordenada_x', 'x', 'lon', 'longitud']), None)
                     col_y = next((c_orig for c_orig, c_low in zip(df_temp.columns, cols_lower) if c_low in ['coordenada_y', 'y', 'lat', 'latitud']), None)
+                    col_caudal = next((c for c, c_l in zip(df_temp.columns, cols_lower) if any(k in c_l for k in ['caudal_por_uso', 'caudal', 'l/s', 'lps'])), None)
+                    col_mun = next((c for c, c_l in zip(df_temp.columns, cols_lower) if 'municipio' in c_l), None)
                     
+                    # IMPUTACIÓN HEURÍSTICA DE CAUDAL (El rescate de los ceros)
+                    if col_caudal:
+                        df_temp['Caudal_Lps'] = pd.to_numeric(df_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce')
+                    else:
+                        df_temp['Caudal_Lps'] = np.nan
+                    
+                    # 💡 REGLA DE ORO: Si está en cero o vacío, asignamos 1.5 L/s presuntos.
+                    df_temp['Caudal_Lps'] = df_temp['Caudal_Lps'].fillna(1.5).replace(0, 1.5)
+                    
+                    # Normalizamos la columna de municipio para cruzarla luego
+                    if col_mun: df_temp['Municipio_Norm'] = df_temp[col_mun].apply(normalizar)
+                    else: df_temp['Municipio_Norm'] = ""
+                    
+                    # SEPARAR LOS BUENOS DE LOS HUÉRFANOS
                     if col_x and col_y:
-                        total_subterraneas = len(df_temp)
                         df_temp[col_x] = pd.to_numeric(df_temp[col_x].astype(str).str.replace(',', '.'), errors='coerce')
                         df_temp[col_y] = pd.to_numeric(df_temp[col_y].astype(str).str.replace(',', '.'), errors='coerce')
                         
-                        # Limpiamos las filas que no tienen coordenadas
-                        df_temp_limpio = df_temp.dropna(subset=[col_x, col_y])
+                        df_con_coords = df_temp.dropna(subset=[col_x, col_y])
+                        df_sin_coords = df_temp[df_temp[col_x].isna() | df_temp[col_y].isna()]
                         
-                        # Sumamos cuántas perdimos por culpa de la corporación
-                        concesiones_sin_coordenadas += (total_subterraneas - len(df_temp_limpio))
+                        # Guardamos los huérfanos
+                        if not df_sin_coords.empty: datos_huerfanos.append(df_sin_coords)
                         
-                        if not df_temp_limpio.empty:
-                            mean_x = df_temp_limpio[col_x].mean()
-                            mean_y = df_temp_limpio[col_y].mean()
+                        # Convertimos los buenos a geometría
+                        if not df_con_coords.empty:
+                            mean_x = df_con_coords[col_x].mean()
+                            mean_y = df_con_coords[col_y].mean()
                             
-                            # Corrector de coordenadas invertidas o diferentes orígenes
-                            if 0 < mean_x < 15 and -80 < mean_y < -65:
-                                crs_adivinado = "EPSG:4326"
-                                geom = gpd.points_from_xy(df_temp_limpio[col_y], df_temp_limpio[col_x]) 
-                            elif -80 < mean_x < -65 and 0 < mean_y < 15:
-                                crs_adivinado = "EPSG:4326"
-                                geom = gpd.points_from_xy(df_temp_limpio[col_x], df_temp_limpio[col_y])
-                            elif mean_x > 3000000 or mean_y > 3000000:
-                                crs_adivinado = "EPSG:9377" 
-                                geom = gpd.points_from_xy(df_temp_limpio[col_x], df_temp_limpio[col_y])
-                            else:
-                                crs_adivinado = "EPSG:3116" 
-                                geom = gpd.points_from_xy(df_temp_limpio[col_x], df_temp_limpio[col_y])
+                            if 0 < mean_x < 15 and -80 < mean_y < -65: crs_ad, geom = "EPSG:4326", gpd.points_from_xy(df_con_coords[col_y], df_con_coords[col_x]) 
+                            elif -80 < mean_x < -65 and 0 < mean_y < 15: crs_ad, geom = "EPSG:4326", gpd.points_from_xy(df_con_coords[col_x], df_con_coords[col_y])
+                            elif mean_x > 3000000 or mean_y > 3000000: crs_ad, geom = "EPSG:9377", gpd.points_from_xy(df_con_coords[col_x], df_con_coords[col_y])
+                            else: crs_ad, geom = "EPSG:3116", gpd.points_from_xy(df_con_coords[col_x], df_con_coords[col_y])
                                 
-                            gdf_temp = gpd.GeoDataFrame(df_temp_limpio, geometry=geom, crs=crs_adivinado)
-
-                # --- UNIFICACIÓN DE GEOMETRÍAS ---
-                if gdf_temp is not None and not gdf_temp.empty:
-                    if gdf_temp.crs != "EPSG:3116":
-                        gdf_temp = gdf_temp.to_crs(epsg=3116)
-                    
-                    cols_lower = [str(c).lower().strip() for c in gdf_temp.columns]
-                    
-                    # Búsqueda exacta del caudal según tu archivo (caudal_por_uso)
-                    col_caudal = next((c for c, c_l in zip(gdf_temp.columns, cols_lower) if any(k in c_l for k in ['caudal_por_uso', 'caudal', 'l/s'])), None)
-                    
-                    gdf_limpio = gpd.GeoDataFrame(geometry=gdf_temp.geometry, crs="EPSG:3116")
-                    
-                    if col_caudal: 
-                        gdf_limpio['Caudal_Lps'] = pd.to_numeric(gdf_temp[col_caudal].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-                    else: 
-                        gdf_limpio['Caudal_Lps'] = 0.0 
-                        
-                    gdf_limpio['Origen'] = archivo
-                    datos_unificados.append(gdf_limpio)
+                            gdf_temp = gpd.GeoDataFrame(df_con_coords, geometry=geom, crs=crs_ad)
+                            gdf_temp['Origen'] = archivo
+                            datos_espaciales.append(gdf_temp.to_crs(epsg=3116))
+                    else:
+                        # Si el archivo entero no tiene coordenadas, todos son huérfanos
+                        datos_huerfanos.append(df_temp)
                         
             except Exception as e:
                 pass
                 
-        if datos_unificados: 
-            return pd.concat(datos_unificados, ignore_index=True), concesiones_sin_coordenadas
-        else: 
-            return gpd.GeoDataFrame(), concesiones_sin_coordenadas
+        gdf_final = pd.concat(datos_espaciales, ignore_index=True) if datos_espaciales else gpd.GeoDataFrame()
+        df_huerf_final = pd.concat(datos_huerfanos, ignore_index=True) if datos_huerfanos else pd.DataFrame()
+        
+        return gdf_final, df_huerf_final
 
-    with st.spinner("🔍 Extrayendo información de las Corporaciones Autónomas..."):
+    with st.spinner("🔍 Aplicando Imputación Heurística a bases de datos ambientales..."):
         st.cache_data.clear() 
-        gdf_concesiones_total, perdidas_por_coordenadas = compilar_demanda_subterranea()
-        
-        if not gdf_concesiones_total.empty:
-            st.caption(f"ℹ️ **Telemetría:** {len(gdf_concesiones_total):,.0f} captaciones mapeadas con éxito. ⚠️ **Alerta de Datos:** Se omitieron **{perdidas_por_coordenadas:,.0f}** registros de la base original porque carecían de coordenadas espaciales.")
+        gdf_concesiones, df_huerfanos = compilar_demanda_subterranea()
 
     # ---------------------------------------------------------------------
-    # 2. EL CRUCE ESPACIAL Y BALANCE MATEMÁTICO (CORREGIDO)
+    # 2. EL BALANCE ESPACIAL Y DOCUMENTAL
     # ---------------------------------------------------------------------
-    if not gdf_concesiones_total.empty:
-        gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
-        gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0) # Forzar geometría válida
+    if not gdf_concesiones.empty or not df_huerfanos.empty:
+        import unicodedata
+        nombre_zona_as = st.session_state.get('nombre_seleccion', 'el Territorio')
         
-        # 🛠️ CRUCE INDUSTRIAL: Usamos Spatial Join en lugar de Clip
-        try:
-            concesiones_locales = gpd.sjoin(gdf_concesiones_total, gdf_zona_3116, how='inner', predicate='intersects')
-        except:
-            concesiones_locales = gpd.clip(gdf_concesiones_total, gdf_zona_3116) # Fallback
+        # A. Sumatoria Espacial (Pozos en el mapa)
+        caudal_espacial = 0.0
+        pozos_espaciales = 0
+        concesiones_locales = gpd.GeoDataFrame()
         
-        caudal_total_demandado_lps = concesiones_locales['Caudal_Lps'].sum()
-        pozos_activos = len(concesiones_locales)
+        if not gdf_concesiones.empty:
+            gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
+            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0)
+            try: concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
+            except: concesiones_locales = gpd.clip(gdf_concesiones, gdf_zona_3116)
+            
+            if not concesiones_locales.empty:
+                caudal_espacial = concesiones_locales['Caudal_Lps'].sum()
+                pozos_espaciales = len(concesiones_locales)
         
-        # 🛠️ CÁLCULO DE OFERTA A PRUEBA DE BALAS
+        # B. Sumatoria Documental (Pozos rescatados por texto)
+        caudal_huerfano = 0.0
+        pozos_huerfanos = 0
+        
+        if not df_huerfanos.empty and 'Municipio_Norm' in df_huerfanos.columns:
+            # Normalizamos el nombre actual seleccionado para cruzarlo
+            nom_norm = unicodedata.normalize('NFKD', nombre_zona_as.lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+            huerfanos_locales = df_huerfanos[df_huerfanos['Municipio_Norm'].str.contains(nom_norm, na=False)]
+            
+            if not huerfanos_locales.empty:
+                caudal_huerfano = huerfanos_locales['Caudal_Lps'].sum()
+                pozos_huerfanos = len(huerfanos_locales)
+        
+        # SUMA TOTAL DE DEMANDA
+        caudal_total_demandado_lps = caudal_espacial + caudal_huerfano
+        total_captaciones = pozos_espaciales + pozos_huerfanos
+        
+        # C. Oferta (Recarga)
         volumen_recarga_m3_ano = st.session_state.get('recarga_total_m3', 0.0)
         if volumen_recarga_m3_ano == 0.0:
-            # Si la memoria falla, calculamos la recarga al vuelo (250mm promedio)
-            area_m2 = gdf_zona_3116.area.sum()
-            volumen_recarga_m3_ano = area_m2 * 0.25 # 0.25 metros = 250 mm
+            area_m2 = gdf_zona.to_crs(epsg=3116).area.sum()
+            volumen_recarga_m3_ano = area_m2 * 0.25
             
         caudal_oferta_lps = (volumen_recarga_m3_ano * 1000) / 31536000
         ipa_porcentaje = (caudal_total_demandado_lps / caudal_oferta_lps) * 100 if caudal_oferta_lps > 0 else 0
@@ -771,14 +784,20 @@ if gdf_zona is not None and not gdf_zona.empty:
         # ---------------------------------------------------------------------
         # 3. EL DASHBOARD DE GOBERNANZA
         # ---------------------------------------------------------------------
-        # 🏷️ TÍTULO DINÁMICO CORREGIDO
-        nombre_zona_as = nombre_seleccion if 'nombre_seleccion' in locals() else st.session_state.get('nombre_seleccion', 'el Territorio')
+        st.caption(f"ℹ️ **Telemetría Inteligente:** {len(gdf_concesiones):,.0f} pozos georreferenciados en la base global. Se aplicó rescate de datos a {len(df_huerfanos):,.0f} registros indocumentados usando imputación a 1.5 L/s.")
+        
         st.markdown(f"#### 📊 Balance Acuífero en {nombre_zona_as.title()}")
         
         c_bal1, c_bal2, c_bal3, c_bal4 = st.columns(4)
         
         c_bal1.metric("💧 Oferta (Recarga Natural)", f"{caudal_oferta_lps:,.1f} L/s")
-        c_bal2.metric("🚰 Demanda (Concesiones)", f"{caudal_total_demandado_lps:,.1f} L/s", f"-{pozos_activos} captaciones", delta_color="inverse")
+        
+        c_bal2.metric(
+            "🚰 Demanda (Concesiones)", 
+            f"{caudal_total_demandado_lps:,.1f} L/s", 
+            f"-{total_captaciones} captaciones totales", delta_color="inverse",
+            help=f"De las {total_captaciones} captaciones, {pozos_espaciales} tienen coordenadas exactas y {pozos_huerfanos} fueron rescatadas por nombre de municipio."
+        )
         
         if ipa_porcentaje < 10: color_ipa, estado_ipa = "🟢", "Subexplotado"
         elif ipa_porcentaje < 40: color_ipa, estado_ipa = "🟡", "Alerta Temprana"
@@ -787,10 +806,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         c_bal3.metric("⚖️ Índice de Presión (IPA)", f"{ipa_porcentaje:,.1f} %", f"{color_ipa} {estado_ipa}", delta_color="off")
         c_bal4.metric("🌊 Margen de Seguridad", f"{(caudal_oferta_lps - caudal_total_demandado_lps):,.1f} L/s", "Caudal ecológico")
         
-        st.session_state['concesiones_locales_gdf'] = concesiones_locales
-        
     else:
-        st.info("No se detectaron concesiones subterráneas registradas en las bases de datos globales.")
+        st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
-
