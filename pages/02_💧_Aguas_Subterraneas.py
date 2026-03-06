@@ -783,6 +783,40 @@ if gdf_zona is not None and not gdf_zona.empty:
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
 
+        # ==============================================================================
+        # 💾 MÓDULO DE DESCARGA DE BASE DE DATOS ESTRUCTURADA
+        # ==============================================================================
+        st.markdown("---")
+        st.markdown("### 📥 Exportar Inventario Subterráneo")
+        st.info("Descarga la base de datos depurada y georreferenciada de captaciones subterráneas para esta zona de análisis.")
+        
+        # 1. Verificamos que haya datos para descargar
+        if 'gdf_concesiones' in locals() and not gdf_concesiones.empty:
+            
+            # 2. Creamos una copia limpia sin la geometría compleja para que Excel la entienda
+            import pandas as pd
+            df_descarga = pd.DataFrame(gdf_concesiones.drop(columns='geometry', errors='ignore'))
+            
+            # 3. Nos aseguramos de extraer las coordenadas a columnas normales
+            centroides = gdf_concesiones.geometry.centroid
+            df_descarga['Longitud_X'] = centroides.x
+            df_descarga['Latitud_Y'] = centroides.y
+            
+            # 4. Convertimos a CSV
+            csv_data = df_descarga.to_csv(index=False).encode('utf-8')
+            
+            # 5. El botón mágico de Streamlit
+            st.download_button(
+                label="💾 Descargar Base de Datos (CSV)",
+                data=csv_data,
+                file_name=f"Inventario_Pozos_SIHCLI.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        else:
+            st.warning("No hay datos subterráneos disponibles para descargar en esta selección.")
+
+
 
 
 
