@@ -623,7 +623,7 @@ if gdf_zona is not None:
 # ⚖️ NUEVO MÓDULO: ADMINISTRACIÓN SOSTENIBLE Y GOBERNANZA HÍDRICA
 # =========================================================================
 st.markdown("---")
-st.header("⚖️ Administración Sostenible: Oferta vs Demanda Subterránea")
+st.markdown(f"### ⚖️ Administración Sostenible: Oferta vs Demanda Subterránea: {nombre_zona}")
 st.markdown("Este motor compara la recarga natural con la extracción. Utiliza **Imputación Heurística** para corregir vacíos de información en las bases de datos ambientales (caudales en cero y pozos sin coordenadas).")
 
 if gdf_zona is not None and not gdf_zona.empty:
@@ -782,6 +782,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
 
 
