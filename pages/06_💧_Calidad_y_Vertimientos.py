@@ -109,6 +109,7 @@ def cargar_veredas():
 # ==============================================================================
 @st.cache_data(show_spinner=False)
 def cargar_vertimientos():
+    import pandas as pd
     gdf = cargar_maestros_nube("vertimientos")
     if gdf.empty: return pd.DataFrame()
     
@@ -118,12 +119,17 @@ def cargar_vertimientos():
     df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
     df['tipo_vertimiento'] = df['Tipo_Vertimiento']
     df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
-    df['coordenada_x'] = gdf.geometry.x
-    df['coordenada_y'] = gdf.geometry.y
+    
+    # EXTRACCIÓN SEGURA DE COORDENADAS (Evita el error de MultiPoints o Nulos)
+    centroides = gdf.geometry.centroid
+    df['coordenada_x'] = centroides.x.fillna(0)
+    df['coordenada_y'] = centroides.y.fillna(0)
+    
     return df
 
 @st.cache_data(show_spinner=False)
 def cargar_concesiones():
+    import pandas as pd
     gdf = cargar_maestros_nube("concesiones")
     if gdf.empty: return pd.DataFrame()
     
@@ -135,8 +141,11 @@ def cargar_concesiones():
     df['uso_detalle'] = df['Uso_Agua']
     df['estado'] = df['Estado']
     df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
-    df['coordenada_x'] = gdf.geometry.x
-    df['coordenada_y'] = gdf.geometry.y
+    
+    # EXTRACCIÓN SEGURA DE COORDENADAS (Evita el error de MultiPoints o Nulos)
+    centroides = gdf.geometry.centroid
+    df['coordenada_x'] = centroides.x.fillna(0)
+    df['coordenada_y'] = centroides.y.fillna(0)
     
     # Micro-clasificador de uso para las gráficas
     def clasificar_uso(u):
