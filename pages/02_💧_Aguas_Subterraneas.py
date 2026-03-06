@@ -780,7 +780,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria y enriquecidos con su Región.")
 
     # ---------------------------------------------------------------------
-    # 4. EL BALANCE ESPACIAL ULTRARRÁPIDO (ANTI-CONGELAMIENTO)
+    # 4. EL BALANCE ESPACIAL ULTRARRÁPIDO (SIN PÉRDIDA DE DATOS)
     # ---------------------------------------------------------------------
     if not gdf_concesiones.empty:
         import unicodedata
@@ -796,24 +796,19 @@ if gdf_zona is not None and not gdf_zona.empty:
         if gdf_zona is not None and not gdf_zona.empty:
             gdf_zona_3116 = gdf_zona.to_crs(epsg=3116).copy()
             
-            # ==========================================================
-            # 🛡️ EL SECRETO ANTI-COLAPSO: SUAVIZADO GEOMÉTRICO
-            # Si es más grande que un municipio, suavizamos los bordes 50m
-            # ==========================================================
+            # Suavizado de bordes para evitar que la Región colapse la app
             if nivel_sel != "Municipal":
                 gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.simplify(50)
                 
-            # Reparación estándar de topología
             gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0)
             
-            # Cruce espacial puro (¡Eliminamos el 'clip' que congelaba la app!)
             try:
                 concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
-                # Si un pozo toca la frontera de dos municipios, evitamos que se duplique
-                concesiones_locales = concesiones_locales.drop_duplicates(subset=['ID_Expediente'])
+                # 💡 EL ARREGLO: Deduplicamos por el índice original del pozo, NO por el ID_Expediente
+                concesiones_locales = concesiones_locales[~concesiones_locales.index.duplicated(keep='first')]
             except Exception as e:
                 st.warning("El mapa tiene una topología demasiado compleja, intentando filtrado tabular...")
-                concesiones_locales = gpd.GeoDataFrame() # Fallback seguro
+                concesiones_locales = gpd.GeoDataFrame()
             
             if not concesiones_locales.empty:
                 # A. AUTO-CORRECCIÓN DE "No Registrado"
@@ -837,7 +832,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                     concesiones_locales['Region'] = concesiones_locales['municipio_norm'].map(mapa_region).fillna('Desconocida')
                     concesiones_locales['Autoridad'] = concesiones_locales['municipio_norm'].map(mapa_car).fillna(concesiones_locales.get('Autoridad', 'Otra Corporacion'))
                 
-                # C. Si la consulta es regional, forzamos la etiqueta para la gráfica/descarga
+                # C. Forzamos etiqueta regional
                 if nivel_sel == "Regional":
                     zona_limpia = nombre_zona_as.replace("Región ", "").replace("Region ", "").title()
                     concesiones_locales['Region'] = zona_limpia
@@ -913,6 +908,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
 
 
