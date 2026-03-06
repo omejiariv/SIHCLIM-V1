@@ -199,16 +199,16 @@ def cargar_cuencas_mpios():
         return leer_csv_robusto(ruta)
     return pd.DataFrame()
 
-df_mpios = cargar_municipios()
-df_veredas = cargar_veredas()
-# Intentamos cargar de la nube primero. Si falla o está vacío, cae al archivo local.
-df_concesiones = cargar_datos_calidad_nube("concesion")
-if df_concesiones.empty:
-    df_concesiones = cargar_concesiones() # Tu función original de respaldo
+# ---------------------------------------------------------------------
+# 🚀 INICIALIZACIÓN DE DATOS MAESTROS
+# ---------------------------------------------------------------------
+df_mpios = cargar_municipios()                                         
+df_veredas = cargar_veredas()   
 
-df_vertimientos = cargar_datos_calidad_nube("vertimiento")
-if df_vertimientos.empty:
-    df_vertimientos = cargar_vertimientos() # Tu función original de respaldo
+# Llamamos directamente a nuestros puentes de compatibilidad.
+# Ellos ya saben cómo conectarse a Supabase y traer todo perfecto.
+df_concesiones = cargar_concesiones()
+df_vertimientos = cargar_vertimientos()
 df_territorio = cargar_territorio_maestro()
 df_bovinos = cargar_censo_bovino()
 df_porcinos = cargar_censo_porcino()
