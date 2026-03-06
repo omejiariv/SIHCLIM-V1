@@ -861,7 +861,55 @@ if gdf_zona is not None:
                 c_bal3.metric("⚖️ Índice de Presión (IPA)", f"{ipa_porcentaje:,.1f} %", f"{color_ipa} {estado_ipa}", delta_color="off")
                 c_bal4.metric("🌊 Margen de Seguridad", f"{(caudal_oferta_lps - caudal_total_demandado_lps):,.1f} L/s", "Caudal ecológico")
                 
+                # ==============================================================================
+                # 🏆 RANKING DE EXPLOTACIÓN SUBTERRÁNEA (GRÁFICO)
+                # ==============================================================================
                 st.markdown("---")
+                st.markdown("### 🏆 Ranking Municipal de Explotación Subterránea")
+                st.caption("Los 15 municipios con mayor y menor volumen de concesiones otorgadas (L/s) en toda la base de datos.")
+                
+                if not gdf_concesiones.empty:
+                    import plotly.graph_objects as go
+                    from plotly.subplots import make_subplots
+                    
+                    # 1. Agrupar la base maestra por Municipio y sumar caudales
+                    df_ranking = gdf_concesiones.groupby('Municipio')['Caudal_Lps'].sum().reset_index()
+                    
+                    # 2. Filtrar los que tienen cero y los que dicen "No Registrado"
+                    df_ranking = df_ranking[(df_ranking['Caudal_Lps'] > 0) & (~df_ranking['Municipio'].isin(['No Registrado', 'Sin Información']))]
+                    
+                    # 3. Ordenar de mayor a menor
+                    df_ranking = df_ranking.sort_values('Caudal_Lps', ascending=False)
+                    
+                    if len(df_ranking) > 0:
+                        # Top 15 (Los que más extraen) - Se ordena ascendente al final para que Plotly ponga el mayor arriba
+                        top_15 = df_ranking.head(15).sort_values('Caudal_Lps', ascending=True) 
+                        
+                        # Bottom 15 (Los que menos extraen)
+                        bottom_15 = df_ranking.tail(15).sort_values('Caudal_Lps', ascending=False) 
+                        
+                        # Crear gráfico de dos paneles
+                        fig = make_subplots(rows=1, cols=2, subplot_titles=("🔴 Top 15: Mayor Extracción (L/s)", "🟢 Top 15: Menor Extracción (L/s)"))
+                        
+                        # Panel Izquierdo (Rojo)
+                        fig.add_trace(go.Bar(
+                            x=top_15['Caudal_Lps'], y=top_15['Municipio'], orientation='h',
+                            marker=dict(color='#ef4444'), text=top_15['Caudal_Lps'].round(1), textposition='auto'
+                        ), row=1, col=1)
+                        
+                        # Panel Derecho (Verde)
+                        fig.add_trace(go.Bar(
+                            x=bottom_15['Caudal_Lps'], y=bottom_15['Municipio'], orientation='h',
+                            marker=dict(color='#10b981'), text=bottom_15['Caudal_Lps'].round(1), textposition='auto'
+                        ), row=1, col=2)
+                        
+                        fig.update_layout(height=550, showlegend=False, template="plotly_white", margin=dict(l=0, r=0, t=40, b=0))
+                        
+                        # Mostrar en Streamlit
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("No hay suficientes datos municipales para generar el ranking.")
+                
                 st.markdown(f"### 📥 Exportar Inventario Subterráneo - {nombre_zona}")
                 
                 if not concesiones_locales.empty:
@@ -899,4 +947,5 @@ if gdf_zona is not None:
             col1.download_button("⬇️ Descargar Serie Temporal (.csv)", df_res.to_csv(index=False).encode('utf-8'), "balance.csv", "text/csv")
         if not df_mapa_stats.empty:
             col2.download_button("⬇️ Descargar Datos Estaciones (.csv)", df_mapa_stats.to_csv(index=False).encode('utf-8'), "estaciones_recarga.csv", "text/csv")
+
 
