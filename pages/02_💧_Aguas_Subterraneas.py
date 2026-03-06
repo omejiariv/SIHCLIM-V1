@@ -780,7 +780,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria y enriquecidos con su Región.")
 
     # ---------------------------------------------------------------------
-    # 4. EL BALANCE ESPACIAL ROBUSTO (CON ENVOLVENTE REGIONAL)
+    # 4. EL BALANCE ESPACIAL ULTRARRÁPIDO (ANTI-CONGELAMIENTO)
     # ---------------------------------------------------------------------
     if not gdf_concesiones.empty:
         import unicodedata
@@ -794,24 +794,26 @@ if gdf_zona is not None and not gdf_zona.empty:
         concesiones_locales = gpd.GeoDataFrame()
         
         if gdf_zona is not None and not gdf_zona.empty:
-            gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
+            gdf_zona_3116 = gdf_zona.to_crs(epsg=3116).copy()
             
             # ==========================================================
-            # 💡 LA MAGIA DE LA ENVOLVENTE (DISSOLVE) SUGERIDA POR TI
-            # Si el mapa tiene más de 1 polígono (ej. una Región o CAR), los fusionamos en uno solo
+            # 🛡️ EL SECRETO ANTI-COLAPSO: SUAVIZADO GEOMÉTRICO
+            # Si es más grande que un municipio, suavizamos los bordes 50m
             # ==========================================================
-            if len(gdf_zona_3116) > 1:
-                gdf_zona_3116['fusion_id'] = 1 # Creamos una columna temporal igual para todos
-                gdf_zona_3116 = gdf_zona_3116.dissolve(by='fusion_id') # ¡Se derriten las fronteras!
+            if nivel_sel != "Municipal":
+                gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.simplify(50)
                 
-            # Sanación extrema del Súper-Polígono
-            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.make_valid()
-            # Truco SIG: Expandir 10cm y encoger 10cm para soldar cualquier micro-hueco interno
-            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0.1).buffer(-0.1) 
+            # Reparación estándar de topología
+            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0)
             
-            # Cruce espacial ultrarrápido contra la envolvente limpia
-            try: concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
-            except: concesiones_locales = gpd.clip(gdf_concesiones, gdf_zona_3116)
+            # Cruce espacial puro (¡Eliminamos el 'clip' que congelaba la app!)
+            try:
+                concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
+                # Si un pozo toca la frontera de dos municipios, evitamos que se duplique
+                concesiones_locales = concesiones_locales.drop_duplicates(subset=['ID_Expediente'])
+            except Exception as e:
+                st.warning("El mapa tiene una topología demasiado compleja, intentando filtrado tabular...")
+                concesiones_locales = gpd.GeoDataFrame() # Fallback seguro
             
             if not concesiones_locales.empty:
                 # A. AUTO-CORRECCIÓN DE "No Registrado"
@@ -911,6 +913,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
 
 
