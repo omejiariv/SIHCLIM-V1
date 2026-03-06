@@ -780,46 +780,50 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria y enriquecidos con su Región.")
 
     # ---------------------------------------------------------------------
-    # 4. EL BALANCE ESPACIAL Y DOCUMENTAL
+    # 4. EL BALANCE (FILTRO INTELIGENTE HÍBRIDO)
     # ---------------------------------------------------------------------
-    if not gdf_concesiones.empty or not df_huerfanos.empty:
+    if not gdf_concesiones.empty:
         import unicodedata
-        nombre_zona_as = st.session_state.get('nombre_seleccion', 'el Territorio')
         
-        # A. Sumatoria Espacial (Pozos en el mapa)
-        caudal_espacial = 0.0
-        pozos_espaciales = 0
+        def normalizar(texto):
+            if pd.isna(texto): return ""
+            return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+            
+        nombre_zona_as = st.session_state.get('nombre_seleccion', 'el Territorio')
+        nivel_sel = st.session_state.get('nivel_seleccion', 'Municipal')
+        
         concesiones_locales = gpd.GeoDataFrame()
         
-        if not gdf_concesiones.empty:
-            gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
-            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0)
-            try: concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
-            except: concesiones_locales = gpd.clip(gdf_concesiones, gdf_zona_3116)
+        # 🎯 ESTRATEGIA TABULAR: Instantánea y a prueba de errores de geometría del mapa
+        if nivel_sel == "Municipal":
+            concesiones_locales = gdf_concesiones[gdf_concesiones['municipio_norm'] == normalizar(nombre_zona_as)]
             
-            if not concesiones_locales.empty:
-                caudal_espacial = concesiones_locales['Caudal_Lps'].sum()
-                pozos_espaciales = len(concesiones_locales)
-        
-        # B. Sumatoria Documental (Pozos rescatados por texto)
-        caudal_huerfano = 0.0
-        pozos_huerfanos = 0
-        
-        if not df_huerfanos.empty and 'Municipio_Norm' in df_huerfanos.columns:
-            nom_norm = unicodedata.normalize('NFKD', nombre_zona_as.lower().strip()).encode('ascii', 'ignore').decode('utf-8')
-            huerfanos_locales = df_huerfanos[df_huerfanos['Municipio_Norm'].str.contains(nom_norm, na=False)]
+        elif nivel_sel == "Regional":
+            zona_limpia = nombre_zona_as.replace("Región ", "").replace("Region ", "")
+            concesiones_locales = gdf_concesiones[gdf_concesiones['Region'].apply(normalizar) == normalizar(zona_limpia)]
             
-            if not huerfanos_locales.empty:
-                caudal_huerfano = huerfanos_locales['Caudal_Lps'].sum()
-                pozos_huerfanos = len(huerfanos_locales)
+        elif nivel_sel == "Jurisdicción Ambiental (CAR)":
+            zona_limpia = nombre_zona_as.replace("CAR: ", "")
+            concesiones_locales = gdf_concesiones[gdf_concesiones['Autoridad'].apply(normalizar) == normalizar(zona_limpia)]
+            
+        elif nivel_sel in ["Departamental", "Nacional (Colombia)"]:
+            concesiones_locales = gdf_concesiones.copy()
+            
+        else:
+            # 🗺️ ESTRATEGIA ESPACIAL: Se activa solo para Cuencas o polígonos dibujados a mano
+            if gdf_zona is not None and not gdf_zona.empty:
+                gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
+                gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0)
+                try: concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
+                except: concesiones_locales = gpd.clip(gdf_concesiones, gdf_zona_3116)
+
+        # Totales
+        caudal_total_demandado_lps = concesiones_locales['Caudal_Lps'].sum() if not concesiones_locales.empty else 0.0
+        total_captaciones = len(concesiones_locales)
         
-        # SUMA TOTAL DE DEMANDA
-        caudal_total_demandado_lps = caudal_espacial + caudal_huerfano
-        total_captaciones = pozos_espaciales + pozos_huerfanos
-        
-        # C. Oferta (Recarga)
+        # Oferta (Recarga)
         volumen_recarga_m3_ano = st.session_state.get('recarga_total_m3', 0.0)
-        if volumen_recarga_m3_ano == 0.0:
+        if volumen_recarga_m3_ano == 0.0 and gdf_zona is not None and not gdf_zona.empty:
             area_m2 = gdf_zona.to_crs(epsg=3116).area.sum()
             volumen_recarga_m3_ano = area_m2 * 0.25
             
@@ -829,19 +833,17 @@ if gdf_zona is not None and not gdf_zona.empty:
         # ---------------------------------------------------------------------
         # 5. EL DASHBOARD DE GOBERNANZA
         # ---------------------------------------------------------------------
-        st.caption(f"ℹ️ **Telemetría Inteligente:** {len(gdf_concesiones):,.0f} pozos georreferenciados en la base global. Se aplicó rescate de datos a {len(df_huerfanos):,.0f} registros indocumentados.")
+        st.caption(f"ℹ️ **Telemetría Inteligente:** {len(gdf_concesiones):,.0f} pozos georreferenciados en la base global.")
         
         st.markdown(f"#### 📊 Balance Acuífero en {nombre_zona_as.title()}")
         
         c_bal1, c_bal2, c_bal3, c_bal4 = st.columns(4)
-        
         c_bal1.metric("💧 Oferta (Recarga Natural)", f"{caudal_oferta_lps:,.1f} L/s")
         
         c_bal2.metric(
             "🚰 Demanda (Concesiones)", 
             f"{caudal_total_demandado_lps:,.1f} L/s", 
-            f"-{total_captaciones} captaciones totales", delta_color="inverse",
-            help=f"De las {total_captaciones} captaciones, {pozos_espaciales} tienen coordenadas exactas y {pozos_huerfanos} fueron rescatadas."
+            f"-{total_captaciones} captaciones totales", delta_color="inverse"
         )
         
         if ipa_porcentaje < 10: color_ipa, estado_ipa = "🟢", "Subexplotado"
@@ -852,28 +854,22 @@ if gdf_zona is not None and not gdf_zona.empty:
         c_bal4.metric("🌊 Margen de Seguridad", f"{(caudal_oferta_lps - caudal_total_demandado_lps):,.1f} L/s", "Caudal ecológico")
         
         # ==============================================================================
-        # 💾 MÓDULO DE DESCARGA DE BASE DE DATOS ESTRUCTURADA
+        # 💾 MÓDULO DE DESCARGA
         # ==============================================================================
         st.markdown("---")
         st.markdown("### 📥 Exportar Inventario Subterráneo")
-        st.info("Descarga la base de datos depurada y georreferenciada de captaciones subterráneas para esta zona de análisis.")
         
-        # 1. Verificamos que haya datos LOCALES para descargar (ya no descarga la base global)
-        if 'concesiones_locales' in locals() and not concesiones_locales.empty:
-            
-            # 2. Creamos una copia limpia sin la geometría compleja
+        if not concesiones_locales.empty:
             import pandas as pd
             df_descarga = pd.DataFrame(concesiones_locales.drop(columns=['geometry', 'municipio_norm', 'region', 'car'], errors='ignore'))
             
-            # 3. Nos aseguramos de extraer las coordenadas de forma segura
+            # Extracción segura de coordenadas
             centroides = concesiones_locales.geometry.centroid
             df_descarga['Longitud_X'] = centroides.x.fillna(0)
             df_descarga['Latitud_Y'] = centroides.y.fillna(0)
             
-            # 4. Convertimos a CSV
             csv_data = df_descarga.to_csv(index=False).encode('utf-8')
             
-            # 5. El botón de Streamlit
             st.download_button(
                 label=f"💾 Descargar Base de Datos de {nombre_zona_as.title()} (CSV)",
                 data=csv_data,
@@ -885,6 +881,6 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.warning("No hay datos subterráneos disponibles para descargar en esta selección.")
 
     else:
-        st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
+        st.info("No se encontraron registros de extracción para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
