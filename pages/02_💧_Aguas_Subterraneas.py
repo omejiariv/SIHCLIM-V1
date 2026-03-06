@@ -862,53 +862,76 @@ if gdf_zona is not None:
                 c_bal4.metric("🌊 Margen de Seguridad", f"{(caudal_oferta_lps - caudal_total_demandado_lps):,.1f} L/s", "Caudal ecológico")
                 
                 # ==============================================================================
-                # 🏆 RANKING DE EXPLOTACIÓN SUBTERRÁNEA (GRÁFICO)
+                # 🏆 RANKING MUNICIPAL (CON IPA INTEGRADO)
                 # ==============================================================================
                 st.markdown("---")
-                st.markdown("### 🏆 Ranking Municipal de Explotación Subterránea")
-                st.caption("Los 15 municipios con mayor y menor volumen de concesiones otorgadas (L/s) en toda la base de datos.")
+                st.markdown("### 🏆 Top 15: Ranking de Explotación e Índice de Presión (IPA)")
+                st.caption("Municipios con mayor y menor volumen de extracción. El IPA (%) indica qué tanta de su recarga natural están consumiendo.")
                 
                 if not gdf_concesiones.empty:
                     import plotly.graph_objects as go
                     from plotly.subplots import make_subplots
+                    import numpy as np
                     
-                    # 1. Agrupar la base maestra por Municipio y sumar caudales
-                    df_ranking = gdf_concesiones.groupby('Municipio')['Caudal_Lps'].sum().reset_index()
-                    
-                    # 2. Filtrar los que tienen cero y los que dicen "No Registrado"
+                    # 1. Agrupar sumando el caudal y extrayendo el área
+                    # Aprovechamos tu idea: Usamos el 'Shape_Area' que ya viene en la base maestra
+                    if 'Shape_Area' in gdf_concesiones.columns:
+                        df_ranking = gdf_concesiones.groupby('Municipio').agg(
+                            Caudal_Lps=('Caudal_Lps', 'sum'),
+                            Area_m2=('Shape_Area', 'max') # El área es la misma para todos los pozos del municipio
+                        ).reset_index()
+                    else:
+                        # Fallback por si la columna cambia de nombre en el futuro
+                        df_ranking = gdf_concesiones.groupby('Municipio')['Caudal_Lps'].sum().reset_index()
+                        df_ranking['Area_m2'] = 0.0 
+                        
+                    # Filtramos ceros y "No Registrados"
                     df_ranking = df_ranking[(df_ranking['Caudal_Lps'] > 0) & (~df_ranking['Municipio'].isin(['No Registrado', 'Sin Información']))]
                     
-                    # 3. Ordenar de mayor a menor
+                    # 2. Calcular Oferta e IPA a la velocidad de la luz (Pandas vectorizado)
+                    df_ranking['Oferta_Lps'] = (df_ranking['Area_m2'] * 0.25 * 1000) / 31536000
+                    df_ranking['IPA_%'] = np.where(df_ranking['Oferta_Lps'] > 0, 
+                                                  (df_ranking['Caudal_Lps'] / df_ranking['Oferta_Lps']) * 100, 
+                                                  0.0)
+                    
+                    # 3. Formato del texto que irá dentro de la barra
+                    def formato_etiqueta(row):
+                        if row['IPA_%'] > 0:
+                            return f"{row['Caudal_Lps']:,.1f} L/s | IPA: {row['IPA_%']:.1f}%"
+                        return f"{row['Caudal_Lps']:,.1f} L/s"
+                        
+                    df_ranking['Texto_Barra'] = df_ranking.apply(formato_etiqueta, axis=1)
                     df_ranking = df_ranking.sort_values('Caudal_Lps', ascending=False)
                     
                     if len(df_ranking) > 0:
-                        # Top 15 (Los que más extraen) - Se ordena ascendente al final para que Plotly ponga el mayor arriba
+                        # Separar los Top 15 (Mayor y Menor)
                         top_15 = df_ranking.head(15).sort_values('Caudal_Lps', ascending=True) 
-                        
-                        # Bottom 15 (Los que menos extraen)
                         bottom_15 = df_ranking.tail(15).sort_values('Caudal_Lps', ascending=False) 
                         
-                        # Crear gráfico de dos paneles
-                        fig = make_subplots(rows=1, cols=2, subplot_titles=("🔴 Top 15: Mayor Extracción (L/s)", "🟢 Top 15: Menor Extracción (L/s)"))
+                        fig = make_subplots(rows=1, cols=2, subplot_titles=("🔴 Top 15: Mayor Extracción", "🟢 Top 15: Menor Extracción"))
                         
-                        # Panel Izquierdo (Rojo)
+                        # Barras Rojas (Los que más extraen)
                         fig.add_trace(go.Bar(
                             x=top_15['Caudal_Lps'], y=top_15['Municipio'], orientation='h',
-                            marker=dict(color='#ef4444'), text=top_15['Caudal_Lps'].round(1), textposition='auto'
+                            marker=dict(color='#ef4444'), text=top_15['Texto_Barra'], textposition='inside',
+                            insidetextanchor='end', hovertemplate="<b>%{y}</b><br>Demanda: %{x:.1f} L/s<br>IPA: %{customdata:.1f}%<extra></extra>",
+                            customdata=top_15['IPA_%']
                         ), row=1, col=1)
                         
-                        # Panel Derecho (Verde)
+                        # Barras Verdes (Los que menos extraen)
                         fig.add_trace(go.Bar(
                             x=bottom_15['Caudal_Lps'], y=bottom_15['Municipio'], orientation='h',
-                            marker=dict(color='#10b981'), text=bottom_15['Caudal_Lps'].round(1), textposition='auto'
+                            marker=dict(color='#10b981'), text=bottom_15['Texto_Barra'], textposition='inside',
+                            insidetextanchor='start', hovertemplate="<b>%{y}</b><br>Demanda: %{x:.1f} L/s<br>IPA: %{customdata:.1f}%<extra></extra>",
+                            customdata=bottom_15['IPA_%']
                         ), row=1, col=2)
                         
-                        fig.update_layout(height=550, showlegend=False, template="plotly_white", margin=dict(l=0, r=0, t=40, b=0))
+                        fig.update_layout(height=600, showlegend=False, template="plotly_white", margin=dict(l=0, r=0, t=40, b=0))
+                        fig.update_xaxes(title_text="Caudal Concesionado (L/s)")
                         
-                        # Mostrar en Streamlit
                         st.plotly_chart(fig, use_container_width=True)
                     else:
-                        st.info("No hay suficientes datos municipales para generar el ranking.")
+                        st.info("No hay datos suficientes para generar el ranking.")
                 
                 st.markdown(f"### 📥 Exportar Inventario Subterráneo - {nombre_zona}")
                 
@@ -947,5 +970,6 @@ if gdf_zona is not None:
             col1.download_button("⬇️ Descargar Serie Temporal (.csv)", df_res.to_csv(index=False).encode('utf-8'), "balance.csv", "text/csv")
         if not df_mapa_stats.empty:
             col2.download_button("⬇️ Descargar Datos Estaciones (.csv)", df_mapa_stats.to_csv(index=False).encode('utf-8'), "estaciones_recarga.csv", "text/csv")
+
 
 
