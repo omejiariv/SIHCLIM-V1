@@ -194,24 +194,65 @@ def cargar_censo_aviar():
         df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
     return df
 
-@st.cache_data
+@st.cache_data(show_spinner=False, ttl=86400)
 def cargar_territorio_maestro():
-    ruta_xlsx = "data/territorio_maestro.xlsx"
-    ruta_csv = "data/territorio_maestro.csv"
-    df = pd.DataFrame()
-    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
-    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
+    import pandas as pd
+    import streamlit as st
+    from supabase import create_client
+    import io
+    import unicodedata
+    
+    # Búsqueda exhaustiva de credenciales (A prueba de balas)
+    url_sb = None
+    key_sb = None
+    if "SUPABASE_URL" in st.secrets:
+        url_sb = st.secrets["SUPABASE_URL"]
+        key_sb = st.secrets["SUPABASE_KEY"]
+    elif "supabase" in st.secrets:
+        url_sb = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+        key_sb = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
+    elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
+        url_sb = st.secrets["iri"]["SUPABASE_URL"]
+        key_sb = st.secrets["iri"]["SUPABASE_KEY"]
+    elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
+        url_sb = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+        key_sb = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
         
-    if not df.empty:
-        df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
-        if 'municipio' in df.columns:
-            df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto)
-        if 'car' in df.columns:
-            df['car'] = df['car'].astype(str).str.upper()
-        if 'region' in df.columns:
-            df['region'] = df['region'].astype(str).str.title()
-        return df
-    return pd.DataFrame()
+    if not url_sb or not key_sb:
+        return pd.DataFrame()
+        
+    try:
+        cliente = create_client(url_sb, key_sb)
+        bucket = "sihcli_maestros"
+        archivo = "territorio_maestro.xlsx"
+        
+        # Descargamos el archivo directamente a la memoria de Python
+        res = cliente.storage.from_(bucket).download(archivo)
+        df_territorio = pd.read_excel(io.BytesIO(res))
+        
+        # Normalizador interno para cruces exactos
+        def normalizar(texto):
+            if pd.isna(texto): return ""
+            return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+            
+        # Limpieza y estandarización
+        df_territorio.columns = df_territorio.columns.str.lower().str.strip()
+        
+        if 'municipio' in df_territorio.columns:
+            df_territorio['municipio_norm'] = df_territorio['municipio'].apply(normalizar)
+            
+        if 'region' in df_territorio.columns:
+            df_territorio['region'] = df_territorio['region'].astype(str).str.title()
+            
+        if 'car' in df_territorio.columns:
+            df_territorio['car'] = df_territorio['car'].astype(str).str.upper()
+            
+        return df_territorio
+        
+    except Exception as e:
+        import streamlit as st
+        st.error(f"❌ Error cargando territorio_maestro: {e}")
+        return pd.DataFrame()
 
 @st.cache_data
 def cargar_cuencas_mpios():
@@ -296,7 +337,7 @@ def obtener_poblacion_base(lugar_sel, nivel_sel):
             pob_r = df_f[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum()
             
     return float(pob_u), float(pob_r), anio_base
-
+    
 # ==============================================================================
 # 🐄 MOTOR MATEMÁTICO PECUARIO (Censo ICA Proporcional al Territorio)
 # ==============================================================================
