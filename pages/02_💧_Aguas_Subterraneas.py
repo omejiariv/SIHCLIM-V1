@@ -780,7 +780,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria y enriquecidos con su Región.")
 
     # ---------------------------------------------------------------------
-    # 4. EL BALANCE ESPACIAL ULTRARRÁPIDO (SIN PÉRDIDA DE DATOS)
+    # 4. EL BALANCE ESPACIAL ROBUSTO (MULTÍGONO SIN DISSOLVE NI CLIP)
     # ---------------------------------------------------------------------
     if not gdf_concesiones.empty:
         import unicodedata
@@ -796,22 +796,21 @@ if gdf_zona is not None and not gdf_zona.empty:
         if gdf_zona is not None and not gdf_zona.empty:
             gdf_zona_3116 = gdf_zona.to_crs(epsg=3116).copy()
             
-            # Suavizado de bordes para evitar que la Región colapse la app
-            if nivel_sel != "Municipal":
-                gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.simplify(50)
-                
-            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0)
+            # 🛡️ EL SECRETO: NO disolver los polígonos y NO usar .clip()
+            # Aseguramos geometrías válidas sin alterar su topología original
+            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.make_valid()
             
-            try:
+            # Cruce espacial ultrarrápido (sjoin puro, es 100x más rápido que clip)
+            try: 
                 concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
-                # 💡 EL ARREGLO: Deduplicamos por el índice original del pozo, NO por el ID_Expediente
+                # Deduplicamos por el índice del pozo para evitar conteos dobles en fronteras
                 concesiones_locales = concesiones_locales[~concesiones_locales.index.duplicated(keep='first')]
             except Exception as e:
-                st.warning("El mapa tiene una topología demasiado compleja, intentando filtrado tabular...")
+                st.error(f"Error en el cruce espacial: {e}")
                 concesiones_locales = gpd.GeoDataFrame()
             
             if not concesiones_locales.empty:
-                # A. AUTO-CORRECCIÓN DE "No Registrado"
+                # A. AUTO-CORRECCIÓN DE "No Registrado" desde los polígonos individuales
                 col_mpio_mapa = next((c for c in concesiones_locales.columns if c.lower() in ['nombre_municipio', 'mpio_cnmbr', 'municipio_1', 'nom_mun']), None)
                 if col_mpio_mapa:
                     mask_vacio = concesiones_locales['Municipio'].isin(['No Registrado', 'Sin Información']) | concesiones_locales['Municipio'].isna()
@@ -832,7 +831,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                     concesiones_locales['Region'] = concesiones_locales['municipio_norm'].map(mapa_region).fillna('Desconocida')
                     concesiones_locales['Autoridad'] = concesiones_locales['municipio_norm'].map(mapa_car).fillna(concesiones_locales.get('Autoridad', 'Otra Corporacion'))
                 
-                # C. Forzamos etiqueta regional
+                # C. Si la consulta es regional, forzamos la etiqueta visual
                 if nivel_sel == "Regional":
                     zona_limpia = nombre_zona_as.replace("Región ", "").replace("Region ", "").title()
                     concesiones_locales['Region'] = zona_limpia
@@ -908,6 +907,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
 
 
