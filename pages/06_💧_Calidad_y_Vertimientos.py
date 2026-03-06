@@ -31,56 +31,48 @@ def normalizar_texto(texto):
     return unicodedata.normalize('NFKD', texto_str).encode('ascii', 'ignore').decode('utf-8')
 
 # ==============================================================================
-# 🔌 CONECTORES A BASES DE DATOS
+# 🔌 CONECTORES A BASES DE DATOS MAESTRAS (SUPABASE DIRECTO)
 # ==============================================================================
-
-# --- CONECTOR CLOUD: SUPABASE (CONCESIONES Y VERTIMIENTOS) ---
-@st.cache_data(ttl=3600, show_spinner=False)
-def cargar_datos_calidad_nube(tipo_archivo="concesion"):
-    """
-    Busca en Supabase el archivo más reciente de concesiones o vertimientos.
-    tipo_archivo: "concesion" o "vertimiento"
-    """
+@st.cache_data(show_spinner=False, ttl=3600)
+def cargar_maestros_nube(tipo="vertimientos"):
+    import geopandas as gpd
+    from supabase import create_client
     
-    # 1. Credenciales
-    url_base = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url")
-    key_supabase = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key")
+    # Búsqueda exhaustiva de credenciales
+    url_sb = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url") or st.secrets.get("iri", {}).get("SUPABASE_URL")
+    key_sb = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key") or st.secrets.get("iri", {}).get("SUPABASE_KEY")
     
-    if not url_base or not key_supabase:
-        return pd.DataFrame()
+    if not url_sb or not key_sb:
+        st.error("❌ Faltan credenciales de Supabase en secrets.")
+        return gpd.GeoDataFrame()
         
-    url_limpia = url_base.strip().strip("'").strip('"').rstrip('/')
-    
     try:
-        from supabase import create_client
-        cliente = create_client(url_base, key_supabase)
+        cliente = create_client(url_sb, key_sb)
+        bucket = "sihcli_maestros"
         
-        # 2. Listar archivos en la carpeta
-        archivos = cliente.storage.from_("sihcli_maestros").list("concesiones_y_vertimientos")
-        if not archivos: return pd.DataFrame()
-        
-        # 3. Buscar el archivo que coincida con la palabra clave
-        nombre_archivo = next((a['name'] for a in archivos if tipo_archivo.lower() in a['name'].lower() and a['name'] != '.emptyFolderPlaceholder'), None)
-        
-        if nombre_archivo:
-            ruta_descarga = f"{url_limpia}/storage/v1/object/public/sihcli_maestros/concesiones_y_vertimientos/{nombre_archivo}"
-            res = requests.get(ruta_descarga)
+        # Seleccionar el archivo correcto según lo que pida la página
+        if tipo == "vertimientos": archivo = "Vertimientos_Antioquia_Maestro.geojson"
+        else: archivo = "Metabolismo_Hidrico_Antioquia_Maestro.geojson"
             
-            if res.status_code == 200:
-                # 4. Leer según la extensión
-                if nombre_archivo.endswith(('.xlsx', '.xls')):
-                    return pd.read_excel(io.BytesIO(res.content))
-                elif nombre_archivo.endswith('.csv'):
-                    return pd.read_csv(io.BytesIO(res.content), low_memory=False)
-                elif nombre_archivo.endswith('.geojson'):
-                    with open(f"/tmp/{nombre_archivo}", "wb") as f: f.write(res.content)
-                    return pd.DataFrame(gpd.read_file(f"/tmp/{nombre_archivo}").drop(columns='geometry'))
-    except Exception as e:
-        st.sidebar.warning(f"Error conectando a Supabase ({tipo_archivo}): {e}")
+        rutas_posibles = [f"Puntos_de_interes/{archivo}", archivo]
         
-    return pd.DataFrame()
-
-# -------------------------------------------------------------------------
+        gdf_maestro = gpd.GeoDataFrame()
+        for ruta in rutas_posibles:
+            try:
+                url_publica = cliente.storage.from_(bucket).get_public_url(ruta)
+                gdf_maestro = gpd.read_file(url_publica)
+                if not gdf_maestro.empty: break
+            except Exception:
+                continue
+        
+        if not gdf_maestro.empty and gdf_maestro.crs != "EPSG:3116":
+            gdf_maestro = gdf_maestro.to_crs(epsg=3116)
+            
+        return gdf_maestro
+        
+    except Exception as e:
+        st.error(f"❌ Error crítico procesando la base de {tipo}: {e}")
+        return gpd.GeoDataFrame()
 
 @st.cache_data
 def cargar_municipios():
@@ -100,99 +92,51 @@ def cargar_veredas():
     ruta = "data/veredas_Antioquia.xlsx"
     return pd.read_excel(ruta) if os.path.exists(ruta) else pd.DataFrame()
 
-@st.cache_data
-def cargar_concesiones():
-    ruta_xlsx = "data/Concesiones_Corantioquia.xlsx"
-    ruta_csv = "data/Concesiones_Corantioquia.csv"
-    
-    df = pd.DataFrame()
-    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
-    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
-        
-    if not df.empty:
-        df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
-        col_caudal = 'caudal_por_uso' if 'caudal_por_uso' in df.columns else ('caudal_usuario' if 'caudal_usuario' in df.columns else next((c for c in df.columns if 'caudal' in c and 'acumulado' not in c), None))
-        col_uso, col_mpio, col_vereda = ('uso' if 'uso' in df.columns else None), ('municipio' if 'municipio' in df.columns else None), ('vereda' if 'vereda' in df.columns else None)
-        col_depto, col_region = ('departamento' if 'departamento' in df.columns else None), ('region' if 'region' in df.columns else None)
-        col_asunto, col_cota = ('asunto' if 'asunto' in df.columns else None), ('cota' if 'cota' in df.columns else None)
-        col_estado, col_car = ('estado' if 'estado' in df.columns else None), ('car' if 'car' in df.columns else None)
-        col_x, col_y = ('coordenada_x' if 'coordenada_x' in df.columns else None), ('coordenada_y' if 'coordenada_y' in df.columns else None)
-
-        if col_caudal and col_mpio:
-            df = df.dropna(subset=[col_mpio]).copy() 
-            if df[col_caudal].dtype == object: df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
-            df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
-            
-            if col_cota: df['cota_num'] = pd.to_numeric(df[col_cota], errors='coerce').fillna(-1)
-            else: df['cota_num'] = -1
-            
-            if col_x: df['coordenada_x'] = pd.to_numeric(df[col_x], errors='coerce').fillna(0)
-            if col_y: df['coordenada_y'] = pd.to_numeric(df[col_y], errors='coerce').fillna(0)
-
-            df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
-            df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
-            if col_vereda: df['vereda_norm'] = df[col_vereda].apply(normalizar_texto)
-            else: df['vereda_norm'] = ""
-            if col_depto: df['departamento_norm'] = df[col_depto].apply(normalizar_texto)
-            if col_region: df['region_norm'] = df[col_region].apply(normalizar_texto)
-            if col_car: df['car_norm'] = df[col_car].astype(str).str.strip().apply(normalizar_texto)
-            else: df['car_norm'] = "sin_car"
-            
-            if col_asunto: df['tipo_agua'] = np.where(df[col_asunto].str.lower().str.contains('subterran|subterrán|pozo|aljibe', regex=True, na=False), 'Subterránea', np.where(df[col_asunto].str.lower().str.contains('superficial|corriente', regex=True, na=False), 'Superficial', 'No Especificado'))
-            else: df['tipo_agua'] = 'No Especificado'
-
-            if col_uso: df['uso_detalle'] = df[col_uso].fillna('Sin Información').astype(str).str.title().str.strip()
-            else: df['uso_detalle'] = 'Sin Información'
-
-            def clasificar_uso(u):
-                u = normalizar_texto(u)
-                if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento', 'acueducto']): return 'Doméstico'
-                elif any(x in u for x in ['agricola', 'pecuario', 'acuicultura', 'agroindustrial', 'riego', 'piscicola', 'silvicultura']): return 'Agrícola/Pecuario'
-                elif any(x in u for x in ['industrial', 'mineria', 'minero', 'generacion de energia']): return 'Industrial'
-                else: return 'Otros'
-                
-            df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
-            if col_estado: df['estado'] = df[col_estado].fillna('Desconocido').astype(str).str.title().str.strip()
-            else: df['estado'] = 'Desconocido'
-            return df
-    return pd.DataFrame()
-
-@st.cache_data
+# ==============================================================================
+# 🌉 PUENTES DE COMPATIBILIDAD (Para no romper las gráficas existentes)
+# ==============================================================================
+@st.cache_data(show_spinner=False)
 def cargar_vertimientos():
-    ruta_xlsx = "data/Vertimientos_Cornare.xlsx"
-    ruta_csv = "data/Vertimientos_Cornare.csv"
+    gdf = cargar_maestros_nube("vertimientos")
+    if gdf.empty: return pd.DataFrame()
     
-    df = pd.DataFrame()
-    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
-    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
-        
-    if not df.empty:
-        df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
-        col_caudal = next((c for c in df.columns if 'caudal' in c), None)
-        col_mpio = 'municipio' if 'municipio' in df.columns else None
-        col_tipo = next((c for c in df.columns if 'tipo' in c and 've' in c), None) 
-        col_car = 'car' if 'car' in df.columns else None
-        col_x, col_y = ('coordenada_x' if 'coordenada_x' in df.columns else None), ('coordenada_y' if 'coordenada_y' in df.columns else None)
-        
-        if col_caudal and col_mpio:
-            df = df.dropna(subset=[col_mpio]).copy() 
-            if df[col_caudal].dtype == object: df[col_caudal] = df[col_caudal].astype(str).str.replace(',', '.')
-            df['caudal_vert_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
-            
-            if col_x: df['coordenada_x'] = pd.to_numeric(df[col_x], errors='coerce').fillna(0)
-            if col_y: df['coordenada_y'] = pd.to_numeric(df[col_y], errors='coerce').fillna(0)
+    # Adaptar los nombres de la base maestra a lo que espera la interfaz vieja
+    df = pd.DataFrame(gdf)
+    df['caudal_vert_lps'] = df['Caudal_Lps']
+    df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
+    df['tipo_vertimiento'] = df['Tipo_Vertimiento']
+    df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
+    df['coordenada_x'] = gdf.geometry.x
+    df['coordenada_y'] = gdf.geometry.y
+    return df
 
-            df['municipio'] = df[col_mpio].astype(str).str.strip().str.title()
-            df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
-            
-            if col_car: df['car_norm'] = df[col_car].astype(str).str.strip().apply(normalizar_texto)
-            else: df['car_norm'] = "sin_car"
-                
-            if col_tipo: df['tipo_vertimiento'] = df[col_tipo].fillna('No Especificado').astype(str).str.title().str.strip()
-            else: df['tipo_vertimiento'] = 'No Especificado'
-            return df
-    return pd.DataFrame()
-
+@st.cache_data(show_spinner=False)
+def cargar_concesiones():
+    gdf = cargar_maestros_nube("concesiones")
+    if gdf.empty: return pd.DataFrame()
+    
+    # Adaptar los nombres de la base maestra a lo que espera la interfaz vieja
+    df = pd.DataFrame(gdf)
+    df['caudal_lps'] = df['Caudal_Lps']
+    df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
+    df['tipo_agua'] = df['Tipo_Fuente']
+    df['uso_detalle'] = df['Uso_Agua']
+    df['estado'] = df['Estado']
+    df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
+    df['coordenada_x'] = gdf.geometry.x
+    df['coordenada_y'] = gdf.geometry.y
+    
+    # Micro-clasificador de uso para las gráficas
+    def clasificar_uso(u):
+        u = normalizar_texto(u)
+        if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento']): return 'Doméstico'
+        elif any(x in u for x in ['agricola', 'pecuario', 'riego']): return 'Agrícola/Pecuario'
+        elif any(x in u for x in ['industrial', 'mineria']): return 'Industrial'
+        else: return 'Otros'
+        
+    df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
+    return df
+    
 @st.cache_data
 def cargar_censo_bovino():
     ruta_xlsx = "data/censos_ICA/Censo_ICA_Bovinos_2023.xlsx"
