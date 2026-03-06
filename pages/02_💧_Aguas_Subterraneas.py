@@ -705,68 +705,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         else:
             st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria, listos para cruzar espacialmente.")
 
-# ==============================================================================
-# 🗺️ CONECTOR: ADN DEL TERRITORIO (REGIONES Y CORPORACIONES)
-# ==============================================================================
-@st.cache_data(show_spinner=False, ttl=86400) # Se guarda en caché por 24 horas
-def cargar_territorio_maestro():
-    import pandas as pd
-    from supabase import create_client
-    import io
-    import unicodedata
-    
-    # Búsqueda exhaustiva de credenciales (A prueba de balas)
-    url_sb = None
-    key_sb = None
-    if "SUPABASE_URL" in st.secrets:
-        url_sb = st.secrets["SUPABASE_URL"]
-        key_sb = st.secrets["SUPABASE_KEY"]
-    elif "supabase" in st.secrets:
-        url_sb = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
-        key_sb = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
-    elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
-        url_sb = st.secrets["iri"]["SUPABASE_URL"]
-        key_sb = st.secrets["iri"]["SUPABASE_KEY"]
-    elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
-        url_sb = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-        key_sb = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-        
-    if not url_sb or not key_sb:
-        return pd.DataFrame()
-        
-    try:
-        cliente = create_client(url_sb, key_sb)
-        bucket = "sihcli_maestros"
-        archivo = "territorio_maestro.xlsx"
-        
-        # Descargamos el archivo directamente a la memoria de Python
-        res = cliente.storage.from_(bucket).download(archivo)
-        df_territorio = pd.read_excel(io.BytesIO(res))
-        
-        # Normalizador interno para cruces exactos
-        def normalizar(texto):
-            if pd.isna(texto): return ""
-            return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
-            
-        # Limpieza y estandarización
-        df_territorio.columns = df_territorio.columns.str.lower().str.strip()
-        
-        if 'municipio' in df_territorio.columns:
-            df_territorio['municipio_norm'] = df_territorio['municipio'].apply(normalizar)
-            
-        if 'region' in df_territorio.columns:
-            df_territorio['region'] = df_territorio['region'].astype(str).str.title()
-            
-        if 'car' in df_territorio.columns:
-            df_territorio['car'] = df_territorio['car'].astype(str).str.upper()
-            
-        return df_territorio
-        
-    except Exception as e:
-        import streamlit as st
-        st.error(f"❌ Error cargando territorio_maestro: {e}")
-        return pd.DataFrame()    
-            
     # ---------------------------------------------------------------------
     # 2. EL BALANCE ESPACIAL Y DOCUMENTAL
     # ---------------------------------------------------------------------
@@ -876,4 +814,5 @@ def cargar_territorio_maestro():
         st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
