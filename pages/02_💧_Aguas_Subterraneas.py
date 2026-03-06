@@ -628,33 +628,48 @@ st.markdown("Este motor compara la recarga natural con la extracción. Utiliza *
 
 if gdf_zona is not None and not gdf_zona.empty:
     
-# ---------------------------------------------------------------------
-    # 1. CONEXIÓN A LA BASE MAESTRA EN SUPABASE
+    # ---------------------------------------------------------------------
+    # 1. CONEXIÓN A LA BASE MAESTRA EN SUPABASE (VÍA URL PÚBLICA)
     # ---------------------------------------------------------------------
     @st.cache_data(show_spinner=False, ttl=3600)
     def cargar_concesiones_maestras():
         import geopandas as gpd
-        import io
         from supabase import create_client
+        import pandas as pd
         
-        # 1. Buscar credenciales
         url_sb = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url") or st.secrets.get("iri", {}).get("SUPABASE_URL")
         key_sb = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key") or st.secrets.get("iri", {}).get("SUPABASE_KEY")
         
         if not url_sb or not key_sb:
+            st.error("❌ Faltan credenciales de Supabase en secrets.")
             return gpd.GeoDataFrame()
             
         try:
             cliente = create_client(url_sb, key_sb)
+            bucket = "sihcli_maestros"
             
-            # Ajusta la ruta dependiendo de dónde subiste el archivo en la Aduana SIG
-            # Si lo pusiste en Puntos_de_interes, déjalo así:
-            ruta_archivo = "Puntos_de_interes/Metabolismo_Hidrico_Antioquia_Maestro.geojson"
+            # El código intentará buscar en la carpeta, y si falla, buscará en la raíz
+            rutas_posibles = [
+                "Puntos_de_interes/Metabolismo_Hidrico_Antioquia_Maestro.geojson",
+                "Metabolismo_Hidrico_Antioquia_Maestro.geojson"
+            ]
             
-            bytes_archivo = cliente.storage.from_("sihcli_maestros").download(ruta_archivo)
-            gdf_maestro = gpd.read_file(io.BytesIO(bytes_archivo))
+            gdf_maestro = gpd.GeoDataFrame()
+            for ruta in rutas_posibles:
+                try:
+                    # Obtenemos el link directo de descarga de Supabase
+                    url_publica = cliente.storage.from_(bucket).get_public_url(ruta)
+                    # GeoPandas lee mágicamente desde el link web
+                    gdf_maestro = gpd.read_file(url_publica)
+                    if not gdf_maestro.empty:
+                        break # Si lo logró leer, salimos del ciclo de búsqueda
+                except Exception:
+                    continue
             
-            # FILTRO CRUCIAL: Solo queremos las subterráneas para esta página
+            if gdf_maestro.empty:
+                return gpd.GeoDataFrame()
+                
+            # Filtro Crítico: Nos quedamos solo con los pozos y aljibes
             gdf_subt = gdf_maestro[gdf_maestro['Tipo_Fuente'] == 'Subterranea'].copy()
             
             if not gdf_subt.empty and gdf_subt.crs != "EPSG:3116":
@@ -663,12 +678,19 @@ if gdf_zona is not None and not gdf_zona.empty:
             return gdf_subt
             
         except Exception as e:
-            st.error(f"❌ Error descargando la base maestra: {e}")
+            st.error(f"❌ Error crítico procesando la base: {e}")
             return gpd.GeoDataFrame()
 
-    with st.spinner("📥 Conectando con Supabase y descargando el Metabolismo Hídrico..."):
+    with st.spinner("📥 Descargando Metabolismo Hídrico desde Supabase..."):
+        st.cache_data.clear() # Forzamos la recarga para que tome el código nuevo
         gdf_concesiones = cargar_concesiones_maestras()
-        df_huerfanos = pd.DataFrame() # Anulamos esto porque el maestro ya tiene la imputación integrada
+        df_huerfanos = pd.DataFrame() # Ya no lo necesitamos, el maestro ya los tiene imputados
+        
+        # TELEMETRÍA DE DIAGNÓSTICO
+        if gdf_concesiones.empty:
+            st.error("⚠️ La base maestra cargó vacía. Verifica que el archivo Metabolismo_Hidrico_Antioquia_Maestro.geojson esté en Supabase.")
+        else:
+            st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria, listos para cruzar espacialmente.")
 
     # ---------------------------------------------------------------------
     # 2. EL BALANCE ESPACIAL Y DOCUMENTAL
@@ -747,4 +769,5 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
