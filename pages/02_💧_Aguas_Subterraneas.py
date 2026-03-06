@@ -306,7 +306,7 @@ if gdf_zona is not None:
     # ==============================================================================
     # 3. PESTAÑAS DE ANÁLISIS
     # ==============================================================================
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 Serie Completa", "🗺️ Mapa Contexto", "💧 Mapa Recarga", "📥 Descargas"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Serie Completa", "🗺️ Mapa Contexto", "💧 Mapa Recarga", "⚖️ Gobernanza", "📥 Descargas"])
 
     # --- GUÍA TÉCNICA ENRIQUECIDA ---
     with st.expander("📘 Guía Técnica: Metodología, Ecuaciones e Interpretación", expanded=False):
@@ -529,15 +529,6 @@ if gdf_zona is not None:
                     
                 except Exception as e:
                     st.error(f"Error técnico en el mapa: {e}")
-
-
-    # --- TAB 4: DESCARGAS ---
-    with tab4:
-        col1, col2 = st.columns(2)
-        if not df_res.empty:
-            col1.download_button("⬇️ Descargar Serie Temporal (.csv)", df_res.to_csv(index=False).encode('utf-8'), "balance.csv", "text/csv")
-        if not df_mapa_stats.empty:
-            col2.download_button("⬇️ Descargar Datos Estaciones (.csv)", df_mapa_stats.to_csv(index=False).encode('utf-8'), "estaciones_recarga.csv", "text/csv")
 
     # ==============================================================================
     # 4. REPORTE GLOBAL (GENERADOR MAESTRO)
@@ -780,7 +771,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria y enriquecidos con su Región.")
 
     # ---------------------------------------------------------------------
-    # 4. EL BALANCE ESPACIAL ROBUSTO (MULTÍGONO SIN DISSOLVE NI CLIP)
+    # 4. BALANCE HÍDRICO (MOTOR HÍBRIDO ULTRARRÁPIDO)
     # ---------------------------------------------------------------------
     if not gdf_concesiones.empty:
         import unicodedata
@@ -789,59 +780,81 @@ if gdf_zona is not None and not gdf_zona.empty:
         nombre_zona_as = st.session_state.get('nombre_seleccion', 'el Territorio')
         nivel_sel = st.session_state.get('nivel_seleccion', 'Municipal')
         
-        caudal_espacial = 0.0
-        pozos_espaciales = 0
+        def normalizar(texto):
+            if pd.isna(texto): return ""
+            return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+            
+        # 1. INYECCIÓN GLOBAL DEL ADN DEL TERRITORIO (A todos los pozos)
+        gdf_concesiones['municipio_norm'] = gdf_concesiones['Municipio'].apply(normalizar)
+        
+        if 'df_territorio' in locals() and not df_territorio.empty:
+            df_terr_limpio = df_territorio.drop_duplicates(subset=['municipio_norm'])
+            mapa_region = dict(zip(df_terr_limpio['municipio_norm'], df_terr_limpio['region']))
+            mapa_car = dict(zip(df_terr_limpio['municipio_norm'], df_terr_limpio['car']))
+            
+            gdf_concesiones['Region'] = gdf_concesiones['municipio_norm'].map(mapa_region).fillna('Desconocida')
+            gdf_concesiones['Autoridad'] = gdf_concesiones['municipio_norm'].map(mapa_car).fillna(gdf_concesiones['Autoridad'])
+
         concesiones_locales = gpd.GeoDataFrame()
         
-        if gdf_zona is not None and not gdf_zona.empty:
-            gdf_zona_3116 = gdf_zona.to_crs(epsg=3116).copy()
+        # 2. SEPARACIÓN DE ESTRATEGIAS (TABULAR VS ESPACIAL)
+        if nivel_sel in ["Regional", "Jurisdicción Ambiental (CAR)", "Departamental", "Nacional (Colombia)"]:
             
-            # 🛡️ EL SECRETO: NO disolver los polígonos y NO usar .clip()
-            # Aseguramos geometrías válidas sin alterar su topología original
-            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.make_valid()
+            # ESTRATEGIA A: TABULAR PURA (Filtro instantáneo, evita colapso del polígono complejo)
+            zona_norm = normalizar(nombre_zona_as.replace("Región ", "").replace("Region ", "").replace("CAR: ", ""))
             
-            # Cruce espacial ultrarrápido (sjoin puro, es 100x más rápido que clip)
-            try: 
-                concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
-                # Deduplicamos por el índice del pozo para evitar conteos dobles en fronteras
-                concesiones_locales = concesiones_locales[~concesiones_locales.index.duplicated(keep='first')]
-            except Exception as e:
-                st.error(f"Error en el cruce espacial: {e}")
-                concesiones_locales = gpd.GeoDataFrame()
-            
-            if not concesiones_locales.empty:
-                # A. AUTO-CORRECCIÓN DE "No Registrado" desde los polígonos individuales
-                col_mpio_mapa = next((c for c in concesiones_locales.columns if c.lower() in ['nombre_municipio', 'mpio_cnmbr', 'municipio_1', 'nom_mun']), None)
-                if col_mpio_mapa:
-                    mask_vacio = concesiones_locales['Municipio'].isin(['No Registrado', 'Sin Información']) | concesiones_locales['Municipio'].isna()
-                    concesiones_locales.loc[mask_vacio, 'Municipio'] = concesiones_locales.loc[mask_vacio, col_mpio_mapa].astype(str).str.title()
+            if nivel_sel == "Regional":
+                concesiones_locales = gdf_concesiones[gdf_concesiones['Region'].apply(normalizar) == zona_norm].copy()
+            elif nivel_sel == "Jurisdicción Ambiental (CAR)":
+                concesiones_locales = gdf_concesiones[gdf_concesiones['Autoridad'].apply(normalizar) == zona_norm].copy()
+            else:
+                concesiones_locales = gdf_concesiones.copy()
                 
-                # B. INYECCIÓN DEL ADN DEL TERRITORIO
-                def normalizar(texto):
-                    if pd.isna(texto): return ""
-                    return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+            # RESCATE EXTREMO: Buscar los "No Registrados" usando la "Banda Elástica" (Convex Hull)
+            if gdf_zona is not None and not gdf_zona.empty:
+                pozos_huerfanos = gdf_concesiones[gdf_concesiones['Municipio'].isin(['No Registrado', 'Sin Información']) | gdf_concesiones['Municipio'].isna()]
                 
-                concesiones_locales['municipio_norm'] = concesiones_locales['Municipio'].apply(normalizar)
-                
-                if 'df_territorio' in locals() and not df_territorio.empty:
-                    df_terr_limpio = df_territorio.drop_duplicates(subset=['municipio_norm'])
-                    mapa_region = dict(zip(df_terr_limpio['municipio_norm'], df_terr_limpio['region']))
-                    mapa_car = dict(zip(df_terr_limpio['municipio_norm'], df_terr_limpio['car']))
+                if not pozos_huerfanos.empty:
+                    gdf_zona_simple = gdf_zona.to_crs(epsg=3116).copy()
+                    # 🛡️ LA MAGIA: Envuelve la región en una figura simple de 4-5 lados. ¡Cálculo en 0.01s!
+                    gdf_zona_simple['geometry'] = gdf_zona_simple.geometry.convex_hull
                     
-                    concesiones_locales['Region'] = concesiones_locales['municipio_norm'].map(mapa_region).fillna('Desconocida')
-                    concesiones_locales['Autoridad'] = concesiones_locales['municipio_norm'].map(mapa_car).fillna(concesiones_locales.get('Autoridad', 'Otra Corporacion'))
+                    try: 
+                        rescatados = gpd.sjoin(pozos_huerfanos, gdf_zona_simple, how='inner', predicate='intersects')
+                        rescatados = rescatados[~rescatados.index.duplicated(keep='first')]
+                        if not rescatados.empty:
+                            if nivel_sel == "Regional": rescatados['Region'] = nombre_zona_as.replace("Región ", "").title()
+                            concesiones_locales = pd.concat([concesiones_locales, rescatados]).drop_duplicates(subset=['ID_Expediente'])
+                    except:
+                        pass # Falla silenciosa si la geometría es verdaderamente imposible
+        else:
+            # ESTRATEGIA B: ESPACIAL PURA (Para Municipios y Cuencas - Precisión milimétrica)
+            if gdf_zona is not None and not gdf_zona.empty:
+                gdf_zona_3116 = gdf_zona.to_crs(epsg=3116).copy()
+                gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.make_valid().buffer(0)
                 
-                # C. Si la consulta es regional, forzamos la etiqueta visual
-                if nivel_sel == "Regional":
-                    zona_limpia = nombre_zona_as.replace("Región ", "").replace("Region ", "").title()
-                    concesiones_locales['Region'] = zona_limpia
+                try: 
+                    concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
+                    concesiones_locales = concesiones_locales[~concesiones_locales.index.duplicated(keep='first')]
                     
-                caudal_espacial = concesiones_locales['Caudal_Lps'].sum()
-                pozos_espaciales = len(concesiones_locales)
-                
+                    # Auto-corrección del municipio usando el mapa
+                    col_mpio_mapa = next((c for c in concesiones_locales.columns if c.lower() in ['nombre_municipio', 'mpio_cnmbr', 'municipio_1', 'nom_mun']), None)
+                    if col_mpio_mapa:
+                        mask_vacio = concesiones_locales['Municipio'].isin(['No Registrado', 'Sin Información']) | concesiones_locales['Municipio'].isna()
+                        concesiones_locales.loc[mask_vacio, 'Municipio'] = concesiones_locales.loc[mask_vacio, col_mpio_mapa].astype(str).str.title()
+                        
+                        # Re-asignar Región a los recién bautizados
+                        concesiones_locales['municipio_norm'] = concesiones_locales['Municipio'].apply(normalizar)
+                        if 'df_territorio' in locals() and not df_territorio.empty:
+                            concesiones_locales['Region'] = concesiones_locales['municipio_norm'].map(mapa_region).fillna(concesiones_locales.get('Region', 'Desconocida'))
+                            concesiones_locales['Autoridad'] = concesiones_locales['municipio_norm'].map(mapa_car).fillna(concesiones_locales.get('Autoridad', 'Otra Corporacion'))
+
+                except Exception as e:
+                    st.error(f"Error espacial: {e}")
+
         # Totales Finales
-        caudal_total_demandado_lps = caudal_espacial
-        total_captaciones = pozos_espaciales
+        caudal_total_demandado_lps = concesiones_locales['Caudal_Lps'].sum() if not concesiones_locales.empty else 0.0
+        total_captaciones = len(concesiones_locales)
         
         # Oferta (Recarga)
         volumen_recarga_m3_ano = st.session_state.get('recarga_total_m3', 0.0)
@@ -908,6 +921,13 @@ if gdf_zona is not None and not gdf_zona.empty:
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
 
+    # --- TAB 5: DESCARGAS ---
+    with tab5:
+        col1, col2 = st.columns(2)
+        if not df_res.empty:
+            col1.download_button("⬇️ Descargar Serie Temporal (.csv)", df_res.to_csv(index=False).encode('utf-8'), "balance.csv", "text/csv")
+        if not df_mapa_stats.empty:
+            col2.download_button("⬇️ Descargar Datos Estaciones (.csv)", df_mapa_stats.to_csv(index=False).encode('utf-8'), "estaciones_recarga.csv", "text/csv")
 
 
 
