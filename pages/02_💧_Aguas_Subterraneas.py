@@ -795,7 +795,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         # A. SUMATORIA ESPACIAL ROBUSTA (Previene fallos de topología en Regiones)
         if gdf_zona is not None and not gdf_zona.empty:
             gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
-            # 🛡️ Corrección mágica de geometría: Evita que el mapa de Urabá congele la aplicación
+            # 🛡️ Corrección mágica de geometría
             gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.make_valid()
             gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0)
             
@@ -805,14 +805,13 @@ if gdf_zona is not None and not gdf_zona.empty:
             
             if not concesiones_locales.empty:
                 # B. AUTO-CORRECCIÓN DE MUNICIPIOS (La cura para el "No Registrado")
-                # El sjoin hereda el nombre del municipio del mapa (gdf_zona). Lo buscamos:
                 col_mpio_mapa = next((c for c in concesiones_locales.columns if c.lower() in ['nombre_municipio', 'mpio_cnmbr', 'municipio_1', 'nom_mun']), None)
                 
                 if col_mpio_mapa:
                     mask_vacio = concesiones_locales['Municipio'].isin(['No Registrado', 'Sin Información']) | concesiones_locales['Municipio'].isna()
                     concesiones_locales.loc[mask_vacio, 'Municipio'] = concesiones_locales.loc[mask_vacio, col_mpio_mapa].astype(str).str.title()
                 
-                # C. INYECCIÓN DEL ADN DEL TERRITORIO (Región y CAR oficial)
+                # C. INYECCIÓN DEL ADN DEL TERRITORIO (Con Mapeo Inteligente)
                 def normalizar(texto):
                     if pd.isna(texto): return ""
                     return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
@@ -820,12 +819,15 @@ if gdf_zona is not None and not gdf_zona.empty:
                 concesiones_locales['municipio_norm'] = concesiones_locales['Municipio'].apply(normalizar)
                 
                 if 'df_territorio' in locals() and not df_territorio.empty:
-                    df_terr_limpio = df_territorio[['municipio_norm', 'region', 'car']].drop_duplicates(subset=['municipio_norm'])
-                    # Fusionamos usando el municipio ya corregido
-                    concesiones_locales = concesiones_locales.merge(df_terr_limpio, on='municipio_norm', how='left')
-                    # Actualizamos las columnas visibles
-                    concesiones_locales['Region'] = concesiones_locales['region'].fillna('Desconocida')
-                    concesiones_locales['Autoridad'] = concesiones_locales['car'].fillna(concesiones_locales['Autoridad'])
+                    df_terr_limpio = df_territorio.drop_duplicates(subset=['municipio_norm'])
+                    
+                    # Creamos diccionarios de búsqueda rápida
+                    mapa_region = dict(zip(df_terr_limpio['municipio_norm'], df_terr_limpio['region']))
+                    mapa_car = dict(zip(df_terr_limpio['municipio_norm'], df_terr_limpio['car']))
+                    
+                    # Actualizamos usando el mapa directo para evitar KeyErrors
+                    concesiones_locales['Region'] = concesiones_locales['municipio_norm'].map(mapa_region).fillna(concesiones_locales.get('Region', 'Desconocida'))
+                    concesiones_locales['Autoridad'] = concesiones_locales['municipio_norm'].map(mapa_car).fillna(concesiones_locales.get('Autoridad', 'Otra Corporacion'))
                 
                 caudal_espacial = concesiones_locales['Caudal_Lps'].sum()
                 pozos_espaciales = len(concesiones_locales)
@@ -899,3 +901,4 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
