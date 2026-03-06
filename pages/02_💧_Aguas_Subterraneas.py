@@ -670,12 +670,10 @@ if gdf_zona is not None and not gdf_zona.empty:
             gdf_maestro = gpd.GeoDataFrame()
             for ruta in rutas_posibles:
                 try:
-                    # Obtenemos el link directo de descarga de Supabase
                     url_publica = cliente.storage.from_(bucket).get_public_url(ruta)
-                    # GeoPandas lee mágicamente desde el link web
                     gdf_maestro = gpd.read_file(url_publica)
                     if not gdf_maestro.empty:
-                        break # Si lo logró leer, salimos del ciclo de búsqueda
+                        break
                 except Exception:
                     continue
             
@@ -694,19 +692,95 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.error(f"❌ Error crítico procesando la base: {e}")
             return gpd.GeoDataFrame()
 
-    with st.spinner("📥 Descargando Metabolismo Hídrico desde Supabase..."):
-        st.cache_data.clear() # Forzamos la recarga para que tome el código nuevo
-        gdf_concesiones = cargar_concesiones_maestras()
-        df_huerfanos = pd.DataFrame() # Ya no lo necesitamos, el maestro ya los tiene imputados
+    # ---------------------------------------------------------------------
+    # 2. CONECTOR: ADN DEL TERRITORIO (REGIONES Y CORPORACIONES)
+    # ---------------------------------------------------------------------
+    @st.cache_data(show_spinner=False, ttl=86400)
+    def cargar_territorio_maestro():
+        import pandas as pd
+        import streamlit as st
+        from supabase import create_client
+        import io
+        import unicodedata
         
-        # TELEMETRÍA DE DIAGNÓSTICO
-        if gdf_concesiones.empty:
-            st.error("⚠️ La base maestra cargó vacía. Verifica que el archivo Metabolismo_Hidrico_Antioquia_Maestro.geojson esté en Supabase.")
-        else:
-            st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria, listos para cruzar espacialmente.")
+        url_sb = None
+        key_sb = None
+        if "SUPABASE_URL" in st.secrets:
+            url_sb = st.secrets["SUPABASE_URL"]
+            key_sb = st.secrets["SUPABASE_KEY"]
+        elif "supabase" in st.secrets:
+            url_sb = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+            key_sb = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
+        elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
+            url_sb = st.secrets["iri"]["SUPABASE_URL"]
+            key_sb = st.secrets["iri"]["SUPABASE_KEY"]
+        elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
+            url_sb = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+            key_sb = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+            
+        if not url_sb or not key_sb:
+            return pd.DataFrame()
+            
+        try:
+            cliente = create_client(url_sb, key_sb)
+            res = cliente.storage.from_("sihcli_maestros").download("territorio_maestro.xlsx")
+            df_territorio = pd.read_excel(io.BytesIO(res))
+            
+            def normalizar(texto):
+                if pd.isna(texto): return ""
+                return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+                
+            df_territorio.columns = df_territorio.columns.str.lower().str.strip()
+            
+            if 'municipio' in df_territorio.columns:
+                df_territorio['municipio_norm'] = df_territorio['municipio'].apply(normalizar)
+            if 'region' in df_territorio.columns:
+                df_territorio['region'] = df_territorio['region'].astype(str).str.title()
+            if 'car' in df_territorio.columns:
+                df_territorio['car'] = df_territorio['car'].astype(str).str.upper()
+                
+            return df_territorio
+            
+        except Exception as e:
+            return pd.DataFrame()
 
     # ---------------------------------------------------------------------
-    # 2. EL BALANCE ESPACIAL Y DOCUMENTAL
+    # 3. DESCARGA Y CRUCE INTELIGENTE (LA MAGIA DE PANDAS)
+    # ---------------------------------------------------------------------
+    with st.spinner("📥 Descargando Metabolismo Hídrico y ADN del Territorio desde Supabase..."):
+        st.cache_data.clear() # Forzamos la recarga para que tome el código nuevo
+        gdf_concesiones = cargar_concesiones_maestras()
+        df_territorio = cargar_territorio_maestro()
+        df_huerfanos = pd.DataFrame() # Ya no lo necesitamos
+        
+        if not gdf_concesiones.empty and not df_territorio.empty:
+            import unicodedata
+            def normalizar(texto):
+                if pd.isna(texto): return ""
+                return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+            
+            # Normalizamos el municipio en los pozos
+            gdf_concesiones['municipio_norm'] = gdf_concesiones['Municipio'].apply(normalizar)
+            
+            # Preparamos la tabla territorio sin duplicados
+            df_terr_limpio = df_territorio[['municipio_norm', 'region', 'car']].drop_duplicates(subset=['municipio_norm'])
+            
+            # CRUZAMOS LOS DATOS
+            gdf_concesiones = gdf_concesiones.merge(df_terr_limpio, on='municipio_norm', how='left')
+            
+            # Llenamos la Región y Autoridad Oficial
+            gdf_concesiones['Region'] = gdf_concesiones['region'].fillna('Desconocida')
+            mask_aut = gdf_concesiones['Autoridad'].isin(['Otra Corporacion', 'No Registrado']) | gdf_concesiones['Autoridad'].isna()
+            gdf_concesiones.loc[mask_aut, 'Autoridad'] = gdf_concesiones.loc[mask_aut, 'car']
+
+        # TELEMETRÍA DE DIAGNÓSTICO
+        if gdf_concesiones.empty:
+            st.error("⚠️ La base maestra cargó vacía. Verifica que el archivo Metabolismo_Hidrico esté en Supabase.")
+        else:
+            st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria y enriquecidos con su Región.")
+
+    # ---------------------------------------------------------------------
+    # 4. EL BALANCE ESPACIAL Y DOCUMENTAL
     # ---------------------------------------------------------------------
     if not gdf_concesiones.empty or not df_huerfanos.empty:
         import unicodedata
@@ -753,9 +827,9 @@ if gdf_zona is not None and not gdf_zona.empty:
         ipa_porcentaje = (caudal_total_demandado_lps / caudal_oferta_lps) * 100 if caudal_oferta_lps > 0 else 0
         
         # ---------------------------------------------------------------------
-        # 3. EL DASHBOARD DE GOBERNANZA
+        # 5. EL DASHBOARD DE GOBERNANZA
         # ---------------------------------------------------------------------
-        st.caption(f"ℹ️ **Telemetría Inteligente:** {len(gdf_concesiones):,.0f} pozos georreferenciados en la base global. Se aplicó rescate de datos a {len(df_huerfanos):,.0f} registros indocumentados usando imputación a 1.5 L/s.")
+        st.caption(f"ℹ️ **Telemetría Inteligente:** {len(gdf_concesiones):,.0f} pozos georreferenciados en la base global. Se aplicó rescate de datos a {len(df_huerfanos):,.0f} registros indocumentados.")
         
         st.markdown(f"#### 📊 Balance Acuífero en {nombre_zona_as.title()}")
         
@@ -767,7 +841,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             "🚰 Demanda (Concesiones)", 
             f"{caudal_total_demandado_lps:,.1f} L/s", 
             f"-{total_captaciones} captaciones totales", delta_color="inverse",
-            help=f"De las {total_captaciones} captaciones, {pozos_espaciales} tienen coordenadas exactas y {pozos_huerfanos} fueron rescatadas por nombre de municipio."
+            help=f"De las {total_captaciones} captaciones, {pozos_espaciales} tienen coordenadas exactas y {pozos_huerfanos} fueron rescatadas."
         )
         
         if ipa_porcentaje < 10: color_ipa, estado_ipa = "🟢", "Subexplotado"
@@ -789,7 +863,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             
             # 2. Creamos una copia limpia sin la geometría compleja
             import pandas as pd
-            df_descarga = pd.DataFrame(concesiones_locales.drop(columns='geometry', errors='ignore'))
+            df_descarga = pd.DataFrame(concesiones_locales.drop(columns=['geometry', 'municipio_norm', 'region', 'car'], errors='ignore'))
             
             # 3. Nos aseguramos de extraer las coordenadas de forma segura
             centroides = concesiones_locales.geometry.centroid
@@ -814,5 +888,3 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
-
-
