@@ -860,8 +860,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         # 5. EL DASHBOARD DE GOBERNANZA
         # ---------------------------------------------------------------------
         st.caption(f"ℹ️ **Telemetría Inteligente:** {len(gdf_concesiones):,.0f} pozos georreferenciados en la base global.")
-        
-        st.markdown(f"#### 📊 Balance Acuífero en {nombre_zona_as.title()}")
+        st.markdown(f"#### 📊 Balance Acuífero en: {nombre_zona}")
         
         c_bal1, c_bal2, c_bal3, c_bal4 = st.columns(4)
         c_bal1.metric("💧 Oferta (Recarga Natural)", f"{caudal_oferta_lps:,.1f} L/s")
@@ -883,7 +882,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         # 💾 MÓDULO DE DESCARGA (CON DATOS COMPLETOS)
         # ==============================================================================
         st.markdown("---")
-        st.markdown("### 📥 Exportar Inventario Subterráneo")
+        st.markdown("### 📥 Exportar Inventario Subterráneo - {nombre_zona}")
         
         if not concesiones_locales.empty:
             # Quitamos las columnas de cálculo interno para entregar un archivo limpio
@@ -912,6 +911,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
 
 
