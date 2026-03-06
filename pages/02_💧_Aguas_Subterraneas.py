@@ -879,7 +879,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         # 💾 MÓDULO DE DESCARGA (CON DATOS COMPLETOS)
         # ==============================================================================
         st.markdown("---")
-        st.markdown("### 📥 Exportar Inventario Subterráneo - {nombre_zona}")
+        st.markdown(f"### 📥 Exportar Inventario Subterráneo - {nombre_zona}")
         
         if not concesiones_locales.empty:
             # Quitamos las columnas de cálculo interno para entregar un archivo limpio
@@ -908,6 +908,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
 
 
