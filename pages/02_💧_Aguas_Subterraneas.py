@@ -732,7 +732,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         pozos_huerfanos = 0
         
         if not df_huerfanos.empty and 'Municipio_Norm' in df_huerfanos.columns:
-            # Normalizamos el nombre actual seleccionado para cruzarlo
             nom_norm = unicodedata.normalize('NFKD', nombre_zona_as.lower().strip()).encode('ascii', 'ignore').decode('utf-8')
             huerfanos_locales = df_huerfanos[df_huerfanos['Municipio_Norm'].str.contains(nom_norm, na=False)]
             
@@ -778,11 +777,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         c_bal3.metric("⚖️ Índice de Presión (IPA)", f"{ipa_porcentaje:,.1f} %", f"{color_ipa} {estado_ipa}", delta_color="off")
         c_bal4.metric("🌊 Margen de Seguridad", f"{(caudal_oferta_lps - caudal_total_demandado_lps):,.1f} L/s", "Caudal ecológico")
         
-    else:
-        st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
-else:
-    st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
-
         # ==============================================================================
         # 💾 MÓDULO DE DESCARGA DE BASE DE DATOS ESTRUCTURADA
         # ==============================================================================
@@ -790,33 +784,33 @@ else:
         st.markdown("### 📥 Exportar Inventario Subterráneo")
         st.info("Descarga la base de datos depurada y georreferenciada de captaciones subterráneas para esta zona de análisis.")
         
-        # 1. Verificamos que haya datos para descargar
-        if 'gdf_concesiones' in locals() and not gdf_concesiones.empty:
+        # 1. Verificamos que haya datos LOCALES para descargar (ya no descarga la base global)
+        if 'concesiones_locales' in locals() and not concesiones_locales.empty:
             
-            # 2. Creamos una copia limpia sin la geometría compleja para que Excel la entienda
+            # 2. Creamos una copia limpia sin la geometría compleja
             import pandas as pd
-            df_descarga = pd.DataFrame(gdf_concesiones.drop(columns='geometry', errors='ignore'))
+            df_descarga = pd.DataFrame(concesiones_locales.drop(columns='geometry', errors='ignore'))
             
-            # 3. Nos aseguramos de extraer las coordenadas a columnas normales
-            centroides = gdf_concesiones.geometry.centroid
-            df_descarga['Longitud_X'] = centroides.x
-            df_descarga['Latitud_Y'] = centroides.y
+            # 3. Nos aseguramos de extraer las coordenadas de forma segura
+            centroides = concesiones_locales.geometry.centroid
+            df_descarga['Longitud_X'] = centroides.x.fillna(0)
+            df_descarga['Latitud_Y'] = centroides.y.fillna(0)
             
             # 4. Convertimos a CSV
             csv_data = df_descarga.to_csv(index=False).encode('utf-8')
             
-            # 5. El botón mágico de Streamlit
+            # 5. El botón de Streamlit
             st.download_button(
-                label="💾 Descargar Base de Datos (CSV)",
+                label=f"💾 Descargar Base de Datos de {nombre_zona_as.title()} (CSV)",
                 data=csv_data,
-                file_name=f"Inventario_Pozos_SIHCLI.csv",
+                file_name=f"Inventario_Pozos_{nombre_zona_as}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
         else:
             st.warning("No hay datos subterráneos disponibles para descargar en esta selección.")
 
-
-
-
-
+    else:
+        st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
+else:
+    st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
