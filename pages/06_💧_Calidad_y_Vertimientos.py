@@ -38,10 +38,22 @@ def cargar_maestros_nube(tipo="vertimientos"):
     import geopandas as gpd
     from supabase import create_client
     
-    # Búsqueda exhaustiva de credenciales
-    url_sb = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url") or st.secrets.get("iri", {}).get("SUPABASE_URL")
-    key_sb = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key") or st.secrets.get("iri", {}).get("SUPABASE_KEY")
-    
+    # Búsqueda exhaustiva de credenciales (La verdadera versión a prueba de balas)
+    url_sb = None
+    key_sb = None
+    if "SUPABASE_URL" in st.secrets:
+        url_sb = st.secrets["SUPABASE_URL"]
+        key_sb = st.secrets["SUPABASE_KEY"]
+    elif "supabase" in st.secrets:
+        url_sb = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+        key_sb = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
+    elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
+        url_sb = st.secrets["iri"]["SUPABASE_URL"]
+        key_sb = st.secrets["iri"]["SUPABASE_KEY"]
+    elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
+        url_sb = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+        key_sb = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+        
     if not url_sb or not key_sb:
         st.error("❌ Faltan credenciales de Supabase en secrets.")
         return gpd.GeoDataFrame()
@@ -73,7 +85,7 @@ def cargar_maestros_nube(tipo="vertimientos"):
     except Exception as e:
         st.error(f"❌ Error crítico procesando la base de {tipo}: {e}")
         return gpd.GeoDataFrame()
-
+        
 @st.cache_data
 def cargar_municipios():
     ruta = "data/Pob_mpios_colombia.csv"
