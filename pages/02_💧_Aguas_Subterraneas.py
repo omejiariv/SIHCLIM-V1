@@ -315,9 +315,7 @@ if gdf_zona is not None:
         with t1:
             st.markdown(r"""
             #### 1. Balance Hídrico de Largo Plazo
-            """) # (Aquí van tus otras líneas de la guía técnica)
             Se utiliza el método de **Turc Modificado** para estimar la oferta hídrica en cuencas tropicales.
-            
             **Ecuación Fundamental:**
             $$P = ETR + E_s + R + \Delta S$$
             
@@ -327,8 +325,8 @@ if gdf_zona is not None:
                 $$ETR = \frac{P}{\sqrt{0.9 + (\frac{P}{L})^2}} \quad \text{donde} \quad L = 300 + 25T + 0.05T^3$$
             * **$R$ (Recarga Potencial):** Fracción del agua que se infiltra profundamente y alimenta el acuífero.
             * **$E_s$ (Escorrentía):** Flujo superficial rápido hacia los cauces.
-            """)
-            
+            """)            
+                        
         with t2:
             st.markdown(r"""
             #### 2. Análisis de Extremos (Caudales)
@@ -901,3 +899,4 @@ if gdf_zona is not None:
             col1.download_button("⬇️ Descargar Serie Temporal (.csv)", df_res.to_csv(index=False).encode('utf-8'), "balance.csv", "text/csv")
         if not df_mapa_stats.empty:
             col2.download_button("⬇️ Descargar Datos Estaciones (.csv)", df_mapa_stats.to_csv(index=False).encode('utf-8'), "estaciones_recarga.csv", "text/csv")
+
