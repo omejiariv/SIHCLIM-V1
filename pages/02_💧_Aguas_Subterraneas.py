@@ -696,7 +696,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     # 2. CONECTOR: ADN DEL TERRITORIO (REGIONES Y CORPORACIONES)
     # ---------------------------------------------------------------------
     @st.cache_data(show_spinner=False, ttl=86400)
-    def cargar_territorio_maestro():
+    def cargar_territorio_maestro(_rev=3): # <--- ¡El rompe-cachés agregado aquí!
         import pandas as pd
         import streamlit as st
         from supabase import create_client
@@ -743,7 +743,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             
         except Exception as e:
             return pd.DataFrame()
-
+            
     # ---------------------------------------------------------------------
     # 3. DESCARGA Y CRUCE INTELIGENTE (LA MAGIA DE PANDAS)
     # ---------------------------------------------------------------------
@@ -787,31 +787,32 @@ if gdf_zona is not None and not gdf_zona.empty:
         import pandas as pd
         
         nombre_zona_as = st.session_state.get('nombre_seleccion', 'el Territorio')
+        nivel_sel = st.session_state.get('nivel_seleccion', 'Municipal')
         
         caudal_espacial = 0.0
         pozos_espaciales = 0
         concesiones_locales = gpd.GeoDataFrame()
         
-        # A. SUMATORIA ESPACIAL ROBUSTA (Previene fallos de topología en Regiones)
+        # A. SUMATORIA ESPACIAL ROBUSTA 
         if gdf_zona is not None and not gdf_zona.empty:
             gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
-            # 🛡️ Corrección mágica de geometría
-            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.make_valid()
-            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.buffer(0)
             
-            # Cruce espacial: Atrapa los pozos físicamente adentro de la zona
+            # 🛡️ Corrección mágica: Reparamos el polígono sin destruirlo (Quitamos buffer(0))
+            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.make_valid()
+            
+            # Cruce espacial a prueba de fallos
             try: concesiones_locales = gpd.sjoin(gdf_concesiones, gdf_zona_3116, how='inner', predicate='intersects')
             except: concesiones_locales = gpd.clip(gdf_concesiones, gdf_zona_3116)
             
             if not concesiones_locales.empty:
-                # B. AUTO-CORRECCIÓN DE MUNICIPIOS (La cura para el "No Registrado")
+                # B. AUTO-CORRECCIÓN DE MUNICIPIOS
                 col_mpio_mapa = next((c for c in concesiones_locales.columns if c.lower() in ['nombre_municipio', 'mpio_cnmbr', 'municipio_1', 'nom_mun']), None)
                 
                 if col_mpio_mapa:
                     mask_vacio = concesiones_locales['Municipio'].isin(['No Registrado', 'Sin Información']) | concesiones_locales['Municipio'].isna()
                     concesiones_locales.loc[mask_vacio, 'Municipio'] = concesiones_locales.loc[mask_vacio, col_mpio_mapa].astype(str).str.title()
                 
-                # C. INYECCIÓN DEL ADN DEL TERRITORIO (Con Mapeo Inteligente)
+                # C. INYECCIÓN DEL ADN DEL TERRITORIO
                 def normalizar(texto):
                     if pd.isna(texto): return ""
                     return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
@@ -820,15 +821,16 @@ if gdf_zona is not None and not gdf_zona.empty:
                 
                 if 'df_territorio' in locals() and not df_territorio.empty:
                     df_terr_limpio = df_territorio.drop_duplicates(subset=['municipio_norm'])
-                    
-                    # Creamos diccionarios de búsqueda rápida
                     mapa_region = dict(zip(df_terr_limpio['municipio_norm'], df_terr_limpio['region']))
                     mapa_car = dict(zip(df_terr_limpio['municipio_norm'], df_terr_limpio['car']))
                     
-                    # Actualizamos usando el mapa directo para evitar KeyErrors
                     concesiones_locales['Region'] = concesiones_locales['municipio_norm'].map(mapa_region).fillna(concesiones_locales.get('Region', 'Desconocida'))
                     concesiones_locales['Autoridad'] = concesiones_locales['municipio_norm'].map(mapa_car).fillna(concesiones_locales.get('Autoridad', 'Otra Corporacion'))
                 
+                # D. Estética para descargas regionales
+                if nivel_sel == "Regional":
+                    concesiones_locales['Region'] = nombre_zona_as.replace("Región ", "").replace("Region ", "").title()
+
                 caudal_espacial = concesiones_locales['Caudal_Lps'].sum()
                 pozos_espaciales = len(concesiones_locales)
         
@@ -901,4 +903,5 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
