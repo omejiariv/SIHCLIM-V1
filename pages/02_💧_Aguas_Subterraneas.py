@@ -637,9 +637,22 @@ if gdf_zona is not None and not gdf_zona.empty:
         from supabase import create_client
         import pandas as pd
         
-        url_sb = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url") or st.secrets.get("iri", {}).get("SUPABASE_URL")
-        key_sb = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key") or st.secrets.get("iri", {}).get("SUPABASE_KEY")
-        
+        # Búsqueda exhaustiva de credenciales (A prueba de balas)
+        url_sb = None
+        key_sb = None
+        if "SUPABASE_URL" in st.secrets:
+            url_sb = st.secrets["SUPABASE_URL"]
+            key_sb = st.secrets["SUPABASE_KEY"]
+        elif "supabase" in st.secrets:
+            url_sb = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+            key_sb = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
+        elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
+            url_sb = st.secrets["iri"]["SUPABASE_URL"]
+            key_sb = st.secrets["iri"]["SUPABASE_KEY"]
+        elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
+            url_sb = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+            key_sb = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+            
         if not url_sb or not key_sb:
             st.error("❌ Faltan credenciales de Supabase en secrets.")
             return gpd.GeoDataFrame()
@@ -691,7 +704,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.error("⚠️ La base maestra cargó vacía. Verifica que el archivo Metabolismo_Hidrico_Antioquia_Maestro.geojson esté en Supabase.")
         else:
             st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria, listos para cruzar espacialmente.")
-
+            
     # ---------------------------------------------------------------------
     # 2. EL BALANCE ESPACIAL Y DOCUMENTAL
     # ---------------------------------------------------------------------
@@ -769,5 +782,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("No se encontraron registros de extracción, ni espaciales ni documentales, para esta zona.")
 else:
     st.info("👈 Selecciona un municipio o cuenca en el panel lateral para calcular el balance hídrico subterráneo.")
+
 
 
