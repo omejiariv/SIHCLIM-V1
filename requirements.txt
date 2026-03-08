@@ -36,3 +36,4 @@ supabase
 scikit-learn
 pykrige
 pysheds
+pyarrow
