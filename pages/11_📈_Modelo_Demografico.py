@@ -18,22 +18,46 @@ RUTA_RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 def cargar_datos_limpios():
     try:
         # Capa 1: Nacional Histórico
-        df_nac = pd.read_csv(os.path.join(RUTA_RAIZ, "data", "PobCol1912_2100.csv"))
-        # Capa 2: Municipal (2005-2020)
-        df_mun = pd.read_csv(os.path.join(RUTA_RAIZ, "data", "Pob_mpios_Colombia.csv"))
-        # Homologamos el nombre de la columna poblacional para evitar errores
+        ruta_nac = os.path.join(RUTA_RAIZ, "data", "PobCol1912_2100.csv")
+        df_nac = pd.read_csv(ruta_nac)
+        
+        # 🧹 LIMPIEZA MÁGICA (Elimina el \ufeff y espacios invisibles de los títulos)
+        df_nac.columns = [str(c).replace('\ufeff', '').strip() for c in df_nac.columns]
+        
+        # Homologación a prueba de balas (por si viene en minúscula o en inglés)
+        df_nac = df_nac.rename(columns={
+            'año': 'Año', 
+            'Male': 'Hombres', 
+            'Female': 'Mujeres'
+        })
+        
+        # Capa 2: Municipal (Buscamos ambas variaciones de mayúsculas/minúsculas)
+        ruta_mun_1 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_Colombia.csv")
+        ruta_mun_2 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_colombia.csv") # c minúscula
+        
+        if os.path.exists(ruta_mun_1):
+            df_mun = pd.read_csv(ruta_mun_1)
+        elif os.path.exists(ruta_mun_2):
+            df_mun = pd.read_csv(ruta_mun_2)
+        else:
+            raise FileNotFoundError(f"No encontré el archivo municipal.")
+            
+        # 🧹 Limpieza también para el municipal
+        df_mun.columns = [str(c).replace('\ufeff', '').strip() for c in df_mun.columns]
         df_mun = df_mun.rename(columns={'Poblacion': 'Total'})
+        
         return df_nac, df_mun
+        
     except Exception as e:
         st.error(f"🚨 Error al leer los archivos: {e}")
-        st.info("Asegúrate de que 'PobCol1912_2100.csv' y 'Pob_mpios_Colombia.csv' estén en la carpeta 'data/'.")
+        st.info("Asegúrate de que 'PobCol1912_2100.csv' y 'Pob_mpios_colombia.csv' estén en la carpeta 'data/'.")
         return pd.DataFrame(), pd.DataFrame()
 
 df_nac, df_mun = cargar_datos_limpios()
 
 if df_nac.empty or df_mun.empty:
     st.stop()
-
+    
 # --- 2. MOTOR DE FILTROS EN CASCADA ---
 st.sidebar.header("⚙️ Configuración")
 
