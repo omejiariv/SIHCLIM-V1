@@ -81,16 +81,16 @@ else:
     depto_sel = st.sidebar.selectbox("Departamento", deptos)
     
     if escala_sel == "Departamental":
-        # Sumamos la población de todo el departamento
-        df_filtro_terr = df_mun[(df_mun['año'] == año_sel) & (df_mun['depto_nom'] == depto_sel) & (df_mun['area_geografica'] == 'total')]
+        # Sumamos la población de todo el departamento (urbano + rural)
+        df_filtro_terr = df_mun[(df_mun['año'] == año_sel) & (df_mun['depto_nom'] == depto_sel)]
         pob_total_territorio = df_filtro_terr['Total'].sum()
         titulo_grafico = f"Pirámide Sintética - {depto_sel} ({año_sel})"
     else:
         mpios = sorted(df_mun[df_mun['depto_nom'] == depto_sel]['municipio'].unique())
         mpio_sel = st.sidebar.selectbox("Municipio", mpios)
         
-        # Población exacta del municipio
-        df_filtro_terr = df_mun[(df_mun['año'] == año_sel) & (df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel) & (df_mun['area_geografica'] == 'total')]
+        # Población exacta del municipio (urbano + rural)
+        df_filtro_terr = df_mun[(df_mun['año'] == año_sel) & (df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)]
         pob_total_territorio = df_filtro_terr['Total'].sum()
         titulo_grafico = f"Pirámide Sintética - {mpio_sel}, {depto_sel} ({año_sel})"
 
