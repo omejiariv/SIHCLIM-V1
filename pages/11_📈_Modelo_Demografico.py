@@ -17,45 +17,53 @@ RUTA_RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 @st.cache_data
 def cargar_datos_limpios():
     try:
-        # Capa 1: Nacional Histórico
+        # --- Capa 1: Nacional Histórico ---
         ruta_nac = os.path.join(RUTA_RAIZ, "data", "PobCol1912_2100.csv")
-        df_nac = pd.read_csv(ruta_nac)
         
-        # 🧹 LIMPIEZA MÁGICA (Elimina el \ufeff y espacios invisibles de los títulos)
-        df_nac.columns = [str(c).replace('\ufeff', '').strip() for c in df_nac.columns]
+        # Lectura "Todo Terreno": Detecta si viene separado por comas o punto y coma
+        df_nac = pd.read_csv(ruta_nac, sep=',')
+        if len(df_nac.columns) < 2:
+            df_nac = pd.read_csv(ruta_nac, sep=';')
+            
+        # Limpiamos y forzamos a que la primera letra sea mayúscula (Ej: año -> Año)
+        df_nac.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().title() for c in df_nac.columns]
+        df_nac = df_nac.rename(columns={'Male': 'Hombres', 'Female': 'Mujeres', 'Ano': 'Año'})
         
-        # Homologación a prueba de balas (por si viene en minúscula o en inglés)
-        df_nac = df_nac.rename(columns={
-            'año': 'Año', 
-            'Male': 'Hombres', 
-            'Female': 'Mujeres'
-        })
-        
-        # Capa 2: Municipal (Buscamos ambas variaciones de mayúsculas/minúsculas)
+        # --- Capa 2: Municipal ---
         ruta_mun_1 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_Colombia.csv")
-        ruta_mun_2 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_colombia.csv") # c minúscula
+        ruta_mun_2 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_colombia.csv")
         
         if os.path.exists(ruta_mun_1):
-            df_mun = pd.read_csv(ruta_mun_1)
+            df_mun = pd.read_csv(ruta_mun_1, sep=',')
+            if len(df_mun.columns) < 2: df_mun = pd.read_csv(ruta_mun_1, sep=';')
         elif os.path.exists(ruta_mun_2):
-            df_mun = pd.read_csv(ruta_mun_2)
+            df_mun = pd.read_csv(ruta_mun_2, sep=',')
+            if len(df_mun.columns) < 2: df_mun = pd.read_csv(ruta_mun_2, sep=';')
         else:
-            raise FileNotFoundError(f"No encontré el archivo municipal.")
+            raise FileNotFoundError("No encontré el archivo municipal.")
             
-        # 🧹 Limpieza también para el municipal
-        df_mun.columns = [str(c).replace('\ufeff', '').strip() for c in df_mun.columns]
-        df_mun = df_mun.rename(columns={'Poblacion': 'Total'})
+        # Limpiamos y forzamos a minúsculas para homologar con el motor
+        df_mun.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().lower() for c in df_mun.columns]
+        df_mun = df_mun.rename(columns={'poblacion': 'Total'})
         
         return df_nac, df_mun
         
     except Exception as e:
-        st.error(f"🚨 Error al leer los archivos: {e}")
-        st.info("Asegúrate de que 'PobCol1912_2100.csv' y 'Pob_mpios_colombia.csv' estén en la carpeta 'data/'.")
+        st.error(f"🚨 Error interno de lectura: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 df_nac, df_mun = cargar_datos_limpios()
 
 if df_nac.empty or df_mun.empty:
+    st.stop()
+
+# 🛑 ALARMA ANTI-ERRORES: Si la columna no existe, nos muestra qué está leyendo la máquina
+if 'Año' not in df_nac.columns:
+    st.error(f"❌ Archivo Nacional: No encontré la columna 'Año'. Esto es lo que Python está leyendo realmente: {list(df_nac.columns)}")
+    st.stop()
+    
+if 'año' not in df_mun.columns:
+    st.error(f"❌ Archivo Municipal: No encontré la columna 'año'. Esto es lo que Python está leyendo realmente: {list(df_mun.columns)}")
     st.stop()
     
 # --- 2. MOTOR DE FILTROS EN CASCADA ---
