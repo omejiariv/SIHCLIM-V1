@@ -12,26 +12,36 @@ st.title("📈 Modelo Demográfico y Dasimétrico")
 st.markdown("Motor avanzado de simulación demográfica, calibración top-down y modelamiento de la estructura poblacional.")
 st.divider()
 
-# --- 1. LECTURA DE DATOS OPTIMIZADOS ---
+# Creamos un "GPS" para encontrar la carpeta raíz del proyecto automáticamente
+RUTA_RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
 @st.cache_data
 def cargar_datos_piramides():
-    ruta = "data/demografia_piramides_maestra.parquet"
+    ruta = os.path.join(RUTA_RAIZ, "data", "demografia_piramides_maestra.parquet")
     if os.path.exists(ruta):
-        return pd.read_parquet(ruta)
-    return pd.DataFrame()
+        try:
+            return pd.read_parquet(ruta)
+        except Exception as e:
+            st.error(f"🚨 El archivo existe, pero hubo un error al leerlo: {e}")
+            st.info("💡 Asegúrate de tener 'pyarrow' o 'fastparquet' en tu archivo requirements.txt")
+            return pd.DataFrame()
+    else:
+        # Modo depuración: Te muestra en pantalla dónde está buscando exactamente
+        st.error(f"🔍 Busqué el archivo exactamente en: {ruta} y no está.")
+        return pd.DataFrame()
 
 @st.cache_data
 def cargar_territorio():
-    ruta = "data/territorio_maestro.csv"
+    ruta = os.path.join(RUTA_RAIZ, "data", "territorio_maestro.xlsx")
     if os.path.exists(ruta):
-        return pd.read_csv(ruta)
+        return pd.read_excel(ruta)
     return pd.DataFrame()
 
 df_pir = cargar_datos_piramides()
 df_terr = cargar_territorio()
 
 if df_pir.empty:
-    st.warning("⚠️ No se encontró la base de datos maestra de pirámides. Por favor ejecuta el script ETL local.")
+    st.warning("⚠️ No se encontró la base de datos maestra de pirámides. Por favor ejecuta el script ETL local o verifica GitHub.")
     st.stop()
 
 # --- 2. MOTOR DE FILTROS EN CASCADA ---
