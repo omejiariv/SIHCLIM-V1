@@ -54,13 +54,18 @@ año_sel = st.sidebar.slider("Seleccione el Año", min_value=int(df_pir['año'].
 area_sel = st.sidebar.radio("Zona", ["Total", "Urbano", "Rural"], horizontal=True)
 area_filtro = area_sel.lower() if area_sel != "Total" else ["urbano", "rural", "total"]
 
-# Filtro 3: Escala (Por ahora Nacional y Departamental, luego inyectaremos Municipal/Veredal)
+# Filtro 3: Escala
 escala_sel = st.sidebar.selectbox("Escala Territorial", ["Nacional", "Departamental"])
 
 departamento_sel = "Nacional"
 if escala_sel == "Departamental":
-    deptos_disponibles = sorted([d.title() for d in df_pir['dpnom'].unique() if d != "NACIONAL"])
+    # Extraemos departamentos asegurando que sean textos válidos y no nulos
+    deptos_disponibles = sorted([str(d).title() for d in df_pir['dpnom'].unique() if pd.notna(d) and str(d).upper() != "NACIONAL"])
     departamento_sel = st.sidebar.selectbox("Seleccione el Departamento", deptos_disponibles)
+    
+    # 🛡️ Salvavidas anti-NoneType (Si está vacío, elige el primero por defecto)
+    if departamento_sel is None:
+        departamento_sel = deptos_disponibles[0] if deptos_disponibles else "Nacional"
 
 # --- 3. PROCESAMIENTO DINÁMICO ---
 # Filtrar por Año y Área
@@ -69,9 +74,9 @@ if isinstance(area_filtro, list):
 else:
     df_filtrado = df_pir[(df_pir['año'] == año_sel) & (df_pir['area_geografica'] == area_filtro)]
 
-# Filtrar por Escala
+# 🛡️ Filtrar por Escala (Aplicamos str() antes de .upper() para blindarlo)
 if escala_sel == "Departamental":
-    df_filtrado = df_filtrado[df_filtrado['dpnom'] == departamento_sel.upper()]
+    df_filtrado = df_filtrado[df_filtrado['dpnom'] == str(departamento_sel).upper()]
 else:
     df_filtrado = df_filtrado[df_filtrado['dpnom'] == "NACIONAL"]
 
