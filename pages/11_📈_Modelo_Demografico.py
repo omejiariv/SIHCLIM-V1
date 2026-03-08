@@ -67,24 +67,42 @@ if escala_sel == "Departamental":
     if departamento_sel is None:
         departamento_sel = deptos_disponibles[0] if deptos_disponibles else "Nacional"
 
-# --- 3. PROCESAMIENTO DINÁMICO ---
-# Filtrar por Año y Área
-if isinstance(area_filtro, list):
-    df_filtrado = df_pir[(df_pir['año'] == año_sel)]
-else:
-    df_filtrado = df_pir[(df_pir['año'] == año_sel) & (df_pir['area_geografica'] == area_filtro)]
-
-# 🛡️ Filtrar por Escala (Aplicamos str() antes de .upper() para blindarlo)
+# --- 3. PROCESAMIENTO DINÁMICO (FILTRO BLINDADO) ---
+# 1. Escala
 if escala_sel == "Departamental":
-    df_filtrado = df_filtrado[df_filtrado['dpnom'] == str(departamento_sel).upper()]
+    df_filtrado = df_pir[df_pir['dpnom'] == str(departamento_sel).upper()]
 else:
-    df_filtrado = df_filtrado[df_filtrado['dpnom'] == "NACIONAL"]
+    df_filtrado = df_pir[df_pir['dpnom'] == "NACIONAL"]
 
-# Agrupar datos para la pirámide
-df_agrupado = df_filtrado.groupby(['Rango_Edad', 'sexo'])['Poblacion'].sum().reset_index()
+# 2. Año
+df_filtrado = df_filtrado[df_filtrado['año'] == año_sel]
 
-# Multiplicamos hombres por -1 para que la pirámide se dibuje hacia la izquierda
-df_agrupado.loc[df_agrupado['sexo'].str.lower().str.startswith('h'), 'Poblacion'] *= -1
+# 3. Limpieza Estricta de SEXO (Evitar dobles conteos)
+# Atrapamos solo hombres y mujeres reales, ignorando filas que digan "Total" o "Ambos"
+mask_hombres = df_filtrado['sexo'].str.contains('hombre', case=False, na=False)
+mask_mujeres = df_filtrado['sexo'].str.contains('mujer', case=False, na=False)
+
+df_filtrado.loc[mask_hombres, 'sexo_limpio'] = 'Hombres'
+df_filtrado.loc[mask_mujeres, 'sexo_limpio'] = 'Mujeres'
+df_filtrado = df_filtrado.dropna(subset=['sexo_limpio']) # Destruimos la basura
+
+# 4. Homologación Estricta de ÁREA GEOGRÁFICA
+# El DANE cambia los nombres con los años. Esto atrapa todas las variaciones.
+mask_urbano = df_filtrado['area_geografica'].str.contains('urbano|cabecera', case=False, na=False)
+mask_rural = df_filtrado['area_geografica'].str.contains('rural|resto|centro poblado', case=False, na=False)
+
+if area_sel == "Urbano":
+    df_filtrado = df_filtrado[mask_urbano]
+elif area_sel == "Rural":
+    df_filtrado = df_filtrado[mask_rural]
+else: # Para "Total", sumamos Urbano + Rural, pero sin usar la fila "Total" del DANE
+    df_filtrado = df_filtrado[mask_urbano | mask_rural]
+
+# Agrupar datos ya purificados
+df_agrupado = df_filtrado.groupby(['Rango_Edad', 'sexo_limpio'])['Poblacion'].sum().reset_index()
+
+# Hombres en negativo para dibujar la pirámide hacia la izquierda
+df_agrupado.loc[df_agrupado['sexo_limpio'] == 'Hombres', 'Poblacion'] *= -1
 
 # --- 4. RENDERIZADO VISUAL ---
 col1, col2 = st.columns([2, 1])
@@ -92,19 +110,17 @@ col1, col2 = st.columns([2, 1])
 with col1:
     st.subheader(f"Estructura Poblacional - {departamento_sel} ({año_sel})")
     
-    # Crear el gráfico tipo Pirámide con Plotly
     fig = px.bar(
         df_agrupado, 
         y='Rango_Edad', 
         x='Poblacion', 
-        color='sexo', 
+        color='sexo_limpio', 
         orientation='h',
         color_discrete_map={'Hombres': '#2563eb', 'Mujeres': '#db2777'},
-        labels={'Poblacion': 'Habitantes', 'Rango_Edad': 'Rango de Edad'},
+        labels={'Poblacion': 'Habitantes', 'Rango_Edad': 'Rango de Edad', 'sexo_limpio': 'Sexo'},
         title=f"Pirámide Poblacional: {area_sel}"
     )
     
-    # Ajustes estéticos para que parezca una pirámide real
     fig.update_layout(
         barmode='relative',
         yaxis_title="Grupos de Edad",
@@ -113,26 +129,20 @@ with col1:
         template="plotly_white",
         hovermode="y unified"
     )
-    # Hacemos que los valores del eje X siempre se muestren en positivo
     fig.update_traces(hovertemplate="%{y}: %{x}")
-    
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    # Tarjetas de resumen matemático
     st.subheader("Resumen Demográfico")
     
     df_absoluto = df_agrupado.copy()
     df_absoluto['Poblacion'] = df_absoluto['Poblacion'].abs()
     
     pob_total = df_absoluto['Poblacion'].sum()
-    pob_hombres = df_absoluto[df_absoluto['sexo'].str.lower().str.startswith('h')]['Poblacion'].sum()
-    pob_mujeres = df_absoluto[df_absoluto['sexo'].str.lower().str.startswith('m')]['Poblacion'].sum()
+    pob_hombres = df_absoluto[df_absoluto['sexo_limpio'] == 'Hombres']['Poblacion'].sum()
+    pob_mujeres = df_absoluto[df_absoluto['sexo_limpio'] == 'Mujeres']['Poblacion'].sum()
     
-    if pob_total > 0:
-        indice_masculinidad = (pob_hombres / pob_mujeres) * 100
-    else:
-        indice_masculinidad = 0
+    indice_masculinidad = (pob_hombres / pob_mujeres) * 100 if pob_mujeres > 0 else 0
 
     st.metric("Población Total", f"{pob_total:,.0f}")
     st.metric("Total Hombres", f"{pob_hombres:,.0f}")
