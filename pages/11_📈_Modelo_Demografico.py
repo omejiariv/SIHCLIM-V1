@@ -67,7 +67,7 @@ if escala_sel == "Departamental":
     if departamento_sel is None:
         departamento_sel = deptos_disponibles[0] if deptos_disponibles else "Nacional"
 
-# --- 3. PROCESAMIENTO DINÁMICO (FILTRO BLINDADO) ---
+# --- 3. PROCESAMIENTO DINÁMICO (FILTRO ULTRA ESTRICTO) ---
 # 1. Escala
 if escala_sel == "Departamental":
     df_filtrado = df_pir[df_pir['dpnom'] == str(departamento_sel).upper()]
@@ -77,28 +77,43 @@ else:
 # 2. Año
 df_filtrado = df_filtrado[df_filtrado['año'] == año_sel]
 
-# 3. Limpieza Estricta de SEXO (Evitar dobles conteos)
-# Atrapamos solo hombres y mujeres reales, ignorando filas que digan "Total" o "Ambos"
-mask_hombres = df_filtrado['sexo'].str.contains('hombre', case=False, na=False)
-mask_mujeres = df_filtrado['sexo'].str.contains('mujer', case=False, na=False)
+# --- 🔍 MODO RAYOS X (Solo para depurar) ---
+with st.expander("🕵️‍♂️ Rayos X: Ver qué categorías reales trae el DANE en este año"):
+    col_db1, col_db2 = st.columns(2)
+    with col_db1:
+        st.markdown("**Categorías de Sexo encontradas:**")
+        st.dataframe(df_filtrado['sexo'].value_counts(), use_container_width=True)
+    with col_db2:
+        st.markdown("**Categorías de Área encontradas:**")
+        st.dataframe(df_filtrado['area_geografica'].value_counts(), use_container_width=True)
 
-df_filtrado.loc[mask_hombres, 'sexo_limpio'] = 'Hombres'
-df_filtrado.loc[mask_mujeres, 'sexo_limpio'] = 'Mujeres'
-df_filtrado = df_filtrado.dropna(subset=['sexo_limpio']) # Destruimos la basura
+# 3. Limpieza EXACTA de SEXO (Matamos el multiplicador x5)
+# Solo aceptamos textos exactos, ignorando las subcategorías étnicas o totales
+df_filtrado = df_filtrado[df_filtrado['sexo'].str.strip().str.title().isin(['Hombres', 'Hombre', 'Mujeres', 'Mujer'])]
+df_filtrado['sexo_limpio'] = df_filtrado['sexo'].str.strip().str.title().replace({'Hombre': 'Hombres', 'Mujer': 'Mujeres'})
 
-# 4. Homologación Estricta de ÁREA GEOGRÁFICA
-# El DANE cambia los nombres con los años. Esto atrapa todas las variaciones.
-mask_urbano = df_filtrado['area_geografica'].str.contains('urbano|cabecera', case=False, na=False)
-mask_rural = df_filtrado['area_geografica'].str.contains('rural|resto|centro poblado', case=False, na=False)
+# 4. Homologación EXACTA de ÁREA GEOGRÁFICA
+def clasificar_area(texto):
+    t = str(texto).strip().lower()
+    if t in ['urbano', 'cabecera', 'cabecera municipal']: return 'Urbano'
+    if t in ['rural', 'resto', 'centros poblados y rural disperso', 'centro poblado']: return 'Rural'
+    return 'Ignorar'
+
+df_filtrado['area_limpia'] = df_filtrado['area_geografica'].apply(clasificar_area)
 
 if area_sel == "Urbano":
-    df_filtrado = df_filtrado[mask_urbano]
+    df_filtrado = df_filtrado[df_filtrado['area_limpia'] == 'Urbano']
 elif area_sel == "Rural":
-    df_filtrado = df_filtrado[mask_rural]
-else: # Para "Total", sumamos Urbano + Rural, pero sin usar la fila "Total" del DANE
-    df_filtrado = df_filtrado[mask_urbano | mask_rural]
+    df_filtrado = df_filtrado[df_filtrado['area_limpia'] == 'Rural']
+else:
+    # Si es Total, sumamos Urbano + Rural pero EXCLUYENDO explícitamente las filas que el DANE ya llama "Total"
+    df_filtrado = df_filtrado[df_filtrado['area_limpia'].isin(['Urbano', 'Rural'])]
 
-# Agrupar datos ya purificados
+# 5. BLINDAJE FINAL: ELIMINADOR DE DUPLICADOS DANE
+# Si el DANE metió múltiples proyecciones para un mismo año (ej. Proyección A y Proyección B), esto deja solo una.
+df_filtrado = df_filtrado.drop_duplicates(subset=['año', 'sexo_limpio', 'area_limpia', 'Edad'])
+
+# 6. Agrupar datos ya purificados
 df_agrupado = df_filtrado.groupby(['Rango_Edad', 'sexo_limpio'])['Poblacion'].sum().reset_index()
 
 # Hombres en negativo para dibujar la pirámide hacia la izquierda
