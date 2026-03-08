@@ -788,8 +788,10 @@ if gdf_zona is not None:
                 # =================================================================
                 if nivel_sel in ["Regional", "Jurisdicción Ambiental (CAR)", "Departamental", "Nacional (Colombia)"]:
                     
-                    zona_limpia = nombre_zona_as.replace("Región ", "").replace("CAR: ", "").strip()
-                    termino_busqueda = normalizar(zona_limpia)
+                    # 🔥 LA CORRECCIÓN: Normalizamos TODO primero para matar tildes y mayúsculas
+                    zona_normalizada = normalizar(nombre_zona_as)
+                    # Luego borramos las palabras estorbo sin importar cómo vengan escritas
+                    termino_busqueda = zona_normalizada.replace("region", "").replace("car", "").replace(":", "").strip()
                     
                     if nivel_sel == "Regional":
                         # Filtro de texto infalible (atrapará a Zaragoza aunque esté en el océano)
@@ -951,6 +953,7 @@ if gdf_zona is not None:
             col1.download_button("⬇️ Descargar Serie Temporal (.csv)", df_res.to_csv(index=False).encode('utf-8'), "balance.csv", "text/csv")
         if not df_mapa_stats.empty:
             col2.download_button("⬇️ Descargar Datos Estaciones (.csv)", df_mapa_stats.to_csv(index=False).encode('utf-8'), "estaciones_recarga.csv", "text/csv")
+
 
 
 
