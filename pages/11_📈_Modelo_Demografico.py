@@ -75,7 +75,8 @@ with col1:
         cortes = list(range(0, 105, 5))
         etiquetas = [f"{i}-{i+4}" for i in range(0, 100, 5)]
         df_pir['Rango'] = pd.cut(df_pir['Edad'], bins=cortes, labels=etiquetas, right=False)
-        df_agrupado = df_pir.groupby('Rango')[['Hombres', 'Mujeres']].sum().reset_index()
+        # observed=True evita otra pequeña advertencia futura de Pandas
+        df_agrupado = df_pir.groupby('Rango', observed=True)[['Hombres', 'Mujeres']].sum().reset_index()
         
         df_melt = pd.melt(df_agrupado, id_vars=['Rango'], value_vars=['Hombres', 'Mujeres'], var_name='Sexo', value_name='Poblacion')
         
@@ -83,15 +84,16 @@ with col1:
                      color_discrete_map={'Hombres': '#2563eb', 'Mujeres': '#db2777'})
         fig.update_layout(barmode='relative', xaxis_title="Población", yaxis_title="Edad")
         fig.update_traces(hovertemplate="%{y}: %{x}")
-        st.plotly_chart(fig, use_container_width=True)
+        # Corrección de la advertencia de Streamlit
+        st.plotly_chart(fig, width='stretch')
         
     else:
         # Gráfica de Urbano vs Rural para Deptos y Municipios
         df_area = df_filtrado.groupby('area_geografica')['Total'].sum().reset_index()
         fig = px.pie(df_area, values='Total', names='area_geografica', hole=0.4, 
-                     color='area_geografica', color_discrete_map={'urbano': '#3b82f6', 'rural': '#22c55e'},
-                     title="Proporción Urbano vs Rural")
-        st.plotly_chart(fig, use_container_width=True)
+                     color='area_geografica', color_discrete_map={'urbano': '#3b82f6', 'rural': '#22c55e'})
+        # Corrección de la advertencia de Streamlit
+        st.plotly_chart(fig, width='stretch')
 
 with col2:
     st.subheader("Resumen Demográfico")
@@ -116,4 +118,4 @@ with col2:
         st.metric("Población Urbana", f"{pob_urbana:,.0f}")
         st.metric("Población Rural", f"{pob_rural:,.0f}")
 
-st.success("✅ Base de datos 100% depurada conectada. Listos para inyectar Capa Veredal y Crecimiento Logístico.")info("💡 Siguiente fase: Integración del modelo de crecimiento logístico ($K$, $r$) y filtros hasta escala veredal.")
+st.success("✅ Base de datos 100% depurada conectada. Listos para inyectar Capa Veredal y Crecimiento Logístico.")
