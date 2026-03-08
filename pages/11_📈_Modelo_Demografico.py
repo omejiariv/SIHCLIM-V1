@@ -72,7 +72,10 @@ st.sidebar.header("⚙️ Configuración")
 escala_sel = st.sidebar.selectbox("Escala Territorial", ["Nacional (1952-2100)", "Departamental (2005-2020)", "Municipal (2005-2020)"])
 
 if escala_sel == "Nacional (1952-2100)":
-    año_sel = st.sidebar.slider("Año", int(df_nac['Año'].min()), int(df_nac['Año'].max()), 2024)
+    años_disponibles = sorted(df_nac['Año'].unique())
+    # Selecciona 2024 por defecto, o el último año disponible si 2024 no está
+    año_defecto = 2024 if 2024 in años_disponibles else años_disponibles[-1]
+    año_sel = st.sidebar.select_slider("Año", options=años_disponibles, value=año_defecto)
     df_filtrado = df_nac[df_nac['Año'] == año_sel].copy()
     titulo_grafico = f"Pirámide Poblacional Colombia ({año_sel})"
     
