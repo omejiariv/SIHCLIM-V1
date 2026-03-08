@@ -756,7 +756,7 @@ if gdf_zona is not None:
                     st.success(f"✅ Enlace establecido: {len(gdf_concesiones):,.0f} pozos globales en memoria y enriquecidos con su Región.")
 
             # ---------------------------------------------------------------------
-            # 4. BALANCE HÍDRICO (MOTOR HÍBRIDO DEFINITIVO Y A PRUEBA DE BALAS)
+            # 4. BALANCE HÍDRICO (TABULAR PARA REGIONES, ESPACIAL PARA MUNICIPIOS)
             # ---------------------------------------------------------------------
             if not gdf_concesiones.empty:
                 import unicodedata
@@ -784,43 +784,24 @@ if gdf_zona is not None:
                     gdf_concesiones['Autoridad'] = gdf_concesiones['municipio_norm'].map(mapa_car).fillna(gdf_concesiones['Autoridad'])
 
                 # =================================================================
-                # ESTRATEGIA A: TABULAR (Regiones y CARs - Atrapa coordenadas malas)
+                # ESTRATEGIA A: 100% TABULAR (Cero Geometría, Cero Congelamiento)
                 # =================================================================
                 if nivel_sel in ["Regional", "Jurisdicción Ambiental (CAR)", "Departamental", "Nacional (Colombia)"]:
                     
-                    # 🔥 LA CORRECCIÓN: Normalizamos TODO primero para matar tildes y mayúsculas
                     zona_normalizada = normalizar(nombre_zona_as)
-                    # Luego borramos las palabras estorbo sin importar cómo vengan escritas
                     termino_busqueda = zona_normalizada.replace("region", "").replace("car", "").replace(":", "").strip()
                     
                     if nivel_sel == "Regional":
-                        # Filtro de texto infalible (atrapará a Zaragoza aunque esté en el océano)
                         concesiones_locales = gdf_concesiones[gdf_concesiones['Region'].apply(normalizar).str.contains(termino_busqueda, na=False)].copy()
                     elif nivel_sel == "Jurisdicción Ambiental (CAR)":
                         concesiones_locales = gdf_concesiones[gdf_concesiones['Autoridad'].apply(normalizar).str.contains(termino_busqueda, na=False)].copy()
                     else:
                         concesiones_locales = gdf_concesiones.copy()
                         
-                    # 🛡️ RESCATE ESPACIAL LIGERO (Solo para los "No Registrado" que sí tienen buenas coordenadas)
-                    if gdf_zona is not None and not gdf_zona.empty:
-                        pozos_huerfanos = gdf_concesiones[gdf_concesiones['Municipio'].isin(['No Registrado', 'Sin Información']) | gdf_concesiones['Municipio'].isna()]
-                        
-                        if not pozos_huerfanos.empty:
-                            # Usamos el mapa tal cual, sin "derretirlo", para mantener la velocidad extrema
-                            gdf_zona_3116 = gdf_zona.to_crs(epsg=3116).copy()
-                            gdf_zona_3116['geometry'] = gdf_zona_3116.geometry.make_valid()
-                            
-                            try:
-                                rescatados = gpd.sjoin(pozos_huerfanos, gdf_zona_3116, how='inner', predicate='intersects')
-                                rescatados = rescatados[~rescatados.index.duplicated(keep='first')]
-                                if not rescatados.empty:
-                                    if nivel_sel == "Regional": rescatados['Region'] = zona_limpia.title()
-                                    concesiones_locales = pd.concat([concesiones_locales, rescatados]).drop_duplicates(subset=['ID_Expediente'])
-                            except:
-                                pass # Ignoramos errores de topología en los huérfanos
+                    # ELIMINAMOS EL RESCATE ESPACIAL AQUÍ PARA SALVAR LA MEMORIA.
 
                 # =================================================================
-                # ESTRATEGIA B: ESPACIAL PURA (Municipios - Toleran el cruce espacial)
+                # ESTRATEGIA B: ESPACIAL PURA (Solo para Municipios)
                 # =================================================================
                 else:
                     if gdf_zona is not None and not gdf_zona.empty:
@@ -847,7 +828,7 @@ if gdf_zona is not None:
                     
                 caudal_oferta_lps = (volumen_recarga_m3_ano * 1000) / 31536000
                 ipa_porcentaje = (caudal_total_demandado_lps / caudal_oferta_lps) * 100 if caudal_oferta_lps > 0 else 0
-
+                
                 # ---------------------------------------------------------------------
                 # 5. EL DASHBOARD DE GOBERNANZA
                 # ---------------------------------------------------------------------
@@ -953,6 +934,7 @@ if gdf_zona is not None:
             col1.download_button("⬇️ Descargar Serie Temporal (.csv)", df_res.to_csv(index=False).encode('utf-8'), "balance.csv", "text/csv")
         if not df_mapa_stats.empty:
             col2.download_button("⬇️ Descargar Datos Estaciones (.csv)", df_mapa_stats.to_csv(index=False).encode('utf-8'), "estaciones_recarga.csv", "text/csv")
+
 
 
 
