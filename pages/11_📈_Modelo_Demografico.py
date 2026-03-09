@@ -7,13 +7,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 from scipy.optimize import curve_fit
 import os
+import time
 import warnings
 
 warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Modelo Demográfico Integral", page_icon="📈", layout="wide")
 
 st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
-st.markdown("Ajuste de modelos matemáticos y proyección top-down de estructuras poblacionales (1952-2070). Escala: Nacional a Veredal.")
+st.markdown("Ajuste matemático, simulación animada y proyección top-down de estructuras poblacionales (1952-2100).")
 st.divider()
 
 # --- 1. LECTURA DE DATOS LIMPIOS Y VEREDALES ---
@@ -39,7 +40,6 @@ def cargar_datos_limpios():
             
         df_mun.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().lower() for c in df_mun.columns]
         df_mun = df_mun.rename(columns={'poblacion': 'Total'})
-        # Homologar textos (Primera letra mayúscula) para que crucen perfecto con veredas
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
         
@@ -102,17 +102,12 @@ elif escala_sel in ["Departamental", "Municipal"]:
     pob_hist = df_terr['Total'].values
 
 elif escala_sel == "Veredal (Antioquia)":
-    if df_ver.empty:
-        st.error("❌ No se encontró la base de datos de veredas de Antioquia.")
-        st.stop()
-        
     mpios_veredas = sorted(df_ver['Municipio'].dropna().unique())
     mpio_sel = st.sidebar.selectbox("Municipio (Antioquia)", mpios_veredas)
     
     veredas_lista = sorted(df_ver[df_ver['Municipio'] == mpio_sel]['Vereda'].dropna().unique())
     vereda_sel = st.sidebar.selectbox("Vereda", veredas_lista)
     
-    # 🧠 Magia Dasimétrica: Extraer historial Rural del Municipio y aplicar proporción de la Vereda
     df_rural_mpio = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['municipio'] == mpio_sel) & (df_mun['area_geografica'] == 'rural')]
     df_hist_rural = df_rural_mpio.groupby('año')['Total'].sum().reset_index()
     
@@ -129,13 +124,15 @@ elif escala_sel == "Veredal (Antioquia)":
 # --- 4. AJUSTE DE CURVAS (REGRESIÓN) ---
 x_hist = np.array(años_hist, dtype=float)
 y_hist = np.array(pob_hist, dtype=float)
-x_proj = np.arange(1950, 2071, 1)
+
+# 🛠️ SOLUCIÓN AL INDEX ERROR: Proyectamos hasta el máximo año disponible en la base Nacional (ej. 2100)
+año_maximo = int(max(df_nac['Año'].max(), 2100))
+x_proj = np.arange(1950, año_maximo + 1, 1) 
 
 proyecciones = {'Año': x_proj, 'Real': [np.nan]*len(x_proj)}
 for i, año in enumerate(x_proj):
     if año in x_hist: proyecciones['Real'][i] = y_hist[np.where(x_hist == año)[0][0]]
 
-# Manejo de errores matemáticos si la población es muy pequeña o cero
 try:
     popt_lin, _ = curve_fit(modelo_lineal, x_hist, y_hist)
     proyecciones['Lineal'] = np.maximum(0, modelo_lineal(x_proj, *popt_lin))
@@ -160,75 +157,140 @@ df_proj = pd.DataFrame(proyecciones)
 # --- 5. INTERFAZ GRÁFICA (CURVAS) ---
 col_graf, col_param = st.columns([3, 1])
 with col_graf:
-    st.subheader(f"📈 Modelos de Crecimiento Poblacional - {titulo_terr}")
+    st.subheader(f"📈 Curvas de Crecimiento Poblacional - {titulo_terr}")
     fig_curvas = go.Figure()
     fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Logístico'], mode='lines', name='Mod. Logístico', line=dict(color='#10b981', dash='dash')))
     fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Exponencial'], mode='lines', name='Mod. Exponencial', line=dict(color='#f59e0b', dash='dot')))
     fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Lineal'], mode='lines', name='Mod. Lineal', line=dict(color='#6366f1', dash='dot')))
-    fig_curvas.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Reales (Base)', marker=dict(color='#ef4444', size=8, symbol='diamond')))
-    fig_curvas.update_layout(hovermode="x unified", xaxis_title="Año", yaxis_title="Población", template="plotly_white")
+    fig_curvas.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Reales (Censo)', marker=dict(color='#ef4444', size=8, symbol='diamond')))
+    fig_curvas.update_layout(hovermode="x unified", xaxis_title="Año", yaxis_title="Habitantes", template="plotly_white")
     st.plotly_chart(fig_curvas, width='stretch')
 
 with col_param:
-    st.subheader("🧮 Ecuaciones")
-    st.info("**Logístico:** \nIdeal a largo plazo. Modela el agotamiento de recursos.")
-    if param_K != "N/A": st.metric("Capacidad de Carga (K)", f"{param_K:,.0f} hab")
-    st.warning("**Exponencial:** \nCrecimiento sin restricciones (Corto plazo).")
-    st.success("**Lineal:** \nTendencia promedio constante.")
+    st.subheader("🧮 Modelos Matemáticos")
+    st.markdown("**1. Logístico (Sigmoide):**")
+    st.latex(r"P(t) = \frac{K}{1 + e^{-r(t - t_0)}}")
+    if param_K != "N/A": st.success(f"**K (Cap. de Carga):** {param_K:,.0f} hab.")
+    
+    st.markdown("**2. Exponencial:**")
+    st.latex(r"P(t) = P_0 \cdot e^{r(t - t_0)}")
+    
+    st.markdown("**3. Lineal:**")
+    st.latex(r"P(t) = m \cdot t + b")
 
 st.divider()
 
-# --- 6. ESTIMACIÓN SINTÉTICA Y PIRÁMIDES ---
-st.sidebar.header("🎯 2. Viaje en el Tiempo")
-modelo_sel = st.sidebar.radio("Elegir modelo para proyectar pirámide:", ["Logístico", "Exponencial", "Lineal", "Dato Real (Si existe)"])
+# --- 6. ESTIMACIÓN SINTÉTICA Y ANIMACIÓN DE PIRÁMIDES ---
+st.sidebar.header("🎯 2. Viaje en el Tiempo (Dasimetría)")
+modelo_sel = st.sidebar.radio("Base de cálculo para la pirámide:", ["Logístico", "Exponencial", "Lineal", "Dato Real (Si existe)"])
+
+# 🛠️ TRADUCTOR ANTI-KEYERROR
+mapa_mod = {"Logístico": "Logístico", "Exponencial": "Exponencial", "Lineal": "Lineal", "Dato Real (Si existe)": "Real"}
+columna_modelo = mapa_mod[modelo_sel]
 
 años_disp = sorted(df_nac['Año'].unique())
-año_sel = st.sidebar.select_slider("Selecciona el Año (1952-2070)", options=años_disp, value=2024)
+año_sel = st.sidebar.select_slider("Selecciona un Año Estático:", options=años_disp, value=2024)
 
-# 🛠️ SOLUCIÓN AL ERROR: Homologamos el nombre del Radio Button con la columna de Pandas
-columna_modelo = "Real" if modelo_sel == "Dato Real (Si existe)" else modelo_sel
-pob_modelo_total = df_proj[df_proj['Año'] == año_sel][columna_modelo].values[0]
+st.sidebar.markdown("---")
+st.sidebar.subheader("▶️ Animación Temporal")
+velocidad_animacion = st.sidebar.slider("Velocidad (Segundos por año)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
+iniciar_animacion = st.sidebar.button("▶️ Reproducir Evolución", type="primary", use_container_width=True)
 
-if pd.isna(pob_modelo_total):
-    st.sidebar.warning(f"No hay dato {columna_modelo} para {año_sel}. Usando Logístico por defecto.")
-    pob_modelo_total = df_proj[df_proj['Año'] == año_sel]['Logístico'].values[0]
-
-# Receta Nacional
-df_filtrado_nac = df_nac[df_nac['Año'] == año_sel].copy()
-pob_nacional_total = df_filtrado_nac['Hombres'].sum() + df_filtrado_nac['Mujeres'].sum()
-df_filtrado_nac['Prop_Hombres'] = df_filtrado_nac['Hombres'] / pob_nacional_total
-df_filtrado_nac['Prop_Mujeres'] = df_filtrado_nac['Mujeres'] / pob_nacional_total
-
-# Aplicar al territorio
-df_filtrado_nac['Hombres_Terr'] = df_filtrado_nac['Prop_Hombres'] * pob_modelo_total
-df_filtrado_nac['Mujeres_Terr'] = df_filtrado_nac['Prop_Mujeres'] * pob_modelo_total
+# 🖥️ Contenedores dinámicos (Placeholders para la animación)
+st.subheader(f"Estructura Poblacional Sintética - {titulo_terr}")
+ph_titulo_año = st.empty()
 
 col_pir1, col_pir2 = st.columns([2, 1])
 with col_pir1:
-    st.subheader(f"Pirámide Poblacional Sintética - {titulo_terr} ({año_sel})")
-    df_pir = pd.DataFrame({
-        'Edad': df_filtrado_nac['Edad'],
-        'Hombres': df_filtrado_nac['Hombres_Terr'] * -1,
-        'Mujeres': df_filtrado_nac['Mujeres_Terr']
-    })
+    ph_grafico_pir = st.empty()
+with col_pir2:
+    st.markdown("### Resumen del Perfil")
+    ph_metrica_pob = st.empty()
+    ph_metrica_hom = st.empty()
+    ph_metrica_muj = st.empty()
+    ph_metrica_ind = st.empty()
+
+# Función maestra que dibuja la pirámide para un año específico
+def renderizar_piramide(año_obj):
+    # 1. Extraer población total del modelo para ese año
+    try:
+        pob_modelo = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
+    except:
+        pob_modelo = np.nan
+        
+    if pd.isna(pob_modelo):
+        pob_modelo = df_proj[df_proj['Año'] == año_obj]['Logístico'].values[0] # Fallback
+    
+    # 2. Receta Nacional (Porcentajes)
+    df_fnac = df_nac[df_nac['Año'] == año_obj].copy()
+    pob_nacional_tot = df_fnac['Hombres'].sum() + df_fnac['Mujeres'].sum()
+    df_fnac['Prop_H'] = df_fnac['Hombres'] / pob_nacional_tot
+    df_fnac['Prop_M'] = df_fnac['Mujeres'] / pob_nacional_tot
+    
+    # 3. Dasimetría: Aplicar al territorio
+    df_fnac['Hom_Terr'] = df_fnac['Prop_H'] * pob_modelo
+    df_fnac['Muj_Terr'] = df_fnac['Prop_M'] * pob_modelo
+    
+    # 4. Agrupación Quinquenal
+    df_pir = pd.DataFrame({'Edad': df_fnac['Edad'], 'Hombres': df_fnac['Hom_Terr'] * -1, 'Mujeres': df_fnac['Muj_Terr']})
     cortes = list(range(0, 105, 5))
     etiquetas = [f"{i}-{i+4}" for i in range(0, 100, 5)]
     df_pir['Rango'] = pd.cut(df_pir['Edad'], bins=cortes, labels=etiquetas, right=False)
     df_agrupado = df_pir.groupby('Rango', observed=True)[['Hombres', 'Mujeres']].sum().reset_index()
     
+    # 5. Dibujo
     df_melt = pd.melt(df_agrupado, id_vars=['Rango'], value_vars=['Hombres', 'Mujeres'], var_name='Sexo', value_name='Poblacion')
     fig_pir = px.bar(df_melt, y='Rango', x='Poblacion', color='Sexo', orientation='h', color_discrete_map={'Hombres': '#2563eb', 'Mujeres': '#db2777'})
-    fig_pir.update_layout(barmode='relative', xaxis_title="Población Habitantes", yaxis_title="Grupos de Edad")
-    fig_pir.update_traces(hovertemplate="%{y}: %{x:,.0f}")
-    st.plotly_chart(fig_pir, width='stretch')
-
-with col_pir2:
-    st.subheader("Resumen del Modelo")
-    pob_hombres = df_filtrado_nac['Hombres_Terr'].sum()
-    pob_mujeres = df_filtrado_nac['Mujeres_Terr'].sum()
-    ind_masc = (pob_hombres / pob_mujeres) * 100 if pob_mujeres > 0 else 0
     
-    st.metric("Población Proyectada", f"{pob_modelo_total:,.0f}")
-    st.metric("Total Hombres (Est.)", f"{pob_hombres:,.0f}")
-    st.metric("Total Mujeres (Est.)", f"{pob_mujeres:,.0f}")
-    st.metric("Índice Masculinidad", f"{ind_masc:.1f} H por cada 100 M")
+    # Fijar el eje X para que la animación sea estable y la gráfica no "brinque"
+    max_x = max(abs(df_melt['Poblacion'].min()), df_melt['Poblacion'].max()) * 1.1
+    fig_pir.update_layout(barmode='relative', xaxis_title="Población Habitantes", yaxis_title="Grupos de Edad", xaxis=dict(range=[-max_x, max_x]))
+    fig_pir.update_traces(hovertemplate="%{y}: %{x:,.0f}")
+    
+    # 6. Actualizar pantalla
+    ph_titulo_año.markdown(f"### ⏳ **Año Proyectado: {año_obj}**")
+    ph_grafico_pir.plotly_chart(fig_pir, width='stretch')
+    
+    tot_h = df_fnac['Hom_Terr'].sum()
+    tot_m = df_fnac['Muj_Terr'].sum()
+    ind_m = (tot_h / tot_m) * 100 if tot_m > 0 else 0
+    
+    ph_metrica_pob.metric("Población Proyectada", f"{pob_modelo:,.0f}")
+    ph_metrica_hom.metric("Total Hombres", f"{tot_h:,.0f}")
+    ph_metrica_muj.metric("Total Mujeres", f"{tot_m:,.0f}")
+    ph_metrica_ind.metric("Índice Masculinidad", f"{ind_m:.1f} H x 100 M")
+
+# Control de Flujo (Si animamos o mostramos estático)
+if iniciar_animacion:
+    for a in años_disp:
+        if a >= 1950: # Evitar años muy antiguos sin modelos fiables
+            renderizar_piramide(a)
+            time.sleep(velocidad_animacion)
+else:
+    renderizar_piramide(año_sel)
+
+st.divider()
+
+# --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
+with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
+    st.markdown("""
+    ### 1. Conceptos Teóricos
+    La dinámica demográfica es el motor fundamental de la planificación hídrica y territorial. Conocer no solo *cuántos* somos, sino la *estructura por edades*, permite proyectar demandas futuras de acueductos, escenarios de presión sobre el recurso hídrico y necesidades de infraestructura.
+
+    ### 2. Metodología de Mapeo Dasimétrico y Asignación Top-Down
+    Ante la falta de censos poblacionales continuos en micro-territorios (como veredas), este modelo utiliza una **Estimación Sintética Anidada**:
+    * **Paso 1 (Calibración):** Se utiliza la serie censal DANE a nivel municipal (Urbano/Rural) entre 2005 y 2020.
+    * **Paso 2 (Dasimetría Veredal):** Se calcula el peso gravitacional de la población de cada vereda respecto a la población rural total de su municipio, asumiendo proporcionalidad espacial ($P_{vereda} = P_{rural\_mpio} \\times \\left( \\frac{P_{base\_vereda}}{\\sum P_{base\_veredas}} \\right)$).
+    * **Paso 3 (Anidación Estructural):** Se aplica la "receta" porcentual de la pirámide de edades nacional del año correspondiente, a la masa poblacional calculada del micro-territorio.
+
+    ### 3. Modelos Matemáticos de Ajuste Histórico
+    Para viajar en el tiempo (1950-2100), la serie histórica se somete a regresiones no lineales (`scipy.optimize`):
+    * **Logístico:** Modela ecosistemas limitados. La población crece hasta encontrar resistencia ambiental, estabilizándose en una *Capacidad de Carga* ($K$). Es el modelo más robusto para planeación a largo plazo.
+    * **Exponencial:** Asume recursos infinitos. Útil para modelar cortos períodos de "explosión demográfica" en centros urbanos nuevos.
+    * **Lineal:** Representa tendencias promedio sin aceleración.
+
+    ### 4. Fuentes de Información
+    * **Capa 1 (Estructura Nacional):** Proyecciones y retroproyecciones oficiales DANE (1950-2070).
+    * **Capa 2 (Masa Municipal):** Series censales DANE conciliadas (2005-2020).
+    * **Capa 3 (Filtro Veredal):** Base de datos espaciales y tabulares Gobernación de Antioquia / IGAC.
+    """)
