@@ -258,6 +258,32 @@ with tab_modelos:
     else:
         renderizar_piramide(año_sel)
 
+st.divider()
+
+# --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
+with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
+    st.markdown("""
+    ### 1. Conceptos Teóricos
+    La dinámica demográfica es el motor fundamental de la planificación hídrica y territorial. Conocer no solo *cuántos* somos, sino la *estructura por edades*, permite proyectar demandas futuras de acueductos, escenarios de presión sobre el recurso hídrico y necesidades de infraestructura.
+
+    ### 2. Metodología de Mapeo Dasimétrico y Asignación Top-Down
+    Ante la falta de censos poblacionales continuos en micro-territorios (como veredas), este modelo utiliza una **Estimación Sintética Anidada**:
+    * **Paso 1 (Calibración):** Se utiliza la serie censal DANE a nivel municipal (Urbano/Rural) entre 2005 y 2020.
+    * **Paso 2 (Dasimetría Veredal):** Se calcula el peso gravitacional de la población de cada vereda respecto a la población rural total de su municipio, asumiendo proporcionalidad espacial ($P_{vereda} = P_{rural\_mpio} \\times \\left( \\frac{P_{base\_vereda}}{\\sum P_{base\_veredas}} \\right)$).
+    * **Paso 3 (Anidación Estructural):** Se aplica la "receta" porcentual de la pirámide de edades nacional del año correspondiente, a la masa poblacional calculada del micro-territorio.
+
+    ### 3. Modelos Matemáticos de Ajuste Histórico
+    Para viajar en el tiempo (1950-2100), la serie histórica se somete a regresiones no lineales (`scipy.optimize`):
+    * **Logístico:** Modela ecosistemas limitados. La población crece hasta encontrar resistencia ambiental, estabilizándose en una *Capacidad de Carga* ($K$). Es el modelo más robusto para planeación a largo plazo.
+    * **Exponencial:** Asume recursos infinitos. Útil para modelar cortos períodos de "explosión demográfica" en centros urbanos nuevos.
+    * **Lineal:** Representa tendencias promedio sin aceleración.
+
+    ### 4. Fuentes de Información
+    * **Capa 1 (Estructura Nacional):** Proyecciones y retroproyecciones oficiales DANE (1950-2070).
+    * **Capa 2 (Masa Municipal):** Series censales DANE conciliadas (2005-2020).
+    * **Capa 3 (Filtro Veredal):** Base de datos espaciales y tabulares Gobernación de Antioquia / IGAC.
+    """)
+
 # ==========================================
 # PESTAÑA 2: MAPA DEMOGRÁFICO (GEOVISOR)
 # ==========================================
