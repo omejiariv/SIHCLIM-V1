@@ -20,16 +20,33 @@ st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
 st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección poblacional (1952-2100).")
 st.divider()
 
-# --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
+# --- FUNCION MÁGICA PARA EMPAREJAR MAPAS (Quita tildes, mayúsculas y homologa IGAC vs DANE) ---
 def normalizar_texto(texto):
     if pd.isna(texto): return ""
     t = str(texto).upper().strip()
-    # Casos atípicos DANE vs IGAC
-    t = t.replace('BOGOTA, D.C.', 'BOGOTA').replace('BOGOTA D.C.', 'BOGOTA')
-    t = t.replace('SAN JOSE DE CUCUTA', 'CUCUTA')
-    # 1. Quitar tildes y diacríticos
+    
+    # 1. Quitar tildes y diacríticos (La 'Ñ' se vuelve 'N')
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    # 2. Destruir TODO lo que no sea letra o número (espacios, comas, puntos, guiones)
+    
+    # 2. Diccionario Quirúrgico (Traductor DANE -> MAPA)
+    diccionario_rebeldes = {
+        "BOGOTA, D.C.": "BOGOTA",
+        "BOGOTA D.C.": "BOGOTA",
+        "SAN JOSE DE CUCUTA": "CUCUTA",
+        "LA GUAJIRA": "GUAJIRA", 
+        "VALLE DEL CAUCA": "VALLE", # A veces el mapa lo llama solo Valle
+        "EL PENOL": "PENOL",
+        "EL RETIRO": "RETIRO",
+        "EL SANTUARIO": "SANTUARIO",
+        "EL CARMEN DE VIBORAL": "CARMEN DE VIBORAL",
+        "SAN VICENTE FERRER": "SAN VICENTE",
+        "PUEBLORRICO": "PUEBLO RICO",
+        "DON MATIAS": "DONMATIAS"
+    }
+    for mal, bien in diccionario_rebeldes.items():
+        if t == mal: t = bien
+        
+    # 3. Destruir espacios y caracteres raros para crear un ADN irrompible
     t = re.sub(r'[^A-Z0-9]', '', t)
     return t
 
@@ -65,11 +82,20 @@ def cargar_datos_limpios():
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
         
-        def asignar_region(depto):
+        # Asignar Región a cada municipio (Con excepciones quirúrgicas)
+        def asignar_region(fila):
+            uraba_caribe = ["TURBO", "NECOCLI", "SAN JUAN DE URABA", "ARBOLETES", "SAN PEDRO DE URABA", "APARTADO", "CAREPA", "CHIGORODO", "MUTATA"]
+            # Si el municipio está en Urabá, es Caribe
+            if normalizar_texto(fila['municipio']) in [normalizar_texto(m) for m in uraba_caribe]:
+                return 'Caribe'
+                
+            depto = fila['depto_nom']
             for region, deptos in REGIONES_COL.items():
                 if depto in deptos: return region
             return "Sin Región"
-        df_mun['Macroregion'] = df_mun['depto_nom'].apply(asignar_region)
+            
+        # Aplicamos la función enviando toda la fila (axis=1) para leer tanto depto como municipio
+        df_mun['Macroregion'] = df_mun.apply(asignar_region, axis=1)
         
         df_ver = pd.DataFrame()
         ruta_ver_1 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv")
@@ -397,8 +423,9 @@ with tab_mapas:
                     else:
                         feature['properties']['MATCH_ID'] = normalizar_texto(val_terr)
                 
-                # MAGIA 3: Percentil 95 para proteger la escala de colores (Efecto Bogotá)
-                max_color = df_mapa_plot['Total'].quantile(0.95) if len(df_mapa_plot) > 5 else df_mapa_plot['Total'].max()
+                # MAGIA 3: Percentil 85 para proteger la escala de colores (Efecto Bogotá/Medellín)
+                q_val = 0.85 if area_mapa == "Total" else 0.90
+                max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
                 
                 # 3. Renderizar Mapa
                 fig_mapa = px.choropleth_mapbox(
@@ -408,24 +435,24 @@ with tab_mapas:
                     featureidkey='properties.MATCH_ID', 
                     color='Total',
                     color_continuous_scale="Viridis",
-                    range_color=[0, max_color],  # Escala inteligente anclada al 95%
+                    range_color=[0, max_color],  # Escala inteligente anclada al 85%
                     mapbox_style="carto-positron",
                     zoom=5 if escala_sel != "Veredal (Antioquia)" else 9, 
                     center={"lat": 4.57, "lon": -74.29} if escala_sel != "Veredal (Antioquia)" else {"lat": 6.25, "lon": -75.56},
                     opacity=0.8,
                     labels={'Total': f'Población {area_mapa}'},
-                    hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
+                    hover_data={'Total': ':,.0f', 'Territorio': True, 'Padre': True} # Ocultamos el MATCH_ID feo
                 )
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
                 st.plotly_chart(fig_mapa, width='stretch')
                 
-            except Exception as e:
-                st.error(f"❌ Error dibujando mapa: {e}")
-        else:
-            st.warning(f"⚠️ No se encontró **{archivo_geo_input}** o no hay datos para esta vista.")
-            
-    st.dataframe(df_mapa_plot[['Territorio', 'Padre', 'Total', 'MATCH_ID']].sort_values('Total', ascending=False).head(20), use_container_width=True)
-
+                # 4. DIAGNÓSTICO DE VEREDAS (Si hay huecos, aquí sabremos por qué)
+                geo_ids_disponibles = [f['properties']['MATCH_ID'] for f in geo_data['features']]
+                df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(geo_ids_disponibles)
+                faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
+                
+                if not faltantes.empty:
+                    st.warning(f"⚠️ Atención: Hay {len(faltantes)} territorios en la base de datos que no cruzaron con el mapa GeoJSON. Revisa la tabla inferior para ver cuáles son y añadirlos al Traductor Maestro si es necesario.")
 # ==========================================
 # PESTAÑA 3: DESCARGAS Y EXPORTACIÓN
 # ==========================================
