@@ -10,21 +10,28 @@ import os
 import time
 import json
 import unicodedata
+import re
 import warnings
 
 warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Modelo Demográfico Integral", page_icon="📈", layout="wide")
 
 st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
-st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
+st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección poblacional (1952-2100).")
 st.divider()
 
-# --- FUNCION MÁGICA PARA EMPAREJAR MAPAS (Quita tildes y pone mayúsculas) ---
+# --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
 def normalizar_texto(texto):
     if pd.isna(texto): return ""
-    texto = str(texto).upper().strip()
-    texto = ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
-    return texto
+    t = str(texto).upper().strip()
+    # Casos atípicos DANE vs IGAC
+    t = t.replace('BOGOTA, D.C.', 'BOGOTA').replace('BOGOTA D.C.', 'BOGOTA')
+    t = t.replace('SAN JOSE DE CUCUTA', 'CUCUTA')
+    # 1. Quitar tildes y diacríticos
+    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+    # 2. Destruir TODO lo que no sea letra o número (espacios, comas, puntos, guiones)
+    t = re.sub(r'[^A-Z0-9]', '', t)
+    return t
 
 # --- 1. LECTURA DE DATOS LIMPIOS Y VEREDALES ---
 RUTA_RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -97,15 +104,14 @@ escala_sel = st.sidebar.selectbox("Escala Territorial", ["Nacional", "Regional (
 años_hist, pob_hist = [], []
 df_mapa_base = pd.DataFrame()
 
+# MAGIA 2: Base espacial siempre a nivel municipal (para que cruce con el GeoJSON)
 if escala_sel == "Nacional":
     df_agrup_nac = df_nac.groupby('Año')[['Hombres', 'Mujeres']].sum().reset_index()
     años_hist = df_agrup_nac['Año'].values
     pob_hist = (df_agrup_nac['Hombres'] + df_agrup_nac['Mujeres']).values
     titulo_terr = "Colombia (Nacional)"
-    # Para el mapa nacional, agrupamos por departamento pero conservamos el área geográfica
-    df_mapa_base = df_mun.groupby(['depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
-    df_mapa_base = df_mapa_base.rename(columns={'depto_nom': 'Territorio'})
-    df_mapa_base['Padre'] = "Colombia"
+    df_mapa_base = df_mun.groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
+    df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
 
 elif escala_sel == "Regional (Macroregiones)":
     regiones_list = sorted(df_mun['Macroregion'].unique())
@@ -114,9 +120,8 @@ elif escala_sel == "Regional (Macroregiones)":
     años_hist = df_terr['año'].values
     pob_hist = df_terr['Total'].values
     titulo_terr = f"Región {reg_sel}"
-    df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
-    df_mapa_base = df_mapa_base.rename(columns={'depto_nom': 'Territorio'})
-    df_mapa_base['Padre'] = reg_sel
+    df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
+    df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
 
 elif escala_sel in ["Departamental", "Municipal"]:
     deptos = sorted(df_mun['depto_nom'].dropna().unique())
@@ -125,7 +130,6 @@ elif escala_sel in ["Departamental", "Municipal"]:
     if escala_sel == "Departamental":
         df_terr = df_mun[df_mun['depto_nom'] == depto_sel].groupby('año')['Total'].sum().reset_index()
         titulo_terr = depto_sel
-        # Guardamos area_geografica para poder filtrar Urbana/Rural luego
         df_mapa_base = df_mun[df_mun['depto_nom'] == depto_sel].groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
         df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
     else:
@@ -328,24 +332,23 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
 with tab_mapas:
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_terr} ({año_sel})")
     
-    # Selector de Área Geográfica (No aplica para veredas porque todas son rurales)
+    # Selector de Área Geográfica (Total/Urbano/Rural)
     if escala_sel != "Veredal (Antioquia)":
         area_mapa = st.radio("Filtro de Zona Geográfica:", ["Total", "Urbano", "Rural"], horizontal=True)
     else:
         area_mapa = "Rural"
         st.info("ℹ️ A escala veredal, toda la población es considerada rural.")
 
-    # Filtrar DataFrame base según el año y la zona seleccionada
+    # Filtro Temporal
     if 'año' in df_mapa_base.columns:
         df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)].copy()
     else:
         df_mapa_año = df_mapa_base.copy()
 
+    # Filtro Espacial (Urbano/Rural/Total)
     if area_mapa == "Total":
-        # Sumar urbano + rural para tener el Total
         df_mapa_plot = df_mapa_año.groupby(['Territorio', 'Padre'])['Total'].sum().reset_index()
     else:
-        # Filtrar solo urbano o rural
         df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
 
     col_map1, col_map2 = st.columns([1, 3])
@@ -370,9 +373,9 @@ with tab_mapas:
     with col_map2:
         ruta_geo = os.path.join(RUTA_RAIZ, "data", archivo_geo_input)
         
-        if os.path.exists(ruta_geo):
+        if os.path.exists(ruta_geo) and not df_mapa_plot.empty:
             try:
-                # 1. Crear ADN Único en el DataFrame
+                # 1. Crear ADN Único en Pandas (Con el súper aspirador Regex)
                 if prop_padre_input.strip() != "":
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].apply(normalizar_texto)
                 else:
@@ -393,6 +396,9 @@ with tab_mapas:
                         feature['properties']['MATCH_ID'] = normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
                     else:
                         feature['properties']['MATCH_ID'] = normalizar_texto(val_terr)
+                
+                # MAGIA 3: Percentil 95 para proteger la escala de colores (Efecto Bogotá)
+                max_color = df_mapa_plot['Total'].quantile(0.95) if len(df_mapa_plot) > 5 else df_mapa_plot['Total'].max() 
                 
                 # 3. Renderizar Mapa
                 fig_mapa = px.choropleth_mapbox(
