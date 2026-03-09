@@ -13,78 +13,87 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Modelo Demográfico Integral", page_icon="📈", layout="wide")
 
 st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
-st.markdown("Ajuste de modelos matemáticos (Logístico, Exponencial, Lineal) y proyección top-down de estructuras poblacionales (1952-2070).")
+st.markdown("Ajuste de modelos matemáticos y proyección top-down de estructuras poblacionales (1952-2070). Escala: Nacional a Veredal.")
 st.divider()
 
-# --- 1. LECTURA DE DATOS LIMPIOS ---
+# --- 1. LECTURA DE DATOS LIMPIOS Y VEREDALES ---
 RUTA_RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 @st.cache_data
 def cargar_datos_limpios():
     try:
+        # Capa 1: Nacional
         ruta_nac = os.path.join(RUTA_RAIZ, "data", "PobCol1912_2100.csv")
         df_nac = pd.read_csv(ruta_nac, sep=',')
         if len(df_nac.columns) < 2: df_nac = pd.read_csv(ruta_nac, sep=';')
-            
         df_nac.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().title() for c in df_nac.columns]
         df_nac = df_nac.rename(columns={'Male': 'Hombres', 'Female': 'Mujeres', 'Ano': 'Año'})
         
+        # Capa 2: Municipal
         ruta_mun_1 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_Colombia.csv")
         ruta_mun_2 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_colombia.csv")
-        
-        if os.path.exists(ruta_mun_1):
-            df_mun = pd.read_csv(ruta_mun_1, sep=',')
-            if len(df_mun.columns) < 2: df_mun = pd.read_csv(ruta_mun_1, sep=';')
-        elif os.path.exists(ruta_mun_2):
-            df_mun = pd.read_csv(ruta_mun_2, sep=',')
-            if len(df_mun.columns) < 2: df_mun = pd.read_csv(ruta_mun_2, sep=';')
-        else:
-            raise FileNotFoundError("Archivo municipal no encontrado.")
+        if os.path.exists(ruta_mun_1): df_mun = pd.read_csv(ruta_mun_1, sep=',')
+        elif os.path.exists(ruta_mun_2): df_mun = pd.read_csv(ruta_mun_2, sep=',')
+        else: raise FileNotFoundError("Archivo municipal no encontrado.")
+        if len(df_mun.columns) < 2: df_mun = pd.read_csv(ruta_mun_1 if os.path.exists(ruta_mun_1) else ruta_mun_2, sep=';')
             
         df_mun.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().lower() for c in df_mun.columns]
         df_mun = df_mun.rename(columns={'poblacion': 'Total'})
+        # Homologar textos (Primera letra mayúscula) para que crucen perfecto con veredas
+        df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
+        df_mun['municipio'] = df_mun['municipio'].str.title()
         
-        return df_nac, df_mun
+        # Capa 3: Veredal (Antioquia)
+        df_ver = pd.DataFrame()
+        ruta_ver_1 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv")
+        ruta_ver_2 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.xlsx")
+        
+        if os.path.exists(ruta_ver_1):
+            df_ver = pd.read_csv(ruta_ver_1, sep=';')
+            if len(df_ver.columns) < 2: df_ver = pd.read_csv(ruta_ver_1, sep=',')
+        elif os.path.exists(ruta_ver_2):
+            df_ver = pd.read_excel(ruta_ver_2)
+            
+        if not df_ver.empty:
+            df_ver.columns = [str(c).replace('\ufeff', '').strip() for c in df_ver.columns]
+            if 'Municipio' in df_ver.columns: df_ver['Municipio'] = df_ver['Municipio'].str.title()
+            if 'Vereda' in df_ver.columns: df_ver['Vereda'] = df_ver['Vereda'].str.title()
+            if 'Poblacion_hab' in df_ver.columns: df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'], errors='coerce').fillna(0)
+
+        return df_nac, df_mun, df_ver
     except Exception as e:
         st.error(f"🚨 Error: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-df_nac, df_mun = cargar_datos_limpios()
+df_nac, df_mun, df_ver = cargar_datos_limpios()
 if df_nac.empty or df_mun.empty: st.stop()
 
 # --- 2. MODELOS MATEMÁTICOS ---
-def modelo_lineal(x, m, b): 
-    return m * x + b
-
-def modelo_exponencial(x, p0, r): 
-    return p0 * np.exp(r * (x - 2005))
-
-def modelo_logistico(x, K, r, x0): 
-    return K / (1 + np.exp(-r * (x - x0)))
+def modelo_lineal(x, m, b): return m * x + b
+def modelo_exponencial(x, p0, r): return p0 * np.exp(r * (x - 2005))
+def modelo_logistico(x, K, r, x0): return K / (1 + np.exp(-r * (x - x0)))
 
 # --- 3. CONFIGURACIÓN Y FILTROS ---
 st.sidebar.header("⚙️ 1. Selección Territorial")
-escala_sel = st.sidebar.selectbox("Escala Territorial", ["Nacional", "Departamental", "Municipal"])
+escala_sel = st.sidebar.selectbox("Escala Territorial", ["Nacional", "Departamental", "Municipal", "Veredal (Antioquia)"])
 
-# Obtener la serie de tiempo real del territorio seleccionado
-años_hist = []
-pob_hist = []
+años_hist, pob_hist = [], []
 
 if escala_sel == "Nacional":
     df_agrup_nac = df_nac.groupby('Año')[['Hombres', 'Mujeres']].sum().reset_index()
-    df_agrup_nac['Total'] = df_agrup_nac['Hombres'] + df_agrup_nac['Mujeres']
     años_hist = df_agrup_nac['Año'].values
-    pob_hist = df_agrup_nac['Total'].values
+    pob_hist = (df_agrup_nac['Hombres'] + df_agrup_nac['Mujeres']).values
     titulo_terr = "Colombia (Nacional)"
-else:
-    deptos = sorted(df_mun['depto_nom'].unique())
+
+elif escala_sel in ["Departamental", "Municipal"]:
+    deptos = sorted(df_mun['depto_nom'].dropna().unique())
     depto_sel = st.sidebar.selectbox("Departamento", deptos)
     
     if escala_sel == "Departamental":
         df_terr = df_mun[df_mun['depto_nom'] == depto_sel].groupby('año')['Total'].sum().reset_index()
         titulo_terr = depto_sel
     else:
-        mpios = sorted(df_mun[df_mun['depto_nom'] == depto_sel]['municipio'].unique())
+        mpios = sorted(df_mun[df_mun['depto_nom'] == depto_sel]['municipio'].dropna().unique())
         mpio_sel = st.sidebar.selectbox("Municipio", mpios)
         df_terr = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)].groupby('año')['Total'].sum().reset_index()
         titulo_terr = f"{mpio_sel}, {depto_sel}"
@@ -92,93 +101,105 @@ else:
     años_hist = df_terr['año'].values
     pob_hist = df_terr['Total'].values
 
+elif escala_sel == "Veredal (Antioquia)":
+    if df_ver.empty:
+        st.error("❌ No se encontró la base de datos de veredas de Antioquia.")
+        st.stop()
+        
+    mpios_veredas = sorted(df_ver['Municipio'].dropna().unique())
+    mpio_sel = st.sidebar.selectbox("Municipio (Antioquia)", mpios_veredas)
+    
+    veredas_lista = sorted(df_ver[df_ver['Municipio'] == mpio_sel]['Vereda'].dropna().unique())
+    vereda_sel = st.sidebar.selectbox("Vereda", veredas_lista)
+    
+    # 🧠 Magia Dasimétrica: Extraer historial Rural del Municipio y aplicar proporción de la Vereda
+    df_rural_mpio = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['municipio'] == mpio_sel) & (df_mun['area_geografica'] == 'rural')]
+    df_hist_rural = df_rural_mpio.groupby('año')['Total'].sum().reset_index()
+    
+    df_mpio_veredas = df_ver[df_ver['Municipio'] == mpio_sel]
+    pob_total_veredas = df_mpio_veredas['Poblacion_hab'].sum()
+    pob_ver_especifica = df_mpio_veredas[df_mpio_veredas['Vereda'] == vereda_sel]['Poblacion_hab'].sum()
+    
+    ratio_vereda = pob_ver_especifica / pob_total_veredas if pob_total_veredas > 0 else 0
+    
+    años_hist = df_hist_rural['año'].values
+    pob_hist = df_hist_rural['Total'].values * ratio_vereda
+    titulo_terr = f"Vereda {vereda_sel} ({mpio_sel})"
+
 # --- 4. AJUSTE DE CURVAS (REGRESIÓN) ---
 x_hist = np.array(años_hist, dtype=float)
 y_hist = np.array(pob_hist, dtype=float)
 x_proj = np.arange(1950, 2071, 1)
 
-# Diccionario para guardar proyecciones
 proyecciones = {'Año': x_proj, 'Real': [np.nan]*len(x_proj)}
 for i, año in enumerate(x_proj):
-    if año in x_hist:
-        proyecciones['Real'][i] = y_hist[np.where(x_hist == año)[0][0]]
+    if año in x_hist: proyecciones['Real'][i] = y_hist[np.where(x_hist == año)[0][0]]
 
-# Ajuste Lineal
+# Manejo de errores matemáticos si la población es muy pequeña o cero
 try:
     popt_lin, _ = curve_fit(modelo_lineal, x_hist, y_hist)
-    proyecciones['Lineal'] = modelo_lineal(x_proj, *popt_lin)
+    proyecciones['Lineal'] = np.maximum(0, modelo_lineal(x_proj, *popt_lin))
 except: proyecciones['Lineal'] = [np.nan]*len(x_proj)
 
-# Ajuste Exponencial
 try:
-    p0_guess = y_hist[0]
-    popt_exp, _ = curve_fit(modelo_exponencial, x_hist, y_hist, p0=[p0_guess, 0.01], maxfev=10000)
+    popt_exp, _ = curve_fit(modelo_exponencial, x_hist, y_hist, p0=[max(1, y_hist[0]), 0.01], maxfev=10000)
     proyecciones['Exponencial'] = modelo_exponencial(x_proj, *popt_exp)
-except: proyecciones['Exponencial'] = [np.nan]*len(x_proj)
+except: proyecciones['Exponencial'] = proyecciones['Lineal']
 
-# Ajuste Logístico
 try:
-    K_guess = max(y_hist) * 1.5
+    K_guess = max(1, max(y_hist)) * 1.5
     popt_log, _ = curve_fit(modelo_logistico, x_hist, y_hist, p0=[K_guess, 0.05, 2020], maxfev=10000)
     proyecciones['Logístico'] = modelo_logistico(x_proj, *popt_log)
     param_K = popt_log[0]
 except: 
-    proyecciones['Logístico'] = proyecciones['Lineal'] # Fallback
+    proyecciones['Logístico'] = proyecciones['Lineal']
     param_K = "N/A"
 
 df_proj = pd.DataFrame(proyecciones)
 
 # --- 5. INTERFAZ GRÁFICA (CURVAS) ---
 col_graf, col_param = st.columns([3, 1])
-
 with col_graf:
     st.subheader(f"📈 Modelos de Crecimiento Poblacional - {titulo_terr}")
     fig_curvas = go.Figure()
-    
-    # Añadir líneas de modelos
     fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Logístico'], mode='lines', name='Mod. Logístico', line=dict(color='#10b981', dash='dash')))
     fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Exponencial'], mode='lines', name='Mod. Exponencial', line=dict(color='#f59e0b', dash='dot')))
     fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Lineal'], mode='lines', name='Mod. Lineal', line=dict(color='#6366f1', dash='dot')))
-    
-    # Añadir datos reales (Puntos)
-    fig_curvas.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Reales (Censo)', marker=dict(color='#ef4444', size=8, symbol='diamond')))
-    
+    fig_curvas.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Reales (Base)', marker=dict(color='#ef4444', size=8, symbol='diamond')))
     fig_curvas.update_layout(hovermode="x unified", xaxis_title="Año", yaxis_title="Población", template="plotly_white")
     st.plotly_chart(fig_curvas, width='stretch')
 
 with col_param:
     st.subheader("🧮 Ecuaciones")
     st.info("**Logístico:** \nIdeal a largo plazo. Modela el agotamiento de recursos.")
-    if param_K != "N/A":
-        st.metric("Capacidad de Carga (K)", f"{param_K:,.0f} hab")
-    
+    if param_K != "N/A": st.metric("Capacidad de Carga (K)", f"{param_K:,.0f} hab")
     st.warning("**Exponencial:** \nCrecimiento sin restricciones (Corto plazo).")
     st.success("**Lineal:** \nTendencia promedio constante.")
 
 st.divider()
 
 # --- 6. ESTIMACIÓN SINTÉTICA Y PIRÁMIDES ---
-st.sidebar.header("🎯 2. Viaje en el Tiempo (Pirámide)")
+st.sidebar.header("🎯 2. Viaje en el Tiempo")
 modelo_sel = st.sidebar.radio("Elegir modelo para proyectar pirámide:", ["Logístico", "Exponencial", "Lineal", "Dato Real (Si existe)"])
 
 años_disp = sorted(df_nac['Año'].unique())
 año_sel = st.sidebar.select_slider("Selecciona el Año (1952-2070)", options=años_disp, value=2024)
 
-# 1. Obtener la población total calculada por el modelo para el año elegido
-pob_modelo_total = df_proj[df_proj['Año'] == año_sel][modelo_sel].values[0]
+# 🛠️ SOLUCIÓN AL ERROR: Homologamos el nombre del Radio Button con la columna de Pandas
+columna_modelo = "Real" if modelo_sel == "Dato Real (Si existe)" else modelo_sel
+pob_modelo_total = df_proj[df_proj['Año'] == año_sel][columna_modelo].values[0]
 
-# Si eligió "Dato Real" pero no hay censo ese año, fallback al logístico
 if pd.isna(pob_modelo_total):
-    st.sidebar.warning("No hay dato real para ese año. Usando Logístico.")
+    st.sidebar.warning(f"No hay dato {columna_modelo} para {año_sel}. Usando Logístico por defecto.")
     pob_modelo_total = df_proj[df_proj['Año'] == año_sel]['Logístico'].values[0]
 
-# 2. Receta Nacional
+# Receta Nacional
 df_filtrado_nac = df_nac[df_nac['Año'] == año_sel].copy()
 pob_nacional_total = df_filtrado_nac['Hombres'].sum() + df_filtrado_nac['Mujeres'].sum()
 df_filtrado_nac['Prop_Hombres'] = df_filtrado_nac['Hombres'] / pob_nacional_total
 df_filtrado_nac['Prop_Mujeres'] = df_filtrado_nac['Mujeres'] / pob_nacional_total
 
-# 3. Aplicar al territorio
+# Aplicar al territorio
 df_filtrado_nac['Hombres_Terr'] = df_filtrado_nac['Prop_Hombres'] * pob_modelo_total
 df_filtrado_nac['Mujeres_Terr'] = df_filtrado_nac['Prop_Mujeres'] * pob_modelo_total
 
