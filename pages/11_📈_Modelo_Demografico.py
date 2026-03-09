@@ -398,7 +398,7 @@ with tab_mapas:
                         feature['properties']['MATCH_ID'] = normalizar_texto(val_terr)
                 
                 # MAGIA 3: Percentil 95 para proteger la escala de colores (Efecto Bogotá)
-                max_color = df_mapa_plot['Total'].quantile(0.95) if len(df_mapa_plot) > 5 else df_mapa_plot['Total'].max() 
+                max_color = df_mapa_plot['Total'].quantile(0.95) if len(df_mapa_plot) > 5 else df_mapa_plot['Total'].max()
                 
                 # 3. Renderizar Mapa
                 fig_mapa = px.choropleth_mapbox(
@@ -408,11 +408,13 @@ with tab_mapas:
                     featureidkey='properties.MATCH_ID', 
                     color='Total',
                     color_continuous_scale="Viridis",
+                    range_color=[0, max_color],  # Escala inteligente anclada al 95%
                     mapbox_style="carto-positron",
                     zoom=5 if escala_sel != "Veredal (Antioquia)" else 9, 
                     center={"lat": 4.57, "lon": -74.29} if escala_sel != "Veredal (Antioquia)" else {"lat": 6.25, "lon": -75.56},
-                    opacity=0.7,
-                    labels={'Total': f'Población {area_mapa}'}
+                    opacity=0.8,
+                    labels={'Total': f'Población {area_mapa}'},
+                    hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
                 )
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
                 st.plotly_chart(fig_mapa, width='stretch')
@@ -420,9 +422,9 @@ with tab_mapas:
             except Exception as e:
                 st.error(f"❌ Error dibujando mapa: {e}")
         else:
-            st.warning(f"⚠️ No se encontró **{archivo_geo_input}** en la carpeta `data/`.")
+            st.warning(f"⚠️ No se encontró **{archivo_geo_input}** o no hay datos para esta vista.")
             
-    st.dataframe(df_mapa_plot[['Territorio', 'Padre', 'Total', 'MATCH_ID']], use_container_width=True)
+    st.dataframe(df_mapa_plot[['Territorio', 'Padre', 'Total', 'MATCH_ID']].sort_values('Total', ascending=False).head(20), use_container_width=True)
 
 # ==========================================
 # PESTAÑA 3: DESCARGAS Y EXPORTACIÓN
