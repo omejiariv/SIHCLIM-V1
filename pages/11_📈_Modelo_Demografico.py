@@ -102,8 +102,10 @@ if escala_sel == "Nacional":
     años_hist = df_agrup_nac['Año'].values
     pob_hist = (df_agrup_nac['Hombres'] + df_agrup_nac['Mujeres']).values
     titulo_terr = "Colombia (Nacional)"
-    df_mapa_base = df_mun.groupby(['depto_nom', 'año'])['Total'].sum().reset_index()
+    # Para el mapa nacional, agrupamos por departamento pero conservamos el área geográfica
+    df_mapa_base = df_mun.groupby(['depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
     df_mapa_base = df_mapa_base.rename(columns={'depto_nom': 'Territorio'})
+    df_mapa_base['Padre'] = "Colombia"
 
 elif escala_sel == "Regional (Macroregiones)":
     regiones_list = sorted(df_mun['Macroregion'].unique())
@@ -112,8 +114,9 @@ elif escala_sel == "Regional (Macroregiones)":
     años_hist = df_terr['año'].values
     pob_hist = df_terr['Total'].values
     titulo_terr = f"Región {reg_sel}"
-    df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['depto_nom', 'año'])['Total'].sum().reset_index()
+    df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
     df_mapa_base = df_mapa_base.rename(columns={'depto_nom': 'Territorio'})
+    df_mapa_base['Padre'] = reg_sel
 
 elif escala_sel in ["Departamental", "Municipal"]:
     deptos = sorted(df_mun['depto_nom'].dropna().unique())
@@ -122,15 +125,16 @@ elif escala_sel in ["Departamental", "Municipal"]:
     if escala_sel == "Departamental":
         df_terr = df_mun[df_mun['depto_nom'] == depto_sel].groupby('año')['Total'].sum().reset_index()
         titulo_terr = depto_sel
-        df_mapa_base = df_mun[df_mun['depto_nom'] == depto_sel].groupby(['municipio', 'año'])['Total'].sum().reset_index()
-        df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio'})
+        # Guardamos area_geografica para poder filtrar Urbana/Rural luego
+        df_mapa_base = df_mun[df_mun['depto_nom'] == depto_sel].groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
+        df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
     else:
         mpios = sorted(df_mun[df_mun['depto_nom'] == depto_sel]['municipio'].dropna().unique())
         mpio_sel = st.sidebar.selectbox("Municipio", mpios)
         df_terr = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)].groupby('año')['Total'].sum().reset_index()
         titulo_terr = f"{mpio_sel}, {depto_sel}"
-        df_mapa_base = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)].groupby(['municipio', 'año'])['Total'].sum().reset_index()
-        df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio'})
+        df_mapa_base = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)].groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
+        df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
         
     años_hist = df_terr['año'].values
     pob_hist = df_terr['Total'].values
@@ -154,9 +158,11 @@ elif escala_sel == "Veredal (Antioquia)":
     años_hist = df_hist_rural['año'].values
     pob_hist = df_hist_rural['Total'].values * ratio_vereda
     titulo_terr = f"Vereda {vereda_sel} ({mpio_sel})"
+    
     df_mapa_base = df_mpio_veredas.copy()
-    df_mapa_base = df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Poblacion_hab': 'Total'})
+    df_mapa_base = df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Municipio': 'Padre', 'Poblacion_hab': 'Total'})
     df_mapa_base['año'] = 2020 
+    df_mapa_base['area_geografica'] = 'rural'
 
 # --- 4. CÁLCULO DE PROYECCIONES ---
 x_hist = np.array(años_hist, dtype=float)
@@ -322,13 +328,25 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
 with tab_mapas:
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_terr} ({año_sel})")
     
+    # Selector de Área Geográfica (No aplica para veredas porque todas son rurales)
+    if escala_sel != "Veredal (Antioquia)":
+        area_mapa = st.radio("Filtro de Zona Geográfica:", ["Total", "Urbano", "Rural"], horizontal=True)
+    else:
+        area_mapa = "Rural"
+        st.info("ℹ️ A escala veredal, toda la población es considerada rural.")
+
+    # Filtrar DataFrame base según el año y la zona seleccionada
     if 'año' in df_mapa_base.columns:
         df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)].copy()
     else:
         df_mapa_año = df_mapa_base.copy()
 
-    # 1. Limpieza de nuestra base de datos para cruce perfecto
-    df_mapa_año['MATCH_ID'] = df_mapa_año['Territorio'].apply(normalizar_texto)
+    if area_mapa == "Total":
+        # Sumar urbano + rural para tener el Total
+        df_mapa_plot = df_mapa_año.groupby(['Territorio', 'Padre'])['Total'].sum().reset_index()
+    else:
+        # Filtrar solo urbano o rural
+        df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
 
     col_map1, col_map2 = st.columns([1, 3])
     
@@ -337,40 +355,58 @@ with tab_mapas:
         if escala_sel == "Veredal (Antioquia)": 
             sugerencia_geo = "VeredasCV.geojson"
             sugerencia_prop = "properties.NOMBRE_VER"
+            sugerencia_padre = "properties.NOMB_MPIO"
         else: 
             sugerencia_geo = "municipios_colombia.geojson"
             sugerencia_prop = "properties.MUNICIPIO"
+            sugerencia_padre = "properties.DEPTO"
             
         archivo_geo_input = st.text_input("Archivo en GitHub:", value=sugerencia_geo)
-        prop_geo_input = st.text_input("Llave GeoJSON (ej. properties.MUNICIPIO):", value=sugerencia_prop)
+        prop_geo_input = st.text_input("Llave Territorio (ej. properties.MUNICIPIO):", value=sugerencia_prop)
+        
+        st.markdown("**🔗 Llave Doble (Anti-Homonimia)**")
+        prop_padre_input = st.text_input("Llave Contexto (ej. properties.DEPTO):", value=sugerencia_padre)
 
     with col_map2:
         ruta_geo = os.path.join(RUTA_RAIZ, "data", archivo_geo_input)
         
         if os.path.exists(ruta_geo):
             try:
+                # 1. Crear ADN Único en el DataFrame
+                if prop_padre_input.strip() != "":
+                    df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].apply(normalizar_texto)
+                else:
+                    df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto)
+
                 with open(ruta_geo, encoding='utf-8') as f:
                     geo_data = json.load(f)
                 
-                # 2. Limpieza dinámica del GeoJSON (Inyectar MATCH_ID)
+                # 2. Crear ADN Único en el GeoJSON
                 prop_key = prop_geo_input.replace("properties.", "")
+                padre_key = prop_padre_input.replace("properties.", "") if prop_padre_input.strip() else ""
+                
                 for feature in geo_data['features']:
-                    valor_original = feature['properties'].get(prop_key, "")
-                    feature['properties']['MATCH_ID'] = normalizar_texto(valor_original)
+                    val_terr = feature['properties'].get(prop_key, "")
+                    val_padre = feature['properties'].get(padre_key, "") if padre_key else ""
+                    
+                    if val_padre:
+                        feature['properties']['MATCH_ID'] = normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
+                    else:
+                        feature['properties']['MATCH_ID'] = normalizar_texto(val_terr)
                 
                 # 3. Renderizar Mapa
                 fig_mapa = px.choropleth_mapbox(
-                    df_mapa_año,
+                    df_mapa_plot,
                     geojson=geo_data,
-                    locations='MATCH_ID',        # Nuestra columna limpia
-                    featureidkey='properties.MATCH_ID', # El GeoJSON limpio
+                    locations='MATCH_ID',        
+                    featureidkey='properties.MATCH_ID', 
                     color='Total',
                     color_continuous_scale="Viridis",
                     mapbox_style="carto-positron",
                     zoom=5 if escala_sel != "Veredal (Antioquia)" else 9, 
                     center={"lat": 4.57, "lon": -74.29} if escala_sel != "Veredal (Antioquia)" else {"lat": 6.25, "lon": -75.56},
                     opacity=0.7,
-                    labels={'Total': 'Población'}
+                    labels={'Total': f'Población {area_mapa}'}
                 )
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
                 st.plotly_chart(fig_mapa, width='stretch')
@@ -380,7 +416,7 @@ with tab_mapas:
         else:
             st.warning(f"⚠️ No se encontró **{archivo_geo_input}** en la carpeta `data/`.")
             
-    st.dataframe(df_mapa_año[['Territorio', 'Total', 'MATCH_ID']], use_container_width=True)
+    st.dataframe(df_mapa_plot[['Territorio', 'Padre', 'Total', 'MATCH_ID']], use_container_width=True)
 
 # ==========================================
 # PESTAÑA 3: DESCARGAS Y EXPORTACIÓN
