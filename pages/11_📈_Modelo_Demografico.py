@@ -25,7 +25,10 @@ def normalizar_texto(texto):
     if pd.isna(texto): return ""
     t = str(texto).upper().strip()
     
-    # Casos atípicos DANE vs IGAC
+    # 1. Quitar tildes y diacríticos (La 'Ñ' se vuelve 'N')
+    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+    
+    # 2. Diccionario Quirúrgico (Traductor DANE -> IGAC/GeoJSON)
     diccionario_rebeldes = {
         "BOGOTA, D.C.": "BOGOTA",
         "BOGOTA D.C.": "BOGOTA",
@@ -38,20 +41,34 @@ def normalizar_texto(texto):
         "EL CARMEN DE VIBORAL": "CARMEN DE VIBORAL",
         "SAN VICENTE FERRER": "SAN VICENTE",
         "PUEBLORRICO": "PUEBLO RICO",
-        "DON MATIAS": "DONMATIAS"
+        "DON MATIAS": "DONMATIAS",
+        # --- NUEVOS: ANTIOQUIA ---
+        "SAN ANDRES DE CUERQUIA": "SAN ANDRES",
+        "SAN PEDRO DE LOS MILAGROS": "SAN PEDRO",
+        "BRICENO": "BRICENO", # Para forzar limpieza en caso de caracteres invisibles
+        # --- NUEVOS: PACÍFICO Y SUR ---
+        "PIZARRO": "BAJO BAUDO",
+        "DOCORDO": "EL LITORAL DEL SAN JUAN",
+        "LITORAL DEL SAN JUAN": "EL LITORAL DEL SAN JUAN",
+        "BAHIA SOLANO": "BAHIA SOLANO MUTIS",
+        "TUMACO": "SAN ANDRES DE TUMACO",
+        "PATIA": "PATIA EL BORDO",
+        "LOPEZ DE MICAY": "LOPEZ",
+        "RIO SUCIO": "RIOSUCIO",
+        "MAGUI": "MAGUI PAYAN",
+        "ROBERTO PAYAN": "ROBERTO PAYAN SAN JOSE",
+        "MALLAMA": "MALLAMA PIEDRA ANCHA",
+        "CUASPUD": "CUASPUD CARLOSAMA"
     }
     
-    # 1. Quitar tildes y diacríticos
-    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    
-    # 2. Aplicar diccionario
+    # Aplicar el diccionario
     for mal, bien in diccionario_rebeldes.items():
         if t == mal: t = bien
         
     # 3. Destruir TODO lo que no sea letra o número (espacios, comas, puntos, guiones)
     t = re.sub(r'[^A-Z0-9]', '', t)
     return t
-
+    
 # --- 1. LECTURA DE DATOS LIMPIOS Y VEREDALES ---
 RUTA_RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
