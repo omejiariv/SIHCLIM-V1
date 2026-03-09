@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from scipy.optimize import curve_fit
 import os
 import time
+import json
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -19,6 +20,15 @@ st.divider()
 
 # --- 1. LECTURA DE DATOS LIMPIOS Y VEREDALES ---
 RUTA_RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+# Diccionario de Macroregiones de Colombia
+REGIONES_COL = {
+    'Caribe': ['Atlántico', 'Bolívar', 'Cesar', 'Córdoba', 'La Guajira', 'Magdalena', 'Sucre', 'Archipiélago De San Andrés'],
+    'Pacífica': ['Cauca', 'Chocó', 'Nariño', 'Valle Del Cauca'],
+    'Andina': ['Antioquia', 'Boyacá', 'Caldas', 'Cundinamarca', 'Huila', 'Norte De Santander', 'Quindio', 'Risaralda', 'Santander', 'Tolima', 'Bogotá, D.C.'],
+    'Orinoquía': ['Arauca', 'Casanare', 'Meta', 'Vichada'],
+    'Amazonía': ['Amazonas', 'Caquetá', 'Guainía', 'Guaviare', 'Putumayo', 'Vaupés']
+}
 
 @st.cache_data
 def cargar_datos_limpios():
@@ -42,6 +52,13 @@ def cargar_datos_limpios():
         df_mun = df_mun.rename(columns={'poblacion': 'Total'})
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
+        
+        # Asignar Región a cada municipio
+        def asignar_region(depto):
+            for region, deptos in REGIONES_COL.items():
+                if depto in deptos: return region
+            return "Sin Región"
+        df_mun['Macroregion'] = df_mun['depto_nom'].apply(asignar_region)
         
         # Capa 3: Veredal (Antioquia)
         df_ver = pd.DataFrame()
@@ -72,17 +89,28 @@ def modelo_logistico(x, K, r, x0): return K / (1 + np.exp(-r * (x - x0)))
 
 # --- 3. CONFIGURACIÓN Y FILTROS LATERALES ---
 st.sidebar.header("⚙️ 1. Selección Territorial")
-escala_sel = st.sidebar.selectbox("Escala Territorial", ["Nacional", "Departamental", "Municipal", "Veredal (Antioquia)"])
+escala_sel = st.sidebar.selectbox("Escala Territorial", ["Nacional", "Regional (Macroregiones)", "Departamental", "Municipal", "Veredal (Antioquia)"])
 
 años_hist, pob_hist = [], []
-df_mapa_base = pd.DataFrame() # Base para el mapa
+df_mapa_base = pd.DataFrame()
 
 if escala_sel == "Nacional":
     df_agrup_nac = df_nac.groupby('Año')[['Hombres', 'Mujeres']].sum().reset_index()
     años_hist = df_agrup_nac['Año'].values
     pob_hist = (df_agrup_nac['Hombres'] + df_agrup_nac['Mujeres']).values
     titulo_terr = "Colombia (Nacional)"
-    df_mapa_base = df_mun.groupby(['depto_nom', 'año'])['Total'].sum().reset_index() # Para mapa nacional, mostramos deptos
+    df_mapa_base = df_mun.groupby(['depto_nom', 'año'])['Total'].sum().reset_index()
+    df_mapa_base = df_mapa_base.rename(columns={'depto_nom': 'Territorio'})
+
+elif escala_sel == "Regional (Macroregiones)":
+    regiones_list = sorted(df_mun['Macroregion'].unique())
+    reg_sel = st.sidebar.selectbox("Seleccione la Macroregión", regiones_list)
+    df_terr = df_mun[df_mun['Macroregion'] == reg_sel].groupby('año')['Total'].sum().reset_index()
+    años_hist = df_terr['año'].values
+    pob_hist = df_terr['Total'].values
+    titulo_terr = f"Región {reg_sel}"
+    df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['depto_nom', 'año'])['Total'].sum().reset_index()
+    df_mapa_base = df_mapa_base.rename(columns={'depto_nom': 'Territorio'})
 
 elif escala_sel in ["Departamental", "Municipal"]:
     deptos = sorted(df_mun['depto_nom'].dropna().unique())
@@ -92,12 +120,14 @@ elif escala_sel in ["Departamental", "Municipal"]:
         df_terr = df_mun[df_mun['depto_nom'] == depto_sel].groupby('año')['Total'].sum().reset_index()
         titulo_terr = depto_sel
         df_mapa_base = df_mun[df_mun['depto_nom'] == depto_sel].groupby(['municipio', 'año'])['Total'].sum().reset_index()
+        df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio'})
     else:
         mpios = sorted(df_mun[df_mun['depto_nom'] == depto_sel]['municipio'].dropna().unique())
         mpio_sel = st.sidebar.selectbox("Municipio", mpios)
         df_terr = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)].groupby('año')['Total'].sum().reset_index()
         titulo_terr = f"{mpio_sel}, {depto_sel}"
-        df_mapa_base = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)] # Base urbana/rural
+        df_mapa_base = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)].groupby(['municipio', 'año'])['Total'].sum().reset_index()
+        df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio'})
         
     años_hist = df_terr['año'].values
     pob_hist = df_terr['Total'].values
@@ -122,6 +152,8 @@ elif escala_sel == "Veredal (Antioquia)":
     pob_hist = df_hist_rural['Total'].values * ratio_vereda
     titulo_terr = f"Vereda {vereda_sel} ({mpio_sel})"
     df_mapa_base = df_mpio_veredas.copy()
+    df_mapa_base = df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Poblacion_hab': 'Total'})
+    df_mapa_base['año'] = 2020 # Fecha estática base para veredas sin serie histórica
 
 # --- 4. CÁLCULO DE PROYECCIONES ---
 x_hist = np.array(años_hist, dtype=float)
@@ -182,7 +214,6 @@ with tab_modelos:
 
     st.divider()
 
-    # ANIMACIÓN DE PIRÁMIDES
     st.sidebar.header("🎯 2. Viaje en el Tiempo")
     modelo_sel = st.sidebar.radio("Base de cálculo para la pirámide:", ["Logístico", "Exponencial", "Lineal", "Dato Real (Si existe)"])
     columna_modelo = "Real" if modelo_sel == "Dato Real (Si existe)" else modelo_sel
@@ -207,7 +238,7 @@ with tab_modelos:
         ph_metrica_muj = st.empty()
         ph_metrica_ind = st.empty()
 
-    df_piramide_final = pd.DataFrame() # Para guardarla y descargarla luego
+    df_piramide_final = pd.DataFrame() 
 
     def renderizar_piramide(año_obj):
         global df_piramide_final
@@ -231,7 +262,7 @@ with tab_modelos:
         df_agrupado = df_pir.groupby('Rango', observed=True)[['Hombres', 'Mujeres']].sum().reset_index()
         
         df_melt = pd.melt(df_agrupado, id_vars=['Rango'], value_vars=['Hombres', 'Mujeres'], var_name='Sexo', value_name='Poblacion')
-        df_piramide_final = df_melt.copy() # Guardar estado para descarga
+        df_piramide_final = df_melt.copy()
         
         fig_pir = px.bar(df_melt, y='Rango', x='Poblacion', color='Sexo', orientation='h', color_discrete_map={'Hombres': '#2563eb', 'Mujeres': '#db2777'})
         
@@ -257,8 +288,6 @@ with tab_modelos:
                 time.sleep(velocidad_animacion)
     else:
         renderizar_piramide(año_sel)
-
-st.divider()
 
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
@@ -288,59 +317,82 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
 # PESTAÑA 2: MAPA DEMOGRÁFICO (GEOVISOR)
 # ==========================================
 with tab_mapas:
-    st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_terr}")
+    st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_terr} ({año_sel})")
     
-    st.info("💡 **Módulo Espacial Listo:** La lógica del mapa coroplético ya está programada. Para que los polígonos se dibujen en pantalla, por favor sube los archivos geométricos correspondientes (`.geojson`) a la carpeta `data/` del proyecto.")
+    # 1. Ajustar los datos al año seleccionado (o usar el más reciente si no aplica)
+    if 'año' in df_mapa_base.columns:
+        df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)]
+    else:
+        df_mapa_año = df_mapa_base.copy()
+
+    col_map1, col_map2 = st.columns([1, 3])
     
-    # Previsualización de la base de datos que alimentará el mapa
+    with col_map1:
+        st.markdown("**⚙️ Configuración del GeoJSON**")
+        # Sugerencia automática del archivo basada en la escala
+        if escala_sel == "Veredal (Antioquia)": 
+            sugerencia_geo = "veredas_Antioquia.geojson"
+            sugerencia_prop = "properties.NOMBRE_VER"
+        else: 
+            sugerencia_geo = "municipios_colombia.geojson"
+            sugerencia_prop = "properties.MPIO_CNMBR"
+            
+        archivo_geo_input = st.text_input("Nombre de tu archivo en GitHub:", value=sugerencia_geo)
+        prop_geo_input = st.text_input("Llave del GeoJSON para cruzar (ej. properties.MPIO_CNMBR):", value=sugerencia_prop)
+        
+        st.info("💡 **Tip:** Asegúrate de que los nombres de los territorios en el archivo GeoJSON coincidan con los de nuestra base de datos (Ej: Medellín = Medellín).")
+
+    with col_map2:
+        ruta_geo = os.path.join(RUTA_RAIZ, "data", archivo_geo_input)
+        
+        if os.path.exists(ruta_geo):
+            try:
+                with open(ruta_geo, encoding='utf-8') as f:
+                    geo_data = json.load(f)
+                
+                # Renderizar Mapa Plotly
+                fig_mapa = px.choropleth_mapbox(
+                    df_mapa_año,
+                    geojson=geo_data,
+                    locations='Territorio',        # La columna estandarizada en nuestro DataFrame
+                    featureidkey=prop_geo_input,   # La columna dentro del GeoJSON
+                    color='Total',                 # Intensidad del color
+                    color_continuous_scale="Viridis",
+                    mapbox_style="carto-positron",
+                    zoom=5 if escala_sel != "Veredal (Antioquia)" else 9, 
+                    center={"lat": 4.57, "lon": -74.29} if escala_sel != "Veredal (Antioquia)" else {"lat": 6.25, "lon": -75.56},
+                    opacity=0.7,
+                    labels={'Total': 'Población'}
+                )
+                fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+                st.plotly_chart(fig_mapa, width='stretch')
+                
+            except Exception as e:
+                st.error(f"❌ Error al dibujar el mapa. Verifica que la llave '{prop_geo_input}' exista en tu archivo GeoJSON. Detalle técnico: {e}")
+        else:
+            st.warning(f"⚠️ No se encontró el archivo **{archivo_geo_input}** en tu carpeta `data/`. Súbelo a GitHub para que el mapa cobre vida al instante.")
+            
     st.markdown("### Tabla de Atributos Espaciales")
-    st.markdown("Esta es la matriz de datos lista para inyectarse al mapa en tiempo real según los filtros seleccionados:")
-    st.dataframe(df_mapa_base.head(15), use_container_width=True)
-    
-    st.markdown("""
-    **¿Cómo activar el mapa real en el futuro?**
-    1. Guarda el archivo geométrico en `data/` (ej. `municipios_colombia.geojson`).
-    2. Usa la librería `plotly.express.choropleth_mapbox` enlazando esta tabla mostrada arriba (`df_mapa_base`) con el archivo geojson mediante la llave primaria (Nombre del municipio o Código DANE).
-    """)
+    st.dataframe(df_mapa_año, use_container_width=True)
 
 # ==========================================
 # PESTAÑA 3: DESCARGAS Y EXPORTACIÓN
 # ==========================================
 with tab_descargas:
     st.subheader("💾 Exportación de Resultados y Series de Tiempo")
-    st.markdown("Descarga los modelos matemáticos y las pirámides calculadas por la aplicación para usarlos en informes o software GIS.")
-    
     col_d1, col_d2 = st.columns(2)
     
     with col_d1:
         st.markdown("### 📈 Curvas de Proyección (1950-2100)")
-        st.markdown("Incluye datos reales de censos y modelos Logístico, Lineal y Exponencial.")
         csv_proj = df_proj.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="⬇️ Descargar Proyecciones (CSV)",
-            data=csv_proj,
-            file_name=f"Proyecciones_{titulo_terr}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+        st.download_button(label="⬇️ Descargar Proyecciones (CSV)", data=csv_proj, file_name=f"Proyecciones_{titulo_terr}.csv", mime="text/csv", use_container_width=True)
         st.dataframe(df_proj.dropna(subset=['Real']).head(5), use_container_width=True)
 
     with col_d2:
         st.markdown(f"### 📊 Pirámide Sintética ({año_sel})")
-        st.markdown(f"Datos estructurados de la pirámide proyectada para el año seleccionado.")
-        
-        # Procesar valores absolutos para que el CSV no salga con hombres en negativo
         df_descarga_pir = df_piramide_final.copy()
         if not df_descarga_pir.empty:
             df_descarga_pir['Poblacion'] = df_descarga_pir['Poblacion'].abs()
             csv_pir = df_descarga_pir.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label=f"⬇️ Descargar Pirámide {año_sel} (CSV)",
-                data=csv_pir,
-                file_name=f"Piramide_{año_sel}_{titulo_terr}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+            st.download_button(label=f"⬇️ Descargar Pirámide {año_sel} (CSV)", data=csv_pir, file_name=f"Piramide_{año_sel}_{titulo_terr}.csv", mime="text/csv", use_container_width=True)
             st.dataframe(df_descarga_pir.head(5), use_container_width=True)
-            
-    st.warning("📸 **¿Quieres descargar las gráficas como imagen?** Pasa el mouse sobre cualquier gráfico (curvas o pirámide) y haz clic en el ícono de la cámara 📷 que aparece en la esquina superior derecha.")
