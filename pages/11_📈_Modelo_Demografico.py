@@ -9,6 +9,7 @@ from scipy.optimize import curve_fit
 import os
 import time
 import json
+import unicodedata
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -18,10 +19,16 @@ st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
 st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
 st.divider()
 
+# --- FUNCION MÁGICA PARA EMPAREJAR MAPAS (Quita tildes y pone mayúsculas) ---
+def normalizar_texto(texto):
+    if pd.isna(texto): return ""
+    texto = str(texto).upper().strip()
+    texto = ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+    return texto
+
 # --- 1. LECTURA DE DATOS LIMPIOS Y VEREDALES ---
 RUTA_RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
-# Diccionario de Macroregiones de Colombia
 REGIONES_COL = {
     'Caribe': ['Atlántico', 'Bolívar', 'Cesar', 'Córdoba', 'La Guajira', 'Magdalena', 'Sucre', 'Archipiélago De San Andrés'],
     'Pacífica': ['Cauca', 'Chocó', 'Nariño', 'Valle Del Cauca'],
@@ -33,14 +40,12 @@ REGIONES_COL = {
 @st.cache_data
 def cargar_datos_limpios():
     try:
-        # Capa 1: Nacional
         ruta_nac = os.path.join(RUTA_RAIZ, "data", "PobCol1912_2100.csv")
         df_nac = pd.read_csv(ruta_nac, sep=',')
         if len(df_nac.columns) < 2: df_nac = pd.read_csv(ruta_nac, sep=';')
         df_nac.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().title() for c in df_nac.columns]
         df_nac = df_nac.rename(columns={'Male': 'Hombres', 'Female': 'Mujeres', 'Ano': 'Año'})
         
-        # Capa 2: Municipal
         ruta_mun_1 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_Colombia.csv")
         ruta_mun_2 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_colombia.csv")
         if os.path.exists(ruta_mun_1): df_mun = pd.read_csv(ruta_mun_1, sep=',')
@@ -53,14 +58,12 @@ def cargar_datos_limpios():
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
         
-        # Asignar Región a cada municipio
         def asignar_region(depto):
             for region, deptos in REGIONES_COL.items():
                 if depto in deptos: return region
             return "Sin Región"
         df_mun['Macroregion'] = df_mun['depto_nom'].apply(asignar_region)
         
-        # Capa 3: Veredal (Antioquia)
         df_ver = pd.DataFrame()
         ruta_ver_1 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv")
         ruta_ver_2 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.xlsx")
@@ -153,7 +156,7 @@ elif escala_sel == "Veredal (Antioquia)":
     titulo_terr = f"Vereda {vereda_sel} ({mpio_sel})"
     df_mapa_base = df_mpio_veredas.copy()
     df_mapa_base = df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Poblacion_hab': 'Total'})
-    df_mapa_base['año'] = 2020 # Fecha estática base para veredas sin serie histórica
+    df_mapa_base['año'] = 2020 
 
 # --- 4. CÁLCULO DE PROYECCIONES ---
 x_hist = np.array(años_hist, dtype=float)
@@ -288,7 +291,7 @@ with tab_modelos:
                 time.sleep(velocidad_animacion)
     else:
         renderizar_piramide(año_sel)
-
+        
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
     st.markdown("""
@@ -319,28 +322,27 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
 with tab_mapas:
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_terr} ({año_sel})")
     
-    # 1. Ajustar los datos al año seleccionado (o usar el más reciente si no aplica)
     if 'año' in df_mapa_base.columns:
-        df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)]
+        df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)].copy()
     else:
         df_mapa_año = df_mapa_base.copy()
+
+    # 1. Limpieza de nuestra base de datos para cruce perfecto
+    df_mapa_año['MATCH_ID'] = df_mapa_año['Territorio'].apply(normalizar_texto)
 
     col_map1, col_map2 = st.columns([1, 3])
     
     with col_map1:
         st.markdown("**⚙️ Configuración del GeoJSON**")
-        # Sugerencia automática del archivo basada en la escala
         if escala_sel == "Veredal (Antioquia)": 
-            sugerencia_geo = "veredas_Antioquia.geojson"
+            sugerencia_geo = "VeredasCV.geojson"
             sugerencia_prop = "properties.NOMBRE_VER"
         else: 
             sugerencia_geo = "municipios_colombia.geojson"
-            sugerencia_prop = "properties.MPIO_CNMBR"
+            sugerencia_prop = "properties.MUNICIPIO"
             
-        archivo_geo_input = st.text_input("Nombre de tu archivo en GitHub:", value=sugerencia_geo)
-        prop_geo_input = st.text_input("Llave del GeoJSON para cruzar (ej. properties.MPIO_CNMBR):", value=sugerencia_prop)
-        
-        st.info("💡 **Tip:** Asegúrate de que los nombres de los territorios en el archivo GeoJSON coincidan con los de nuestra base de datos (Ej: Medellín = Medellín).")
+        archivo_geo_input = st.text_input("Archivo en GitHub:", value=sugerencia_geo)
+        prop_geo_input = st.text_input("Llave GeoJSON (ej. properties.MUNICIPIO):", value=sugerencia_prop)
 
     with col_map2:
         ruta_geo = os.path.join(RUTA_RAIZ, "data", archivo_geo_input)
@@ -350,13 +352,19 @@ with tab_mapas:
                 with open(ruta_geo, encoding='utf-8') as f:
                     geo_data = json.load(f)
                 
-                # Renderizar Mapa Plotly
+                # 2. Limpieza dinámica del GeoJSON (Inyectar MATCH_ID)
+                prop_key = prop_geo_input.replace("properties.", "")
+                for feature in geo_data['features']:
+                    valor_original = feature['properties'].get(prop_key, "")
+                    feature['properties']['MATCH_ID'] = normalizar_texto(valor_original)
+                
+                # 3. Renderizar Mapa
                 fig_mapa = px.choropleth_mapbox(
                     df_mapa_año,
                     geojson=geo_data,
-                    locations='Territorio',        # La columna estandarizada en nuestro DataFrame
-                    featureidkey=prop_geo_input,   # La columna dentro del GeoJSON
-                    color='Total',                 # Intensidad del color
+                    locations='MATCH_ID',        # Nuestra columna limpia
+                    featureidkey='properties.MATCH_ID', # El GeoJSON limpio
+                    color='Total',
                     color_continuous_scale="Viridis",
                     mapbox_style="carto-positron",
                     zoom=5 if escala_sel != "Veredal (Antioquia)" else 9, 
@@ -368,12 +376,11 @@ with tab_mapas:
                 st.plotly_chart(fig_mapa, width='stretch')
                 
             except Exception as e:
-                st.error(f"❌ Error al dibujar el mapa. Verifica que la llave '{prop_geo_input}' exista en tu archivo GeoJSON. Detalle técnico: {e}")
+                st.error(f"❌ Error dibujando mapa: {e}")
         else:
-            st.warning(f"⚠️ No se encontró el archivo **{archivo_geo_input}** en tu carpeta `data/`. Súbelo a GitHub para que el mapa cobre vida al instante.")
+            st.warning(f"⚠️ No se encontró **{archivo_geo_input}** en la carpeta `data/`.")
             
-    st.markdown("### Tabla de Atributos Espaciales")
-    st.dataframe(df_mapa_año, use_container_width=True)
+    st.dataframe(df_mapa_año[['Territorio', 'Total', 'MATCH_ID']], use_container_width=True)
 
 # ==========================================
 # PESTAÑA 3: DESCARGAS Y EXPORTACIÓN
