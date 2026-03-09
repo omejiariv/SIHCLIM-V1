@@ -17,24 +17,21 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Modelo Demográfico Integral", page_icon="📈", layout="wide")
 
 st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
-st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección poblacional (1952-2100).")
+st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
 st.divider()
 
-# --- FUNCION MÁGICA PARA EMPAREJAR MAPAS (Quita tildes, mayúsculas y homologa IGAC vs DANE) ---
+# --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
 def normalizar_texto(texto):
     if pd.isna(texto): return ""
     t = str(texto).upper().strip()
     
-    # 1. Quitar tildes y diacríticos (La 'Ñ' se vuelve 'N')
-    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    
-    # 2. Diccionario Quirúrgico (Traductor DANE -> MAPA)
+    # Casos atípicos DANE vs IGAC
     diccionario_rebeldes = {
         "BOGOTA, D.C.": "BOGOTA",
         "BOGOTA D.C.": "BOGOTA",
         "SAN JOSE DE CUCUTA": "CUCUTA",
         "LA GUAJIRA": "GUAJIRA", 
-        "VALLE DEL CAUCA": "VALLE", # A veces el mapa lo llama solo Valle
+        "VALLE DEL CAUCA": "VALLE", 
         "EL PENOL": "PENOL",
         "EL RETIRO": "RETIRO",
         "EL SANTUARIO": "SANTUARIO",
@@ -43,10 +40,15 @@ def normalizar_texto(texto):
         "PUEBLORRICO": "PUEBLO RICO",
         "DON MATIAS": "DONMATIAS"
     }
+    
+    # 1. Quitar tildes y diacríticos
+    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+    
+    # 2. Aplicar diccionario
     for mal, bien in diccionario_rebeldes.items():
         if t == mal: t = bien
         
-    # 3. Destruir espacios y caracteres raros para crear un ADN irrompible
+    # 3. Destruir TODO lo que no sea letra o número (espacios, comas, puntos, guiones)
     t = re.sub(r'[^A-Z0-9]', '', t)
     return t
 
@@ -82,10 +84,9 @@ def cargar_datos_limpios():
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
         
-        # Asignar Región a cada municipio (Con excepciones quirúrgicas)
+        # MAGIA 2: Asignar Región con excepciones (Urabá)
         def asignar_region(fila):
             uraba_caribe = ["TURBO", "NECOCLI", "SAN JUAN DE URABA", "ARBOLETES", "SAN PEDRO DE URABA", "APARTADO", "CAREPA", "CHIGORODO", "MUTATA"]
-            # Si el municipio está en Urabá, es Caribe
             if normalizar_texto(fila['municipio']) in [normalizar_texto(m) for m in uraba_caribe]:
                 return 'Caribe'
                 
@@ -94,7 +95,6 @@ def cargar_datos_limpios():
                 if depto in deptos: return region
             return "Sin Región"
             
-        # Aplicamos la función enviando toda la fila (axis=1) para leer tanto depto como municipio
         df_mun['Macroregion'] = df_mun.apply(asignar_region, axis=1)
         
         df_ver = pd.DataFrame()
@@ -130,7 +130,6 @@ escala_sel = st.sidebar.selectbox("Escala Territorial", ["Nacional", "Regional (
 años_hist, pob_hist = [], []
 df_mapa_base = pd.DataFrame()
 
-# MAGIA 2: Base espacial siempre a nivel municipal (para que cruce con el GeoJSON)
 if escala_sel == "Nacional":
     df_agrup_nac = df_nac.groupby('Año')[['Hombres', 'Mujeres']].sum().reset_index()
     años_hist = df_agrup_nac['Año'].values
@@ -358,7 +357,7 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
 with tab_mapas:
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_terr} ({año_sel})")
     
-    # Selector de Área Geográfica (Total/Urbano/Rural)
+    # Selector de Área Geográfica
     if escala_sel != "Veredal (Antioquia)":
         area_mapa = st.radio("Filtro de Zona Geográfica:", ["Total", "Urbano", "Rural"], horizontal=True)
     else:
@@ -371,7 +370,7 @@ with tab_mapas:
     else:
         df_mapa_año = df_mapa_base.copy()
 
-    # Filtro Espacial (Urbano/Rural/Total)
+    # Filtro Espacial
     if area_mapa == "Total":
         df_mapa_plot = df_mapa_año.groupby(['Territorio', 'Padre'])['Total'].sum().reset_index()
     else:
@@ -392,7 +391,6 @@ with tab_mapas:
             
         archivo_geo_input = st.text_input("Archivo en GitHub:", value=sugerencia_geo)
         prop_geo_input = st.text_input("Llave Territorio (ej. properties.MUNICIPIO):", value=sugerencia_prop)
-        
         st.markdown("**🔗 Llave Doble (Anti-Homonimia)**")
         prop_padre_input = st.text_input("Llave Contexto (ej. properties.DEPTO):", value=sugerencia_padre)
 
@@ -401,7 +399,7 @@ with tab_mapas:
         
         if os.path.exists(ruta_geo) and not df_mapa_plot.empty:
             try:
-                # 1. Crear ADN Único en Pandas (Con el súper aspirador Regex)
+                # 1. Crear ADN Único en Pandas usando el Aspirador
                 if prop_padre_input.strip() != "":
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].apply(normalizar_texto)
                 else:
@@ -423,7 +421,7 @@ with tab_mapas:
                     else:
                         feature['properties']['MATCH_ID'] = normalizar_texto(val_terr)
                 
-                # MAGIA 3: Percentil 85 para proteger la escala de colores (Efecto Bogotá/Medellín)
+                # MAGIA 3: Percentil 85/90 para proteger la escala de colores
                 q_val = 0.85 if area_mapa == "Total" else 0.90
                 max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
                 
@@ -435,24 +433,32 @@ with tab_mapas:
                     featureidkey='properties.MATCH_ID', 
                     color='Total',
                     color_continuous_scale="Viridis",
-                    range_color=[0, max_color],  # Escala inteligente anclada al 85%
+                    range_color=[0, max_color],  
                     mapbox_style="carto-positron",
                     zoom=5 if escala_sel != "Veredal (Antioquia)" else 9, 
                     center={"lat": 4.57, "lon": -74.29} if escala_sel != "Veredal (Antioquia)" else {"lat": 6.25, "lon": -75.56},
                     opacity=0.8,
                     labels={'Total': f'Población {area_mapa}'},
-                    hover_data={'Total': ':,.0f', 'Territorio': True, 'Padre': True} # Ocultamos el MATCH_ID feo
+                    hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
                 )
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
                 st.plotly_chart(fig_mapa, width='stretch')
                 
-                # 4. DIAGNÓSTICO DE VEREDAS (Si hay huecos, aquí sabremos por qué)
-                geo_ids_disponibles = [f['properties']['MATCH_ID'] for f in geo_data['features']]
-                df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(geo_ids_disponibles)
+                # DIAGNÓSTICO: Si algo falla, el sistema nos dirá qué faltó
+                geo_ids_disp = [f['properties'].get('MATCH_ID', '') for f in geo_data['features']]
+                df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(geo_ids_disp)
                 faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
                 
                 if not faltantes.empty:
-                    st.warning(f"⚠️ Atención: Hay {len(faltantes)} territorios en la base de datos que no cruzaron con el mapa GeoJSON. Revisa la tabla inferior para ver cuáles son y añadirlos al Traductor Maestro si es necesario.")
+                    st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el GeoJSON. Revisa la tabla de abajo para añadirlos al diccionario si es necesario.")
+                
+            except Exception as e:
+                st.error(f"❌ Error dibujando mapa: {e}")
+        else:
+            st.warning(f"⚠️ No se encontró **{archivo_geo_input}** o no hay datos para esta vista.")
+            
+    st.dataframe(df_mapa_plot[['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa']].sort_values('Total', ascending=False), use_container_width=True)
+
 # ==========================================
 # PESTAÑA 3: DESCARGAS Y EXPORTACIÓN
 # ==========================================
