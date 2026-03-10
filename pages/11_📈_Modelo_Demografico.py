@@ -98,7 +98,10 @@ def normalizar_texto(texto):
         "TUNUNGUA": "TUNUNGA",
         "LAMONTANITA": "MONTANITA",
         "ELPAUJIL": "PAUJIL",
-        "VILLARICA": "VILLARRICA"
+        "VILLARICA": "VILLARRICA",
+        "GUADALAJARADEBUGA": "BUGA",
+        "SANANDRES": "SANANDRES",
+        "BOGOTADC": "BOGOTA"
     }
     
     # Aplicar traducción si existe en el diccionario
