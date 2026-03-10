@@ -13,12 +13,11 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Generador Espacial", page_icon="⚙️", layout="wide")
 
 st.title("⚙️ Centro de Geoprocesamiento y Transformación")
-st.info("Herramientas de administrador para cruces espaciales, compresión de archivos y estandarización de cartografía web.")
+st.info("Herramientas de administrador para cruces espaciales, compresión y estandarización de cartografía web.")
 
-# Nueva estructura de pestañas
 tab1, tab2, tab3 = st.tabs([
     "🧩 1. Intersección Cuencas-Municipios", 
-    "🔄 2. Convertidor a GeoJSON (Soporta ZIP)", 
+    "🔄 2. Convertidor GeoJSON (Soporta ZIP y Simplificación)", 
     "🗜️ 3. Compresor/Extractor ZIP"
 ])
 
@@ -66,26 +65,36 @@ with tab1:
         )
 
 # =====================================================================
-# PESTAÑA 2: TRANSFORMADOR DE SHAPEFILES (AHORA SOPORTA ZIP DIRECTO)
+# PESTAÑA 2: EL TRANSFORMADOR DE SHAPEFILES (SOPORTA ZIP Y SIMPLIFICACIÓN)
 # =====================================================================
 with tab2:
-    st.subheader("Transformador Web de Cartografía a GeoJSON")
-    st.markdown("Puedes subir un archivo **.zip** que contenga tu Shapefile, o seleccionar los archivos sueltos (`.shp`, `.dbf`, `.shx`, etc.) al mismo tiempo.")
+    st.subheader("Transformador y Optimizador Web de Cartografía")
+    st.markdown("Sube un archivo **.zip** (ej. de 65 MB) que contenga tu Shapefile. El sistema lo descomprimirá, lo simplificará para la web y te entregará un GeoJSON ligero.")
     
     modo_carga = st.radio("Método de Carga:", ["Subir archivo .zip (Recomendado)", "Subir archivos sueltos"], horizontal=True)
+    
+    # --- CONTROL DE SIMPLIFICACIÓN ---
+    st.markdown("---")
+    st.markdown("#### 📉 Optimización Topológica (Adelgazar Mapa)")
+    simplificar = st.checkbox("Activar simplificación de fronteras (Crucial para mapas Nacionales grandes)", value=True)
+    factor_simp = st.slider(
+        "Tolerancia (Grados). Más alto = Más liviano pero bordes más rectos. 0.005 es ideal para Municipios.", 
+        min_value=0.001, max_value=0.050, value=0.005, step=0.001, format="%.3f"
+    )
+    st.markdown("---")
     
     if modo_carga == "Subir archivo .zip (Recomendado)":
         archivo_zip = st.file_uploader("Sube tu archivo ZIP (debe contener un .shp adentro)", type=['zip'])
         
-        if archivo_zip and st.button("⚙️ Descomprimir y Transformar a GeoJSON"):
-            with st.spinner("Procesando ZIP y reproyectando a WGS84..."):
+        if archivo_zip and st.button("⚙️ Descomprimir, Simplificar y Transformar"):
+            with st.spinner("Procesando ZIP en la nube..."):
                 try:
                     with tempfile.TemporaryDirectory() as tmpdir:
-                        # Extraer todo el ZIP en la carpeta temporal
+                        # 1. Extraer ZIP
                         with zipfile.ZipFile(archivo_zip, 'r') as zip_ref:
                             zip_ref.extractall(tmpdir)
                             
-                        # Buscar recursivamente el archivo .shp
+                        # 2. Buscar archivo .shp
                         ruta_shp = None
                         for root, dirs, files in os.walk(tmpdir):
                             for file in files:
@@ -97,17 +106,26 @@ with tab2:
                         if not ruta_shp:
                             st.error("❌ No se encontró ningún archivo .shp dentro del ZIP.")
                         else:
-                            # Leer con GeoPandas
+                            # 3. Leer con GeoPandas
+                            st.toast("Leyendo polígonos...")
                             gdf = gpd.read_file(ruta_shp)
                             
-                            # Estandarización de Coordenadas
+                            # 4. Proyección a WGS84 (Web)
                             if gdf.crs is None: gdf.set_crs(epsg=3116, inplace=True)
-                            if gdf.crs.to_string() != "EPSG:4326": gdf = gdf.to_crs(epsg=4326)
+                            if gdf.crs.to_string() != "EPSG:4326": 
+                                st.toast("Reproyectando coordenadas a WGS84...")
+                                gdf = gdf.to_crs(epsg=4326)
                             
+                            # 5. SIMPLIFICACIÓN TOPOLÓGICA MÁGICA
+                            if simplificar:
+                                st.toast(f"Simplificando geometrías (Tolerancia: {factor_simp})...")
+                                gdf['geometry'] = gdf['geometry'].simplify(tolerance=factor_simp, preserve_topology=True)
+                            
+                            st.toast("Convirtiendo a GeoJSON...")
                             geojson_data = gdf.to_json()
-                            nombre_base = os.path.basename(ruta_shp).replace('.shp', '').replace('.SHP', '')
+                            nombre_base = os.path.basename(ruta_shp).replace('.shp', '').replace('.SHP', '') + "_optimizado"
                             
-                            st.success(f"✅ ¡Capa '{nombre_base}' estandarizada! ({len(gdf)} polígonos procesados).")
+                            st.success(f"✅ ¡Capa '{nombre_base}' lista! ({len(gdf)} polígonos procesados).")
                             st.download_button(
                                 label=f"📥 Descargar {nombre_base}.geojson",
                                 data=geojson_data,
@@ -117,13 +135,13 @@ with tab2:
                 except Exception as e:
                     st.error(f"❌ Error procesando el ZIP: {str(e)}")
                     
-    else: # Modo archivos sueltos (tu código original mejorado)
+    else: # Modo archivos sueltos
         archivos_subidos = st.file_uploader("Selecciona archivos (Mínimo .shp, .shx y .dbf)", accept_multiple_files=True)
         if archivos_subidos:
             archivo_shp = next((f for f in archivos_subidos if f.name.lower().endswith('.shp')), None)
             
             if archivo_shp and st.button("⚙️ Transformar sueltos a GeoJSON"):
-                with st.spinner("Reconstruyendo Shapefile y reproyectando..."):
+                with st.spinner("Procesando archivos sueltos..."):
                     try:
                         with tempfile.TemporaryDirectory() as tmpdir:
                             for f in archivos_subidos:
@@ -136,8 +154,11 @@ with tab2:
                             if gdf.crs is None: gdf.set_crs(epsg=3116, inplace=True)
                             if gdf.crs.to_string() != "EPSG:4326": gdf = gdf.to_crs(epsg=4326)
                             
+                            if simplificar:
+                                gdf['geometry'] = gdf['geometry'].simplify(tolerance=factor_simp, preserve_topology=True)
+                            
                             geojson_data = gdf.to_json()
-                            nombre_base = archivo_shp.name.replace('.shp', '').replace('.SHP', '')
+                            nombre_base = archivo_shp.name.replace('.shp', '').replace('.SHP', '') + "_optimizado"
                             
                             st.success(f"✅ ¡Capa estandarizada! ({len(gdf)} registros).")
                             st.download_button(
@@ -165,7 +186,6 @@ with tab3:
         if archivos_a_comprimir:
             nombre_zip = st.text_input("Nombre del archivo final:", value="mapas_comprimidos")
             if st.button("📦 Crear Archivo ZIP"):
-                # Crear ZIP en memoria
                 zip_buffer = io.BytesIO()
                 with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
                     for archivo in archivos_a_comprimir:
@@ -181,17 +201,14 @@ with tab3:
 
     with col_zip2:
         st.markdown("### 📂 Descomprimir ZIP")
-        st.markdown("Sube un archivo `.zip` para ver y descargar su contenido por separado.")
+        st.markdown("Sube un archivo `.zip` para extraer su contenido.")
         archivo_a_descomprimir = st.file_uploader("Sube un archivo ZIP", type=['zip'], key="uploader_desc")
         
         if archivo_a_descomprimir:
             with zipfile.ZipFile(archivo_a_descomprimir, 'r') as zip_ref:
                 lista_archivos = zip_ref.namelist()
                 st.write(f"**Contiene {len(lista_archivos)} archivos:**")
-                
-                # Mostrar botones de descarga individuales
                 for nombre_archivo in lista_archivos:
-                    # Evitar carpetas vacías
                     if not nombre_archivo.endswith('/'): 
                         datos_archivo = zip_ref.read(nombre_archivo)
                         st.download_button(
