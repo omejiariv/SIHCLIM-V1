@@ -635,7 +635,10 @@ with tab_mapas:
 # PESTAÑA 3: RANKINGS Y DINÁMICA HISTÓRICA (Top 15 y 2005-2035)
 # ==========================================
 with tab_rankings:
-    st.subheader(f"📊 Análisis Comparativo y Trayectorias Poblacionales ({filtro_zona})")
+    # Extraemos la zona automáticamente de la base para evitar errores
+    zona_actual = df_mapa_base['area_geografica'].iloc[0].title() if not df_mapa_base.empty and 'area_geografica' in df_mapa_base.columns else "Total"
+    
+    st.subheader(f"📊 Análisis Comparativo y Trayectorias Poblacionales ({zona_actual})")
     
     # Solo mostrar si hay datos para comparar
     if not df_mapa_base.empty and len(df_mapa_base) > 1:
@@ -671,12 +674,12 @@ with tab_rankings:
                 top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
                 
                 # Preparamos los datos desde nuestra base maestra (df_mun) actualizada al 2035
-                zona_q = filtro_zona.lower()
+                zona_q = zona_actual.lower()
                 df_base_historica = df_mun[df_mun['area_geografica'] == zona_q]
                 df_line = pd.DataFrame()
                 
                 if escala_sel == "Departamental":
-                    if region_sel != "Todas":
+                    if 'region_sel' in locals() and region_sel != "Todas":
                         df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel]
                     df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
                     df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
@@ -691,7 +694,7 @@ with tab_rankings:
                     df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                     df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
                 
-                # Filtramos la serie de tiempo SOLO para el Top 10 (para que la gráfica no sea un espagueti ilegible)
+                # Filtramos la serie de tiempo SOLO para el Top 10 (para que no sea un espagueti ilegible)
                 if not df_line.empty:
                     df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
                     fig_line = px.line(df_line, x='año', y='Total', color='Territorio', markers=True,
@@ -700,8 +703,8 @@ with tab_rankings:
                     fig_line.update_layout(hovermode="x unified")
                     st.plotly_chart(fig_line, use_container_width=True)
     else:
-        st.info("💡 Selecciona una escala territorial con múltiples divisiones (ej. Municipal o Departamental) para ver el ranking y las curvas comparativas.")    
-
+        st.info("💡 Selecciona una escala territorial con múltiples divisiones (ej. Municipal o Departamental) para ver el ranking y las curvas comparativas.")
+        
 # ==========================================
 # PESTAÑA 4: DESCARGAS Y EXPORTACIÓN
 # ==========================================
