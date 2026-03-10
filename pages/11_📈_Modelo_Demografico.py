@@ -197,7 +197,7 @@ def cargar_datos_limpios():
         # =======================================================
         # 3. Cargar datos Veredales (TU CÓDIGO ORIGINAL AQUÍ)
         # =======================================================
-        ruta_ver = os.path.join(RUTA_RAIZ, "data", "TUS_VEREDAS.csv") # (Asegúrate de tener tu código original aquí)
+        ruta_ver = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv") # (Asegúrate de tener tu código original aquí)
         df_ver = pd.read_csv(ruta_ver, sep=';') # (O como lo tuvieras)
         
         return df_nac, df_mun, df_ver
