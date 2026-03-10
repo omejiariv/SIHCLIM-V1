@@ -26,6 +26,9 @@ def normalizar_texto(texto):
     t = str(texto).upper()
     t = re.sub(r'\(.*?\)', '', t)
     
+    # --- NUEVO: DESTRUCTOR DE PREFIJOS VEREDALES ---
+    t = t.replace("VDA.", "").replace("VDA ", "").replace("VEREDA ", "").replace("SECTOR ", "").replace("CGE.", "")
+    
     # 1. HOTFIX: Reparador de Caracteres Mutantes del DANE (UTF-8 a Latin-1)
     reparador = {
         "Ã\x81": "A", "Ã": "A", "Ã\x89": "E", "Ã‰": "E",
