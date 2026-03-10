@@ -448,7 +448,7 @@ with tab_mapas:
             # VALORES ACTUALIZADOS PARA EL MAPA OFICIAL DANE
             sugerencia_geo = "mgn_municipios_optimizado.geojson"
             sugerencia_prop = "properties.MPIO_CNMBR"
-            sugerencia_padre = "properties.DPTO_CNMBR"
+            sugerencia_padre = ""
             
         archivo_geo_input = st.text_input("Archivo en GitHub / Local:", value=sugerencia_geo)
         prop_geo_input = st.text_input("Llave Territorio (DANE = properties.MPIO_CNMBR):", value=sugerencia_prop)
