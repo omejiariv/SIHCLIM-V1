@@ -202,30 +202,48 @@ elif escala_sel in ["Departamental", "Municipal"]:
     pob_hist = df_terr['Total'].values
 
 elif escala_sel == "Veredal (Antioquia)":
-    mpios_veredas = sorted(df_ver['Municipio'].dropna().unique())
+    # 1. Agregamos la opción "TODOS" al principio de la lista
+    mpios_veredas = ["TODOS (Ver Mapa Completo)"] + sorted(df_ver['Municipio'].dropna().unique())
     mpio_sel = st.sidebar.selectbox("Municipio (Antioquia)", mpios_veredas)
     
-    veredas_lista = sorted(df_ver[df_ver['Municipio'] == mpio_sel]['Vereda'].dropna().unique())
-    vereda_sel = st.sidebar.selectbox("Vereda", veredas_lista)
-    
-    df_rural_mpio = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['municipio'] == mpio_sel) & (df_mun['area_geografica'] == 'rural')]
-    df_hist_rural = df_rural_mpio.groupby('año')['Total'].sum().reset_index()
-    
-    df_mpio_veredas = df_ver[df_ver['Municipio'] == mpio_sel]
-    pob_total_veredas = df_mpio_veredas['Poblacion_hab'].sum()
-    pob_ver_especifica = df_mpio_veredas[df_mpio_veredas['Vereda'] == vereda_sel]['Poblacion_hab'].sum()
-    
-    ratio_vereda = pob_ver_especifica / pob_total_veredas if pob_total_veredas > 0 else 0
-    
-    años_hist = df_hist_rural['año'].values
-    pob_hist = df_hist_rural['Total'].values * ratio_vereda
-    titulo_terr = f"Vereda {vereda_sel} ({mpio_sel})"
-    
-    df_mapa_base = df_mpio_veredas.copy()
-    df_mapa_base = df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Municipio': 'Padre', 'Poblacion_hab': 'Total'})
-    df_mapa_base['año'] = 2020 
-    df_mapa_base['area_geografica'] = 'rural'
-
+    if mpio_sel == "TODOS (Ver Mapa Completo)":
+        # Sumamos toda la población rural de Antioquia como base histórica general
+        df_rural_ant = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['area_geografica'] == 'rural')]
+        df_hist_rural = df_rural_ant.groupby('año')['Total'].sum().reset_index()
+        
+        años_hist = df_hist_rural['año'].values
+        pob_hist = df_hist_rural['Total'].values
+        titulo_terr = "Todas las Veredas (Región Disponible)"
+        
+        # Inyectamos la tabla completa de veredas al mapa
+        df_mapa_base = df_ver.copy()
+        df_mapa_base = df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Municipio': 'Padre', 'Poblacion_hab': 'Total'})
+        df_mapa_base['año'] = 2020 
+        df_mapa_base['area_geografica'] = 'rural'
+        
+    else:
+        # El código original para un solo municipio
+        veredas_lista = sorted(df_ver[df_ver['Municipio'] == mpio_sel]['Vereda'].dropna().unique())
+        vereda_sel = st.sidebar.selectbox("Vereda", veredas_lista)
+        
+        df_rural_mpio = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['municipio'] == mpio_sel) & (df_mun['area_geografica'] == 'rural')]
+        df_hist_rural = df_rural_mpio.groupby('año')['Total'].sum().reset_index()
+        
+        df_mpio_veredas = df_ver[df_ver['Municipio'] == mpio_sel]
+        pob_total_veredas = df_mpio_veredas['Poblacion_hab'].sum()
+        pob_ver_especifica = df_mpio_veredas[df_mpio_veredas['Vereda'] == vereda_sel]['Poblacion_hab'].sum()
+        
+        ratio_vereda = pob_ver_especifica / pob_total_veredas if pob_total_veredas > 0 else 0
+        
+        años_hist = df_hist_rural['año'].values
+        pob_hist = df_hist_rural['Total'].values * ratio_vereda
+        titulo_terr = f"Vereda {vereda_sel} ({mpio_sel})"
+        
+        df_mapa_base = df_mpio_veredas.copy()
+        df_mapa_base = df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Municipio': 'Padre', 'Poblacion_hab': 'Total'})
+        df_mapa_base['año'] = 2020 
+        df_mapa_base['area_geografica'] = 'rural'
+        
 # --- 4. CÁLCULO DE PROYECCIONES ---
 x_hist = np.array(años_hist, dtype=float)
 y_hist = np.array(pob_hist, dtype=float)
