@@ -106,7 +106,7 @@ def normalizar_texto(texto):
         "LAAURORA": "LAMADERAAURORA", # El Carmen de V.
         "GUAPA": "GUAPALEON", # Chigorodó
         "SANJOSEDEMULATOS": "ALTODEMULATOS", # Turbo
-        "LACIONDORX10": "ELCONDOR", # Yondó
+        "LACIONDOR-X10": "ELCONDOR", # Yondó
         "AGUASCLARAS": "AGUASCLARASSONDORA", # El Carmen de V.
         "POTREROMISERANGA": "POTRERAMISERENGA", # Medellín
         "ELRETIRO": "RETIRO",    # ARGELIA
