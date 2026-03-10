@@ -167,7 +167,9 @@ REGIONES_COL = {
 @st.cache_data
 def cargar_datos_limpios():
     try:
-        # 1. Cargar datos nacionales (Sigue siendo CSV)
+        # =======================================================
+        # 1. Cargar datos nacionales (CSV)
+        # =======================================================
         ruta_nac = os.path.join(RUTA_RAIZ, "data", "PobCol1912_2100.csv")
         df_nac = pd.read_csv(ruta_nac, sep=',')
         if len(df_nac.columns) < 2: 
@@ -177,7 +179,7 @@ def cargar_datos_limpios():
         df_nac = df_nac.rename(columns={'Male': 'Hombres', 'Female': 'Mujeres', 'Ano': 'Año'})
         
         # =======================================================
-        # 2. Cargar datos municipales (AHORA USA LECTOR DE EXCEL)
+        # 2. Cargar datos municipales (EXCEL)
         # =======================================================
         ruta_mun_1 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_Colombia.xlsx")
         ruta_mun_2 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_colombia.xlsx")
@@ -194,20 +196,6 @@ def cargar_datos_limpios():
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
         
-        # =======================================================
-        # 3. Cargar datos Veredales (TU CÓDIGO ORIGINAL AQUÍ)
-        # =======================================================
-        ruta_ver = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.xlsx") # (Asegúrate de tener tu código original aquí)
-        df_ver = pd.read_excel(ruta_ver, sep=';') # (O como lo tuvieras)
-        
-        return df_nac, df_mun, df_ver
-        
-    except Exception as e:
-        import streamlit as st
-        st.error(f"❌ Error cargando las bases de datos: {e}")
-        # SI HAY ERROR, ENTREGAMOS 3 TABLAS VACÍAS PARA QUE NO COLAPSE
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-                
         # MAGIA 2: Asignar Región con excepciones (Urabá)
         def asignar_region(fila):
             uraba_caribe = ["TURBO", "NECOCLI", "SAN JUAN DE URABA", "ARBOLETES", "SAN PEDRO DE URABA", "APARTADO", "CAREPA", "CHIGORODO", "MUTATA"]
@@ -221,12 +209,17 @@ def cargar_datos_limpios():
             
         df_mun['Macroregion'] = df_mun.apply(asignar_region, axis=1)
         
+        # =======================================================
+        # 3. Cargar datos Veredales (Soporta CSV o EXCEL)
+        # =======================================================
         df_ver = pd.DataFrame()
         ruta_ver_1 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv")
         ruta_ver_2 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.xlsx")
         
-        if os.path.exists(ruta_ver_1): df_ver = pd.read_csv(ruta_ver_1, sep=';')
-        elif os.path.exists(ruta_ver_2): df_ver = pd.read_excel(ruta_ver_2)
+        if os.path.exists(ruta_ver_1): 
+            df_ver = pd.read_csv(ruta_ver_1, sep=';')
+        elif os.path.exists(ruta_ver_2): 
+            df_ver = pd.read_excel(ruta_ver_2) # Sin sep=';' para Excel
             
         if not df_ver.empty:
             df_ver.columns = [str(c).replace('\ufeff', '').strip() for c in df_ver.columns]
@@ -235,13 +228,15 @@ def cargar_datos_limpios():
             if 'Poblacion_hab' in df_ver.columns: df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'], errors='coerce').fillna(0)
 
         return df_nac, df_mun, df_ver
+        
     except Exception as e:
-        st.error(f"🚨 Error: {e}")
+        import streamlit as st
+        st.error(f"🚨 Error cargando las bases de datos: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 df_nac, df_mun, df_ver = cargar_datos_limpios()
 if df_nac.empty or df_mun.empty: st.stop()
-
+    
 # --- 2. MODELOS MATEMÁTICOS ---
 def modelo_lineal(x, m, b): return m * x + b
 def modelo_exponencial(x, p0, r): return p0 * np.exp(r * (x - 2005))
