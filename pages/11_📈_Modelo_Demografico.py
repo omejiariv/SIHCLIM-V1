@@ -109,449 +109,449 @@ def normalizar_texto(texto):
         "LACIONDORX10": "ELCONDOR", # Yondó
         "AGUASCLARAS": "AGUASCLARASSONDORA", # El Carmen de V.
         "POTREROMISERANGA": "POTRERAMISERENGA", # Medellín
-        "Chagualal": "CHAGUALAL",    # Abejorral
-        "Purima": "PURIMA",    # Abejorral
-        "El Vesubio": "ELVESUBIO",    # Abejorral
-        "Piedra Candela": "PIEDRACANDELA",    # Abejorral
-        "Quebradona Abajo": "QUEBRADONAABAJO",    # Abejorral
-        "La Albania": "LAALBANIA",    # Abejorral
-        "Nápoles": "NAPOLES",    # Abejorral
-        "El Caunzal": "ELCAUNZAL",    # Abejorral
-        "La Loma Parte Baja": "LALOMAPARTEBAJA",    # Abejorral
-        "Corcovado": "CORCOVADO",    # Abriaqui
-        "La Nancuí": "LANANCUI",    # Abriaqui
-        "Gualí": "GUALI",    # Amaga
-        "Guaimaral": "GUAIMARAL",    # Amaga
-        "Portachuelos": "PORTACHUELOS",    # Amalfi
-        "Ánimas": "ANIMAS",    # Amalfi
-        "La Guayana": "LAGUAYANA",    # Amalfi
-        "Jardín": "JARDIN",    # Amalfi
-        "El Naranjal": "ELNARANJAL",    # Amalfi
-        "La Sonadora": "LASONADORA",    # Amalfi
-        "Tinitacita": "TINITACITA",    # Amalfi
-        "La Esperanza": "LAESPERANZA",    # Amalfi
-        "Pavas": "PAVAS",    # Amalfi
-        "Baldío": "BALDIO",    # Amalfi
-        "El Barcino": "ELBARCINO",    # Andes
-        "Romeral": "ROMERAL",    # Angelopolis
-        "Palmas": "PALMAS",    # Angostura
-        "Liberia": "LIBERIA",    # Anori
-        "El Carmín": "ELCARMIN",    # Anori
-        "La Guayana": "LAGUAYANA",    # Anori
-        "Tabacal": "TABACAL",    # Anori
-        "Villa Fátima": "VILLAFATIMA",    # Anori
-        "La Choclina": "LACHOCLINA",    # Anza
-        "La Chuscalito": "LACHUSCALITO",    # Anza
-        "El Osito": "ELOSITO",    # Apartado
-        "Guineo Alto": "GUINEOALTO",    # Apartado
-        "La Pedrosa": "LAPEDROSA",    # Apartado
-        "San Juancito Vijao": "SANJUANCITOVIJAO",    # Arboletes
-        "Agua Viva": "AGUAVIVA",    # Arboletes
-        "Calabozo": "CALABOZO",    # Arboletes
-        "El Café": "ELCAFE",    # Argelia
-        "El Retiro": "RETIRO",    # Argelia
-        "Paraíso": "PARAISO",    # Barbosa
-        "La Chorrera": "LACHORRERA",    # Barbosa
-        "Tablazo Popalito": "TABLAZOPOPALITO",    # Barbosa
-        "Chorro Hondo": "CHORROHONDO",    # Barbosa
-        "Matasano": "MATASANO",    # Barbosa
-        "Las Lajas": "LASLAJAS",    # Barbosa
-        "La Chapa Alta": "LACHAPAALTA",    # Barbosa
-        "El Picacho": "ELPICACHO",    # Bello
-        "Guasimalito": "GUASIMALITO",    # Bello
-        "Ovejas": "OVEJAS",    # Bello
-        "Los Aguacates": "LOSAGUACATES",    # Betania
-        "Travesías": "TRAVESIAS",    # Betania
-        "Guadualejo": "GUADUALEJO",    # Betania
-        "Área Sin Levantar": "AREASINLEVANTAR",    # Betania
-        "El Tostado": "ELTOSTADO",    # Betulia
-        "Piñonal": "PINONAL",    # Betulia
-        "Alto Del Chiri": "ALTODELCHIRI",    # Briceño
-        "Tabacal": "TABACAL",    # Buritica
-        "Guarco": "GUARCO",    # Buritica
-        "El Siento": "ELSIENTO",    # Buritica
-        "Untí": "UNTI",    # Buritica
-        "San Juan": "SANJUAN",    # Caicedo
-        "Anocozca": "ANOCOZCA",    # Caicedo
-        "La Miel": "LAMIEL",    # Caldas
-        "La Salada": "LASALADA",    # Caldas
-        "La Clara": "LACLARA",    # Caldas
-        "La Mina": "LAMINA",    # Caldas
-        "El Cardal": "ELCARDAL",    # Caldas
-        "La Maní Del Cardal": "LAMANIDELCARDAL",    # Caldas
-        "Potrerillo": "POTRERILLO",    # Caldas
-        "La Cima": "LACIMA",    # Caldas
-        "Canalón": "CANALON",    # Caldas
-        "La Legía": "LALEGIA",    # Caldas
-        "El Barcino": "ELBARCINO",    # Campamento
-        "Los Mangos": "LOSMANGOS",    # Campamento
-        "El Bosque": "ELBOSQUE",    # Campamento
-        "El Carriel": "ELCARRIEL",    # Campamento
-        "La Luz": "LALUZ",    # Campamento
-        "La Polka": "LAPOLKA",    # Campamento
-        "San Antonio": "SANANTONIO",    # Campamento
-        "La Ceiba": "LACEIBA",    # Campamento
-        "El Yerbal": "ELYERBAL",    # Campamento
-        "Capotal": "CAPOTAL",    # Campamento
-        "Juntas De Uramita": "JUNTASDEURAMITA",    # Cañasgordas
-        "Cumbarrá": "CUMBARRA",    # Cañasgordas
-        "Pernilla": "PERNILLA",    # Cañasgordas
-        "Los Antioqueños": "LOSANTIOQUENOS",    # Cañasgordas
-        "Zarabanda": "ZARABANDA",    # Carepa
-        "El Cerro": "ELCERRO",    # Carepa
-        "Bocas De Chigorodó": "BOCASDECHIGORODO",    # Carepa
-        "Las Trescientas": "LASTRESCIENTAS",    # Carepa
-        "La Cadena": "LACADENA",    # Carepa
-        "Sadem": "SADEM",    # Chigorodo
-        "Guapa": "GUAPA",    # Chigorodo
-        "Barranquillita": "BARRANQUILLITA",    # Chigorodo
-        "Guaguas": "GUAGUAS",    # Chigorodo
-        "Guapá Arriba": "GUAPAARRIBA",    # Chigorodo
-        "El Plátano": "ELPLATANO",    # Chigorodo
-        "La Candelaria": "LACANDELARIA",    # Chigorodo
-        "La Maporita": "LAMAPORITA",    # Chigorodo
-        "Bocas De Guapa": "BOCASDEGUAPA",    # Chigorodo
-        "Chigorodocito": "CHIGORODOCITO",    # Chigorodo
-        "Serranía De Abibe": "SERRANIADEABIBE",    # Chigorodo
-        "El Jordán": "ELJORDAN",    # Cocorna
-        "Tafetanes": "TAFETANES",    # Concepcion
-        "La Fátima": "LAFATIMA",    # Concepcion
-        "La Trinidad": "LATRINIDAD",    # Concepcion
-        "Zarzal Curazao": "ZARZALCURAZAO",    # Copacabana
-        "Ancón": "ANCON",    # Copacabana
-        "Churrascal ": "CHURRASCAL",    # Dabeiba
-        "La Florida": "LAFLORIDA",    # Dabeiba
-        "El Jordán": "ELJORDAN",    # Dabeiba
-        "Chimurró Nendo": "CHIMURRONENDO",    # Dabeiba
-        "Corcobado": "CORCOBADO",    # Dabeiba
-        "La Pía": "LAPIA",    # Dabeiba
-        "Choromandó": "CHOROMANDO",    # Dabeiba
-        "El Caliche": "ELCALICHE",    # Dabeiba
-        "Barrancon Antado": "BARRANCONANTADO",    # Dabeiba
-        "Tuguridó": "TUGURIDO",    # Dabeiba
-        "Resguardo Indígena Pegadó": "RESGUARDOINDIGENAPEGADO",    # Dabeiba
-        "Quiparadosito": "QUIPARADOSITO",    # Dabeiba
-        "Baldíos De La Nación": "BALDIOSDELANACION",    # Dabeiba
-        "Chuscal Tuguridocito": "CHUSCALTUGURIDOCITO",    # Dabeiba
-        "El Caliche": "ELCALICHE",    # Dabeiba
-        "Matasano": "MATASANO",    # Don Matias
-        "El Socorro": "ELSOCORRO",    # Ebejico
-        "Llano De Santa Bárbara": "LLANODESANTABARBARA",    # Ebejico
-        "Bamba": "BAMBA",    # El Bagre
-        "Santa Bárbara": "SANTABARBARA",    # El Bagre
-        "Guachí": "GUACHI",    # El Bagre
-        "El Puente": "ELPUENTE",    # El Bagre
-        "Mellizos": "MELLIZOS",    # El Bagre
-        "La Llana": "LALLANA",    # El Bagre
-        "Baldíos De La Nación": "BALDIOSDELANACION",    # El Bagre
-        "La Aurora": "LAAURORA",    # El Carmen De Viboral
-        "Aguas Claras": "AGUASCLARAS",    # El Carmen De Viboral
-        "El Mazorcal": "ELMAZORCAL",    # El Carmen De Viboral
-        "Guamito": "GUAMITO",    # El Carmen De Viboral
-        "El Ciprés": "ELCIPRES",    # El Carmen De Viboral
-        "El Brasil": "ELBRASIL",    # El Carmen De Viboral
-        "Magdalena": "MAGDALENA",    # El Peñol
-        "Santa Elena": "SANTAELENA",    # El Retiro
-        "Campo Alegre": "CAMPOALEGRE",    # El Santuario
-        "Yerbabuenal": "YERBABUENAL",    # Entrerrios
-        "El Escobero": "ELESCOBERO",    # Envigado
-        "Combia Grande": "COMBIAGRANDE",    # Fredonia
-        "El Uvital": "ELUVITAL",    # Fredonia
-        "Sabaletas": "SABALETAS",    # Fredonia
-        "San Lázaro": "SANLAZARO",    # Frontino
-        "Cabras": "CABRAS",    # Frontino
-        "Chuscal De Musinga": "CHUSCALDEMUSINGA",    # Frontino
-        "Monos": "MONOS",    # Frontino
-        "Nore": "NORE",    # Frontino
-        "Musinga": "MUSINGA",    # Frontino
-        "Atausí": "ATAUSI",    # Frontino
-        "El Cerro": "ELCERRO",    # Gomez Plata
-        "La Cristalina": "LACRISTALINA",    # Granada
-        "San Basilio Abajo": "SANBASILIOABAJO",    # Guadalupe
-        "Bramadora": "BRAMADORA",    # Guadalupe
-        "San Vicente  - El Kiosko": "SANVICENTEELKIOSKO",    # Guadalupe
-        "Alto De San Juan": "ALTODESANJUAN",    # Guadalupe
-        "Morrón": "MORRON",    # Guadalupe
-        "Colorado": "COLORADO",    # Guarne
-        "Juan Xxiii": "JUANXXIII",    # Guarne
-        "Brizuela": "BRIZUELA",    # Guarne
-        "La Verde - La María": "LAVERDELAMARIA",    # Itagui
-        "Pío X": "PIOX",    # Ituango
-        "Parque Nacional Natural Del Paramillo": "PARQUENACIONALNATURALDELPARAMILLO",    # Ituango
-        "Monte Alto": "MONTEALTO",    # Ituango
-        "El Olivar": "ELOLIVAR",    # Ituango
-        "La Lomita": "LALOMITA",    # Ituango
-        "La Cabaña": "LACABANA",    # Ituango
-        "Róo Claro": "ROOCLARO",    # Jardin
-        "El Tormento": "ELTORMENTO",    # Jardin
-        "Juan Xxiii": "JUANXXIII",    # La Estrella
-        "San Miguel": "SANMIGUELLADORADA",    # La Union
-        "Cardal": "CARDAL",    # La Union
-        "El Buey": "ELBUEY",    # La Union
-        "Fátima": "FATIMA",    # La Union
-        "La Diviza": "LADIVIZA",    # La Union
-        "Alto De Dolores": "ALTODEDOLORES",    # Maceo
-        "San Luís": "SANLUIS",    # Maceo
-        "La Paloma": "LAPALOMA",    # Maceo
-        "La Cuchilla": "LACUCHILLA",    # Maceo
-        "Santa Ana": "SANTAANA",    # Maceo
-        "Los Alpes": "LOSALPES",    # Marinilla
-        "Potrero – Miseranga ": "POTREROMISERANGA",    # Medellin
-        "La Volcana - Guayabal": "LAVOLCANAGUAYABAL",    # Medellin
-        "Las Playas": "LASPLAYAS",    # Medellin
-        "Patio - Bolas": "PATIOBOLAS",    # Medellin
-        "San José Del Manzanillo": "SANJOSEDELMANZANILLO",    # Medellin
-        "La Trinidad": "LATRINIDAD",    # Montebello
-        "La Honda": "LAHONDA",    # Montebello
-        "Bebarameño": "BEBARAMENO",    # Murindo
-        "Belén De Bajirá": "BELENDEBAJIRA",    # Mutata
-        "Antazales": "ANTAZALES",    # Mutata
-        "Tierradentro": "TIERRADENTRO",    # Mutata
-        "Villa Del Carmen": "VILLADELCARMEN",    # Mutata
-        "Los Cedros": "LOSCEDROS",    # Mutata
-        "La Primavera": "LAPRIMAVERA",    # Mutata
-        "Eugenia Arriba": "EUGENIAARRIBA",    # Mutata
-        "La Secreta": "LASECRETA",    # Mutata
-        "Chontaduralito": "CHONTADURALITO",    # Mutata
-        "Nueva Esperanza": "NUEVAESPERANZA",    # Mutata
-        "Parque Nacional Natural Del Paramillo": "PARQUENACIONALNATURALDELPARAMILLO",    # Mutata
-        "Surrambay": "SURRAMBAY",    # Mutata
-        "Puente Linda": "PUENTELINDA",    # Nariño
-        "La Valvanera": "LAVALVANERA",    # Nariño
-        "Venecia": "VENECIA",    # Nariño
-        "Quiebra Honda": "QUIEBRAHONDA",    # Nariño
-        "Santa Rosa De Las Palmeras": "SANTAROSADELASPALMERAS",    # Necocli
-        "Los Laureles": "LOSLAURELES",    # Necocli
-        "Piedrecitas": "PIEDRECITAS",    # Necocli
-        "El Venado Sevilla": "ELVENADOSEVILLA",    # Necocli
-        "La Yoky Cenizosa": "LAYOKYCENIZOSA",    # Necocli
-        "La Unión": "LAUNION",    # Necocli
-        "El Cedro": "ELCEDRO",    # Necocli
-        "Aguas Claras": "AGUASCLARAS",    # Necocli
-        "El Calducho": "ELCALDUCHO",    # Necocli
-        "La Berrío": "LABERRIO",    # Pueblorrico
-        "Minas Del Vapor": "MINASDELVAPOR",    # Puerto Berrio
-        "Río Magdalena": "RIOMAGDALENA",    # Puerto Triunfo
-        "Platanares": "PLATANARES",    # Remedios
-        "San Antonio - El Río": "SANANTONIOELRIO",    # Remedios
-        "El Silencio": "ELSILENCIO",    # Remedios
-        "Camelia Quintana": "CAMELIAQUINTANA",    # Remedios
-        "La Honda San Bartolo": "LAHONDASANBARTOLO",    # Remedios
-        "Juan Brand": "JUANBRAND",    # Remedios
-        "Nohava": "NOHAVA",    # Sabanalarga
-        "El Roblal": "ELROBLAL",    # Salgar
-        "El Morro": "ELMORRO",    # San Andres De Cuerquia
-        "Puerto Garza - Narices": "PUERTOGARZANARICES",    # San Carlos
-        "Guadalito": "GUADALITO",    # San Carlos
-        "La Garrucha": "LAGARRUCHA",    # San Carlos
-        "La Rápida": "LARAPIDA",    # San Carlos
-        "La Tupiada": "LATUPIADA",    # San Carlos
-        "La Hondita": "LAHONDITA",    # San Carlos
-        "Calderas": "CALDERAS",    # San Carlos
-        "Norcasia - 7 De Agosto": "NORCASIA7DEAGOSTO",    # San Carlos
-        "Sardinita": "SARDINITA",    # San Carlos
-        "Fronteritas": "FRONTERITAS",    # San Carlos
-        "Juanos": "JUANOS",    # San Carlos
-        "La Leona": "LALEONA",    # San Carlos
-        "Las Palmas": "PALMAS",    # San Carlos
-        "Mirandita": "MIRANDITA",    # San Carlos
-        "Quebradón - 20 De Julio": "QUEBRADON20DEJULIO",    # San Carlos
-        "El Vergel": "ELVERGEL",    # San Carlos
-        "Cañafisto": "CANAFISTO",    # San Carlos
-        "La Floresta": "LAFLORESTA",    # San Francisco
-        "Pailania": "PAILANIA",    # San Francisco
-        "La Nutria - Caunzales": "LANUTRIACAUNZALES",    # San Francisco
-        "El Rincón": "ELRINCON",    # San Jeronimo
-        "La Cienaga": "LACIENAGA",    # San Jeronimo
-        "Matasano": "MATASANO",    # San Jeronimo
-        "Murrapala": "MURRAPALA",    # San Jeronimo
-        "Buenos Aires Parte Alta": "BUENOSAIRESPARTEALTA",    # San Jeronimo
-        "Quimbayo": "QUIMBAYO",    # San Jeronimo
-        "Pesquinal": "PESQUINAL",    # San Jeronimo
-        "El Golfo": "ELGOLFO",    # San Jeronimo
-        "El Calvario": "ELCALVARIO",    # San Jeronimo
-        "El Cedral": "ELCEDRAL",    # San Jeronimo
-        "El Mestizo": "ELMESTIZO",    # San Jeronimo
-        "Llano Arriba": "LLANOARRIBA",    # San Jeronimo
-        "Quimbayito": "QUIMBAYITO",    # San Jeronimo
-        "Pantanillo": "PANTANILLO",    # San Jeronimo
-        "Agua Mala": "AGUAMALA",    # San Jeronimo
-        "Buenos Aires Parte Baja": "BUENOSAIRESPARTEBAJA",    # San Jeronimo
-        "El Guaico": "ELGUAICO",    # San Jeronimo
-        "El Guásimo": "ELGUASIMO",    # San Jeronimo
-        "La Clara Arriba": "LACLARAARRIBA",    # San Jeronimo
-        "Palo Blanco": "PALOBLANCO",    # San Jeronimo
-        "San Nicolás Del Río": "SANNICOLASDELRIO",    # San Juan De Uraba
-        "El Arquillo": "ELARQUILLO",    # San Juan De Uraba
-        "Entra Si Puedes": "ENTRASIPUEDES",    # San Juan De Uraba
-        "El Bongo": "ELBONGO",    # San Juan De Uraba
-        "Chapales De Uveros": "CHAPALESDEUVEROS",    # San Juan De Uraba
-        "Los Chapales De Damaquiel": "LOSCHAPALESDEDAMAQUIEL",    # San Juan De Uraba
-        "La Josefina": "LAJOSEFINA",    # San Luis
-        "El Prodigio": "ELPRODIGIO",    # San Luis
-        "Los Medios": "LOSMEDIOS",    # San Luis
-        "La Habana - Palestina": "LAHABANAPALESTINA",    # San Luis
-        "La Cristalina": "LACRISTALINA",    # San Luis
-        "Las Margaritas": "LASMARGARITAS",    # San Luis
-        "El Palacio": "ELPALACIO",    # San Luis
-        "Villanueva": "VILLANUEVA",    # San Luis
-        "La Clarita": "LACLARITA",    # San Pedro De Los Milagros
-        "Almagras": "ALMAGRAS",    # San Pedro De Uraba
-        "Filo Pancho": "FILOPANCHO",    # San Pedro De Uraba
-        "Alto San Juan": "ALTOSANJUAN",    # San Pedro De Uraba
-        "Farallones": "FARALLONES",    # San Rafael
-        "El Cardal": "ELCARDAL",    # San Rafael
-        "Piedras Abajo": "PIEDRASABAJO",    # San Rafael
-        "Totumito": "TOTUMITO",    # San Rafael
-        "Manizales - Villanueva": "MANIZALESVILLANUEVA",    # San Roque
-        "Peñas Azules": "PENASAZULES",    # San Roque
-        "La Floresta": "LAFLORESTA",    # San Roque
-        "Alto De Los Gómez": "ALTODELOSGOMEZ",    # Santa Barbara
-        "El Rodeo": "ELRODEO",    # Santa Fe De Antioquia
-        "Pontezuela": "PONTEZUELA",    # Santa Rosa De Osos
-        "Mortiñal": "MORTINAL",    # Santa Rosa De Osos
-        "San Antonio": "SANANTONIO",    # Santa Rosa De Osos
-        "Río Negrito": "RIONEGRITO",    # Santa Rosa De Osos
-        "Orobajo Santa Inés": "OROBAJOSANTAINES",    # Santa Rosa De Osos
-        "Montefrío": "MONTEFRIO",    # Santa Rosa De Osos
-        "La Pava Salamina": "LAPAVASALAMINA",    # Santa Rosa De Osos
-        "Chilimaco": "CHILIMACO",    # Santa Rosa De Osos
-        "Santa Gertrudis - Peñas": "SANTAGERTRUDISPENAS",    # Santo Domingo
-        "El Chical": "ELCHICAL",    # Santo Domingo
-        "El Cenizo": "ELCENIZO",    # Segovia
-        "Baldíos De La Nación": "BALDIOSDELANACION",    # Segovia
-        "Cianurada": "CIANURADA",    # Segovia
-        "El Tesoro": "ELTESORO",    # Segovia
-        "Marmajito": "MARMAJITO",    # Segovia
-        "Llanadas Santa Clara": "LLANADASSANTACLARA",    # Sonson
-        "Aures La Morelia": "AURESLAMORELIA",    # Sonson
-        "Manzanares Abajo": "MANZANARESABAJO",    # Sonson
-        "Manzanares Arriba": "MANZANARESARRIBA",    # Sonson
-        "Roblalito A": "ROBLALITOA",    # Sonson
-        "Roblal Arriba": "ROBLALARRIBA",    # Sonson
-        "Los Potreros": "LOSPOTREROS",    # Sonson
-        "Manzanares Centro": "MANZANARESCENTRO",    # Sonson
-        "Naranjal Abajo": "NARANJALABAJO",    # Sonson
-        "Roblal Abajo  - Chirimoyo": "ROBLALABAJOCHIRIMOYO",    # Sonson
-        "El Llano - Cañaveral": "ELLLANOCANAVERAL",    # Sonson
-        "Roblalito B": "ROBLALITOB",    # Sonson
-        "Yarumal Alta Vista": "YARUMALALTAVISTA",    # Sonson
-        "La Aguadita": "LAAGUADITA",    # Sonson
-        "San José Las Cruces": "SANJOSELASCRUCES",    # Sonson
-        "Argentina Magallo": "ARGENTINAMAGALLO",    # Sonson
-        "Ventiaderos": "VENTIADEROS",    # Sonson
-        "El Limón": "ELLIMON",    # Sonson
-        "Magallo Centro": "MAGALLOCENTRO",    # Sonson
-        "Magallo Abajo": "MAGALLOABAJO",    # Sonson
-        "Sirgüita": "SIRGUITA",    # Sonson
-        "Alto De Guayaquil": "ALTODEGUAYAQUIL",    # Sonson
-        "El Bosque": "ELBOSQUE",    # Sonson
-        "El Coco": "ELCOCO",    # Sonson
-        "Guayabal Río Arma": "GUAYABALRIOARMA",    # Sonson
-        "La Francia": "LAFRANCIA",    # Sonson
-        "La Quiebra De San Pablo": "LAQUIEBRADESANPABLO",    # Sonson
-        "Alto Del Rayo": "ALTODELRAYO",    # Sonson
-        "Brisas - Caunzal": "BRISASCAUNZAL",    # Sonson
-        "Caunzal Los Medios": "CAUNZALLOSMEDIOS",    # Sonson
-        "Jerusalén": "JERUSALEN",    # Sonson
-        "Santa Rosa - La Danta": "SANTAROSALADANTA",    # Sonson
-        "Guaimaral": "GUAIMARAL",    # Sopetran
-        "Loma Del Medio": "LOMADELMEDIO",    # Sopetran
-        "Pomos": "POMOS",    # Sopetran
-        "Los Aguacates": "LOSAGUACATES",    # Sopetran
-        "La Liborina": "LALIBORINA",    # Tamesis
-        "El Nueve": "ELNUEVE",    # Taraza
-        "El Cinco": "ELCINCO",    # Taraza
-        "El Tres": "ELTRES",    # Taraza
-        "Tornoban": "TORNOBAN",    # Taraza
-        "Resguardo Indígena Jaidusabi": "RESGUARDOINDIGENAJAIDUSABI",    # Taraza
-        "Rincón Santo": "RINCONSANTO",    # Taraza
-        "Pueblito De Los Bolívares": "PUEBLITODELOSBOLIVARES",    # Titiribi
-        "Las Margaritas": "LASMARGARITAS",    # Toledo
-        "El Cántaro": "ELCANTARO",    # Toledo
-        "Nuevo Antioquia": "NUEVOANTIOQUIA",    # Turbo
-        "San José De Mulatos": "SANJOSEDEMULATOS",    # Turbo
-        "Pueblo Bello": "PUEBLOBELLO",    # Turbo
-        "Santiago De Urabá": "SANTIAGODEURABA",    # Turbo
-        "Bellavista": "BELLAVISTA",    # Turbo
-        "Brunito Abajo": "BRUNITOABAJO",    # Turbo
-        "Kilómetro 25": "KILOMETRO25",    # Turbo
-        "Macondo": "MACONDO",    # Turbo
-        "Guayabal Arriba": "GUAYABALARRIBA",    # Turbo
-        "Bocas Del Roto": "BOCASDELROTO",    # Turbo
-        "Cuchillo Blanco": "CUCHILLOBLANCO",    # Turbo
-        "Toya": "TOYA",    # Turbo
-        "Zabaletas": "ZABALETAS",    # Turbo
-        "El Cedro": "ELCEDRO",    # Turbo
-        "La Florida": "LAFLORIDA",    # Turbo
-        "Eugenia Media": "EUGENIAMEDIA",    # Turbo
-        "Salsipuedes": "SALSIPUEDES",    # Turbo
-        "Cuchillo Negro": "CUCHILLONEGRO",    # Turbo
-        "Buenos Aires": "BUENOSAIRES",    # Turbo
-        "Mil Pesares": "MILPESARES",    # Turbo
-        "Nueva Estrella": "NUEVAESTRELLA",    # Turbo
-        "Paraíso Tulapa": "PARAISOTULAPA",    # Turbo
-        "El Caimán": "ELCAIMAN",    # Turbo
-        "La Unión": "LAUNION",    # Turbo
-        "Bocas De Tío López": "BOCASDETIOLOPEZ",    # Turbo
-        "Bella Rosa": "BELLAROSA",    # Turbo
-        "Eugenia Arriba": "EUGENIAARRIBA",    # Turbo
-        "Guacamaya": "GUACAMAYA",    # Turbo
-        "La Unión": "LAUNION",    # Turbo
-        "Tumaradocito": "TUMARADOCITO",    # Turbo
-        "El Pital": "ELPITAL",    # Uramita
-        "Paramillo": "PARAMILLO",    # Uramita
-        "La Aguada": "LAAGUADA",    # Uramita
-        "El Llano": "ELLLANO",    # Uramita
-        "Frontinito": "FRONTINITO",    # Uramita
-        "El Palón": "ELPALON",    # Uramita
-        "Alto Del Pital": "ALTODELPITAL",    # Uramita
-        "Orobugo Medio": "OROBUGOMEDIO",    # Urrao
-        "Guapante": "GUAPANTE",    # Urrao
-        "San José Montañitas": "SANJOSEMONTANITAS",    # Urrao
-        "Punta De Ocaidó": "PUNTADEOCAIDO",    # Urrao
-        "El Saladito": "ELSALADITO",    # Urrao
-        "El Indio": "ELINDIO",    # Urrao
-        "Parque Nacional Natural Las Orquídeas": "PARQUENACIONALNATURALLASORQUIDEAS",    # Urrao
-        "Penderisco Arriba": "PENDERISCOARRIBA",    # Urrao
-        "El Escobero": "ELESCOBERO",    # Urrao
-        "Los Animes": "LOSANIMES",    # Urrao
-        "La Guayabala": "LAGUAYABALA",    # Urrao
-        "Área Sin Levantar": "AREASINLEVANTAR",    # Urrao
-        "Orobugo Bajo": "OROBUGOBAJO",    # Urrao
-        "San José De Génova": "SANJOSEDEGENOVA",    # Valdivia
-        "Caracolí": "CARACOLI",    # Valdivia
-        "Clavellino": "CLAVELLINO",    # Valdivia
-        "Morrón - Sevilla": "MORRONSEVILLA",    # Valdivia
-        "Mata Arriba": "MATAARRIBA",    # Vegachi
-        "La Alejandría": "LAALEJANDRIA",    # Vegachi
-        "El Ventiadero": "ELVENTIADERO",    # Venecia
-        "La Mina": "LAMINA",    # Venecia
-        "Melindres": "MELINDRES",    # Venecia
-        "Boca De Luisa": "BOCADELUISA",    # Vigia Del Fuerte
-        "Piedras Gordas": "PIEDRASGORDAS",    # Vigia Del Fuerte
-        "Brillantina": "BRILLANTINA",    # Yali
-        "Terminal La Alondra": "TERMINALLAALONDRA",    # Yali
-        "Rosarito": "ROSARITO",    # Yarumal
-        "La Zorra": "LAZORRA",    # Yarumal
-        "Vereda Cabecera Municipal": "CABECERAMUNICIPAL",    # Yarumal
-        "El Homiguero": "ELHOMIGUERO",    # Yolombo
-        "Bengala": "BENGALA",    # Yolombo
-        "Alto De Méndez": "ALTODEMENDEZ",    # Yolombo
-        "La Cóndor - X10": "LACONDORX10",    # Yondo
-        "Bocas De San Francisco": "BOCASDESANFRANCISCO",    # Yondo
-        "Caño Don Juan": "CANODONJUAN",    # Yondo
-        "Puerto Matilde": "PUERTOMATILDE",    # Yondo
-        "Sardinata Alta": "SARDINATAALTA",    # Yondo
-        "La Rompida No. 1": "LAROMPIDANO1",    # Yondo
-        "La Rompida No. 2": "LAROMPIDANO2",    # Yondo
-        "Zona Urbana Vereda El Dique": "ZONAURBANAELDIQUE",    # Yondo
-        "Cienaga De Sardinata": "CIENAGADESARDINATA",    # Yondo
-        "Quebradona Uno": "QUEBRADONAUNO",    # Zaragoza
-        "Limón Adentro": "LIMONADENTRO",    # Zaragoza
-        "Bocas De Maestro Esteban": "BOCASDEMAESTROESTEBAN",    # Zaragoza
-        "Cordero Icacales": "CORDEROICACALES",    # Zaragoza
-        "Cordero": "CORDERO"    # Zaragoza
+        "NÁPOLES": "NAPOLES",    # Abejorral
+        "LANANCUÍ": "LANANCUI",    # Abriaqui
+        "GUALÍ": "GUALI",    # Amaga
+        "ÁNIMAS": "ANIMAS",    # Amalfi
+        "JARDÍN": "JARDIN",    # Amalfi
+        "BALDÍO": "BALDIO",    # Amalfi
+        "ELCARMÍN": "ELCARMIN",    # Anori
+        "VILLAFÁTIMA": "VILLAFATIMA",    # Anori
+        "ELCAFÉ": "ELCAFE",    # Argelia
+        "ELRETIRO": "RETIRO",    # Argelia
+        "PARAÍSO": "PARAISO",    # Barbosa
+        "TRAVESÍAS": "TRAVESIAS",    # Betania
+        "ÁREASINLEVANTAR": "AREASINLEVANTAR",    # Betania
+        "PIÑONAL": "PINONAL",    # Betulia
+        "UNTÍ": "UNTI",    # Buritica
+        "LAMANÍDELCARDAL": "LAMANIDELCARDAL",    # Caldas
+        "CANALÓN": "CANALON",    # Caldas
+        "LALEGÍA": "LALEGIA",    # Caldas
+        "CUMBARRÁ": "CUMBARRA",    # Cañasgordas
+        "LOSANTIOQUEÑOS": "LOSANTIOQUENOS",    # Cañasgordas
+        "BOCASDECHIGORODÓ": "BOCASDECHIGORODO",    # Carepa
+        "GUAPÁARRIBA": "GUAPAARRIBA",    # Chigorodo
+        "ELPLÁTANO": "ELPLATANO",    # Chigorodo
+        "SERRANÍADEABIBE": "SERRANIADEABIBE",    # Chigorodo
+        "ELJORDÁN": "ELJORDAN",    # Cocorna
+        "LAFÁTIMA": "LAFATIMA",    # Concepcion
+        "ANCÓN": "ANCON",    # Copacabana
+        "ELJORDÁN": "ELJORDAN",    # Dabeiba
+        "CHIMURRÓNENDO": "CHIMURRONENDO",    # Dabeiba
+        "LAPÍA": "LAPIA",    # Dabeiba
+        "CHOROMANDÓ": "CHOROMANDO",    # Dabeiba
+        "TUGURIDÓ": "TUGURIDO",    # Dabeiba
+        "RESGUARDOINDÍGENAPEGADÓ": "RESGUARDOINDIGENAPEGADO",    # Dabeiba
+        "BALDÍOSDELANACIÓN": "BALDIOSDELANACION",    # Dabeiba
+        "LLANODESANTABÁRBARA": "LLANODESANTABARBARA",    # Ebejico
+        "SANTABÁRBARA": "SANTABARBARA",    # El Bagre
+        "GUACHÍ": "GUACHI",    # El Bagre
+        "BALDÍOSDELANACIÓN": "BALDIOSDELANACION",    # El Bagre
+        "ELCIPRÉS": "ELCIPRES",    # El Carmen De Viboral
+        "SANLÁZARO": "SANLAZARO",    # Frontino
+        "ATAUSÍ": "ATAUSI",    # Frontino
+        "SANVICENTE-ELKIOSKO": "SANVICENTEELKIOSKO",    # Guadalupe
+        "MORRÓN": "MORRON",    # Guadalupe
+        "LAVERDE-LAMARÍA": "LAVERDELAMARIA",    # Itagui
+        "PÍOX": "PIOX",    # Ituango
+        "LACABAÑA": "LACABANA",    # Ituango
+        "RÓOCLARO": "ROOCLARO",    # Jardin
+        "SANMIGUEL": "SANMIGUELLADORADA",    # La Union
+        "FÁTIMA": "FATIMA",    # La Union
+        "SANLUÍS": "SANLUIS",    # Maceo
+        "POTRERO–MISERANGA": "POTREROMISERANGA",    # Medellin
+        "LAVOLCANA-GUAYABAL": "LAVOLCANAGUAYABAL",    # Medellin
+        "PATIO-BOLAS": "PATIOBOLAS",    # Medellin
+        "SANJOSÉDELMANZANILLO": "SANJOSEDELMANZANILLO",    # Medellin
+        "BEBARAMEÑO": "BEBARAMENO",    # Murindo
+        "BELÉNDEBAJIRÁ": "BELENDEBAJIRA",    # Mutata
+        "LAUNIÓN": "LAUNION",    # Necocli
+        "LABERRÍO": "LABERRIO",    # Pueblorrico
+        "RÍOMAGDALENA": "RIOMAGDALENA",    # Puerto Triunfo
+        "SANANTONIO-ELRÍO": "SANANTONIOELRIO",    # Remedios
+        "PUERTOGARZA-NARICES": "PUERTOGARZANARICES",    # San Carlos
+        "LARÁPIDA": "LARAPIDA",    # San Carlos
+        "NORCASIA-7DEAGOSTO": "NORCASIA7DEAGOSTO",    # San Carlos
+        "LASPALMAS": "PALMAS",    # San Carlos
+        "QUEBRADÓN-20DEJULIO": "QUEBRADON20DEJULIO",    # San Carlos
+        "CAÑAFISTO": "CANAFISTO",    # San Carlos
+        "LANUTRIA-CAUNZALES": "LANUTRIACAUNZALES",    # San Francisco
+        "ELRINCÓN": "ELRINCON",    # San Jeronimo
+        "ELGUÁSIMO": "ELGUASIMO",    # San Jeronimo
+        "SANNICOLÁSDELRÍO": "SANNICOLASDELRIO",    # San Juan De Uraba
+        "LAHABANA-PALESTINA": "LAHABANAPALESTINA",    # San Luis
+        "MANIZALES-VILLANUEVA": "MANIZALESVILLANUEVA",    # San Roque
+        "PEÑASAZULES": "PENASAZULES",    # San Roque
+        "ALTODELOSGÓMEZ": "ALTODELOSGOMEZ",    # Santa Barbara
+        "MORTIÑAL": "MORTINAL",    # Santa Rosa De Osos
+        "RÍONEGRITO": "RIONEGRITO",    # Santa Rosa De Osos
+        "OROBAJOSANTAINÉS": "OROBAJOSANTAINES",    # Santa Rosa De Osos
+        "MONTEFRÍO": "MONTEFRIO",    # Santa Rosa De Osos
+        "SANTAGERTRUDIS-PEÑAS": "SANTAGERTRUDISPENAS",    # Santo Domingo
+        "BALDÍOSDELANACIÓN": "BALDIOSDELANACION",    # Segovia
+        "ROBLALABAJO-CHIRIMOYO": "ROBLALABAJOCHIRIMOYO",    # Sonson
+        "ELLLANO-CAÑAVERAL": "ELLLANOCANAVERAL",    # Sonson
+        "SANJOSÉLASCRUCES": "SANJOSELASCRUCES",    # Sonson
+        "ELLIMÓN": "ELLIMON",    # Sonson
+        "SIRGÜITA": "SIRGUITA",    # Sonson
+        "GUAYABALRÍOARMA": "GUAYABALRIOARMA",    # Sonson
+        "BRISAS-CAUNZAL": "BRISASCAUNZAL",    # Sonson
+        "JERUSALÉN": "JERUSALEN",    # Sonson
+        "SANTAROSA-LADANTA": "SANTAROSALADANTA",    # Sonson
+        "RESGUARDOINDÍGENAJAIDUSABI": "RESGUARDOINDIGENAJAIDUSABI",    # Taraza
+        "RINCÓNSANTO": "RINCONSANTO",    # Taraza
+        "PUEBLITODELOSBOLÍVARES": "PUEBLITODELOSBOLIVARES",    # Titiribi
+        "ELCÁNTARO": "ELCANTARO",    # Toledo
+        "SANJOSÉDEMULATOS": "SANJOSEDEMULATOS",    # Turbo
+        "SANTIAGODEURABÁ": "SANTIAGODEURABA",    # Turbo
+        "KILÓMETRO25": "KILOMETRO25",    # Turbo
+        "PARAÍSOTULAPA": "PARAISOTULAPA",    # Turbo
+        "ELCAIMÁN": "ELCAIMAN",    # Turbo
+        "LAUNIÓN": "LAUNION",    # Turbo
+        "BOCASDETÍOLÓPEZ": "BOCASDETIOLOPEZ",    # Turbo
+        "LAUNIÓN": "LAUNION",    # Turbo
+        "ELPALÓN": "ELPALON",    # Uramita
+        "SANJOSÉMONTAÑITAS": "SANJOSEMONTANITAS",    # Urrao
+        "PUNTADEOCAIDÓ": "PUNTADEOCAIDO",    # Urrao
+        "PARQUENACIONALNATURALLASORQUÍDEAS": "PARQUENACIONALNATURALLASORQUIDEAS",    # Urrao
+        "ÁREASINLEVANTAR": "AREASINLEVANTAR",    # Urrao
+        "SANJOSÉDEGÉNOVA": "SANJOSEDEGENOVA",    # Valdivia
+        "CARACOLÍ": "CARACOLI",    # Valdivia
+        "MORRÓN-SEVILLA": "MORRONSEVILLA",    # Valdivia
+        "LAALEJANDRÍA": "LAALEJANDRIA",    # Vegachi
+        "VEREDACABECERAMUNICIPAL": "CABECERAMUNICIPAL",    # Yarumal
+        "ALTODEMÉNDEZ": "ALTODEMENDEZ",    # Yolombo
+        "LACÓNDOR-X10": "LACONDORX10",    # Yondo
+        "CAÑODONJUAN": "CANODONJUAN",    # Yondo
+        "LAROMPIDANO.1": "LAROMPIDANO1",    # Yondo
+        "LAROMPIDANO.2": "LAROMPIDANO2",    # Yondo
+        "ZONAURBANAVEREDAELDIQUE": "ZONAURBANAELDIQUE",    # Yondo
+        "LIMÓNADENTRO": "LIMONADENTRO",    # Zaragoza
+        "CHAGUALAL": "CHAGUALAL",    # Abejorral
+        "PURIMA": "PURIMA",    # Abejorral
+        "ELVESUBIO": "ELVESUBIO",    # Abejorral
+        "PIEDRACANDELA": "PIEDRACANDELA",    # Abejorral
+        "QUEBRADONAABAJO": "QUEBRADONAABAJO",    # Abejorral
+        "LAALBANIA": "LAALBANIA",    # Abejorral
+        "ELCAUNZAL": "ELCAUNZAL",    # Abejorral
+        "LALOMAPARTEBAJA": "LALOMAPARTEBAJA",    # Abejorral
+        "CORCOVADO": "CORCOVADO",    # Abriaqui
+        "GUAIMARAL": "GUAIMARAL",    # Amaga
+        "PORTACHUELOS": "PORTACHUELOS",    # Amalfi
+        "LAGUAYANA": "LAGUAYANA",    # Amalfi
+        "ELNARANJAL": "ELNARANJAL",    # Amalfi
+        "LASONADORA": "LASONADORA",    # Amalfi
+        "TINITACITA": "TINITACITA",    # Amalfi
+        "LAESPERANZA": "LAESPERANZA",    # Amalfi
+        "PAVAS": "PAVAS",    # Amalfi
+        "ELBARCINO": "ELBARCINO",    # Andes
+        "ROMERAL": "ROMERAL",    # Angelopolis
+        "PALMAS": "PALMAS",    # Angostura
+        "LIBERIA": "LIBERIA",    # Anori
+        "LAGUAYANA": "LAGUAYANA",    # Anori
+        "TABACAL": "TABACAL",    # Anori
+        "LACHOCLINA": "LACHOCLINA",    # Anza
+        "LACHUSCALITO": "LACHUSCALITO",    # Anza
+        "ELOSITO": "ELOSITO",    # Apartado
+        "GUINEOALTO": "GUINEOALTO",    # Apartado
+        "LAPEDROSA": "LAPEDROSA",    # Apartado
+        "SANJUANCITOVIJAO": "SANJUANCITOVIJAO",    # Arboletes
+        "AGUAVIVA": "AGUAVIVA",    # Arboletes
+        "CALABOZO": "CALABOZO",    # Arboletes
+        "LACHORRERA": "LACHORRERA",    # Barbosa
+        "TABLAZOPOPALITO": "TABLAZOPOPALITO",    # Barbosa
+        "CHORROHONDO": "CHORROHONDO",    # Barbosa
+        "MATASANO": "MATASANO",    # Barbosa
+        "LASLAJAS": "LASLAJAS",    # Barbosa
+        "LACHAPAALTA": "LACHAPAALTA",    # Barbosa
+        "ELPICACHO": "ELPICACHO",    # Bello
+        "GUASIMALITO": "GUASIMALITO",    # Bello
+        "OVEJAS": "OVEJAS",    # Bello
+        "LOSAGUACATES": "LOSAGUACATES",    # Betania
+        "GUADUALEJO": "GUADUALEJO",    # Betania
+        "ELTOSTADO": "ELTOSTADO",    # Betulia
+        "ALTODELCHIRI": "ALTODELCHIRI",    # Briceño
+        "TABACAL": "TABACAL",    # Buritica
+        "GUARCO": "GUARCO",    # Buritica
+        "ELSIENTO": "ELSIENTO",    # Buritica
+        "SANJUAN": "SANJUAN",    # Caicedo
+        "ANOCOZCA": "ANOCOZCA",    # Caicedo
+        "LAMIEL": "LAMIEL",    # Caldas
+        "LASALADA": "LASALADA",    # Caldas
+        "LACLARA": "LACLARA",    # Caldas
+        "LAMINA": "LAMINA",    # Caldas
+        "ELCARDAL": "ELCARDAL",    # Caldas
+        "POTRERILLO": "POTRERILLO",    # Caldas
+        "LACIMA": "LACIMA",    # Caldas
+        "ELBARCINO": "ELBARCINO",    # Campamento
+        "LOSMANGOS": "LOSMANGOS",    # Campamento
+        "ELBOSQUE": "ELBOSQUE",    # Campamento
+        "ELCARRIEL": "ELCARRIEL",    # Campamento
+        "LALUZ": "LALUZ",    # Campamento
+        "LAPOLKA": "LAPOLKA",    # Campamento
+        "SANANTONIO": "SANANTONIO",    # Campamento
+        "LACEIBA": "LACEIBA",    # Campamento
+        "ELYERBAL": "ELYERBAL",    # Campamento
+        "CAPOTAL": "CAPOTAL",    # Campamento
+        "JUNTASDEURAMITA": "JUNTASDEURAMITA",    # Cañasgordas
+        "PERNILLA": "PERNILLA",    # Cañasgordas
+        "ZARABANDA": "ZARABANDA",    # Carepa
+        "ELCERRO": "ELCERRO",    # Carepa
+        "LASTRESCIENTAS": "LASTRESCIENTAS",    # Carepa
+        "LACADENA": "LACADENA",    # Carepa
+        "SADEM": "SADEM",    # Chigorodo
+        "GUAPA": "GUAPA",    # Chigorodo
+        "BARRANQUILLITA": "BARRANQUILLITA",    # Chigorodo
+        "GUAGUAS": "GUAGUAS",    # Chigorodo
+        "LACANDELARIA": "LACANDELARIA",    # Chigorodo
+        "LAMAPORITA": "LAMAPORITA",    # Chigorodo
+        "BOCASDEGUAPA": "BOCASDEGUAPA",    # Chigorodo
+        "CHIGORODOCITO": "CHIGORODOCITO",    # Chigorodo
+        "TAFETANES": "TAFETANES",    # Concepcion
+        "LATRINIDAD": "LATRINIDAD",    # Concepcion
+        "ZARZALCURAZAO": "ZARZALCURAZAO",    # Copacabana
+        "CHURRASCAL": "CHURRASCAL",    # Dabeiba
+        "LAFLORIDA": "LAFLORIDA",    # Dabeiba
+        "CORCOBADO": "CORCOBADO",    # Dabeiba
+        "ELCALICHE": "ELCALICHE",    # Dabeiba
+        "BARRANCONANTADO": "BARRANCONANTADO",    # Dabeiba
+        "QUIPARADOSITO": "QUIPARADOSITO",    # Dabeiba
+        "CHUSCALTUGURIDOCITO": "CHUSCALTUGURIDOCITO",    # Dabeiba
+        "ELCALICHE": "ELCALICHE",    # Dabeiba
+        "MATASANO": "MATASANO",    # Don Matias
+        "ELSOCORRO": "ELSOCORRO",    # Ebejico
+        "BAMBA": "BAMBA",    # El Bagre
+        "ELPUENTE": "ELPUENTE",    # El Bagre
+        "MELLIZOS": "MELLIZOS",    # El Bagre
+        "LALLANA": "LALLANA",    # El Bagre
+        "LAAURORA": "LAAURORA",    # El Carmen De Viboral
+        "AGUASCLARAS": "AGUASCLARAS",    # El Carmen De Viboral
+        "ELMAZORCAL": "ELMAZORCAL",    # El Carmen De Viboral
+        "GUAMITO": "GUAMITO",    # El Carmen De Viboral
+        "ELBRASIL": "ELBRASIL",    # El Carmen De Viboral
+        "MAGDALENA": "MAGDALENA",    # El Peñol
+        "SANTAELENA": "SANTAELENA",    # El Retiro
+        "CAMPOALEGRE": "CAMPOALEGRE",    # El Santuario
+        "YERBABUENAL": "YERBABUENAL",    # Entrerrios
+        "ELESCOBERO": "ELESCOBERO",    # Envigado
+        "COMBIAGRANDE": "COMBIAGRANDE",    # Fredonia
+        "ELUVITAL": "ELUVITAL",    # Fredonia
+        "SABALETAS": "SABALETAS",    # Fredonia
+        "CABRAS": "CABRAS",    # Frontino
+        "CHUSCALDEMUSINGA": "CHUSCALDEMUSINGA",    # Frontino
+        "MONOS": "MONOS",    # Frontino
+        "NORE": "NORE",    # Frontino
+        "MUSINGA": "MUSINGA",    # Frontino
+        "ELCERRO": "ELCERRO",    # Gomez Plata
+        "LACRISTALINA": "LACRISTALINA",    # Granada
+        "SANBASILIOABAJO": "SANBASILIOABAJO",    # Guadalupe
+        "BRAMADORA": "BRAMADORA",    # Guadalupe
+        "ALTODESANJUAN": "ALTODESANJUAN",    # Guadalupe
+        "COLORADO": "COLORADO",    # Guarne
+        "JUANXXIII": "JUANXXIII",    # Guarne
+        "BRIZUELA": "BRIZUELA",    # Guarne
+        "PARQUENACIONALNATURALDELPARAMILLO": "PARQUENACIONALNATURALDELPARAMILLO",    # Ituango
+        "MONTEALTO": "MONTEALTO",    # Ituango
+        "ELOLIVAR": "ELOLIVAR",    # Ituango
+        "LALOMITA": "LALOMITA",    # Ituango
+        "ELTORMENTO": "ELTORMENTO",    # Jardin
+        "JUANXXIII": "JUANXXIII",    # La Estrella
+        "CARDAL": "CARDAL",    # La Union
+        "ELBUEY": "ELBUEY",    # La Union
+        "LADIVIZA": "LADIVIZA",    # La Union
+        "ALTODEDOLORES": "ALTODEDOLORES",    # Maceo
+        "LAPALOMA": "LAPALOMA",    # Maceo
+        "LACUCHILLA": "LACUCHILLA",    # Maceo
+        "SANTAANA": "SANTAANA",    # Maceo
+        "LOSALPES": "LOSALPES",    # Marinilla
+        "LASPLAYAS": "LASPLAYAS",    # Medellin
+        "LATRINIDAD": "LATRINIDAD",    # Montebello
+        "LAHONDA": "LAHONDA",    # Montebello
+        "ANTAZALES": "ANTAZALES",    # Mutata
+        "TIERRADENTRO": "TIERRADENTRO",    # Mutata
+        "VILLADELCARMEN": "VILLADELCARMEN",    # Mutata
+        "LOSCEDROS": "LOSCEDROS",    # Mutata
+        "LAPRIMAVERA": "LAPRIMAVERA",    # Mutata
+        "EUGENIAARRIBA": "EUGENIAARRIBA",    # Mutata
+        "LASECRETA": "LASECRETA",    # Mutata
+        "CHONTADURALITO": "CHONTADURALITO",    # Mutata
+        "NUEVAESPERANZA": "NUEVAESPERANZA",    # Mutata
+        "PARQUENACIONALNATURALDELPARAMILLO": "PARQUENACIONALNATURALDELPARAMILLO",    # Mutata
+        "SURRAMBAY": "SURRAMBAY",    # Mutata
+        "PUENTELINDA": "PUENTELINDA",    # Nariño
+        "LAVALVANERA": "LAVALVANERA",    # Nariño
+        "VENECIA": "VENECIA",    # Nariño
+        "QUIEBRAHONDA": "QUIEBRAHONDA",    # Nariño
+        "SANTAROSADELASPALMERAS": "SANTAROSADELASPALMERAS",    # Necocli
+        "LOSLAURELES": "LOSLAURELES",    # Necocli
+        "PIEDRECITAS": "PIEDRECITAS",    # Necocli
+        "ELVENADOSEVILLA": "ELVENADOSEVILLA",    # Necocli
+        "LAYOKYCENIZOSA": "LAYOKYCENIZOSA",    # Necocli
+        "ELCEDRO": "ELCEDRO",    # Necocli
+        "AGUASCLARAS": "AGUASCLARAS",    # Necocli
+        "ELCALDUCHO": "ELCALDUCHO",    # Necocli
+        "MINASDELVAPOR": "MINASDELVAPOR",    # Puerto Berrio
+        "PLATANARES": "PLATANARES",    # Remedios
+        "ELSILENCIO": "ELSILENCIO",    # Remedios
+        "CAMELIAQUINTANA": "CAMELIAQUINTANA",    # Remedios
+        "LAHONDASANBARTOLO": "LAHONDASANBARTOLO",    # Remedios
+        "JUANBRAND": "JUANBRAND",    # Remedios
+        "NOHAVA": "NOHAVA",    # Sabanalarga
+        "ELROBLAL": "ELROBLAL",    # Salgar
+        "ELMORRO": "ELMORRO",    # San Andres De Cuerquia
+        "GUADALITO": "GUADALITO",    # San Carlos
+        "LAGARRUCHA": "LAGARRUCHA",    # San Carlos
+        "LATUPIADA": "LATUPIADA",    # San Carlos
+        "LAHONDITA": "LAHONDITA",    # San Carlos
+        "CALDERAS": "CALDERAS",    # San Carlos
+        "SARDINITA": "SARDINITA",    # San Carlos
+        "FRONTERITAS": "FRONTERITAS",    # San Carlos
+        "JUANOS": "JUANOS",    # San Carlos
+        "LALEONA": "LALEONA",    # San Carlos
+        "MIRANDITA": "MIRANDITA",    # San Carlos
+        "ELVERGEL": "ELVERGEL",    # San Carlos
+        "LAFLORESTA": "LAFLORESTA",    # San Francisco
+        "PAILANIA": "PAILANIA",    # San Francisco
+        "LACIENAGA": "LACIENAGA",    # San Jeronimo
+        "MATASANO": "MATASANO",    # San Jeronimo
+        "MURRAPALA": "MURRAPALA",    # San Jeronimo
+        "BUENOSAIRESPARTEALTA": "BUENOSAIRESPARTEALTA",    # San Jeronimo
+        "QUIMBAYO": "QUIMBAYO",    # San Jeronimo
+        "PESQUINAL": "PESQUINAL",    # San Jeronimo
+        "ELGOLFO": "ELGOLFO",    # San Jeronimo
+        "ELCALVARIO": "ELCALVARIO",    # San Jeronimo
+        "ELCEDRAL": "ELCEDRAL",    # San Jeronimo
+        "ELMESTIZO": "ELMESTIZO",    # San Jeronimo
+        "LLANOARRIBA": "LLANOARRIBA",    # San Jeronimo
+        "QUIMBAYITO": "QUIMBAYITO",    # San Jeronimo
+        "PANTANILLO": "PANTANILLO",    # San Jeronimo
+        "AGUAMALA": "AGUAMALA",    # San Jeronimo
+        "BUENOSAIRESPARTEBAJA": "BUENOSAIRESPARTEBAJA",    # San Jeronimo
+        "ELGUAICO": "ELGUAICO",    # San Jeronimo
+        "LACLARAARRIBA": "LACLARAARRIBA",    # San Jeronimo
+        "PALOBLANCO": "PALOBLANCO",    # San Jeronimo
+        "ELARQUILLO": "ELARQUILLO",    # San Juan De Uraba
+        "ENTRASIPUEDES": "ENTRASIPUEDES",    # San Juan De Uraba
+        "ELBONGO": "ELBONGO",    # San Juan De Uraba
+        "CHAPALESDEUVEROS": "CHAPALESDEUVEROS",    # San Juan De Uraba
+        "LOSCHAPALESDEDAMAQUIEL": "LOSCHAPALESDEDAMAQUIEL",    # San Juan De Uraba
+        "LAJOSEFINA": "LAJOSEFINA",    # San Luis
+        "ELPRODIGIO": "ELPRODIGIO",    # San Luis
+        "LOSMEDIOS": "LOSMEDIOS",    # San Luis
+        "LACRISTALINA": "LACRISTALINA",    # San Luis
+        "LASMARGARITAS": "LASMARGARITAS",    # San Luis
+        "ELPALACIO": "ELPALACIO",    # San Luis
+        "VILLANUEVA": "VILLANUEVA",    # San Luis
+        "LACLARITA": "LACLARITA",    # San Pedro De Los Milagros
+        "ALMAGRAS": "ALMAGRAS",    # San Pedro De Uraba
+        "FILOPANCHO": "FILOPANCHO",    # San Pedro De Uraba
+        "ALTOSANJUAN": "ALTOSANJUAN",    # San Pedro De Uraba
+        "FARALLONES": "FARALLONES",    # San Rafael
+        "ELCARDAL": "ELCARDAL",    # San Rafael
+        "PIEDRASABAJO": "PIEDRASABAJO",    # San Rafael
+        "TOTUMITO": "TOTUMITO",    # San Rafael
+        "LAFLORESTA": "LAFLORESTA",    # San Roque
+        "ELRODEO": "ELRODEO",    # Santa Fe De Antioquia
+        "PONTEZUELA": "PONTEZUELA",    # Santa Rosa De Osos
+        "SANANTONIO": "SANANTONIO",    # Santa Rosa De Osos
+        "LAPAVASALAMINA": "LAPAVASALAMINA",    # Santa Rosa De Osos
+        "CHILIMACO": "CHILIMACO",    # Santa Rosa De Osos
+        "ELCHICAL": "ELCHICAL",    # Santo Domingo
+        "ELCENIZO": "ELCENIZO",    # Segovia
+        "CIANURADA": "CIANURADA",    # Segovia
+        "ELTESORO": "ELTESORO",    # Segovia
+        "MARMAJITO": "MARMAJITO",    # Segovia
+        "LLANADASSANTACLARA": "LLANADASSANTACLARA",    # Sonson
+        "AURESLAMORELIA": "AURESLAMORELIA",    # Sonson
+        "MANZANARESABAJO": "MANZANARESABAJO",    # Sonson
+        "MANZANARESARRIBA": "MANZANARESARRIBA",    # Sonson
+        "ROBLALITOA": "ROBLALITOA",    # Sonson
+        "ROBLALARRIBA": "ROBLALARRIBA",    # Sonson
+        "LOSPOTREROS": "LOSPOTREROS",    # Sonson
+        "MANZANARESCENTRO": "MANZANARESCENTRO",    # Sonson
+        "NARANJALABAJO": "NARANJALABAJO",    # Sonson
+        "ROBLALITOB": "ROBLALITOB",    # Sonson
+        "YARUMALALTAVISTA": "YARUMALALTAVISTA",    # Sonson
+        "LAAGUADITA": "LAAGUADITA",    # Sonson
+        "ARGENTINAMAGALLO": "ARGENTINAMAGALLO",    # Sonson
+        "VENTIADEROS": "VENTIADEROS",    # Sonson
+        "MAGALLOCENTRO": "MAGALLOCENTRO",    # Sonson
+        "MAGALLOABAJO": "MAGALLOABAJO",    # Sonson
+        "ALTODEGUAYAQUIL": "ALTODEGUAYAQUIL",    # Sonson
+        "ELBOSQUE": "ELBOSQUE",    # Sonson
+        "ELCOCO": "ELCOCO",    # Sonson
+        "LAFRANCIA": "LAFRANCIA",    # Sonson
+        "LAQUIEBRADESANPABLO": "LAQUIEBRADESANPABLO",    # Sonson
+        "ALTODELRAYO": "ALTODELRAYO",    # Sonson
+        "CAUNZALLOSMEDIOS": "CAUNZALLOSMEDIOS",    # Sonson
+        "GUAIMARAL": "GUAIMARAL",    # Sopetran
+        "LOMADELMEDIO": "LOMADELMEDIO",    # Sopetran
+        "POMOS": "POMOS",    # Sopetran
+        "LOSAGUACATES": "LOSAGUACATES",    # Sopetran
+        "LALIBORINA": "LALIBORINA",    # Tamesis
+        "ELNUEVE": "ELNUEVE",    # Taraza
+        "ELCINCO": "ELCINCO",    # Taraza
+        "ELTRES": "ELTRES",    # Taraza
+        "TORNOBAN": "TORNOBAN",    # Taraza
+        "LASMARGARITAS": "LASMARGARITAS",    # Toledo
+        "NUEVOANTIOQUIA": "NUEVOANTIOQUIA",    # Turbo
+        "PUEBLOBELLO": "PUEBLOBELLO",    # Turbo
+        "BELLAVISTA": "BELLAVISTA",    # Turbo
+        "BRUNITOABAJO": "BRUNITOABAJO",    # Turbo
+        "MACONDO": "MACONDO",    # Turbo
+        "GUAYABALARRIBA": "GUAYABALARRIBA",    # Turbo
+        "BOCASDELROTO": "BOCASDELROTO",    # Turbo
+        "CUCHILLOBLANCO": "CUCHILLOBLANCO",    # Turbo
+        "TOYA": "TOYA",    # Turbo
+        "ZABALETAS": "ZABALETAS",    # Turbo
+        "ELCEDRO": "ELCEDRO",    # Turbo
+        "LAFLORIDA": "LAFLORIDA",    # Turbo
+        "EUGENIAMEDIA": "EUGENIAMEDIA",    # Turbo
+        "SALSIPUEDES": "SALSIPUEDES",    # Turbo
+        "CUCHILLONEGRO": "CUCHILLONEGRO",    # Turbo
+        "BUENOSAIRES": "BUENOSAIRES",    # Turbo
+        "MILPESARES": "MILPESARES",    # Turbo
+        "NUEVAESTRELLA": "NUEVAESTRELLA",    # Turbo
+        "BELLAROSA": "BELLAROSA",    # Turbo
+        "EUGENIAARRIBA": "EUGENIAARRIBA",    # Turbo
+        "GUACAMAYA": "GUACAMAYA",    # Turbo
+        "TUMARADOCITO": "TUMARADOCITO",    # Turbo
+        "ELPITAL": "ELPITAL",    # Uramita
+        "PARAMILLO": "PARAMILLO",    # Uramita
+        "LAAGUADA": "LAAGUADA",    # Uramita
+        "ELLLANO": "ELLLANO",    # Uramita
+        "FRONTINITO": "FRONTINITO",    # Uramita
+        "ALTODELPITAL": "ALTODELPITAL",    # Uramita
+        "OROBUGOMEDIO": "OROBUGOMEDIO",    # Urrao
+        "GUAPANTE": "GUAPANTE",    # Urrao
+        "ELSALADITO": "ELSALADITO",    # Urrao
+        "ELINDIO": "ELINDIO",    # Urrao
+        "PENDERISCOARRIBA": "PENDERISCOARRIBA",    # Urrao
+        "ELESCOBERO": "ELESCOBERO",    # Urrao
+        "LOSANIMES": "LOSANIMES",    # Urrao
+        "LAGUAYABALA": "LAGUAYABALA",    # Urrao
+        "OROBUGOBAJO": "OROBUGOBAJO",    # Urrao
+        "CLAVELLINO": "CLAVELLINO",    # Valdivia
+        "MATAARRIBA": "MATAARRIBA",    # Vegachi
+        "ELVENTIADERO": "ELVENTIADERO",    # Venecia
+        "LAMINA": "LAMINA",    # Venecia
+        "MELINDRES": "MELINDRES",    # Venecia
+        "BOCADELUISA": "BOCADELUISA",    # Vigia Del Fuerte
+        "PIEDRASGORDAS": "PIEDRASGORDAS",    # Vigia Del Fuerte
+        "BRILLANTINA": "BRILLANTINA",    # Yali
+        "TERMINALLAALONDRA": "TERMINALLAALONDRA",    # Yali
+        "ROSARITO": "ROSARITO",    # Yarumal
+        "LAZORRA": "LAZORRA",    # Yarumal
+        "ELHOMIGUERO": "ELHOMIGUERO",    # Yolombo
+        "BENGALA": "BENGALA",    # Yolombo
+        "BOCASDESANFRANCISCO": "BOCASDESANFRANCISCO",    # Yondo
+        "PUERTOMATILDE": "PUERTOMATILDE",    # Yondo
+        "SARDINATAALTA": "SARDINATAALTA",    # Yondo
+        "CIENAGADESARDINATA": "CIENAGADESARDINATA",    # Yondo
+        "QUEBRADONAUNO": "QUEBRADONAUNO",    # Zaragoza
+        "BOCASDEMAESTROESTEBAN": "BOCASDEMAESTROESTEBAN",    # Zaragoza
+        "CORDEROICACALES": "CORDEROICACALES",    # Zaragoza
+        "CORDERO": "CORDERO"    # Zaragoza
 
     }
     
