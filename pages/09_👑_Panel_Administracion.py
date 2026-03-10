@@ -741,11 +741,11 @@ with tabs[4]:
 
 
 # ==============================================================================
-# TAB 5: MUNICIPIOS
+# TAB 5: MUNICIPIOS (Ahora con soporte para simplificación y mapas nacionales)
 # ==============================================================================
 with tabs[5]:
     st.header("🏙️ Municipios")
-    sb1, sb2 = st.tabs(["👁️ Ver y Editar Tabla", "📂 Cargar GeoJSON"])
+    sb1, sb2 = st.tabs(["👁️ Ver y Editar Tabla", "📂 Cargar GeoJSON (Con Simplificación)"])
     
     with sb1:
         try:
@@ -767,51 +767,80 @@ with tabs[5]:
             st.warning("No hay municipios cargados.")
 
     with sb2:
-        st.info("Carga el archivo de Municipios. Selecciona la columna correcta para evitar el error 'ANTIOQUIA'.")
+        st.info("Sube el archivo GeoJSON de Municipios. Para mapas nacionales pesados (>50MB), usa el factor de simplificación.")
         up_m = st.file_uploader("GeoJSON Municipios", type=["geojson", "json"], key="up_mun_geo_smart")
         
         if up_m:
             try:
-                gdf_m = gpd.read_file(up_m)
-                cols_m = list(gdf_m.columns)
+                # 1. Cargamos el GeoJSON en memoria
+                with st.spinner("⏳ Leyendo el archivo GeoJSON... (Puede tardar si es muy pesado)"):
+                    gdf_m = gpd.read_file(up_m)
+                    cols_m = list(gdf_m.columns)
                 
-                st.markdown("##### 🛠️ Mapeo de Columnas")
-                c1, c2 = st.columns(2)
+                # 2. Configuración de Mapeo
+                st.markdown("##### 🛠️ Mapeo de Columnas y Optimización")
+                c1, c2, c3 = st.columns([2, 2, 1])
                 
-                # Intentamos adivinar MPIO_CNMBR o NOMBRE_MUNICIPIO
-                idx_nom_m = next((i for i, c in enumerate(cols_m) if c.lower() in ['mpio_cnmbr', 'nombre_municipio', 'nombre']), 0)
-                idx_cod_m = next((i for i, c in enumerate(cols_m) if c.lower() in ['mpio_cdpmp', 'codigo', 'id_municipio']), 0)
+                idx_nom_m = next((i for i, c in enumerate(cols_m) if c.lower() in ['mpio_cnmbr', 'nombre_municipio', 'nombre', 'municipio']), 0)
+                idx_cod_m = next((i for i, c in enumerate(cols_m) if c.lower() in ['mpio_cdpmp', 'codigo', 'id_municipio', 'mpios']), 0)
+                idx_dep_m = next((i for i, c in enumerate(cols_m) if c.lower() in ['depto', 'departamento', 'dpto_cnmbr', 'nom_dep']), 0)
                 
-                # EL USUARIO ELIGE LA VERDAD
-                col_nom_mun = c1.selectbox("📌 Columna NOMBRE MUNICIPIO:", cols_m, index=idx_nom_m, help="Selecciona la que dice 'Medellín', NO la que dice 'Antioquia'")
+                col_nom_mun = c1.selectbox("📌 Columna MUNICIPIO:", cols_m, index=idx_nom_m)
                 col_cod_mun = c2.selectbox("🔑 Columna CÓDIGO DANE:", cols_m, index=idx_cod_m)
+                col_dep_mun = c3.selectbox("🗺️ Columna DEPARTAMENTO:", ["(No aplica / Todo Antioquia)"] + cols_m, index=idx_dep_m + 1 if idx_dep_m else 0)
                 
-                if st.button("🚀 Guardar Municipios", key="btn_save_mun_smart"):
+                # 3. Control de Simplificación
+                st.markdown("---")
+                st.markdown("**📉 Compresión Topológica (Obligatorio para mapas de todo Colombia)**")
+                simplificar = st.checkbox("Activar simplificación de fronteras (Recomendado)", value=True)
+                factor_simp = st.slider(
+                    "Tolerancia (Grados). Más alto = Más liviano pero menos preciso.", 
+                    min_value=0.001, max_value=0.050, value=0.005, step=0.001, format="%.3f"
+                )
+                
+                if st.button("🚀 Guardar Municipios en Base de Datos", key="btn_save_mun_smart"):
                     status = st.status("Procesando...", expanded=True)
                     
+                    # Proyección Estándar Web (WGS84)
                     if gdf_m.crs and gdf_m.crs.to_string() != "EPSG:4326":
+                        status.update(label="Reproyectando coordenadas a EPSG:4326...", state="running")
                         gdf_m = gdf_m.to_crs("EPSG:4326")
                         
-                    # Renombrado Estándar
-                    gdf_m = gdf_m.rename(columns={
-                        col_nom_mun: 'nombre_municipio', # ESTANDARIZADO
+                    # Simplificación Topológica
+                    if simplificar:
+                        status.update(label=f"Simplificando geometrías (Tolerancia: {factor_simp})...", state="running")
+                        gdf_m['geometry'] = gdf_m['geometry'].simplify(tolerance=factor_simp, preserve_topology=True)
+                        
+                    # Renombrado Estándar para Supabase
+                    status.update(label="Mapeando columnas...", state="running")
+                    mapeo = {
+                        col_nom_mun: 'nombre_municipio',
                         col_cod_mun: 'id_municipio'
-                    })
+                    }
+                    if col_dep_mun != "(No aplica / Todo Antioquia)":
+                        mapeo[col_dep_mun] = 'departamento'
+                        
+                    gdf_m = gdf_m.rename(columns=mapeo)
                     
                     # Limpieza extra
                     if 'departamento' not in gdf_m.columns:
-                        gdf_m['departamento'] = 'Antioquia' # Default si falta
+                        gdf_m['departamento'] = 'Antioquia' # Default si es un mapa solo de Antioquia
                         
+                    # Filtrar solo las columnas necesarias para no saturar Supabase
+                    columnas_finales = ['id_municipio', 'nombre_municipio', 'departamento', 'geometry']
+                    columnas_existentes = [c for c in columnas_finales if c in gdf_m.columns]
+                    gdf_m = gdf_m[columnas_existentes]
+                    
+                    status.update(label="Subiendo a Supabase (PostGIS)...", state="running")
                     gdf_m.to_postgis('municipios', engine, if_exists='replace', index=False)
                     
                     status.update(label="¡Listo!", state="complete")
-                    st.success(f"✅ Municipios cargados. Mapeo: **{col_nom_mun}** → **nombre_municipio**")
+                    st.success(f"✅ Mapa cargado exitosamente en la base de datos.")
                     time.sleep(2)
                     st.rerun()
                     
             except Exception as e:
-                st.error(f"Error: {e}")
-
+                st.error(f"Error procesando el mapa: {e}")
 
 # ==============================================================================
 # TAB 6: GESTIÓN DE RASTERS EN LA NUBE (DEM + COBERTURAS)
@@ -1334,4 +1363,5 @@ with tabs[15]:
                 
         except Exception as e:
             st.error(f"No se pudo conectar con el explorador. Detalle: {e}")
+
 
