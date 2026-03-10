@@ -23,47 +23,87 @@ st.divider()
 # --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
 def normalizar_texto(texto):
     if pd.isna(texto): return ""
-    t = str(texto).upper().strip()
+    t = str(texto).upper()
     
-    # 1. Quitar tildes y diacríticos (La 'Ñ' se vuelve 'N')
+    # 1. Eliminar paréntesis y su contenido (ej. "(1)(3)" o "(CD)")
+    t = re.sub(r'\(.*?\)', '', t)
+    
+    # 2. Quitar tildes y diacríticos (La 'Ñ' se vuelve 'N')
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
     
-    # 2. Diccionario Quirúrgico (Traductor DANE -> IGAC/GeoJSON)
+    # 3. Destruir espacios y caracteres raros para crear un ADN irrompible
+    t = re.sub(r'[^A-Z0-9]', '', t)
+    
+    # 4. Traductor Supremo (DANE sin espacios -> IGAC sin espacios)
     diccionario_rebeldes = {
-        "BOGOTA, D.C.": "BOGOTA",
-        "BOGOTA D.C.": "BOGOTA",
-        "SAN JOSE DE CUCUTA": "CUCUTA",
-        "LA GUAJIRA": "GUAJIRA", 
-        "VALLE DEL CAUCA": "VALLE", 
-        "EL PENOL": "PENOL",
-        "EL RETIRO": "RETIRO",
-        "EL SANTUARIO": "SANTUARIO",
-        "EL CARMEN DE VIBORAL": "CARMEN DE VIBORAL",
-        "SAN VICENTE FERRER": "SAN VICENTE",
-        "PUEBLORRICO": "PUEBLO RICO",
-        "DON MATIAS": "DONMATIAS",
-        # --- NUEVOS: ANTIOQUIA ---
-        "SAN ANDRES DE CUERQUIA": "SAN ANDRES",
-        "SAN PEDRO DE LOS MILAGROS": "SAN PEDRO",
-        "BRICENO": "BRICENO", # Para forzar limpieza en caso de caracteres invisibles
-        # --- NUEVOS: PACÍFICO Y SUR ---
-        "PIZARRO": "BAJO BAUDO",
-        "DOCORDO": "EL LITORAL DEL SAN JUAN",
-        "LITORAL DEL SAN JUAN": "EL LITORAL DEL SAN JUAN",
-        "BAHIA SOLANO": "BAHIA SOLANO MUTIS",
-        "TUMACO": "SAN ANDRES DE TUMACO",
-        "PATIA": "PATIA EL BORDO",
-        "LOPEZ DE MICAY": "LOPEZ",
-        "RIO SUCIO": "RIOSUCIO",
-        "MAGUI": "MAGUI PAYAN",
-        "ROBERTO PAYAN": "ROBERTO PAYAN SAN JOSE",
-        "MALLAMA": "MALLAMA PIEDRA ANCHA",
-        "CUASPUD": "CUASPUD CARLOSAMA"
+        # CAPITALES E HISTÓRICOS
+        "BOGOTADC": "BOGOTA",
+        "SANJOSEDECUCUTA": "CUCUTA",
+        "LAGUAJIRA": "GUAJIRA", 
+        "VALLEDELCAUCA": "VALLE", 
+        "VILLADESANDIEGODEUBATE": "UBATE",
+        "SANTIAGODETOLU": "TOLU",
+        # ANTIOQUIA
+        "ELPENOL": "PENOL",
+        "ELRETIRO": "RETIRO",
+        "ELSANTUARIO": "SANTUARIO",
+        "ELCARMENDEVIBORAL": "CARMENDEVIBORAL",
+        "SANVICENTEFERRER": "SANVICENTE",
+        "PUEBLORRICO": "PUEBLORICO",
+        "SANANDRESDECUERQUIA": "SANANDRES",
+        "SANPEDRODELOSMILAGROS": "SANPEDRO",
+        "BRICENO": "BRICEN0", # Error tipográfico del IGAC (usaron un Cero)
+        # PACÍFICO Y SUR
+        "PIZARRO": "BAJOBAUDO",
+        "DOCORDO": "ELLITORALDELSANJUAN",
+        "LITORALDELSANJUAN": "ELLITORALDELSANJUAN",
+        "BAHIASOLANO": "BAHIASOLANOMUTIS",
+        "TUMACO": "SANANDRESDETUMACO",
+        "PATIA": "PATIAELBORDO",
+        "LOPEZDEMICAY": "LOPEZ",
+        "MAGUI": "MAGUIPAYAN",
+        "ROBERTOPAYAN": "ROBERTOPAYANSANJOSE",
+        "MALLAMA": "MALLAMAPIEDRAANCHA",
+        "CUASPUD": "CUASPUDCARLOSAMA",
+        "ALTOBAUDO": "ALTOBAUDOPIEDEPATO",
+        "OLAYAHERRERA": "OLAYAHERRERABOCASDESATINGA",
+        "SANTACRUZ": "SANTACRUZGUACHAVEZ",
+        "LOSANDES": "LOSANDESSOTOMAYOR",
+        "FRANCISCOPIZARRO": "FRANCISCOPIZARROSALAHONDA",
+        "MEDIOSANJUAN": "ELLITORALDELSANJUANDOCORDO",
+        "ELCANTONDELSANPABLO": "ELCANTONDESANPABLOMANAGRU",
+        "ATRATO": "ATRATOYUTO",
+        # AMAZONÍA
+        "LEGUIZAMO": "PUERTOLEGUIZAMO",
+        "BARRANCOMINAS": "BARRANCOMINA",
+        "MAPIRIPANA": "PANAPANA",
+        "MORICHAL": "MORICHALNUEVO",
+        # RESTO DEL PAÍS
+        "SANANDRESSOTAVENTO": "SANANDRESDESOTAVENTO",
+        "SANLUISDESINCE": "SINCE",
+        "SANVICENTEDECHUCURI": "SANVICENTEDELCHUCURI",
+        "ELCARMENDECHUCURI": "ELCARMEN",
+        "ARIGUANI": "ARIGUANIELDIFICIL",
+        "SANMIGUEL": "SANMIGUELLADORADA",
+        "VILLADELEYVA": "VILLADELEIVA",
+        "PURACE": "PURACECOCONUCO",
+        "ELTABLONDEGOMEZ": "ELTABLON",
+        "ARMERO": "ARMEROGUAYABAL",
+        "COLON": "COLONGENOVA",
+        "SANPEDRODECARTAGO": "SANPEDRODECARTAGOCARTAGO",
+        "CERROSANANTONIO": "CERRODESANANTONIO",
+        "ARBOLEDA": "ARBOLEDABERRUECOS",
+        "ENCINO": "ELENCINO",
+        "MACARAVITA": "MARACAVITA",
+        "TUNUNGUA": "TUNUNGA",
+        "LAMONTANITA": "MONTANITA",
+        "ELPAUJIL": "PAUJIL",
+        "VILLARICA": "VILLARRICA"
     }
     
-    # Aplicar el diccionario
-    for mal, bien in diccionario_rebeldes.items():
-        if t == mal: t = bien
+    # Aplicar traducción si existe en el diccionario
+    if t in diccionario_rebeldes:
+        t = diccionario_rebeldes[t]
         
     # 3. Destruir TODO lo que no sea letra o número (espacios, comas, puntos, guiones)
     t = re.sub(r'[^A-Z0-9]', '', t)
