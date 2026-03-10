@@ -429,9 +429,9 @@ with tab_mapas:
     with col_map1:
         st.markdown("**⚙️ Configuración del GeoJSON**")
         if escala_sel == "Veredal (Antioquia)": 
-            sugerencia_geo = "VeredasCV.geojson"
+            sugerencia_geo = "Veredas_Antioquia_Oficial_DANE.geojson"
             sugerencia_prop = "properties.NOMBRE_VER"
-            sugerencia_padre = "properties.NOMB_MPIO"
+            sugerencia_padre = "properties.MPIO_CNMBR"
         else: 
             sugerencia_geo = "mgn_municipios_optimizado.geojson" # Asegúrate de que este sea tu nombre de archivo
             sugerencia_prop = "properties.MPIO_CNMBR"
