@@ -904,7 +904,7 @@ with tab_mapas:
     with col_map1:
         st.markdown("**⚙️ Configuración del GeoJSON**")
         if escala_sel == "Veredal (Antioquia)": 
-            sugerencia_geo = "Veredas_Antioquia_Oficial_DANE.geojson"
+            sugerencia_geo = "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson"
             sugerencia_prop = "properties.NOMBRE_VER"
             sugerencia_padre = "properties.NOMB_MPIO"
         else: 
