@@ -167,23 +167,39 @@ REGIONES_COL = {
 @st.cache_data
 def cargar_datos_limpios():
     try:
+        # 1. Cargar datos nacionales (Sigue siendo CSV)
         ruta_nac = os.path.join(RUTA_RAIZ, "data", "PobCol1912_2100.csv")
         df_nac = pd.read_csv(ruta_nac, sep=',')
-        if len(df_nac.columns) < 2: df_nac = pd.read_csv(ruta_nac, sep=';')
+        if len(df_nac.columns) < 2: 
+            df_nac = pd.read_csv(ruta_nac, sep=';')
+            
         df_nac.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().title() for c in df_nac.columns]
         df_nac = df_nac.rename(columns={'Male': 'Hombres', 'Female': 'Mujeres', 'Ano': 'Año'})
         
+        # 2. Cargar datos municipales (AHORA USA LECTOR DE EXCEL)
         ruta_mun_1 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_Colombia.xlsx")
         ruta_mun_2 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_colombia.xlsx")
-        if os.path.exists(ruta_mun_1): df_mun = pd.read_csv(ruta_mun_1, sep=',')
-        elif os.path.exists(ruta_mun_2): df_mun = pd.read_csv(ruta_mun_2, sep=',')
-        else: raise FileNotFoundError("Archivo municipal no encontrado.")
-        if len(df_mun.columns) < 2: df_mun = pd.read_csv(ruta_mun_1 if os.path.exists(ruta_mun_1) else ruta_mun_2, sep=';')
+        
+        if os.path.exists(ruta_mun_1): 
+            df_mun = pd.read_excel(ruta_mun_1)
+        elif os.path.exists(ruta_mun_2): 
+            df_mun = pd.read_excel(ruta_mun_2)
+        else: 
+            raise FileNotFoundError("Archivo municipal (.xlsx) no encontrado en la carpeta data.")
             
+        # 3. Estandarización y limpieza de la tabla municipal
         df_mun.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().lower() for c in df_mun.columns]
         df_mun = df_mun.rename(columns={'poblacion': 'Total'})
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
+        
+        # (Asegúrate de que la función retorne los DataFrames como lo tenías originalmente)
+        return df_nac, df_mun
+        
+    except Exception as e:
+        import streamlit as st
+        st.error(f"❌ Error cargando las bases de datos: {e}")
+        return pd.DataFrame(), pd.DataFrame()
         
         # MAGIA 2: Asignar Región con excepciones (Urabá)
         def asignar_region(fila):
