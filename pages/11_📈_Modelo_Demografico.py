@@ -497,6 +497,25 @@ with tab_mapas:
                 
                 if not faltantes.empty:
                     st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el GeoJSON.")
+                    
+                    # --- NUEVO: REVELADOR DE VEREDAS (RAYOS X) ---
+                    if escala_sel == "Veredal (Antioquia)":
+                        with st.expander("🔍 Ver nombres exactos dentro del mapa GeoJSON (Para arreglar el Excel)"):
+                            municipio_actual = normalizar_texto(df_mapa_plot['Padre'].iloc[0]) if not df_mapa_plot.empty else ""
+                            
+                            # Extraer las veredas que SÍ están dibujadas en el mapa para este municipio
+                            veredas_en_mapa = []
+                            for f in geo_data['features']:
+                                m_padre = str(f['properties'].get(padre_key, ""))
+                                if normalizar_texto(m_padre) == municipio_actual:
+                                    veredas_en_mapa.append(f['properties'].get(prop_key, ""))
+                                    
+                            if veredas_en_mapa:
+                                st.write(f"El mapa tiene **{len(veredas_en_mapa)}** polígonos para este municipio. Estos son sus nombres reales:")
+                                st.dataframe(pd.DataFrame({"Nombres exactos en el GeoJSON": sorted(veredas_en_mapa)}), use_container_width=True)
+                                st.info("💡 **Solución:** Busca tu vereda en esta lista. Si en tu Excel dice 'La Loma' pero aquí dice 'Vda. Loma', simplemente actualiza el nombre en tu Excel o añádelo al diccionario del código.")
+                            else:
+                                st.error("No se encontró ningún polígono para este municipio en el archivo GeoJSON. Verifica que la 'Llave Contexto' sea correcta.")
                 
             except Exception as e:
                 st.error(f"❌ Error dibujando mapa: {e}")
