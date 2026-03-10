@@ -80,8 +80,25 @@ def normalizar_texto(texto):
         "PAPUNAUA": "PAPUNAHUA"
     }
     
-    if t in diccionario_rebeldes:
+    if t in diccionario_rebeldes: 
         t = diccionario_rebeldes[t]
+
+    # --- NUEVO: DICCIONARIO ESPECÍFICO DE VEREDAS (ANTIOQUIA) ---
+    diccionario_veredas = {
+        "ELVALLANO": "VALLANO",
+        "LASPALMAS": "PALMAS",
+        "MULATOS": "LOSMULATOS",
+        "LAQUIEBRA": "LARAYA",
+        "ELROSARIOLOMADELOSZULETA": "LOMADELOSZULETA",
+        "ELMELLITO": "ELMELLITOALTO",
+        "TABLAZOHATILLO": "ELHATILLO",
+        "MANDE": "GUAPANDE", # Urrao
+        "PANTANONEGRO": "PANTANOS", # Abejorral
+        "ELCHAGUALO": "CHAGUALO" # Abejorral
+    }
+    
+    if t in diccionario_veredas:
+        t = diccionario_veredas[t]
         
     return t
     
