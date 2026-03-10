@@ -417,20 +417,17 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
 with tab_mapas:
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_terr} ({año_sel})")
     
-    # Selector de Área Geográfica
     if escala_sel != "Veredal (Antioquia)":
         area_mapa = st.radio("Filtro de Zona Geográfica:", ["Total", "Urbano", "Rural"], horizontal=True)
     else:
         area_mapa = "Rural"
         st.info("ℹ️ A escala veredal, toda la población es considerada rural.")
 
-    # Filtro Temporal
     if 'año' in df_mapa_base.columns:
         df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)].copy()
     else:
         df_mapa_año = df_mapa_base.copy()
 
-    # Filtro Espacial
     if area_mapa == "Total":
         df_mapa_plot = df_mapa_año.groupby(['Territorio', 'Padre'])['Total'].sum().reset_index()
     else:
@@ -445,22 +442,21 @@ with tab_mapas:
             sugerencia_prop = "properties.NOMBRE_VER"
             sugerencia_padre = "properties.NOMB_MPIO"
         else: 
-            # VALORES ACTUALIZADOS PARA EL MAPA OFICIAL DANE
-            sugerencia_geo = "mgn_municipios_optimizado.geojson"
+            sugerencia_geo = "mgn_municipios_optimizado.geojson" # Asegúrate de que este sea tu nombre de archivo
             sugerencia_prop = "properties.MPIO_CNMBR"
-            sugerencia_padre = ""
+            sugerencia_padre = "properties.DPTO_CCDGO" # AHORA USAMOS EL CÓDIGO DANE
             
-        archivo_geo_input = st.text_input("Archivo en GitHub / Local:", value=sugerencia_geo)
-        prop_geo_input = st.text_input("Llave Territorio (DANE = properties.MPIO_CNMBR):", value=sugerencia_prop)
+        archivo_geo_input = st.text_input("Archivo en GitHub:", value=sugerencia_geo)
+        prop_geo_input = st.text_input("Llave Territorio:", value=sugerencia_prop)
         st.markdown("**🔗 Llave Doble (Anti-Homonimia)**")
-        prop_padre_input = st.text_input("Llave Contexto (DANE = properties.DPTO_CNMBR):", value=sugerencia_padre)
+        prop_padre_input = st.text_input("Llave Contexto:", value=sugerencia_padre)
 
     with col_map2:
         ruta_geo = os.path.join(RUTA_RAIZ, "data", archivo_geo_input)
         
         if os.path.exists(ruta_geo) and not df_mapa_plot.empty:
             try:
-                # 1. Crear ADN Único en Pandas usando el Aspirador
+                # 1. Crear ADN Único en Pandas
                 if prop_padre_input.strip() != "":
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].apply(normalizar_texto)
                 else:
@@ -469,20 +465,35 @@ with tab_mapas:
                 with open(ruta_geo, encoding='utf-8') as f:
                     geo_data = json.load(f)
                 
+                # --- TRADUCTOR DANE DE CÓDIGOS A NOMBRES ---
+                codigos_dane_deptos = {
+                    "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", 
+                    "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", 
+                    "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", 
+                    "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", 
+                    "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", 
+                    "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLE", 
+                    "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", 
+                    "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA"
+                }
+                
                 # 2. Crear ADN Único en el GeoJSON
                 prop_key = prop_geo_input.replace("properties.", "")
                 padre_key = prop_padre_input.replace("properties.", "") if prop_padre_input.strip() else ""
                 
                 for feature in geo_data['features']:
                     val_terr = feature['properties'].get(prop_key, "")
-                    val_padre = feature['properties'].get(padre_key, "") if padre_key else ""
+                    val_padre = str(feature['properties'].get(padre_key, "")) if padre_key else ""
+                    
+                    # Si el mapa entrega un código DANE, lo traducimos al nombre del departamento
+                    if val_padre.zfill(2) in codigos_dane_deptos:
+                        val_padre = codigos_dane_deptos[val_padre.zfill(2)]
                     
                     if val_padre:
                         feature['properties']['MATCH_ID'] = normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
                     else:
                         feature['properties']['MATCH_ID'] = normalizar_texto(val_terr)
                 
-                # MAGIA 3: Percentil 85/90 para proteger la escala de colores
                 q_val = 0.85 if area_mapa == "Total" else 0.90
                 max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
                 
@@ -505,13 +516,12 @@ with tab_mapas:
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
                 st.plotly_chart(fig_mapa, width='stretch')
                 
-                # DIAGNÓSTICO: Si algo falla, el sistema nos dirá qué faltó
                 geo_ids_disp = [f['properties'].get('MATCH_ID', '') for f in geo_data['features']]
                 df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(geo_ids_disp)
                 faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
                 
                 if not faltantes.empty:
-                    st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el GeoJSON. Revisa la tabla de abajo para añadirlos al diccionario si es necesario.")
+                    st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el GeoJSON.")
                 
             except Exception as e:
                 st.error(f"❌ Error dibujando mapa: {e}")
