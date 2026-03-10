@@ -445,14 +445,15 @@ with tab_mapas:
             sugerencia_prop = "properties.NOMBRE_VER"
             sugerencia_padre = "properties.NOMB_MPIO"
         else: 
-            sugerencia_geo = "municipios_colombia.geojson"
-            sugerencia_prop = "properties.MUNICIPIO"
-            sugerencia_padre = "properties.DEPTO"
+            # VALORES ACTUALIZADOS PARA EL MAPA OFICIAL DANE
+            sugerencia_geo = "mgn_municipios_optimizado.geojson"
+            sugerencia_prop = "properties.MPIO_CNMBR"
+            sugerencia_padre = "properties.DPTO_CNMBR"
             
-        archivo_geo_input = st.text_input("Archivo en GitHub:", value=sugerencia_geo)
-        prop_geo_input = st.text_input("Llave Territorio (ej. properties.MUNICIPIO):", value=sugerencia_prop)
+        archivo_geo_input = st.text_input("Archivo en GitHub / Local:", value=sugerencia_geo)
+        prop_geo_input = st.text_input("Llave Territorio (DANE = properties.MPIO_CNMBR):", value=sugerencia_prop)
         st.markdown("**🔗 Llave Doble (Anti-Homonimia)**")
-        prop_padre_input = st.text_input("Llave Contexto (ej. properties.DEPTO):", value=sugerencia_padre)
+        prop_padre_input = st.text_input("Llave Contexto (DANE = properties.DPTO_CNMBR):", value=sugerencia_padre)
 
     with col_map2:
         ruta_geo = os.path.join(RUTA_RAIZ, "data", archivo_geo_input)
