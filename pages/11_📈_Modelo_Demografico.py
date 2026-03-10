@@ -363,7 +363,8 @@ except:
 df_proj = pd.DataFrame(proyecciones)
 
 # --- CONFIGURACIÓN DE PESTAÑAS (TABS) ---
-tab_modelos, tab_mapas, tab_descargas = st.tabs(["📊 Pirámides y Modelos", "🌍 Geovisor Espacial", "💾 Descarga de Datos"])
+tab_modelos, tab_mapas, tab_descargas = st.tabs(["📈 Tendencia y Estructura", "🌍 Geovisor Espacial", "💾 Descarga de Datos"])
+tab_modelos, tab_mapas, tab_rankings, tab_descargas = st.tabs(["📈 Tendencia y Estructura"", "🗺️ Mapa Demográfico", "📊 Rankings y Dinámica Histórica", "💾 Descargas"])
 
 # ==========================================
 # PESTAÑA 1: MODELOS Y PIRÁMIDES ANIMADAS
@@ -632,7 +633,78 @@ with tab_mapas:
     st.dataframe(df_mapa_plot[['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa']].sort_values('Total', ascending=False), use_container_width=True)
 
 # ==========================================
-# PESTAÑA 3: DESCARGAS Y EXPORTACIÓN
+# PESTAÑA 3: RANKINGS Y DINÁMICA HISTÓRICA (Top 15 y 2005-2035)
+# ==========================================
+with tab_rankings:
+    st.subheader(f"📊 Análisis Comparativo y Trayectorias Poblacionales ({filtro_zona})")
+    
+    # Solo mostrar si hay datos para comparar
+    if not df_mapa_base.empty and len(df_mapa_base) > 1:
+        col_r1, col_r2 = st.columns([1, 1.2])
+        
+        # --- COLUMNA 1: RANKING BARS (TOP 15) ---
+        with col_r1:
+            st.markdown(f"**Top 15 Territorios ({año_sel})**")
+            es_top = st.radio("Ordenar por:", ["Mayor Población", "Menor Población"], horizontal=True)
+            
+            df_rank = df_mapa_base.copy().dropna(subset=['Total'])
+            df_rank = df_rank[df_rank['Total'] > 0]
+            
+            if es_top == "Mayor Población":
+                df_plot = df_rank.nlargest(15, 'Total')
+            else:
+                df_plot = df_rank.nsmallest(15, 'Total')
+                
+            fig_bar = px.bar(df_plot, x='Total', y='Territorio', orientation='h', 
+                             color='Total', color_continuous_scale='Viridis',
+                             title=f"Ranking Poblacional ({año_sel})")
+            fig_bar.update_layout(yaxis={'categoryorder':'total ascending' if es_top == "Mayor Población" else 'total descending'})
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        # --- COLUMNA 2: CURVAS HISTÓRICAS (2005 - 2035) ---
+        with col_r2:
+            st.markdown("**Dinámica Poblacional (2005 - 2035)**")
+            
+            if escala_sel == "Veredal (Antioquia)":
+                st.info("ℹ️ A escala Veredal, la plataforma utiliza un corte censal oficial estático. Las curvas de proyección dinámica 2005-2035 se activan desde la escala municipal hacia arriba.")
+            else:
+                # Extraemos los NOMBRES de los 10 territorios más poblados para graficar sus líneas
+                top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
+                
+                # Preparamos los datos desde nuestra base maestra (df_mun) actualizada al 2035
+                zona_q = filtro_zona.lower()
+                df_base_historica = df_mun[df_mun['area_geografica'] == zona_q]
+                df_line = pd.DataFrame()
+                
+                if escala_sel == "Departamental":
+                    if region_sel != "Todas":
+                        df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel]
+                    df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
+                    df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+                    
+                elif escala_sel == "Municipal (Departamentos)":
+                    df_base_historica = df_base_historica[df_base_historica['depto_nom'] == depto_sel]
+                    df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                    df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+                    
+                elif escala_sel == "Municipal (Regiones)":
+                    df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel_m]
+                    df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                    df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+                
+                # Filtramos la serie de tiempo SOLO para el Top 10 (para que la gráfica no sea un espagueti ilegible)
+                if not df_line.empty:
+                    df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
+                    fig_line = px.line(df_line, x='año', y='Total', color='Territorio', markers=True,
+                                       title=f"Evolución de los Territorios más Poblados",
+                                       labels={'año': 'Año', 'Total': 'Habitantes'})
+                    fig_line.update_layout(hovermode="x unified")
+                    st.plotly_chart(fig_line, use_container_width=True)
+    else:
+        st.info("💡 Selecciona una escala territorial con múltiples divisiones (ej. Municipal o Departamental) para ver el ranking y las curvas comparativas.")    
+
+# ==========================================
+# PESTAÑA 4: DESCARGAS Y EXPORTACIÓN
 # ==========================================
 with tab_descargas:
     st.subheader("💾 Exportación de Resultados y Series de Tiempo")
