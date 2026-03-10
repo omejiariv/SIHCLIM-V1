@@ -24,92 +24,62 @@ st.divider()
 def normalizar_texto(texto):
     if pd.isna(texto): return ""
     t = str(texto).upper()
-    
-    # 1. Eliminar paréntesis y su contenido (ej. "(1)(3)" o "(CD)")
     t = re.sub(r'\(.*?\)', '', t)
     
-    # 2. Quitar tildes y diacríticos (La 'Ñ' se vuelve 'N')
+    # 1. HOTFIX: Reparador de Caracteres Mutantes del DANE (UTF-8 a Latin-1)
+    reparador = {
+        "Ã\x81": "A", "Ã": "A", "Ã\x89": "E", "Ã‰": "E",
+        "Ã\x8d": "I", "Ã": "I", "Ã\x93": "O", "Ã“": "O",
+        "Ã\x9a": "U", "Ãš": "U", "Ã\x91": "N", "Ã‘": "N",
+        "Ãœ": "U", "Ã\x9c": "U", "Ã¡": "A", "Ã©": "E", 
+        "Ã­": "I", "Ã³": "O", "Ãº": "U", "Ã±": "N", "Ã¼": "U"
+    }
+    for malo, bueno in reparador.items():
+        t = t.replace(malo, bueno)
+        
+    # 2. Quitar tildes y dejar solo letras/números
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    
-    # 3. Destruir espacios y caracteres raros para crear un ADN irrompible
     t = re.sub(r'[^A-Z0-9]', '', t)
     
-    # 4. Traductor Supremo (DANE sin espacios -> IGAC sin espacios)
+    # 3. Traductor DANE-IGAC Actualizado (Con los 9 nombres pomposos)
     diccionario_rebeldes = {
-        # CAPITALES E HISTÓRICOS
-        "BOGOTADC": "BOGOTA",
-        "SANJOSEDECUCUTA": "CUCUTA",
-        "LAGUAJIRA": "GUAJIRA", 
-        "VALLEDELCAUCA": "VALLE", 
-        "VILLADESANDIEGODEUBATE": "UBATE",
-        "SANTIAGODETOLU": "TOLU",
-        # ANTIOQUIA
-        "ELPENOL": "PENOL",
-        "ELRETIRO": "RETIRO",
-        "ELSANTUARIO": "SANTUARIO",
-        "ELCARMENDEVIBORAL": "CARMENDEVIBORAL",
-        "SANVICENTEFERRER": "SANVICENTE",
-        "PUEBLORRICO": "PUEBLORICO",
-        "SANANDRESDECUERQUIA": "SANANDRES",
-        "SANPEDRODELOSMILAGROS": "SANPEDRO",
-        "BRICENO": "BRICEN0", # Error tipográfico del IGAC (usaron un Cero)
-        # PACÍFICO Y SUR
-        "PIZARRO": "BAJOBAUDO",
-        "DOCORDO": "ELLITORALDELSANJUAN",
-        "LITORALDELSANJUAN": "ELLITORALDELSANJUAN",
-        "BAHIASOLANO": "BAHIASOLANOMUTIS",
-        "TUMACO": "SANANDRESDETUMACO",
-        "PATIA": "PATIAELBORDO",
-        "LOPEZDEMICAY": "LOPEZ",
-        "MAGUI": "MAGUIPAYAN",
-        "ROBERTOPAYAN": "ROBERTOPAYANSANJOSE",
-        "MALLAMA": "MALLAMAPIEDRAANCHA",
-        "CUASPUD": "CUASPUDCARLOSAMA",
-        "ALTOBAUDO": "ALTOBAUDOPIEDEPATO",
-        "OLAYAHERRERA": "OLAYAHERRERABOCASDESATINGA",
-        "SANTACRUZ": "SANTACRUZGUACHAVEZ",
-        "LOSANDES": "LOSANDESSOTOMAYOR",
-        "FRANCISCOPIZARRO": "FRANCISCOPIZARROSALAHONDA",
-        "MEDIOSANJUAN": "ELLITORALDELSANJUANDOCORDO",
-        "ELCANTONDELSANPABLO": "ELCANTONDESANPABLOMANAGRU",
-        "ATRATO": "ATRATOYUTO",
-        # AMAZONÍA
-        "LEGUIZAMO": "PUERTOLEGUIZAMO",
-        "BARRANCOMINAS": "BARRANCOMINA",
-        "MAPIRIPANA": "PANAPANA",
-        "MORICHAL": "MORICHALNUEVO",
-        # RESTO DEL PAÍS
-        "SANANDRESSOTAVENTO": "SANANDRESDESOTAVENTO",
-        "SANLUISDESINCE": "SINCE",
-        "SANVICENTEDECHUCURI": "SANVICENTEDELCHUCURI",
-        "ELCARMENDECHUCURI": "ELCARMEN",
-        "ARIGUANI": "ARIGUANIELDIFICIL",
-        "SANMIGUEL": "SANMIGUELLADORADA",
-        "VILLADELEYVA": "VILLADELEIVA",
-        "PURACE": "PURACECOCONUCO",
-        "ELTABLONDEGOMEZ": "ELTABLON",
-        "ARMERO": "ARMEROGUAYABAL",
-        "COLON": "COLONGENOVA",
-        "SANPEDRODECARTAGO": "SANPEDRODECARTAGOCARTAGO",
-        "CERROSANANTONIO": "CERRODESANANTONIO",
-        "ARBOLEDA": "ARBOLEDABERRUECOS",
-        "ENCINO": "ELENCINO",
-        "MACARAVITA": "MARACAVITA",
-        "TUNUNGUA": "TUNUNGA",
-        "LAMONTANITA": "MONTANITA",
-        "ELPAUJIL": "PAUJIL",
-        "VILLARICA": "VILLARRICA",
+        "BOGOTADC": "BOGOTA", "SANJOSEDECUCUTA": "CUCUTA", "LAGUAJIRA": "GUAJIRA", 
+        "VALLEDELCAUCA": "VALLE", "VILLADESANDIEGODEUBATE": "UBATE", "SANTIAGODETOLU": "TOLU",
+        "ELPENOL": "PENOL", "ELRETIRO": "RETIRO", "ELSANTUARIO": "SANTUARIO",
+        "ELCARMENDEVIBORAL": "CARMENDEVIBORAL", "SANVICENTEFERRER": "SANVICENTE",
+        "PUEBLORRICO": "PUEBLORICO", "SANANDRESDECUERQUIA": "SANANDRES",
+        "SANPEDRODELOSMILAGROS": "SANPEDRO", "BRICENO": "BRICEN0",
+        "PIZARRO": "BAJOBAUDO", "DOCORDO": "ELLITORALDELSANJUAN", "LITORALDELSANJUAN": "ELLITORALDELSANJUAN",
+        "BAHIASOLANO": "BAHIASOLANOMUTIS", "TUMACO": "SANANDRESDETUMACO", "PATIA": "PATIAELBORDO",
+        "LOPEZDEMICAY": "LOPEZ", "MAGUI": "MAGUIPAYAN", "ROBERTOPAYAN": "ROBERTOPAYANSANJOSE",
+        "MALLAMA": "MALLAMAPIEDRAANCHA", "CUASPUD": "CUASPUDCARLOSAMA", "ALTOBAUDO": "ALTOBAUDOPIEDEPATO",
+        "OLAYAHERRERA": "OLAYAHERRERABOCASDESATINGA", "SANTACRUZ": "SANTACRUZGUACHAVEZ",
+        "LOSANDES": "LOSANDESSOTOMAYOR", "FRANCISCOPIZARRO": "FRANCISCOPIZARROSALAHONDA",
+        "MEDIOSANJUAN": "ELLITORALDELSANJUANDOCORDO", "ELCANTONDELSANPABLO": "ELCANTONDESANPABLOMANAGRU",
+        "ATRATO": "ATRATOYUTO", "LEGUIZAMO": "PUERTOLEGUIZAMO", "BARRANCOMINAS": "BARRANCOMINA",
+        "MAPIRIPANA": "PANAPANA", "MORICHAL": "MORICHALNUEVO", "SANANDRESSOTAVENTO": "SANANDRESDESOTAVENTO",
+        "SANLUISDESINCE": "SINCE", "SANVICENTEDECHUCURI": "SANVICENTEDELCHUCURI", "ELCARMENDECHUCURI": "ELCARMEN",
+        "ARIGUANI": "ARIGUANIELDIFICIL", "SANMIGUEL": "SANMIGUELLADORADA", "VILLADELEYVA": "VILLADELEIVA",
+        "PURACE": "PURACECOCONUCO", "ELTABLONDEGOMEZ": "ELTABLON", "ARMERO": "ARMEROGUAYABAL",
+        "COLON": "COLONGENOVA", "SANPEDRODECARTAGO": "SANPEDRODECARTAGOCARTAGO", "CERROSANANTONIO": "CERRODESANANTONIO",
+        "ARBOLEDA": "ARBOLEDABERRUECOS", "ENCINO": "ELENCINO", "MACARAVITA": "MARACAVITA",
+        "TUNUNGUA": "TUNUNGA", "LAMONTANITA": "MONTANITA", "ELPAUJIL": "PAUJIL", "VILLARICA": "VILLARRICA",
         "GUADALAJARADEBUGA": "BUGA",
-        "SANANDRES": "SANANDRES",
-        "BOGOTADC": "BOGOTA"
+        # --- LOS 9 NUEVOS REBELDES (Nombres pomposos del nuevo mapa) ---
+        "CARTAGENA": "CARTAGENADEINDIAS",
+        "PIENDAMO": "PIENDAMOTUNIA",
+        "MARIQUITA": "SANSEBASTIANDEMARIQUITA",
+        "TOLUVIEJO": "SANJOSEDETOLUVIEJO",
+        "SOTARA": "SOTARAPAISPAMBA",
+        "PURISIMA": "PURISIMADELACONCEPCION",
+        "GUICAN": "GUICANDELASIERRA",
+        "PAPUNAUACD": "PAPUNAHUA",
+        "PAPUNAUA": "PAPUNAHUA"
     }
     
-    # Aplicar traducción si existe en el diccionario
     if t in diccionario_rebeldes:
         t = diccionario_rebeldes[t]
         
-    # 3. Destruir TODO lo que no sea letra o número (espacios, comas, puntos, guiones)
-    t = re.sub(r'[^A-Z0-9]', '', t)
     return t
     
 # --- 1. LECTURA DE DATOS LIMPIOS Y VEREDALES ---
@@ -485,15 +455,20 @@ with tab_mapas:
                     val_terr = feature['properties'].get(prop_key, "")
                     val_padre = str(feature['properties'].get(padre_key, "")) if padre_key else ""
                     
-                    # Si el mapa entrega un código DANE, lo traducimos al nombre del departamento
+                    # Fix caracteres mutantes desde la fuente
+                    val_terr = normalizar_texto(val_terr)
+                    
                     if val_padre.zfill(2) in codigos_dane_deptos:
                         val_padre = codigos_dane_deptos[val_padre.zfill(2)]
                     
+                    # Fix espacial: Para distinguir los dos Manaures (El del Cesar es Balcón del Cesar)
+                    if val_terr == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
+                    
                     if val_padre:
-                        feature['properties']['MATCH_ID'] = normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
+                        feature['properties']['MATCH_ID'] = val_terr + "_" + normalizar_texto(val_padre)
                     else:
-                        feature['properties']['MATCH_ID'] = normalizar_texto(val_terr)
-                
+                        feature['properties']['MATCH_ID'] = val_terr
+                        
                 q_val = 0.85 if area_mapa == "Total" else 0.90
                 max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
                 
