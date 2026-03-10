@@ -363,7 +363,6 @@ except:
 df_proj = pd.DataFrame(proyecciones)
 
 # --- CONFIGURACIÓN DE PESTAÑAS (TABS) ---
-tab_modelos, tab_mapas, tab_descargas = st.tabs(["📈 Tendencia y Estructura", "🌍 Geovisor Espacial", "💾 Descarga de Datos"])
 tab_modelos, tab_mapas, tab_rankings, tab_descargas = st.tabs(["📈 Tendencia y Estructura"", "🗺️ Mapa Demográfico", "📊 Rankings y Dinámica Histórica", "💾 Descargas"])
 
 # ==========================================
