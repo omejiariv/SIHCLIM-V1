@@ -176,7 +176,9 @@ def cargar_datos_limpios():
         df_nac.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().title() for c in df_nac.columns]
         df_nac = df_nac.rename(columns={'Male': 'Hombres', 'Female': 'Mujeres', 'Ano': 'Año'})
         
+        # =======================================================
         # 2. Cargar datos municipales (AHORA USA LECTOR DE EXCEL)
+        # =======================================================
         ruta_mun_1 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_Colombia.xlsx")
         ruta_mun_2 = os.path.join(RUTA_RAIZ, "data", "Pob_mpios_colombia.xlsx")
         
@@ -187,20 +189,25 @@ def cargar_datos_limpios():
         else: 
             raise FileNotFoundError("Archivo municipal (.xlsx) no encontrado en la carpeta data.")
             
-        # 3. Estandarización y limpieza de la tabla municipal
         df_mun.columns = [str(c).replace('\ufeff', '').replace('"', '').strip().lower() for c in df_mun.columns]
         df_mun = df_mun.rename(columns={'poblacion': 'Total'})
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
         
-        # (Asegúrate de que la función retorne los DataFrames como lo tenías originalmente)
-        return df_nac, df_mun
+        # =======================================================
+        # 3. Cargar datos Veredales (TU CÓDIGO ORIGINAL AQUÍ)
+        # =======================================================
+        ruta_ver = os.path.join(RUTA_RAIZ, "data", "TUS_VEREDAS.csv") # (Asegúrate de tener tu código original aquí)
+        df_ver = pd.read_csv(ruta_ver, sep=';') # (O como lo tuvieras)
+        
+        return df_nac, df_mun, df_ver
         
     except Exception as e:
         import streamlit as st
         st.error(f"❌ Error cargando las bases de datos: {e}")
-        return pd.DataFrame(), pd.DataFrame()
-        
+        # SI HAY ERROR, ENTREGAMOS 3 TABLAS VACÍAS PARA QUE NO COLAPSE
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+                
         # MAGIA 2: Asignar Región con excepciones (Urabá)
         def asignar_region(fila):
             uraba_caribe = ["TURBO", "NECOCLI", "SAN JUAN DE URABA", "ARBOLETES", "SAN PEDRO DE URABA", "APARTADO", "CAREPA", "CHIGORODO", "MUTATA"]
