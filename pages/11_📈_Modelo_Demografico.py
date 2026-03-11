@@ -717,14 +717,28 @@ with tab_rankings:
                     df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                     df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
                 
-                # Filtramos la serie de tiempo SOLO para el Top 10 (para que no sea un espagueti ilegible)
+                # Filtramos la serie de tiempo SOLO para el Top 10
                 if not df_line.empty:
                     df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
+                    
+                    # --- NUEVO: Planchador automático para todas las curvas comparativas ---
+                    def planchar_curva(group):
+                        group = group.sort_values('año')
+                        rmed = group['Total'].rolling(window=5, center=True, min_periods=1).median()
+                        anomalias = (group['Total'] - rmed).abs() / rmed > 0.06
+                        group.loc[anomalias, 'Total'] = np.nan
+                        group['Total'] = group['Total'].interpolate(method='linear').bfill().ffill()
+                        return group
+                        
+                    df_line = df_line.groupby('Territorio', group_keys=False).apply(planchar_curva)
+                    # -----------------------------------------------------------------------
+                    
                     fig_line = px.line(df_line, x='año', y='Total', color='Territorio', markers=True,
                                        title=f"Evolución de los Territorios más Poblados",
                                        labels={'año': 'Año', 'Total': 'Habitantes'})
                     fig_line.update_layout(hovermode="x unified")
                     st.plotly_chart(fig_line, use_container_width=True)
+                    
     else:
         st.info("💡 Selecciona una escala territorial con múltiples divisiones (ej. Municipal o Departamental) para ver el ranking y las curvas comparativas.")
         
