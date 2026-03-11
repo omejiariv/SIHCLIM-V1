@@ -332,15 +332,16 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
     
     col_anio = 'año' if 'año' in df_base.columns else 'Año'
     
-    # Agrupamos correctamente para que la gráfica tenga datos
+    # Agrupamos la historia
     df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
     años_hist = df_hist[col_anio].values
     pob_hist = df_hist['Total'].values
     
-    df_mapa_base = df_base[df_base[col_anio] == año_sel].groupby('municipio')['Total'].sum().reset_index()
+    # --- LA CORRECCIÓN: Agrupamos sin el filtro del año ---
+    df_mapa_base = df_base.groupby('municipio')['Total'].sum().reset_index()
     df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
     df_mapa_base['Padre'] = cuenca_sel
-
+    
 elif escala_sel == "Municipal (Departamentos)":
     depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
     mpios_depto = df_mun[df_mun['depto_nom'] == depto_sel]
