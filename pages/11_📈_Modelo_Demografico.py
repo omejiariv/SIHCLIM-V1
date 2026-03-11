@@ -354,20 +354,23 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         
         # 2. Agrupar por municipio
         aporte_mpio = df_cruce_ver.groupby('Municipio_upper')['Pob_en_cuenca'].sum().reset_index()
-        total_rural_mpio = df_ver_temp.groupby('Municipio_upper')['Poblacion_hab
+        total_rural_mpio = df_ver_temp.groupby('Municipio_upper')['Poblacion_hab'].sum().reset_index()
+        total_rural_mpio.rename(columns={'Poblacion_hab': 'Pob_Total_Rural'}, inplace=True)
         
-        # 3. Calcular el Ratio Real (Qué % de la ruralidad del municipio está en la cuenca)
+        # 3. Calcular el Ratio Real
         ratios_mpio = pd.merge(aporte_mpio, total_rural_mpio, on='Municipio_upper')
         ratios_mpio['Ratio_Cuenca'] = ratios_mpio['Pob_en_cuenca'] / ratios_mpio['Pob_Total_Rural']
         ratios_mpio['Ratio_Cuenca'] = ratios_mpio['Ratio_Cuenca'].fillna(0)
         
-        # 4. Aplicar este ratio a la historia puramente RURAL de la base de datos nacional
-        df_mun_rural = df_mun[df_mun['area_geografica'].str.lower() == 'rural'].copy()
-        df_mun_rural['Municipio_upper'] = df_mun_rural['municipio'].astype(str).str.upper().str.strip()
+        # 4. BLINDAJE DE ÁREA RURAL (Capturamos todos los nombres que usa el DANE)
+        terminos_rurales = ['rural', 'resto', 'centros poblados y rural disperso', 'centro poblado y rural disperso']
+        mask_rural = limpiar_texto(df_mun['area_geografica']).str.lower().isin(terminos_rurales)
+        
+        df_mun_rural = df_mun[mask_rural].copy()
+        df_mun_rural['Municipio_upper'] = limpiar_texto(df_mun_rural['municipio'])
         
         df_base = pd.merge(df_mun_rural, ratios_mpio, on='Municipio_upper', how='inner')
-        df_base['Total_Cuenca'] = df_base['Total'] * df_base['Ratio_Cuenca']
-        
+        df_base['Total_Cuenca'] = df_base['Total'] * df_base['Ratio_Cuenca']        
         filtro_zona = cuenca_sel
         titulo_terr = f"{cuenca_sel}"
         
