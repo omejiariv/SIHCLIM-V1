@@ -276,13 +276,17 @@ elif escala_sel == "Regional (Macroregiones)":
     df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
-    # df_mun['cuenca'] = df_mun['municipio'].map(DICCIONARIO_CUENCAS)
-    lista_cuencas = ["Río Cauca", "Río Magdalena", "Atrato"] # Reemplaza con tus cuencas
+    # --- ESCUDO: Si no existe la columna en el Excel, la creamos vacía ---
+    if 'cuenca' not in df_mun.columns:
+        df_mun['cuenca'] = "Cuenca Genérica (Añadir a Excel)"
+        
+    lista_cuencas = df_mun['cuenca'].unique().tolist()
     cuenca_sel = st.sidebar.selectbox("Seleccione la Cuenca:", lista_cuencas)
     
     df_base = df_mun[df_mun['cuenca'] == cuenca_sel]
     filtro_zona = cuenca_sel
     titulo_terr = cuenca_sel
+    
     df_mapa_base = df_base[df_base['año'] == año_sel].groupby('municipio')['Total'].sum().reset_index()
     df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
 
@@ -366,54 +370,52 @@ elif escala_sel == "Veredal (Antioquia)":
 
 if 'titulo_terr' not in locals():
     titulo_terr = filtro_zona if 'filtro_zona' in locals() else "Territorio Seleccionado"
+    
 # --- 4. CÁLCULO DE PROYECCIONES ---
 x_hist = np.array(años_hist, dtype=float)
 y_hist = np.array(pob_hist, dtype=float)
 
-# =================================================================
-# --- AISLAMIENTO ESTRUCTURAL PARA EL MODELO MATEMÁTICO ---
-# Mantenemos todos los puntos para la gráfica (Real), pero entrenamos el 
-# modelo SOLO con la nueva realidad post-Censo (2018 en adelante)
-# =================================================================
+# 1. Aislamiento Estructural (Solo entrenamos de 2018 en adelante)
 mask_train = x_hist >= 2018
-
-# Si tenemos suficientes datos de la nueva serie (ej. 4 datos o más), los usamos en exclusiva
 if sum(mask_train) >= 4:
     x_train = x_hist[mask_train]
     y_train = y_hist[mask_train]
 else:
-    # Si por alguna razón no hay datos suficientes, usamos todo por seguridad
     x_train = x_hist
     y_train = y_hist
-# =================================================================
 
-año_maximo = int(max(df_nac['Año'].max(), 2100))
+año_maximo = int(max(df_nac['Año'].max() if 'df_nac' in locals() else 2100, 2100))
 x_proj = np.arange(1950, año_maximo + 1, 1) 
 
-# 1. Llenamos los puntos históricos reales (Azules) con TODO el histórico
 proyecciones = {'Año': x_proj, 'Real': [np.nan]*len(x_proj)}
 for i, año in enumerate(x_proj):
     if año in x_hist: proyecciones['Real'][i] = y_hist[np.where(x_hist == año)[0][0]]
 
-# 2. Entrenamos los modelos (Líneas de colores) SOLO con los datos recientes (x_train, y_train)
+# --- EL BLINDAJE: Normalizamos el tiempo para que las matemáticas no exploten ---
+x_offset = x_hist[0] if len(x_hist) > 0 else 1950
+x_train_norm = x_train - x_offset
+x_proj_norm = x_proj - x_offset
+
+# 2. Modelos Súper Blindados
 try:
-    popt_lin, _ = curve_fit(modelo_lineal, x_train, y_train)
-    proyecciones['Lineal'] = np.maximum(0, modelo_lineal(x_proj, *popt_lin))
+    popt_lin, _ = curve_fit(modelo_lineal, x_train_norm, y_train)
+    proyecciones['Lineal'] = np.maximum(0, modelo_lineal(x_proj_norm, *popt_lin))
 except: 
-    proyecciones['Lineal'] = [np.nan]*len(x_proj)
+    proyecciones['Lineal'] = np.full(len(x_proj), y_train[-1] if len(y_train) > 0 else 0)
 
 try:
-    # El p0 usa y_train[0] para tomar la referencia de la nueva serie
-    popt_exp, _ = curve_fit(modelo_exponencial, x_train, y_train, p0=[max(1, y_train[0]), 0.01], maxfev=10000)
-    proyecciones['Exponencial'] = modelo_exponencial(x_proj, *popt_exp)
+    p0_exp = [max(1, y_train[0]), 0.01]
+    popt_exp, _ = curve_fit(modelo_exponencial, x_train_norm, y_train, p0=p0_exp, maxfev=10000)
+    proyecciones['Exponencial'] = modelo_exponencial(x_proj_norm, *popt_exp)
 except: 
     proyecciones['Exponencial'] = proyecciones['Lineal']
 
 try:
     K_guess = max(1, max(y_train)) * 1.5
-    # Forzamos al modelo logístico a centrarse cerca de los años recientes (ej. 2020)
-    popt_log, _ = curve_fit(modelo_logistico, x_train, y_train, p0=[K_guess, 0.05, 2020], maxfev=10000)
-    proyecciones['Logístico'] = modelo_logistico(x_proj, *popt_log)
+    # Corregimos el centro matemático para que no cause "Infinito"
+    t0_guess = (2020 - x_offset) if 2020 >= x_offset else len(x_hist)/2
+    popt_log, _ = curve_fit(modelo_logistico, x_train_norm, y_train, p0=[K_guess, 0.05, t0_guess], maxfev=10000)
+    proyecciones['Logístico'] = modelo_logistico(x_proj_norm, *popt_log)
     param_K = popt_log[0]
 except: 
     proyecciones['Logístico'] = proyecciones['Lineal']
