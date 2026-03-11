@@ -323,25 +323,30 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
     # 1. Cargamos tu nuevo archivo de proporciones GIS
-    ruta_cuencas = os.path.join(RUTA_RAIZ, "data", "cuencas_mpios_proporcion.csv") # Asegúrate de que el nombre coincida
+    ruta_cuencas = os.path.join(RUTA_RAIZ, "data", "cuencas_mpios_proporcion.csv")
     
     if os.path.exists(ruta_cuencas):
         df_prop = pd.read_csv(ruta_cuencas)
         
-        # 2. Creamos los selectores (podemos usar 'Sistema' o 'Subcuenca')
-        # Aquí usaremos Subcuenca como nivel de análisis principal
         lista_cuencas = sorted(df_prop['Subcuenca'].dropna().unique())
         cuenca_sel = st.sidebar.selectbox("Seleccione la Subcuenca:", lista_cuencas)
         
-        # Filtramos la tabla de proporciones para la cuenca elegida
         df_prop_sel = df_prop[df_prop['Subcuenca'] == cuenca_sel].copy()
         
-        # 3. Cruzamos la información (Homologando nombres de municipios a MAYÚSCULAS para evitar errores)
-        df_prop_sel['Municipio_merge'] = df_prop_sel['Municipio'].str.upper().str.strip()
-        df_mun['Municipio_merge'] = df_mun['municipio'].str.upper().str.strip()
+        # --- FILTRO DE PUREZA: Evitamos la doble contabilidad ---
+        # Nos quedamos SOLO con la población total del municipio (ignorando el desglose urbano/rural)
+        df_mun_puro = df_mun[df_mun['area_geografica'].str.lower() == 'total'].copy()
         
-        # Hacemos el "Inner Join" para traer solo la historia de los municipios que tocan la cuenca
-        df_base = pd.merge(df_mun, df_prop_sel, on='Municipio_merge', how='inner')
+        # Si por alguna razón tu base no tiene la palabra 'total', sumamos urbano y rural agrupando por año
+        if df_mun_puro.empty:
+            df_mun_puro = df_mun.groupby(['municipio', 'año', 'depto_nom'])['Total'].sum().reset_index()
+
+        # 3. Cruzamos la información (Homologando nombres)
+        df_prop_sel['Municipio_merge'] = df_prop_sel['Municipio'].str.upper().str.strip()
+        df_mun_puro['Municipio_merge'] = df_mun_puro['municipio'].str.upper().str.strip()
+        
+        # Hacemos el "Inner Join" con la base PURA
+        df_base = pd.merge(df_mun_puro, df_prop_sel, on='Municipio_merge', how='inner')
         
         # 4. LA MAGIA MATEMÁTICA: Calculamos la población real de la cuenca
         df_base['Total_Cuenca'] = df_base['Total'] * (df_base['Porcentaje'] / 100.0)
@@ -359,7 +364,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         # 5. Preparamos la base para el mapa
         df_mapa_base = df_base.copy()
         df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
-        # Reemplazamos el 'Total' con nuestra nueva columna proporcional para que el mapa y los rankings sean correctos
         df_mapa_base['Total'] = df_mapa_base['Total_Cuenca']
         df_mapa_base['Padre'] = cuenca_sel
         
