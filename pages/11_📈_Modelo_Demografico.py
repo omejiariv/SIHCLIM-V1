@@ -322,53 +322,98 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
     df_mapa_base['Padre'] = "Colombia"
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
-    # 1. Cargamos tu nuevo archivo de proporciones GIS
-    ruta_cuencas = os.path.join(RUTA_RAIZ, "data", "cuencas_mpios_proporcion.csv")
+    # 1. Rutas de los archivos (Le damos prioridad al de Veredas)
+    ruta_cuencas_ver = os.path.join(RUTA_RAIZ, "data", "cuencas_veredas_proporcion.csv")
+    ruta_cuencas_mun = os.path.join(RUTA_RAIZ, "data", "cuencas_mpios_proporcion.csv")
     
-    if os.path.exists(ruta_cuencas):
-        df_prop = pd.read_csv(ruta_cuencas)
+    if os.path.exists(ruta_cuencas_ver):
+        # =========================================================
+        # MODO ALTA PRECISIÓN: CRUCE CON VEREDAS (PURA RURALIDAD)
+        # =========================================================
+        df_prop = pd.read_csv(ruta_cuencas_ver)
+        lista_cuencas = sorted(df_prop['Subcuenca'].dropna().unique())
+        cuenca_sel = st.sidebar.selectbox("Seleccione la Subcuenca (Alta Precisión):", lista_cuencas)
         
+        df_prop_sel = df_prop[df_prop['Subcuenca'] == cuenca_sel].copy()
+        
+        # Homologar nombres para cruzar con tu base de veredas (df_ver)
+        df_prop_sel['Vereda_upper'] = df_prop_sel['Vereda'].astype(str).str.upper().str.strip()
+        df_prop_sel['Municipio_upper'] = df_prop_sel['Municipio'].astype(str).str.upper().str.strip()
+        
+        df_ver_temp = df_ver.copy()
+        df_ver_temp['Vereda_upper'] = df_ver_temp['Vereda'].astype(str).str.upper().str.strip()
+        df_ver_temp['Municipio_upper'] = df_ver_temp['Municipio'].astype(str).str.upper().str.strip()
+        df_ver_temp['Poblacion_hab'] = df_ver_temp['Poblacion_hab'].fillna(0)
+        
+        # 1. Cruzar Veredas base con la cuenca
+        df_cruce_ver = pd.merge(df_ver_temp, df_prop_sel, on=['Vereda_upper', 'Municipio_upper'], how='inner')
+        df_cruce_ver['Pob_en_cuenca'] = df_cruce_ver['Poblacion_hab'] * (df_cruce_ver['Porcentaje'] / 100.0)
+        
+        # 2. Agrupar por municipio para saber la cuota rural que aporta cada uno a la cuenca
+        aporte_mpio = df_cruce_ver.groupby('Municipio_upper')['Pob_en_cuenca'].sum().reset_index()
+        total_rural_mpio = df_ver_temp.groupby('Municipio_upper')['Poblacion_hab'].sum().reset_index()
+        total_rural_mpio.rename(columns={'Poblacion_hab': 'Pob_Total_Rural'}, inplace=True)
+        
+        # 3. Calcular el Ratio Real (Qué % de la ruralidad del municipio está en la cuenca)
+        ratios_mpio = pd.merge(aporte_mpio, total_rural_mpio, on='Municipio_upper')
+        ratios_mpio['Ratio_Cuenca'] = ratios_mpio['Pob_en_cuenca'] / ratios_mpio['Pob_Total_Rural']
+        ratios_mpio['Ratio_Cuenca'] = ratios_mpio['Ratio_Cuenca'].fillna(0)
+        
+        # 4. Aplicar este ratio a la historia puramente RURAL de la base de datos nacional
+        df_mun_rural = df_mun[df_mun['area_geografica'].str.lower() == 'rural'].copy()
+        df_mun_rural['Municipio_upper'] = df_mun_rural['municipio'].astype(str).str.upper().str.strip()
+        
+        df_base = pd.merge(df_mun_rural, ratios_mpio, on='Municipio_upper', how='inner')
+        df_base['Total_Cuenca'] = df_base['Total'] * df_base['Ratio_Cuenca']
+        
+        filtro_zona = cuenca_sel
+        titulo_terr = f"{cuenca_sel}"
+        
+        col_anio = 'año' if 'año' in df_base.columns else 'Año'
+        
+        # 5. Generar la historia perfecta y depurada
+        df_hist = df_base.groupby(col_anio)['Total_Cuenca'].sum().reset_index()
+        años_hist = df_hist[col_anio].values
+        pob_hist = df_hist['Total_Cuenca'].values
+        
+        # 6. Base para el mapa (Muestra el aporte de cada vereda)
+        df_mapa_base = df_cruce_ver.copy()
+        df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Municipio': 'Padre', 'Pob_en_cuenca': 'Total'}, inplace=True)
+
+    elif os.path.exists(ruta_cuencas_mun):
+        # =========================================================
+        # MODO ESTÁNDAR: CRUCE CON MUNICIPIOS (FALLBACK)
+        # =========================================================
+        df_prop = pd.read_csv(ruta_cuencas_mun)
         lista_cuencas = sorted(df_prop['Subcuenca'].dropna().unique())
         cuenca_sel = st.sidebar.selectbox("Seleccione la Subcuenca:", lista_cuencas)
         
         df_prop_sel = df_prop[df_prop['Subcuenca'] == cuenca_sel].copy()
         
-        # --- FILTRO DE PUREZA: Evitamos la doble contabilidad ---
-        # Nos quedamos SOLO con la población total del municipio (ignorando el desglose urbano/rural)
         df_mun_puro = df_mun[df_mun['area_geografica'].str.lower() == 'total'].copy()
-        
-        # Si por alguna razón tu base no tiene la palabra 'total', sumamos urbano y rural agrupando por año
-        if df_mun_puro.empty:
-            df_mun_puro = df_mun.groupby(['municipio', 'año', 'depto_nom'])['Total'].sum().reset_index()
+        if df_mun_puro.empty: df_mun_puro = df_mun.groupby(['municipio', 'año', 'depto_nom'])['Total'].sum().reset_index()
 
-        # 3. Cruzamos la información (Homologando nombres)
-        df_prop_sel['Municipio_merge'] = df_prop_sel['Municipio'].str.upper().str.strip()
-        df_mun_puro['Municipio_merge'] = df_mun_puro['municipio'].str.upper().str.strip()
+        df_prop_sel['Municipio_merge'] = df_prop_sel['Municipio'].astype(str).str.upper().str.strip()
+        df_mun_puro['Municipio_merge'] = df_mun_puro['municipio'].astype(str).str.upper().str.strip()
         
-        # Hacemos el "Inner Join" con la base PURA
         df_base = pd.merge(df_mun_puro, df_prop_sel, on='Municipio_merge', how='inner')
-        
-        # 4. LA MAGIA MATEMÁTICA: Calculamos la población real de la cuenca
         df_base['Total_Cuenca'] = df_base['Total'] * (df_base['Porcentaje'] / 100.0)
         
         filtro_zona = cuenca_sel
-        titulo_terr = f"Subcuenca: {cuenca_sel}"
+        titulo_terr = f"{cuenca_sel}"
         
         col_anio = 'año' if 'año' in df_base.columns else 'Año'
-        
-        # Agrupamos la historia sumando los pedacitos proporcionales de cada municipio
         df_hist = df_base.groupby(col_anio)['Total_Cuenca'].sum().reset_index()
         años_hist = df_hist[col_anio].values
         pob_hist = df_hist['Total_Cuenca'].values
         
-        # 5. Preparamos la base para el mapa
         df_mapa_base = df_base.copy()
         df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
         df_mapa_base['Total'] = df_mapa_base['Total_Cuenca']
         df_mapa_base['Padre'] = cuenca_sel
         
     else:
-        st.error("🚨 No se encontró el archivo de proporciones de cuencas en la carpeta data.")
+        st.error("🚨 Ejecuta el cruce espacial en el Generador para ver las Cuencas.")
         años_hist, pob_hist = np.array([]), np.array([])
         df_mapa_base = pd.DataFrame()
     
