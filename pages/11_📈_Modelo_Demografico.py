@@ -778,17 +778,20 @@ with tab_opt:
                             
                     elif mod == "Logístico":
                         if opt_auto: 
-                            # --- EL BLINDAJE DEL SOLVER ---
-                            k_guess = max(p_data) * 1.2
+                            k_guess = max(p_data) * 1.5
                             a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
-                            r_guess = 0.03
+                            r_guess = 0.02
+                            limites = ([max(p_data), 0, 0.0001], [max(p_data)*5, np.inf, 0.3])
                             
-                            # Le ponemos límites (bounds): K no puede ser menor a la población actual ni infinito
-                            limites = ([max(p_data), 0, 0], [max(p_data)*5, np.inf, 0.2])
-                            
-                            popt, _ = curve_fit(f_log, t_data, p_data, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=10000)
+                            popt, _ = curve_fit(f_log, t_data, p_data, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=25000)
                             y_pred = f_log(t_total, *popt)
-                            res_text.append(f"**Log**: K={popt[0]:,.0f}, r={popt[2]:.4f}")
+                            
+                            # Calculamos R2 para mostrarlo
+                            ss_res = np.sum((p_data - f_log(t_data, *popt)) ** 2)
+                            ss_tot = np.sum((p_data - np.mean(p_data)) ** 2)
+                            r2_val = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+                            
+                            res_text.append(f"**Log**: K={popt[0]:,.0f}, r={popt[2]:.4f}, R²={r2_val:.3f}")
                         else: 
                             # Ajuste manual perfecto anclado al inicio
                             a_man = (k_man - p0_val) / p0_val if p0_val > 0 else 1
@@ -984,78 +987,88 @@ with tab_mapas:
     st.dataframe(df_mostrar, use_container_width=True)
 
 # =====================================================================
-# PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN)
+# PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) CON R²
 # =====================================================================
-with tab_matriz: # O la variable que hayas asignado a la pestaña 4
+with tab_matriz:
     st.subheader("🧠 Motor Generador de Matriz Maestra Demográfica")
-    st.write("Calcula los coeficientes logísticos óptimos (K, a, r) para todas las escalas territoriales.")
+    st.write("Calcula los coeficientes logísticos óptimos (K, a, r) y su coeficiente de ajuste (R²).")
     
     if st.button("⚙️ Iniciar Entrenamiento de Matriz Maestra", type="primary"):
-        with st.spinner("Entrenando modelos matemáticos... Esto tomará unos segundos."):
+        with st.spinner("Entrenando modelos matemáticos y calculando R²... Esto tomará unos segundos."):
             import numpy as np
+            import pandas as pd
             from scipy.optimize import curve_fit
             
             def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
             
+            # --- FUNCIÓN PARA CALCULAR R² ---
+            def calcular_r2(y_real, y_pred):
+                ss_res = np.sum((y_real - y_pred) ** 2)
+                ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
+                return 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            
             matriz_resultados = []
             
-            # --- FUNCIÓN ENTRENADORA ---
+            # --- FUNCIÓN ENTRENADORA ROBUSTA ---
             def ajustar_logistica(x, y, nivel, territorio, padre):
-                # Desplazamos los años para que el modelo no colapse con números como e^(-2024)
                 x_offset = x[0] if len(x) > 0 else 1950
                 x_norm = x - x_offset
                 
                 try:
                     p0_val = max(1, y[0])
-                    k_guess = max(y) * 1.2
+                    k_guess = max(y) * 1.5 # Le damos más margen para buscar el techo
                     a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
-                    r_guess = 0.03
-                    limites = ([max(y), 0, 0], [max(y)*5, np.inf, 0.2])
+                    r_guess = 0.02
+                    # Ampliamos los límites para que NUNCA de r=0
+                    limites = ([max(y), 0, 0.0001], [max(y)*10, np.inf, 0.3])
                     
-                    popt, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=10000)
+                    popt, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
                     k_opt, a_opt, r_opt = popt
+                    
+                    # Calcular R²
+                    y_pred = f_log(x_norm, *popt)
+                    r2_val = calcular_r2(y, y_pred)
                     
                     matriz_resultados.append({
                         'Nivel': nivel, 'Territorio': territorio, 'Padre': padre,
                         'Año_Base': x_offset, 'Pob_Base': p0_val,
-                        'K': k_opt, 'a': a_opt, 'r': r_opt
+                        'K': k_opt, 'a': a_opt, 'r': r_opt, 'R2': round(r2_val, 4)
                     })
                 except Exception as e:
-                    pass # Si falla (por falta de datos), se omite silenciosamente para no detener el proceso
+                    pass # Si no logra ajustar, lo omite para no romper el proceso masivo
 
             # ==========================================
-            # 1. ESCALA NACIONAL
+            # 1. CARGA DE BASE DE DATOS ÚNICA (LA SOLUCIÓN AL ERROR)
             # ==========================================
-            df_nac = pd.read_csv("data/PobCol1912_2100.csv") # Verifica que esta ruta sea correcta
-            col_anio_nac = 'año' if 'año' in df_nac.columns else 'Año'
-            col_tot_nac = 'Total' if 'Total' in df_nac.columns else 'Population'
+            df_mun = pd.read_csv("data/df_Mpios_1985_2035.csv") 
+            col_anio = 'año' if 'año' in df_mun.columns else 'Año'
             
-            # Ordenar cronológicamente
-            df_nac = df_nac.sort_values(by=col_anio_nac)
-            ajustar_logistica(df_nac[col_anio_nac].values, df_nac[col_tot_nac].values, 'Nacional', 'Colombia', 'Mundo')
-
-            # ==========================================
-            # 2. ESCALA DEPARTAMENTAL Y MUNICIPAL
-            # ==========================================
-            df_mun = pd.read_csv("data/df_Mpios_1985_2035.csv")
-            col_anio_mun = 'año' if 'año' in df_mun.columns else 'Año'
-            
-            # Solo trabajamos con la población Total pura para evitar doble contabilidad
             df_mun_puro = df_mun[df_mun['area_geografica'].str.lower() == 'total'].copy()
             if df_mun_puro.empty: df_mun_puro = df_mun.copy()
-            
-            # -> Agrupación Departamentos
-            df_deptos = df_mun_puro.groupby(['depto_nom', col_anio_mun])['Total'].sum().reset_index()
-            for depto in df_deptos['depto_nom'].unique():
-                df_temp = df_deptos[df_deptos['depto_nom'] == depto].sort_values(by=col_anio_mun)
-                ajustar_logistica(df_temp[col_anio_mun].values, df_temp['Total'].values, 'Departamental', depto, 'Colombia')
 
-            # -> Agrupación Municipios
-            df_mpios = df_mun_puro.groupby(['municipio', 'depto_nom', col_anio_mun])['Total'].sum().reset_index()
+            # ==========================================
+            # 2. ESCALA NACIONAL (Construida sumando municipios)
+            # ==========================================
+            df_nac_temp = df_mun_puro.groupby(col_anio)['Total'].sum().reset_index()
+            df_nac_temp = df_nac_temp.sort_values(by=col_anio)
+            ajustar_logistica(df_nac_temp[col_anio].values, df_nac_temp['Total'].values, 'Nacional', 'Colombia', 'Mundo')
+
+            # ==========================================
+            # 3. ESCALA DEPARTAMENTAL
+            # ==========================================
+            df_deptos = df_mun_puro.groupby(['depto_nom', col_anio])['Total'].sum().reset_index()
+            for depto in df_deptos['depto_nom'].unique():
+                df_temp = df_deptos[df_deptos['depto_nom'] == depto].sort_values(by=col_anio)
+                ajustar_logistica(df_temp[col_anio].values, df_temp['Total'].values, 'Departamental', depto, 'Colombia')
+
+            # ==========================================
+            # 4. ESCALA MUNICIPAL
+            # ==========================================
+            df_mpios = df_mun_puro.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
             for mpio in df_mpios['municipio'].unique():
-                df_temp = df_mpios[df_mpios['municipio'] == mpio].sort_values(by=col_anio_mun)
+                df_temp = df_mpios[df_mpios['municipio'] == mpio].sort_values(by=col_anio)
                 padre_mpio = df_temp['depto_nom'].iloc[0]
-                ajustar_logistica(df_temp[col_anio_mun].values, df_temp['Total'].values, 'Municipal', mpio, padre_mpio)
+                ajustar_logistica(df_temp[col_anio].values, df_temp['Total'].values, 'Municipal', mpio, padre_mpio)
 
             # ==========================================
             # EXPORTACIÓN
@@ -1071,7 +1084,7 @@ with tab_matriz: # O la variable que hayas asignado a la pestaña 4
                 file_name="Matriz_Maestra_Demografica.csv",
                 mime='text/csv'
             )
-
+            
 # ==========================================
 # PESTAÑA 5: RANKINGS Y DINÁMICA HISTÓRICA (Top 15 y 2005-2035)
 # ==========================================
