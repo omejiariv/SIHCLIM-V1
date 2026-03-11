@@ -363,24 +363,24 @@ except:
 df_proj = pd.DataFrame(proyecciones)
 
 # ====================================================
-# --- CONCILIACIÓN CENSAL (EL PUENTE 2005 - 2020) ---
+# --- CONCILIACIÓN CENSAL (A PRUEBA DE BALAS) ---
 # ====================================================
 if len(pob_hist) > 0:
     import numpy as np
     import pandas as pd
     
-    df_clean = pd.DataFrame({'año': años_hist, 'Total': pob_hist}).sort_values('año').reset_index(drop=True)
+    df_clean = pd.DataFrame({'año': años_hist, 'Total': pob_hist})
     
-    # Si la serie histórica cubre el Censo 2005 y el inicio de la nueva serie 2020
-    if 2005 in df_clean['año'].values and 2020 in df_clean['año'].values:
-        # Seleccionamos las proyecciones viejas y erradas (2006 a 2019)
-        mask_intercensal = (df_clean['año'] > 2005) & (df_clean['año'] < 2020)
-        
-        # Las borramos temporalmente
-        df_clean.loc[mask_intercensal, 'Total'] = np.nan
-        
-        # Trazamos un puente matemático suave y directo entre la realidad 2005 y la realidad 2020
-        df_clean['Total'] = df_clean['Total'].interpolate(method='linear')
+    # 1. Forzamos a que el año sea un número (para evitar errores de texto)
+    df_clean['año'] = pd.to_numeric(df_clean['año'], errors='coerce')
+    df_clean = df_clean.sort_values('año').reset_index(drop=True)
+    
+    # 2. Borramos SIN PREGUNTAR las proyecciones viejas (2006 a 2019)
+    mask_intercensal = (df_clean['año'] >= 2006) & (df_clean['año'] <= 2019)
+    df_clean.loc[mask_intercensal, 'Total'] = np.nan
+    
+    # 3. Construimos el puente matemático lineal
+    df_clean['Total'] = df_clean['Total'].interpolate(method='linear').ffill().bfill()
         
     años_hist = df_clean['año'].values
     pob_hist = df_clean['Total'].values
@@ -722,13 +722,14 @@ with tab_rankings:
                 if not df_line.empty:
                     df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
                     
-                    # --- NUEVO: Conciliación Censal para gráficas comparativas ---
+                    # --- NUEVO: Conciliación Censal forzada ---
                     def conciliacion_censal(group):
+                        group['año'] = pd.to_numeric(group['año'], errors='coerce')
                         group = group.sort_values('año')
-                        if 2005 in group['año'].values and 2020 in group['año'].values:
-                            mask = (group['año'] > 2005) & (group['año'] < 2020)
-                            group.loc[mask, 'Total'] = np.nan
-                            group['Total'] = group['Total'].interpolate(method='linear')
+                        
+                        mask = (group['año'] >= 2006) & (group['año'] <= 2019)
+                        group.loc[mask, 'Total'] = np.nan
+                        group['Total'] = group['Total'].interpolate(method='linear').ffill().bfill()
                         return group
                         
                     df_line = df_line.groupby('Territorio', group_keys=False).apply(conciliacion_censal)
