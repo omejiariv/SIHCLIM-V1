@@ -270,39 +270,39 @@ años_hist, pob_hist = [], []
 df_mapa_base = pd.DataFrame()
 
 if escala_sel == "🌍 Global y Suramérica":
-        # Ahora aprovechamos todas las columnas de tu archivo
-        opciones_hist = ["Mundo", "Suramérica", "Colombia (DANE)", "Antioquia", "AMVA", "Medellín"]
-        contexto_sel = st.sidebar.selectbox("Seleccione la región histórica:", opciones_hist)
+    # Ahora aprovechamos todas las columnas de tu archivo
+    opciones_hist = ["Mundo", "Suramérica", "Colombia (DANE)", "Antioquia", "AMVA", "Medellín"]
+    contexto_sel = st.sidebar.selectbox("Seleccione la región histórica:", opciones_hist)
+    
+    filtro_zona = contexto_sel
+    titulo_terr = contexto_sel
+    
+    if not df_global.empty:
+        diccionario_columnas = {
+            "Mundo": "Pob_mundial", "Suramérica": "Pob_suramerica", 
+            "Colombia (DANE)": "Pob_Colombia_DANE", "Antioquia": "Pob_Antioquia",
+            "AMVA": "Pob_Amva", "Medellín": "Pob_Medellin"
+        }
+        col_objetivo = diccionario_columnas[contexto_sel]
         
-        filtro_zona = contexto_sel
-        titulo_terr = contexto_sel
+        # Filtramos solo los años que tienen datos para esa columna
+        df_temp = df_global.dropna(subset=['Año', col_objetivo])
+        años_hist = df_temp['Año'].values
+        pob_hist = df_temp[col_objetivo].values
+    else:
+        años_hist, pob_hist = np.array([]), np.array([])
         
-        if not df_global.empty:
-            diccionario_columnas = {
-                "Mundo": "Pob_mundial", "Suramérica": "Pob_suramerica", 
-                "Colombia (DANE)": "Pob_Colombia_DANE", "Antioquia": "Pob_Antioquia",
-                "AMVA": "Pob_Amva", "Medellín": "Pob_Medellin"
-            }
-            col_objetivo = diccionario_columnas[contexto_sel]
-            
-            # Filtramos solo los años que tienen datos para esa columna
-            df_temp = df_global.dropna(subset=['Año', col_objetivo])
-            años_hist = df_temp['Año'].values
-            pob_hist = df_temp[col_objetivo].values
-        else:
-            años_hist, pob_hist = np.array([]), np.array([])
-            
-        df_mapa_base = pd.DataFrame()
+    df_mapa_base = pd.DataFrame()
 
-    elif escala_sel == "🇨🇴 Nacional (Colombia)":
-        df_base = df_nac
-        filtro_zona = "Colombia"    # <--- ¡Esto soluciona el NameError!
-        titulo_terr = "Colombia"
-        años_hist = df_base['Año'].values
-        pob_hist = df_base['Total'].values
-        df_mapa_base = df_mun[df_mun['año'] == año_sel].groupby(['depto_nom'])['Total'].sum().reset_index()
-        df_mapa_base.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
-        df_mapa_base['Padre'] = "Colombia"
+elif escala_sel == "🇨🇴 Nacional (Colombia)":
+    df_base = df_nac
+    filtro_zona = "Colombia"
+    titulo_terr = "Colombia"
+    años_hist = df_base['Año'].values
+    pob_hist = df_base['Total'].values
+    df_mapa_base = df_mun[df_mun['año'] == año_sel].groupby(['depto_nom'])['Total'].sum().reset_index()
+    df_mapa_base.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+    df_mapa_base['Padre'] = "Colombia"
 
 elif escala_sel == "Regional (Macroregiones)":
     regiones_list = sorted(df_mun['Macroregion'].unique())
