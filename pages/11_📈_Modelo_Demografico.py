@@ -531,19 +531,17 @@ if 'titulo_terr' not in locals():
 x_hist = np.array(años_hist, dtype=float)
 y_hist = np.array(pob_hist, dtype=float)
 
-# 1. Aislamiento Estructural Inteligente
-# Solo aplicamos el recorte post-2018 a los datos locales. Para la historia Global/AMVA, usamos TODO.
-if escala_sel not in ["🌍 Global y Suramérica"]:
+# 1. Aislamiento Estructural
+# Dejamos que Global y Nacional vean TODA su historia. Las demás escalas locales usan post-2018.
+if escala_sel not in ["🌍 Global y Suramérica", "🇨🇴 Nacional (Colombia)"]:
     mask_train = x_hist >= 2018
     if sum(mask_train) >= 4:
         x_train = x_hist[mask_train]
         y_train = y_hist[mask_train]
     else:
-        x_train = x_hist
-        y_train = y_hist
+        x_train = x_hist; y_train = y_hist
 else:
-    x_train = x_hist
-    y_train = y_hist
+    x_train = x_hist; y_train = y_hist
 
 año_maximo = int(max(df_nac['Año'].max() if 'df_nac' in locals() else 2100, 2100))
 
@@ -586,10 +584,11 @@ except:
 df_proj = pd.DataFrame(proyecciones)
 
 # --- CONFIGURACIÓN DE PESTAÑAS (TABS) ---
-tab_modelos, tab_opt, tab_mapas, tab_rankings, tab_descargas = st.tabs([
+tab_modelos, tab_opt, tab_mapas, tab_matriz, tab_rankings, tab_descargas = st.tabs([
     "📈 Tendencia y Estructura", 
     "⚙️ Optimización (Solver)", 
     "🗺️ Mapa Demográfico", 
+    "🧠 4. Matriz Maestra Demográfica",
     "📊 Rankings y Dinámica Histórica", 
     "💾 Descargas"
 ])
@@ -984,8 +983,97 @@ with tab_mapas:
         
     st.dataframe(df_mostrar, use_container_width=True)
 
+# =====================================================================
+# PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN)
+# =====================================================================
+with tab_matriz: # O la variable que hayas asignado a la pestaña 4
+    st.subheader("🧠 Motor Generador de Matriz Maestra Demográfica")
+    st.write("Calcula los coeficientes logísticos óptimos (K, a, r) para todas las escalas territoriales.")
+    
+    if st.button("⚙️ Iniciar Entrenamiento de Matriz Maestra", type="primary"):
+        with st.spinner("Entrenando modelos matemáticos... Esto tomará unos segundos."):
+            import numpy as np
+            from scipy.optimize import curve_fit
+            
+            def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
+            
+            matriz_resultados = []
+            
+            # --- FUNCIÓN ENTRENADORA ---
+            def ajustar_logistica(x, y, nivel, territorio, padre):
+                # Desplazamos los años para que el modelo no colapse con números como e^(-2024)
+                x_offset = x[0] if len(x) > 0 else 1950
+                x_norm = x - x_offset
+                
+                try:
+                    p0_val = max(1, y[0])
+                    k_guess = max(y) * 1.2
+                    a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
+                    r_guess = 0.03
+                    limites = ([max(y), 0, 0], [max(y)*5, np.inf, 0.2])
+                    
+                    popt, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=10000)
+                    k_opt, a_opt, r_opt = popt
+                    
+                    matriz_resultados.append({
+                        'Nivel': nivel, 'Territorio': territorio, 'Padre': padre,
+                        'Año_Base': x_offset, 'Pob_Base': p0_val,
+                        'K': k_opt, 'a': a_opt, 'r': r_opt
+                    })
+                except Exception as e:
+                    pass # Si falla (por falta de datos), se omite silenciosamente para no detener el proceso
+
+            # ==========================================
+            # 1. ESCALA NACIONAL
+            # ==========================================
+            df_nac = pd.read_csv("data/PobCol1912_2100.csv") # Verifica que esta ruta sea correcta
+            col_anio_nac = 'año' if 'año' in df_nac.columns else 'Año'
+            col_tot_nac = 'Total' if 'Total' in df_nac.columns else 'Population'
+            
+            # Ordenar cronológicamente
+            df_nac = df_nac.sort_values(by=col_anio_nac)
+            ajustar_logistica(df_nac[col_anio_nac].values, df_nac[col_tot_nac].values, 'Nacional', 'Colombia', 'Mundo')
+
+            # ==========================================
+            # 2. ESCALA DEPARTAMENTAL Y MUNICIPAL
+            # ==========================================
+            df_mun = pd.read_csv("data/df_Mpios_1985_2035.csv")
+            col_anio_mun = 'año' if 'año' in df_mun.columns else 'Año'
+            
+            # Solo trabajamos con la población Total pura para evitar doble contabilidad
+            df_mun_puro = df_mun[df_mun['area_geografica'].str.lower() == 'total'].copy()
+            if df_mun_puro.empty: df_mun_puro = df_mun.copy()
+            
+            # -> Agrupación Departamentos
+            df_deptos = df_mun_puro.groupby(['depto_nom', col_anio_mun])['Total'].sum().reset_index()
+            for depto in df_deptos['depto_nom'].unique():
+                df_temp = df_deptos[df_deptos['depto_nom'] == depto].sort_values(by=col_anio_mun)
+                ajustar_logistica(df_temp[col_anio_mun].values, df_temp['Total'].values, 'Departamental', depto, 'Colombia')
+
+            # -> Agrupación Municipios
+            df_mpios = df_mun_puro.groupby(['municipio', 'depto_nom', col_anio_mun])['Total'].sum().reset_index()
+            for mpio in df_mpios['municipio'].unique():
+                df_temp = df_mpios[df_mpios['municipio'] == mpio].sort_values(by=col_anio_mun)
+                padre_mpio = df_temp['depto_nom'].iloc[0]
+                ajustar_logistica(df_temp[col_anio_mun].values, df_temp['Total'].values, 'Municipal', mpio, padre_mpio)
+
+            # ==========================================
+            # EXPORTACIÓN
+            # ==========================================
+            df_matriz = pd.DataFrame(matriz_resultados)
+            st.success(f"✅ Matriz generada con éxito. Total unidades procesadas: {len(df_matriz)}")
+            st.dataframe(df_matriz.head(10))
+            
+            csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Descargar Matriz_Maestra_Demografica.csv",
+                data=csv_matriz,
+                file_name="Matriz_Maestra_Demografica.csv",
+                mime='text/csv'
+            )
+
 # ==========================================
-# PESTAÑA 3: RANKINGS Y DINÁMICA HISTÓRICA (Top 15 y 2005-2035)
+# PESTAÑA 5: RANKINGS Y DINÁMICA HISTÓRICA (Top 15 y 2005-2035)
 # ==========================================
 with tab_rankings:
     # Extraemos la zona automáticamente de la base para evitar errores
@@ -1072,7 +1160,7 @@ with tab_rankings:
         st.info("💡 Selecciona una escala territorial con múltiples divisiones (ej. Municipal o Departamental) para ver el ranking y las curvas comparativas.")
         
 # ==========================================
-# PESTAÑA 4: DESCARGAS Y EXPORTACIÓN
+# PESTAÑA 6: DESCARGAS Y EXPORTACIÓN
 # ==========================================
 with tab_descargas:
     st.subheader("💾 Exportación de Resultados y Series de Tiempo")
