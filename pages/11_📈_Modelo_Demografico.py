@@ -270,18 +270,23 @@ años_hist, pob_hist = [], []
 df_mapa_base = pd.DataFrame()
 
 if escala_sel == "🌍 Global y Suramérica":
-    # Ahora aprovechamos todas las columnas de tu archivo
-    opciones_hist = ["Mundo", "Suramérica", "Colombia (DANE)", "Antioquia", "AMVA", "Medellín"]
+    # Añadimos Colombia (ONU) a las opciones
+    opciones_hist = ["Mundo", "Suramérica", "Colombia (DANE)", "Colombia (ONU)", "Antioquia", "AMVA", "Medellín"]
     contexto_sel = st.sidebar.selectbox("Seleccione la región histórica:", opciones_hist)
     
     filtro_zona = contexto_sel
     titulo_terr = contexto_sel
     
     if not df_global.empty:
+        # El diccionario maestro con los nombres EXACTOS de tus columnas
         diccionario_columnas = {
-            "Mundo": "Pob_mundial", "Suramérica": "Pob_suramerica", 
-            "Colombia (DANE)": "Pob_Colombia_DANE", "Antioquia": "Pob_Antioquia",
-            "AMVA": "Pob_Amva", "Medellín": "Pob_Medellin"
+            "Mundo": "Pob_mundial", 
+            "Suramérica": "Pob_suramerica", 
+            "Colombia (DANE)": "Pob_Colombia_DANE", 
+            "Colombia (ONU)": "Pob_Colombia_ONU",
+            "Antioquia": "Pob_Antioquia",
+            "AMVA": "Pob_Amva", 
+            "Medellín": "Pob_Medellin"
         }
         col_objetivo = diccionario_columnas[contexto_sel]
         
