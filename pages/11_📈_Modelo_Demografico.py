@@ -317,7 +317,8 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
     else:
         pob_hist = df_base.iloc[:, 1].values 
         
-    df_mapa_base = df_mun[df_mun['año'] == año_sel].groupby('depto_nom')['Total'].sum().reset_index()
+    # --- LA CORRECCIÓN: Agrupamos manteniendo la columna 'año' para filtrar más abajo ---
+    df_mapa_base = df_mun.groupby(['depto_nom', 'año'])['Total'].sum().reset_index()
     df_mapa_base.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
     df_mapa_base['Padre'] = "Colombia"
 
@@ -327,7 +328,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
     ruta_cuencas_mun = os.path.join(RUTA_RAIZ, "data", "cuencas_mpios_proporcion.csv")
     
     if os.path.exists(ruta_cuencas_ver):
-# =========================================================
+        # =========================================================
         # MODO ALTA PRECISIÓN: CRUCE CON VEREDAS (PURA RURALIDAD)
         # =========================================================
         df_prop = pd.read_csv(ruta_cuencas_ver)
