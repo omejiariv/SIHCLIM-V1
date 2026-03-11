@@ -195,8 +195,30 @@ def cargar_datos_limpios():
         df_mun = df_mun.rename(columns={'poblacion': 'Total'})
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
+
+        # ===================================================================
+        # --- MAGIA 2: SANACIÓN ESTRUCTURAL DEL EMPALME CENSAL 2005-2020 ---
+        # Curamos la base de datos maestra para que todas las gráficas salgan perfectas
+        # ===================================================================
+        df_mun['año'] = pd.to_numeric(df_mun['año'], errors='coerce')
         
-        # MAGIA 2: Asignar Región con excepciones (Urabá)
+        def reparar_empalme(grupo):
+            grupo = grupo.sort_values('año')
+            # Si el municipio tiene datos del Censo 2005 y del 2020...
+            if 2005 in grupo['año'].values and 2020 in grupo['año'].values:
+                # Borramos los datos desfasados entre 2006 y 2019
+                mask = (grupo['año'] >= 2006) & (grupo['año'] <= 2019)
+                grupo.loc[mask, 'Total'] = np.nan
+                # Trazamos el puente perfecto
+                grupo['Total'] = grupo['Total'].interpolate(method='linear').ffill().bfill()
+            return grupo
+            
+        # Aplicamos la cura a cada municipio (separando urbano y rural)
+        if 'dp_mp' in df_mun.columns and 'area_geografica' in df_mun.columns:
+            df_mun = df_mun.groupby(['dp_mp', 'area_geografica'], group_keys=False).apply(reparar_empalme)
+        # ===================================================================        
+        
+        # MAGIA 3: Asignar Región con excepciones (Urabá)
         def asignar_region(fila):
             uraba_caribe = ["TURBO", "NECOCLI", "SAN JUAN DE URABA", "ARBOLETES", "SAN PEDRO DE URABA", "APARTADO", "CAREPA", "CHIGORODO", "MUTATA"]
             if normalizar_texto(fila['municipio']) in [normalizar_texto(m) for m in uraba_caribe]:
@@ -361,30 +383,6 @@ except:
     param_K = "N/A"
 
 df_proj = pd.DataFrame(proyecciones)
-
-# ====================================================
-# --- CONCILIACIÓN CENSAL (A PRUEBA DE BALAS) ---
-# ====================================================
-if len(pob_hist) > 0:
-    import numpy as np
-    import pandas as pd
-    
-    df_clean = pd.DataFrame({'año': años_hist, 'Total': pob_hist})
-    
-    # 1. Forzamos a que el año sea un número (para evitar errores de texto)
-    df_clean['año'] = pd.to_numeric(df_clean['año'], errors='coerce')
-    df_clean = df_clean.sort_values('año').reset_index(drop=True)
-    
-    # 2. Borramos SIN PREGUNTAR las proyecciones viejas (2006 a 2019)
-    mask_intercensal = (df_clean['año'] >= 2006) & (df_clean['año'] <= 2019)
-    df_clean.loc[mask_intercensal, 'Total'] = np.nan
-    
-    # 3. Construimos el puente matemático lineal
-    df_clean['Total'] = df_clean['Total'].interpolate(method='linear').ffill().bfill()
-        
-    años_hist = df_clean['año'].values
-    pob_hist = df_clean['Total'].values
-# ====================================================
 
 # --- CONFIGURACIÓN DE PESTAÑAS (TABS) ---
 tab_modelos, tab_mapas, tab_rankings, tab_descargas = st.tabs(["📈 Tendencia y Estructura", "🗺️ Mapa Demográfico", "📊 Rankings y Dinámica Histórica", "💾 Descargas"])
