@@ -228,7 +228,26 @@ def cargar_datos_limpios():
             if 'Vereda' in df_ver.columns: df_ver['Vereda'] = df_ver['Vereda'].str.title()
             if 'Poblacion_hab' in df_ver.columns: df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'], errors='coerce').fillna(0)
 
-        return df_nac, df_mun, df_ver
+        # =======================================================
+        # 4. Cargar datos históricos globales y regionales (NUEVO)
+        # =======================================================
+        df_global = pd.DataFrame()
+        ruta_global_csv = os.path.join(RUTA_RAIZ, "data", "Pob_Col_Ant_Amva_Med.csv")
+        ruta_global_xlsx = os.path.join(RUTA_RAIZ, "data", "Pob_Col_Ant_Amva_Med.xlsx")
+        
+        if os.path.exists(ruta_global_csv): df_global = pd.read_csv(ruta_global_csv)
+        elif os.path.exists(ruta_global_xlsx): df_global = pd.read_excel(ruta_global_xlsx)
+
+        return df_nac, df_mun, df_ver, df_global
+        
+    except Exception as e:
+        import streamlit as st
+        st.error(f"🚨 Error cargando las bases de datos: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+# Y actualiza la llamada a la función para recibir las 4 bases:
+df_nac, df_mun, df_ver, df_global = cargar_datos_limpios()
+if df_nac.empty or df_mun.empty: st.stop()
         
     except Exception as e:
         import streamlit as st
@@ -257,13 +276,40 @@ escala_sel = st.sidebar.radio("Nivel de Análisis:", [
 años_hist, pob_hist = [], []
 df_mapa_base = pd.DataFrame()
 
-if escala_sel == "Nacional":
-    df_agrup_nac = df_nac.groupby('Año')[['Hombres', 'Mujeres']].sum().reset_index()
-    años_hist = df_agrup_nac['Año'].values
-    pob_hist = (df_agrup_nac['Hombres'] + df_agrup_nac['Mujeres']).values
-    titulo_terr = "Colombia (Nacional)"
-    df_mapa_base = df_mun.groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
-    df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
+if escala_sel == "🌍 Global y Suramérica":
+        # Ahora aprovechamos todas las columnas de tu archivo
+        opciones_hist = ["Mundo", "Suramérica", "Colombia (DANE)", "Antioquia", "AMVA", "Medellín"]
+        contexto_sel = st.sidebar.selectbox("Seleccione la región histórica:", opciones_hist)
+        
+        filtro_zona = contexto_sel
+        titulo_terr = contexto_sel
+        
+        if not df_global.empty:
+            diccionario_columnas = {
+                "Mundo": "Pob_mundial", "Suramérica": "Pob_suramerica", 
+                "Colombia (DANE)": "Pob_Colombia_DANE", "Antioquia": "Pob_Antioquia",
+                "AMVA": "Pob_Amva", "Medellín": "Pob_Medellin"
+            }
+            col_objetivo = diccionario_columnas[contexto_sel]
+            
+            # Filtramos solo los años que tienen datos para esa columna
+            df_temp = df_global.dropna(subset=['Año', col_objetivo])
+            años_hist = df_temp['Año'].values
+            pob_hist = df_temp[col_objetivo].values
+        else:
+            años_hist, pob_hist = np.array([]), np.array([])
+            
+        df_mapa_base = pd.DataFrame()
+
+    elif escala_sel == "🇨🇴 Nacional (Colombia)":
+        df_base = df_nac
+        filtro_zona = "Colombia"    # <--- ¡Esto soluciona el NameError!
+        titulo_terr = "Colombia"
+        años_hist = df_base['Año'].values
+        pob_hist = df_base['Total'].values
+        df_mapa_base = df_mun[df_mun['año'] == año_sel].groupby(['depto_nom'])['Total'].sum().reset_index()
+        df_mapa_base.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+        df_mapa_base['Padre'] = "Colombia"
 
 elif escala_sel == "Regional (Macroregiones)":
     regiones_list = sorted(df_mun['Macroregion'].unique())
@@ -289,21 +335,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
     
     df_mapa_base = df_base[df_base['año'] == año_sel].groupby('municipio')['Total'].sum().reset_index()
     df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
-
-elif escala_sel == "🌍 Global y Suramérica":
-    contexto_sel = st.sidebar.selectbox("Seleccione la región:", ["Mundo", "Suramérica"])
-    filtro_zona = contexto_sel
-    titulo_terr = contexto_sel
-    
-    # Aquí puedes inyectar los arrays quemados de tu antigua página o cargar un CSV global
-    if contexto_sel == "Mundo":
-        años_hist = np.array([2000, 2010, 2020, 2024])
-        pob_hist = np.array([6.1e9, 6.9e9, 7.8e9, 8.1e9]) # Datos de ejemplo
-    else:
-        años_hist = np.array([2000, 2010, 2020, 2024])
-        pob_hist = np.array([348e6, 394e6, 430e6, 442e6]) # Datos de ejemplo
-        
-    df_mapa_base = pd.DataFrame() # El mapa quedará vacío a esta escala, lo cual está bien
 
 elif escala_sel in ["Departamental", "Municipal"]:
     deptos = sorted(df_mun['depto_nom'].dropna().unique())
@@ -375,16 +406,22 @@ if 'titulo_terr' not in locals():
 x_hist = np.array(años_hist, dtype=float)
 y_hist = np.array(pob_hist, dtype=float)
 
-# 1. Aislamiento Estructural (Solo entrenamos de 2018 en adelante)
-mask_train = x_hist >= 2018
-if sum(mask_train) >= 4:
-    x_train = x_hist[mask_train]
-    y_train = y_hist[mask_train]
+# 1. Aislamiento Estructural Inteligente
+# Solo aplicamos el recorte post-2018 a los datos locales. Para la historia Global/AMVA, usamos TODO.
+if escala_sel not in ["🌍 Global y Suramérica"]:
+    mask_train = x_hist >= 2018
+    if sum(mask_train) >= 4:
+        x_train = x_hist[mask_train]
+        y_train = y_hist[mask_train]
+    else:
+        x_train = x_hist
+        y_train = y_hist
 else:
     x_train = x_hist
     y_train = y_hist
 
 año_maximo = int(max(df_nac['Año'].max() if 'df_nac' in locals() else 2100, 2100))
+
 x_proj = np.arange(1950, año_maximo + 1, 1) 
 
 proyecciones = {'Año': x_proj, 'Real': [np.nan]*len(x_proj)}
@@ -569,7 +606,7 @@ with tab_opt:
         col_opt1, col_opt2 = st.columns([1, 2.5])
         with col_opt1:
             st.subheader("Configuración")
-            st.success(f"Modelando: **{filtro_zona}**")
+            st.success(f"Modelando: **{filtro_zona if 'filtro_zona' in locals() else titulo_terr}**")
             
             # Usamos x_train y y_train (nuestra data curada post-2018) para no dañar la matemática
             t_data_raw = x_train
