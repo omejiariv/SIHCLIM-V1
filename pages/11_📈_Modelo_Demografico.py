@@ -282,12 +282,14 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
     
     df_base = df_mun[df_mun['cuenca'] == cuenca_sel]
     filtro_zona = cuenca_sel
+    titulo_terr = cuenca_sel
     df_mapa_base = df_base[df_base['año'] == año_sel].groupby('municipio')['Total'].sum().reset_index()
     df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
 
 elif escala_sel == "🌍 Global y Suramérica":
     contexto_sel = st.sidebar.selectbox("Seleccione la región:", ["Mundo", "Suramérica"])
     filtro_zona = contexto_sel
+    titulo_terr = contexto_sel
     
     # Aquí puedes inyectar los arrays quemados de tu antigua página o cargar un CSV global
     if contexto_sel == "Mundo":
@@ -361,7 +363,9 @@ elif escala_sel == "Veredal (Antioquia)":
         df_mapa_base = df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Municipio': 'Padre', 'Poblacion_hab': 'Total'})
         df_mapa_base['año'] = 2020 
         df_mapa_base['area_geografica'] = 'rural'
-        
+
+if 'titulo_terr' not in locals():
+    titulo_terr = filtro_zona if 'filtro_zona' in locals() else "Territorio Seleccionado"
 # --- 4. CÁLCULO DE PROYECCIONES ---
 x_hist = np.array(años_hist, dtype=float)
 y_hist = np.array(pob_hist, dtype=float)
