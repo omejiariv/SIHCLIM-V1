@@ -363,24 +363,25 @@ except:
 df_proj = pd.DataFrame(proyecciones)
 
 # ====================================================
-# --- AMORTIGUADOR DE ANOMALÍAS DANE (VERSIÓN DEFINITIVA) ---
+# --- CONCILIACIÓN CENSAL (EL PUENTE 2005 - 2020) ---
 # ====================================================
-if len(pob_hist) > 4:
+if len(pob_hist) > 0:
     import numpy as np
     import pandas as pd
     
     df_clean = pd.DataFrame({'año': años_hist, 'Total': pob_hist}).sort_values('año').reset_index(drop=True)
     
-    # 1. Creamos un "túnel" de normalidad usando la mediana de 5 años
-    rmed = df_clean['Total'].rolling(window=5, center=True, min_periods=1).median()
-    
-    # 2. Si el dato del DANE se desvía más del 6% de esa normalidad, lo consideramos error
-    anomalias = (df_clean['Total'] - rmed).abs() / rmed > 0.06
-    
-    # 3. Borramos el error y construimos el puente (interpolación)
-    df_clean.loc[anomalias, 'Total'] = np.nan
-    df_clean['Total'] = df_clean['Total'].interpolate(method='linear').bfill().ffill()
-    
+    # Si la serie histórica cubre el Censo 2005 y el inicio de la nueva serie 2020
+    if 2005 in df_clean['año'].values and 2020 in df_clean['año'].values:
+        # Seleccionamos las proyecciones viejas y erradas (2006 a 2019)
+        mask_intercensal = (df_clean['año'] > 2005) & (df_clean['año'] < 2020)
+        
+        # Las borramos temporalmente
+        df_clean.loc[mask_intercensal, 'Total'] = np.nan
+        
+        # Trazamos un puente matemático suave y directo entre la realidad 2005 y la realidad 2020
+        df_clean['Total'] = df_clean['Total'].interpolate(method='linear')
+        
     años_hist = df_clean['año'].values
     pob_hist = df_clean['Total'].values
 # ====================================================
@@ -721,23 +722,21 @@ with tab_rankings:
                 if not df_line.empty:
                     df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
                     
-                    # --- NUEVO: Planchador automático para todas las curvas comparativas ---
-                    def planchar_curva(group):
+                    # --- NUEVO: Conciliación Censal para gráficas comparativas ---
+                    def conciliacion_censal(group):
                         group = group.sort_values('año')
-                        rmed = group['Total'].rolling(window=5, center=True, min_periods=1).median()
-                        anomalias = (group['Total'] - rmed).abs() / rmed > 0.06
-                        group.loc[anomalias, 'Total'] = np.nan
-                        group['Total'] = group['Total'].interpolate(method='linear').bfill().ffill()
+                        if 2005 in group['año'].values and 2020 in group['año'].values:
+                            mask = (group['año'] > 2005) & (group['año'] < 2020)
+                            group.loc[mask, 'Total'] = np.nan
+                            group['Total'] = group['Total'].interpolate(method='linear')
                         return group
                         
-                    df_line = df_line.groupby('Territorio', group_keys=False).apply(planchar_curva)
-                    # -----------------------------------------------------------------------
+                    df_line = df_line.groupby('Territorio', group_keys=False).apply(conciliacion_censal)
+                    # -------------------------------------------------------------
                     
                     fig_line = px.line(df_line, x='año', y='Total', color='Territorio', markers=True,
                                        title=f"Evolución de los Territorios más Poblados",
                                        labels={'año': 'Año', 'Total': 'Habitantes'})
-                    fig_line.update_layout(hovermode="x unified")
-                    st.plotly_chart(fig_line, use_container_width=True)
                     
     else:
         st.info("💡 Selecciona una escala territorial con múltiples divisiones (ej. Municipal o Departamental) para ver el ranking y las curvas comparativas.")
