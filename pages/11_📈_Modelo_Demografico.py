@@ -245,8 +245,15 @@ def modelo_logistico(x, K, r, x0): return K / (1 + np.exp(-r * (x - x0)))
 
 # --- 3. CONFIGURACIÓN Y FILTROS LATERALES ---
 st.sidebar.header("⚙️ 1. Selección Territorial")
-escala_sel = st.sidebar.selectbox("Escala Territorial", ["Nacional", "Regional (Macroregiones)", "Departamental", "Municipal", "Veredal (Antioquia)"])
-
+escala_sel = st.sidebar.radio("Nivel de Análisis:", [
+    "🌍 Global y Suramérica",
+    "🇨🇴 Nacional (Colombia)", 
+    "Departamental", 
+    "💧 Cuencas Hidrográficas", 
+    "Municipal (Regiones)", 
+    "Municipal (Departamentos)", 
+    "Veredal (Antioquia)"
+])
 años_hist, pob_hist = [], []
 df_mapa_base = pd.DataFrame()
 
@@ -267,6 +274,30 @@ elif escala_sel == "Regional (Macroregiones)":
     titulo_terr = f"Región {reg_sel}"
     df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
     df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
+
+elif escala_sel == "💧 Cuencas Hidrográficas":
+    # df_mun['cuenca'] = df_mun['municipio'].map(DICCIONARIO_CUENCAS)
+    lista_cuencas = ["Río Cauca", "Río Magdalena", "Atrato"] # Reemplaza con tus cuencas
+    cuenca_sel = st.sidebar.selectbox("Seleccione la Cuenca:", lista_cuencas)
+    
+    df_base = df_mun[df_mun['cuenca'] == cuenca_sel]
+    filtro_zona = cuenca_sel
+    df_mapa_base = df_base[df_base['año'] == año_sel].groupby('municipio')['Total'].sum().reset_index()
+    df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
+
+elif escala_sel == "🌍 Global y Suramérica":
+    contexto_sel = st.sidebar.selectbox("Seleccione la región:", ["Mundo", "Suramérica"])
+    filtro_zona = contexto_sel
+    
+    # Aquí puedes inyectar los arrays quemados de tu antigua página o cargar un CSV global
+    if contexto_sel == "Mundo":
+        años_hist = np.array([2000, 2010, 2020, 2024])
+        pob_hist = np.array([6.1e9, 6.9e9, 7.8e9, 8.1e9]) # Datos de ejemplo
+    else:
+        años_hist = np.array([2000, 2010, 2020, 2024])
+        pob_hist = np.array([348e6, 394e6, 430e6, 442e6]) # Datos de ejemplo
+        
+    df_mapa_base = pd.DataFrame() # El mapa quedará vacío a esta escala, lo cual está bien
 
 elif escala_sel in ["Departamental", "Municipal"]:
     deptos = sorted(df_mun['depto_nom'].dropna().unique())
@@ -387,7 +418,13 @@ except:
 df_proj = pd.DataFrame(proyecciones)
 
 # --- CONFIGURACIÓN DE PESTAÑAS (TABS) ---
-tab_modelos, tab_mapas, tab_rankings, tab_descargas = st.tabs(["📈 Tendencia y Estructura", "🗺️ Mapa Demográfico", "📊 Rankings y Dinámica Histórica", "💾 Descargas"])
+tab_modelos, tab_opt, tab_mapas, tab_rankings, tab_descargas = st.tabs([
+    "📈 Tendencia y Estructura", 
+    "⚙️ Optimización (Solver)", 
+    "🗺️ Mapa Demográfico", 
+    "📊 Rankings y Dinámica Histórica", 
+    "💾 Descargas"
+])
 
 # ==========================================
 # PESTAÑA 1: MODELOS Y PIRÁMIDES ANIMADAS
@@ -512,8 +549,82 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
     * **Capa 3 (Filtro Veredal):** Base de datos espaciales y tabulares Gobernación de Antioquia / IGAC.
     """)
 
+# ==============================================================================
+# TAB 2: MODELOS Y OPTIMIZACIÓN MATEMÁTICA (SOLVER)
+# ==============================================================================
+with tab_opt:
+    st.header("⚙️ Ajuste de Modelos Evolutivos (Solver)")
+    
+    if len(x_hist) == 0:
+        st.info("👆 Selecciona una escala válida en el panel izquierdo.")
+    elif escala_sel == "Veredal (Antioquia)":
+        st.error("❌ La escala Veredal no posee serie de tiempo continua para modelación matemática pura.")
+    else:
+        col_opt1, col_opt2 = st.columns([1, 2.5])
+        with col_opt1:
+            st.subheader("Configuración")
+            st.success(f"Modelando: **{filtro_zona}**")
+            
+            # Usamos x_train y y_train (nuestra data curada post-2018) para no dañar la matemática
+            t_data_raw = x_train
+            p_data = y_train
+            t_data = t_data_raw - t_data_raw.min()
+            p0_val = float(p_data[0]) 
+                
+            t_max = st.slider("Años a proyectar (Horizonte):", 10, 100, 30, key='slider_opt')
+            st.markdown("---")
+            modelos_sel = st.multiselect("Curvas a evaluar:", 
+                                         ["Exponencial", "Logístico", "Geométrico", "Polinómico (Grado 2)", "Polinómico (Grado 3)"], 
+                                         default=["Logístico", "Polinómico (Grado 2)"])
+            opt_auto = st.button("✨ Optimizar Parámetros", type="primary", use_container_width=True)
+
+            st.caption("Ajuste Manual:")
+            r_man = st.number_input("Tasa (r):", value=0.02, format="%.4f")
+            k_man = st.number_input("Capacidad (K):", value=float(p_data.max() * 2.0), step=1000.0)
+
+        with col_opt2:
+            def f_exp(t, p0, r): return p0 * np.exp(r * t)
+            def f_log(t, k, p0, r): return k / (1 + ((k-p0)/p0) * np.exp(-r * t))
+            def f_geom(t, p0, r): return p0 * (1 + r)**t
+            def f_poly2(t, a, b, c): return a*t**2 + b*t + c
+            def f_poly3(t, a, b, c, d): return a*t**3 + b*t**2 + c*t + d
+
+            t_total = np.arange(0, max(t_data) + t_max + 1)
+            anios_totales = t_total + t_data_raw.min()
+            
+            fig2 = go.Figure()
+            # Mostramos TODO el histórico en puntos negros para ver la realidad completa
+            fig2.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Históricos', marker=dict(color='black', size=8)))
+
+            res_text = []
+            for mod in modelos_sel:
+                y_pred = np.zeros_like(t_total, dtype=float)
+                try:
+                    if mod == "Exponencial":
+                        if opt_auto: popt, _ = curve_fit(f_exp, t_data, p_data, p0=[p0_val, 0.01]); y_pred = f_exp(t_total, *popt); res_text.append(f"**Exp**: r={popt[1]:.4f}")
+                        else: y_pred = f_exp(t_total, p0_val, r_man)
+                    elif mod == "Logístico":
+                        if opt_auto: popt, _ = curve_fit(f_log, t_data, p_data, p0=[max(p_data)*1.5, p0_val, 0.01], maxfev=10000); y_pred = f_log(t_total, *popt); res_text.append(f"**Log**: K={popt[0]:,.0f}, r={popt[2]:.4f}")
+                        else: y_pred = f_log(t_total, k_man, p0_val, r_man)
+                    elif mod == "Geométrico":
+                        if opt_auto: popt, _ = curve_fit(f_geom, t_data, p_data, p0=[p0_val, 0.01]); y_pred = f_geom(t_total, *popt)
+                        else: y_pred = f_geom(t_total, p0_val, r_man)
+                    elif mod == "Polinómico (Grado 2)":
+                        if opt_auto: popt, _ = curve_fit(f_poly2, t_data, p_data); y_pred = f_poly2(t_total, *popt)
+                        else: y_pred = f_poly2(t_total, 1, 10, p0_val)
+                    elif mod == "Polinómico (Grado 3)":
+                        if opt_auto: popt, _ = curve_fit(f_poly3, t_data, p_data); y_pred = f_poly3(t_total, *popt)
+                        else: y_pred = f_poly3(t_total, 1, 10, p0_val, 0)
+
+                    fig2.add_trace(go.Scatter(x=anios_totales, y=y_pred, mode='lines', name=mod, line=dict(width=3, dash='dot' if opt_auto else 'solid')))
+                except: pass
+
+            fig2.update_layout(title="Proyección de Modelos Dinámicos", xaxis_title="Año", yaxis_title="Población", hovermode="x unified", height=550)
+            st.plotly_chart(fig2, use_container_width=True)
+            if opt_auto and res_text: st.success("✅ **Parámetros Óptimos:** " + " | ".join(res_text))
+                
 # ==========================================
-# PESTAÑA 2: MAPA DEMOGRÁFICO (GEOVISOR)
+# PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR)
 # ==========================================
 with tab_mapas:
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_terr} ({año_sel})")
