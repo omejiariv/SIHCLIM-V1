@@ -16,53 +16,79 @@ st.title("⚙️ Centro de Geoprocesamiento y Transformación")
 st.info("Herramientas de administrador para cruces espaciales, compresión y estandarización de cartografía web.")
 
 tab1, tab2, tab3 = st.tabs([
-    "🧩 1. Intersección Cuencas-Municipios", 
+    "🧩 1. Intersecciones Espaciales (Cuencas)", 
     "🔄 2. Convertidor GeoJSON (Soporta ZIP y Simplificación)", 
     "🗜️ 3. Compresor/Extractor ZIP"
 ])
 
 # =====================================================================
-# PESTAÑA 1: TU CÓDIGO ORIGINAL INTACTO
+# PESTAÑA 1: INTERSECCIÓN ESPACIAL (MUNICIPIOS O VEREDAS)
 # =====================================================================
 with tab1:
     st.subheader("Generador de Intersecciones Espaciales")
-    st.write("Cruce de mapas para calcular la proporción de cada municipio dentro de las cuencas.")
+    st.write("Cruce de mapas para calcular la proporción de cada territorio dentro de las cuencas.")
     
-    if st.button("🚀 Iniciar Cruce Espacial (Tarda ~1 minuto)"):
+    # NUEVO: Selector de nivel territorial
+    nivel_cruce = st.radio("Selecciona el Nivel Territorial a cruzar con las Cuencas:", ["Municipios", "Veredas"], horizontal=True)
+    
+    if st.button(f"🚀 Iniciar Cruce Espacial ({nivel_cruce})", type="primary"):
         with st.spinner("1. Cargando y proyectando mapas (EPSG:9377)..."):
             try:
-                mpios = gpd.read_file('data/MunicipiosAntioquia.geojson')
+                # 1. Cargar Cuencas (Siempre es el mismo)
                 cuencas = gpd.read_file('data/SubcuencasAinfluencia.geojson')
-                
-                mpios = mpios.to_crs(epsg=9377)
                 cuencas = cuencas.to_crs(epsg=9377)
                 
-                mpios['area_mpio_ha'] = mpios.geometry.area / 10000
+                # 2. Cargar Capa Territorial según la selección
+                if nivel_cruce == "Municipios":
+                    territorio = gpd.read_file('data/mgn_municipios_optimizado.geojson')
+                    col_nombre = 'MPIO_CNMBR'
+                    col_padre = 'DPTO_CNMBR' # Opcional
+                    nombre_salida = 'cuencas_mpios_proporcion.csv'
+                else:
+                    territorio = gpd.read_file('data/Veredas_Antioquia_TOTAL_UrbanoyRural.geojson')
+                    col_nombre = 'NOMBRE_VER'
+                    col_padre = 'NOMB_MPIO' # Necesario en veredas por homonimia
+                    nombre_salida = 'cuencas_veredas_proporcion.csv'
+                
+                territorio = territorio.to_crs(epsg=9377)
+                st.success(f"Mapas cargados. Cuencas: {len(cuencas)} | {nivel_cruce}: {len(territorio)}")
+
+                # 3. Calcular área original del territorio
+                territorio['Area_Original_Ha'] = territorio.geometry.area / 10000
+
+                # 4. Intersección
+                st.info("2. Ejecutando geoprocesamiento de intersección (Esto puede tardar unos minutos)...")
+                interseccion = gpd.overlay(territorio, cuencas, how='intersection')
+
+                # 5. Calcular nueva área y proporción
+                interseccion['Area_Interseccion_Ha'] = interseccion.geometry.area / 10000
+                interseccion['Porcentaje'] = (interseccion['Area_Interseccion_Ha'] / interseccion['Area_Original_Ha']) * 100
+                
+                # Limpiamos porcentajes mayores a 100 (errores de topología menores)
+                interseccion['Porcentaje'] = interseccion['Porcentaje'].apply(lambda x: min(x, 100.0))
+
+                # 6. Preparar tabla final
+                if nivel_cruce == "Municipios":
+                    df_final = interseccion[['MPIO_CNMBR', 'ZH', 'SUBC_LBL', 'N_NSS1', 'Area_Interseccion_Ha', 'Porcentaje']].copy()
+                    df_final.columns = ['Municipio', 'Zona_Hidrografica', 'Subcuenca', 'Sistema', 'Area_Ha', 'Porcentaje']
+                else:
+                    df_final = interseccion[['NOMBRE_VER', 'NOMB_MPIO', 'ZH', 'SUBC_LBL', 'N_NSS1', 'Area_Interseccion_Ha', 'Porcentaje']].copy()
+                    df_final.columns = ['Vereda', 'Municipio', 'Zona_Hidrografica', 'Subcuenca', 'Sistema', 'Area_Ha', 'Porcentaje']
+
+                st.success("✅ Cruce completado con éxito.")
+                st.dataframe(df_final.head())
+
+                # 7. Botón de descarga
+                csv = df_final.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label=f"📥 Descargar {nombre_salida}",
+                    data=csv,
+                    file_name=nombre_salida,
+                    mime='text/csv',
+                )
+
             except Exception as e:
-                st.error(f"Error cargando mapas. Verifica que existan en la carpeta data/. Detalles: {e}")
-                st.stop()
-            
-        with st.spinner("2. Geometría en proceso: Cruzando polígonos..."):
-            interseccion = gpd.overlay(mpios, cuencas, how='intersection')
-            interseccion['area_fragmento_ha'] = interseccion.geometry.area / 10000
-            interseccion['porcentaje_en_cuenca'] = (interseccion['area_fragmento_ha'] / interseccion['area_mpio_ha']) * 100
-            
-            df_final = interseccion[interseccion['porcentaje_en_cuenca'] > 0.1].copy()
-            
-            df_export = df_final[['MPIO_CNMBR', 'Zona', 'SUBC_LBL', 'N_NSS1', 'area_fragmento_ha', 'porcentaje_en_cuenca']]
-            df_export.columns = ['Municipio', 'Zona_Hidrografica', 'Subcuenca', 'Sistema', 'Area_Ha', 'Porcentaje']
-            
-            csv = df_export.to_csv(index=False).encode('utf-8')
-            
-        st.success("✅ ¡Matemática espacial completada con éxito!")
-        st.dataframe(df_export.head()) 
-        
-        st.download_button(
-            label="📥 DESCARGAR ARCHIVO MAESTRO CSV",
-            data=csv,
-            file_name='cuencas_mpios_proporcion.csv',
-            mime='text/csv',
-        )
+                st.error(f"🚨 Ocurrió un error en el cruce: {e}")
 
 # =====================================================================
 # PESTAÑA 2: EL TRANSFORMADOR DE SHAPEFILES (SOPORTA ZIP Y SIMPLIFICACIÓN)
