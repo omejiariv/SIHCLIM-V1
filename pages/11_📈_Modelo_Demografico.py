@@ -378,7 +378,17 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         
         # 6. Base para el mapa (Muestra el aporte de cada vereda)
         df_mapa_base = df_cruce_ver.copy()
-        df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Municipio': 'Padre', 'Pob_en_cuenca': 'Total'}, inplace=True)
+        # Aseguramos que las columnas se llamen exactamente como la app espera (Territorio y Padre)
+        df_mapa_base.rename(columns={
+            'Vereda_x': 'Territorio', 
+            'Vereda': 'Territorio', # Por si cruza con un sufijo diferente
+            'Municipio_x': 'Padre', 
+            'Municipio': 'Padre',
+            'Pob_en_cuenca': 'Total'
+        }, inplace=True)
+        
+        # Eliminar posibles columnas duplicadas por el cruce
+        df_mapa_base = df_mapa_base.loc[:, ~df_mapa_base.columns.duplicated()]
 
     elif os.path.exists(ruta_cuencas_mun):
         # =========================================================
