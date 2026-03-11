@@ -304,20 +304,24 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
     filtro_zona = "Colombia"
     titulo_terr = "Colombia"
     
-    # Escudo contra mayúsculas/minúsculas
     col_anio = 'año' if 'año' in df_base.columns else 'Año'
-    años_hist = df_base[col_anio].values
     
-    # Escudo original recuperado (Busca-Columnas)
-    if 'Total' in df_base.columns: pob_hist = df_base['Total'].values
-    elif 'Population' in df_base.columns: pob_hist = df_base['Population'].values
-    elif 'Poblacion' in df_base.columns: pob_hist = df_base['Poblacion'].values
+    # Unificamos la búsqueda de la columna de población
+    if 'Total' in df_base.columns: df_base['Pob_Calc'] = df_base['Total']
+    elif 'Population' in df_base.columns: df_base['Pob_Calc'] = df_base['Population']
+    elif 'Poblacion' in df_base.columns: df_base['Pob_Calc'] = df_base['Poblacion']
     elif 'Hombres' in df_base.columns and 'Mujeres' in df_base.columns:
-        pob_hist = (df_base['Hombres'] + df_base['Mujeres']).values
+        df_base['Pob_Calc'] = df_base['Hombres'] + df_base['Mujeres']
     else:
-        pob_hist = df_base.iloc[:, 1].values 
+        df_base['Pob_Calc'] = df_base.iloc[:, 1]
         
-    # --- LA CORRECCIÓN: Agrupamos manteniendo la columna 'año' para filtrar más abajo ---
+    # --- LA CURA AL ZIG-ZAG: Agrupar y Ordenar Cronológicamente ---
+    df_hist = df_base.groupby(col_anio)['Pob_Calc'].sum().reset_index()
+    df_hist = df_hist.sort_values(by=col_anio) # <-- Esto evita que la línea se devuelva
+    
+    años_hist = df_hist[col_anio].values
+    pob_hist = df_hist['Pob_Calc'].values
+    
     df_mapa_base = df_mun.groupby(['depto_nom', 'año'])['Total'].sum().reset_index()
     df_mapa_base.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
     df_mapa_base['Padre'] = "Colombia"
