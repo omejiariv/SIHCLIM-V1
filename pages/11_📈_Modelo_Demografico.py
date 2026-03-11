@@ -235,8 +235,10 @@ def cargar_datos_limpios():
         ruta_global_csv = os.path.join(RUTA_RAIZ, "data", "Pob_Col_Ant_Amva_Med.csv")
         ruta_global_xlsx = os.path.join(RUTA_RAIZ, "data", "Pob_Col_Ant_Amva_Med.xlsx")
         
-        if os.path.exists(ruta_global_csv): df_global = pd.read_csv(ruta_global_csv)
-        elif os.path.exists(ruta_global_xlsx): df_global = pd.read_excel(ruta_global_xlsx)
+        if os.path.exists(ruta_global_csv): 
+            df_global = pd.read_csv(ruta_global_csv)
+        elif os.path.exists(ruta_global_xlsx): 
+            df_global = pd.read_excel(ruta_global_xlsx)
 
         return df_nac, df_mun, df_ver, df_global
         
@@ -245,16 +247,7 @@ def cargar_datos_limpios():
         st.error(f"🚨 Error cargando las bases de datos: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Y actualiza la llamada a la función para recibir las 4 bases:
 df_nac, df_mun, df_ver, df_global = cargar_datos_limpios()
-if df_nac.empty or df_mun.empty: st.stop()
-        
-    except Exception as e:
-        import streamlit as st
-        st.error(f"🚨 Error cargando las bases de datos: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-df_nac, df_mun, df_ver = cargar_datos_limpios()
 if df_nac.empty or df_mun.empty: st.stop()
     
 # --- 2. MODELOS MATEMÁTICOS ---
