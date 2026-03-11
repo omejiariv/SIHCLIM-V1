@@ -656,7 +656,8 @@ with tab_opt:
 
         with col_opt2:
             def f_exp(t, p0, r): return p0 * np.exp(r * t)
-            def f_log(t, k, p0, r): return k / (1 + ((k-p0)/p0) * np.exp(-r * t))
+            # --- FÓRMULA LOGÍSTICA CORREGIDA Y ESTABILIZADA ---
+            def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
             def f_geom(t, p0, r): return p0 * (1 + r)**t
             def f_poly2(t, a, b, c): return a*t**2 + b*t + c
             def f_poly3(t, a, b, c, d): return a*t**3 + b*t**2 + c*t + d
@@ -665,7 +666,7 @@ with tab_opt:
             anios_totales = t_total + t_data_raw.min()
             
             fig2 = go.Figure()
-            # Mostramos TODO el histórico en puntos negros para ver la realidad completa
+            # Mostramos TODO el histórico en puntos negros
             fig2.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Históricos', marker=dict(color='black', size=8)))
 
             res_text = []
@@ -673,23 +674,49 @@ with tab_opt:
                 y_pred = np.zeros_like(t_total, dtype=float)
                 try:
                     if mod == "Exponencial":
-                        if opt_auto: popt, _ = curve_fit(f_exp, t_data, p_data, p0=[p0_val, 0.01]); y_pred = f_exp(t_total, *popt); res_text.append(f"**Exp**: r={popt[1]:.4f}")
-                        else: y_pred = f_exp(t_total, p0_val, r_man)
+                        if opt_auto: 
+                            popt, _ = curve_fit(f_exp, t_data, p_data, p0=[p0_val, 0.01])
+                            y_pred = f_exp(t_total, *popt)
+                            res_text.append(f"**Exp**: r={popt[1]:.4f}")
+                        else: 
+                            y_pred = f_exp(t_total, p0_val, r_man)
+                            
                     elif mod == "Logístico":
-                        if opt_auto: popt, _ = curve_fit(f_log, t_data, p_data, p0=[max(p_data)*1.5, p0_val, 0.01], maxfev=10000); y_pred = f_log(t_total, *popt); res_text.append(f"**Log**: K={popt[0]:,.0f}, r={popt[2]:.4f}")
-                        else: y_pred = f_log(t_total, k_man, p0_val, r_man)
+                        if opt_auto: 
+                            # --- EL BLINDAJE DEL SOLVER ---
+                            k_guess = max(p_data) * 1.2
+                            a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
+                            r_guess = 0.03
+                            
+                            # Le ponemos límites (bounds): K no puede ser menor a la población actual ni infinito
+                            limites = ([max(p_data), 0, 0], [max(p_data)*5, np.inf, 0.2])
+                            
+                            popt, _ = curve_fit(f_log, t_data, p_data, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=10000)
+                            y_pred = f_log(t_total, *popt)
+                            res_text.append(f"**Log**: K={popt[0]:,.0f}, r={popt[2]:.4f}")
+                        else: 
+                            # Ajuste manual perfecto anclado al inicio
+                            a_man = (k_man - p0_val) / p0_val if p0_val > 0 else 1
+                            y_pred = f_log(t_total, k_man, a_man, r_man)
+                            
                     elif mod == "Geométrico":
-                        if opt_auto: popt, _ = curve_fit(f_geom, t_data, p_data, p0=[p0_val, 0.01]); y_pred = f_geom(t_total, *popt)
-                        else: y_pred = f_geom(t_total, p0_val, r_man)
+                        if opt_auto: 
+                            popt, _ = curve_fit(f_geom, t_data, p_data, p0=[p0_val, 0.01])
+                            y_pred = f_geom(t_total, *popt)
+                        else: 
+                            y_pred = f_geom(t_total, p0_val, r_man)
+                            
                     elif mod == "Polinómico (Grado 2)":
                         if opt_auto: popt, _ = curve_fit(f_poly2, t_data, p_data); y_pred = f_poly2(t_total, *popt)
                         else: y_pred = f_poly2(t_total, 1, 10, p0_val)
+                        
                     elif mod == "Polinómico (Grado 3)":
                         if opt_auto: popt, _ = curve_fit(f_poly3, t_data, p_data); y_pred = f_poly3(t_total, *popt)
                         else: y_pred = f_poly3(t_total, 1, 10, p0_val, 0)
 
                     fig2.add_trace(go.Scatter(x=anios_totales, y=y_pred, mode='lines', name=mod, line=dict(width=3, dash='dot' if opt_auto else 'solid')))
-                except: pass
+                except: 
+                    pass # Si un modelo matemático falla, simplemente no lo dibuja, evitando que colapse la app
 
             fig2.update_layout(title="Proyección de Modelos Dinámicos", xaxis_title="Año", yaxis_title="Población", hovermode="x unified", height=550)
             st.plotly_chart(fig2, use_container_width=True)
