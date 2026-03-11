@@ -300,14 +300,80 @@ if escala_sel == "🌍 Global y Suramérica":
     df_mapa_base = pd.DataFrame()
 
 elif escala_sel == "🇨🇴 Nacional (Colombia)":
-    df_base = df_nac
+    df_base = df_nac.copy()
     filtro_zona = "Colombia"
     titulo_terr = "Colombia"
-    años_hist = df_base['Año'].values
-    pob_hist = df_base['Total'].values
-    df_mapa_base = df_mun[df_mun['año'] == año_sel].groupby(['depto_nom'])['Total'].sum().reset_index()
+    
+    # Escudo contra mayúsculas/minúsculas
+    col_anio = 'año' if 'año' in df_base.columns else 'Año'
+    años_hist = df_base[col_anio].values
+    
+    # Escudo original recuperado (Busca-Columnas)
+    if 'Total' in df_base.columns: pob_hist = df_base['Total'].values
+    elif 'Population' in df_base.columns: pob_hist = df_base['Population'].values
+    elif 'Poblacion' in df_base.columns: pob_hist = df_base['Poblacion'].values
+    elif 'Hombres' in df_base.columns and 'Mujeres' in df_base.columns:
+        pob_hist = (df_base['Hombres'] + df_base['Mujeres']).values
+    else:
+        pob_hist = df_base.iloc[:, 1].values 
+        
+    df_mapa_base = df_mun[df_mun['año'] == año_sel].groupby('depto_nom')['Total'].sum().reset_index()
     df_mapa_base.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
     df_mapa_base['Padre'] = "Colombia"
+
+elif escala_sel == "💧 Cuencas Hidrográficas":
+    if 'cuenca' not in df_mun.columns: df_mun['cuenca'] = "Cuenca Genérica"
+    lista_cuencas = df_mun['cuenca'].unique().tolist()
+    cuenca_sel = st.sidebar.selectbox("Seleccione la Cuenca:", lista_cuencas)
+    
+    df_base = df_mun[df_mun['cuenca'] == cuenca_sel]
+    filtro_zona = cuenca_sel
+    titulo_terr = cuenca_sel
+    
+    col_anio = 'año' if 'año' in df_base.columns else 'Año'
+    
+    # Agrupamos correctamente para que la gráfica tenga datos
+    df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
+    años_hist = df_hist[col_anio].values
+    pob_hist = df_hist['Total'].values
+    
+    df_mapa_base = df_base[df_base[col_anio] == año_sel].groupby('municipio')['Total'].sum().reset_index()
+    df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
+    df_mapa_base['Padre'] = cuenca_sel
+
+elif escala_sel == "Municipal (Departamentos)":
+    depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
+    mpios_depto = df_mun[df_mun['depto_nom'] == depto_sel]
+    municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_depto['municipio'].unique()))
+    
+    df_base = mpios_depto[mpios_depto['municipio'] == municipio_sel]
+    filtro_zona = municipio_sel
+    titulo_terr = f"{municipio_sel} ({depto_sel})"
+    
+    col_anio = 'año' if 'año' in df_base.columns else 'Año'
+    df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
+    años_hist = df_hist[col_anio].values
+    pob_hist = df_hist['Total'].values
+    
+    df_mapa_base = df_base.copy()
+    df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
+
+elif escala_sel == "Municipal (Regiones)":
+    region_sel = st.sidebar.selectbox("Macroregión:", sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"]))
+    mpios_reg = df_mun[df_mun['Macroregion'] == region_sel]
+    municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_reg['municipio'].unique()))
+    
+    df_base = mpios_reg[mpios_reg['municipio'] == municipio_sel]
+    filtro_zona = municipio_sel
+    titulo_terr = f"{municipio_sel} ({region_sel})"
+    
+    col_anio = 'año' if 'año' in df_base.columns else 'Año'
+    df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
+    años_hist = df_hist[col_anio].values
+    pob_hist = df_hist['Total'].values
+    
+    df_mapa_base = df_base.copy()
+    df_mapa_base.rename(columns={'municipio': 'Territorio', 'Macroregion': 'Padre'}, inplace=True)
 
 elif escala_sel == "Regional (Macroregiones)":
     regiones_list = sorted(df_mun['Macroregion'].unique())
@@ -318,41 +384,6 @@ elif escala_sel == "Regional (Macroregiones)":
     titulo_terr = f"Región {reg_sel}"
     df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
     df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
-
-elif escala_sel == "💧 Cuencas Hidrográficas":
-    # --- ESCUDO: Si no existe la columna en el Excel, la creamos vacía ---
-    if 'cuenca' not in df_mun.columns:
-        df_mun['cuenca'] = "Cuenca Genérica (Añadir a Excel)"
-        
-    lista_cuencas = df_mun['cuenca'].unique().tolist()
-    cuenca_sel = st.sidebar.selectbox("Seleccione la Cuenca:", lista_cuencas)
-    
-    df_base = df_mun[df_mun['cuenca'] == cuenca_sel]
-    filtro_zona = cuenca_sel
-    titulo_terr = cuenca_sel
-    
-    df_mapa_base = df_base[df_base['año'] == año_sel].groupby('municipio')['Total'].sum().reset_index()
-    df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
-
-elif escala_sel in ["Departamental", "Municipal"]:
-    deptos = sorted(df_mun['depto_nom'].dropna().unique())
-    depto_sel = st.sidebar.selectbox("Departamento", deptos)
-    
-    if escala_sel == "Departamental":
-        df_terr = df_mun[df_mun['depto_nom'] == depto_sel].groupby('año')['Total'].sum().reset_index()
-        titulo_terr = depto_sel
-        df_mapa_base = df_mun[df_mun['depto_nom'] == depto_sel].groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
-        df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
-    else:
-        mpios = sorted(df_mun[df_mun['depto_nom'] == depto_sel]['municipio'].dropna().unique())
-        mpio_sel = st.sidebar.selectbox("Municipio", mpios)
-        df_terr = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)].groupby('año')['Total'].sum().reset_index()
-        titulo_terr = f"{mpio_sel}, {depto_sel}"
-        df_mapa_base = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['municipio'] == mpio_sel)].groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
-        df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
-        
-    años_hist = df_terr['año'].values
-    pob_hist = df_terr['Total'].values
 
 elif escala_sel == "Veredal (Antioquia)":
     # 1. Agregamos la opción "TODOS" al principio de la lista
