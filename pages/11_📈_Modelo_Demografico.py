@@ -631,7 +631,9 @@ with tab_opt:
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR)
 # ==========================================
 with tab_mapas:
-    st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_terr} ({año_sel})")
+    # Usamos un pequeño seguro por si titulo_terr no existe en alguna escala
+    titulo_tab_mapa = titulo_terr if 'titulo_terr' in locals() else "Territorio Seleccionado"
+    st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_tab_mapa} ({año_sel})")
     
     if escala_sel != "Veredal (Antioquia)":
         area_mapa = st.radio("Filtro de Zona Geográfica:", ["Total", "Urbano", "Rural"], horizontal=True)
@@ -644,10 +646,22 @@ with tab_mapas:
     else:
         df_mapa_año = df_mapa_base.copy()
 
-    if area_mapa == "Total":
-        df_mapa_plot = df_mapa_año.groupby(['Territorio', 'Padre'])['Total'].sum().reset_index()
+    # --- ESCUDO CONTRA BASES DE DATOS VACÍAS (Global/Cuencas) ---
+    if df_mapa_año.empty:
+        df_mapa_plot = pd.DataFrame()
     else:
-        df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
+        if area_mapa == "Total":
+            # Agrupamos SOLO por las columnas que realmente existan
+            cols_agrupar = [c for c in ['Territorio', 'Padre'] if c in df_mapa_año.columns]
+            if cols_agrupar:
+                df_mapa_plot = df_mapa_año.groupby(cols_agrupar)['Total'].sum().reset_index()
+            else:
+                df_mapa_plot = df_mapa_año.copy()
+        else:
+            if 'area_geografica' in df_mapa_año.columns:
+                df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
+            else:
+                df_mapa_plot = df_mapa_año.copy()
 
     col_map1, col_map2 = st.columns([1, 3])
     
@@ -658,9 +672,9 @@ with tab_mapas:
             sugerencia_prop = "properties.NOMBRE_VER"
             sugerencia_padre = "properties.NOMB_MPIO"
         else: 
-            sugerencia_geo = "mgn_municipios_optimizado.geojson" # Asegúrate de que este sea tu nombre de archivo
+            sugerencia_geo = "mgn_municipios_optimizado.geojson"
             sugerencia_prop = "properties.MPIO_CNMBR"
-            sugerencia_padre = "properties.DPTO_CCDGO" # AHORA USAMOS EL CÓDIGO DANE
+            sugerencia_padre = "properties.DPTO_CCDGO"
             
         archivo_geo_input = st.text_input("Archivo en GitHub:", value=sugerencia_geo)
         prop_geo_input = st.text_input("Llave Territorio:", value=sugerencia_prop)
