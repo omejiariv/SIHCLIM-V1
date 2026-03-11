@@ -363,28 +363,24 @@ except:
 df_proj = pd.DataFrame(proyecciones)
 
 # ====================================================
-# --- AMORTIGUADOR DE ANOMALÍAS DANE (VERSIÓN UNIVERSAL) ---
-# Se aplica a los arrays finales justo antes de los modelos
+# --- AMORTIGUADOR DE ANOMALÍAS DANE (VERSIÓN DEFINITIVA) ---
 # ====================================================
-if len(pob_hist) > 3:
+if len(pob_hist) > 4:
     import numpy as np
     import pandas as pd
     
-    # Metemos los datos en un mini-dataframe temporal
-    df_clean = pd.DataFrame({'año': años_hist, 'Total': pob_hist})
-    df_clean = df_clean.sort_values('año').reset_index(drop=True)
+    df_clean = pd.DataFrame({'año': años_hist, 'Total': pob_hist}).sort_values('año').reset_index(drop=True)
     
-    # Calculamos la variación de un año a otro
-    df_clean['pct_cambio'] = df_clean['Total'].pct_change()
+    # 1. Creamos un "túnel" de normalidad usando la mediana de 5 años
+    rmed = df_clean['Total'].rolling(window=5, center=True, min_periods=1).median()
     
-    # Si la población "cae" o "sube" más de un 10% en un solo año, es un error del DANE
-    anomalias = df_clean['pct_cambio'].abs() > 0.10
+    # 2. Si el dato del DANE se desvía más del 6% de esa normalidad, lo consideramos error
+    anomalias = (df_clean['Total'] - rmed).abs() / rmed > 0.06
     
-    # Borramos ese error y trazamos una línea recta para rellenar el hueco (Interpolación)
+    # 3. Borramos el error y construimos el puente (interpolación)
     df_clean.loc[anomalias, 'Total'] = np.nan
-    df_clean['Total'] = df_clean['Total'].interpolate(method='linear')
+    df_clean['Total'] = df_clean['Total'].interpolate(method='linear').bfill().ffill()
     
-    # Devolvemos los datos ya curados y suavizados al sistema
     años_hist = df_clean['año'].values
     pob_hist = df_clean['Total'].values
 # ====================================================
