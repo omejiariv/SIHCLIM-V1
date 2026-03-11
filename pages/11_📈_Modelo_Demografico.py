@@ -327,7 +327,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
     ruta_cuencas_mun = os.path.join(RUTA_RAIZ, "data", "cuencas_mpios_proporcion.csv")
     
     if os.path.exists(ruta_cuencas_ver):
-        # =========================================================
+# =========================================================
         # MODO ALTA PRECISIÓN: CRUCE CON VEREDAS (PURA RURALIDAD)
         # =========================================================
         df_prop = pd.read_csv(ruta_cuencas_ver)
@@ -336,23 +336,25 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         
         df_prop_sel = df_prop[df_prop['Subcuenca'] == cuenca_sel].copy()
         
-        # Homologar nombres para cruzar con tu base de veredas (df_ver)
-        df_prop_sel['Vereda_upper'] = df_prop_sel['Vereda'].astype(str).str.upper().str.strip()
-        df_prop_sel['Municipio_upper'] = df_prop_sel['Municipio'].astype(str).str.upper().str.strip()
+        # --- BLINDAJE ORTOGRÁFICO (Sin tildes ni espacios extra) ---
+        def limpiar_texto(columna):
+            return columna.astype(str).str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8').str.upper().str.strip()
+            
+        df_prop_sel['Vereda_upper'] = limpiar_texto(df_prop_sel['Vereda'])
+        df_prop_sel['Municipio_upper'] = limpiar_texto(df_prop_sel['Municipio'])
         
         df_ver_temp = df_ver.copy()
-        df_ver_temp['Vereda_upper'] = df_ver_temp['Vereda'].astype(str).str.upper().str.strip()
-        df_ver_temp['Municipio_upper'] = df_ver_temp['Municipio'].astype(str).str.upper().str.strip()
+        df_ver_temp['Vereda_upper'] = limpiar_texto(df_ver_temp['Vereda'])
+        df_ver_temp['Municipio_upper'] = limpiar_texto(df_ver_temp['Municipio'])
         df_ver_temp['Poblacion_hab'] = df_ver_temp['Poblacion_hab'].fillna(0)
         
         # 1. Cruzar Veredas base con la cuenca
         df_cruce_ver = pd.merge(df_ver_temp, df_prop_sel, on=['Vereda_upper', 'Municipio_upper'], how='inner')
         df_cruce_ver['Pob_en_cuenca'] = df_cruce_ver['Poblacion_hab'] * (df_cruce_ver['Porcentaje'] / 100.0)
         
-        # 2. Agrupar por municipio para saber la cuota rural que aporta cada uno a la cuenca
+        # 2. Agrupar por municipio
         aporte_mpio = df_cruce_ver.groupby('Municipio_upper')['Pob_en_cuenca'].sum().reset_index()
-        total_rural_mpio = df_ver_temp.groupby('Municipio_upper')['Poblacion_hab'].sum().reset_index()
-        total_rural_mpio.rename(columns={'Poblacion_hab': 'Pob_Total_Rural'}, inplace=True)
+        total_rural_mpio = df_ver_temp.groupby('Municipio_upper')['Poblacion_hab
         
         # 3. Calcular el Ratio Real (Qué % de la ruralidad del municipio está en la cuenca)
         ratios_mpio = pd.merge(aporte_mpio, total_rural_mpio, on='Municipio_upper')
