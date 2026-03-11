@@ -196,29 +196,8 @@ def cargar_datos_limpios():
         df_mun['depto_nom'] = df_mun['depto_nom'].str.title()
         df_mun['municipio'] = df_mun['municipio'].str.title()
 
-        # ===================================================================
-        # --- MAGIA 2: SANACIÓN ESTRUCTURAL DEL EMPALME CENSAL 2005-2020 ---
-        # Curamos la base de datos maestra para que todas las gráficas salgan perfectas
-        # ===================================================================
-        df_mun['año'] = pd.to_numeric(df_mun['año'], errors='coerce')
         
-        def reparar_empalme(grupo):
-            grupo = grupo.sort_values('año')
-            # Si el municipio tiene datos del Censo 2005 y del 2020...
-            if 2005 in grupo['año'].values and 2020 in grupo['año'].values:
-                # Borramos los datos desfasados entre 2006 y 2019
-                mask = (grupo['año'] >= 2006) & (grupo['año'] <= 2019)
-                grupo.loc[mask, 'Total'] = np.nan
-                # Trazamos el puente perfecto
-                grupo['Total'] = grupo['Total'].interpolate(method='linear').ffill().bfill()
-            return grupo
-            
-        # Aplicamos la cura a cada municipio (separando urbano y rural)
-        if 'dp_mp' in df_mun.columns and 'area_geografica' in df_mun.columns:
-            df_mun = df_mun.groupby(['dp_mp', 'area_geografica'], group_keys=False).apply(reparar_empalme)
-        # ===================================================================        
-        
-        # MAGIA 3: Asignar Región con excepciones (Urabá)
+        # MAGIA 2: Asignar Región con excepciones (Urabá)
         def asignar_region(fila):
             uraba_caribe = ["TURBO", "NECOCLI", "SAN JUAN DE URABA", "ARBOLETES", "SAN PEDRO DE URABA", "APARTADO", "CAREPA", "CHIGORODO", "MUTATA"]
             if normalizar_texto(fila['municipio']) in [normalizar_texto(m) for m in uraba_caribe]:
@@ -356,26 +335,49 @@ elif escala_sel == "Veredal (Antioquia)":
 x_hist = np.array(años_hist, dtype=float)
 y_hist = np.array(pob_hist, dtype=float)
 
+# =================================================================
+# --- AISLAMIENTO ESTRUCTURAL PARA EL MODELO MATEMÁTICO ---
+# Mantenemos todos los puntos para la gráfica (Real), pero entrenamos el 
+# modelo SOLO con la nueva realidad post-Censo (2018 en adelante)
+# =================================================================
+mask_train = x_hist >= 2018
+
+# Si tenemos suficientes datos de la nueva serie (ej. 4 datos o más), los usamos en exclusiva
+if sum(mask_train) >= 4:
+    x_train = x_hist[mask_train]
+    y_train = y_hist[mask_train]
+else:
+    # Si por alguna razón no hay datos suficientes, usamos todo por seguridad
+    x_train = x_hist
+    y_train = y_hist
+# =================================================================
+
 año_maximo = int(max(df_nac['Año'].max(), 2100))
 x_proj = np.arange(1950, año_maximo + 1, 1) 
 
+# 1. Llenamos los puntos históricos reales (Azules) con TODO el histórico
 proyecciones = {'Año': x_proj, 'Real': [np.nan]*len(x_proj)}
 for i, año in enumerate(x_proj):
     if año in x_hist: proyecciones['Real'][i] = y_hist[np.where(x_hist == año)[0][0]]
 
+# 2. Entrenamos los modelos (Líneas de colores) SOLO con los datos recientes (x_train, y_train)
 try:
-    popt_lin, _ = curve_fit(modelo_lineal, x_hist, y_hist)
+    popt_lin, _ = curve_fit(modelo_lineal, x_train, y_train)
     proyecciones['Lineal'] = np.maximum(0, modelo_lineal(x_proj, *popt_lin))
-except: proyecciones['Lineal'] = [np.nan]*len(x_proj)
+except: 
+    proyecciones['Lineal'] = [np.nan]*len(x_proj)
 
 try:
-    popt_exp, _ = curve_fit(modelo_exponencial, x_hist, y_hist, p0=[max(1, y_hist[0]), 0.01], maxfev=10000)
+    # El p0 usa y_train[0] para tomar la referencia de la nueva serie
+    popt_exp, _ = curve_fit(modelo_exponencial, x_train, y_train, p0=[max(1, y_train[0]), 0.01], maxfev=10000)
     proyecciones['Exponencial'] = modelo_exponencial(x_proj, *popt_exp)
-except: proyecciones['Exponencial'] = proyecciones['Lineal']
+except: 
+    proyecciones['Exponencial'] = proyecciones['Lineal']
 
 try:
-    K_guess = max(1, max(y_hist)) * 1.5
-    popt_log, _ = curve_fit(modelo_logistico, x_hist, y_hist, p0=[K_guess, 0.05, 2020], maxfev=10000)
+    K_guess = max(1, max(y_train)) * 1.5
+    # Forzamos al modelo logístico a centrarse cerca de los años recientes (ej. 2020)
+    popt_log, _ = curve_fit(modelo_logistico, x_train, y_train, p0=[K_guess, 0.05, 2020], maxfev=10000)
     proyecciones['Logístico'] = modelo_logistico(x_proj, *popt_log)
     param_K = popt_log[0]
 except: 
