@@ -653,7 +653,9 @@ with tab_mapas:
         else:
             st.warning(f"⚠️ No se encontró **{archivo_geo_input}** o no hay datos para esta vista.")
             
-    st.dataframe(df_mapa_plot[['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa']].sort_values('Total', ascending=False), use_container_width=True)
+    # Mostramos solo las columnas que realmente existan en la tabla actual
+    cols_existentes = [c for c in ['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa'] if c in df_mapa_plot.columns]
+    st.dataframe(df_mapa_plot[cols_existentes].sort_values('Total', ascending=False), use_container_width=True)
 
 # ==========================================
 # PESTAÑA 3: RANKINGS Y DINÁMICA HISTÓRICA (Top 15 y 2005-2035)
