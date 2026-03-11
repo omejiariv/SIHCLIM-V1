@@ -296,6 +296,25 @@ elif escala_sel == "Veredal (Antioquia)":
         # Sumamos toda la población rural de Antioquia como base histórica general
         df_rural_ant = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['area_geografica'] == 'rural')]
         df_hist_rural = df_rural_ant.groupby('año')['Total'].sum().reset_index()
+
+        # --- NUEVO: AMORTIGUADOR DE ANOMALÍAS DANE ---
+        # 1. Ordenar por año para garantizar la secuencia
+        df_hist = df_hist.sort_values('año').reset_index(drop=True)
+        
+        if len(df_hist) > 3:
+            # 2. Calcular el cambio porcentual año a año
+            df_hist['pct_cambio'] = df_hist['Total'].pct_change()
+            
+            # 3. Detectar caídas o subidas irreales (mayores al 10% en un solo año)
+            # En demografía real, una región no pierde el 10% de su población en un año (salvo guerra/desastre)
+            anomalias = df_hist['pct_cambio'].abs() > 0.10
+            
+            # 4. Convertir esas anomalías en "vacíos" y rellenarlos interpolando la línea
+            df_hist.loc[anomalias, 'Total'] = np.nan
+            df_hist['Total'] = df_hist['Total'].interpolate(method='linear')
+            
+            # Limpiar columna auxiliar
+            df_hist = df_hist.drop(columns=['pct_cambio'])        
         
         años_hist = df_hist_rural['año'].values
         pob_hist = df_hist_rural['Total'].values
