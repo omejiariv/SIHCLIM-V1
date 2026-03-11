@@ -1040,11 +1040,14 @@ with tab_matriz:
             # ==========================================
             # 1. CARGA DE BASE DE DATOS ÚNICA (LA SOLUCIÓN AL ERROR)
             # ==========================================
-            df_mun = pd.read_csv("data/df_Mpios_1985_2035.csv") 
-            col_anio = 'año' if 'año' in df_mun.columns else 'Año'
+            # Usamos la base que ya está cargada en la memoria de tu app
+            df_mun_memoria = df_mun.copy() 
+            col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
             
-            df_mun_puro = df_mun[df_mun['area_geografica'].str.lower() == 'total'].copy()
-            if df_mun_puro.empty: df_mun_puro = df_mun.copy()
+            # Filtramos solo el 'Total' para no duplicar datos urbanos/rurales
+            df_mun_puro = df_mun_memoria[df_mun_memoria['area_geografica'].str.lower() == 'total'].copy()
+            if df_mun_puro.empty: 
+                df_mun_puro = df_mun_memoria.copy()
 
             # ==========================================
             # 2. ESCALA NACIONAL (Construida sumando municipios)
