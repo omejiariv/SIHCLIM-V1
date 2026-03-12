@@ -257,20 +257,27 @@ def modelo_logistico(x, K, r, x0): return K / (1 + np.exp(-r * (x - x0)))
 
 # --- 3. CONFIGURACIÓN Y FILTROS LATERALES ---
 st.sidebar.header("⚙️ 1. Selección Territorial")
+
+# 1. LA LISTA MAESTRA (Sincronizada con el Solver)
 escala_sel = st.sidebar.radio("Nivel de Análisis:", [
     "🌍 Global y Suramérica",
     "🇨🇴 Nacional (Colombia)", 
-    "Departamental", 
+    "🏛️ Departamental (Colombia)", 
+    "🧩 Regional (Macroregiones)",
     "💧 Cuencas Hidrográficas", 
-    "Municipal (Regiones)", 
-    "Municipal (Departamentos)", 
-    "Veredal (Antioquia)"
+    "🏢 Municipal (Regiones)", 
+    "🏢 Municipal (Departamentos)", 
+    "🌿 Veredal (Antioquia)"
 ])
+
 años_hist, pob_hist = [], []
 df_mapa_base = pd.DataFrame()
 
+# ==========================================================
+# 2. LOS MOTORES LÓGICOS (Uno para cada elemento de la lista)
+# ==========================================================
+
 if escala_sel == "🌍 Global y Suramérica":
-    # Añadimos Colombia (ONU) a las opciones
     opciones_hist = ["Mundo", "Suramérica", "Colombia (DANE)", "Colombia (ONU)", "Antioquia", "AMVA", "Medellín"]
     contexto_sel = st.sidebar.selectbox("Seleccione la región histórica:", opciones_hist)
     
@@ -278,7 +285,6 @@ if escala_sel == "🌍 Global y Suramérica":
     titulo_terr = contexto_sel
     
     if not df_global.empty:
-        # El diccionario maestro con los nombres EXACTOS de tus columnas
         diccionario_columnas = {
             "Mundo": "Pob_mundial", 
             "Suramérica": "Pob_suramerica", 
@@ -290,7 +296,6 @@ if escala_sel == "🌍 Global y Suramérica":
         }
         col_objetivo = diccionario_columnas[contexto_sel]
         
-        # Filtramos solo los años que tienen datos para esa columna
         df_temp = df_global.dropna(subset=['Año', col_objetivo])
         años_hist = df_temp['Año'].values
         pob_hist = df_temp[col_objetivo].values
@@ -306,7 +311,6 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
     
     col_anio = 'año' if 'año' in df_base.columns else 'Año'
     
-    # Unificamos la búsqueda de la columna de población
     if 'Total' in df_base.columns: df_base['Pob_Calc'] = df_base['Total']
     elif 'Population' in df_base.columns: df_base['Pob_Calc'] = df_base['Population']
     elif 'Poblacion' in df_base.columns: df_base['Pob_Calc'] = df_base['Poblacion']
@@ -315,9 +319,8 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
     else:
         df_base['Pob_Calc'] = df_base.iloc[:, 1]
         
-    # --- LA CURA AL ZIG-ZAG: Agrupar y Ordenar Cronológicamente ---
     df_hist = df_base.groupby(col_anio)['Pob_Calc'].sum().reset_index()
-    df_hist = df_hist.sort_values(by=col_anio) # <-- Esto evita que la línea se devuelva
+    df_hist = df_hist.sort_values(by=col_anio) 
     
     años_hist = df_hist[col_anio].values
     pob_hist = df_hist['Pob_Calc'].values
@@ -326,22 +329,50 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
     df_mapa_base.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
     df_mapa_base['Padre'] = "Colombia"
 
+# --- NUEVO MOTOR: DEPARTAMENTAL ---
+elif escala_sel == "🏛️ Departamental (Colombia)":
+    depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
+    df_base = df_mun[df_mun['depto_nom'] == depto_sel]
+    
+    filtro_zona = depto_sel
+    titulo_terr = depto_sel
+    
+    col_anio = 'año' if 'año' in df_base.columns else 'Año'
+    df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
+    df_hist = df_hist.sort_values(by=col_anio)
+    
+    años_hist = df_hist[col_anio].values
+    pob_hist = df_hist['Total'].values
+    
+    df_mapa_base = df_base.groupby(['municipio', col_anio])['Total'].sum().reset_index()
+    df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
+    df_mapa_base['Padre'] = depto_sel
+
+elif escala_sel == "🧩 Regional (Macroregiones)":
+    regiones_list = sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"])
+    reg_sel = st.sidebar.selectbox("Seleccione la Macroregión:", regiones_list)
+    
+    filtro_zona = reg_sel
+    titulo_terr = f"Región {reg_sel}"
+    
+    df_terr = df_mun[df_mun['Macroregion'] == reg_sel].groupby('año')['Total'].sum().reset_index()
+    años_hist = df_terr['año'].values
+    pob_hist = df_terr['Total'].values
+    
+    df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['municipio', 'depto_nom', 'año'])['Total'].sum().reset_index()
+    df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
+
 elif escala_sel == "💧 Cuencas Hidrográficas":
-    # 1. Rutas de los archivos (Le damos prioridad al de Veredas)
     ruta_cuencas_ver = os.path.join(RUTA_RAIZ, "data", "cuencas_veredas_proporcion.csv")
     ruta_cuencas_mun = os.path.join(RUTA_RAIZ, "data", "cuencas_mpios_proporcion.csv")
     
     if os.path.exists(ruta_cuencas_ver):
-        # =========================================================
-        # MODO ALTA PRECISIÓN: CRUCE CON VEREDAS (PURA RURALIDAD)
-        # =========================================================
         df_prop = pd.read_csv(ruta_cuencas_ver)
         lista_cuencas = sorted(df_prop['Subcuenca'].dropna().unique())
         cuenca_sel = st.sidebar.selectbox("Seleccione la Subcuenca (Alta Precisión):", lista_cuencas)
         
         df_prop_sel = df_prop[df_prop['Subcuenca'] == cuenca_sel].copy()
         
-        # --- BLINDAJE ORTOGRÁFICO (Sin tildes ni espacios extra) ---
         def limpiar_texto(columna):
             return columna.astype(str).str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8').str.upper().str.strip()
             
@@ -353,21 +384,17 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         df_ver_temp['Municipio_upper'] = limpiar_texto(df_ver_temp['Municipio'])
         df_ver_temp['Poblacion_hab'] = df_ver_temp['Poblacion_hab'].fillna(0)
         
-        # 1. Cruzar Veredas base con la cuenca
         df_cruce_ver = pd.merge(df_ver_temp, df_prop_sel, on=['Vereda_upper', 'Municipio_upper'], how='inner')
         df_cruce_ver['Pob_en_cuenca'] = df_cruce_ver['Poblacion_hab'] * (df_cruce_ver['Porcentaje'] / 100.0)
         
-        # 2. Agrupar por municipio
         aporte_mpio = df_cruce_ver.groupby('Municipio_upper')['Pob_en_cuenca'].sum().reset_index()
         total_rural_mpio = df_ver_temp.groupby('Municipio_upper')['Poblacion_hab'].sum().reset_index()
         total_rural_mpio.rename(columns={'Poblacion_hab': 'Pob_Total_Rural'}, inplace=True)
         
-        # 3. Calcular el Ratio Real
         ratios_mpio = pd.merge(aporte_mpio, total_rural_mpio, on='Municipio_upper')
         ratios_mpio['Ratio_Cuenca'] = ratios_mpio['Pob_en_cuenca'] / ratios_mpio['Pob_Total_Rural']
         ratios_mpio['Ratio_Cuenca'] = ratios_mpio['Ratio_Cuenca'].fillna(0)
         
-        # 4. BLINDAJE DE ÁREA RURAL (Capturamos todos los nombres que usa el DANE)
         terminos_rurales = ['rural', 'resto', 'centros poblados y rural disperso', 'centro poblado y rural disperso']
         mask_rural = limpiar_texto(df_mun['area_geografica']).str.lower().isin(terminos_rurales)
         
@@ -376,34 +403,27 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         
         df_base = pd.merge(df_mun_rural, ratios_mpio, on='Municipio_upper', how='inner')
         df_base['Total_Cuenca'] = df_base['Total'] * df_base['Ratio_Cuenca']        
+        
         filtro_zona = cuenca_sel
         titulo_terr = f"{cuenca_sel}"
         
         col_anio = 'año' if 'año' in df_base.columns else 'Año'
         
-        # 5. Generar la historia perfecta y depurada
         df_hist = df_base.groupby(col_anio)['Total_Cuenca'].sum().reset_index()
         años_hist = df_hist[col_anio].values
         pob_hist = df_hist['Total_Cuenca'].values
         
-        # 6. Base para el mapa (Muestra el aporte de cada vereda)
         df_mapa_base = df_cruce_ver.copy()
-        # Aseguramos que las columnas se llamen exactamente como la app espera (Territorio y Padre)
         df_mapa_base.rename(columns={
             'Vereda_x': 'Territorio', 
-            'Vereda': 'Territorio', # Por si cruza con un sufijo diferente
+            'Vereda': 'Territorio', 
             'Municipio_x': 'Padre', 
             'Municipio': 'Padre',
             'Pob_en_cuenca': 'Total'
         }, inplace=True)
-        
-        # Eliminar posibles columnas duplicadas por el cruce
         df_mapa_base = df_mapa_base.loc[:, ~df_mapa_base.columns.duplicated()]
 
     elif os.path.exists(ruta_cuencas_mun):
-        # =========================================================
-        # MODO ESTÁNDAR: CRUCE CON MUNICIPIOS (FALLBACK)
-        # =========================================================
         df_prop = pd.read_csv(ruta_cuencas_mun)
         lista_cuencas = sorted(df_prop['Subcuenca'].dropna().unique())
         cuenca_sel = st.sidebar.selectbox("Seleccione la Subcuenca:", lista_cuencas)
@@ -436,25 +456,9 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         st.error("🚨 Ejecuta el cruce espacial en el Generador para ver las Cuencas.")
         años_hist, pob_hist = np.array([]), np.array([])
         df_mapa_base = pd.DataFrame()
+        filtro_zona = "Error Cuencas"
     
-elif escala_sel == "Municipal (Departamentos)":
-    depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
-    mpios_depto = df_mun[df_mun['depto_nom'] == depto_sel]
-    municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_depto['municipio'].unique()))
-    
-    df_base = mpios_depto[mpios_depto['municipio'] == municipio_sel]
-    filtro_zona = municipio_sel
-    titulo_terr = f"{municipio_sel} ({depto_sel})"
-    
-    col_anio = 'año' if 'año' in df_base.columns else 'Año'
-    df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
-    años_hist = df_hist[col_anio].values
-    pob_hist = df_hist['Total'].values
-    
-    df_mapa_base = df_base.copy()
-    df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
-
-elif escala_sel == "Municipal (Regiones)":
+elif escala_sel == "🏢 Municipal (Regiones)":
     region_sel = st.sidebar.selectbox("Macroregión:", sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"]))
     mpios_reg = df_mun[df_mun['Macroregion'] == region_sel]
     municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_reg['municipio'].unique()))
@@ -471,38 +475,43 @@ elif escala_sel == "Municipal (Regiones)":
     df_mapa_base = df_base.copy()
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'Macroregion': 'Padre'}, inplace=True)
 
-elif escala_sel == "Regional (Macroregiones)":
-    regiones_list = sorted(df_mun['Macroregion'].unique())
-    reg_sel = st.sidebar.selectbox("Seleccione la Macroregión", regiones_list)
-    df_terr = df_mun[df_mun['Macroregion'] == reg_sel].groupby('año')['Total'].sum().reset_index()
-    años_hist = df_terr['año'].values
-    pob_hist = df_terr['Total'].values
-    titulo_terr = f"Región {reg_sel}"
-    df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['municipio', 'depto_nom', 'año', 'area_geografica'])['Total'].sum().reset_index()
-    df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
+elif escala_sel == "🏢 Municipal (Departamentos)":
+    depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
+    mpios_depto = df_mun[df_mun['depto_nom'] == depto_sel]
+    municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_depto['municipio'].unique()))
+    
+    df_base = mpios_depto[mpios_depto['municipio'] == municipio_sel]
+    filtro_zona = municipio_sel
+    titulo_terr = f"{municipio_sel} ({depto_sel})"
+    
+    col_anio = 'año' if 'año' in df_base.columns else 'Año'
+    df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
+    años_hist = df_hist[col_anio].values
+    pob_hist = df_hist['Total'].values
+    
+    df_mapa_base = df_base.copy()
+    df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
-elif escala_sel == "Veredal (Antioquia)":
-    # 1. Agregamos la opción "TODOS" al principio de la lista
+elif escala_sel == "🌿 Veredal (Antioquia)":
     mpios_veredas = ["TODOS (Ver Mapa Completo)"] + sorted(df_ver['Municipio'].dropna().unique())
     mpio_sel = st.sidebar.selectbox("Municipio (Antioquia)", mpios_veredas)
     
     if mpio_sel == "TODOS (Ver Mapa Completo)":
-        # Sumamos toda la población rural de Antioquia como base histórica general
         df_rural_ant = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['area_geografica'] == 'rural')]
         df_hist_rural = df_rural_ant.groupby('año')['Total'].sum().reset_index()
 
         años_hist = df_hist_rural['año'].values
         pob_hist = df_hist_rural['Total'].values
+        
+        filtro_zona = "Antioquia"
         titulo_terr = "Todas las Veredas (Región Disponible)"
         
-        # Inyectamos la tabla completa de veredas al mapa
         df_mapa_base = df_ver.copy()
         df_mapa_base = df_mapa_base.rename(columns={'Vereda': 'Territorio', 'Municipio': 'Padre', 'Poblacion_hab': 'Total'})
         df_mapa_base['año'] = 2020 
         df_mapa_base['area_geografica'] = 'rural'
         
     else:
-        # El código original para un solo municipio
         veredas_lista = sorted(df_ver[df_ver['Municipio'] == mpio_sel]['Vereda'].dropna().unique())
         vereda_sel = st.sidebar.selectbox("Vereda", veredas_lista)
         
@@ -517,6 +526,8 @@ elif escala_sel == "Veredal (Antioquia)":
         
         años_hist = df_hist_rural['año'].values
         pob_hist = df_hist_rural['Total'].values * ratio_vereda
+        
+        filtro_zona = vereda_sel
         titulo_terr = f"Vereda {vereda_sel} ({mpio_sel})"
         
         df_mapa_base = df_mpio_veredas.copy()
@@ -524,6 +535,7 @@ elif escala_sel == "Veredal (Antioquia)":
         df_mapa_base['año'] = 2020 
         df_mapa_base['area_geografica'] = 'rural'
 
+# Escudo final de seguridad
 if 'titulo_terr' not in locals():
     titulo_terr = filtro_zona if 'filtro_zona' in locals() else "Territorio Seleccionado"
     
