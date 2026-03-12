@@ -394,10 +394,13 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         df_prop_sel['Vereda_upper'] = limpiar_texto(df_prop_sel['Vereda'])
         df_prop_sel['Municipio_upper'] = limpiar_texto(df_prop_sel['Municipio'])
         
+        # --- BLOQUE CORREGIDO PARA VEREDAS ---
         df_ver_temp = df_ver.copy()
         df_ver_temp['Vereda_upper'] = limpiar_texto(df_ver_temp['Vereda'])
         df_ver_temp['Municipio_upper'] = limpiar_texto(df_ver_temp['Municipio'])
-        df_ver_temp['Poblacion_hab'] = df_ver_temp['Poblacion_hab'].fillna(0)
+        
+        # ESCUDO ANTI-TEXTO: Convertimos la población a números puros obligatoriamente
+        df_ver_temp['Poblacion_hab'] = pd.to_numeric(df_ver_temp['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
         
         # 1. Cruzar Veredas base con la cuenca
         df_cruce_ver = pd.merge(df_ver_temp, df_prop_sel, on=['Vereda_upper', 'Municipio_upper'], how='inner')
@@ -735,7 +738,10 @@ with tab_modelos:
             
         if pd.isna(pob_modelo): pob_modelo = df_proj[df_proj['Año'] == año_obj]['Logístico'].values[0]
         
-        df_fnac = df_nac[df_nac['Año'] == año_obj].copy()
+        # --- BLOQUE CORREGIDO PARA LA PIRÁMIDE ---
+        # Detectamos automáticamente si la columna está en mayúscula o minúscula
+        col_anio_pyr2 = 'año' if 'año' in df_nac.columns else 'Año'
+        df_fnac = df_nac[df_nac[col_anio_pyr2] == año_obj].copy()
         pob_nacional_tot = df_fnac['Hombres'].sum() + df_fnac['Mujeres'].sum()
         df_fnac['Prop_H'] = df_fnac['Hombres'] / pob_nacional_tot
         df_fnac['Prop_M'] = df_fnac['Mujeres'] / pob_nacional_tot
