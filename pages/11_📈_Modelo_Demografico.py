@@ -835,14 +835,14 @@ def renderizar_piramide(año_obj):
         ph_metrica_muj.metric("Mujeres", f"{int(total_muj):,}".replace(",", "."), f"{(total_muj/pob_modelo)*100:.1f}%")
         ph_metrica_ind.metric("Índ. de Masculinidad", f"{ind_masculinidad:.1f}", "Hombres por cada 100 mujeres")
 
-    # === BOTÓN DE ENCENDIDO DE LA PIRÁMIDE Y ANIMACIÓN ===
-    if iniciar_animacion:
-        for a in años_disp:
-            if a >= 1985: # Dibujar desde que hay datos censales
-                renderizar_piramide(a)
-                time.sleep(velocidad_animacion)
-    else:
-        renderizar_piramide(año_sel)
+# === BOTÓN DE ENCENDIDO DE LA PIRÁMIDE Y ANIMACIÓN ===
+if iniciar_animacion:
+    for a in años_disp:
+        if a >= 1985: # Dibujar desde que hay datos censales
+            renderizar_piramide(a)
+            time.sleep(velocidad_animacion)
+else:
+    renderizar_piramide(año_sel)
         
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
