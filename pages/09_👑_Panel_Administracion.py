@@ -1153,7 +1153,7 @@ with tabs[14]:
                             key: str = st.secrets["SUPABASE_KEY"]
                             supabase: Client = create_client(url, key)
                             
-                            nombre_bucket = "archivos_demograficos" # <-- ¡CAMBIA ESTO por el nombre de tu bucket!
+                            nombre_bucket = "sihcli_maestros" # <-- ¡CAMBIA ESTO por el nombre de tu bucket!
                             nombre_archivo_destino = "Poblacion_Colombia_Maestra.parquet"
                             
                             # Volvemos a poner el puntero del archivo al inicio
@@ -1347,6 +1347,7 @@ with tabs[15]:
                 
         except Exception as e:
             st.error(f"No se pudo conectar con el explorador. Detalle: {e}")
+
 
 
 
