@@ -241,7 +241,7 @@ def cargar_datos_limpios():
         # -------------------------------------------------------
         df_nac_temp = df_mun[df_mun['area_geografica'] == 'total']
         cols_agrupar_nac = ['Total', 'Hombres', 'Mujeres'] + cols_poblacion
-        df_nac = df_nac_temp.groupby('año')[cols_agrupar_nac].sum().reset_index()
+        df_nac = df_mun.groupby(['año', 'area_geografica'])[cols_agrupar_nac].sum().reset_index()
 
         # -------------------------------------------------------
         # C. Crear df_global (Fusión Dinámica + Histórica)
@@ -348,7 +348,7 @@ if escala_sel == "🌍 Global y Suramérica":
     df_mapa_base = pd.DataFrame()
 
 elif escala_sel == "🇨🇴 Nacional (Colombia)":
-    df_base = df_nac.copy()
+    df_base = df_nac[df_nac['area_geografica'] == 'total'].copy()
     filtro_zona = "Colombia"
     titulo_terr = "Colombia"
     
@@ -773,7 +773,7 @@ def renderizar_piramide(año_obj):
             return
 
         col_anio_pyr2 = 'año' if 'año' in df_nac.columns else 'Año'
-        df_fnac = df_nac[df_nac[col_anio_pyr2] == año_obj].copy()
+        df_fnac = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'] == zona_piramide.lower())].copy()
         
         if df_fnac.empty:
             ph_grafico_pir.warning("No hay datos base nacionales para este año.")
