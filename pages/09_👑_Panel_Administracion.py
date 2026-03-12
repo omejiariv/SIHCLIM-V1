@@ -1104,100 +1104,84 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
             except Exception as e: st.error(f"Error: {e}")
     
 # ==============================================================================
-# TAB 14: GESTIÓN DEMOGRÁFICA (ACTUALIZADA PARA MUNICIPIOS Y EDADES HASTA 100)
+# TAB 14: GESTIÓN DEMOGRÁFICA (ACTUALIZADA PARA SUBIDA A SUPABASE)
 # ==============================================================================
 with tabs[14]:
     st.header("👥 Gestión de Datos Demográficos y Poblacionales")
     st.markdown("""
-    Aquí puedes actualizar las bases de datos maestras de Población Municipal y Estructura por Edades (1950-2070).
-    **Instrucciones:** Selecciona el tipo de dato, sube tu archivo asegurándote de que tenga los encabezados exactos.
+    Aquí puedes actualizar la base de datos maestra (`.parquet`) enviándola directamente al almacenamiento en la nube (Supabase).
+    Esto nos permite superar los límites de tamaño de GitHub y centralizar la información.
     """)
-    
-    # 1. Selector del tipo de datos a cargar
-    tipo_carga = st.radio(
-        "Selecciona la base de datos a actualizar:",
-        ["📈 Población Histórica y Proyección por Municipios", "🏗️ Estructura por Edades (0 a 100 años)"],
-        horizontal=True
-    )
     
     st.divider()
     
-    # 2. Definición de Plantillas y Columnas Requeridas
-    if "Municipios" in tipo_carga:
-        cols_requeridas = ['depto_nom', 'cod_mp', 'municipio', 'area_geografica', 'año', 'Poblacion']
-        archivo_salida = "data/Pob_mpios_colombia.csv"
-        nombre_plantilla = "plantilla_mpios_colombia.csv"
-        desc_ayuda = "El archivo debe contener las columnas: depto_nom, cod_mp, municipio, area_geografica (total/urbano/rural), año y Poblacion."
-    else:
-        # Genera automáticamente la lista de columnas ['dpnom', 'año', 'area_geografica', 'sexo', '0', '1', ..., '100']
-        cols_requeridas = ['dpnom', 'año', 'area_geografica', 'sexo'] + [str(i) for i in range(101)]
-        archivo_salida = "data/Pob_sexo_edad_Colombia_1950-2070.csv"
-        nombre_plantilla = "plantilla_sexo_edad.csv"
-        desc_ayuda = "El archivo debe contener: dpnom, año, area_geografica, sexo y una columna numérica para cada edad del 0 al 100."
-
-    col_down, col_up = st.columns([1, 2])
+    col_izq, col_der = st.columns([1, 1])
     
-    # 3. Opción de Descargar Plantilla Vacía
-    with col_down:
-        st.subheader("1. Descargar Plantilla")
-        st.info(desc_ayuda)
-        
-        df_plantilla = pd.DataFrame(columns=cols_requeridas)
-        # Se genera la plantilla estándar
-        csv_plantilla = df_plantilla.to_csv(index=False).encode('utf-8')
-        
-        st.download_button(
-            label=f"📥 Descargar {nombre_plantilla}", 
-            data=csv_plantilla, 
-            file_name=nombre_plantilla, 
-            mime='text/csv', 
-            type="primary"
+    # --- COLUMNA 1: Subida del Archivo ---
+    with col_izq:
+        st.subheader("1. Subir Archivo Parquet")
+        archivo_subido = st.file_uploader(
+            "Sube tu archivo optimizado (Formato .parquet, max 100MB)", 
+            type=['parquet'],
+            help="Este archivo contiene toda la historia y proyección demográfica de Colombia."
         )
         
-    # 4. Cargador del Archivo y Previsualización
-    with col_up:
-        st.subheader("2. Cargar Datos Diligenciados")
-        archivo_subido = st.file_uploader(f"Sube tu archivo CSV o Excel para '{tipo_carga}'", type=['csv', 'xlsx'])
+    # --- COLUMNA 2: Procesamiento y Envío a Supabase ---
+    with col_der:
+        st.subheader("2. Enviar a la Nube (Supabase)")
         
         if archivo_subido is not None:
+            # 1. Validación rápida para asegurar que es legible
             try:
-                if archivo_subido.name.endswith('.csv'):
-                    # Intentar leer con punto y coma (;) que es como vienen tus archivos
-                    try:
-                        df_nuevo = pd.read_csv(archivo_subido, sep=';')
-                        if len(df_nuevo.columns) < 2:  # Si falla y lee todo en 1 columna, intenta con coma (,)
+                df_nuevo = pd.read_parquet(archivo_subido)
+                st.success(f"✅ Archivo leído correctamente: {len(df_nuevo):,} registros detectados.")
+                
+                with st.expander("👁️ Vista Previa Rápida"):
+                    st.dataframe(df_nuevo.head(5), use_container_width=True)
+                
+                # 2. Botón de Subida a Supabase
+                st.warning("⚠️ Asegúrate de que las credenciales de Supabase estén en tus secrets.")
+                
+                if st.button("🚀 Subir a Supabase Storage", type="primary", use_container_width=True):
+                    with st.spinner("Conectando con Supabase y transfiriendo el archivo..."):
+                        try:
+                            # --- CONEXIÓN A SUPABASE ---
+                            from supabase import create_client, Client
+                            
+                            # Intentamos obtener credenciales de Streamlit Secrets
+                            url: str = st.secrets["SUPABASE_URL"]
+                            key: str = st.secrets["SUPABASE_KEY"]
+                            supabase: Client = create_client(url, key)
+                            
+                            nombre_bucket = "archivos_demograficos" # <-- ¡CAMBIA ESTO por el nombre de tu bucket!
+                            nombre_archivo_destino = "Poblacion_Colombia_Maestra.parquet"
+                            
+                            # Volvemos a poner el puntero del archivo al inicio
                             archivo_subido.seek(0)
-                            df_nuevo = pd.read_csv(archivo_subido, sep=',')
-                    except:
-                        archivo_subido.seek(0)
-                        df_nuevo = pd.read_csv(archivo_subido, sep=',')
-                else:
-                    df_nuevo = pd.read_excel(archivo_subido)
-                
-                # Convertimos todas las columnas a string para evitar que '0', '1' se lean como enteros y rompan la validación
-                df_nuevo.columns = [str(col).strip() for col in df_nuevo.columns]
-                
-                columnas_faltantes = [col for col in cols_requeridas if col not in df_nuevo.columns]
-                
-                if columnas_faltantes:
-                    st.error(f"❌ Error: El archivo no tiene la estructura correcta. Faltan las siguientes columnas: {', '.join(columnas_faltantes[:10])} ... (Mostrando las primeras 10 faltantes)")
-                else:
-                    st.success(f"✅ Archivo leído correctamente: {len(df_nuevo):,} registros encontrados.")
-                    with st.expander("👁️ Vista Previa de los Datos", expanded=True):
-                        st.dataframe(df_nuevo.head(10), use_container_width=True)
-                    
-                    # 5. Botón de Guardado Final
-                    if st.button("💾 Guardar y Actualizar Base de Datos", type="primary", use_container_width=True):
-                        import os
-                        os.makedirs("data", exist_ok=True) 
-                        
-                        # Guardamos estandarizado separado por comas internamente
-                        df_nuevo.to_csv(archivo_salida, index=False) 
-                        st.balloons()
-                        st.success(f"¡Base de datos actualizada con éxito! Archivo guardado en: `{archivo_salida}`")
-                        
+                            
+                            # Leemos los bytes del archivo
+                            file_bytes = archivo_subido.read()
+                            
+                            # --- SUBIDA AL BUCKET ---
+                            # Usamos upsert=True para que sobrescriba si el archivo ya existe
+                            respuesta = supabase.storage.from_(nombre_bucket).upload(
+                                path=nombre_archivo_destino, 
+                                file=file_bytes, 
+                                file_options={"content-type": "application/vnd.apache.parquet", "upsert": "true"}
+                            )
+                            
+                            st.balloons()
+                            st.success(f"🎉 ¡Éxito! Archivo `{nombre_archivo_destino}` subido a Supabase correctamente.")
+                            
+                        except KeyError:
+                            st.error("🚨 Faltan las credenciales de Supabase en `st.secrets`.")
+                        except Exception as e:
+                            st.error(f"❌ Error al subir a Supabase: {str(e)}")
+                            
             except Exception as e:
-                st.error(f"Ocurrió un error al procesar el archivo: {e}")
+                st.error(f"❌ Ocurrió un error al leer el archivo Parquet: {e}")
+        else:
+            st.info("👆 Sube un archivo en el panel izquierdo para habilitar el envío.")
 
 # =====================================================================
 # TAB 15: MÓDULO DE CARGA ESPACIAL (SHAPEFILE -> GEOJSON -> SUPABASE)
@@ -1363,5 +1347,6 @@ with tabs[15]:
                 
         except Exception as e:
             st.error(f"No se pudo conectar con el explorador. Detalle: {e}")
+
 
 
