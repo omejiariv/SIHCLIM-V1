@@ -255,18 +255,20 @@ def cargar_datos_limpios():
         df_global_dinamico = pd.merge(df_global_dinamico, df_med, on='año', how='outer')
         df_global_dinamico = df_global_dinamico.rename(columns={'año': 'Año'})
 
-        # --- CONEXIÓN AL ARCHIVO VIEJO ---
-        df_global = pd.DataFrame()
-        # ⚠️ IMPORTANTE: Pon aquí el nombre exacto de tu archivo CSV global que está en la carpeta data/
-        ruta_global = "data/Pob_Col_Ant_Amva_Med.csv" 
+        # --- CONEXIÓN AL ARCHIVO HISTÓRICO MUNDIAL DESDE SUPABASE ---
+        url_global = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Pob_Col_Ant_Amva_Med.csv" 
         
-        if os.path.exists(ruta_global):
-            # Detecta automáticamente si es separado por coma o punto y coma
-            sep_char = ';' if ';' in open(ruta_global, encoding='utf-8').readline() else ','
-            df_global_csv = pd.read_csv(ruta_global, sep=sep_char, encoding='utf-8')
-            # Fusionamos ambos mundos
+        try:
+            # Intenta detectar si viene separado por comas o punto y coma
+            try:
+                df_global_csv = pd.read_csv(url_global, sep=';', encoding='utf-8')
+                if len(df_global_csv.columns) == 1: # Si falló y lo metió todo en una columna
+                    df_global_csv = pd.read_csv(url_global, sep=',', encoding='utf-8')
+            except:
+                df_global_csv = pd.read_csv(url_global, sep=',', encoding='utf-8')
+                
             df_global = pd.merge(df_global_csv, df_global_dinamico, on='Año', how='outer')
-        else:
+        except Exception as e:
             df_global = df_global_dinamico
 
         # =======================================================
@@ -746,44 +748,52 @@ with tab_modelos:
     iniciar_animacion = st.sidebar.button("▶️ Reproducir Evolución", type="primary", use_container_width=True)
 
     st.subheader(f"Estructura Poblacional Sintética - {titulo_terr}")
-    ph_titulo_año = st.empty()
+    
+    # Selector de comparación en la interfaz principal
+    zona_comparacion = st.radio("Selecciona el área para comparar con la Estructura Total:", ["Urbano", "Rural"], horizontal=True)
 
-    col_pir1, col_pir2 = st.columns([2, 1])
-    with col_pir1: ph_grafico_pir = st.empty()
-    with col_pir2:
-        st.markdown("### Resumen del Perfil")
-        ph_metrica_pob = st.empty()
-        ph_metrica_hom = st.empty()
-        ph_metrica_muj = st.empty()
-        ph_metrica_ind = st.empty()
-
-    df_piramide_final = pd.DataFrame() 
-
-def renderizar_piramide(año_obj):
-        # 1. Título en su contenedor correcto
-        ph_titulo_año.markdown(f"#### 📊 Estructura Poblacional Modelada ({año_obj})")
-        
-        try:
-            pob_modelo = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
-        except:
-            pob_modelo = np.nan
+    # Creamos dos columnas maestras para poner las pirámides lado a lado
+    col_p1, col_p2 = st.columns(2)
+    
+    with col_p1:
+        ph_tit_1 = st.empty()
+        ph_graf_1 = st.empty()
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            ph_m_pob_1 = st.empty()
+            ph_m_hom_1 = st.empty()
+        with col_m2:
+            ph_m_muj_1 = st.empty()
+            ph_m_ind_1 = st.empty()
             
-        if pd.isna(pob_modelo) or pob_modelo == 0:
-            ph_grafico_pir.warning(f"No hay datos de población proyectada para el año {año_obj}.")
-            return
+    with col_p2:
+        ph_tit_2 = st.empty()
+        ph_graf_2 = st.empty()
+        col_m3, col_m4 = st.columns(2)
+        with col_m3:
+            ph_m_pob_2 = st.empty()
+            ph_m_hom_2 = st.empty()
+        with col_m4:
+            ph_m_muj_2 = st.empty()
+            ph_m_ind_2 = st.empty()
+
+    # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES (Totalmente aislado del diseño) ---
+    def generar_figura_piramide(año_obj, zona_str):
+        try:
+            pob_modelo_total = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
+        except:
+            return None, 0, 0, 0, 0, f"No hay proyección para el año {año_obj}."
 
         col_anio_pyr2 = 'año' if 'año' in df_nac.columns else 'Año'
-        df_fnac = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'] == zona_piramide.lower())].copy()
+        df_fnac_zona = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'] == zona_str.lower())].copy()
+        df_fnac_total = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'] == 'total')].copy()
         
-        if df_fnac.empty:
-            ph_grafico_pir.warning("No hay datos base nacionales para este año.")
-            return
+        if df_fnac_zona.empty or df_fnac_total.empty:
+            return None, 0, 0, 0, 0, "No hay datos base nacionales para este año."
 
-        # --- MAGIA DE TRANSFORMACIÓN (De Ancho a Largo) ---
         import re
-        # ESCUDO: Solo tomamos las columnas de la pirámide que tengan números en su nombre
-        cols_h = [c for c in df_fnac.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
-        cols_m = [c for c in df_fnac.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
+        cols_h = [c for c in df_fnac_zona.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
+        cols_m = [c for c in df_fnac_zona.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
         
         def extraer_edad(texto):
             nums = re.findall(r'\d+', texto)
@@ -792,36 +802,27 @@ def renderizar_piramide(año_obj):
         datos_edades = []
         for col in cols_h:
             edad = extraer_edad(col)
-            val_h = df_fnac[col].values[0]
+            val_h = df_fnac_zona[col].values[0]
             col_mujer = next((c for c in cols_m if extraer_edad(c) == edad), None)
-            val_m = df_fnac[col_mujer].values[0] if col_mujer else 0
+            val_m = df_fnac_zona[col_mujer].values[0] if col_mujer else 0
             datos_edades.append({'Edad': edad, 'Hombres': val_h, 'Mujeres': val_m})
             
         df_edades = pd.DataFrame(datos_edades)
         
-        # Calcular proporciones y escalar
-        pob_nacional_tot = df_edades['Hombres'].sum() + df_edades['Mujeres'].sum()
-        df_edades['Prop_H'] = df_edades['Hombres'] / pob_nacional_tot
-        df_edades['Prop_M'] = df_edades['Mujeres'] / pob_nacional_tot
+        # --- ESCALADO PRECISO AL TERRITORIO (Manteniendo la proporción Urbano/Rural) ---
+        pob_nac_total_real = df_fnac_total['Total'].values[0]
+        factor_escala = (pob_modelo_total / pob_nac_total_real) if pob_nac_total_real > 0 else 0
+            
+        df_edades['Hom_Terr'] = df_edades['Hombres'] * factor_escala
+        df_edades['Muj_Terr'] = df_edades['Mujeres'] * factor_escala
         
-        df_edades['Hom_Terr'] = df_edades['Prop_H'] * pob_modelo
-        df_edades['Muj_Terr'] = df_edades['Prop_M'] * pob_modelo
+        df_pir = pd.DataFrame({'Edad': df_edades['Edad'], 'Hombres': df_edades['Hom_Terr'] * -1, 'Mujeres': df_edades['Muj_Terr']})
         
-        # Construir df_pir para Plotly
-        df_pir = pd.DataFrame({
-            'Edad': df_edades['Edad'], 
-            'Hombres': df_edades['Hom_Terr'] * -1, 
-            'Mujeres': df_edades['Muj_Terr']
-        })
-        
-        # Clasificar en grupos de 5 años
         cortes = list(range(0, 105, 5)) + [200]
         etiquetas = [f"{i}-{i+4}" for i in range(0, 100, 5)] + ["100+"]
         df_pir['Rango'] = pd.cut(df_pir['Edad'], bins=cortes, labels=etiquetas, right=False)
-        
         df_pir_agrupado = df_pir.groupby('Rango', observed=True)[['Hombres', 'Mujeres']].sum().reset_index()
 
-        # --- DIBUJAR LA PIRÁMIDE ---
         fig_pir = go.Figure()
         fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Hombres'], name='Hombres', orientation='h', marker_color='#3498db'))
         fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Mujeres'], name='Mujeres', orientation='h', marker_color='#e74c3c'))
@@ -829,35 +830,54 @@ def renderizar_piramide(año_obj):
         rango_max = max(abs(df_pir_agrupado['Hombres'].min()), df_pir_agrupado['Mujeres'].max()) if not df_pir_agrupado.empty else 100
         
         fig_pir.update_layout(
-            barmode='relative',
-            yaxis_title='Rango de Edad',
-            xaxis_title='Población',
+            barmode='relative', yaxis_title='Rango de Edad', xaxis_title='Población',
             xaxis=dict(range=[-rango_max*1.1, rango_max*1.1], tickvals=[-rango_max, 0, rango_max], ticktext=[f"{int(rango_max):,}", "0", f"{int(rango_max):,}"]),
-            margin=dict(l=0, r=0, t=30, b=0),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            margin=dict(l=0, r=0, t=30, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
         
-        # 2. Inyectamos la gráfica en TU contenedor izquierdo
-        ph_grafico_pir.plotly_chart(fig_pir, use_container_width=True)
-
-        # 3. Calculamos y actualizamos las métricas de TU contenedor derecho
         total_hom = df_edades['Hom_Terr'].sum()
         total_muj = df_edades['Muj_Terr'].sum()
+        total_zona = total_hom + total_muj
         ind_masculinidad = (total_hom / total_muj * 100) if total_muj > 0 else 0
         
-        ph_metrica_pob.metric("Población Total", f"{int(pob_modelo):,}".replace(",", "."))
-        ph_metrica_hom.metric("Hombres", f"{int(total_hom):,}".replace(",", "."), f"{(total_hom/pob_modelo)*100:.1f}%")
-        ph_metrica_muj.metric("Mujeres", f"{int(total_muj):,}".replace(",", "."), f"{(total_muj/pob_modelo)*100:.1f}%")
-        ph_metrica_ind.metric("Índ. de Masculinidad", f"{ind_masculinidad:.1f}", "Hombres por cada 100 mujeres")
+        return fig_pir, total_zona, total_hom, total_muj, ind_masculinidad, None
 
-# === BOTÓN DE ENCENDIDO DE LA PIRÁMIDE Y ANIMACIÓN ===
-if iniciar_animacion:
-    for a in años_disp:
-        if a >= 1985: # Dibujar desde que hay datos censales
-            renderizar_piramide(a)
-            time.sleep(velocidad_animacion)
-else:
-    renderizar_piramide(año_sel)
+    # --- EL PINTOR DE LA INTERFAZ ---
+    def actualizar_ui_piramides(año):
+        # 1. Pirámide Izquierda (TOTAL SIEMPRE)
+        fig1, t1, h1, m1, ind1, err1 = generar_figura_piramide(año, "Total")
+        if err1:
+            ph_graf_1.warning(err1)
+        else:
+            ph_tit_1.markdown(f"#### 🔵 Estructura Total ({año})")
+            ph_graf_1.plotly_chart(fig1, use_container_width=True)
+            ph_m_pob_1.metric("Pob. Total", f"{int(t1):,}".replace(",", "."))
+            if t1 > 0:
+                ph_m_hom_1.metric("Hombres", f"{int(h1):,}".replace(",", "."), f"{(h1/t1)*100:.1f}%")
+                ph_m_muj_1.metric("Mujeres", f"{int(m1):,}".replace(",", "."), f"{(m1/t1)*100:.1f}%")
+            ph_m_ind_1.metric("Índ. Masc.", f"{ind1:.1f}")
+
+        # 2. Pirámide Derecha (URBANO O RURAL según selector)
+        fig2, t2, h2, m2, ind2, err2 = generar_figura_piramide(año, zona_comparacion)
+        if err2:
+            ph_graf_2.warning(err2)
+        else:
+            ph_tit_2.markdown(f"#### 🟢 Perfil {zona_comparacion} ({año})")
+            ph_graf_2.plotly_chart(fig2, use_container_width=True)
+            ph_m_pob_2.metric(f"Pob. {zona_comparacion}", f"{int(t2):,}".replace(",", "."))
+            if t2 > 0:
+                ph_m_hom_2.metric("Hombres", f"{int(h2):,}".replace(",", "."), f"{(h2/t2)*100:.1f}%")
+                ph_m_muj_2.metric("Mujeres", f"{int(m2):,}".replace(",", "."), f"{(m2/t2)*100:.1f}%")
+            ph_m_ind_2.metric("Índ. Masc.", f"{ind2:.1f}")
+    
+    # === EJECUCIÓN ===
+    if iniciar_animacion:
+        for a in años_disp:
+            if a >= 1985:
+                actualizar_ui_piramides(a)
+                time.sleep(velocidad_animacion)
+    else:
+        actualizar_ui_piramides(año_sel)
         
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
