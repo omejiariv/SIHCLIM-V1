@@ -265,26 +265,25 @@ def cargar_datos_limpios():
         df_global_dinamico = pd.merge(df_global_dinamico, df_med, on='año', how='outer')
         df_global_dinamico = df_global_dinamico.rename(columns={'año': 'Año'})
 
-        # --- CONEXIÓN AL ARCHIVO HISTÓRICO GLOBAL (LOCAL GITHUB) ---
-        ruta_global = os.path.join(RUTA_RAIZ, "data", "Pob_Col_Ant_Amva_Med.csv")
+        # --- CONEXIÓN AL ARCHIVO HISTÓRICO GLOBAL (SUPABASE) ---
+        url_global = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Pob_Col_Ant_Amva_Med.csv"
         df_global = df_global_dinamico.copy()
         
-        if os.path.exists(ruta_global):
-            try:
-                # Detecta automáticamente si es punto y coma o coma
-                sep_char = ';' if ';' in open(ruta_global, encoding='utf-8').readline() else ','
-                df_global_csv = pd.read_csv(ruta_global, sep=sep_char, encoding='utf-8')
+        try:
+            # Intentamos leer con coma, si falla probamos punto y coma
+            df_global_csv = pd.read_csv(url_global, sep=',', encoding='utf-8')
+            if len(df_global_csv.columns) == 1:
+                df_global_csv = pd.read_csv(url_global, sep=';', encoding='utf-8')
                 
-                # Forzar que la columna de tiempo se llame 'Año' para que coincida
-                if 'año' in df_global_csv.columns:
-                    df_global_csv = df_global_csv.rename(columns={'año': 'Año'})
-                    
-                df_global = pd.merge(df_global_csv, df_global_dinamico, on='Año', how='outer')
-            except Exception as e:
-                pass
+            # Forzamos que la columna de tiempo se llame 'Año'
+            if 'año' in df_global_csv.columns:
+                df_global_csv = df_global_csv.rename(columns={'año': 'Año'})
+                
+            df_global = pd.merge(df_global_csv, df_global_dinamico, on='Año', how='outer')
+        except Exception as e:
+            pass
                 
         # =======================================================
-# =======================================================
         # 2. Cargar datos Veredales 
         # =======================================================
         df_ver = pd.DataFrame()
@@ -458,7 +457,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         
         # --- NUEVO: ESCUDO ANTI-ASTILLAS (SLIVERS) TOPOLÓGICAS ---
         # Borramos los "roces" accidentales de mapa (territorios con menos del 1% dentro de la cuenca)
-        df_cruce_ver = df_cruce_ver[df_cruce_ver['Porcentaje'] >= 1.0]
+        df_cruce_ver = df_cruce_ver[df_cruce_ver['Porcentaje'] >= 3.0]
         
         df_cruce_ver['Pob_en_cuenca'] = df_cruce_ver['Poblacion_hab'] * (df_cruce_ver['Porcentaje'] / 100.0)
         
