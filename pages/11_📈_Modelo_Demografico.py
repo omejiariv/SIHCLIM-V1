@@ -279,6 +279,15 @@ def cargar_datos_limpios():
             if 'año' in df_global_csv.columns:
                 df_global_csv = df_global_csv.rename(columns={'año': 'Año'})
                 
+            # --- ESCUDO EXCLUSIVO PARA LA ESCALA MUNDIAL ---
+            # Limpiamos los puntos (miles) antes de que el sistema los confunda con decimales
+            for col in df_global_csv.columns:
+                if col != 'Año':
+                    df_global_csv[col] = pd.to_numeric(
+                        df_global_csv[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '', regex=False),
+                        errors='coerce'
+                    )
+                
             df_global = pd.merge(df_global_csv, df_global_dinamico, on='Año', how='outer')
         except Exception as e:
             pass
