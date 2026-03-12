@@ -279,14 +279,30 @@ def cargar_datos_limpios():
                 pass
                 
         # =======================================================
+# =======================================================
         # 2. Cargar datos Veredales 
         # =======================================================
         df_ver = pd.DataFrame()
-        ruta_ver_1 = "data/veredas_Antioquia.csv"
-        if os.path.exists(ruta_ver_1): df_ver = pd.read_csv(ruta_ver_1, sep=';')
+        ruta_ver_1 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv")
+        
+        if os.path.exists(ruta_ver_1): 
+            df_ver = pd.read_csv(ruta_ver_1, sep=';')
+            
+            # EL ESCUDO DEFINITIVO: Convertimos a números puros desde el momento cero
+            if 'Poblacion_hab' in df_ver.columns:
+                df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
 
         return df_nac, df_mun, df_ver, df_global
-    
+        
+    except Exception as e:
+        import streamlit as st
+        st.error(f"🚨 Error cargando las bases de datos: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+# Llamada principal a la función y escudo de seguridad para detener la app si no hay datos
+df_nac, df_mun, df_ver, df_global = cargar_datos_limpios()
+if df_nac.empty or df_mun.empty: st.stop()
+
 # --- 2. MODELOS MATEMÁTICOS ---
 def modelo_lineal(x, m, b): return m * x + b
 def modelo_exponencial(x, p0, r): return p0 * np.exp(r * (x - 2005))
