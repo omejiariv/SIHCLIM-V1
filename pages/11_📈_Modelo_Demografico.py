@@ -549,14 +549,18 @@ if os.path.exists(ruta_matriz):
 
 def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
 
-# Identificar qué estamos buscando en la Matriz
-territorio_busqueda = str(filtro_zona).upper().strip()
+# ==========================================================
+# Identificar qué estamos buscando en la Matriz (Modo Seguro)
+# ==========================================================
+try:
+    zona_segura = filtro_zona
+except:
+    zona_segura = "Colombia"
+
+territorio_busqueda = str(zona_segura).upper().strip()
 if escala_sel == "🇨🇴 Nacional (Colombia)": territorio_busqueda = "COLOMBIA"
 
 row_matriz = pd.DataFrame()
-if not df_matriz.empty and escala_sel not in ["🌍 Global y Suramérica", "💧 Cuencas Hidrográficas", "Veredal (Antioquia)"]:
-    mask = df_matriz['Territorio'].astype(str).str.upper().str.strip() == territorio_busqueda
-    row_matriz = df_matriz[mask]
 
 # --- INYECTAR RESULTADOS ---
 if not row_matriz.empty:
