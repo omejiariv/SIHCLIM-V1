@@ -1254,6 +1254,8 @@ with tab_rankings:
             es_top = st.radio("Ordenar por:", ["Mayor Población", "Menor Población"], horizontal=True)
             
             df_rank = df_mapa_base.copy().dropna(subset=['Total'])
+            # ESCUDO ANTI-TEXTO: Convertimos a números antes de filtrar el Top
+            df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
             df_rank = df_rank[df_rank['Total'] > 0]
             
             if es_top == "Mayor Población":
