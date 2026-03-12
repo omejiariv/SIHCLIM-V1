@@ -209,8 +209,8 @@ def cargar_datos_limpios():
         df_master['area_geografica'] = df_master['area_geografica'].astype(str).str.strip().map(lambda x: mapeo_areas.get(x, x.lower()))
 
         # Separamos Hombres y Mujeres y Totales
-        cols_hombres = [c for c in df_master.columns if 'Hombre' in str(c)]
-        cols_mujeres = [c for c in df_master.columns if 'Mujer' in str(c)]
+        cols_hombres = [c for c in df_master.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
+        cols_mujeres = [c for c in df_master.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
         cols_poblacion = cols_hombres + cols_mujeres
         
         for col in cols_poblacion:
@@ -244,16 +244,30 @@ def cargar_datos_limpios():
         df_nac = df_nac_temp.groupby('año')[cols_agrupar_nac].sum().reset_index()
 
         # -------------------------------------------------------
-        # C. Crear df_global
+        # C. Crear df_global (Fusión Dinámica + Histórica)
         # -------------------------------------------------------
         mpios_amva = ['Medellín', 'Bello', 'Itagüí', 'Envigado', 'Sabaneta', 'Copacabana', 'La Estrella', 'Girardota', 'Caldas', 'Barbosa']
         df_ant = df_nac_temp[df_nac_temp['depto_nom'] == 'Antioquia'].groupby('año')['Total'].sum().reset_index().rename(columns={'Total': 'Pob_Antioquia'})
         df_amva = df_nac_temp[(df_nac_temp['depto_nom'] == 'Antioquia') & (df_nac_temp['municipio'].str.title().isin(mpios_amva))].groupby('año')['Total'].sum().reset_index().rename(columns={'Total': 'Pob_Amva'})
         df_med = df_nac_temp[df_nac_temp['municipio'] == 'Medellín'].groupby('año')['Total'].sum().reset_index().rename(columns={'Total': 'Pob_Medellin'})
         
-        df_global = pd.merge(df_ant, df_amva, on='año', how='outer')
-        df_global = pd.merge(df_global, df_med, on='año', how='outer')
-        df_global = df_global.rename(columns={'año': 'Año'})
+        df_global_dinamico = pd.merge(df_ant, df_amva, on='año', how='outer')
+        df_global_dinamico = pd.merge(df_global_dinamico, df_med, on='año', how='outer')
+        df_global_dinamico = df_global_dinamico.rename(columns={'año': 'Año'})
+
+        # --- CONEXIÓN AL ARCHIVO VIEJO ---
+        df_global = pd.DataFrame()
+        # ⚠️ IMPORTANTE: Pon aquí el nombre exacto de tu archivo CSV global que está en la carpeta data/
+        ruta_global = "data/Pob_Col_Ant_Amva_Med.csv" 
+        
+        if os.path.exists(ruta_global):
+            # Detecta automáticamente si es separado por coma o punto y coma
+            sep_char = ';' if ';' in open(ruta_global, encoding='utf-8').readline() else ','
+            df_global_csv = pd.read_csv(ruta_global, sep=sep_char, encoding='utf-8')
+            # Fusionamos ambos mundos
+            df_global = pd.merge(df_global_csv, df_global_dinamico, on='Año', how='outer')
+        else:
+            df_global = df_global_dinamico
 
         # =======================================================
         # 2. Cargar datos Veredales 
@@ -767,8 +781,9 @@ def renderizar_piramide(año_obj):
 
         # --- MAGIA DE TRANSFORMACIÓN (De Ancho a Largo) ---
         import re
-        cols_h = [c for c in df_fnac.columns if 'Hombre' in str(c) and c != 'Hombres']
-        cols_m = [c for c in df_fnac.columns if 'Mujer' in str(c) and c != 'Mujeres']
+        # ESCUDO: Solo tomamos las columnas de la pirámide que tengan números en su nombre
+        cols_h = [c for c in df_fnac.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
+        cols_m = [c for c in df_fnac.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
         
         def extraer_edad(texto):
             nums = re.findall(r'\d+', texto)
