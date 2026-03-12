@@ -433,18 +433,15 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         
         df_prop_sel = df_prop[df_prop['Subcuenca'] == cuenca_sel].copy()
         
-        def limpiar_texto(columna):
-            return columna.astype(str).str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8').str.upper().str.strip()
-            
-        df_prop_sel['Vereda_upper'] = limpiar_texto(df_prop_sel['Vereda'])
-        df_prop_sel['Municipio_upper'] = limpiar_texto(df_prop_sel['Municipio'])
+        # --- LA CURA DE LOS POLÍGONOS PERDIDOS: Usar el normalizador mágico en lugar de limpiar_texto ---
+        df_prop_sel['Vereda_upper'] = df_prop_sel['Vereda'].apply(normalizar_texto)
+        df_prop_sel['Municipio_upper'] = df_prop_sel['Municipio'].apply(normalizar_texto)
         
-        # --- BLOQUE CORREGIDO PARA VEREDAS ---
         df_ver_temp = df_ver.copy()
-        df_ver_temp['Vereda_upper'] = limpiar_texto(df_ver_temp['Vereda'])
-        df_ver_temp['Municipio_upper'] = limpiar_texto(df_ver_temp['Municipio'])
+        df_ver_temp['Vereda_upper'] = df_ver_temp['Vereda'].apply(normalizar_texto)
+        df_ver_temp['Municipio_upper'] = df_ver_temp['Municipio'].apply(normalizar_texto)
         
-        # ESCUDO ANTI-TEXTO: Convertimos la población a números puros obligatoriamente
+        # ESCUDO ANTI-TEXTO
         df_ver_temp['Poblacion_hab'] = pd.to_numeric(df_ver_temp['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
         
         # 1. Cruzar Veredas base con la cuenca
@@ -529,7 +526,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
     
 elif escala_sel == "🏢 Municipal (Regiones)":
     region_sel = st.sidebar.selectbox("Macroregión:", sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"]))
-    mpios_reg = df_mun[(df_mun['Macroregion'] == region_sel) & (df_mun['area_geografica'] == 'total')]
+    mpios_reg = df_mun[df_mun['Macroregion'] == region_sel]
     municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_reg['municipio'].unique()))
     
     df_base = mpios_reg[mpios_reg['municipio'] == municipio_sel]
@@ -537,16 +534,18 @@ elif escala_sel == "🏢 Municipal (Regiones)":
     titulo_terr = f"{municipio_sel} ({region_sel})"
     
     col_anio = 'año' if 'año' in df_base.columns else 'Año'
-    df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
+    # ESCUDO ANTI-DUPLICACIÓN: Solo sumar el total para la curva histórica
+    df_hist = df_base[df_base['area_geografica'] == 'total'].groupby(col_anio)['Total'].sum().reset_index()
     años_hist = df_hist[col_anio].values
     pob_hist = df_hist['Total'].values
     
     df_mapa_base = df_base.copy()
-    df_mapa_base.rename(columns={'municipio': 'Territorio', 'Macroregion': 'Padre'}, inplace=True)
+    # MAPA FIX: El padre debe ser depto_nom para que cruce con el GeoJSON Municipal
+    df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 elif escala_sel == "🏢 Municipal (Departamentos)":
     depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
-    mpios_depto = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['area_geografica'] == 'total')]
+    mpios_depto = df_mun[df_mun['depto_nom'] == depto_sel]
     municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_depto['municipio'].unique()))
     
     df_base = mpios_depto[mpios_depto['municipio'] == municipio_sel]
@@ -554,7 +553,8 @@ elif escala_sel == "🏢 Municipal (Departamentos)":
     titulo_terr = f"{municipio_sel} ({depto_sel})"
     
     col_anio = 'año' if 'año' in df_base.columns else 'Año'
-    df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
+    # ESCUDO ANTI-DUPLICACIÓN: Solo sumar el total para la curva histórica
+    df_hist = df_base[df_base['area_geografica'] == 'total'].groupby(col_anio)['Total'].sum().reset_index()
     años_hist = df_hist[col_anio].values
     pob_hist = df_hist['Total'].values
     
@@ -1069,20 +1069,21 @@ with tab_mapas:
     
     with col_map1:
         st.markdown("**⚙️ Configuración del GeoJSON**")
-        # --- SOLUCIÓN EMOJIS: Verificamos el texto exacto incluyendo el emoji ---
+        
+        # --- SOLUCIÓN: SELECTORES EN CASCADA PREDEFINIDOS ---
+        opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson"]
+        opciones_terr = ["properties.MPIO_CNMBR", "properties.NOMBRE_VER"]
+        opciones_padre = ["properties.DPTO_CCDGO", "properties.NOMB_MPIO"]
+        
         if escala_sel in ["🌿 Veredal (Antioquia)", "💧 Cuencas Hidrográficas"]: 
-            sugerencia_geo = "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson"
-            sugerencia_prop = "properties.NOMBRE_VER"
-            sugerencia_padre = "properties.NOMB_MPIO"
+            idx_geo, idx_terr, idx_padre = 1, 1, 1
         else: 
-            sugerencia_geo = "mgn_municipios_optimizado.geojson"
-            sugerencia_prop = "properties.MPIO_CNMBR"
-            sugerencia_padre = "properties.DPTO_CCDGO"
+            idx_geo, idx_terr, idx_padre = 0, 0, 0
             
-        archivo_geo_input = st.text_input("Archivo en GitHub:", value=sugerencia_geo)
-        prop_geo_input = st.text_input("Llave Territorio:", value=sugerencia_prop)
+        archivo_geo_input = st.selectbox("Archivo en GitHub:", opciones_geo, index=idx_geo)
+        prop_geo_input = st.selectbox("Llave Territorio:", opciones_terr, index=idx_terr)
         st.markdown("**🔗 Llave Doble (Anti-Homonimia)**")
-        prop_padre_input = st.text_input("Llave Contexto:", value=sugerencia_padre)
+        prop_padre_input = st.selectbox("Llave Contexto:", opciones_padre, index=idx_padre)
     
     with col_map2:
         ruta_geo = os.path.join(RUTA_RAIZ, "data", archivo_geo_input)
