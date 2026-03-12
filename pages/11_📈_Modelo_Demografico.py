@@ -168,14 +168,13 @@ REGIONES_COL = {
 def cargar_datos_limpios():
     try:
         # =======================================================
-        # 1. EL NUEVO CORAZÓN: Archivo Parquet Unificado
+        # 1. EL NUEVO CORAZÓN: Conexión Directa a Supabase
         # =======================================================
-        ruta_parquet = os.path.join(RUTA_RAIZ, "data", "Poblacion_Colombia_1985_2042_Optimizado.parquet")
+        # ¡Tu enlace mágico oficial!
+        url_parquet = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Poblacion_Colombia_1985_2042_Optimizado.parquet" 
         
-        if not os.path.exists(ruta_parquet):
-            raise FileNotFoundError(f"No se encontró el archivo: {ruta_parquet}")
-            
-        df_master = pd.read_parquet(ruta_parquet)
+        # Pandas lee el archivo directamente desde internet
+        df_master = pd.read_parquet(url_parquet)
         
         # Limpieza de nombres de columnas principales
         columnas_base = {
@@ -184,17 +183,15 @@ def cargar_datos_limpios():
             'AÑO': 'año',
             'AREA_GEOGRAFICA': 'area_geografica'
         }
-        # Renombramos si existen (manejando posibles mayúsculas/minúsculas)
         for col_orig in df_master.columns:
             col_upper = str(col_orig).strip().upper()
             if col_upper in columnas_base:
                 df_master = df_master.rename(columns={col_orig: columnas_base[col_upper]})
 
-        # Estandarizamos el texto de las columnas clave
         df_master['depto_nom'] = df_master['depto_nom'].str.title()
         df_master['municipio'] = df_master['municipio'].str.title()
         
-        # Mapeamos las Áreas Geográficas al estándar que ya usa la app
+        # Mapeamos las Áreas Geográficas
         mapeo_areas = {
             'Cabecera': 'urbano',
             'Cabecera municipal': 'urbano',
@@ -203,15 +200,14 @@ def cargar_datos_limpios():
         }
         df_master['area_geografica'] = df_master['area_geografica'].astype(str).str.strip().map(lambda x: mapeo_areas.get(x, x.lower()))
 
-        # Calculamos la Población Total sumando todas las columnas de edades (Hombres y Mujeres)
+        # Calculamos la Población Total sumando edades
         cols_poblacion = [c for c in df_master.columns if 'Hombre' in str(c) or 'Mujer' in str(c)]
-        # Aseguramos que sean numéricas y sumamos
         for col in cols_poblacion:
             df_master[col] = pd.to_numeric(df_master[col], errors='coerce').fillna(0)
         df_master['Total'] = df_master[cols_poblacion].sum(axis=1)
 
         # -------------------------------------------------------
-        # A. Crear df_mun (Municipal) a partir del Master
+        # A. Crear df_mun (Municipal)
         # -------------------------------------------------------
         df_mun = df_master[['año', 'depto_nom', 'municipio', 'area_geografica', 'Total'] + cols_poblacion].copy()
         
@@ -227,17 +223,15 @@ def cargar_datos_limpios():
         df_mun['Macroregion'] = df_mun.apply(asignar_region, axis=1)
 
         # -------------------------------------------------------
-        # B. Crear df_nac (Nacional) a partir del Master
+        # B. Crear df_nac (Nacional)
         # -------------------------------------------------------
-        # Filtramos solo el 'total' para no duplicar habitantes
         df_nac_temp = df_mun[df_mun['area_geografica'] == 'total']
         df_nac = df_nac_temp.groupby('año')['Total'].sum().reset_index()
 
         # -------------------------------------------------------
-        # C. Crear df_global (Antioquia, AMVA, Medellín) dinámicamente
+        # C. Crear df_global (Dinámico)
         # -------------------------------------------------------
         mpios_amva = ['Medellín', 'Bello', 'Itagüí', 'Envigado', 'Sabaneta', 'Copacabana', 'La Estrella', 'Girardota', 'Caldas', 'Barbosa']
-        
         df_ant = df_nac_temp[df_nac_temp['depto_nom'] == 'Antioquia'].groupby('año')['Total'].sum().reset_index().rename(columns={'Total': 'Pob_Antioquia'})
         df_amva = df_nac_temp[(df_nac_temp['depto_nom'] == 'Antioquia') & (df_nac_temp['municipio'].str.title().isin(mpios_amva))].groupby('año')['Total'].sum().reset_index().rename(columns={'Total': 'Pob_Amva'})
         df_med = df_nac_temp[df_nac_temp['municipio'] == 'Medellín'].groupby('año')['Total'].sum().reset_index().rename(columns={'Total': 'Pob_Medellin'})
@@ -247,28 +241,20 @@ def cargar_datos_limpios():
         df_global = df_global.rename(columns={'año': 'Año'})
 
         # =======================================================
-        # 2. Cargar datos Veredales (Mantenemos esto para el cruce espacial)
+        # 2. Cargar datos Veredales (Mantenemos los locales por ahora)
         # =======================================================
         df_ver = pd.DataFrame()
-        ruta_ver_1 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv")
-        ruta_ver_2 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.xlsx")
-        
+        ruta_ver_1 = "data/veredas_Antioquia.csv"
         if os.path.exists(ruta_ver_1): df_ver = pd.read_csv(ruta_ver_1, sep=';')
-        elif os.path.exists(ruta_ver_2): df_ver = pd.read_excel(ruta_ver_2)
-            
-        if not df_ver.empty:
-            df_ver.columns = [str(c).replace('\ufeff', '').strip() for c in df_ver.columns]
-            if 'Municipio' in df_ver.columns: df_ver['Municipio'] = df_ver['Municipio'].str.title()
-            if 'Vereda' in df_ver.columns: df_ver['Vereda'] = df_ver['Vereda'].str.title()
-            if 'Poblacion_hab' in df_ver.columns: df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'], errors='coerce').fillna(0)
 
         return df_nac, df_mun, df_ver, df_global
         
     except Exception as e:
         import streamlit as st
-        st.error(f"🚨 Error cargando las bases de datos: {e}")
+        st.error(f"🚨 Error cargando las bases de datos desde la nube: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
+# Llamada a la función y el escudo protector vital:
 df_nac, df_mun, df_ver, df_global = cargar_datos_limpios()
 if df_nac.empty or df_mun.empty: st.stop()
     
