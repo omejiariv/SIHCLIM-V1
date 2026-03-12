@@ -461,11 +461,12 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         ratios_mpio['Ratio_Cuenca'] = ratios_mpio['Pob_en_cuenca'] / ratios_mpio['Pob_Total_Rural']
         ratios_mpio['Ratio_Cuenca'] = ratios_mpio['Ratio_Cuenca'].fillna(0)
         
-        terminos_rurales = ['rural', 'resto', 'centros poblados y rural disperso', 'centro poblado y rural disperso']
-        mask_rural = limpiar_texto(df_mun['area_geografica']).str.lower().isin(terminos_rurales)
+        # ESCUDO SIMPLIFICADO: El cargador ya dejó todo etiquetado como 'rural'
+        mask_rural = df_mun['area_geografica'] == 'rural'
         
         df_mun_rural = df_mun[mask_rural].copy()
-        df_mun_rural['Municipio_upper'] = limpiar_texto(df_mun_rural['municipio'])
+        # Usamos nuestra función mágica actualizada
+        df_mun_rural['Municipio_upper'] = df_mun_rural['municipio'].apply(normalizar_texto)
         
         df_base = pd.merge(df_mun_rural, ratios_mpio, on='Municipio_upper', how='inner')
         df_base['Total_Cuenca'] = df_base['Total'] * df_base['Ratio_Cuenca']        
