@@ -746,7 +746,8 @@ with tab_modelos:
     df_piramide_final = pd.DataFrame() 
 
 def renderizar_piramide(año_obj):
-        st.markdown(f"#### 📊 Estructura Poblacional Modelada ({año_obj})")
+        # 1. Título en su contenedor correcto
+        ph_titulo_año.markdown(f"#### 📊 Estructura Poblacional Modelada ({año_obj})")
         
         try:
             pob_modelo = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
@@ -754,19 +755,18 @@ def renderizar_piramide(año_obj):
             pob_modelo = np.nan
             
         if pd.isna(pob_modelo) or pob_modelo == 0:
-            st.warning(f"No hay datos de población proyectada para el año {año_obj}.")
+            ph_grafico_pir.warning(f"No hay datos de población proyectada para el año {año_obj}.")
             return
 
         col_anio_pyr2 = 'año' if 'año' in df_nac.columns else 'Año'
         df_fnac = df_nac[df_nac[col_anio_pyr2] == año_obj].copy()
         
         if df_fnac.empty:
-            st.warning("No hay datos base nacionales para este año.")
+            ph_grafico_pir.warning("No hay datos base nacionales para este año.")
             return
 
         # --- MAGIA DE TRANSFORMACIÓN (De Ancho a Largo) ---
         import re
-        # Buscamos las columnas de edades ignorando las de totales
         cols_h = [c for c in df_fnac.columns if 'Hombre' in str(c) and c != 'Hombres']
         cols_m = [c for c in df_fnac.columns if 'Mujer' in str(c) and c != 'Mujeres']
         
@@ -778,23 +778,21 @@ def renderizar_piramide(año_obj):
         for col in cols_h:
             edad = extraer_edad(col)
             val_h = df_fnac[col].values[0]
-            # Buscamos la columna de mujer correspondiente a la misma edad
             col_mujer = next((c for c in cols_m if extraer_edad(c) == edad), None)
             val_m = df_fnac[col_mujer].values[0] if col_mujer else 0
             datos_edades.append({'Edad': edad, 'Hombres': val_h, 'Mujeres': val_m})
             
         df_edades = pd.DataFrame(datos_edades)
         
-        # Calcular proporciones usando la NUEVA tabla df_edades
+        # Calcular proporciones y escalar
         pob_nacional_tot = df_edades['Hombres'].sum() + df_edades['Mujeres'].sum()
         df_edades['Prop_H'] = df_edades['Hombres'] / pob_nacional_tot
         df_edades['Prop_M'] = df_edades['Mujeres'] / pob_nacional_tot
         
-        # Escalar al territorio objetivo (Antioquia, Medellín, etc.) usando la NUEVA tabla
         df_edades['Hom_Terr'] = df_edades['Prop_H'] * pob_modelo
         df_edades['Muj_Terr'] = df_edades['Prop_M'] * pob_modelo
         
-        # Construir df_pir para Plotly usando la NUEVA tabla
+        # Construir df_pir para Plotly
         df_pir = pd.DataFrame({
             'Edad': df_edades['Edad'], 
             'Hombres': df_edades['Hom_Terr'] * -1, 
@@ -823,7 +821,19 @@ def renderizar_piramide(año_obj):
             margin=dict(l=0, r=0, t=30, b=0),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-        st.plotly_chart(fig_pir, use_container_width=True)
+        
+        # 2. Inyectamos la gráfica en TU contenedor izquierdo
+        ph_grafico_pir.plotly_chart(fig_pir, use_container_width=True)
+
+        # 3. Calculamos y actualizamos las métricas de TU contenedor derecho
+        total_hom = df_edades['Hom_Terr'].sum()
+        total_muj = df_edades['Muj_Terr'].sum()
+        ind_masculinidad = (total_hom / total_muj * 100) if total_muj > 0 else 0
+        
+        ph_metrica_pob.metric("Población Total", f"{int(pob_modelo):,}".replace(",", "."))
+        ph_metrica_hom.metric("Hombres", f"{int(total_hom):,}".replace(",", "."), f"{(total_hom/pob_modelo)*100:.1f}%")
+        ph_metrica_muj.metric("Mujeres", f"{int(total_muj):,}".replace(",", "."), f"{(total_muj/pob_modelo)*100:.1f}%")
+        ph_metrica_ind.metric("Índ. de Masculinidad", f"{ind_masculinidad:.1f}", "Hombres por cada 100 mujeres")
         
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
