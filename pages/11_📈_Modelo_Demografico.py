@@ -170,13 +170,10 @@ def cargar_datos_limpios():
         # =======================================================
         # 1. EL NUEVO CORAZÓN: Conexión Directa a Supabase
         # =======================================================
-        # ¡Tu enlace mágico oficial!
         url_parquet = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Poblacion_Colombia_1985_2042_Optimizado.parquet" 
         
-        # Pandas lee el archivo directamente desde internet
         df_master = pd.read_parquet(url_parquet)
         
-        # Limpieza de nombres de columnas principales
         columnas_base = {
             'DPNOM': 'depto_nom',
             'DPMP': 'municipio',
@@ -191,7 +188,6 @@ def cargar_datos_limpios():
         df_master['depto_nom'] = df_master['depto_nom'].str.title()
         df_master['municipio'] = df_master['municipio'].str.title()
         
-        # Mapeamos las Áreas Geográficas
         mapeo_areas = {
             'Cabecera': 'urbano',
             'Cabecera municipal': 'urbano',
@@ -200,16 +196,23 @@ def cargar_datos_limpios():
         }
         df_master['area_geografica'] = df_master['area_geografica'].astype(str).str.strip().map(lambda x: mapeo_areas.get(x, x.lower()))
 
-        # Calculamos la Población Total sumando edades
-        cols_poblacion = [c for c in df_master.columns if 'Hombre' in str(c) or 'Mujer' in str(c)]
+        # --- AQUÍ ESTÁ LA MAGIA NUEVA: Separamos Hombres y Mujeres ---
+        cols_hombres = [c for c in df_master.columns if 'Hombre' in str(c)]
+        cols_mujeres = [c for c in df_master.columns if 'Mujer' in str(c)]
+        cols_poblacion = cols_hombres + cols_mujeres
+        
         for col in cols_poblacion:
             df_master[col] = pd.to_numeric(df_master[col], errors='coerce').fillna(0)
-        df_master['Total'] = df_master[cols_poblacion].sum(axis=1)
+            
+        # Creamos las columnas totales que la pirámide está buscando
+        df_master['Hombres'] = df_master[cols_hombres].sum(axis=1)
+        df_master['Mujeres'] = df_master[cols_mujeres].sum(axis=1)
+        df_master['Total'] = df_master['Hombres'] + df_master['Mujeres']
 
         # -------------------------------------------------------
-        # A. Crear df_mun (Municipal)
+        # A. Crear df_mun (Municipal) - Ahora incluye Hombres y Mujeres
         # -------------------------------------------------------
-        df_mun = df_master[['año', 'depto_nom', 'municipio', 'area_geografica', 'Total'] + cols_poblacion].copy()
+        df_mun = df_master[['año', 'depto_nom', 'municipio', 'area_geografica', 'Total', 'Hombres', 'Mujeres'] + cols_poblacion].copy()
         
         def asignar_region(fila):
             uraba_caribe = ["TURBO", "NECOCLI", "SAN JUAN DE URABA", "ARBOLETES", "SAN PEDRO DE URABA", "APARTADO", "CAREPA", "CHIGORODO", "MUTATA"]
@@ -223,10 +226,10 @@ def cargar_datos_limpios():
         df_mun['Macroregion'] = df_mun.apply(asignar_region, axis=1)
 
         # -------------------------------------------------------
-        # B. Crear df_nac (Nacional)
+        # B. Crear df_nac (Nacional) - Ahora agrupa Hombres y Mujeres
         # -------------------------------------------------------
         df_nac_temp = df_mun[df_mun['area_geografica'] == 'total']
-        df_nac = df_nac_temp.groupby('año')['Total'].sum().reset_index()
+        df_nac = df_nac_temp.groupby('año')[['Total', 'Hombres', 'Mujeres']].sum().reset_index()
 
         # -------------------------------------------------------
         # C. Crear df_global (Dinámico)
@@ -241,7 +244,7 @@ def cargar_datos_limpios():
         df_global = df_global.rename(columns={'año': 'Año'})
 
         # =======================================================
-        # 2. Cargar datos Veredales (Mantenemos los locales por ahora)
+        # 2. Cargar datos Veredales 
         # =======================================================
         df_ver = pd.DataFrame()
         ruta_ver_1 = "data/veredas_Antioquia.csv"
@@ -254,7 +257,6 @@ def cargar_datos_limpios():
         st.error(f"🚨 Error cargando las bases de datos desde la nube: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Llamada a la función y el escudo protector vital:
 df_nac, df_mun, df_ver, df_global = cargar_datos_limpios()
 if df_nac.empty or df_mun.empty: st.stop()
     
