@@ -189,6 +189,9 @@ def cargar_datos_limpios():
         df_master['depto_nom'] = df_master['depto_nom'].str.title()
         df_master['municipio'] = df_master['municipio'].str.title()
         
+        # ESCUDO DE AÑO: Forzamos que el año sea un número entero y no texto
+        df_master['año'] = pd.to_numeric(df_master['año'], errors='coerce').fillna(1985).astype(int)
+        
         # --- SOLUCIÓN QUINDÍO Y SAN ANDRÉS ---
         reemplazos_deptos = {
             'Quindio': 'Quindío',
@@ -1108,8 +1111,10 @@ with tab_mapas:
     # Mostramos solo las columnas que realmente existan en la tabla actual
     cols_existentes = [c for c in ['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa'] if c in df_mapa_plot.columns]
     
-    # Solo ordenamos si la columna 'Total' existe (evita errores en la escala Global)
+    # Solo ordenamos si la columna 'Total' existe (evita errores en la vista)
     if 'Total' in cols_existentes and not df_mapa_plot.empty:
+        # ESCUDO ANTI-TEXTO: Convertimos todo a números puros antes de ordenar
+        df_mapa_plot['Total'] = pd.to_numeric(df_mapa_plot['Total'], errors='coerce').fillna(0)
         df_mostrar = df_mapa_plot[cols_existentes].sort_values('Total', ascending=False)
     else:
         df_mostrar = df_mapa_plot[cols_existentes]
