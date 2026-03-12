@@ -286,14 +286,6 @@ def cargar_datos_limpios():
         if os.path.exists(ruta_ver_1): df_ver = pd.read_csv(ruta_ver_1, sep=';')
 
         return df_nac, df_mun, df_ver, df_global
-        
-    except Exception as e:
-        import streamlit as st
-        st.error(f"🚨 Error cargando las bases de datos desde la nube: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-df_nac, df_mun, df_ver, df_global = cargar_datos_limpios()
-if df_nac.empty or df_mun.empty: st.stop()
     
 # --- 2. MODELOS MATEMÁTICOS ---
 def modelo_lineal(x, m, b): return m * x + b
