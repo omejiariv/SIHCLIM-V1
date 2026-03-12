@@ -834,6 +834,15 @@ def renderizar_piramide(año_obj):
         ph_metrica_hom.metric("Hombres", f"{int(total_hom):,}".replace(",", "."), f"{(total_hom/pob_modelo)*100:.1f}%")
         ph_metrica_muj.metric("Mujeres", f"{int(total_muj):,}".replace(",", "."), f"{(total_muj/pob_modelo)*100:.1f}%")
         ph_metrica_ind.metric("Índ. de Masculinidad", f"{ind_masculinidad:.1f}", "Hombres por cada 100 mujeres")
+
+    # === BOTÓN DE ENCENDIDO DE LA PIRÁMIDE Y ANIMACIÓN ===
+    if iniciar_animacion:
+        for a in años_disp:
+            if a >= 1985: # Dibujar desde que hay datos censales
+                renderizar_piramide(a)
+                time.sleep(velocidad_animacion)
+    else:
+        renderizar_piramide(año_sel)
         
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
@@ -1264,8 +1273,18 @@ with tab_rankings:
             es_top = st.radio("Ordenar por:", ["Mayor Población", "Menor Población"], horizontal=True)
             
             df_rank = df_mapa_base.copy().dropna(subset=['Total'])
-            # ESCUDO ANTI-TEXTO: Convertimos a números antes de filtrar el Top
+            # ESCUDO ANTI-TEXTO
             df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
+            
+            # --- CURA ANTI-BARRAS APILADAS Y DUPLICADOS ---
+            # Agrupamos por Territorio y Padre (Municipio) para sumar todos los fragmentos
+            if 'Padre' in df_rank.columns:
+                df_rank = df_rank.groupby(['Territorio', 'Padre'])['Total'].sum().reset_index()
+                df_rank['Nombre_Grafico'] = df_rank['Territorio'] + " (" + df_rank['Padre'] + ")"
+            else:
+                df_rank = df_rank.groupby('Territorio')['Total'].sum().reset_index()
+                df_rank['Nombre_Grafico'] = df_rank['Territorio']
+                
             df_rank = df_rank[df_rank['Total'] > 0]
             
             if es_top == "Mayor Población":
@@ -1273,9 +1292,11 @@ with tab_rankings:
             else:
                 df_plot = df_rank.nsmallest(15, 'Total')
                 
-            fig_bar = px.bar(df_plot, x='Total', y='Territorio', orientation='h', 
+            fig_bar = px.bar(df_plot, x='Total', y='Nombre_Grafico', orientation='h', 
                              color='Total', color_continuous_scale='Viridis',
                              title=f"Ranking Poblacional ({año_sel})")
+            
+            # Usamos Nombre_Grafico en lugar de Territorio
             fig_bar.update_layout(yaxis={'categoryorder':'total ascending' if es_top == "Mayor Población" else 'total descending'})
             st.plotly_chart(fig_bar, use_container_width=True)
 
