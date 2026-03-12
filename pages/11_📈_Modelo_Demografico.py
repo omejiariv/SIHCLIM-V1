@@ -636,6 +636,10 @@ if escala_sel == "🇨🇴 Nacional (Colombia)": territorio_busqueda = "COLOMBIA
 # 2. ESCUDO UNIVERSAL ANTI ZIG-ZAGS (Limpia matemática y gráficas)
 if len(años_hist) > 0:
     df_clean = pd.DataFrame({'Año': años_hist, 'Pob': pob_hist})
+    
+    # --- ESCUDO ANTI-TEXTO: Convertimos la población a números puros ---
+    df_clean['Pob'] = pd.to_numeric(df_clean['Pob'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
+    
     df_clean = df_clean[df_clean['Pob'] > 0] 
     df_clean = df_clean.groupby('Año')['Pob'].max().reset_index() 
     df_clean = df_clean.sort_values(by='Año') 
@@ -1073,7 +1077,13 @@ with tab_mapas:
                 df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
             else:
                 df_mapa_plot = df_mapa_año.copy()
-
+                
+        # --- LA NUEVA ESTRATEGIA ANTI-PELUSAS (SLIVERS TOPOLÓGICOS) ---
+        if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
+            # Eliminamos visualmente las "Cabeceras" del mapa de cuencas para borrar el ruido del GeoJSON.
+            # (La población matemática sigue intacta en el resto de la app)
+            df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.contains('CABECERA', case=False, na=False)]
+            
     col_map1, col_map2 = st.columns([1, 3])
     
     with col_map1:
