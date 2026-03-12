@@ -1354,85 +1354,109 @@ with tab_matriz:
 # PESTAÑA 5: RANKINGS Y DINÁMICA HISTÓRICA (Top 15 y 2005-2035)
 # ==========================================
 with tab_rankings:
-    # Extraemos la zona automáticamente de la base para evitar errores
-    zona_actual = df_mapa_base['area_geografica'].iloc[0].title() if not df_mapa_base.empty and 'area_geografica' in df_mapa_base.columns else "Total"
-    
+    # Extraemos la zona actual (Total, Urbano o Rural)
+    zona_actual = "Total"
+    if not df_mapa_base.empty and 'area_geografica' in df_mapa_base.columns:
+        zona_actual = df_mapa_base['area_geografica'].iloc[0].title()
+        
     st.subheader(f"📊 Análisis Comparativo y Trayectorias Poblacionales ({zona_actual})")
     
-    # Solo mostrar si hay datos para comparar
-    if not df_mapa_base.empty and len(df_mapa_base) > 1:
+    zona_q = zona_actual.lower()
+    
+    # --- LA MAGIA: CONSTRUIMOS EL RANKING DE FORMA INDEPENDIENTE AL MAPA ---
+    df_rank = pd.DataFrame()
+    titulo_ranking = ""
+    
+    if "Nacional" in escala_sel:
+        # Ranking de Departamentos
+        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
+        df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+        titulo_ranking = "Departamentos"
         
-        # -------------------------------------------------------------------
-        # SECCIÓN 1: RANKINGS LADO A LADO (Top 15 y Bottom 15)
-        # -------------------------------------------------------------------
-        st.markdown(f"### 🏆 Extremos Poblacionales ({año_sel})")
+    elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
+        # Ranking de todos los Municipios del Departamento seleccionado
+        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == depto_sel)].groupby('municipio')['Total'].sum().reset_index()
+        df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
+        titulo_ranking = f"Municipios de {depto_sel}"
         
-        df_rank = df_mapa_base.copy().dropna(subset=['Total'])
-        # ESCUDO ANTI-TEXTO
+    elif "Regional" in escala_sel or "Municipal (Regiones)" in escala_sel:
+        # Ranking de todos los Municipios de la Macroregión seleccionada
+        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['Macroregion'] == region_sel)].groupby('municipio')['Total'].sum().reset_index()
+        df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
+        titulo_ranking = f"Municipios de {region_sel}"
+        
+    else:
+        # Veredas y Cuencas (Usan la tabla del mapa directamente)
+        df_rank = df_mapa_base.copy()
+        titulo_ranking = "Territorios"
+
+    # Escudo Numérico Universal para la Pestaña 5
+    if not df_rank.empty and 'Total' in df_rank.columns:
         df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
         df_rank = df_rank[df_rank['Total'] > 0]
+    
+    # Procedemos solo si hay datos para armar gráficas
+    if not df_rank.empty and len(df_rank) > 1:
         
-        # Creamos las dos ventanas ocupando el ancho total
+        # -------------------------------------------------------------------
+        # SECCIÓN 1: RANKINGS LADO A LADO (Escalera Perfecta a Prueba de Balas)
+        # -------------------------------------------------------------------
+        st.markdown(f"### 🏆 Extremos Poblacionales ({año_sel}) - {titulo_ranking}")
+        
         col_rank_izq, col_rank_der = st.columns(2)
         
         with col_rank_izq:
-            # 1. Gráfica de MAYOR Población (Top 15)
-            df_plot_top = df_rank.nlargest(15, 'Total').sort_values(by='Total', ascending=True)
+            # Top 15: Forzamos 'total ascending' para que el mayor quede arriba
+            df_plot_top = df_rank.nlargest(15, 'Total')
             fig_top = px.bar(df_plot_top, x='Total', y='Territorio', orientation='h', 
                              color='Total', color_continuous_scale='Viridis',
                              title="📈 Top 15: Mayor Población")
-            fig_top.update_layout(yaxis={'categoryorder':'trace'}, height=450, margin=dict(t=40, b=0, l=0, r=0))
+            fig_top.update_layout(yaxis={'categoryorder':'total ascending'}, height=450, margin=dict(t=40, b=0, l=0, r=0))
             st.plotly_chart(fig_top, use_container_width=True, key=f"rank_top_{año_sel}_{zona_actual}")
 
         with col_rank_der:
-            # 2. Gráfica de MENOR Población (Bottom 15)
+            # Bottom 15: Forzamos 'total descending' para que el menor quede arriba
             if len(df_rank) > 5:
-                df_plot_bot = df_rank.nsmallest(15, 'Total').sort_values(by='Total', ascending=False)
+                df_plot_bot = df_rank.nsmallest(15, 'Total')
                 fig_bot = px.bar(df_plot_bot, x='Total', y='Territorio', orientation='h', 
                                  color='Total', color_continuous_scale='Plasma',
                                  title="📉 Bottom 15: Menor Población")
-                fig_bot.update_layout(yaxis={'categoryorder':'trace'}, height=450, margin=dict(t=40, b=0, l=0, r=0))
+                fig_bot.update_layout(yaxis={'categoryorder':'total descending'}, height=450, margin=dict(t=40, b=0, l=0, r=0))
                 st.plotly_chart(fig_bot, use_container_width=True, key=f"rank_bot_{año_sel}_{zona_actual}")
 
         # -------------------------------------------------------------------
-        # SECCIÓN 2: CURVAS HISTÓRICAS (Aprovechando todo el ancho inferior)
+        # SECCIÓN 2: CURVAS HISTÓRICAS (Totalmente Funcionales)
         # -------------------------------------------------------------------
         st.markdown("---")
         st.markdown("### 📈 Dinámica Poblacional (2005 - 2035)")
         
         if "Veredal" in escala_sel or "Cuencas" in escala_sel:
+            # Muestra el mensaje informativo (Como ya comprobaste, esto funciona perfecto)
             st.info("ℹ️ A escala Veredal/Cuencas, la plataforma utiliza un corte censal oficial estático. Las curvas de proyección dinámica 2005-2035 se activan desde la escala municipal hacia arriba.")
         else:
-            # Extraemos los NOMBRES de los 10 territorios más poblados para graficar sus líneas
+            # Obtenemos los 10 líderes del ranking independiente que acabamos de crear
             top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
             
-            zona_q = zona_actual.lower()
             df_base_historica = df_mun[df_mun['area_geografica'] == zona_q].copy()
             df_line = pd.DataFrame()
             
-            # Agregamos soporte para la escala Nacional
             if "Nacional" in escala_sel:
                 df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
                 df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
-            elif "Departamental" in escala_sel:
-                if 'region_sel' in locals() and region_sel != "Todas":
-                    df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel]
-                df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
-                df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
-            elif "Municipal (Departamentos)" in escala_sel:
+            elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
                 df_base_historica = df_base_historica[df_base_historica['depto_nom'] == depto_sel]
                 df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                 df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
-            elif "Municipal (Regiones)" in escala_sel:
+            elif "Regional" in escala_sel or "Municipal (Regiones)" in escala_sel:
                 df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel]
                 df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                 df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
             
-            # Filtramos la serie de tiempo SOLO para el Top 10
             if not df_line.empty:
+                # Filtramos las curvas para que solo muestren a los del Top 10
                 df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
                 
-                # Conciliación Censal forzada
+                # Suavizador para la gráfica
                 def conciliacion_censal(group):
                     group['año'] = pd.to_numeric(group['año'], errors='coerce')
                     group = group.sort_values('año')
@@ -1447,11 +1471,10 @@ with tab_rankings:
                                    title="Evolución de los 10 Territorios más Poblados",
                                    labels={'año': 'Año', 'Total': 'Habitantes'})
                 
-                # ¡LA LÍNEA QUE FALTABA! Renderizar la gráfica en pantalla
                 st.plotly_chart(fig_line, use_container_width=True, key=f"line_hist_{zona_actual}")
 
     else:
-        st.info("💡 Selecciona una escala territorial con múltiples divisiones (ej. Municipal o Departamental) para ver el ranking y las curvas comparativas.")
+        st.info("💡 Selecciona una escala territorial con múltiples divisiones para ver el ranking y las curvas comparativas.")
         
 # ==========================================
 # PESTAÑA 6: DESCARGAS Y EXPORTACIÓN
