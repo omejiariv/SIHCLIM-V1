@@ -1363,38 +1363,32 @@ with tab_rankings:
     if not df_mapa_base.empty and len(df_mapa_base) > 1:
         col_r1, col_r2 = st.columns([1, 1.2])
         
-        # --- COLUMNA 1: RANKING BARS (TOP 15) ---
+        # --- COLUMNA 1: RANKING BARS (TOP 15 - MAYOR Y MENOR POBLACIÓN) ---
         with col_r1:
-            st.markdown(f"**Top 15 Territorios ({año_sel})**")
-            es_top = st.radio("Ordenar por:", ["Mayor Población", "Menor Población"], horizontal=True)
+            st.markdown(f"**Extremos Poblacionales ({año_sel})**")
             
             df_rank = df_mapa_base.copy().dropna(subset=['Total'])
             # ESCUDO ANTI-TEXTO
             df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
-            
-            # --- CURA ANTI-BARRAS APILADAS Y DUPLICADOS ---
-            # Agrupamos por Territorio y Padre (Municipio) para sumar todos los fragmentos
-            if 'Padre' in df_rank.columns:
-                df_rank = df_rank.groupby(['Territorio', 'Padre'])['Total'].sum().reset_index()
-                df_rank['Nombre_Grafico'] = df_rank['Territorio'] + " (" + df_rank['Padre'] + ")"
-            else:
-                df_rank = df_rank.groupby('Territorio')['Total'].sum().reset_index()
-                df_rank['Nombre_Grafico'] = df_rank['Territorio']
-                
             df_rank = df_rank[df_rank['Total'] > 0]
             
-            if es_top == "Mayor Población":
-                df_plot = df_rank.nlargest(15, 'Total')
-            else:
-                df_plot = df_rank.nsmallest(15, 'Total')
-                
-            fig_bar = px.bar(df_plot, x='Total', y='Nombre_Grafico', orientation='h', 
+            # 1. Gráfica de MAYOR Población
+            df_plot_top = df_rank.nlargest(15, 'Total')
+            fig_top = px.bar(df_plot_top, x='Total', y='Territorio', orientation='h', 
                              color='Total', color_continuous_scale='Viridis',
-                             title=f"Ranking Poblacional ({año_sel})")
-            
-            # Usamos Nombre_Grafico en lugar de Territorio
-            fig_bar.update_layout(yaxis={'categoryorder':'total ascending' if es_top == "Mayor Población" else 'total descending'})
-            st.plotly_chart(fig_bar, use_container_width=True)
+                             title="📈 Mayor Población")
+            # Ajustamos la altura para que quepan las dos gráficas cómodamente
+            fig_top.update_layout(yaxis={'categoryorder':'total ascending'}, height=350, margin=dict(t=30, b=0, l=0, r=0))
+            st.plotly_chart(fig_top, use_container_width=True, key=f"rank_top_{año_sel}_{zona_actual}")
+
+            # 2. Gráfica de MENOR Población (Solo la dibujamos si hay bastantes territorios para no repetir)
+            if len(df_rank) > 5:
+                df_plot_bot = df_rank.nsmallest(15, 'Total')
+                fig_bot = px.bar(df_plot_bot, x='Total', y='Territorio', orientation='h', 
+                                 color='Total', color_continuous_scale='Plasma', # Usamos otro color para diferenciar
+                                 title="📉 Menor Población")
+                fig_bot.update_layout(yaxis={'categoryorder':'total descending'}, height=350, margin=dict(t=30, b=0, l=0, r=0))
+                st.plotly_chart(fig_bot, use_container_width=True, key=f"rank_bot_{año_sel}_{zona_actual}")
 
         # --- COLUMNA 2: CURVAS HISTÓRICAS (2005 - 2035) ---
         with col_r2:
