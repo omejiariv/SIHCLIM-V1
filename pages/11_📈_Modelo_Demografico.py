@@ -292,7 +292,12 @@ def cargar_datos_limpios():
         if os.path.exists(ruta_ver_1): 
             df_ver = pd.read_csv(ruta_ver_1, sep=';')
             
-            # EL ESCUDO DEFINITIVO: Convertimos a números puros desde el momento cero
+            # --- SINCRONIZACIÓN DE NOMBRES ---
+            # Hacemos que las veredas hablen el mismo idioma que el DANE (Mayúscula Inicial)
+            if 'Municipio' in df_ver.columns:
+                df_ver['Municipio'] = df_ver['Municipio'].astype(str).str.title()
+                
+            # EL ESCUDO DEFINITIVO
             if 'Poblacion_hab' in df_ver.columns:
                 df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
 
@@ -637,9 +642,13 @@ if escala_sel == "🇨🇴 Nacional (Colombia)": territorio_busqueda = "COLOMBIA
 if len(años_hist) > 0:
     df_clean = pd.DataFrame({'Año': años_hist, 'Pob': pob_hist})
     
-    # --- ESCUDO ANTI-TEXTO: Convertimos la población a números puros ---
-    df_clean['Pob'] = pd.to_numeric(df_clean['Pob'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
-    
+    # --- ESCUDO INTELIGENTE: Solo limpiar si es texto ---
+    if df_clean['Pob'].dtype == object:
+        df_clean['Pob'] = pd.to_numeric(df_clean['Pob'].astype(str).str.replace(',', ''), errors='coerce')
+    else:
+        df_clean['Pob'] = pd.to_numeric(df_clean['Pob'], errors='coerce')
+        
+    df_clean = df_clean.fillna(0)
     df_clean = df_clean[df_clean['Pob'] > 0] 
     df_clean = df_clean.groupby('Año')['Pob'].max().reset_index() 
     df_clean = df_clean.sort_values(by='Año') 
