@@ -77,7 +77,9 @@ def normalizar_texto(texto):
         "PURISIMA": "PURISIMADELACONCEPCION",
         "GUICAN": "GUICANDELASIERRA",
         "PAPUNAUACD": "PAPUNAHUA",
-        "PAPUNAUA": "PAPUNAHUA"
+        "PAPUNAUA": "PAPUNAHUA",
+        "CHIBOLO": "CHIVOLO", 
+        "MANAUREBALCONDELCESAR": "MANAURE"
     }
     
     if t in diccionario_rebeldes: 
@@ -195,8 +197,11 @@ def cargar_datos_limpios():
         # --- SOLUCIÓN QUINDÍO Y SAN ANDRÉS ---
         reemplazos_deptos = {
             'Quindio': 'Quindío',
-            'Archipiélago De San Andrés': 'Archipiélago De San Andrés, Providencia Y Santa Catalina',
-            'Archipielago De San Andres': 'Archipiélago De San Andrés, Providencia Y Santa Catalina'
+            # Forzamos el nombre corto para que cruce con el GeoJSON
+            'Archipiélago De San Andrés, Providencia Y Santa Catalina': 'Archipiélago De San Andrés',
+            'Archipielago De San Andres': 'Archipiélago De San Andrés',
+            'Valle Del Cauca': 'Valle',
+            'Bogota D.c.': 'Bogotá, D.C.'
         }
         df_master['depto_nom'] = df_master['depto_nom'].replace(reemplazos_deptos)
         
@@ -447,9 +452,13 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         # 1. Cruzar Veredas base con la cuenca
         df_cruce_ver = pd.merge(df_ver_temp, df_prop_sel, on=['Vereda_upper', 'Municipio_upper'], how='inner')
         
-        # ESCUDO ANTI-TEXTO: Forzamos a que sean números reales borrando comas o puntos raros
+        # ESCUDO ANTI-TEXTO
         df_cruce_ver['Poblacion_hab'] = pd.to_numeric(df_cruce_ver['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
         df_cruce_ver['Porcentaje'] = pd.to_numeric(df_cruce_ver['Porcentaje'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+        
+        # --- NUEVO: ESCUDO ANTI-ASTILLAS (SLIVERS) TOPOLÓGICAS ---
+        # Borramos los "roces" accidentales de mapa (territorios con menos del 1% dentro de la cuenca)
+        df_cruce_ver = df_cruce_ver[df_cruce_ver['Porcentaje'] >= 1.0]
         
         df_cruce_ver['Pob_en_cuenca'] = df_cruce_ver['Poblacion_hab'] * (df_cruce_ver['Porcentaje'] / 100.0)
         
