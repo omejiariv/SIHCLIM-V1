@@ -742,57 +742,85 @@ with tab_modelos:
 
     df_piramide_final = pd.DataFrame() 
 
-    def renderizar_piramide(año_obj):
-        global df_piramide_final
-        try: pob_modelo = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
-        except: pob_modelo = np.nan
-            
-        if pd.isna(pob_modelo): pob_modelo = df_proj[df_proj['Año'] == año_obj]['Logístico'].values[0]
+def renderizar_piramide(año_obj):
+        st.markdown(f"#### 📊 Estructura Poblacional Modelada ({año_obj})")
         
-        # --- BLOQUE CORREGIDO PARA LA PIRÁMIDE ---
-        # Detectamos automáticamente si la columna está en mayúscula o minúscula
+        try:
+            pob_modelo = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
+        except:
+            pob_modelo = np.nan
+            
+        if pd.isna(pob_modelo) or pob_modelo == 0:
+            st.warning(f"No hay datos de población proyectada para el año {año_obj}.")
+            return
+
         col_anio_pyr2 = 'año' if 'año' in df_nac.columns else 'Año'
         df_fnac = df_nac[df_nac[col_anio_pyr2] == año_obj].copy()
-        pob_nacional_tot = df_fnac['Hombres'].sum() + df_fnac['Mujeres'].sum()
-        df_fnac['Prop_H'] = df_fnac['Hombres'] / pob_nacional_tot
-        df_fnac['Prop_M'] = df_fnac['Mujeres'] / pob_nacional_tot
         
-        df_fnac['Hom_Terr'] = df_fnac['Prop_H'] * pob_modelo
-        df_fnac['Muj_Terr'] = df_fnac['Prop_M'] * pob_modelo
-        
-        df_pir = pd.DataFrame({'Edad': df_fnac['Edad'], 'Hombres': df_fnac['Hom_Terr'] * -1, 'Mujeres': df_fnac['Muj_Terr']})
-        cortes = list(range(0, 105, 5))
-        etiquetas = [f"{i}-{i+4}" for i in range(0, 100, 5)]
-        df_pir['Rango'] = pd.cut(df_pir['Edad'], bins=cortes, labels=etiquetas, right=False)
-        df_agrupado = df_pir.groupby('Rango', observed=True)[['Hombres', 'Mujeres']].sum().reset_index()
-        
-        df_melt = pd.melt(df_agrupado, id_vars=['Rango'], value_vars=['Hombres', 'Mujeres'], var_name='Sexo', value_name='Poblacion')
-        df_piramide_final = df_melt.copy()
-        
-        fig_pir = px.bar(df_melt, y='Rango', x='Poblacion', color='Sexo', orientation='h', color_discrete_map={'Hombres': '#2563eb', 'Mujeres': '#db2777'})
-        
-        max_x = max(abs(df_melt['Poblacion'].min()), df_melt['Poblacion'].max()) * 1.1
-        fig_pir.update_layout(barmode='relative', xaxis_title="Habitantes", yaxis_title="Edades", xaxis=dict(range=[-max_x, max_x]))
-        fig_pir.update_traces(hovertemplate="%{y}: %{x:,.0f}")
-        
-        ph_titulo_año.markdown(f"### ⏳ **Año Proyectado: {año_obj}**")
-        ph_grafico_pir.plotly_chart(fig_pir, width='stretch')
-        
-        tot_h, tot_m = df_fnac['Hom_Terr'].sum(), df_fnac['Muj_Terr'].sum()
-        ind_m = (tot_h / tot_m) * 100 if tot_m > 0 else 0
-        
-        ph_metrica_pob.metric("Población Proyectada", f"{pob_modelo:,.0f}")
-        ph_metrica_hom.metric("Total Hombres", f"{tot_h:,.0f}")
-        ph_metrica_muj.metric("Total Mujeres", f"{tot_m:,.0f}")
-        ph_metrica_ind.metric("Índice Masculinidad", f"{ind_m:.1f} H x 100 M")
+        if df_fnac.empty:
+            st.warning("No hay datos base nacionales para este año.")
+            return
 
-    if iniciar_animacion:
-        for a in años_disp:
-            if a >= 1950:
-                renderizar_piramide(a)
-                time.sleep(velocidad_animacion)
-    else:
-        renderizar_piramide(año_sel)
+        # --- MAGIA DE TRANSFORMACIÓN (De Ancho a Largo) ---
+        import re
+        # Buscamos las columnas de edades ignorando las de totales
+        cols_h = [c for c in df_fnac.columns if 'Hombre' in str(c) and c != 'Hombres']
+        cols_m = [c for c in df_fnac.columns if 'Mujer' in str(c) and c != 'Mujeres']
+        
+        def extraer_edad(texto):
+            nums = re.findall(r'\d+', texto)
+            return int(nums[0]) if nums else 0
+
+        datos_edades = []
+        for col in cols_h:
+            edad = extraer_edad(col)
+            val_h = df_fnac[col].values[0]
+            # Buscamos la columna de mujer correspondiente a la misma edad
+            col_mujer = next((c for c in cols_m if extraer_edad(c) == edad), None)
+            val_m = df_fnac[col_mujer].values[0] if col_mujer else 0
+            datos_edades.append({'Edad': edad, 'Hombres': val_h, 'Mujeres': val_m})
+            
+        df_edades = pd.DataFrame(datos_edades)
+        
+        # Calcular proporciones usando la NUEVA tabla df_edades
+        pob_nacional_tot = df_edades['Hombres'].sum() + df_edades['Mujeres'].sum()
+        df_edades['Prop_H'] = df_edades['Hombres'] / pob_nacional_tot
+        df_edades['Prop_M'] = df_edades['Mujeres'] / pob_nacional_tot
+        
+        # Escalar al territorio objetivo (Antioquia, Medellín, etc.) usando la NUEVA tabla
+        df_edades['Hom_Terr'] = df_edades['Prop_H'] * pob_modelo
+        df_edades['Muj_Terr'] = df_edades['Prop_M'] * pob_modelo
+        
+        # Construir df_pir para Plotly usando la NUEVA tabla
+        df_pir = pd.DataFrame({
+            'Edad': df_edades['Edad'], 
+            'Hombres': df_edades['Hom_Terr'] * -1, 
+            'Mujeres': df_edades['Muj_Terr']
+        })
+        
+        # Clasificar en grupos de 5 años
+        cortes = list(range(0, 105, 5)) + [200]
+        etiquetas = [f"{i}-{i+4}" for i in range(0, 100, 5)] + ["100+"]
+        df_pir['Rango'] = pd.cut(df_pir['Edad'], bins=cortes, labels=etiquetas, right=False)
+        
+        df_pir_agrupado = df_pir.groupby('Rango', observed=True)[['Hombres', 'Mujeres']].sum().reset_index()
+
+        # --- DIBUJAR LA PIRÁMIDE ---
+        fig_pir = go.Figure()
+        fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Hombres'], name='Hombres', orientation='h', marker_color='#3498db'))
+        fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Mujeres'], name='Mujeres', orientation='h', marker_color='#e74c3c'))
+        
+        rango_max = max(abs(df_pir_agrupado['Hombres'].min()), df_pir_agrupado['Mujeres'].max()) if not df_pir_agrupado.empty else 100
+        
+        fig_pir.update_layout(
+            barmode='relative',
+            yaxis_title='Rango de Edad',
+            xaxis_title='Población',
+            xaxis=dict(range=[-rango_max*1.1, rango_max*1.1], tickvals=[-rango_max, 0, rango_max], ticktext=[f"{int(rango_max):,}", "0", f"{int(rango_max):,}"]),
+            margin=dict(l=0, r=0, t=30, b=0),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig_pir, use_container_width=True)
         
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
