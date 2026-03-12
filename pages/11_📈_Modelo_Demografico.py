@@ -371,6 +371,7 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
     
     col_anio = 'año' if 'año' in df_base.columns else 'Año'
     
+    # ¡CONSERVAMOS TU VALIOSO ESCUDO DE COLUMNAS!
     if 'Total' in df_base.columns: df_base['Pob_Calc'] = df_base['Total']
     elif 'Population' in df_base.columns: df_base['Pob_Calc'] = df_base['Population']
     elif 'Poblacion' in df_base.columns: df_base['Pob_Calc'] = df_base['Poblacion']
@@ -385,9 +386,8 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
     años_hist = df_hist[col_anio].values
     pob_hist = df_hist['Pob_Calc'].values
     
-    df_mapa_base = df_mun.groupby(['depto_nom', 'año'])['Total'].sum().reset_index()
-    df_mapa_base.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
-    df_mapa_base['Padre'] = "Colombia"
+    df_mapa_base = df_mun.groupby(['municipio', 'depto_nom', 'año'])['Total'].sum().reset_index()
+    df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 # --- NUEVO MOTOR: DEPARTAMENTAL ---
 elif escala_sel == "🏛️ Departamental (Colombia)":
@@ -863,15 +863,16 @@ with tab_modelos:
 
     # --- EL PINTOR DE LA INTERFAZ ---
     def actualizar_ui_piramides(año):
-        global df_piramide_final # Avisamos que vamos a editar la global
+        global df_piramide_final
         
         fig1, t1, h1, m1, ind1, err1, df_export = generar_figura_piramide(año, "Total")
         if err1:
             ph_graf_1.warning(err1)
         else:
-            df_piramide_final = df_export.copy() # Guardamos la tabla para descargas!
+            df_piramide_final = df_export.copy()
             ph_tit_1.markdown(f"#### 🔵 Estructura Total ({año})")
-            ph_graf_1.plotly_chart(fig1, use_container_width=True)
+            # SOLUCIÓN ID: Le damos un "key" único basado en el año
+            ph_graf_1.plotly_chart(fig1, use_container_width=True, key=f"pir_1_{año}")
             ph_m_pob_1.metric("Pob. Total", f"{int(t1):,}".replace(",", "."))
             if t1 > 0:
                 ph_m_hom_1.metric("Hombres", f"{int(h1):,}".replace(",", "."), f"{(h1/t1)*100:.1f}%")
@@ -883,7 +884,8 @@ with tab_modelos:
             ph_graf_2.warning(err2)
         else:
             ph_tit_2.markdown(f"#### 🟢 Perfil {zona_comparacion} ({año})")
-            ph_graf_2.plotly_chart(fig2, use_container_width=True)
+            # SOLUCIÓN ID: Le damos un "key" único a la segunda gráfica también
+            ph_graf_2.plotly_chart(fig2, use_container_width=True, key=f"pir_2_{año}_{zona_comparacion}")
             ph_m_pob_2.metric(f"Pob. {zona_comparacion}", f"{int(t2):,}".replace(",", "."))
             if t2 > 0:
                 ph_m_hom_2.metric("Hombres", f"{int(h2):,}".replace(",", "."), f"{(h2/t2)*100:.1f}%")
@@ -1067,7 +1069,8 @@ with tab_mapas:
     
     with col_map1:
         st.markdown("**⚙️ Configuración del GeoJSON**")
-        if escala_sel == "Veredal (Antioquia)": 
+        # --- SOLUCIÓN EMOJIS: Verificamos el texto exacto incluyendo el emoji ---
+        if escala_sel in ["🌿 Veredal (Antioquia)", "💧 Cuencas Hidrográficas"]: 
             sugerencia_geo = "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson"
             sugerencia_prop = "properties.NOMBRE_VER"
             sugerencia_padre = "properties.NOMB_MPIO"
@@ -1080,7 +1083,7 @@ with tab_mapas:
         prop_geo_input = st.text_input("Llave Territorio:", value=sugerencia_prop)
         st.markdown("**🔗 Llave Doble (Anti-Homonimia)**")
         prop_padre_input = st.text_input("Llave Contexto:", value=sugerencia_padre)
-
+    
     with col_map2:
         ruta_geo = os.path.join(RUTA_RAIZ, "data", archivo_geo_input)
         
