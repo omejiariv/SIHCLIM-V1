@@ -1149,8 +1149,8 @@ with tabs[14]:
                             from supabase import create_client, Client
                             
                             # Intentamos obtener credenciales de Streamlit Secrets
-                            url: str = st.secrets["SUPABASE_URL"]
-                            key: str = st.secrets["SUPABASE_KEY"]
+                            url: str = st.secrets["https://ldunpssoxvifemoyeuac.supabase.co"]
+                            key: str = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkdW5wc3NveHZpZmVtb3lldWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzNDk1NzQsImV4cCI6MjA3ODkyNTU3NH0.UDlf1aFBDCR8WS87ldS_D3cUl3g0HVfIVoekn1ZBAkI"]
                             supabase: Client = create_client(url, key)
                             
                             nombre_bucket = "sihcli_maestros" # <-- ¡CAMBIA ESTO por el nombre de tu bucket!
@@ -1347,6 +1347,7 @@ with tabs[15]:
                 
         except Exception as e:
             st.error(f"No se pudo conectar con el explorador. Detalle: {e}")
+
 
 
 
