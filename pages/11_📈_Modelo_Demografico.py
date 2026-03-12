@@ -1147,7 +1147,7 @@ with tab_rankings:
                     df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
                     
                 elif escala_sel == "Municipal (Regiones)":
-                    df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel_m]
+                    df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel]
                     df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                     df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
                 
