@@ -392,7 +392,13 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         df_ver_temp['Municipio_upper'] = limpiar_texto(df_ver_temp['Municipio'])
         df_ver_temp['Poblacion_hab'] = df_ver_temp['Poblacion_hab'].fillna(0)
         
+        # 1. Cruzar Veredas base con la cuenca
         df_cruce_ver = pd.merge(df_ver_temp, df_prop_sel, on=['Vereda_upper', 'Municipio_upper'], how='inner')
+        
+        # ESCUDO ANTI-TEXTO: Forzamos a que sean números reales borrando comas o puntos raros
+        df_cruce_ver['Poblacion_hab'] = pd.to_numeric(df_cruce_ver['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
+        df_cruce_ver['Porcentaje'] = pd.to_numeric(df_cruce_ver['Porcentaje'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+        
         df_cruce_ver['Pob_en_cuenca'] = df_cruce_ver['Poblacion_hab'] * (df_cruce_ver['Porcentaje'] / 100.0)
         
         aporte_mpio = df_cruce_ver.groupby('Municipio_upper')['Pob_en_cuenca'].sum().reset_index()
@@ -580,7 +586,9 @@ else:
     x_hist, y_hist = np.array([]), np.array([])
 
 # 3. Eje X Futuro
-año_maximo = int(max(df_nac['Año'].max() if 'df_nac' in locals() else 2100, 2100))
+# Escudo protector para detectar si la columna es 'año' o 'Año'
+col_anio_nac = 'año' if 'año' in df_nac.columns else 'Año'
+año_maximo = int(max(df_nac[col_anio_nac].max() if 'df_nac' in locals() and not df_nac.empty else 2100, 2100))
 x_proj = np.arange(1950, año_maximo + 1, 1) 
 
 proyecciones = {'Año': x_proj, 'Real': [np.nan]*len(x_proj)}
