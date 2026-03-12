@@ -457,7 +457,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         
         # --- NUEVO: ESCUDO ANTI-ASTILLAS (SLIVERS) TOPOLÓGICAS ---
         # Borramos los "roces" accidentales de mapa (territorios con menos del 1% dentro de la cuenca)
-        df_cruce_ver = df_cruce_ver[df_cruce_ver['Porcentaje'] >= 3.0]
+        df_cruce_ver = df_cruce_ver[df_cruce_ver['Porcentaje'] >= 2.0]
         
         df_cruce_ver['Pob_en_cuenca'] = df_cruce_ver['Poblacion_hab'] * (df_cruce_ver['Porcentaje'] / 100.0)
         
