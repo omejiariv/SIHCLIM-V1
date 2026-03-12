@@ -1043,23 +1043,27 @@ with tab_matriz:
                 try:
                     p0_val = max(1, y[0])
                     p_final = y[-1]
+                    max_y = max(y)
                     
-                    # 1. El modelo ahora entiende si la población crece o se encoge
                     es_creciente = p_final >= p0_val
                     
-                    k_guess = max(y) * 1.5
-                    a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
+                    # ========================================================
+                    # EL ESCUDO ANTI-RAGONVALIA (Límites Estrictos de K)
+                    # ========================================================
+                    # Si crece, el techo máximo es 3 veces su población mayor.
+                    # Si decrece, el techo máximo es solo un 10% más de su pico histórico.
+                    k_max = max_y * 3.0 if es_creciente else max_y * 1.1
                     
-                    # Si se encoge, empezamos buscando en negativo
+                    k_guess = max_y * 1.2 if es_creciente else max_y
+                    a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
                     r_guess = 0.02 if es_creciente else -0.02
                     
-                    # 2. EL SECRETO: Permitimos tasas de crecimiento negativas (hasta -0.2)
-                    limites = ([max(y), 0, -0.2], [max(y)*10, np.inf, 0.3])
+                    # Obligamos al algoritmo a no salirse de k_max
+                    limites = ([max_y, 0, -0.2], [k_max, np.inf, 0.3])
                     
                     popt, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
                     k_opt, a_opt, r_opt = popt
                     
-                    # Calcular R²
                     y_pred = f_log(x_norm, *popt)
                     r2_val = calcular_r2(y, y_pred)
                     
@@ -1069,7 +1073,7 @@ with tab_matriz:
                         'K': round(k_opt, 4), 'a': round(a_opt, 6), 'r': round(r_opt, 6), 'R2': round(r2_val, 4)
                     })
                 except Exception as e:
-                    pass # Si no logra ajustar, lo omite para no romper el proceso masivo
+                    pass
 
             # ==========================================
             # 1. CARGA DE BASE DE DATOS ÚNICA (LA SOLUCIÓN AL ERROR)
