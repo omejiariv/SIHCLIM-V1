@@ -200,15 +200,20 @@ def cargar_datos_limpios():
         }
         df_master['depto_nom'] = df_master['depto_nom'].replace(reemplazos_deptos)
         
-        mapeo_areas = {
-            'Cabecera': 'urbano',
-            'Cabecera municipal': 'urbano',
-            'Centros Poblados y Rural Disperso': 'rural',
-            'Total': 'total'
+        # --- TRADUCTOR ROBUSTO DE ÁREAS GEOGRÁFICAS ---
+        # 1. Convertimos todo a minúsculas y quitamos espacios a los lados para evitar fallos
+        df_master['area_geografica'] = df_master['area_geografica'].astype(str).str.lower().str.strip()
+        
+        # 2. Diccionario a prueba de balas
+        reemplazos_area = {
+            'cabecera': 'urbano',
+            'cabecera municipal': 'urbano',
+            'centros poblados y rural disperso': 'rural',
+            'centro poblado y rural disperso': 'rural'
         }
-        df_master['area_geografica'] = df_master['area_geografica'].astype(str).str.strip().map(lambda x: mapeo_areas.get(x, x.lower()))
+        df_master['area_geografica'] = df_master['area_geografica'].replace(reemplazos_area)
 
-        # Separamos Hombres y Mujeres y Totales
+        # --- SEPARACIÓN DE HOMBRES Y MUJERES (CON ESCUDO NUMÉRICO) ---
         cols_hombres = [c for c in df_master.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
         cols_mujeres = [c for c in df_master.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
         cols_poblacion = cols_hombres + cols_mujeres
@@ -377,7 +382,7 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
 # --- NUEVO MOTOR: DEPARTAMENTAL ---
 elif escala_sel == "🏛️ Departamental (Colombia)":
     depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
-    df_base = df_mun[df_mun['depto_nom'] == depto_sel]
+    df_base = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['area_geografica'] == 'total')]
     
     filtro_zona = depto_sel
     titulo_terr = depto_sel
@@ -400,7 +405,7 @@ elif escala_sel == "🧩 Regional (Macroregiones)":
     filtro_zona = reg_sel
     titulo_terr = f"Región {reg_sel}"
     
-    df_terr = df_mun[df_mun['Macroregion'] == reg_sel].groupby('año')['Total'].sum().reset_index()
+    df_terr = df_mun[(df_mun['Macroregion'] == reg_sel) & (df_mun['area_geografica'] == 'total')].groupby('año')['Total'].sum().reset_index()
     años_hist = df_terr['año'].values
     pob_hist = df_terr['Total'].values
     
@@ -514,7 +519,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
     
 elif escala_sel == "🏢 Municipal (Regiones)":
     region_sel = st.sidebar.selectbox("Macroregión:", sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"]))
-    mpios_reg = df_mun[df_mun['Macroregion'] == region_sel]
+    mpios_reg = df_mun[(df_mun['Macroregion'] == region_sel) & (df_mun['area_geografica'] == 'total')]
     municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_reg['municipio'].unique()))
     
     df_base = mpios_reg[mpios_reg['municipio'] == municipio_sel]
@@ -531,7 +536,7 @@ elif escala_sel == "🏢 Municipal (Regiones)":
 
 elif escala_sel == "🏢 Municipal (Departamentos)":
     depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
-    mpios_depto = df_mun[df_mun['depto_nom'] == depto_sel]
+    mpios_depto = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['area_geografica'] == 'total')]
     municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_depto['municipio'].unique()))
     
     df_base = mpios_depto[mpios_depto['municipio'] == municipio_sel]
@@ -778,18 +783,21 @@ with tab_modelos:
             ph_m_ind_2 = st.empty()
 
     # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES (Totalmente aislado del diseño) ---
+    df_piramide_final = pd.DataFrame()
+
+    # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES ---
     def generar_figura_piramide(año_obj, zona_str):
         try:
             pob_modelo_total = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
         except:
-            return None, 0, 0, 0, 0, f"No hay proyección para el año {año_obj}."
+            return None, 0, 0, 0, 0, f"No hay proyección para el año {año_obj}.", pd.DataFrame()
 
         col_anio_pyr2 = 'año' if 'año' in df_nac.columns else 'Año'
         df_fnac_zona = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'] == zona_str.lower())].copy()
         df_fnac_total = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'] == 'total')].copy()
         
         if df_fnac_zona.empty or df_fnac_total.empty:
-            return None, 0, 0, 0, 0, "No hay datos base nacionales para este año."
+            return None, 0, 0, 0, 0, "No hay datos base nacionales para este año/zona.", pd.DataFrame()
 
         import re
         cols_h = [c for c in df_fnac_zona.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
@@ -809,7 +817,7 @@ with tab_modelos:
             
         df_edades = pd.DataFrame(datos_edades)
         
-        # --- ESCALADO PRECISO AL TERRITORIO (Manteniendo la proporción Urbano/Rural) ---
+        # ESCALADO
         pob_nac_total_real = df_fnac_total['Total'].values[0]
         factor_escala = (pob_modelo_total / pob_nac_total_real) if pob_nac_total_real > 0 else 0
             
@@ -840,15 +848,18 @@ with tab_modelos:
         total_zona = total_hom + total_muj
         ind_masculinidad = (total_hom / total_muj * 100) if total_muj > 0 else 0
         
-        return fig_pir, total_zona, total_hom, total_muj, ind_masculinidad, None
+        # Agregamos la tabla df_pir al final del return
+        return fig_pir, total_zona, total_hom, total_muj, ind_masculinidad, None, df_pir
 
     # --- EL PINTOR DE LA INTERFAZ ---
     def actualizar_ui_piramides(año):
-        # 1. Pirámide Izquierda (TOTAL SIEMPRE)
-        fig1, t1, h1, m1, ind1, err1 = generar_figura_piramide(año, "Total")
+        global df_piramide_final # Avisamos que vamos a editar la global
+        
+        fig1, t1, h1, m1, ind1, err1, df_export = generar_figura_piramide(año, "Total")
         if err1:
             ph_graf_1.warning(err1)
         else:
+            df_piramide_final = df_export.copy() # Guardamos la tabla para descargas!
             ph_tit_1.markdown(f"#### 🔵 Estructura Total ({año})")
             ph_graf_1.plotly_chart(fig1, use_container_width=True)
             ph_m_pob_1.metric("Pob. Total", f"{int(t1):,}".replace(",", "."))
@@ -857,8 +868,7 @@ with tab_modelos:
                 ph_m_muj_1.metric("Mujeres", f"{int(m1):,}".replace(",", "."), f"{(m1/t1)*100:.1f}%")
             ph_m_ind_1.metric("Índ. Masc.", f"{ind1:.1f}")
 
-        # 2. Pirámide Derecha (URBANO O RURAL según selector)
-        fig2, t2, h2, m2, ind2, err2 = generar_figura_piramide(año, zona_comparacion)
+        fig2, t2, h2, m2, ind2, err2, _ = generar_figura_piramide(año, zona_comparacion)
         if err2:
             ph_graf_2.warning(err2)
         else:
@@ -869,7 +879,7 @@ with tab_modelos:
                 ph_m_hom_2.metric("Hombres", f"{int(h2):,}".replace(",", "."), f"{(h2/t2)*100:.1f}%")
                 ph_m_muj_2.metric("Mujeres", f"{int(m2):,}".replace(",", "."), f"{(m2/t2)*100:.1f}%")
             ph_m_ind_2.metric("Índ. Masc.", f"{ind2:.1f}")
-    
+            
     # === EJECUCIÓN ===
     if iniciar_animacion:
         for a in años_disp:
