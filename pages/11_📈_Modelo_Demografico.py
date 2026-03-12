@@ -260,22 +260,24 @@ def cargar_datos_limpios():
         df_global_dinamico = pd.merge(df_global_dinamico, df_med, on='año', how='outer')
         df_global_dinamico = df_global_dinamico.rename(columns={'año': 'Año'})
 
-        # --- CONEXIÓN AL ARCHIVO HISTÓRICO MUNDIAL DESDE SUPABASE ---
-        url_global = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Pob_Col_Ant_Amva_Med.csv" 
+        # --- CONEXIÓN AL ARCHIVO HISTÓRICO GLOBAL (LOCAL GITHUB) ---
+        ruta_global = os.path.join(RUTA_RAIZ, "data", "Pob_Col_Ant_Amva_Med.csv")
+        df_global = df_global_dinamico.copy()
         
-        try:
-            # Intenta detectar si viene separado por comas o punto y coma
+        if os.path.exists(ruta_global):
             try:
-                df_global_csv = pd.read_csv(url_global, sep=';', encoding='utf-8')
-                if len(df_global_csv.columns) == 1: # Si falló y lo metió todo en una columna
-                    df_global_csv = pd.read_csv(url_global, sep=',', encoding='utf-8')
-            except:
-                df_global_csv = pd.read_csv(url_global, sep=',', encoding='utf-8')
+                # Detecta automáticamente si es punto y coma o coma
+                sep_char = ';' if ';' in open(ruta_global, encoding='utf-8').readline() else ','
+                df_global_csv = pd.read_csv(ruta_global, sep=sep_char, encoding='utf-8')
                 
-            df_global = pd.merge(df_global_csv, df_global_dinamico, on='Año', how='outer')
-        except Exception as e:
-            df_global = df_global_dinamico
-
+                # Forzar que la columna de tiempo se llame 'Año' para que coincida
+                if 'año' in df_global_csv.columns:
+                    df_global_csv = df_global_csv.rename(columns={'año': 'Año'})
+                    
+                df_global = pd.merge(df_global_csv, df_global_dinamico, on='Año', how='outer')
+            except Exception as e:
+                pass
+                
         # =======================================================
         # 2. Cargar datos Veredales 
         # =======================================================
@@ -1417,7 +1419,10 @@ with tab_descargas:
         st.markdown(f"### 📊 Pirámide Sintética ({año_sel})")
         df_descarga_pir = df_piramide_final.copy()
         if not df_descarga_pir.empty:
-            df_descarga_pir['Poblacion'] = df_descarga_pir['Poblacion'].abs()
+            # Volvemos los Hombres a números positivos para el Excel
+            if 'Hombres' in df_descarga_pir.columns:
+                df_descarga_pir['Hombres'] = df_descarga_pir['Hombres'].abs()
+                
             csv_pir = df_descarga_pir.to_csv(index=False).encode('utf-8')
             st.download_button(label=f"⬇️ Descargar Pirámide {año_sel} (CSV)", data=csv_pir, file_name=f"Piramide_{año_sel}_{titulo_terr}.csv", mime="text/csv", use_container_width=True)
             st.dataframe(df_descarga_pir.head(5), use_container_width=True)
