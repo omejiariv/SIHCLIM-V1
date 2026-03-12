@@ -1108,6 +1108,10 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
 # ==============================================================================
 with tabs[14]:
     st.header("👥 Gestión de Datos Demográficos y Poblacionales")
+if "SUPABASE_URL" in st.secrets:
+    st.success("✅ Streamlit SÍ está leyendo los secretos.")
+else:
+    st.error("🚨 Streamlit AÚN NO encuentra los secretos. (Revisa si creaste la carpeta .streamlit/secrets.toml)")
     st.markdown("""
     Aquí puedes actualizar la base de datos maestra (`.parquet`) enviándola directamente al almacenamiento en la nube (Supabase).
     Esto nos permite superar los límites de tamaño de GitHub y centralizar la información.
@@ -1347,6 +1351,7 @@ with tabs[15]:
                 
         except Exception as e:
             st.error(f"No se pudo conectar con el explorador. Detalle: {e}")
+
 
 
 
