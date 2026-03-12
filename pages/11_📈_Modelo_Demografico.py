@@ -185,8 +185,17 @@ def cargar_datos_limpios():
             if col_upper in columnas_base:
                 df_master = df_master.rename(columns={col_orig: columnas_base[col_upper]})
 
+        # ESTANDARIZACIÓN DE NOMBRES
         df_master['depto_nom'] = df_master['depto_nom'].str.title()
         df_master['municipio'] = df_master['municipio'].str.title()
+        
+        # --- SOLUCIÓN QUINDÍO Y SAN ANDRÉS ---
+        reemplazos_deptos = {
+            'Quindio': 'Quindío',
+            'Archipiélago De San Andrés': 'Archipiélago De San Andrés, Providencia Y Santa Catalina',
+            'Archipielago De San Andres': 'Archipiélago De San Andrés, Providencia Y Santa Catalina'
+        }
+        df_master['depto_nom'] = df_master['depto_nom'].replace(reemplazos_deptos)
         
         mapeo_areas = {
             'Cabecera': 'urbano',
@@ -196,7 +205,7 @@ def cargar_datos_limpios():
         }
         df_master['area_geografica'] = df_master['area_geografica'].astype(str).str.strip().map(lambda x: mapeo_areas.get(x, x.lower()))
 
-        # --- AQUÍ ESTÁ LA MAGIA NUEVA: Separamos Hombres y Mujeres ---
+        # Separamos Hombres y Mujeres y Totales
         cols_hombres = [c for c in df_master.columns if 'Hombre' in str(c)]
         cols_mujeres = [c for c in df_master.columns if 'Mujer' in str(c)]
         cols_poblacion = cols_hombres + cols_mujeres
@@ -204,13 +213,12 @@ def cargar_datos_limpios():
         for col in cols_poblacion:
             df_master[col] = pd.to_numeric(df_master[col], errors='coerce').fillna(0)
             
-        # Creamos las columnas totales que la pirámide está buscando
         df_master['Hombres'] = df_master[cols_hombres].sum(axis=1)
         df_master['Mujeres'] = df_master[cols_mujeres].sum(axis=1)
         df_master['Total'] = df_master['Hombres'] + df_master['Mujeres']
 
         # -------------------------------------------------------
-        # A. Crear df_mun (Municipal) - Ahora incluye Hombres y Mujeres
+        # A. Crear df_mun (Municipal)
         # -------------------------------------------------------
         df_mun = df_master[['año', 'depto_nom', 'municipio', 'area_geografica', 'Total', 'Hombres', 'Mujeres'] + cols_poblacion].copy()
         
@@ -226,13 +234,14 @@ def cargar_datos_limpios():
         df_mun['Macroregion'] = df_mun.apply(asignar_region, axis=1)
 
         # -------------------------------------------------------
-        # B. Crear df_nac (Nacional) - Ahora agrupa Hombres y Mujeres
+        # B. Crear df_nac (Nacional) -> AHORA INCLUYE TODAS LAS EDADES
         # -------------------------------------------------------
         df_nac_temp = df_mun[df_mun['area_geografica'] == 'total']
-        df_nac = df_nac_temp.groupby('año')[['Total', 'Hombres', 'Mujeres']].sum().reset_index()
+        cols_agrupar_nac = ['Total', 'Hombres', 'Mujeres'] + cols_poblacion
+        df_nac = df_nac_temp.groupby('año')[cols_agrupar_nac].sum().reset_index()
 
         # -------------------------------------------------------
-        # C. Crear df_global (Dinámico)
+        # C. Crear df_global
         # -------------------------------------------------------
         mpios_amva = ['Medellín', 'Bello', 'Itagüí', 'Envigado', 'Sabaneta', 'Copacabana', 'La Estrella', 'Girardota', 'Caldas', 'Barbosa']
         df_ant = df_nac_temp[df_nac_temp['depto_nom'] == 'Antioquia'].groupby('año')['Total'].sum().reset_index().rename(columns={'Total': 'Pob_Antioquia'})
