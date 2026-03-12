@@ -530,10 +530,36 @@ if 'titulo_terr' not in locals():
 # =====================================================================
 # --- 4. CÁLCULO DE PROYECCIONES (NUEVO PARADIGMA TOP-DOWN) ---
 # =====================================================================
-x_hist = np.array(años_hist, dtype=float)
-y_hist = np.array(pob_hist, dtype=float)
 
-# Generamos el eje X para el futuro
+# 1. ESCUDO DEFINITIVO ANTI-NAME ERROR
+try:
+    _ = filtro_zona
+except NameError:
+    try:
+        filtro_zona = titulo_terr
+    except NameError:
+        filtro_zona = "Colombia"
+
+territorio_busqueda = str(filtro_zona).upper().strip()
+if escala_sel == "🇨🇴 Nacional (Colombia)": territorio_busqueda = "COLOMBIA"
+
+# 2. ESCUDO UNIVERSAL ANTI ZIG-ZAGS (Limpia matemática y gráficas)
+if len(años_hist) > 0:
+    df_clean = pd.DataFrame({'Año': años_hist, 'Pob': pob_hist})
+    df_clean = df_clean[df_clean['Pob'] > 0] 
+    df_clean = df_clean.groupby('Año')['Pob'].max().reset_index() 
+    df_clean = df_clean.sort_values(by='Año') 
+    
+    x_hist = df_clean['Año'].values.astype(float)
+    y_hist = df_clean['Pob'].values.astype(float)
+    
+    # ¡LA CURA DEL ZIG-ZAG! Obligamos a Plotly a usar los datos limpios y ordenados
+    años_hist = x_hist
+    pob_hist = y_hist
+else:
+    x_hist, y_hist = np.array([]), np.array([])
+
+# 3. Eje X Futuro
 año_maximo = int(max(df_nac['Año'].max() if 'df_nac' in locals() else 2100, 2100))
 x_proj = np.arange(1950, año_maximo + 1, 1) 
 
@@ -541,7 +567,7 @@ proyecciones = {'Año': x_proj, 'Real': [np.nan]*len(x_proj)}
 for i, año in enumerate(x_proj):
     if año in x_hist: proyecciones['Real'][i] = y_hist[np.where(x_hist == año)[0][0]]
 
-# Cargar Matriz Maestra (Si existe)
+# 4. Cargar Matriz Maestra
 ruta_matriz = os.path.join(RUTA_RAIZ, "data", "Matriz_Maestra_Demografica.csv")
 df_matriz = pd.DataFrame()
 if os.path.exists(ruta_matriz):
@@ -549,25 +575,15 @@ if os.path.exists(ruta_matriz):
 
 def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
 
-# ==========================================================
-# Identificar qué estamos buscando en la Matriz (Modo Seguro)
-# ==========================================================
-try:
-    zona_segura = filtro_zona
-except:
-    zona_segura = "Colombia"
-
-territorio_busqueda = str(zona_segura).upper().strip()
-if escala_sel == "🇨🇴 Nacional (Colombia)": territorio_busqueda = "COLOMBIA"
-
 row_matriz = pd.DataFrame()
+if not df_matriz.empty and escala_sel not in ["🌍 Global y Suramérica", "💧 Cuencas Hidrográficas", "Veredal (Antioquia)"]:
+    mask = df_matriz['Territorio'].astype(str).str.upper().str.strip() == territorio_busqueda
+    row_matriz = df_matriz[mask]
 
-# --- INYECTAR RESULTADOS ---
+# --- 5. INYECTAR RESULTADOS ---
 if not row_matriz.empty:
-    # MODO 1: MATRIZ MAESTRA PERFECTA (Top-Down)
+    # MODO 1: MATRIZ MAESTRA
     row = row_matriz.iloc[0]
-    
-    # Limpiamos los números gigantes (por si Excel los guardó con comas/puntos)
     k_opt = float(str(row['K']).replace('.', '').replace(',', '.')) if isinstance(row['K'], str) else float(row['K'])
     a_opt = float(str(row['a']).replace(',', '.'))
     r_opt = float(str(row['r']).replace(',', '.'))
@@ -580,8 +596,7 @@ if not row_matriz.empty:
     modo_calc = f"Matriz Maestra (R²: {row.get('R2', 'N/A')})"
     
 else:
-    # MODO 2: FALLBACK ROBUSTO (Para Cuencas, Veredas, o si no hay matriz)
-    # Se eliminó el "Aislamiento Estructural". Usamos TODA la historia para que nunca dé r=0.
+    # MODO 2: FALLBACK ROBUSTO (Macroregiones, Cuencas, Veredas)
     x_train, y_train = x_hist, y_hist
     x_offset = x_train[0] if len(x_train) > 0 else 1950
     x_train_norm = x_train - x_offset
@@ -590,25 +605,29 @@ else:
     try:
         p0_val = max(1, y_train[0] if len(y_train)>0 else 1)
         p_final = y_train[-1] if len(y_train)>0 else p0_val
+        max_y = max(y_train)
         
-        k_guess = max(y_train) * 1.5
+        es_creciente = p_final >= p0_val
+        k_guess = max_y * 1.2 if es_creciente else max_y
         a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
+        r_guess = 0.02 if es_creciente else -0.02
         
-        # EL SECRETO: Permitir que 'r' sea negativo si la cuenca se despuebla
-        r_guess = 0.02 if p_final >= p0_val else -0.02
-        limites = ([max(y_train), 0, -0.2], [max(y_train)*10, np.inf, 0.3])
+        # Ampliamos los límites para que el modelo nunca se rinda y caiga a cero
+        limites = ([max_y * 0.8, 0, -0.2], [max_y * 3.0 if es_creciente else max_y * 1.1, np.inf, 0.3])
         
         popt_log, _ = curve_fit(f_log, x_train_norm, y_train, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
         proyecciones['Logístico'] = f_log(x_proj_norm, *popt_log)
         
         param_K, param_r = popt_log[0], popt_log[2]
         modo_calc = "Cálculo en Vivo (Robusto)"
-    except:
-        proyecciones['Logístico'] = np.full(len(x_proj), y_train[-1] if len(y_train)>0 else 0)
+    except Exception as e:
+        # Failsafe extremo: Si las matemáticas fallan, asume el promedio reciente
+        val_seguro = np.mean(y_train[-3:]) if len(y_train) >= 3 else (y_train[-1] if len(y_train)>0 else 0)
+        proyecciones['Logístico'] = np.full(len(x_proj), val_seguro)
         param_K, param_r = "N/A", 0
-        modo_calc = "Falla de Convergencia"
+        modo_calc = "Ajuste Promedio (Falla Matemática)"
 
-# Uniformizamos las demás proyecciones para evitar errores en otras pestañas
+# Uniformizamos
 proyecciones['Lineal'] = proyecciones['Logístico'] 
 proyecciones['Exponencial'] = proyecciones['Logístico']
 df_proj = pd.DataFrame(proyecciones)
