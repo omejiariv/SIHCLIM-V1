@@ -304,9 +304,16 @@ if escala_sel == "🌍 Global y Suramérica":
         }
         col_objetivo = diccionario_columnas[contexto_sel]
         
-        df_temp = df_global.dropna(subset=['Año', col_objetivo])
-        años_hist = df_temp['Año'].values
-        pob_hist = df_temp[col_objetivo].values
+        # ESCUDO: Solo graficar si la columna realmente existe en los datos
+        col_anio_glob = 'Año' if 'Año' in df_global.columns else 'año'
+        
+        if col_objetivo in df_global.columns:
+            df_temp = df_global.dropna(subset=[col_anio_glob, col_objetivo])
+            años_hist = df_temp[col_anio_glob].values
+            pob_hist = df_temp[col_objetivo].values
+        else:
+            st.warning(f"⚠️ Los datos de '{contexto_sel}' no están en el nuevo archivo maestro.")
+            años_hist, pob_hist = np.array([]), np.array([])
     else:
         años_hist, pob_hist = np.array([]), np.array([])
         
@@ -698,7 +705,8 @@ with tab_modelos:
     modelo_sel = st.sidebar.radio("Base de cálculo para la pirámide:", ["Logístico", "Exponencial", "Lineal", "Dato Real (Si existe)"])
     columna_modelo = "Real" if modelo_sel == "Dato Real (Si existe)" else modelo_sel
 
-    años_disp = sorted(df_nac['Año'].unique())
+    col_anio_pyr = 'año' if 'año' in df_nac.columns else 'Año'
+    años_disp = sorted(df_nac[col_anio_pyr].unique())
     año_sel = st.sidebar.select_slider("Selecciona un Año Estático:", options=años_disp, value=2024)
 
     st.sidebar.markdown("---")
