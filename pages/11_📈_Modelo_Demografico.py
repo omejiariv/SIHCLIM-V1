@@ -1016,11 +1016,19 @@ with tab_matriz:
                 
                 try:
                     p0_val = max(1, y[0])
-                    k_guess = max(y) * 1.5 # Le damos más margen para buscar el techo
+                    p_final = y[-1]
+                    
+                    # 1. El modelo ahora entiende si la población crece o se encoge
+                    es_creciente = p_final >= p0_val
+                    
+                    k_guess = max(y) * 1.5
                     a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
-                    r_guess = 0.02
-                    # Ampliamos los límites para que NUNCA de r=0
-                    limites = ([max(y), 0, 0.0001], [max(y)*10, np.inf, 0.3])
+                    
+                    # Si se encoge, empezamos buscando en negativo
+                    r_guess = 0.02 if es_creciente else -0.02
+                    
+                    # 2. EL SECRETO: Permitimos tasas de crecimiento negativas (hasta -0.2)
+                    limites = ([max(y), 0, -0.2], [max(y)*10, np.inf, 0.3])
                     
                     popt, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
                     k_opt, a_opt, r_opt = popt
@@ -1031,8 +1039,8 @@ with tab_matriz:
                     
                     matriz_resultados.append({
                         'Nivel': nivel, 'Territorio': territorio, 'Padre': padre,
-                        'Año_Base': x_offset, 'Pob_Base': p0_val,
-                        'K': k_opt, 'a': a_opt, 'r': r_opt, 'R2': round(r2_val, 4)
+                        'Año_Base': x_offset, 'Pob_Base': round(p0_val, 0),
+                        'K': round(k_opt, 4), 'a': round(a_opt, 6), 'r': round(r_opt, 6), 'R2': round(r2_val, 4)
                     })
                 except Exception as e:
                     pass # Si no logra ajustar, lo omite para no romper el proceso masivo
