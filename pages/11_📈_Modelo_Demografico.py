@@ -1361,87 +1361,95 @@ with tab_rankings:
     
     # Solo mostrar si hay datos para comparar
     if not df_mapa_base.empty and len(df_mapa_base) > 1:
-        col_r1, col_r2 = st.columns([1, 1.2])
         
-        # --- COLUMNA 1: RANKING BARS (TOP 15 - MAYOR Y MENOR POBLACIÓN) ---
-        with col_r1:
-            st.markdown(f"**Extremos Poblacionales ({año_sel})**")
-            
-            df_rank = df_mapa_base.copy().dropna(subset=['Total'])
-            # ESCUDO ANTI-TEXTO
-            df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
-            df_rank = df_rank[df_rank['Total'] > 0]
-            
-            # 1. Gráfica de MAYOR Población
-            df_plot_top = df_rank.nlargest(15, 'Total')
+        # -------------------------------------------------------------------
+        # SECCIÓN 1: RANKINGS LADO A LADO (Top 15 y Bottom 15)
+        # -------------------------------------------------------------------
+        st.markdown(f"### 🏆 Extremos Poblacionales ({año_sel})")
+        
+        df_rank = df_mapa_base.copy().dropna(subset=['Total'])
+        # ESCUDO ANTI-TEXTO
+        df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
+        df_rank = df_rank[df_rank['Total'] > 0]
+        
+        # Creamos las dos ventanas ocupando el ancho total
+        col_rank_izq, col_rank_der = st.columns(2)
+        
+        with col_rank_izq:
+            # 1. Gráfica de MAYOR Población (Top 15)
+            df_plot_top = df_rank.nlargest(15, 'Total').sort_values(by='Total', ascending=True)
             fig_top = px.bar(df_plot_top, x='Total', y='Territorio', orientation='h', 
                              color='Total', color_continuous_scale='Viridis',
-                             title="📈 Mayor Población")
-            # Ajustamos la altura para que quepan las dos gráficas cómodamente
-            fig_top.update_layout(yaxis={'categoryorder':'total ascending'}, height=350, margin=dict(t=30, b=0, l=0, r=0))
+                             title="📈 Top 15: Mayor Población")
+            fig_top.update_layout(yaxis={'categoryorder':'trace'}, height=450, margin=dict(t=40, b=0, l=0, r=0))
             st.plotly_chart(fig_top, use_container_width=True, key=f"rank_top_{año_sel}_{zona_actual}")
 
-            # 2. Gráfica de MENOR Población (Solo la dibujamos si hay bastantes territorios para no repetir)
+        with col_rank_der:
+            # 2. Gráfica de MENOR Población (Bottom 15)
             if len(df_rank) > 5:
-                df_plot_bot = df_rank.nsmallest(15, 'Total')
+                df_plot_bot = df_rank.nsmallest(15, 'Total').sort_values(by='Total', ascending=False)
                 fig_bot = px.bar(df_plot_bot, x='Total', y='Territorio', orientation='h', 
-                                 color='Total', color_continuous_scale='Plasma', # Usamos otro color para diferenciar
-                                 title="📉 Menor Población")
-                fig_bot.update_layout(yaxis={'categoryorder':'total descending'}, height=350, margin=dict(t=30, b=0, l=0, r=0))
+                                 color='Total', color_continuous_scale='Plasma',
+                                 title="📉 Bottom 15: Menor Población")
+                fig_bot.update_layout(yaxis={'categoryorder':'trace'}, height=450, margin=dict(t=40, b=0, l=0, r=0))
                 st.plotly_chart(fig_bot, use_container_width=True, key=f"rank_bot_{año_sel}_{zona_actual}")
 
-        # --- COLUMNA 2: CURVAS HISTÓRICAS (2005 - 2035) ---
-        with col_r2:
-            st.markdown("**Dinámica Poblacional (2005 - 2035)**")
+        # -------------------------------------------------------------------
+        # SECCIÓN 2: CURVAS HISTÓRICAS (Aprovechando todo el ancho inferior)
+        # -------------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 📈 Dinámica Poblacional (2005 - 2035)")
+        
+        if "Veredal" in escala_sel or "Cuencas" in escala_sel:
+            st.info("ℹ️ A escala Veredal/Cuencas, la plataforma utiliza un corte censal oficial estático. Las curvas de proyección dinámica 2005-2035 se activan desde la escala municipal hacia arriba.")
+        else:
+            # Extraemos los NOMBRES de los 10 territorios más poblados para graficar sus líneas
+            top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
             
-            if escala_sel == "Veredal (Antioquia)":
-                st.info("ℹ️ A escala Veredal, la plataforma utiliza un corte censal oficial estático. Las curvas de proyección dinámica 2005-2035 se activan desde la escala municipal hacia arriba.")
-            else:
-                # Extraemos los NOMBRES de los 10 territorios más poblados para graficar sus líneas
-                top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
-                
-                # Preparamos los datos desde nuestra base maestra (df_mun) actualizada al 2035
-                zona_q = zona_actual.lower()
-                df_base_historica = df_mun[df_mun['area_geografica'] == zona_q]
-                df_line = pd.DataFrame()
-                
-                if escala_sel == "Departamental":
-                    if 'region_sel' in locals() and region_sel != "Todas":
-                        df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel]
-                    df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
-                    df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
-                    
-                elif escala_sel == "Municipal (Departamentos)":
-                    df_base_historica = df_base_historica[df_base_historica['depto_nom'] == depto_sel]
-                    df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
-                    df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
-                    
-                elif escala_sel == "Municipal (Regiones)":
+            zona_q = zona_actual.lower()
+            df_base_historica = df_mun[df_mun['area_geografica'] == zona_q].copy()
+            df_line = pd.DataFrame()
+            
+            # Agregamos soporte para la escala Nacional
+            if "Nacional" in escala_sel:
+                df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
+                df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+            elif "Departamental" in escala_sel:
+                if 'region_sel' in locals() and region_sel != "Todas":
                     df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel]
-                    df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
-                    df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+                df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
+                df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+            elif "Municipal (Departamentos)" in escala_sel:
+                df_base_historica = df_base_historica[df_base_historica['depto_nom'] == depto_sel]
+                df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+            elif "Municipal (Regiones)" in escala_sel:
+                df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel]
+                df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+            
+            # Filtramos la serie de tiempo SOLO para el Top 10
+            if not df_line.empty:
+                df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
                 
-                # Filtramos la serie de tiempo SOLO para el Top 10
-                if not df_line.empty:
-                    df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
+                # Conciliación Censal forzada
+                def conciliacion_censal(group):
+                    group['año'] = pd.to_numeric(group['año'], errors='coerce')
+                    group = group.sort_values('año')
+                    mask = (group['año'] >= 2006) & (group['año'] <= 2019)
+                    group.loc[mask, 'Total'] = np.nan
+                    group['Total'] = group['Total'].interpolate(method='linear').ffill().bfill()
+                    return group
                     
-                    # --- NUEVO: Conciliación Censal forzada ---
-                    def conciliacion_censal(group):
-                        group['año'] = pd.to_numeric(group['año'], errors='coerce')
-                        group = group.sort_values('año')
-                        
-                        mask = (group['año'] >= 2006) & (group['año'] <= 2019)
-                        group.loc[mask, 'Total'] = np.nan
-                        group['Total'] = group['Total'].interpolate(method='linear').ffill().bfill()
-                        return group
-                        
-                    df_line = df_line.groupby('Territorio', group_keys=False).apply(conciliacion_censal)
-                    # -------------------------------------------------------------
-                    
-                    fig_line = px.line(df_line, x='año', y='Total', color='Territorio', markers=True,
-                                       title=f"Evolución de los Territorios más Poblados",
-                                       labels={'año': 'Año', 'Total': 'Habitantes'})
-                    
+                df_line = df_line.groupby('Territorio', group_keys=False).apply(conciliacion_censal)
+                
+                fig_line = px.line(df_line, x='año', y='Total', color='Territorio', markers=True,
+                                   title="Evolución de los 10 Territorios más Poblados",
+                                   labels={'año': 'Año', 'Total': 'Habitantes'})
+                
+                # ¡LA LÍNEA QUE FALTABA! Renderizar la gráfica en pantalla
+                st.plotly_chart(fig_line, use_container_width=True, key=f"line_hist_{zona_actual}")
+
     else:
         st.info("💡 Selecciona una escala territorial con múltiples divisiones (ej. Municipal o Departamental) para ver el ranking y las curvas comparativas.")
         
