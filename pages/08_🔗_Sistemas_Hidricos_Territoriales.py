@@ -17,6 +17,72 @@ Evalúa cómo los embalses integran las cuencas propias con los trasvases artifi
 st.divider()
 
 # ==============================================================================
+# 🕸️ MAPA CONCEPTUAL: TOPOLOGÍA DEL METABOLISMO (Sankey)
+# ==============================================================================
+with st.expander("🕸️ Mapa Conceptual: Topología del Metabolismo Hídrico", expanded=True):
+    st.markdown(f"Visualización en tiempo real de las transferencias de caudal (m³/s) para el **Embalse {nodo_seleccionado}**.")
+    
+    labels = [f"Embalse {nodo_seleccionado}"]
+    source, target, value, color = [], [], [], []
+    idx = 1
+
+    for nombre, q in afluentes_inputs.items():
+        if q > 0:
+            labels.append(nombre)
+            source.append(idx)
+            target.append(0)
+            value.append(q)
+            color.append("rgba(46, 204, 113, 0.6)")
+            idx += 1
+
+    for nombre, q in trasvases_inputs.items():
+        if q > 0:
+            labels.append(f"Bombeo {nombre} ⚡(-)")
+            source.append(idx)
+            target.append(0)
+            value.append(q)
+            color.append("rgba(231, 76, 60, 0.8)")
+            idx += 1
+
+    if val_acueducto > 0:
+        labels.append("Acueducto (Aburrá)")
+        source.append(0)
+        target.append(idx)
+        value.append(val_acueducto)
+        color.append("rgba(52, 152, 219, 0.6)")
+        idx += 1
+        
+    if val_turbinado > 0:
+        labels.append("Generación ⚡(+)")
+        source.append(0)
+        target.append(idx)
+        value.append(val_turbinado)
+        color.append("rgba(241, 196, 15, 0.8)")
+        idx += 1
+        
+    if val_ecologico > 0:
+        labels.append("Río Abajo (Eco)")
+        source.append(0)
+        target.append(idx)
+        value.append(val_ecologico)
+        color.append("rgba(149, 165, 166, 0.6)")
+        idx += 1
+        
+    if datos_nodo["evaporacion_m3s"] > 0:
+        labels.append("Evaporación")
+        source.append(0)
+        target.append(idx)
+        value.append(datos_nodo["evaporacion_m3s"])
+        color.append("rgba(189, 195, 199, 0.3)")
+
+    fig_sankey = go.Figure(data=[go.Sankey(
+        textfont=dict(size=15, color="black", family="Arial Black"), 
+        node=dict(pad=20, thickness=30, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
+        link=dict(source=source, target=target, value=value, color=color)
+    )])
+    fig_sankey.update_layout(height=480, margin=dict(l=20, r=20, t=30, b=50))
+    st.plotly_chart(fig_sankey, use_container_width=True)
+# ==============================================================================
 # 🧠 EL ALEPH HÍDRICO (RECEPTOR INTELIGENTE DE DEMANDA)
 # ==============================================================================
 # 1. Leemos la memoria del sistema sin afectar el sidebar
@@ -315,44 +381,6 @@ c1.metric("Balance Hídrico (ΔS/Δt)", f"{balance:+.1f} m³/s", "Llenándose �
 c2.metric("Energía Generada", f"{potencia_generada_kw/1000:,.1f} MW", f"${ingreso_hora_cop/1e6:,.1f} M/hora", delta_color="normal")
 c3.metric("Energía Consumida", f"{potencia_consumida_kw/1000:,.1f} MW", f"-${costo_hora_cop/1e6:,.1f} M/hora", delta_color="inverse")
 c4.metric("Balance Neto", f"{balance_energetico_MW:,.1f} MW", "Superávit ⚡" if balance_energetico_MW > 0 else "Déficit 🔴" if balance_energetico_MW < 0 else "Neutro")
-
-st.markdown("---")
-st.subheader(f"🕸️ Topología del Metabolismo: {nodo_seleccionado} (Agua y Energía)")
-
-labels = [f"Embalse {nodo_seleccionado}"]
-source, target, value, color = [], [], [], []
-idx = 1
-
-for nombre, q in afluentes_inputs.items():
-    if q > 0:
-        labels.append(nombre); source.append(idx); target.append(0); value.append(q); color.append("rgba(46, 204, 113, 0.6)")
-        idx += 1
-
-for nombre, q in trasvases_inputs.items():
-    if q > 0:
-        labels.append(f"Bombeo {nombre} ⚡(-)"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.8)")
-        idx += 1
-
-if val_acueducto > 0:
-    labels.append("Acueducto (Aburrá)"); source.append(0); target.append(idx); value.append(val_acueducto); color.append("rgba(52, 152, 219, 0.6)")
-    idx += 1
-if val_turbinado > 0:
-    labels.append("Generación ⚡(+)"); source.append(0); target.append(idx); value.append(val_turbinado); color.append("rgba(241, 196, 15, 0.8)")
-    idx += 1
-if val_ecologico > 0:
-    labels.append("Río Abajo (Eco)"); source.append(0); target.append(idx); value.append(val_ecologico); color.append("rgba(149, 165, 166, 0.6)")
-    idx += 1
-if datos_nodo["evaporacion_m3s"] > 0:
-    labels.append("Evaporación"); source.append(0); target.append(idx); value.append(datos_nodo["evaporacion_m3s"]); color.append("rgba(189, 195, 199, 0.3)")
-
-# Ajuste 2: Se añaden márgenes (b=50) para que Evaporación no quede cortada en pantalla completa
-fig_sankey = go.Figure(data=[go.Sankey(
-    textfont=dict(size=15, color="black", family="Arial Black"), 
-    node=dict(pad=20, thickness=30, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
-    link=dict(source=source, target=target, value=value, color=color)
-)])
-fig_sankey.update_layout(height=480, margin=dict(l=20, r=20, t=30, b=50))
-st.plotly_chart(fig_sankey, use_container_width=True)
 
 # =========================================================================
 # 4. TABLERO WRI: NEUTRALIDAD, RESILIENCIA Y CALIDAD
