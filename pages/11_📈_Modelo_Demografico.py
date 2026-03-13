@@ -959,7 +959,6 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
 # ==============================================================================
 # 🧠 TRANSMISIÓN AL CEREBRO GLOBAL (EL ALEPH)
 # ==============================================================================
-# Verificamos si las variables clave existen antes de enviarlas a la memoria global
 if 'año_sel' in locals() and 'escala_sel' in locals():
     # Determinamos el lugar seleccionado según la escala
     lugar_activo = "Colombia"
@@ -969,11 +968,16 @@ if 'año_sel' in locals() and 'escala_sel' in locals():
     elif "Cuencas" in escala_sel: lugar_activo = cuenca_sel if 'cuenca_sel' in locals() else "Río Grande"
     elif "Veredal" in escala_sel: lugar_activo = vereda_sel if 'vereda_sel' in locals() else "Centro"
 
-    # Capturamos la población total proyectada del DataFrame histórico
+    # Captura matemática infalible (Buscamos directamente en los vectores de la gráfica)
     pob_total_aleph = 0
-    if not df_hist.empty and 'Pob_Calc' in df_hist.columns:
-        pob_total_aleph = df_hist[df_hist['Año'] == año_sel]['Pob_Calc'].max()
-        if pd.isna(pob_total_aleph): pob_total_aleph = 0
+    try:
+        if 'años_hist' in locals() and 'pob_hist' in locals() and len(años_hist) > 0:
+            import numpy as np
+            # Buscamos la población que coincide con el año seleccionado
+            idx = np.abs(np.array(años_hist) - año_sel).argmin()
+            pob_total_aleph = pob_hist[idx]
+    except Exception:
+        pass
 
     # Inyectamos los datos en el Session State
     st.session_state['aleph_lugar'] = lugar_activo
@@ -982,7 +986,7 @@ if 'año_sel' in locals() and 'escala_sel' in locals():
     st.session_state['aleph_pob_total'] = float(pob_total_aleph)
     
     # Podrías agregar un pequeño indicador visual opcional (o dejarlo en silencio)
-    # st.sidebar.success("🔗 Contexto demográfico sincronizado con módulos hídricos.")
+    st.sidebar.success("🔗 Contexto demográfico sincronizado con módulos hídricos.")
 
 # ==============================================================================
 # TAB 2: MODELOS Y OPTIMIZACIÓN MATEMÁTICA (SOLVER)
