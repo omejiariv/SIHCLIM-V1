@@ -997,6 +997,12 @@ with tab_opt:
             def f_poly2(t, a, b, c): return a*t**2 + b*t + c
             def f_poly3(t, a, b, c, d): return a*t**3 + b*t**2 + c*t + d
 
+            # Calculadora Universal de R2
+            def calcular_r2(y_real, y_prediccion):
+                ss_res = np.sum((y_real - y_prediccion) ** 2)
+                ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
+                return 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
             t_total = np.arange(0, max(t_data) + t_max + 1)
             anios_totales = t_total + t_data_raw.min()
             
@@ -1005,6 +1011,8 @@ with tab_opt:
             fig2.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Históricos', marker=dict(color='black', size=8)))
 
             res_text = []
+            resultados_modelos = {} # Diccionario para guardar métricas y fórmulas
+            
             for mod in modelos_sel:
                 y_pred = np.zeros_like(t_total, dtype=float)
                 try:
@@ -1012,9 +1020,13 @@ with tab_opt:
                         if opt_auto: 
                             popt, _ = curve_fit(f_exp, t_data, p_data, p0=[p0_val, 0.01])
                             y_pred = f_exp(t_total, *popt)
+                            r2_val = calcular_r2(p_data, f_exp(t_data, *popt))
+                            resultados_modelos[mod] = {"popt": popt, "r2": r2_val, "latex": r"P(t) = P_0 \cdot e^{r \cdot t}", "vars": ["P_0", "r"]}
                             res_text.append(f"**Exp**: r={popt[1]:.4f}")
                         else: 
                             y_pred = f_exp(t_total, p0_val, r_man)
+                            r2_val = calcular_r2(p_data, f_exp(t_data, p0_val, r_man))
+                            resultados_modelos[mod] = {"popt": [p0_val, r_man], "r2": r2_val, "latex": r"P(t) = P_0 \cdot e^{r \cdot t}", "vars": ["P_0", "r"]}
                             
                     elif mod == "Logístico":
                         if opt_auto: 
@@ -1025,40 +1037,90 @@ with tab_opt:
                             
                             popt, _ = curve_fit(f_log, t_data, p_data, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=25000)
                             y_pred = f_log(t_total, *popt)
-                            
-                            # Calculamos R2 para mostrarlo
-                            ss_res = np.sum((p_data - f_log(t_data, *popt)) ** 2)
-                            ss_tot = np.sum((p_data - np.mean(p_data)) ** 2)
-                            r2_val = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
-                            
-                            res_text.append(f"**Log**: K={popt[0]:,.0f}, r={popt[2]:.4f}, R²={r2_val:.3f}")
+                            r2_val = calcular_r2(p_data, f_log(t_data, *popt))
+                            resultados_modelos[mod] = {"popt": popt, "r2": r2_val, "latex": r"P(t) = \frac{K}{1 + a \cdot e^{-r \cdot t}}", "vars": ["K", "a", "r"]}
+                            res_text.append(f"**Log**: K={popt[0]:,.0f}, r={popt[2]:.4f}")
                         else: 
-                            # Ajuste manual perfecto anclado al inicio
                             a_man = (k_man - p0_val) / p0_val if p0_val > 0 else 1
                             y_pred = f_log(t_total, k_man, a_man, r_man)
+                            r2_val = calcular_r2(p_data, f_log(t_data, k_man, a_man, r_man))
+                            resultados_modelos[mod] = {"popt": [k_man, a_man, r_man], "r2": r2_val, "latex": r"P(t) = \frac{K}{1 + a \cdot e^{-r \cdot t}}", "vars": ["K", "a", "r"]}
                             
                     elif mod == "Geométrico":
                         if opt_auto: 
                             popt, _ = curve_fit(f_geom, t_data, p_data, p0=[p0_val, 0.01])
                             y_pred = f_geom(t_total, *popt)
+                            r2_val = calcular_r2(p_data, f_geom(t_data, *popt))
+                            resultados_modelos[mod] = {"popt": popt, "r2": r2_val, "latex": r"P(t) = P_0 \cdot (1 + r)^t", "vars": ["P_0", "r"]}
                         else: 
                             y_pred = f_geom(t_total, p0_val, r_man)
+                            r2_val = calcular_r2(p_data, f_geom(t_data, p0_val, r_man))
+                            resultados_modelos[mod] = {"popt": [p0_val, r_man], "r2": r2_val, "latex": r"P(t) = P_0 \cdot (1 + r)^t", "vars": ["P_0", "r"]}
                             
                     elif mod == "Polinómico (Grado 2)":
-                        if opt_auto: popt, _ = curve_fit(f_poly2, t_data, p_data); y_pred = f_poly2(t_total, *popt)
-                        else: y_pred = f_poly2(t_total, 1, 10, p0_val)
+                        if opt_auto: 
+                            popt, _ = curve_fit(f_poly2, t_data, p_data)
+                            y_pred = f_poly2(t_total, *popt)
+                            r2_val = calcular_r2(p_data, f_poly2(t_data, *popt))
+                            resultados_modelos[mod] = {"popt": popt, "r2": r2_val, "latex": r"P(t) = a \cdot t^2 + b \cdot t + c", "vars": ["a", "b", "c"]}
+                        else: 
+                            y_pred = f_poly2(t_total, 1, 10, p0_val)
+                            r2_val = calcular_r2(p_data, f_poly2(t_data, 1, 10, p0_val))
+                            resultados_modelos[mod] = {"popt": [1, 10, p0_val], "r2": r2_val, "latex": r"P(t) = a \cdot t^2 + b \cdot t + c", "vars": ["a", "b", "c"]}
                         
                     elif mod == "Polinómico (Grado 3)":
-                        if opt_auto: popt, _ = curve_fit(f_poly3, t_data, p_data); y_pred = f_poly3(t_total, *popt)
-                        else: y_pred = f_poly3(t_total, 1, 10, p0_val, 0)
+                        if opt_auto: 
+                            popt, _ = curve_fit(f_poly3, t_data, p_data)
+                            y_pred = f_poly3(t_total, *popt)
+                            r2_val = calcular_r2(p_data, f_poly3(t_data, *popt))
+                            resultados_modelos[mod] = {"popt": popt, "r2": r2_val, "latex": r"P(t) = a \cdot t^3 + b \cdot t^2 + c \cdot t + d", "vars": ["a", "b", "c", "d"]}
+                        else: 
+                            y_pred = f_poly3(t_total, 1, 10, p0_val, 0)
+                            r2_val = calcular_r2(p_data, f_poly3(t_data, 1, 10, p0_val, 0))
+                            resultados_modelos[mod] = {"popt": [1, 10, p0_val, 0], "r2": r2_val, "latex": r"P(t) = a \cdot t^3 + b \cdot t^2 + c \cdot t + d", "vars": ["a", "b", "c", "d"]}
 
                     fig2.add_trace(go.Scatter(x=anios_totales, y=y_pred, mode='lines', name=mod, line=dict(width=3, dash='dot' if opt_auto else 'solid')))
                 except: 
-                    pass # Si un modelo matemático falla, simplemente no lo dibuja, evitando que colapse la app
+                    pass # Si un modelo matemático falla, simplemente no lo dibuja
 
-            fig2.update_layout(title="Proyección de Modelos Dinámicos", xaxis_title="Año", yaxis_title="Población", hovermode="x unified", height=550)
+            fig2.update_layout(title="Proyección de Modelos Dinámicos", xaxis_title="Año", yaxis_title="Población", hovermode="x unified", height=500)
             st.plotly_chart(fig2, use_container_width=True)
-            if opt_auto and res_text: st.success("✅ **Parámetros Óptimos:** " + " | ".join(res_text))
+
+        # ----------------------------------------------------------------------
+        # NUEVO PANEL: AUDITORÍA DE ECUACIONES Y PARÁMETROS MATEMÁTICOS
+        # ----------------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 🧮 Auditoría Matemática: Ecuaciones y Precisión (R²)")
+        
+        if resultados_modelos:
+            # Encontrar el mejor modelo (el de mayor R2)
+            mejor_mod_nombre = max(resultados_modelos, key=lambda k: resultados_modelos[k]['r2'])
+            mejor_r2 = resultados_modelos[mejor_mod_nombre]['r2']
+            st.info(f"🏆 **El modelo que mejor se ajusta a estos datos históricos es:** {mejor_mod_nombre} (R² = {mejor_r2:.4f})")
+            
+            # Mostramos las ecuaciones en columnas (máximo 3 por fila para que se vea ordenado)
+            cols_eq = st.columns(3)
+            idx_col = 0
+            
+            for nombre_mod, datos_mod in resultados_modelos.items():
+                with cols_eq[idx_col % 3]:
+                    st.markdown(f"**{nombre_mod}**")
+                    st.latex(datos_mod['latex'])
+                    
+                    # Construir el bloque de código con los parámetros
+                    texto_params = f"R² = {datos_mod['r2']:.4f}\n\nParámetros:\n"
+                    for variable, valor in zip(datos_mod['vars'], datos_mod['popt']):
+                        # Formateamos K (capacidad) sin decimales porque son personas, los demás con 4 decimales
+                        if variable == "K":
+                            texto_params += f"{variable} = {valor:,.0f}\n"
+                        else:
+                            texto_params += f"{variable} = {valor:.6f}\n"
+                            
+                    st.code(texto_params)
+                
+                idx_col += 1
+        else:
+            st.caption("Presiona 'Optimizar Parámetros' o ajusta manualmente para visualizar las ecuaciones.")
                 
 # ==========================================
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR)
