@@ -621,7 +621,7 @@ with tab_fuentes:
 
     with col_g2:
         st.subheader(f"📈 Evolución de Carga Orgánica ({modelo_sel})")
-        pob_u_evo = pob_urbana * (factor_evo / factor_proy)
+        pob_u_evo = pob_urbana * factor_evo
         dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_agricola
         fig_dbo_evo = go.Figure()
         fig_dbo_evo.add_trace(go.Scatter(x=anios_evo, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
@@ -798,7 +798,7 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
 # =========================================================================
 
 # 2.1 Calcular Carga Difusa Base (El "Fondo" del Río)
-pob_u, pob_r, _ = obtener_poblacion_base(lugar_sel, nivel_sel_visual)
+pob_u, pob_r = pob_urbana, pob_rural
 bov, por, ave = obtener_censo_pecuario(lugar_sel, nivel_sel_visual)
 
 # Factores de Emisión Típicos (kg DBO/día por individuo)
@@ -1060,7 +1060,7 @@ with tab_mapa:
             
         if not df_m.empty:
             df_agg = df_m.groupby('municipio')['Poblacion'].sum().reset_index()
-            df_agg['Poblacion_Proy'] = df_agg['Poblacion'] * factor_proy
+            df_agg['Poblacion_Proy'] = df_agg['Poblacion'] * 1.15 # Proyección proxy
             
             if "Caudal" in var_mapa:
                 df_agg['Valor'] = (df_agg['Poblacion_Proy'] * dotacion) / 86400
