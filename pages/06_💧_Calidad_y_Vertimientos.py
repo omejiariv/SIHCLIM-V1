@@ -620,7 +620,7 @@ with tab_fuentes:
         st.download_button("📥 Descargar Datos de Cargas (CSV)", data=csv_cargas, file_name=f"Inventario_Cargas_{lugar_sel}.csv", mime='text/csv')
 
     with col_g2:
-        st.subheader(f"📈 Evolución de Carga Orgánica ({modelo_sel})")
+        st.subheader("📈 Evolución de Carga Orgánica (Proyectada)")
         pob_u_evo = pob_urbana * factor_evo
         dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_agricola
         fig_dbo_evo = go.Figure()
