@@ -848,27 +848,49 @@ with col_h1:
             lista_archivos = [a['name'] for a in archivos_ica if a['name'] != '.emptyFolderPlaceholder']
             
             if lista_archivos:
-                archivo_seleccionado = st.selectbox("Seleccione el Censo ICA a evaluar:", lista_archivos)
+                # CAMBIO 1: Selector Múltiple
+                archivos_seleccionados = st.multiselect("Seleccione los Censos ICA a evaluar (Puedes elegir varios):", lista_archivos)
                 
-                if st.button("📥 Analizar Censo y Calcular Huella"):
-                    with st.spinner("Descargando y procesando matriz ICA..."):
+                if st.button("📥 Analizar Censos y Calcular Huella"):
+                    with st.spinner("Descargando y procesando matrices ICA..."):
                         url_limpia = url_base.strip().strip("'").strip('"').rstrip('/')
-                        ruta_censo = f"{url_limpia}/storage/v1/object/public/sihcli_maestros/censos_ICA/{archivo_seleccionado}"
-                        
+                        bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
                         import requests
                         import io
-                        res_censo = requests.get(ruta_censo)
                         
-                        if res_censo.status_code == 200:
-                            if archivo_seleccionado.endswith(('.xlsx', '.xls')):
-                                df_ica = pd.read_excel(io.BytesIO(res_censo.content))
-                            else:
-                                df_ica = pd.read_csv(io.BytesIO(res_censo.content))
+                        for archivo in archivos_seleccionados:
+                            ruta_censo = f"{url_limpia}/storage/v1/object/public/sihcli_maestros/censos_ICA/{archivo}"
+                            res_censo = requests.get(ruta_censo)
                             
-                            st.success(f"✅ Matriz ICA cargada: {len(df_ica)} registros.")
-                            st.session_state['df_ica_cargado'] = df_ica
-                        else:
-                            st.error("Error al descargar el archivo del bucket.")
+                            if res_censo.status_code == 200:
+                                if archivo.endswith(('.xlsx', '.xls')):
+                                    df_ica = pd.read_excel(io.BytesIO(res_censo.content))
+                                else:
+                                    df_ica = pd.read_csv(io.BytesIO(res_censo.content))
+                                
+                                # CAMBIO 2: Clasificación inteligente (Detecta de qué animal es el archivo)
+                                nombre_arch = archivo.lower()
+                                if 'bovin' in nombre_arch or 'vaca' in nombre_arch:
+                                    cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower() and ('bovin' in str(c).lower() or 'vaca' in str(c).lower())]
+                                    if not cols_tot: cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower()]
+                                    if cols_tot: bovinos_tot += pd.to_numeric(df_ica[cols_tot[0]], errors='coerce').sum()
+                                    
+                                elif 'porcin' in nombre_arch or 'cerdo' in nombre_arch:
+                                    cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower() and ('porcin' in str(c).lower() or 'cerdo' in str(c).lower())]
+                                    if not cols_tot: cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower()]
+                                    if cols_tot: porcinos_tot += pd.to_numeric(df_ica[cols_tot[0]], errors='coerce').sum()
+                                    
+                                elif 'ave' in nombre_arch or 'avicol' in nombre_arch:
+                                    cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower() and 'ave' in str(c).lower()]
+                                    if not cols_tot: cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower()]
+                                    if cols_tot: aves_tot += pd.to_numeric(df_ica[cols_tot[0]], errors='coerce').sum()
+                            else:
+                                st.error(f"Error descargando: {archivo}")
+                                
+                        st.success(f"✅ Matrices procesadas. Bovinos: {bovinos_tot:,.0f} | Porcinos: {porcinos_tot:,.0f} | Aves: {aves_tot:,.0f}")
+                        st.session_state['ica_bovinos_calc'] = bovinos_tot
+                        st.session_state['ica_porcinos_calc'] = porcinos_tot
+                        st.session_state['ica_aves_calc'] = aves_tot
             else:
                 st.warning("No hay censos ICA subidos en la carpeta de Supabase.")
         except Exception as e:
@@ -879,33 +901,29 @@ with col_h1:
 with col_h2:
     st.subheader("2. Demanda Total (Urbana + Rural)")
     
-    # 1. Recuperar población humana de la MEMORIA GLOBAL (st.session_state) o usar un valor por defecto (Valle de Aburrá aprox)
     pob_humana_memoria = st.session_state.get('poblacion_total', 4000000) 
     
-    # 2. Recuperar inventario animal del Censo ICA
-    cabezas_bovinas = 0
-    cabezas_porcinas = 0
-    if 'df_ica_cargado' in st.session_state:
-        df_ica = st.session_state['df_ica_cargado']
-        cols_bov = [c for c in df_ica.columns if 'bovin' in str(c).lower() or 'vaca' in str(c).lower()]
-        cols_por = [c for c in df_ica.columns if 'porcin' in str(c).lower() or 'cerdo' in str(c).lower()]
-        if cols_bov: cabezas_bovinas = df_ica[cols_bov[0]].sum()
-        if cols_por: cabezas_porcinas = df_ica[cols_por[0]].sum()
+    cabezas_bovinas = st.session_state.get('ica_bovinos_calc', 0)
+    cabezas_porcinas = st.session_state.get('ica_porcinos_calc', 0)
+    cabezas_aves = st.session_state.get('ica_aves_calc', 0)
         
-    c_i1, c_i2, c_i3 = st.columns(3)
-    pob_humana = c_i1.number_input("👥 Población Humana (Hab):", value=int(pob_humana_memoria), help="Puedes modificarlo, o se auto-llenará si vienes de la página Demografía.")
-    cabezas_bovinas = c_i2.number_input("🐄 Inventario Bovino:", value=int(cabezas_bovinas))
-    cabezas_porcinas = c_i3.number_input("🐖 Inventario Porcino:", value=int(cabezas_porcinas))
+    # CAMBIO 3: Añadimos una cuarta columna para las Aves
+    c_i1, c_i2, c_i3, c_i4 = st.columns(4)
+    pob_humana = c_i1.number_input("👥 Pob (Hab):", value=int(pob_humana_memoria))
+    cabezas_bovinas = c_i2.number_input("🐄 Bovinos:", value=int(cabezas_bovinas))
+    cabezas_porcinas = c_i3.number_input("🐖 Porcinos:", value=int(cabezas_porcinas))
+    cabezas_aves_in = c_i4.number_input("🐔 Aves:", value=int(cabezas_aves)) 
     
     st.markdown("### 📊 Demanda Metabólica Equivalente")
     
     # Parámetros estándar de consumo
-    consumo_humano_ld = 150 # Litros por habitante al día
-    consumo_bovino_ld = 40
-    consumo_porcino_ld = 15
+    consumo_humano_ld = 150 # Litros/hab/día
+    consumo_bovino_ld = 40  # Litros/bovino/día
+    consumo_porcino_ld = 15 # Litros/cerdo/día
+    consumo_ave_ld = 0.3    # Litros/ave/día (aprox 300 ml por pollo/gallina)
     
     demanda_humana_m3_dia = (pob_humana * consumo_humano_ld) / 1000
-    demanda_agro_m3_dia = ((cabezas_bovinas * consumo_bovino_ld) + (cabezas_porcinas * consumo_porcino_ld)) / 1000
+    demanda_agro_m3_dia = ((cabezas_bovinas * consumo_bovino_ld) + (cabezas_porcinas * consumo_porcino_ld) + (cabezas_aves_in * consumo_ave_ld)) / 1000
     demanda_total_m3_dia = demanda_humana_m3_dia + demanda_agro_m3_dia
     
     # Convertir a m3/s para cruzarlo con el WRI
@@ -916,10 +934,10 @@ with col_h2:
     c_m2.metric("Demanda Agro (m³/día)", f"{demanda_agro_m3_dia:,.1f}")
     c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s", delta_color="inverse")
     
-    if st.button("💾 Enviar Demanda al Modelo (Memoria Global)", help="Al hacer clic, este valor (m³/s) quedará guardado en la memoria del sistema. El módulo 'Toma de Decisiones' utilizará este dato exacto para calcular el Índice de Estrés Hídrico y el riesgo de desabastecimiento."):
+    if st.button("💾 Enviar Demanda al Modelo (Memoria Global)"):
         st.session_state['demanda_total_m3s'] = demanda_total_m3_s
-        st.success("✅ Dato inyectado en la memoria global.")
-
+        st.success("✅ Dato inyectado en la memoria global. Este valor viajará hasta el tablero de Toma de Decisiones.")
+        
 # ==============================================================================
 # 🕸️ DIBUJO DEL MAPA CONCEPTUAL (Se inyecta en la parte superior)
 # ==============================================================================
