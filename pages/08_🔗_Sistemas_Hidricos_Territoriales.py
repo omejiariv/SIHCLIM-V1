@@ -902,9 +902,9 @@ with col_h2:
     c_m2.metric("Demanda Agro (m³/día)", f"{demanda_agro_m3_dia:,.1f}")
     c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s", delta_color="inverse")
     
-    if st.button("💾 Enviar Demanda al Modelo (Memoria Global)"):
+    if st.button("💾 Enviar Demanda al Modelo (Memoria Global)", help="Al hacer clic, este valor (m³/s) quedará guardado en la memoria del sistema. El módulo 'Toma de Decisiones' utilizará este dato exacto para calcular el Índice de Estrés Hídrico y el riesgo de desabastecimiento."):
         st.session_state['demanda_total_m3s'] = demanda_total_m3_s
-        st.success("✅ Dato inyectado en la memoria global. Si ajustaste la población, esto afectará a Calidad y Vertimientos.")
+        st.success("✅ Dato inyectado en la memoria global.")
 
 # ==============================================================================
 # 🕸️ DIBUJO DEL MAPA CONCEPTUAL (Se inyecta en la parte superior)
