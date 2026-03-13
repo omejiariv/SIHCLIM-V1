@@ -278,224 +278,87 @@ df_aves = cargar_censo_aviar()
 df_cuencas_mpios = cargar_cuencas_mpios()
 
 # ==============================================================================
-# MOTOR MATEMÁTICO POBLACIONAL (MEJORADO CON CRUCE TERRITORIAL PROPORCIONAL)
+# 🧠 EL ALEPH (RECEPTOR DEL CONTEXTO DEMOGRÁFICO Y TERRITORIAL)
 # ==============================================================================
-def obtener_poblacion_base(lugar_sel, nivel_sel):
-    pob_u, pob_r, anio_base = 0.0, 0.0, 2020
-    if nivel_sel == "Veredal" and not df_veredas.empty:
-        df_v = df_veredas[df_veredas['Vereda'] == lugar_sel]
-        if not df_v.empty: pob_r = df_v['Poblacion_hab'].values[0]
-        
-    elif not df_mpios.empty:
-        anio_base = df_mpios['año'].max()
-        df_f = pd.DataFrame()
-        
-        if nivel_sel == "Nacional (Colombia)": 
-            df_f = df_mpios[df_mpios['año'] == anio_base]
-        elif nivel_sel == "Municipal": 
-            lugar_n = normalizar_texto(lugar_sel)
-            df_f = df_mpios[(df_mpios['municipio_norm'] == lugar_n) & (df_mpios['año'] == anio_base)]
-        elif nivel_sel in ["Jurisdicción Ambiental (CAR)", "Regional", "Departamental"]:
-            mpios_activos = []
-            if not df_territorio.empty:
-                if nivel_sel == "Jurisdicción Ambiental (CAR)":
-                    car_name = lugar_sel.replace("CAR: ", "")
-                    mpios_activos = df_territorio[df_territorio['car'] == car_name]['municipio_norm'].tolist()
-                elif nivel_sel == "Regional":
-                    mpios_activos = df_territorio[df_territorio['region'] == lugar_sel]['municipio_norm'].tolist()
-                elif nivel_sel == "Departamental":
-                    mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == lugar_sel]['municipio_norm'].tolist()
-            
-            if mpios_activos:
-                df_f = df_mpios[(df_mpios['municipio_norm'].isin(mpios_activos)) & (df_mpios['año'] == anio_base)]
-        
-        # 🌐 NUEVA LÓGICA: CÁLCULO PROPORCIONAL PARA CUENCAS HIDROGRÁFICAS
-        elif nivel_sel == "Cuenca Hidrográfica" and not df_cuencas_mpios.empty:
-            df_interseccion = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]
-            
-            if not df_interseccion.empty:
-                for _, row in df_interseccion.iterrows():
-                    mpio_n = normalizar_texto(row['Municipio'])
-                    pct_area = row['Porcentaje'] / 100.0 # Porcentaje del municipio en la cuenca
-                    
-                    df_m = df_mpios[(df_mpios['municipio_norm'] == mpio_n) & (df_mpios['año'] == anio_base)]
-                    if not df_m.empty:
-                        areas_str = df_m['area_geografica'].astype(str).str.lower()
-                        p_u = df_m[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum()
-                        p_r = df_m[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum()
-                        
-                        # Sumamos solo la fracción de población que vive dentro de la cuenca
-                        pob_u += (p_u * pct_area)
-                        pob_r += (p_r * pct_area)
-                        
-                return float(pob_u), float(pob_r), anio_base # Retorno directo tras calcular proporciones
-        
-        # Lógica original para los demás niveles territoriales
-        if not df_f.empty:
-            areas_str = df_f['area_geografica'].astype(str).str.lower()
-            pob_u = df_f[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum()
-            pob_r = df_f[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum()
-            
-    return float(pob_u), float(pob_r), anio_base
-    
+# 1. Leemos la memoria del sistema
+conectado_aleph = False
+if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
+    lugar_sel = st.session_state['aleph_lugar']
+    nivel_sel_visual = st.session_state.get('aleph_escala', 'Municipal')
+    nivel_sel_interno = nivel_sel_visual
+    anio_analisis = st.session_state.get('aleph_anio', 2035)
+    pob_total = float(st.session_state['aleph_pob_total'])
+    conectado_aleph = True
+else:
+    # Valores por defecto de emergencia si entran directo a esta página
+    lugar_sel = "Antioquia"
+    nivel_sel_visual = "Departamental"
+    nivel_sel_interno = "Departamental"
+    anio_analisis = 2035
+    pob_total = 6000000.0
+
+# 2. Interfaz de Recepción Minimalista
+with st.expander("📍 1. Contexto Territorial y Demográfico (Sihcli-Aleph)", expanded=True):
+    if conectado_aleph:
+        st.success(f"🧠 **Contexto Heredado Automáticamente:** Estás analizando la demanda hídrica y vertimientos para **{lugar_sel} ({nivel_sel_visual})** en el año **{anio_analisis}**.")
+        st.metric("👥 Población Proyectada (Del Modelo Matemático)", f"{pob_total:,.0f} Habitantes")
+    else:
+        st.warning("⚠️ **Modo Desconectado:** No se detectó configuración en el Modelo Demográfico. Usando datos por defecto. Ve a la pestaña 'Demografía y Población' para calibrar el modelo.")
+        lugar_sel = st.selectbox("Territorio de Emergencia:", ["Antioquia", "Medellín", "Rionegro", "Abejorral"])
+        anio_analisis = st.slider("Año:", 2020, 2060, 2035)
+        pob_total = st.number_input("Población Total:", value=100000.0)
+
+    st.markdown("---")
+    st.markdown("⚙️ **Distribución Espacial de la Población**")
+    col_p1, col_p2 = st.columns(2)
+    with col_p1: pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=pob_total * 0.70, step=100.0, help="Puedes ajustar esta distribución manualmente.")
+    with col_p2: pob_rural = st.number_input("Pob. Rural (Resto):", min_value=0.0, value=pob_total - (pob_total * 0.70), step=100.0)
+    pob_total = pob_urbana + pob_rural # Reajuste por si el usuario edita manual
+
+st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{lugar_sel} ({nivel_sel_visual})** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.**")
+
 # ==============================================================================
 # 🐄 MOTOR MATEMÁTICO PECUARIO (Censo ICA Proporcional al Territorio)
 # ==============================================================================
 def obtener_censo_pecuario(lugar_sel, nivel_sel):
     import numpy as np
-    
-    # Función auxiliar para sumar animales proporcionalmente
     def calcular_animales(df_censo, mpios_lista=None, df_interseccion=None):
         if df_censo.empty: return 0.0
-        
-        # Buscar la columna que contenga el total (suele llamarse TOTAL, POB_TOTAL, etc.)
         col_total = next((c for c in df_censo.columns if 'TOTAL' in c.upper() or 'INVENTARIO' in c.upper()), None)
-        if not col_total: return 0.0 # Si no encuentra columna, retorna 0
+        if not col_total: return 0.0 
         
         df_censo[col_total] = pd.to_numeric(df_censo[col_total], errors='coerce').fillna(0)
         total_animales = 0.0
         
-        # 🌐 LÓGICA PROPORCIONAL PARA CUENCAS
         if df_interseccion is not None:
             for _, row in df_interseccion.iterrows():
                 mpio_n = normalizar_texto(row['Municipio'])
                 pct_area = row['Porcentaje'] / 100.0
                 df_m = df_censo[df_censo['MUNICIPIO_NORM'] == mpio_n]
-                if not df_m.empty:
-                    total_animales += (df_m[col_total].sum() * pct_area)
-        
-        # Lógica para municipios enteros (CAR, Depto, etc.)
+                if not df_m.empty: total_animales += (df_m[col_total].sum() * pct_area)
         elif mpios_lista is not None:
             df_f = df_censo[df_censo['MUNICIPIO_NORM'].isin(mpios_lista)]
-            if not df_f.empty:
-                total_animales = df_f[col_total].sum()
-        
+            if not df_f.empty: total_animales = df_f[col_total].sum()
         return float(total_animales)
 
-    # Identificar la jurisdicción territorial seleccionada
     mpios_activos = None
     df_intersec = None
     
-    if nivel_sel == "Municipal":
-        mpios_activos = [normalizar_texto(lugar_sel)]
-    elif nivel_sel == "Cuenca Hidrográfica" and not df_cuencas_mpios.empty:
-        df_intersec = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]
+    if "Municipal" in nivel_sel: mpios_activos = [normalizar_texto(lugar_sel)]
+    elif "Cuenca" in nivel_sel and not df_cuencas_mpios.empty: df_intersec = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]
     elif nivel_sel in ["Jurisdicción Ambiental (CAR)", "Regional", "Departamental"] and not df_territorio.empty:
-        if nivel_sel == "Jurisdicción Ambiental (CAR)":
-            mpios_activos = df_territorio[df_territorio['car'] == lugar_sel.replace("CAR: ", "")]['municipio_norm'].tolist()
-        elif nivel_sel == "Departamental":
-            mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == lugar_sel]['municipio_norm'].tolist()
+        if nivel_sel == "Jurisdicción Ambiental (CAR)": mpios_activos = df_territorio[df_territorio['car'] == lugar_sel.replace("CAR: ", "")]['municipio_norm'].tolist()
+        elif nivel_sel == "Departamental": mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == lugar_sel]['municipio_norm'].tolist()
 
-    # Ejecutar el conteo para cada especie
     total_bovinos = calcular_animales(df_bovinos, mpios_activos, df_intersec)
     total_porcinos = calcular_animales(df_porcinos, mpios_activos, df_intersec)
     total_aves = calcular_animales(df_aves, mpios_activos, df_intersec)
-    
     return total_bovinos, total_porcinos, total_aves
 
-def proyectar_curva(p_base, anios_array, anio_base, modelo, r, k):
-    t = np.maximum(0, anios_array - anio_base) 
-    if modelo == "Logístico":
-        k_val = max(k, p_base * 1.05) 
-        return k_val / (1 + ((k_val - p_base) / p_base) * np.exp(-r * t))
-    elif modelo == "Exponencial": return p_base * np.exp(r * t)
-    elif modelo == "Lineal (Tendencial)": return p_base * (1 + r * t)
-    else: return p_base * ((1 + r) ** t)
-
-# --- EXPORTAR PROYECCIONES ICA A LA MEMORIA GLOBAL ---
-st.markdown("<br>", unsafe_allow_html=True)
-st.info("💡 Envíe estas proyecciones matemáticas al módulo de Sistemas Hídricos para evaluar su impacto en el embalse.")
-
-if st.button("💾 Enviar Proyección ICA al Modelo WRI", use_container_width=True):
-    # Asegúrate de que los nombres de estas variables coincidan con las que usas
-    st.session_state['ica_bovinos_proy'] = bovinos_proyectados
-    st.session_state['ica_porcinos_proy'] = porcinos_proyectados
-    st.session_state['ica_aves_proy'] = aves_proyectadas
-    st.success("✅ ¡Proyecciones del Censo ICA guardadas en el cerebro del sistema!")
-    
-# ==============================================================================
-# 🎛️ PANEL MAESTRO DE VARIABLES (DESPLEGABLE Y DINÁMICO)
-# ==============================================================================
-with st.expander("📍 1. Configuración Territorial y Máquina del Tiempo", expanded=True):
-    nivel_sel_visual = st.selectbox("🎯 Nivel de Análisis Objetivo:", ["Nacional (Colombia)", "Jurisdicción Ambiental (CAR)", "Departamental", "Regional", "Municipal", "Cuenca Hidrográfica", "Veredal"], key="sel_nivel_maestro")
-    nivel_sel_interno = nivel_sel_visual
-
-    if nivel_sel_visual == "Nacional (Colombia)": lugar_sel = "Colombia"
-    
-    elif nivel_sel_visual == "Jurisdicción Ambiental (CAR)":
-        if not df_territorio.empty and 'car' in df_territorio.columns:
-            # Escudo protector contra celdas vacías en Excel
-            cars = sorted([str(x) for x in df_territorio['car'].dropna().unique() if str(x).strip() != ''])
-            col_f1, col_f2 = st.columns(2)
-            with col_f1: car_sel = st.selectbox("1. Autoridad Ambiental (CAR):", cars, key="sel_car")
-            with col_f2:
-                mpios_car = sorted([str(x) for x in df_territorio[df_territorio['car'] == car_sel]['municipio'].dropna().unique()])
-                sub_sel = st.selectbox("2. Municipio (Opcional):", ["Toda la Jurisdicción"] + mpios_car, key="sel_car_mpio")
-            
-            if sub_sel == "Toda la Jurisdicción": lugar_sel = f"CAR: {car_sel}"
-            else: 
-                lugar_sel = sub_sel
-                nivel_sel_interno = "Municipal"
-        else: st.warning("No se detectó la tabla territorial maestra."); lugar_sel = "N/A"
-
-    elif nivel_sel_visual == "Departamental" and not df_mpios.empty:
-        deptos = sorted([str(x) for x in df_mpios['depto_nom'].dropna().unique() if str(x).strip() != ''])
-        lugar_sel = st.selectbox("1. Departamento:", deptos, index=deptos.index("Antioquia") if "Antioquia" in deptos else 0, key="sel_depto")
-        
-    elif nivel_sel_visual == "Regional":
-        if not df_territorio.empty and 'region' in df_territorio.columns:
-            regiones = sorted([str(x) for x in df_territorio['region'].dropna().unique() if str(x).strip() != ''])
-            lugar_sel = st.selectbox("Región (Antioquia):", regiones, key="sel_region")
-        else: st.warning("No se detectó la tabla territorial."); lugar_sel = "N/A"
-            
-    elif nivel_sel_visual == "Municipal":
-        if not df_territorio.empty and 'municipio' in df_territorio.columns:
-            mpios = sorted([str(x) for x in df_territorio['municipio'].dropna().unique() if str(x).strip() != ''])
-            lugar_sel = st.selectbox("Municipio (Antioquia):", mpios, key="sel_mpio")
-        else: st.warning("No se detectó la tabla territorial."); lugar_sel = "N/A"
-
-    elif nivel_sel_visual == "Cuenca Hidrográfica":
-        if not df_cuencas_mpios.empty and 'Subcuenca' in df_cuencas_mpios.columns:
-            # Lee las cuencas del archivo y crea el menú desplegable
-            cuencas_list = sorted([str(x) for x in df_cuencas_mpios['Subcuenca'].dropna().unique()])
-            lugar_sel = st.selectbox("1. Seleccione la Cuenca Hidrográfica:", cuencas_list, key="sel_cuenca")
-            nivel_sel_interno = "Cuenca Hidrográfica"
-        else: 
-            st.error("❌ Archivo de cuencas no encontrado. Revisa la carpeta data/")
-            lugar_sel = "N/A"
-            
-    elif nivel_sel_visual == "Veredal" and not df_veredas.empty:
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            mpios_v = sorted([str(x) for x in df_veredas['Municipio'].dropna().unique()])
-            mpio_sel = st.selectbox("1. Municipio Anfitrión:", mpios_v, key="sel_ver_mpio")
-        with col_f2:
-            veredas = sorted([str(x) for x in df_veredas[df_veredas['Municipio'] == mpio_sel]['Vereda'].dropna().unique()])
-            lugar_sel = st.selectbox("2. Vereda:", veredas, key="sel_vereda")
-
-    st.markdown("⚙️ **Parámetros de Proyección Demográfica**")
-    pob_u_base, pob_r_base, anio_base = obtener_poblacion_base(lugar_sel, nivel_sel_interno)
-    pob_t_base = pob_u_base + pob_r_base
-
-    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
-    with col_t1: anio_analisis = st.slider("📅 Año a Simular:", min_value=anio_base, max_value=2060, value=2024, step=1)
-    with col_t2: modelo_sel = st.selectbox("Ecuación Evolutiva:", ["Logístico", "Geométrico", "Exponencial", "Lineal (Tendencial)"])
-    with col_t3: tasa_r = st.number_input("Tasa de Crecimiento (r) %:", value=1.50, step=0.1) / 100.0
-    with col_t4: k_man = st.number_input("Capacidad de Carga (K):", value=float(max(pob_t_base * 2.0, 1000)), step=1000.0, disabled=(modelo_sel != "Logístico"))
-
-    factor_proy = proyectar_curva(pob_t_base, np.array([anio_analisis]), anio_base, modelo_sel, tasa_r, k_man)[0] / pob_t_base if pob_t_base > 0 else 1.0
-    pob_u_auto = pob_u_base * factor_proy
-    pob_r_auto = pob_r_base * factor_proy
-
-    st.info(f"👥 Demografía dinámica para **{lugar_sel}** en el año **{anio_analisis}**:")
-    col_p1, col_p2, col_p3 = st.columns([1, 1, 1.5])
-    with col_p1: pob_urbana = st.number_input("Pob. Urbana (Editable):", min_value=0.0, value=pob_u_auto, step=100.0)
-    with col_p2: pob_rural = st.number_input("Pob. Rural (Editable):", min_value=0.0, value=pob_r_auto, step=100.0)
-    with col_p3:
-        pob_total = pob_urbana + pob_rural
-        st.metric(label="Población Total Estimada", value=f"{pob_total:,.0f} Hab.", delta=f"+ {pob_total - pob_t_base:,.0f} desde {anio_base}" if pob_total > pob_t_base else None)
-
-st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{lugar_sel} ({nivel_sel_visual})** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.**")
+# Arrays para gráficas de tendencias a futuro (DBO)
+anios_evo = np.arange(anio_analisis, anio_analisis + 31)
+factor_evo = (1 + 0.015) ** (anios_evo - anio_analisis) # Crecimiento proxy 1.5%
+pob_evo = pob_total * factor_evo
 
 tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena, tab_extern, tab_lactosuero = st.tabs([
     "🚰 2. Demanda y Eficiencia",
@@ -505,12 +368,8 @@ tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena, ta
     "🗺️ 6. Mapa de Calor (Visor)",
     "📊 7. Explorador Ambiental",
     "⚠️ 8. Externalidades",
-    "🥛 9. Economía Circular" # 👈 La nueva pestaña
+    "🥛 9. Economía Circular" 
 ])
-
-anios_evo = np.arange(anio_analisis, anio_analisis + 31)
-factor_evo = proyectar_curva(pob_t_base, anios_evo, anio_base, modelo_sel, tasa_r, k_man) / pob_t_base if pob_t_base > 0 else np.ones_like(anios_evo)
-pob_evo = pob_total * (factor_evo / factor_proy)
 
 # ------------------------------------------------------------------------------
 # TAB 1: DEMANDA HÍDRICA Y EFICIENCIA
