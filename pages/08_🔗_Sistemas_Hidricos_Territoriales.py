@@ -39,20 +39,45 @@ if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
         with st.expander("🧠 Conexión Activa con el Modelo Demográfico (El Aleph)", expanded=True):
             st.success(f"Recibiendo proyección para **{aleph_lugar}** (Año **{aleph_anio}**): **{aleph_pob:,.0f} habitantes**.")
             
-            # 2. Enrutador Topológico (¿De qué lado del tubo están?)
-            productores_rg2 = ["belmira", "donmatías", "donmatias", "san pedro", "entrerríos", "entrerrios", "santa rosa", "río chico", "rio chico", "río grande", "rio grande"]
-            consumidores_amva = ["medellín", "medellin", "bello", "itagüí", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa", "valle de aburrá", "amva"]
+            # 2. Enrutador Topológico Avanzado (La Fe, RG2 y AMVA)
+            lugar_str = str(aleph_lugar).lower().replace(".", "").strip()
             
-            lugar_str = str(aleph_lugar).lower()
+            productores_rg2 = ["belmira", "donmatias", "san pedro", "entrerrios", "santa rosa", "chico", "grande", "animas"]
+            productores_lafe = ["retiro", "la ceja", "rionegro", "negro", "espiritu santo", "pantanillo", "buey", "piedras", "arma"]
+            consumidores_amva = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa", "aburra", "amva", "total"]
             
-            if any(x in lugar_str for x in consumidores_amva):
-                st.info("🏙️ **Rol detectado: Consumidor Metropolitano.** Esta población se asignará automáticamente a la Demanda Urbana del Sistema (AMVA).")
+            # Función para limpiar tildes rápido en la búsqueda
+            import unicodedata
+            lugar_limpio = unicodedata.normalize('NFKD', lugar_str).encode('ascii', 'ignore').decode('utf-8')
+            
+            if any(x in lugar_limpio for x in consumidores_amva):
+                st.info("🏙️ **Rol detectado: Consumidor Metropolitano.** Población asignada a la Demanda Urbana del Sistema.")
                 pob_amva_aleph = aleph_pob
-            elif any(x in lugar_str for x in productores_rg2):
-                st.info("🌲 **Rol detectado: Productor de Cuenca.** Esta población se asignará a la Demanda Local (Aguas arriba del embalse), restando caudal de ingreso.")
+                st.session_state['nodo_sugerido'] = "La Fe" # Por defecto para la ciudad
+            elif any(x in lugar_limpio for x in productores_rg2):
+                st.info("🌲 **Rol detectado: Productor (Sistema Río Grande II).** Población asignada a la Demanda Local aguas arriba.")
                 pob_local_aleph = aleph_pob
+                st.session_state['nodo_sugerido'] = "Río Grande II"
+            elif any(x in lugar_limpio for x in productores_lafe):
+                st.info("🌲 **Rol detectado: Productor (Sistema La Fe).** Población asignada a la Demanda Local aguas arriba.")
+                pob_local_aleph = aleph_pob
+                st.session_state['nodo_sugerido'] = "La Fe"
             else:
-                st.warning("⚠️ El territorio heredado no pertenece directamente a las cuencas de Río Grande II o La Fe. El sistema usará los datos manuales del panel lateral.")
+                st.warning(f"⚠️ El territorio '{aleph_lugar}' no está mapeado directamente a las cuencas. Usando datos manuales.")
+
+# =========================================================================
+# 2. PANEL DE OPERACIONES Y CONTROLES (CON AUTO-SELECCIÓN DE NODO)
+# =========================================================================
+st.sidebar.markdown("### 🎛️ Centro de Operaciones")
+
+# Determinamos si el Aleph sugirió un embalse para pre-seleccionarlo
+nodos_lista = list(sistemas_embalses.keys())
+idx_defecto = 0
+if 'nodo_sugerido' in st.session_state and st.session_state['nodo_sugerido'] in nodos_lista:
+    idx_defecto = nodos_lista.index(st.session_state['nodo_sugerido'])
+
+nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", nodos_lista, index=idx_defecto)
+datos_nodo = sistemas_embalses[nodo_seleccionado]
                 
 # =========================================================================
 # 0. CARGA DE CARTOGRAFÍA (Desde Supabase en la Nube)
@@ -217,13 +242,6 @@ if gdf_embalses is not None and not gdf_embalses.empty:
                     st.sidebar.success("🌲 Áreas de conservación inyectadas (Se respetó el histórico de La Fe).")
         except Exception as e:
             st.sidebar.warning(f"No se pudo cargar la capa de predios: {e}")
-
-# =========================================================================
-# 2. PANEL DE OPERACIONES Y CONTROLES (RECEPTOR CLIMÁTICO Y METABÓLICO)
-# =========================================================================
-st.sidebar.markdown("### 🎛️ Centro de Operaciones")
-nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", list(sistemas_embalses.keys()))
-datos_nodo = sistemas_embalses[nodo_seleccionado]
 
 # --- ☁️ MOTOR CLIMÁTICO LOCAL (ENSO) ---
 st.sidebar.markdown("### 🌍 Motor Climático (ENSO)")
