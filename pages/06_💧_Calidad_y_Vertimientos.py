@@ -284,8 +284,18 @@ df_cuencas_mpios = cargar_cuencas_mpios()
 conectado_aleph = False
 if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
     lugar_sel = st.session_state['aleph_lugar']
-    nivel_sel_visual = st.session_state.get('aleph_escala', 'Municipal')
-    nivel_sel_interno = nivel_sel_visual
+    escala_raw = st.session_state.get('aleph_escala', 'Municipal')
+    
+    # --- TRADUCTOR UNIVERSAL DE ESCALAS (Empareja Demografía con Vertimientos) ---
+    if "Nacional" in escala_raw: nivel_sel_interno = "Nacional (Colombia)"
+    elif "Departamental" in escala_raw: nivel_sel_interno = "Departamental"
+    elif "Regional" in escala_raw: nivel_sel_interno = "Regional"
+    elif "Municipal" in escala_raw: nivel_sel_interno = "Municipal"
+    elif "Cuenca" in escala_raw: nivel_sel_interno = "Cuenca Hidrográfica"
+    elif "Veredal" in escala_raw: nivel_sel_interno = "Veredal"
+    else: nivel_sel_interno = "Municipal"
+    
+    nivel_sel_visual = nivel_sel_interno
     anio_analisis = st.session_state.get('aleph_anio', 2035)
     pob_total = float(st.session_state['aleph_pob_total'])
     conectado_aleph = True
@@ -295,7 +305,7 @@ else:
     nivel_sel_visual = "Departamental"
     nivel_sel_interno = "Departamental"
     anio_analisis = 2035
-    pob_total = 6000000.0
+    pob_total = 7158023
 
 # 2. Interfaz de Recepción Minimalista
 with st.expander("📍 1. Contexto Territorial y Demográfico (Sihcli-Aleph)", expanded=True):
