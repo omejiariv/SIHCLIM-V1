@@ -1368,33 +1368,35 @@ with tab_rankings:
     titulo_ranking = ""
     
     if "Nacional" in escala_sel:
-        # Ranking de Departamentos
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
         df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
         titulo_ranking = "Departamentos"
         
     elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
-        # Ranking de todos los Municipios del Departamento seleccionado
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == depto_sel)].groupby('municipio')['Total'].sum().reset_index()
         df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
         titulo_ranking = f"Municipios de {depto_sel}"
         
     elif "Regional" in escala_sel or "Municipal (Regiones)" in escala_sel:
-        # Ranking de todos los Municipios de la Macroregión seleccionada
-        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['Macroregion'] == region_sel)].groupby('municipio')['Total'].sum().reset_index()
+        # SOLUCIÓN ERROR: Capturamos la región sin importar cómo se llamó la variable arriba
+        region_activa = reg_sel if 'reg_sel' in locals() else region_sel if 'region_sel' in locals() else "Andina"
+        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['Macroregion'] == region_activa)].groupby('municipio')['Total'].sum().reset_index()
         df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
-        titulo_ranking = f"Municipios de {region_sel}"
+        titulo_ranking = f"Municipios de {region_activa}"
         
     else:
-        # Veredas y Cuencas (Usan la tabla del mapa directamente)
+        # Veredas y Cuencas
         df_rank = df_mapa_base.copy()
+        # SOLUCIÓN ARCOÍRIS VEREDAL: Le ponemos el apellido (Municipio) a la vereda para evitar homonimias
+        if 'Padre' in df_rank.columns:
+            df_rank['Territorio'] = df_rank['Territorio'].astype(str).str.title() + " (" + df_rank['Padre'].astype(str).str.title() + ")"
         titulo_ranking = "Territorios"
 
     # Escudo Numérico Universal para la Pestaña 5
     if not df_rank.empty and 'Total' in df_rank.columns:
         df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
         df_rank = df_rank[df_rank['Total'] > 0]
-    
+        
     # Procedemos solo si hay datos para armar gráficas
     if not df_rank.empty and len(df_rank) > 1:
         
