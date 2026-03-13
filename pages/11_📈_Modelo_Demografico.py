@@ -1449,8 +1449,12 @@ with tab_rankings:
                 df_base_historica = df_base_historica[df_base_historica['depto_nom'] == depto_sel]
                 df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                 df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+
             elif "Regional" in escala_sel or "Municipal (Regiones)" in escala_sel:
-                df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_sel]
+                # SOLUCIÓN: Usamos el mismo truco para atrapar el nombre exacto de la variable de región
+                region_activa_curvas = reg_sel if 'reg_sel' in locals() else region_sel if 'region_sel' in locals() else "Andina"
+                
+                df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_activa_curvas]
                 df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                 df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
             
