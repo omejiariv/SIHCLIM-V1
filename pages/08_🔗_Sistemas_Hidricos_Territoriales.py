@@ -16,6 +16,41 @@ Evalúa cómo los embalses integran las cuencas propias con los trasvases artifi
 """)
 st.divider()
 
+# ==============================================================================
+# 🧠 EL ALEPH HÍDRICO (RECEPTOR INTELIGENTE DE DEMANDA)
+# ==============================================================================
+# 1. Leemos la memoria del sistema sin afectar el sidebar
+conectado_aleph = False
+pob_amva_aleph = None
+pob_local_aleph = None
+
+if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
+    aleph_lugar = st.session_state['aleph_lugar']
+    aleph_pob = float(st.session_state['aleph_pob_total'])
+    aleph_anio = st.session_state.get('aleph_anio', 2035)
+    
+    # Solo activamos si la población es mayor a cero
+    if aleph_pob > 0:
+        conectado_aleph = True
+        st.markdown("---")
+        with st.expander("🧠 Conexión Activa con el Modelo Demográfico (El Aleph)", expanded=True):
+            st.success(f"Recibiendo proyección para **{aleph_lugar}** (Año **{aleph_anio}**): **{aleph_pob:,.0f} habitantes**.")
+            
+            # 2. Enrutador Topológico (¿De qué lado del tubo están?)
+            productores_rg2 = ["belmira", "donmatías", "donmatias", "san pedro", "entrerríos", "entrerrios", "santa rosa", "río chico", "rio chico", "río grande", "rio grande"]
+            consumidores_amva = ["medellín", "medellin", "bello", "itagüí", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa", "valle de aburrá", "amva"]
+            
+            lugar_str = str(aleph_lugar).lower()
+            
+            if any(x in lugar_str for x in consumidores_amva):
+                st.info("🏙️ **Rol detectado: Consumidor Metropolitano.** Esta población se asignará automáticamente a la Demanda Urbana del Sistema (AMVA).")
+                pob_amva_aleph = aleph_pob
+            elif any(x in lugar_str for x in productores_rg2):
+                st.info("🌲 **Rol detectado: Productor de Cuenca.** Esta población se asignará a la Demanda Local (Aguas arriba del embalse), restando caudal de ingreso.")
+                pob_local_aleph = aleph_pob
+            else:
+                st.warning("⚠️ El territorio heredado no pertenece directamente a las cuencas de Río Grande II o La Fe. El sistema usará los datos manuales del panel lateral.")
+                
 # =========================================================================
 # 0. CARGA DE CARTOGRAFÍA (Desde Supabase en la Nube)
 # =========================================================================
