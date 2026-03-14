@@ -441,9 +441,21 @@ with tab_demanda:
         col_res2.metric("Bruto (Efectivo)", f"{q_efectivo_dom:.2f} L/s", delta=f"Pérdida: {(q_efectivo_dom - q_necesario_dom):.2f} L/s", delta_color="inverse")
         
         st.markdown("**B. Uso Agrícola / Pecuario**")
+        
+        # 1. Consultamos los animales en la nube para este territorio y año
+        bov_dem, por_dem, ave_dem = obtener_censo_pecuario(lugar_sel, nivel_sel_interno, anio_analisis)
+        
+        # 2. Calculamos cuánto beben (L/día) y lo pasamos a L/s
+        consumo_animales_lpd = (bov_dem * 40) + (por_dem * 15) + (ave_dem * 0.3)
+        q_animales_ls = consumo_animales_lpd / 86400
+        
         col_d_agr1, col_d_agr2 = st.columns(2)
-        with col_d_agr1: q_necesario_agr = st.number_input("Demanda Neta Agrícola (L/s):", value=45.0, step=5.0)
-        with col_d_agr2: perd_agr = st.slider("Pérdidas Sist. de Riego (%):", 0.0, 100.0, 30.0, step=1.0)
+        with col_d_agr1: 
+            # Sumamos el agua de los animales a una base de cultivos (Ej. 45 L/s)
+            q_necesario_agr = st.number_input("Demanda Neta Agrícola/Pecuaria (L/s):", value=float(q_animales_ls + 45.0), step=5.0)
+        with col_d_agr2: 
+            perd_agr = st.slider("Pérdidas Sist. de Riego (%):", 0.0, 100.0, 30.0, step=1.0)
+            
         q_efectivo_agr = q_necesario_agr / (1 - (perd_agr/100)) if perd_agr < 100 else q_necesario_agr
         st.caption(f"Caudal Bruto Agrícola a captar: **{q_efectivo_agr:.2f} L/s**")
         
@@ -838,23 +850,30 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
 
 # 2.1 Calcular Carga Difusa Base (El "Fondo" del Río)
 pob_u, pob_r = pob_urbana, pob_rural
-bov, por, ave = obtener_censo_pecuario(lugar_sel, nivel_sel_visual, anio_analisis)
+bov, por, ave = obtener_censo_pecuario(lugar_sel, nivel_sel_interno, anio_analisis)
 
 # Factores de Emisión Típicos (kg DBO/día por individuo)
 dbo_hab = (pob_u + pob_r) * 0.054
 dbo_bov = bov * 0.600
 dbo_por = por * 0.200
-carga_difusa_total_kg = dbo_hab + dbo_bov + dbo_por
+dbo_ave = ave * 0.015  # Nuevo aporte avícola
+
+# Carga Pecuaria Total
+dbo_gan = dbo_bov + dbo_por + dbo_ave
+carga_difusa_total_kg = dbo_hab + dbo_gan
 
 # Asumimos que solo un % de la carga difusa llega efectivamente al cauce en este punto (Atenuación natural)
 factor_escorrentia = 0.15 
 dbo_rio_arriba_fondo = max(1.0, ((carga_difusa_total_kg * factor_escorrentia) * 1000) / (q_rio * 86400))
 
 with st.expander("🏭 Presión Antrópica y Vertimiento Hipotético", expanded=True):
-    st.markdown("##### 🐄 1. Carga Difusa Base (Cuenca Aguas Arriba)")
+    st.markdown("##### 🐄🐖🐔 1. Carga Difusa Base (Cuenca Aguas Arriba)")
     cd1, cd2, cd3 = st.columns(3)
     cd1.metric("Población Humana", f"{pob_u + pob_r:,.0f} hab", f"{dbo_hab:,.0f} kg DBO/d", delta_color="inverse")
-    cd2.metric("Censo Ganadero", f"{bov:,.0f} bovinos", f"{dbo_bov:,.0f} kg DBO/d", delta_color="inverse")
+    
+    total_animales = bov + por + ave
+    cd2.metric("Censo Pecuario Total", f"{total_animales:,.0f} animales", f"{dbo_gan:,.0f} kg DBO/d", delta_color="inverse")
+    
     cd3.metric("Impacto en Río (Fondo)", f"{dbo_rio_arriba_fondo:.1f} mg/L DBO", "Concentración base antes del vertimiento puntual", delta_color="off")
     
     st.markdown("---")
