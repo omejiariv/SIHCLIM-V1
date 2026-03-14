@@ -7,6 +7,7 @@ import os
 import unicodedata
 import warnings
 from modules.utils import normalizar_texto, leer_csv_robusto
+from modules.demografia_tools import render_motor_demografico
 import requests
 import io
 import geopandas as gpd
@@ -21,6 +22,11 @@ Modelo integral del ciclo hidrosocial: Simulación de demanda, cargas contaminan
 capacidad de asimilación, formalización y visor espacial de calor (Concesiones y Vertimientos).
 """)
 st.divider()
+
+# --- MOTOR DEMOGRÁFICO DE BOLSILLO ---
+with st.expander("⚙️ Recalcular Proyección Demográfica (Motor Local)", expanded=False):
+    st.caption("Calcula la población futura para proyectar el incremento en las cargas contaminantes (DBO5 / SST).")
+    render_motor_demografico(lugar_defecto="Valle de Aburrá")
 
 # ==============================================================================
 # 🧽 FUNCIÓN NORMALIZADORA (MATA-TILDES Y ESPACIOS)
