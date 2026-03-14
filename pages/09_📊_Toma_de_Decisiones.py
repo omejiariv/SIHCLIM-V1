@@ -89,8 +89,22 @@ if gdf_zona is not None and not gdf_zona.empty:
     demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5) 
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
 
-    # Motor de Estrés Hídrico
-    oferta_nominal = 14.5 
+    st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
+    
+    # 1. Recuperamos la Oferta desde el Aleph (O ponemos 14.5 como respaldo)
+    oferta_memoria = st.session_state.get('aleph_oferta_hidrica', 14.5)
+    
+    # 2. Cajón Manual Híbrido: Lee la memoria, pero permite sobreescritura manual
+    with st.expander("⚙️ Calibración de Oferta Hídrica Base", expanded=False):
+        oferta_base = st.number_input(
+            "Oferta Nominal del Sistema (m³/s):", 
+            value=float(oferta_memoria), 
+            step=0.5,
+            help="Dato heredado de Sistemas Hídricos. Puedes modificarlo aquí para simular sequías extremas o nuevas represas."
+        )
+
+    # 3. Motor de Estrés Hídrico (El ENSO castiga la oferta elegida)
+    oferta_nominal = oferta_base 
     if "Niño Severo" in fase_enso: oferta_nominal *= 0.55
     elif "Niño Moderado" in fase_enso: oferta_nominal *= 0.75
     elif "Niña" in fase_enso: oferta_nominal *= 1.20
@@ -98,7 +112,6 @@ if gdf_zona is not None and not gdf_zona.empty:
     estres_hidrico = (demanda_m3s / oferta_nominal) * 100 if oferta_nominal > 0 else 100
     st.session_state['estres_hidrico_global'] = estres_hidrico
 
-    st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric(f"👥 Población ({lugar_actual} - {anio_actual})", f"{int(pob_total):,.0f} hab")
@@ -115,7 +128,6 @@ if gdf_zona is not None and not gdf_zona.empty:
 
     # --- AHORA SÍ DIBUJAMOS LAS PESTAÑAS ---
     tab1, tab2, tab3, tab4 = st.tabs(["🎯 SÍNTESIS DE PRIORIZACIÓN", "🌊 HIDROLOGÍA", "🛡️ SIGA-CAL", "📊 ESTÁNDARES WRI"])
-
     with tab1:
         st.subheader(f"🗺️ Visor Geográfico Integrado: {nombre_zona}")
         
