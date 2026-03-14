@@ -944,13 +944,6 @@ with col_h2:
         st.session_state['demanda_total_m3s'] = demanda_total_m3_s
         st.success("✅ Dato inyectado en la memoria global.")
 
-# =========================================================================
-# 9. MATEMÁTICA Y CIENCIA
-# =========================================================================
-with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
-    st.markdown("La variación de almacenamiento en el tiempo se rige por la ecuación de continuidad:")
-    st.markdown("$$\\frac{\\Delta S}{\\Delta t} = I_{nat} + \\sum I_{trasvases} - O_{urb} - O_{eco} - O_{energia} - E_{vap}$$")
-        
 # ==============================================================================
 # 🕸️ DIBUJO DEL MAPA CONCEPTUAL (Se inyecta en la parte superior)
 # ==============================================================================
