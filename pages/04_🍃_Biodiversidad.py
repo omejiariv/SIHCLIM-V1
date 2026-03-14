@@ -1,4 +1,4 @@
-# pages/03_🍃_Biodiversidad.py
+# pages/04_🍃_Biodiversidad.py
 
 import streamlit as st
 import sys
