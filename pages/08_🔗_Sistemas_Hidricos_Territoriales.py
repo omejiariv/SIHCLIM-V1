@@ -1014,7 +1014,7 @@ with contenedor_sankey.container():
             link=dict(source=source, target=target, value=value, color=color)
         )])
         fig_sankey.update_layout(height=480, margin=dict(l=20, r=20, t=30, b=50))
-        st.plotly_chart(fig_sankey, use_container_width=True)
+        contenedor_sankey.plotly_chart(fig_sankey, use_container_width=True)
         
 # =========================================================================
 # 8. MATEMÁTICA Y CIENCIA
