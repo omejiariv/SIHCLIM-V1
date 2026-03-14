@@ -15,6 +15,8 @@ from rasterio.features import shapes
 import plotly.graph_objects as go
 import plotly.express as px
 from modules.admin_utils import init_supabase
+from modules.geomorfologia_tools import render_motor_hidrologico
+render_motor_hidrologico(gdf_zona)
 from shapely.geometry import shape
 
 from modules.land_cover import LAND_COVER_COLORS, LAND_COVER_LEGEND
