@@ -21,6 +21,16 @@ import os
 # --- 1. CONFIGURACIÓN Y CARGA DE MÓDULOS ---
 st.set_page_config(page_title="Sihcli-Poter: Toma de Decisiones", page_icon="🎯", layout="wide")
 
+# =========================================================================
+# 🏷️ RECUPERACIÓN DEL TÍTULO PRINCIPAL DE LA PÁGINA
+# =========================================================================
+st.title("🎯 Módulo Maestro de Toma de Decisiones y Síntesis Territorial")
+st.markdown("""
+Integración Multicriterio para la **Seguridad Hídrica**, la **Conservación de la Biodiversidad** y la **Gestión del Riesgo**.  
+*Utilice este tablero gerencial para simular escenarios de inversión y priorizar áreas de restauración ecológica.*
+""")
+st.divider()
+
 try:
     from modules.impacto_serv_ecosist import render_sigacal_analysis
     from modules import selectors
