@@ -940,20 +940,20 @@ with col_h2:
     c_m2.metric("Demanda Agro (m³/día)", f"{demanda_agro_m3_dia:,.1f}")
     c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s", delta_color="inverse")
     
-    if st.button("💾 Enviar Datos al Modelo (Memoria Global)", help="Al hacer clic, estos valores viajarán al Tablero de Toma de Decisiones para cruzar Oferta vs Demanda."):
+    if st.button("💾 Enviar Datos al Modelo (Memoria Global)", help="..."):
         # 1. Inyectar Demanda
         st.session_state['demanda_total_m3s'] = demanda_total_m3_s
         
-        # 2. Inyectar Oferta (Dependiendo del embalse que el usuario esté analizando)
-        oferta_calculada = 14.5 # Sistema Integrado por defecto
-        if "Grande" in nodo_seleccionado:
-            oferta_calculada = 10.5 # Oferta nominal Río Grande II
-        elif "Fe" in nodo_seleccionado:
-            oferta_calculada = 4.0  # Oferta nominal La Fe
+        # 2. Inyectar Oferta REAL (Suma tus variables de entrada aquí)
+        # Reemplaza 'variable_q_natural', 'variable_bombeo1', etc., por los nombres reales de tus inputs
+        oferta_calculada = variable_q_natural + variable_bombeo1 + variable_bombeo2 
+        
+        # Nota: Si ya tienes una variable que sumaba el total de entradas, ponla directo:
+        # oferta_calculada = total_inflows 
             
         st.session_state['aleph_oferta_hidrica'] = oferta_calculada
         
-        st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_calculada:.1f} m³/s")
+        st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_calculada:.2f} m³/s")
 
 # ==============================================================================
 # 🕸️ DIBUJO DEL MAPA CONCEPTUAL (Se inyecta en la parte superior)
