@@ -103,26 +103,41 @@ if gdf_zona is not None and not gdf_zona.empty:
             help="Dato heredado de Sistemas Hídricos. Puedes modificarlo aquí para simular sequías extremas o nuevas represas."
         )
 
-    # 3. Motor de Estrés Hídrico (El ENSO castiga la oferta elegida)
-    oferta_nominal = oferta_base 
+# 3. Motor de Estrés Hídrico (Integrando Tiempo, Cambio Climático y ENSO)
+    oferta_nominal = float(oferta_base) 
+    
+    # A. Factor de Cambio Climático (Degradación de oferta a largo plazo)
+    # Asumimos que la cuenca pierde un 0.5% de su recarga hídrica por cada año futuro (desde 2024)
+    anio_base_cc = 2024
+    if int(anio_actual) > anio_base_cc:
+        anios_futuro = int(anio_actual) - anio_base_cc
+        tasa_degradacion = anios_futuro * 0.005  # 0.5% por año
+        oferta_nominal = oferta_nominal * (1 - tasa_degradacion)
+
+    # B. Factor de Variabilidad Climática (ENSO - Choques a corto plazo)
     if "Niño Severo" in fase_enso: oferta_nominal *= 0.55
     elif "Niño Moderado" in fase_enso: oferta_nominal *= 0.75
     elif "Niña" in fase_enso: oferta_nominal *= 1.20
 
+    # C. Cálculo de Estrés Final
     estres_hidrico = (demanda_m3s / oferta_nominal) * 100 if oferta_nominal > 0 else 100
     st.session_state['estres_hidrico_global'] = estres_hidrico
 
+    # --- RENDERIZADO DE LOS 4 KPIs GLOBALES ---
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric(f"👥 Población ({lugar_actual} - {anio_actual})", f"{int(pob_total):,.0f} hab")
+        st.metric(f"👥 Población ({lugar_actual} - {int(anio_actual)})", f"{int(pob_total):,.0f} hab")
     with col2:
         st.metric("💧 Demanda Continua", f"{demanda_m3s:,.2f} m³/s", "Humana + Pecuaria", delta_color="off")
     with col3:
-        st.metric("🌍 Fase ENSO Actual", fase_enso)
+        st.metric("🌍 Fase ENSO Actual", fase_enso, help="Afecta el nivel de la oferta a corto plazo.")
     with col4:
         alerta_estres = "inverse" if estres_hidrico > 80 else "normal"
         if estres_hidrico > 100: alerta_estres = "inverse" 
-        st.metric("⚠️ Estrés Hídrico", f"{estres_hidrico:,.1f} %", "Crítico" if estres_hidrico > 80 else "Estable", delta_color=alerta_estres)
+        
+        # Agregamos en la ayuda (help) el impacto del tiempo
+        msg_ayuda = "Relación Demanda/Oferta. Incluye degradación climática anual (0.5%/año) e impacto ENSO."
+        st.metric("⚠️ Estrés Hídrico", f"{estres_hidrico:,.1f} %", "Crítico" if estres_hidrico > 80 else "Estable", delta_color=alerta_estres, help=msg_ayuda)
     
     st.divider()
 
