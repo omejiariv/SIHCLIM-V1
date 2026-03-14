@@ -761,12 +761,24 @@ if gdf_zona is not None and not gdf_zona.empty:
 
             st.success(f"✅ Modelando 3 escenarios simultáneos ({b_min}m, {b_med}m, {b_max}m)...")
             
+            # Calculamos los totales a partir de los tramos
+            tot_min = df_tramos[f"Mínimo ({b_min}m) ha"].sum()
+            tot_med = df_tramos[f"Ideal ({b_med}m) ha"].sum()
+            tot_max = df_tramos[f"Óptimo ({b_max}m) ha"].sum()
+            tot_longitud_km = df_tramos["Longitud (Km)"].sum() # <-- NUEVO CÁLCULO
+
+            st.success(f"✅ Modelando 3 escenarios simultáneos ({b_min}m, {b_med}m, {b_max}m)...")
+            
             st.markdown("##### 📊 Tablero de Sensibilidad Ecológica y Financiera")
-            cm1, cm2, cm3, cm4 = st.columns(4)
+            
+            # Ahora creamos 5 columnas en lugar de 4
+            cm1, cm2, cm3, cm4, cm5 = st.columns(5)
+            
             cm1.metric(f"🔴 Escenario {b_min}m", f"{tot_min:,.1f} ha")
             cm2.metric(f"🟡 Escenario {b_med}m", f"{tot_med:,.1f} ha", f"+{(tot_med - tot_min):,.1f} ha extra", delta_color="off")
             cm3.metric(f"🟢 Escenario {b_max}m", f"{tot_max:,.1f} ha", f"+{(tot_max - tot_med):,.1f} ha extra", delta_color="off")
             cm4.metric("🌿 Tramos Hídricos", f"{len(df_tramos)}")
+            cm5.metric("📏 Longitud Total", f"{tot_longitud_km:,.1f} km") # <-- NUEVA MÉTRICA
             
             # --- SEPARACIÓN ELEGANTE EN PESTAÑAS (TABS) ---
             tab_predios, tab_tramos = st.tabs(["🏡 Impacto Predial (Negociación)", "🌿 Áreas por Franja Riparia (Tramos)"])
