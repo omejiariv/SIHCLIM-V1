@@ -9,7 +9,7 @@ import geopandas as gpd
 
 st.set_page_config(page_title="Metabolismo Complejo", page_icon="🔗", layout="wide")
 
-st.title("🔗 Metabolismo Territorial Complejo: Nodos y Trasvases")
+st.header(f"Metabolismo Territorial Complejo: Nodos y Trasvases ({nodo_seleccionado})")
 st.markdown("""
 Modelo de topología de redes para el **Sistema de Abastecimiento del Valle de Aburrá**. 
 Evalúa cómo los embalses integran las cuencas propias con los trasvases artificiales para sostener la demanda urbana, alterando el flujo natural de los ecosistemas aportantes.
@@ -828,7 +828,7 @@ with c_res2:
 # 8. HUELLA HÍDRICA TERRITORIAL (CONEXIÓN MAESTROS ICA + DANE + MEMORIA GLOBAL)
 # =========================================================================
 st.markdown("---")
-st.header("💧 Metabolismo Hídrico: Presión Demográfica y Agropecuaria")
+st.header(f"💧 Metabolismo Hídrico de {nodo_seleccionado}: Presión Demográfica y Agropecuaria ({anio_censo})")
 st.info("Cálculo de la demanda hídrica real integrando la población humana (DANE) y los inventarios pecuarios alojados en la nube (ICA).")
 
 col_h1, col_h2 = st.columns([1, 1.5])
