@@ -107,10 +107,10 @@ if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
             st.session_state['nodo_sugerido'] = "La Fe"
 
 # Verificamos si el Aleph ya tiene datos. Si no los tiene, mostramos el botón.
-if 'aleph_pob_total' not in st.session_state or st.session_state.get('aleph_pob_total') == 0:
+with st.expander("⚙️ Recalcular Proyección Demográfica (Motor Local)", expanded=False):
+    st.write("Usa esta herramienta si deseas cambiar el año de análisis sin salir de esta página.")
     render_motor_demografico(lugar_defecto="Valle de Aburrá")
-    st.divider()
-
+    
 # =========================================================================
 # 3. 🎛️ SIDEBAR (Sabe qué embalse sugerir)
 # =========================================================================
