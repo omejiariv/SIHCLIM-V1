@@ -286,7 +286,7 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         # --- 3. PORTAFOLIOS DE INVERSIÓN (CANTIDAD Y CALIDAD) ---
         st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("💼 Portafolios de Inversión Multi-Objetivo")
+        st.subheader(f"💼 Portafolios de Inversión Multi-Objetivo ({lugar_actual} - {anio_actual})")
         
         # --- CONEXIÓN AL ALEPH (Aseguramos que los datos base existan) ---
         demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5)
