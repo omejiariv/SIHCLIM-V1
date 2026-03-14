@@ -79,7 +79,41 @@ with st.sidebar:
 
 if gdf_zona is not None and not gdf_zona.empty:
     engine = get_engine()
+
+    # ==============================================================================
+    # 🧠 CEREBRO MAESTRO: LECTURA DE LA MEMORIA GLOBAL Y KPIs METROPOLITANOS
+    # ==============================================================================
+    lugar_actual = st.session_state.get('aleph_lugar', nombre_zona)
+    anio_actual = st.session_state.get('aleph_anio', 2024)
+    pob_total = st.session_state.get('aleph_pob_total', 4150000)
+    demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5) 
+    fase_enso = st.session_state.get('enso_fase', 'Neutro')
+
+    # Motor de Estrés Hídrico
+    oferta_nominal = 14.5 
+    if "Niño Severo" in fase_enso: oferta_nominal *= 0.55
+    elif "Niño Moderado" in fase_enso: oferta_nominal *= 0.75
+    elif "Niña" in fase_enso: oferta_nominal *= 1.20
+
+    estres_hidrico = (demanda_m3s / oferta_nominal) * 100 if oferta_nominal > 0 else 100
+    st.session_state['estres_hidrico_global'] = estres_hidrico
+
+    st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric(f"👥 Población ({lugar_actual} - {anio_actual})", f"{int(pob_total):,.0f} hab")
+    with col2:
+        st.metric("💧 Demanda Continua", f"{demanda_m3s:,.2f} m³/s", "Humana + Pecuaria", delta_color="off")
+    with col3:
+        st.metric("🌍 Fase ENSO Actual", fase_enso)
+    with col4:
+        alerta_estres = "inverse" if estres_hidrico > 80 else "normal"
+        if estres_hidrico > 100: alerta_estres = "inverse" 
+        st.metric("⚠️ Estrés Hídrico", f"{estres_hidrico:,.1f} %", "Crítico" if estres_hidrico > 80 else "Estable", delta_color=alerta_estres)
     
+    st.divider()
+
+    # --- AHORA SÍ DIBUJAMOS LAS PESTAÑAS ---
     tab1, tab2, tab3, tab4 = st.tabs(["🎯 SÍNTESIS DE PRIORIZACIÓN", "🌊 HIDROLOGÍA", "🛡️ SIGA-CAL", "📊 ESTÁNDARES WRI"])
 
     with tab1:
