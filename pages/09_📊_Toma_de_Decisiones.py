@@ -272,8 +272,22 @@ if gdf_zona is not None and not gdf_zona.empty:
         # --- 3. PORTAFOLIOS DE INVERSIÓN (CANTIDAD Y CALIDAD) ---
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("💼 Portafolios de Inversión Multi-Objetivo")
+        
+        # --- CONEXIÓN AL ALEPH (Aseguramos que los datos base existan) ---
+        demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5)
+        consumo_anual_m3 = demanda_m3s * 31536000
+        carga_total_ton = st.session_state.get('carga_total_ton', 500.0) # Toneladas DBO5 al año
+        
+        # Variables de respaldo por si el usuario no pasó por la sección 2
+        ha_simuladas = locals().get('ha_simuladas', 0.0)
+        ha_riparias_potenciales = locals().get('ha_riparias_potenciales', 0.0)
+        sumar_riparias = locals().get('sumar_riparias', False)
+        volumen_repuesto_m3 = locals().get('volumen_repuesto_m3', 0.0)
+        sist_saneamiento = locals().get('sist_saneamiento', 0)
 
-        # Portafolio 1: Neutralidad
+        # ====================================================================
+        # Portafolio 1: Neutralidad (Cantidad)
+        # ====================================================================
         with st.expander("🎯 1. Optimización de Brechas: Oferta y Demanda (Neutralidad)", expanded=False):
             col_m1, col_m2 = st.columns([1, 2.5])
             with col_m1:
@@ -291,12 +305,11 @@ if gdf_zona is not None and not gdf_zona.empty:
                 costo_proyectos_simulados = ha_proyectos_simulados * costo_ha
                 
                 if brecha_m3 <= 0: 
-                    st.success("✅ ¡Se cumple la meta de Neutralidad!")
-                    # Aún si se cumple la meta, mostramos cuánto costó la simulación para llegar allí
+                    st.success("✅ ¡Se cumple la meta de Neutralidad Volumétrica!")
                     if costo_proyectos_simulados > 0:
-                        st.info(f"💰 Inversión en proyectos simulados (Riparios/Manuales): **${costo_proyectos_simulados:,.0f} Millones**")
+                        st.info(f"💰 Inversión en proyectos simulados (Riparios/Manuales): **${costo_proyectos_simulados:,.0f} Millones COP**")
                 else:
-                    st.warning(f"⚠️ Faltan compensar **{brecha_m3/1e6:,.2f} Mm³/año**.")
+                    st.warning(f"⚠️ Faltan compensar **{brecha_m3/1e6:,.2f} Millones de m³/año**.")
                     c_mix1, c_mix2, c_mix3 = st.columns(3)
                     pct_a = c_mix1.number_input("% Restauración", 0, 100, 40, key="td_pct_a")
                     pct_b = c_mix2.number_input("% Saneamiento", 0, 100, 40, key="td_pct_b")
@@ -308,21 +321,22 @@ if gdf_zona is not None and not gdf_zona.empty:
                         lps_req = ((brecha_m3 * (pct_c/100)) * 1000) / 31536000 
                         
                         # INVERSIÓN TOTAL = Lo que falta para la brecha + Lo que ya pusimos en la simulación
-                        inv_brecha = (ha_req*costo_ha) + (stam_req*costo_stam_n) + (lps_req*costo_lps)
+                        inv_brecha = (ha_req * costo_ha) + (stam_req * costo_stam_n) + (lps_req * costo_lps)
                         inv_total = inv_brecha + costo_proyectos_simulados
                         
                         st.markdown("📊 **Requerimientos Físicos y Presupuesto Final:**")
                         c_op1, c_op2, c_op3, c_op4 = st.columns(4)
                         
-                        # Sumamos las ha simuladas a las requeridas para mostrar el esfuerzo territorial total
                         c_op1.metric("🌲 Restaurar Total", f"{(ha_req + ha_proyectos_simulados):,.1f} ha", help="Incluye Riparias/Manuales + Brecha")
                         c_op2.metric("🚽 Saneamiento", f"{stam_req:,.0f} STAM")
                         c_op3.metric("🚰 Eficiencia", f"{lps_req:,.1f} L/s")
-                        c_op4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M", help="Suma el costo de la brecha más los proyectos riparios/manuales simulados.")
+                        c_op4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M", help="Costo de la brecha + proyectos simulados.")
                     else: 
-                        st.error("La suma debe ser 100%.")
+                        st.error("❌ La suma de los porcentajes de intervención debe ser exactamente 100%.")
 
-        # Portafolio 2: Calidad
+        # ====================================================================
+        # Portafolio 2: Calidad (Saneamiento DBO5)
+        # ====================================================================
         with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO5)", expanded=False):
             col_c1, col_c2 = st.columns([1, 2.5])
             with col_c1:
@@ -330,13 +344,15 @@ if gdf_zona is not None and not gdf_zona.empty:
                 costo_ptar = st.number_input("PTAR (1 Ton/a) [M COP]:", value=150.0, step=10.0, key="td_c_ptar")
                 costo_stam_c = st.number_input("STAM (1 Ton/a) [M COP]:", value=45.0, step=5.0, key="td_c_stamc")
                 costo_sbn = st.number_input("SbN (1 Ton/a) [M COP]:", value=12.0, step=2.0, key="td_c_sbn")
+            
             with col_c2:
                 carga_objetivo = (meta_remocion / 100.0) * carga_total_ton
                 brecha_ton = carga_objetivo - (sist_saneamiento * 0.5) # Aprox 0.5 ton removidas por STAM existente
                 
-                if brecha_ton <= 0: st.success("✅ ¡Se cumple la meta de Remoción!")
+                if brecha_ton <= 0: 
+                    st.success("✅ ¡Se cumple la meta de Remoción de Cargas!")
                 else:
-                    st.warning(f"⚠️ Faltan remover **{brecha_ton:,.1f} Ton/año** de DBO5. (Base: {carga_total_ton:,.0f} Ton)")
+                    st.warning(f"⚠️ Faltan remover **{brecha_ton:,.1f} Ton/año** de DBO5. (Base Inyectada: {carga_total_ton:,.0f} Ton)")
                     c_mc1, c_mc2, c_mc3 = st.columns(3)
                     pct_ptar = c_mc1.number_input("% PTAR", 0, 100, 50, key="td_pct_ptar")
                     pct_stam_c = c_mc2.number_input("% STAM Rural", 0, 100, 30, key="td_pct_stam_c")
@@ -346,16 +362,17 @@ if gdf_zona is not None and not gdf_zona.empty:
                         t_ptar = brecha_ton * (pct_ptar/100)
                         t_stam = brecha_ton * (pct_stam_c/100)
                         t_sbn = brecha_ton * (pct_sbn_c/100)
-                        inv_tot_c = (t_ptar*costo_ptar) + (t_stam*costo_stam_c) + (t_sbn*costo_sbn)
+                        inv_tot_c = (t_ptar * costo_ptar) + (t_stam * costo_stam_c) + (t_sbn * costo_sbn)
                         
                         st.markdown("📊 **Requerimientos de Remoción y Presupuesto:**")
                         c_oc1, c_oc2, c_oc3, c_oc4 = st.columns(4)
                         c_oc1.metric("🏙️ PTAR", f"{t_ptar:,.0f} Ton")
-                        c_oc2.metric("🏡 STAM", f"{t_stam:,.0f} Ton")
-                        c_oc3.metric("🌿 SbN", f"{t_sbn:,.0f} Ton")
-                        c_oc4.metric("💰 INVERSIÓN", f"${inv_tot_c:,.0f} M")
-                    else: st.error("La suma debe ser 100%.")
-
+                        c_oc2.metric("🏡 STAM Rural", f"{t_stam:,.0f} Ton")
+                        c_oc3.metric("🌿 SbN Biofiltros", f"{t_sbn:,.0f} Ton")
+                        c_oc4.metric("💰 INVERSIÓN CALIDAD", f"${inv_tot_c:,.0f} M")
+                    else: 
+                        st.error("❌ La suma de los porcentajes de saneamiento debe ser exactamente 100%.")
+                        
         # --- 4. MOTORES DE CÁLCULO ACTUALES Y VELOCÍMETROS ---
         ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 100.0
         ind_resiliencia = min(100.0, ((recarga_anual_m3 + oferta_anual_m3) / ((consumo_anual_m3+1) * 10)) * 100)
