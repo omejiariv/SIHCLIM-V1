@@ -12,6 +12,7 @@ from streamlit_folium import st_folium
 from folium import plugins
 from sqlalchemy import create_engine, text
 from scipy.interpolate import griddata
+from modules.demografia_tools import render_motor_demografico
 import sys
 import os
 
@@ -88,6 +89,11 @@ if gdf_zona is not None and not gdf_zona.empty:
     pob_total = st.session_state.get('aleph_pob_total', 4150000)
     demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5) 
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
+
+    # --- MOTOR DEMOGRÁFICO DE BOLSILLO ---
+    with st.expander("⚙️ Recalcular Proyección Demográfica (Motor Local)", expanded=False):
+        st.caption("Ajusta el año de proyección para recalcular la demanda poblacional y el estrés hídrico sin salir del panel.")
+        render_motor_demografico(lugar_defecto="Valle de Aburrá")
 
     st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
     
