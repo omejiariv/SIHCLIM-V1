@@ -940,9 +940,20 @@ with col_h2:
     c_m2.metric("Demanda Agro (m³/día)", f"{demanda_agro_m3_dia:,.1f}")
     c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s", delta_color="inverse")
     
-    if st.button("💾 Enviar Demanda al Modelo (Memoria Global)", help="Al hacer clic, este valor viajará al Tablero de Toma de Decisiones para cruzarlo con el Estrés Hídrico."):
+    if st.button("💾 Enviar Datos al Modelo (Memoria Global)", help="Al hacer clic, estos valores viajarán al Tablero de Toma de Decisiones para cruzar Oferta vs Demanda."):
+        # 1. Inyectar Demanda
         st.session_state['demanda_total_m3s'] = demanda_total_m3_s
-        st.success("✅ Dato inyectado en la memoria global.")
+        
+        # 2. Inyectar Oferta (Dependiendo del embalse que el usuario esté analizando)
+        oferta_calculada = 14.5 # Sistema Integrado por defecto
+        if "Grande" in nodo_seleccionado:
+            oferta_calculada = 10.5 # Oferta nominal Río Grande II
+        elif "Fe" in nodo_seleccionado:
+            oferta_calculada = 4.0  # Oferta nominal La Fe
+            
+        st.session_state['aleph_oferta_hidrica'] = oferta_calculada
+        
+        st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_calculada:.1f} m³/s")
 
 # ==============================================================================
 # 🕸️ DIBUJO DEL MAPA CONCEPTUAL (Se inyecta en la parte superior)
