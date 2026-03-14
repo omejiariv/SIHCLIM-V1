@@ -785,9 +785,13 @@ if gdf_zona is not None and not gdf_zona.empty:
                     
                     c_tram1, c_tram2 = st.columns([2, 1])
                     with c_tram1:
-                        st.markdown(f"##### 🌿 Tramos Críticos para Restauración en: **{nombre_zona}** (Top 10)")
-                        st.dataframe(df_tramos.head(10).style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format({"Longitud (Km)": "{:.2f}", "Importancia Ecológica": "{:.0f}"}), use_container_width=True, hide_index=True)
-                    with c_tram2:
+                        # Lo metemos en un expander (acordeón) cerrado por defecto
+                        with st.expander(f"🌿 Tramos Críticos para Restauración en: **{nombre_zona}** (Top 10)", expanded=False):
+                            st.dataframe(
+                                df_tramos.head(10).style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format({"Longitud (Km)": "{:.2f}", "Importancia Ecológica": "{:.0f}"}), 
+                                use_container_width=True, 
+                                hide_index=True
+                            )
                         st.markdown("##### 💡 Resumen Ecológico")
                         tramos_clave = df_tramos[df_tramos['Orden de Strahler'] >= 2]
                         st.metric("Tramos Estratégicos (> Orden 1)", f"{len(tramos_clave)} segmentos")
@@ -813,6 +817,9 @@ if gdf_zona is not None and not gdf_zona.empty:
                 zona_4326 = gdf_zona.to_crs("EPSG:4326")
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
             
+            # Salvavidas: Si el usuario no ha elegido ancho, asumimos 30 visualmente para que no colapse
+            ancho_seguro = buffer_m if buffer_m is not None else 30 
+            
             # Capa de Ríos
             if 'rios_4326' in locals():
                 capas_mapa.append(pdk.Layer(
@@ -821,7 +828,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                     opacity=0.6,
                     stroked=True,
                     get_line_color=[39, 174, 96, 255], 
-                    get_line_width=buffer_m * 2,
+                    get_line_width=ancho_seguro * 2, # <-- USAMOS EL SALVAVIDAS AQUÍ
                     lineWidthUnits='"meters"',
                     lineWidthMinPixels=2,
                     pickable=True,
