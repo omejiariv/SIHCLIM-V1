@@ -12,6 +12,7 @@ from streamlit_folium import st_folium
 from folium import plugins
 from sqlalchemy import create_engine, text
 from scipy.interpolate import griddata
+from modules.demografia_tools import render_motor_demografico
 from modules.biodiversidad_tools import render_motor_ripario
 from modules.geomorfologia_tools import render_motor_hidrologico
 import sys
