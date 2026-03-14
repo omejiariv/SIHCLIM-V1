@@ -844,7 +844,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
 
         else:
-    st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
+     st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
 
      # --- MOTOR RIPARIO DE BOLSILLO ---
      if 'gdf_riparia' not in st.session_state:
