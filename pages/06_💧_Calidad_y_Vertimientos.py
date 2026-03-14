@@ -313,7 +313,7 @@ with st.expander("📍 1. Contexto Territorial y Demográfico (Sihcli-Aleph)", e
         st.success(f"🧠 **Contexto Heredado Automáticamente:** Estás analizando la demanda hídrica y vertimientos para **{lugar_sel} ({nivel_sel_visual})** en el año **{anio_analisis}**.")
         st.metric("👥 Población Proyectada (Del Modelo Matemático)", f"{pob_total:,.0f} Habitantes")
     else:
-        st.warning("⚠️ **Modo Desconectado:** No se detectó configuración en el Modelo Demográfico. Usando datos por defecto. Ve a la pestaña 'Demografía y Población' para calibrar el modelo.")
+        st.warning("⚠️ **Modo Desconectado:** La memoria global está vacía. Usando datos por defecto. Ve primero a la pestaña 'Modelo Demográfico' para heredar el territorio y la población.")
         lugar_sel = st.selectbox("Territorio de Emergencia:", ["Antioquia", "Medellín", "Rionegro", "Abejorral"])
         anio_analisis = st.slider("Año:", 2020, 2060, 2035)
         pob_total = st.number_input("Población Total:", value=100000.0)
@@ -838,7 +838,7 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
 
 # 2.1 Calcular Carga Difusa Base (El "Fondo" del Río)
 pob_u, pob_r = pob_urbana, pob_rural
-bov, por, ave = obtener_censo_pecuario(lugar_sel, nivel_sel_visual)
+bov, por, ave = obtener_censo_pecuario(lugar_sel, nivel_sel_visual, anio_analisis)
 
 # Factores de Emisión Típicos (kg DBO/día por individuo)
 dbo_hab = (pob_u + pob_r) * 0.054
