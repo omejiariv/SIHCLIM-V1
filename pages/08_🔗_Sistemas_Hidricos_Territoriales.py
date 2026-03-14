@@ -836,7 +836,7 @@ col_h1, col_h2 = st.columns([1, 1.5])
 with col_h1:
     st.subheader("1. Conexión a Censos ICA (Supabase)")
     
-    # 🧠 MOTOR DE CACHÉ ESTRICTO: Solo descarga de internet 1 vez por hora
+    # 🧠 MOTOR DE CACHÉ ESTRICTO
     @st.cache_data(show_spinner=False, ttl=3600)
     def descargar_maestro_ica(url):
         import pandas as pd
@@ -845,66 +845,58 @@ with col_h1:
             res = requests.get(url)
             if res.status_code == 200:
                 return pd.read_csv(io.BytesIO(res.content), encoding='utf-8-sig', sep=None, engine='python')
-        except Exception as e:
-            st.error(f"Error de red: {e}")
-        return pd.DataFrame()
+        except: return pd.DataFrame()
     
-    # 🚀 SLIDER DEL TIEMPO
-    anio_censo = st.slider("📅 Seleccione el Año del Censo Pecuario:", 2018, 2025, 2024)
+    # 🚀 SLIDER DEL TIEMPO (Al moverlo, o al cambiar el menú lateral, recalcula solo)
+    anio_censo = st.slider("📅 Año del Censo Pecuario:", 2018, 2025, 2024)
     
-    if st.button("📥 Descargar Maestros y Calcular Huella", type="primary", use_container_width=True):
-        with st.spinner(f"Cruzando matrices para el año {anio_censo}..."):
-            bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
-            import unicodedata
-            
-            def limpiar_mpio(m):
-                if pd.isna(m): return ""
-                return unicodedata.normalize('NFKD', str(m).upper()).encode('ascii', 'ignore').decode('utf-8')
-            
-            # Determinamos los municipios aportantes
-            mpios_cuenca = []
-            if "Grande" in nodo_seleccionado:
-                mpios_cuenca = ["BELMIRA", "DONMATIAS", "DON MATIAS", "SAN PEDRO", "ENTRERRIOS", "SANTA ROSA"]
-            elif "Fe" in nodo_seleccionado:
-                mpios_cuenca = ["RETIRO", "CEJA", "RIONEGRO"]
-                
-            mpios_cuenca_limpios = [limpiar_mpio(m) for m in mpios_cuenca]
+    # --- CÁLCULO AUTOMÁTICO (Sin botón) ---
+    bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
+    import unicodedata
+    
+    def limpiar_mpio(m):
+        if pd.isna(m): return ""
+        return unicodedata.normalize('NFKD', str(m).upper()).encode('ascii', 'ignore').decode('utf-8')
+    
+    # Determinamos los municipios aportantes según el nodo seleccionado en el sidebar
+    mpios_cuenca = []
+    if "Grande" in nodo_seleccionado:
+        mpios_cuenca = ["BELMIRA", "DONMATIAS", "DON MATIAS", "SAN PEDRO", "ENTRERRIOS", "SANTA ROSA"]
+    elif "Fe" in nodo_seleccionado:
+        mpios_cuenca = ["RETIRO", "CEJA", "RIONEGRO"]
+        
+    mpios_cuenca_limpios = [limpiar_mpio(m) for m in mpios_cuenca]
 
-            # Archivos a procesar
-            archivos_maestros = [
-                ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Bovinos.csv", "TOTAL_BOVINOS", "Bovinos"),
-                ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Porcinos.csv", "TOTAL_CERDOS", "Porcinos"),
-                ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Aves.csv", "TOTAL_AVES_CAP_OCUPADA_MAS_AVES_TRASPATIO", "Aves")
-            ]
+    archivos_maestros = [
+        ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Bovinos.csv", "TOTAL_BOVINOS", "Bovinos"),
+        ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Porcinos.csv", "TOTAL_CERDOS", "Porcinos"),
+        ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Aves.csv", "TOTAL_AVES_CAP_OCUPADA_MAS_AVES_TRASPATIO", "Aves")
+    ]
+    
+    for url_censo, col_total, nombre_animal in archivos_maestros:
+        df = descargar_maestro_ica(url_censo)
+        if not df.empty:
+            df_anio = df[df['AÑO'] == anio_censo].copy()
+            if not df_anio.empty:
+                col_mpio = next((c for c in df_anio.columns if 'MUNICIPIO' in c), None)
+                col_tot_real = next((c for c in df_anio.columns if col_total in c), None)
+                if col_mpio and col_tot_real:
+                    df_anio['MPIO_NORM'] = df_anio[col_mpio].apply(limpiar_mpio)
+                    filtro = df_anio['MPIO_NORM'].apply(lambda x: any(m in x for m in mpios_cuenca_limpios))
+                    df_final = df_anio[filtro]
+                    suma_animales = pd.to_numeric(df_final[col_tot_real], errors='coerce').sum()
+                    if "Bovinos" in nombre_animal: bovinos_tot = suma_animales
+                    elif "Porcinos" in nombre_animal: porcinos_tot = suma_animales
+                    elif "Aves" in nombre_animal: aves_tot = suma_animales
             
-            for url_censo, col_total, nombre_animal in archivos_maestros:
-                # 👉 AQUI LA MAGIA: Llama a la memoria RAM, no a internet
-                df = descargar_maestro_ica(url_censo)
-                
-                if not df.empty:
-                    df_anio = df[df['AÑO'] == anio_censo].copy()
-                    if not df_anio.empty:
-                        col_mpio = next((c for c in df_anio.columns if 'MUNICIPIO' in c), None)
-                        col_tot_real = next((c for c in df_anio.columns if col_total in c), None)
-                        
-                        if col_mpio and col_tot_real:
-                            df_anio['MPIO_NORM'] = df_anio[col_mpio].apply(limpiar_mpio)
-                            filtro = df_anio['MPIO_NORM'].apply(lambda x: any(m in x for m in mpios_cuenca_limpios))
-                            df_final = df_anio[filtro]
-                                
-                            suma_animales = pd.to_numeric(df_final[col_tot_real], errors='coerce').sum()
-                            
-                            if "Bovinos" in nombre_animal: bovinos_tot = suma_animales
-                            elif "Porcinos" in nombre_animal: porcinos_tot = suma_animales
-                            elif "Aves" in nombre_animal: aves_tot = suma_animales
-                    
-            st.success(f"✅ ¡Metabolismo Pecuario de **{nodo_seleccionado}** ({anio_censo}) calculado en ms!")
-            st.info(f"🐄 Bovinos: **{bovinos_tot:,.0f}** | 🐖 Porcinos: **{porcinos_tot:,.0f}** | 🐔 Aves: **{aves_tot:,.0f}**")
-            
-            # Guardamos en la memoria global
-            st.session_state['ica_bovinos_calc'] = bovinos_tot
-            st.session_state['ica_porcinos_calc'] = porcinos_tot
-            st.session_state['ica_aves_calc'] = aves_tot
+    st.success(f"✅ Metabolismo Pecuario de **{nodo_seleccionado}** actualizado.")
+    st.info(f"🐄 Bovinos: **{bovinos_tot:,.0f}** | 🐖 Porcinos: **{porcinos_tot:,.0f}** | 🐔 Aves: **{aves_tot:,.0f}**")
+    
+    # Guardamos en la memoria global en tiempo real
+    st.session_state['ica_bovinos_calc'] = bovinos_tot
+    st.session_state['ica_porcinos_calc'] = porcinos_tot
+    st.session_state['ica_aves_calc'] = aves_tot
+    
 with col_h2:
     st.subheader("2. Demanda Total (Urbana + Rural)")
     
