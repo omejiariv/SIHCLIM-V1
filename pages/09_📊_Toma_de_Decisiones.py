@@ -143,19 +143,52 @@ if gdf_zona is not None and not gdf_zona.empty:
 
     # --- AHORA SÍ DIBUJAMOS LAS PESTAÑAS ---
     tab1, tab2, tab3, tab4 = st.tabs(["🎯 SÍNTESIS DE PRIORIZACIÓN", "🌊 HIDROLOGÍA", "🛡️ SIGA-CAL", "📊 ESTÁNDARES WRI"])
-    with tab1:
-        st.subheader(f"🗺️ Visor Geográfico Integrado: {nombre_zona}")
-        
-        # Mapa Profesional
-        m = folium.Map(location=[gdf_zona.centroid.y.iloc[0], gdf_zona.centroid.x.iloc[0]], 
-                       zoom_start=12, tiles="cartodbpositron")
-        
-        if v_sat:
-            folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                             attr='Esri', name='Satélite').add_to(m)
+        with tab1:
+            st.subheader(f"🗺️ Visor Geográfico Integrado: {nombre_zona}")
+            
+            # --- 🌡️ TERMÓMETRO TERRITORIAL (Reacciona al Estrés Hídrico) ---
+            # Rescatamos el estrés que calculamos en el Cerebro Maestro arriba
+            estres_actual = st.session_state.get('estres_hidrico_global', 0)
+            
+            # Definimos el color del polígono según la gravedad
+            if estres_actual > 100:
+                color_alerta = '#8B0000' # Rojo Oscuro (Colapso)
+                opacidad = 0.5
+            elif estres_actual > 80:
+                color_alerta = '#E74C3C' # Rojo Claro (Crítico)
+                opacidad = 0.4
+            elif estres_actual > 40:
+                color_alerta = '#F39C12' # Naranja (Alto)
+                opacidad = 0.3
+            else:
+                color_alerta = '#3498DB' # Azul (Estable)
+                opacidad = 0.2
 
-        capas = load_context_layers(tuple(gdf_zona.total_bounds))
+            # Mapa Profesional
+            m = folium.Map(location=[gdf_zona.centroid.y.iloc[0], gdf_zona.centroid.x.iloc[0]], zoom_start=12, tiles="cartodbpositron")
+            
+            if v_sat:
+                folium.TileLayer(
+                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri', name='Satélite'
+                ).add_to(m)
+            
+            # 🗺️ DIBUJAMOS EL POLÍGONO DEL MUNICIPIO CON EL COLOR DE ALARMA
+            folium.GeoJson(
+                gdf_zona, 
+                name=f"Estado: {nombre_zona}",
+                style_function=lambda x, color=color_alerta, opac=opacidad: {
+                    'fillColor': color, 
+                    'fillOpacity': opac, 
+                    'color': color, 
+                    'weight': 2
+                },
+                tooltip=f"Estrés Hídrico: {estres_actual:.1f}%"
+            ).add_to(m)
 
+            # Carga de las otras capas de contexto
+            capas = load_context_layers(tuple(gdf_zona.total_bounds))
+            
         if v_geo and capas['geomorf'] is not None:
             folium.GeoJson(capas['geomorf'], name="Geomorfología",
                            style_function=lambda x: {'fillColor': 'gray', 'fillOpacity': 0.2, 'color': 'black', 'weight': 1},
