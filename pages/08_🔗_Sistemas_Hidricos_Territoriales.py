@@ -797,18 +797,23 @@ with c_res2:
     st.plotly_chart(fig_sun, use_container_width=True)
 
 # =========================================================================
-# 8. HUELLA HÍDRICA TERRITORIAL (CONEXIÓN MAESTROS ICA + DANE + MEMORIA GLOBAL)
+# 8. HUELLA HÍDRICA TERRITORIAL (CONEXIÓN MAESTROS ICA + DANE + MEMORIA)
 # =========================================================================
 st.markdown("---")
+
+# 1. PRIMERO PONEMOS EL SLIDER (Para que la variable exista)
+anio_censo = st.slider("📅 Seleccione el Año de Análisis (Censo Pecuario y Proyección):", 2018, 2025, 2024)
+
+# 2. LUEGO EL TÍTULO (Ahora sí sabe qué año elegiste)
 st.header(f"💧 Metabolismo Hídrico de {nodo_seleccionado}: Presión Demográfica y Agropecuaria ({anio_censo})")
-st.info("Cálculo de la demanda hídrica real integrando la población humana (DANE) y los inventarios pecuarios alojados en la nube (ICA).")
+st.info("Cálculo de la demanda hídrica real integrando la población humana proyectada y la vocación pecuaria de la cuenca.")
 
 col_h1, col_h2 = st.columns([1, 1.5])
 
 with col_h1:
     st.subheader("1. Conexión a Censos ICA (Supabase)")
     
-    # 🧠 MOTOR DE CACHÉ ESTRICTO
+    # 🧠 MOTOR DE CACHÉ ESTRICTO (El slider ya no va aquí, porque lo subimos)
     @st.cache_data(show_spinner=False, ttl=3600)
     def descargar_maestro_ica(url):
         import pandas as pd
@@ -818,9 +823,6 @@ with col_h1:
             if res.status_code == 200:
                 return pd.read_csv(io.BytesIO(res.content), encoding='utf-8-sig', sep=None, engine='python')
         except: return pd.DataFrame()
-    
-    # 🚀 SLIDER DEL TIEMPO (Al moverlo, o al cambiar el menú lateral, recalcula solo)
-    anio_censo = st.slider("📅 Año del Censo Pecuario:", 2018, 2025, 2024)
     
     # --- CÁLCULO AUTOMÁTICO (Sin botón) ---
     bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
