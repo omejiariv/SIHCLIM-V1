@@ -898,21 +898,38 @@ with col_h1:
     st.session_state['ica_aves_calc'] = aves_tot
     
 with col_h2:
-    st.subheader("2. Demanda Total (Urbana + Rural)")
+    st.subheader(f"2. Demanda Total y Estrés Local ({nodo_seleccionado})")
     
-    # Traemos del Aleph la población humana y los animales
-    pob_humana_memoria = st.session_state.get('aleph_pob_total', 4000000) 
+    # 1. Traemos la población global del Valle de Aburrá desde el Aleph
+    pob_global_memoria = st.session_state.get('aleph_pob_total', 4000000)
+    
+    # --- 🛡️ SIMULADOR DE SEGURIDAD HÍDRICA (Nivel de Dependencia) ---
+    st.markdown("##### 🛡️ Seguridad Hídrica: Nivel de Dependencia")
+    st.caption("Ajusta qué porcentaje de la población total es abastecida por este embalse. Permite simular fallas en el sistema o aislar embalses de solo energía (0%).")
+    
+    # Asignación automática de la realidad del sistema EPM
+    dependencia_defecto = 0.0
+    if "Fe" in nodo_seleccionado: dependencia_defecto = 58.0
+    elif "Grande" in nodo_seleccionado: dependencia_defecto = 33.0
+    elif "Piedras" in nodo_seleccionado: dependencia_defecto = 9.0
+    
+    pct_dependencia = st.slider(f"% de Población dependiente de {nodo_seleccionado}:", 0.0, 100.0, dependencia_defecto, step=1.0)
+    
+    # Calculamos la población real que presiona a ESTE embalse
+    pob_real_dependiente = pob_global_memoria * (pct_dependencia / 100.0)
+
+    # 2. Traemos animales (Ellos sí son 100% dependientes de la cuenca local donde viven)
     cabezas_bovinas = st.session_state.get('ica_bovinos_calc', 0)
     cabezas_porcinas = st.session_state.get('ica_porcinos_calc', 0)
     cabezas_aves = st.session_state.get('ica_aves_calc', 0)
         
     c_i1, c_i2, c_i3, c_i4 = st.columns(4)
-    pob_humana = c_i1.number_input("👥 Pob (Hab):", value=int(pob_humana_memoria))
+    pob_humana = c_i1.number_input("👥 Pob. Asignada:", value=int(pob_real_dependiente), help="Población calculada según el % de dependencia.")
     cabezas_bovinas = c_i2.number_input("🐄 Bovinos:", value=int(cabezas_bovinas))
     cabezas_porcinas = c_i3.number_input("🐖 Porcinos:", value=int(cabezas_porcinas))
     cabezas_aves_in = c_i4.number_input("🐔 Aves:", value=int(cabezas_aves)) 
     
-    st.markdown("### 📊 Demanda Metabólica Equivalente")
+    st.markdown(f"### 📊 Demanda Metabólica Equivalente")
     
     # Parámetros estándar de consumo
     consumo_humano_ld = 150 # Litros/hab/día
@@ -924,28 +941,38 @@ with col_h2:
     demanda_agro_m3_dia = ((cabezas_bovinas * consumo_bovino_ld) + (cabezas_porcinas * consumo_porcino_ld) + (cabezas_aves_in * consumo_ave_ld)) / 1000
     demanda_total_m3_dia = demanda_humana_m3_dia + demanda_agro_m3_dia
     
-    # Convertir a m3/s
+    # Convertir a m3/s (Extracción Continua)
     demanda_total_m3_s = demanda_total_m3_dia / 86400  
     
-    c_m1, c_m2, c_m3 = st.columns(3)
-    c_m1.metric("Demanda Humana (m³/día)", f"{demanda_humana_m3_dia:,.1f}")
-    c_m2.metric("Demanda Agro (m³/día)", f"{demanda_agro_m3_dia:,.1f}")
-    c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s", delta_color="inverse")
+    # --- ⚠️ CÁLCULO DE ESTRÉS HÍDRICO LOCAL ---
+    st.markdown("---")
+    oferta_local_m3s = st.number_input("💧 Oferta Total del Sistema (m³/s) [Natural + Trasvases]:", value=5.7, step=0.1, help="Digita aquí la suma de tus Inflows (Naturales + Bombeos) para cruzar con la demanda.")
     
-    if st.button("💾 Enviar Datos al Modelo (Memoria Global)", help="..."):
-        # 1. Inyectar Demanda
+    estres_local = (demanda_total_m3_s / oferta_local_m3s) * 100 if oferta_local_m3s > 0 else 100
+    
+    # Lógica de interpretación de estrés
+    estado_estres = "Estable"
+    alerta_color = "normal"
+    if estres_local > 100:
+        estado_estres = "Colapso"
+        alerta_color = "inverse"
+    elif estres_local > 80:
+        estado_estres = "Crítico"
+        alerta_color = "inverse"
+    elif estres_local > 40:
+        estado_estres = "Alto"
+        alerta_color = "off"
+    
+    c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+    c_m1.metric("Demanda Humana", f"{demanda_humana_m3_dia:,.0f} m³/d")
+    c_m2.metric("Demanda Agro", f"{demanda_agro_m3_dia:,.0f} m³/d")
+    c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s")
+    c_m4.metric(f"⚠️ Estrés ({estado_estres})", f"{estres_local:.1f}%", delta_color=alerta_color)
+    
+    if st.button("💾 Enviar Datos al Modelo Central (Toma de Decisiones)", type="primary"):
         st.session_state['demanda_total_m3s'] = demanda_total_m3_s
-        
-        # 2. Inyectar Oferta REAL (Suma tus variables de entrada aquí)
-        # Reemplaza 'variable_q_natural', 'variable_bombeo1', etc., por los nombres reales de tus inputs
-        oferta_calculada = variable_q_natural + variable_bombeo1 + variable_bombeo2 
-        
-        # Nota: Si ya tienes una variable que sumaba el total de entradas, ponla directo:
-        # oferta_calculada = total_inflows 
-            
-        st.session_state['aleph_oferta_hidrica'] = oferta_calculada
-        
-        st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_calculada:.2f} m³/s")
+        st.session_state['aleph_oferta_hidrica'] = oferta_local_m3s
+        st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_local_m3s:.1f} m³/s")
 
 # ==============================================================================
 # 🕸️ DIBUJO DEL MAPA CONCEPTUAL (Se inyecta en la parte superior)
