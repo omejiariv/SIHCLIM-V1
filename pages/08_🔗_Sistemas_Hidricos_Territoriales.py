@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import os
 import geopandas as gpd
+from modules.demografia_tools import render_motor_demografico
 
 # =========================================================================
 # 1. CONFIGURACIÓN Y DICCIONARIO BASE (Debe ir primero)
@@ -104,6 +105,11 @@ if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
             st.session_state['nodo_sugerido'] = "Río Grande II"
         elif any(x in lugar_limpio for x in claves_lafe):
             st.session_state['nodo_sugerido'] = "La Fe"
+
+# Verificamos si el Aleph ya tiene datos. Si no los tiene, mostramos el botón.
+if 'aleph_pob_total' not in st.session_state or st.session_state.get('aleph_pob_total') == 0:
+    render_motor_demografico(lugar_defecto="Valle de Aburrá")
+    st.divider()
 
 # =========================================================================
 # 3. 🎛️ SIDEBAR (Sabe qué embalse sugerir)
