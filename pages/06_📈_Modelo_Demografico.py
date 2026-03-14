@@ -1,4 +1,4 @@
-# 08_📈_Modelo_Demografico.py
+# 06_📈_Modelo_Demografico.py
 
 import streamlit as st
 import pandas as pd
