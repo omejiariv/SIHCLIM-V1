@@ -1,4 +1,4 @@
-# pages/Sistemas_Hídricos_Territoriales.py
+# pages/08_🔗_Sistemas_Hidricos_Territoriales.py
 
 import streamlit as st
 import plotly.graph_objects as go
@@ -7,60 +7,12 @@ import numpy as np
 import os
 import geopandas as gpd
 
+# =========================================================================
+# 1. CONFIGURACIÓN Y DICCIONARIO BASE (Debe ir primero)
+# =========================================================================
 st.set_page_config(page_title="Metabolismo Complejo", page_icon="🔗", layout="wide")
 
-st.header(f"Metabolismo Territorial Complejo: Nodos y Trasvases ({nodo_seleccionado})")
-st.markdown("""
-Modelo de topología de redes para el **Sistema de Abastecimiento del Valle de Aburrá**. 
-Evalúa cómo los embalses integran las cuencas propias con los trasvases artificiales para sostener la demanda urbana, alterando el flujo natural de los ecosistemas aportantes.
-""")
-st.divider()
-
-# Creamos un "espacio reservado" en la parte superior de la página
-contenedor_sankey = st.empty()
-
-# =========================================================================
-# 0. CARGA DE CARTOGRAFÍA (Desde Supabase en la Nube)
-# =========================================================================
-# 1. Buscamos la URL base de tu Supabase en los secretos
-url_supabase = None
-if "SUPABASE_URL" in st.secrets:
-    url_supabase = st.secrets["SUPABASE_URL"]
-elif "supabase" in st.secrets:
-    url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
-elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
-    url_supabase = st.secrets["iri"]["SUPABASE_URL"]
-elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
-    url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-
-gdf_embalses = None 
-
-if url_supabase:
-    # 2. Construimos el enlace web directo y público al GeoJSON
-    nombre_bucket = "sihcli_maestros"
-    # IMPORTANTE: Verifica que el nombre del archivo sea exactamente este en Supabase
-    nombre_archivo = "embalses_CV_9377.geojson"
-    
-    ruta_embalses_nube = f"{url_supabase}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/{nombre_archivo}"
-    
-    try:
-        # Leemos el archivo directo desde la URL de Supabase
-        gdf_embalses = gpd.read_file(ruta_embalses_nube)
-        st.sidebar.success(f"✅ Embalses conectados desde la Nube ({len(gdf_embalses)} registros)")
-    except Exception as e:
-        st.sidebar.warning(f"⚠️ No se pudo cargar la capa desde la nube. Revisa si el nombre del archivo es correcto. Detalle: {e}")
-else:
-    st.sidebar.error("❌ No se encontró la URL de Supabase en los secretos.")
-
-# =========================================================================
-# 1. BASE DE DATOS ESTRUCTURAL: NEXO AGUA-ENERGÍA Y TAMAÑO
-# =========================================================================
-import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-import numpy as np
-
-# A. Datos paramétricos (Estructura Ampliada)
+# Datos paramétricos (Estructura Ampliada)
 sistemas_embalses = {
     "La Fe": {
         "capacidad_util_Mm3": 11.5, 
@@ -84,7 +36,7 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 1.0,
         "factor_energia_kwh_m3": 0.65,
         "costo_bombeo_kwh_m3": 0.0,
-        "ha_conservadas_base": 4500.0 # Ajustado según indicación
+        "ha_conservadas_base": 4500.0
     },
     "El Peñol (Guatapé)": {
         "capacidad_util_Mm3": 1070.0, 
@@ -96,7 +48,7 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 2.0,
         "factor_energia_kwh_m3": 1.2,
         "costo_bombeo_kwh_m3": 0.0,
-        "ha_conservadas_base": 0.0 # Corrección: Sin intervenciones registradas
+        "ha_conservadas_base": 0.0
     },
     "Punchiná (San Carlos)": {
         "capacidad_util_Mm3": 68.0, 
@@ -108,7 +60,7 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 4.0,
         "factor_energia_kwh_m3": 2.5,
         "costo_bombeo_kwh_m3": 0.0,
-        "ha_conservadas_base": 0.0 # Corrección: Sin intervenciones registradas
+        "ha_conservadas_base": 0.0
     },
     "Hidroituango": {
         "capacidad_util_Mm3": 2720.0, 
@@ -120,11 +72,93 @@ sistemas_embalses = {
         "caudal_ecologico_m3s": 200.0, 
         "factor_energia_kwh_m3": 0.9,
         "costo_bombeo_kwh_m3": 0.0,
-        "ha_conservadas_base": 0.0 # Corrección: Sin intervenciones registradas
+        "ha_conservadas_base": 0.0
     }
 }
 
-# B. INYECCIÓN DE DATOS ESPACIALES AL MODELO MATEMÁTICO
+# ==============================================================================
+# 2. 🧠 EL ALEPH HÍDRICO (Decide ANTES de pintar el menú)
+# ==============================================================================
+conectado_aleph = False
+pob_amva_aleph = None
+pob_local_aleph = None
+
+if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
+    aleph_lugar = st.session_state['aleph_lugar']
+    aleph_pob = float(st.session_state['aleph_pob_total'])
+    aleph_anio = st.session_state.get('aleph_anio', 2035)
+    
+    if aleph_pob > 0:
+        conectado_aleph = True
+        import unicodedata
+        lugar_limpio = unicodedata.normalize('NFKD', str(aleph_lugar).lower()).encode('ascii', 'ignore').decode('utf-8')
+        
+        claves_rg2 = ["belmira", "donmatias", "san pedro", "entrerrios", "santa rosa", "chico", "grande", "animas"]
+        claves_lafe = ["retiro", "ceja", "rionegro", "negro", "espiritu santo", "pantanillo", "buey", "piedras", "arma"]
+        claves_amva = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "estrella", "girardota", "caldas", "barbosa", "aburra", "amva", "total"]
+        
+        if any(x in lugar_limpio for x in claves_amva):
+            st.session_state['nodo_sugerido'] = "La Fe" 
+        elif any(x in lugar_limpio for x in claves_rg2):
+            st.session_state['nodo_sugerido'] = "Río Grande II"
+        elif any(x in lugar_limpio for x in claves_lafe):
+            st.session_state['nodo_sugerido'] = "La Fe"
+
+# =========================================================================
+# 3. 🎛️ SIDEBAR (Sabe qué embalse sugerir)
+# =========================================================================
+st.sidebar.markdown("### 🎛️ Centro de Operaciones")
+
+nodos_lista = list(sistemas_embalses.keys())
+idx_defecto = 0
+if 'nodo_sugerido' in st.session_state and st.session_state['nodo_sugerido'] in nodos_lista:
+    idx_defecto = nodos_lista.index(st.session_state['nodo_sugerido'])
+
+nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", nodos_lista, index=idx_defecto)
+datos_nodo = sistemas_embalses[nodo_seleccionado]
+
+# =========================================================================
+# 4. 🏷️ TÍTULOS Y UI PRINCIPAL (Ya existe 'nodo_seleccionado')
+# =========================================================================
+st.title(f"🔗 Metabolismo Territorial Complejo: Nodos y Trasvases ({nodo_seleccionado})")
+st.markdown("""
+Modelo de topología de redes para el **Sistema de Abastecimiento del Valle de Aburrá y Generación Eléctrica**. 
+Evalúa cómo los embalses integran las cuencas propias con los trasvases artificiales para sostener la demanda, alterando el flujo natural de los ecosistemas aportantes.
+""")
+st.divider()
+
+if conectado_aleph:
+    with st.expander("🧠 Conexión Activa con el Modelo Demográfico (El Aleph)", expanded=False):
+        st.success(f"Recibiendo proyección para **{aleph_lugar}** (Año **{aleph_anio}**): **{aleph_pob:,.0f} habitantes**.")
+
+# Creamos un "espacio reservado" en la parte superior de la página
+contenedor_sankey = st.empty()
+
+# =========================================================================
+# 5. CARGA DE CARTOGRAFÍA (Desde Supabase en la Nube)
+# =========================================================================
+url_supabase = None
+if "SUPABASE_URL" in st.secrets:
+    url_supabase = st.secrets["SUPABASE_URL"]
+elif "supabase" in st.secrets:
+    url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
+    url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+
+gdf_embalses = None 
+
+if url_supabase:
+    nombre_bucket = "sihcli_maestros"
+    nombre_archivo = "embalses_CV_9377.geojson"
+    ruta_embalses_nube = f"{url_supabase}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/{nombre_archivo}"
+    
+    try:
+        gdf_embalses = gpd.read_file(ruta_embalses_nube)
+        st.sidebar.success(f"✅ Embalses conectados desde la Nube ({len(gdf_embalses)} registros)")
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ No se pudo cargar la capa desde la nube. Detalle: {e}")
+
+# Inyección de datos espaciales al modelo matemático
 if gdf_embalses is not None and not gdf_embalses.empty:
     col_nombre = next((c for c in gdf_embalses.columns if 'nom' in c.lower() or 'proyect' in c.lower() or 'embalse' in c.lower()), None)
     col_vol = next((c for c in gdf_embalses.columns if 'vol' in c.lower() or 'cap' in c.lower()), None)
@@ -150,13 +184,11 @@ if gdf_embalses is not None and not gdf_embalses.empty:
         # C. INYECCIÓN DE PREDIOS CONSERVADOS (SbN) DESDE SUPABASE
         # -----------------------------------------------------------------
         try:
-            # 1. Aseguramos el patrimonio histórico base de La Fe
             sistemas_embalses["La Fe"]["ha_conservadas_base"] = 3600.0
             
-            # Construimos la ruta directa a tu archivo de Predios
-            ruta_predios = f"{url_limpia}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/PrediosEjecutados.geojson"
-            import requests
-            import tempfile
+            # ¡AQUÍ ESTABA EL ERROR DE LA URL LIMPIA! Ya está corregido a url_supabase
+            ruta_predios = f"{url_supabase}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/PrediosEjecutados.geojson"
+            import requests, tempfile
             
             res_predios = requests.get(ruta_predios)
             if res_predios.status_code == 200:
@@ -164,80 +196,19 @@ if gdf_embalses is not None and not gdf_embalses.empty:
                     tmp_p.write(res_predios.content)
                     tmp_path_p = tmp_p.name
                 
-                import geopandas as gpd
                 gdf_predios = gpd.read_file(tmp_path_p)
                 
-                # Sumar por embalse leyendo tus columnas reales 'EMBALSE' y 'AREA_HA'
                 if 'EMBALSE' in gdf_predios.columns and 'AREA_HA' in gdf_predios.columns:
                     resumen_predios = gdf_predios.groupby('EMBALSE')['AREA_HA'].sum().to_dict()
-                    
-                    # Mapear el resultado al diccionario del modelo
                     for embalse_mapa, ha_total in resumen_predios.items():
                         nombre_mapa_limpio = str(embalse_mapa).lower().strip()
                         for nombre_nodo in sistemas_embalses.keys():
                             if nombre_mapa_limpio in nombre_nodo.lower() or (nombre_mapa_limpio == "riogrande ii" and "grande" in nombre_nodo.lower()):
-                                # SUMAMOS (+), no sobrescribimos (=), para proteger las 3600 ha de La Fe
                                 sistemas_embalses[nombre_nodo]["ha_conservadas_base"] += float(ha_total)
                                 
-                    st.sidebar.success("🌲 Áreas de conservación inyectadas (Se respetó el histórico de La Fe).")
+                    st.sidebar.success("🌲 Áreas de conservación inyectadas correctamente.")
         except Exception as e:
-            st.sidebar.warning(f"No se pudo cargar la capa de predios: {e}")
-
-# ==============================================================================
-# 🧠 EL ALEPH HÍDRICO (RECEPTOR INTELIGENTE DE DEMANDA Y ROUTER)
-# ==============================================================================
-conectado_aleph = False
-pob_amva_aleph = None
-pob_local_aleph = None
-
-if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
-    aleph_lugar = st.session_state['aleph_lugar']
-    aleph_pob = float(st.session_state['aleph_pob_total'])
-    aleph_anio = st.session_state.get('aleph_anio', 2035)
-    
-    if aleph_pob > 0:
-        conectado_aleph = True
-        st.markdown("---")
-        with st.expander("🧠 Conexión Activa con el Modelo Demográfico (El Aleph)", expanded=True):
-            st.success(f"Recibiendo proyección para **{aleph_lugar}** (Año **{aleph_anio}**): **{aleph_pob:,.0f} habitantes**.")
-            
-            # Limpiamos el texto al máximo para que "R. Chico" coincida con "chico"
-            import unicodedata
-            lugar_limpio = unicodedata.normalize('NFKD', str(aleph_lugar).lower()).encode('ascii', 'ignore').decode('utf-8')
-            
-            # Listas de palabras clave precisas
-            claves_rg2 = ["belmira", "donmatias", "san pedro", "entrerrios", "santa rosa", "chico", "grande", "animas"]
-            claves_lafe = ["retiro", "ceja", "rionegro", "negro", "espiritu santo", "pantanillo", "buey", "piedras", "arma"]
-            claves_amva = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "estrella", "girardota", "caldas", "barbosa", "aburra", "amva", "total"]
-            
-            if any(x in lugar_limpio for x in claves_amva):
-                st.info("🏙️ **Rol detectado: Consumidor Metropolitano.** Población asignada a la Demanda Urbana del Sistema.")
-                pob_amva_aleph = aleph_pob
-                st.session_state['nodo_sugerido'] = "La Fe" 
-            elif any(x in lugar_limpio for x in claves_rg2):
-                st.info("🌲 **Rol detectado: Productor (Sistema Río Grande II).** Población asignada a la Demanda Local aguas arriba.")
-                pob_local_aleph = aleph_pob
-                st.session_state['nodo_sugerido'] = "Río Grande II"
-            elif any(x in lugar_limpio for x in claves_lafe):
-                st.info("🌲 **Rol detectado: Productor (Sistema La Fe).** Población asignada a la Demanda Local aguas arriba.")
-                pob_local_aleph = aleph_pob
-                st.session_state['nodo_sugerido'] = "La Fe"
-            else:
-                st.warning(f"⚠️ El territorio '{aleph_lugar}' no se autodetectó. Usando datos manuales.")
-
-# =========================================================================
-# 2. PANEL DE OPERACIONES Y CONTROLES (CON AUTO-SELECCIÓN)
-# =========================================================================
-st.sidebar.markdown("### 🎛️ Centro de Operaciones")
-
-# Determinamos si el Aleph sugirió un embalse
-nodos_lista = list(sistemas_embalses.keys())
-idx_defecto = 0
-if 'nodo_sugerido' in st.session_state and st.session_state['nodo_sugerido'] in nodos_lista:
-    idx_defecto = nodos_lista.index(st.session_state['nodo_sugerido'])
-
-nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", nodos_lista, index=idx_defecto)
-datos_nodo = sistemas_embalses[nodo_seleccionado]
+            pass
 
 # --- ☁️ MOTOR CLIMÁTICO LOCAL (ENSO) ---
 st.sidebar.markdown("### 🌍 Motor Climático (ENSO)")
