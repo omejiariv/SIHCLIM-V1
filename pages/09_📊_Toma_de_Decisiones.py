@@ -785,74 +785,85 @@ if gdf_zona is not None and not gdf_zona.empty:
             # 🏷️ CORRECCIÓN TÍTULO 3
             st.markdown(f"##### 🗺️ Visor Táctico de Conectividad y Predios en: **{nombre_zona}**")
             
-            import pydeck as pdk
+            st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
+
+            # --- MOTOR RIPARIO DE BOLSILLO ---
+            if 'gdf_riparia' not in st.session_state:
+                with st.expander("⚠️ Faltan Datos: Generar Franja Riparia (Motor Local)", expanded=True):
+                    st.info("Para priorizar predios, el sistema necesita conocer la huella de los ríos. Calcúlala aquí sin salir del tablero.")
+                    render_motor_ripario()
+            else:
+                ancho_actual = st.session_state.get('ancho_ripario_usado', 30)
+                st.success(f"✅ Franja Riparia de {ancho_actual}m detectada en memoria.")
+                with st.expander("⚙️ Recalcular Franja Riparia", expanded=False):
+                    render_motor_ripario()
             
-            # El mapa ahora lee la tabla maestra que ya tiene el 'ID_Tramo' correcto
-            rios_4326 = rios_strahler.to_crs(epsg=4326).copy()
-            
-            try: c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
-            except: c_lat, c_lon = 6.2, -75.5
-            
-            capas_mapa = []
-            
-            if gdf_zona is not None:
-                zona_4326 = gdf_zona.to_crs("EPSG:4326")
-                capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
-            
-            # Capa de Ríos
-            capas_mapa.append(pdk.Layer(
-                "GeoJsonLayer",
-                data=rios_4326,
-                opacity=0.6,
-                stroked=True,
-                get_line_color=[39, 174, 96, 255], 
-                get_line_width=buffer_m * 2,
-                lineWidthUnits='"meters"',
-                lineWidthMinPixels=2,
-                pickable=True,
-                autoHighlight=True
-            ))
-            
-            # Capa de Predios
-            if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
-                col_id_pred = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'ID_Predio'] if col in predios_en_buffer.columns), None)
-                if col_id_pred and capa_predios is not None:
-                    ids_afectados = predios_en_buffer[col_id_pred].unique()
-                    predios_a_dibujar = capa_predios[capa_predios[col_id_pred].isin(ids_afectados)].to_crs(epsg=4326)
-                    
+                import pydeck as pdk
+                
+                # El mapa ahora lee la tabla maestra que ya tiene el 'ID_Tramo' correcto
+                # Usamos un try/except por si 'rios_strahler' no se ha definido en esta página
+                try:
+                    rios_4326 = rios_strahler.to_crs(epsg=4326).copy()
+                    c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
+                except Exception as e:
+                    # Si 'rios_strahler' no existe, intentamos usar 'gdf_rios' de la memoria global
+                    if 'gdf_rios' in st.session_state:
+                        rios_4326 = st.session_state['gdf_rios'].to_crs(epsg=4326).copy()
+                        c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
+                    else:
+                        st.error("❌ No se encontró información de la red hídrica para dibujar el mapa.")
+                        c_lat, c_lon = 6.2, -75.5 # Coordenadas por defecto (Medellín)
+                
+                capas_mapa = []
+                
+                if gdf_zona is not None:
+                    zona_4326 = gdf_zona.to_crs("EPSG:4326")
+                    capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
+                
+                # Definimos un valor por defecto para buffer_m en caso de que no esté definido antes
+                buffer_m = locals().get('buffer_m', ancho_actual)
+
+                # Capa de Ríos
+                if 'rios_4326' in locals():
                     capas_mapa.append(pdk.Layer(
                         "GeoJsonLayer",
-                        data=predios_a_dibujar,
-                        opacity=0.4,
+                        data=rios_4326,
+                        opacity=0.6,
                         stroked=True,
-                        filled=True,
-                        get_fill_color=[255, 165, 0, 150],
-                        get_line_color=[255, 140, 0, 255],
-                        get_line_width=2,
+                        get_line_color=[39, 174, 96, 255], 
+                        get_line_width=buffer_m * 2,
+                        lineWidthUnits='"meters"',
+                        lineWidthMinPixels=2,
                         pickable=True,
                         autoHighlight=True
                     ))
-            
-            view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=12)
-            
-            # Tooltip unificado que soporta información tanto de ríos como de predios
-            tooltip = {
-                "html": "<b>Detalle de Selección:</b><br/>{ID_Tramo} {MATRICULA} {COD_CATAST}<br/>Orden de Strahler: {Orden_Strahler}<br/>Longitud: {longitud_km} km",
-                "style": {"backgroundColor": "steelblue", "color": "white"}
-            }
-            
-            st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
-
-        else:
-     st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
-
-     # --- MOTOR RIPARIO DE BOLSILLO ---
-     if 'gdf_riparia' not in st.session_state:
-         with st.expander("⚠️ Faltan Datos: Generar Franja Riparia (Motor Local)", expanded=True):
-             st.info("Para priorizar predios, el sistema necesita conocer la huella de los ríos. Calcúlala aquí sin salir del tablero.")
-             render_motor_ripario()
-     else:
-         ancho_actual = st.session_state.get('ancho_ripario_usado', 30)
-         st.success(f"✅ Franja Riparia de {ancho_actual}m detectada en memoria.")
-         with st.expander("⚙️ Recalcular Franja Riparia", expanded=False):
-             render_motor_ripario()
+                
+                # Capa de Predios
+                if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
+                    col_id_pred = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'ID_Predio'] if col in predios_en_buffer.columns), None)
+                    if col_id_pred and capa_predios is not None:
+                        ids_afectados = predios_en_buffer[col_id_pred].unique()
+                        predios_a_dibujar = capa_predios[capa_predios[col_id_pred].isin(ids_afectados)].to_crs(epsg=4326)
+                        
+                        capas_mapa.append(pdk.Layer(
+                            "GeoJsonLayer",
+                            data=predios_a_dibujar,
+                            opacity=0.4,
+                            stroked=True,
+                            filled=True,
+                            get_fill_color=[255, 165, 0, 150],
+                            get_line_color=[255, 140, 0, 255],
+                            get_line_width=2,
+                            pickable=True,
+                            autoHighlight=True
+                        ))
+                
+                view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=12)
+                
+                # Tooltip unificado que soporta información tanto de ríos como de predios
+                tooltip = {
+                    "html": "<b>Detalle de Selección:</b><br/>{ID_Tramo} {MATRICULA} {COD_CATAST}<br/>Orden de Strahler: {Orden_Strahler}<br/>Longitud: {longitud_km} km",
+                    "style": {"backgroundColor": "steelblue", "color": "white"}
+                }
+                
+                st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
