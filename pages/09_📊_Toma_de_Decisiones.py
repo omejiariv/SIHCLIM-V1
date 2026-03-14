@@ -13,6 +13,7 @@ from folium import plugins
 from sqlalchemy import create_engine, text
 from scipy.interpolate import griddata
 from modules.demografia_tools import render_motor_demografico
+from modules.biodiversidad_tools import render_motor_ripario
 import sys
 import os
 
@@ -843,8 +844,15 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
 
         else:
-            st.info("💡 Asegúrate de haber calculado la franja riparia de esta cuenca en la página de **Biodiversidad** primero.")
+    st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
 
-
-
-
+     # --- MOTOR RIPARIO DE BOLSILLO ---
+     if 'gdf_riparia' not in st.session_state:
+         with st.expander("⚠️ Faltan Datos: Generar Franja Riparia (Motor Local)", expanded=True):
+             st.info("Para priorizar predios, el sistema necesita conocer la huella de los ríos. Calcúlala aquí sin salir del tablero.")
+             render_motor_ripario()
+     else:
+         ancho_actual = st.session_state.get('ancho_ripario_usado', 30)
+         st.success(f"✅ Franja Riparia de {ancho_actual}m detectada en memoria.")
+         with st.expander("⚙️ Recalcular Franja Riparia", expanded=False):
+             render_motor_ripario()
