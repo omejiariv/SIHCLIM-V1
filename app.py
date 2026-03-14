@@ -42,7 +42,7 @@ st.markdown('<p class="sub-header">Sistema de Información Hidroclimática Integ
 
 # Panel de Métricas Globales (Dashboard)
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Módulos Analíticos", "9 Especializados", "Operativos")
+col1.metric("Módulos Analíticos", "14 Especializados", "Operativos")
 col2.metric("Resolución Temporal", "1950 - 2070", "Datos Históricos + Proyecciones")
 col3.metric("Cobertura Geográfica", "Región Andina", "Topología de Cuencas")
 col4.metric("Motores de Decisión", "WRI / AHP / Turc", "Estándares Globales")
@@ -60,55 +60,76 @@ tab_dashboard, tab_arquitectura, tab_aleph = st.tabs([
 # PESTAÑA 1: CENTRO DE COMANDO (GRID DE NAVEGACIÓN)
 # =====================================================================
 with tab_dashboard:
+    # --- EJE 1 ---
     st.markdown("### 🌍 EJE 1: Soporte Biofísico (Condiciones Base)")
     st.caption("Módulos dedicados a la lectura y modelación del entorno natural, el clima y el subsuelo.")
     
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
         st.page_link("pages/01_🌦️_Clima_e_Hidrologia.py", label="**Clima e Hidrología**", icon="🌦️")
         st.markdown("<small>Tablero de control telemétrico, análisis de variabilidad y pronósticos ENSO (IRI).</small>", unsafe_allow_html=True)
     with c2:
-        st.page_link("pages/10_🏔️_Geomorfologia.py", label="**Geomorfología**", icon="🏔️")
-        st.markdown("<small>Análisis de Modelos Digitales de Elevación (DEM), redes de drenaje y morfometría.</small>", unsafe_allow_html=True)
-    with c3:
         st.page_link("pages/02_💧_Aguas_Subterraneas.py", label="**Aguas Subterráneas**", icon="💧")
         st.markdown("<small>Modelación de recarga potencial de acuíferos mediante balance hídrico (Turc).</small>", unsafe_allow_html=True)
+    with c3:
+        st.page_link("pages/03_🗺️_Isoyetas_HD.py", label="**Isoyetas HD y Espacialización**", icon="🗺️")
+        st.markdown("<small>Generador climático: Interpolación espacial (RBF) de lluvia y escenarios predictivos.</small>", unsafe_allow_html=True)
+        
+    c4, c5, _ = st.columns(3)
     with c4:
-        st.page_link("pages/03_🍃_Biodiversidad.py", label="**Biodiversidad**", icon="🍃")
+        st.page_link("pages/04_🍃_Biodiversidad.py", label="**Biodiversidad**", icon="🍃")
         st.markdown("<small>Monitor de especies (GBIF), endemismos y vulnerabilidad de flora/fauna.</small>", unsafe_allow_html=True)
+    with c5:
+        st.page_link("pages/05_🏔️_Geomorfologia.py", label="**Geomorfología**", icon="🏔️")
+        st.markdown("<small>Análisis de Modelos Digitales de Elevación (DEM), redes de drenaje y morfometría.</small>", unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin: 10px 0; border-top: 1px dashed #ccc;'>", unsafe_allow_html=True)
     
+    # --- EJE 2 ---
     st.markdown("### ⚙️ EJE 2: Metabolismo Territorial (Presiones Antrópicas)")
     st.caption("Módulos enfocados en la interacción humana: cómo poblamos, demandamos e impactamos la cuenca.")
     
-    c5, c6, c7 = st.columns([1, 1, 1])
-    with c5:
-        st.page_link("pages/08_🔗_Sistemas_Hidricos_Territoriales.py", label="**Sistemas Hídricos (Metabolismo)**", icon="🔗")
-        st.markdown("<small>Topología de redes, diagrama de Sankey de trasvases y Estándares de Seguridad Hídrica (WRI).</small>", unsafe_allow_html=True)
+    c6, c7, c8 = st.columns(3)
     with c6:
-        st.page_link("pages/07_👥_Demografia_y_Poblacion.py", label="**Demografía y Población**", icon="👥")
-        st.markdown("<small>Proyecciones poblacionales (DANE) y censos agropecuarios (ICA) para cálculo de demanda real.</small>", unsafe_allow_html=True)
+        st.page_link("pages/06_📈_Modelo_Demografico.py", label="**Modelo Demográfico**", icon="📈")
+        st.markdown("<small>Proyecciones poblacionales y censos (DANE/ICA) con inyección a la Memoria Global.</small>", unsafe_allow_html=True)
     with c7:
-        st.page_link("pages/06_💧_Calidad_y_Vertimientos.py", label="**Calidad y Vertimientos**", icon="🧪")
-        st.markdown("<small>Mapeo de usuarios del recurso, modelación de concesiones y cargas contaminantes.</small>", unsafe_allow_html=True)
+        st.page_link("pages/07_💧_Calidad_y_Vertimientos.py", label="**Calidad y Vertimientos**", icon="🧪")
+        st.markdown("<small>Mapeo de usuarios del recurso, modelación de concesiones y cargas contaminantes DBO.</small>", unsafe_allow_html=True)
+    with c8:
+        st.page_link("pages/08_🔗_Sistemas_Hidricos_Territoriales.py", label="**Sistemas Hídricos Territoriales**", icon="🔗")
+        st.markdown("<small>Topología de redes, diagramas de Sankey y huella hídrica consolidada en la nube.</small>", unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin: 10px 0; border-top: 1px dashed #ccc;'>", unsafe_allow_html=True)
 
+    # --- EJE 3 ---
     st.markdown("### 🧠 EJE 3: Síntesis y Estrategia (DSS)")
     st.caption("Sistemas de Soporte de Decisiones para planeación, ordenamiento y priorización de inversiones.")
     
-    c8, c9, c10 = st.columns([1, 1, 1])
-    with c8:
-        st.page_link("pages/04_📊_Toma_de_Decisiones.py", label="**Toma de Decisiones (AHP)**", icon="📊")
-        st.markdown("<small>Matrices multicriterio (AHP) para priorizar proyectos ambientales y de compensación (SbN).</small>", unsafe_allow_html=True)
+    c9, c10, _ = st.columns(3)
     with c9:
-        st.page_link("pages/05_🗺️_Isoyetas_HD.py", label="**Isoyetas HD y Espacialización**", icon="🗺️")
-        st.markdown("<small>Generador climático: Interpolación espacial (RBF) de lluvia y escenarios predictivos.</small>", unsafe_allow_html=True)
+        st.page_link("pages/09_📊_Toma_de_Decisiones.py", label="**Toma de Decisiones**", icon="📊")
+        st.markdown("<small>Dashboard Maestro: Estrés hídrico, Portafolio WRI y análisis multicriterio (AHP).</small>", unsafe_allow_html=True)
     with c10:
-        # Espacio reservado para el panel de administración
-        st.page_link("pages/09_👑_Panel_Administracion.py", label="**Panel de Administración**", icon="👑")
-        st.markdown("<small>Aduana SIG, carga de datos a la nube (Supabase) y gestión integral del sistema.</small>", unsafe_allow_html=True)
+        st.page_link("pages/10_👑_Panel_Administracion.py", label="**Panel de Administración**", icon="👑")
+        st.markdown("<small>Aduana SIG, carga de datos maestros a la nube (Supabase) y gestión del sistema.</small>", unsafe_allow_html=True)
+
+    st.markdown("<hr style='margin: 10px 0; border-top: 1px dashed #ccc;'>", unsafe_allow_html=True)
+
+    # --- EJE 4 ---
+    st.markdown("### 🛠️ EJE 4: Soporte Técnico y Herramientas")
+    st.caption("Utilidades del sistema para mantenimiento, documentación y depuración del gemelo digital.")
+    
+    c11, c12, c13, c14 = st.columns(4)
+    with c11:
+        st.page_link("pages/11_⚙️_Generador.py", label="**Generador**", icon="⚙️")
+    with c12:
+        st.page_link("pages/12_📚_Ayuda_y_Docs.py", label="**Ayuda y Docs**", icon="📚")
+    with c13:
+        st.page_link("pages/13_🚑_Diagnostico.py", label="**Diagnóstico**", icon="🚑")
+    with c14:
+        st.page_link("pages/14_🕵️_Detective.py", label="**Detective**", icon="🕵️")
+
 
 # =====================================================================
 # PESTAÑA 2: ARQUITECTURA DEL SISTEMA (SUNBURST)
@@ -117,9 +138,24 @@ with tab_arquitectura:
     st.markdown("### Mapa Topológico del Sistema")
     st.info("Visualización jerárquica de la arquitectura de la plataforma y sus submódulos lógicos.")
     
-    ids = ['SIHCLI-POTER', 'Metabolismo Territorial', 'Dinámica Poblacional', 'Calidad y Saneamiento', 'Clima e Hidrología', 'Aguas Subterráneas', 'Biodiversidad', 'Toma de Decisiones', 'Geomorfología', 'Embalses y Trasvases', 'Estándares WRI', 'Topología de Redes', 'Proyecciones DANE', 'Pirámides Edades', 'Censos ICA', 'Vertimientos', 'Concesiones', 'Cargas Contaminantes', 'Isoyetas HD', 'Monitoreo Clima', 'Índices ENSO', 'Balance Turc', 'Acuíferos', 'Monitor GBIF', 'AHP']
-    parents = ['', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial', 'Dinámica Poblacional', 'Dinámica Poblacional', 'Dinámica Poblacional', 'Calidad y Saneamiento', 'Calidad y Saneamiento', 'Calidad y Saneamiento', 'Clima e Hidrología', 'Clima e Hidrología', 'Clima e Hidrología', 'Aguas Subterráneas', 'Aguas Subterráneas', 'Biodiversidad', 'Toma de Decisiones']
-    values = [100, 20, 15, 15, 15, 10, 10, 10, 5, 7, 7, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 10, 10]
+    # Actualizado con la nueva estructura
+    ids = ['SIHCLI-POTER', 'Soporte Biofísico', 'Metabolismo Territorial', 'Síntesis Estratégica', 'Herramientas', 
+           'Clima e Hidrología', 'Aguas Subterráneas', 'Isoyetas HD', 'Biodiversidad', 'Geomorfología',
+           'Modelo Demográfico', 'Calidad y Vertimientos', 'Sistemas Hídricos', 
+           'Toma de Decisiones', 'Panel Administración',
+           'Generador', 'Ayuda y Docs', 'Diagnóstico', 'Detective']
+           
+    parents = ['', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER',
+               'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico',
+               'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial',
+               'Síntesis Estratégica', 'Síntesis Estratégica',
+               'Herramientas', 'Herramientas', 'Herramientas', 'Herramientas']
+               
+    values = [100, 30, 30, 20, 20, 
+              6, 6, 6, 6, 6, 
+              10, 10, 10, 
+              10, 10, 
+              5, 5, 5, 5]
 
     if len(ids) == len(parents) == len(values):
         df = pd.DataFrame(dict(ids=ids, parents=parents, values=values))
@@ -151,4 +187,3 @@ with tab_aleph:
 # --- FOOTER ---
 st.divider()
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
-
