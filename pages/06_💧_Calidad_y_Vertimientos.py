@@ -328,42 +328,73 @@ with st.expander("📍 1. Contexto Territorial y Demográfico (Sihcli-Aleph)", e
 st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{lugar_sel} ({nivel_sel_visual})** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.**")
 
 # ==============================================================================
-# 🐄 MOTOR MATEMÁTICO PECUARIO (Censo ICA Proporcional al Territorio)
+# 🐄 MOTOR MATEMÁTICO PECUARIO (Conectado a la Nube - Censo ICA Maestro)
 # ==============================================================================
-def obtener_censo_pecuario(lugar_sel, nivel_sel):
-    import numpy as np
-    def calcular_animales(df_censo, mpios_lista=None, df_interseccion=None):
-        if df_censo.empty: return 0.0
-        col_total = next((c for c in df_censo.columns if 'TOTAL' in c.upper() or 'INVENTARIO' in c.upper()), None)
-        if not col_total: return 0.0 
-        
-        df_censo[col_total] = pd.to_numeric(df_censo[col_total], errors='coerce').fillna(0)
+@st.cache_data(show_spinner=False, ttl=3600)
+def cargar_maestros_pecuarios():
+    """Descarga los 3 archivos maestros desde Supabase a la memoria RAM"""
+    import pandas as pd
+    import unicodedata
+    urls = {
+        "bovinos": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Bovinos.csv",
+        "porcinos": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Porcinos.csv",
+        "aves": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Aves.csv"
+    }
+    dfs = {}
+    for key, url in urls.items():
+        try:
+            dfs[key] = pd.read_csv(url, encoding='utf-8-sig', sep=None, engine='python')
+            if 'MUNICIPIO' in dfs[key].columns:
+                dfs[key]['MUNICIPIO_NORM'] = dfs[key]['MUNICIPIO'].astype(str).str.upper().apply(
+                    lambda x: unicodedata.normalize('NFKD', x).encode('ascii', 'ignore').decode('utf-8')
+                )
+        except Exception as e:
+            dfs[key] = pd.DataFrame()
+    return dfs
+
+def obtener_censo_pecuario(lugar_sel, nivel_sel, anio_evaluacion):
+    """Filtra los maestros por año y por territorio"""
+    dfs_ica = cargar_maestros_pecuarios()
+    anio_censo = max(2018, min(2025, int(anio_evaluacion)))
+    
+    def calcular_animales(df_censo, col_tot, mpios_lista=None, df_interseccion=None):
+        if df_censo.empty or col_tot not in df_censo.columns: return 0.0
+        df_y = df_censo[df_censo['AÑO'] == anio_censo]
         total_animales = 0.0
         
         if df_interseccion is not None:
             for _, row in df_interseccion.iterrows():
-                mpio_n = normalizar_texto(row['Municipio'])
+                # Normalizamos aquí por si acaso
+                import unicodedata
+                mpio_n = unicodedata.normalize('NFKD', str(row['Municipio']).upper()).encode('ascii', 'ignore').decode('utf-8')
                 pct_area = row['Porcentaje'] / 100.0
-                df_m = df_censo[df_censo['MUNICIPIO_NORM'] == mpio_n]
-                if not df_m.empty: total_animales += (df_m[col_total].sum() * pct_area)
+                df_m = df_y[df_y['MUNICIPIO_NORM'] == mpio_n]
+                if not df_m.empty: total_animales += (pd.to_numeric(df_m[col_tot], errors='coerce').sum() * pct_area)
         elif mpios_lista is not None:
-            df_f = df_censo[df_censo['MUNICIPIO_NORM'].isin(mpios_lista)]
-            if not df_f.empty: total_animales = df_f[col_total].sum()
+            import unicodedata
+            mpios_norm = [unicodedata.normalize('NFKD', str(m).upper()).encode('ascii', 'ignore').decode('utf-8') for m in mpios_lista]
+            df_f = df_y[df_y['MUNICIPIO_NORM'].isin(mpios_norm)]
+            if not df_f.empty: total_animales = pd.to_numeric(df_f[col_tot], errors='coerce').sum()
+        else:
+            total_animales = pd.to_numeric(df_y[col_tot], errors='coerce').sum()
+            
         return float(total_animales)
 
     mpios_activos = None
     df_intersec = None
     
-    if "Municipal" in nivel_sel: mpios_activos = [normalizar_texto(lugar_sel)]
-    elif "Cuenca" in nivel_sel and not df_cuencas_mpios.empty: df_intersec = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]
-    elif nivel_sel in ["Jurisdicción Ambiental (CAR)", "Regional", "Departamental"] and not df_territorio.empty:
+    if "Municipal" in nivel_sel: mpios_activos = [lugar_sel]
+    elif "Cuenca" in nivel_sel and 'df_cuencas_mpios' in globals() and not df_cuencas_mpios.empty: 
+        df_intersec = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]
+    elif nivel_sel in ["Jurisdicción Ambiental (CAR)", "Regional", "Departamental"] and 'df_territorio' in globals() and not df_territorio.empty:
         if nivel_sel == "Jurisdicción Ambiental (CAR)": mpios_activos = df_territorio[df_territorio['car'] == lugar_sel.replace("CAR: ", "")]['municipio_norm'].tolist()
         elif nivel_sel == "Departamental": mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == lugar_sel]['municipio_norm'].tolist()
 
-    total_bovinos = calcular_animales(df_bovinos, mpios_activos, df_intersec)
-    total_porcinos = calcular_animales(df_porcinos, mpios_activos, df_intersec)
-    total_aves = calcular_animales(df_aves, mpios_activos, df_intersec)
-    return total_bovinos, total_porcinos, total_aves
+    tot_bov = calcular_animales(dfs_ica["bovinos"], "TOTAL_BOVINOS", mpios_activos, df_intersec)
+    tot_por = calcular_animales(dfs_ica["porcinos"], "TOTAL_CERDOS", mpios_activos, df_intersec)
+    tot_ave = calcular_animales(dfs_ica["aves"], "TOTAL_AVES_CAP_OCUPADA_MAS_AVES_TRASPATIO", mpios_activos, df_intersec)
+    
+    return tot_bov, tot_por, tot_ave
 
 # Arrays para gráficas de tendencias a futuro (DBO)
 anios_evo = np.arange(anio_analisis, anio_analisis + 31)
@@ -565,44 +596,38 @@ with tab_fuentes:
         elif nivel_sel_interno == "Municipal": mpios_activos = [lugar_n]
     if not mpios_activos: mpios_activos = [lugar_n]
 
-    # EXTRACCIÓN DE BASES DE DATOS ICA
-    total_bovinos, total_porcinos, total_aves, default_trat_porc = 0, 0, 0, 20
-    if not df_bovinos.empty: total_bovinos = int(df_bovinos[df_bovinos['MUNICIPIO_NORM'].isin(mpios_activos)]['TOTALBOVINOS'].sum())
-    
-    if not df_porcinos.empty:
-        df_p_f = df_porcinos[df_porcinos['MUNICIPIO_NORM'].isin(mpios_activos)]
-        if not df_p_f.empty:
-            total_porcinos = int(df_p_f['TOTAL_CERDOS'].sum())
-            tecnificados = df_p_f['TOTAL_PORCINOS__TECNIFICADA'].sum() + df_p_f['TOTAL_PORCINOS__COMERCIAL_INDUSTRIAL_-_2021'].sum() if 'TOTAL_PORCINOS__TECNIFICADA' in df_p_f.columns else 0
-            if total_porcinos > 0: default_trat_porc = int((tecnificados / total_porcinos) * 85)
-            
-    if not df_aves.empty:
-        col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
-        if col_aves in df_aves.columns:
-            total_aves = int(df_aves[df_aves['MUNICIPIO_NORM'].isin(mpios_activos)][col_aves].sum())
+# ==============================================================================
+    # EXTRACCIÓN DE BASES DE DATOS ICA (Ahora conectado a la Nube)
+    # ==============================================================================
+    # Llamamos a nuestra nueva función inteligente pasándole el año del Aleph
+    total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(lugar_sel, nivel_sel_interno, anio_analisis)
 
+    default_trat_porc = 20 # Eficiencia por defecto si no se ajusta manualmente
+
+    # Valores por defecto en caso de que el municipio no tenga datos o esté en 0
     if total_bovinos == 0: total_bovinos = int(pob_rural * 1.5)
     if total_porcinos == 0: total_porcinos = int(pob_rural * 0.8)
 
     col_pec1, col_pec2, col_pec3 = st.columns(3)
     with col_pec1:
         st.subheader("Sector Bovino")
-        cabezas_bovinos = st.number_input("Bovinos (Cabezas):", min_value=0, value=total_bovinos, step=100)
+        cabezas_bovinos = st.number_input("Bovinos (Cabezas):", min_value=0, value=int(total_bovinos), step=100)
         sistema_bovino = st.radio("Sistema Bovino:", ["Extensivo", "Estabulado"])
         factor_dbo_bov = 0.8 if "Estabulado" in sistema_bovino else 0.15 
         
     with col_pec2:
         st.subheader("Sector Porcícola")
-        cabezas_porcinos = st.number_input("Porcinos (Cabezas):", min_value=0, value=total_porcinos, step=100)
+        cabezas_porcinos = st.number_input("Porcinos (Cabezas):", min_value=0, value=int(total_porcinos), step=100)
         tratamiento_porc = st.slider("Eficiencia Biodigestor %:", 0, 100, default_trat_porc)
         factor_dbo_porc = 0.150 * (1 - (tratamiento_porc/100))
         
     with col_pec3:
         st.subheader("Sector Avícola")
-        cabezas_aves = st.number_input("Aves (Galpones):", min_value=0, value=total_aves, step=1000)
+        cabezas_aves = st.number_input("Aves (Galpones/Cabezas):", min_value=0, value=int(total_aves), step=1000)
         tratamiento_aves = st.slider("Manejo Gallinaza %:", 0, 100, 75)
         factor_dbo_aves = 0.015 * (1 - (tratamiento_aves/100)) # Factor aprox 15g DBO/ave
 
+    # --- CÁLCULOS DE CARGA ORGÁNICA (DBO5) ---
     dbo_urbana = pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100)) 
     dbo_rural = pob_rural * 0.040 
     dbo_suero = vol_suero * 0.035 
@@ -622,6 +647,7 @@ with tab_fuentes:
         "DBO_kg_dia": [dbo_urbana, dbo_rural, dbo_suero, dbo_agricola, dbo_bovinos, dbo_porcinos, dbo_aves]
     })
 
+    # --- GRÁFICAS Y RESULTADOS ---
     col_g1, col_g2 = st.columns(2)
     with col_g1:
         fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
@@ -632,7 +658,10 @@ with tab_fuentes:
     with col_g2:
         st.subheader("📈 Evolución de Carga Orgánica (Proyectada)")
         pob_u_evo = pob_urbana * factor_evo
-        dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_agricola
+        
+        # Corrección: Se añade dbo_aves a la proyección futura
+        dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
+        
         fig_dbo_evo = go.Figure()
         fig_dbo_evo.add_trace(go.Scatter(x=anios_evo, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
         st.plotly_chart(fig_dbo_evo, use_container_width=True)
