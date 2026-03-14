@@ -825,7 +825,7 @@ with c_res2:
     st.plotly_chart(fig_sun, use_container_width=True)
 
 # =========================================================================
-# 8. HUELLA HÍDRICA TERRITORIAL (CONEXIÓN CENSOS ICA + DANE + MEMORIA GLOBAL)
+# 8. HUELLA HÍDRICA TERRITORIAL (CONEXIÓN MAESTROS ICA + DANE + MEMORIA GLOBAL)
 # =========================================================================
 st.markdown("---")
 st.header("💧 Metabolismo Hídrico: Presión Demográfica y Agropecuaria")
@@ -836,78 +836,84 @@ col_h1, col_h2 = st.columns([1, 1.5])
 with col_h1:
     st.subheader("1. Conexión a Censos ICA (Supabase)")
     
-    url_base = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url") or st.secrets.get("supabase", {}).get("SUPABASE_URL")
-    key_supabase = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key") or st.secrets.get("supabase", {}).get("SUPABASE_KEY")
-
-    if url_base and key_supabase:
-        from supabase import create_client
-        cliente_supabase = create_client(url_base, key_supabase)
-        
-        try:
-            archivos_ica = cliente_supabase.storage.from_("sihcli_maestros").list("censos_ICA")
-            lista_archivos = [a['name'] for a in archivos_ica if a['name'] != '.emptyFolderPlaceholder']
+    # 🚀 EL NUEVO SLIDER DEL TIEMPO
+    anio_censo = st.slider("📅 Seleccione el Año del Censo Pecuario:", 2018, 2025, 2024)
+    
+    if st.button("📥 Descargar Maestros y Calcular Huella", type="primary", use_container_width=True):
+        with st.spinner(f"Extrayendo y filtrando datos de {anio_censo} desde la Nube..."):
+            bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
+            import requests
+            import io
+            import unicodedata
             
-            if lista_archivos:
-                # CAMBIO 1: Selector Múltiple
-                archivos_seleccionados = st.multiselect("Seleccione los Censos ICA a evaluar (Puedes elegir varios):", lista_archivos)
+            # Función para limpiar los nombres de municipios
+            def limpiar_mpio(m):
+                if pd.isna(m): return ""
+                return unicodedata.normalize('NFKD', str(m).upper()).encode('ascii', 'ignore').decode('utf-8')
+            
+            # Definimos los municipios de la cuenca según el nodo seleccionado
+            mpios_cuenca = []
+            if "Grande" in nodo_seleccionado:
+                mpios_cuenca = ["BELMIRA", "DONMATIAS", "DON MATIAS", "SAN PEDRO", "ENTRERRIOS", "SANTA ROSA"]
+            elif "Fe" in nodo_seleccionado:
+                mpios_cuenca = ["RETIRO", "CEJA", "RIONEGRO"]
                 
-                if st.button("📥 Analizar Censos y Calcular Huella"):
-                    with st.spinner("Descargando y procesando matrices ICA..."):
-                        url_limpia = url_base.strip().strip("'").strip('"').rstrip('/')
-                        bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
-                        import requests
-                        import io
+            mpios_cuenca_limpios = [limpiar_mpio(m) for m in mpios_cuenca]
+
+            # Enlaces públicos directos que acabas de crear
+            archivos_maestros = [
+                ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Bovinos.csv", "TOTAL_BOVINOS", "Bovinos"),
+                ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Porcinos.csv", "TOTAL_CERDOS", "Porcinos"),
+                ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Aves.csv", "TOTAL_AVES_CAP_OCUPADA_MAS_AVES_TRASPATIO", "Aves")
+            ]
+            
+            for url_censo, col_total, nombre_animal in archivos_maestros:
+                try:
+                    res = requests.get(url_censo)
+                    if res.status_code == 200:
+                        df = pd.read_csv(io.BytesIO(res.content), encoding='utf-8-sig', sep=None, engine='python')
                         
-                        for archivo in archivos_seleccionados:
-                            ruta_censo = f"{url_limpia}/storage/v1/object/public/sihcli_maestros/censos_ICA/{archivo}"
-                            res_censo = requests.get(ruta_censo)
+                        # 1. Filtramos por el Año seleccionado en el Slider
+                        df_anio = df[df['AÑO'] == anio_censo].copy()
+                        
+                        if not df_anio.empty:
+                            col_mpio = next((c for c in df_anio.columns if 'MUNICIPIO' in c), None)
+                            col_tot_real = next((c for c in df_anio.columns if col_total in c), None)
                             
-                            if res_censo.status_code == 200:
-                                if archivo.endswith(('.xlsx', '.xls')):
-                                    df_ica = pd.read_excel(io.BytesIO(res_censo.content))
-                                else:
-                                    df_ica = pd.read_csv(io.BytesIO(res_censo.content))
+                            if col_mpio and col_tot_real:
+                                df_anio['MPIO_NORM'] = df_anio[col_mpio].apply(limpiar_mpio)
                                 
-                                # CAMBIO 2: Clasificación inteligente (Detecta de qué animal es el archivo)
-                                nombre_arch = archivo.lower()
-                                if 'bovin' in nombre_arch or 'vaca' in nombre_arch:
-                                    cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower() and ('bovin' in str(c).lower() or 'vaca' in str(c).lower())]
-                                    if not cols_tot: cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower()]
-                                    if cols_tot: bovinos_tot += pd.to_numeric(df_ica[cols_tot[0]], errors='coerce').sum()
+                                # 2. Filtramos SOLO los municipios que le aportan agua al embalse
+                                filtro = df_anio['MPIO_NORM'].apply(lambda x: any(m in x for m in mpios_cuenca_limpios))
+                                df_final = df_anio[filtro]
                                     
-                                elif 'porcin' in nombre_arch or 'cerdo' in nombre_arch:
-                                    cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower() and ('porcin' in str(c).lower() or 'cerdo' in str(c).lower())]
-                                    if not cols_tot: cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower()]
-                                    if cols_tot: porcinos_tot += pd.to_numeric(df_ica[cols_tot[0]], errors='coerce').sum()
-                                    
-                                elif 'ave' in nombre_arch or 'avicol' in nombre_arch:
-                                    cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower() and 'ave' in str(c).lower()]
-                                    if not cols_tot: cols_tot = [c for c in df_ica.columns if 'total' in str(c).lower()]
-                                    if cols_tot: aves_tot += pd.to_numeric(df_ica[cols_tot[0]], errors='coerce').sum()
-                            else:
-                                st.error(f"Error descargando: {archivo}")
+                                suma_animales = pd.to_numeric(df_final[col_tot_real], errors='coerce').sum()
                                 
-                        st.success(f"✅ Matrices procesadas. Bovinos: {bovinos_tot:,.0f} | Porcinos: {porcinos_tot:,.0f} | Aves: {aves_tot:,.0f}")
-                        st.session_state['ica_bovinos_calc'] = bovinos_tot
-                        st.session_state['ica_porcinos_calc'] = porcinos_tot
-                        st.session_state['ica_aves_calc'] = aves_tot
-            else:
-                st.warning("No hay censos ICA subidos en la carpeta de Supabase.")
-        except Exception as e:
-            st.error(f"Error conectando al bucket: {e}")
-    else:
-        st.warning("Faltan credenciales de Supabase en secrets para leer los censos.")
+                                if "Bovinos" in nombre_animal: bovinos_tot = suma_animales
+                                elif "Porcinos" in nombre_animal: porcinos_tot = suma_animales
+                                elif "Aves" in nombre_animal: aves_tot = suma_animales
+                    else:
+                        st.error(f"❌ No se pudo descargar {nombre_animal} (Error {res.status_code})")
+                except Exception as e:
+                    st.error(f"Error procesando {nombre_animal}: {e}")
+                    
+            st.success(f"✅ ¡Metabolismo Pecuario de **{nodo_seleccionado}** ({anio_censo}) calculado!")
+            st.info(f"🐄 Bovinos: **{bovinos_tot:,.0f}** | 🐖 Porcinos: **{porcinos_tot:,.0f}** | 🐔 Aves: **{aves_tot:,.0f}**")
+            
+            # Guardamos en la memoria global
+            st.session_state['ica_bovinos_calc'] = bovinos_tot
+            st.session_state['ica_porcinos_calc'] = porcinos_tot
+            st.session_state['ica_aves_calc'] = aves_tot
 
 with col_h2:
     st.subheader("2. Demanda Total (Urbana + Rural)")
     
-    pob_humana_memoria = st.session_state.get('poblacion_total', 4000000) 
-    
+    # Traemos del Aleph la población humana y los animales
+    pob_humana_memoria = st.session_state.get('aleph_pob_total', 4000000) 
     cabezas_bovinas = st.session_state.get('ica_bovinos_calc', 0)
     cabezas_porcinas = st.session_state.get('ica_porcinos_calc', 0)
     cabezas_aves = st.session_state.get('ica_aves_calc', 0)
         
-    # CAMBIO 3: Añadimos una cuarta columna para las Aves
     c_i1, c_i2, c_i3, c_i4 = st.columns(4)
     pob_humana = c_i1.number_input("👥 Pob (Hab):", value=int(pob_humana_memoria))
     cabezas_bovinas = c_i2.number_input("🐄 Bovinos:", value=int(cabezas_bovinas))
@@ -920,13 +926,13 @@ with col_h2:
     consumo_humano_ld = 150 # Litros/hab/día
     consumo_bovino_ld = 40  # Litros/bovino/día
     consumo_porcino_ld = 15 # Litros/cerdo/día
-    consumo_ave_ld = 0.3    # Litros/ave/día (aprox 300 ml por pollo/gallina)
+    consumo_ave_ld = 0.3    # Litros/ave/día 
     
     demanda_humana_m3_dia = (pob_humana * consumo_humano_ld) / 1000
     demanda_agro_m3_dia = ((cabezas_bovinas * consumo_bovino_ld) + (cabezas_porcinas * consumo_porcino_ld) + (cabezas_aves_in * consumo_ave_ld)) / 1000
     demanda_total_m3_dia = demanda_humana_m3_dia + demanda_agro_m3_dia
     
-    # Convertir a m3/s para cruzarlo con el WRI
+    # Convertir a m3/s
     demanda_total_m3_s = demanda_total_m3_dia / 86400  
     
     c_m1, c_m2, c_m3 = st.columns(3)
@@ -934,9 +940,16 @@ with col_h2:
     c_m2.metric("Demanda Agro (m³/día)", f"{demanda_agro_m3_dia:,.1f}")
     c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s", delta_color="inverse")
     
-    if st.button("💾 Enviar Demanda al Modelo (Memoria Global)"):
+    if st.button("💾 Enviar Demanda al Modelo (Memoria Global)", help="Al hacer clic, este valor viajará al Tablero de Toma de Decisiones para cruzarlo con el Estrés Hídrico."):
         st.session_state['demanda_total_m3s'] = demanda_total_m3_s
-        st.success("✅ Dato inyectado en la memoria global. Este valor viajará hasta el tablero de Toma de Decisiones.")
+        st.success("✅ Dato inyectado en la memoria global.")
+
+# =========================================================================
+# 9. MATEMÁTICA Y CIENCIA
+# =========================================================================
+with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
+    st.markdown("La variación de almacenamiento en el tiempo se rige por la ecuación de continuidad:")
+    st.markdown("$$\\frac{\\Delta S}{\\Delta t} = I_{nat} + \\sum I_{trasvases} - O_{urb} - O_{eco} - O_{energia} - E_{vap}$$")
         
 # ==============================================================================
 # 🕸️ DIBUJO DEL MAPA CONCEPTUAL (Se inyecta en la parte superior)
