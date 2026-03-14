@@ -12,8 +12,8 @@ from streamlit_folium import st_folium
 from folium import plugins
 from sqlalchemy import create_engine, text
 from scipy.interpolate import griddata
-from modules.demografia_tools import render_motor_demografico
 from modules.biodiversidad_tools import render_motor_ripario
+from modules.geomorfologia_tools import render_motor_hidrologico
 import sys
 import os
 
@@ -668,18 +668,23 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         # 1. Recuperar datos
         rios_strahler = st.session_state.get('gdf_rios')
-        buffer_m = st.session_state.get('buffer_m_ripario', 30) 
+        buffer_m = st.session_state.get('buffer_m_ripario', None) 
         
-        # --- 🌿 MOTOR RIPARIO DE BOLSILLO (SIEMPRE VISIBLE) ---
+        # --- 🌿 MOTOR GEOMORFOLÓGICO Y RIPARIO (CASCADA INTELIGENTE) ---
         st.markdown("---")
-        if 'gdf_riparia' not in st.session_state:
-            with st.expander("⚠️ Faltan Datos: Generar Franja Riparia (Motor Local)", expanded=True):
-                st.info("Para priorizar predios, el sistema necesita conocer la huella de los ríos. Calcúlala aquí sin salir del tablero.")
+        if rios_strahler is None or rios_strahler.empty:
+            with st.expander("⚠️ Paso 1: Faltan Datos - Generar Red Hídrica", expanded=True):
+                st.info("Para priorizar predios necesitamos crear la franja riparia, y para eso necesitamos los ríos. ¡Trázalos aquí!")
+                render_motor_hidrologico(gdf_zona)
+                
+        elif buffer_m is None:
+            with st.expander("⚠️ Paso 2: Configurar Franja Riparia", expanded=True):
+                st.success("✅ ¡Ríos detectados! Ahora define el ancho de la zona de protección riparia.")
                 render_motor_ripario()
+                
         else:
-            ancho_actual = st.session_state.get('ancho_ripario_usado', 30)
-            st.success(f"✅ Franja Riparia de {ancho_actual}m detectada en memoria.")
             with st.expander("⚙️ Recalcular Franja Riparia", expanded=False):
+                st.success(f"✅ Red Hídrica y Franja Riparia de {buffer_m}m listas para el cruce predial.")
                 render_motor_ripario()
 
         # 2. CARGAR LA CAPA DE PREDIOS
