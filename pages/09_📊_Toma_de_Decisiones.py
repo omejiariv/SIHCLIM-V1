@@ -705,111 +705,117 @@ if gdf_zona is not None and not gdf_zona.empty:
         except Exception as e:
             st.warning(f"No se pudo cargar la capa de predios local: {e}")
 
-        # 3. EJECUTAR EL MOTOR DE CRUCE
+        # 3. EJECUTAR EL MOTOR DE CRUCE MULTI-ANILLO
         if rios_strahler is not None and not rios_strahler.empty:
             
-            # Reseteamos el índice de la tabla para que la matemática y el mapa hablen el mismo idioma
             rios_strahler = rios_strahler.reset_index(drop=True)
             rios_strahler['ID_Tramo'] = ["Segmento " + str(i+1) for i in range(len(rios_strahler))]
             if 'longitud_km' in rios_strahler.columns:
                 rios_strahler['longitud_km'] = rios_strahler['longitud_km'].round(2)
             
+            # Extraemos los 3 tamaños de anillo
+            anillos = st.session_state.get('multi_rings', [10, 20, 30])
+            b_min, b_med, b_max = anillos[0], anillos[1], anillos[2]
+            
+            # 🌿 MAGIA GEOMÉTRICA: Pre-calculamos los 3 anillos fusionados
+            rios_3116 = rios_strahler.to_crs(epsg=3116)
+            rios_union = rios_3116.unary_union
+            geom_max = rios_union.buffer(b_max, resolution=2)
+            geom_med = rios_union.buffer(b_med, resolution=2)
+            geom_min = rios_union.buffer(b_min, resolution=2)
+            
+            buffer_max_gdf = gpd.GeoDataFrame(geometry=[geom_max], crs=3116)
+            
             if capa_predios is not None and not capa_predios.empty:
-                # ---------------------------------------------------------
-                # RUTA A: CON MAPA DE PREDIOS 
-                # ---------------------------------------------------------
-                st.success(f"✅ Estructura predial detectada. Calculando impacto ripario ({buffer_m}m por lado)...")
-                with st.spinner("Ejecutando cruce espacial avanzado..."):
+                st.success(f"✅ Estructura predial lista. Modelando 3 escenarios simultáneos ({b_min}m, {b_med}m, {b_max}m)...")
+                with st.spinner("Ejecutando intersección de anillos concéntricos..."):
                     try:
                         predios_3116 = capa_predios.to_crs(epsg=3116)
-                        rios_3116 = rios_strahler.to_crs(epsg=3116)
                         
-                        buffer_tramos = gpd.GeoDataFrame(geometry=rios_3116.buffer(buffer_m, resolution=1), crs="EPSG:3116")
-                        predios_en_buffer = gpd.overlay(predios_3116, buffer_tramos, how='intersection')
+                        # 1. Cruzamos SOLO con el anillo más grande (para filtrar rápido los predios que importan)
+                        predios_en_buffer = gpd.overlay(predios_3116, buffer_max_gdf, how='intersection')
                         
                         if not predios_en_buffer.empty:
-                            predios_en_buffer['Area_Riparia_ha'] = predios_en_buffer.geometry.area / 10000.0
+                            # 2. Calculamos las 3 áreas para cada predio de forma ultra-eficiente
+                            predios_en_buffer['Area_Max_ha'] = predios_en_buffer.geometry.area / 10000.0
+                            predios_en_buffer['Area_Med_ha'] = predios_en_buffer.geometry.intersection(geom_med).area / 10000.0
+                            predios_en_buffer['Area_Min_ha'] = predios_en_buffer.geometry.intersection(geom_min).area / 10000.0
+                            
                             col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID'] if col in predios_en_buffer.columns), None)
                             if col_id is None:
                                 predios_en_buffer['ID_Predio'] = predios_en_buffer.index
                                 col_id = 'ID_Predio'
                                 
-                            predios_agrupados = predios_en_buffer.groupby(col_id).agg({'Area_Riparia_ha': 'sum'}).reset_index()
+                            predios_agrupados = predios_en_buffer.groupby(col_id).agg({
+                                'Area_Min_ha': 'sum', 'Area_Med_ha': 'sum', 'Area_Max_ha': 'sum'
+                            }).reset_index()
                             
                             datos_ranking = []
                             for idx, row in predios_agrupados.iterrows():
-                                area_ha = row['Area_Riparia_ha']
                                 datos_ranking.append({
                                     "Identificador Predial": row[col_id],
-                                    "Área a Negociar (Buffer ha)": area_ha,
-                                    "Índice de Prioridad (ROI)": area_ha * 100,
-                                    "Estado": "Sin Contactar"
+                                    f"Mínimo ({b_min}m) ha": row['Area_Min_ha'],
+                                    f"Ideal ({b_med}m) ha": row['Area_Med_ha'],
+                                    f"Óptimo ({b_max}m) ha": row['Area_Max_ha'],
+                                    "ROI (Máx)": row['Area_Max_ha'] * 100
                                 })
                                 
-                            df_prioridad = pd.DataFrame(datos_ranking).sort_values(by="Índice de Prioridad (ROI)", ascending=False)
+                            df_prioridad = pd.DataFrame(datos_ranking).sort_values(by="ROI (Máx)", ascending=False)
+                            
+                            # Totales para el Dashboard
+                            tot_min = df_prioridad[f"Mínimo ({b_min}m) ha"].sum()
+                            tot_med = df_prioridad[f"Ideal ({b_med}m) ha"].sum()
+                            tot_max = df_prioridad[f"Óptimo ({b_max}m) ha"].sum()
+                            
+                            st.markdown("##### 📊 Tablero de Sensibilidad Financiera (Área a Negociar)")
+                            cm1, cm2, cm3, cm4 = st.columns(4)
+                            cm1.metric(f"🔴 Escenario {b_min}m", f"{tot_min:,.1f} ha")
+                            cm2.metric(f"🟡 Escenario {b_med}m", f"{tot_med:,.1f} ha", f"+{(tot_med - tot_min):,.1f} ha extra", delta_color="off")
+                            cm3.metric(f"🟢 Escenario {b_max}m", f"{tot_max:,.1f} ha", f"+{(tot_max - tot_med):,.1f} ha extra", delta_color="off")
+                            cm4.metric("🏡 Predios Afectados", f"{len(df_prioridad)}")
                             
                             c_rank1, c_rank2 = st.columns([2, 1])
                             with c_rank1:
-                                st.markdown("##### 📋 Top 10 Predios Estratégicos")
-                                st.dataframe(df_prioridad.head(10).style.background_gradient(cmap="YlOrRd", subset=["Índice de Prioridad (ROI)"]).format({"Área a Negociar (Buffer ha)": "{:.2f}", "Índice de Prioridad (ROI)": "{:.0f}"}), use_container_width=True, hide_index=True)
+                                with st.expander("📋 Ver Matriz Detallada de Predios (Multi-Anillo)", expanded=True):
+                                    st.dataframe(df_prioridad.head(15).style.background_gradient(cmap="YlOrRd", subset=["ROI (Máx)"]).format(precision=2), use_container_width=True, hide_index=True)
                             with c_rank2:
-                                st.markdown("##### 💡 Resumen Operativo")
-                                st.metric("Predios Involucrados", f"{len(df_prioridad)}")
+                                st.info("Cada escenario incrementa el esfuerzo de negociación predial. Use el botón abajo para exportar a su equipo de gestión territorial.")
                                 csv_predios = df_prioridad.to_csv(index=False).encode('utf-8')
-                                st.download_button("📥 Descargar Plan de Negociación (CSV)", csv_predios, "Priorizacion_Predial.csv", "text/csv")
+                                st.download_button("📥 Descargar Matriz de Escenarios (CSV)", csv_predios, "Escenarios_Riparios.csv", "text/csv")
                         else:
-                            st.info("Ninguno de los predios cargados intercepta la red hidrográfica calculada.")
+                            st.info("Ninguno de los predios intercepta la red hidrográfica.")
                     except Exception as e:
                         st.error(f"Error en el cruce geográfico: {e}")
             else:
-                # ---------------------------------------------------------
-                # RUTA B: SIN PREDIOS (PRIORIZACIÓN ECOLÓGICA POR TRAMOS)
-                # ---------------------------------------------------------
                 st.info("ℹ️ No se detectó mapa predial. Activando **Priorización Ecológica por Tramos Hídricos**.")
                 with st.spinner("Analizando jerarquía de conectividad del paisaje..."):
+                    # (Lógica original de tramos)
                     datos_tramos = []
                     for idx, row in rios_strahler.iterrows():
                         orden = row.get('Orden_Strahler', 1)
                         longitud = row.get('longitud_km', 0)
-                        score_ecologico = (orden * 50) + (longitud * 10)
-                        
                         datos_tramos.append({
                             "ID Tramo": row['ID_Tramo'],
-                            "Orden de Strahler": orden,
-                            "Longitud (Km)": longitud,
-                            "Importancia Ecológica": score_ecologico,
-                            "Rol en Conectividad": "Corredor Principal" if orden >= 3 else "Conector Secundario" if orden == 2 else "Área de Nacimiento"
+                            "Orden de Strahler": orden, "Longitud (Km)": longitud,
+                            "Importancia Ecológica": (orden * 50) + (longitud * 10),
+                            "Conectividad": "Corredor Principal" if orden >= 3 else "Conector Secundario" if orden == 2 else "Nacimiento"
                         })
-                        
                     df_tramos = pd.DataFrame(datos_tramos).sort_values(by="Importancia Ecológica", ascending=False)
                     
-                    c_tram1, c_tram2 = st.columns([2, 1])
-                    with c_tram1:
-                        # Lo metemos en un expander (acordeón) cerrado por defecto
-                        with st.expander(f"🌿 Tramos Críticos para Restauración en: **{nombre_zona}** (Top 10)", expanded=False):
-                            st.dataframe(
-                                df_tramos.head(10).style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format({"Longitud (Km)": "{:.2f}", "Importancia Ecológica": "{:.0f}"}), 
-                                use_container_width=True, 
-                                hide_index=True
-                            )
-                        st.markdown("##### 💡 Resumen Ecológico")
-                        tramos_clave = df_tramos[df_tramos['Orden de Strahler'] >= 2]
-                        st.metric("Tramos Estratégicos (> Orden 1)", f"{len(tramos_clave)} segmentos")
-                        st.caption("Estrategia: Al no contar con información predial, la prioridad de siembra se dirige a los tramos de mayor Orden de Strahler.")
+                    with st.expander(f"🌿 Tramos Críticos para Restauración en: **{nombre_zona}**", expanded=False):
+                        st.dataframe(df_tramos.head(10).style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format({"Longitud (Km)": "{:.2f}", "Importancia Ecológica": "{:.0f}"}), use_container_width=True, hide_index=True)
 
             # =========================================================
-            # 🗺️ EL MAPA TÁCTICO DE NEGOCIACIÓN 
+            # 🗺️ EL MAPA TÁCTICO (CON MULTI-ANILLOS VISUALES)
             # =========================================================
             st.markdown("---")
             st.markdown(f"##### 🗺️ Visor Táctico de Conectividad y Predios en: **{nombre_zona}**")
-            
             import pydeck as pdk
             
             try:
                 rios_4326 = rios_strahler.to_crs(epsg=4326).copy()
                 c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
-            except Exception as e:
-                c_lat, c_lon = 6.2, -75.5 
+            except: c_lat, c_lon = 6.2, -75.5 
             
             capas_mapa = []
             
@@ -817,25 +823,28 @@ if gdf_zona is not None and not gdf_zona.empty:
                 zona_4326 = gdf_zona.to_crs("EPSG:4326")
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
             
-            # Salvavidas: Si el usuario no ha elegido ancho, asumimos 30 visualmente para que no colapse
-            ancho_seguro = buffer_m if buffer_m is not None else 30 
-            
-            # Capa de Ríos
+            # --- 🟢 CAPAS MULTI-ANILLO (Dibujadas de mayor a menor para efecto concéntrico) ---
+            if 'geom_max' in locals():
+                # Óptimo (Más grande, más transparente)
+                gdf_max = gpd.GeoDataFrame(geometry=[geom_max], crs=3116).to_crs(4326)
+                capas_mapa.append(pdk.Layer("GeoJsonLayer", data=gdf_max, opacity=0.2, get_fill_color=[171, 235, 198], stroked=False))
+                # Ideal (Intermedio)
+                gdf_med = gpd.GeoDataFrame(geometry=[geom_med], crs=3116).to_crs(4326)
+                capas_mapa.append(pdk.Layer("GeoJsonLayer", data=gdf_med, opacity=0.4, get_fill_color=[88, 214, 141], stroked=False))
+                # Normativo (Más pequeño, verde oscuro)
+                gdf_min = gpd.GeoDataFrame(geometry=[geom_min], crs=3116).to_crs(4326)
+                capas_mapa.append(pdk.Layer("GeoJsonLayer", data=gdf_min, opacity=0.6, get_fill_color=[40, 180, 99], stroked=False))
+
+            # --- 🔵 CAPA DE RÍOS (Línea Fina Central) ---
             if 'rios_4326' in locals():
                 capas_mapa.append(pdk.Layer(
-                    "GeoJsonLayer",
-                    data=rios_4326,
-                    opacity=0.6,
-                    stroked=True,
-                    get_line_color=[39, 174, 96, 255], 
-                    get_line_width=ancho_seguro * 2, # <-- USAMOS EL SALVAVIDAS AQUÍ
-                    lineWidthUnits='"meters"',
-                    lineWidthMinPixels=2,
-                    pickable=True,
-                    autoHighlight=True
+                    "GeoJsonLayer", data=rios_4326,
+                    get_line_color=[31, 97, 141, 255], # Azul oscuro
+                    get_line_width=2, lineWidthMinPixels=2,
+                    pickable=True, autoHighlight=True
                 ))
             
-            # Capa de Predios
+            # --- 🏠 CAPA DE PREDIOS ---
             if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
                 col_id_pred = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'ID_Predio'] if col in predios_en_buffer.columns), None)
                 if col_id_pred and capa_predios is not None:
@@ -843,28 +852,17 @@ if gdf_zona is not None and not gdf_zona.empty:
                     predios_a_dibujar = capa_predios[capa_predios[col_id_pred].isin(ids_afectados)].to_crs(epsg=4326)
                     
                     capas_mapa.append(pdk.Layer(
-                        "GeoJsonLayer",
-                        data=predios_a_dibujar,
-                        opacity=0.4,
-                        stroked=True,
-                        filled=True,
-                        get_fill_color=[255, 165, 0, 150],
-                        get_line_color=[255, 140, 0, 255],
-                        get_line_width=2,
-                        pickable=True,
-                        autoHighlight=True
+                        "GeoJsonLayer", data=predios_a_dibujar, opacity=0.4,
+                        stroked=True, filled=True, get_fill_color=[255, 165, 0, 150],
+                        get_line_color=[255, 140, 0, 255], get_line_width=2,
+                        pickable=True, autoHighlight=True
                     ))
             
-            view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=12)
+            view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=13, pitch=45)
             
-            tooltip = {
-                "html": "<b>Detalle de Selección:</b><br/>{ID_Tramo} {MATRICULA} {COD_CATAST}<br/>Orden de Strahler: {Orden_Strahler}<br/>Longitud: {longitud_km} km",
-                "style": {"backgroundColor": "steelblue", "color": "white"}
-            }
-            
+            tooltip = {"html": "<b>{ID_Tramo} {MATRICULA} {COD_CATAST}</b><br/>Orden Hídrico: {Orden_Strahler}<br/>Longitud: {longitud_km} km", "style": {"backgroundColor": "steelblue", "color": "white"}}
             st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
 
         else:
-            # 🛑 ESTE ES EL SALVAVIDAS SI FALTAN LOS RÍOS
             st.warning("⚠️ El cruce predial y el mapa táctico están en pausa porque aún no se han calculado los ríos.")
             st.info("👆 Por favor, utiliza el generador de Franja Riparia que se encuentra arriba para iluminar este tablero.")
