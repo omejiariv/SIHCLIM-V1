@@ -320,6 +320,10 @@ with st.expander(f"📍 Contexto Territorial y Demográfico: {nombre_seleccion}"
 
 st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.**")
 
+# --- 🌉 ALIAS DE COMPATIBILIDAD PARA FUNCIONES ANTIGUAS ---
+lugar_sel = nombre_seleccion
+nivel_sel_interno = "Municipal" # Valor por defecto seguro para el censo
+
 # ==============================================================================
 # 🚀 FILTRO GEOGRÁFICO AVANZADO (Cruce Espacial con la Nube)
 # ==============================================================================
