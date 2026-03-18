@@ -317,8 +317,14 @@ with st.expander(f"📍 Contexto Territorial y Demográfico: {nombre_seleccion}"
         st.success(f"🧠 **Contexto Sincronizado:** Analizando **{nombre_seleccion}** con datos del Motor Demográfico.")
     else:
         st.warning(f"⚠️ **Atención:** No hay proyección en memoria para **{nombre_seleccion}**. Se ha realizado una {origen_dato}.")
-        st.caption("⚙️ Para un cálculo preciso, utiliza la página de 'Modelo Demográfico' y el sistema heredará el dato.")
     
+    # 🚀 RECUPERAMOS EL MOTOR DEMOGRÁFICO EN LA PÁGINA
+    st.markdown("#### ⚙️ Proyectar Población (Motor Local)")
+    from modules.demografia_tools import render_motor_demografico
+    render_motor_demografico(lugar_defecto=nombre_seleccion)
+    
+    st.markdown("---")
+    st.markdown("⚙️ **Ajuste Manual de Distribución Espacial**")
     col_p1, col_p2 = st.columns(2)
     with col_p1: 
         pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=float(pob_total * 0.70), step=1.0)
