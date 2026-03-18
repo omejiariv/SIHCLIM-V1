@@ -24,11 +24,6 @@ capacidad de asimilación, formalización y visor espacial de calor (Concesiones
 """)
 st.divider()
 
-# --- MOTOR DEMOGRÁFICO DE BOLSILLO ---
-with st.expander("⚙️ Recalcular Proyección Demográfica (Motor Local)", expanded=False):
-    st.caption("Calcula la población futura para proyectar el incremento en las cargas contaminantes (DBO5 / SST).")
-    render_motor_demografico(lugar_defecto="Valle de Aburrá")
-
 # ==============================================================================
 # 🧽 FUNCIÓN NORMALIZADORA (MATA-TILDES Y ESPACIOS)
 # ==============================================================================
@@ -295,34 +290,49 @@ if gdf_zona is None or gdf_zona.empty:
     st.info("👈 Por favor, utiliza el menú lateral para seleccionar un territorio (Cuenca, Municipio, Región...).")
     st.stop() # Congela la página elegantemente hasta que el usuario elija algo
 
-# 2. Rescatamos la Demografía (Proyectada por el "Motor de Bolsillo" que está arriba)
+# 2. Rescatamos la Demografía (Y verificamos que coincida con el lugar actual)
+lugar_en_memoria = st.session_state.get('aleph_lugar', '')
 anio_analisis = st.session_state.get('aleph_anio', 2024)
-pob_total = float(st.session_state.get('aleph_pob_total', 0.0))
 
-# 3. Interfaz de Recepción Minimalista
-with st.expander(f"📍 Contexto Territorial y Demográfico: {nombre_seleccion}", expanded=True):
-    if pob_total > 0:
-        st.success(f"🧠 **Contexto Heredado Automáticamente:** Analizando la demanda hídrica y vertimientos para **{nombre_seleccion}** en el año **{anio_analisis}**.")
+# 🛑 EL DETECTOR DE MENTIRAS DE LA MEMORIA
+if lugar_en_memoria != nombre_seleccion:
+    pob_total = 0.0  # Obligamos a recalcular porque la memoria es de otro territorio
+else:
+    pob_total = float(st.session_state.get('aleph_pob_total', 0.0))
+
+# 3. Interfaz de Recepción y Motor Demográfico Integrado (La Cascada)
+st.markdown("---")
+if pob_total > 0:
+    with st.expander(f"📍 Contexto Territorial y Demográfico: {nombre_seleccion}", expanded=False):
+        st.success(f"🧠 **Contexto Heredado:** Analizando la demanda hídrica y vertimientos para **{nombre_seleccion}** en el año **{anio_analisis}**.")
         st.metric("👥 Población Proyectada (Del Motor Demográfico)", f"{pob_total:,.0f} Habitantes")
-    else:
-        st.warning("⚠️ **Atención:** No se ha detectado una proyección poblacional. Te sugerimos abrir el 'Motor Demográfico' (arriba) y calcular el año.")
-        pob_total = st.number_input("Población Total (Ingreso Manual de Emergencia):", min_value=1.0, value=100000.0, step=1000.0)
+        st.caption("⚙️ ¿Quieres proyectar a otro año? Usa el motor local:")
+        render_motor_demografico(lugar_defecto=nombre_seleccion)
+else:
+    with st.expander(f"⚠️ Falta Proyección Demográfica para {nombre_seleccion}", expanded=True):
+        if lugar_en_memoria != "":
+            st.warning(f"La memoria del sistema tiene datos de **{lugar_en_memoria}**, pero estás analizando **{nombre_seleccion}**. Usa el motor para calcular la población correcta:")
+        else:
+            st.info(f"Para calcular las cargas contaminantes de **{nombre_seleccion}**, necesitamos proyectar su población:")
+        
+        # Inyectamos el motor forzando a que use la selección actual
+        render_motor_demografico(lugar_defecto=nombre_seleccion)
+        
+        pob_total = st.number_input("O ingresa la Población Total manualmente (Emergencia):", min_value=1.0, value=100000.0, step=1000.0)
 
-    st.markdown("---")
-    st.markdown("⚙️ **Distribución Espacial de la Población**")
-    col_p1, col_p2 = st.columns(2)
-    with col_p1: 
-        pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=float(pob_total * 0.70), step=100.0, help="Puedes ajustar esta distribución manualmente.")
-    with col_p2: 
-        pob_rural = st.number_input("Pob. Rural (Resto):", min_value=0.0, value=float(pob_total * 0.30), step=100.0)
-    
-    pob_total = pob_urbana + pob_rural # Reajuste automático si el usuario edita los valores manualmente
+st.markdown("⚙️ **Distribución Espacial de la Población**")
+col_p1, col_p2 = st.columns(2)
+with col_p1: 
+    pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=float(pob_total * 0.70), step=100.0)
+with col_p2: 
+    pob_rural = st.number_input("Pob. Rural (Resto):", min_value=0.0, value=float(pob_total * 0.30), step=100.0)
+
+pob_total = pob_urbana + pob_rural # Reajuste automático
 
 st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.**")
 
 # --- 🌉 ALIAS DE COMPATIBILIDAD PARA FUNCIONES ANTIGUAS ---
 lugar_sel = nombre_seleccion
-# Adivinamos si es cuenca basándonos en el nombre, o por defecto asignamos Municipal
 nivel_sel_interno = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() for x in ['rio', 'río', 'quebrada']) else "Municipal"
 nivel_sel_visual = nivel_sel_interno
 
