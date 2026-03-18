@@ -1441,15 +1441,13 @@ with st.expander("🪨 Filtro del Suelo y Termodinámica de Recarga", expanded=T
             help="Lámina de agua que logra infiltrarse hasta el acuífero."
         )
         
-        # 2. Calcular Área Aferente
-        area_km2 = 100.0 # Default
-        if 'aleph_area_km2' in st.session_state:
-            area_km2 = float(st.session_state['aleph_area_km2'])
-        elif not df_cuencas_mpios.empty and nivel_sel_interno == "Cuenca Hidrográfica":
-            # Si no ha corrido el Aleph, estimamos el área con el CSV de proporciones
-            area_km2 = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == nombre_seleccion]['Area_Ha'].sum() / 100.0
+        # 2. Calcular Área Aferente con Geometría Espacial Pura (A prueba de balas)
+        if gdf_zona is not None and not gdf_zona.empty:
+            area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0 # Metros cuadrados a km²
+        else:
+            area_km2 = 100.0 # Default
             
-        st.caption(f"Área aferente de recarga: **{area_km2:,.1f} km²**")
+        st.caption(f"Área aferente de recarga (Cálculo Espacial): **{area_km2:,.1f} km²**")
         volumen_recarga_m3 = recarga_anual_mm * area_km2 * 1000
         st.metric("Volumen de Infiltración Anual", f"{volumen_recarga_m3:,.0f} m³")
 
