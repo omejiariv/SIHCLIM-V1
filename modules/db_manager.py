@@ -3,6 +3,8 @@
 import json
 
 import streamlit as st
+import geopandas as gpd
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -135,3 +137,27 @@ def get_user_preference(username, key, default=None):
             pass
 
     return default
+
+import streamlit as st
+import geopandas as gpd
+
+@st.cache_data(show_spinner=False, ttl=3600) # Cache de 1 hora para no saturar Supabase
+def cargar_concesiones_maestro():
+    """
+    Descarga y almacena en caché el archivo unificado de concesiones de agua 
+    directamente desde el bucket público de Supabase.
+    """
+    url_concesiones = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Metabolismo_Hidrico_Antioquia_Maestro.geojson"
+    
+    try:
+        # GeoPandas es lo suficientemente inteligente para leer URLs públicas directamente
+        gdf_concesiones = gpd.read_file(url_concesiones)
+        
+        # Opcional: Aseguramos que el Caudal sea numérico por si acaso
+        if 'Caudal_Lps' in gdf_concesiones.columns:
+            gdf_concesiones['Caudal_Lps'] = pd.to_numeric(gdf_concesiones['Caudal_Lps'], errors='coerce').fillna(0)
+            
+        return gdf_concesiones
+    except Exception as e:
+        st.error(f"⚠️ Error conectando con la Nube (Concesiones): {e}")
+        return None
