@@ -341,45 +341,70 @@ nivel_sel_interno = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() 
 nivel_sel_visual = nivel_sel_interno
 
 # ==============================================================================
-# 🚀 FILTRO GEOGRÁFICO AVANZADO (Spatial Join + Parche de Metadatos)
+# 🚀 FILTRO GEOGRÁFICO AVANZADO (Modo Bajo Consumo de RAM)
 # ==============================================================================
 with st.spinner(f"Cruzando concesiones y vertimientos con la geometría de {nombre_seleccion}..."):
     import geopandas as gpd
+    import gc # Importamos el recolector de basura de Python
     
-    gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
+    # Solo cruzamos con la columna geometry de la zona para ahorrar muchísima memoria
+    gdf_zona_ligera = gdf_zona[['geometry']].to_crs(epsg=3116)
     
+    # ---------------------------------------------------------
     # 1. VERTIMIENTOS
+    # ---------------------------------------------------------
     if not df_vertimientos.empty:
-        gdf_v = gpd.GeoDataFrame(df_vertimientos, geometry=gpd.points_from_xy(df_vertimientos['coordenada_x'], df_vertimientos['coordenada_y']), crs="EPSG:3116")
-        gdf_v_filtrado = gpd.sjoin(gdf_v, gdf_zona_3116, how="inner", predicate="intersects")
+        # Filtramos columnas estrictamente necesarias antes de volverlo espacial
+        cols_v = [c for c in df_vertimientos.columns if c in ['caudal_vert_lps', 'tipo_vertimiento', 'coordenada_x', 'coordenada_y']]
+        df_v_light = df_vertimientos[cols_v].copy()
+        
+        gdf_v = gpd.GeoDataFrame(df_v_light, geometry=gpd.points_from_xy(df_v_light['coordenada_x'], df_v_light['coordenada_y']), crs="EPSG:3116")
+        gdf_v_filtrado = gpd.sjoin(gdf_v, gdf_zona_ligera, how="inner", predicate="intersects")
         df_v = pd.DataFrame(gdf_v_filtrado)
+        
+        # Limpieza de memoria manual
+        del df_v_light, gdf_v, gdf_v_filtrado
     else:
         df_v = pd.DataFrame()
 
-    # 2. CONCESIONES (Y corrección de metadata faltante para evitar ceros)
+    # ---------------------------------------------------------
+    # 2. CONCESIONES
+    # ---------------------------------------------------------
     if not df_concesiones.empty:
-        gdf_c = gpd.GeoDataFrame(df_concesiones, geometry=gpd.points_from_xy(df_concesiones['coordenada_x'], df_concesiones['coordenada_y']), crs="EPSG:3116")
-        gdf_c_filtrado = gpd.sjoin(gdf_c, gdf_zona_3116, how="inner", predicate="intersects")
+        # Filtramos columnas estrictamente necesarias
+        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y']]
+        df_c_light = df_concesiones[cols_c].copy()
+        
+        gdf_c = gpd.GeoDataFrame(df_c_light, geometry=gpd.points_from_xy(df_c_light['coordenada_x'], df_c_light['coordenada_y']), crs="EPSG:3116")
+        gdf_c_filtrado = gpd.sjoin(gdf_c, gdf_zona_ligera, how="inner", predicate="intersects")
         df_c = pd.DataFrame(gdf_c_filtrado)
         
         if not df_c.empty:
-            # 🛠️ PARCHE INTELIGENTE DE DATOS: 
-            # Si la fuente es desconocida, asumimos 'Superficial' (la más común).
-            def limpiar_fuente(x):
+            def normalizar_fuente(x):
                 x_str = str(x).lower()
                 if pd.isna(x) or 'no especi' in x_str or 'nan' in x_str: return 'Superficial'
-                return x
-            
-            # Si el uso es 'Otros' o desconocido, asumimos 'Doméstico' para forzar la visibilidad del estrés hídrico vital.
-            def limpiar_sector(x):
-                x_str = str(x).lower()
-                if pd.isna(x) or 'otros' in x_str or 'no registr' in x_str: return 'Doméstico'
-                return x
+                return 'Subterránea' if 'subterr' in x_str else 'Superficial'
                 
-            df_c['tipo_agua'] = df_c['tipo_agua'].apply(limpiar_fuente)
-            df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(limpiar_sector)
+            def normalizar_sector(x):
+                x_str = str(x).lower()
+                if pd.isna(x) or 'otros' in x_str or 'no registr' in x_str or 'nan' in x_str: return 'Doméstico'
+                if 'agr' in x_str or 'pec' in x_str: return 'Agrícola/Pecuario'
+                if 'ind' in x_str: return 'Industrial'
+                return 'Doméstico'
+
+            df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
+            df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
+            
+            df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
+            df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
+            
+        # Limpieza de memoria manual
+        del df_c_light, gdf_c, gdf_c_filtrado
     else:
         df_c = pd.DataFrame()
+
+    # Forzamos a Python a vaciar la RAM inmediatamente
+    gc.collect()
         
 # ==============================================================================
 # 🐄 MOTOR MATEMÁTICO PECUARIO (Conectado a la Nube - Censo ICA Maestro)
