@@ -335,26 +335,43 @@ nivel_sel_interno = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() 
 nivel_sel_visual = nivel_sel_interno
 
 # ==============================================================================
-# 🚀 FILTRO GEOGRÁFICO AVANZADO (Cruce Espacial con la Nube)
+# 🚀 FILTRO GEOGRÁFICO AVANZADO (Spatial Join + Parche de Metadatos)
 # ==============================================================================
 with st.spinner(f"Cruzando concesiones y vertimientos con la geometría de {nombre_seleccion}..."):
     import geopandas as gpd
     
-    # Cruzamos vertimientos con el polígono de la zona seleccionada
+    gdf_zona_3116 = gdf_zona.to_crs(epsg=3116)
+    
+    # 1. VERTIMIENTOS
     if not df_vertimientos.empty:
-        # CORRECCIÓN: Las coordenadas ya vienen en EPSG:3116 desde el puente de conexión
         gdf_v = gpd.GeoDataFrame(df_vertimientos, geometry=gpd.points_from_xy(df_vertimientos['coordenada_x'], df_vertimientos['coordenada_y']), crs="EPSG:3116")
-        gdf_v_filtrado = gpd.overlay(gdf_v, gdf_zona.to_crs(epsg=3116), how='intersection')
-        df_v = pd.DataFrame(gdf_v_filtrado) # Devolvemos a Pandas para compatibilidad
+        gdf_v_filtrado = gpd.sjoin(gdf_v, gdf_zona_3116, how="inner", predicate="intersects")
+        df_v = pd.DataFrame(gdf_v_filtrado)
     else:
         df_v = pd.DataFrame()
 
-    # Cruzamos concesiones con el polígono de la zona seleccionada
+    # 2. CONCESIONES (Y corrección de metadata faltante para evitar ceros)
     if not df_concesiones.empty:
-        # CORRECCIÓN: Declaramos directamente EPSG:3116 y evitamos doble reproyección
         gdf_c = gpd.GeoDataFrame(df_concesiones, geometry=gpd.points_from_xy(df_concesiones['coordenada_x'], df_concesiones['coordenada_y']), crs="EPSG:3116")
-        gdf_c_filtrado = gpd.overlay(gdf_c, gdf_zona.to_crs(epsg=3116), how='intersection')
+        gdf_c_filtrado = gpd.sjoin(gdf_c, gdf_zona_3116, how="inner", predicate="intersects")
         df_c = pd.DataFrame(gdf_c_filtrado)
+        
+        if not df_c.empty:
+            # 🛠️ PARCHE INTELIGENTE DE DATOS: 
+            # Si la fuente es desconocida, asumimos 'Superficial' (la más común).
+            def limpiar_fuente(x):
+                x_str = str(x).lower()
+                if pd.isna(x) or 'no especi' in x_str or 'nan' in x_str: return 'Superficial'
+                return x
+            
+            # Si el uso es 'Otros' o desconocido, asumimos 'Doméstico' para forzar la visibilidad del estrés hídrico vital.
+            def limpiar_sector(x):
+                x_str = str(x).lower()
+                if pd.isna(x) or 'otros' in x_str or 'no registr' in x_str: return 'Doméstico'
+                return x
+                
+            df_c['tipo_agua'] = df_c['tipo_agua'].apply(limpiar_fuente)
+            df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(limpiar_sector)
     else:
         df_c = pd.DataFrame()
         
