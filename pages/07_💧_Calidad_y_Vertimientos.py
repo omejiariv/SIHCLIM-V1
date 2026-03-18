@@ -279,57 +279,55 @@ df_aves = cargar_censo_aviar()
 df_cuencas_mpios = cargar_cuencas_mpios()
 
 # ==============================================================================
-# 🌍 SELECTOR ESPACIAL UNIVERSAL Y RECEPTOR DE CONTEXTO DEMOGRÁFICO
+# 🌍 SELECTOR ESPACIAL Y RECEPTOR DE CONTEXTO (SÍNTESIS UNIFICADA)
 # ==============================================================================
 from modules import selectors
 
-# 1. Invocamos el Selector Universal (Reemplaza los viejos menús manuales)
 ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona = selectors.render_selector_espacial()
 
 if gdf_zona is None or gdf_zona.empty:
-    st.info("👈 Por favor, utiliza el menú lateral para seleccionar un territorio (Cuenca, Municipio, Región...).")
-    st.stop() # Congela la página elegantemente hasta que el usuario elija algo
+    st.info("👈 Por favor, utiliza el menú lateral para seleccionar un territorio.")
+    st.stop() 
 
-# 2. Rescatamos la Demografía (Y verificamos que coincida con el lugar actual)
+# --- 🛑 DETECTOR DE FUGAS DE MEMORIA (STATE LEAKAGE) ---
 lugar_en_memoria = st.session_state.get('aleph_lugar', '')
 anio_analisis = st.session_state.get('aleph_anio', 2024)
 
-# 🛑 EL DETECTOR DE MENTIRAS DE LA MEMORIA
+# LÓGICA UNIFICADA: Si el territorio cambió, la población anterior es BASURA.
 if lugar_en_memoria != nombre_seleccion:
-    pob_total = 0.0  # Obligamos a recalcular porque la memoria es de otro territorio
-else:
-    pob_total = float(st.session_state.get('aleph_pob_total', 0.0))
+    st.session_state['aleph_pob_total'] = 0.0 # Destruimos el dato falso
+    lugar_en_memoria = nombre_seleccion # Forzamos la actualización de referencia
+    
+pob_memoria = float(st.session_state.get('aleph_pob_total', 0.0))
 
-# 3. Interfaz de Recepción y Motor Demográfico Integrado (La Cascada)
+# Si la población es 0 (porque cambiamos de lugar o no se ha calculado), estimamos por área
+if pob_memoria <= 0:
+    area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
+    pob_total = area_km2 * 65.0  # Densidad rural/mixta base (65 hab/km2)
+    pob_total = max(pob_total, 500.0) # Mínimo vital
+    origen_dato = "Estimación Geoespacial (Densidad base)"
+else:
+    pob_total = pob_memoria
+    origen_dato = "Motor Demográfico (Memoria)"
+
+# --- INTERFAZ UNIFICADA ---
 st.markdown("---")
-if pob_total > 0:
-    with st.expander(f"📍 Contexto Territorial y Demográfico: {nombre_seleccion}", expanded=False):
-        st.success(f"🧠 **Contexto Heredado:** Analizando la demanda hídrica y vertimientos para **{nombre_seleccion}** en el año **{anio_analisis}**.")
-        st.metric("👥 Población Proyectada (Del Motor Demográfico)", f"{pob_total:,.0f} Habitantes")
-        st.caption("⚙️ ¿Quieres proyectar a otro año? Usa el motor local:")
-        render_motor_demografico(lugar_defecto=nombre_seleccion)
-else:
-    with st.expander(f"⚠️ Falta Proyección Demográfica para {nombre_seleccion}", expanded=True):
-        if lugar_en_memoria != "":
-            st.warning(f"La memoria del sistema tiene datos de **{lugar_en_memoria}**, pero estás analizando **{nombre_seleccion}**. Usa el motor para calcular la población correcta:")
-        else:
-            st.info(f"Para calcular las cargas contaminantes de **{nombre_seleccion}**, necesitamos proyectar su población:")
-        
-        # Inyectamos el motor forzando a que use la selección actual
-        render_motor_demografico(lugar_defecto=nombre_seleccion)
-        
-        pob_total = st.number_input("O ingresa la Población Total manualmente (Emergencia):", min_value=1.0, value=100000.0, step=1000.0)
+with st.expander(f"📍 Contexto Territorial y Demográfico: {nombre_seleccion}", expanded=False):
+    if pob_memoria > 0:
+        st.success(f"🧠 **Contexto Sincronizado:** Analizando **{nombre_seleccion}** con datos del Motor Demográfico.")
+    else:
+        st.warning(f"⚠️ **Atención:** No hay proyección en memoria para **{nombre_seleccion}**. Se ha realizado una {origen_dato}.")
+        st.caption("⚙️ Para un cálculo preciso, utiliza la página de 'Modelo Demográfico' y el sistema heredará el dato.")
+    
+    col_p1, col_p2 = st.columns(2)
+    with col_p1: 
+        pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=float(pob_total * 0.70), step=1.0)
+    with col_p2: 
+        pob_rural = st.number_input("Pob. Rural (Resto):", min_value=0.0, value=float(pob_total * 0.30), step=1.0)
+    
+    pob_total = pob_urbana + pob_rural
 
-st.markdown("⚙️ **Distribución Espacial de la Población**")
-col_p1, col_p2 = st.columns(2)
-with col_p1: 
-    pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=float(pob_total * 0.70), step=100.0)
-with col_p2: 
-    pob_rural = st.number_input("Pob. Rural (Resto):", min_value=0.0, value=float(pob_total * 0.30), step=100.0)
-
-pob_total = pob_urbana + pob_rural # Reajuste automático
-
-st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.**")
+st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 📅 Año: **{anio_analisis}** | 👥 Población Base: **{pob_total:,.0f} Hab.**")
 
 # --- 🌉 ALIAS DE COMPATIBILIDAD PARA FUNCIONES ANTIGUAS ---
 lugar_sel = nombre_seleccion
