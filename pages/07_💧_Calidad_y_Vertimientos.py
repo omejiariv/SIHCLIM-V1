@@ -341,59 +341,59 @@ nivel_sel_interno = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() 
 nivel_sel_visual = nivel_sel_interno
 
 # ==============================================================================
-# 🚀 FILTRO GEOGRÁFICO AVANZADO (Modo Súper Bajo Consumo - Bounding Box)
+# 🚀 FILTRO GEOGRÁFICO AVANZADO (Modo Ultra-Ligero / Cero RAM)
 # ==============================================================================
-with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion} (Modo optimizado)..."):
-    import geopandas as gpd
+with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion} (Modo Ultra-Ligero)..."):
+    from shapely.geometry import Point
+    from shapely.prepared import prep
     import gc
 
-    # 1. Simplificar geometría de la zona para no saturar la RAM (Tolerancia de 50 metros)
-    gdf_zona_ligera = gdf_zona[['geometry']].to_crs(epsg=3116).copy()
-    gdf_zona_ligera['geometry'] = gdf_zona_ligera.simplify(50)
-
-    # 2. Extraer la "Caja Delimitadora" (Bounding Box)
-    minx, miny, maxx, maxy = gdf_zona_ligera.total_bounds
+    # 1. Extraemos y simplificamos el polígono a una figura matemática pura
+    poligono_zona = gdf_zona.to_crs(epsg=3116).unary_union.simplify(50)
+    
+    # 2. "Preparamos" el polígono (Esto lo compila en C++ para que el cruce no gaste RAM)
+    poligono_preparado = prep(poligono_zona)
+    minx, miny, maxx, maxy = poligono_zona.bounds
 
     # ---------------------------------------------------------
-    # 1. VERTIMIENTOS
+    # 1. VERTIMIENTOS (Puro Pandas, sin GeoPandas)
     # ---------------------------------------------------------
     if not df_vertimientos.empty:
         cols_v = [c for c in df_vertimientos.columns if c in ['caudal_vert_lps', 'tipo_vertimiento', 'coordenada_x', 'coordenada_y']]
         df_v_light = df_vertimientos[cols_v].copy()
 
-        # PRE-FILTRO: Solo tomamos puntos dentro del cuadro delimitador (Costo de RAM: Prácticamente Cero)
-        mask_v = (df_v_light['coordenada_x'] >= minx) & (df_v_light['coordenada_x'] <= maxx) & \
-                 (df_v_light['coordenada_y'] >= miny) & (df_v_light['coordenada_y'] <= maxy)
-        df_v_box = df_v_light[mask_v].copy()
+        # Pre-filtro matemático (Caja delimitadora)
+        mask_box = (df_v_light['coordenada_x'] >= minx) & (df_v_light['coordenada_x'] <= maxx) & \
+                   (df_v_light['coordenada_y'] >= miny) & (df_v_light['coordenada_y'] <= maxy)
+        df_v_box = df_v_light[mask_box].copy()
 
-        # Recién ahora hacemos el cruce fino con los pocos puntos que quedaron
+        # Cruce exacto (Usando apply matemático, sin índices pesados)
         if not df_v_box.empty:
-            gdf_v = gpd.GeoDataFrame(df_v_box, geometry=gpd.points_from_xy(df_v_box['coordenada_x'], df_v_box['coordenada_y']), crs="EPSG:3116")
-            gdf_v_filtrado = gpd.sjoin(gdf_v, gdf_zona_ligera, how="inner", predicate="intersects")
-            df_v = pd.DataFrame(gdf_v_filtrado)
+            mask_exacta = df_v_box.apply(lambda row: poligono_preparado.contains(Point(row['coordenada_x'], row['coordenada_y'])), axis=1)
+            df_v = df_v_box[mask_exacta].copy()
         else:
             df_v = pd.DataFrame()
 
-        del df_v_light, mask_v, df_v_box
+        del df_v_light, df_v_box, mask_box
     else:
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
-    # 2. CONCESIONES
+    # 2. CONCESIONES (Puro Pandas, sin GeoPandas)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
         cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y']]
         df_c_light = df_concesiones[cols_c].copy()
 
-        # PRE-FILTRO BBOX (Elimina el 95% de los puntos antes del cruce pesado)
-        mask_c = (df_c_light['coordenada_x'] >= minx) & (df_c_light['coordenada_x'] <= maxx) & \
-                 (df_c_light['coordenada_y'] >= miny) & (df_c_light['coordenada_y'] <= maxy)
-        df_c_box = df_c_light[mask_c].copy()
+        # Pre-filtro matemático
+        mask_box = (df_c_light['coordenada_x'] >= minx) & (df_c_light['coordenada_x'] <= maxx) & \
+                   (df_c_light['coordenada_y'] >= miny) & (df_c_light['coordenada_y'] <= maxy)
+        df_c_box = df_c_light[mask_box].copy()
 
         if not df_c_box.empty:
-            gdf_c = gpd.GeoDataFrame(df_c_box, geometry=gpd.points_from_xy(df_c_box['coordenada_x'], df_c_box['coordenada_y']), crs="EPSG:3116")
-            gdf_c_filtrado = gpd.sjoin(gdf_c, gdf_zona_ligera, how="inner", predicate="intersects")
-            df_c = pd.DataFrame(gdf_c_filtrado)
+            # Cruce exacto sin colapsar la RAM
+            mask_exacta = df_c_box.apply(lambda row: poligono_preparado.contains(Point(row['coordenada_x'], row['coordenada_y'])), axis=1)
+            df_c = df_c_box[mask_exacta].copy()
 
             if not df_c.empty:
                 def normalizar_fuente(x):
@@ -416,12 +416,12 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion} (Modo opti
         else:
             df_c = pd.DataFrame()
 
-        del df_c_light, mask_c, df_c_box
+        del df_c_light, df_c_box, mask_box
     else:
         df_c = pd.DataFrame()
 
-    # Vaciado absoluto
-    del gdf_zona_ligera
+    # Destruimos los objetos pesados y forzamos vaciado de RAM
+    del poligono_zona, poligono_preparado
     gc.collect()
         
 # ==============================================================================
