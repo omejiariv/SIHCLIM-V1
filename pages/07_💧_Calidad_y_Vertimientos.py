@@ -341,29 +341,40 @@ nivel_sel_interno = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() 
 nivel_sel_visual = nivel_sel_interno
 
 # ==============================================================================
-# 🚀 FILTRO GEOGRÁFICO AVANZADO (Modo Bajo Consumo de RAM)
+# 🚀 FILTRO GEOGRÁFICO AVANZADO (Modo Súper Bajo Consumo - Bounding Box)
 # ==============================================================================
-with st.spinner(f"Cruzando concesiones y vertimientos con la geometría de {nombre_seleccion}..."):
+with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion} (Modo optimizado)..."):
     import geopandas as gpd
-    import gc # Importamos el recolector de basura de Python
-    
-    # Solo cruzamos con la columna geometry de la zona para ahorrar muchísima memoria
-    gdf_zona_ligera = gdf_zona[['geometry']].to_crs(epsg=3116)
-    
+    import gc
+
+    # 1. Simplificar geometría de la zona para no saturar la RAM (Tolerancia de 50 metros)
+    gdf_zona_ligera = gdf_zona[['geometry']].to_crs(epsg=3116).copy()
+    gdf_zona_ligera['geometry'] = gdf_zona_ligera.simplify(50)
+
+    # 2. Extraer la "Caja Delimitadora" (Bounding Box)
+    minx, miny, maxx, maxy = gdf_zona_ligera.total_bounds
+
     # ---------------------------------------------------------
     # 1. VERTIMIENTOS
     # ---------------------------------------------------------
     if not df_vertimientos.empty:
-        # Filtramos columnas estrictamente necesarias antes de volverlo espacial
         cols_v = [c for c in df_vertimientos.columns if c in ['caudal_vert_lps', 'tipo_vertimiento', 'coordenada_x', 'coordenada_y']]
         df_v_light = df_vertimientos[cols_v].copy()
-        
-        gdf_v = gpd.GeoDataFrame(df_v_light, geometry=gpd.points_from_xy(df_v_light['coordenada_x'], df_v_light['coordenada_y']), crs="EPSG:3116")
-        gdf_v_filtrado = gpd.sjoin(gdf_v, gdf_zona_ligera, how="inner", predicate="intersects")
-        df_v = pd.DataFrame(gdf_v_filtrado)
-        
-        # Limpieza de memoria manual
-        del df_v_light, gdf_v, gdf_v_filtrado
+
+        # PRE-FILTRO: Solo tomamos puntos dentro del cuadro delimitador (Costo de RAM: Prácticamente Cero)
+        mask_v = (df_v_light['coordenada_x'] >= minx) & (df_v_light['coordenada_x'] <= maxx) & \
+                 (df_v_light['coordenada_y'] >= miny) & (df_v_light['coordenada_y'] <= maxy)
+        df_v_box = df_v_light[mask_v].copy()
+
+        # Recién ahora hacemos el cruce fino con los pocos puntos que quedaron
+        if not df_v_box.empty:
+            gdf_v = gpd.GeoDataFrame(df_v_box, geometry=gpd.points_from_xy(df_v_box['coordenada_x'], df_v_box['coordenada_y']), crs="EPSG:3116")
+            gdf_v_filtrado = gpd.sjoin(gdf_v, gdf_zona_ligera, how="inner", predicate="intersects")
+            df_v = pd.DataFrame(gdf_v_filtrado)
+        else:
+            df_v = pd.DataFrame()
+
+        del df_v_light, mask_v, df_v_box
     else:
         df_v = pd.DataFrame()
 
@@ -371,39 +382,46 @@ with st.spinner(f"Cruzando concesiones y vertimientos con la geometría de {nomb
     # 2. CONCESIONES
     # ---------------------------------------------------------
     if not df_concesiones.empty:
-        # Filtramos columnas estrictamente necesarias
         cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y']]
         df_c_light = df_concesiones[cols_c].copy()
-        
-        gdf_c = gpd.GeoDataFrame(df_c_light, geometry=gpd.points_from_xy(df_c_light['coordenada_x'], df_c_light['coordenada_y']), crs="EPSG:3116")
-        gdf_c_filtrado = gpd.sjoin(gdf_c, gdf_zona_ligera, how="inner", predicate="intersects")
-        df_c = pd.DataFrame(gdf_c_filtrado)
-        
-        if not df_c.empty:
-            def normalizar_fuente(x):
-                x_str = str(x).lower()
-                if pd.isna(x) or 'no especi' in x_str or 'nan' in x_str: return 'Superficial'
-                return 'Subterránea' if 'subterr' in x_str else 'Superficial'
-                
-            def normalizar_sector(x):
-                x_str = str(x).lower()
-                if pd.isna(x) or 'otros' in x_str or 'no registr' in x_str or 'nan' in x_str: return 'Doméstico'
-                if 'agr' in x_str or 'pec' in x_str: return 'Agrícola/Pecuario'
-                if 'ind' in x_str: return 'Industrial'
-                return 'Doméstico'
 
-            df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
-            df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
-            
-            df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
-            df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
-            
-        # Limpieza de memoria manual
-        del df_c_light, gdf_c, gdf_c_filtrado
+        # PRE-FILTRO BBOX (Elimina el 95% de los puntos antes del cruce pesado)
+        mask_c = (df_c_light['coordenada_x'] >= minx) & (df_c_light['coordenada_x'] <= maxx) & \
+                 (df_c_light['coordenada_y'] >= miny) & (df_c_light['coordenada_y'] <= maxy)
+        df_c_box = df_c_light[mask_c].copy()
+
+        if not df_c_box.empty:
+            gdf_c = gpd.GeoDataFrame(df_c_box, geometry=gpd.points_from_xy(df_c_box['coordenada_x'], df_c_box['coordenada_y']), crs="EPSG:3116")
+            gdf_c_filtrado = gpd.sjoin(gdf_c, gdf_zona_ligera, how="inner", predicate="intersects")
+            df_c = pd.DataFrame(gdf_c_filtrado)
+
+            if not df_c.empty:
+                def normalizar_fuente(x):
+                    x_str = str(x).lower()
+                    if pd.isna(x) or 'no especi' in x_str or 'nan' in x_str: return 'Superficial'
+                    return 'Subterránea' if 'subterr' in x_str else 'Superficial'
+
+                def normalizar_sector(x):
+                    x_str = str(x).lower()
+                    if pd.isna(x) or 'otros' in x_str or 'no registr' in x_str or 'nan' in x_str: return 'Doméstico'
+                    if 'agr' in x_str or 'pec' in x_str: return 'Agrícola/Pecuario'
+                    if 'ind' in x_str: return 'Industrial'
+                    return 'Doméstico'
+
+                df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
+                df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
+
+                df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
+                df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
+        else:
+            df_c = pd.DataFrame()
+
+        del df_c_light, mask_c, df_c_box
     else:
         df_c = pd.DataFrame()
 
-    # Forzamos a Python a vaciar la RAM inmediatamente
+    # Vaciado absoluto
+    del gdf_zona_ligera
     gc.collect()
         
 # ==============================================================================
