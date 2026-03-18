@@ -11,6 +11,7 @@ from modules.demografia_tools import render_motor_demografico
 import requests
 import io
 import geopandas as gpd
+from modules import selectors
 
 warnings.filterwarnings("ignore")
 
@@ -27,6 +28,13 @@ st.divider()
 with st.expander("⚙️ Recalcular Proyección Demográfica (Motor Local)", expanded=False):
     st.caption("Calcula la población futura para proyectar el incremento en las cargas contaminantes (DBO5 / SST).")
     render_motor_demografico(lugar_defecto="Valle de Aburrá")
+
+# --- 🌍 SELECTOR ESPACIAL UNIVERSAL ---
+ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona = selectors.render_selector_espacial()
+
+if gdf_zona is None or gdf_zona.empty:
+    st.info("👈 Por favor, utiliza el menú lateral para seleccionar un territorio (Cuenca, Municipio, Región...).")
+    st.stop() # Pausa la página hasta que el usuario elija algo
 
 # ==============================================================================
 # 🧽 FUNCIÓN NORMALIZADORA (MATA-TILDES Y ESPACIOS)
@@ -273,8 +281,7 @@ def cargar_cuencas_mpios():
 df_mpios = cargar_municipios()                                         
 df_veredas = cargar_veredas()   
 
-# Llamamos directamente a nuestros puentes de compatibilidad.
-# Ellos ya saben cómo conectarse a Supabase y traer todo perfecto.
+# Llamamos directamente a nuestros puentes de compatibilidad en la Nube
 df_concesiones = cargar_concesiones()
 df_vertimientos = cargar_vertimientos()
 df_territorio = cargar_territorio_maestro()
@@ -284,55 +291,64 @@ df_aves = cargar_censo_aviar()
 df_cuencas_mpios = cargar_cuencas_mpios()
 
 # ==============================================================================
-# 🧠 EL ALEPH (RECEPTOR DEL CONTEXTO DEMOGRÁFICO Y TERRITORIAL)
+# 🌍 SELECTOR ESPACIAL UNIVERSAL Y RECEPTOR DE CONTEXTO DEMOGRÁFICO
 # ==============================================================================
-# 1. Leemos la memoria del sistema
-conectado_aleph = False
-if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
-    lugar_sel = st.session_state['aleph_lugar']
-    escala_raw = st.session_state.get('aleph_escala', 'Municipal')
-    
-    # --- TRADUCTOR UNIVERSAL DE ESCALAS (Empareja Demografía con Vertimientos) ---
-    if "Nacional" in escala_raw: nivel_sel_interno = "Nacional (Colombia)"
-    elif "Departamental" in escala_raw: nivel_sel_interno = "Departamental"
-    elif "Regional" in escala_raw: nivel_sel_interno = "Regional"
-    elif "Municipal" in escala_raw: nivel_sel_interno = "Municipal"
-    elif "Cuenca" in escala_raw: nivel_sel_interno = "Cuenca Hidrográfica"
-    elif "Veredal" in escala_raw: nivel_sel_interno = "Veredal"
-    else: nivel_sel_interno = "Municipal"
-    
-    nivel_sel_visual = nivel_sel_interno
-    anio_analisis = st.session_state.get('aleph_anio', 2035)
-    pob_total = float(st.session_state['aleph_pob_total'])
-    conectado_aleph = True
-else:
-    # Valores por defecto de emergencia si entran directo a esta página
-    lugar_sel = "Antioquia"
-    nivel_sel_visual = "Departamental"
-    nivel_sel_interno = "Departamental"
-    anio_analisis = 2035
-    pob_total = 7158023
+from modules import selectors
 
-# 2. Interfaz de Recepción Minimalista
-with st.expander("📍 1. Contexto Territorial y Demográfico (Sihcli-Aleph)", expanded=True):
-    if conectado_aleph:
-        st.success(f"🧠 **Contexto Heredado Automáticamente:** Estás analizando la demanda hídrica y vertimientos para **{lugar_sel} ({nivel_sel_visual})** en el año **{anio_analisis}**.")
-        st.metric("👥 Población Proyectada (Del Modelo Matemático)", f"{pob_total:,.0f} Habitantes")
+# 1. Invocamos el Selector Universal (Reemplaza los viejos menús manuales)
+ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona = selectors.render_selector_espacial()
+
+if gdf_zona is None or gdf_zona.empty:
+    st.info("👈 Por favor, utiliza el menú lateral para seleccionar un territorio (Cuenca, Municipio, Región...).")
+    st.stop() # Congela la página elegantemente hasta que el usuario elija algo
+
+# 2. Rescatamos la Demografía (Proyectada por el "Motor de Bolsillo" que está arriba)
+anio_analisis = st.session_state.get('aleph_anio', 2024)
+pob_total = float(st.session_state.get('aleph_pob_total', 0.0))
+
+# 3. Interfaz de Recepción Minimalista
+with st.expander(f"📍 Contexto Territorial y Demográfico: {nombre_seleccion}", expanded=True):
+    if pob_total > 0:
+        st.success(f"🧠 **Contexto Heredado Automáticamente:** Analizando la demanda hídrica y vertimientos para **{nombre_seleccion}** en el año **{anio_analisis}**.")
+        st.metric("👥 Población Proyectada (Del Motor Demográfico)", f"{pob_total:,.0f} Habitantes")
     else:
-        st.warning("⚠️ **Modo Desconectado:** La memoria global está vacía. Usando datos por defecto. Ve primero a la pestaña 'Modelo Demográfico' para heredar el territorio y la población.")
-        lugar_sel = st.selectbox("Territorio de Emergencia:", ["Antioquia", "Medellín", "Rionegro", "Abejorral"])
-        anio_analisis = st.slider("Año:", 2020, 2060, 2035)
-        pob_total = st.number_input("Población Total:", value=100000.0)
+        st.warning("⚠️ **Atención:** No se ha detectado una proyección poblacional. Te sugerimos abrir el 'Motor Demográfico' (arriba) y calcular el año.")
+        pob_total = st.number_input("Población Total (Ingreso Manual de Emergencia):", min_value=1.0, value=100000.0, step=1000.0)
 
     st.markdown("---")
     st.markdown("⚙️ **Distribución Espacial de la Población**")
     col_p1, col_p2 = st.columns(2)
-    with col_p1: pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=pob_total * 0.70, step=100.0, help="Puedes ajustar esta distribución manualmente.")
-    with col_p2: pob_rural = st.number_input("Pob. Rural (Resto):", min_value=0.0, value=pob_total - (pob_total * 0.70), step=100.0)
-    pob_total = pob_urbana + pob_rural # Reajuste por si el usuario edita manual
+    with col_p1: 
+        pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=float(pob_total * 0.70), step=100.0, help="Puedes ajustar esta distribución manualmente.")
+    with col_p2: 
+        pob_rural = st.number_input("Pob. Rural (Resto):", min_value=0.0, value=float(pob_total * 0.30), step=100.0)
+    
+    pob_total = pob_urbana + pob_rural # Reajuste automático si el usuario edita los valores manualmente
 
-st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{lugar_sel} ({nivel_sel_visual})** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.**")
+st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 📅 Año: **{anio_analisis}** | 👥 Población: **{pob_total:,.0f} Hab.**")
 
+# ==============================================================================
+# 🚀 FILTRO GEOGRÁFICO AVANZADO (Cruce Espacial con la Nube)
+# ==============================================================================
+with st.spinner(f"Cruzando concesiones y vertimientos con la geometría de {nombre_seleccion}..."):
+    import geopandas as gpd
+    
+    # Cruzamos vertimientos con el polígono de la zona seleccionada
+    if not df_vertimientos.empty:
+        gdf_v = gpd.GeoDataFrame(df_vertimientos, geometry=gpd.points_from_xy(df_vertimientos['coordenada_x'], df_vertimientos['coordenada_y']), crs="EPSG:4326")
+        gdf_v_filtrado = gpd.overlay(gdf_v.to_crs(epsg=3116), gdf_zona.to_crs(epsg=3116), how='intersection')
+        df_v = pd.DataFrame(gdf_v_filtrado) # Devolvemos a Pandas para compatibilidad
+    else:
+        df_v = pd.DataFrame()
+
+    # Cruzamos concesiones con el polígono de la zona seleccionada
+    if not df_concesiones.empty:
+        gdf_c = gpd.GeoDataFrame(df_concesiones, geometry=gpd.points_from_xy(df_concesiones['coordenada_x'], df_concesiones['coordenada_y']), crs="EPSG:4326")
+        gdf_c_filtrado = gpd.overlay(gdf_c.to_crs(epsg=3116), gdf_zona.to_crs(epsg=3116), how='intersection')
+        df_c = pd.DataFrame(gdf_c_filtrado)
+    else:
+        df_c = pd.DataFrame()
+        
 # ==============================================================================
 # 🐄 MOTOR MATEMÁTICO PECUARIO (Conectado a la Nube - Censo ICA Maestro)
 # ==============================================================================
