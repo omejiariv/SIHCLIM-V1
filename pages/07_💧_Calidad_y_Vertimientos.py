@@ -1229,21 +1229,29 @@ with tab_mapa:
             
     else:
         st.caption("Mapa de densidad sobre cartografía base (Convierte MAGNA-SIRGAS a WGS84 en tiempo real).")
-        df_map = df_concesiones.copy() if "Concesión" in var_mapa else df_vertimientos.copy()
+        
+        # 🚀 CORRECCIÓN ESTRUCTURAL: Usamos los datos que ya pasaron por el filtro espacial (df_c y df_v)
+        df_map = df_c.copy() if "Concesión" in var_mapa else df_v.copy()
         
         if not df_map.empty:
-            lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
-            if nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_map.columns: df_map = df_map[df_map['car_norm'] == lugar_norm]
-            elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_map.columns: df_map = df_map[df_map['departamento_norm'] == normalizar_texto(nombre_seleccion)]
-            elif nivel_sel_interno == "Regional" and 'region_norm' in df_map.columns: df_map = df_map[df_map['region_norm'] == normalizar_texto(nombre_seleccion)]
-            elif nivel_sel_interno == "Municipal": df_map = df_map[df_map['municipio_norm'] == lugar_norm]
-            elif nivel_sel_interno == "Veredal" and 'vereda_norm' in df_map.columns: df_map = df_map[df_map['vereda_norm'] == lugar_norm]
+            # (Hemos eliminado los filtros de texto antiguos, porque df_map ya está recortado geográficamente)
             
             col_z = 'caudal_lps' if "Concesión" in var_mapa else 'caudal_vert_lps'
             df_map['coordenada_x'] = pd.to_numeric(df_map['coordenada_x'], errors='coerce')
             df_map['coordenada_y'] = pd.to_numeric(df_map['coordenada_y'], errors='coerce')
             df_map[col_z] = pd.to_numeric(df_map[col_z], errors='coerce')
             df_map = df_map.dropna(subset=['coordenada_x', 'coordenada_y', col_z])
+            
+            # ==============================================================================
+            # 🛡️ ESCUDO PROTECTOR DE MEMORIA (MUESTREO VISUAL)
+            # ==============================================================================
+            LIMITE_PUNTOS = 2000
+            total_puntos_reales = len(df_map)
+            
+            if total_puntos_reales > LIMITE_PUNTOS:
+                df_map = df_map.sample(n=LIMITE_PUNTOS, random_state=42)
+                st.warning(f"🗺️ **Optimización Visual Activada:** Hay {total_puntos_reales:,} puntos en esta zona. Para evitar colapsar la memoria, el mapa dibuja una muestra representativa de {LIMITE_PUNTOS} puntos. (Tus indicadores matemáticos de la parte superior están calculados con el 100% de los datos reales).")
+            # ==============================================================================
             
             mask_magna = (df_map['coordenada_x'] > 100000) & (df_map['coordenada_y'] > 100000)
             mask_wgs84 = (df_map['coordenada_x'] < 0) & (df_map['coordenada_x'] > -85) & (df_map['coordenada_y'] > -5)
@@ -1253,7 +1261,7 @@ with tab_mapa:
             if not df_plot.empty and df_plot[col_z].sum() > 0:
                 try:
                     import pyproj
-                    # EPSG:3116 es el origen Magna-Sirgas central (muy común en Antioquia)
+                    # EPSG:3116 es el origen Magna-Sirgas central
                     transformer = pyproj.Transformer.from_crs("epsg:3116", "epsg:4326", always_xy=True)
                     
                     def to_wgs84(row):
@@ -1285,7 +1293,7 @@ with tab_mapa:
             else:
                 st.warning("No hay suficientes coordenadas válidas para generar un mapa en esta jurisdicción.")
         else:
-            st.warning("No hay base de datos disponible para esta variable.")
+            st.warning("No hay base de datos disponible en la zona seleccionada.")
 
 # ------------------------------------------------------------------------------
 # TAB 6: EXPLORADOR SIRENA Y VERTIMIENTOS
