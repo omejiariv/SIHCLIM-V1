@@ -334,16 +334,18 @@ with st.spinner(f"Cruzando concesiones y vertimientos con la geometría de {nomb
     
     # Cruzamos vertimientos con el polígono de la zona seleccionada
     if not df_vertimientos.empty:
-        gdf_v = gpd.GeoDataFrame(df_vertimientos, geometry=gpd.points_from_xy(df_vertimientos['coordenada_x'], df_vertimientos['coordenada_y']), crs="EPSG:4326")
-        gdf_v_filtrado = gpd.overlay(gdf_v.to_crs(epsg=3116), gdf_zona.to_crs(epsg=3116), how='intersection')
+        # CORRECCIÓN: Las coordenadas ya vienen en EPSG:3116 desde el puente de conexión
+        gdf_v = gpd.GeoDataFrame(df_vertimientos, geometry=gpd.points_from_xy(df_vertimientos['coordenada_x'], df_vertimientos['coordenada_y']), crs="EPSG:3116")
+        gdf_v_filtrado = gpd.overlay(gdf_v, gdf_zona.to_crs(epsg=3116), how='intersection')
         df_v = pd.DataFrame(gdf_v_filtrado) # Devolvemos a Pandas para compatibilidad
     else:
         df_v = pd.DataFrame()
 
     # Cruzamos concesiones con el polígono de la zona seleccionada
     if not df_concesiones.empty:
-        gdf_c = gpd.GeoDataFrame(df_concesiones, geometry=gpd.points_from_xy(df_concesiones['coordenada_x'], df_concesiones['coordenada_y']), crs="EPSG:4326")
-        gdf_c_filtrado = gpd.overlay(gdf_c.to_crs(epsg=3116), gdf_zona.to_crs(epsg=3116), how='intersection')
+        # CORRECCIÓN: Declaramos directamente EPSG:3116 y evitamos doble reproyección
+        gdf_c = gpd.GeoDataFrame(df_concesiones, geometry=gpd.points_from_xy(df_concesiones['coordenada_x'], df_concesiones['coordenada_y']), crs="EPSG:3116")
+        gdf_c_filtrado = gpd.overlay(gdf_c, gdf_zona.to_crs(epsg=3116), how='intersection')
         df_c = pd.DataFrame(gdf_c_filtrado)
     else:
         df_c = pd.DataFrame()
