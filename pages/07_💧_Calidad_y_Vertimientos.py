@@ -341,87 +341,94 @@ nivel_sel_interno = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() 
 nivel_sel_visual = nivel_sel_interno
 
 # ==============================================================================
-# 🚀 FILTRO GEOGRÁFICO AVANZADO (Modo Ultra-Ligero / Cero RAM)
+# 🚀 FILTRO GEOGRÁFICO AVANZADO (Modo Ultra-Ligero + Bypass Departamental)
 # ==============================================================================
-with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion} (Modo Ultra-Ligero)..."):
+with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
     from shapely.geometry import Point
     from shapely.prepared import prep
     import gc
 
-    # 1. Extraemos y simplificamos el polígono a una figura matemática pura
-    poligono_zona = gdf_zona.to_crs(epsg=3116).unary_union.simplify(50)
-    
-    # 2. "Preparamos" el polígono (Esto lo compila en C++ para que el cruce no gaste RAM)
-    poligono_preparado = prep(poligono_zona)
-    minx, miny, maxx, maxy = poligono_zona.bounds
+    # 🛑 EL BYPASS: Si seleccionó todo el departamento, no hacemos matemática espacial
+    es_todo_antioquia = ("antioquia" in nombre_seleccion.lower() or nivel_sel_interno == "Departamental")
+
+    if not es_todo_antioquia:
+        poligono_zona = gdf_zona.to_crs(epsg=3116).unary_union.simplify(50)
+        poligono_preparado = prep(poligono_zona)
+        minx, miny, maxx, maxy = poligono_zona.bounds
+    else:
+        minx, miny, maxx, maxy = 0, 0, 2000000, 2000000 # Límites absurdos para dejar pasar todo
 
     # ---------------------------------------------------------
-    # 1. VERTIMIENTOS (Puro Pandas, sin GeoPandas)
+    # 1. VERTIMIENTOS
     # ---------------------------------------------------------
     if not df_vertimientos.empty:
         cols_v = [c for c in df_vertimientos.columns if c in ['caudal_vert_lps', 'tipo_vertimiento', 'coordenada_x', 'coordenada_y']]
         df_v_light = df_vertimientos[cols_v].copy()
 
-        # Pre-filtro matemático (Caja delimitadora)
-        mask_box = (df_v_light['coordenada_x'] >= minx) & (df_v_light['coordenada_x'] <= maxx) & \
-                   (df_v_light['coordenada_y'] >= miny) & (df_v_light['coordenada_y'] <= maxy)
-        df_v_box = df_v_light[mask_box].copy()
-
-        # Cruce exacto (Usando apply matemático, sin índices pesados)
-        if not df_v_box.empty:
-            mask_exacta = df_v_box.apply(lambda row: poligono_preparado.contains(Point(row['coordenada_x'], row['coordenada_y'])), axis=1)
-            df_v = df_v_box[mask_exacta].copy()
+        if es_todo_antioquia:
+            df_v = df_v_light.copy()
         else:
-            df_v = pd.DataFrame()
+            mask_box = (df_v_light['coordenada_x'] >= minx) & (df_v_light['coordenada_x'] <= maxx) & \
+                       (df_v_light['coordenada_y'] >= miny) & (df_v_light['coordenada_y'] <= maxy)
+            df_v_box = df_v_light[mask_box].copy()
 
-        del df_v_light, df_v_box, mask_box
+            if not df_v_box.empty:
+                mask_exacta = df_v_box.apply(lambda row: poligono_preparado.contains(Point(row['coordenada_x'], row['coordenada_y'])), axis=1)
+                df_v = df_v_box[mask_exacta].copy()
+            else:
+                df_v = pd.DataFrame()
+            del df_v_box, mask_box
+
+        del df_v_light
     else:
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
-    # 2. CONCESIONES (Puro Pandas, sin GeoPandas)
+    # 2. CONCESIONES
     # ---------------------------------------------------------
     if not df_concesiones.empty:
         cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y']]
         df_c_light = df_concesiones[cols_c].copy()
 
-        # Pre-filtro matemático
-        mask_box = (df_c_light['coordenada_x'] >= minx) & (df_c_light['coordenada_x'] <= maxx) & \
-                   (df_c_light['coordenada_y'] >= miny) & (df_c_light['coordenada_y'] <= maxy)
-        df_c_box = df_c_light[mask_box].copy()
-
-        if not df_c_box.empty:
-            # Cruce exacto sin colapsar la RAM
-            mask_exacta = df_c_box.apply(lambda row: poligono_preparado.contains(Point(row['coordenada_x'], row['coordenada_y'])), axis=1)
-            df_c = df_c_box[mask_exacta].copy()
-
-            if not df_c.empty:
-                def normalizar_fuente(x):
-                    x_str = str(x).lower()
-                    if pd.isna(x) or 'no especi' in x_str or 'nan' in x_str: return 'Superficial'
-                    return 'Subterránea' if 'subterr' in x_str else 'Superficial'
-
-                def normalizar_sector(x):
-                    x_str = str(x).lower()
-                    if pd.isna(x) or 'otros' in x_str or 'no registr' in x_str or 'nan' in x_str: return 'Doméstico'
-                    if 'agr' in x_str or 'pec' in x_str: return 'Agrícola/Pecuario'
-                    if 'ind' in x_str: return 'Industrial'
-                    return 'Doméstico'
-
-                df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
-                df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
-
-                df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
-                df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
+        if es_todo_antioquia:
+            df_c = df_c_light.copy()
         else:
-            df_c = pd.DataFrame()
+            mask_box = (df_c_light['coordenada_x'] >= minx) & (df_c_light['coordenada_x'] <= maxx) & \
+                       (df_c_light['coordenada_y'] >= miny) & (df_c_light['coordenada_y'] <= maxy)
+            df_c_box = df_c_light[mask_box].copy()
 
-        del df_c_light, df_c_box, mask_box
+            if not df_c_box.empty:
+                mask_exacta = df_c_box.apply(lambda row: poligono_preparado.contains(Point(row['coordenada_x'], row['coordenada_y'])), axis=1)
+                df_c = df_c_box[mask_exacta].copy()
+            else:
+                df_c = pd.DataFrame()
+            del df_c_box, mask_box
+
+        if not df_c.empty:
+            def normalizar_fuente(x):
+                x_str = str(x).lower()
+                if pd.isna(x) or 'no especi' in x_str or 'nan' in x_str: return 'Superficial'
+                return 'Subterránea' if 'subterr' in x_str else 'Superficial'
+
+            def normalizar_sector(x):
+                x_str = str(x).lower()
+                if pd.isna(x) or 'otros' in x_str or 'no registr' in x_str or 'nan' in x_str: return 'Doméstico'
+                if 'agr' in x_str or 'pec' in x_str: return 'Agrícola/Pecuario'
+                if 'ind' in x_str: return 'Industrial'
+                return 'Doméstico'
+
+            df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
+            df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
+
+            df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
+            df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
+        
+        del df_c_light
     else:
         df_c = pd.DataFrame()
 
-    # Destruimos los objetos pesados y forzamos vaciado de RAM
-    del poligono_zona, poligono_preparado
+    if not es_todo_antioquia:
+        del poligono_zona, poligono_preparado
     gc.collect()
         
 # ==============================================================================
