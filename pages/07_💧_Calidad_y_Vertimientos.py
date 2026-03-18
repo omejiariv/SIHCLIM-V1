@@ -29,13 +29,6 @@ with st.expander("⚙️ Recalcular Proyección Demográfica (Motor Local)", exp
     st.caption("Calcula la población futura para proyectar el incremento en las cargas contaminantes (DBO5 / SST).")
     render_motor_demografico(lugar_defecto="Valle de Aburrá")
 
-# --- 🌍 SELECTOR ESPACIAL UNIVERSAL ---
-ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona = selectors.render_selector_espacial()
-
-if gdf_zona is None or gdf_zona.empty:
-    st.info("👈 Por favor, utiliza el menú lateral para seleccionar un territorio (Cuenca, Municipio, Región...).")
-    st.stop() # Pausa la página hasta que el usuario elija algo
-
 # ==============================================================================
 # 🧽 FUNCIÓN NORMALIZADORA (MATA-TILDES Y ESPACIOS)
 # ==============================================================================
