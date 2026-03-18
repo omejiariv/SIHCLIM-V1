@@ -322,7 +322,9 @@ st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}**
 
 # --- 🌉 ALIAS DE COMPATIBILIDAD PARA FUNCIONES ANTIGUAS ---
 lugar_sel = nombre_seleccion
-nivel_sel_interno = "Municipal" # Valor por defecto seguro para el censo
+# Adivinamos si es cuenca basándonos en el nombre, o por defecto asignamos Municipal
+nivel_sel_interno = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() for x in ['rio', 'río', 'quebrada']) else "Municipal"
+nivel_sel_visual = nivel_sel_interno
 
 # ==============================================================================
 # 🚀 FILTRO GEOGRÁFICO AVANZADO (Cruce Espacial con la Nube)
@@ -371,7 +373,7 @@ def cargar_maestros_pecuarios():
             dfs[key] = pd.DataFrame()
     return dfs
 
-def obtener_censo_pecuario(lugar_sel, nivel_sel, anio_evaluacion):
+def obtener_censo_pecuario(nombre_seleccion, nivel_sel, anio_evaluacion):
     """Filtra los maestros por año y por territorio"""
     dfs_ica = cargar_maestros_pecuarios()
     anio_censo = max(2018, min(2025, int(anio_evaluacion)))
@@ -402,12 +404,12 @@ def obtener_censo_pecuario(lugar_sel, nivel_sel, anio_evaluacion):
     mpios_activos = None
     df_intersec = None
     
-    if "Municipal" in nivel_sel: mpios_activos = [lugar_sel]
+    if "Municipal" in nivel_sel: mpios_activos = [nombre_seleccion]
     elif "Cuenca" in nivel_sel and 'df_cuencas_mpios' in globals() and not df_cuencas_mpios.empty: 
-        df_intersec = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]
+        df_intersec = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == nombre_seleccion]
     elif nivel_sel in ["Jurisdicción Ambiental (CAR)", "Regional", "Departamental"] and 'df_territorio' in globals() and not df_territorio.empty:
-        if nivel_sel == "Jurisdicción Ambiental (CAR)": mpios_activos = df_territorio[df_territorio['car'] == lugar_sel.replace("CAR: ", "")]['municipio_norm'].tolist()
-        elif nivel_sel == "Departamental": mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == lugar_sel]['municipio_norm'].tolist()
+        if nivel_sel == "Jurisdicción Ambiental (CAR)": mpios_activos = df_territorio[df_territorio['car'] == nombre_seleccion.replace("CAR: ", "")]['municipio_norm'].tolist()
+        elif nivel_sel == "Departamental": mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == nombre_seleccion]['municipio_norm'].tolist()
 
     tot_bov = calcular_animales(dfs_ica["bovinos"], "TOTAL_BOVINOS", mpios_activos, df_intersec)
     tot_por = calcular_animales(dfs_ica["porcinos"], "TOTAL_CERDOS", mpios_activos, df_intersec)
@@ -462,7 +464,7 @@ with tab_demanda:
         st.markdown("**B. Uso Agrícola / Pecuario**")
         
         # 1. Consultamos los animales en la nube para este territorio y año
-        bov_dem, por_dem, ave_dem = obtener_censo_pecuario(lugar_sel, nivel_sel_interno, anio_analisis)
+        bov_dem, por_dem, ave_dem = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
         
         # 2. Calculamos cuánto beben (L/día) y lo pasamos a L/s
         consumo_animales_lpd = (bov_dem * 40) + (por_dem * 15) + (ave_dem * 0.3)
@@ -490,8 +492,8 @@ with tab_demanda:
         q_sup, q_sub, q_legal_agr, q_legal_ind = 0.0, 0.0, 0.0, 0.0
         df_usos_detalle = pd.DataFrame()
         
-        if not df_concesiones.empty and lugar_sel != "N/A":
-            lugar_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
+        if not df_concesiones.empty and nombre_seleccion != "N/A":
+            lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
             
             if nivel_sel_interno == "Nacional (Colombia)": df_filtro_c = df_concesiones.copy()
             elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)": df_filtro_c = df_concesiones[df_concesiones['car_norm'] == lugar_norm] if 'car_norm' in df_concesiones.columns else pd.DataFrame()
@@ -501,7 +503,7 @@ with tab_demanda:
             elif nivel_sel_interno == "Veredal" and 'vereda_norm' in df_concesiones.columns: df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
             # 🌐 NUEVA LÓGICA: CRUCE ESPACIAL PARA CUENCAS
             elif nivel_sel_interno == "Cuenca Hidrográfica" and not df_cuencas_mpios.empty:
-                mpios_en_cuenca = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]['Municipio'].apply(normalizar_texto).tolist()
+                mpios_en_cuenca = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == nombre_seleccion]['Municipio'].apply(normalizar_texto).tolist()
                 if mpios_en_cuenca:
                     df_filtro_c = df_concesiones[df_concesiones['municipio_norm'].isin(mpios_en_cuenca)]
                 else:
@@ -548,8 +550,8 @@ with tab_demanda:
         with c1: st.dataframe(df_usos_detalle.astype(str), width="stretch")
         with c2:
             csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Desglose (CSV)", data=csv, file_name=f'Usos_{lugar_sel}.csv', mime='text/csv')
-    else: st.warning(f"⚠️ El territorio **{lugar_sel}** no registra datos formales.")
+            st.download_button("📥 Descargar Desglose (CSV)", data=csv, file_name=f'Usos_{nombre_seleccion}.csv', mime='text/csv')
+    else: st.warning(f"⚠️ El territorio **{nombre_seleccion}** no registra datos formales.")
 
     # =========================================================================
     # NUEVA SECCIÓN: HUELLA HÍDRICA TERRITORIAL (CONSOLIDADO WRI)
@@ -588,14 +590,14 @@ with tab_fuentes:
     aleph_activo = False
     if 'aleph_ha_pastos' in st.session_state and 'aleph_territorio_origen' in st.session_state:
         origen_aleph = normalizar_texto(st.session_state['aleph_territorio_origen'])
-        destino_actual = normalizar_texto(lugar_sel)
+        destino_actual = normalizar_texto(nombre_seleccion)
         
         # Si el usuario está analizando el mismo municipio en ambas páginas
         if origen_aleph == destino_actual:
             aleph_activo = True
 
     if aleph_activo:
-        st.success(f"🌐 **Conexión Aleph:** Las áreas agrícolas y de pastos para **{lugar_sel}** han sido extraídas automáticamente del modelo satelital de la página de Biodiversidad.")
+        st.success(f"🌐 **Conexión Aleph:** Las áreas agrícolas y de pastos para **{nombre_seleccion}** han sido extraídas automáticamente del modelo satelital de la página de Biodiversidad.")
     
     # Extraer valores del satélite, o usar manuales por defecto
     val_def_papa = float(st.session_state.get('aleph_ha_agricola', 50.0)) if aleph_activo else 50.0
@@ -615,13 +617,13 @@ with tab_fuentes:
         ha_pastos = st.number_input("Pastos [Ha]:", min_value=0.0, value=val_def_pastos, step=10.0, disabled=aleph_activo)
 
     st.markdown("---")
-    st.markdown(f"### 🐄🚜 Censo Pecuario ICA (2023) para: **{lugar_sel}**")
+    st.markdown(f"### 🐄🚜 Censo Pecuario ICA (2023) para: **{nombre_seleccion}**")
     
     # MOTOR DE CRUCE TERRITORIAL
     mpios_activos = []
-    lugar_n = normalizar_texto(lugar_sel.replace("CAR: ", ""))
+    lugar_n = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
     if not df_territorio.empty:
-        if nivel_sel_interno == "Jurisdicción Ambiental (CAR)": mpios_activos = df_territorio[df_territorio['car'].str.upper() == lugar_sel.replace("CAR: ", "").upper()]['municipio_norm'].tolist()
+        if nivel_sel_interno == "Jurisdicción Ambiental (CAR)": mpios_activos = df_territorio[df_territorio['car'].str.upper() == nombre_seleccion.replace("CAR: ", "").upper()]['municipio_norm'].tolist()
         elif nivel_sel_interno == "Departamental": mpios_activos = df_territorio[df_territorio['depto_nom'].apply(normalizar_texto) == lugar_n]['municipio_norm'].tolist()
         elif nivel_sel_interno == "Regional": mpios_activos = df_territorio[df_territorio['region'].apply(normalizar_texto) == lugar_n]['municipio_norm'].tolist()
         elif nivel_sel_interno == "Municipal": mpios_activos = [lugar_n]
@@ -631,7 +633,7 @@ with tab_fuentes:
     # EXTRACCIÓN DE BASES DE DATOS ICA (Ahora conectado a la Nube)
     # ==============================================================================
     # Llamamos a nuestra nueva función inteligente pasándole el año del Aleph
-    total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(lugar_sel, nivel_sel_interno, anio_analisis)
+    total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
 
     default_trat_porc = 20 # Eficiencia por defecto si no se ajusta manualmente
 
@@ -684,7 +686,7 @@ with tab_fuentes:
         fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
         st.plotly_chart(fig_cargas, use_container_width=True)
         csv_cargas = df_cargas.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Descargar Datos de Cargas (CSV)", data=csv_cargas, file_name=f"Inventario_Cargas_{lugar_sel}.csv", mime='text/csv')
+        st.download_button("📥 Descargar Datos de Cargas (CSV)", data=csv_cargas, file_name=f"Inventario_Cargas_{nombre_seleccion}.csv", mime='text/csv')
 
     with col_g2:
         st.subheader("📈 Evolución de Carga Orgánica (Proyectada)")
@@ -766,7 +768,7 @@ def calcular_area_inversa(altitud_vertimiento, res_hipso):
 # 1. Parámetros Físicos del Río (Interactivos y Visibles)
 # =========================================================================
 # 1.1 Extraer topografía ANTES de renderizar la interfaz para ajustar límites
-nombre_c = lugar_sel if nivel_sel_visual == "Cuenca Hidrográfica" else "Generica"
+nombre_c = nombre_seleccion if nivel_sel_interno == "Cuenca Hidrográfica" else "Generica"
 h_min_cuenca, h_max_cuenca, h_med_cuenca = 1000.0, 2800.0, 1500.0
 
 res_hipso_actual = obtener_datos_hipso_dinamicos(nombre_c)
@@ -869,7 +871,7 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
 
 # 2.1 Calcular Carga Difusa Base (El "Fondo" del Río)
 pob_u, pob_r = pob_urbana, pob_rural
-bov, por, ave = obtener_censo_pecuario(lugar_sel, nivel_sel_interno, anio_analisis)
+bov, por, ave = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
 
 # Factores de Emisión Típicos (kg DBO/día por individuo)
 dbo_hab = (pob_u + pob_r) * 0.054
@@ -1110,7 +1112,7 @@ with tab_mitigacion:
 # ------------------------------------------------------------------------------
 with tab_mapa:
     st.header("🗺️ Mapa de Calor y Análisis Espacial")
-    st.info(f"📍 **Enfoque Espacial:** Mostrando datos para **{nivel_sel_visual} - {lugar_sel}**.")
+    st.info(f"📍 **Enfoque Espacial:** Mostrando datos para **{nivel_sel_interno} - {nombre_seleccion}**.")
     
     var_mapa = st.selectbox("Variable a cartografiar:", [
         "1. Densidad de Puntos de Concesión (Coordenadas)", 
@@ -1125,14 +1127,14 @@ with tab_mapa:
         
         if nivel_sel_interno == "Nacional (Colombia)": df_m = df_mpios[df_mpios['año'] == anio_base].copy()
         elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)":
-            car_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
+            car_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
             mpios_car = set()
             if not df_concesiones.empty: mpios_car.update(df_concesiones[df_concesiones['car_norm'] == car_norm]['municipio_norm'].unique())
             if not df_vertimientos.empty: mpios_car.update(df_vertimientos[df_vertimientos['car_norm'] == car_norm]['municipio_norm'].unique())
             df_m = df_mpios[(df_mpios['municipio_norm'].isin(mpios_car)) & (df_mpios['año'] == anio_base)].copy()
-        elif nivel_sel_interno == "Departamental": df_m = df_mpios[(df_mpios['depto_nom'] == lugar_sel) & (df_mpios['año'] == anio_base)].copy()
-        elif nivel_sel_interno == "Regional": df_m = df_mpios[(df_mpios['region'] == lugar_sel) & (df_mpios['año'] == anio_base)].copy()
-        elif nivel_sel_interno == "Municipal": df_m = df_mpios[(df_mpios['municipio_norm'] == normalizar_texto(lugar_sel)) & (df_mpios['año'] == anio_base)].copy()
+        elif nivel_sel_interno == "Departamental": df_m = df_mpios[(df_mpios['depto_nom'] == nombre_seleccion) & (df_mpios['año'] == anio_base)].copy()
+        elif nivel_sel_interno == "Regional": df_m = df_mpios[(df_mpios['region'] == nombre_seleccion) & (df_mpios['año'] == anio_base)].copy()
+        elif nivel_sel_interno == "Municipal": df_m = df_mpios[(df_mpios['municipio_norm'] == normalizar_texto(nombre_seleccion)) & (df_mpios['año'] == anio_base)].copy()
         else: df_m = df_mpios[df_mpios['año'] == anio_base].copy() 
             
         if not df_m.empty:
@@ -1141,10 +1143,10 @@ with tab_mapa:
             
             if "Caudal" in var_mapa:
                 df_agg['Valor'] = (df_agg['Poblacion_Proy'] * dotacion) / 86400
-                fig_tree = px.treemap(df_agg, path=[px.Constant(lugar_sel), 'municipio'], values='Valor', color='Valor', color_continuous_scale='Blues', title="Caudal Doméstico Requerido (L/s)")
+                fig_tree = px.treemap(df_agg, path=[px.Constant(nombre_seleccion), 'municipio'], values='Valor', color='Valor', color_continuous_scale='Blues', title="Caudal Doméstico Requerido (L/s)")
             else:
                 df_agg['Valor'] = df_agg['Poblacion_Proy'] * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))
-                fig_tree = px.treemap(df_agg, path=[px.Constant(lugar_sel), 'municipio'], values='Valor', color='Valor', color_continuous_scale='Reds', title="Carga Orgánica DBO (kg/día) aportada por Municipio")
+                fig_tree = px.treemap(df_agg, path=[px.Constant(nombre_seleccion), 'municipio'], values='Valor', color='Valor', color_continuous_scale='Reds', title="Carga Orgánica DBO (kg/día) aportada por Municipio")
                 
             fig_tree.update_traces(textinfo="label+value")
             st.plotly_chart(fig_tree, use_container_width=True)
@@ -1154,10 +1156,10 @@ with tab_mapa:
         df_map = df_concesiones.copy() if "Concesión" in var_mapa else df_vertimientos.copy()
         
         if not df_map.empty:
-            lugar_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
+            lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
             if nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_map.columns: df_map = df_map[df_map['car_norm'] == lugar_norm]
-            elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_map.columns: df_map = df_map[df_map['departamento_norm'] == normalizar_texto(lugar_sel)]
-            elif nivel_sel_interno == "Regional" and 'region_norm' in df_map.columns: df_map = df_map[df_map['region_norm'] == normalizar_texto(lugar_sel)]
+            elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_map.columns: df_map = df_map[df_map['departamento_norm'] == normalizar_texto(nombre_seleccion)]
+            elif nivel_sel_interno == "Regional" and 'region_norm' in df_map.columns: df_map = df_map[df_map['region_norm'] == normalizar_texto(nombre_seleccion)]
             elif nivel_sel_interno == "Municipal": df_map = df_map[df_map['municipio_norm'] == lugar_norm]
             elif nivel_sel_interno == "Veredal" and 'vereda_norm' in df_map.columns: df_map = df_map[df_map['vereda_norm'] == lugar_norm]
             
@@ -1214,15 +1216,15 @@ with tab_mapa:
 # ------------------------------------------------------------------------------
 with tab_sirena:
     st.header("📊 Explorador Ambiental Avanzado")
-    st.info(f"📍 **Contexto Global Activo:** Estás navegando la base de datos bajo la lupa de: **{nivel_sel_visual} - {lugar_sel}**.")
+    st.info(f"📍 **Contexto Global Activo:** Estás navegando la base de datos bajo la lupa de: **{nivel_sel_interno} - {nombre_seleccion}**.")
     
     if not df_concesiones.empty:
         df_exp = df_concesiones.copy()
-        lugar_norm = normalizar_texto(lugar_sel.replace("CAR: ", ""))
+        lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
         
         if nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_exp.columns: df_exp = df_exp[df_exp['car_norm'] == lugar_norm]
-        elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_exp.columns: df_exp = df_exp[df_exp['departamento_norm'] == normalizar_texto(lugar_sel)]
-        elif nivel_sel_interno == "Regional" and 'region_norm' in df_exp.columns: df_exp = df_exp[df_exp['region_norm'] == normalizar_texto(lugar_sel)]
+        elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_exp.columns: df_exp = df_exp[df_exp['departamento_norm'] == normalizar_texto(nombre_seleccion)]
+        elif nivel_sel_interno == "Regional" and 'region_norm' in df_exp.columns: df_exp = df_exp[df_exp['region_norm'] == normalizar_texto(nombre_seleccion)]
         elif nivel_sel_interno == "Municipal": df_exp = df_exp[df_exp['municipio_norm'] == lugar_norm]
         
         c_exp1, c_exp2 = st.columns([2, 1.5])
@@ -1244,7 +1246,7 @@ with tab_sirena:
 # ------------------------------------------------------------------------------
 with tab_extern:
     st.header("⚠️ Análisis Sectorial de Externalidades Ambientales")
-    st.markdown(f"Evaluación avanzada de Huella de Carbono y Balance de Nutrientes (NPK) en **{lugar_sel}**.")
+    st.markdown(f"Evaluación avanzada de Huella de Carbono y Balance de Nutrientes (NPK) en **{nombre_seleccion}**.")
     
     # 1. RE-CÁLCULO INTERNO (Para evitar errores de variables huérfanas)
     dbo_domestica = pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100)) + (pob_rural * 0.040)
@@ -1352,14 +1354,14 @@ with tab_extern:
         
     with col_t2:
         csv_ext = df_pivot.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Descargar Reporte de Externalidades (CSV)", data=csv_ext, file_name=f"Externalidades_NPK_CO2_{lugar_sel}.csv", mime='text/csv')
+        st.download_button("📥 Descargar Reporte de Externalidades (CSV)", data=csv_ext, file_name=f"Externalidades_NPK_CO2_{nombre_seleccion}.csv", mime='text/csv')
 
 # ------------------------------------------------------------------------------
 # TAB 9: ECONOMÍA CIRCULAR (VALORIZACIÓN DE LACTOSUERO)
 # ------------------------------------------------------------------------------
 with tab_lactosuero:
     st.header("🥛 Economía Circular: Valorización Industrial de Lactosueros")
-    st.markdown(f"Evaluación del potencial tecnológico y mitigación ambiental para la cuenca lechera de **{lugar_sel}**.")
+    st.markdown(f"Evaluación del potencial tecnológico y mitigación ambiental para la cuenca lechera de **{nombre_seleccion}**.")
     
     # Extraer específicamente las vacas en edad de producción del censo ICA
     vacas_adultas = 0
@@ -1443,9 +1445,9 @@ with st.expander("🪨 Filtro del Suelo y Termodinámica de Recarga", expanded=T
         area_km2 = 100.0 # Default
         if 'aleph_area_km2' in st.session_state:
             area_km2 = float(st.session_state['aleph_area_km2'])
-        elif not df_cuencas_mpios.empty and nivel_sel_visual == "Cuenca Hidrográfica":
+        elif not df_cuencas_mpios.empty and nivel_sel_interno == "Cuenca Hidrográfica":
             # Si no ha corrido el Aleph, estimamos el área con el CSV de proporciones
-            area_km2 = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == lugar_sel]['Area_Ha'].sum() / 100.0
+            area_km2 = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == nombre_seleccion]['Area_Ha'].sum() / 100.0
             
         st.caption(f"Área aferente de recarga: **{area_km2:,.1f} km²**")
         volumen_recarga_m3 = recarga_anual_mm * area_km2 * 1000
