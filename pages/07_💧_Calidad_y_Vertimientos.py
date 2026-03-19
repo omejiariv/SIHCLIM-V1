@@ -630,10 +630,16 @@ with tab_demanda:
     st.subheader("📋 Consolidado de Todos los Usos Registrados")
     if not df_usos_detalle.empty:
         c1, c2 = st.columns([2,1])
-        with c1: st.dataframe(df_usos_detalle.astype(str), width="stretch")
+        with c1: 
+            # 🛡️ ESCUDO DE TABLA 1
+            df_view_usos = df_usos_detalle.astype(str)
+            if len(df_view_usos) > 1000:
+                st.caption(f"⚠️ Mostrando muestra de 1,000 registros de un total de {len(df_view_usos):,}.")
+                df_view_usos = df_view_usos.head(1000)
+            st.dataframe(df_view_usos, width="stretch")
         with c2:
             csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Desglose (CSV)", data=csv, file_name=f'Usos_{nombre_seleccion}.csv', mime='text/csv')
+            st.download_button("📥 Descargar Desglose Completo (CSV)", data=csv, file_name=f'Usos_{nombre_seleccion}.csv', mime='text/csv')
     else: st.warning(f"⚠️ El territorio **{nombre_seleccion}** no registra datos formales.")
 
     # =========================================================================
@@ -1320,8 +1326,16 @@ with tab_sirena:
         
         c_exp1, c_exp2 = st.columns([2, 1.5])
         with c_exp1:
-            st.subheader(f"Registros Encontrados: {len(df_exp)}")
-            st.dataframe(df_exp.astype(str), width="stretch")
+            st.subheader(f"Registros Encontrados: {len(df_exp):,}")
+            
+            # 🛡️ ESCUDO DE TABLA 2 (MÁXIMA PROTECCIÓN)
+            df_view_exp = df_exp.astype(str)
+            if len(df_view_exp) > 1000:
+                st.caption("⚠️ **Protección activada:** Se muestran los primeros 1,000 registros para evitar colapsar el navegador. El análisis lateral sí usa el 100% de la base.")
+                df_view_exp = df_view_exp.head(1000)
+                
+            st.dataframe(df_view_exp, width="stretch")
+            
         with c_exp2:
             if not df_exp.empty and df_exp['caudal_lps'].sum() > 0:
                 agrupador = st.selectbox("Agrupar Concesiones por:", ["tipo_agua", "Sector_Sihcli", "uso_detalle", "estado"], index=0)
@@ -1439,7 +1453,10 @@ with tab_extern:
         df_pivot.rename(columns={'tCO2e_año': 'Huella_Carbono (tCO2e/año)'}, inplace=True)
         df_pivot.fillna(0, inplace=True)
         
-        st.dataframe(df_pivot.style.format({
+        # 🛡️ ESCUDO DE TABLA 3
+        df_view_pivot = df_pivot.head(1000) if len(df_pivot) > 1000 else df_pivot
+        
+        st.dataframe(df_view_pivot.style.format({
             "Nitrógeno (N)": "{:,.1f}", "Fósforo (P)": "{:,.1f}", "Potasio (K)": "{:,.1f}", "Huella_Carbono (tCO2e/año)": "{:,.0f}"
         }), use_container_width=True)
         
