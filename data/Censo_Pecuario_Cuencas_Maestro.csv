@@ -1,0 +1,98 @@
+Zona_Hidrografica,Subcuenca,Sistema,Bovinos,Porcinos,Aves
+C Rio Negro,Qda La Paja,Río Negro,18351,62917,115959
+C Rio Negro,Qda. Cimarrona,Río Negro,6266,16002,287284
+C Rio Negro,Qda. El Molino,Río Negro,7084,34115,95607
+C Rio Negro,Qda. La Mosca,Río Negro,6897,48942,170695
+C Rio Negro,Qda. Marinilla,Río Negro,14299,27453,679220
+C Rio Negro,Qda. San Antonio - Emb. Abreo Mal Paso,Río Negro,7821,13002,371156
+C Rio Negro,Qda. Yarumal,Río Negro,3237,7677,153485
+Embalse La Fe,Represa La Fé,Río Negro,4389,75573,275370
+Embalse La Fe,Rio Piedras,Río Arma,29904,14702,1096993
+Embalse La Fe,Río Buey,Río Arma,36076,5528,284449
+Embalse La Fe,Río Platanillo,Río Negro,658,2099,34508
+Embalse Riogrande Ii,Q. Bramadora,R. Grande - Chico,254,538,412
+Embalse Riogrande Ii,Q. La Gurreña,R. Grande - Chico,1897,4024,3078
+Embalse Riogrande Ii,Q. La Turura,R. Grande - Chico,2404,3199,50
+Embalse Riogrande Ii,Q. Las Trampas,R. Grande - Chico,79215,118286,10158
+Embalse Riogrande Ii,Q. Orobajo,R. Grande - Chico,1309,2776,2124
+Embalse Riogrande Ii,Q. Potrerito,R. Grande - Chico,708,942,15
+Embalse Riogrande Ii,Q. Quebradona,R. Grande - Chico,46207,63271,48786
+Embalse Riogrande Ii,R. Chico,R. Grande - Chico,143651,237983,266672
+Embalse Riogrande Ii,R. Grande Tramo 1,R. Grande - Chico,29138,61802,47279
+Embalse Riogrande Ii,R. Grande Tramo 2,R. Grande - Chico,35539,70688,48162
+Embalse Riogrande Ii,R. Grande Tramo 3,R. Grande - Chico,21640,34383,11783
+Embalse Riogrande Ii,R. Grande Tramo 4,R. Grande - Chico,7054,67601,178943
+Parte Baja Riogrande,Q. La Chorrera,R. Grande - Chico,1723,3654,2795
+Parte Baja Riogrande,Q. Las Animas,R. Grande - Chico,4813,10209,7810
+Parte Baja Riogrande,Q. Mocorongo,R. Grande - Chico,216,2072,5484
+Parte Baja Riogrande,R. Grande Tramo 4,R. Grande - Chico,15273,82034,182736
+Parte Baja Riogrande,R. Grande Tramo 5,R. Grande - Chico,10673,94131,244804
+Parte Baja Riogrande,R. Grande Tramo 6,R. Grande - Chico,45611,106057,103646
+Valle De Aburra,Directos R. Aburra  (Intercuenca 2),Rio Aburra,1326,16343,49896
+Valle De Aburra,Directos R. Aburra  A Caldas,Rio Aburra,244,6771,41391
+Valle De Aburra,Directos R. Aburra  A Salida,Rio Aburra,7345,42023,242361
+Valle De Aburra,Directos R. Aburra (Intercuenca 1),Rio Aburra,105,1290,3939
+Valle De Aburra,Directos R. Aburra (Intercuenca 3),Rio Aburra,1831,22321,70451
+Valle De Aburra,Directos R. Aburra (Intercuenca 4),Rio Aburra,5409,35346,139819
+Valle De Aburra,Directos R. Aburra A Copacabana,Rio Aburra,5069,114865,220475
+Valle De Aburra,Directos R. Aburra Zu Medellín,Rio Aburra,613,6818,104144
+Valle De Aburra,Directos R. Aburra Zu Medellín (Intercuenca 5),Rio Aburra,1141,21205,175886
+Valle De Aburra,Q. Aguas Claras,Rio Aburra,33,409,1248
+Valle De Aburra,Q. Altavista,Rio Aburra,75,702,1146
+Valle De Aburra,Q. Corrientes,Rio Aburra,184,2263,6911
+Valle De Aburra,Q. Dos Quebradas,Rio Aburra,8435,1370,162642
+Valle De Aburra,Q. Doña Maria,Rio Aburra,9025,8805,22069
+Valle De Aburra,Q. El Choco,Rio Aburra,1812,22332,68182
+Valle De Aburra,Q. El Chuscal,Rio Aburra,807,6091,30549
+Valle De Aburra,Q. El Guayabo,Rio Aburra,1547,19065,58206
+Valle De Aburra,Q. El Hato,Rio Aburra,2503,16050,60601
+Valle De Aburra,Q. El Molinal,Rio Aburra,6303,26027,130901
+Valle De Aburra,Q. El Salado,Rio Aburra,116,1036,6848
+Valle De Aburra,Q. Fulgencio,Rio Aburra,1952,17479,115492
+Valle De Aburra,Q. Guasimal,Rio Aburra,4474,28658,107789
+Valle De Aburra,Q. Guayabal,Rio Aburra,1492,18386,56133
+Valle De Aburra,Q. Juan Cojo,Rio Aburra,237,2119,14001
+Valle De Aburra,Q. La Ayurá,Rio Aburra,2304,82067,99820
+Valle De Aburra,Q. La Bermejala,Rio Aburra,145,265,17239
+Valle De Aburra,Q. La Brunera,Rio Aburra,896,24822,151747
+Valle De Aburra,Q. La Caldas,Rio Aburra,281,3462,10571
+Valle De Aburra,Q. La Clara,Rio Aburra,122,3392,20736
+Valle De Aburra,Q. La Correa,Rio Aburra,364,3263,21558
+Valle De Aburra,Q. La Doctora,Rio Aburra,55,7,23200
+Valle De Aburra,Q. La Garcia,Rio Aburra,966,6196,23394
+Valle De Aburra,Q. La Grande,Rio Aburra,265,483,31394
+Valle De Aburra,Q. La Herradura,Rio Aburra,554,6823,20833
+Valle De Aburra,Q. La Hueso,Rio Aburra,2027,62136,107401
+Valle De Aburra,Q. La Iguaná,Rio Aburra,428,13113,22665
+Valle De Aburra,Q. La Lejia,Rio Aburra,6,175,1071
+Valle De Aburra,Q. La Loca,Rio Aburra,687,4407,16641
+Valle De Aburra,Q. La Miel,Rio Aburra,367,7776,82740
+Valle De Aburra,Q. La Montera,Rio Aburra,4557,47291,131795
+Valle De Aburra,Q. La Picacha,Rio Aburra,1021,31302,54106
+Valle De Aburra,Q. La Presidenta,Rio Aburra,1142,36295,57455
+Valle De Aburra,Q. La Quesariega,Rio Aburra,156,1921,5864
+Valle De Aburra,Q. La Salada,Rio Aburra,222,6137,37520
+Valle De Aburra,Q. La Silva,Rio Aburra,693,6225,40840
+Valle De Aburra,Q. La Tolda,Rio Aburra,1267,7029,9647
+Valle De Aburra,Q. La Valeria,Rio Aburra,233,6453,39451
+Valle De Aburra,Q. Las Lajas,Rio Aburra,140,1729,5279
+Valle De Aburra,Q. Las Minas,Rio Aburra,160,4431,27087
+Valle De Aburra,Q. Las Peñas,Rio Aburra,262,3226,9851
+Valle De Aburra,Q. Laureles,Rio Aburra,675,6471,17130
+Valle De Aburra,Q. Los Aguacates,Rio Aburra,170,945,1298
+Valle De Aburra,Q. Los Ortegas,Rio Aburra,311,2788,18423
+Valle De Aburra,Q. Los Totumos,Rio Aburra,1663,20495,62573
+Valle De Aburra,Q. Mandalay,Rio Aburra,63,1758,10750
+Valle De Aburra,Q. Ovejas,Rio Aburra,3132,27721,121538
+Valle De Aburra,Q. Piedra Gorda,Rio Aburra,3603,9559,124222
+Valle De Aburra,Q. Piedras Blancas,Rio Aburra,4227,75577,137007
+Valle De Aburra,Q. Platanito,Rio Aburra,305,3756,11468
+Valle De Aburra,Q. Reventon,Rio Aburra,260,3208,9795
+Valle De Aburra,Q. Rodas,Rio Aburra,3480,21416,67003
+Valle De Aburra,Q. San Jacinto,Rio Aburra,1721,16495,43662
+Valle De Aburra,Q. Santa Elena,Rio Aburra,376,11521,19914
+Valle De Aburra,Q. Santa Rosa,Rio Aburra,583,7183,21931
+Valle De Aburra,Q. Santo Domingo,Rio Aburra,201,2481,7576
+Valle De Aburra,Q. Seca,Rio Aburra,801,5137,19397
+Valle De Aburra,Q.Agua Fria,Rio Aburra,8966,25849,309837
+Valle De Aburra,Río Aburra Alto,Rio Aburra,326,9018,55129
