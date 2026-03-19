@@ -463,50 +463,64 @@ def cargar_maestros_pecuarios():
             dfs[key] = pd.DataFrame()
     return dfs
 
-def obtener_censo_pecuario(nombre_seleccion, nivel_sel, anio_evaluacion):
-    """Filtra los maestros por año y por territorio"""
-    dfs_ica = cargar_maestros_pecuarios()
-    anio_censo = max(2018, min(2025, int(anio_evaluacion)))
-    
-    def calcular_animales(df_censo, col_tot, mpios_lista=None, df_interseccion=None):
-        if df_censo.empty or col_tot not in df_censo.columns: return 0.0
-        df_y = df_censo[df_censo['AÑO'] == anio_censo]
-        total_animales = 0.0
+def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=None):
+    try:
+        import unicodedata
+        import os
+        import pandas as pd
         
-        if df_interseccion is not None:
-            for _, row in df_interseccion.iterrows():
-                # Normalizamos aquí por si acaso
-                import unicodedata
-                mpio_n = unicodedata.normalize('NFKD', str(row['Municipio']).upper()).encode('ascii', 'ignore').decode('utf-8')
-                pct_area = row['Porcentaje'] / 100.0
-                df_m = df_y[df_y['MUNICIPIO_NORM'] == mpio_n]
-                if not df_m.empty: total_animales += (pd.to_numeric(df_m[col_tot], errors='coerce').sum() * pct_area)
-        elif mpios_lista is not None:
-            import unicodedata
-            mpios_norm = [unicodedata.normalize('NFKD', str(m).upper()).encode('ascii', 'ignore').decode('utf-8') for m in mpios_lista]
-            df_f = df_y[df_y['MUNICIPIO_NORM'].isin(mpios_norm)]
-            if not df_f.empty: total_animales = pd.to_numeric(df_f[col_tot], errors='coerce').sum()
-        else:
-            total_animales = pd.to_numeric(df_y[col_tot], errors='coerce').sum()
+        ruta_csv = "Censo_Pecuario_Cuencas_Maestro.csv"
+        
+        # 🚨 CHIVATO 1: ¿Encuentra el archivo?
+        if not os.path.exists(ruta_csv):
+            st.error(f"❌ ALERTA: No encuentro el archivo '{ruta_csv}' en la carpeta raíz.")
+            return 0, 0, 0
             
-        return float(total_animales)
-
-    mpios_activos = None
-    df_intersec = None
-    
-    if "Municipal" in nivel_sel: mpios_activos = [nombre_seleccion]
-    elif "Cuenca" in nivel_sel and 'df_cuencas_mpios' in globals() and not df_cuencas_mpios.empty: 
-        df_intersec = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == nombre_seleccion]
-    elif nivel_sel in ["Jurisdicción Ambiental (CAR)", "Regional", "Departamental"] and 'df_territorio' in globals() and not df_territorio.empty:
-        if nivel_sel == "Jurisdicción Ambiental (CAR)": mpios_activos = df_territorio[df_territorio['car'] == nombre_seleccion.replace("CAR: ", "")]['municipio_norm'].tolist()
-        elif nivel_sel == "Departamental": mpios_activos = df_territorio[df_territorio['depto_nom'].astype(str).str.title() == nombre_seleccion]['municipio_norm'].tolist()
-
-    tot_bov = calcular_animales(dfs_ica["bovinos"], "TOTAL_BOVINOS", mpios_activos, df_intersec)
-    tot_por = calcular_animales(dfs_ica["porcinos"], "TOTAL_CERDOS", mpios_activos, df_intersec)
-    tot_ave = calcular_animales(dfs_ica["aves"], "TOTAL_AVES_CAP_OCUPADA_MAS_AVES_TRASPATIO", mpios_activos, df_intersec)
-    
-    return tot_bov, tot_por, tot_ave
-
+        df_censo = pd.read_csv(ruta_csv)
+        
+        columna_escala = nivel_sel_interno
+        if nivel_sel_interno == "Zona Hidrográfica":
+            columna_escala = "Zona_Hidrografica"
+            
+        # 🚨 CHIVATO 2: ¿La escala está bien escrita?
+        if columna_escala not in df_censo.columns:
+            st.error(f"❌ ALERTA: La escala '{columna_escala}' no coincide con las columnas del CSV.")
+            return 0, 0, 0
+            
+        def normalizar(texto):
+            if pd.isna(texto): return ""
+            t = str(texto).lower().strip()
+            return unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('utf-8')
+        
+        nombres_csv = df_censo[columna_escala].apply(normalizar)
+        busqueda = normalizar(nombre_seleccion)
+        
+        df_filtrado = df_censo[nombres_csv == busqueda]
+        
+        palabra_clave = busqueda
+        if df_filtrado.empty:
+            palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
+            if palabra_clave:
+                mask = nombres_csv.str.contains(palabra_clave, na=False)
+                df_filtrado = df_censo[mask]
+                
+        # 🚨 CHIVATO 3: ¿Falló la búsqueda?
+        if df_filtrado.empty:
+            st.warning(f"⚠️ ALERTA: Busqué '{nombre_seleccion}' (Clave: {palabra_clave}) en la columna '{columna_escala}', pero el CSV no lo tiene.")
+            return 0, 0, 0
+            
+        bov = df_filtrado['Bovinos'].sum()
+        por = df_filtrado['Porcinos'].sum()
+        ave = df_filtrado['Aves'].sum()
+        
+        # 🚨 CHIVATO 4: ¡ÉXITO!
+        st.success(f"✅ ¡CONEXIÓN MAESTRA! '{nombre_seleccion}' inyectó {int(bov):,} bovinos desde el CSV.")
+        
+        return int(bov), int(por), int(ave)
+        
+    except Exception as e:
+        st.error(f"❌ ERROR INTERNO: {e}")
+        return 0, 0, 0
 # Arrays para gráficas de tendencias a futuro (DBO)
 anios_evo = np.arange(anio_analisis, anio_analisis + 31)
 factor_evo = (1 + 0.015) ** (anios_evo - anio_analisis) # Crecimiento proxy 1.5%
