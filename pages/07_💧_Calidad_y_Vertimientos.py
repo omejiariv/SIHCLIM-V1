@@ -958,7 +958,12 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
 
 # 2.1 Calcular Carga Difusa Base (El "Fondo" del Río)
 pob_u, pob_r = pob_urbana, pob_rural
-bov, por, ave = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
+
+# 🔗 CONEXIÓN CORREGIDA: Usamos directamente las variables de la pestaña 
+# 'Inventario de Cargas' (respetando los salvavidas y tus ajustes manuales)
+bov = cabezas_bovinos if 'cabezas_bovinos' in locals() else 0
+por = cabezas_porcinos if 'cabezas_porcinos' in locals() else 0
+ave = cabezas_aves if 'cabezas_aves' in locals() else 0
 
 # Factores de Emisión Típicos (kg DBO/día por individuo)
 dbo_hab = (pob_u + pob_r) * 0.054
