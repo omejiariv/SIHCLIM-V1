@@ -582,36 +582,24 @@ with tab_demanda:
         q_sup, q_sub, q_legal_agr, q_legal_ind = 0.0, 0.0, 0.0, 0.0
         df_usos_detalle = pd.DataFrame()
         
-        if not df_concesiones.empty and nombre_seleccion != "N/A":
-            lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
+        # 🚀 LA MAGIA FINAL: En vez de buscar por texto, usamos df_c (los puntos que cayeron en el polígono)
+        if 'df_c' in locals() and not df_c.empty:
+            df_filtro_c = df_c.copy()
             
-            if nivel_sel_interno == "Nacional (Colombia)": df_filtro_c = df_concesiones.copy()
-            elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)": df_filtro_c = df_concesiones[df_concesiones['car_norm'] == lugar_norm] if 'car_norm' in df_concesiones.columns else pd.DataFrame()
-            elif nivel_sel_interno == "Departamental": df_filtro_c = df_concesiones[df_concesiones['departamento_norm'] == lugar_norm] if 'departamento_norm' in df_concesiones.columns else df_concesiones.copy()
-            elif nivel_sel_interno == "Regional": df_filtro_c = df_concesiones[df_concesiones['region_norm'] == lugar_norm] if 'region_norm' in df_concesiones.columns else pd.DataFrame()
-            elif nivel_sel_interno == "Municipal": df_filtro_c = df_concesiones[df_concesiones['municipio_norm'] == lugar_norm]
-            elif nivel_sel_interno == "Veredal" and 'vereda_norm' in df_concesiones.columns: df_filtro_c = df_concesiones[df_concesiones['vereda_norm'] == lugar_norm]
-            # 🌐 NUEVA LÓGICA: CRUCE ESPACIAL PARA CUENCAS
-            elif nivel_sel_interno == "Cuenca Hidrográfica" and not df_cuencas_mpios.empty:
-                mpios_en_cuenca = df_cuencas_mpios[df_cuencas_mpios['Subcuenca'] == nombre_seleccion]['Municipio'].apply(normalizar_texto).tolist()
-                if mpios_en_cuenca:
-                    df_filtro_c = df_concesiones[df_concesiones['municipio_norm'].isin(mpios_en_cuenca)]
-                else:
-                    df_filtro_c = pd.DataFrame()
-            else: df_filtro_c = pd.DataFrame()
-                
-            if not df_filtro_c.empty:
-                df_dom = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Doméstico']
-                q_sup = df_dom[df_dom['tipo_agua'] == 'Superficial']['caudal_lps'].sum()
-                q_sub = df_dom[df_dom['tipo_agua'] == 'Subterránea']['caudal_lps'].sum()
-                q_legal_agr = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Agrícola/Pecuario']['caudal_lps'].sum()
-                q_legal_ind = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Industrial']['caudal_lps'].sum()
-                
+            df_dom = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Doméstico']
+            q_sup = df_dom[df_dom['tipo_agua'] == 'Superficial']['caudal_lps'].sum()
+            q_sub = df_dom[df_dom['tipo_agua'] == 'Subterránea']['caudal_lps'].sum()
+            q_legal_agr = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Agrícola/Pecuario']['caudal_lps'].sum()
+            q_legal_ind = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Industrial']['caudal_lps'].sum()
+            
+            # Agrupar para la tabla de abajo
+            if 'uso_detalle' in df_filtro_c.columns:
                 df_usos_detalle = df_filtro_c.groupby(['uso_detalle', 'tipo_agua'])['caudal_lps'].sum().reset_index()
                 df_usos_detalle.rename(columns={'uso_detalle':'Uso Específico', 'tipo_agua':'Fuente', 'caudal_lps':'Caudal (L/s)'}, inplace=True)
                 df_usos_detalle = df_usos_detalle.sort_values(by='Caudal (L/s)', ascending=False)
                 
         q_concesionado_dom = q_sup + q_sub
+        
         st.write(f"- **Superficial Doméstico:** {q_sup:,.2f} L/s")
         st.write(f"- **Subterráneo Doméstico:** {q_sub:,.2f} L/s")
         st.write(f"- **Total Legal Doméstico:** {q_concesionado_dom:,.2f} L/s")
