@@ -393,10 +393,6 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
     # 2. CONCESIONES
     # ---------------------------------------------------------
     if not df_concesiones.empty:
-        # ---------------------------------------------------------
-    # 2. CONCESIONES
-    # ---------------------------------------------------------
-    if not df_concesiones.empty:
         # ⚠️ CORRECCIÓN: Nombres exactos mapeados en la función cargar_concesiones
         cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado']]
         df_c_light = df_concesiones[cols_c].copy()
