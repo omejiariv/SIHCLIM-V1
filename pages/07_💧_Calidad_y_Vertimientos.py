@@ -115,18 +115,21 @@ def cargar_vertimientos():
     gdf = cargar_maestros_nube("vertimientos")
     if gdf.empty: return pd.DataFrame()
     
-    # Adaptar los nombres de la base maestra a lo que espera la interfaz vieja
     df = pd.DataFrame(gdf)
     df['caudal_vert_lps'] = df['Caudal_Lps']
     df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
     df['tipo_vertimiento'] = df['Tipo_Vertimiento']
     df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
     
-    # EXTRACCIÓN SEGURA DE COORDENADAS (Evita el error de MultiPoints o Nulos)
+    # Extracción de coordenadas
     centroides = gdf.geometry.centroid
     df['coordenada_x'] = centroides.x.fillna(0)
     df['coordenada_y'] = centroides.y.fillna(0)
     
+    # 🛡️ EXTIRPACIÓN DE LA COLUMNA ASESINA DE MEMORIA
+    if 'geometry' in df.columns:
+        df = df.drop(columns=['geometry'])
+        
     return df
 
 @st.cache_data(show_spinner=False)
@@ -135,7 +138,6 @@ def cargar_concesiones():
     gdf = cargar_maestros_nube("concesiones")
     if gdf.empty: return pd.DataFrame()
     
-    # Adaptar los nombres de la base maestra a lo que espera la interfaz vieja
     df = pd.DataFrame(gdf)
     df['caudal_lps'] = df['Caudal_Lps']
     df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
@@ -144,12 +146,11 @@ def cargar_concesiones():
     df['estado'] = df['Estado']
     df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
     
-    # EXTRACCIÓN SEGURA DE COORDENADAS (Evita el error de MultiPoints o Nulos)
+    # Extracción de coordenadas
     centroides = gdf.geometry.centroid
     df['coordenada_x'] = centroides.x.fillna(0)
     df['coordenada_y'] = centroides.y.fillna(0)
     
-    # Micro-clasificador de uso para las gráficas
     def clasificar_uso(u):
         u = normalizar_texto(u)
         if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento']): return 'Doméstico'
@@ -158,6 +159,11 @@ def cargar_concesiones():
         else: return 'Otros'
         
     df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
+    
+    # 🛡️ EXTIRPACIÓN DE LA COLUMNA ASESINA DE MEMORIA
+    if 'geometry' in df.columns:
+        df = df.drop(columns=['geometry'])
+        
     return df
     
 @st.cache_data
@@ -631,12 +637,15 @@ with tab_demanda:
     if not df_usos_detalle.empty:
         c1, c2 = st.columns([2,1])
         with c1: 
-            # 🛡️ ESCUDO DE TABLA 1
-            df_view_usos = df_usos_detalle.astype(str)
-            if len(df_view_usos) > 1000:
-                st.caption(f"⚠️ Mostrando muestra de 1,000 registros de un total de {len(df_view_usos):,}.")
-                df_view_usos = df_view_usos.head(1000)
+            # 🛡️ ESCUDO DE TABLA (Transformamos a texto SOLO las 1000 que vamos a mostrar)
+            if len(df_usos_detalle) > 1000:
+                st.caption(f"⚠️ Mostrando muestra de 1,000 registros de un total de {len(df_usos_detalle):,}.")
+                df_view_usos = df_usos_detalle.head(1000).astype(str)
+            else:
+                df_view_usos = df_usos_detalle.astype(str)
+                
             st.dataframe(df_view_usos, width="stretch")
+            
         with c2:
             csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Descargar Desglose Completo (CSV)", data=csv, file_name=f'Usos_{nombre_seleccion}.csv', mime='text/csv')
@@ -1328,11 +1337,12 @@ with tab_sirena:
         with c_exp1:
             st.subheader(f"Registros Encontrados: {len(df_exp):,}")
             
-            # 🛡️ ESCUDO DE TABLA 2 (MÁXIMA PROTECCIÓN)
-            df_view_exp = df_exp.astype(str)
-            if len(df_view_exp) > 1000:
+            # 🛡️ ESCUDO DE TABLA (Transformamos a texto SOLO las 1000 que vamos a mostrar)
+            if len(df_exp) > 1000:
                 st.caption("⚠️ **Protección activada:** Se muestran los primeros 1,000 registros para evitar colapsar el navegador. El análisis lateral sí usa el 100% de la base.")
-                df_view_exp = df_view_exp.head(1000)
+                df_view_exp = df_exp.head(1000).astype(str)
+            else:
+                df_view_exp = df_exp.astype(str)
                 
             st.dataframe(df_view_exp, width="stretch")
             
