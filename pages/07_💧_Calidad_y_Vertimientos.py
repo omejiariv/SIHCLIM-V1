@@ -544,117 +544,117 @@ tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena, ta
 # ------------------------------------------------------------------------------
 with tab_demanda:
     with st.expander(f"🚰 Demanda, Eficiencia de Sistemas y Formalización: {nombre_seleccion}", expanded=True):
-    
-    # --- CONEXIÓN CON DEMOGRAFÍA (MEMORIA GLOBAL) ---
-    # Si la página de Demografía envió un dato, lo usamos. Si no, usamos el del selector espacial actual.
-    if 'poblacion_total' in st.session_state:
-        pob_total = st.session_state['poblacion_total']
-        st.info(f"👥 Población base inyectada desde el Modelo Demográfico: **{pob_total:,.0f} habitantes**.")
-    # ------------------------------------------------
-    
-    col_d1, col_d2 = st.columns([1, 1.5])
-    
-    with col_d1:
-        st.markdown(f"### 1. Demanda Teórica (Neto vs Bruto) en {nombre_seleccion}")
         
-        st.markdown("**A. Uso Doméstico**")
-        col_d_dom1, col_d_dom2 = st.columns(2)
-        with col_d_dom1: dotacion = st.number_input("Dotación Neta (L/hab/d):", value=120.0, step=5.0)
-        with col_d_dom2: perd_dom = st.slider("Pérdidas del Acueducto (%):", 0.0, 100.0, 25.0, step=1.0)
-        q_necesario_dom = (pob_total * dotacion) / 86400
-        q_efectivo_dom = q_necesario_dom / (1 - (perd_dom/100)) if perd_dom < 100 else q_necesario_dom
-        col_res1, col_res2 = st.columns(2)
-        col_res1.metric("Neto (Necesario)", f"{q_necesario_dom:.2f} L/s")
-        col_res2.metric("Bruto (Efectivo)", f"{q_efectivo_dom:.2f} L/s", delta=f"Pérdida: {(q_efectivo_dom - q_necesario_dom):.2f} L/s", delta_color="inverse")
+        # --- CONEXIÓN CON DEMOGRAFÍA (MEMORIA GLOBAL) ---
+        # Si la página de Demografía envió un dato, lo usamos. Si no, usamos el del selector espacial actual.
+        if 'poblacion_total' in st.session_state:
+            pob_total = st.session_state['poblacion_total']
+            st.info(f"👥 Población base inyectada desde el Modelo Demográfico: **{pob_total:,.0f} habitantes**.")
+        # ------------------------------------------------
         
-        st.markdown("**B. Uso Agrícola / Pecuario**")
+        col_d1, col_d2 = st.columns([1, 1.5])
         
-        # 1. Consultamos los animales en la nube para este territorio y año
-        bov_dem, por_dem, ave_dem = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
-        
-        # 2. Calculamos cuánto beben (L/día) y lo pasamos a L/s
-        consumo_animales_lpd = (bov_dem * 40) + (por_dem * 15) + (ave_dem * 0.3)
-        q_animales_ls = consumo_animales_lpd / 86400
-        
-        col_d_agr1, col_d_agr2 = st.columns(2)
-        with col_d_agr1: 
-            # Sumamos el agua de los animales a una base de cultivos (Ej. 45 L/s)
-            q_necesario_agr = st.number_input("Demanda Neta Agrícola/Pecuaria (L/s):", value=float(q_animales_ls + 45.0), step=5.0)
-        with col_d_agr2: 
-            perd_agr = st.slider("Pérdidas Sist. de Riego (%):", 0.0, 100.0, 30.0, step=1.0)
+        with col_d1:
+            st.markdown(f"### 1. Demanda Teórica (Neto vs Bruto) en {nombre_seleccion}")
             
-        q_efectivo_agr = q_necesario_agr / (1 - (perd_agr/100)) if perd_agr < 100 else q_necesario_agr
-        st.caption(f"Caudal Bruto Agrícola a captar: **{q_efectivo_agr:.2f} L/s**")
-        
-        st.markdown("**C. Uso Industrial**")
-        col_d_ind1, col_d_ind2 = st.columns(2)
-        with col_d_ind1: q_necesario_ind = st.number_input("Demanda Neta Industrial (L/s):", value=20.0, step=2.0)
-        with col_d_ind2: perd_ind = st.slider("Pérdidas de Industria (%):", 0.0, 100.0, 10.0, step=1.0)
-        q_efectivo_ind = q_necesario_ind / (1 - (perd_ind/100)) if perd_ind < 100 else q_necesario_ind
-        st.caption(f"Caudal Bruto Industrial a captar: **{q_efectivo_ind:.2f} L/s**")
-        
-        st.markdown("---")
-        st.markdown(f"### 2. Demanda Legal Autorizada en {nombre_seleccion}")
-        q_sup, q_sub, q_legal_agr, q_legal_ind = 0.0, 0.0, 0.0, 0.0
-        df_usos_detalle = pd.DataFrame()
-        
-        # 🚀 LA MAGIA FINAL: En vez de buscar por texto, usamos df_c (los puntos que cayeron en el polígono)
-        if 'df_c' in locals() and not df_c.empty:
-            df_filtro_c = df_c.copy()
+            st.markdown("**A. Uso Doméstico**")
+            col_d_dom1, col_d_dom2 = st.columns(2)
+            with col_d_dom1: dotacion = st.number_input("Dotación Neta (L/hab/d):", value=120.0, step=5.0)
+            with col_d_dom2: perd_dom = st.slider("Pérdidas del Acueducto (%):", 0.0, 100.0, 25.0, step=1.0)
+            q_necesario_dom = (pob_total * dotacion) / 86400
+            q_efectivo_dom = q_necesario_dom / (1 - (perd_dom/100)) if perd_dom < 100 else q_necesario_dom
+            col_res1, col_res2 = st.columns(2)
+            col_res1.metric("Neto (Necesario)", f"{q_necesario_dom:.2f} L/s")
+            col_res2.metric("Bruto (Efectivo)", f"{q_efectivo_dom:.2f} L/s", delta=f"Pérdida: {(q_efectivo_dom - q_necesario_dom):.2f} L/s", delta_color="inverse")
             
-            df_dom = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Doméstico']
-            q_sup = df_dom[df_dom['tipo_agua'] == 'Superficial']['caudal_lps'].sum()
-            q_sub = df_dom[df_dom['tipo_agua'] == 'Subterránea']['caudal_lps'].sum()
-            q_legal_agr = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Agrícola/Pecuario']['caudal_lps'].sum()
-            q_legal_ind = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Industrial']['caudal_lps'].sum()
+            st.markdown("**B. Uso Agrícola / Pecuario**")
             
-            # Agrupar para la tabla de abajo
-            if 'uso_detalle' in df_filtro_c.columns:
-                df_usos_detalle = df_filtro_c.groupby(['uso_detalle', 'tipo_agua'])['caudal_lps'].sum().reset_index()
-                df_usos_detalle.rename(columns={'uso_detalle':'Uso Específico', 'tipo_agua':'Fuente', 'caudal_lps':'Caudal (L/s)'}, inplace=True)
-                df_usos_detalle = df_usos_detalle.sort_values(by='Caudal (L/s)', ascending=False)
+            # 1. Consultamos los animales en la nube para este territorio y año
+            bov_dem, por_dem, ave_dem = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
+            
+            # 2. Calculamos cuánto beben (L/día) y lo pasamos a L/s
+            consumo_animales_lpd = (bov_dem * 40) + (por_dem * 15) + (ave_dem * 0.3)
+            q_animales_ls = consumo_animales_lpd / 86400
+            
+            col_d_agr1, col_d_agr2 = st.columns(2)
+            with col_d_agr1: 
+                # Sumamos el agua de los animales a una base de cultivos (Ej. 45 L/s)
+                q_necesario_agr = st.number_input("Demanda Neta Agrícola/Pecuaria (L/s):", value=float(q_animales_ls + 45.0), step=5.0)
+            with col_d_agr2: 
+                perd_agr = st.slider("Pérdidas Sist. de Riego (%):", 0.0, 100.0, 30.0, step=1.0)
                 
-        q_concesionado_dom = q_sup + q_sub
-        
-        st.write(f"- **Superficial Doméstico:** {q_sup:,.2f} L/s")
-        st.write(f"- **Subterráneo Doméstico:** {q_sub:,.2f} L/s")
-        st.write(f"- **Total Legal Doméstico:** {q_concesionado_dom:,.2f} L/s")
-        
-    with col_d2:
-        st.markdown(f"#### 📊 Análisis de Formalización (Uso Doméstico) - {nombre_seleccion}")
-        margen = 0.05 
-        if q_concesionado_dom > q_efectivo_dom * (1 + margen): st.error(f"🔴 **Sobreconcesión:** Otorgado {q_concesionado_dom - q_efectivo_dom:,.1f} L/s por encima de la extracción bruta requerida.")
-        elif q_concesionado_dom < q_efectivo_dom * (1 - margen): st.warning(f"⚠️ **Riesgo de Subregistro:** Se requiere evaluar el estado de legalidad de por lo menos {q_efectivo_dom - q_concesionado_dom:,.1f} L/s adicionales que no aparecen formalizados en la corporación.")
-        else: st.success(f"✅ **Equilibrio Hídrico:** La concesión ({q_concesionado_dom:,.1f} L/s) cubre perfectamente la demanda y las pérdidas del sistema.")
+            q_efectivo_agr = q_necesario_agr / (1 - (perd_agr/100)) if perd_agr < 100 else q_necesario_agr
+            st.caption(f"Caudal Bruto Agrícola a captar: **{q_efectivo_agr:.2f} L/s**")
+            
+            st.markdown("**C. Uso Industrial**")
+            col_d_ind1, col_d_ind2 = st.columns(2)
+            with col_d_ind1: q_necesario_ind = st.number_input("Demanda Neta Industrial (L/s):", value=20.0, step=2.0)
+            with col_d_ind2: perd_ind = st.slider("Pérdidas de Industria (%):", 0.0, 100.0, 10.0, step=1.0)
+            q_efectivo_ind = q_necesario_ind / (1 - (perd_ind/100)) if perd_ind < 100 else q_necesario_ind
+            st.caption(f"Caudal Bruto Industrial a captar: **{q_efectivo_ind:.2f} L/s**")
+            
+            st.markdown("---")
+            st.markdown(f"### 2. Demanda Legal Autorizada en {nombre_seleccion}")
+            q_sup, q_sub, q_legal_agr, q_legal_ind = 0.0, 0.0, 0.0, 0.0
+            df_usos_detalle = pd.DataFrame()
+            
+            # 🚀 LA MAGIA FINAL: En vez de buscar por texto, usamos df_c (los puntos que cayeron en el polígono)
+            if 'df_c' in locals() and not df_c.empty:
+                df_filtro_c = df_c.copy()
+                
+                df_dom = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Doméstico']
+                q_sup = df_dom[df_dom['tipo_agua'] == 'Superficial']['caudal_lps'].sum()
+                q_sub = df_dom[df_dom['tipo_agua'] == 'Subterránea']['caudal_lps'].sum()
+                q_legal_agr = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Agrícola/Pecuario']['caudal_lps'].sum()
+                q_legal_ind = df_filtro_c[df_filtro_c['Sector_Sihcli'] == 'Industrial']['caudal_lps'].sum()
+                
+                # Agrupar para la tabla de abajo
+                if 'uso_detalle' in df_filtro_c.columns:
+                    df_usos_detalle = df_filtro_c.groupby(['uso_detalle', 'tipo_agua'])['caudal_lps'].sum().reset_index()
+                    df_usos_detalle.rename(columns={'uso_detalle':'Uso Específico', 'tipo_agua':'Fuente', 'caudal_lps':'Caudal (L/s)'}, inplace=True)
+                    df_usos_detalle = df_usos_detalle.sort_values(by='Caudal (L/s)', ascending=False)
+                    
+            q_concesionado_dom = q_sup + q_sub
+            
+            st.write(f"- **Superficial Doméstico:** {q_sup:,.2f} L/s")
+            st.write(f"- **Subterráneo Doméstico:** {q_sub:,.2f} L/s")
+            st.write(f"- **Total Legal Doméstico:** {q_concesionado_dom:,.2f} L/s")
+            
+        with col_d2:
+            st.markdown(f"#### 📊 Análisis de Formalización (Uso Doméstico) - {nombre_seleccion}")
+            margen = 0.05 
+            if q_concesionado_dom > q_efectivo_dom * (1 + margen): st.error(f"🔴 **Sobreconcesión:** Otorgado {q_concesionado_dom - q_efectivo_dom:,.1f} L/s por encima de la extracción bruta requerida.")
+            elif q_concesionado_dom < q_efectivo_dom * (1 - margen): st.warning(f"⚠️ **Riesgo de Subregistro:** Se requiere evaluar el estado de legalidad de por lo menos {q_efectivo_dom - q_concesionado_dom:,.1f} L/s adicionales que no aparecen formalizados en la corporación.")
+            else: st.success(f"✅ **Equilibrio Hídrico:** La concesión ({q_concesionado_dom:,.1f} L/s) cubre perfectamente la demanda y las pérdidas del sistema.")
 
-        df_chart = pd.DataFrame([
-            {"Categoría": "Demanda Efectiva (Bruta)", "Componente": "Consumo Neto", "Caudal (L/s)": q_necesario_dom},
-            {"Categoría": "Demanda Efectiva (Bruta)", "Componente": "Pérdidas de Acueducto", "Caudal (L/s)": (q_efectivo_dom - q_necesario_dom)},
-            {"Categoría": "Registro Oficial (Legal)", "Componente": "Concesión Superficial", "Caudal (L/s)": q_sup},
-            {"Categoría": "Registro Oficial (Legal)", "Componente": "Concesión Subterránea", "Caudal (L/s)": q_sub}
-        ])
-        fig_sub = px.bar(df_chart, x="Categoría", y="Caudal (L/s)", color="Componente", color_discrete_map={"Consumo Neto": "#2980b9", "Pérdidas de Acueducto": "#e67e22", "Concesión Superficial": "#3498db", "Concesión Subterránea": "#2ecc71"}, title="Demanda Bruta vs Permisos Otorgados")
-        fig_sub.add_hline(y=q_efectivo_dom, line_dash="dash", line_color="red", annotation_text="Límite Extracción Bruta")
-        st.plotly_chart(fig_sub, use_container_width=True)
-        
-    st.divider()
-    st.markdown(f"#### 📋 Consolidado de Todos los Usos Registrados en {nombre_seleccion}")
-    if not df_usos_detalle.empty:
-        c1, c2 = st.columns([2,1])
-        with c1: 
-            # 🛡️ ESCUDO DE TABLA (Transformamos a texto SOLO las 1000 que vamos a mostrar)
-            if len(df_usos_detalle) > 1000:
-                st.caption(f"⚠️ Mostrando muestra de 1,000 registros de un total de {len(df_usos_detalle):,}.")
-                df_view_usos = df_usos_detalle.head(1000).astype(str)
-            else:
-                df_view_usos = df_usos_detalle.astype(str)
-                
-            st.dataframe(df_view_usos, width="stretch")
+            df_chart = pd.DataFrame([
+                {"Categoría": "Demanda Efectiva (Bruta)", "Componente": "Consumo Neto", "Caudal (L/s)": q_necesario_dom},
+                {"Categoría": "Demanda Efectiva (Bruta)", "Componente": "Pérdidas de Acueducto", "Caudal (L/s)": (q_efectivo_dom - q_necesario_dom)},
+                {"Categoría": "Registro Oficial (Legal)", "Componente": "Concesión Superficial", "Caudal (L/s)": q_sup},
+                {"Categoría": "Registro Oficial (Legal)", "Componente": "Concesión Subterránea", "Caudal (L/s)": q_sub}
+            ])
+            fig_sub = px.bar(df_chart, x="Categoría", y="Caudal (L/s)", color="Componente", color_discrete_map={"Consumo Neto": "#2980b9", "Pérdidas de Acueducto": "#e67e22", "Concesión Superficial": "#3498db", "Concesión Subterránea": "#2ecc71"}, title="Demanda Bruta vs Permisos Otorgados")
+            fig_sub.add_hline(y=q_efectivo_dom, line_dash="dash", line_color="red", annotation_text="Límite Extracción Bruta")
+            st.plotly_chart(fig_sub, use_container_width=True)
             
-        with c2:
-            csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Desglose Completo (CSV)", data=csv, file_name=f'Usos_{nombre_seleccion}.csv', mime='text/csv')
-    else: st.warning(f"⚠️ El territorio **{nombre_seleccion}** no registra datos formales.")
+        st.divider()
+        st.markdown(f"#### 📋 Consolidado de Todos los Usos Registrados en {nombre_seleccion}")
+        if not df_usos_detalle.empty:
+            c1, c2 = st.columns([2,1])
+            with c1: 
+                # 🛡️ ESCUDO DE TABLA (Transformamos a texto SOLO las 1000 que vamos a mostrar)
+                if len(df_usos_detalle) > 1000:
+                    st.caption(f"⚠️ Mostrando muestra de 1,000 registros de un total de {len(df_usos_detalle):,}.")
+                    df_view_usos = df_usos_detalle.head(1000).astype(str)
+                else:
+                    df_view_usos = df_usos_detalle.astype(str)
+                    
+                st.dataframe(df_view_usos, width="stretch")
+                
+            with c2:
+                csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Descargar Desglose Completo (CSV)", data=csv, file_name=f'Usos_{nombre_seleccion}.csv', mime='text/csv')
+        else: st.warning(f"⚠️ El territorio **{nombre_seleccion}** no registra datos formales.")
 
     # =========================================================================
     # NUEVA SECCIÓN: HUELLA HÍDRICA TERRITORIAL (CONSOLIDADO WRI)
