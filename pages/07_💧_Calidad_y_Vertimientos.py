@@ -465,29 +465,28 @@ def cargar_maestros_pecuarios():
 
 @st.cache_data(show_spinner=False)
 def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=None):
-    """
-    Versión Cloud: Conecta directamente al Storage público de Supabase 
-    y cruza la información en memoria RAM temporal.
-    """
     try:
         import unicodedata
         import pandas as pd
-        import streamlit as st
         
-        # 🌐 EL ENLACE DIRECTO A TU BUCKET DE SUPABASE
         url_supabase = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Cuencas_Maestro.csv"
-        
-        # Pandas es capaz de descargar y leer el CSV desde la URL en una sola línea
         df_censo = pd.read_csv(url_supabase)
         
-        columna_escala = nivel_sel_interno
-        if nivel_sel_interno == "Zona Hidrográfica":
-            columna_escala = "Zona_Hidrografica"
-            
+        # 🗺️ EL TRADUCTOR INMUNE (Ignora mayúsculas y tildes en el nombre de la columna)
+        mapa_escala = {
+            "zona hidrográfica": "Zona_Hidrografica",
+            "zona hidrografica": "Zona_Hidrografica",
+            "subcuenca": "Subcuenca",
+            "sistema": "Sistema",
+            "municipio": "Municipio_Norm" # Conecta con la nueva columna del ETL
+        }
+        
+        col_limpia = str(nivel_sel_interno).lower().strip()
+        columna_escala = mapa_escala.get(col_limpia, nivel_sel_interno)
+        
         if columna_escala not in df_censo.columns:
             return 0, 0, 0
             
-        # Normalizador de texto para emparejar la selección de la web con el CSV
         def normalizar(texto):
             if pd.isna(texto): return ""
             t = str(texto).lower().strip()
@@ -496,21 +495,17 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         nombres_csv = df_censo[columna_escala].apply(normalizar)
         busqueda = normalizar(nombre_seleccion)
         
-        # Filtro 1: Búsqueda exacta
         df_filtrado = df_censo[nombres_csv == busqueda]
         
-        # Filtro 2: Búsqueda difusa (Ignora "Río", "Q.", etc.)
         if df_filtrado.empty:
             palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
             if palabra_clave:
                 mask = nombres_csv.str.contains(palabra_clave, na=False)
                 df_filtrado = df_censo[mask]
                 
-        # Si la cuenca no tiene animales registrados, devolvemos 0
         if df_filtrado.empty:
             return 0, 0, 0
             
-        # Sumatoria final
         bov = df_filtrado['Bovinos'].sum()
         por = df_filtrado['Porcinos'].sum()
         ave = df_filtrado['Aves'].sum()
@@ -518,10 +513,7 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         return int(bov), int(por), int(ave)
         
     except Exception as e:
-        import streamlit as st
-        st.error(f"❌ Error de conexión con Supabase: {e}")
         return 0, 0, 0
-
 
 # Arrays para gráficas de tendencias a futuro (DBO)
 anios_evo = np.arange(anio_analisis, anio_analisis + 31)
