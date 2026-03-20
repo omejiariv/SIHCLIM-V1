@@ -463,49 +463,71 @@ def cargar_maestros_pecuarios():
             dfs[key] = pd.DataFrame()
     return dfs
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=60) # ttl=60 limpia la memoria cada minuto
 def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=None):
+    """
+    Motor Pecuario Inmortal: Conecta a Supabase forzando la actualización en vivo,
+    y utiliza un radar global si la escala de búsqueda falla.
+    """
     try:
         import unicodedata
         import pandas as pd
+        import time
         
-        url_supabase = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Cuencas_Maestro.csv"
+        # 🛡️ ESCUDO 1: "Cache-Buster" para engañar a Supabase y traer el archivo fresco siempre
+        url_supabase = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Cuencas_Maestro.csv?t={int(time.time())}"
         df_censo = pd.read_csv(url_supabase)
         
-        # 🗺️ EL TRADUCTOR INMUNE (Ignora mayúsculas y tildes en el nombre de la columna)
+        # 🛡️ ESCUDO 2: Traductor Universal de Escalas
         mapa_escala = {
             "zona hidrográfica": "Zona_Hidrografica",
             "zona hidrografica": "Zona_Hidrografica",
+            "cuenca": "Subcuenca",       # <- Clave por si la UI envía "cuenca"
             "subcuenca": "Subcuenca",
             "sistema": "Sistema",
-            "municipio": "Municipio_Norm" # Conecta con la nueva columna del ETL
+            "municipio": "Municipio_Norm",
+            "mpio": "Municipio_Norm"
         }
         
         col_limpia = str(nivel_sel_interno).lower().strip()
-        columna_escala = mapa_escala.get(col_limpia, nivel_sel_interno)
+        columna_escala = mapa_escala.get(col_limpia, "Subcuenca") # Fallback a Subcuenca
         
-        if columna_escala not in df_censo.columns:
-            return 0, 0, 0
-            
         def normalizar(texto):
             if pd.isna(texto): return ""
             t = str(texto).lower().strip()
             return unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('utf-8')
         
-        nombres_csv = df_censo[columna_escala].apply(normalizar)
         busqueda = normalizar(nombre_seleccion)
+        df_filtrado = pd.DataFrame()
         
-        df_filtrado = df_censo[nombres_csv == busqueda]
-        
+        # Intento 1: Búsqueda exacta e Inteligente en la columna seleccionada
+        if columna_escala in df_censo.columns:
+            nombres_csv = df_censo[columna_escala].apply(normalizar)
+            df_filtrado = df_censo[nombres_csv == busqueda]
+            
+            if df_filtrado.empty:
+                palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
+                if palabra_clave:
+                    mask = nombres_csv.str.contains(palabra_clave, na=False)
+                    df_filtrado = df_censo[mask]
+                    
+        # 🛡️ ESCUDO 3: RADAR GLOBAL. Si falló todo, buscamos en TODO el mapa.
         if df_filtrado.empty:
             palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
-            if palabra_clave:
-                mask = nombres_csv.str.contains(palabra_clave, na=False)
-                df_filtrado = df_censo[mask]
-                
+            # Escaneamos todas las columnas espaciales a la fuerza
+            for col in ['Subcuenca', 'Sistema', 'Zona_Hidrografica', 'Municipio_Norm']:
+                if col in df_censo.columns:
+                    nombres_csv = df_censo[col].apply(normalizar)
+                    mask = nombres_csv.str.contains(palabra_clave, na=False)
+                    if mask.any():
+                        df_filtrado = df_censo[mask]
+                        break # Lo encontramos, detenemos el radar
+                        
+        # Si definitivamente el lugar no existe en el CSV
         if df_filtrado.empty:
             return 0, 0, 0
             
+        # Sumamos todos los fragmentos encontrados
         bov = df_filtrado['Bovinos'].sum()
         por = df_filtrado['Porcinos'].sum()
         ave = df_filtrado['Aves'].sum()
@@ -513,6 +535,8 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         return int(bov), int(por), int(ave)
         
     except Exception as e:
+        import streamlit as st
+        st.error(f"Error de conexión con la Nube: {e}")
         return 0, 0, 0
 
 # Arrays para gráficas de tendencias a futuro (DBO)
