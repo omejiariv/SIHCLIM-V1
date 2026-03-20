@@ -1550,7 +1550,7 @@ with tab_lactosuero:
 # =========================================================================
 st.markdown("---")
 with st.expander(f"⏬ 5. Vulnerabilidad y Calidad del Acuífero en {nombre_seleccion}", expanded=False):
-st.info("Simula el viaje de la contaminación difusa que escapa de la escorrentía superficial, se infiltra a través del perfil del suelo y llega al nivel freático, afectando eventualmente los nacimientos y el caudal base del río.")
+    st.info("Simula el viaje de la contaminación difusa que escapa de la escorrentía superficial, se infiltra a través del perfil del suelo y llega al nivel freático, afectando eventualmente los nacimientos y el caudal base del río.")
 
 with st.expander("🪨 Filtro del Suelo y Termodinámica de Recarga", expanded=True):
     cg1, cg2, cg3 = st.columns(3)
