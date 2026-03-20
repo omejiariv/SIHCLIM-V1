@@ -463,30 +463,31 @@ def cargar_maestros_pecuarios():
             dfs[key] = pd.DataFrame()
     return dfs
 
+@st.cache_data(show_spinner=False)
 def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=None):
+    """
+    Versión Cloud: Conecta directamente al Storage público de Supabase 
+    y cruza la información en memoria RAM temporal.
+    """
     try:
         import unicodedata
-        import os
         import pandas as pd
+        import streamlit as st
         
-        ruta_csv = "Censo_Pecuario_Cuencas_Maestro.csv"
+        # 🌐 EL ENLACE DIRECTO A TU BUCKET DE SUPABASE
+        url_supabase = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Cuencas_Maestro.csv"
         
-        # 🚨 CHIVATO 1: ¿Encuentra el archivo?
-        if not os.path.exists(ruta_csv):
-            st.error(f"❌ ALERTA: No encuentro el archivo '{ruta_csv}' en la carpeta raíz.")
-            return 0, 0, 0
-            
-        df_censo = pd.read_csv(ruta_csv)
+        # Pandas es capaz de descargar y leer el CSV desde la URL en una sola línea
+        df_censo = pd.read_csv(url_supabase)
         
         columna_escala = nivel_sel_interno
         if nivel_sel_interno == "Zona Hidrográfica":
             columna_escala = "Zona_Hidrografica"
             
-        # 🚨 CHIVATO 2: ¿La escala está bien escrita?
         if columna_escala not in df_censo.columns:
-            st.error(f"❌ ALERTA: La escala '{columna_escala}' no coincide con las columnas del CSV.")
             return 0, 0, 0
             
+        # Normalizador de texto para emparejar la selección de la web con el CSV
         def normalizar(texto):
             if pd.isna(texto): return ""
             t = str(texto).lower().strip()
@@ -495,32 +496,33 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         nombres_csv = df_censo[columna_escala].apply(normalizar)
         busqueda = normalizar(nombre_seleccion)
         
+        # Filtro 1: Búsqueda exacta
         df_filtrado = df_censo[nombres_csv == busqueda]
         
-        palabra_clave = busqueda
+        # Filtro 2: Búsqueda difusa (Ignora "Río", "Q.", etc.)
         if df_filtrado.empty:
             palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
             if palabra_clave:
                 mask = nombres_csv.str.contains(palabra_clave, na=False)
                 df_filtrado = df_censo[mask]
                 
-        # 🚨 CHIVATO 3: ¿Falló la búsqueda?
+        # Si la cuenca no tiene animales registrados, devolvemos 0
         if df_filtrado.empty:
-            st.warning(f"⚠️ ALERTA: Busqué '{nombre_seleccion}' (Clave: {palabra_clave}) en la columna '{columna_escala}', pero el CSV no lo tiene.")
             return 0, 0, 0
             
+        # Sumatoria final
         bov = df_filtrado['Bovinos'].sum()
         por = df_filtrado['Porcinos'].sum()
         ave = df_filtrado['Aves'].sum()
         
-        # 🚨 CHIVATO 4: ¡ÉXITO!
-        st.success(f"✅ ¡CONEXIÓN MAESTRA! '{nombre_seleccion}' inyectó {int(bov):,} bovinos desde el CSV.")
-        
         return int(bov), int(por), int(ave)
         
     except Exception as e:
-        st.error(f"❌ ERROR INTERNO: {e}")
+        import streamlit as st
+        st.error(f"❌ Error de conexión con Supabase: {e}")
         return 0, 0, 0
+
+
 # Arrays para gráficas de tendencias a futuro (DBO)
 anios_evo = np.arange(anio_analisis, anio_analisis + 31)
 factor_evo = (1 + 0.015) ** (anios_evo - anio_analisis) # Crecimiento proxy 1.5%
