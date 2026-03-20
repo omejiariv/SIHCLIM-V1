@@ -806,7 +806,7 @@ with tab_fuentes:
 # 🌊 MÓDULO AVANZADO: ASIMILACIÓN Y CURVA DE OXÍGENO (STREETER-PHELPS)
 # =====================================================================
 st.markdown("---")
-swith st.expander(f"🌊 4. Capacidad de Asimilación del Río Receptor: {nombre_seleccion}", expanded=True):
+with st.expander(f"🌊 4. Capacidad de Asimilación del Río Receptor: {nombre_seleccion}", expanded=True):
 st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígeno Disuelto (OD) aguas abajo del vertimiento principal de la zona seleccionada.")
 
 from modules.water_quality import calcular_streeter_phelps
