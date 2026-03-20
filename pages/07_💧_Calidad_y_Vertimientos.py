@@ -543,7 +543,7 @@ tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena, ta
 # TAB 1: DEMANDA HÍDRICA Y EFICIENCIA
 # ------------------------------------------------------------------------------
 with tab_demanda:
-    st.header(f"🚰 Demanda, Eficiencia de Sistemas y Formalización")
+    with st.expander(f"🚰 Demanda, Eficiencia de Sistemas y Formalización: {nombre_seleccion}", expanded=True):
     
     # --- CONEXIÓN CON DEMOGRAFÍA (MEMORIA GLOBAL) ---
     # Si la página de Demografía envió un dato, lo usamos. Si no, usamos el del selector espacial actual.
@@ -555,7 +555,7 @@ with tab_demanda:
     col_d1, col_d2 = st.columns([1, 1.5])
     
     with col_d1:
-        st.subheader("1. Demanda Teórica (Neto vs Bruto)")
+        st.markdown(f"### 1. Demanda Teórica (Neto vs Bruto) en {nombre_seleccion}")
         
         st.markdown("**A. Uso Doméstico**")
         col_d_dom1, col_d_dom2 = st.columns(2)
@@ -594,7 +594,7 @@ with tab_demanda:
         st.caption(f"Caudal Bruto Industrial a captar: **{q_efectivo_ind:.2f} L/s**")
         
         st.markdown("---")
-        st.subheader("2. Demanda Legal (Autorizada)")
+        st.markdown(f"### 2. Demanda Legal Autorizada en {nombre_seleccion}")
         q_sup, q_sub, q_legal_agr, q_legal_ind = 0.0, 0.0, 0.0, 0.0
         df_usos_detalle = pd.DataFrame()
         
@@ -621,7 +621,7 @@ with tab_demanda:
         st.write(f"- **Total Legal Doméstico:** {q_concesionado_dom:,.2f} L/s")
         
     with col_d2:
-        st.subheader("📊 Análisis de Formalización (Uso Doméstico)")
+        st.markdown(f"#### 📊 Análisis de Formalización (Uso Doméstico) - {nombre_seleccion}")
         margen = 0.05 
         if q_concesionado_dom > q_efectivo_dom * (1 + margen): st.error(f"🔴 **Sobreconcesión:** Otorgado {q_concesionado_dom - q_efectivo_dom:,.1f} L/s por encima de la extracción bruta requerida.")
         elif q_concesionado_dom < q_efectivo_dom * (1 - margen): st.warning(f"⚠️ **Riesgo de Subregistro:** Se requiere evaluar el estado de legalidad de por lo menos {q_efectivo_dom - q_concesionado_dom:,.1f} L/s adicionales que no aparecen formalizados en la corporación.")
@@ -638,7 +638,7 @@ with tab_demanda:
         st.plotly_chart(fig_sub, use_container_width=True)
         
     st.divider()
-    st.subheader("📋 Consolidado de Todos los Usos Registrados")
+    st.markdown(f"#### 📋 Consolidado de Todos los Usos Registrados en {nombre_seleccion}")
     if not df_usos_detalle.empty:
         c1, c2 = st.columns([2,1])
         with c1: 
@@ -660,7 +660,7 @@ with tab_demanda:
     # NUEVA SECCIÓN: HUELLA HÍDRICA TERRITORIAL (CONSOLIDADO WRI)
     # =========================================================================
     st.divider()
-    st.subheader("👣 Huella Hídrica Territorial (Metabolismo de Extracción)")
+    with st.expander(f"👣 Huella Hídrica Territorial (Metabolismo de Extracción) en {nombre_seleccion}", expanded=False):
     st.markdown("Consolidación de las demandas brutas efectivas (Doméstica + Agrícola + Industrial) para evaluar el nivel de estrés del territorio.")
     
     # 1. Sumamos las demandas efectivas (lo que realmente se saca del río)
@@ -806,7 +806,7 @@ with tab_fuentes:
 # 🌊 MÓDULO AVANZADO: ASIMILACIÓN Y CURVA DE OXÍGENO (STREETER-PHELPS)
 # =====================================================================
 st.markdown("---")
-st.header("🌊 4. Capacidad de Asimilación del Río Receptor")
+swith st.expander(f"🌊 4. Capacidad de Asimilación del Río Receptor: {nombre_seleccion}", expanded=True):
 st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígeno Disuelto (OD) aguas abajo del vertimiento principal de la zona seleccionada.")
 
 from modules.water_quality import calcular_streeter_phelps
@@ -995,8 +995,8 @@ carga_difusa_total_kg = dbo_hab + dbo_gan
 factor_escorrentia = 0.15 
 dbo_rio_arriba_fondo = max(1.0, ((carga_difusa_total_kg * factor_escorrentia) * 1000) / (q_rio * 86400))
 
-with st.expander("🏭 Presión Antrópica y Vertimiento Hipotético", expanded=True):
-    st.markdown("##### 🐄🐖🐔 1. Carga Difusa Base (Cuenca Aguas Arriba)")
+with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre_seleccion}", expanded=True):
+    st.markdown(f"##### 🐄🐖🐔 1. Carga Difusa Base (Cuenca Aguas Arriba de {nombre_seleccion})")
     cd1, cd2, cd3 = st.columns(3)
     cd1.metric("Población Humana", f"{pob_u + pob_r:,.0f} hab", f"{dbo_hab:,.0f} kg DBO/d", delta_color="inverse")
     
@@ -1006,7 +1006,7 @@ with st.expander("🏭 Presión Antrópica y Vertimiento Hipotético", expanded=
     cd3.metric("Impacto en Río (Fondo)", f"{dbo_rio_arriba_fondo:.1f} mg/L DBO", "Concentración base antes del vertimiento puntual", delta_color="off")
     
     st.markdown("---")
-    st.markdown("##### 🧪 2. Simulador de Vertimiento Hipotético (Puntual)")
+    st.markdown(f"##### 🧪 2. Simulador de Vertimiento Hipotético (Puntual en {nombre_seleccion})")
     st.caption("Modela el impacto de una nueva industria, un tubo roto o una nueva PTAR.")
     
     cv1, cv2, cv3 = st.columns(3)
@@ -1549,7 +1549,7 @@ with tab_lactosuero:
 # 5. VIAJE AL SUBSUELO: CALIDAD DEL AGUA SUBTERRÁNEA (LIXIVIACIÓN)
 # =========================================================================
 st.markdown("---")
-st.header("⏬ 5. Vulnerabilidad y Calidad del Acuífero")
+with st.expander(f"⏬ 5. Vulnerabilidad y Calidad del Acuífero en {nombre_seleccion}", expanded=False):
 st.info("Simula el viaje de la contaminación difusa que escapa de la escorrentía superficial, se infiltra a través del perfil del suelo y llega al nivel freático, afectando eventualmente los nacimientos y el caudal base del río.")
 
 with st.expander("🪨 Filtro del Suelo y Termodinámica de Recarga", expanded=True):
