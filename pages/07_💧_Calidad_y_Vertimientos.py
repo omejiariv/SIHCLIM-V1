@@ -661,7 +661,7 @@ with tab_demanda:
     # =========================================================================
     st.divider()
     with st.expander(f"👣 Huella Hídrica Territorial (Metabolismo de Extracción) en {nombre_seleccion}", expanded=False):
-    st.markdown("Consolidación de las demandas brutas efectivas (Doméstica + Agrícola + Industrial) para evaluar el nivel de estrés del territorio.")
+        st.markdown("Consolidación de las demandas brutas efectivas (Doméstica + Agrícola + Industrial) para evaluar el nivel de estrés del territorio.")
     
     # 1. Sumamos las demandas efectivas (lo que realmente se saca del río)
     caudal_total_efectivo_L_s = q_efectivo_dom + q_efectivo_agr + q_efectivo_ind
