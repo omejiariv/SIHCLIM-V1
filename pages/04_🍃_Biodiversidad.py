@@ -400,7 +400,7 @@ st.markdown("""
 # 🎥 EL REPRODUCTOR DE VIDEO DIDÁCTICO
 with st.expander("🎥 Ver Explicación Didáctica: El Ciclo del Agua", expanded=False):
     url_video_supabase = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/videos/ciclodelagua.mp4"
-    st.video(url_video_supabase)
+    st.video(url_video_supabase, format="video/mp4")
     st.caption("Aprende cómo la naturaleza actúa como la mayor planta de tratamiento y bombeo del planeta.")
 
 # 1. Obtenemos población de la memoria o usamos valor por defecto
