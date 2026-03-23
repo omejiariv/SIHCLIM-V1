@@ -1421,12 +1421,12 @@ with tab_matriz:
                 
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
 
-            # 🔥 LA SOLUCIÓN: Lógica de agregación explícita para el "Total"
+            # 🔥 LA SOLUCIÓN: Lógica de agregación estricta para evitar duplicidad
             for tipo_area in ['Total', 'Urbana', 'Rural']:
                 
                 if tipo_area == 'Total':
-                    # Para el total, tomamos todo el dataset original (Urbana + Rural + Todo)
-                    df_area_actual = df_mun_memoria.copy()
+                    # Construimos el Total sumando ÚNICAMENTE las partes puras (Urbana + Rural)
+                    df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'].isin(['Urbana', 'Rural'])]
                 else:
                     # Para Urbana o Rural, filtramos estrictamente
                     df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
