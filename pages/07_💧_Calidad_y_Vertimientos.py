@@ -748,7 +748,7 @@ with tab_fuentes:
         elif nivel_sel_interno == "Municipal": mpios_activos = [lugar_n]
     if not mpios_activos: mpios_activos = [lugar_n]
 
-# ==============================================================================
+    # ==============================================================================
     # EXTRACCIÓN DE BASES DE DATOS ICA (Ahora conectado a la Nube)
     # ==============================================================================
     # Llamamos a nuestra nueva función inteligente pasándole el año del Aleph
@@ -795,28 +795,100 @@ with tab_fuentes:
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
 
     df_cargas = pd.DataFrame({
-        "Fuente": ["Urbana", "Rural", "Agroindustria", "Agricultura", "Bovinos", "Porcinos", "Avicultura"], 
-        "DBO_kg_dia": [dbo_urbana, dbo_rural, dbo_suero, dbo_agricola, dbo_bovinos, dbo_porcinos, dbo_aves]
-    })
-
-    # --- GRÁFICAS Y RESULTADOS ---
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
-        st.plotly_chart(fig_cargas, use_container_width=True)
-        csv_cargas = df_cargas.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Descargar Datos de Cargas (CSV)", data=csv_cargas, file_name=f"Inventario_Cargas_{nombre_seleccion}.csv", mime='text/csv')
-
-    with col_g2:
-        st.subheader("📈 Evolución de Carga Orgánica (Proyectada)")
-        pob_u_evo = pob_urbana * factor_evo
+    # =====================================================================
+    # 🔮 SIMULADOR DINÁMICO DE METABOLISMO (Conectado a Memoria Global)
+    # =====================================================================
+    st.markdown("---")
+    st.subheader("📈 Evolución de la Presión Ambiental (Gemelo Digital)")
+    
+    # 1. Verificar si existen los modelos en memoria
+    if 'df_matriz_demografica' in st.session_state and 'df_matriz_pecuaria' in st.session_state:
+        df_demo = st.session_state['df_matriz_demografica']
+        df_pecu = st.session_state['df_matriz_pecuaria']
         
-        # Corrección: Se añade dbo_aves a la proyección futura
-        dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
+        # 2. Funciones Lectoras de Modelos
+        def calcular_curva(fila, anios):
+            x_norm = anios - fila['Año_Base']
+            modelo = fila['Modelo_Recomendado']
+            if modelo == 'Logístico': return fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm))
+            elif modelo == 'Exponencial': return fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm)
+            else: return fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D']
+
+        def obtener_vector(df, nivel, territorio, categoria, col_categoria, anios, valor_estatico_fallback):
+            filtro = df[(df['Nivel'] == nivel) & (df['Territorio'] == territorio) & (df[col_categoria] == categoria)]
+            if filtro.empty: 
+                # Si el modelo falló o no existe para este municipio, usamos el valor estático como línea plana
+                return np.full(len(anios), valor_estatico_fallback)
+            return np.maximum(0, calcular_curva(filtro.iloc[0], anios))
+            
+        # 3. Construcción del Vector de Tiempo
+        anio_limite = st.slider("⏳ Horizonte de Simulación:", min_value=2025, max_value=2050, value=2035, step=1)
+        anios_vector = np.arange(anio_analisis, anio_limite + 1)
         
-        fig_dbo_evo = go.Figure()
-        fig_dbo_evo.add_trace(go.Scatter(x=anios_evo, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
-        st.plotly_chart(fig_dbo_evo, use_container_width=True)
+        # 4. Generación de Vectores Poblacionales
+        # Usamos nivel_sel_visual para buscar en la matriz (generalmente "Municipal" o "Subcuenca")
+        # Si el usuario seleccionó "Departamental", el fallback estático nos salvará
+        v_pob_urbana = obtener_vector(df_demo, nivel_sel_visual, nombre_seleccion, 'Urbana', 'Area', anios_vector, pob_urbana)
+        v_pob_rural = obtener_vector(df_demo, nivel_sel_visual, nombre_seleccion, 'Rural', 'Area', anios_vector, pob_rural)
+        v_bovinos = obtener_vector(df_pecu, nivel_sel_visual, nombre_seleccion, 'Bovinos', 'Especie', anios_vector, cabezas_bovinos)
+        v_porcinos = obtener_vector(df_pecu, nivel_sel_visual, nombre_seleccion, 'Porcinos', 'Especie', anios_vector, cabezas_porcinos)
+        v_aves = obtener_vector(df_pecu, nivel_sel_visual, nombre_seleccion, 'Aves', 'Especie', anios_vector, cabezas_aves)
+
+        # 5. Motor Bioquímico Vectorial (Multiplicamos población futura por eficiencia actual de los sliders)
+        v_dbo_urbana = v_pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))
+        v_dbo_rural = v_pob_rural * 0.040
+        v_dbo_bovinos = v_bovinos * factor_dbo_bov
+        v_dbo_porcinos = v_porcinos * factor_dbo_porc
+        v_dbo_aves = v_aves * factor_dbo_aves
+        v_dbo_agricola = np.full(len(anios_vector), dbo_agricola) # La agricultura y el suero los mantenemos constantes por ahora
+        v_dbo_suero = np.full(len(anios_vector), dbo_suero)
+        
+        # 6. Renderizado de Gráficas Comparativas
+        col_g1, col_g2 = st.columns(2)
+        
+        with col_g1:
+            st.caption(f"**Instantánea Actual ({anio_analisis})**")
+            df_cargas_hoy = pd.DataFrame({
+                "Fuente": ["Urbana", "Rural", "Agroindustria", "Agricultura", "Bovinos", "Porcinos", "Avicultura"], 
+                "DBO_kg_dia": [v_dbo_urbana[0], v_dbo_rural[0], v_dbo_suero[0], v_dbo_agricola[0], v_dbo_bovinos[0], v_dbo_porcinos[0], v_dbo_aves[0]]
+            })
+            carga_hoy_total = df_cargas_hoy['DBO_kg_dia'].sum()
+            fig_bar = px.bar(df_cargas_hoy, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_hoy_total:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+        with col_g2:
+            st.caption(f"**Metabolismo Futuro Dinámico (hasta {anio_limite})**")
+            fig_stack = go.Figure()
+            fig_stack.add_trace(go.Scatter(x=anios_vector, y=v_dbo_urbana, mode='lines', stackgroup='one', name='Urbana (Afectada por PTAR)', fillcolor='#3498db', line=dict(color='#2980b9')))
+            fig_stack.add_trace(go.Scatter(x=anios_vector, y=v_dbo_rural, mode='lines', stackgroup='one', name='Rural', fillcolor='#95a5a6', line=dict(color='#7f8c8d')))
+            fig_stack.add_trace(go.Scatter(x=anios_vector, y=v_dbo_suero, mode='lines', stackgroup='one', name='Agroindustria (Suero)', fillcolor='#f1c40f', line=dict(color='#f39c12')))
+            fig_stack.add_trace(go.Scatter(x=anios_vector, y=v_dbo_porcinos, mode='lines', stackgroup='one', name='Porcicultura', fillcolor='#e74c3c', line=dict(color='#c0392b')))
+            fig_stack.add_trace(go.Scatter(x=anios_vector, y=v_dbo_aves, mode='lines', stackgroup='one', name='Avicultura', fillcolor='#f39c12', line=dict(color='#d35400')))
+            fig_stack.add_trace(go.Scatter(x=anios_vector, y=v_dbo_bovinos, mode='lines', stackgroup='one', name='Bovinos', fillcolor='#2ecc71', line=dict(color='#27ae60')))
+            fig_stack.add_trace(go.Scatter(x=anios_vector, y=v_dbo_agricola, mode='lines', stackgroup='one', name='Agricultura', fillcolor='#16a085', line=dict(color='#1abc9c')))
+
+            fig_stack.update_layout(
+                title=f"Crecimiento Multimodelo de Cargas Contaminantes",
+                xaxis_title="Año", yaxis_title="DBO5 (kg/día)", hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+            )
+            st.plotly_chart(fig_stack, use_container_width=True)
+            
+    else:
+        st.warning("⚠️ **Memoria Global Vacía:** No has entrenado los Motores Demográficos y Pecuarios en las páginas 06 y 06a.")
+        st.info("Mostrando proyecciones estáticas (Crecimiento lineal básico). Para ver la simulación avanzada, entrena los modelos matemáticos primero.")
+        # ... Aquí se mantiene tu código estático antiguo como plan de respaldo por si el usuario no entrenó nada
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
+            st.plotly_chart(fig_cargas, use_container_width=True)
+        with col_g2:
+            st.subheader("📈 Evolución de Carga Orgánica (Proyectada)")
+            pob_u_evo = pob_urbana * factor_evo
+            dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
+            fig_dbo_evo = go.Figure()
+            fig_dbo_evo.add_trace(go.Scatter(x=anios_evo, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
+            st.plotly_chart(fig_dbo_evo, use_container_width=True)
         
 # =====================================================================
 # 🌊 MÓDULO AVANZADO: ASIMILACIÓN Y CURVA DE OXÍGENO (STREETER-PHELPS)
