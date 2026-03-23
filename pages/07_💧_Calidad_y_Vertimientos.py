@@ -794,7 +794,6 @@ with tab_fuentes:
     q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400) + ((cabezas_porcinos * 40)/86400)
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
 
-    df_cargas = pd.DataFrame({
     # =====================================================================
     # 🔮 SIMULADOR DINÁMICO DE METABOLISMO (Conectado a Memoria Global)
     # =====================================================================
