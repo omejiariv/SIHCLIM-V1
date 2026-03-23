@@ -297,7 +297,8 @@ if gdf_zona is None or gdf_zona.empty:
 
 # --- 🛑 DETECTOR DE FUGAS DE MEMORIA (STATE LEAKAGE) ---
 lugar_en_memoria = st.session_state.get('aleph_lugar', '')
-anio_analisis = st.session_state.get('aleph_anio', 2024)
+# Forzamos el reloj de calidad a arrancar en 2025 (Año actual de calibración)
+anio_analisis = 2025
 
 # LÓGICA UNIFICADA: Si el territorio cambió, la población anterior es BASURA.
 if lugar_en_memoria != nombre_seleccion:
@@ -740,7 +741,7 @@ with tab_fuentes:
         ha_pastos = st.number_input("Pastos [Ha]:", min_value=0.0, value=val_def_pastos, step=10.0, disabled=aleph_activo)
 
     st.markdown("---")
-    st.markdown(f"### 🐄🚜 Censo Pecuario ICA (2023) para: **{nombre_seleccion}**")
+    st.markdown(f"### 🐄🚜 Censo Pecuario (Calibrado a {anio_analisis}) para: **{nombre_seleccion}**")
     
     # MOTOR DE CRUCE TERRITORIAL
     mpios_activos = []
@@ -871,7 +872,7 @@ with tab_fuentes:
             fig_stack.add_trace(go.Scatter(x=anios_vector, y=v_dbo_agricola, mode='lines', stackgroup='one', name='Agricultura', fillcolor='#16a085', line=dict(color='#1abc9c')))
 
             fig_stack.update_layout(
-                title=f"Crecimiento Multimodelo de Cargas Contaminantes",
+                title=f"Crecimiento Multimodelo de Cargas Contaminantes ({anio_analisis} - {anio_limite})",
                 xaxis_title="Año", yaxis_title="DBO5 (kg/día)", hovermode="x unified",
                 legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
             )
