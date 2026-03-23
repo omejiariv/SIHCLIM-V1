@@ -216,9 +216,12 @@ if 'df_matriz_pecuaria' in st.session_state:
             xaxis_title="Año", yaxis_title="Número de Animales", hovermode="x unified", 
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-        st.plotly_chart(fig, use_container_width=True)
+
+        st.plotly_chart(fig, use_container_width=True, key=f"plot_{key_suffix}")
         
-        with st.expander(f"📐 Parámetros del Modelo de {especie_sel}", expanded=False):
+        # Le agregamos el lado (Izquierdo/Derecho) al título para que nunca se repita
+        lado = "Panel Izquierdo" if key_suffix == "g1" else "Panel Derecho"
+        with st.expander(f"📐 Parámetros del Modelo de {especie_sel} ({lado})", expanded=False):
             df_coefs = pd.DataFrame([
                 {"Modelo": "Logístico", "R²": f"{fila_terr['Log_R2']:.4f}", "Parámetros": f"K={fila_terr['Log_K']:.0f}, a={fila_terr['Log_a']:.4f}, r={fila_terr['Log_r']:.4f}"},
                 {"Modelo": "Exponencial", "R²": f"{fila_terr['Exp_R2']:.4f}", "Parámetros": f"a={fila_terr['Exp_a']:.0f}, b={fila_terr['Exp_b']:.4f}"},
