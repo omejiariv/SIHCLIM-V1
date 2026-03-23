@@ -1456,7 +1456,7 @@ with tab_matriz:
     # =====================================================================
     # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
     # =====================================================================
-    if 'df_matriz_demografica' in st.session_state:
+    if 'df_matriz_demografica' in st.session_state and 'Area' in st.session_state['df_matriz_demografica'].columns:
         st.divider()
         st.subheader("🔬 Validador Visual Comparativo (Urbano vs Rural vs Total)")
         
