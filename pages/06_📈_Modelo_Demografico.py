@@ -1358,7 +1358,6 @@ with tab_matriz:
             
             matriz_resultados = []
             
-            # --- FUNCIÓN ENTRENADORA MODIFICADA (AHORA RECIBE EL ÁREA) ---
             def ajustar_modelos(x, y, nivel, territorio, padre, area):
                 if len(x) < 4: return 
                 x_offset = x[0]
@@ -1397,13 +1396,12 @@ with tab_matriz:
                     poly_r2 = calcular_r2(y, np.polyval(coefs, x_norm))
                 except Exception: pass
 
-                # JUEZ: MEJOR MODELO
                 dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2}
                 mejor_modelo = max(dic_modelos, key=dic_modelos.get)
                 mejor_r2 = dic_modelos[mejor_modelo]
 
                 matriz_resultados.append({
-                    'Area': area, # <--- NUEVA VARIABLE ESPACIAL
+                    'Area': area, 
                     'Nivel': nivel, 'Territorio': territorio, 'Padre': padre,
                     'Año_Base': int(x_offset), 'Pob_Base': round(p0_val, 0),
                     'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
@@ -1412,40 +1410,35 @@ with tab_matriz:
                     'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
                 })
 
-            # CARGA DE DATOS Y LIMPIEZA DE CATEGORÍAS URBANAS/RURALES
             df_mun_memoria = df_mun.copy() 
             col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
             
+            # 🔥 RADAR AMPLIADO PARA CAPTURAR "URBANO", "URBANA", "CABECERA", "RESTO", ETC.
             def clasificar_area(val):
                 v = str(val).lower()
-                if 'cabecera' in v: return 'Urbana'
-                if 'rural' in v or 'centros' in v: return 'Rural'
+                if 'cabecera' in v or 'urban' in v: return 'Urbana'
+                if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
                 return 'Total'
                 
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
 
-            # ENTRENAMIENTO POR CADA ÁREA (Total, Urbana, Rural)
             for tipo_area in ['Total', 'Urbana', 'Rural']:
                 df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
                 if df_area_actual.empty: continue
                 
-                # Nacional
                 df_nac_temp = df_area_actual.groupby(col_anio)['Total'].sum().reset_index().sort_values(by=col_anio)
                 ajustar_modelos(df_nac_temp[col_anio].values, df_nac_temp['Total'].values, 'Nacional', 'Colombia', 'Mundo', tipo_area)
 
-                # Departamental
                 df_deptos = df_area_actual.groupby(['depto_nom', col_anio])['Total'].sum().reset_index()
                 for depto in df_deptos['depto_nom'].unique():
                     df_temp = df_deptos[df_deptos['depto_nom'] == depto].sort_values(by=col_anio)
                     ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Departamental', depto, 'Colombia', tipo_area)
 
-                # Municipal
                 df_mpios = df_area_actual.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
                 for mpio in df_mpios['municipio'].unique():
                     df_temp = df_mpios[df_mpios['municipio'] == mpio].sort_values(by=col_anio)
                     ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Municipal', mpio, df_temp['depto_nom'].iloc[0], tipo_area)
 
-            # EXPORTACIÓN Y GUARDADO EN MEMORIA GLOBAL
             df_matriz = pd.DataFrame(matriz_resultados)
             st.session_state['df_matriz_demografica'] = df_matriz 
             st.success(f"✅ Matriz generada con éxito (Urbana, Rural y Total). Total unidades procesadas: {len(df_matriz)}")
@@ -1462,7 +1455,6 @@ with tab_matriz:
         
         df_mat = st.session_state['df_matriz_demografica']
         
-        # 1. SELECTORES GLOBALES DE TERRITORIO
         c_nav1, c_nav2, c_nav3 = st.columns([1, 1.5, 1])
         with c_nav1:
             niveles_disp = list(df_mat['Nivel'].unique())
@@ -1477,12 +1469,10 @@ with tab_matriz:
             
         st.markdown("---")
         
-        # --- FUNCIÓN CONSTRUCTORA DE PANELES ---
         def renderizar_panel(area_sel, key_suffix):
             import numpy as np
             import plotly.graph_objects as go
             
-            # Filtrar Matriz por Área
             df_filtrado = df_mat[(df_mat['Nivel'] == nivel_val) & (df_mat['Territorio'] == terr_val) & (df_mat['Area'] == area_sel)]
             if df_filtrado.empty:
                 st.warning(f"No hay datos para el área {area_sel} en {terr_val}.")
@@ -1491,13 +1481,14 @@ with tab_matriz:
             fila_terr = df_filtrado.iloc[0]
             mejor_modelo = fila_terr['Modelo_Recomendado']
             
-            # Reconstruir Histórico
             df_mun_memoria = df_mun.copy() 
             col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
+            
+            # 🔥 MISMO RADAR AMPLIADO PARA LA GRÁFICA
             def clasificar_area(val):
                 v = str(val).lower()
-                if 'cabecera' in v: return 'Urbana'
-                if 'rural' in v or 'centros' in v: return 'Rural'
+                if 'cabecera' in v or 'urban' in v: return 'Urbana'
+                if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
                 return 'Total'
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
             
@@ -1511,7 +1502,6 @@ with tab_matriz:
             x_hist = df_hist[col_anio].values
             y_hist = df_hist['Total'].values
             
-            # Vectores de predicción
             x_offset = fila_terr['Año_Base']
             x_pred = np.arange(x_offset, anio_futuro + 1)
             x_norm_pred = x_pred - x_offset
@@ -1520,7 +1510,6 @@ with tab_matriz:
             y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
             y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
             
-            # Gráfico Plotly
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Histórico DANE', marker=dict(color='black', size=8, symbol='diamond')))
             
@@ -1540,34 +1529,24 @@ with tab_matriz:
             fig.update_layout(title=f"Proyección {area_sel} (Ganador: {mejor_modelo})", xaxis_title="Año", yaxis_title="Habitantes", hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             st.plotly_chart(fig, use_container_width=True)
             
-            # --- SECCIÓN MATEMÁTICA (ECUACIONES Y TABLA) ---
             with st.expander(f"📐 Parámetros y Ecuaciones del Modelo {area_sel}", expanded=True):
                 st.markdown(f"**Donde la variable tiempo es:** $t = Año\_Proyectado - {fila_terr['Año_Base']}$")
-                
-                # Ecuaciones en LaTeX
                 st.latex(r"Log\text{\'{i}}stico: P(t) = \frac{K}{1 + a \cdot e^{-r \cdot t}}")
                 st.latex(r"Exponencial: P(t) = a \cdot e^{b \cdot t}")
                 st.latex(r"Polinomial: P(t) = A \cdot t^3 + B \cdot t^2 + C \cdot t + D")
                 
-                # Tabla de Coeficientes
                 df_coefs = pd.DataFrame([
                     {"Modelo": "Logístico", "R²": f"{fila_terr['Log_R2']:.4f}", "Parámetros": f"K={fila_terr['Log_K']:.0f}, a={fila_terr['Log_a']:.4f}, r={fila_terr['Log_r']:.4f}"},
                     {"Modelo": "Exponencial", "R²": f"{fila_terr['Exp_R2']:.4f}", "Parámetros": f"a={fila_terr['Exp_a']:.0f}, b={fila_terr['Exp_b']:.4f}"},
                     {"Modelo": "Polinomial 3", "R²": f"{fila_terr['Poly_R2']:.4f}", "Parámetros": f"A={fila_terr['Poly_A']:.4e}, B={fila_terr['Poly_B']:.4e}, C={fila_terr['Poly_C']:.4f}, D={fila_terr['Poly_D']:.0f}"}
                 ])
-                # Resaltar la fila ganadora
-                def highlight_winner(row):
-                    return ['background-color: #d4edda' if row['Modelo'] == mejor_modelo else '' for _ in row]
-                
+                def highlight_winner(row): return ['background-color: #d4edda' if row['Modelo'] == mejor_modelo else '' for _ in row]
                 st.dataframe(df_coefs.style.apply(highlight_winner, axis=1), use_container_width=True)
 
-        # 2. DOBLE VENTANA (COLUMNAS)
         col_graf_1, col_graf_2 = st.columns(2)
-        
         with col_graf_1:
             area_1 = st.selectbox("Área de Análisis (Panel Izquierdo):", ["Total", "Urbana", "Rural"], index=0, key="sel_a1")
             renderizar_panel(area_1, "g1")
-            
         with col_graf_2:
             area_2 = st.selectbox("Área de Análisis (Panel Derecho):", ["Total", "Urbana", "Rural"], index=1, key="sel_a2")
             renderizar_panel(area_2, "g2")
