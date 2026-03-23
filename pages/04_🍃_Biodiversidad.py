@@ -399,7 +399,7 @@ st.markdown("""
 
 # 🎥 EL REPRODUCTOR DE VIDEO DIDÁCTICO
 with st.expander("🎥 Ver Explicación Didáctica: El Ciclo del Agua", expanded=False):
-    url_video_supabase = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/videos/ciclo%20del%20agua.mp4"
+    url_video_supabase = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/videos/ciclodelagua.mp4"
     st.video(url_video_supabase)
     st.caption("Aprende cómo la naturaleza actúa como la mayor planta de tratamiento y bombeo del planeta.")
 
