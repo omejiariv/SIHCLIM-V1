@@ -1413,27 +1413,37 @@ with tab_matriz:
             df_mun_memoria = df_mun.copy() 
             col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
             
-            # 🔥 RADAR AMPLIADO PARA CAPTURAR "URBANO", "URBANA", "CABECERA", "RESTO", ETC.
             def clasificar_area(val):
                 v = str(val).lower()
                 if 'cabecera' in v or 'urban' in v: return 'Urbana'
                 if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
-                return 'Total'
+                return 'Desconocido'
                 
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
 
+            # 🔥 LA SOLUCIÓN: Lógica de agregación explícita para el "Total"
             for tipo_area in ['Total', 'Urbana', 'Rural']:
-                df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
+                
+                if tipo_area == 'Total':
+                    # Para el total, tomamos todo el dataset original (Urbana + Rural + Todo)
+                    df_area_actual = df_mun_memoria.copy()
+                else:
+                    # Para Urbana o Rural, filtramos estrictamente
+                    df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
+                    
                 if df_area_actual.empty: continue
                 
+                # 1. Nacional
                 df_nac_temp = df_area_actual.groupby(col_anio)['Total'].sum().reset_index().sort_values(by=col_anio)
                 ajustar_modelos(df_nac_temp[col_anio].values, df_nac_temp['Total'].values, 'Nacional', 'Colombia', 'Mundo', tipo_area)
 
+                # 2. Departamental
                 df_deptos = df_area_actual.groupby(['depto_nom', col_anio])['Total'].sum().reset_index()
                 for depto in df_deptos['depto_nom'].unique():
                     df_temp = df_deptos[df_deptos['depto_nom'] == depto].sort_values(by=col_anio)
                     ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Departamental', depto, 'Colombia', tipo_area)
 
+                # 3. Municipal
                 df_mpios = df_area_actual.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
                 for mpio in df_mpios['municipio'].unique():
                     df_temp = df_mpios[df_mpios['municipio'] == mpio].sort_values(by=col_anio)
@@ -1475,7 +1485,7 @@ with tab_matriz:
             
             df_filtrado = df_mat[(df_mat['Nivel'] == nivel_val) & (df_mat['Territorio'] == terr_val) & (df_mat['Area'] == area_sel)]
             if df_filtrado.empty:
-                st.warning(f"No hay datos para el área {area_sel} en {terr_val}.")
+                st.warning(f"No hay datos procesados para el área {area_sel} en {terr_val}.")
                 return
                 
             fila_terr = df_filtrado.iloc[0]
@@ -1484,15 +1494,18 @@ with tab_matriz:
             df_mun_memoria = df_mun.copy() 
             col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
             
-            # 🔥 MISMO RADAR AMPLIADO PARA LA GRÁFICA
             def clasificar_area(val):
                 v = str(val).lower()
                 if 'cabecera' in v or 'urban' in v: return 'Urbana'
                 if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
-                return 'Total'
+                return 'Desconocido'
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
             
-            df_hist_base = df_mun_memoria[df_mun_memoria['Categoria_Area'] == area_sel]
+            # 🔥 LA SOLUCIÓN REPLICADA PARA EL GRÁFICO
+            if area_sel == 'Total':
+                df_hist_base = df_mun_memoria.copy()
+            else:
+                df_hist_base = df_mun_memoria[df_mun_memoria['Categoria_Area'] == area_sel]
             
             if nivel_val == 'Nacional': df_hist = df_hist_base.groupby(col_anio)['Total'].sum().reset_index()
             elif nivel_val == 'Departamental': df_hist = df_hist_base[df_hist_base['depto_nom'] == terr_val].groupby(col_anio)['Total'].sum().reset_index()
@@ -1526,7 +1539,14 @@ with tab_matriz:
             line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
             fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial 3 (R²: {fila_terr['Poly_R2']})", line=line_poly, opacity=op_poly))
             
-            fig.update_layout(title=f"Proyección {area_sel} (Ganador: {mejor_modelo})", xaxis_title="Año", yaxis_title="Habitantes", hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            # Formateo visual del eje Y (con separador de miles)
+            fig.update_layout(
+                title=f"Proyección {area_sel} (Ganador: {mejor_modelo})", 
+                xaxis_title="Año", 
+                yaxis_title="Habitantes", 
+                hovermode="x unified", 
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
             st.plotly_chart(fig, use_container_width=True)
             
             with st.expander(f"📐 Parámetros y Ecuaciones del Modelo {area_sel}", expanded=True):
