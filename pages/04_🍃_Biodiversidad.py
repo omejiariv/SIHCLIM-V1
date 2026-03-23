@@ -31,7 +31,12 @@ except Exception as e:
 
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Monitor de Biodiversidad", page_icon="🍃", layout="wide")
-st.title("🍃 Biodiversidad y Servicios Ecosistémicos Integrados")
+st.title("🍃 Biodiversidad y Servicios de la Naturaleza")
+st.markdown("""
+Explora la riqueza biológica del territorio y descubre **La Factura de la Naturaleza**: 
+una valoración económica de los colosales servicios de desalinización, bombeo, transporte 
+y tratamiento de agua que el ecosistema realiza de forma gratuita.
+""")
 
 # 2. SELECTOR ESPACIAL
 try:
@@ -382,6 +387,83 @@ if gdf_zona is not None:
     if not gdf_bio.empty and 'Amenaza IUCN' in gdf_bio.columns:
         threatened = gdf_bio[~gdf_bio['Amenaza IUCN'].isin(['NE', 'LC', 'NT', 'DD', 'nan'])]
         n_threat = threatened['Nombre Científico'].nunique()
+
+# ==============================================================================
+# 💧 MÓDULO: LA FACTURA DE LA NATURALEZA (VALORACIÓN DE SERVICIOS ECOSISTÉMICOS)
+# ==============================================================================
+st.divider()
+st.header("🌎 La Factura de la Naturaleza")
+st.markdown("""
+¿Cuánto nos costaría a los humanos hacer el trabajo que el ciclo del agua hace gratis? 
+Ajusta los parámetros de tu cuenca para calcular el costo energético y económico de 
+desalinizar, bombear, transportar y filtrar el agua con tecnología humana.
+""")
+
+with st.expander("⚙️ Simulador Económico del Ciclo del Agua", expanded=True):
+    # 1. Conexión con la memoria demográfica (Si existe) o valores por defecto
+    pob_defecto = st.session_state.get('poblacion_total', 500000)
+    
+    col_params1, col_params2, col_params3 = st.columns(3)
+    
+    with col_params1:
+        poblacion = st.number_input("👥 Población a abastecer:", min_value=1000, value=int(pob_defecto), step=10000)
+        dotacion = st.number_input("🚰 Dotación (Litros/hab/día):", min_value=50, value=150, step=10)
+        
+    with col_params2:
+        altura_m = st.number_input("⛰️ Altura de la cuenca (m.s.n.m):", min_value=0, value=1500, step=100)
+        distancia_km = st.number_input("🌬️ Distancia al mar (km):", min_value=0, value=400, step=50)
+        
+    with col_params3:
+        # Tarifas extraídas del Excel original del usuario (US$)
+        st.caption("💸 Tarifas de Ingeniería (Referencia US$)")
+        t_desalinizacion = st.number_input("Desalinización ($/m³):", value=0.50, step=0.05)
+        t_tratamiento = st.number_input("Tratamiento ($/m³):", value=0.05, step=0.01)
+        t_transporte = st.number_input("Transporte ($/m³ por km):", value=0.25, step=0.05)
+        t_bombeo = st.number_input("Bombeo ($/m³ por metro):", value=0.18, step=0.01)
+
+    # 2. EL CEREBRO MATEMÁTICO (Traducción del Excel)
+    volumen_anual_m3 = (poblacion * dotacion * 365) / 1000
+    
+    costo_desalinizacion = volumen_anual_m3 * t_desalinizacion
+    costo_tratamiento = volumen_anual_m3 * t_tratamiento
+    costo_transporte = volumen_anual_m3 * distancia_km * t_transporte
+    costo_bombeo = volumen_anual_m3 * altura_m * t_bombeo
+    
+    costo_total_naturaleza = costo_desalinizacion + costo_tratamiento + costo_transporte + costo_bombeo
+    
+    # 3. RESULTADOS DE ALTO IMPACTO
+    st.markdown("### 🧾 Resumen de la Factura Anual")
+    
+    col_res1, col_res2, col_res3 = st.columns(3)
+    col_res1.metric("Volumen de Agua Movilizado", f"{volumen_anual_m3:,.0f} m³/año")
+    col_res2.metric("Aporte Total de la Naturaleza", f"${costo_total_naturaleza:,.0f} USD/año")
+    
+    # Costo medio equivalente en la factura humana
+    costo_medio_m3 = costo_total_naturaleza / volumen_anual_m3 if volumen_anual_m3 > 0 else 0
+    col_res3.metric("Costo Real Oculto del Agua", f"${costo_medio_m3:,.2f} USD/m³", "Pagado por el ecosistema")
+
+    # 4. GRÁFICA COMPARATIVA
+    import plotly.express as px
+    import pandas as pd
+    
+    df_costos = pd.DataFrame({
+        "Servicio Ecosistémico": ["Desalinización (Evaporación)", "Bombeo (Ascenso Térmico)", "Transporte (Vientos Alisios)", "Tratamiento (Suelo/Bosque)"],
+        "Costo (USD)": [costo_desalinizacion, costo_bombeo, costo_transporte, costo_tratamiento]
+    })
+    
+    fig_agua = px.pie(
+        df_costos, 
+        values="Costo (USD)", 
+        names="Servicio Ecosistémico", 
+        title="Distribución del Esfuerzo Energético y Económico Natural",
+        hole=0.4,
+        color_discrete_sequence=px.colors.sequential.Teal
+    )
+    fig_agua.update_traces(textposition='inside', textinfo='percent+label')
+    
+    st.plotly_chart(fig_agua, use_container_width=True)
+    
+    st.info(f"💡 **Reflexión:** Para proveer agua a **{poblacion:,.0f} habitantes** en una cuenca a **{altura_m} metros** de altura, la naturaleza invierte anualmente el equivalente a **${costo_total_naturaleza / 1e6:,.1f} millones de dólares** en trabajo termodinámico. Conservar la cuenca no es un gasto, es el mayor ahorro en infraestructura que puede hacer un municipio.")
 
 # ==============================================================================
 # TAB 1: MAPA Y MÉTRICAS
