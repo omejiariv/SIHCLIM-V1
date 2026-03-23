@@ -1337,9 +1337,9 @@ with tab_matriz:
     st.subheader("🧠 Motor Generador de Matriz Maestra Demográfica")
     st.markdown("""
     Este motor entrena simultáneamente tres modelos matemáticos predictivos y recomienda el de mejor ajuste:
-    * **Logístico:** $P(t) = K / (1 + a \cdot e^{-r \cdot t})$ (Ideal para poblaciones que alcanzan un techo).
-    * **Exponencial:** $P(t) = a \cdot e^{b \cdot t}$ (Ideal para poblaciones en crecimiento libre).
-    * **Polinomial (Grado 3):** $P(t) = A \cdot t^3 + B \cdot t^2 + C \cdot t + D$ (Ideal para poblaciones con fluctuaciones o declives).
+    * **Logístico:** Ideal para poblaciones que alcanzan un techo por límites físicos o recursos.
+    * **Exponencial:** Ideal para poblaciones en crecimiento o decrecimiento libre constante.
+    * **Polinomial (Grado 3):** Ideal para poblaciones con fluctuaciones o declives no lineales.
     """)
     
     if st.button("⚙️ Iniciar Entrenamiento Multimodelo", type="primary"):
@@ -1348,11 +1348,9 @@ with tab_matriz:
             import pandas as pd
             from scipy.optimize import curve_fit
             
-            # --- DEFINICIÓN DE FUNCIONES ---
             def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
             def f_exp(t, a, b): return a * np.exp(b * t)
             
-            # --- FUNCIÓN PARA CALCULAR R² ---
             def calcular_r2(y_real, y_pred):
                 ss_res = np.sum((y_real - y_pred) ** 2)
                 ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
@@ -1360,18 +1358,15 @@ with tab_matriz:
             
             matriz_resultados = []
             
-            # --- FUNCIÓN ENTRENADORA MULTIMODELO ---
             def ajustar_modelos(x, y, nivel, territorio, padre):
-                if len(x) < 4: return # Evitar errores si hay muy pocos datos para polinomios
-                
+                if len(x) < 4: return 
                 x_offset = x[0]
                 x_norm = x - x_offset
-                
                 p0_val = max(1, y[0])
                 max_y = max(y)
                 es_creciente = y[-1] >= p0_val
                 
-                # 1. ENTRENAMIENTO LOGÍSTICO
+                # 1. LOGÍSTICO
                 log_k, log_a, log_r, log_r2 = 0, 0, 0, 0
                 try:
                     k_max = max_y * 3.0 if es_creciente else max_y * 1.1
@@ -1385,109 +1380,151 @@ with tab_matriz:
                     log_r2 = calcular_r2(y, f_log(x_norm, *popt_log))
                 except Exception: pass
 
-                # 2. ENTRENAMIENTO EXPONENCIAL
+                # 2. EXPONENCIAL
                 exp_a, exp_b, exp_r2 = 0, 0, 0
                 try:
-                    # Suposición inicial: a = población base, b = tasa de crecimiento suave
                     popt_exp, _ = curve_fit(f_exp, x_norm, y, p0=[p0_val, 0.01], maxfev=50000)
                     exp_a, exp_b = popt_exp
                     exp_r2 = calcular_r2(y, f_exp(x_norm, *popt_exp))
                 except Exception: pass
 
-                # 3. ENTRENAMIENTO POLINOMIAL (Grado 3)
+                # 3. POLINOMIAL (Grado 3)
                 poly_A, poly_B, poly_C, poly_D, poly_r2 = 0, 0, 0, 0, 0
                 try:
                     coefs = np.polyfit(x_norm, y, 3)
                     poly_A, poly_B, poly_C, poly_D = coefs
-                    y_pred_poly = np.polyval(coefs, x_norm)
-                    poly_r2 = calcular_r2(y, y_pred_poly)
+                    poly_r2 = calcular_r2(y, np.polyval(coefs, x_norm))
                 except Exception: pass
 
-                # 🏆 JUEZ: SELECCIÓN DEL MEJOR MODELO
-                # Evaluamos quién tiene el R² más cercano a 1 (100% de precisión)
-                dic_modelos = {
-                    'Logístico': log_r2,
-                    'Exponencial': exp_r2,
-                    'Polinomial_3': poly_r2
-                }
-                
-                # Elegimos la llave con el valor máximo
+                # JUEZ: MEJOR MODELO
+                dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2}
                 mejor_modelo = max(dic_modelos, key=dic_modelos.get)
                 mejor_r2 = dic_modelos[mejor_modelo]
 
-                # Consolidación
                 matriz_resultados.append({
                     'Nivel': nivel, 'Territorio': territorio, 'Padre': padre,
                     'Año_Base': int(x_offset), 'Pob_Base': round(p0_val, 0),
-                    # Coeficientes Logísticos
                     'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
-                    # Coeficientes Exponenciales
                     'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
-                    # Coeficientes Polinomiales
                     'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
-                    # El Veredicto
-                    'Modelo_Recomendado': mejor_modelo,
-                    'Mejor_R2': round(mejor_r2, 4)
+                    'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
                 })
 
-            # ==========================================
-            # 1. CARGA DE BASE DE DATOS ÚNICA
-            # ==========================================
+            # CARGA DE DATOS Y ENTRENAMIENTO
             df_mun_memoria = df_mun.copy() 
             col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
-            
             df_mun_puro = df_mun_memoria[df_mun_memoria['area_geografica'].str.lower() == 'total'].copy()
-            if df_mun_puro.empty: 
-                df_mun_puro = df_mun_memoria.copy()
+            if df_mun_puro.empty: df_mun_puro = df_mun_memoria.copy()
 
-            # ==========================================
-            # 2. ESCALA NACIONAL
-            # ==========================================
-            df_nac_temp = df_mun_puro.groupby(col_anio)['Total'].sum().reset_index()
-            df_nac_temp = df_nac_temp.sort_values(by=col_anio)
+            df_nac_temp = df_mun_puro.groupby(col_anio)['Total'].sum().reset_index().sort_values(by=col_anio)
             ajustar_modelos(df_nac_temp[col_anio].values, df_nac_temp['Total'].values, 'Nacional', 'Colombia', 'Mundo')
 
-            # ==========================================
-            # 3. ESCALA DEPARTAMENTAL
-            # ==========================================
             df_deptos = df_mun_puro.groupby(['depto_nom', col_anio])['Total'].sum().reset_index()
             for depto in df_deptos['depto_nom'].unique():
                 df_temp = df_deptos[df_deptos['depto_nom'] == depto].sort_values(by=col_anio)
                 ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Departamental', depto, 'Colombia')
 
-            # ==========================================
-            # 4. ESCALA MUNICIPAL
-            # ==========================================
             df_mpios = df_mun_puro.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
             for mpio in df_mpios['municipio'].unique():
                 df_temp = df_mpios[df_mpios['municipio'] == mpio].sort_values(by=col_anio)
-                padre_mpio = df_temp['depto_nom'].iloc[0]
-                ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Municipal', mpio, padre_mpio)
+                ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Municipal', mpio, df_temp['depto_nom'].iloc[0])
 
-            # ==========================================
-            # EXPORTACIÓN Y ANÁLISIS GLOBAL
-            # ==========================================
+            # EXPORTACIÓN Y GUARDADO EN MEMORIA GLOBAL
             df_matriz = pd.DataFrame(matriz_resultados)
-            
-            # Gráfico rápido de distribución de mejores modelos
-            st.success(f"✅ Matriz generada con éxito. Total unidades procesadas: {len(df_matriz)}")
-            
-            c1, c2 = st.columns([1,2])
-            with c1:
-                st.markdown("**🏆 Frecuencia de Modelos Ganadores**")
-                st.dataframe(df_matriz['Modelo_Recomendado'].value_counts().reset_index().rename(columns={'count':'Territorios'}))
-            with c2:
-                st.markdown("**📊 Muestra de la Matriz Generada (Top 10)**")
-                # Mostramos columnas clave para la vista previa
-                st.dataframe(df_matriz[['Nivel', 'Territorio', 'Modelo_Recomendado', 'Mejor_R2', 'Log_R2', 'Exp_R2', 'Poly_R2']].head(10))
+            st.session_state['df_matriz_demografica'] = df_matriz # <--- GUARDADO CLAVE PARA EL VALIDADOR
+            st.success(f"✅ Matriz generada con éxito en la memoria. Total unidades procesadas: {len(df_matriz)}")
             
             csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Descargar Matriz_Maestra_Demografica_Multimodelo.csv",
-                data=csv_matriz,
-                file_name="Matriz_Maestra_Demografica_Multimodelo.csv",
-                mime='text/csv'
-            )
+            st.download_button("📥 Descargar Matriz CSV", data=csv_matriz, file_name="Matriz_Multimodelo.csv", mime='text/csv')
+
+    # =====================================================================
+    # 🔬 VALIDADOR VISUAL INTERACTIVO (Aparece si la matriz está en memoria)
+    # =====================================================================
+    if 'df_matriz_demografica' in st.session_state:
+        st.divider()
+        st.subheader("🔬 Validador Visual de Proyecciones Multimodelo")
+        st.markdown("Inspecciona visualmente el comportamiento histórico frente a la predicción matemática antes de aplicar el modelo al resto de la plataforma.")
+        
+        df_mat = st.session_state['df_matriz_demografica']
+        
+        # 1. SELECTORES
+        c1, c2, c3 = st.columns([1, 1.5, 1])
+        with c1:
+            niveles_disp = list(df_mat['Nivel'].unique())
+            idx_mun = niveles_disp.index('Municipal') if 'Municipal' in niveles_disp else 0
+            nivel_val = st.selectbox("1. Nivel de Análisis:", niveles_disp, index=idx_mun)
+            
+        with c2:
+            territorios_disp = sorted(df_mat[df_mat['Nivel'] == nivel_val]['Territorio'].unique())
+            # Si quieres ver Belmira por defecto (para pruebas), lo buscamos
+            idx_terr = territorios_disp.index('BELMIRA') if 'BELMIRA' in territorios_disp else 0
+            terr_val = st.selectbox("2. Territorio (Municipio/Depto):", territorios_disp, index=idx_terr)
+            
+        with c3:
+            anio_futuro = st.slider("3. Proyectar hasta el año:", min_value=2025, max_value=2100, value=2050, step=5)
+            
+        # 2. RECOPILACIÓN DE DATOS PARA LA GRÁFICA
+        import numpy as np
+        fila_terr = df_mat[(df_mat['Nivel'] == nivel_val) & (df_mat['Territorio'] == terr_val)].iloc[0]
+        mejor_modelo = fila_terr['Modelo_Recomendado']
+        
+        # Traer histórico
+        df_mun_memoria = df_mun.copy() 
+        col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
+        df_mun_puro = df_mun_memoria[df_mun_memoria['area_geografica'].str.lower() == 'total'].copy()
+        if df_mun_puro.empty: df_mun_puro = df_mun_memoria.copy()
+        
+        if nivel_val == 'Nacional': df_hist = df_mun_puro.groupby(col_anio)['Total'].sum().reset_index()
+        elif nivel_val == 'Departamental': df_hist = df_mun_puro[df_mun_puro['depto_nom'] == terr_val].groupby(col_anio)['Total'].sum().reset_index()
+        else: df_hist = df_mun_puro[df_mun_puro['municipio'] == terr_val].groupby(col_anio)['Total'].sum().reset_index()
+            
+        df_hist = df_hist.sort_values(by=col_anio)
+        x_hist = df_hist[col_anio].values
+        y_hist = df_hist['Total'].values
+        
+        # Vectores de predicción
+        x_offset = fila_terr['Año_Base']
+        x_pred = np.arange(x_offset, anio_futuro + 1)
+        x_norm_pred = x_pred - x_offset
+        
+        # Cálculo de las 3 líneas
+        y_log = fila_terr['Log_K'] / (1 + fila_terr['Log_a'] * np.exp(-fila_terr['Log_r'] * x_norm_pred))
+        y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
+        y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
+        
+        # 3. RENDERIZADO DEL GRÁFICO (PLOTLY)
+        import plotly.graph_objects as go
+        fig = go.Figure()
+        
+        # Puntos reales (DANE)
+        fig.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Histórico DANE', marker=dict(color='black', size=9, symbol='diamond')))
+        
+        # Configuración visual: El ganador es grueso y sólido, los perdedores delgados y punteados
+        def config_linea(nombre_mod, color):
+            es_ganador = mejor_modelo == nombre_mod
+            return dict(color=color, width=4 if es_ganador else 2, dash='solid' if es_ganador else 'dash'), 1.0 if es_ganador else 0.4
+            
+        line_log, op_log = config_linea('Logístico', '#2980b9')
+        fig.add_trace(go.Scatter(x=x_pred, y=y_log, mode='lines', name=f"Logístico (R²: {fila_terr['Log_R2']})", line=line_log, opacity=op_log))
+        
+        line_exp, op_exp = config_linea('Exponencial', '#e67e22')
+        fig.add_trace(go.Scatter(x=x_pred, y=y_exp, mode='lines', name=f"Exponencial (R²: {fila_terr['Exp_R2']})", line=line_exp, opacity=op_exp))
+        
+        line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
+        fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial 3 (R²: {fila_terr['Poly_R2']})", line=line_poly, opacity=op_poly))
+        
+        fig.update_layout(
+            title=f"Evolución y Proyección de {terr_val} (Ganador: {mejor_modelo})",
+            xaxis_title="Año", yaxis_title="Habitantes",
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Conclusión ejecutiva
+        st.info(f"💡 **Diagnóstico de la IA:** Para el territorio de **{terr_val}** (perteneciente a {fila_terr['Padre']}), el algoritmo seleccionó el modelo **{mejor_modelo}** porque logró un ajuste del **{fila_terr['Mejor_R2']*100:.2f}%** sobre la curva de datos reales. Esta es la ecuación que se inyectará en el simulador de presiones hídricas.")
+    else:
+        st.info("👆 Haz clic en 'Iniciar Entrenamiento Multimodelo' para generar la matriz y desbloquear el validador visual.")
             
 # ==========================================
 # PESTAÑA 5: RANKINGS Y DINÁMICA HISTÓRICA (Top 15 y 2005-2035)
