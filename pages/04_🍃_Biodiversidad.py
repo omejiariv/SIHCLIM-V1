@@ -1010,40 +1010,47 @@ with tab_afolu:
             area_bosque_real = df_diagnostico[df_diagnostico['COV_ID'] == 9]['Hectareas'].sum()
     except: pass
 
-    df_bov = cargar_censo_ica('bovino')
-    df_porc = cargar_censo_ica('porcino')
-    df_aves = cargar_censo_ica('aviar')
+    # --- NUEVA LÓGICA: CONEXIÓN AL GEMELO DIGITAL (MEMORIA GLOBAL) ---
+    nivel_sel_visual = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() for x in ['rio', 'río', 'quebrada']) else "Municipal"
     
-    # Motor de sumatoria masiva
-    def filtrar_y_sumar(df, columna_mpio, columna_valor):
-        if df.empty or columna_valor not in df.columns: return 0
-        if es_departamento:
-            if 'DEPARTAMENTO' in df.columns:
-                return df[df['DEPARTAMENTO'].astype(str).str.lower().str.contains('antioquia')][columna_valor].sum()
-            return df[columna_valor].sum()
-        return df[df[columna_mpio].isin(mpios_activos)][columna_valor].sum()
+    poblacion_urbana_calculada, poblacion_rural_calculada = 0.0, 0.0
+    bovinos_reales, porcinos_reales, aves_reales = 0.0, 0.0, 0.0
+    origen_datos = "Estimación (Fallback)"
 
-    bovinos_reales = int(filtrar_y_sumar(df_bov, 'MUNICIPIO_NORM', 'TOTALBOVINOS'))
-    porcinos_reales = int(filtrar_y_sumar(df_porc, 'MUNICIPIO_NORM', 'TOTAL_CERDOS'))
-    col_aves = 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' if not df_aves.empty and 'TOTAL_AVES_CAPACIDAD_OCUPADA_MAS_AVES_TRASPATIO' in df_aves.columns else 'TOTAL_AVES_CAPACIDAD_OCUPADA'
-    aves_reales = int(filtrar_y_sumar(df_aves, 'MUNICIPIO_NORM', col_aves))
+    # 1. Extraer Humanos de la Memoria
+    if 'df_matriz_demografica' in st.session_state:
+        df_demo = st.session_state['df_matriz_demografica']
+        filtro_u = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Urbana')]
+        filtro_r = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Rural')]
+        
+        if not filtro_u.empty: poblacion_urbana_calculada = float(filtro_u.iloc[0]['Pob_Base'])
+        if not filtro_r.empty: poblacion_rural_calculada = float(filtro_r.iloc[0]['Pob_Base'])
+        if poblacion_urbana_calculada > 0 or poblacion_rural_calculada > 0: origen_datos = "Matriz Maestra"
 
-    poblacion_rural_calculada, poblacion_urbana_calculada = 0, 0
-    try:
-        df_mpios = pd.read_csv("data/Pob_mpios_colombia.csv", sep=';', low_memory=False)
-        if es_departamento: df_m_filt = df_mpios[df_mpios['depto_nom'].astype(str).str.lower().str.contains('antioquia')]
-        else: df_m_filt = df_mpios[df_mpios['municipio'].astype(str).apply(normalizar_texto).isin(mpios_activos)]
-            
-        if not df_m_filt.empty:
-            anio_max = df_m_filt['año'].max()
-            df_m_filt = df_m_filt[df_m_filt['año'] == anio_max]
-            areas_str = df_m_filt['area_geografica'].astype(str).str.lower()
-            poblacion_rural_calculada = int(df_m_filt[areas_str.str.contains('rural|resto|centro', na=False)]['Poblacion'].sum())
-            poblacion_urbana_calculada = int(df_m_filt[areas_str.str.contains('urbano|cabecera', na=False)]['Poblacion'].sum())
-    except: pass
-    
-    if poblacion_rural_calculada == 0: poblacion_rural_calculada = 50 
-    if poblacion_urbana_calculada == 0: poblacion_urbana_calculada = 1000 
+    # 2. Extraer Animales de la Memoria
+    if 'df_matriz_pecuaria' in st.session_state:
+        df_pecu = st.session_state['df_matriz_pecuaria']
+        filtro_bov = df_pecu[(df_pecu['Nivel'] == nivel_sel_visual) & (df_pecu['Territorio'] == nombre_seleccion) & (df_pecu['Especie'] == 'Bovinos')]
+        filtro_por = df_pecu[(df_pecu['Nivel'] == nivel_sel_visual) & (df_pecu['Territorio'] == nombre_seleccion) & (df_pecu['Especie'] == 'Porcinos')]
+        filtro_ave = df_pecu[(df_pecu['Nivel'] == nivel_sel_visual) & (df_pecu['Territorio'] == nombre_seleccion) & (df_pecu['Especie'] == 'Aves')]
+        
+        if not filtro_bov.empty: bovinos_reales = float(filtro_bov.iloc[0]['Poblacion_Base'])
+        if not filtro_por.empty: porcinos_reales = float(filtro_por.iloc[0]['Poblacion_Base'])
+        if not filtro_ave.empty: aves_reales = float(filtro_ave.iloc[0]['Poblacion_Base'])
+
+    # 3. Fallbacks de Seguridad (Por si es un área sin datos)
+    pob_total_calculada = poblacion_urbana_calculada + poblacion_rural_calculada
+    if pob_total_calculada <= 0:
+        area_km2 = 100.0 # Valor seguro
+        if 'gdf_zona' in locals() and gdf_zona is not None and not gdf_zona.empty:
+            area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
+        pob_total_calculada = max(area_km2 * 65.0, 500.0)
+        poblacion_urbana_calculada = pob_total_calculada * 0.7
+        poblacion_rural_calculada = pob_total_calculada * 0.3
+        
+    if bovinos_reales <= 0: bovinos_reales = pob_total_calculada * 1.5 
+    if porcinos_reales <= 0: porcinos_reales = pob_total_calculada * 0.8
+    if aves_reales <= 0: aves_reales = pob_total_calculada * 10.0
     aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
 
     col_a1, col_a2 = st.columns([1, 2.5])
@@ -1064,7 +1071,10 @@ with tab_afolu:
         # 🐄 MÓDULO 2: RURAL Y AGROPECUARIO (Desplegable)
         # =========================================================================
         with st.expander("🌾 2. Actividades Agropecuarias y Humanas (Rural)", expanded=False):
-            st.info(f"📍 **Conexión Aleph:** Datos extraídos para **{nombre_seleccion}**.")
+            if origen_datos == "Matriz Maestra":
+                st.success(f"🧠 **Conexión Aleph Sincronizada:** Las cargas rurales se calcularon usando censos reales para **{nombre_seleccion}**.")
+            else:
+                st.info(f"📍 **Conexión Aleph Local:** Datos aproximados para **{nombre_seleccion}** (Fuente: {origen_datos}).")
             opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"]
             fuentes_sel = st.multiselect("Selecciona cargas rurales a modelar:", opciones_fuentes, default=["Todas"])
             fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"] if "Todas" in fuentes_sel else fuentes_sel
