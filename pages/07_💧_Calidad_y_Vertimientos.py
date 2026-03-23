@@ -295,44 +295,50 @@ if gdf_zona is None or gdf_zona.empty:
     st.info("👈 Por favor, utiliza el menú lateral para seleccionar un territorio.")
     st.stop() 
 
-# --- 🛑 DETECTOR DE FUGAS DE MEMORIA (STATE LEAKAGE) ---
-lugar_en_memoria = st.session_state.get('aleph_lugar', '')
-# Forzamos el reloj de calidad a arrancar en 2025 (Año actual de calibración)
-anio_analisis = 2025
+# ==============================================================================
+# 👥 EXTRACCIÓN DE POBLACIÓN BASE DESDE LA MATRIZ MAESTRA
+# ==============================================================================
+anio_analisis = 2025 # Forzamos el reloj de calidad a arrancar en 2025
+nivel_sel_visual = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() for x in ['rio', 'río', 'quebrada']) else "Municipal"
 
-# LÓGICA UNIFICADA: Si el territorio cambió, la población anterior es BASURA.
-if lugar_en_memoria != nombre_seleccion:
-    st.session_state['aleph_pob_total'] = 0.0 # Destruimos el dato falso
-    lugar_en_memoria = nombre_seleccion # Forzamos la actualización de referencia
+pob_urb_base, pob_rur_base = 0.0, 0.0
+origen_dato = "Estimación Geoespacial (Fallback)"
+
+# Buscamos directamente en la mente del Gemelo Digital
+if 'df_matriz_demografica' in st.session_state:
+    df_demo = st.session_state['df_matriz_demografica']
     
-pob_memoria = float(st.session_state.get('aleph_pob_total', 0.0))
+    filtro_u = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Urbana')]
+    filtro_r = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Rural')]
+    
+    if not filtro_u.empty: pob_urb_base = float(filtro_u.iloc[0]['Pob_Base'])
+    if not filtro_r.empty: pob_rur_base = float(filtro_r.iloc[0]['Pob_Base'])
+    
+    if pob_urb_base > 0 or pob_rur_base > 0:
+        origen_dato = "Matriz Maestra (DANE)"
 
-# Si la población es 0 (porque cambiamos de lugar o no se ha calculado), estimamos por área
-if pob_memoria <= 0:
+pob_total_base = pob_urb_base + pob_rur_base
+
+# Fallback por si el usuario elige una cuenca no mapeada o todo el departamento
+if pob_total_base <= 0:
     area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
-    pob_total = area_km2 * 65.0  # Densidad rural/mixta base (65 hab/km2)
-    pob_total = max(pob_total, 500.0) # Mínimo vital
-    origen_dato = "Estimación Geoespacial (Densidad base)"
-else:
-    pob_total = pob_memoria
-    origen_dato = "Motor Demográfico (Memoria)"
+    pob_total_base = max(area_km2 * 65.0, 500.0)
+    pob_urb_base, pob_rur_base = pob_total_base * 0.7, pob_total_base * 0.3
 
 # --- INTERFAZ UNIFICADA ---
 st.markdown("---")
-with st.expander(f"📍 Contexto Territorial y Demográfico: {nombre_seleccion}", expanded=False):
-    if pob_memoria > 0:
-        st.success(f"🧠 **Contexto Sincronizado:** Analizando **{nombre_seleccion}** con datos del Motor Demográfico.")
+with st.expander(f"📍 Contexto Demográfico Base ({anio_analisis}): {nombre_seleccion}", expanded=False):
+    if origen_dato == "Matriz Maestra (DANE)":
+        st.success(f"🧠 **Sincronización Perfecta:** Población extraída de la Matriz Maestra para **{nombre_seleccion}**.")
     else:
-        st.warning(f"⚠️ **Atención:** No hay proyección en memoria para **{nombre_seleccion}**. Se ha realizado una {origen_dato}.")
+        st.warning(f"⚠️ **Atención:** No hay datos en la matriz para **{nombre_seleccion}**. Usando {origen_dato}.")
     
-    
-    st.markdown("---")
-    st.markdown("⚙️ **Ajuste Manual de Distribución Espacial**")
+    st.markdown("⚙️ **Distribución Espacial (Calibración Base)**")
     col_p1, col_p2 = st.columns(2)
     with col_p1: 
-        pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=float(pob_total * 0.70), step=1.0)
+        pob_urbana = st.number_input("Pob. Urbana (Cabecera):", min_value=0.0, value=float(pob_urb_base), step=1.0)
     with col_p2: 
-        pob_rural = st.number_input("Pob. Rural (Resto):", min_value=0.0, value=float(pob_total * 0.30), step=1.0)
+        pob_rural = st.number_input("Pob. Rural (Resto):", min_value=0.0, value=float(pob_rur_base), step=1.0)
     
     pob_total = pob_urbana + pob_rural
 
