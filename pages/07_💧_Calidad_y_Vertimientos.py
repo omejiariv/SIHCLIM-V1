@@ -329,9 +329,13 @@ if pob_total_base <= 0:
 st.markdown("---")
 with st.expander(f"📍 Contexto Demográfico Base ({anio_analisis}): {nombre_seleccion}", expanded=False):
     if origen_dato == "Matriz Maestra (DANE)":
-        st.success(f"🧠 **Sincronización Perfecta:** Población extraída de la Matriz Maestra para **{nombre_seleccion}**.")
+        st.success(f"🧠 **Sincronización Perfecta:** Población humana extraída de la Matriz Maestra para **{nombre_seleccion}**.")
     else:
-        st.warning(f"⚠️ **Atención:** No hay datos en la matriz para **{nombre_seleccion}**. Usando {origen_dato}.")
+        # Si es un río o cuenca, damos un mensaje informativo en azul (info), no una alerta (warning)
+        if nivel_sel_visual == "Cuenca Hidrográfica":
+            st.info(f"🗺️ **Adaptación Espacial:** El DANE proyecta humanos solo por municipios. Para la cuenca **{nombre_seleccion}**, se aplicó una {origen_dato}.")
+        else:
+            st.warning(f"⚠️ **Atención:** No hay datos en la matriz para **{nombre_seleccion}**. Usando {origen_dato}.")
     
     st.markdown("⚙️ **Distribución Espacial (Calibración Base)**")
     col_p1, col_p2 = st.columns(2)
@@ -342,7 +346,7 @@ with st.expander(f"📍 Contexto Demográfico Base ({anio_analisis}): {nombre_se
     
     pob_total = pob_urbana + pob_rural
 
-st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 📅 Año: **{anio_analisis}** | 👥 Población Base: **{pob_total:,.0f} Hab.**")
+st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 📅 Año: **{anio_analisis}** | 👥 Población Base Humana: **{pob_total:,.0f} Hab.**")
 
 # --- 🌉 ALIAS DE COMPATIBILIDAD PARA FUNCIONES ANTIGUAS ---
 lugar_sel = nombre_seleccion
