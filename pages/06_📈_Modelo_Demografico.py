@@ -1413,24 +1413,19 @@ with tab_matriz:
             df_mun_memoria = df_mun.copy() 
             col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
             
+            # 🔥 EL RADAR PERFECCIONADO (Identifica el Total nativo del DANE)
             def clasificar_area(val):
                 v = str(val).lower()
+                if 'total' in v: return 'Total'
                 if 'cabecera' in v or 'urban' in v: return 'Urbana'
                 if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
                 return 'Desconocido'
                 
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
 
-            # 🔥 LA SOLUCIÓN: Lógica de agregación estricta para evitar duplicidad
+            # Extraemos las áreas puras sin sumas forzadas
             for tipo_area in ['Total', 'Urbana', 'Rural']:
-                
-                if tipo_area == 'Total':
-                    # Construimos el Total sumando ÚNICAMENTE las partes puras (Urbana + Rural)
-                    df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'].isin(['Urbana', 'Rural'])]
-                else:
-                    # Para Urbana o Rural, filtramos estrictamente
-                    df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
-                    
+                df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
                 if df_area_actual.empty: continue
                 
                 # 1. Nacional
@@ -1496,16 +1491,15 @@ with tab_matriz:
             
             def clasificar_area(val):
                 v = str(val).lower()
+                if 'total' in v: return 'Total'
                 if 'cabecera' in v or 'urban' in v: return 'Urbana'
                 if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
                 return 'Desconocido'
+                
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
             
-            # 🔥 LA SOLUCIÓN REPLICADA PARA EL GRÁFICO
-            if area_sel == 'Total':
-                df_hist_base = df_mun_memoria.copy()
-            else:
-                df_hist_base = df_mun_memoria[df_mun_memoria['Categoria_Area'] == area_sel]
+            # 🔥 Seleccionamos el área puramente
+            df_hist_base = df_mun_memoria[df_mun_memoria['Categoria_Area'] == area_sel]
             
             if nivel_val == 'Nacional': df_hist = df_hist_base.groupby(col_anio)['Total'].sum().reset_index()
             elif nivel_val == 'Departamental': df_hist = df_hist_base[df_hist_base['depto_nom'] == terr_val].groupby(col_anio)['Total'].sum().reset_index()
@@ -1539,7 +1533,6 @@ with tab_matriz:
             line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
             fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial 3 (R²: {fila_terr['Poly_R2']})", line=line_poly, opacity=op_poly))
             
-            # Formateo visual del eje Y (con separador de miles)
             fig.update_layout(
                 title=f"Proyección {area_sel} (Ganador: {mejor_modelo})", 
                 xaxis_title="Año", 
