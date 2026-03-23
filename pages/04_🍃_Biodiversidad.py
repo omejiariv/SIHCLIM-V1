@@ -397,6 +397,12 @@ st.markdown("""
 > *¿Cuánto nos costaría a los humanos hacer el trabajo que el ciclo del agua hace gratis?* > Este simulador calcula el costo energético y económico de desalinizar, bombear, transportar y filtrar el agua con tecnología e infraestructura humana.
 """)
 
+# 🎥 EL REPRODUCTOR DE VIDEO DIDÁCTICO
+with st.expander("🎥 Ver Explicación Didáctica: El Ciclo del Agua", expanded=False):
+    url_video_supabase = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/sign/videos/ciclo%20del%20agua.avi?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xNDhiMmI5YS1jN2FlLTRjMzctYTkwNy1iZTlmM2UyY2NlY2YiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvY2ljbG8gZGVsIGFndWEuYXZpIiwiaWF0IjoxNzc0MjI2Mjg1LCJleHAiOjE4MDU3NjIyODV9.r5pwkBmjmolpZShE5WTy1hs0oYu3sGL-rsCOEqk8R0Q"
+    st.video(url_video_supabase)
+    st.caption("Aprende cómo la naturaleza actúa como la mayor planta de tratamiento y bombeo del planeta.")
+
 # 1. Obtenemos población de la memoria o usamos valor por defecto
 pob_defecto = st.session_state.get('poblacion_total', 500000)
 
@@ -436,7 +442,7 @@ costo_medio_m3 = costo_total_naturaleza / volumen_anual_m3 if volumen_anual_m3 >
 # PANEL DE RESULTADOS (DERECHA)
 # ==========================================
 with col_dash:
-    st.markdown("### 🧾 Resumen Financiero Anual")
+    st.markdown("### 🧾 Resumen Financiero Anual - Aportes de la Infraestructura Natural")
     
     # Tarjetas de métricas (KPIs)
     kpi1, kpi2, kpi3 = st.columns(3)
