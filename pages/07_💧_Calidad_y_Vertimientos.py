@@ -474,15 +474,22 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         import pandas as pd
         import time
         
-        # 🛡️ ESCUDO 1: "Cache-Buster" para engañar a Supabase y traer el archivo fresco siempre
-        url_supabase = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Cuencas_Maestro.csv?t={int(time.time())}"
+        # 🛡️ ESCUDO 1: URL actualizada al nuevo archivo HISTÓRICO
+        url_supabase = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Historico_Cuencas.csv?t={int(time.time())}"
         df_censo = pd.read_csv(url_supabase)
+        
+        # 🔥 FILTRO TEMPORAL CLAVE: Para no sumar todos los años históricos juntos
+        if anio_analisis is not None and 'Anio' in df_censo.columns:
+            # Si el usuario pide 2035 pero la historia llega a 2025, usamos 2025 como base estática
+            anio_max = df_censo['Anio'].max()
+            anio_filtro = min(anio_analisis, anio_max)
+            df_censo = df_censo[df_censo['Anio'] == anio_filtro]
         
         # 🛡️ ESCUDO 2: Traductor Universal de Escalas
         mapa_escala = {
             "zona hidrográfica": "Zona_Hidrografica",
             "zona hidrografica": "Zona_Hidrografica",
-            "cuenca": "Subcuenca",       # <- Clave por si la UI envía "cuenca"
+            "cuenca": "Subcuenca",       
             "subcuenca": "Subcuenca",
             "sistema": "Sistema",
             "municipio": "Municipio_Norm",
@@ -490,7 +497,7 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         }
         
         col_limpia = str(nivel_sel_interno).lower().strip()
-        columna_escala = mapa_escala.get(col_limpia, "Subcuenca") # Fallback a Subcuenca
+        columna_escala = mapa_escala.get(col_limpia, "Subcuenca") 
         
         def normalizar(texto):
             if pd.isna(texto): return ""
@@ -514,20 +521,17 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         # 🛡️ ESCUDO 3: RADAR GLOBAL. Si falló todo, buscamos en TODO el mapa.
         if df_filtrado.empty:
             palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
-            # Escaneamos todas las columnas espaciales a la fuerza
             for col in ['Subcuenca', 'Sistema', 'Zona_Hidrografica', 'Municipio_Norm']:
                 if col in df_censo.columns:
                     nombres_csv = df_censo[col].apply(normalizar)
                     mask = nombres_csv.str.contains(palabra_clave, na=False)
                     if mask.any():
                         df_filtrado = df_censo[mask]
-                        break # Lo encontramos, detenemos el radar
+                        break 
                         
-        # Si definitivamente el lugar no existe en el CSV
         if df_filtrado.empty:
             return 0, 0, 0
             
-        # Sumamos todos los fragmentos encontrados
         bov = df_filtrado['Bovinos'].sum()
         por = df_filtrado['Porcinos'].sum()
         ave = df_filtrado['Aves'].sum()
@@ -538,7 +542,7 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         import streamlit as st
         st.error(f"Error de conexión con la Nube: {e}")
         return 0, 0, 0
-
+        
 # Arrays para gráficas de tendencias a futuro (DBO)
 anios_evo = np.arange(anio_analisis, anio_analisis + 31)
 factor_evo = (1 + 0.015) ** (anios_evo - anio_analisis) # Crecimiento proxy 1.5%
