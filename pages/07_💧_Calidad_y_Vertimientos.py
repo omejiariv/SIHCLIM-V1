@@ -876,7 +876,13 @@ with tab_fuentes:
     else:
         st.warning("⚠️ **Memoria Global Vacía:** No has entrenado los Motores Demográficos y Pecuarios en las páginas 06 y 06a.")
         st.info("Mostrando proyecciones estáticas (Crecimiento lineal básico). Para ver la simulación avanzada, entrena los modelos matemáticos primero.")
-        # ... Aquí se mantiene tu código estático antiguo como plan de respaldo por si el usuario no entrenó nada
+        
+        # 🔥 EL DATAFRAME RESCATADO: Necesario para el modo estático
+        df_cargas = pd.DataFrame({
+            "Fuente": ["Urbana", "Rural", "Agroindustria", "Agricultura", "Bovinos", "Porcinos", "Avicultura"], 
+            "DBO_kg_dia": [dbo_urbana, dbo_rural, dbo_suero, dbo_agricola, dbo_bovinos, dbo_porcinos, dbo_aves]
+        })
+        
         col_g1, col_g2 = st.columns(2)
         with col_g1:
             fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
