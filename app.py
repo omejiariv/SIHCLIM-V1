@@ -42,7 +42,7 @@ st.markdown('<p class="sub-header">Sistema de Información Hidroclimática Integ
 
 # Panel de Métricas Globales (Dashboard)
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Módulos Analíticos", "14 Especializados", "Operativos")
+col1.metric("Módulos Analíticos", "15 Especializados", "Operativos") # Actualizado a 15
 col2.metric("Resolución Temporal", "1950 - 2070", "Datos Históricos + Proyecciones")
 col3.metric("Cobertura Geográfica", "Región Andina", "Topología de Cuencas")
 col4.metric("Motores de Decisión", "WRI / AHP / Turc", "Estándares Globales")
@@ -78,7 +78,7 @@ with tab_dashboard:
     c4, c5, _ = st.columns(3)
     with c4:
         st.page_link("pages/04_🍃_Biodiversidad.py", label="**Biodiversidad**", icon="🍃")
-        st.markdown("<small>Monitor de especies (GBIF), endemismos y vulnerabilidad de flora/fauna.</small>", unsafe_allow_html=True)
+        st.markdown("<small>Monitor de especies (GBIF), endemismos y valoración económica de servicios ecosistémicos.</small>", unsafe_allow_html=True)
     with c5:
         st.page_link("pages/05_🏔️_Geomorfologia.py", label="**Geomorfología**", icon="🏔️")
         st.markdown("<small>Análisis de Modelos Digitales de Elevación (DEM), redes de drenaje y morfometría.</small>", unsafe_allow_html=True)
@@ -87,16 +87,20 @@ with tab_dashboard:
     
     # --- EJE 2 ---
     st.markdown("### ⚙️ EJE 2: Metabolismo Territorial (Presiones Antrópicas)")
-    st.caption("Módulos enfocados en la interacción humana: cómo poblamos, demandamos e impactamos la cuenca.")
+    st.caption("Módulos enfocados en la dinámica poblacional y el impacto sobre la red hídrica.")
     
-    c6, c7, c8 = st.columns(3)
+    c6, c7 = st.columns(2)
     with c6:
-        st.page_link("pages/06_📈_Modelo_Demografico.py", label="**Modelo Demográfico**", icon="📈")
-        st.markdown("<small>Proyecciones poblacionales y censos (DANE/ICA) con inyección a la Memoria Global.</small>", unsafe_allow_html=True)
+        st.page_link("pages/06_📈_Modelo_Demografico.py", label="**Modelo Demográfico (Humanos)**", icon="📈")
+        st.markdown("<small>Proyecciones poblacionales (DANE) multimodelo con inyección a la Memoria Global.</small>", unsafe_allow_html=True)
+        st.write("") # Espaciador
+        st.page_link("pages/06a_🐄_Modelo_Pecuario.py", label="**Modelo Pecuario (Animales)**", icon="🐄")
+        st.markdown("<small>Proyecciones de crecimiento (ICA) para Bovinos, Porcinos y Aves en escalas hidrográficas.</small>", unsafe_allow_html=True)
+        
     with c7:
         st.page_link("pages/07_💧_Calidad_y_Vertimientos.py", label="**Calidad y Vertimientos**", icon="🧪")
         st.markdown("<small>Mapeo de usuarios del recurso, modelación de concesiones y cargas contaminantes DBO.</small>", unsafe_allow_html=True)
-    with c8:
+        st.write("") # Espaciador
         st.page_link("pages/08_🔗_Sistemas_Hidricos_Territoriales.py", label="**Sistemas Hídricos Territoriales**", icon="🔗")
         st.markdown("<small>Topología de redes, diagramas de Sankey y huella hídrica consolidada en la nube.</small>", unsafe_allow_html=True)
 
@@ -138,22 +142,22 @@ with tab_arquitectura:
     st.markdown("### Mapa Topológico del Sistema")
     st.info("Visualización jerárquica de la arquitectura de la plataforma y sus submódulos lógicos.")
     
-    # Actualizado con la nueva estructura
+    # Actualizado con la nueva estructura pecuaria
     ids = ['SIHCLI-POTER', 'Soporte Biofísico', 'Metabolismo Territorial', 'Síntesis Estratégica', 'Herramientas', 
            'Clima e Hidrología', 'Aguas Subterráneas', 'Isoyetas HD', 'Biodiversidad', 'Geomorfología',
-           'Modelo Demográfico', 'Calidad y Vertimientos', 'Sistemas Hídricos', 
+           'Modelo Demográfico', 'Modelo Pecuario', 'Calidad y Vertimientos', 'Sistemas Hídricos', 
            'Toma de Decisiones', 'Panel Administración',
            'Generador', 'Ayuda y Docs', 'Diagnóstico', 'Detective']
            
     parents = ['', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER',
                'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico',
-               'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial',
+               'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial',
                'Síntesis Estratégica', 'Síntesis Estratégica',
                'Herramientas', 'Herramientas', 'Herramientas', 'Herramientas']
                
-    values = [100, 30, 30, 20, 20, 
+    values = [100, 30, 40, 20, 20, 
               6, 6, 6, 6, 6, 
-              10, 10, 10, 
+              10, 10, 10, 10, 
               10, 10, 
               5, 5, 5, 5]
 
