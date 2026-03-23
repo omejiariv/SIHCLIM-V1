@@ -1,4 +1,4 @@
-# 06_🐄_Modelo_Pecuario.py
+# 06a_🐄_Modelo_Pecuario.py
 
 import streamlit as st
 import pandas as pd
