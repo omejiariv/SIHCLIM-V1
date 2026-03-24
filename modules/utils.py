@@ -105,30 +105,34 @@ import pandas as pd
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def descargar_matrices_produccion():
-    """Descarga los cerebros pre-entrenados desde Supabase (Se guarda en caché 1 hora para máxima velocidad)"""
+    """Descarga los cerebros pre-entrenados desde Supabase (Se guarda en caché 1 hora)"""
     try:
-        # URLs públicas de tu Supabase
         url_demo = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Demografica.csv"
         url_pecu = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Pecuaria.csv"
+        url_prop = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Proporciones_Veredales_Final.csv" # <-- NUEVA MATRIZ ESPACIAL
         
         df_d = pd.read_csv(url_demo)
         df_p = pd.read_csv(url_pecu)
-        return df_d, df_p
+        df_prop = pd.read_csv(url_prop) # <-- DESCARGA
+        return df_d, df_p, df_prop
     except Exception as e:
         print(f"Error descargando cerebros: {e}")
-        return None, None
+        return None, None, None
 
 def encender_gemelo_digital():
-    """Verifica si la memoria está vacía (Ej. nuevo usuario o F5) y la llena instantáneamente"""
-    if 'df_matriz_demografica' not in st.session_state or 'df_matriz_pecuaria' not in st.session_state:
-        df_demo, df_pecu = descargar_matrices_produccion()
+    """Verifica si la memoria está vacía y la llena instantáneamente"""
+    if 'df_matriz_demografica' not in st.session_state:
+        df_demo, df_pecu, df_prop = descargar_matrices_produccion()
         
         if df_demo is not None and not df_demo.empty:
             st.session_state['df_matriz_demografica'] = df_demo
             
         if df_pecu is not None and not df_pecu.empty:
             st.session_state['df_matriz_pecuaria'] = df_pecu
-
+            
+        if df_prop is not None and not df_prop.empty:
+            st.session_state['df_matriz_proporciones'] = df_prop # <-- GUARDADO EN MEMORIA
+            
 import numpy as np
 import unicodedata
 
