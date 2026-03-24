@@ -33,25 +33,48 @@ def render_selector_espacial():
             try:
                 gdf_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry")
                 
-                # --- RECUPERADO: Selector de Columna de Nombres ---
-                cols_texto = [c for c in gdf_cuencas.columns if c not in ['geometry', 'gid', 'objectid']]
-                default_idx = 0
-                if 'subc_lbl' in cols_texto: default_idx = cols_texto.index('subc_lbl')
-                elif 'nombre' in cols_texto: default_idx = cols_texto.index('nombre')
+                # --- FILTRO ESTRICTO DE COLUMNAS (El Radar Geográfico) ---
+                columnas_permitidas = ['AH', 'ZH', 'SZH', 'Zona', 'N_NSS1', 'SUBC_LBL', 'N-NSS3', 'COD']
+                permitidas_lower = [c.lower() for c in columnas_permitidas]
                 
-                col_nom = st.sidebar.selectbox("📂 Columna de Nombres:", cols_texto, index=default_idx)
+                # Filtramos para usar solo las columnas que existen en la base de datos
+                columnas_reales = [col for col in gdf_cuencas.columns if col.lower() in permitidas_lower]
+                
+                # Diccionario para que en la interfaz se vean en Mayúsculas (estético)
+                mapa_nombres = {c.lower(): c.upper() for c in columnas_reales}
+                
+                # Definir índice por defecto (priorizamos subc_lbl si existe)
+                default_idx = 0
+                if 'subc_lbl' in columnas_reales: 
+                    default_idx = columnas_reales.index('subc_lbl')
+                elif 'zona' in columnas_reales:
+                    default_idx = columnas_reales.index('zona')
+                
+                # Renderizamos el selector limpio
+                col_nom = st.sidebar.selectbox(
+                    "📂 Columna de Nombres:", 
+                    options=columnas_reales, 
+                    index=default_idx,
+                    format_func=lambda x: mapa_nombres.get(x.lower(), x),
+                    help="Seleccione el nivel de jerarquía hidrográfica."
+                )
                 
                 if col_nom:
-                    lista = sorted(gdf_cuencas[col_nom].astype(str).unique().tolist())
-                    sel = st.sidebar.selectbox("Seleccione Cuenca:", lista)
+                    # Extraemos valores únicos, eliminando nulos y textos vacíos
+                    valores_brutos = gdf_cuencas[col_nom].dropna().astype(str).unique().tolist()
+                    lista_limpia = sorted([v.strip() for v in valores_brutos if v.strip() != ""])
+                    
+                    sel = st.sidebar.selectbox("🌊 Seleccione Territorio:", lista_limpia)
+                    
                     if sel:
                         nombre_zona = sel
-                        gdf_zona = gdf_cuencas[gdf_cuencas[col_nom] == sel]
+                        # Filtramos el GeoDataFrame exactamente por la selección
+                        gdf_zona = gdf_cuencas[gdf_cuencas[col_nom].astype(str).str.strip() == sel]
 
             except Exception as e:
                 st.sidebar.warning(f"Error cargando cuencas: {e}")
                 return [], "", 0, None
-
+                
         # --- NUEVO: POR REGIÓN ---
         elif modo == "Por Región":
             try:
