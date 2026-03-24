@@ -407,8 +407,10 @@ with st.expander("🎥 Ver Explicación Didáctica: El Ciclo del Agua", expanded
     st.video(url_video_supabase, format="video/mp4")
     st.caption("Aprende cómo la naturaleza actúa como la mayor planta de tratamiento y bombeo del planeta.")
 
-# 1. Obtenemos población de la memoria o usamos valor por defecto
-pob_defecto = st.session_state.get('poblacion_total', 500000)
+# 1. 🚀 INYECCIÓN DE LA TURBINA CENTRAL
+anio_actual = st.session_state.get('aleph_anio', 2025)
+datos_metabolismo = obtener_metabolismo_exacto(nombre_seleccion, anio_actual)
+pob_total_base = datos_metabolismo['pob_total']
 
 # ==========================================
 # ESTRUCTURA DE DASHBOARD: 1/3 Controles | 2/3 Resultados
@@ -419,7 +421,9 @@ with col_ctrl:
     st.markdown("### 🎛️ Parámetros Locales")
     st.info("Ajusta las variables de tu territorio para recalcular la factura en tiempo real.")
     
-    poblacion = st.number_input("👥 Población a abastecer:", min_value=1000, value=int(pob_defecto), step=5000)
+    # Blindaje: value usa la población exacta extraída por el motor
+    val_pob = int(pob_total_base) if pob_total_base >= 1000 else 1000
+    poblacion = st.number_input("👥 Población a abastecer:", min_value=1000, value=val_pob, step=5000)
     dotacion = st.slider("🚰 Dotación (Litros/hab/día):", min_value=50, max_value=300, value=150, step=5)
     altura_m = st.number_input("⛰️ Altitud promedio (m.s.n.m):", min_value=0, value=1500, step=50)
     distancia_km = st.number_input("🌬️ Distancia al mar (km):", min_value=0, value=400, step=10)
@@ -950,88 +954,19 @@ with tab_afolu:
             area_bosque_real = df_diagnostico[df_diagnostico['COV_ID'] == 9]['Hectareas'].sum()
     except: pass
 
-    # --- LÓGICA UNIFICADA: CONEXIÓN AL GEMELO DIGITAL ---
-    # Usamos la misma lógica infalible que en Calidad de Agua
-    es_cuenca = any(x in nombre_seleccion.lower() for x in ['rio', 'río', 'quebrada', 'alto', 'medio', 'bajo'])
-    nivel_sel_visual = "Cuenca Hidrográfica" if es_cuenca else "Municipal"
-    
-    poblacion_urbana_calculada, poblacion_rural_calculada = 0.0, 0.0
-    bovinos_reales, porcinos_reales, aves_reales = 0.0, 0.0, 0.0
-    origen_datos = "Estimación (Fallback)"
+    # -------------------------------------------------------------------------
+    # 🚀 LA MAGIA CENTRALIZADA: Extracción limpia al Gemelo Digital
+    # -------------------------------------------------------------------------
+    anio_analisis = st.session_state.get('aleph_anio', 2025)
+    datos_metabolismo = obtener_metabolismo_exacto(nombre_seleccion, anio_analisis)
 
-    # 1. Extraer Humanos de la Memoria (Pág 06)
-    if 'df_matriz_demografica' in st.session_state:
-        df_demo = st.session_state['df_matriz_demografica']
-        # El DANE no tiene cuencas, así que si es un río, activamos la estimación de emergencia (Fallback) o sumamos los municipios aportantes
-        if es_cuenca:
-            mpios_cuenca = []
-            if "chico" in nombre_seleccion.lower(): mpios_cuenca = ["BELMIRA", "SAN PEDRO DE LOS MILAGROS", "ENTRERRIOS"]
-            elif "grande" in nombre_seleccion.lower(): mpios_cuenca = ["DON MATIAS", "SANTA ROSA DE OSOS", "ENTRERRIOS"]
-            elif "negro" in nombre_seleccion.lower(): mpios_cuenca = ["RIONEGRO", "EL CARMEN DE VIBORAL", "MARINILLA", "GUARNE", "LA CEJA", "EL RETIRO", "EL SANTUARIO", "SAN VICENTE"]
-            
-            if mpios_cuenca:
-                # Si conocemos la cuenca, sumamos sus municipios
-                for mpio in mpios_cuenca:
-                    fu = df_demo[(df_demo['Nivel'] == 'Municipal') & (df_demo['Territorio'].str.upper() == mpio) & (df_demo['Area'] == 'Urbana')]
-                    fr = df_demo[(df_demo['Nivel'] == 'Municipal') & (df_demo['Territorio'].str.upper() == mpio) & (df_demo['Area'] == 'Rural')]
-                    if not fu.empty: poblacion_urbana_calculada += float(fu.iloc[0]['Pob_Base'])
-                    if not fr.empty: poblacion_rural_calculada += float(fr.iloc[0]['Pob_Base'])
-                if poblacion_urbana_calculada > 0: origen_datos = "Matriz Maestra (Mpios Agrupados)"
-        else:
-            # Es un municipio normal
-            filtro_u = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Urbana')]
-            filtro_r = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Rural')]
-            if not filtro_u.empty: poblacion_urbana_calculada = float(filtro_u.iloc[0]['Pob_Base'])
-            if not filtro_r.empty: poblacion_rural_calculada = float(filtro_r.iloc[0]['Pob_Base'])
-            if poblacion_urbana_calculada > 0: origen_datos = "Matriz Maestra"
+    poblacion_urbana_calculada = datos_metabolismo['pob_urbana']
+    poblacion_rural_calculada = datos_metabolismo['pob_rural']
+    bovinos_reales = datos_metabolismo['bovinos']
+    porcinos_reales = datos_metabolismo['porcinos']
+    aves_reales = datos_metabolismo['aves']
+    origen_datos = datos_metabolismo.get('origen_humano', 'Estimación Geoespacial')
 
-    # 2. Extraer Animales de la Memoria (Pág 06a - Este SI tiene cuencas)
-    if 'df_matriz_pecuaria' in st.session_state:
-        df_pecu = st.session_state['df_matriz_pecuaria'].copy()
-        
-        import unicodedata
-        def normalizar_robusto(texto):
-            if pd.isna(texto): return ""
-            return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
-            
-        busqueda = normalizar_robusto(nombre_seleccion)
-        df_pecu['Terr_Norm'] = df_pecu['Territorio'].apply(normalizar_robusto)
-        
-        # Intento 1: Búsqueda exacta
-        filtro_bov = df_pecu[(df_pecu['Terr_Norm'] == busqueda) & (df_pecu['Especie'] == 'Bovinos')]
-        filtro_por = df_pecu[(df_pecu['Terr_Norm'] == busqueda) & (df_pecu['Especie'] == 'Porcinos')]
-        filtro_ave = df_pecu[(df_pecu['Terr_Norm'] == busqueda) & (df_pecu['Especie'] == 'Aves')]
-        
-        # Intento 2: Búsqueda flexible (radar) si falló la exacta por culpa de prefijos
-        if filtro_bov.empty:
-            palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
-            if palabra_clave:
-                mask = df_pecu['Terr_Norm'].str.contains(palabra_clave, na=False)
-                filtro_bov = df_pecu[mask & (df_pecu['Especie'] == 'Bovinos')]
-                filtro_por = df_pecu[mask & (df_pecu['Especie'] == 'Porcinos')]
-                filtro_ave = df_pecu[mask & (df_pecu['Especie'] == 'Aves')]
-
-        if not filtro_bov.empty: bovinos_reales = float(filtro_bov.iloc[0]['Poblacion_Base'])
-        if not filtro_por.empty: porcinos_reales = float(filtro_por.iloc[0]['Poblacion_Base'])
-        if not filtro_ave.empty: aves_reales = float(filtro_ave.iloc[0]['Poblacion_Base'])
-        
-        if bovinos_reales > 0 or porcinos_reales > 0:
-            origen_datos = "Matriz Maestra (Sincronizada)"
-
-    # 3. Fallbacks de Seguridad (Por si es un área sin datos)
-    pob_total_calculada = poblacion_urbana_calculada + poblacion_rural_calculada
-    if pob_total_calculada <= 0:
-        area_km2 = 100.0 # Valor seguro
-        if 'gdf_zona' in locals() and gdf_zona is not None and not gdf_zona.empty:
-            area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
-        pob_total_calculada = max(area_km2 * 65.0, 500.0)
-        poblacion_urbana_calculada = pob_total_calculada * 0.7
-        poblacion_rural_calculada = pob_total_calculada * 0.3
-        
-    if bovinos_reales <= 0: bovinos_reales = pob_total_calculada * 1.5 
-    if porcinos_reales <= 0: porcinos_reales = pob_total_calculada * 0.8
-    if aves_reales <= 0: aves_reales = pob_total_calculada * 10.0
-    
     aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
 
     col_a1, col_a2 = st.columns([1, 2.5])
