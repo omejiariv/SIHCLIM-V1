@@ -194,8 +194,20 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
             df_prop = st.session_state['df_matriz_proporciones']
             
             # 1. Preparación y cálculo de Áreas Totales (Ejecutado 1 sola vez en memoria)
-            if 'Tipo_Area' not in df_prop.columns:
+            if 'C1_Norm' not in df_prop.columns:  # <-- EL CAMBIO ESTÁ AQUÍ
                 df_prop['MPIO_Norm'] = df_prop['NOMB_MPIO'].astype(str).apply(normalizar_robusto)
+                df_prop['VER_Norm'] = df_prop['NOMBRE_VER'].astype(str).apply(normalizar_robusto)
+                df_prop['SUBC_Norm'] = df_prop['SUBC_LBL'].astype(str).apply(normalizar_robusto)
+                df_prop['C1_Norm'] = df_prop['N_NSS1'].astype(str).apply(normalizar_robusto)
+                
+                df_prop['Tipo_Area'] = 'Rural'
+                mask_urb = df_prop['VER_Norm'].str.contains('cabecera') | (df_prop['VER_Norm'] == df_prop['MPIO_Norm'])
+                df_prop.loc[mask_urb, 'Tipo_Area'] = 'Urbana'
+                
+                # Para evitar duplicados, sumamos el área original de las veredas únicas de cada municipio
+                df_unicos = df_prop.drop_duplicates(subset=['MPIO_Norm', 'VER_Norm'])
+                st.session_state['areas_totales_mpio'] = df_unicos.groupby(['MPIO_Norm', 'Tipo_Area'])['Area_Original_km2'].sum().to_dict()
+                st.session_state['df_matriz_proporciones'] = df_prop
                 df_prop['VER_Norm'] = df_prop['NOMBRE_VER'].astype(str).apply(normalizar_robusto)
                 df_prop['SUBC_Norm'] = df_prop['SUBC_LBL'].astype(str).apply(normalizar_robusto)
                 df_prop['C1_Norm'] = df_prop['N_NSS1'].astype(str).apply(normalizar_robusto)
