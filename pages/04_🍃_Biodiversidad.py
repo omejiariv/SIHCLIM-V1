@@ -29,14 +29,12 @@ except Exception as e:
     st.error(f"Error crítico de importación: {e}")
     st.stop()
 
-from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
-encender_gemelo_digital()
-
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Monitor de Biodiversidad", page_icon="🍃", layout="wide")
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
-from modules.utils import encender_gemelo_digital
+from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
+
 st.title("🍃 Biodiversidad y Servicios de la Naturaleza")
 st.markdown("""
 Explora la riqueza biológica del territorio y descubre **La Factura de la Naturaleza**: 
