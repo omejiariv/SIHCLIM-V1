@@ -866,14 +866,41 @@ with col_h1:
 with col_h2:
     st.subheader(f"2. Demanda Total y Estrés Local ({nodo_seleccionado})")
     
-    # 1. Traemos la población global del Valle de Aburrá desde el Aleph
-    pob_global_memoria = st.session_state.get('aleph_pob_total', 4000000)
+    # =========================================================================
+    # 🧠 EXTRACCIÓN DINÁMICA: POBLACIÓN HUMANA (VALLE DE ABURRÁ)
+    # =========================================================================
+    pob_global_memoria = 4000000 # Valor base de respaldo
+    mpios_amva = ["MEDELLIN", "BELLO", "ITAGUI", "ENVIGADO", "SABANETA", "COPACABANA", "LA ESTRELLA", "GIRARDOTA", "CALDAS", "BARBOSA"]
     
+    if 'df_matriz_demografica' in st.session_state:
+        df_demo = st.session_state['df_matriz_demografica']
+        pob_calculada = 0
+        
+        # Normalizar la columna para cruce exacto
+        df_demo_mpios = df_demo[df_demo['Nivel'] == 'Municipal'].copy()
+        if not df_demo_mpios.empty:
+            df_demo_mpios['Terr_Norm'] = df_demo_mpios['Territorio'].astype(str).str.upper().apply(
+                lambda x: unicodedata.normalize('NFKD', x).encode('ascii', 'ignore').decode('utf-8')
+            )
+            
+            # Sumar la población futura de los 10 municipios del Valle de Aburrá
+            for mpio in mpios_amva:
+                filtro = df_demo_mpios[df_demo_mpios['Terr_Norm'] == mpio]
+                for _, fila in filtro.iterrows():
+                    x_norm = anio_censo - fila['Año_Base']
+                    mod = fila['Modelo_Recomendado']
+                    if mod == 'Logístico': val = fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm))
+                    elif mod == 'Exponencial': val = fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm)
+                    else: val = fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D']
+                    pob_calculada += max(0, val)
+                    
+        if pob_calculada > 0:
+            pob_global_memoria = pob_calculada
+
     # --- 🛡️ SIMULADOR DE SEGURIDAD HÍDRICA (Nivel de Dependencia) ---
     st.markdown("##### 🛡️ Seguridad Hídrica: Nivel de Dependencia")
-    st.caption("Ajusta qué porcentaje de la población total es abastecida por este embalse. Permite simular fallas en el sistema o aislar embalses de solo energía (0%).")
+    st.caption("Ajusta qué porcentaje de la población total del Valle de Aburrá es abastecida por este embalse.")
     
-    # Asignación automática de la realidad del sistema EPM
     dependencia_defecto = 0.0
     if "Fe" in nodo_seleccionado: dependencia_defecto = 58.0
     elif "Grande" in nodo_seleccionado: dependencia_defecto = 33.0
@@ -881,10 +908,9 @@ with col_h2:
     
     pct_dependencia = st.slider(f"% de Población dependiente de {nodo_seleccionado}:", 0.0, 100.0, dependencia_defecto, step=1.0)
     
-    # Calculamos la población real que presiona a ESTE embalse
     pob_real_dependiente = pob_global_memoria * (pct_dependencia / 100.0)
 
-    # 2. Traemos animales (Ellos sí son 100% dependientes de la cuenca local donde viven)
+    # 2. Traemos animales (Calculados dinámicamente en col_h1)
     cabezas_bovinas = st.session_state.get('ica_bovinos_calc', 0)
     cabezas_porcinas = st.session_state.get('ica_porcinos_calc', 0)
     cabezas_aves = st.session_state.get('ica_aves_calc', 0)
