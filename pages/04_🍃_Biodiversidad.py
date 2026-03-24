@@ -29,6 +29,9 @@ except Exception as e:
     st.error(f"Error crítico de importación: {e}")
     st.stop()
 
+from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
+encender_gemelo_digital()
+
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Monitor de Biodiversidad", page_icon="🍃", layout="wide")
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
