@@ -158,47 +158,78 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
     }
 
     # =========================================================================
-    # 1. MOTOR HUMANO (Agrupación de Municipios DANE)
+    # 1. MOTOR HUMANO (Alta Precisión: Proporciones Veredales y Urbanas)
     # =========================================================================
-    if 'df_matriz_demografica' in st.session_state:
-        df_demo = st.session_state['df_matriz_demografica'].copy()
-        df_demo['Terr_Norm'] = df_demo['Territorio'].apply(normalizar_robusto)
+    if 'df_matriz_demografica' in st.session_state and 'df_matriz_proporciones' in st.session_state:
+        df_demo = st.session_state['df_matriz_demografica']
+        df_prop = st.session_state['df_matriz_proporciones']
         
-        mpios_a_sumar = []
-        if es_cuenca:
-            if "chico" in nombre_sel_limpio: mpios_a_sumar = ["belmira", "san pedro de los milagros", "entrerrios"]
-            elif "grande" in nombre_sel_limpio: mpios_a_sumar = ["don matias", "santa rosa de osos", "entrerrios"]
-            elif "negro" in nombre_sel_limpio: mpios_a_sumar = ["rionegro", "el carmen de viboral", "marinilla", "guarne", "la ceja", "el retiro", "el santuario", "san vicente"]
-            elif "fe" in nombre_sel_limpio: mpios_a_sumar = ["el retiro", "la ceja", "rionegro"]
-            elif "aburra" in nombre_sel_limpio: mpios_a_sumar = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
-        else:
-            mpios_a_sumar = [nombre_sel_limpio]
-            
-        pob_u, pob_r = 0.0, 0.0
-        for mpio in mpios_a_sumar:
-            fu = df_demo[(df_demo['Terr_Norm'] == mpio) & (df_demo['Area'] == 'Urbana')]
-            fr = df_demo[(df_demo['Terr_Norm'] == mpio) & (df_demo['Area'] == 'Rural')]
-            
-            def calcular_pob(filtro):
-                if filtro.empty: return 0.0
-                fila = filtro.iloc[0]
-                if anio_destino is None: return float(fila['Pob_Base'])
-                
-                x_norm = anio_destino - fila['Año_Base']
-                mod = fila.get('Modelo_Recomendado', 'Polinomial')
-                try:
-                    if mod == 'Logístico': val = fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm))
-                    elif mod == 'Exponencial': val = fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm)
-                    else: val = fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D']
-                    return max(0.0, val)
-                except: return float(fila['Pob_Base'])
+        # Función interna para calcular el futuro poblacional de 1 fila
+        def proyectar_pob(fila_demo):
+            if anio_destino is None: return float(fila_demo['Pob_Base'])
+            x_norm = anio_destino - fila_demo['Año_Base']
+            mod = fila_demo.get('Modelo_Recomendado', 'Polinomial')
+            try:
+                if mod == 'Logístico': val = fila_demo['Log_K'] / (1 + fila_demo['Log_a'] * np.exp(-fila_demo['Log_r'] * x_norm))
+                elif mod == 'Exponencial': val = fila_demo['Exp_a'] * np.exp(fila_demo['Exp_b'] * x_norm)
+                else: val = fila_demo['Poly_A']*(x_norm**3) + fila_demo['Poly_B']*(x_norm**2) + fila_demo['Poly_C']*x_norm + fila_demo['Poly_D']
+                return max(0.0, val)
+            except: return float(fila_demo['Pob_Base'])
 
-            pob_u += calcular_pob(fu)
-            pob_r += calcular_pob(fr)
+        pob_u, pob_r = 0.0, 0.0
+        
+        if es_cuenca:
+            # 1. RADAR ESPACIAL: Buscamos qué polígonos conforman esta cuenca
+            palabra_busqueda = nombre_sel_limpio.replace("rio", "").replace("alto", "").replace("bajo", "").replace("embalse", "").strip()
             
+            # Buscamos en todas las columnas hidrológicas simultáneamente
+            mask = (
+                df_prop['SUBC_LBL'].str.lower().str.contains(palabra_busqueda, na=False) |
+                df_prop['N_NSS1'].str.lower().str.contains(palabra_busqueda, na=False) |
+                df_prop['ZH'].str.lower().str.contains(palabra_busqueda, na=False)
+            )
+            fragmentos_cuenca = df_prop[mask]
+            
+            if not fragmentos_cuenca.empty:
+                # 2. CÁLCULO MILIMÉTRICO: Cruzamos el mapa con el censo
+                for _, frag in fragmentos_cuenca.iterrows():
+                    mpio_nombre = str(frag['NOMB_MPIO']).strip().upper()
+                    vereda_nombre = str(frag['NOMBRE_VER']).strip().upper()
+                    
+                    # Vacuna contra polígonos duplicados (Max 100%)
+                    pct = min(float(frag['Pct_en_Cuenca']), 1.0) 
+                    
+                    # ¿Es ciudad o campo? (Regla oficial de cartografía colombiana)
+                    es_urbano = ("CABECERA" in vereda_nombre) or (mpio_nombre in vereda_nombre)
+                    tipo_area = 'Urbana' if es_urbano else 'Rural'
+                    
+                    # Extraemos a esa población de la Matriz DANE y la proyectamos
+                    filtro_dane = df_demo[(df_demo['Territorio'].str.upper() == mpio_nombre) & (df_demo['Area'] == tipo_area)]
+                    
+                    if not filtro_dane.empty:
+                        pob_proyectada = proyectar_pob(filtro_dane.iloc[0])
+                        pob_aportada = pob_proyectada * pct # La magia ocurre aquí
+                        
+                        if es_urbano: pob_u += pob_aportada
+                        else: pob_r += pob_aportada
+                
+                res['origen_humano'] = "Matriz Espacial (Veredal/Urbano)"
+                
+        else:
+            # Es un municipio directo (Selección tradicional)
+            mpio_nombre = nombre_sel_limpio.upper()
+            fu = df_demo[(df_demo['Territorio'].str.upper() == mpio_nombre) & (df_demo['Area'] == 'Urbana')]
+            fr = df_demo[(df_demo['Territorio'].str.upper() == mpio_nombre) & (df_demo['Area'] == 'Rural')]
+            
+            if not fu.empty: pob_u = proyectar_pob(fu.iloc[0])
+            if not fr.empty: pob_r = proyectar_pob(fr.iloc[0])
+            res['origen_humano'] = "Matriz Maestra (DANE)"
+
+        # Guardamos el total si logramos encontrar gente
         if pob_u > 0 or pob_r > 0:
-            res['pob_urbana'], res['pob_rural'], res['pob_total'] = pob_u, pob_r, pob_u + pob_r
-            res['origen_humano'] = "Matriz Maestra (Agrupada)" if es_cuenca else "Matriz Maestra"
+            res['pob_urbana'] = pob_u
+            res['pob_rural'] = pob_r
+            res['pob_total'] = pob_u + pob_r
 
     # =========================================================================
     # 2. MOTOR PECUARIO (Radar Inteligente Cuencas/Mpios ICA)
