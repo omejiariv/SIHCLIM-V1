@@ -937,109 +937,71 @@ with tab_forestal:
 # ==============================================================================
 with tab_afolu:
     
+# -------------------------------------------------------------------------
+    # 🌐 1. CEREBRO ESPACIAL Y EXTRACCIÓN AL GEMELO DIGITAL
     # -------------------------------------------------------------------------
-    # 🌐 1. CAPTURA ABSOLUTA DE VARIABLES Y CEREBRO ESPACIAL
-    # -------------------------------------------------------------------------
-    from modules.data_processor import cargar_censo_ica, normalizar_texto, cargar_territorio_maestro
+    st.header(f"⚖️ Metabolismo Territorial: Dinámica de GEI en {nombre_seleccion}")
     
-    # 1.1 El "Cazador" de variables locales (Evita el 'Desconocido')
-    try: 
-        nivel_sel = nivel_seleccion # Intenta leer tu variable local del sidebar
-    except NameError: 
-        nivel_sel = st.session_state.get('nivel_seleccion', st.session_state.get('nivel_agregacion', 'Por Municipio'))
-        
-    try: 
-        nombre_sel = nombre_seleccion # Intenta leer tu variable local del sidebar
-    except NameError: 
-        nombre_sel = st.session_state.get('nombre_seleccion', st.session_state.get('territorio_seleccionado', 'Desconocido'))
-
-    nombre_sel_norm = normalizar_texto(nombre_sel)
-    termino_busqueda = nombre_sel_norm.replace("region", "").replace("provincia", "").replace("car", "").strip()
-    
-    # 1.2 Conexión a la nueva base maestra
-    df_territorio = cargar_territorio_maestro()
-    
-    # Blindaje: Si el procesador no creó las columnas norm, las creamos aquí en vivo
-    if not df_territorio.empty:
-        if 'region_norm' not in df_territorio.columns and 'region' in df_territorio.columns:
-            df_territorio['region_norm'] = df_territorio['region'].astype(str).apply(normalizar_texto)
-        if 'municipio_norm' not in df_territorio.columns and 'municipio' in df_territorio.columns:
-            df_territorio['municipio_norm'] = df_territorio['municipio'].astype(str).apply(normalizar_texto)
-            
-    mpios_activos = []
-    es_departamento = False
-    
-    # 1.3 Motor de Agregación Flexible
-    if "departamento" in nivel_sel.lower() or "antioquia" in termino_busqueda:
-        es_departamento = True
-    elif not df_territorio.empty and "regi" in nivel_sel.lower():
-        # Busca el término (ej. 'oriente') dentro de la columna region_norm de tu nuevo excel
-        mask = df_territorio['region_norm'].astype(str).str.contains(termino_busqueda, na=False)
-        mpios_activos = df_territorio[mask]['municipio_norm'].tolist()
-    elif not df_territorio.empty and ("car" in nivel_sel.lower() or "jurisdicci" in nivel_sel.lower()):
-        if 'car' in df_territorio.columns:
-            mask = df_territorio['car'].astype(str).apply(normalizar_texto).str.contains(termino_busqueda, na=False)
-            mpios_activos = df_territorio[mask]['municipio_norm'].tolist()
-        
-    # Fallback si no encontró nada o la base falló
-    if not mpios_activos and not es_departamento:
-        if "aburra" in termino_busqueda:
-            mpios_activos = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "la estrella", "girardota", "caldas", "barbosa"]
-        else:
-            mpios_activos = [nombre_sel_norm]
-
-    # --- TÍTULO DINÁMICO ---
-    if "municipio" in nivel_sel.lower(): prefijo = "el Municipio de"
-    elif "regi" in nivel_sel.lower(): prefijo = "la Región"
-    elif "departamento" in nivel_sel.lower(): prefijo = "el Departamento de"
-    elif "cuenca" in nivel_sel.lower(): prefijo = "la Cuenca"
-    elif "car" in nivel_sel.lower() or "jurisdicci" in nivel_sel.lower(): prefijo = "la Jurisdicción de"
-    else: prefijo = "el territorio de"
-    
-    titulo_dinamico = f"Metabolismo Territorial: Dinámica de GEI en {nombre_sel}"
-
-    st.header(f"⚖️ {titulo_dinamico}")
-    
-    # Un pequeño indicador visual para que tú sepas si está leyendo la base bien
-    if es_departamento: st.success(f"📍 Mapeando Departamento Completo")
-    else: st.info(f"📍 Agrupando {len(mpios_activos)} municipio(s): {', '.join(mpios_activos[:5])}{'...' if len(mpios_activos)>5 else ''}")
-
-    # -------------------------------------------------------------------------
-    # 🌐 2. EXTRACCIÓN Y SUMA DE DATOS (BOSQUE, ICA, DANE)
-    # -------------------------------------------------------------------------
     area_bosque_real = 100.0
     try:
         if 'df_diagnostico' in locals() and df_diagnostico is not None:
             area_bosque_real = df_diagnostico[df_diagnostico['COV_ID'] == 9]['Hectareas'].sum()
     except: pass
 
-    # --- NUEVA LÓGICA: CONEXIÓN AL GEMELO DIGITAL (MEMORIA GLOBAL) ---
-    nivel_sel_visual = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() for x in ['rio', 'río', 'quebrada']) else "Municipal"
+    # --- LÓGICA UNIFICADA: CONEXIÓN AL GEMELO DIGITAL ---
+    # Usamos la misma lógica infalible que en Calidad de Agua
+    es_cuenca = any(x in nombre_seleccion.lower() for x in ['rio', 'río', 'quebrada', 'alto', 'medio', 'bajo'])
+    nivel_sel_visual = "Cuenca Hidrográfica" if es_cuenca else "Municipal"
     
     poblacion_urbana_calculada, poblacion_rural_calculada = 0.0, 0.0
     bovinos_reales, porcinos_reales, aves_reales = 0.0, 0.0, 0.0
     origen_datos = "Estimación (Fallback)"
 
-    # 1. Extraer Humanos de la Memoria
+    # 1. Extraer Humanos de la Memoria (Pág 06)
     if 'df_matriz_demografica' in st.session_state:
         df_demo = st.session_state['df_matriz_demografica']
-        filtro_u = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Urbana')]
-        filtro_r = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Rural')]
-        
-        if not filtro_u.empty: poblacion_urbana_calculada = float(filtro_u.iloc[0]['Pob_Base'])
-        if not filtro_r.empty: poblacion_rural_calculada = float(filtro_r.iloc[0]['Pob_Base'])
-        if poblacion_urbana_calculada > 0 or poblacion_rural_calculada > 0: origen_datos = "Matriz Maestra"
+        # El DANE no tiene cuencas, así que si es un río, activamos la estimación de emergencia (Fallback) o sumamos los municipios aportantes
+        if es_cuenca:
+            mpios_cuenca = []
+            if "chico" in nombre_seleccion.lower(): mpios_cuenca = ["BELMIRA", "SAN PEDRO DE LOS MILAGROS", "ENTRERRIOS"]
+            elif "grande" in nombre_seleccion.lower(): mpios_cuenca = ["DON MATIAS", "SANTA ROSA DE OSOS", "ENTRERRIOS"]
+            elif "negro" in nombre_seleccion.lower(): mpios_cuenca = ["RIONEGRO", "EL CARMEN DE VIBORAL", "MARINILLA", "GUARNE", "LA CEJA", "EL RETIRO", "EL SANTUARIO", "SAN VICENTE"]
+            
+            if mpios_cuenca:
+                # Si conocemos la cuenca, sumamos sus municipios
+                for mpio in mpios_cuenca:
+                    fu = df_demo[(df_demo['Nivel'] == 'Municipal') & (df_demo['Territorio'].str.upper() == mpio) & (df_demo['Area'] == 'Urbana')]
+                    fr = df_demo[(df_demo['Nivel'] == 'Municipal') & (df_demo['Territorio'].str.upper() == mpio) & (df_demo['Area'] == 'Rural')]
+                    if not fu.empty: poblacion_urbana_calculada += float(fu.iloc[0]['Pob_Base'])
+                    if not fr.empty: poblacion_rural_calculada += float(fr.iloc[0]['Pob_Base'])
+                if poblacion_urbana_calculada > 0: origen_datos = "Matriz Maestra (Mpios Agrupados)"
+        else:
+            # Es un municipio normal
+            filtro_u = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Urbana')]
+            filtro_r = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Rural')]
+            if not filtro_u.empty: poblacion_urbana_calculada = float(filtro_u.iloc[0]['Pob_Base'])
+            if not filtro_r.empty: poblacion_rural_calculada = float(filtro_r.iloc[0]['Pob_Base'])
+            if poblacion_urbana_calculada > 0: origen_datos = "Matriz Maestra"
 
-    # 2. Extraer Animales de la Memoria
+    # 2. Extraer Animales de la Memoria (Pág 06a - Este SI tiene cuencas)
     if 'df_matriz_pecuaria' in st.session_state:
         df_pecu = st.session_state['df_matriz_pecuaria']
-        filtro_bov = df_pecu[(df_pecu['Nivel'] == nivel_sel_visual) & (df_pecu['Territorio'] == nombre_seleccion) & (df_pecu['Especie'] == 'Bovinos')]
-        filtro_por = df_pecu[(df_pecu['Nivel'] == nivel_sel_visual) & (df_pecu['Territorio'] == nombre_seleccion) & (df_pecu['Especie'] == 'Porcinos')]
-        filtro_ave = df_pecu[(df_pecu['Nivel'] == nivel_sel_visual) & (df_pecu['Territorio'] == nombre_seleccion) & (df_pecu['Especie'] == 'Aves')]
+        
+        # El motor pecuario sí entiende de cuencas gracias a nuestro ETL
+        nivel_busqueda = "Cuenca" if es_cuenca else "Municipal"
+        # Ajuste de nombre para el cruce pecuario (que usa 'rio chico' en lugar de 'Rio Chico')
+        nombre_busqueda = nombre_seleccion.lower() if es_cuenca else nombre_seleccion
+
+        filtro_bov = df_pecu[(df_pecu['Nivel'] == nivel_busqueda) & (df_pecu['Territorio'].str.lower() == nombre_busqueda) & (df_pecu['Especie'] == 'Bovinos')]
+        filtro_por = df_pecu[(df_pecu['Nivel'] == nivel_busqueda) & (df_pecu['Territorio'].str.lower() == nombre_busqueda) & (df_pecu['Especie'] == 'Porcinos')]
+        filtro_ave = df_pecu[(df_pecu['Nivel'] == nivel_busqueda) & (df_pecu['Territorio'].str.lower() == nombre_busqueda) & (df_pecu['Especie'] == 'Aves')]
         
         if not filtro_bov.empty: bovinos_reales = float(filtro_bov.iloc[0]['Poblacion_Base'])
         if not filtro_por.empty: porcinos_reales = float(filtro_por.iloc[0]['Poblacion_Base'])
         if not filtro_ave.empty: aves_reales = float(filtro_ave.iloc[0]['Poblacion_Base'])
+        
+        if bovinos_reales > 0 or porcinos_reales > 0:
+            origen_datos = "Matriz Maestra (Híbrida)" if es_cuenca else "Matriz Maestra"
 
     # 3. Fallbacks de Seguridad (Por si es un área sin datos)
     pob_total_calculada = poblacion_urbana_calculada + poblacion_rural_calculada
@@ -1054,6 +1016,7 @@ with tab_afolu:
     if bovinos_reales <= 0: bovinos_reales = pob_total_calculada * 1.5 
     if porcinos_reales <= 0: porcinos_reales = pob_total_calculada * 0.8
     if aves_reales <= 0: aves_reales = pob_total_calculada * 10.0
+    
     aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
 
     col_a1, col_a2 = st.columns([1, 2.5])
