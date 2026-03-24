@@ -85,18 +85,26 @@ sistemas_embalses = {
 # ==============================================================================
 # 2. 🧠 EL ALEPH HÍDRICO (Decide ANTES de pintar el menú)
 # ==============================================================================
+from modules.utils import obtener_metabolismo_exacto
+import unicodedata
+
 conectado_aleph = False
 pob_amva_aleph = None
 pob_local_aleph = None
 
-if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
+# Verificamos si el usuario trae un lugar seleccionado desde el dashboard principal
+if 'aleph_lugar' in st.session_state:
     aleph_lugar = st.session_state['aleph_lugar']
-    aleph_pob = float(st.session_state['aleph_pob_total'])
-    aleph_anio = st.session_state.get('aleph_anio', 2035)
+    aleph_anio = st.session_state.get('aleph_anio', 2025) # Asume 2025 por defecto si no hay año
+    
+    # 🚀 LA MAGIA: Calculamos la población en vivo con el motor espacial
+    datos_metabolismo = obtener_metabolismo_exacto(aleph_lugar, aleph_anio)
+    aleph_pob = datos_metabolismo['pob_total']
     
     if aleph_pob > 0:
         conectado_aleph = True
-        import unicodedata
+        
+        # Limpieza de texto para el enrutador de cuencas
         lugar_limpio = unicodedata.normalize('NFKD', str(aleph_lugar).lower()).encode('ascii', 'ignore').decode('utf-8')
         
         claves_rg2 = ["belmira", "donmatias", "san pedro", "entrerrios", "santa rosa", "chico", "grande", "animas"]
