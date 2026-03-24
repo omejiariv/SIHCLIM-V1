@@ -99,3 +99,32 @@ def leer_csv_robusto(ruta):
         except Exception as e:
             print(f"Error crítico leyendo {ruta}: {e}")
             return pd.DataFrame()
+
+import streamlit as st
+import pandas as pd
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def descargar_matrices_produccion():
+    """Descarga los cerebros pre-entrenados desde Supabase (Se guarda en caché 1 hora para máxima velocidad)"""
+    try:
+        # URLs públicas de tu Supabase
+        url_demo = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Demografica.csv"
+        url_pecu = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Pecuaria.csv"
+        
+        df_d = pd.read_csv(url_demo)
+        df_p = pd.read_csv(url_pecu)
+        return df_d, df_p
+    except Exception as e:
+        print(f"Error descargando cerebros: {e}")
+        return None, None
+
+def encender_gemelo_digital():
+    """Verifica si la memoria está vacía (Ej. nuevo usuario o F5) y la llena instantáneamente"""
+    if 'df_matriz_demografica' not in st.session_state or 'df_matriz_pecuaria' not in st.session_state:
+        df_demo, df_pecu = descargar_matrices_produccion()
+        
+        if df_demo is not None and not df_demo.empty:
+            st.session_state['df_matriz_demografica'] = df_demo
+            
+        if df_pecu is not None and not df_pecu.empty:
+            st.session_state['df_matriz_pecuaria'] = df_pecu
