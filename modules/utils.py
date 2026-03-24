@@ -147,9 +147,9 @@ def normalizar_robusto(texto):
 def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
     """
     Cerebro Central: Extrae y proyecta la población humana y pecuaria desde el Gemelo Digital.
+    Corrige la sobreestimación distribuyendo la población por fracción de área total.
     """
     nombre_sel_limpio = normalizar_robusto(nombre_seleccion)
-    es_cuenca = any(x in nombre_sel_limpio for x in ['rio', 'quebrada', 'alto', 'medio', 'bajo', 'embalse', 'fe', 'q.'])
     
     res = {
         'pob_urbana': 0.0, 'pob_rural': 0.0, 'pob_total': 0.0,
@@ -159,7 +159,7 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
     }
 
     # =========================================================================
-    # 1. MOTOR HUMANO (Alta Precisión por Densidad Espacial)
+    # 1. MOTOR HUMANO (Distribución Espacial Perfecta)
     # =========================================================================
     if 'df_matriz_demografica' in st.session_state:
         df_demo = st.session_state['df_matriz_demografica'].copy()
@@ -178,67 +178,80 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
 
         pob_u, pob_r = 0.0, 0.0
 
-        if es_cuenca and 'df_matriz_proporciones' in st.session_state:
-            df_prop = st.session_state['df_matriz_proporciones']
-            
-            # --- OPTIMIZACIÓN EN MEMORIA (Se hace solo 1 vez) ---
-            if 'Tipo_Area' not in df_prop.columns:
-                df_prop['NOMB_MPIO_Norm'] = df_prop['NOMB_MPIO'].apply(normalizar_robusto)
-                df_prop['NOMBRE_VER_Norm'] = df_prop['NOMBRE_VER'].apply(normalizar_robusto)
-                df_prop['SUBC_Norm'] = df_prop['SUBC_LBL'].apply(normalizar_robusto)
-                df_prop['CUENCA_Norm'] = df_prop['N_NSS1'].apply(normalizar_robusto)
-                
-                df_prop['Tipo_Area'] = 'Rural'
-                mask_urb = df_prop['NOMBRE_VER_Norm'].str.contains('cabecera', na=False) | (df_prop['NOMBRE_VER_Norm'] == df_prop['NOMB_MPIO_Norm'])
-                df_prop.loc[mask_urb, 'Tipo_Area'] = 'Urbana'
-                st.session_state['df_matriz_proporciones'] = df_prop
+        # Inteligencia de Enrutamiento: ¿Está en el DANE? Si sí, es un municipio. Si no, es cuenca.
+        es_municipio = not df_demo[df_demo['Terr_Norm'] == nombre_sel_limpio].empty
 
-            # --- RADAR DE BÚSQUEDA ---
-            pal_clave = nombre_sel_limpio.replace("rio", "").replace("alto", "").replace("bajo", "").replace("q.", "").replace("embalse", "").strip()
-            
-            frags = df_prop[(df_prop['SUBC_Norm'] == nombre_sel_limpio) | (df_prop['CUENCA_Norm'] == nombre_sel_limpio)]
-            if frags.empty and pal_clave:
-                mask = df_prop['SUBC_Norm'].str.contains(pal_clave, na=False) | df_prop['CUENCA_Norm'].str.contains(pal_clave, na=False)
-                frags = df_prop[mask]
-
-            if not frags.empty:
-                # --- CÁLCULO MATEMÁTICO PERFECTO (Previene la clonación de población) ---
-                # 1. Sumamos el área total de los polígonos que cayeron en la cuenca (agrupados por municipio)
-                areas_cuenca = frags.groupby(['NOMB_MPIO_Norm', 'Tipo_Area'])['Area_Fragmento_km2'].sum().reset_index()
-                
-                for _, row in areas_cuenca.iterrows():
-                    mpio = row['NOMB_MPIO_Norm']
-                    tipo = row['Tipo_Area']
-                    area_en_cuenca = row['Area_Fragmento_km2']
-                    
-                    # 2. Consultamos el Área Total que tiene ese municipio en el mapa de Antioquia
-                    area_total = df_prop[(df_prop['NOMB_MPIO_Norm'] == mpio) & (df_prop['Tipo_Area'] == tipo)]['Area_Fragmento_km2'].sum()
-                    
-                    # 3. Calculamos la densidad exacta
-                    pct_real = min(area_en_cuenca / area_total, 1.0) if area_total > 0 else 0.0
-                    
-                    # 4. Cruzamos con el DANE
-                    filtro = df_demo[(df_demo['Terr_Norm'] == mpio) & (df_demo['Area'] == tipo)]
-                    if not filtro.empty:
-                        aportada = proyectar_pob(filtro.iloc[0]) * pct_real
-                        if tipo == 'Urbana': pob_u += aportada
-                        else: pob_r += aportada
-                        
-                res['origen_humano'] = "Matriz Espacial (Densidad Real)"
-            else:
-                res['origen_humano'] = "Cuenca no hallada en GIS (Fallback)"
-
-        else: # Búsqueda de Municipio Tradicional
+        if es_municipio:
+            # RUTA A: MUNICIPIO DIRECTO
             fu = df_demo[(df_demo['Terr_Norm'] == nombre_sel_limpio) & (df_demo['Area'] == 'Urbana')]
             fr = df_demo[(df_demo['Terr_Norm'] == nombre_sel_limpio) & (df_demo['Area'] == 'Rural')]
             if not fu.empty: pob_u = proyectar_pob(fu.iloc[0])
             if not fr.empty: pob_r = proyectar_pob(fr.iloc[0])
             res['origen_humano'] = "Matriz Maestra (DANE)"
             
+        elif 'df_matriz_proporciones' in st.session_state:
+            # RUTA B: ES UNA CUENCA O SUBCUENCA
+            df_prop = st.session_state['df_matriz_proporciones']
+            
+            # 1. Preparación y cálculo de Áreas Totales (Ejecutado 1 sola vez en memoria)
+            if 'Tipo_Area' not in df_prop.columns:
+                df_prop['MPIO_Norm'] = df_prop['NOMB_MPIO'].astype(str).apply(normalizar_robusto)
+                df_prop['VER_Norm'] = df_prop['NOMBRE_VER'].astype(str).apply(normalizar_robusto)
+                df_prop['SUBC_Norm'] = df_prop['SUBC_LBL'].astype(str).apply(normalizar_robusto)
+                df_prop['C1_Norm'] = df_prop['N_NSS1'].astype(str).apply(normalizar_robusto)
+                
+                df_prop['Tipo_Area'] = 'Rural'
+                mask_urb = df_prop['VER_Norm'].str.contains('cabecera') | (df_prop['VER_Norm'] == df_prop['MPIO_Norm'])
+                df_prop.loc[mask_urb, 'Tipo_Area'] = 'Urbana'
+                
+                # Para evitar duplicados, sumamos el área original de las veredas únicas de cada municipio
+                df_unicos = df_prop.drop_duplicates(subset=['MPIO_Norm', 'VER_Norm'])
+                st.session_state['areas_totales_mpio'] = df_unicos.groupby(['MPIO_Norm', 'Tipo_Area'])['Area_Original_km2'].sum().to_dict()
+                st.session_state['df_matriz_proporciones'] = df_prop
+
+            # 2. Búsqueda Implacable del Polígono
+            frags = df_prop[(df_prop['SUBC_Norm'] == nombre_sel_limpio) | (df_prop['C1_Norm'] == nombre_sel_limpio)]
+            if frags.empty:
+                mask = df_prop['SUBC_Norm'].str.contains(nombre_sel_limpio, na=False) | df_prop['C1_Norm'].str.contains(nombre_sel_limpio, na=False)
+                frags = df_prop[mask]
+            if frags.empty:
+                pal_clave = nombre_sel_limpio.replace("rio ", "").replace("q. ", "").replace("quebrada ", "").strip()
+                if len(pal_clave) > 3:
+                    mask = df_prop['SUBC_Norm'].str.contains(pal_clave, na=False) | df_prop['C1_Norm'].str.contains(pal_clave, na=False)
+                    frags = df_prop[mask]
+
+            # 3. Matemática de Distribución Proporcional
+            if not frags.empty:
+                areas_totales = st.session_state['areas_totales_mpio']
+                
+                # Agrupamos cuánta área aportó cada municipio DENTRO de la cuenca
+                areas_cuenca = frags.groupby(['MPIO_Norm', 'Tipo_Area'])['Area_Fragmento_km2'].sum().reset_index()
+                
+                for _, row in areas_cuenca.iterrows():
+                    mpio = row['MPIO_Norm']
+                    tipo = row['Tipo_Area']
+                    area_dentro = row['Area_Fragmento_km2']
+                    
+                    # Obtenemos el Área Total del municipio
+                    area_total_mpio = areas_totales.get((mpio, tipo), 0.001) # Evita división por cero
+                    
+                    # Calculamos qué % del municipio se "comió" la cuenca
+                    fraccion = min(area_dentro / area_total_mpio, 1.0)
+                    
+                    filtro = df_demo[(df_demo['Terr_Norm'] == mpio) & (df_demo['Area'] == tipo)]
+                    if not filtro.empty:
+                        aportada = proyectar_pob(filtro.iloc[0]) * fraccion
+                        if tipo == 'Urbana': pob_u += aportada
+                        else: pob_r += aportada
+                        
+                res['origen_humano'] = "Matriz Espacial (Fracción de Área)"
+            else:
+                res['origen_humano'] = "Polígono no encontrado en GIS"
+
         res['pob_urbana'], res['pob_rural'], res['pob_total'] = pob_u, pob_r, pob_u + pob_r
 
     # =========================================================================
-    # 2. MOTOR PECUARIO
+    # 2. MOTOR PECUARIO (Se mantiene estable)
     # =========================================================================
     if 'df_matriz_pecuaria' in st.session_state:
         df_pec = st.session_state['df_matriz_pecuaria'].copy()
@@ -249,8 +262,8 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
         f_a = df_pec[(df_pec['Terr_Norm'] == nombre_sel_limpio) & (df_pec['Especie'] == 'Aves')]
         
         if f_b.empty:
-            pal_clave = nombre_sel_limpio.replace("rio", "").replace("alto", "").replace("bajo", "").replace("embalse", "").strip()
-            if pal_clave:
+            pal_clave = nombre_sel_limpio.replace("rio ", "").replace("q. ", "").replace("quebrada ", "").strip()
+            if len(pal_clave) > 3:
                 mask = df_pec['Terr_Norm'].str.contains(pal_clave, na=False)
                 f_b = df_pec[mask & (df_pec['Especie'] == 'Bovinos')]
                 f_p = df_pec[mask & (df_pec['Especie'] == 'Porcinos')]
