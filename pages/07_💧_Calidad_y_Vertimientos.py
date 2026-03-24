@@ -16,9 +16,11 @@ from modules import selectors
 warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="Calidad y Vertimientos", page_icon="💧", layout="wide")
+
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
-from modules.utils import encender_gemelo_digital
+from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
+
 st.title("💧 Demanda, Calidad del Agua y Metabolismo Hídrico")
 st.markdown("""
 Modelo integral del ciclo hidrosocial: Simulación de demanda, cargas contaminantes, 
