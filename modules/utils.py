@@ -121,7 +121,9 @@ def descargar_matrices_produccion():
 
 def encender_gemelo_digital():
     """Verifica si la memoria está vacía y la llena instantáneamente"""
-    if 'df_matriz_demografica' not in st.session_state:
+    # CRÍTICO: Ahora revisamos específicamente si falta la matriz de proporciones
+    if 'df_matriz_proporciones' not in st.session_state:
+        st.cache_data.clear() # Obligamos a Streamlit a borrar su caché histórico
         df_demo, df_pecu, df_prop = descargar_matrices_produccion()
         
         if df_demo is not None and not df_demo.empty:
@@ -131,7 +133,8 @@ def encender_gemelo_digital():
             st.session_state['df_matriz_pecuaria'] = df_pecu
             
         if df_prop is not None and not df_prop.empty:
-            st.session_state['df_matriz_proporciones'] = df_prop # <-- GUARDADO EN MEMORIA
+            st.session_state['df_matriz_proporciones'] = df_prop
+            print("✅ ¡Matriz Espacial cargada en memoria exitosamente!")
             
 import numpy as np
 import unicodedata
