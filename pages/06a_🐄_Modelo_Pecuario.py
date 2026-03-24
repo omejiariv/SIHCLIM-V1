@@ -237,3 +237,20 @@ if 'df_matriz_pecuaria' in st.session_state:
     with col_graf_2:
         esp_2 = st.selectbox("Especie (Panel Derecho):", ["Bovinos", "Porcinos", "Aves"], index=1, key="sel_esp2")
         renderizar_panel_pecuario(esp_2, "g2")
+
+# ==============================================================================
+# 💾 EXPORTACIÓN DEL CEREBRO A PRODUCCIÓN (NUEVA ARQUITECTURA)
+# ==============================================================================
+if 'df_matriz_pecuaria' in st.session_state:
+    st.markdown("---")
+    st.subheader("💾 Exportar Cerebro Pecuario (Para Producción)")
+    st.info("💡 **Paso a Producción:** Descarga esta matriz ya calculada y súbela a tu bucket de Supabase.")
+    
+    csv_pecu = st.session_state['df_matriz_pecuaria'].to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Descargar Matriz Maestra Pecuaria", 
+        data=csv_pecu, 
+        file_name="Matriz_Maestra_Pecuaria.csv", 
+        mime="text/csv",
+        type="primary"
+    )
