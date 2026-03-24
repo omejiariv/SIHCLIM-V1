@@ -21,7 +21,7 @@ import os
 # --- 1. CONFIGURACIÓN Y CARGA DE MÓDULOS ---
 st.set_page_config(page_title="Sihcli-Poter: Toma de Decisiones", page_icon="🎯", layout="wide")
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
-from modules.utils import encender_gemelo_digital
+from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
 
 # =========================================================================
