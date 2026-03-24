@@ -986,23 +986,36 @@ with tab_afolu:
 
     # 2. Extraer Animales de la Memoria (Pág 06a - Este SI tiene cuencas)
     if 'df_matriz_pecuaria' in st.session_state:
-        df_pecu = st.session_state['df_matriz_pecuaria']
+        df_pecu = st.session_state['df_matriz_pecuaria'].copy()
         
-        # El motor pecuario sí entiende de cuencas gracias a nuestro ETL
-        nivel_busqueda = "Cuenca" if es_cuenca else "Municipal"
-        # Ajuste de nombre para el cruce pecuario (que usa 'rio chico' en lugar de 'Rio Chico')
-        nombre_busqueda = nombre_seleccion.lower() if es_cuenca else nombre_seleccion
+        import unicodedata
+        def normalizar_robusto(texto):
+            if pd.isna(texto): return ""
+            return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+            
+        busqueda = normalizar_robusto(nombre_seleccion)
+        df_pecu['Terr_Norm'] = df_pecu['Territorio'].apply(normalizar_robusto)
+        
+        # Intento 1: Búsqueda exacta
+        filtro_bov = df_pecu[(df_pecu['Terr_Norm'] == busqueda) & (df_pecu['Especie'] == 'Bovinos')]
+        filtro_por = df_pecu[(df_pecu['Terr_Norm'] == busqueda) & (df_pecu['Especie'] == 'Porcinos')]
+        filtro_ave = df_pecu[(df_pecu['Terr_Norm'] == busqueda) & (df_pecu['Especie'] == 'Aves')]
+        
+        # Intento 2: Búsqueda flexible (radar) si falló la exacta por culpa de prefijos
+        if filtro_bov.empty:
+            palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
+            if palabra_clave:
+                mask = df_pecu['Terr_Norm'].str.contains(palabra_clave, na=False)
+                filtro_bov = df_pecu[mask & (df_pecu['Especie'] == 'Bovinos')]
+                filtro_por = df_pecu[mask & (df_pecu['Especie'] == 'Porcinos')]
+                filtro_ave = df_pecu[mask & (df_pecu['Especie'] == 'Aves')]
 
-        filtro_bov = df_pecu[(df_pecu['Nivel'] == nivel_busqueda) & (df_pecu['Territorio'].str.lower() == nombre_busqueda) & (df_pecu['Especie'] == 'Bovinos')]
-        filtro_por = df_pecu[(df_pecu['Nivel'] == nivel_busqueda) & (df_pecu['Territorio'].str.lower() == nombre_busqueda) & (df_pecu['Especie'] == 'Porcinos')]
-        filtro_ave = df_pecu[(df_pecu['Nivel'] == nivel_busqueda) & (df_pecu['Territorio'].str.lower() == nombre_busqueda) & (df_pecu['Especie'] == 'Aves')]
-        
         if not filtro_bov.empty: bovinos_reales = float(filtro_bov.iloc[0]['Poblacion_Base'])
         if not filtro_por.empty: porcinos_reales = float(filtro_por.iloc[0]['Poblacion_Base'])
         if not filtro_ave.empty: aves_reales = float(filtro_ave.iloc[0]['Poblacion_Base'])
         
         if bovinos_reales > 0 or porcinos_reales > 0:
-            origen_datos = "Matriz Maestra (Híbrida)" if es_cuenca else "Matriz Maestra"
+            origen_datos = "Matriz Maestra (Sincronizada)"
 
     # 3. Fallbacks de Seguridad (Por si es un área sin datos)
     pob_total_calculada = poblacion_urbana_calculada + poblacion_rural_calculada
