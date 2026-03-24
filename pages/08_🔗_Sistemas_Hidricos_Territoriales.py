@@ -916,7 +916,13 @@ with col_h2:
     cabezas_aves = st.session_state.get('ica_aves_calc', 0)
         
     c_i1, c_i2, c_i3, c_i4 = st.columns(4)
-    pob_humana = c_i1.number_input("👥 Pob. Asignada:", value=int(pob_real_dependiente), help="Población calculada según el % de dependencia.")
+    # Forzamos la actualización pasándole el valor calculado directamente y sin llaves antiguas
+    pob_humana = c_i1.number_input(
+        "👥 Pob. Asignada:", 
+        value=int(pob_real_dependiente), 
+        help=f"El {pct_dependencia}% de {pob_global_memoria:,.0f} habitantes del Valle de Aburrá.",
+        key=f"pob_asig_{nodo_seleccionado}_{pct_dependencia}" # Llave dinámica que rompe la caché
+    )
     cabezas_bovinas = c_i2.number_input("🐄 Bovinos:", value=int(cabezas_bovinas))
     cabezas_porcinas = c_i3.number_input("🐖 Porcinos:", value=int(cabezas_porcinas))
     cabezas_aves_in = c_i4.number_input("🐔 Aves:", value=int(cabezas_aves)) 
