@@ -106,11 +106,6 @@ if 'aleph_lugar' in st.session_state and 'aleph_pob_total' in st.session_state:
         elif any(x in lugar_limpio for x in claves_lafe):
             st.session_state['nodo_sugerido'] = "La Fe"
 
-# Verificamos si el Aleph ya tiene datos. Si no los tiene, mostramos el botón.
-with st.expander("⚙️ Recalcular Proyección Demográfica (Motor Local)", expanded=False):
-    st.write("Usa esta herramienta si deseas cambiar el año de análisis sin salir de esta página.")
-    render_motor_demografico(lugar_defecto="Valle de Aburrá")
-    
 # =========================================================================
 # 3. 🎛️ SIDEBAR (Sabe qué embalse sugerir)
 # =========================================================================
@@ -803,76 +798,67 @@ with c_res2:
     st.plotly_chart(fig_sun, use_container_width=True)
 
 # =========================================================================
-# 8. HUELLA HÍDRICA TERRITORIAL (CONEXIÓN MAESTROS ICA + DANE + MEMORIA)
+# 8. HUELLA HÍDRICA TERRITORIAL (CONECTADA AL GEMELO DIGITAL)
 # =========================================================================
 st.markdown("---")
 
-# 1. PRIMERO PONEMOS EL SLIDER (Para que la variable exista)
-anio_censo = st.slider("📅 Seleccione el Año de Análisis (Censo Pecuario y Proyección):", 2018, 2025, 2024)
+# 1. EL SLIDER DEL TIEMPO (Sincronizado con el futuro)
+anio_censo = st.slider("📅 Horizonte de Simulación (Demanda y Presión):", min_value=2025, max_value=2050, value=2035, step=1)
 
-# 2. LUEGO EL TÍTULO (Ahora sí sabe qué año elegiste)
 st.header(f"💧 Metabolismo Hídrico de {nodo_seleccionado}: Presión Demográfica y Agropecuaria ({anio_censo})")
 st.info("Cálculo de la demanda hídrica real integrando la población humana proyectada y la vocación pecuaria de la cuenca.")
 
 col_h1, col_h2 = st.columns([1, 1.5])
 
 with col_h1:
-    st.subheader("1. Conexión a Censos ICA (Supabase)")
+    st.subheader("1. Conexión a la Matriz Pecuaria")
     
-    # 🧠 MOTOR DE CACHÉ ESTRICTO (El slider ya no va aquí, porque lo subimos)
-    @st.cache_data(show_spinner=False, ttl=3600)
-    def descargar_maestro_ica(url):
-        import pandas as pd
-        import requests, io
-        try:
-            res = requests.get(url)
-            if res.status_code == 200:
-                return pd.read_csv(io.BytesIO(res.content), encoding='utf-8-sig', sep=None, engine='python')
-        except: return pd.DataFrame()
-    
-    # --- CÁLCULO AUTOMÁTICO (Sin botón) ---
     bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
-    import unicodedata
+    origen_datos_pec = "Valores Estáticos (Fallback)"
     
-    def limpiar_mpio(m):
-        if pd.isna(m): return ""
-        return unicodedata.normalize('NFKD', str(m).upper()).encode('ascii', 'ignore').decode('utf-8')
-    
-    # Determinamos los municipios aportantes según el nodo seleccionado en el sidebar
+    # Identificar municipios clave según el embalse
     mpios_cuenca = []
-    if "Grande" in nodo_seleccionado:
-        mpios_cuenca = ["BELMIRA", "DONMATIAS", "DON MATIAS", "SAN PEDRO", "ENTRERRIOS", "SANTA ROSA"]
-    elif "Fe" in nodo_seleccionado:
-        mpios_cuenca = ["RETIRO", "CEJA", "RIONEGRO"]
-        
-    mpios_cuenca_limpios = [limpiar_mpio(m) for m in mpios_cuenca]
-
-    archivos_maestros = [
-        ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Bovinos.csv", "TOTAL_BOVINOS", "Bovinos"),
-        ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Porcinos.csv", "TOTAL_CERDOS", "Porcinos"),
-        ("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Maestro_Aves.csv", "TOTAL_AVES_CAP_OCUPADA_MAS_AVES_TRASPATIO", "Aves")
-    ]
+    if "Grande" in nodo_seleccionado: mpios_cuenca = ["BELMIRA", "DON MATIAS", "SAN PEDRO DE LOS MILAGROS", "ENTRERRIOS", "SANTA ROSA DE OSOS"]
+    elif "Fe" in nodo_seleccionado: mpios_cuenca = ["EL RETIRO", "LA CEJA", "RIONEGRO"]
     
-    for url_censo, col_total, nombre_animal in archivos_maestros:
-        df = descargar_maestro_ica(url_censo)
-        if not df.empty:
-            df_anio = df[df['AÑO'] == anio_censo].copy()
-            if not df_anio.empty:
-                col_mpio = next((c for c in df_anio.columns if 'MUNICIPIO' in c), None)
-                col_tot_real = next((c for c in df_anio.columns if col_total in c), None)
-                if col_mpio and col_tot_real:
-                    df_anio['MPIO_NORM'] = df_anio[col_mpio].apply(limpiar_mpio)
-                    filtro = df_anio['MPIO_NORM'].apply(lambda x: any(m in x for m in mpios_cuenca_limpios))
-                    df_final = df_anio[filtro]
-                    suma_animales = pd.to_numeric(df_final[col_tot_real], errors='coerce').sum()
-                    if "Bovinos" in nombre_animal: bovinos_tot = suma_animales
-                    elif "Porcinos" in nombre_animal: porcinos_tot = suma_animales
-                    elif "Aves" in nombre_animal: aves_tot = suma_animales
-            
-    st.success(f"✅ Metabolismo Pecuario de **{nodo_seleccionado}** actualizado.")
+    # 🧠 Extracción Vectorial de la Memoria
+    if 'df_matriz_pecuaria' in st.session_state and mpios_cuenca:
+        df_pec = st.session_state['df_matriz_pecuaria']
+        
+        def obtener_pob_futura(especie):
+            total = 0
+            for mpio in mpios_cuenca:
+                filtro = df_pec[(df_pec['Nivel'] == 'Municipal') & (df_pec['Territorio'].str.upper() == mpio) & (df_pec['Especie'] == especie)]
+                if not filtro.empty:
+                    fila = filtro.iloc[0]
+                    x_norm = anio_censo - fila['Año_Base']
+                    mod = fila['Modelo_Recomendado']
+                    if mod == 'Logístico': val = fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm))
+                    elif mod == 'Exponencial': val = fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm)
+                    else: val = fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D']
+                    total += max(0, val)
+            return total
+        
+        bovinos_tot = obtener_pob_futura('Bovinos')
+        porcinos_tot = obtener_pob_futura('Porcinos')
+        aves_tot = obtener_pob_futura('Aves')
+        origen_datos_pec = "Matriz Maestra (Proyectada)"
+        
+    # Valores de respaldo si la memoria está vacía
+    if origen_datos_pec == "Valores Estáticos (Fallback)":
+        bovinos_tot = 85000 if "Grande" in nodo_seleccionado else 5000
+        porcinos_tot = 45000 if "Grande" in nodo_seleccionado else 2000
+        aves_tot = 800000 if "Grande" in nodo_seleccionado else 150000
+
+    # Mensajes a la interfaz
+    if origen_datos_pec == "Matriz Maestra (Proyectada)":
+        st.success(f"🧠 **Sincronización Perfecta:** Metabolismo pecuario proyectado al {anio_censo} para **{nodo_seleccionado}**.")
+    else:
+        st.warning(f"⚠️ **Memoria Vacía:** Entrena el Modelo Pecuario en la pág 06a para ver proyecciones dinámicas.")
+
     st.info(f"🐄 Bovinos: **{bovinos_tot:,.0f}** | 🐖 Porcinos: **{porcinos_tot:,.0f}** | 🐔 Aves: **{aves_tot:,.0f}**")
     
-    # Guardamos en la memoria global en tiempo real
+    # Guardar en memoria local de la página
     st.session_state['ica_bovinos_calc'] = bovinos_tot
     st.session_state['ica_porcinos_calc'] = porcinos_tot
     st.session_state['ica_aves_calc'] = aves_tot
