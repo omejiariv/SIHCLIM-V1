@@ -221,16 +221,27 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
                 st.session_state['areas_totales_mpio'] = df_unicos.groupby(['MPIO_Norm', 'Tipo_Area'])['Area_Original_km2'].sum().to_dict()
                 st.session_state['df_matriz_proporciones'] = df_prop
 
-            # 2. Búsqueda Implacable del Polígono
-            frags = df_prop[(df_prop['SUBC_Norm'] == nombre_sel_limpio) | (df_prop['C1_Norm'] == nombre_sel_limpio)]
-            if frags.empty:
-                mask = df_prop['SUBC_Norm'].str.contains(nombre_sel_limpio, na=False) | df_prop['C1_Norm'].str.contains(nombre_sel_limpio, na=False)
-                frags = df_prop[mask]
+            # 2. BÚSQUEDA OMNIDIRECCIONAL (La cura integral)
+            cols_geo = ['AH', 'ZH', 'SZH', 'Zona', 'N_NSS1', 'SUBC_LBL', 'N-NSS3']
+            mask_busqueda = pd.Series(False, index=df_prop.index)
+            
+            # Pasada 1: Búsqueda Exacta en TODAS las columnas
+            for col in cols_geo:
+                if col in df_prop.columns:
+                    col_norm = df_prop[col].astype(str).apply(normalizar_robusto)
+                    mask_busqueda = mask_busqueda | (col_norm == nombre_sel_limpio)
+            
+            frags = df_prop[mask_busqueda]
+
+            # Pasada 2: Búsqueda Flexible (Si la exacta falla)
             if frags.empty:
                 pal_clave = nombre_sel_limpio.replace("rio ", "").replace("q. ", "").replace("quebrada ", "").strip()
                 if len(pal_clave) > 3:
-                    mask = df_prop['SUBC_Norm'].str.contains(pal_clave, na=False) | df_prop['C1_Norm'].str.contains(pal_clave, na=False)
-                    frags = df_prop[mask]
+                    for col in cols_geo:
+                        if col in df_prop.columns:
+                            col_norm = df_prop[col].astype(str).apply(normalizar_robusto)
+                            mask_busqueda = mask_busqueda | col_norm.str.contains(pal_clave, na=False)
+                    frags = df_prop[mask_busqueda]
 
             # 3. Matemática de Distribución Proporcional
             if not frags.empty:
