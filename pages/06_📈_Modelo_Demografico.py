@@ -1720,3 +1720,20 @@ with tab_descargas:
             csv_pir = df_descarga_pir.to_csv(index=False).encode('utf-8')
             st.download_button(label=f"⬇️ Descargar Pirámide {año_sel} (CSV)", data=csv_pir, file_name=f"Piramide_{año_sel}_{titulo_terr}.csv", mime="text/csv", use_container_width=True)
             st.dataframe(df_descarga_pir.head(5), use_container_width=True)
+
+# ==============================================================================
+# 💾 EXPORTACIÓN DEL CEREBRO A PRODUCCIÓN (NUEVA ARQUITECTURA)
+# ==============================================================================
+if 'df_matriz_demografica' in st.session_state:
+    st.markdown("---")
+    st.subheader("💾 Exportar Cerebro Entrenado (Para Producción)")
+    st.info("💡 **Paso a Producción:** Descarga esta matriz ya calculada y súbela a tu bucket de Supabase. Así, los usuarios no tendrán que entrenar el modelo cada vez que entren a la plataforma.")
+    
+    csv_demo = st.session_state['df_matriz_demografica'].to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Descargar Matriz Maestra Demográfica", 
+        data=csv_demo, 
+        file_name="Matriz_Maestra_Demografica.csv", 
+        mime="text/csv",
+        type="primary"
+    )
