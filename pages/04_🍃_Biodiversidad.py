@@ -937,10 +937,11 @@ with tab_forestal:
 # ==============================================================================
 with tab_afolu:
     
-# -------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     # 🌐 1. CEREBRO ESPACIAL Y EXTRACCIÓN AL GEMELO DIGITAL
     # -------------------------------------------------------------------------
-    st.header(f"⚖️ Metabolismo Territorial: Dinámica de GEI en {nombre_seleccion}")
+    titulo_dinamico = f"Metabolismo Territorial: Dinámica de GEI en {nombre_seleccion}"
+    st.header(f"⚖️ {titulo_dinamico}")
     
     area_bosque_real = 100.0
     try:
