@@ -300,46 +300,40 @@ if gdf_zona is None or gdf_zona.empty:
     st.stop() 
 
 # ==============================================================================
-# 👥 EXTRACCIÓN DE POBLACIÓN BASE DESDE LA MATRIZ MAESTRA
+# 👥 EXTRACCIÓN DE POBLACIÓN BASE (CONEXIÓN A LA TURBINA CENTRAL)
 # ==============================================================================
+from modules.utils import obtener_metabolismo_exacto
+
 anio_analisis = 2025 # Forzamos el reloj de calidad a arrancar en 2025
-nivel_sel_visual = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() for x in ['rio', 'río', 'quebrada']) else "Municipal"
 
-pob_urb_base, pob_rur_base = 0.0, 0.0
-origen_dato = "Estimación Geoespacial (Fallback)"
+# 🚀 Llamamos al motor espacial unificado (Él se encarga de cruzar DANE o Fracción de Área)
+datos_metabolismo = obtener_metabolismo_exacto(nombre_seleccion, anio_analisis)
 
-# Buscamos directamente en la mente del Gemelo Digital
-if 'df_matriz_demografica' in st.session_state:
-    df_demo = st.session_state['df_matriz_demografica']
-    
-    filtro_u = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Urbana')]
-    filtro_r = df_demo[(df_demo['Nivel'] == nivel_sel_visual) & (df_demo['Territorio'] == nombre_seleccion) & (df_demo['Area'] == 'Rural')]
-    
-    if not filtro_u.empty: pob_urb_base = float(filtro_u.iloc[0]['Pob_Base'])
-    if not filtro_r.empty: pob_rur_base = float(filtro_r.iloc[0]['Pob_Base'])
-    
-    if pob_urb_base > 0 or pob_rur_base > 0:
-        origen_dato = "Matriz Maestra (DANE)"
+pob_urb_base = datos_metabolismo['pob_urbana']
+pob_rur_base = datos_metabolismo['pob_rural']
+pob_total_base = datos_metabolismo['pob_total']
+origen_dato = datos_metabolismo.get('origen_humano', 'Estimación Geoespacial (Fallback)')
 
-pob_total_base = pob_urb_base + pob_rur_base
+# --- INYECCIÓN DESDE LA TURBINA CENTRAL ---
+# (Asegúrate de tener nombre_seleccion y anio_analisis definidos arriba)
+from modules.utils import obtener_metabolismo_exacto
+datos_metabolismo = obtener_metabolismo_exacto(nombre_seleccion, anio_analisis)
 
-# Fallback por si el usuario elige una cuenca no mapeada o todo el departamento
-if pob_total_base <= 0:
-    area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
-    pob_total_base = max(area_km2 * 65.0, 500.0)
-    pob_urb_base, pob_rur_base = pob_total_base * 0.7, pob_total_base * 0.3
+pob_urb_base = datos_metabolismo['pob_urbana']
+pob_rur_base = datos_metabolismo['pob_rural']
+origen_dato = datos_metabolismo.get('origen_humano', 'Estimación')
 
 # --- INTERFAZ UNIFICADA ---
 st.markdown("---")
 with st.expander(f"📍 Contexto Demográfico Base ({anio_analisis}): {nombre_seleccion}", expanded=False):
-    if origen_dato == "Matriz Maestra (DANE)":
+    
+    # Mensajes dinámicos según la verdadera inteligencia espacial
+    if "DANE" in origen_dato:
         st.success(f"🧠 **Sincronización Perfecta:** Población humana extraída de la Matriz Maestra para **{nombre_seleccion}**.")
+    elif "Matriz Espacial" in origen_dato:
+        st.info(f"🗺️ **Geometría de Precisión:** Población calculada por fracción de área exacta para **{nombre_seleccion}**. ({origen_dato})")
     else:
-        # Si es un río o cuenca, damos un mensaje informativo en azul (info), no una alerta (warning)
-        if nivel_sel_visual == "Cuenca Hidrográfica":
-            st.info(f"🗺️ **Adaptación Espacial:** El DANE proyecta humanos solo por municipios. Para la cuenca **{nombre_seleccion}**, se aplicó una {origen_dato}.")
-        else:
-            st.warning(f"⚠️ **Atención:** No hay datos en la matriz para **{nombre_seleccion}**. Usando {origen_dato}.")
+        st.warning(f"⚠️ **Atención:** No se halló polígono preciso para **{nombre_seleccion}**. Usando {origen_dato}.")
     
     st.markdown("⚙️ **Distribución Espacial (Calibración Base)**")
     col_p1, col_p2 = st.columns(2)
@@ -354,7 +348,8 @@ st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}**
 
 # --- 🌉 ALIAS DE COMPATIBILIDAD PARA FUNCIONES ANTIGUAS ---
 lugar_sel = nombre_seleccion
-nivel_sel_interno = "Cuenca Hidrográfica" if any(x in nombre_seleccion.lower() for x in ['rio', 'río', 'quebrada']) else "Municipal"
+# Ya no adivinamos por nombre. Si viene del DANE es municipio, sino es cuenca.
+nivel_sel_interno = "Municipal" if "DANE" in origen_dato else "Cuenca Hidrográfica"
 nivel_sel_visual = nivel_sel_interno
 
 # ==============================================================================
