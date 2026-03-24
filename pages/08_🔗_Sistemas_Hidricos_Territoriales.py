@@ -13,8 +13,9 @@ from modules.demografia_tools import render_motor_demografico
 # 1. CONFIGURACIÓN Y DICCIONARIO BASE (Debe ir primero)
 # =========================================================================
 st.set_page_config(page_title="Metabolismo Complejo", page_icon="🔗", layout="wide")
+
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
-from modules.utils import encender_gemelo_digital
+from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
 
 # Datos paramétricos (Estructura Ampliada)
