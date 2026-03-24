@@ -85,7 +85,6 @@ sistemas_embalses = {
 # ==============================================================================
 # 2. 🧠 EL ALEPH HÍDRICO (Decide ANTES de pintar el menú)
 # ==============================================================================
-from modules.utils import obtener_metabolismo_exacto
 import unicodedata
 
 conectado_aleph = False
@@ -95,7 +94,7 @@ pob_local_aleph = None
 # Verificamos si el usuario trae un lugar seleccionado desde el dashboard principal
 if 'aleph_lugar' in st.session_state:
     aleph_lugar = st.session_state['aleph_lugar']
-    aleph_anio = st.session_state.get('aleph_anio', 2025) # Asume 2025 por defecto si no hay año
+    aleph_anio = st.session_state.get('aleph_anio', 2025) # Asume 2025 por defecto
     
     # 🚀 LA MAGIA: Calculamos la población en vivo con el motor espacial
     datos_metabolismo = obtener_metabolismo_exacto(aleph_lugar, aleph_anio)
@@ -132,7 +131,7 @@ nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", nodos_
 datos_nodo = sistemas_embalses[nodo_seleccionado]
 
 # =========================================================================
-# 4. 🏷️ TÍTULOS Y UI PRINCIPAL (Ya existe 'nodo_seleccionado')
+# 4. 🏷️ TÍTULOS Y UI PRINCIPAL
 # =========================================================================
 st.title(f"🔗 Metabolismo Territorial Complejo: Nodos y Trasvases ({nodo_seleccionado})")
 st.markdown("""
@@ -200,7 +199,6 @@ if gdf_embalses is not None and not gdf_embalses.empty:
         try:
             sistemas_embalses["La Fe"]["ha_conservadas_base"] = 3600.0
             
-            # ¡AQUÍ ESTABA EL ERROR DE LA URL LIMPIA! Ya está corregido a url_supabase
             ruta_predios = f"{url_supabase}/storage/v1/object/public/{nombre_bucket}/Puntos_de_interes/PrediosEjecutados.geojson"
             import requests, tempfile
             
@@ -232,7 +230,7 @@ escenario_enso = st.sidebar.select_slider(
     value="Neutro"
 )
 
-# Acoplamiento Termodinámico (Precipitación vs Evaporación)
+# Acoplamiento Termodinámico
 if escenario_enso == "Niño Severo": factor_p, factor_et = 0.65, 1.40
 elif escenario_enso == "Niño Moderado": factor_p, factor_et = 0.85, 1.20
 elif escenario_enso == "Neutro": factor_p, factor_et = 1.0, 1.0
@@ -249,7 +247,7 @@ else:
 
 col_in, col_out = st.columns(2)
 
-# --- ENTRADAS DINÁMICAS (AFECTADAS POR EL CLIMA) ---
+# --- ENTRADAS DINÁMICAS ---
 afluentes_inputs = {}
 trasvases_inputs = {}
 
@@ -257,14 +255,17 @@ with col_in:
     st.markdown("#### 📥 ENTRADAS (Inflows)")
     st.caption("Aportes Naturales de la Cuenca (Afectados por ENSO):")
     for nombre, caudal in datos_nodo["afluentes_naturales"].items():
-        caudal_afectado = float(caudal * factor_p)
         max_val = float(caudal * 3) if caudal > 0 else 10.0
+        # Blindaje del valor por defecto
+        caudal_afectado = min(float(caudal * factor_p), max_val) 
         afluentes_inputs[nombre] = st.slider(f"{nombre} [m³/s]:", 0.0, max_val, caudal_afectado, 0.1, key=f"in_{nombre}")
     
     st.caption("Bombas y Túneles (Trasvases Externos):")
     if datos_nodo["trasvases"]:
         for nombre, caudal in datos_nodo["trasvases"].items():
-            trasvases_inputs[nombre] = st.slider(f"Bombeo {nombre} [m³/s]:", 0.0, float(caudal * 2), float(caudal), 0.1, key=f"tr_{nombre}")
+            max_val = float(caudal * 2) if caudal > 0 else 5.0
+            val_defecto = min(float(caudal), max_val)
+            trasvases_inputs[nombre] = st.slider(f"Bombeo {nombre} [m³/s]:", 0.0, max_val, val_defecto, 0.1, key=f"tr_{nombre}")
     else:
         st.write("*(Sistema impulsado 100% por gravedad)*")
 
@@ -272,27 +273,25 @@ with col_in:
 with col_out:
     st.markdown("#### 📤 SALIDAS (Outflows)")
     
-    # Acoplamiento Evaporativo (El Niño evapora más rápido el embalse)
     evaporacion_dinamica = datos_nodo["evaporacion_m3s"] * factor_et
     st.metric("Evaporación Directa (Afectada por T°)", f"{evaporacion_dinamica:.2f} m³/s", f"{(evaporacion_dinamica - datos_nodo['evaporacion_m3s']):+.2f} m³/s", delta_color="inverse")
     
-    # Extracción Consuntiva conectada a la memoria
     demanda_memoria = st.session_state.get('demanda_total_m3s', datos_nodo["demanda_acueducto_m3s"])
     max_acueducto = float(max(demanda_memoria, datos_nodo["demanda_acueducto_m3s"]) * 2)
     
     val_acueducto = 0.0
     if max_acueducto > 0:
-        val_acueducto = st.slider("Extracción Consuntiva (Multi-Sector) [m³/s]:", 0.0, max_acueducto, float(demanda_memoria), 0.1)
+        val_defecto_acue = min(float(demanda_memoria), max_acueducto)
+        val_acueducto = st.slider("Extracción Consuntiva (Multi-Sector) [m³/s]:", 0.0, max_acueducto, val_defecto_acue, 0.1)
     
     val_turbinado = 0.0
     if datos_nodo["generacion_energia_m3s"] > 0:
         max_turb = float(datos_nodo["generacion_energia_m3s"] * 1.5)
-        val_turbinado = st.slider("Caudal Turbinado (Energía) [m³/s]:", 0.0, max_turb, float(datos_nodo["generacion_energia_m3s"]), 1.0)
+        val_def_turb = min(float(datos_nodo["generacion_energia_m3s"]), max_turb)
+        val_turbinado = st.slider("Caudal Turbinado (Energía) [m³/s]:", 0.0, max_turb, val_def_turb, 1.0)
         
     val_ecologico = st.number_input("Caudal Ecológico / Vertimiento [m³/s]:", min_value=0.0, value=float(datos_nodo["caudal_ecologico_m3s"]), step=1.0)
 
-# Corrección vital para el cálculo de balance (Sección 3)
-# Asegúrate de que la variable sum_salidas use la nueva evaporación
 sum_salidas = val_acueducto + val_turbinado + val_ecologico + evaporacion_dinamica
 
 # =========================================================================
