@@ -96,20 +96,24 @@ with st.sidebar:
 if gdf_zona is not None and not gdf_zona.empty:
     engine = get_engine()
 
+# ==============================================================================
+    # 🧠 CEREBRO MAESTRO: CONEXIÓN A LA TURBINA CENTRAL
     # ==============================================================================
-    # 🧠 CEREBRO MAESTRO: LECTURA DE LA MEMORIA GLOBAL Y KPIs METROPOLITANOS
-    # ==============================================================================
-    lugar_actual = st.session_state.get('aleph_lugar', nombre_zona)
-    anio_actual = st.session_state.get('aleph_anio', 2024)
-    pob_total = st.session_state.get('aleph_pob_total', 4150000)
+    from modules.utils import obtener_metabolismo_exacto
+    
+    lugar_actual = nombre_zona
+    
+    # Un slider nativo y rápido para viajar en el tiempo
+    anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
+        
+    # 🚀 LA MAGIA DEL CÓDIGO CENTRALIZADO (1 Sola línea hace todo el trabajo)
+    datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
+    pob_total = datos_metabolismo['pob_total']
+    
+    # Mantenemos las variables de demanda y clima
     demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5) 
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
-
-    # --- MOTOR DEMOGRÁFICO DE BOLSILLO ---
-    with st.expander("⚙️ Recalcular Proyección Demográfica (Motor Local)", expanded=False):
-        st.caption("Ajusta el año de proyección para recalcular la demanda poblacional y el estrés hídrico sin salir del panel.")
-        render_motor_demografico(lugar_defecto="Valle de Aburrá")
-
+    
     st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
     
     # 1. Recuperamos la Oferta desde el Aleph (O ponemos 14.5 como respaldo)
