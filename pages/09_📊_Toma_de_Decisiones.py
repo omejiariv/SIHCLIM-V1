@@ -172,22 +172,19 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.subheader(f"🗺️ Visor Geográfico Integrado: {nombre_zona}")
             
         # --- 🌡️ TERMÓMETRO TERRITORIAL (Reacciona al Estrés Hídrico) ---
-        # Rescatamos el estrés que calculamos en el Cerebro Maestro arriba
-        estres_actual = st.session_state.get('estres_hidrico_global', 0)
-            
-        # Definimos el color del polígono según la gravedad
-        if estres_actual > 100:
+        # Usamos la variable local 'estres_hidrico' calculada líneas arriba para reactividad instantánea
+        if estres_hidrico > 100:
             color_alerta = '#8B0000' # Rojo Oscuro (Colapso)
-            opacidad = 0.5
-        elif estres_actual > 80:
+            opacidad_alerta = 0.5
+        elif estres_hidrico > 80:
             color_alerta = '#E74C3C' # Rojo Claro (Crítico)
-            opacidad = 0.4
-        elif estres_actual > 40:
+            opacidad_alerta = 0.4
+        elif estres_hidrico > 40:
             color_alerta = '#F39C12' # Naranja (Alto)
-            opacidad = 0.3
+            opacidad_alerta = 0.3
         else:
             color_alerta = '#3498DB' # Azul (Estable)
-            opacidad = 0.2
+            opacidad_alerta = 0.2
 
         # Mapa Profesional
         m = folium.Map(location=[gdf_zona.centroid.y.iloc[0], gdf_zona.centroid.x.iloc[0]], zoom_start=12, tiles="cartodbpositron")
@@ -198,46 +195,52 @@ if gdf_zona is not None and not gdf_zona.empty:
                 attr='Esri', name='Satélite'
             ).add_to(m)
             
-        # 🗺️ DIBUJAMOS EL POLÍGONO DEL MUNICIPIO CON EL COLOR DE ALARMA
+        # 🗺️ DIBUJAMOS EL POLÍGONO DEL MUNICIPIO/CUENCA CON EL COLOR DE ALARMA
         folium.GeoJson(
             gdf_zona, 
             name=f"Estado: {nombre_zona}",
-            style_function=lambda x, color=color_alerta, opac=opacidad: {
-                'fillColor': color, 
-                'fillOpacity': opac, 
-                'color': color, 
+            style_function=lambda feature, c=color_alerta, o=opacidad_alerta: {
+                'fillColor': c, 
+                'fillOpacity': o, 
+                'color': c, 
                 'weight': 2
             },
-            tooltip=f"Estrés Hídrico: {estres_actual:.1f}%"
+            tooltip=f"Estrés Hídrico: {estres_hidrico:.1f}%"
         ).add_to(m)
 
-        # Carga de las otras capas de contexto
-        capas = load_context_layers(tuple(gdf_zona.total_bounds))
-            
-        if v_geo and capas['geomorf'] is not None:
-            folium.GeoJson(capas['geomorf'], name="Geomorfología",
-                           style_function=lambda x: {'fillColor': 'gray', 'fillOpacity': 0.2, 'color': 'black', 'weight': 1},
-                           tooltip=folium.GeoJsonTooltip(fields=['unidad'], aliases=['Unidad:'])).add_to(m)
+        # Carga de las otras capas de contexto (Protegido por si alguna capa falta)
+        try:
+            capas = load_context_layers(tuple(gdf_zona.total_bounds))
+                
+            if v_geo and capas.get('geomorf') is not None:
+                folium.GeoJson(capas['geomorf'], name="Geomorfología",
+                               style_function=lambda x: {'fillColor': 'gray', 'fillOpacity': 0.2, 'color': 'black', 'weight': 1},
+                               tooltip=folium.GeoJsonTooltip(fields=['unidad'], aliases=['Unidad:'])).add_to(m)
 
-        if v_drain and capas['drenaje'] is not None:
-            folium.GeoJson(capas['drenaje'], name="Ríos", style_function=lambda x: {'color': '#3498db', 'weight': 2}).add_to(m)
+            if v_drain and capas.get('drenaje') is not None:
+                folium.GeoJson(capas['drenaje'], name="Ríos", style_function=lambda x: {'color': '#3498db', 'weight': 2}).add_to(m)
 
-        if capas['predios'] is not None:
-            folium.GeoJson(capas['predios'], name="Predios CV", 
-                           style_function=lambda x: {'fillColor': 'orange', 'color': 'darkorange'}).add_to(m)
+            if capas.get('predios') is not None:
+                folium.GeoJson(capas['predios'], name="Predios CV", 
+                               style_function=lambda x: {'fillColor': 'orange', 'color': 'darkorange'}).add_to(m)
+        except Exception as e:
+            st.warning(f"Aviso de renderizado de capas: {e}")
 
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=600, key="mapa_final")
 
         # --- TABLA DE CRUCE: GEOMORFOLOGÍA VS PRIORIDAD ---
         st.markdown("### 📊 Análisis de Suelo y Prioridad")
-        if capas['geomorf'] is not None:
-            df_analisis = pd.DataFrame({
-                "Unidad Geomorfológica": capas['geomorf']['unidad'].unique(),
-                "Prioridad Promedio": [round(np.random.uniform(0.4, 0.9), 2) for _ in range(len(capas['geomorf']['unidad'].unique()))],
-                "Recomendación": "Restauración Activa / Conservación"
-            })
-            st.table(df_analisis)
+        try:
+            if capas.get('geomorf') is not None:
+                df_analisis = pd.DataFrame({
+                    "Unidad Geomorfológica": capas['geomorf']['unidad'].unique(),
+                    "Prioridad Promedio": [round(np.random.uniform(0.4, 0.9), 2) for _ in range(len(capas['geomorf']['unidad'].unique()))],
+                    "Recomendación": "Restauración Activa / Conservación"
+                })
+                st.table(df_analisis)
+        except:
+            pass
 
     with tab2:
         st.subheader("💧 Análisis Hidrológico Integrado")
