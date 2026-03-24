@@ -151,7 +151,6 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
     nombre_sel_limpio = normalizar_robusto(nombre_seleccion)
     es_cuenca = any(x in nombre_sel_limpio for x in ['rio', 'quebrada', 'alto', 'medio', 'bajo', 'embalse', 'fe', 'q.'])
     
-    # 0. Diccionario base
     res = {
         'pob_urbana': 0.0, 'pob_rural': 0.0, 'pob_total': 0.0,
         'bovinos': 0.0, 'porcinos': 0.0, 'aves': 0.0,
@@ -160,12 +159,10 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
     }
 
     # =========================================================================
-    # 1. MOTOR HUMANO (Alta Precisión Topológica)
+    # 1. MOTOR HUMANO (Alta Precisión por Densidad Espacial)
     # =========================================================================
     if 'df_matriz_demografica' in st.session_state:
         df_demo = st.session_state['df_matriz_demografica'].copy()
-        
-        # Blindaje 1: Normalizamos la base DANE
         if 'Terr_Norm' not in df_demo.columns:
             df_demo['Terr_Norm'] = df_demo['Territorio'].apply(normalizar_robusto)
 
@@ -181,45 +178,57 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
 
         pob_u, pob_r = 0.0, 0.0
 
-        # --- RUTA A: ES UNA CUENCA (Usa Matriz de Proporciones) ---
         if es_cuenca and 'df_matriz_proporciones' in st.session_state:
-            df_prop = st.session_state['df_matriz_proporciones'].copy()
+            df_prop = st.session_state['df_matriz_proporciones']
             
-            # Blindaje 2: Normalizamos el mapa GIS
-            if 'SUBC_Norm' not in df_prop.columns:
+            # --- OPTIMIZACIÓN EN MEMORIA (Se hace solo 1 vez) ---
+            if 'Tipo_Area' not in df_prop.columns:
+                df_prop['NOMB_MPIO_Norm'] = df_prop['NOMB_MPIO'].apply(normalizar_robusto)
+                df_prop['NOMBRE_VER_Norm'] = df_prop['NOMBRE_VER'].apply(normalizar_robusto)
                 df_prop['SUBC_Norm'] = df_prop['SUBC_LBL'].apply(normalizar_robusto)
                 df_prop['CUENCA_Norm'] = df_prop['N_NSS1'].apply(normalizar_robusto)
+                
+                df_prop['Tipo_Area'] = 'Rural'
+                mask_urb = df_prop['NOMBRE_VER_Norm'].str.contains('cabecera', na=False) | (df_prop['NOMBRE_VER_Norm'] == df_prop['NOMB_MPIO_Norm'])
+                df_prop.loc[mask_urb, 'Tipo_Area'] = 'Urbana'
+                st.session_state['df_matriz_proporciones'] = df_prop
+
+            # --- RADAR DE BÚSQUEDA ---
+            pal_clave = nombre_sel_limpio.replace("rio", "").replace("alto", "").replace("bajo", "").replace("q.", "").replace("embalse", "").strip()
             
-            # Búsqueda exacta primero
             frags = df_prop[(df_prop['SUBC_Norm'] == nombre_sel_limpio) | (df_prop['CUENCA_Norm'] == nombre_sel_limpio)]
-            
-            # Si falla, búsqueda flexible (Radar)
-            if frags.empty:
-                pal_clave = nombre_sel_limpio.replace("rio", "").replace("alto", "").replace("q.", "").replace("embalse", "").strip()
-                if pal_clave:
-                    mask = df_prop['SUBC_Norm'].str.contains(pal_clave, na=False) | df_prop['CUENCA_Norm'].str.contains(pal_clave, na=False)
-                    frags = df_prop[mask]
+            if frags.empty and pal_clave:
+                mask = df_prop['SUBC_Norm'].str.contains(pal_clave, na=False) | df_prop['CUENCA_Norm'].str.contains(pal_clave, na=False)
+                frags = df_prop[mask]
 
             if not frags.empty:
-                for _, frag in frags.iterrows():
-                    mpio_limpio = normalizar_robusto(frag['NOMB_MPIO'])
-                    ver_limpia = normalizar_robusto(frag['NOMBRE_VER'])
-                    pct = min(float(frag['Pct_en_Cuenca']), 1.0) # Vacuna contra el >100%
-                    
-                    es_urbano = ("cabecera" in ver_limpia) or (mpio_limpio in ver_limpia)
-                    tipo = 'Urbana' if es_urbano else 'Rural'
-                    
-                    # El cruce perfecto (Todo en minúsculas sin tildes)
-                    filtro = df_demo[(df_demo['Terr_Norm'] == mpio_limpio) & (df_demo['Area'] == tipo)]
-                    if not filtro.empty:
-                        aportada = proyectar_pob(filtro.iloc[0]) * pct
-                        if es_urbano: pob_u += aportada
-                        else: pob_r += aportada
+                # --- CÁLCULO MATEMÁTICO PERFECTO (Previene la clonación de población) ---
+                # 1. Sumamos el área total de los polígonos que cayeron en la cuenca (agrupados por municipio)
+                areas_cuenca = frags.groupby(['NOMB_MPIO_Norm', 'Tipo_Area'])['Area_Fragmento_km2'].sum().reset_index()
                 
-                res['origen_humano'] = "Matriz Espacial (Alta Precisión)"
+                for _, row in areas_cuenca.iterrows():
+                    mpio = row['NOMB_MPIO_Norm']
+                    tipo = row['Tipo_Area']
+                    area_en_cuenca = row['Area_Fragmento_km2']
+                    
+                    # 2. Consultamos el Área Total que tiene ese municipio en el mapa de Antioquia
+                    area_total = df_prop[(df_prop['NOMB_MPIO_Norm'] == mpio) & (df_prop['Tipo_Area'] == tipo)]['Area_Fragmento_km2'].sum()
+                    
+                    # 3. Calculamos la densidad exacta
+                    pct_real = min(area_en_cuenca / area_total, 1.0) if area_total > 0 else 0.0
+                    
+                    # 4. Cruzamos con el DANE
+                    filtro = df_demo[(df_demo['Terr_Norm'] == mpio) & (df_demo['Area'] == tipo)]
+                    if not filtro.empty:
+                        aportada = proyectar_pob(filtro.iloc[0]) * pct_real
+                        if tipo == 'Urbana': pob_u += aportada
+                        else: pob_r += aportada
+                        
+                res['origen_humano'] = "Matriz Espacial (Densidad Real)"
+            else:
+                res['origen_humano'] = "Cuenca no hallada en GIS (Fallback)"
 
-        # --- RUTA B: ES UN MUNICIPIO (Búsqueda Directa DANE) ---
-        else:
+        else: # Búsqueda de Municipio Tradicional
             fu = df_demo[(df_demo['Terr_Norm'] == nombre_sel_limpio) & (df_demo['Area'] == 'Urbana')]
             fr = df_demo[(df_demo['Terr_Norm'] == nombre_sel_limpio) & (df_demo['Area'] == 'Rural')]
             if not fu.empty: pob_u = proyectar_pob(fu.iloc[0])
@@ -229,19 +238,18 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
         res['pob_urbana'], res['pob_rural'], res['pob_total'] = pob_u, pob_r, pob_u + pob_r
 
     # =========================================================================
-    # 2. MOTOR PECUARIO (Radar Inteligente)
+    # 2. MOTOR PECUARIO
     # =========================================================================
     if 'df_matriz_pecuaria' in st.session_state:
         df_pec = st.session_state['df_matriz_pecuaria'].copy()
-        if 'Terr_Norm' not in df_pec.columns:
-            df_pec['Terr_Norm'] = df_pec['Territorio'].apply(normalizar_robusto)
+        if 'Terr_Norm' not in df_pec.columns: df_pec['Terr_Norm'] = df_pec['Territorio'].apply(normalizar_robusto)
         
         f_b = df_pec[(df_pec['Terr_Norm'] == nombre_sel_limpio) & (df_pec['Especie'] == 'Bovinos')]
         f_p = df_pec[(df_pec['Terr_Norm'] == nombre_sel_limpio) & (df_pec['Especie'] == 'Porcinos')]
         f_a = df_pec[(df_pec['Terr_Norm'] == nombre_sel_limpio) & (df_pec['Especie'] == 'Aves')]
         
         if f_b.empty:
-            pal_clave = nombre_sel_limpio.replace("rio", "").replace("alto", "").replace("embalse", "").strip()
+            pal_clave = nombre_sel_limpio.replace("rio", "").replace("alto", "").replace("bajo", "").replace("embalse", "").strip()
             if pal_clave:
                 mask = df_pec['Terr_Norm'].str.contains(pal_clave, na=False)
                 f_b = df_pec[mask & (df_pec['Especie'] == 'Bovinos')]
@@ -266,10 +274,9 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
         if res['bovinos'] > 0: res['origen_pecuario'] = "Matriz Maestra (Sincronizada)"
 
     # =========================================================================
-    # 3. FALLBACKS DE SEGURIDAD EXTREMA
+    # 3. FALLBACKS DE SEGURIDAD
     # =========================================================================
-    if res['pob_total'] <= 0:
-        res['pob_total'], res['pob_urbana'], res['pob_rural'] = 5000.0, 3500.0, 1500.0
+    if res['pob_total'] <= 0: res['pob_total'], res['pob_urbana'], res['pob_rural'] = 5000.0, 3500.0, 1500.0
     if res['bovinos'] <= 0: res['bovinos'] = res['pob_total'] * 1.5
     if res['porcinos'] <= 0: res['porcinos'] = res['pob_total'] * 0.8
     if res['aves'] <= 0: res['aves'] = res['pob_total'] * 10.0
