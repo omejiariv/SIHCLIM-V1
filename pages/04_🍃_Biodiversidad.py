@@ -1086,17 +1086,17 @@ with tab_afolu:
             with c_r1:
                 if "Pasturas" in fuentes_activas:
                     esc_pasto = st.selectbox("Manejo de Pastos:", list(carbon_calculator.ESCENARIOS_PASTURAS.keys()), format_func=lambda x: carbon_calculator.ESCENARIOS_PASTURAS[x]["nombre"])
-                    area_pastos = st.number_input("Ha de Pasturas (Satélite):", value=aleph_pastos, step=5.0)
+                    area_pastos = st.number_input("Ha de Pasturas (Satélite):", value=float(aleph_pastos), step=5.0)
                 if "Bovinos" in fuentes_activas:
                     v_leche = st.number_input("Vacas Lecheras (ICA):", value=int(bovinos_reales * 0.4), step=10)
             with c_r2:
                 if "Bovinos" in fuentes_activas:
                     v_carne = st.number_input("Ganado Carne/Cría (ICA):", value=int(bovinos_reales * 0.6), step=10)
                 if "Porcinos" in fuentes_activas:
-                    cerdos = st.number_input("Cerdos Cabezas (ICA):", value=porcinos_reales, step=50)
+                    cerdos = st.number_input("Cerdos Cabezas (ICA):", value=int(porcinos_reales), step=50)
             with c_r3:
                 if "Avicultura" in fuentes_activas:
-                    aves = st.number_input("Aves Galpones (ICA):", value=aves_reales, step=500)
+                    aves = st.number_input("Aves Galpones (ICA):", value=int(aves_reales), step=500)
                 if "Población Rural" in fuentes_activas:
                     humanos_rurales = st.number_input("Humanos Rurales (Censo):", value=int(poblacion_rural_calculada), step=10)
 
