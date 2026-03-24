@@ -33,43 +33,51 @@ def render_selector_espacial():
             try:
                 gdf_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry")
                 
-                # --- FILTRO ESTRICTO DE COLUMNAS (El Radar Geográfico) ---
+                # --- 🛡️ FILTRO BLINDADO DE COLUMNAS ---
                 columnas_permitidas = ['AH', 'ZH', 'SZH', 'Zona', 'N_NSS1', 'SUBC_LBL', 'N-NSS3', 'COD']
                 permitidas_lower = [c.lower() for c in columnas_permitidas]
                 
-                # Filtramos para usar solo las columnas que existen en la base de datos
+                # Rescatamos las columnas ignorando diferencias entre mayúsculas y minúsculas
                 columnas_reales = [col for col in gdf_cuencas.columns if col.lower() in permitidas_lower]
                 
-                # Diccionario para que en la interfaz se vean en Mayúsculas (estético)
+                # FALLBACK DE EMERGENCIA: Si PostGIS tiene nombres diferentes, cargamos las de texto
+                if not columnas_reales:
+                    columnas_reales = [c for c in gdf_cuencas.columns if c.lower() not in ['geometry', 'gid', 'objectid', 'shape_length', 'shape_area']]
+                
+                # Diccionario estético para que se vean en Mayúsculas en la interfaz
                 mapa_nombres = {c.lower(): c.upper() for c in columnas_reales}
                 
-                # Definir índice por defecto (priorizamos subc_lbl si existe)
+                # Buscar el índice por defecto de forma segura (sin importar mayúsculas)
                 default_idx = 0
-                if 'subc_lbl' in columnas_reales: 
-                    default_idx = columnas_reales.index('subc_lbl')
-                elif 'zona' in columnas_reales:
-                    default_idx = columnas_reales.index('zona')
+                cols_lower = [c.lower() for c in columnas_reales]
+                if 'subc_lbl' in cols_lower: default_idx = cols_lower.index('subc_lbl')
+                elif 'zona' in cols_lower: default_idx = cols_lower.index('zona')
+                elif 'nombre' in cols_lower: default_idx = cols_lower.index('nombre')
                 
-                # Renderizamos el selector limpio
-                col_nom = st.sidebar.selectbox(
-                    "📂 Columna de Nombres:", 
-                    options=columnas_reales, 
-                    index=default_idx,
-                    format_func=lambda x: mapa_nombres.get(x.lower(), x),
-                    help="Seleccione el nivel de jerarquía hidrográfica."
-                )
-                
-                if col_nom:
-                    # Extraemos valores únicos, eliminando nulos y textos vacíos
-                    valores_brutos = gdf_cuencas[col_nom].dropna().astype(str).unique().tolist()
-                    lista_limpia = sorted([v.strip() for v in valores_brutos if v.strip() != ""])
+                # Protección absoluta: Si definitivamente no hay columnas, detenemos sin error
+                if len(columnas_reales) == 0:
+                    st.sidebar.error("⚠️ La tabla de cuencas no tiene columnas de texto.")
+                else:
+                    col_nom = st.sidebar.selectbox(
+                        "📂 Columna de Nombres:", 
+                        options=columnas_reales, 
+                        index=min(default_idx, len(columnas_reales)-1), # Previene desbordamiento
+                        format_func=lambda x: mapa_nombres.get(x.lower(), x) if x else "",
+                        help="Seleccione el nivel de jerarquía hidrográfica."
+                    )
                     
-                    sel = st.sidebar.selectbox("🌊 Seleccione Territorio:", lista_limpia)
-                    
-                    if sel:
-                        nombre_zona = sel
-                        # Filtramos el GeoDataFrame exactamente por la selección
-                        gdf_zona = gdf_cuencas[gdf_cuencas[col_nom].astype(str).str.strip() == sel]
+                    if col_nom:
+                        # Limpiamos nulos y espacios en blanco de los datos
+                        valores_brutos = gdf_cuencas[col_nom].dropna().astype(str).unique().tolist()
+                        lista_limpia = sorted([v.strip() for v in valores_brutos if v.strip() != ""])
+                        
+                        if len(lista_limpia) > 0:
+                            sel = st.sidebar.selectbox("🌊 Seleccione Territorio:", lista_limpia)
+                            if sel:
+                                nombre_zona = sel
+                                gdf_zona = gdf_cuencas[gdf_cuencas[col_nom].astype(str).str.strip() == sel]
+                        else:
+                            st.sidebar.warning("La columna seleccionada no contiene datos.")
 
             except Exception as e:
                 st.sidebar.warning(f"Error cargando cuencas: {e}")
