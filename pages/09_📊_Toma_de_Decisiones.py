@@ -263,8 +263,13 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("Transforma las métricas biofísicas de la cuenca/municipio en indicadores estandarizados, evalúa portafolios de inversión y simula escenarios climáticos (ENSO).")
         
         # --- 1. RECUPERACIÓN DE DATOS BASE Y METABOLISMO ---
-        # Recuperar Datos Base del Aleph (Oferta y Geometría)
-        area_km2 = float(st.session_state.get('aleph_area_km2', 100.0))
+        # 🚀 Cálculo espacial exacto del área en vivo (Adiós al fallback de 100km2)
+        if gdf_zona is not None and not gdf_zona.empty:
+            area_km2_real = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
+        else:
+            area_km2_real = 100.0
+            
+        area_km2 = float(st.session_state.get('aleph_area_km2', area_km2_real))
         recarga_mm_base = float(st.session_state.get('aleph_recarga_mm', 350.0))
         q_oferta_m3s_base = float(st.session_state.get('aleph_q_rio_m3s', 5.0))
         
