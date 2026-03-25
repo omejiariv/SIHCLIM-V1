@@ -94,7 +94,7 @@ with tab_dashboard:
         st.page_link("pages/06_📈_Modelo_Demografico.py", label="**Modelo Demográfico (Humanos)**", icon="📈")
         st.markdown("<small>Proyecciones poblacionales (DANE) multimodelo con inyección a la Memoria Global.</small>", unsafe_allow_html=True)
         st.write("") # Espaciador
-        st.page_link("pages/06a_🐄_Modelo_Pecuario.py", label="**Modelo Pecuario (Animales)**", icon="🐄")
+        st.page_link("pages/06_🐄_Modelo_Pecuario.py", label="**Modelo Pecuario (Animales)**", icon="🐄")
         st.markdown("<small>Proyecciones de crecimiento (ICA) para Bovinos, Porcinos y Aves en escalas hidrográficas.</small>", unsafe_allow_html=True)
         
     with c7:
