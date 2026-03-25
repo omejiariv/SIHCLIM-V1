@@ -759,16 +759,20 @@ with tab_fuentes:
     if not mpios_activos: mpios_activos = [lugar_n]
 
     # ==============================================================================
-    # EXTRACCIÓN DE BASES DE DATOS ICA (Ahora conectado a la Nube)
+    # EXTRACCIÓN DE BASES DE DATOS ICA (Inyección desde la Turbina Central)
     # ==============================================================================
-    # Llamamos a nuestra nueva función inteligente pasándole el año del Aleph
-    total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
+    # Usamos directamente los datos espaciales de altísima precisión
+    total_bovinos = datos_metabolismo.get('bovinos', 0.0)
+    total_porcinos = datos_metabolismo.get('porcinos', 0.0)
+    total_aves = datos_metabolismo.get('aves', 0.0)
+    origen_pecuario = datos_metabolismo.get('origen_pecuario', 'Estimación')
+
+    if "Sincronizada" in origen_pecuario:
+        st.success(f"🧠 **Conexión ICA:** Datos pecuarios sincronizados para **{nombre_seleccion}**.")
+    else:
+        st.info("⚠️ Usando estimación estadística para datos pecuarios (Censo no disponible).")
 
     default_trat_porc = 20 # Eficiencia por defecto si no se ajusta manualmente
-
-    # Valores por defecto en caso de que el municipio no tenga datos o esté en 0
-    if total_bovinos == 0: total_bovinos = int(pob_rural * 1.5)
-    if total_porcinos == 0: total_porcinos = int(pob_rural * 0.8)
 
     col_pec1, col_pec2, col_pec3 = st.columns(3)
     with col_pec1:
