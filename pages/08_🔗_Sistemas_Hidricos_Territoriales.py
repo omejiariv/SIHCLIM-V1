@@ -737,18 +737,6 @@ with st.expander("⚙️ Ajustar Módulos de Consumo y Generación (Agua y Resid
     kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1, key="sh_rs_generacion")
     pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0, key="sh_rs_fraccion")
 
-with st.expander("⚙️ Ajustar Módulos de Consumo y Generación (Agua y Residuos)"):
-    c_d1, c_d2, c_d3, c_d4 = st.columns(4)
-    dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150)
-    dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40)
-    dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15)
-    cabezas_aves = c_d4.number_input("🐔 Aves (Unidades):", value=def_ave, step=5000)
-    
-    st.markdown("**Residuos Sólidos (Aplicable solo a Población Residente):**")
-    c_rs1, c_rs2 = st.columns(2)
-    kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1)
-    pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0)
-
 st.markdown("### 2. Balance Metabólico Integral")
 
 # A. EXTRACCIÓN de Agua - Demandas Hídricas- (Suma a residentes y ciudad externa)
@@ -824,55 +812,43 @@ col_h1, col_h2 = st.columns([1, 1.5])
 with col_h1:
     st.subheader("1. Conexión a la Matriz Pecuaria")
     
-    bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
-    origen_datos_pec = "Valores Estáticos (Fallback)"
-    
-    # Identificar municipios clave según el embalse
-    mpios_cuenca = []
-    if "Grande" in nodo_seleccionado: mpios_cuenca = ["BELMIRA", "DON MATIAS", "SAN PEDRO DE LOS MILAGROS", "ENTRERRIOS", "SANTA ROSA DE OSOS"]
-    elif "Fe" in nodo_seleccionado: mpios_cuenca = ["EL RETIRO", "LA CEJA", "RIONEGRO"]
-    
-    # 🧠 Extracción Vectorial de la Memoria
-    if 'df_matriz_pecuaria' in st.session_state and mpios_cuenca:
-        df_pec = st.session_state['df_matriz_pecuaria']
+bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
+origen_datos_pec = "Valores Estáticos (Fallback)"
+
+# Identificar municipios clave según el embalse
+mpios_cuenca = []
+if "Grande" in nodo_seleccionado: mpios_cuenca = ["BELMIRA", "DON MATIAS", "SAN PEDRO DE LOS MILAGROS", "ENTRERRIOS", "SANTA ROSA DE OSOS"]
+elif "Fe" in nodo_seleccionado: mpios_cuenca = ["EL RETIRO", "LA CEJA", "RIONEGRO"]
+
+# 🚀 TURBINA CENTRAL: Extracción Limpia y Vectorial (Sin matemáticas repetidas)
+if mpios_cuenca:
+    for mpio in mpios_cuenca:
+        datos_mpio = obtener_metabolismo_exacto(mpio, anio_censo)
+        bovinos_tot += datos_mpio.get('bovinos', 0.0)
+        porcinos_tot += datos_mpio.get('porcinos', 0.0)
+        aves_tot += datos_mpio.get('aves', 0.0)
         
-        def obtener_pob_futura(especie):
-            total = 0
-            for mpio in mpios_cuenca:
-                filtro = df_pec[(df_pec['Nivel'] == 'Municipal') & (df_pec['Territorio'].str.upper() == mpio) & (df_pec['Especie'] == especie)]
-                if not filtro.empty:
-                    fila = filtro.iloc[0]
-                    x_norm = anio_censo - fila['Año_Base']
-                    mod = fila['Modelo_Recomendado']
-                    if mod == 'Logístico': val = fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm))
-                    elif mod == 'Exponencial': val = fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm)
-                    else: val = fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D']
-                    total += max(0, val)
-            return total
-        
-        bovinos_tot = obtener_pob_futura('Bovinos')
-        porcinos_tot = obtener_pob_futura('Porcinos')
-        aves_tot = obtener_pob_futura('Aves')
+    if bovinos_tot > 0:
         origen_datos_pec = "Matriz Maestra (Proyectada)"
-        
-    # Valores de respaldo si la memoria está vacía
-    if origen_datos_pec == "Valores Estáticos (Fallback)":
-        bovinos_tot = 85000 if "Grande" in nodo_seleccionado else 5000
-        porcinos_tot = 45000 if "Grande" in nodo_seleccionado else 2000
-        aves_tot = 800000 if "Grande" in nodo_seleccionado else 150000
-
-    # Mensajes a la interfaz
-    if origen_datos_pec == "Matriz Maestra (Proyectada)":
-        st.success(f"🧠 **Sincronización Perfecta:** Metabolismo pecuario proyectado al {anio_censo} para **{nodo_seleccionado}**.")
-    else:
-        st.warning(f"⚠️ **Memoria Vacía:** Entrena el Modelo Pecuario en la pág 06a para ver proyecciones dinámicas.")
-
-    st.info(f"🐄 Bovinos: **{bovinos_tot:,.0f}** | 🐖 Porcinos: **{porcinos_tot:,.0f}** | 🐔 Aves: **{aves_tot:,.0f}**")
     
-    # Guardar en memoria local de la página
-    st.session_state['ica_bovinos_calc'] = bovinos_tot
-    st.session_state['ica_porcinos_calc'] = porcinos_tot
-    st.session_state['ica_aves_calc'] = aves_tot
+# Valores de respaldo si la memoria está vacía
+if origen_datos_pec == "Valores Estáticos (Fallback)":
+    bovinos_tot = 85000 if "Grande" in nodo_seleccionado else 5000
+    porcinos_tot = 45000 if "Grande" in nodo_seleccionado else 2000
+    aves_tot = 800000 if "Grande" in nodo_seleccionado else 150000
+
+# Mensajes a la interfaz
+if origen_datos_pec == "Matriz Maestra (Proyectada)":
+    st.success(f"🧠 **Sincronización Perfecta:** Metabolismo pecuario proyectado al {anio_censo} para **{nodo_seleccionado}**.")
+else:
+    st.warning(f"⚠️ **Memoria Vacía:** Entrena el Modelo Pecuario en la pág 06a para ver proyecciones dinámicas.")
+
+st.info(f"🐄 Bovinos: **{bovinos_tot:,.0f}** | 🐖 Porcinos: **{porcinos_tot:,.0f}** | 🐔 Aves: **{aves_tot:,.0f}**")
+
+# Guardar en memoria local de la página
+st.session_state['ica_bovinos_calc'] = bovinos_tot
+st.session_state['ica_porcinos_calc'] = porcinos_tot
+st.session_state['ica_aves_calc'] = aves_tot
     
 with col_h2:
     st.subheader(f"2. Demanda Total y Estrés Local ({nodo_seleccionado})")
@@ -883,30 +859,15 @@ with col_h2:
     pob_global_memoria = 4000000 # Valor base de respaldo
     mpios_amva = ["MEDELLIN", "BELLO", "ITAGUI", "ENVIGADO", "SABANETA", "COPACABANA", "LA ESTRELLA", "GIRARDOTA", "CALDAS", "BARBOSA"]
     
-    if 'df_matriz_demografica' in st.session_state:
-        df_demo = st.session_state['df_matriz_demografica']
-        pob_calculada = 0
-        
-        # Normalizar la columna para cruce exacto
-        df_demo_mpios = df_demo[df_demo['Nivel'] == 'Municipal'].copy()
-        if not df_demo_mpios.empty:
-            df_demo_mpios['Terr_Norm'] = df_demo_mpios['Territorio'].astype(str).str.upper().apply(
-                lambda x: unicodedata.normalize('NFKD', x).encode('ascii', 'ignore').decode('utf-8')
-            )
+    pob_calculada = 0
+    # 🚀 TURBINA CENTRAL: Sumamos todo el Valle de Aburrá sin ecuaciones sueltas
+    for mpio in mpios_amva:
+        datos_amva = obtener_metabolismo_exacto(mpio, anio_censo)
+        if datos_amva['pob_total'] > 1000: # Evita sumar fallbacks por defecto
+            pob_calculada += datos_amva['pob_total']
             
-            # Sumar la población futura de los 10 municipios del Valle de Aburrá
-            for mpio in mpios_amva:
-                filtro = df_demo_mpios[df_demo_mpios['Terr_Norm'] == mpio]
-                for _, fila in filtro.iterrows():
-                    x_norm = anio_censo - fila['Año_Base']
-                    mod = fila['Modelo_Recomendado']
-                    if mod == 'Logístico': val = fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm))
-                    elif mod == 'Exponencial': val = fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm)
-                    else: val = fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D']
-                    pob_calculada += max(0, val)
-                    
-        if pob_calculada > 0:
-            pob_global_memoria = pob_calculada
+    if pob_calculada > 10000: # Validación de seguridad
+        pob_global_memoria = pob_calculada
 
     # --- 🛡️ SIMULADOR DE SEGURIDAD HÍDRICA (Nivel de Dependencia) ---
     st.markdown("##### 🛡️ Seguridad Hídrica: Nivel de Dependencia")
