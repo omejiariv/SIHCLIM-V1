@@ -54,22 +54,22 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
             es_creciente = y[-1] >= p0_val
             
             # 1. LOGÍSTICO
-                log_k, log_a, log_r, log_r2 = 0, 0, 0, 0
-                try:
-                    k_max = max_y * 3.0 if es_creciente else max_y * 1.1
-                    # Si el hato decrece, apuntamos la proyección hacia abajo
-                    k_guess = max_y * 1.2 if es_creciente else (y[-1] * 0.9 if y[-1] > 0 else max_y)
-                    a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
-                    r_guess = 0.02 if es_creciente else -0.02
+            log_k, log_a, log_r, log_r2 = 0, 0, 0, 0
+            try:
+                k_max = max_y * 3.0 if es_creciente else max_y * 1.1
+                # Si el hato decrece, apuntamos la proyección hacia abajo
+                k_guess = max_y * 1.2 if es_creciente else (y[-1] * 0.9 if y[-1] > 0 else max_y)
+                a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
+                r_guess = 0.02 if es_creciente else -0.02
                     
-                    # 🛡️ EL BISTURÍ: Permitir que la capacidad de carga baje hasta un 10% si hay reducción ganadera
-                    k_min = max_y * 0.8 if es_creciente else max_y * 0.1
-                    limites = ([k_min, 0, -0.2], [k_max, np.inf, 0.3])
+                # 🛡️ EL BISTURÍ: Permitir que la capacidad de carga baje hasta un 10% si hay reducción ganadera
+                k_min = max_y * 0.8 if es_creciente else max_y * 0.1
+                limites = ([k_min, 0, -0.2], [k_max, np.inf, 0.3])
                     
-                    popt_log, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
-                    log_k, log_a, log_r = popt_log
-                    log_r2 = calcular_r2(y, f_log(x_norm, *popt_log))
-                except Exception: pass
+                popt_log, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
+                log_k, log_a, log_r = popt_log
+                log_r2 = calcular_r2(y, f_log(x_norm, *popt_log))
+            except Exception: pass
 
             # 2. EXPONENCIAL
             exp_a, exp_b, exp_r2 = 0, 0, 0
