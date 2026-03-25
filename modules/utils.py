@@ -158,10 +158,12 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
         'origen_pecuario': "Estimación (Fallback)"
     }
 
+    # =========================================================================
+    # 1. MOTOR DEMOGRÁFICO (Humanos)
+    # =========================================================================
     if 'df_matriz_demografica' in st.session_state:
         df_demo = st.session_state['df_matriz_demografica'].copy()
         
-        # Limpieza profunda del DANE para evitar desajustes de texto
         if 'Terr_Norm' not in df_demo.columns:
             df_demo['Terr_Norm'] = df_demo['Territorio'].astype(str).apply(normalizar_robusto)
             df_demo['Area'] = df_demo['Area'].astype(str).str.strip()
@@ -194,7 +196,6 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
                 df_prop['VER_Norm'] = df_prop['NOMBRE_VER'].astype(str).apply(normalizar_robusto)
                 
                 df_prop['Tipo_Area'] = 'Rural'
-                # 🔥 DETECTOR URBANO AVANZADO: Atrapa cabeceras, cascos urbanos, zonas centro y nombres idénticos
                 mask_urb = (
                     df_prop['VER_Norm'].str.contains('cabecera|urban|centro|casco', na=False) | 
                     (df_prop['VER_Norm'] == df_prop['MPIO_Norm'])
@@ -205,7 +206,6 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
                 st.session_state['areas_totales_mpio'] = df_unicos.groupby(['MPIO_Norm', 'Tipo_Area'])['Area_Original_km2'].sum().to_dict()
                 st.session_state['df_matriz_proporciones'] = df_prop
 
-            # 🧭 RADAR OMNIDIRECCIONAL (Busca en TODAS las jerarquías)
             cols_geo = ['AH', 'ZH', 'SZH', 'Zona', 'N_NSS1', 'SUBC_LBL', 'N_NSS3']
             mask_busqueda = pd.Series(False, index=df_prop.index)
             
@@ -247,51 +247,39 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
 
         res['pob_urbana'], res['pob_rural'], res['pob_total'] = pob_u, pob_r, pob_u + pob_r
 
-    # (El motor pecuario se mantiene intacto, no necesitas pegarlo aquí si ya lo tienes abajo, pero asegúrate de que esté)
-    # ... FALLBACKS DE SEGURIDAD ...
     if res['pob_total'] <= 0: res['pob_total'], res['pob_urbana'], res['pob_rural'] = 5000.0, 3500.0, 1500.0
-    return res
-    
+
     # =========================================================================
-    # 2. MOTOR PECUARIO (Se mantiene estable)
+    # 2. MOTOR PECUARIO (Animales - ICA)
     # =========================================================================
     if 'df_matriz_pecuaria' in st.session_state:
-        df_pec = st.session_state['df_matriz_pecuaria'].copy()
-        if 'Terr_Norm' not in df_pec.columns: df_pec['Terr_Norm'] = df_pec['Territorio'].apply(normalizar_robusto)
+        df_pecu = st.session_state['df_matriz_pecuaria'].copy()
+        if 'Terr_Norm' not in df_pecu.columns:
+            df_pecu['Terr_Norm'] = df_pecu['Territorio'].astype(str).apply(normalizar_robusto)
         
-        f_b = df_pec[(df_pec['Terr_Norm'] == nombre_sel_limpio) & (df_pec['Especie'] == 'Bovinos')]
-        f_p = df_pec[(df_pec['Terr_Norm'] == nombre_sel_limpio) & (df_pec['Especie'] == 'Porcinos')]
-        f_a = df_pec[(df_pec['Terr_Norm'] == nombre_sel_limpio) & (df_pec['Especie'] == 'Aves')]
+        # A. Búsqueda Exacta
+        f_bov = df_pecu[(df_pecu['Terr_Norm'] == nombre_sel_limpio) & (df_pecu['Especie'] == 'Bovinos')]
+        f_por = df_pecu[(df_pecu['Terr_Norm'] == nombre_sel_limpio) & (df_pecu['Especie'] == 'Porcinos')]
+        f_ave = df_pecu[(df_pecu['Terr_Norm'] == nombre_sel_limpio) & (df_pecu['Especie'] == 'Aves')]
         
-        if f_b.empty:
+        # B. Búsqueda Flexible (Radar para prefijos de Río/Cuenca)
+        if f_bov.empty and f_por.empty:
             pal_clave = nombre_sel_limpio.replace("rio ", "").replace("q. ", "").replace("quebrada ", "").strip()
             if len(pal_clave) > 3:
-                mask = df_pec['Terr_Norm'].str.contains(pal_clave, na=False)
-                f_b = df_pec[mask & (df_pec['Especie'] == 'Bovinos')]
-                f_p = df_pec[mask & (df_pec['Especie'] == 'Porcinos')]
-                f_a = df_pec[mask & (df_pec['Especie'] == 'Aves')]
+                mask_pecu = df_pecu['Terr_Norm'].str.contains(pal_clave, na=False)
+                f_bov = df_pecu[mask_pecu & (df_pecu['Especie'] == 'Bovinos')]
+                f_por = df_pecu[mask_pecu & (df_pecu['Especie'] == 'Porcinos')]
+                f_ave = df_pecu[mask_pecu & (df_pecu['Especie'] == 'Aves')]
 
-        def calc_pec(filtro):
-            if filtro.empty: return 0.0
-            fila = filtro.iloc[0]
-            if anio_destino is None: return float(fila['Poblacion_Base'])
-            x_norm = anio_destino - fila['Año_Base']
-            try:
-                mod = fila.get('Modelo_Recomendado', 'Polinomial')
-                if mod == 'Logístico': return max(0.0, fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm)))
-                elif mod == 'Exponencial': return max(0.0, fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm))
-                else: return max(0.0, fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D'])
-            except: return float(fila['Poblacion_Base'])
+        # C. Asignación
+        if not f_bov.empty: res['bovinos'] = float(f_bov['Poblacion_Base'].sum())
+        if not f_por.empty: res['porcinos'] = float(f_por['Poblacion_Base'].sum())
+        if not f_ave.empty: res['aves'] = float(f_ave['Poblacion_Base'].sum())
+        
+        if res['bovinos'] > 0 or res['porcinos'] > 0: 
+            res['origen_pecuario'] = "Matriz Pecuaria (Sincronizada)"
 
-        if not f_b.empty: res['bovinos'] = calc_pec(f_b)
-        if not f_p.empty: res['porcinos'] = calc_pec(f_p)
-        if not f_a.empty: res['aves'] = calc_pec(f_a)
-        if res['bovinos'] > 0: res['origen_pecuario'] = "Matriz Maestra (Sincronizada)"
-
-    # =========================================================================
-    # 3. FALLBACKS DE SEGURIDAD
-    # =========================================================================
-    if res['pob_total'] <= 0: res['pob_total'], res['pob_urbana'], res['pob_rural'] = 5000.0, 3500.0, 1500.0
+    # D. Fallbacks de Seguridad (Por si la cuenca seleccionada no está en la matriz ICA)
     if res['bovinos'] <= 0: res['bovinos'] = res['pob_total'] * 1.5
     if res['porcinos'] <= 0: res['porcinos'] = res['pob_total'] * 0.8
     if res['aves'] <= 0: res['aves'] = res['pob_total'] * 10.0
