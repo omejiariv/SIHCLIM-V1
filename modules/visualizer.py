@@ -5005,7 +5005,7 @@ def display_climate_scenarios_tab(**kwargs):
                     """)
             else:
                 # Fallback por si el usuario no ha corrido el Aleph
-                st.warning("⚠️ **Falta Contexto Físico:** Ejecuta primero el 'Modelo Hidrológico Distribuido' (botón arriba) para conocer el caudal base real de la cuenca. De lo contrario, no podemos cuantificar este impacto en m³/s ni en personas afectadas.")
+                st.warning("⚠️ **Falta Contexto Físico:** El sistema no encuentra el caudal base de la cuenca. Para calcularlo, ve al menú lateral izquierdo, entra al módulo **'🌍 Mapas Avanzados'**, presiona el botón **'🚀 Ejecutar Modelo'** y luego regresa a esta pantalla.")
                 
             st.caption(f"Nota Termodinámica (Clausius-Clapeyron): Un aumento de {delta_temp}°C incrementa la demanda evaporativa de la atmósfera (ET) en un estimado del {et_increase:.1f}%.")
 
