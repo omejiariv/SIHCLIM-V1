@@ -4925,7 +4925,7 @@ def display_climate_scenarios_tab(**kwargs):
             },
         }
 
-    st.markdown("##### 🎛️ Ajuste Manual de Escenarios (Simulación)")
+        st.markdown("##### 🎛️ Ajuste Manual de Escenarios (Simulación)")
         st.info("💡 **NEXO FÍSICO ACTIVO:** Los valores que ajustes aquí se inyectarán en la Turbina Central. Si subes y presionas 'Ejecutar Modelo', los mapas y caudales se recalcularán usando este clima futuro.")
         
         c_sim1, c_sim2 = st.columns(2)
