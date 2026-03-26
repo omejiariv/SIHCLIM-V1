@@ -32,40 +32,30 @@ except ImportError:
 
 st.set_page_config(page_title="Panel de Administración", page_icon="👑", layout="wide")
 
-# --- 2. AUTENTICACIÓN ---
-def check_password():
-    if st.session_state.get("password_correct", False):
-        return True
+# ==============================================================================
+# 0. 🔒 MURO DE SEGURIDAD (ACCESO ESTRICTO)
+# ==============================================================================
+if "admin_unlocked" not in st.session_state:
+    st.session_state["admin_unlocked"] = False
+
+if not st.session_state["admin_unlocked"]:
+    st.warning("⚠️ **Zona de Alto Riesgo:** Centro de Comando y Control de Bases de Datos.")
+    st.info("Ingresa la credencial de Arquitecto para acceder al núcleo del sistema.")
     
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.title("🔐 Acceso Restringido")
-        st.info("Panel de Control SIHCLI-POTER (Nube)")
-        
-        # Validación de seguridad para que no falle si no hay secrets
-        if "iri" not in st.secrets:
-            # st.error("⚠️ Falta configuración [iri] en secrets.toml")
-            # Si quieres saltar el bloqueo aunque falten secrets, devuelve True o False según prefieras.
-            # Aquí lo dejo como estaba pero permitiendo continuar.
-            return False 
-        
-        user_input = st.text_input("Usuario")
-        pass_input = st.text_input("Contraseña", type="password")
-        
-        if st.button("Ingresar"):
-            sec_user = st.secrets["iri"]["username"]
-            sec_pass = st.secrets["iri"]["password"]
-            if user_input == sec_user and pass_input == sec_pass:
-                st.session_state.password_correct = True
+    col_k1, col_k2 = st.columns([1, 2])
+    with col_k1:
+        clave = st.text_input("Contraseña:", type="password")
+        if st.button("Desbloquear Panel", type="primary", use_container_width=True):
+            # 💡 Busca en secrets, si no hay secrets, la clave es "AdminPoter2026"
+            clave_correcta = st.secrets.get("CLAVE_ADMIN", "AdminPoter2026") 
+            if clave == clave_correcta:
+                st.session_state["admin_unlocked"] = True
                 st.rerun()
             else:
-                # st.error("🚫 Acceso Denegado")
-                return False
-    return False
+                st.error("❌ Credencial incorrecta. Acceso denegado al núcleo.")
+    st.stop() # 🛑 Esto detiene la lectura del archivo. Nada de lo de abajo se ejecuta.
 
-if not check_password():
-    pass  # <--- AGREGAR ESTO (Indica a Python: "No hagas nada y continúa")
-#    st.stop()
+# ==============================================================================
 
 engine = get_engine()
 
