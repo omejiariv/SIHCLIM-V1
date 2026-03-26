@@ -4953,13 +4953,61 @@ def display_climate_scenarios_tab(**kwargs):
         if st.button("🚀 Calcular Impacto Teórico Inicial"):
             et_increase = delta_temp * 3
             water_balance_change = delta_ppt - et_increase
-            st.metric(
-                "Impacto Estimado en Balance Hídrico",
-                f"{water_balance_change:.1f}%",
-                delta="Déficit Hídrico" if water_balance_change < 0 else "Excedente",
-                delta_color="inverse",
-            )
-            st.caption(f"Nota: Aumento de ET estimado: {et_increase:.1f}%. Para ver el impacto real en el caudal (m³/s), ejecuta el Modelo Hidrológico en la parte superior.")
+            
+            # --- 🧠 LECTURA DEL CAUDAL FÍSICO REAL ---
+            q_actual = st.session_state.get('aleph_q_rio_m3s', 0.0)
+            
+            c_m1, c_m2, c_m3 = st.columns(3)
+            with c_m1:
+                st.metric(
+                    "Impacto en Balance Hídrico",
+                    f"{water_balance_change:.1f}%",
+                    delta="Déficit Global" if water_balance_change < 0 else "Excedente",
+                    delta_color="inverse",
+                )
+            
+            if q_actual > 0:
+                # Traducción del porcentaje a métricas físicas
+                q_futuro = q_actual * (1 + (water_balance_change / 100))
+                q_perdido = q_futuro - q_actual
+                litros_seg = q_perdido * 1000
+                
+                with c_m2:
+                    st.metric(
+                        "Caudal Medio Futuro",
+                        f"{max(0, q_futuro):.3f} m³/s",
+                        delta=f"{q_perdido:.3f} m³/s",
+                        delta_color="inverse"
+                    )
+                with c_m3:
+                    st.metric(
+                        "Variación Neta Volumétrica",
+                        f"{litros_seg:.0f} L/s",
+                        delta="Pérdida Crítica" if litros_seg < 0 else "Aumento",
+                        delta_color="inverse"
+                    )
+                
+                # --- 🌍 TRADUCCIÓN HIDROSOCIAL Y ECOLÓGICA ---
+                st.markdown("---")
+                if water_balance_change < 0:
+                    # Asumiendo dotación de 150 Litros / habitante / día
+                    personas_afectadas = abs(litros_seg) * 86400 / 150 
+                    st.error(f"""
+                    🚨 **Radiografía del Colapso (Impacto Socio-Ecológico):** Una reducción del {abs(water_balance_change):.1f}% en esta cuenca no es solo un dato climático. Físicamente, significa que el río pierde **{abs(litros_seg):.0f} litros por segundo** de su caudal base. 
+                    * **👥 Dimensión Social:** Ese volumen evaporado y no llovido equivale al suministro diario de agua potable de aproximadamente **{int(personas_afectadas):,} personas**. 
+                    * **🍃 Dimensión Ecológica:** Al perder este caudal, la lámina de agua disminuye, el río pierde su capacidad de arrastre y oxigenación, concentrando dramáticamente los vertimientos contaminantes y amenazando la franja capilar que sostiene el bosque ripario.
+                    """)
+                else:
+                    st.success(f"""
+                    🌱 **Radiografía de Excedencia (Impacto Socio-Ecológico):**
+                    Un aumento del {water_balance_change:.1f}% incrementa la oferta hídrica base del sistema en **{litros_seg:.0f} L/s**. 
+                    Si bien esto favorece la recarga de acuíferos y la dilución de contaminantes, un incremento sostenido de esta magnitud obliga a revaluar las cotas de inundación (Geomorfología) y exige adecuar la infraestructura de drenaje para evitar colapsos por eventos torrenciales.
+                    """)
+            else:
+                # Fallback por si el usuario no ha corrido el Aleph
+                st.warning("⚠️ **Falta Contexto Físico:** Ejecuta primero el 'Modelo Hidrológico Distribuido' (botón arriba) para conocer el caudal base real de la cuenca. De lo contrario, no podemos cuantificar este impacto en m³/s ni en personas afectadas.")
+                
+            st.caption(f"Nota Termodinámica (Clausius-Clapeyron): Un aumento de {delta_temp}°C incrementa la demanda evaporativa de la atmósfera (ET) en un estimado del {et_increase:.1f}%.")
 
         st.divider()
 
