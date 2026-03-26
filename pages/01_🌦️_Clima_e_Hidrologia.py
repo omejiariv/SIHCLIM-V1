@@ -754,7 +754,7 @@ if __name__ == "__main__":
 
     main()
 
-# ==============================================================================
+    # ==============================================================================
     # ⚙️ CUARTO DE MÁQUINAS: FORJA DE LA MATRIZ MAESTRA
     # ==============================================================================
     st.markdown("---")
@@ -773,6 +773,7 @@ if __name__ == "__main__":
         
         # Selección de columna de nombre (Protegida)
         try:
+            from sqlalchemy import text
             q_cols = text("SELECT column_name FROM information_schema.columns WHERE table_name = 'cuencas' AND data_type = 'text'")
             cols_bd = pd.read_sql(q_cols, engine)['column_name'].tolist()
             idx_def = next((i for i, c in enumerate(cols_bd) if c in ['n_nss3', 'subc_lbl', 'nombre', 'nombre_cuenca']), 0)
@@ -784,6 +785,7 @@ if __name__ == "__main__":
             try:
                 import numpy as np
                 import geopandas as gpd
+                from sqlalchemy import text
                 
                 with st.spinner("Procesando todas las unidades territoriales (Esto tomará unos minutos)..."):
                     # 1. Cargar Geometrías de Cuencas
@@ -861,7 +863,7 @@ if __name__ == "__main__":
                     df_matriz = pd.DataFrame(res)
                     df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='replace', index=False)
                     
-                    st.success("✅ Matriz Maestra forjada y almacenada con éxito.")
+                    st.success("✅ Matriz Maestra forjada y almacenada con éxito en la base de datos.")
                     st.dataframe(df_matriz.head(10))
                     
                     # Permite descargar por si el gerente la quiere en Excel
