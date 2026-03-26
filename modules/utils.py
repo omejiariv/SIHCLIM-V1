@@ -146,14 +146,14 @@ def normalizar_robusto(texto):
 
 def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
     """
-    🧠 Cerebro Central V2 (SQL-Ready): Extrae y proyecta la población humana y pecuaria
-    directamente desde las Matrices Maestras en PostgreSQL.
-    Incluye Traductor Inteligente de Nombres de Cuencas.
+    🧠 Cerebro Central V3 (Buscador Multi-Nivel): 
+    1. Busca nombre exacto. 
+    2. Busca traducido (R. -> Río). 
+    3. Busca palabra clave.
     """
     import pandas as pd
     import numpy as np
     
-    # 🔌 Conexión a la base de datos
     try:
         from modules.db_manager import get_engine
         engine = get_engine()
@@ -170,89 +170,78 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
     
     if engine is None: return res
 
-    # =========================================================================
-    # 🛡️ TRADUCTOR INTELIGENTE (El Puente de Nomenclatura)
-    # =========================================================================
-    zona_limpia = str(nombre_seleccion).strip()
+    # --- 1. PREPARACIÓN DE NOMBRES ---
+    nombre_exacto = str(nombre_seleccion).strip().lower()
     
-    # Arregla abreviaciones espaciales comunes ("R. Chico" -> "Río Chico")
-    if zona_limpia.startswith("R. "):
-        zona_limpia = zona_limpia.replace("R. ", "Río ")
-    elif zona_limpia.startswith("Q. "):
-        zona_limpia = zona_limpia.replace("Q. ", "Quebrada ")
-        
-    zona_limpia_lower = zona_limpia.lower()
+    nombre_traducido = str(nombre_seleccion).strip()
+    if nombre_traducido.startswith("R. "): nombre_traducido = nombre_traducido.replace("R. ", "Río ")
+    elif nombre_traducido.startswith("Q. "): nombre_traducido = nombre_traducido.replace("Q. ", "Quebrada ")
+    nombre_traducido = nombre_traducido.lower()
+    
+    # Extraer núcleo del nombre (ej: "Chico") para búsquedas flexibles
+    palabra_clave = nombre_exacto.replace("r. ", "").replace("río ", "").replace("rio ", "").replace("q. ", "").replace("quebrada ", "").strip()
 
-    # =========================================================================
-    # ⚙️ MOTOR MATEMÁTICO UNIVERSAL (Proyecta años futuros)
-    # =========================================================================
     def proyectar(fila, col_base, col_anio_base):
         if anio_destino is None: return float(fila[col_base])
         x_norm = anio_destino - fila[col_anio_base]
         try:
             mod = fila.get('Modelo_Recomendado', 'Polinomial_3')
-            if mod == 'Logístico': 
-                return max(0.0, fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm)))
-            elif mod == 'Exponencial': 
-                return max(0.0, fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm))
-            else: 
-                return max(0.0, fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D'])
-        except: 
-            return float(fila[col_base])
+            if mod == 'Logístico': return max(0.0, fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm)))
+            elif mod == 'Exponencial': return max(0.0, fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm))
+            else: return max(0.0, fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D'])
+        except: return float(fila[col_base])
 
     # =========================================================================
-    # 1. MOTOR DEMOGRÁFICO (Lectura SQL)
+    # 1. MOTOR DEMOGRÁFICO
     # =========================================================================
     try:
-        # Búsqueda exacta ignorando mayúsculas
+        # Intento 1: Nombre Exacto ("R. Chico")
         q_demo = "SELECT * FROM matriz_maestra_demografica WHERE LOWER(TRIM(\"Territorio\")) = %(z)s"
-        df_demo = pd.read_sql(q_demo, engine, params={"z": zona_limpia_lower})
+        df_demo = pd.read_sql(q_demo, engine, params={"z": nombre_exacto})
         
-        # Búsqueda flexible (Si "Río Chico" está guardado como "Cuenca Río Chico")
-        if df_demo.empty:
+        # Intento 2: Nombre Traducido ("Río Chico")
+        if df_demo.empty and nombre_exacto != nombre_traducido:
+            df_demo = pd.read_sql(q_demo, engine, params={"z": nombre_traducido})
+            
+        # Intento 3: Búsqueda Flexible ("%chico%")
+        if df_demo.empty and len(palabra_clave) > 3:
             q_demo_like = "SELECT * FROM matriz_maestra_demografica WHERE LOWER(\"Territorio\") LIKE %(z)s"
-            df_demo = pd.read_sql(q_demo_like, engine, params={"z": f"%{zona_limpia_lower}%"})
+            df_demo = pd.read_sql(q_demo_like, engine, params={"z": f"%{palabra_clave}%"})
 
         if not df_demo.empty:
             fu = df_demo[df_demo['Area'] == 'Urbana']
             fr = df_demo[df_demo['Area'] == 'Rural']
-            
             pob_u = proyectar(fu.iloc[0], 'Pob_Base', 'Año_Base') if not fu.empty else 0.0
             pob_r = proyectar(fr.iloc[0], 'Pob_Base', 'Año_Base') if not fr.empty else 0.0
-            
-            res['pob_urbana'] = pob_u
-            res['pob_rural'] = pob_r
-            res['pob_total'] = pob_u + pob_r
+            res['pob_urbana'], res['pob_rural'], res['pob_total'] = pob_u, pob_r, pob_u + pob_r
             res['origen_humano'] = "Matriz Maestra SQL"
-                
-    except Exception as e:
-        print(f"Error SQL Demográfico: {e}")
+    except Exception as e: print(f"Error SQL Demo: {e}")
 
     # =========================================================================
-    # 2. MOTOR PECUARIO (Lectura SQL)
+    # 2. MOTOR PECUARIO
     # =========================================================================
     try:
+        # Intento 1: Nombre Exacto
         q_pecu = "SELECT * FROM matriz_maestra_pecuaria WHERE LOWER(TRIM(\"Territorio\")) = %(z)s"
-        df_pecu = pd.read_sql(q_pecu, engine, params={"z": zona_limpia_lower})
+        df_pecu = pd.read_sql(q_pecu, engine, params={"z": nombre_exacto})
         
-        if df_pecu.empty:
+        # Intento 2: Nombre Traducido
+        if df_pecu.empty and nombre_exacto != nombre_traducido:
+            df_pecu = pd.read_sql(q_pecu, engine, params={"z": nombre_traducido})
+            
+        # Intento 3: Búsqueda Flexible
+        if df_pecu.empty and len(palabra_clave) > 3:
             q_pecu_like = "SELECT * FROM matriz_maestra_pecuaria WHERE LOWER(\"Territorio\") LIKE %(z)s"
-            df_pecu = pd.read_sql(q_pecu_like, engine, params={"z": f"%{zona_limpia_lower}%"})
+            df_pecu = pd.read_sql(q_pecu_like, engine, params={"z": f"%{palabra_clave}%"})
 
         if not df_pecu.empty:
             f_bov = df_pecu[df_pecu['Especie'] == 'Bovinos']
             f_por = df_pecu[df_pecu['Especie'] == 'Porcinos']
             f_ave = df_pecu[df_pecu['Especie'] == 'Aves']
-            
             if not f_bov.empty: res['bovinos'] = proyectar(f_bov.iloc[0], 'Poblacion_Base', 'Año_Base')
             if not f_por.empty: res['porcinos'] = proyectar(f_por.iloc[0], 'Poblacion_Base', 'Año_Base')
             if not f_ave.empty: res['aves'] = proyectar(f_ave.iloc[0], 'Poblacion_Base', 'Año_Base')
-            
             res['origen_pecuario'] = "Matriz Pecuaria SQL"
-            
-    except Exception as e:
-        print(f"Error SQL Pecuario: {e}")
+    except Exception as e: print(f"Error SQL Pecu: {e}")
 
-    # Se eliminaron los fallbacks de números inventados para mantener la pureza de los datos.
-    # Si todo dio cero, la plataforma será honesta y pedirá actualizar la matriz.
     return res
