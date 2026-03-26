@@ -5053,21 +5053,6 @@ def display_climate_scenarios_tab(**kwargs):
         else:
             st.warning("Seleccione escenarios para comparar.")
 
-            st.markdown("##### 📋 Detalles de Escenarios")
-            st.dataframe(
-                df_sim[
-                    [
-                        "Escenario",
-                        "Anomalía Precipitación (%)",
-                        "Anomalía Temperatura (°C)",
-                        "Tipo",
-                    ]
-                ],
-            )
-        else:
-            st.warning("Seleccione escenarios para comparar.")
-
-
 def display_station_table_tab(**kwargs):
     st.subheader("📋 Tabla Detallada de Datos")
 
