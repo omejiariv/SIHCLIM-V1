@@ -1771,29 +1771,38 @@ with tab_descargas:
             st.download_button(label=f"⬇️ Descargar Pirámide {año_sel} (CSV)", data=csv_pir, file_name=f"Piramide_{año_sel}_{titulo_terr}.csv", mime="text/csv", use_container_width=True)
             st.dataframe(df_descarga_pir.head(5), use_container_width=True)
 
-        # ==============================================================================
-        # 💾 EXPORTACIÓN AUTOMÁTICA A SQL (1 CLIC A PRODUCCIÓN)
-        # ==============================================================================
-        if 'df_matriz_demografica' in st.session_state:
-            st.markdown("---")
-            st.subheader("💾 Exportar Cerebro Demográfico a SQL (Para Producción)")
-            
-            # Rescatamos la matriz de la memoria en lugar de usar 'matriz_resultados'
-            df_matriz_demo = st.session_state['df_matriz_demografica']
-            
-            if st.button("🚀 Subir Matriz Demográfica a Base de Datos (SQL)", type="primary"):
-                with st.spinner("Conectando con PostgreSQL y guardando matriz..."):
-                    try:
-                        from modules.db_manager import get_engine
-                        engine_sql = get_engine()
-                        
-                        # Escribir directamente en la base de datos PostgreSQL
-                        df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='replace', index=False)
-                        
-                        st.success(f"✅ ¡Migración a SQL Exitosa! Matriz Demográfica ({len(df_matriz_demo)} modelos) alojada automáticamente en la base de datos maestra.")
-                    except Exception as e:
-                        st.error(f"Error conectando a la base de datos SQL: {e}")
-            
-            # Mantenemos el botón de descarga solo como respaldo
-            csv_matriz = df_matriz_demo.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Respaldo (CSV)", data=csv_matriz, file_name="Matriz_Multimodelo_Demografica.csv", mime='text/csv')
+# ==============================================================================
+# 💾 EXPORTACIÓN AUTOMÁTICA A SQL Y DESCARGA (PRODUCCIÓN)
+# ==============================================================================
+# Este bloque debe estar FUERA del if st.button("Entrenar...")
+if 'df_matriz_demografica' in st.session_state:
+    st.markdown("---")
+    st.subheader("💾 Exportar Cerebro Demográfico (Para Producción)")
+    st.info("💡 Tu matriz ya está en memoria. Puedes inyectarla directamente a la base de datos o descargarla como archivo de respaldo.")
+    
+    # Rescatamos la matriz de la memoria
+    df_matriz_demo = st.session_state['df_matriz_demografica']
+    
+    col_btn1, col_btn2 = st.columns(2)
+    
+    with col_btn1:
+        if st.button("🚀 Inyectar a Base de Datos (SQL)", type="primary", use_container_width=True):
+            with st.spinner("Conectando con PostgreSQL (Supabase)..."):
+                try:
+                    from modules.db_manager import get_engine
+                    engine_sql = get_engine()
+                    df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='replace', index=False)
+                    st.success(f"✅ ¡Inyección Exitosa! {len(df_matriz_demo)} registros actualizados en PostgreSQL.")
+                except Exception as e:
+                    st.error(f"Error SQL: {e}")
+                    
+    with col_btn2:
+        # El botón de descarga siempre estará visible mientras la matriz exista en memoria
+        csv_matriz = df_matriz_demo.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Descargar Matriz (CSV de Respaldo)", 
+            data=csv_matriz, 
+            file_name="Matriz_Multimodelo_Demografica.csv", 
+            mime='text/csv',
+            use_container_width=True
+        )
