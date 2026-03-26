@@ -254,11 +254,25 @@ trasvases_inputs = {}
 with col_in:
     st.markdown("#### 📥 ENTRADAS (Inflows)")
     st.caption("Aportes Naturales de la Cuenca (Afectados por ENSO):")
-    for nombre, caudal in datos_nodo["afluentes_naturales"].items():
-        max_val = float(caudal * 3) if caudal > 0 else 10.0
-        # Blindaje del valor por defecto
-        caudal_afectado = min(float(caudal * factor_p), max_val) 
-        afluentes_inputs[nombre] = st.slider(f"{nombre} [m³/s]:", 0.0, max_val, caudal_afectado, 0.1, key=f"in_{nombre}")
+    
+    # 🌍 BISTURÍ: Inyección de la Oferta Física Real (Desde Pág 01)
+    caudal_real_aleph = st.session_state.get('aleph_q_rio_m3s', 0.0)
+    
+    for i, (nombre, caudal) in enumerate(datos_nodo["afluentes_naturales"].items()):
+        # Si existe un caudal calculado por el Aleph, sobreescribimos el primer afluente del diccionario
+        if i == 0 and caudal_real_aleph > 0:
+            caudal_base = caudal_real_aleph
+            nombre_mostrar = f"💧 {nombre} (Física Real)"
+        else:
+            caudal_base = caudal
+            nombre_mostrar = nombre
+            
+        max_val = float(caudal_base * 3) if caudal_base > 0 else 10.0
+        caudal_afectado = min(float(caudal_base * factor_p), max_val) 
+        afluentes_inputs[nombre_mostrar] = st.slider(f"{nombre_mostrar} [m³/s]:", 0.0, max_val, caudal_afectado, 0.1, key=f"in_{nombre}")
+        
+    if caudal_real_aleph > 0:
+        st.success("🧠 Oferta Hídrica sincronizada con el modelo distribuido.")
     
     st.caption("Bombas y Túneles (Trasvases Externos):")
     if datos_nodo["trasvases"]:
@@ -276,13 +290,22 @@ with col_out:
     evaporacion_dinamica = datos_nodo["evaporacion_m3s"] * factor_et
     st.metric("Evaporación Directa (Afectada por T°)", f"{evaporacion_dinamica:.2f} m³/s", f"{(evaporacion_dinamica - datos_nodo['evaporacion_m3s']):+.2f} m³/s", delta_color="inverse")
     
-    demanda_memoria = st.session_state.get('demanda_total_m3s', datos_nodo["demanda_acueducto_m3s"])
-    max_acueducto = float(max(demanda_memoria, datos_nodo["demanda_acueducto_m3s"]) * 2)
+    # 🌍 BISTURÍ: Inyección de la Demanda Metabólica Real (Desde Pág 07)
+    demanda_memoria = st.session_state.get('demanda_total_m3s', 0.0)
+    
+    if demanda_memoria > 0:
+        st.success(f"🧠 Demanda Metabólica Sincronizada: {demanda_memoria:.3f} m³/s")
+        val_base_acue = demanda_memoria
+        label_acueducto = "🚰 Extracción Metabólica (Real) [m³/s]:"
+    else:
+        val_base_acue = datos_nodo["demanda_acueducto_m3s"]
+        label_acueducto = "Extracción Consuntiva (Teórica) [m³/s]:"
+        
+    max_acueducto = float(max(val_base_acue, datos_nodo["demanda_acueducto_m3s"]) * 2)
     
     val_acueducto = 0.0
     if max_acueducto > 0:
-        val_defecto_acue = min(float(demanda_memoria), max_acueducto)
-        val_acueducto = st.slider("Extracción Consuntiva (Multi-Sector) [m³/s]:", 0.0, max_acueducto, val_defecto_acue, 0.1)
+        val_acueducto = st.slider(label_acueducto, 0.0, max_acueducto, float(val_base_acue), 0.05)
     
     val_turbinado = 0.0
     if datos_nodo["generacion_energia_m3s"] > 0:
