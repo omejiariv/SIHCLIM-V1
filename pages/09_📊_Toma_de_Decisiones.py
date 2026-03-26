@@ -117,25 +117,19 @@ if gdf_zona is not None and not gdf_zona.empty:
     # Un slider nativo y rápido para viajar en el tiempo
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
         
-    # 🚀 TURBINA CENTRAL: METABOLISMO EN VIVO
+    # 🚀 TURBINA CENTRAL: METABOLISMO EN VIVO (Lectura Ultrarrápida)
+    # Busca directamente en las Matrices Maestras alojadas en Supabase / Memoria
     datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
     pob_total = datos_metabolismo.get('pob_total', 0)
     bovinos = datos_metabolismo.get('bovinos', 0)
     porcinos = datos_metabolismo.get('porcinos', 0)
     aves = datos_metabolismo.get('aves', 0)
 
-    # 🧬 BISTURÍ 1: METABOLISMO SINTÉTICO (Realidad para Cuencas)
-    # Si la base devuelve 0 (por ser una subcuenca), estimamos la presión real 
-    # multiplicando el área geométrica por densidades críticas de Antioquia.
-    area_km2_temp = 10.0
-    if gdf_zona is not None and not gdf_zona.empty:
-        area_km2_temp = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
-
+    # 🛑 BISTURÍ DE INTEGRIDAD: Cero estimaciones al vuelo.
+    # Si la base devuelve 0, es porque el nombre exacto de esta cuenca/territorio 
+    # NO existe en las Matrices Maestras Demográfica o Pecuaria.
     if pob_total == 0 and bovinos == 0:
-        pob_total = area_km2_temp * 85  # 85 hab/km² (Densidad rural alta)
-        bovinos = area_km2_temp * 150   # 150 vacas/km² (Presión ganadera fuerte)
-        porcinos = area_km2_temp * 45   # 45 cerdos/km²
-        aves = area_km2_temp * 600
+        st.warning(f"⚠️ **Vacío de Datos:** '{nombre_zona}' no fue encontrado en las Matrices Maestras Demográfica y Pecuaria. Para ver la presión real, debes ir a los módulos respectivos y forjar las matrices asegurando que incluyan la capa de subcuencas.")
 
     # 🧠 CÁLCULO DINÁMICO DE DEMANDA (L/día convertidos a m³/s)
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
