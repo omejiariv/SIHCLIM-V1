@@ -39,11 +39,27 @@ except ImportError as e:
     st.error(f"Error importando módulos del sistema: {e}")
     st.stop()
 
+# Configuración de Página
 st.set_page_config(page_title="Aguas Subterráneas", page_icon="💧", layout="wide")
+
+# 🧠 Encendido automático del Gemelo Digital (Lectura de matrices maestras)
+try:
+    from modules.utils import encender_gemelo_digital
+    encender_gemelo_digital()
+except: pass
 
 if st.sidebar.button("🧹 Limpiar Memoria y Recargar"):
     st.cache_data.clear()
     st.rerun()
+
+st.title("💧 Aguas Subterráneas: El Corazón Invisible")
+st.markdown("""
+<div style="border-left: 5px solid #2980b9; padding: 15px; background-color: rgba(52, 152, 219, 0.1); border-radius: 5px; margin-bottom: 15px;">
+    <h4 style="color: #2980b9; margin-top: 0;">🌊 Manifiesto de las Aguas Ocultas</h4>
+    <b style="font-size: 0.95em;">El agua subterránea es el agua dulce líquida más abundante del planeta. Es la memoria milenaria de la lluvia. De ella dependen los bosques en la sequía, el caudal base de los ríos que vemos fluir, y la vida de miles de personas en las zonas más apartadas y frágiles. Es invisible, y por ello a menudo ignorada y sobreexplotada. Aquí la hacemos visible, para tratarla con el respeto, la gratitud y el amor que merece el recurso que hoy salva vidas y que será nuestro mayor escudo ante la crisis climática.</b>
+</div>
+""", unsafe_allow_html=True)
+st.divider()
 
 # --- 1. SELECTOR ESPACIAL (CONECTADO AL SELECTOR ARREGLADO) ---
 ids_estaciones, nombre_zona, altitud_ref, gdf_zona = selectors.render_selector_espacial()
@@ -218,16 +234,30 @@ if gdf_zona is not None:
             
             if area_km2 <= 0: area_km2 = 10.0 # Valor por defecto seguro
 
-            # --- B. CÁLCULOS AGREGADOS ---
-            # Promedios mensuales * 12 = Anuales
-            p_med = df_hist['p_final'].mean() * 12
-            etr_med = df_hist['etr_mm'].mean() * 12
-            rec_med = df_hist['recarga_mm'].mean() * 12
-            inf_med = df_hist['infiltracion_mm'].mean() * 12
-            esc_med = df_hist['escorrentia_mm'].mean() * 12
+            # --- 🌍 BISTURÍ 1: NEXO CLIMÁTICO (Conexión Aleph) ---
+            delta_ppt_sim = st.session_state.get('sim_delta_ppt', 0.0) 
+            delta_temp_sim = st.session_state.get('sim_delta_temp', 0.0)
+            enso_estado = st.session_state.get('enso_fase', 'Neutro ⚖️')
+            
+            if delta_ppt_sim != 0.0 or delta_temp_sim != 0.0 or "Niño" in enso_estado or "Niña" in enso_estado:
+                st.success(f"🧠 **Nexo Atmosférico Activo:** El acuífero reacciona al clima global. (ENSO: {enso_estado} | CMIP6 Lluvia: {delta_ppt_sim}% | CMIP6 Temp: +{delta_temp_sim}°C)")
+
+            # Aplicamos los factores termodinámicos
+            factor_lluvia = 1 + (delta_ppt_sim / 100.0)
+            if "Niño Severo" in enso_estado: factor_lluvia *= 0.6
+            elif "Niño Moderado" in enso_estado: factor_lluvia *= 0.8
+            elif "Niña" in enso_estado: factor_lluvia *= 1.2
+            
+            # --- B. CÁLCULOS AGREGADOS (Afectados por el Clima) ---
+            p_med = (df_hist['p_final'].mean() * 12) * factor_lluvia
+            etr_med = (df_hist['etr_mm'].mean() * 12) * (1 + (delta_temp_sim * 0.03)) # +3% Evapotranspiración por °C
+            
+            # Recalculamos la física con el nuevo clima
+            rec_med = max(0.0, (p_med - etr_med) * (ki_final * kg_factor))
+            inf_med = max(0.0, (p_med - etr_med) * ki_final)
+            esc_med = max(0.0, (p_med - etr_med) - rec_med)
             
             # Caudales (m3/s)
-            # Q = (Lluvia_mm * Area_km2 * 1000) / (365 * 24 * 3600)
             segundos_anio = 31536000
             q_base_m3s = (rec_med * area_km2 * 1000) / segundos_anio
             q_medio_m3s = (esc_med * area_km2 * 1000) / segundos_anio
@@ -236,8 +266,7 @@ if gdf_zona is not None:
             q_min_50a, q_eco = 0, 0
             if analysis:
                 try:
-                    serie_p = df_hist.set_index('fecha')['p_final']
-                    # Coeficiente escorrentía directo aprox
+                    serie_p = df_hist.set_index('fecha')['p_final'] * factor_lluvia
                     c_dir = (esc_med - rec_med) / p_med if p_med > 0 else 0.3
                     
                     stats = analysis.calculate_hydrological_statistics(
@@ -248,21 +277,30 @@ if gdf_zona is not None:
                 except: pass
 
             # --- C. VISUALIZACIÓN DE MÉTRICAS (10 COLUMNAS) ---
-            st.markdown("##### 💧 Balance Hídrico y Oferta Subterránea (Promedios Multianuales)")
+            st.markdown("##### 💧 Balance Hídrico y Oferta Subterránea (Simulación Activa)")
             cols = st.columns(10)
             
             def fmt(v, u=""): return f"{v:,.0f} {u}"
             
             cols[0].metric("📏 Área", f"{area_km2:,.1f} km²")
-            cols[1].metric("🌧️ Lluvia", fmt(p_med, "mm/año"))
-            cols[2].metric("☀️ ETR", fmt(etr_med, "mm/año"))
-            cols[3].metric("🌱 Infiltración", fmt(inf_med, "mm/año"))
-            cols[4].metric("💧 Recarga", fmt(rec_med, "mm/año"), help="Oferta hídrica subterránea")
-            cols[5].metric("🌊 Escorrentía", fmt(esc_med, "mm/año"))
+            cols[1].metric("🌧️ Lluvia", fmt(p_med, "mm/a"), delta=f"{delta_ppt_sim}%" if delta_ppt_sim!=0 else None)
+            cols[2].metric("☀️ ETR", fmt(etr_med, "mm/a"))
+            cols[3].metric("🌱 Infilt.", fmt(inf_med, "mm/a"))
+            cols[4].metric("💧 Recarga", fmt(rec_med, "mm/a"), help="Oferta hídrica subterránea")
+            cols[5].metric("🌊 Escorrentía", fmt(esc_med, "mm/a"))
             cols[6].metric("⚖️ Q. Medio", f"{q_medio_m3s:.2f} m³/s")
-            cols[7].metric("📉 Q. Min 50a", f"{q_min_50a:.3f} m³/s", delta_color="inverse", help="Caudal mínimo probable (Tr=50 años)")
-            cols[8].metric("🐟 Q. Ecológico", f"{q_eco:.3f} m³/s", help="Caudal ambiental (Q95)")
-            cols[9].metric("📡 Estaciones", len(df_puntos))
+            cols[7].metric("📉 Q. Min 50a", f"{q_min_50a:.2f} m³/s", delta_color="inverse", help="Caudal mínimo (Tr=50a)")
+            cols[8].metric("🐟 Q. Eco.", f"{q_eco:.2f} m³/s", help="Caudal ambiental (Q95)")
+            cols[9].metric("📡 Ests.", len(df_puntos))
+            
+            # --- ❤️ BISTURÍ 2: EL LATIDO DEL RÍO (Conexión de Salida) ---
+            volumen_recarga_m3_año = rec_med * area_km2 * 1000
+            caudal_base_emergente_lps = (volumen_recarga_m3_año * 1000) / 31536000 # de m3/año a L/s
+            
+            st.info(f"💧 **El Latido del Río:** Esta recarga invisible no se queda estática; viaja lentamente por la roca durante meses. En la sequía más dura, emergerá en los nacimientos aportando **{caudal_base_emergente_lps:,.1f} Litros por segundo** al cauce. Es la sangre que mantiene vivo al ecosistema.")
+            
+            # INYECTAR A LA MEMORIA CENTRAL PARA CALIDAD Y TOMA DE DECISIONES
+            st.session_state['aleph_recarga_mm'] = float(rec_med)
 
     st.divider()
 
