@@ -976,29 +976,56 @@ if gdf_zona_seleccionada is not None:
                             # Pasamos gdf_zona_seleccionada para dibujar el borde verde
                             mapa_amenaza_contexto(mask_t, "red", "Amenaza: Avenida Torrencial", gdf_zona_seleccionada)
 
-                    # 2. INUNDACIÓN
+                    # 2. INUNDACIÓN (NEXO FÍSICO CON ALEPH)
                     with t2:
-                        c1, c2 = st.columns([1, 3])
-                        with c1:
-                            st.markdown("#### Índice TWI")
+                        c_in1, c_in2 = st.columns([1, 3])
+                        with c_in1:
+                            st.markdown("#### Motor Hidráulico (Manning-TWI)")
+                            
+                            # 🌍 BISTURÍ: Inyección de Oferta Extrema (Desde Pág 01)
+                            q_max_aleph = st.session_state.get('aleph_q_max_m3s', 0.0)
+                            
+                            if q_max_aleph > 0:
+                                st.success(f"🧠 **Caudal Pico Sincronizado:** {q_max_aleph:,.1f} m³/s")
+                                q_diseno = q_max_aleph
+                            else:
+                                st.warning("⚠️ Usando caudal teórico. Ejecuta el Aleph en la Pág 01 para usar hidrología real.")
+                                q_diseno = 50.0 # Fallback
+                                
+                            # Ecuación empírica para derivar el umbral TWI desde el caudal
+                            # A mayor caudal, el umbral de TWI baja (más celdas se inundan)
+                            twi_sugerido = max(5.0, 16.0 - np.log1p(q_diseno))
+                            
+                            twi_val = st.slider(
+                                "Umbral de Desbordamiento (TWI):", 
+                                min_value=5.0, max_value=25.0, 
+                                value=float(twi_sugerido), step=0.5, key="twi_slider",
+                                help="El modelo calculó este umbral basado en el Caudal Máximo. Si lo bajas, simulas un nivel de agua más alto."
+                            )
+                            
                             # Cálculo TWI robusto
-                            with st.spinner("Procesando terreno..."):
+                            with st.spinner("Inundando llanura aluvial..."):
                                 s_rad = np.deg2rad(s_core)
                                 tan_s = np.tan(s_rad)
                                 tan_s = np.where(tan_s < 0.001, 0.001, tan_s)
                                 resolucion = 30.0 # Aprox Sentinel/SRTM
                                 area_esp = acc_raw * resolucion
                                 twi = np.log((area_esp + 1) / tan_s)
+                                
+                            strict = st.checkbox("Restringir a valles (< 5°)", value=True)
                             
-                            twi_val = st.slider("Umbral Humedad", 5.0, 25.0, 10.0, key="twi_slider")
-                            strict = st.checkbox("Solo planos (< 5°)", value=True)
-                            st.info("Detectando zonas de empozamiento.")
-                        with c2:
+                            # Inyectar el buffer de inundación resultante al Aleph (Para Biodiversidad)
+                            if st.button("🚀 Guardar Zona de Riesgo (Para Corredores Riparios)"):
+                                st.session_state['aleph_twi_umbral'] = twi_val
+                                st.session_state['aleph_pendiente_max'] = 5 if strict else 90
+                                st.toast("✅ Zona de inundación guardada en Memoria Global.", icon="🌊")
+
+                        with c_in2:
                             if strict: mask_i = (twi >= twi_val) & (s_core <= 5)
                             else: mask_i = (twi >= twi_val)
                             
-                            caja_analisis_ai(mask_i, "Inundación")
-                            mapa_amenaza_contexto(mask_i, "#0099FF", f"Amenaza: Inundación (TWI > {twi_val})", gdf_zona_seleccionada)
+                            caja_analisis_ai(mask_i, "Inundación por Desbordamiento")
+                            mapa_amenaza_contexto(mask_i, "#0099FF", f"Llanura de Inundación (Q = {q_diseno:,.1f} m³/s)", gdf_zona_seleccionada)
                 else:
                     st.warning("⚠️ Calcula la Hidrología en el Tab 4 primero.")
                     
