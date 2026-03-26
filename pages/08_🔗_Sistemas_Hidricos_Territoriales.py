@@ -290,17 +290,20 @@ with col_out:
     evaporacion_dinamica = datos_nodo["evaporacion_m3s"] * factor_et
     st.metric("Evaporación Directa (Afectada por T°)", f"{evaporacion_dinamica:.2f} m³/s", f"{(evaporacion_dinamica - datos_nodo['evaporacion_m3s']):+.2f} m³/s", delta_color="inverse")
     
-    # 🌍 BISTURÍ: Inyección de la Demanda Metabólica Real (Desde Pág 07)
+    # 🌍 BISTURÍ: Inyección de la Demanda Metabólica Real
     demanda_memoria = st.session_state.get('demanda_total_m3s', 0.0)
     
-    if demanda_memoria > 0:
+    # ¡CORRECCIÓN!: Evitar que el consumo de una vereda (Río Chico) sobrescriba el de un embalse gigante
+    if demanda_memoria > 0 and demanda_memoria >= (datos_nodo["demanda_acueducto_m3s"] * 0.5):
         st.success(f"🧠 Demanda Metabólica Sincronizada: {demanda_memoria:.3f} m³/s")
         val_base_acue = demanda_memoria
         label_acueducto = "🚰 Extracción Metabólica (Real) [m³/s]:"
     else:
         val_base_acue = datos_nodo["demanda_acueducto_m3s"]
         label_acueducto = "Extracción Consuntiva (Teórica) [m³/s]:"
-        
+        if demanda_memoria > 0:
+            st.info("⚠️ Se ignoró la demanda en memoria por ser de otra escala territorial.")
+            
     max_acueducto = float(max(val_base_acue, datos_nodo["demanda_acueducto_m3s"]) * 2)
     
     val_acueducto = 0.0
@@ -389,45 +392,52 @@ with c_inv3:
     st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
 
 # =========================================================================
+# =========================================================================
 # --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
 # =========================================================================
 
-# Recuperamos la población viva del Aleph (Calculada al inicio de la página)
-pob_hum = datos_metabolismo.get('pob_total', 15000) if conectado_aleph else 15000
-pob_bov = datos_metabolismo.get('bovinos', 5000) if conectado_aleph else 5000
-pob_por = datos_metabolismo.get('porcinos', 2000) if conectado_aleph else 2000
+# ⚠️ Usamos las variables estrictamente locales de esta página para la contaminación
+pob_hum_local = pob_residente 
+pob_bov_local = cabezas_bovinas
+pob_por_local = cabezas_porcinas
 
-# A. CALIDAD DE AGUA (Delivery Ratio y Mezcla C0)
+# A. CALIDAD DE AGUA (Delivery Ratio y Mezcla C0 en Afluentes Naturales)
 dr_difuso = 0.15 
 dr_puntual = 0.80
 
-carga_neta_ton = (((pob_bov * 0.18) + (pob_por * 0.11)) * dr_difuso) + ((pob_hum * 0.018) * dr_puntual)
+carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual)
 carga_removida_ton = sist_saneamiento * 2.5
 carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
-carga_mg_s = (carga_final_rio_ton * 1_000_000) / 31536000
-caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000
+# ¡CORRECCIÓN FÍSICA!: 1 Tonelada = 1,000,000,000 mg
+carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
 
-concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
+# ¡CORRECCIÓN ECO-HIDROLÓGICA!: Diluimos SOLO con los afluentes naturales de la cuenca, no con el agua de los túneles
+caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
+caudal_natural_L_s = caudal_natural_m3s * 1000
+
+concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
+
+# Límite normativo crítico: >10 mg/L de DBO5
 ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
 
 # B. RESILIENCIA ESTRUCTURAL (Buffer de Embalse)
-# La resiliencia es la capacidad del embalse de sostener la demanda. > 2 años de buffer es óptimo = 100%
+# 100% = El embalse + afluentes puede sostener la demanda por más de 2 años
 buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
 ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
 
 # C. ESTRÉS HÍDRICO (WEI+)
-wei_ratio = consumo_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
+# Validamos el consumo real de la ciudad, no el de la vereda
+consumo_real = max(consumo_anual_m3, val_acueducto * 31536000)
+wei_ratio = consumo_real / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
 ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
 
 # D. NEUTRALIDAD VOLUMÉTRICA
-ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
+ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real) * 100) if consumo_real > 0 else 0.0
 
 def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
-    if not invertido:
-        return ("🔴 CRÍTICO", "#c0392b") if valor < umbral_rojo else ("🟡 VULNERABLE", "#f39c12") if valor < umbral_verde else ("🟢 ÓPTIMO", "#27ae60")
-    else:
-        return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
+    if not invertido: return ("🔴 CRÍTICO", "#c0392b") if valor < umbral_rojo else ("🟡 VULNERABLE", "#f39c12") if valor < umbral_verde else ("🟢 ÓPTIMO", "#27ae60")
+    else: return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
 def generar_leyenda(u_r, u_v, inv):
     if not inv: return f"🔴 <b>Crítico</b> &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> &gt; {u_v}%"
@@ -447,11 +457,11 @@ def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, inver
     return fig
 
 col_g1, col_g2, col_g3, col_g4 = st.columns(4)
-# 🛡️ UNIFICACIÓN: Todos los indicadores miden "Salud" (100 = Óptimo). Por eso invertido=False para todos.
+# 🛡️ Todos invertido=False porque miden Salud
 for col, ind, tit, col_h, u_r, u_v, inv in zip(
     [col_g1, col_g2, col_g3, col_g4], [ind_neutralidad, ind_resiliencia, ind_estres, ind_calidad],
     ["Neutralidad", "Resiliencia", "Seguridad Hídrica (WEI+)", "Calidad de Agua"], ["#2ecc71", "#3498db", "#e74c3c", "#9b59b6"],
-    [40, 40, 40, 40], [70, 70, 70, 70], [False, False, False, False] 
+    [40, 40, 40, 40], [70, 70, 70, 70], [False, False, False, False]
 ):
     with col:
         est, color_txt = evaluar_indice(ind, u_r, u_v, inv)
@@ -643,25 +653,22 @@ with tab_resumen:
             f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
             estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
         
-        f_cli_total = f_cc_base + f_enso 
-        o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
-        c_m3 = (demanda_m3s_base * f_dem) * 31536000
+        f_cli_total = max(0.1, f_cc_base + f_enso) 
         
-        # 1. Neutralidad
+        o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
+        c_m3 = (val_acueducto * f_dem) * 31536000
+        
         n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
         
-        # 2. Resiliencia
         buff_sim = (capacidad_embalse_m3 + o_m3) / c_m3 if c_m3 > 0 else 5.0
         r = min(100.0, (buff_sim / 2.0) * 100)
         
-        # 3. Estrés (WEI+)
         wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
         e = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
         
-        # 4. Calidad
-        caudal_L_s_sim = (o_m3 / 31536000) * 1000
+        caudal_natural_L_s_sim = caudal_natural_L_s * f_cli_total
         carga_mg_s_futura = carga_mg_s * f_dem
-        dbo_mg_l_sim = carga_mg_s_futura / caudal_L_s_sim if caudal_L_s_sim > 0 else 999.0
+        dbo_mg_l_sim = carga_mg_s_futura / caudal_natural_L_s_sim if caudal_natural_L_s_sim > 0 else 999.0
         cal = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
         
         datos_proj.extend([
@@ -673,8 +680,8 @@ with tab_resumen:
         
     fig_line1 = px.line(pd.DataFrame(datos_proj), x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
                        color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Seguridad Hídrica": "#e74c3c", "Calidad": "#9b59b6"})
-    fig_line1.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.1, layer="below", annotation_text="  Zona Crítica (<40%)")
-    fig_line1.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.1, layer="below", annotation_text="  Zona Vulnerable (40-70%)")
+    fig_line1.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.05, layer="below", annotation_text="  Zona Crítica (<40%)")
+    fig_line1.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.05, layer="below", annotation_text="  Zona Vulnerable (40-70%)")
     fig_line1.update_layout(height=400, hovermode="x unified", yaxis_range=[0, 105])
     st.plotly_chart(fig_line1, use_container_width=True)
 
