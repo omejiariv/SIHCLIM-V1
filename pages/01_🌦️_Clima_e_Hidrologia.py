@@ -753,3 +753,120 @@ def main():
 if __name__ == "__main__":
 
     main()
+
+# ==============================================================================
+    # ⚙️ CUARTO DE MÁQUINAS: FORJA DE LA MATRIZ MAESTRA
+    # ==============================================================================
+    st.markdown("---")
+    st.subheader("⚙️ Motor Administrativo: Matriz Hidrológica Maestra")
+    
+    # 📣 EL MANIFIESTO DEL ESTADO DINÁMICO
+    st.markdown("""
+    <div style="border-left: 5px solid #f39c12; padding: 15px; background-color: rgba(243, 156, 18, 0.1); border-radius: 5px; margin-bottom: 15px;">
+        <h4 style="color: #d35400; margin-top: 0;">⚠️ Advertencia de Sincronización Territorial</h4>
+        <b style="font-size: 0.95em;">Esta Matriz Maestra es una fotografía del estado dinámico de la realidad. Es el motor de alta velocidad que alimenta la Toma de Decisiones. Si hay cambios sustanciales en el sistema (inclusión de nuevas áreas de análisis, nuevas cuencas, nueva información hidrometeorológica, actualizaciones de coberturas o correcciones topográficas), se DEBE generar una nueva matriz maestra para asegurar que la planificación se base en la verdad territorial más reciente.</b>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.expander("🚀 Ejecutar Generación Masiva (Recálculo Global)", expanded=False):
+        st.info("Esta herramienta recorrerá espacialmente todas las cuencas, cruzará las estaciones climáticas, ejecutará los modelos termodinámicos y guardará el resultado en una base de datos ultraligera.")
+        
+        # Selección de columna de nombre (Protegida)
+        try:
+            q_cols = text("SELECT column_name FROM information_schema.columns WHERE table_name = 'cuencas' AND data_type = 'text'")
+            cols_bd = pd.read_sql(q_cols, engine)['column_name'].tolist()
+            idx_def = next((i for i, c in enumerate(cols_bd) if c in ['n_nss3', 'subc_lbl', 'nombre', 'nombre_cuenca']), 0)
+            col_nom_rep = st.selectbox("Identificador de Cuenca:", cols_bd, index=idx_def, key="col_rep_final")
+        except: 
+            col_nom_rep = 'nombre_cuenca'
+
+        if st.button("⚡ Forjar Matriz Maestra", key="btn_gen_rep", type="primary"):
+            try:
+                import numpy as np
+                import geopandas as gpd
+                
+                with st.spinner("Procesando todas las unidades territoriales (Esto tomará unos minutos)..."):
+                    # 1. Cargar Geometrías de Cuencas
+                    gdf_all = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
+                    
+                    # 2. Cargar Estaciones con Altitud
+                    q_est = text("SELECT id_estacion, altitud, ST_SetSRID(ST_MakePoint(CAST(longitud AS FLOAT), CAST(latitud AS FLOAT)), 4326) as geometry FROM estaciones WHERE latitud IS NOT NULL")
+                    gdf_est = gpd.read_postgis(q_est, engine, geom_col="geometry").to_crs("EPSG:3116")
+                    gdf_est['id_estacion'] = gdf_est['id_estacion'].astype(str)
+                    
+                    # 3. Lluvia Anual de la Base de Datos Histórica
+                    df_rain = pd.read_sql("SELECT id_estacion, AVG(valor)*12 as ppt FROM precipitacion GROUP BY id_estacion", engine)
+                    df_rain['id_estacion'] = df_rain['id_estacion'].astype(str)
+                    
+                    res = []
+                    prog = st.progress(0)
+                    
+                    # 4. El Bucle Espacial (Fuerza Bruta)
+                    for i, row in gdf_all.iterrows():
+                        nom = str(row.get(col_nom_rep, f"Cuenca {i}"))
+                        area_km2 = row.geometry.area / 1e6
+                        
+                        if area_km2 <= 0: area_km2 = 1.0 # Seguro contra geometrías inválidas
+                        
+                        # Búsqueda de estaciones cercanas (Buffer de 20km)
+                        buf = row.geometry.buffer(20000)
+                        est_in = gdf_est[gdf_est.geometry.within(buf)]
+                        
+                        ppt_media = 2500.0 # Promedio Antioquia fallback
+                        altitud_media = 1500.0
+                        
+                        if not est_in.empty:
+                            ids = est_in['id_estacion'].tolist()
+                            vals_ppt = df_rain[df_rain['id_estacion'].isin(ids)]['ppt']
+                            if not vals_ppt.empty: 
+                                ppt_media = vals_ppt.mean()
+                            
+                            # Intentar sacar altitud real de las estaciones
+                            vals_alt = est_in['altitud'].dropna()
+                            if not vals_alt.empty:
+                                altitud_media = vals_alt.mean()
+                        
+                        # 5. Física Fundamental (Turc Modificado)
+                        temp_calc = max(5.0, 28.0 - (0.006 * altitud_media))
+                        L = 300 + 25*temp_calc + 0.05*(temp_calc**3)
+                        etr = ppt_media / np.sqrt(0.9 + (ppt_media/L)**2) if L > 0 else 0
+                        
+                        escorrentia_total = ppt_media - etr
+                        
+                        # Asignación conservadora regional (15% a recarga profunda, resto a escorrentía rápida)
+                        recarga_mm = escorrentia_total * 0.15
+                        escorrentia_superficial = escorrentia_total * 0.85
+                        
+                        # Caudales Anuales
+                        q_medio = (escorrentia_superficial * area_km2 * 1000) / 31536000
+                        q_base = (recarga_mm * area_km2 * 1000) / 31536000
+                        q_total = q_medio + q_base
+
+                        res.append({
+                            "Unidad_Analisis": "Cuenca",
+                            "Nombre": nom, 
+                            "Area_km2": round(area_km2, 2), 
+                            "Altitud_m": round(altitud_media, 0),
+                            "Temp_C": round(temp_calc, 1),
+                            "Lluvia_mm": round(ppt_media, 0), 
+                            "ETR_mm": round(etr, 0),
+                            "Recarga_mm": round(recarga_mm, 0),
+                            "Escorrentia_mm": round(escorrentia_superficial, 0),
+                            "Caudal_Medio_m3s": round(q_total, 3)
+                        })
+                        
+                        prog.progress((i+1)/len(gdf_all))
+                    
+                    # 6. Guardar la Matriz Maestra en SQL
+                    df_matriz = pd.DataFrame(res)
+                    df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='replace', index=False)
+                    
+                    st.success("✅ Matriz Maestra forjada y almacenada con éxito.")
+                    st.dataframe(df_matriz.head(10))
+                    
+                    # Permite descargar por si el gerente la quiere en Excel
+                    csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Descargar Matriz (CSV)", csv_matriz, "Matriz_Hidro_Maestra.csv", "text/csv")
+                    
+            except Exception as e:
+                st.error(f"Error crítico en la forja de la matriz: {e}")
