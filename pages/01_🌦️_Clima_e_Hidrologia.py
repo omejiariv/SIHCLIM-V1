@@ -606,9 +606,16 @@ def main():
                             k5.metric("Recarga Real", f"{v_rec_real:.0f} mm", "Acuífero")
                             k5.metric("Volumen Recarga", f"{(v_rec_real * area_km2 * 1000):.2e} m³", "Anual")
                             
-                            # 🌐 INYECCIÓN AL ALEPH (Memoria Global para Calidad de Agua Subterránea)
+                            # 🌐 INYECCIÓN AL ALEPH (Memoria Global para todo el Gemelo Digital)
                             st.session_state['aleph_recarga_mm'] = float(v_rec_real)
                             st.session_state['aleph_area_km2'] = float(area_km2)
+                            
+                            # 🚀 LAS NUEVAS CONEXIONES HIDROLÓGICAS
+                            st.session_state['aleph_q_rio_m3s'] = float(Q_medio)  # Caudal Medio Oferta
+                            st.session_state['aleph_q_min_m3s'] = float(Q_base)   # Caudal Mínimo (Estiaje / Q95)
+                            st.session_state['aleph_q_max_m3s'] = float(Q_maximo) # Caudal Máximo Pico
+                            
+                            st.success("🧠 **¡Conexión Exitosa!** Caudales y recarga inyectados en vivo al Gemelo Digital. Las páginas de 'Toma de Decisiones' y 'Sistemas Hídricos' ahora usarán la física de esta cuenca.")
                             
                         except Exception as e:
                             st.warning(f"Cálculos parciales: {e}")
