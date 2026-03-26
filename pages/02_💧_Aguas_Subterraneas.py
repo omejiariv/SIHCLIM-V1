@@ -24,12 +24,16 @@ try:
     from modules import db_manager, hydrogeo_utils, selectors
     from modules.config import Config
     
-    # Módulos opcionales con manejo de fallo
-    try: from modules import land_cover
-    except ImportError: land_cover = None
-        
-    try: from modules import analysis
-    except ImportError: analysis = None
+    # Módulos opcionales con manejo de fallo y blindaje anti-caché de Streamlit                          
+    try: 
+        from modules import land_cover                                 
+    except (ImportError, KeyError): 
+        land_cover = None                               
+                                                                        
+    try: 
+        from modules import analysis                                   
+    except (ImportError, KeyError): 
+        analysis = None
         
 except ImportError as e:
     st.error(f"Error importando módulos del sistema: {e}")
