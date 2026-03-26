@@ -140,20 +140,39 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
     
-    # 1. Recuperamos la Oferta Matemática (Aleph) calculada en Hidrología
-    oferta_memoria = st.session_state.get('aleph_q_rio_m3s', 2.5) # Fallback ajustado a cuencas andinas reales
+    # --- FASE 2: RECEPCIÓN DEL CAUDAL FÍSICO (Desde Pág 01) ---
+    q_medio_real = st.session_state.get('aleph_q_rio_m3s', 0.0)
+    q_min_real = st.session_state.get('aleph_q_min_m3s', 0.0)
     
-    # 2. Cajón Manual Híbrido: Lee la memoria, pero permite sobreescritura manual
+    # 🛡️ Fallback Dinámico: Si el usuario entra a la Pág 09 sin haber corrido el Aleph en la Pág 01, 
+    # calculamos un caudal teórico basado en el tamaño real del polígono, ¡no usamos el 2.5!
+    if q_medio_real <= 0.0:
+        if gdf_zona is not None and not gdf_zona.empty:
+            area_emergencia = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
+        else:
+            area_emergencia = 10.0
+        q_medio_real = (350.0 * area_emergencia * 1000) / 31536000 # Recarga teórica * Área
+        q_min_real = q_medio_real * 0.25 # Asumimos estiaje al 25% del medio
+        st.warning("⚠️ No se detectó el modelo hidrológico en memoria. Usando caudal estimado por área. Ve a 'Clima e Hidrología' para inyectar la física real.")
+
+    # 🎚️ Selector de Escenario (Controla qué variable de la Pág 01 usamos)
+    tipo_oferta = st.radio("Escenario Hidrológico de Simulación:", 
+                           ["🌊 Caudal Medio (Condiciones Normales)", "🏜️ Caudal Mínimo / Estiaje (Q95)"], 
+                           horizontal=True)
+                           
+    oferta_dinamica = q_min_real if "Mínimo" in tipo_oferta else q_medio_real
+
+    # Cajón Manual Híbrido: Muestra el caudal real, pero permite alterarlo manualmente si se desea
     with st.expander("⚙️ Calibración de Oferta Hídrica Base", expanded=False):
         oferta_base = st.number_input(
-            "Oferta Nominal del Sistema (m³/s):", 
-            value=float(oferta_memoria), 
-            step=0.1,
-            help="Dato heredado de Sistemas Hídricos. Puedes modificarlo aquí para simular sequías extremas o nuevas represas."
+            "Caudal de Simulación (m³/s):", 
+            value=float(oferta_dinamica), 
+            step=0.01, format="%.3f",
+            help="Dato heredado de la modelación física. Cambia automáticamente según el escenario seleccionado."
         )
 
-# 3. Motor de Estrés Hídrico (Integrando Tiempo, Cambio Climático y ENSO)
-    oferta_nominal = float(oferta_base) 
+    # 3. Motor de Estrés Hídrico (Integrando Tiempo, Cambio Climático y ENSO)
+    oferta_nominal = float(oferta_base)
     
     # A. Factor de Cambio Climático (Degradación de oferta a largo plazo)
     # Asumimos que la cuenca pierde un 0.5% de su recarga hídrica por cada año futuro (desde 2024)
