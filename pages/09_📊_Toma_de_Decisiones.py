@@ -123,7 +123,20 @@ if gdf_zona is not None and not gdf_zona.empty:
     bovinos = datos_metabolismo.get('bovinos', 0)
     porcinos = datos_metabolismo.get('porcinos', 0)
     aves = datos_metabolismo.get('aves', 0)
-    
+
+    # 🧬 BISTURÍ 1: METABOLISMO SINTÉTICO (Realidad para Cuencas)
+    # Si la base devuelve 0 (por ser una subcuenca), estimamos la presión real 
+    # multiplicando el área geométrica por densidades críticas de Antioquia.
+    area_km2_temp = 10.0
+    if gdf_zona is not None and not gdf_zona.empty:
+        area_km2_temp = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
+
+    if pob_total == 0 and bovinos == 0:
+        pob_total = area_km2_temp * 85  # 85 hab/km² (Densidad rural alta)
+        bovinos = area_km2_temp * 150   # 150 vacas/km² (Presión ganadera fuerte)
+        porcinos = area_km2_temp * 45   # 45 cerdos/km²
+        aves = area_km2_temp * 600
+
     # 🧠 CÁLCULO DINÁMICO DE DEMANDA (L/día convertidos a m³/s)
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
@@ -552,14 +565,34 @@ if gdf_zona is not None and not gdf_zona.empty:
                     else: 
                         st.error("❌ La suma de los porcentajes de saneamiento debe ser exactamente 100%.")
                         
-        # --- 4. MOTORES DE CÁLCULO ACTUALES Y VELOCÍMETROS ---
-        ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 100.0
-        ind_resiliencia = min(100.0, ((recarga_anual_m3 + oferta_anual_m3) / ((consumo_anual_m3+1) * 2)) * 100)
+        # --- 4. MOTORES DE CÁLCULO ESTRICTOS (BISTURÍ ECOLÓGICO) ---
+        
+        # A. Carga Contaminante Real (Ton DBO5/año)
+        # Una vaca genera ~0.18 Ton/año, un cerdo ~0.11, un humano sin PTAR ~0.018
+        carga_generada_ton = (bovinos * 0.18) + (porcinos * 0.11) + (pob_total * 0.018)
+        carga_removida_ton = sist_saneamiento * 2.5 # Cada STAM remueve ~2.5 Ton/año
+        carga_neta_ton = max(0.0, carga_generada_ton - carga_removida_ton)
+        
+        # B. Capacidad Biológica de Dilución del Río
+        # Asumimos que 1 tonelada de DBO5 necesita ~20,000 m³ de agua fluida para diluirse a niveles aceptables
+        capacidad_dilucion_ton = oferta_anual_m3 / 20000.0 
+        
+        # 1. NEUTRALIDAD (Cantidad Devuelta vs Cantidad Extraída)
+        ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
+        
+        # 2. RESILIENCIA ESTRUCTURAL (Recarga de Acuífero + Área Forestal)
+        ha_total_bosque = ha_base_calculo + ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
+        pct_bosque_sbn = min(50.0, (ha_total_bosque / (area_km2 * 100)) * 100)
+        factor_recarga = min(50.0, (recarga_anual_m3 / max(consumo_anual_m3, 1.0)) * 10)
+        ind_resiliencia = min(100.0, factor_recarga + pct_bosque_sbn)
+        
+        # 3. ESTRÉS HÍDRICO (Extracción Neta vs Oferta Total)
         ind_estres = min(100.0, (consumo_anual_m3 / oferta_anual_m3) * 100) if oferta_anual_m3 > 0 else 100.0
         
-        # 🛡️ BISTURÍ: Multiplicador agresivo para que la inversión en saneamiento mueva fuertemente el indicador
-        factor_dilucion = (oferta_anual_m3 / (consumo_anual_m3 + 1)) 
-        ind_calidad = min(100.0, max(0.0, 30.0 + (factor_dilucion * 0.1) + (sist_saneamiento * 0.8)))
+        # 4. CALIDAD DE AGUA (WQI Penalizado Críticamente)
+        # Si la carga neta de heces/DBO5 supera la capacidad del río, el índice colapsa a 0%
+        ratio_contaminacion = carga_neta_ton / capacidad_dilucion_ton if capacidad_dilucion_ton > 0 else 2.0
+        ind_calidad = max(0.0, min(100.0, 100.0 - (ratio_contaminacion * 100)))
         
         st.markdown("---")
         st.subheader(f"🧭 Tablero de Seguridad Hídrica Integral: {nombre_zona}")
