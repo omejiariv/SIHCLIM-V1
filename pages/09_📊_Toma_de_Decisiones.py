@@ -135,13 +135,14 @@ if gdf_zona is not None and not gdf_zona.empty:
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
     
-    # 🛡️ EL BISTURÍ: Inyectar la nueva demanda en la memoria para que el resto de la página reaccione
+    # 🛡️ EL BISTURÍ: Inyectar la nueva demanda en la memoria. CERO MENTIRAS.
     if demanda_dinamica_m3s > 0:
         st.session_state['demanda_total_m3s'] = demanda_dinamica_m3s
         demanda_m3s = demanda_dinamica_m3s
     else:
-        demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5)
-        st.info("⚠️ Usando demanda base estática (El modelo demográfico no ha generado datos para esta zona/año).")
+        # Si no hay humanos ni vacas, la demanda es CERO. Nada de 6.5 m3/s fantasmas.
+        demanda_m3s = 0.0 
+        st.session_state['demanda_total_m3s'] = 0.0
         
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
     
