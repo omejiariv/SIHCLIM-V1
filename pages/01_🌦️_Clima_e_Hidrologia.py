@@ -542,7 +542,7 @@ def main():
                         
                         # F. DASHBOARD DE ESTADÍSTICAS (5 COLUMNAS - SUPER COMPLETO)
                         st.markdown("---")
-                        st.subheader("📊 Diagnóstico Hidrológico Integral")
+                        st.markdown(f"### 📊 Diagnóstico Hidrológico Integral: {nombre_zona}")
                         
                         try:
                             # --- 1. CÁLCULOS GEOMÉTRICOS ---
