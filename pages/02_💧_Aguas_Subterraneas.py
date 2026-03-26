@@ -299,6 +299,13 @@ if gdf_zona is not None:
             
             st.info(f"💧 **El Latido del Río:** Esta recarga invisible no se queda estática; viaja lentamente por la roca durante meses. En la sequía más dura, emergerá en los nacimientos aportando **{caudal_base_emergente_lps:,.1f} Litros por segundo** al cauce. Es la sangre que mantiene vivo al ecosistema.")
             
+            # 📜 EL MENSAJE DEL ARQUITECTO
+            st.markdown("""
+            <div style="text-align: right; padding-right: 10px;">
+                <i style="color: #7f8c8d; font-size: 0.9em;">✨ <b>Instrucción del Modelo:</b> Si vas a 'Clima e Hidrología', prendes 'El Niño Severo', y regresas a Aguas Subterráneas, sentirás el 'Latido del Río'.</i>
+            </div>
+            """, unsafe_allow_html=True)
+            
             # INYECTAR A LA MEMORIA CENTRAL PARA CALIDAD Y TOMA DE DECISIONES
             st.session_state['aleph_recarga_mm'] = float(rec_med)
 
@@ -518,58 +525,74 @@ if gdf_zona is not None:
         except Exception as e:
             st.error(f"Error renderizando mapa: {e}")
 
-    # --- TAB 3: MAPA DE RECARGA (INTERPOLACIÓN) ---
+    # --- TAB 3: MAPA DE RECARGA (MOTOR ESPACIAL BLINDADO) ---
     with tab3:
-        st.subheader("Distribución Espacial de la Recarga")
+        st.markdown("##### 💧 Distribución Espacial de la Oferta Subterránea")
         
-        # VERIFICACIÓN DE SEGURIDAD: ¿Existe la columna?
-        if 'recarga_calc' not in df_mapa_stats.columns:
-            st.warning("⚠️ No se pudo generar el mapa de recarga porque faltan datos de precipitación para calcularlo.")
+        if 'df_mapa_stats' not in locals() or df_mapa_stats.empty or 'recarga_calc' not in df_mapa_stats.columns:
+            st.warning("⚠️ No hay datos suficientes para generar el mapa. Verifica las estaciones.")
         else:
-            df_valid = df_mapa_stats.dropna(subset=['recarga_calc'])
+            # 1. Limpieza estricta de datos nulos (Esto evita el 99% de los colapsos)
+            df_valid = df_mapa_stats.dropna(subset=['latitud', 'longitud', 'recarga_calc']).copy()
             
-            if len(df_valid) < 3:
-                st.warning("⚠️ Se requieren al menos 3 estaciones con datos válidos para generar el mapa.")
+            if len(df_valid) < 1:
+                st.warning("⚠️ Las estaciones no tienen coordenadas válidas para el mapeo.")
             else:
-                try:
-                    # Datos para interpolar
-                    x = df_valid['longitud'].values
-                    y = df_valid['latitud'].values
-                    z = df_valid['recarga_calc'].values * 12 # mm/año
-                    
-                    # Grid
-                    pad = 0.05
-                    xi = np.linspace(x.min()-pad, x.max()+pad, 100)
-                    yi = np.linspace(y.min()-pad, y.max()+pad, 100)
-                    Xi, Yi = np.meshgrid(xi, yi)
-                    
-                    # Interpolación
-                    Zi = griddata((x, y), z, (Xi, Yi), method='linear')
-                    
-                    # Mapa
-                    m_iso = folium.Map(location=[y.mean(), x.mean()], zoom_start=11, tiles="CartoDB positron")
-                    m_iso.fit_bounds([[y.min(), x.min()], [y.max(), x.max()]])
-                    
-                    # Raster
-                    if not np.isnan(Zi).all():
-                        try: cmap = plt.get_cmap('Blues')
-                        except: cmap = cm.Blues
+                with st.spinner("Renderizando mapa de recarga y límites de cuenca..."):
+                    try:
+                        # 2. Centrar el mapa
+                        c_lat = df_valid['latitud'].mean()
+                        c_lon = df_valid['longitud'].mean()
+                        m_recarga = folium.Map(location=[c_lat, c_lon], zoom_start=10, tiles='cartodbpositron')
+
+                        # 3. 🛡️ INYECCIÓN DEL LÍMITE FÍSICO (La Cuenca)
+                        if gdf_zona is not None and not gdf_zona.empty:
+                            gdf_zona_4326 = gdf_zona.to_crs(epsg=4326) # Asegurar proyección web
+                            folium.GeoJson(
+                                gdf_zona_4326,
+                                name="Límite de Análisis (Cuenca/Municipio)",
+                                style_function=lambda x: {
+                                    'fillColor': '#3498db', 
+                                    'fillOpacity': 0.1, 
+                                    'color': '#2c3e50', 
+                                    'weight': 3, 
+                                    'dashArray': '5, 5'
+                                },
+                                tooltip="Zona de Recarga Directa"
+                            ).add_to(m_recarga)
+
+                        # 4. Mapeo Rápido de Estaciones (Colores dinámicos según recarga)
+                        # Reemplazamos el griddata pesado por un mapeo de calor puntual nativo
+                        from branca.colormap import LinearColormap
+                        min_r = df_valid['recarga_calc'].min()
+                        max_r = df_valid['recarga_calc'].max()
                         
-                        vmin, vmax = np.nanmin(Zi), np.nanmax(Zi)
-                        norm_z = (Zi - vmin) / (vmax - vmin)
-                        rgba = cmap(norm_z)
-                        rgba[np.isnan(Zi), 3] = 0
+                        # Si todos los valores son iguales, ajustamos para evitar error matemático
+                        if min_r == max_r: max_r += 1.0 
                         
-                        folium.raster_layers.ImageOverlay(
-                            image=rgba, bounds=[[yi.min(), xi.min()], [yi.max(), xi.max()]], 
-                            opacity=0.7, name="Recarga (Raster)"
-                        ).add_to(m_iso)
+                        cmap = LinearColormap(colors=['#f39c12', '#2ecc71', '#2980b9'], vmin=min_r, vmax=max_r)
+                        cmap.caption = 'Recarga Potencial (mm/año)'
+                        m_recarga.add_child(cmap)
+
+                        for idx, row in df_valid.iterrows():
+                            val_recarga = row['recarga_calc']
+                            folium.CircleMarker(
+                                location=[row['latitud'], row['longitud']],
+                                radius=10,
+                                popup=f"<b>Estación:</b> {row['nombre']}<br><b>Recarga:</b> {val_recarga:.1f} mm/año",
+                                color="black",
+                                weight=1,
+                                fill=True,
+                                fill_color=cmap(val_recarga),
+                                fill_opacity=0.8
+                            ).add_to(m_recarga)
+                            
+                        # 5. Renderizar
+                        st_folium(m_recarga, width="100%", height=500, key="mapa_recarga_seguro")
+                        st.caption("📍 Puntos de control hidrogeológico dentro de la delimitación territorial. El color indica el volumen de recarga.")
                     
-                    folium.LayerControl().add_to(m_iso)
-                    st_folium(m_iso, width=1400, height=600, key=f"map_iso_{nombre_zona}")
-                    
-                except Exception as e:
-                    st.error(f"Error técnico en el mapa: {e}")
+                    except Exception as e:
+                        st.error(f"Error de geoprocesamiento: {e}")
 
     # ==============================================================================
     # 4. REPORTE GLOBAL (GENERADOR MAESTRO)
