@@ -1115,11 +1115,19 @@ dbo_ave = ave * 0.015  # Nuevo aporte avícola
 dbo_gan = dbo_bov + dbo_por + dbo_ave
 carga_difusa_total_kg = dbo_hab + dbo_gan
 
-# Asumimos que solo un % de la carga difusa llega efectivamente al cauce en este punto (Atenuación natural)
-factor_escorrentia = 0.15 
-dbo_rio_arriba_fondo = max(1.0, ((carga_difusa_total_kg * factor_escorrentia) * 1000) / (q_rio * 86400))
-
 with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre_seleccion}", expanded=True):
+    st.markdown(f"##### 🐄🐖🐔 1. Carga Difusa Base (Cuenca Aguas Arriba de {nombre_seleccion})")
+    
+    # 🛡️ BISTURÍ: Slider de Calibración de Escorrentía
+    factor_escorrentia = st.slider(
+        "Atenuación Natural (% de carga difusa que llega al cauce):", 
+        min_value=0.5, max_value=30.0, value=5.0, step=0.5,
+        help="Los bosques y el suelo actúan como filtro. Ajusta este valor para que la 'DBO de Fondo' coincida con las mediciones reales de laboratorio de esta cuenca."
+    ) / 100.0
+    
+    dbo_rio_arriba_fondo = max(1.0, ((carga_difusa_total_kg * factor_escorrentia) * 1000) / (q_rio * 86400))
+
+    cd1, cd2, cd3 = st.columns(3)
     st.markdown(f"##### 🐄🐖🐔 1. Carga Difusa Base (Cuenca Aguas Arriba de {nombre_seleccion})")
     cd1, cd2, cd3 = st.columns(3)
     cd1.metric("Población Humana", f"{pob_u + pob_r:,.0f} hab", f"{dbo_hab:,.0f} kg DBO/d", delta_color="inverse")
