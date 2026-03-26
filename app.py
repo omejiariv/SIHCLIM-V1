@@ -4,13 +4,43 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 
-# --- 1. CONFIGURACIÓN DE PÁGINA ---
+# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE DEBE IR PRIMERO) ---
 st.set_page_config(
     page_title="SIHCLI-POTER | Centro de Comando",
     page_icon="💧",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ==============================================================================
+# 🔒 MURO DE SEGURIDAD GLOBAL (ACCESO BETA)
+# ==============================================================================
+def muro_de_acceso_beta():
+    if "beta_unlocked" not in st.session_state:
+        st.session_state["beta_unlocked"] = False
+        
+    if not st.session_state["beta_unlocked"]:
+        st.title("🔒 Sihcli-Poter: Fase de Pruebas (Beta)")
+        st.info("Esta plataforma científica se encuentra en fase de acceso restringido. Por favor, ingresa la credencial proporcionada por el equipo de investigación.")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            clave_beta = st.text_input("Credencial de Acceso:", type="password")
+            if st.button("Ingresar al Gemelo Digital", type="primary", use_container_width=True):
+                # 💡 La contraseña por defecto es "Agua2026"
+                if clave_beta == st.secrets.get("CLAVE_BETA", "Agua2026"):
+                    st.session_state["beta_unlocked"] = True
+                    st.rerun() # Recarga la página y muestra todo el contenido
+                else:
+                    st.error("❌ Credencial incorrecta. Acceso denegado.")
+        
+        # 🛑 st.stop() es la magia: evita que Python siga leyendo el código hacia abajo
+        st.stop() 
+
+# Llamamos a la función para activar el escudo
+muro_de_acceso_beta()
+# ==============================================================================
+
 
 # --- ESTILOS CSS PERSONALIZADOS ---
 st.markdown("""
@@ -150,13 +180,13 @@ with tab_arquitectura:
            'Modelo Demográfico', 'Modelo Pecuario', 'Calidad y Vertimientos', 'Sistemas Hídricos', 
            'Toma de Decisiones', 'Panel Administración',
            'Generador', 'Ayuda y Docs', 'Diagnóstico', 'Detective']
-           
+            
     parents = ['', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER',
                'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico',
                'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial',
                'Síntesis Estratégica', 'Síntesis Estratégica',
                'Herramientas', 'Herramientas', 'Herramientas', 'Herramientas']
-               
+                
     values = [100, 30, 40, 20, 20, 
               6, 6, 6, 6, 6, 
               10, 10, 10, 10, 
