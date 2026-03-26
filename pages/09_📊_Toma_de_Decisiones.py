@@ -559,34 +559,50 @@ if gdf_zona is not None and not gdf_zona.empty:
                     else: 
                         st.error("❌ La suma de los porcentajes de saneamiento debe ser exactamente 100%.")
                         
-        # --- 4. MOTORES DE CÁLCULO ESTRICTOS (BISTURÍ ECOLÓGICO) ---
+# --- 4. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA: IDEAM, USGS, WRI) ---
         
-        # A. Carga Contaminante Real (Ton DBO5/año)
-        # Una vaca genera ~0.18 Ton/año, un cerdo ~0.11, un humano sin PTAR ~0.018
-        carga_generada_ton = (bovinos * 0.18) + (porcinos * 0.11) + (pob_total * 0.018)
-        carga_removida_ton = sist_saneamiento * 2.5 # Cada STAM remueve ~2.5 Ton/año
-        carga_neta_ton = max(0.0, carga_generada_ton - carga_removida_ton)
+        # A. CALIDAD DEL AGUA (Carga Másica, Delivery Ratio y Mezcla C0)
+        # Factor de Entrega (Delivery Ratio): 
+        # - Carga difusa (Ganadería): Atenuación en suelo/pastos. Llega ~15% al cauce principal.
+        # - Carga puntual (Humanos urbanos/descargas directas): Llega ~80% al cauce.
+        dr_difuso = 0.15 
+        dr_puntual = 0.80
         
-        # B. Capacidad Biológica de Dilución del Río
-        # Asumimos que 1 tonelada de DBO5 necesita ~20,000 m³ de agua fluida para diluirse a niveles aceptables
-        capacidad_dilucion_ton = oferta_anual_m3 / 20000.0 
+        # Generación Bruta (Ton DBO5/año)
+        dbo_bov_bruta = bovinos * 0.18
+        dbo_por_bruta = porcinos * 0.11
+        dbo_hum_bruta = pob_total * 0.018
         
-        # 1. NEUTRALIDAD (Cantidad Devuelta vs Cantidad Extraída)
+        # Carga Neta que efectivamente entra al cauce (Ton/año)
+        carga_neta_ton = ((dbo_bov_bruta + dbo_por_bruta) * dr_difuso) + (dbo_hum_bruta * dr_puntual)
+        carga_removida_ton = sist_saneamiento * 2.5 # ~2.5 Ton removidas por STAM/PTAR al año
+        carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
+        
+        # Mezcla (Ecuación de Continuidad Básica C0). mg/L = (mg/s) / (L/s)
+        carga_mg_s = (carga_final_rio_ton * 1_000_000) / 31536000 # Conversión de Ton/año a mg/s
+        caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000   # Conversión de m3/año a L/s
+        
+        concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
+        
+        # Índice de Calidad: Límite normativo crítico es >10 mg/L de DBO5 (Umbral de anoxia)
+        ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
+
+        # B. RESILIENCIA ESTRUCTURAL (Baseflow Index - BFI del USGS)
+        # BFI = Recarga / Oferta Total. La teoría eco-hidrológica dicta que >70% es un buffer óptimo.
+        bfi_ratio = recarga_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 0.0
+        score_bfi = min(100.0, (bfi_ratio / 0.70) * 100)
+        
+        # Factor de estrés de estiaje: ¿La recarga base soporta el consumo humano en época sin lluvia?
+        factor_supervivencia = min(1.0, recarga_anual_m3 / consumo_anual_m3) if consumo_anual_m3 > 0 else 1.0
+        ind_resiliencia = max(0.0, min(100.0, score_bfi * factor_supervivencia))
+
+        # C. ESTRÉS HÍDRICO (Water Exploitation Index WEI+ - Agencia Europea M.A.)
+        # WEI = Consumo / Oferta. >40% indica estrés hídrico severo.
+        wei_ratio = consumo_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
+        ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
+
+        # D. NEUTRALIDAD VOLUMÉTRICA (VWBA - WRI)
         ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
-        
-        # 2. RESILIENCIA ESTRUCTURAL (Recarga de Acuífero + Área Forestal)
-        ha_total_bosque = ha_base_calculo + ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
-        pct_bosque_sbn = min(50.0, (ha_total_bosque / (area_km2 * 100)) * 100)
-        factor_recarga = min(50.0, (recarga_anual_m3 / max(consumo_anual_m3, 1.0)) * 10)
-        ind_resiliencia = min(100.0, factor_recarga + pct_bosque_sbn)
-        
-        # 3. ESTRÉS HÍDRICO (Extracción Neta vs Oferta Total)
-        ind_estres = min(100.0, (consumo_anual_m3 / oferta_anual_m3) * 100) if oferta_anual_m3 > 0 else 100.0
-        
-        # 4. CALIDAD DE AGUA (WQI Penalizado Críticamente)
-        # Si la carga neta de heces/DBO5 supera la capacidad del río, el índice colapsa a 0%
-        ratio_contaminacion = carga_neta_ton / capacidad_dilucion_ton if capacidad_dilucion_ton > 0 else 2.0
-        ind_calidad = max(0.0, min(100.0, 100.0 - (ratio_contaminacion * 100)))
         
         st.markdown("---")
         st.subheader(f"🧭 Tablero de Seguridad Hídrica Integral: {nombre_zona}")
@@ -654,7 +670,9 @@ if gdf_zona is not None and not gdf_zona.empty:
             datos_proj = []
             for a in anios_proj:
                 delta_a = a - 2024
+                # Crecimiento demográfico/agropecuario (~1.5% anual)
                 f_dem = (1 + 0.015) ** delta_a
+                # Degradación de recarga/oferta por Cambio Climático (~0.5% anual)
                 f_cc_base = (1 - 0.005) ** delta_a if activar_cc else 1.0
                 
                 f_enso = 0.0
@@ -666,33 +684,51 @@ if gdf_zona is not None and not gdf_zona.empty:
                 # 🛡️ Escudo anti-negativos para evitar colapsos matemáticos si el Niño es muy fuerte
                 f_cli_total = max(0.1, f_cc_base + f_enso) 
                 
+                # =========================================================
+                # 🔬 PROYECCIÓN DE VOLÚMENES FÍSICOS
+                # =========================================================
                 o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
                 r_m3 = (recarga_mm_base * f_cli_total) * area_km2 * 1000
                 c_m3 = (demanda_m3s_base * f_dem) * 31536000
                 
+                # =========================================================
+                # ⚖️ NÚCLEO MATEMÁTICO ESTRICTO EN LA SIMULACIÓN FUTURA
+                # =========================================================
+                # 1. Neutralidad (VWBA)
                 n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
-                r = min(100.0, ((r_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
                 
-                # 🛡️ DESCONGELAMIENTO: Dejamos que el Estrés suba hasta 200% para ver los picos de escasez
-                e = min(200.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 200.0
+                # 2. Resiliencia (BFI y Supervivencia)
+                bfi_sim = r_m3 / o_m3 if o_m3 > 0 else 0.0
+                fact_superv_sim = min(1.0, r_m3 / c_m3) if c_m3 > 0 else 1.0
+                r = max(0.0, min(100.0, (bfi_sim / 0.70) * 100 * fact_superv_sim))
                 
-                # 🛡️ MULTIPLICADOR AGRESIVO: La Calidad ahora reacciona fuertemente a las STAM/PTAR
-                fac_dil = (o_m3 / (c_m3 + 1))
-                cal = min(100.0, max(0.0, 30.0 + (fac_dil * 0.1) + (sist_saneamiento * 0.8)))
+                # 3. Seguridad Hídrica (Inverso del WEI+)
+                wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
+                e = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
+                
+                # 4. Calidad (C0 con Delivery Ratio y Crecimiento de Carga)
+                caudal_L_s_sim = (o_m3 / 31536000) * 1000
+                # La carga contaminante crece al mismo ritmo que la demografía/ganadería (f_dem)
+                carga_mg_s_futura = carga_mg_s * f_dem
+                dbo_mg_l_sim = carga_mg_s_futura / caudal_L_s_sim if caudal_L_s_sim > 0 else 999.0
+                cal = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
                 
                 datos_proj.extend([
                     {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
                     {"Año": a, "Indicador": "Resiliencia", "Valor (%)": r, "Fase ENSO": estado_enso},
-                    {"Año": a, "Indicador": "Estrés Hídrico", "Valor (%)": e, "Fase ENSO": estado_enso},
+                    {"Año": a, "Indicador": "Seguridad (Inv. Estrés)", "Valor (%)": e, "Fase ENSO": estado_enso},
                     {"Año": a, "Indicador": "Calidad", "Valor (%)": cal, "Fase ENSO": estado_enso}
                 ])
                 
             fig_line1 = px.line(pd.DataFrame(datos_proj), x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
-                               color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Estrés Hídrico": "#e74c3c", "Calidad": "#9b59b6"})
-            fig_line1.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below")
+                               color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Seguridad (Inv. Estrés)": "#e74c3c", "Calidad": "#9b59b6"})
             
-            # 🛡️ VISIBILIDAD: Ampliamos el eje Y hasta 160 (o más) para que la onda roja del estrés sea visible
-            fig_line1.update_layout(height=400, hovermode="x unified", yaxis_range=[0, 150])
+            # 🛡️ ZONAS DE RIESGO: Como ahora todo es "Salud" (100=Bueno, 0=Malo), el peligro está abajo
+            fig_line1.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.1, layer="below", annotation_text="  Zona Crítica (<40%)")
+            fig_line1.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.1, layer="below", annotation_text="  Zona Vulnerable (40-70%)")
+            
+            # Ejes alineados con el resto del tablero (0 a 100)
+            fig_line1.update_layout(height=400, hovermode="x unified", yaxis_range=[0, 105], title="Evolución de la Salud Integral del Sistema (0 = Colapso, 100 = Óptimo)")
             st.plotly_chart(fig_line1, use_container_width=True)
 
         with tab_escenarios:
