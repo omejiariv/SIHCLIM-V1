@@ -296,9 +296,8 @@ if gdf_zona is not None:
             """, unsafe_allow_html=True)
             
             # INYECTAR A LA MEMORIA CENTRAL PARA CALIDAD Y TOMA DE DECISIONES
-            # 🛡️ BISTURÍ ANTI-BUCLES: Solo actualizamos la memoria si el valor realmente cambió
-            # Esto evita que Streamlit entre en un ciclo infinito de recarga
-            recarga_float = float(rec_med)
+            # 🛡️ BISTURÍ ANTI-BUCLES DE MEMORIA: Redondear a 2 decimales para evitar oscilaciones
+            recarga_float = round(float(rec_med), 2)
             if st.session_state.get('aleph_recarga_mm') != recarga_float:
                 st.session_state['aleph_recarga_mm'] = recarga_float
 
@@ -513,7 +512,7 @@ if gdf_zona is not None:
             
             fg.add_to(m)
             folium.LayerControl().add_to(m)
-            st_folium(m, width=1400, height=600, key=f"map_ctx_{nombre_zona}")
+            st_folium(m, width=1400, height=600, key=f"map_ctx_{nombre_zona}", returned_objects=[])
 
         except Exception as e:
             st.error(f"Error renderizando mapa: {e}")
@@ -625,7 +624,7 @@ if gdf_zona is not None:
                             ).add_to(m_recarga)
 
                         folium.LayerControl().add_to(m_recarga)
-                        st_folium(m_recarga, width="100%", height=500, key="mapa_recarga_continuo_final")
+                        st_folium(m_recarga, width="100%", height=500, key="mapa_recarga_continuo_final", returned_objects=[])
                         st.caption("🗺️ Superficie interpolada a partir de los puntos de control. Las zonas más oscuras indican mayor recarga potencial al acuífero.")
                         
                     except Exception as e:
