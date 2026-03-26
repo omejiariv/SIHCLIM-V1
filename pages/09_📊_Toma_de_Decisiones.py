@@ -140,22 +140,48 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
     
-    # --- FASE 2: RECEPCIÓN DEL CAUDAL FÍSICO (Desde Pág 01) ---
-    q_medio_real = st.session_state.get('aleph_q_rio_m3s', 0.0)
-    q_min_real = st.session_state.get('aleph_q_min_m3s', 0.0)
+    # --- ⚡ FASE 2: CONEXIÓN DE ALTA VELOCIDAD A LA MATRIZ MAESTRA ---
+    # Adiós a la dependencia de la memoria volátil. Leemos directamente de la base de datos pre-calculada.
     
-    # 🛡️ Fallback Dinámico: Si el usuario entra a la Pág 09 sin haber corrido el Aleph en la Pág 01, 
-    # calculamos un caudal teórico basado en el tamaño real del polígono, ¡no usamos el 2.5!
-    if q_medio_real <= 0.0:
+    @st.cache_data(ttl=3600)
+    def obtener_física_matriz(territorio_nombre):
+        try:
+            # Buscamos el territorio ignorando mayúsculas/minúsculas y espacios extra
+            q = text("SELECT * FROM matriz_hidrologica_maestra WHERE LOWER(trim(\"Territorio\")) = LOWER(trim(:t)) LIMIT 1")
+            df_m = pd.read_sql(q, engine, params={'t': str(territorio_nombre)})
+            if not df_m.empty:
+                return df_m.iloc[0].to_dict()
+        except: pass
+        return None
+
+    datos_matriz = obtener_física_matriz(nombre_zona)
+
+    if datos_matriz:
+        q_medio_real = datos_matriz.get('Caudal_Medio_m3s', 0.0)
+        # El estiaje (Q_min) se fundamenta en la recarga profunda que aporta el acuífero
+        q_min_real = (datos_matriz.get('Recarga_mm', 0.0) * datos_matriz.get('Area_km2', 10.0) * 1000) / 31536000
+        
+        # Guardamos en memoria para que el Tab 4 (WRI) los consuma sin fallar
+        st.session_state['aleph_area_km2'] = datos_matriz.get('Area_km2', 10.0)
+        st.session_state['aleph_recarga_mm'] = datos_matriz.get('Recarga_mm', 0.0)
+        
+        st.success(f"⚡ **Sincronización Exitosa:** Física de '{nombre_zona}' extraída de la Matriz Maestra en milisegundos.")
+    else:
+        # 🛡️ Fallback Dinámico: Por si seleccionan un territorio nuevo que aún no está en la matriz
         if gdf_zona is not None and not gdf_zona.empty:
             area_emergencia = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
         else:
             area_emergencia = 10.0
-        q_medio_real = (350.0 * area_emergencia * 1000) / 31536000 # Recarga teórica * Área
-        q_min_real = q_medio_real * 0.25 # Asumimos estiaje al 25% del medio
-        st.warning("⚠️ No se detectó el modelo hidrológico en memoria. Usando caudal estimado por área. Ve a 'Clima e Hidrología' para inyectar la física real.")
+        
+        q_medio_real = (350.0 * area_emergencia * 1000) / 31536000 
+        q_min_real = q_medio_real * 0.25 
+        
+        st.session_state['aleph_area_km2'] = area_emergencia
+        st.session_state['aleph_recarga_mm'] = 350.0
+        
+        st.warning(f"⚠️ '{nombre_zona}' no fue encontrado en la Matriz Maestra. Usando aproximación geométrica. Para máxima precisión, forja la matriz en 'Clima e Hidrología'.")
 
-    # 🎚️ Selector de Escenario (Controla qué variable de la Pág 01 usamos)
+    # 🎚️ Selector de Escenario (Controla qué variable física usamos)
     tipo_oferta = st.radio("Escenario Hidrológico de Simulación:", 
                            ["🌊 Caudal Medio (Condiciones Normales)", "🏜️ Caudal Mínimo / Estiaje (Q95)"], 
                            horizontal=True)
