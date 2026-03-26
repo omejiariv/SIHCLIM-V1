@@ -388,11 +388,40 @@ with c_inv3:
     volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
     st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
 
-# --- 3. MOTORES DE CÁLCULO WRI ---
-ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 100.0
-ind_resiliencia = min(100.0, ((capacidad_embalse_m3 + oferta_anual_m3) / ((consumo_anual_m3+1) * 2)) * 100)
-ind_estres = min(100.0, (consumo_anual_m3 / oferta_anual_m3) * 100) if oferta_anual_m3 > 0 else 100.0
-ind_calidad = min(100.0, max(0.0, 50.0 + ((oferta_anual_m3 / (consumo_anual_m3 + 1)) * 0.5) + (sist_saneamiento * 0.05)))
+# =========================================================================
+# --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
+# =========================================================================
+
+# Recuperamos la población viva del Aleph (Calculada al inicio de la página)
+pob_hum = datos_metabolismo.get('pob_total', 15000) if conectado_aleph else 15000
+pob_bov = datos_metabolismo.get('bovinos', 5000) if conectado_aleph else 5000
+pob_por = datos_metabolismo.get('porcinos', 2000) if conectado_aleph else 2000
+
+# A. CALIDAD DE AGUA (Delivery Ratio y Mezcla C0)
+dr_difuso = 0.15 
+dr_puntual = 0.80
+
+carga_neta_ton = (((pob_bov * 0.18) + (pob_por * 0.11)) * dr_difuso) + ((pob_hum * 0.018) * dr_puntual)
+carga_removida_ton = sist_saneamiento * 2.5
+carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
+
+carga_mg_s = (carga_final_rio_ton * 1_000_000) / 31536000
+caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000
+
+concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
+ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
+
+# B. RESILIENCIA ESTRUCTURAL (Buffer de Embalse)
+# La resiliencia es la capacidad del embalse de sostener la demanda. > 2 años de buffer es óptimo = 100%
+buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
+ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
+
+# C. ESTRÉS HÍDRICO (WEI+)
+wei_ratio = consumo_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
+ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
+
+# D. NEUTRALIDAD VOLUMÉTRICA
+ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
 
 def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
     if not invertido:
@@ -400,12 +429,9 @@ def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
     else:
         return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
-# Generador de Leyendas Interpretativas (CON NOMBRES)
 def generar_leyenda(u_r, u_v, inv):
-    if not inv:
-        return f"🔴 <b>Crítico</b> &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> &gt; {u_v}%"
-    else:
-        return f"🟢 <b>Holgado</b> &lt; {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Moderado</b> {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 <b>Severo</b> &gt; {u_r}%"
+    if not inv: return f"🔴 <b>Crítico</b> &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> &gt; {u_v}%"
+    else: return f"🟢 <b>Holgado</b> &lt; {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Moderado</b> {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 <b>Severo</b> &gt; {u_r}%"
 
 st.markdown("---")
 def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
@@ -421,18 +447,17 @@ def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, inver
     return fig
 
 col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+# 🛡️ UNIFICACIÓN: Todos los indicadores miden "Salud" (100 = Óptimo). Por eso invertido=False para todos.
 for col, ind, tit, col_h, u_r, u_v, inv in zip(
     [col_g1, col_g2, col_g3, col_g4], [ind_neutralidad, ind_resiliencia, ind_estres, ind_calidad],
-    ["Neutralidad", "Resiliencia", "Estrés Hídrico", "Calidad"], ["#2ecc71", "#3498db", "#e74c3c", "#9b59b6"],
-    [20, 30, 40, 40], [50, 70, 20, 70], [False, False, True, False]
+    ["Neutralidad", "Resiliencia", "Seguridad Hídrica (WEI+)", "Calidad de Agua"], ["#2ecc71", "#3498db", "#e74c3c", "#9b59b6"],
+    [40, 40, 40, 40], [70, 70, 70, 70], [False, False, False, False] 
 ):
     with col:
         est, color_txt = evaluar_indice(ind, u_r, u_v, inv)
         st.plotly_chart(crear_velocimetro(ind, tit, col_h, u_r, u_v, inv), use_container_width=True)
         st.markdown(f"<h4 style='text-align: center; color: {color_txt}; margin-top:-20px;'>{est}</h4>", unsafe_allow_html=True)
-        # Inyectar leyenda interpretativa
-        leyenda = generar_leyenda(u_r, u_v, inv)
-        st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{leyenda}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{generar_leyenda(u_r, u_v, inv)}</div>", unsafe_allow_html=True)
 
 # Caja desplegable con el glosario
 with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded=False):
@@ -622,23 +647,35 @@ with tab_resumen:
         o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
         c_m3 = (demanda_m3s_base * f_dem) * 31536000
         
+        # 1. Neutralidad
         n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
-        r = min(100.0, ((capacidad_embalse_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
-        e = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
-        fac_dil = (o_m3 / (c_m3 + 1))
-        cal = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (sist_saneamiento * 0.05)))
+        
+        # 2. Resiliencia
+        buff_sim = (capacidad_embalse_m3 + o_m3) / c_m3 if c_m3 > 0 else 5.0
+        r = min(100.0, (buff_sim / 2.0) * 100)
+        
+        # 3. Estrés (WEI+)
+        wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
+        e = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
+        
+        # 4. Calidad
+        caudal_L_s_sim = (o_m3 / 31536000) * 1000
+        carga_mg_s_futura = carga_mg_s * f_dem
+        dbo_mg_l_sim = carga_mg_s_futura / caudal_L_s_sim if caudal_L_s_sim > 0 else 999.0
+        cal = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
         
         datos_proj.extend([
             {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
             {"Año": a, "Indicador": "Resiliencia", "Valor (%)": r, "Fase ENSO": estado_enso},
-            {"Año": a, "Indicador": "Estrés Hídrico", "Valor (%)": e, "Fase ENSO": estado_enso},
+            {"Año": a, "Indicador": "Seguridad Hídrica", "Valor (%)": e, "Fase ENSO": estado_enso},
             {"Año": a, "Indicador": "Calidad", "Valor (%)": cal, "Fase ENSO": estado_enso}
         ])
         
     fig_line1 = px.line(pd.DataFrame(datos_proj), x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
-                       color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Estrés Hídrico": "#e74c3c", "Calidad": "#9b59b6"})
-    fig_line1.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Zona Crítica (>40%)", annotation_position="top left")
-    fig_line1.update_layout(height=400, hovermode="x unified")
+                       color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Seguridad Hídrica": "#e74c3c", "Calidad": "#9b59b6"})
+    fig_line1.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.1, layer="below", annotation_text="  Zona Crítica (<40%)")
+    fig_line1.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.1, layer="below", annotation_text="  Zona Vulnerable (40-70%)")
+    fig_line1.update_layout(height=400, hovermode="x unified", yaxis_range=[0, 105])
     st.plotly_chart(fig_line1, use_container_width=True)
 
 # -------------------------------------------------------------------------
@@ -684,11 +721,17 @@ with tab_escenarios:
             c_m3 = (demanda_m3s_base * f_dem) * 31536000
             
             if ind_sel == "Neutralidad": val = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
-            elif ind_sel == "Resiliencia": val = min(100.0, ((capacidad_embalse_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
-            elif ind_sel == "Estrés Hídrico": val = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
+            elif ind_sel == "Resiliencia": 
+                buff_sim = (capacidad_embalse_m3 + o_m3) / c_m3 if c_m3 > 0 else 5.0
+                val = min(100.0, (buff_sim / 2.0) * 100)
+            elif ind_sel == "Estrés Hídrico": 
+                wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
+                val = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
             else: 
-                fac_dil = (o_m3 / (c_m3 + 1))
-                val = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (sist_saneamiento * 0.05)))
+                caudal_L_s_sim = (o_m3 / 31536000) * 1000
+                carga_mg_s_futura = carga_mg_s * f_dem
+                dbo_mg_l_sim = carga_mg_s_futura / caudal_L_s_sim if caudal_L_s_sim > 0 else 999.0
+                val = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
                 
             datos_esc.append({"Año": a, "Escenario Climático": nombre_esc, "Valor (%)": val})
             
@@ -697,7 +740,7 @@ with tab_escenarios:
         
         color_map = {
             "Onda Dinámica (Ciclo de 4.5 años)": "#9b59b6",  
-            "Condición Neutra (Línea Base)": "#34495e",       
+            "Condición Neutra (Línea Base)": "#34495e",        
             "🟡 El Niño Moderado Constante (-15%)": "#f1c40f",
             "🔴 El Niño Severo Constante (-35%)": "#e74c3c",
             "🟢 La Niña Moderada Constante (+15%)": "#2ecc71",
@@ -707,12 +750,10 @@ with tab_escenarios:
         fig_esc = px.line(df_esc, x="Año", y="Valor (%)", color="Escenario Climático", color_discrete_map=color_map)
         fig_esc.update_traces(line=dict(width=3)) 
         
-        if ind_sel == "Estrés Hídrico":
-            fig_esc.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Estrés Crítico (>40%)")
-        elif ind_sel == "Resiliencia":
-            fig_esc.add_hrect(y0=0, y1=50, fillcolor="red", opacity=0.05, layer="below", annotation_text="Colapso Hídrico (<50%)")
+        fig_esc.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.05, layer="below", annotation_text="Colapso / Crítico (<40%)")
+        fig_esc.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.05, layer="below", annotation_text="Vulnerable (40-70%)")
             
-        fig_esc.update_layout(height=450, hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
+        fig_esc.update_layout(height=450, hovermode="x unified", yaxis_range=[0, 105], legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
         st.plotly_chart(fig_esc, use_container_width=True)
     else:
         st.info("👈 Seleccione al menos una curva climática para visualizar.")
