@@ -32,6 +32,29 @@ except ImportError:
 st.set_page_config(page_title="SIHCLI-POTER", page_icon="🌦️", layout="wide")
 warnings.filterwarnings("ignore")
 
+# ==============================================================================
+# 📡 1. CONEXIÓN SATELITAL (AUTO-FETCH ENSO DESDE COLUMBIA UNIVERSITY)
+# ==============================================================================
+if 'enso_fase' not in st.session_state:
+    try:
+        from modules.forecasting import get_iri_enso_forecast
+        df_enso, _ = get_iri_enso_forecast()
+        
+        # Tomamos el pronóstico del trimestre actual (primera fila)
+        if df_enso is not None and not df_enso.empty:
+            prob_nina = df_enso.iloc[0]['Niña']
+            prob_nino = df_enso.iloc[0]['Niño']
+            
+            if prob_nina > 50: estado_actual = "Niña 🌧️"
+            elif prob_nino > 50: estado_actual = "Niño ☀️"
+            else: estado_actual = "Neutro ⚖️"
+            
+            st.session_state['enso_fase'] = estado_actual
+            st.toast(f"📡 Clima Global Sincronizado: Condición actual {estado_actual}", icon="✅")
+    except Exception as e:
+        st.session_state['enso_fase'] = "Neutro ⚖️"
+        st.toast("⚠️ No se pudo conectar con el servidor IRI. Usando clima Neutro.", icon="🔌")
+
 # --- 2. IMPORTACIONES ROBUSTAS ---
 try:
     # Módulos Base (Tus archivos subidos)
@@ -436,7 +459,6 @@ def main():
             if st.button("🚀 Ejecutar Modelo"):
                 st.session_state['ejecutar_aleph'] = True
             
-            # ... (código previo dentro del if session_state) ...
             if st.session_state.get('ejecutar_aleph', False):
                 col_close = st.columns([6, 1])[1]
                 if col_close.button("❌ Cerrar"):
@@ -460,13 +482,27 @@ def main():
                         df_anios_count = df_monthly_filtered.groupby(Config.STATION_NAME_COL)[Config.YEAR_COL].nunique().reset_index(name='n_anios')
                         gdf_calc = gdf_calc.merge(df_anios_count, on=Config.STATION_NAME_COL, how='left').fillna(0)
 
-                        # A. INTERPOLACIÓN
+                        # A. INTERPOLACIÓN HISTÓRICA BASE
                         dem_safe = np.nan_to_num(dem_array, nan=0)
-                        Z_P, Z_Err = physics.interpolar_variable(
+                        Z_P_base, Z_Err = physics.interpolar_variable(
                             gdf_calc, 'ppt_media', grid_x, grid_y, method=metodo, dem_array=dem_safe
                         )
-                        if metodo == 'ked': Z_P = np.maximum(Z_P, 0)
+                        if metodo == 'ked': Z_P_base = np.maximum(Z_P_base, 0)
 
+                        # 🌍 B. BISTURÍ: INYECCIÓN DE ESCENARIOS CMIP6 (Cambio Climático)
+                        # Buscamos si el usuario ajustó los sliders en la pestaña del simulador
+                        # (Si no existen, asumimos clima actual: 0% cambio ppt, +0°C temp)
+                        delta_ppt_sim = st.session_state.get('sim_delta_ppt', 0.0) 
+                        delta_temp_sim = st.session_state.get('sim_delta_temp', 0.0)
+
+                        # Modificamos la matriz de lluvia espacialmente
+                        Z_P_futuro = Z_P_base * (1 + (delta_ppt_sim / 100.0))
+                        
+                        # C. MOTOR FÍSICO DISTRIBUIDO (Ahora corre con el clima del futuro)
+                        matrices_finales = physics.run_distributed_model(
+                            Z_P_futuro, grid_x, grid_y, {'dem': dem_path, 'cobertura': cov_path}, bounds_calc
+                        )
+                        
                         # B. MOTOR FÍSICO
                         matrices_finales = physics.run_distributed_model(
                             Z_P, grid_x, grid_y, {'dem': dem_path, 'cobertura': cov_path}, bounds_calc
