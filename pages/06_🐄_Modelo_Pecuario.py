@@ -1,4 +1,4 @@
-# 06a_🐄_Modelo_Pecuario.py
+# 06__🐄_Modelo_Pecuario.py
 
 import streamlit as st
 import pandas as pd
@@ -131,32 +131,10 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
             for especie in ['Bovinos', 'Porcinos', 'Aves']:
                 ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'Sistema Hidrico', sis, especie)
 
-        # ==============================================================================
-        # 💾 EXPORTACIÓN AUTOMÁTICA A SQL (1 CLIC A PRODUCCIÓN)
-        # ==============================================================================
-        if 'df_matriz_pecuaria' in st.session_state:
-            st.markdown("---")
-            st.subheader("💾 Exportar Cerebro Pecuario a SQL (Para Producción)")
-            
-            # Rescatamos la matriz de la memoria
-            df_matriz_pec = st.session_state['df_matriz_pecuaria']
-            
-            if st.button("🚀 Subir Matriz Pecuaria a Base de Datos (SQL)", type="primary"):
-                with st.spinner("Conectando con PostgreSQL y guardando matriz..."):
-                    try:
-                        from modules.db_manager import get_engine
-                        engine_sql = get_engine()
-                        
-                        # Escribir directamente en la base de datos PostgreSQL
-                        df_matriz_pec.to_sql('matriz_maestra_pecuaria', engine_sql, if_exists='replace', index=False)
-                        
-                        st.success(f"✅ ¡Migración a SQL Exitosa! Matriz Pecuaria ({len(df_matriz_pec)} modelos) alojada automáticamente en la base de datos maestra.")
-                    except Exception as e:
-                        st.error(f"Error conectando a la base de datos SQL: {e}")
-            
-            # Mantenemos el botón de descarga solo como respaldo
-            csv_matriz = df_matriz_pec.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Respaldo (CSV)", data=csv_matriz, file_name="Matriz_Multimodelo_Pecuaria.csv", mime='text/csv')
+        # Guardamos en la memoria volátil para poder validar y exportar después
+        df_matriz_pec = pd.DataFrame(matriz_resultados)
+        st.session_state['df_matriz_pecuaria'] = df_matriz_pec 
+        st.success(f"✅ ¡Entrenamiento exitoso! {len(df_matriz_pec)} modelos matemáticos creados. Desplázate hacia abajo para validarlos y exportarlos.")
         
 # =====================================================================
 # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
@@ -262,18 +240,36 @@ if 'df_matriz_pecuaria' in st.session_state:
         renderizar_panel_pecuario(esp_2, "g2")
 
 # ==============================================================================
-# 💾 EXPORTACIÓN DEL CEREBRO A PRODUCCIÓN (NUEVA ARQUITECTURA)
+# 💾 EXPORTACIÓN AUTOMÁTICA A SQL Y DESCARGA (PRODUCCIÓN)
 # ==============================================================================
 if 'df_matriz_pecuaria' in st.session_state:
     st.markdown("---")
     st.subheader("💾 Exportar Cerebro Pecuario (Para Producción)")
-    st.info("💡 **Paso a Producción:** Descarga esta matriz ya calculada y súbela a tu bucket de Supabase.")
+    st.info("💡 Tu matriz ya está en memoria. Puedes inyectarla directamente a la base de datos o descargarla como archivo de respaldo.")
     
-    csv_pecu = st.session_state['df_matriz_pecuaria'].to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Descargar Matriz Maestra Pecuaria", 
-        data=csv_pecu, 
-        file_name="Matriz_Maestra_Pecuaria.csv", 
-        mime="text/csv",
-        type="primary"
-    )
+    # Rescatamos la matriz de la memoria
+    df_matriz_pec = st.session_state['df_matriz_pecuaria']
+    
+    col_btn1, col_btn2 = st.columns(2)
+    
+    with col_btn1:
+        if st.button("🚀 Inyectar a Base de Datos (SQL)", type="primary", use_container_width=True):
+            with st.spinner("Conectando con PostgreSQL (Supabase)..."):
+                try:
+                    from modules.db_manager import get_engine
+                    engine_sql = get_engine()
+                    df_matriz_pec.to_sql('matriz_maestra_pecuaria', engine_sql, if_exists='replace', index=False)
+                    st.success(f"✅ ¡Inyección Exitosa! {len(df_matriz_pec)} registros actualizados en PostgreSQL.")
+                except Exception as e:
+                    st.error(f"Error SQL: {e}")
+                    
+    with col_btn2:
+        # El botón de descarga siempre estará visible mientras la matriz exista en memoria
+        csv_matriz = df_matriz_pec.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Descargar Matriz (CSV de Respaldo)", 
+            data=csv_matriz, 
+            file_name="Matriz_Multimodelo_Pecuaria.csv", 
+            mime='text/csv',
+            use_container_width=True
+        )
