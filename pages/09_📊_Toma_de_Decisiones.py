@@ -140,15 +140,15 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
     
-    # 1. Recuperamos la Oferta desde el Aleph (O ponemos 14.5 como respaldo)
-    oferta_memoria = st.session_state.get('aleph_oferta_hidrica', 14.5)
+    # 1. Recuperamos la Oferta Matemática (Aleph) calculada en Hidrología
+    oferta_memoria = st.session_state.get('aleph_q_rio_m3s', 2.5) # Fallback ajustado a cuencas andinas reales
     
     # 2. Cajón Manual Híbrido: Lee la memoria, pero permite sobreescritura manual
     with st.expander("⚙️ Calibración de Oferta Hídrica Base", expanded=False):
         oferta_base = st.number_input(
             "Oferta Nominal del Sistema (m³/s):", 
             value=float(oferta_memoria), 
-            step=0.5,
+            step=0.1,
             help="Dato heredado de Sistemas Hídricos. Puedes modificarlo aquí para simular sequías extremas o nuevas represas."
         )
 
@@ -295,11 +295,12 @@ if gdf_zona is not None and not gdf_zona.empty:
             
         area_km2 = float(st.session_state.get('aleph_area_km2', area_km2_real))
         recarga_mm_base = float(st.session_state.get('aleph_recarga_mm', 350.0))
-        q_oferta_m3s_base = float(st.session_state.get('aleph_q_rio_m3s', 5.0))
-        
-        # Recuperar Metabolismo de la Memoria (Demanda y Cargas inyectadas desde otras páginas)
-        demanda_m3s_base = float(st.session_state.get('demanda_total_m3s', 0.5))
         carga_total_ton = float(st.session_state.get('carga_total_ton', 500.0))
+        
+        # 🛡️ UNIFICACIÓN TOTAL: Obligamos al tablero WRI a usar la oferta y demanda exactas del panel global
+        # (Esto garantiza que las proyecciones WRI reaccionen al Año, ENSO y Vacas/Humanos)
+        q_oferta_m3s_base = oferta_nominal 
+        demanda_m3s_base = demanda_m3s
         
         oferta_anual_m3 = q_oferta_m3s_base * 31536000
         recarga_anual_m3 = recarga_mm_base * area_km2 * 1000
@@ -480,10 +481,12 @@ if gdf_zona is not None and not gdf_zona.empty:
                         
         # --- 4. MOTORES DE CÁLCULO ACTUALES Y VELOCÍMETROS ---
         ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 100.0
-        ind_resiliencia = min(100.0, ((recarga_anual_m3 + oferta_anual_m3) / ((consumo_anual_m3+1) * 10)) * 100)
+        ind_resiliencia = min(100.0, ((recarga_anual_m3 + oferta_anual_m3) / ((consumo_anual_m3+1) * 2)) * 100)
         ind_estres = min(100.0, (consumo_anual_m3 / oferta_anual_m3) * 100) if oferta_anual_m3 > 0 else 100.0
+        
+        # 🛡️ BISTURÍ: Multiplicador agresivo para que la inversión en saneamiento mueva fuertemente el indicador
         factor_dilucion = (oferta_anual_m3 / (consumo_anual_m3 + 1)) 
-        ind_calidad = min(100.0, max(0.0, 50.0 + (factor_dilucion * 0.5) + (sist_saneamiento * 0.05)))
+        ind_calidad = min(100.0, max(0.0, 30.0 + (factor_dilucion * 0.1) + (sist_saneamiento * 0.8)))0.05)))
         
         st.markdown("---")
         st.subheader(f"🧭 Tablero de Seguridad Hídrica Integral: {nombre_zona}")
@@ -560,16 +563,22 @@ if gdf_zona is not None and not gdf_zona.empty:
                     f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
                     estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
                 
-                f_cli_total = f_cc_base + f_enso 
+                # 🛡️ Escudo anti-negativos para evitar colapsos matemáticos si el Niño es muy fuerte
+                f_cli_total = max(0.1, f_cc_base + f_enso) 
+                
                 o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
                 r_m3 = (recarga_mm_base * f_cli_total) * area_km2 * 1000
                 c_m3 = (demanda_m3s_base * f_dem) * 31536000
                 
                 n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
                 r = min(100.0, ((r_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
-                e = min(100.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 100.0
+                
+                # 🛡️ DESCONGELAMIENTO: Dejamos que el Estrés suba hasta 200% para ver los picos de escasez
+                e = min(200.0, (c_m3 / o_m3) * 100) if o_m3 > 0 else 200.0
+                
+                # 🛡️ MULTIPLICADOR AGRESIVO: La Calidad ahora reacciona fuertemente a las STAM/PTAR
                 fac_dil = (o_m3 / (c_m3 + 1))
-                cal = min(100.0, max(0.0, 50.0 + (fac_dil * 0.5) + (sist_saneamiento * 0.05)))
+                cal = min(100.0, max(0.0, 30.0 + (fac_dil * 0.1) + (sist_saneamiento * 0.8)))
                 
                 datos_proj.extend([
                     {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
@@ -581,7 +590,9 @@ if gdf_zona is not None and not gdf_zona.empty:
             fig_line1 = px.line(pd.DataFrame(datos_proj), x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
                                color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Estrés Hídrico": "#e74c3c", "Calidad": "#9b59b6"})
             fig_line1.add_hrect(y0=40, y1=100, fillcolor="red", opacity=0.05, layer="below")
-            fig_line1.update_layout(height=400, hovermode="x unified")
+            
+            # 🛡️ VISIBILIDAD: Ampliamos el eje Y hasta 160 (o más) para que la onda roja del estrés sea visible
+            fig_line1.update_layout(height=400, hovermode="x unified", yaxis_range=[0, 150])
             st.plotly_chart(fig_line1, use_container_width=True)
 
         with tab_escenarios:
