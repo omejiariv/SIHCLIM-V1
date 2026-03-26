@@ -307,7 +307,11 @@ if gdf_zona is not None:
             """, unsafe_allow_html=True)
             
             # INYECTAR A LA MEMORIA CENTRAL PARA CALIDAD Y TOMA DE DECISIONES
-            st.session_state['aleph_recarga_mm'] = float(rec_med)
+            # 🛡️ BISTURÍ ANTI-BUCLES: Solo actualizamos la memoria si el valor realmente cambió
+            # Esto evita que Streamlit entre en un ciclo infinito de recarga
+            recarga_float = float(rec_med)
+            if st.session_state.get('aleph_recarga_mm') != recarga_float:
+                st.session_state['aleph_recarga_mm'] = recarga_float
 
     st.divider()
 
