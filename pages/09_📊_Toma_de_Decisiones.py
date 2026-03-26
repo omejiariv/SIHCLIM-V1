@@ -580,7 +580,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
         
         # Mezcla (Ecuación de Continuidad Básica C0). mg/L = (mg/s) / (L/s)
-        carga_mg_s = (carga_final_rio_ton * 1_000_000) / 31536000 # Conversión de Ton/año a mg/s
+        carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 # Conversión de Ton/año a mg/s
         caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000   # Conversión de m3/año a L/s
         
         concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
