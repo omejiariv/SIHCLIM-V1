@@ -1262,7 +1262,36 @@ with tab_ecologia:
         
         with c_gap1:
             st.markdown("#### ⚙️ Parámetros del Corredor")
-            buffer_m = st.slider("Ancho de franja de protección por lado (m):", min_value=0, max_value=50, value=30, step=5)
+            
+            # 🌍 BISTURÍ: Verificar si hay una amenaza activa en la memoria de Geomorfología
+            amenaza_activa = 'aleph_twi_umbral' in st.session_state
+            
+            opciones_metodo = ["Estándar (Ley 99 de 1993)"]
+            if amenaza_activa: 
+                opciones_metodo.append("🛡️ Diseño por Amenaza (Nexo Físico)")
+                
+            tipo_buffer = st.radio("Metodología de Aislamiento:", opciones_metodo)
+            
+            if tipo_buffer == "Estándar (Ley 99 de 1993)":
+                buffer_m = st.slider("Ancho de franja de protección por lado (m):", min_value=0, max_value=100, value=30, step=5)
+            else:
+                st.success("🧠 **Nexo Físico Activo:** Leyendo llanura de inundación / torrencial de Geomorfología.")
+                
+                # 📣 EL MANIFIESTO DEL ARQUITECTO
+                st.markdown(f"""
+                <div style="border-left: 5px solid #2ecc71; padding: 15px; background-color: rgba(46, 204, 113, 0.1); border-radius: 5px; margin-bottom: 15px;">
+                    <h4 style="color: #27ae60; margin-top: 0;">🌳 Manifiesto de Resiliencia</h4>
+                    <b style="font-size: 0.95em;">Se requiere crear un bosque de protección y un corredor de biodiversidad sobre estas zonas de peligro para amortiguar el golpe, proteger a la población, restaurar el cauce natural del río y contribuir con la Seguridad Hídrica Integral de la cuenca.</b>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Traducimos la amenaza extrema (Q_max) a metros de protección requeridos
+                # A mayor caudal pico, más ancho se vuelve el bosque ripario de forma automática
+                q_max_memoria = st.session_state.get('aleph_q_max_m3s', 50.0)
+                buffer_calculado = max(30.0, float(np.log10(q_max_memoria + 1) * 35.0)) 
+                
+                st.info(f"🌊 Ancho de seguridad calculado por la física extrema del río: **{buffer_calculado:.1f} metros** por margen.")
+                buffer_m = buffer_calculado
             
             with st.spinner("Calculando red riparia (Álgebra Lineal Rápida)..."):
                 # 1. CÁLCULO MATEMÁTICO PURO (¡Cero colapsos de memoria!)
