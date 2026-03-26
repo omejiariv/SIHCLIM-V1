@@ -814,7 +814,7 @@ if gdf_zona_seleccionada is not None:
                             tc_kirpich_min = 0
 
                     with col_q:
-                        st.markdown("**2. Caudal Pico (Q) - Método Racional**")
+                        st.markdown("**2. Caudal Pico Extremo (Q) - Método Racional Integrado**")
                         
                         # --- CÁLCULO AUTOMÁTICO DE C (COBERTURAS) ---
                         c_sugerido = 0.50 # Default
@@ -823,42 +823,55 @@ if gdf_zona_seleccionada is not None:
                         PATH_COB = "data/Cob25m_WGS84.tif"
                         if land_cover and os.path.exists(PATH_COB):
                             try:
-                                # Calcular estadísticas de cobertura para la zona
                                 stats_cob = land_cover.calcular_estadisticas_zona(gdf_zona_seleccionada, PATH_COB)
                                 if stats_cob:
-                                    # Ponderación simple según valores típicos del método racional
-                                    # Urbano: 0.85, Cultivo: 0.6, Pasto: 0.5, Bosque: 0.3, Agua: 1.0
                                     c_pond = 0
                                     for cob, pct in stats_cob.items():
                                         peso = pct / 100.0
                                         val_c = 0.5
                                         if "Urbano" in cob or "Industrial" in cob: val_c = 0.85
                                         elif "Cultivo" in cob: val_c = 0.60
-                                        elif "Pasto" in cob or "Herbácea" in cob: val_c = 0.45
+                                        elif "Pasto" in  cob or "Herbácea" in cob: val_c = 0.45
                                         elif "Bosque" in cob: val_c = 0.30
                                         elif "Agua" in cob: val_c = 1.0
                                         c_pond += val_c * peso
-                                    
                                     c_sugerido = c_pond
-                                    # Texto resumen
                                     top_3 = sorted(stats_cob.items(), key=lambda x: x[1], reverse=True)[:3]
                                     detalle_cob = ", ".join([f"{k} ({v:.0f}%)" for k,v in top_3])
                             except: pass
 
-                        i_rain = st.slider("Intensidad de Lluvia (I) [mm/h]:", 10, 200, 50, 10)
-                        
                         c_runoff = st.slider(
                             "Coeficiente de Escorrentía (C):", 
                             0.1, 1.0, float(c_sugerido), 0.05,
                             help=f"Valor sugerido basado en coberturas satelitales: {c_sugerido:.2f}\nPredomina: {detalle_cob}"
                         )
-                        
                         if c_sugerido != 0.5:
                             st.caption(f"🛰️ **C Calculado:** {c_sugerido:.2f} ({detalle_cob})")
+
+                        # 🌍 BISTURÍ: INYECCIÓN ESTADÍSTICA (GUMBEL)
+                        st.markdown("---")
+                        st.markdown("##### ⛈️ Tormenta de Diseño (Nexo Estadístico)")
                         
-                        q_peak = 0.278 * c_runoff * i_rain * area_km2
+                        ppt_100a_memoria = st.session_state.get('aleph_ppt_100a', 120.0) # Fallback educado
                         
-                        st.metric("Caudal Pico Estimado (Q)", f"{q_peak:.2f} m³/s")
+                        if 'aleph_ppt_100a' in st.session_state:
+                            st.success(f"🧠 **Gumbel Sincronizado:** Lluvia Tr=100 años es de **{ppt_100a_memoria:.1f} mm**.")
+                        
+                        p_diseno = st.number_input("Precipitación Extrema 24h [mm]:", min_value=10.0, value=float(ppt_100a_memoria), step=5.0, help="Representa la lluvia de un evento extremo (ej. Periodo de Retorno de 100 años).")
+                        
+                        # Fusión Física: Intensidad = Precipitación / Tiempo de Concentración
+                        tc_horas = tc_kirpich_min / 60 if tc_kirpich_min > 0 else 1.0
+                        i_rain_calc = p_diseno / tc_horas
+                        
+                        st.info(f"⚡ **Intensidad Desagregada (I):** {i_rain_calc:.1f} mm/h *(Asumiendo el peor escenario: toda la lluvia cae concentrada en el Tc de {tc_horas:.2f}h)*.")
+                        
+                        # Cálculo Final Racional
+                        q_peak = 0.278 * c_runoff * i_rain_calc * area_km2
+                        
+                        # 🌐 INYECCIÓN AL ALEPH: Reemplazamos el caudal máximo global con este, que es hiper-preciso
+                        st.session_state['aleph_q_max_m3s'] = float(q_peak)
+                        
+                        st.metric("Caudal Pico Definitivo (Q)", f"{q_peak:,.2f} m³/s", "Inyectado a la Turbina Central (Amenazas)")
                         st.caption("Fórmula: $Q = 0.278 \cdot C \cdot I \cdot A$")
     
                 except Exception as e:
@@ -962,19 +975,43 @@ if gdf_zona_seleccionada is not None:
                     
                     t1, t2 = st.tabs(["🔴 Avenida Torrencial", "🔵 Inundación (TWI)"])
                     
-                    # 1. TORRENCIAL
+                    # 1. TORRENCIAL (NEXO FÍSICO CON ALEPH)
                     with t1:
-                        c1, c2 = st.columns([1, 3])
-                        with c1:
-                            st.markdown("#### Parámetros Físicos")
-                            s_range = st.slider("Pendiente Crítica (°)", 0.0, 60.0, (5.0, 40.0), key="s_torrencial")
-                            a_umb = st.slider("Acumulación (Log)", 4.0, 9.0, 6.0, key="a_torrencial")
-                            st.warning("Detectando flujos de alta energía.")
-                        with c2:
+                        c_t1, c_t2 = st.columns([1, 3])
+                        with c_t1:
+                            st.markdown("#### Parámetros Físicos y Energía")
+                            
+                            # 🌍 BISTURÍ: Inyección de Oferta Extrema (Desde Pág 01)
+                            q_max_aleph = st.session_state.get('aleph_q_max_m3s', 0.0)
+                            
+                            s_range = st.slider("Rango de Pendiente Crítica (°)", 0.0, 60.0, (15.0, 45.0), key="s_torrencial", help="Las avenidas torrenciales (flujos de detritos) ocurren típicamente en laderas con más de 15° de inclinación.")
+                            
+                            if q_max_aleph > 0:
+                                st.success(f"🧠 **Caudal Pico Sincronizado:** {q_max_aleph:,.1f} m³/s")
+                                # Ecuación empírica: A mayor caudal, menor acumulación necesaria para detonar un flujo
+                                a_sugerido = max(4.0, 8.5 - np.log10(q_max_aleph + 1))
+                            else:
+                                st.warning("⚠️ Usando energía teórica. Ejecuta el Aleph en la Pág 01.")
+                                a_sugerido = 6.0
+                                
+                            a_umb = st.slider(
+                                "Umbral de Energía (Acumulación Log):", 
+                                min_value=4.0, max_value=9.0, 
+                                value=float(a_sugerido), step=0.1, key="a_torrencial",
+                                help="El modelo ajusta esto según el caudal pico. Valores más bajos indican que ríos más pequeños tendrán suficiente energía para arrastrar rocas."
+                            )
+                            st.warning("Detectando zonas de alta energía cinética y arrastre.")
+                            
+                            if st.button("🚀 Guardar Zona Torrencial (Para Biodiversidad)"):
+                                st.session_state['aleph_twi_umbral'] = a_umb
+                                st.session_state['aleph_pendiente_max'] = s_range[1]
+                                st.session_state['aleph_pendiente_min'] = s_range[0]
+                                st.toast("✅ Zona torrencial guardada para diseño de bosques de protección.", icon="🪨")
+
+                        with c_t2:
                             mask_t = (s_core >= s_range[0]) & (s_core <= s_range[1]) & (a_core_log >= a_umb)
-                            caja_analisis_ai(mask_t, "Avenida Torrencial")
-                            # Pasamos gdf_zona_seleccionada para dibujar el borde verde
-                            mapa_amenaza_contexto(mask_t, "red", "Amenaza: Avenida Torrencial", gdf_zona_seleccionada)
+                            caja_analisis_ai(mask_t, "Avenida Torrencial (Flujo de Detritos)")
+                            mapa_amenaza_contexto(mask_t, "#e74c3c", f"Zonas de Alta Energía / Susceptibilidad Torrencial", gdf_zona_seleccionada)
 
                     # 2. INUNDACIÓN (NEXO FÍSICO CON ALEPH)
                     with t2:
