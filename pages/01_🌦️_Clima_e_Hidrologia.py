@@ -791,9 +791,22 @@ if __name__ == "__main__":
                 import geopandas as gpd
                 from sqlalchemy import text
                 
-                with st.spinner("Procesando todas las unidades territoriales (Esto tomará unos minutos)..."):
+                with st.spinner("Procesando y agrupando unidades territoriales (Fusión Espacial)..."):
                     # 1. Cargar Geometrías de Cuencas
                     gdf_all = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
+                    
+                    # 🧠 BISTURÍ 1: Identificar columnas de jerarquía disponibles
+                    col_map = {c.upper(): c for c in gdf_all.columns}
+                    cols_jerarquia_deseadas = ['AH', 'ZH', 'SZH', 'ZONA', 'N_NSS1', 'SUBC_LBL', 'N_NSS3']
+                    cols_presentes = [col_map[c] for c in cols_jerarquia_deseadas if c in col_map]
+                    
+                    # 🌍 BISTURÍ 2: Fusión (Dissolve) de polígonos fragmentados
+                    # Agrupamos por la columna seleccionada y conservamos el primer valor de las jerarquías
+                    agg_dict = {c: 'first' for c in cols_presentes if c != col_nom_rep}
+                    if agg_dict:
+                        gdf_dissolved = gdf_all.dissolve(by=col_nom_rep, aggfunc=agg_dict).reset_index()
+                    else:
+                        gdf_dissolved = gdf_all.dissolve(by=col_nom_rep).reset_index()
                     
                     # 2. Cargar Estaciones con Altitud
                     q_est = text("SELECT id_estacion, altitud, ST_SetSRID(ST_MakePoint(CAST(longitud AS FLOAT), CAST(latitud AS FLOAT)), 4326) as geometry FROM estaciones WHERE latitud IS NOT NULL")
@@ -807,50 +820,51 @@ if __name__ == "__main__":
                     res = []
                     prog = st.progress(0)
                     
-                    # 4. El Bucle Espacial (Fuerza Bruta)
-                    for i, row in gdf_all.iterrows():
-                        nom = str(row.get(col_nom_rep, f"Cuenca {i}"))
+                    # 4. El Bucle Espacial (Sobre los polígonos fusionados)
+                    for i, row in gdf_dissolved.iterrows():
+                        nom = str(row.get(col_nom_rep, f"Unidad {i}"))
                         area_km2 = row.geometry.area / 1e6
                         
-                        if area_km2 <= 0: area_km2 = 1.0 # Seguro contra geometrías inválidas
+                        if area_km2 <= 0: area_km2 = 1.0
                         
-                        # Búsqueda de estaciones cercanas (Buffer de 20km)
                         buf = row.geometry.buffer(20000)
                         est_in = gdf_est[gdf_est.geometry.within(buf)]
                         
-                        ppt_media = 2500.0 # Promedio Antioquia fallback
+                        ppt_media = 2500.0 
                         altitud_media = 1500.0
                         
                         if not est_in.empty:
                             ids = est_in['id_estacion'].tolist()
                             vals_ppt = df_rain[df_rain['id_estacion'].isin(ids)]['ppt']
-                            if not vals_ppt.empty: 
-                                ppt_media = vals_ppt.mean()
+                            if not vals_ppt.empty: ppt_media = vals_ppt.mean()
                             
-                            # Intentar sacar altitud real de las estaciones
                             vals_alt = est_in['altitud'].dropna()
-                            if not vals_alt.empty:
-                                altitud_media = vals_alt.mean()
+                            if not vals_alt.empty: altitud_media = vals_alt.mean()
                         
-                        # 5. Física Fundamental (Turc Modificado)
                         temp_calc = max(5.0, 28.0 - (0.006 * altitud_media))
                         L = 300 + 25*temp_calc + 0.05*(temp_calc**3)
                         etr = ppt_media / np.sqrt(0.9 + (ppt_media/L)**2) if L > 0 else 0
                         
                         escorrentia_total = ppt_media - etr
-                        
-                        # Asignación conservadora regional (15% a recarga profunda, resto a escorrentía rápida)
                         recarga_mm = escorrentia_total * 0.15
                         escorrentia_superficial = escorrentia_total * 0.85
                         
-                        # Caudales Anuales
                         q_medio = (escorrentia_superficial * area_km2 * 1000) / 31536000
                         q_base = (recarga_mm * area_km2 * 1000) / 31536000
                         q_total = q_medio + q_base
 
-                        res.append({
-                            "Unidad_Analisis": "Cuenca",
-                            "Nombre": nom, 
+                        # Construcción del Registro Final con Jerarquías
+                        registro = {
+                            "Nivel_Analisis": col_nom_rep.upper(),
+                            "Territorio": nom
+                        }
+                        
+                        # Añadir jerarquías dinámicamente
+                        for c in cols_presentes:
+                            registro[c.upper()] = str(row.get(c, ""))
+                            
+                        # Añadir cálculos físicos
+                        registro.update({
                             "Area_km2": round(area_km2, 2), 
                             "Altitud_m": round(altitud_media, 0),
                             "Temp_C": round(temp_calc, 1),
@@ -861,18 +875,18 @@ if __name__ == "__main__":
                             "Caudal_Medio_m3s": round(q_total, 3)
                         })
                         
-                        prog.progress((i+1)/len(gdf_all))
+                        res.append(registro)
+                        prog.progress((i+1)/len(gdf_dissolved))
                     
-                    # 6. Guardar la Matriz Maestra en SQL
+                    # 5. Guardar la Matriz Maestra
                     df_matriz = pd.DataFrame(res)
                     df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='replace', index=False)
                     
                     st.success("✅ Matriz Maestra forjada y almacenada con éxito en la base de datos.")
                     st.dataframe(df_matriz.head(10))
                     
-                    # Permite descargar por si el gerente la quiere en Excel
                     csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Descargar Matriz (CSV)", csv_matriz, "Matriz_Hidro_Maestra.csv", "text/csv")
+                    st.download_button("📥 Descargar Matriz Expandida (CSV)", csv_matriz, "Matriz_Hidro_Maestra.csv", "text/csv")
                     
             except Exception as e:
                 st.error(f"Error crítico en la forja de la matriz: {e}")
