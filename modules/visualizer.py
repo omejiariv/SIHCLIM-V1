@@ -4925,28 +4925,32 @@ def display_climate_scenarios_tab(**kwargs):
             },
         }
 
-        st.markdown("##### 🎛️ Ajuste Manual de Escenarios (Simulación)")
+    st.markdown("##### 🎛️ Ajuste Manual de Escenarios (Simulación)")
+        st.info("💡 **NEXO FÍSICO ACTIVO:** Los valores que ajustes aquí se inyectarán en la Turbina Central. Si subes y presionas 'Ejecutar Modelo', los mapas y caudales se recalcularán usando este clima futuro.")
+        
         c_sim1, c_sim2 = st.columns(2)
         with c_sim1:
             delta_temp = st.slider(
                 "Aumento de Temperatura (°C):",
-                0.0,
-                5.0,
-                1.5,
-                0.1,
-                help="Simular aumento de temperatura.",
+                min_value=0.0,
+                max_value=5.0,
+                value=1.5,
+                step=0.1,
+                help="Simular aumento de temperatura. Aumenta la Evapotranspiración en el modelo físico.",
+                key="sim_delta_temp" # 🔗 CONEXIÓN AL MODELO FÍSICO (Memoria Global)
             )
         with c_sim2:
             delta_ppt = st.slider(
                 "Cambio en Precipitación (%):",
-                -30,
-                30,
-                -5,
-                1,
-                help="Simular cambio porcentual.",
+                min_value=-30,
+                max_value=30,
+                value=-5,
+                step=1,
+                help="Simular cambio porcentual en la lluvia. Altera la escorrentía y recarga en el modelo físico.",
+                key="sim_delta_ppt" # 🔗 CONEXIÓN AL MODELO FÍSICO (Memoria Global)
             )
 
-        if st.button("🚀 Simular Escenario Futuro"):
+        if st.button("🚀 Calcular Impacto Teórico Inicial"):
             et_increase = delta_temp * 3
             water_balance_change = delta_ppt - et_increase
             st.metric(
@@ -4955,7 +4959,7 @@ def display_climate_scenarios_tab(**kwargs):
                 delta="Déficit Hídrico" if water_balance_change < 0 else "Excedente",
                 delta_color="inverse",
             )
-            st.caption(f"Nota: Aumento de ET estimado: {et_increase:.1f}%.")
+            st.caption(f"Nota: Aumento de ET estimado: {et_increase:.1f}%. Para ver el impacto real en el caudal (m³/s), ejecuta el Modelo Hidrológico en la parte superior.")
 
         st.divider()
 
@@ -4988,7 +4992,7 @@ def display_climate_scenarios_tab(**kwargs):
 
             plot_data.append(
                 {
-                    "Escenario": "Mi Simulación (Manual)",
+                    "Escenario": "Mi Simulación (CMIP6 Inyectado)",
                     "Anomalía Temperatura (°C)": delta_temp,
                     "Anomalía Precipitación (%)": delta_ppt,
                     "Tipo": "Usuario",
@@ -5034,6 +5038,20 @@ def display_climate_scenarios_tab(**kwargs):
                     orientation="h",
                 )
                 st.plotly_chart(fig_temp, use_container_width=True)
+
+            st.markdown("##### 📋 Detalles de Escenarios")
+            st.dataframe(
+                df_sim[
+                    [
+                        "Escenario",
+                        "Anomalía Precipitación (%)",
+                        "Anomalía Temperatura (°C)",
+                        "Tipo",
+                    ]
+                ],
+            )
+        else:
+            st.warning("Seleccione escenarios para comparar.")
 
             st.markdown("##### 📋 Detalles de Escenarios")
             st.dataframe(
