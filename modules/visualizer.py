@@ -4413,8 +4413,17 @@ def display_drought_analysis_tab(df_long, gdf_stations, **kwargs):
         df_g[Config.YEAR_COL] = df_g[Config.DATE_COL].dt.year
         res_df, debug_data = calculate_return_periods(df_g, selected_station)
         if res_df is not None:
+            
+            # 🌐 BISTURÍ: Atrapar el Tr=100 y mandarlo al Aleph
+            try:
+                ppt_100 = res_df.loc[res_df["Período de Retorno (Tr)"] == 100, "Ppt Máxima Esperada (mm)"].values[0]
+                st.session_state['aleph_ppt_100a'] = float(ppt_100)
+            except: pass
+            
             c1, c2 = st.columns([1, 2])
-            with c1: st.dataframe(res_df.style.format({"Ppt Máxima Esperada (mm)": "{:.1f}"}))
+            with c1: 
+                st.dataframe(res_df.style.format({"Ppt Máxima Esperada (mm)": "{:.1f}"}))
+                st.success("🧠 Lluvia extrema (Tr=100) enviada al modelo de Geomorfología.")
             with c2:
                 tr = np.linspace(1.01, 100, 100)
                 ppt_plot = stats.gumbel_r.ppf(1 - (1/tr), *debug_data["params"])
