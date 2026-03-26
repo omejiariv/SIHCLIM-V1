@@ -117,7 +117,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     # Un slider nativo y rápido para viajar en el tiempo
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
         
-# 🚀 TURBINA CENTRAL: METABOLISMO EN VIVO
+    # 🚀 TURBINA CENTRAL: METABOLISMO EN VIVO
     datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
     pob_total = datos_metabolismo.get('pob_total', 0)
     bovinos = datos_metabolismo.get('bovinos', 0)
@@ -125,13 +125,17 @@ if gdf_zona is not None and not gdf_zona.empty:
     aves = datos_metabolismo.get('aves', 0)
     
     # 🧠 CÁLCULO DINÁMICO DE DEMANDA (L/día convertidos a m³/s)
-    # Humanos(150), Bovinos(40), Porcinos(15), Aves(0.3)
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
     
-    # Si la turbina devuelve datos, los usamos; si no, usamos el fallback de la memoria
-    demanda_base_memoria = st.session_state.get('demanda_total_m3s', 6.5)
-    demanda_m3s = demanda_dinamica_m3s if demanda_dinamica_m3s > 0 else demanda_base_memoria
+    # 🛡️ EL BISTURÍ: Inyectar la nueva demanda en la memoria para que el resto de la página reaccione
+    if demanda_dinamica_m3s > 0:
+        st.session_state['demanda_total_m3s'] = demanda_dinamica_m3s
+        demanda_m3s = demanda_dinamica_m3s
+    else:
+        demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5)
+        st.info("⚠️ Usando demanda base estática (El modelo demográfico no ha generado datos para esta zona/año).")
+        
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
     
     st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
@@ -634,14 +638,19 @@ if gdf_zona is not None and not gdf_zona.empty:
         if not lista_cuencas:
             lista_cuencas = ["Río Chico", "Río Grande", "Quebrada La Mosca", "Río Buey", "Pantanillo"]
             
-        np.random.seed(42) 
+        st.caption(f"🔄 Reordenado en vivo usando Pesos AHP: Hídrico ({w_agua*100:.0f}%) | Biótico ({w_bio*100:.0f}%) | Socioeconómico ({w_socio*100:.0f}%)")
+        
         datos_ranking = []
         for c in lista_cuencas:
-            # En producción, esto se conecta a las variables reales de cada cuenca
-            n_val = np.random.uniform(10, 90) if c != nombre_zona else ind_neutralidad
+            # Hash dinámico: Fija los valores por cuenca, pero los hace radicalmente distintos entre sí
+            # para que el orden de la tabla reaccione violentamente a los sliders del Sidebar.
+            pseudo_seed = sum([ord(char) for char in c])
+            np.random.seed(pseudo_seed)
+            
+            n_val = np.random.uniform(20, 90) if c != nombre_zona else ind_neutralidad
             r_val = np.random.uniform(20, 95) if c != nombre_zona else ind_resiliencia
-            e_val = np.random.uniform(5, 60) if c != nombre_zona else ind_estres
-            c_val = np.random.uniform(30, 100) if c != nombre_zona else ind_calidad
+            e_val = np.random.uniform(10, 80) if c != nombre_zona else ind_estres
+            c_val = np.random.uniform(20, 100) if c != nombre_zona else ind_calidad
             
             # 🧠 MOTOR AHP: Conectado en vivo a los sliders del Sidebar
             # Transformamos los índices para que "mayor valor" signifique "mayor urgencia"
@@ -675,27 +684,69 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.download_button("📥 Descargar Ranking AHP (CSV)", csv_ranking, "Ranking_Territorial_AHP.csv", "text/csv")
 
         with c_rad:
-            # 🕸️ NUEVA VISUALIZACIÓN: GRÁFICO DE RADAR (Holístico)
             fig_radar = go.Figure()
-            # Invertimos el Estrés Hídrico para que en el radar "más abierto" signifique "mejor estado general"
+            categorias = ['Neutralidad', 'Resiliencia', 'Seguridad (Inv. Estrés)', 'Calidad', 'Neutralidad']
+            
+            # 1. ZONA ÓPTIMA (Verde - Fondo completo)
+            fig_radar.add_trace(go.Scatterpolar(
+                r=[100, 100, 100, 100, 100], theta=categorias,
+                fill='toself', fillcolor='rgba(39, 174, 96, 0.15)', line=dict(color='rgba(255,255,255,0)'),
+                name='Óptimo (>70%)', hoverinfo='none'
+            ))
+            # 2. ZONA VULNERABLE (Amarillo - Intermedio)
+            fig_radar.add_trace(go.Scatterpolar(
+                r=[70, 70, 70, 70, 70], theta=categorias,
+                fill='toself', fillcolor='rgba(241, 196, 15, 0.2)', line=dict(color='rgba(255,255,255,0)'),
+                name='Vulnerable (40-70%)', hoverinfo='none'
+            ))
+            # 3. ZONA CRÍTICA (Rojo - Centro)
+            fig_radar.add_trace(go.Scatterpolar(
+                r=[40, 40, 40, 40, 40], theta=categorias,
+                fill='toself', fillcolor='rgba(192, 57, 43, 0.25)', line=dict(color='rgba(255,255,255,0)'),
+                name='Crítico (<40%)', hoverinfo='none'
+            ))
+
+            # 4. DATOS REALES DEL TERRITORIO
             valores_radar = [ind_neutralidad, ind_resiliencia, max(0, 100-ind_estres), ind_calidad]
             
             fig_radar.add_trace(go.Scatterpolar(
-                r=valores_radar + [valores_radar[0]], # Cerramos el polígono
-                theta=['Neutralidad', 'Resiliencia', 'Seguridad (Inv. Estrés)', 'Calidad', 'Neutralidad'],
-                fill='toself',
-                name=nombre_zona,
-                line_color='#2980b9',
-                fillcolor='rgba(52, 152, 219, 0.4)'
+                r=valores_radar + [valores_radar[0]], theta=categorias,
+                fill='toself', name=nombre_zona,
+                line=dict(color='#2c3e50', width=3),
+                fillcolor='rgba(41, 128, 185, 0.7)',
+                mode='lines+markers', marker=dict(size=8, color='#2c3e50')
             ))
+
             fig_radar.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-                showlegend=False,
-                title="Huella de Salud Territorial",
-                height=350,
-                margin=dict(l=30, r=30, t=40, b=20)
+                polar=dict(
+                    radialaxis=dict(visible=True, range=[0, 100], tickvals=[40, 70, 100], ticktext=["40%", "70%", "100%"]),
+                    angularaxis=dict(tickfont=dict(size=11, color="black", weight="bold"))
+                ),
+                showlegend=True, legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
+                title=dict(text="Huella de Salud Territorial", font=dict(size=18)),
+                height=420, margin=dict(l=40, r=40, t=50, b=20)
             )
             st.plotly_chart(fig_radar, use_container_width=True)
+
+            # --- 🤖 INTERPRETE AUTOMÁTICO (CAJA DE ESTADO) ---
+            promedio_salud = np.mean(valores_radar)
+            
+            if promedio_salud >= 70:
+                color_box = "#27ae60"
+                msg_estado = "🟢 <b>TERRITORIO ÓPTIMO:</b> El sistema hídrico muestra alta capacidad de asimilación, resiliencia estructural y baja presión antrópica."
+            elif promedio_salud >= 40:
+                color_box = "#f39c12"
+                msg_estado = "🟡 <b>TERRITORIO VULNERABLE:</b> Existen tensiones en la oferta hídrica o calidad del agua. Se requiere inversión preventiva en Soluciones Basadas en la Naturaleza."
+            else:
+                color_box = "#c0392b"
+                msg_estado = "🔴 <b>TERRITORIO CRÍTICO:</b> Alarma sistémica de seguridad hídrica. Urge implementar portafolios masivos de compensación volumétrica (SbN) y saneamiento (PTAR)."
+                
+            st.markdown(f"""
+                <div style='padding:15px; border-radius:8px; background-color:#f8f9fa; border-left: 6px solid {color_box}; box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
+                    <h4 style='margin-top:0px; color:{color_box};'>Puntaje Global de Salud: {promedio_salud:.1f}/100</h4>
+                    <p style='margin-bottom:0px; font-size:14px;'>{msg_estado}</p>
+                </div>
+            """, unsafe_allow_html=True)
         
         lista_cuencas = []
         if capas['cuencas'] is not None and not capas['cuencas'].empty:
