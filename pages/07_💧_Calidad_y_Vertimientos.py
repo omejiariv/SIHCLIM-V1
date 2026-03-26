@@ -1011,11 +1011,28 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
             help="A mayor altitud, menor área aportante (menos caudal) y menor temperatura del agua."
         )
         
-        # 🌊 MOTOR HIPSOMÉTRICO
-        q_base_cuenca = 5.0
-        if 'aleph_q_rio_m3s' in st.session_state and st.session_state['aleph_q_rio_m3s'] > 0:
-            q_base_cuenca = float(st.session_state['aleph_q_rio_m3s'])
+        # 🌊 MOTOR HIPSOMÉTRICO Y CONEXIÓN ALEPH
+        # Leemos los caudales físicos reales inyectados por la Página 01 (Clima e Hidrología)
+        aleph_q_medio = st.session_state.get('aleph_q_rio_m3s', 0.0)
+        aleph_q_min = st.session_state.get('aleph_q_min_m3s', 0.0)
+        
+        # Interfaz para que el usuario decida qué escenario de dilución simular
+        st.markdown("---")
+        tipo_escenario = st.radio(
+            "🌊 Escenario Hidrológico para Dilución (Conexión Aleph):", 
+            ["🏜️ Peor Escenario: Caudal de Estiaje / Mínimo (Recomendado MADS)", "🌊 Escenario Promedio: Caudal Medio"], 
+            horizontal=True
+        )
+        
+        # Lógica de asignación y Fallback
+        if "Estiaje" in tipo_escenario:
+            q_base_cuenca = float(aleph_q_min) if aleph_q_min > 0 else 1.25 # Fallback teórico de estiaje
+        else:
+            q_base_cuenca = float(aleph_q_medio) if aleph_q_medio > 0 else 5.0 # Fallback teórico medio
             
+        if aleph_q_medio <= 0:
+            st.warning("⚠️ **Alerta de Contexto:** No se detectó un modelo hidrológico en memoria. Se están usando caudales genéricos de respaldo. Ve a 'Clima e Hidrología' y ejecuta el Aleph para usar caudales reales.")
+
         frac_area, fuente_hipso, eq_hipso = calcular_area_inversa(h_descarga, res_hipso_actual)
         q_rio = max(0.01, q_base_cuenca * frac_area)
         
