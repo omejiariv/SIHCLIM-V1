@@ -529,74 +529,118 @@ if gdf_zona is not None:
         except Exception as e:
             st.error(f"Error renderizando mapa: {e}")
 
-    # --- TAB 3: MAPA DE RECARGA (MOTOR ESPACIAL BLINDADO) ---
+    # --- TAB 3: MAPA DE RECARGA (SUPERFICIE CONTINUA Y SEGURA) ---
     with tab3:
         st.markdown("##### 💧 Distribución Espacial de la Oferta Subterránea")
         
         if 'df_mapa_stats' not in locals() or df_mapa_stats.empty or 'recarga_calc' not in df_mapa_stats.columns:
             st.warning("⚠️ No hay datos suficientes para generar el mapa. Verifica las estaciones.")
         else:
-            # 1. Limpieza estricta de datos nulos (Esto evita el 99% de los colapsos)
+            # 1. Limpieza estricta de datos nulos
             df_valid = df_mapa_stats.dropna(subset=['latitud', 'longitud', 'recarga_calc']).copy()
             
-            if len(df_valid) < 1:
-                st.warning("⚠️ Las estaciones no tienen coordenadas válidas para el mapeo.")
+            # 🛡️ LA REGLA DE ORO GEOMÉTRICA: Mínimo 3 estaciones para crear una superficie
+            if len(df_valid) < 3:
+                st.warning(f"⚠️ **Faltan Puntos de Control:** Se encontraron {len(df_valid)} estación(es) válida(s). Para generar un mapa de superficie continua mediante interpolación matemática, se requieren **mínimo 3 estaciones** que formen un polígono espacial.")
+                
+                st.info("💡 **Solución:** Ve al panel lateral (Sidebar), aumenta el 'Buffer de Búsqueda (Grados)' y vuelve a procesar para capturar estaciones vecinas que rodeen tu cuenca.")
+                
+                # Fallback: Mostrar al menos los puntos y la cuenca si hay 1 o 2 estaciones
+                if len(df_valid) > 0:
+                    with st.spinner("Mostrando puntos de control disponibles..."):
+                        c_lat = df_valid['latitud'].mean()
+                        c_lon = df_valid['longitud'].mean()
+                        m_recarga_fallback = folium.Map(location=[c_lat, c_lon], zoom_start=10, tiles='cartodbpositron')
+
+                        if gdf_zona is not None and not gdf_zona.empty:
+                            gdf_zona_4326 = gdf_zona.to_crs(epsg=4326)
+                            folium.GeoJson(
+                                gdf_zona_4326,
+                                name="Límite de Análisis",
+                                style_function=lambda x: {'fillColor': 'none', 'color': '#2c3e50', 'weight': 3, 'dashArray': '5, 5'}
+                            ).add_to(m_recarga_fallback)
+
+                        for idx, row in df_valid.iterrows():
+                            folium.CircleMarker(
+                                location=[row['latitud'], row['longitud']],
+                                radius=8, color="black", weight=1, fill=True, fill_color="#3498db", fill_opacity=0.8,
+                                popup=f"<b>Estación:</b> {row['nombre']}<br><b>Recarga:</b> {row['recarga_calc']:.1f} mm/año"
+                            ).add_to(m_recarga_fallback)
+
+                        st_folium(m_recarga_fallback, width="100%", height=500, key="mapa_recarga_fallback")
+
             else:
-                with st.spinner("Renderizando mapa de recarga y límites de cuenca..."):
+                # 🛡️ MOTOR DE SUPERFICIE CONTINUA (Griddata Blindado)
+                with st.spinner("Calculando superficie continua de recarga (Interpolación de grilla)..."):
                     try:
-                        # 2. Centrar el mapa
                         c_lat = df_valid['latitud'].mean()
                         c_lon = df_valid['longitud'].mean()
                         m_recarga = folium.Map(location=[c_lat, c_lon], zoom_start=10, tiles='cartodbpositron')
 
-                        # 3. 🛡️ INYECCIÓN DEL LÍMITE FÍSICO (La Cuenca)
+                        # 1. Dibujar el Límite de la Cuenca
                         if gdf_zona is not None and not gdf_zona.empty:
-                            gdf_zona_4326 = gdf_zona.to_crs(epsg=4326) # Asegurar proyección web
+                            gdf_zona_4326 = gdf_zona.to_crs(epsg=4326)
                             folium.GeoJson(
                                 gdf_zona_4326,
-                                name="Límite de Análisis (Cuenca/Municipio)",
-                                style_function=lambda x: {
-                                    'fillColor': '#3498db', 
-                                    'fillOpacity': 0.1, 
-                                    'color': '#2c3e50', 
-                                    'weight': 3, 
-                                    'dashArray': '5, 5'
-                                },
-                                tooltip="Zona de Recarga Directa"
+                                name="Límite de Análisis",
+                                style_function=lambda x: {'fillColor': 'none', 'color': '#2c3e50', 'weight': 3, 'dashArray': '5, 5'}
                             ).add_to(m_recarga)
 
-                        # 4. Mapeo Rápido de Estaciones (Colores dinámicos según recarga)
-                        # Reemplazamos el griddata pesado por un mapeo de calor puntual nativo
-                        from branca.colormap import LinearColormap
-                        min_r = df_valid['recarga_calc'].min()
-                        max_r = df_valid['recarga_calc'].max()
+                        # 2. Interpolación Matemática (griddata)
+                        import numpy as np
+                        from scipy.interpolate import griddata
+                        import matplotlib.cm as cm
+                        from matplotlib.colors import Normalize
                         
-                        # Si todos los valores son iguales, ajustamos para evitar error matemático
-                        if min_r == max_r: max_r += 1.0 
+                        # Definir los límites de la caja matemática
+                        margen = 0.1
+                        min_lon, max_lon = df_valid['longitud'].min() - margen, df_valid['longitud'].max() + margen
+                        min_lat, max_lat = df_valid['latitud'].min() - margen, df_valid['latitud'].max() + margen
                         
-                        cmap = LinearColormap(colors=['#f39c12', '#2ecc71', '#2980b9'], vmin=min_r, vmax=max_r)
-                        cmap.caption = 'Recarga Potencial (mm/año)'
-                        m_recarga.add_child(cmap)
+                        # Malla ligera (100x100 píxeles) para no colapsar el servidor
+                        grid_lon, grid_lat = np.mgrid[min_lon:max_lon:100j, min_lat:max_lat:100j]
+                        
+                        puntos = df_valid[['longitud', 'latitud']].values
+                        valores = df_valid['recarga_calc'].values
+                        
+                        # Intento cúbico (suave), fallback a lineal
+                        try:
+                            grid_z = griddata(puntos, valores, (grid_lon, grid_lat), method='cubic')
+                        except:
+                            grid_z = griddata(puntos, valores, (grid_lon, grid_lat), method='linear')
+                            
+                        # Limpiar valores vacíos (NaN) en los bordes
+                        grid_z = np.nan_to_num(grid_z, nan=np.nanmean(valores))
 
+                        # Colorear la superficie (Tonos de agua)
+                        norm = Normalize(vmin=valores.min(), vmax=valores.max())
+                        cmap = cm.get_cmap('YlGnBu') 
+                        colored_grid = cmap(norm(grid_z))
+                        
+                        # Inyectar la imagen al mapa
+                        folium.raster_layers.ImageOverlay(
+                            image=colored_grid,
+                            bounds=[[min_lat, min_lon], [max_lat, max_lon]],
+                            opacity=0.6,
+                            name="Superficie de Recarga Continua",
+                            interactive=True,
+                            cross_origin=False
+                        ).add_to(m_recarga)
+                        
+                        # 3. Dibujar las estaciones reales encima como chinchetas
                         for idx, row in df_valid.iterrows():
-                            val_recarga = row['recarga_calc']
                             folium.CircleMarker(
                                 location=[row['latitud'], row['longitud']],
-                                radius=10,
-                                popup=f"<b>Estación:</b> {row['nombre']}<br><b>Recarga:</b> {val_recarga:.1f} mm/año",
-                                color="black",
-                                weight=1,
-                                fill=True,
-                                fill_color=cmap(val_recarga),
-                                fill_opacity=0.8
+                                radius=5, color="black", weight=1, fill=True, fill_color="#e74c3c", fill_opacity=1,
+                                popup=f"<b>Estación:</b> {row['nombre']}<br><b>Recarga Base:</b> {row['recarga_calc']:.1f} mm/año"
                             ).add_to(m_recarga)
-                            
-                        # 5. Renderizar
-                        st_folium(m_recarga, width="100%", height=500, key="mapa_recarga_seguro")
-                        st.caption("📍 Puntos de control hidrogeológico dentro de la delimitación territorial. El color indica el volumen de recarga.")
-                    
+
+                        folium.LayerControl().add_to(m_recarga)
+                        st_folium(m_recarga, width="100%", height=500, key="mapa_recarga_continuo_final")
+                        st.caption("🗺️ Superficie interpolada a partir de los puntos de control. Las zonas más oscuras indican mayor recarga potencial al acuífero.")
+                        
                     except Exception as e:
-                        st.error(f"Error de geoprocesamiento: {e}")
+                        st.error(f"Error generando la superficie continua: {e}")
 
     # ==============================================================================
     # 4. REPORTE GLOBAL (GENERADOR MAESTRO)
