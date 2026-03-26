@@ -348,7 +348,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         
         ha_base_calculo = ha_reales_sig if activar_sig else 0.0
         
-        # --- 🌟 CONEXIÓN CON BOSQUES RIPARIOS (GEOMORFOLOGÍA) ---
+        # --- 🌟 CONEXIÓN CON BOSQUES RIPARIOS (GEOMORFOLOGÍA / BIODIVERSIDAD) ---
         ha_riparias_potenciales = 0.0
         sumar_riparias = False
         df_str = st.session_state.get('geomorfo_strahler_df')
@@ -356,10 +356,38 @@ if gdf_zona is not None and not gdf_zona.empty:
         if df_str is not None and not df_str.empty:
             st.markdown("<br>", unsafe_allow_html=True)
             with st.expander("🌿 Infraestructura Verde: Potencial de Reforestación Riparia", expanded=True):
-                st.markdown("El modelo detectó una red hidrográfica calculada por la Ley de Horton. Dimensiona las franjas forestales protectoras (buffer) para integrarlas como **Soluciones Basadas en la Naturaleza (SbN)** al cálculo WRI.")
                 
+                # 🌍 VERIFICACIÓN DEL NEXO FÍSICO (¿Hay riesgo activo?)
+                amenaza_activa = 'aleph_twi_umbral' in st.session_state
+                
+                if amenaza_activa:
+                    st.success("🧠 **Nexo Físico Activo:** Integrando zona de amenaza extrema (Inundación/Avalancha) como área de restauración obligatoria.")
+                    
+                    # 📣 EL MANIFIESTO DEL ARQUITECTO
+                    st.markdown(f"""
+                    <div style="border-left: 5px solid #2ecc71; padding: 15px; background-color: rgba(46, 204, 113, 0.1); border-radius: 5px; margin-bottom: 15px;">
+                        <h4 style="color: #27ae60; margin-top: 0;">🌳 Manifiesto de Resiliencia</h4>
+                        <b style="font-size: 0.95em;">Se requiere crear un bosque de protección y un corredor de biodiversidad sobre estas zonas de peligro para amortiguar el golpe, proteger a la población, restaurar el cauce natural del río y contribuir con la Seguridad Hídrica Integral de la cuenca {nombre_zona}.</b>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    q_max_memoria = st.session_state.get('aleph_q_max_m3s', 50.0)
+                    buffer_defecto = max(30.0, float(np.log10(q_max_memoria + 1) * 35.0))
+                else:
+                    st.markdown("El modelo detectó una red hidrográfica. Dimensiona las franjas forestales protectoras (buffer) para integrarlas como **Soluciones Basadas en la Naturaleza (SbN)** al cálculo financiero WRI.")
+                    buffer_defecto = 30.0
+
                 c_rip1, c_rip2, c_rip3 = st.columns(3)
-                ancho_buffer = c_rip1.number_input("Ancho de Aislamiento por lado (m):", min_value=5, max_value=100, value=30, step=5, key="td_buffer_rip")
+                
+                # 🧠 Leemos el buffer de Biodiversidad (Si el usuario ya lo ajustó allá)
+                buffer_memoria = st.session_state.get('buffer_m_ripario', buffer_defecto)
+                
+                ancho_buffer = c_rip1.number_input(
+                    "Ancho de Aislamiento (m/lado):", 
+                    min_value=5.0, max_value=250.0, 
+                    value=float(buffer_memoria), step=5.0, key="td_buffer_rip",
+                    help="Calculado automáticamente por la física de caudales extremos si el Nexo Físico está activo."
+                )
                 
                 longitud_total_km = df_str['Longitud_Km'].sum()
                 c_rip2.metric("Longitud Total de Cauces", f"{longitud_total_km:,.2f} km")
@@ -945,16 +973,9 @@ if gdf_zona is not None and not gdf_zona.empty:
             tot_min = df_tramos[f"Mínimo ({b_min}m) ha"].sum()
             tot_med = df_tramos[f"Ideal ({b_med}m) ha"].sum()
             tot_max = df_tramos[f"Óptimo ({b_max}m) ha"].sum()
+            tot_longitud_km = df_tramos["Longitud (Km)"].sum() 
 
-            st.success(f"✅ Modelando 3 escenarios simultáneos ({b_min}m, {b_med}m, {b_max}m)...")
-            
-            # Calculamos los totales a partir de los tramos
-            tot_min = df_tramos[f"Mínimo ({b_min}m) ha"].sum()
-            tot_med = df_tramos[f"Ideal ({b_med}m) ha"].sum()
-            tot_max = df_tramos[f"Óptimo ({b_max}m) ha"].sum()
-            tot_longitud_km = df_tramos["Longitud (Km)"].sum() # <-- NUEVO CÁLCULO
-
-            st.success(f"✅ Modelando 3 escenarios simultáneos ({b_min}m, {b_med}m, {b_max}m)...")
+            st.success(f"✅ Modelando 3 escenarios concéntricos simultáneos ({b_min}m, {b_med}m, {b_max}m)...")
             
             st.markdown("##### 📊 Tablero de Sensibilidad Ecológica y Financiera")
             
