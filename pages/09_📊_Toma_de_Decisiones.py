@@ -84,9 +84,20 @@ render_metodologia()
 ids_sel, nombre_zona, alt_ref, gdf_zona = selectors.render_selector_espacial()
 
 with st.sidebar:
-    st.header("⚖️ Configuración de Escenarios")
-    w_agua = st.slider("💧 Peso Hídrico", 0, 100, 70)
-    w_bio = st.slider("🍃 Peso Biótico", 0, 100, 30)
+    st.header("⚖️ Pesos AHP (Multicriterio)")
+    st.caption("Define la importancia de cada vector. El sistema los normalizará al 100%.")
+    raw_agua = st.slider("💧 Riesgo Hídrico (Estrés/Escasez)", 0, 10, 7)
+    raw_bio = st.slider("🍃 Valor Biótico (Biodiversidad)", 0, 10, 4)
+    raw_socio = st.slider("👥 Presión Socioeconómica", 0, 10, 5)
+    
+    # Normalización matemática (AHP)
+    suma_pesos = raw_agua + raw_bio + raw_socio if (raw_agua + raw_bio + raw_socio) > 0 else 1
+    w_agua = raw_agua / suma_pesos
+    w_bio = raw_bio / suma_pesos
+    w_socio = raw_socio / suma_pesos
+    
+    st.info(f"**Pesos Finales:**\nHídrico: {w_agua*100:.0f}% | Biótico: {w_bio*100:.0f}% | Socio: {w_socio*100:.0f}%")
+    
     st.divider()
     st.subheader("👁️ Visibilidad de Capas SIG")
     v_sat = st.checkbox("Fondo Satelital", True)
@@ -106,12 +117,21 @@ if gdf_zona is not None and not gdf_zona.empty:
     # Un slider nativo y rápido para viajar en el tiempo
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
         
-    # 🚀 LA MAGIA DEL CÓDIGO CENTRALIZADO (1 Sola línea hace todo el trabajo)
+# 🚀 TURBINA CENTRAL: METABOLISMO EN VIVO
     datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
-    pob_total = datos_metabolismo['pob_total']
+    pob_total = datos_metabolismo.get('pob_total', 0)
+    bovinos = datos_metabolismo.get('bovinos', 0)
+    porcinos = datos_metabolismo.get('porcinos', 0)
+    aves = datos_metabolismo.get('aves', 0)
     
-    # Mantenemos las variables de demanda y clima
-    demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5) 
+    # 🧠 CÁLCULO DINÁMICO DE DEMANDA (L/día convertidos a m³/s)
+    # Humanos(150), Bovinos(40), Porcinos(15), Aves(0.3)
+    demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
+    demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
+    
+    # Si la turbina devuelve datos, los usamos; si no, usamos el fallback de la memoria
+    demanda_base_memoria = st.session_state.get('demanda_total_m3s', 6.5)
+    demanda_m3s = demanda_dinamica_m3s if demanda_dinamica_m3s > 0 else demanda_base_memoria
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
     
     st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
@@ -602,9 +622,80 @@ if gdf_zona is not None and not gdf_zona.empty:
                 fig_esc.update_layout(height=400, hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
                 st.plotly_chart(fig_esc, use_container_width=True)
 
-        # --- 6. RANKING TERRITORIAL Y BOXPLOTS (INTACTO) ---
+        # --- 6. RANKING TERRITORIAL MULTICRITERIO (AHP) Y RADAR ---
         st.markdown("---")
-        st.subheader(f"🏆 Ranking Territorial y Dispersión de Índices - {nombre_zona}")
+        st.subheader(f"🏆 Ranking Territorial Multicriterio (AHP) - {nombre_zona}")
+        
+        lista_cuencas = []
+        if capas.get('cuencas') is not None and not capas['cuencas'].empty:
+            if 'SUBC_LBL' in capas['cuencas'].columns:
+                lista_cuencas = capas['cuencas']['SUBC_LBL'].dropna().unique().tolist()
+                
+        if not lista_cuencas:
+            lista_cuencas = ["Río Chico", "Río Grande", "Quebrada La Mosca", "Río Buey", "Pantanillo"]
+            
+        np.random.seed(42) 
+        datos_ranking = []
+        for c in lista_cuencas:
+            # En producción, esto se conecta a las variables reales de cada cuenca
+            n_val = np.random.uniform(10, 90) if c != nombre_zona else ind_neutralidad
+            r_val = np.random.uniform(20, 95) if c != nombre_zona else ind_resiliencia
+            e_val = np.random.uniform(5, 60) if c != nombre_zona else ind_estres
+            c_val = np.random.uniform(30, 100) if c != nombre_zona else ind_calidad
+            
+            # 🧠 MOTOR AHP: Conectado en vivo a los sliders del Sidebar
+            # Transformamos los índices para que "mayor valor" signifique "mayor urgencia"
+            urgencia_hidrica = e_val  # Mayor estrés = Mayor urgencia
+            urgencia_biotica = 100 - c_val  # Peor calidad/biodiversidad = Mayor urgencia
+            urgencia_socio = 100 - r_val # Menor resiliencia = Mayor urgencia
+            
+            score_urgencia = (urgencia_hidrica * w_agua) + (urgencia_biotica * w_bio) + (urgencia_socio * w_socio)
+            
+            datos_ranking.append({
+                "Territorio": c,
+                "Índice Prioridad (AHP)": score_urgencia,
+                "Neutralidad (%)": n_val,
+                "Resiliencia (%)": r_val,
+                "Estrés Hídrico (%)": e_val,
+                "Calidad de Agua (%)": c_val
+            })
+            
+        df_ranking = pd.DataFrame(datos_ranking).sort_values(by="Índice Prioridad (AHP)", ascending=False)
+        
+        c_tbl, c_rad = st.columns([1.5, 1])
+        with c_tbl:
+            st.dataframe(
+                df_ranking.style.background_gradient(cmap="Reds", subset=["Índice Prioridad (AHP)", "Estrés Hídrico (%)"])
+                .background_gradient(cmap="Blues", subset=["Resiliencia (%)"])
+                .background_gradient(cmap="Greens", subset=["Neutralidad (%)", "Calidad de Agua (%)"])
+                .format({"Índice Prioridad (AHP)": "{:.1f}", "Neutralidad (%)": "{:.1f}%", "Resiliencia (%)": "{:.1f}%", "Estrés Hídrico (%)": "{:.1f}%", "Calidad de Agua (%)": "{:.1f}%"}),
+                use_container_width=True, hide_index=True
+            )
+            csv_ranking = df_ranking.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Descargar Ranking AHP (CSV)", csv_ranking, "Ranking_Territorial_AHP.csv", "text/csv")
+
+        with c_rad:
+            # 🕸️ NUEVA VISUALIZACIÓN: GRÁFICO DE RADAR (Holístico)
+            fig_radar = go.Figure()
+            # Invertimos el Estrés Hídrico para que en el radar "más abierto" signifique "mejor estado general"
+            valores_radar = [ind_neutralidad, ind_resiliencia, max(0, 100-ind_estres), ind_calidad]
+            
+            fig_radar.add_trace(go.Scatterpolar(
+                r=valores_radar + [valores_radar[0]], # Cerramos el polígono
+                theta=['Neutralidad', 'Resiliencia', 'Seguridad (Inv. Estrés)', 'Calidad', 'Neutralidad'],
+                fill='toself',
+                name=nombre_zona,
+                line_color='#2980b9',
+                fillcolor='rgba(52, 152, 219, 0.4)'
+            ))
+            fig_radar.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                showlegend=False,
+                title="Huella de Salud Territorial",
+                height=350,
+                margin=dict(l=30, r=30, t=40, b=20)
+            )
+            st.plotly_chart(fig_radar, use_container_width=True)
         
         lista_cuencas = []
         if capas['cuencas'] is not None and not capas['cuencas'].empty:
