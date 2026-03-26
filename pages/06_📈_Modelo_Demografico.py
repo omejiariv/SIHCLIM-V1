@@ -1774,20 +1774,26 @@ with tab_descargas:
         # ==============================================================================
         # 💾 EXPORTACIÓN AUTOMÁTICA A SQL (1 CLIC A PRODUCCIÓN)
         # ==============================================================================
-        df_matriz_demo = pd.DataFrame(matriz_resultados)
-        st.session_state['df_matriz_demografica'] = df_matriz_demo 
-        
-        try:
-            from modules.db_manager import get_engine
-            engine_sql = get_engine()
+        if 'df_matriz_demografica' in st.session_state:
+            st.markdown("---")
+            st.subheader("💾 Exportar Cerebro Demográfico a SQL (Para Producción)")
             
-            # Escribir directamente en la base de datos PostgreSQL
-            df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='replace', index=False)
+            # Rescatamos la matriz de la memoria en lugar de usar 'matriz_resultados'
+            df_matriz_demo = st.session_state['df_matriz_demografica']
             
-            st.success(f"✅ ¡Migración a SQL Exitosa! Matriz Demográfica ({len(df_matriz_demo)} modelos) alojada automáticamente en la base de datos maestra.")
-        except Exception as e:
-            st.error(f"Error conectando a la base de datos SQL: {e}")
-        
-        # Mantenemos el botón de descarga solo como respaldo
-        csv_matriz = df_matriz_demo.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Descargar Respaldo (CSV)", data=csv_matriz, file_name="Matriz_Multimodelo_Demografica.csv", mime='text/csv')
+            if st.button("🚀 Subir Matriz Demográfica a Base de Datos (SQL)", type="primary"):
+                with st.spinner("Conectando con PostgreSQL y guardando matriz..."):
+                    try:
+                        from modules.db_manager import get_engine
+                        engine_sql = get_engine()
+                        
+                        # Escribir directamente en la base de datos PostgreSQL
+                        df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='replace', index=False)
+                        
+                        st.success(f"✅ ¡Migración a SQL Exitosa! Matriz Demográfica ({len(df_matriz_demo)} modelos) alojada automáticamente en la base de datos maestra.")
+                    except Exception as e:
+                        st.error(f"Error conectando a la base de datos SQL: {e}")
+            
+            # Mantenemos el botón de descarga solo como respaldo
+            csv_matriz = df_matriz_demo.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Descargar Respaldo (CSV)", data=csv_matriz, file_name="Matriz_Multimodelo_Demografica.csv", mime='text/csv')
