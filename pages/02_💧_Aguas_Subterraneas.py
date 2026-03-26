@@ -53,12 +53,12 @@ if st.sidebar.button("🧹 Limpiar Memoria y Recargar"):
     st.rerun()
 
 st.title("💧 Aguas Subterráneas: El Corazón Invisible")
-st.markdown("""
-<div style="border-left: 5px solid #2980b9; padding: 15px; background-color: rgba(52, 152, 219, 0.1); border-radius: 5px; margin-bottom: 15px;">
-    <h4 style="color: #2980b9; margin-top: 0;">🌊 Manifiesto de las Aguas Ocultas</h4>
-    <b style="font-size: 0.95em;">El agua subterránea es el agua dulce líquida más abundante del planeta. Es la memoria milenaria de la lluvia. De ella dependen los bosques en la sequía, el caudal base de los ríos que vemos fluir, y la vida de miles de personas en las zonas más apartadas y frágiles. Es invisible, y por ello a menudo ignorada y sobreexplotada. Aquí la hacemos visible, para tratarla con el respeto, la gratitud y el amor que merece el recurso que hoy salva vidas y que será nuestro mayor escudo ante la crisis climática.</b>
-</div>
-""", unsafe_allow_html=True)
+with st.expander("🌊 Manifiesto de las Aguas Ocultas", expanded=False):
+    st.markdown("""
+    <div style="border-left: 5px solid #2980b9; padding: 15px; background-color: rgba(52, 152, 219, 0.1); border-radius: 5px;">
+        <b style="font-size: 0.95em;">El agua subterránea es el agua dulce líquida más abundante del planeta. Es la memoria milenaria de la lluvia. De ella dependen los bosques en la sequía, el caudal base de los ríos que vemos fluir, y la vida de miles de personas en las zonas más apartadas y frágiles. Es invisible, y por ello a menudo ignorada y sobreexplotada. Aquí la hacemos visible, para tratarla con el respeto, la gratitud y el amor que merece el recurso que hoy salva vidas y que será nuestro mayor escudo ante la crisis climática.</b>
+    </div>
+    """, unsafe_allow_html=True)
 st.divider()
 
 # --- 1. SELECTOR ESPACIAL (CONECTADO AL SELECTOR ARREGLADO) ---
@@ -210,68 +210,57 @@ if gdf_zona is not None:
         df_hist = df_res[df_res['tipo'] == 'Histórico']
         
         if not df_hist.empty:
-            # --- A. CÁLCULO DE ÁREA ---
-            area_km2 = 0
-            try:
-                # Limpieza de nombre para búsqueda SQL
-                if isinstance(nombre_zona, list): n_busq = str(nombre_zona[0])
-                else: n_busq = str(nombre_zona)
-                
-                n_busq = n_busq.replace("['", "").replace("']", "").strip()
-                
-                # Buscar en Cuencas
-                q_area = text("SELECT area_km2 FROM cuencas WHERE nombre_cuenca ILIKE :n OR CAST(subc_lbl AS TEXT) ILIKE :n LIMIT 1")
-                df_a = pd.read_sql(q_area, engine, params={'n': f"%{n_busq}%"})
-                
-                if not df_a.empty:
-                    area_km2 = df_a.iloc[0]['area_km2']
-                else:
-                    # Buscar en Municipios
-                    q_mun = text("SELECT area_km2 FROM municipios WHERE nombre_municipio ILIKE :n LIMIT 1")
-                    df_m = pd.read_sql(q_mun, engine, params={'n': f"%{n_busq}%"})
-                    if not df_m.empty: area_km2 = df_m.iloc[0]['area_km2']
-            except: pass
-            
-            if area_km2 <= 0: area_km2 = 10.0 # Valor por defecto seguro
+            # --- 🗺️ A. CÁLCULO DE ÁREA EXACTA (GEOMETRÍA VIVA) ---
+            # Calculamos el área directamente del mapa seleccionado.
+            if gdf_zona is not None and not gdf_zona.empty:
+                area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
+            else:
+                area_km2 = 10.0
 
-            # --- 🌍 BISTURÍ 1: NEXO CLIMÁTICO (Conexión Aleph) ---
+            # --- 🌍 B. NEXO CLIMÁTICO Y SINCRONIZACIÓN ALEPH ---
+            # Recuperamos la física calculada en la Página 01
+            lluvia_aleph = st.session_state.get('aleph_ppt_anual', 0.0)
+            etr_aleph = st.session_state.get('aleph_etr_anual', 0.0)
+            
             delta_ppt_sim = st.session_state.get('sim_delta_ppt', 0.0) 
             delta_temp_sim = st.session_state.get('sim_delta_temp', 0.0)
             enso_estado = st.session_state.get('enso_fase', 'Neutro ⚖️')
             
             if delta_ppt_sim != 0.0 or delta_temp_sim != 0.0 or "Niño" in enso_estado or "Niña" in enso_estado:
-                st.success(f"🧠 **Nexo Atmosférico Activo:** El acuífero reacciona al clima global. (ENSO: {enso_estado} | CMIP6 Lluvia: {delta_ppt_sim}% | CMIP6 Temp: +{delta_temp_sim}°C)")
+                st.success(f"🧠 **Nexo Atmosférico Activo:** El acuífero reacciona al clima global. (ENSO: {enso_estado} | CMIP6 Lluvia: {delta_ppt_sim}% | Temp: +{delta_temp_sim}°C)")
+            
+            if lluvia_aleph > 0:
+                st.caption("🌐 **Gemelo Digital:** Lluvia y ETR heredados con precisión espacial desde el modelo distribuido (Pág 01).")
 
-            # Aplicamos los factores termodinámicos
             factor_lluvia = 1 + (delta_ppt_sim / 100.0)
             if "Niño Severo" in enso_estado: factor_lluvia *= 0.6
             elif "Niño Moderado" in enso_estado: factor_lluvia *= 0.8
             elif "Niña" in enso_estado: factor_lluvia *= 1.2
             
-            # --- B. CÁLCULOS AGREGADOS (Afectados por el Clima) ---
-            p_med = (df_hist['p_final'].mean() * 12) * factor_lluvia
-            etr_med = (df_hist['etr_mm'].mean() * 12) * (1 + (delta_temp_sim * 0.03)) # +3% Evapotranspiración por °C
+            # 🧠 Lógica Maestra: Si la Pág 01 tiene datos, los usamos. Si no, promediamos estaciones locales.
+            if lluvia_aleph > 0:
+                p_med = lluvia_aleph * factor_lluvia
+                etr_med = etr_aleph * (1 + (delta_temp_sim * 0.03))
+            else:
+                p_med = (df_hist['p_final'].mean() * 12) * factor_lluvia
+                etr_med = (df_hist['etr_mm'].mean() * 12) * (1 + (delta_temp_sim * 0.03)) 
             
-            # Recalculamos la física con el nuevo clima
+            # Recalculamos la física
             rec_med = max(0.0, (p_med - etr_med) * (ki_final * kg_factor))
             inf_med = max(0.0, (p_med - etr_med) * ki_final)
             esc_med = max(0.0, (p_med - etr_med) - rec_med)
             
-            # Caudales (m3/s)
+            # Caudales Extremos y Medios
             segundos_anio = 31536000
             q_base_m3s = (rec_med * area_km2 * 1000) / segundos_anio
             q_medio_m3s = (esc_med * area_km2 * 1000) / segundos_anio
             
-            # Estadísticas Extremas (usando analysis.py si existe)
             q_min_50a, q_eco = 0, 0
             if analysis:
                 try:
                     serie_p = df_hist.set_index('fecha')['p_final'] * factor_lluvia
                     c_dir = (esc_med - rec_med) / p_med if p_med > 0 else 0.3
-                    
-                    stats = analysis.calculate_hydrological_statistics(
-                        serie_p, runoff_coeff=c_dir, area_km2=area_km2, q_base_m3s=q_base_m3s
-                    )
+                    stats = analysis.calculate_hydrological_statistics(serie_p, runoff_coeff=c_dir, area_km2=area_km2, q_base_m3s=q_base_m3s)
                     q_min_50a = stats.get("Q_Min_50a", 0)
                     q_eco = stats.get("Q_Ecologico_Q95", 0)
                 except: pass
