@@ -146,142 +146,113 @@ def normalizar_robusto(texto):
 
 def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
     """
-    Cerebro Central: Extrae y proyecta la población humana y pecuaria.
-    Incluye Radar Omnidireccional y Detector Avanzado de Zonas Urbanas.
+    🧠 Cerebro Central V2 (SQL-Ready): Extrae y proyecta la población humana y pecuaria
+    directamente desde las Matrices Maestras en PostgreSQL.
+    Incluye Traductor Inteligente de Nombres de Cuencas.
     """
-    nombre_sel_limpio = normalizar_robusto(nombre_seleccion)
+    import pandas as pd
+    import numpy as np
     
+    # 🔌 Conexión a la base de datos
+    try:
+        from modules.db_manager import get_engine
+        engine = get_engine()
+    except Exception as e:
+        print(f"Error cargando engine: {e}")
+        engine = None
+
     res = {
         'pob_urbana': 0.0, 'pob_rural': 0.0, 'pob_total': 0.0,
         'bovinos': 0.0, 'porcinos': 0.0, 'aves': 0.0,
-        'origen_humano': "Estimación (Fallback)",
-        'origen_pecuario': "Estimación (Fallback)"
+        'origen_humano': "Sin Datos (0)",
+        'origen_pecuario': "Sin Datos (0)"
     }
+    
+    if engine is None: return res
 
     # =========================================================================
-    # 1. MOTOR DEMOGRÁFICO (Humanos)
+    # 🛡️ TRADUCTOR INTELIGENTE (El Puente de Nomenclatura)
     # =========================================================================
-    if 'df_matriz_demografica' in st.session_state:
-        df_demo = st.session_state['df_matriz_demografica'].copy()
+    zona_limpia = str(nombre_seleccion).strip()
+    
+    # Arregla abreviaciones espaciales comunes ("R. Chico" -> "Río Chico")
+    if zona_limpia.startswith("R. "):
+        zona_limpia = zona_limpia.replace("R. ", "Río ")
+    elif zona_limpia.startswith("Q. "):
+        zona_limpia = zona_limpia.replace("Q. ", "Quebrada ")
         
-        if 'Terr_Norm' not in df_demo.columns:
-            df_demo['Terr_Norm'] = df_demo['Territorio'].astype(str).apply(normalizar_robusto)
-            df_demo['Area'] = df_demo['Area'].astype(str).str.strip()
+    zona_limpia_lower = zona_limpia.lower()
 
-        def proyectar_pob(fila):
-            if anio_destino is None: return float(fila['Pob_Base'])
-            x_norm = anio_destino - fila['Año_Base']
-            try:
-                mod = fila.get('Modelo_Recomendado', 'Polinomial')
-                if mod == 'Logístico': return max(0.0, fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm)))
-                elif mod == 'Exponencial': return max(0.0, fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm))
-                else: return max(0.0, fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D'])
-            except: return float(fila['Pob_Base'])
+    # =========================================================================
+    # ⚙️ MOTOR MATEMÁTICO UNIVERSAL (Proyecta años futuros)
+    # =========================================================================
+    def proyectar(fila, col_base, col_anio_base):
+        if anio_destino is None: return float(fila[col_base])
+        x_norm = anio_destino - fila[col_anio_base]
+        try:
+            mod = fila.get('Modelo_Recomendado', 'Polinomial_3')
+            if mod == 'Logístico': 
+                return max(0.0, fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm)))
+            elif mod == 'Exponencial': 
+                return max(0.0, fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm))
+            else: 
+                return max(0.0, fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D'])
+        except: 
+            return float(fila[col_base])
 
-        pob_u, pob_r = 0.0, 0.0
-        es_municipio = not df_demo[df_demo['Terr_Norm'] == nombre_sel_limpio].empty
+    # =========================================================================
+    # 1. MOTOR DEMOGRÁFICO (Lectura SQL)
+    # =========================================================================
+    try:
+        # Búsqueda exacta ignorando mayúsculas
+        q_demo = "SELECT * FROM matriz_maestra_demografica WHERE LOWER(TRIM(\"Territorio\")) = %(z)s"
+        df_demo = pd.read_sql(q_demo, engine, params={"z": zona_limpia_lower})
+        
+        # Búsqueda flexible (Si "Río Chico" está guardado como "Cuenca Río Chico")
+        if df_demo.empty:
+            q_demo_like = "SELECT * FROM matriz_maestra_demografica WHERE LOWER(\"Territorio\") LIKE %(z)s"
+            df_demo = pd.read_sql(q_demo_like, engine, params={"z": f"%{zona_limpia_lower}%"})
 
-        if es_municipio:
-            fu = df_demo[(df_demo['Terr_Norm'] == nombre_sel_limpio) & (df_demo['Area'] == 'Urbana')]
-            fr = df_demo[(df_demo['Terr_Norm'] == nombre_sel_limpio) & (df_demo['Area'] == 'Rural')]
-            if not fu.empty: pob_u = proyectar_pob(fu.iloc[0])
-            if not fr.empty: pob_r = proyectar_pob(fr.iloc[0])
-            res['origen_humano'] = "Matriz Maestra (DANE)"
+        if not df_demo.empty:
+            fu = df_demo[df_demo['Area'] == 'Urbana']
+            fr = df_demo[df_demo['Area'] == 'Rural']
             
-        elif 'df_matriz_proporciones' in st.session_state:
-            df_prop = st.session_state['df_matriz_proporciones']
+            pob_u = proyectar(fu.iloc[0], 'Pob_Base', 'Año_Base') if not fu.empty else 0.0
+            pob_r = proyectar(fr.iloc[0], 'Pob_Base', 'Año_Base') if not fr.empty else 0.0
             
-            if 'Tipo_Area' not in df_prop.columns:
-                df_prop['MPIO_Norm'] = df_prop['NOMB_MPIO'].astype(str).apply(normalizar_robusto)
-                df_prop['VER_Norm'] = df_prop['NOMBRE_VER'].astype(str).apply(normalizar_robusto)
+            res['pob_urbana'] = pob_u
+            res['pob_rural'] = pob_r
+            res['pob_total'] = pob_u + pob_r
+            res['origen_humano'] = "Matriz Maestra SQL"
                 
-                df_prop['Tipo_Area'] = 'Rural'
-                mask_urb = (
-                    df_prop['VER_Norm'].str.contains('cabecera|urban|centro|casco', na=False) | 
-                    (df_prop['VER_Norm'] == df_prop['MPIO_Norm'])
-                )
-                df_prop.loc[mask_urb, 'Tipo_Area'] = 'Urbana'
-                
-                df_unicos = df_prop.drop_duplicates(subset=['MPIO_Norm', 'VER_Norm'])
-                st.session_state['areas_totales_mpio'] = df_unicos.groupby(['MPIO_Norm', 'Tipo_Area'])['Area_Original_km2'].sum().to_dict()
-                st.session_state['df_matriz_proporciones'] = df_prop
-
-            cols_geo = ['AH', 'ZH', 'SZH', 'Zona', 'N_NSS1', 'SUBC_LBL', 'N_NSS3']
-            mask_busqueda = pd.Series(False, index=df_prop.index)
-            
-            for col in cols_geo:
-                if col in df_prop.columns:
-                    col_norm = df_prop[col].astype(str).apply(normalizar_robusto)
-                    mask_busqueda = mask_busqueda | (col_norm == nombre_sel_limpio)
-            
-            frags = df_prop[mask_busqueda]
-
-            if frags.empty:
-                pal_clave = nombre_sel_limpio.replace("rio ", "").replace("q. ", "").replace("quebrada ", "").strip()
-                if len(pal_clave) > 3:
-                    for col in cols_geo:
-                        if col in df_prop.columns:
-                            col_norm = df_prop[col].astype(str).apply(normalizar_robusto)
-                            mask_busqueda = mask_busqueda | col_norm.str.contains(pal_clave, na=False)
-                    frags = df_prop[mask_busqueda]
-
-            if not frags.empty:
-                areas_totales = st.session_state['areas_totales_mpio']
-                areas_cuenca = frags.groupby(['MPIO_Norm', 'Tipo_Area'])['Area_Fragmento_km2'].sum().reset_index()
-                
-                for _, row in areas_cuenca.iterrows():
-                    mpio = row['MPIO_Norm']
-                    tipo = row['Tipo_Area']
-                    area_dentro = row['Area_Fragmento_km2']
-                    
-                    area_total_mpio = areas_totales.get((mpio, tipo), 0.001)
-                    fraccion = min(area_dentro / area_total_mpio, 1.0)
-                    
-                    filtro = df_demo[(df_demo['Terr_Norm'] == mpio) & (df_demo['Area'] == tipo)]
-                    if not filtro.empty:
-                        aportada = proyectar_pob(filtro.iloc[0]) * fraccion
-                        if tipo == 'Urbana': pob_u += aportada
-                        else: pob_r += aportada
-                        
-                res['origen_humano'] = "Matriz Espacial (Fracción de Área)"
-
-        res['pob_urbana'], res['pob_rural'], res['pob_total'] = pob_u, pob_r, pob_u + pob_r
-
-    if res['pob_total'] <= 0: res['pob_total'], res['pob_urbana'], res['pob_rural'] = 5000.0, 3500.0, 1500.0
+    except Exception as e:
+        print(f"Error SQL Demográfico: {e}")
 
     # =========================================================================
-    # 2. MOTOR PECUARIO (Animales - ICA)
+    # 2. MOTOR PECUARIO (Lectura SQL)
     # =========================================================================
-    if 'df_matriz_pecuaria' in st.session_state:
-        df_pecu = st.session_state['df_matriz_pecuaria'].copy()
-        if 'Terr_Norm' not in df_pecu.columns:
-            df_pecu['Terr_Norm'] = df_pecu['Territorio'].astype(str).apply(normalizar_robusto)
+    try:
+        q_pecu = "SELECT * FROM matriz_maestra_pecuaria WHERE LOWER(TRIM(\"Territorio\")) = %(z)s"
+        df_pecu = pd.read_sql(q_pecu, engine, params={"z": zona_limpia_lower})
         
-        # A. Búsqueda Exacta
-        f_bov = df_pecu[(df_pecu['Terr_Norm'] == nombre_sel_limpio) & (df_pecu['Especie'] == 'Bovinos')]
-        f_por = df_pecu[(df_pecu['Terr_Norm'] == nombre_sel_limpio) & (df_pecu['Especie'] == 'Porcinos')]
-        f_ave = df_pecu[(df_pecu['Terr_Norm'] == nombre_sel_limpio) & (df_pecu['Especie'] == 'Aves')]
-        
-        # B. Búsqueda Flexible (Radar para prefijos de Río/Cuenca)
-        if f_bov.empty and f_por.empty:
-            pal_clave = nombre_sel_limpio.replace("rio ", "").replace("q. ", "").replace("quebrada ", "").strip()
-            if len(pal_clave) > 3:
-                mask_pecu = df_pecu['Terr_Norm'].str.contains(pal_clave, na=False)
-                f_bov = df_pecu[mask_pecu & (df_pecu['Especie'] == 'Bovinos')]
-                f_por = df_pecu[mask_pecu & (df_pecu['Especie'] == 'Porcinos')]
-                f_ave = df_pecu[mask_pecu & (df_pecu['Especie'] == 'Aves')]
+        if df_pecu.empty:
+            q_pecu_like = "SELECT * FROM matriz_maestra_pecuaria WHERE LOWER(\"Territorio\") LIKE %(z)s"
+            df_pecu = pd.read_sql(q_pecu_like, engine, params={"z": f"%{zona_limpia_lower}%"})
 
-        # C. Asignación
-        if not f_bov.empty: res['bovinos'] = float(f_bov['Poblacion_Base'].sum())
-        if not f_por.empty: res['porcinos'] = float(f_por['Poblacion_Base'].sum())
-        if not f_ave.empty: res['aves'] = float(f_ave['Poblacion_Base'].sum())
-        
-        if res['bovinos'] > 0 or res['porcinos'] > 0: 
-            res['origen_pecuario'] = "Matriz Pecuaria (Sincronizada)"
+        if not df_pecu.empty:
+            f_bov = df_pecu[df_pecu['Especie'] == 'Bovinos']
+            f_por = df_pecu[df_pecu['Especie'] == 'Porcinos']
+            f_ave = df_pecu[df_pecu['Especie'] == 'Aves']
+            
+            if not f_bov.empty: res['bovinos'] = proyectar(f_bov.iloc[0], 'Poblacion_Base', 'Año_Base')
+            if not f_por.empty: res['porcinos'] = proyectar(f_por.iloc[0], 'Poblacion_Base', 'Año_Base')
+            if not f_ave.empty: res['aves'] = proyectar(f_ave.iloc[0], 'Poblacion_Base', 'Año_Base')
+            
+            res['origen_pecuario'] = "Matriz Pecuaria SQL"
+            
+    except Exception as e:
+        print(f"Error SQL Pecuario: {e}")
 
-    # D. Fallbacks de Seguridad (Por si la cuenca seleccionada no está en la matriz ICA)
-    if res['bovinos'] <= 0: res['bovinos'] = res['pob_total'] * 1.5
-    if res['porcinos'] <= 0: res['porcinos'] = res['pob_total'] * 0.8
-    if res['aves'] <= 0: res['aves'] = res['pob_total'] * 10.0
-
+    # Se eliminaron los fallbacks de números inventados para mantener la pureza de los datos.
+    # Si todo dio cero, la plataforma será honesta y pedirá actualizar la matriz.
     return res
