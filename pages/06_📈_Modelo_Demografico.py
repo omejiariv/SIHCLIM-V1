@@ -1771,19 +1771,23 @@ with tab_descargas:
             st.download_button(label=f"⬇️ Descargar Pirámide {año_sel} (CSV)", data=csv_pir, file_name=f"Piramide_{año_sel}_{titulo_terr}.csv", mime="text/csv", use_container_width=True)
             st.dataframe(df_descarga_pir.head(5), use_container_width=True)
 
-# ==============================================================================
-# 💾 EXPORTACIÓN DEL CEREBRO A PRODUCCIÓN (NUEVA ARQUITECTURA)
-# ==============================================================================
-if 'df_matriz_demografica' in st.session_state:
-    st.markdown("---")
-    st.subheader("💾 Exportar Cerebro Entrenado (Para Producción)")
-    st.info("💡 **Paso a Producción:** Descarga esta matriz ya calculada y súbela a tu bucket de Supabase. Así, los usuarios no tendrán que entrenar el modelo cada vez que entren a la plataforma.")
-    
-    csv_demo = st.session_state['df_matriz_demografica'].to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Descargar Matriz Maestra Demográfica", 
-        data=csv_demo, 
-        file_name="Matriz_Maestra_Demografica.csv", 
-        mime="text/csv",
-        type="primary"
-    )
+        # ==============================================================================
+        # 💾 EXPORTACIÓN AUTOMÁTICA A SQL (1 CLIC A PRODUCCIÓN)
+        # ==============================================================================
+        df_matriz_demo = pd.DataFrame(matriz_resultados)
+        st.session_state['df_matriz_demografica'] = df_matriz_demo 
+        
+        try:
+            from modules.db_manager import get_engine
+            engine_sql = get_engine()
+            
+            # Escribir directamente en la base de datos PostgreSQL
+            df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='replace', index=False)
+            
+            st.success(f"✅ ¡Migración a SQL Exitosa! Matriz Demográfica ({len(df_matriz_demo)} modelos) alojada automáticamente en la base de datos maestra.")
+        except Exception as e:
+            st.error(f"Error conectando a la base de datos SQL: {e}")
+        
+        # Mantenemos el botón de descarga solo como respaldo
+        csv_matriz = df_matriz_demo.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Descargar Respaldo (CSV)", data=csv_matriz, file_name="Matriz_Multimodelo_Demografica.csv", mime='text/csv')
