@@ -491,23 +491,17 @@ def main():
 
                         # 🌍 B. BISTURÍ: INYECCIÓN DE ESCENARIOS CMIP6 (Cambio Climático)
                         # Buscamos si el usuario ajustó los sliders en la pestaña del simulador
-                        # (Si no existen, asumimos clima actual: 0% cambio ppt, +0°C temp)
                         delta_ppt_sim = st.session_state.get('sim_delta_ppt', 0.0) 
                         delta_temp_sim = st.session_state.get('sim_delta_temp', 0.0)
 
-                        # Modificamos la matriz de lluvia espacialmente
-                        Z_P_futuro = Z_P_base * (1 + (delta_ppt_sim / 100.0))
+                        # 🛡️ BLINDAJE: Nombramos la variable final como 'Z_P' para que el resto del código no falle
+                        Z_P = Z_P_base * (1 + (delta_ppt_sim / 100.0))
                         
                         # C. MOTOR FÍSICO DISTRIBUIDO (Ahora corre con el clima del futuro)
                         matrices_finales = physics.run_distributed_model(
-                            Z_P_futuro, grid_x, grid_y, {'dem': dem_path, 'cobertura': cov_path}, bounds_calc
-                        )
-                        
-                        # B. MOTOR FÍSICO
-                        matrices_finales = physics.run_distributed_model(
                             Z_P, grid_x, grid_y, {'dem': dem_path, 'cobertura': cov_path}, bounds_calc
                         )
-
+                        
                         # C. INCERTIDUMBRE
                         if Z_Err is not None:
                             matrices_finales['12. Incertidumbre Interpolación (Std)'] = Z_Err
