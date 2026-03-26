@@ -396,10 +396,18 @@ with c_inv3:
 # --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
 # =========================================================================
 
-# ⚠️ Usamos las variables estrictamente locales de esta página para la contaminación
-pob_hum_local = pob_residente 
-pob_bov_local = cabezas_bovinas
-pob_por_local = cabezas_porcinas
+# ⚠️ REPARACIÓN: Leemos las variables desde la memoria de la sesión para evitar el error de "not defined"
+# ya que los inputs visuales están más abajo en la página (Streamlit lee de arriba hacia abajo).
+if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
+elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
+elif "Peñol" in nodo_seleccionado: d_hum, d_bov, d_por = 25000, 40000, 15000
+elif "Ituango" in nodo_seleccionado: d_hum, d_bov, d_por = 35000, 250000, 60000
+else: d_hum, d_bov, d_por = 20000, 25000, 10000
+
+# Extrae el dato si ya se digitó abajo, si no, usa la línea base del embalse
+pob_hum_local = st.session_state.get('sh_pob_residente', d_hum)
+pob_bov_local = st.session_state.get('sh_bovinos_ica', d_bov)
+pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
 
 # A. CALIDAD DE AGUA (Delivery Ratio y Mezcla C0 en Afluentes Naturales)
 dr_difuso = 0.15 
