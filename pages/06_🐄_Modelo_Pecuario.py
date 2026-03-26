@@ -131,14 +131,27 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
             for especie in ['Bovinos', 'Porcinos', 'Aves']:
                 ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'Sistema Hidrico', sis, especie)
 
-        # EXPORTACIÓN
+        # ==============================================================================
+        # 💾 EXPORTACIÓN AUTOMÁTICA A SQL (1 CLIC A PRODUCCIÓN)
+        # ==============================================================================
         df_matriz_pec = pd.DataFrame(matriz_resultados)
         st.session_state['df_matriz_pecuaria'] = df_matriz_pec 
-        st.success(f"✅ Matriz Pecuaria generada con éxito. Total modelos entrenados: {len(df_matriz_pec)}")
         
+        try:
+            from modules.db_manager import get_engine
+            engine_sql = get_engine()
+            
+            # Escribir directamente en la base de datos PostgreSQL
+            df_matriz_pec.to_sql('matriz_maestra_pecuaria', engine_sql, if_exists='replace', index=False)
+            
+            st.success(f"✅ ¡Migración a SQL Exitosa! Matriz Pecuaria ({len(df_matriz_pec)} modelos) alojada automáticamente en la base de datos maestra.")
+        except Exception as e:
+            st.error(f"Error conectando a la base de datos SQL: {e}")
+        
+        # Mantenemos el botón de descarga solo como respaldo
         csv_matriz = df_matriz_pec.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Descargar Matriz Pecuaria (CSV)", data=csv_matriz, file_name="Matriz_Multimodelo_Pecuaria.csv", mime='text/csv')
-
+        st.download_button("📥 Descargar Respaldo (CSV)", data=csv_matriz, file_name="Matriz_Multimodelo_Pecuaria.csv", mime='text/csv')
+        
 # =====================================================================
 # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
 # =====================================================================
