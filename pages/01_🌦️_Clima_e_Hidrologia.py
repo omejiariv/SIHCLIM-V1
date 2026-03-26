@@ -771,6 +771,10 @@ if __name__ == "__main__":
     with st.expander("🚀 Ejecutar Generación Masiva (Recálculo Global)", expanded=False):
         st.info("Esta herramienta recorrerá espacialmente todas las cuencas, cruzará las estaciones climáticas, ejecutará los modelos termodinámicos y guardará el resultado en una base de datos ultraligera.")
         
+        # 🔌 INYECCIÓN DE LA LLAVE DE LA BASE DE DATOS (ENGINE)
+        from modules.db_manager import get_engine
+        engine = get_engine()
+        
         # Selección de columna de nombre (Protegida)
         try:
             from sqlalchemy import text
