@@ -486,7 +486,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         
         # 🛡️ BISTURÍ: Multiplicador agresivo para que la inversión en saneamiento mueva fuertemente el indicador
         factor_dilucion = (oferta_anual_m3 / (consumo_anual_m3 + 1)) 
-        ind_calidad = min(100.0, max(0.0, 30.0 + (factor_dilucion * 0.1) + (sist_saneamiento * 0.8)))0.05)))
+        ind_calidad = min(100.0, max(0.0, 30.0 + (factor_dilucion * 0.1) + (sist_saneamiento * 0.8)))
         
         st.markdown("---")
         st.subheader(f"🧭 Tablero de Seguridad Hídrica Integral: {nombre_zona}")
