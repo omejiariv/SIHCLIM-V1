@@ -1657,7 +1657,7 @@ with tab_micro:
             # Nota: Puse '.png' para Plana y Cóncava, y '.jpg' para Acuminada según lo que vi en tus archivos.
             c_img4.image(f"{url_base}Morfologia%20Plana.png", caption="Plana")
             c_img5.image(f"{url_base}Morfologia%20Concava.png", caption="Cóncava (Efecto copa)")
-            c_img6.image(f"{url_base}Morfologia%20Acuminada.jpg", caption="Acuminada (Punta de goteo)")
+            c_img6.image(f"{url_base}Morfologia%20Acuminada.png", caption="Acuminada (Punta de goteo)")
 
     # =========================================================================
     # 🧠 MOTOR FÍSICO Y ALOMÉTRICO DEL INDIVIDUO
