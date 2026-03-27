@@ -2050,3 +2050,95 @@ with tab_micro:
         
         **La Paradoja del Dosel Alto:** Si el bosque carece de sotobosque (plantas bajas y rastrojo), y los árboles tienen hojas cóncavas a gran altura (ej. plantaciones maderables exóticas), las "súper-gotas" generadas por las hojas adquieren una energía masiva, causando **mayor erosión bajo el bosque que a cielo abierto**. Por esto, la verdadera protección hídrica requiere un bosque multi-estrato (sotobosque, subdosel y dosel).
         """)
+
+# =========================================================================
+    # 🌊 5. MÓDULO DE TRANSPORTE DE SEDIMENTOS (Ecuación de Manning)
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("#### 🌊 5. El Viaje del Lodo: Transporte de Sedimentos")
+    st.info("La tierra arrancada por el impacto de la gota necesita un vehículo para llegar al río: La Escorrentía. Usa la física hidráulica de Manning para calcular cuánto sedimento es retenido por el sotobosque y cuánto termina contaminando el embalse.")
+
+    col_trans1, col_trans2 = st.columns([1, 1.5])
+
+    with col_trans1:
+        pendiente_pct = st.slider("⛰️ Pendiente del Terreno (%):", 1.0, 60.0, 15.0, 1.0, help="A mayor pendiente, mayor gravedad impulsando el agua.")
+        
+        st.markdown("**El Freno Biológico (Coeficiente de Manning):**")
+        rugosidad = st.radio(
+            "Cobertura a nivel del suelo (Sotobosque / Hojarasca):",
+            [
+                "Suelo Desnudo / Pasto sobrepastoreado (Muy liso, n = 0.03)",
+                "Rastrojo bajo / Hojarasca media (Fricción media, n = 0.08)",
+                "Bosque nativo denso con raíces densas (Fricción alta, n = 0.15)"
+            ], index=1
+        )
+        
+        if "0.03" in rugosidad:
+            manning_n = 0.03
+        elif "0.08" in rugosidad:
+            manning_n = 0.08
+        else:
+            manning_n = 0.15
+
+    # ==========================================
+    # FÍSICA HIDRÁULICA (Manning & Transport Capacity)
+    # ==========================================
+    # 1. Parámetros Hidráulicos
+    S = pendiente_pct / 100.0 # Pendiente en m/m
+    R = 0.005 # Radio hidráulico para flujo laminar superficial (muy somero, 5mm)
+    
+    # Ecuación de Manning para la velocidad de la lámina de agua (m/s)
+    # V = (1/n) * R^(2/3) * S^(1/2)
+    velocidad_escorrentia = (1.0 / manning_n) * (R ** (2/3)) * math.sqrt(S)
+    
+    # 2. Tasa de Entrega de Sedimentos (SDR - Sediment Delivery Ratio)
+    # A mayor velocidad, mayor capacidad de carga. Calibramos para que V altas entreguen casi todo.
+    # Supongamos una velocidad crítica de arrastre de 0.8 m/s para arrastrar el 100% de los limos.
+    sdr_pct = (velocidad_escorrentia / 0.8) * 100
+    sdr_pct = min(max(sdr_pct, 0.0), 100.0) # Acotar entre 0 y 100%
+    
+    # 3. El Destino de la Tierra (Usando suelo_perdido_arbol_kg del módulo anterior)
+    sedimento_al_rio_kg = suelo_perdido_arbol_kg * (sdr_pct / 100.0)
+    sedimento_retenido_kg = suelo_perdido_arbol_kg - sedimento_al_rio_kg
+
+    with col_trans2:
+        c_t1, c_t2, c_t3 = st.columns(3)
+        c_t1.metric("Velocidad del Flujo", f"{velocidad_escorrentia:.2f} m/s", "Ecuación de Manning")
+        c_t2.metric("Sedimento Exportado al Río", f"{sedimento_al_rio_kg:.2f} Kg/m²", f"{sdr_pct:.1f}% del lodo generado", delta_color="inverse")
+        c_t3.metric("Filtro Biológico", f"{sedimento_retenido_kg:.2f} Kg/m²", "Retenido en el bosque", delta_color="normal")
+        
+        # Gráfico Waterfall del Destino Final
+        fig_viaje = go.Figure(go.Waterfall(
+            orientation = "v",
+            measure = ["absolute", "relative", "total"],
+            x = ["Tierra Arrancada<br>(Splash)", "Retenida por Fricción<br>(Sotobosque)", "Exportada al Embalse<br>(Erosión Efectiva)"],
+            textposition = "outside",
+            text = [f"{suelo_perdido_arbol_kg:.2f} Kg", f"-{sedimento_retenido_kg:.2f} Kg", f"<b>{sedimento_al_rio_kg:.2f} Kg</b>"],
+            y = [suelo_perdido_arbol_kg, -sedimento_retenido_kg, sedimento_al_rio_kg],
+            connector = {"line":{"color":"rgba(0,0,0,0.2)", "dash":"dot"}},
+            decreasing = {"marker":{"color":"#2ecc71"}}, # Verde para lo retenido (bueno)
+            increasing = {"marker":{"color":"#e74c3c"}},
+            totals = {"marker":{"color":"#8e44ad"}}      # Morado/Marrón para el lodo final
+        ))
+        
+        fig_viaje.update_layout(
+            title="Balance de Transporte de Sedimentos",
+            showlegend=False,
+            height=300,
+            margin=dict(l=20, r=20, t=40, b=20),
+            plot_bgcolor='rgba(0,0,0,0)',
+            yaxis_title="Kilogramos (Kg)"
+        )
+        st.plotly_chart(fig_viaje, use_container_width=True)
+
+    with st.expander("📚 El Aleph de la Hidráulica: Rugosidad y Gravedad", expanded=False):
+        st.markdown("""
+        ### 🌊 La Ecuación de Manning y la Ley de la Gravedad
+        Una vez que la tierra ha sido pulverizada por la lluvia, comienza su descenso hacia los ríos. El ingeniero irlandés Robert Manning (1889) dedujo cómo calcular la velocidad de este flujo superficial:
+        $$V = \\frac{1}{n} R^{2/3} S^{1/2}$$
+        Donde $S$ es la fuerza implacable de la gravedad (pendiente de la montaña) y $n$ es la salvación de la cuenca: **La Rugosidad**.
+        
+        ### 🌿 La Inteligencia del Sotobosque
+        Tener árboles altos sin plantas rasantes en el suelo es un error común en repoblaciones forestales. El agua fluye debajo del dosel como en un tobogán liso. 
+        Al añadir hojarasca, helechos, musgos y raíces superficiales, el coeficiente de fricción ($n$) aumenta dramáticamente. Esto reduce la velocidad del agua por debajo de la *velocidad crítica de arrastre*. La fuerza hidráulica pierde la batalla contra la gravedad de la partícula, obligando al lodo a decantar y depositarse en el suelo del bosque. **El agua llega al río, pero la montaña se queda en su sitio.**
+        """)
