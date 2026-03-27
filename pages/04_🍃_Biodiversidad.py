@@ -2142,3 +2142,94 @@ with tab_micro:
         Tener árboles altos sin plantas rasantes en el suelo es un error común en repoblaciones forestales. El agua fluye debajo del dosel como en un tobogán liso. 
         Al añadir hojarasca, helechos, musgos y raíces superficiales, el coeficiente de fricción ($n$) aumenta dramáticamente. Esto reduce la velocidad del agua por debajo de la *velocidad crítica de arrastre*. La fuerza hidráulica pierde la batalla contra la gravedad de la partícula, obligando al lodo a decantar y depositarse en el suelo del bosque. **El agua llega al río, pero la montaña se queda en su sitio.**
         """)
+
+# =========================================================================
+    # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN Y EUTROFIZACIÓN (LA FE)
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("#### 🛑 6. Limnología: El Destino del Embalse")
+    st.info("El lodo que llega al río desemboca en las aguas tranquilas del embalse. Aquí calculamos cómo ese sedimento reduce la vida útil de la represa (Colmatación) y cómo los nutrientes adheridos a la tierra disparan las plagas de macrófitas (Eutrofización).")
+
+    col_lim1, col_lim2 = st.columns([1, 1.5])
+
+    with col_lim1:
+        st.markdown("**Escalamiento a Nivel de Cuenca:**")
+        area_cuenca_ha = st.slider("Área de la cuenca afectada por la tormenta (Hectáreas):", 10.0, 5000.0, 1000.0, 50.0, help="1 Hectárea = 10,000 m².")
+        
+        st.markdown("**Parámetros del Embalse (Ej. La Fe):**")
+        vol_embalse_hm3 = st.number_input("Volumen Total del Embalse (Millones de m³):", min_value=1.0, value=14.6, step=1.0)
+        
+        st.markdown("**Carga Química del Suelo:**")
+        uso_suelo = st.radio(
+            "Uso del suelo erosionado:",
+            [
+                "Agrícola / Ganadero (Alta carga de fertilizantes - 0.15% Fósforo)",
+                "Suelo Degradado (Carga media - 0.05% Fósforo)",
+                "Bosque Conservado (Carga natural baja - 0.01% Fósforo)"
+            ], index=0
+        )
+        
+        if "0.15%" in uso_suelo:
+            pct_fosforo = 0.0015
+        elif "0.05%" in uso_suelo:
+            pct_fosforo = 0.0005
+        else:
+            pct_fosforo = 0.0001
+
+    # ==========================================
+    # MOTOR BIOQUÍMICO Y FÍSICO DEL EMBALSE
+    # ==========================================
+    # 1. Escalamiento de Sedimentos a toda la cuenca
+    # sedimento_al_rio_kg viene del módulo de Manning (por m2)
+    area_cuenca_m2 = area_cuenca_ha * 10_000
+    sedimento_total_tormenta_kg = sedimento_al_rio_kg * area_cuenca_m2
+    
+    # 2. Colmatación (Física): Densidad aparente del lodo arcilloso asentado húmedo ~ 1,200 kg/m3
+    densidad_lodo_kg_m3 = 1200.0
+    volumen_lodo_m3 = sedimento_total_tormenta_kg / densidad_lodo_kg_m3
+    
+    # Impacto en la vida útil (¿Qué porcentaje del embalse se llenó de lodo en esta sola tormenta?)
+    vol_embalse_m3 = vol_embalse_hm3 * 1_000_000
+    pct_volumen_perdido = (volumen_lodo_m3 / vol_embalse_m3) * 100
+    
+    # 3. Eutrofización (Química): Carga de Fósforo (P)
+    fosforo_total_kg = sedimento_total_tormenta_kg * pct_fosforo
+
+    # ==========================================
+    # RENDERIZADO DEL DIAGNÓSTICO
+    # ==========================================
+    with col_lim2:
+        st.markdown("##### ⏳ Diagnóstico Tras la Tormenta")
+        c_l1, c_l2 = st.columns(2)
+        
+        c_l1.metric("Lodo Depositado en el Fondo", f"{volumen_lodo_m3:,.0f} m³", f"-{pct_volumen_perdido:.5f}% de capacidad", delta_color="inverse")
+        c_l2.metric("Inyección de Fósforo (P)", f"{fosforo_total_kg:,.1f} Kg", "Fertilizante detonante", delta_color="inverse")
+        
+        st.markdown("---")
+        
+        # El Semáforo de la Eutrofización
+        if fosforo_total_kg > 500:
+            st.error(f"🚨 **ALERTA ROJA DE EUTROFIZACIÓN (Anoxia Inminente):** Se han inyectado {fosforo_total_kg:,.0f} Kg de fósforo al embalse. Esta cantidad de nutrientes actuará como fertilizante directo, detonando una explosión demográfica de macrófitas (*Eichhornia crassipes* - Buchón de agua) y cianobacterias. Al morir y descomponerse, esta biomasa consumirá el oxígeno disuelto (anoxia), asfixiando a los peces y elevando brutalmente los costos de potabilización.")
+        elif fosforo_total_kg > 100:
+            st.warning(f"⚠️ **Riesgo Medio (Crecimiento Algal):** La entrada de {fosforo_total_kg:,.0f} Kg de fósforo alterará la transparencia del agua y requerirá mayor dosificación de químicos en la planta de tratamiento.")
+        else:
+            if volumen_lodo_m3 == 0:
+                st.success("🌿 **Protección Perfecta:** El bosque y el sotobosque lograron retener el 100% de los sedimentos. El agua que llega al embalse es cristalina y oligotrófica (libre de nutrientes nocivos).")
+            else:
+                st.info(f"✅ **Estado Oligotrófico:** La carga de fósforo es baja ({fosforo_total_kg:,.1f} Kg). El ecosistema acuático del embalse puede asimilar este impacto sin generar plagas de macrófitas.")
+
+    # El Aleph Limnológico
+    with st.expander("📚 El Aleph de los Lagos: Colmatación, Fósforo y Anoxia", expanded=False):
+        st.markdown("""
+        ### ⏳ Colmatación: El Reloj de Arena de la Ingeniería
+        Los embalses son, termodinámicamente, trampas de sedimentos perfectas. Al frenar la velocidad del río a casi cero, toda la tierra arrancada por la lluvia en las montañas decanta hacia el fondo. 
+        * **El Costo Oculto:** Cada metro cúbico de lodo que entra es un metro cúbico de agua potable que ya no se puede almacenar para la época de sequía (El Niño). Cuando el lodo alcanza las compuertas de fondo, la represa muere operativamente.
+        
+        ### 🧪 La Venganza de la Tierra: Eutrofización
+        La tierra agrícola es rica en Fósforo (P) y Nitrógeno (N). En la montaña, estos elementos hacen crecer los cultivos. En un embalse cerrado, son una sentencia de muerte.
+        1. **El Estallido Verde:** El Fósforo detona el crecimiento hiperacelerado de macrófitas flotantes (buchón de agua) y microalgas.
+        2. **El Bloqueo Solar:** El buchón cubre la superficie, impidiendo que la luz solar llegue al fondo. Las algas profundas dejan de hacer fotosíntesis.
+        3. **La Anoxia (Muerte por Asfixia):** Cuando el buchón y las algas mueren, las bacterias del fondo las descomponen. Este proceso consume masivamente el Oxígeno Disuelto (OD) del agua. El embalse se vuelve anóxico (sin oxígeno), generando gases tóxicos como sulfuro de hidrógeno (olor a huevo podrido) y aniquilando la fauna acuática.
+        
+        **La solución real** no es comprar dragas multimillonarias ni aplicar herbicidas en el lago; la solución es volver al **Módulo 1** de este simulador: diseñar árboles con alto Índice de Área Foliar, promover el sotobosque y dejar que la microingeniería de la hoja frene la gota de lluvia antes de que toque el suelo.
+        """)
