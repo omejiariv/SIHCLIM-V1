@@ -1702,8 +1702,6 @@ with tab_micro:
         )
         st.plotly_chart(fig_particion, use_container_width=True)
 
-    st.markdown("---")
-
     # =========================================================================
     # 🌧️ MÓDULO DE BALÍSTICA Y ENERGÍA CINÉTICA (EROSIÓN)
     # =========================================================================
