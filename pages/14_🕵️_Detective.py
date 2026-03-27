@@ -12,6 +12,35 @@ st.set_page_config(page_title="Centro de Diagnóstico", page_icon="🕵️", lay
 st.title("🕵️ Centro de Diagnóstico y Detective")
 st.markdown("---")
 
+# ==============================================================================
+# 🔒 MURO DE SEGURIDAD GLOBAL (ACCESO BETA)
+# ==============================================================================
+def muro_de_acceso_beta():
+    if "beta_unlocked" not in st.session_state:
+        st.session_state["beta_unlocked"] = False
+        
+    if not st.session_state["beta_unlocked"]:
+        st.title("🔒 Sihcli-Poter: Fase de Pruebas (Beta)")
+        st.info("Esta plataforma científica se encuentra en fase de acceso restringido. Por favor, ingresa la credencial proporcionada por el equipo de investigación.")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            clave_beta = st.text_input("Credencial de Acceso:", type="password")
+            if st.button("Ingresar al Gemelo Digital", type="primary", use_container_width=True):
+                # 💡 La contraseña por defecto es "Agua2026"
+                if clave_beta == st.secrets.get("CLAVE_BETA", "Agua2026"):
+                    st.session_state["beta_unlocked"] = True
+                    st.rerun() # Recarga la página y muestra todo el contenido
+                else:
+                    st.error("❌ Credencial incorrecta. Acceso denegado.")
+        
+        # 🛑 st.stop() es la magia: evita que Python siga leyendo el código hacia abajo
+        st.stop() 
+
+# Llamamos a la función para activar el escudo
+muro_de_acceso_beta()
+# ==============================================================================
+
 # --- GESTIÓN DE CONEXIÓN ---
 try:
     from modules.db_manager import get_engine
