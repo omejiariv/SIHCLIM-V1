@@ -373,122 +373,145 @@ def detectar_zona_vida_dominante(gdf_zona):
     except:
         return "bh-MB"
 
-# --- DEFINICIÓN DE TABS PRINCIPALES ---
-tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador, tab_ecologia, tab_ret_dosel = st.tabs([
-    "🗺️ Mapa & GBIF", "🧬 Taxonomía", "🌲 Bosque e Inventarios", "⚖️ Metabolismo (AFOLU)", "📊 Comparador", "🌿 Ecología del Paisaje", "🌳 Retención Hídrica del Dosel"])
+# =========================================================================
+# 🗂️ SISTEMA DE PESTAÑAS (NAVEGACIÓN)
+# =========================================================================
+tab_factura, tab_mapa, tab_stats, tab_tendencias, tab_ecologia, tab_dosel, tab_micro = st.tabs([
+    "💰 La Factura de la Naturaleza", 
+    "🗺️ Mapa & GBIF", 
+    "📊 Estadísticas GBIF", 
+    "📈 Tendencias & Análisis", 
+    "🌿 Ecología del Paisaje", 
+    "🌳 Retención Hídrica del Dosel",
+    "🔬 Microsistema del Árbol"
+])
 
-# Variable global para datos de biodiversidad
+# ==============================================================================
+# 💧 TAB 1: LA FACTURA DE LA NATURALEZA (VALORACIÓN DE SERVICIOS ECOSISTÉMICOS)
+# ==============================================================================
+with tab_factura:
+    st.subheader("💰 La Factura de la Naturaleza")
+    st.info("Valoración económica de los servicios ecosistémicos...")
+
+    st.markdown("""
+    > *¿Cuánto nos costaría a los humanos hacer el trabajo que el ciclo del agua hace gratis?* > Este simulador calcula el costo energético y económico de desalinizar, bombear, transportar y filtrar el agua con tecnología e infraestructura humana.
+    """)
+
+    # 🎥 EL REPRODUCTOR DE VIDEO DIDÁCTICO
+    with st.expander("🎥 Ver Explicación Didáctica: El Ciclo del Agua", expanded=False):
+        url_video_supabase = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/videos/ciclodelagua.mp4"
+        st.video(url_video_supabase, format="video/mp4")
+        st.caption("Aprende cómo la naturaleza actúa como la mayor planta de tratamiento y bombeo del planeta.")
+
+    # 1. 🚀 INYECCIÓN DE LA TURBINA CENTRAL (Con blindaje de seguridad)
+    try:
+        anio_actual = st.session_state.get('aleph_anio', 2025)
+        datos_metabolismo = obtener_metabolismo_exacto(nombre_seleccion, anio_actual)
+        pob_total_base = datos_metabolismo.get('pob_total', 5000)
+    except Exception:
+        # Paracaídas por si no hay territorio seleccionado aún
+        pob_total_base = 5000 
+
+    # ==========================================
+    # ESTRUCTURA DE DASHBOARD: 1/3 Controles | 2/3 Resultados
+    # ==========================================
+    col_ctrl, col_dash = st.columns([1, 2.2], gap="large")
+
+    with col_ctrl:
+        st.markdown("### 🎛️ Parámetros Locales")
+        st.info("Ajusta las variables para recalcular la factura en tiempo real.")
+        
+        # Blindaje: value usa la población exacta extraída por el motor
+        val_pob = int(pob_total_base) if pob_total_base >= 1000 else 1000
+        poblacion = st.number_input("👥 Población a abastecer:", min_value=1000, value=val_pob, step=5000)
+        dotacion = st.slider("🚰 Dotación (Litros/hab/día):", min_value=50, max_value=300, value=150, step=5)
+        altura_m = st.number_input("⛰️ Altitud promedio (m.s.n.m):", min_value=0, value=1500, step=50)
+        distancia_km = st.number_input("🌬️ Distancia al mar (km):", min_value=0, value=400, step=10)
+        
+        # Escondemos las tarifas técnicas para no saturar la interfaz principal
+        with st.expander("⚙️ Configuración de Tarifas Unitarias (US$)", expanded=False):
+            t_desalinizacion = st.number_input("Desalinización ($/m³):", value=0.50, step=0.05)
+            t_tratamiento = st.number_input("Tratamiento ($/m³):", value=0.05, step=0.01)
+            t_transporte = st.number_input("Transporte ($/m³ por km):", value=0.25, step=0.05)
+            t_bombeo = st.number_input("Bombeo ($/m³ por metro):", value=0.18, step=0.01)
+
+    # ==========================================
+    # MOTOR MATEMÁTICO
+    # ==========================================
+    volumen_anual_m3 = (poblacion * dotacion * 365) / 1000
+    costo_desalinizacion = volumen_anual_m3 * t_desalinizacion
+    costo_tratamiento = volumen_anual_m3 * t_tratamiento
+    costo_transporte = volumen_anual_m3 * distancia_km * t_transporte
+    costo_bombeo = volumen_anual_m3 * altura_m * t_bombeo
+    
+    costo_total_naturaleza = costo_desalinizacion + costo_tratamiento + costo_transporte + costo_bombeo
+    costo_medio_m3 = costo_total_naturaleza / volumen_anual_m3 if volumen_anual_m3 > 0 else 0
+
+    # ==========================================
+    # PANEL DE RESULTADOS (DERECHA)
+    # ==========================================
+    with col_dash:
+        st.markdown("### 🧾 Resumen Financiero Anual - Aportes de la Infraestructura Natural")
+        
+        # Tarjetas de métricas (KPIs)
+        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1.metric("💧 Volumen Movilizado", f"{volumen_anual_m3 / 1e6:,.1f} Millones m³")
+        kpi2.metric("💸 Aporte de la Naturaleza", f"${costo_total_naturaleza / 1e6:,.1f} M USD", "Subsidio Natural")
+        kpi3.metric("🏷️ Costo Real Oculto", f"${costo_medio_m3:,.2f} USD / m³")
+        
+        # Gráfico de Cascada Financiera (Waterfall)
+        import plotly.graph_objects as go
+        
+        fig_waterfall = go.Figure(go.Waterfall(
+            name = "Factura Natural",
+            orientation = "v",
+            measure = ["relative", "relative", "relative", "relative", "total"],
+            x = ["Desalinización<br>(Evaporación)", "Bombeo<br>(Ascenso Térmico)", "Transporte<br>(Vientos)", "Tratamiento<br>(Suelo/Bosques)", "<b>VALOR TOTAL</b>"],
+            textposition = "outside",
+            text = [f"${costo_desalinizacion/1e6:.1f}M", f"${costo_bombeo/1e6:.1f}M", f"${costo_transporte/1e6:.1f}M", f"${costo_tratamiento/1e6:.1f}M", f"<b>${costo_total_naturaleza/1e6:.1f}M</b>"],
+            y = [costo_desalinizacion, costo_bombeo, costo_transporte, costo_tratamiento, costo_total_naturaleza],
+            connector = {"line":{"color":"rgb(63, 63, 63)"}},
+            decreasing = {"marker":{"color":"#e74c3c"}},
+            increasing = {"marker":{"color":"#2ecc71"}},
+            totals = {"marker":{"color":"#3498db"}}
+        ))
+        
+        fig_waterfall.update_layout(
+            title = "Construcción del Costo de los Servicios Hídricos (Millones USD)",
+            showlegend = False,
+            plot_bgcolor="rgba(0,0,0,0)",
+            yaxis_title="Millones de Dólares (USD)",
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        
+        st.plotly_chart(fig_waterfall, use_container_width=True)
+
+    # Mensaje conclusivo de alto impacto (¡AHORA SÍ DENTRO DE LA PESTAÑA!)
+    st.success(f"🌱 **El Mensaje para los Tomadores de Decisiones:** Proteger las cuencas y los bosques que abastecen a estos **{poblacion:,.0f} habitantes** le ahorra al Estado y a la sociedad **${costo_total_naturaleza / 1e6:,.1f} millones de dólares anuales** en infraestructura artificial. La conservación es la inversión más rentable.")
+
+# ==============================================================================
+# 🌍 MOTOR DE BIODIVERSIDAD GLOBAL (Prepara datos para Tab 2 y 3)
+# ==============================================================================
+import pandas as pd
+
 gdf_bio = pd.DataFrame()
 threatened = pd.DataFrame()
 n_threat = 0
 
-# --- PROCESAMIENTO PREVIO (Solo si hay zona) ---
-if gdf_zona is not None:
-    with st.spinner(f"📡 Escaneando biodiversidad en {nombre_seleccion}..."):
-        gdf_bio = gbif_connector.get_biodiversity_in_polygon(gdf_zona, limit=3000)
-        
-    if not gdf_bio.empty and 'Amenaza IUCN' in gdf_bio.columns:
-        threatened = gdf_bio[~gdf_bio['Amenaza IUCN'].isin(['NE', 'LC', 'NT', 'DD', 'nan'])]
-        n_threat = threatened['Nombre Científico'].nunique()
+# --- PROCESAMIENTO PREVIO (Solo si hay zona cargada) ---
+try:
+    if gdf_zona is not None:
+        with st.spinner(f"📡 Escaneando biodiversidad en {nombre_seleccion}..."):
+            gdf_bio = gbif_connector.get_biodiversity_in_polygon(gdf_zona, limit=3000)
+            
+        if not gdf_bio.empty and 'Amenaza IUCN' in gdf_bio.columns:
+            threatened = gdf_bio[~gdf_bio['Amenaza IUCN'].isin(['NE', 'LC', 'NT', 'DD', 'nan'])]
+            n_threat = threatened['Nombre Científico'].nunique()
+except NameError:
+    pass # Pasa de largo si no hay mapa cargado para no romper la app
 
 # ==============================================================================
-# 💧 MÓDULO: LA FACTURA DE LA NATURALEZA (VALORACIÓN DE SERVICIOS ECOSISTÉMICOS)
-# ==============================================================================
-st.markdown("---")
-st.header("🌎 La Factura de la Naturaleza")
-st.markdown("""
-> *¿Cuánto nos costaría a los humanos hacer el trabajo que el ciclo del agua hace gratis?* > Este simulador calcula el costo energético y económico de desalinizar, bombear, transportar y filtrar el agua con tecnología e infraestructura humana.
-""")
-
-# 🎥 EL REPRODUCTOR DE VIDEO DIDÁCTICO
-with st.expander("🎥 Ver Explicación Didáctica: El Ciclo del Agua", expanded=False):
-    url_video_supabase = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/videos/ciclodelagua.mp4"
-    st.video(url_video_supabase, format="video/mp4")
-    st.caption("Aprende cómo la naturaleza actúa como la mayor planta de tratamiento y bombeo del planeta.")
-
-# 1. 🚀 INYECCIÓN DE LA TURBINA CENTRAL
-anio_actual = st.session_state.get('aleph_anio', 2025)
-datos_metabolismo = obtener_metabolismo_exacto(nombre_seleccion, anio_actual)
-pob_total_base = datos_metabolismo['pob_total']
-
-# ==========================================
-# ESTRUCTURA DE DASHBOARD: 1/3 Controles | 2/3 Resultados
-# ==========================================
-col_ctrl, col_dash = st.columns([1, 2.2], gap="large")
-
-with col_ctrl:
-    st.markdown("### 🎛️ Parámetros Locales")
-    st.info("Ajusta las variables de tu territorio para recalcular la factura en tiempo real.")
-    
-    # Blindaje: value usa la población exacta extraída por el motor
-    val_pob = int(pob_total_base) if pob_total_base >= 1000 else 1000
-    poblacion = st.number_input("👥 Población a abastecer:", min_value=1000, value=val_pob, step=5000)
-    dotacion = st.slider("🚰 Dotación (Litros/hab/día):", min_value=50, max_value=300, value=150, step=5)
-    altura_m = st.number_input("⛰️ Altitud promedio (m.s.n.m):", min_value=0, value=1500, step=50)
-    distancia_km = st.number_input("🌬️ Distancia al mar (km):", min_value=0, value=400, step=10)
-    
-    # Escondemos las tarifas técnicas para no saturar la interfaz principal
-    with st.expander("⚙️ Configuración de Tarifas Unitarias (US$)", expanded=False):
-        t_desalinizacion = st.number_input("Desalinización ($/m³):", value=0.50, step=0.05)
-        t_tratamiento = st.number_input("Tratamiento ($/m³):", value=0.05, step=0.01)
-        t_transporte = st.number_input("Transporte ($/m³ por km):", value=0.25, step=0.05)
-        t_bombeo = st.number_input("Bombeo ($/m³ por metro):", value=0.18, step=0.01)
-
-# ==========================================
-# MOTOR MATEMÁTICO
-# ==========================================
-volumen_anual_m3 = (poblacion * dotacion * 365) / 1000
-costo_desalinizacion = volumen_anual_m3 * t_desalinizacion
-costo_tratamiento = volumen_anual_m3 * t_tratamiento
-costo_transporte = volumen_anual_m3 * distancia_km * t_transporte
-costo_bombeo = volumen_anual_m3 * altura_m * t_bombeo
-costo_total_naturaleza = costo_desalinizacion + costo_tratamiento + costo_transporte + costo_bombeo
-costo_medio_m3 = costo_total_naturaleza / volumen_anual_m3 if volumen_anual_m3 > 0 else 0
-
-# ==========================================
-# PANEL DE RESULTADOS (DERECHA)
-# ==========================================
-with col_dash:
-    st.markdown("### 🧾 Resumen Financiero Anual - Aportes de la Infraestructura Natural")
-    
-    # Tarjetas de métricas (KPIs)
-    kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("💧 Volumen Movilizado", f"{volumen_anual_m3 / 1e6:,.1f} Millones m³")
-    kpi2.metric("💸 Aporte de la Naturaleza", f"${costo_total_naturaleza / 1e6:,.1f} M USD", "Subsidio Natural")
-    kpi3.metric("🏷️ Costo Real Oculto", f"${costo_medio_m3:,.2f} USD / m³")
-    
-    # Gráfico de Cascada Financiera (Waterfall)
-    import plotly.graph_objects as go
-    
-    fig_waterfall = go.Figure(go.Waterfall(
-        name = "Factura Natural",
-        orientation = "v",
-        measure = ["relative", "relative", "relative", "relative", "total"],
-        x = ["Desalinización<br>(Evaporación)", "Bombeo<br>(Ascenso Térmico)", "Transporte<br>(Vientos)", "Tratamiento<br>(Suelo/Bosques)", "<b>VALOR TOTAL</b>"],
-        textposition = "outside",
-        text = [f"${costo_desalinizacion/1e6:.1f}M", f"${costo_bombeo/1e6:.1f}M", f"${costo_transporte/1e6:.1f}M", f"${costo_tratamiento/1e6:.1f}M", f"<b>${costo_total_naturaleza/1e6:.1f}M</b>"],
-        y = [costo_desalinizacion, costo_bombeo, costo_transporte, costo_tratamiento, costo_total_naturaleza],
-        connector = {"line":{"color":"rgb(63, 63, 63)"}},
-        decreasing = {"marker":{"color":"#e74c3c"}},
-        increasing = {"marker":{"color":"#2ecc71"}},
-        totals = {"marker":{"color":"#3498db"}}
-    ))
-    
-    fig_waterfall.update_layout(
-        title = "Construcción del Costo de los Servicios Hídricos (Millones USD)",
-        showlegend = False,
-        plot_bgcolor="rgba(0,0,0,0)",
-        yaxis_title="Millones de Dólares (USD)",
-        margin=dict(l=20, r=20, t=40, b=20)
-    )
-    
-    st.plotly_chart(fig_waterfall, use_container_width=True)
-
-# Mensaje conclusivo de alto impacto
-st.success(f"🌱 **El Mensaje para los Tomadores de Decisiones:** Proteger las cuencas y los bosques que abastecen a estos **{poblacion:,.0f} habitantes** le ahorra al Estado y a la sociedad **${costo_total_naturaleza / 1e6:,.1f} millones de dólares anuales** en infraestructura artificial. La conservación es la inversión más rentable.")
-
-# ==============================================================================
-# TAB 1: MAPA Y MÉTRICAS
+# 🗺️ TAB 2: MAPA Y MÉTRICAS
 # ==============================================================================
 with tab_mapa:
     if gdf_zona is not None:
@@ -1379,172 +1402,108 @@ with tab_ecologia:
         render_motor_hidrologico(gdf_zona)
 
 # =========================================================================
-# PESTAÑA 7: RETENCIÓN HÍDRICA DEL DOSEL
+# PESTAÑA 7: EL MICROSISTEMA (DISEÑADOR ECOHIDROLÓGICO DEL ÁRBOL)
 # =========================================================================
-with tab_ret_dosel:
-    st.subheader("🌳 Servicio Ecosistémico: Retención Hídrica del Dosel")
-    st.info("Modelo eco-hidrológico de intercepción forestal. Estima cuánta agua de un aguacero es 'secuestrada' por las hojas y ramas, mitigando el riesgo de escorrentía rápida y avalanchas.")
-
-    # --- INICIO DEL JUGUETE FRACTAL DA VINCI ---
-    with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
-        st.markdown("La capacidad adaptativa (inteligencia) de un árbol para retener agua y permitir el paso de la luz, se basa en la optimización fractal de su área superficial. Juega con los parámetros matemáticos que definen el crecimiento de las ramas.")
-        
-        col_frac1, col_frac2 = st.columns([1, 2.5])
-        
-        with col_frac1:
-            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 15, 7, help="Más iteraciones = más hojas = mayor área de retención.")
-            angulo_grados = st.slider("Ángulo de Ramificación (°):", 10, 90, 25)
-            escala = st.slider("Factor de Reducción (Escala):", 0.5, 0.85, 0.75, step=0.05)
-            
-            st.caption("A mayor complejidad fractal, mayor Índice de Área Foliar (LAI) y, por tanto, mayor retención de agua calculada en el modelo inferior.")
-            
-            # 🚀 EL CONTROL DE VELOCIDAD Y EL BOTÓN
-            st.markdown("<br>", unsafe_allow_html=True)
-            velocidad = st.slider("⏱️ Velocidad de Animación (seg/nivel):", 0.05, 1.5, 0.25, 0.05, help="Menor tiempo = crecimiento más rápido.")
-            animar = st.button("🌱 Animar Crecimiento", use_container_width=True)
-            
-        with col_frac2:
-            import math
-            import time
-            import plotly.graph_objects as go
-            
-            # Contenedor dinámico para la animación
-            espacio_fractal = st.empty()
-            
-            # Función recursiva para dibujar el árbol fractal
-            def construir_arbol(x, y, angulo, longitud, nivel, x_lines, y_lines):
-                if nivel == 0:
-                    return
-                
-                # Coordenadas de la nueva rama
-                x_nuevo = x + longitud * math.cos(angulo)
-                y_nuevo = y + longitud * math.sin(angulo)
-                
-                # Agregar coordenadas (None rompe la línea para que Plotly no conecte ramas distintas)
-                x_lines.extend([x, x_nuevo, None])
-                y_lines.extend([y, y_nuevo, None])
-                
-                # Llamadas recursivas para las dos sub-ramas
-                construir_arbol(x_nuevo, y_nuevo, angulo - math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
-                construir_arbol(x_nuevo, y_nuevo, angulo + math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
-
-            def generar_figura_fractal(prof_actual):
-                x_arbol, y_arbol = [], []
-                construir_arbol(0, 0, math.pi / 2, 100, prof_actual, x_arbol, y_arbol)
-                
-                fig_fractal = go.Figure(go.Scatter(x=x_arbol, y=y_arbol, mode='lines', line=dict(color='rgba(39, 174, 96, 0.8)', width=1.5)))
-                fig_fractal.update_layout(
-                    xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
-                    margin=dict(l=0, r=0, t=0, b=0), height=350, plot_bgcolor='rgba(0,0,0,0)'
-                )
-                return fig_fractal
-
-            # Lógica de Renderizado (Estático vs Animado)
-            if animar:
-                for p in range(1, profundidad + 1):
-                    espacio_fractal.plotly_chart(generar_figura_fractal(p), use_container_width=True)
-                    time.sleep(velocidad) # <--- 🧠 AHORA LA VELOCIDAD ES DINÁMICA
-            else:
-                espacio_fractal.plotly_chart(generar_figura_fractal(profundidad), use_container_width=True)
-                
-    # --- FIN DEL JUGUETE FRACTAL ---
+with tab_micro:
+    import plotly.graph_objects as go
     
-    st.markdown("---")
+    st.subheader("🔬 El Microsistema: Diseñador Ecohidrológico del Árbol")
+    st.info("Laboratorio de bioingeniería forestal. Modela cómo la anatomía de un solo árbol altera el ciclo del agua a escala micrométrica (Intercepción, Goteo y Escorrentía Fustal).")
 
-    col_input, col_graf = st.columns([1, 2])
+    col_anat, col_hoja, col_graf = st.columns([1.2, 1.2, 2])
 
-    with col_input:
-        st.subheader("Parámetros Macro del Ecosistema")
+    with col_anat:
+        st.markdown("#### 🪵 1. Arquitectura del Árbol")
         
-        tipo_cobertura = st.selectbox(
-            "Tipo de Cobertura Vegetal:",
-            ["Bosque Andino (Nativo)", "Plantación de Pino", "Robledal", "Rastrojo Alto", "Pastos Degradados"]
+        # Modelo Alométrico simplificado: El diámetro define el Área Foliar
+        dbh_cm = st.slider("Diámetro del Tronco (DAP en cm):", 5.0, 150.0, 30.0, 1.0, help="A mayor grosor, más edad y una copa exponencialmente más grande.")
+        
+        # El ángulo define el "Efecto Embudo" (Stemflow)
+        angulo_ramas = st.select_slider(
+            "Ángulo de Ramificación:",
+            options=["Agudo (30° - Forma V)", "Medio (60° - Copa Redonda)", "Horizontal (90°)", "Llorón (120° - Hacia abajo)"],
+            value="Medio (60° - Copa Redonda)"
         )
-        
-        dicc_vegetacion = {
-            "Bosque Andino (Nativo)": {"Sl": 0.25, "LAI_max": 6.5},
-            "Plantación de Pino": {"Sl": 0.20, "LAI_max": 5.0},
-            "Robledal": {"Sl": 0.30, "LAI_max": 5.5},
-            "Rastrojo Alto": {"Sl": 0.15, "LAI_max": 3.5},
-            "Pastos Degradados": {"Sl": 0.05, "LAI_max": 1.5}
-        }
-        
-        params = dicc_vegetacion[tipo_cobertura]
-        
-        densidad_pct = st.slider("Estado de Conservación / Densidad (%):", 10.0, 100.0, 80.0, 5.0)
-        lai_actual = params["LAI_max"] * (densidad_pct / 100.0)
-        
-        hectareas = st.number_input("Área del polígono a evaluar (ha):", value=100.0, step=10.0)
-        
-        st.markdown("---")
-        st.subheader("El Evento Meteorológico")
-        
-        # Nuevos controles separados de Intensidad y Tiempo
-        c_lluvia1, c_lluvia2 = st.columns(2)
-        intensidad_mm_h = c_lluvia1.slider("🌧️ Intensidad (mm/hora):", 1.0, 100.0, 20.0, 1.0)
-        duracion_h = c_lluvia2.slider("⏱️ Duración (horas):", 0.5, 24.0, 2.0, 0.5)
-        
-        # Cálculo de la precipitación total bruta
-        precipitacion_mm = intensidad_mm_h * duracion_h
-        st.info(f"**Precipitación Bruta Total del Evento:** {precipitacion_mm:.1f} mm")
 
-    # Motor Físico-Matemático (Ecuación de Aston)
-    s_max_mm = params["Sl"] * lai_actual
+    with col_hoja:
+        st.markdown("#### 🍃 2. Microingeniería Foliar")
+        
+        textura = st.radio("Textura de la Epidermis:", 
+                           ["Lisa / Cerosa (Repele agua)", "Normal", "Pubescente (Pelos microscópicos)"], index=1)
+        
+        forma = st.radio("Morfología de la Hoja:",
+                         ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
 
-    import numpy as np
-    if s_max_mm > 0:
-        intercepcion_mm = s_max_mm * (1 - np.exp(-precipitacion_mm / s_max_mm))
-    else:
-        intercepcion_mm = 0.0
-
-    precipitacion_efectiva_mm = precipitacion_mm - intercepcion_mm
+    # =========================================================================
+    # 🧠 MOTOR FÍSICO Y ALOMÉTRICO DEL INDIVIDUO
+    # =========================================================================
     
-    # Prevenir división por cero si el evento es de 0 mm
-    if precipitacion_mm > 0:
-        eficiencia_retencion_pct = (intercepcion_mm / precipitacion_mm) * 100
+    # 1. Alometría: Ecuación potencial empírica para Área Foliar Total (m2)
+    area_foliar_m2 = 0.15 * (dbh_cm ** 2.1)
+
+    # 2. Modificadores de Capacidad de Retención Específica (Sl en mm o L/m2)
+    sl_base = 0.20 # Capacidad base genérica
+
+    # Modificador por Textura
+    if textura == "Lisa / Cerosa (Repele agua)": mod_tex = 0.7
+    elif textura == "Pubescente (Pelos microscópicos)": mod_tex = 1.6
+    else: mod_tex = 1.0
+
+    # Modificador por Forma
+    if forma == "Cóncava (Forma de copa)": mod_for = 1.4
+    elif forma == "Acuminada (Punta de goteo larga)": mod_for = 0.8
+    else: mod_for = 1.0
+
+    sl_efectivo = sl_base * mod_tex * mod_for
+
+    # 3. Cálculo de Volúmenes (1 mm de agua en 1 m2 = 1 Litro)
+    volumen_retenido_litros = area_foliar_m2 * sl_efectivo
+
+    # 4. Partición del Agua (Destino de la lluvia)
+    if "Agudo" in angulo_ramas:
+        stemflow_pct = 12.0
+    elif "Medio" in angulo_ramas:
+        stemflow_pct = 5.0
+    elif "Horizontal" in angulo_ramas:
+        stemflow_pct = 1.0
     else:
-        eficiencia_retencion_pct = 0.0
+        stemflow_pct = 0.1
 
-    volumen_retenido_m3 = intercepcion_mm * hectareas * 10
-    volumen_escurre_m3 = precipitacion_efectiva_mm * hectareas * 10
+    retencion_pct = 25.0 * (sl_efectivo / 0.20)
+    retencion_pct = min(retencion_pct, 45.0) # Límite físico
+    throughfall_pct = 100.0 - retencion_pct - stemflow_pct
 
+    # =========================================================================
+    # 📊 RENDERIZADO VISUAL DEL MICROSISTEMA
+    # =========================================================================
     with col_graf:
-        c_m1, c_m2, c_m3 = st.columns(3)
-        c_m1.metric("Capacidad Máxima Dosel", f"{s_max_mm:.2f} mm", f"LAI: {lai_actual:.1f}", delta_color="normal")
-        c_m2.metric("Agua Retenida (Intercepción)", f"{intercepcion_mm:.1f} mm", f"{eficiencia_retencion_pct:.1f}% del aguacero", delta_color="off")
+        st.markdown(f"**Área Foliar Total Desplegada:** {area_foliar_m2:,.1f} m²")
+        st.markdown(f"**Capacidad Máxima de la Esponja:** :blue[{volumen_retenido_litros:,.1f} Litros de agua]")
         
-        alerta_suelo = "inverse" if precipitacion_efectiva_mm > 30 else "normal"
-        c_m3.metric("Agua al Suelo (P. Efectiva)", f"{precipitacion_efectiva_mm:.1f} mm", "Golpe de escorrentía", delta_color=alerta_suelo)
-        
-        import plotly.graph_objects as go
-        fig_vol = go.Figure()
-        fig_vol.add_trace(go.Bar(
-            x=["Impacto Volumétrico del Evento"],
-            y=[volumen_retenido_m3],
-            name="Volumen 'Secuestrado' por el Bosque (m³)",
-            marker_color="#2ecc71",
-            text=f"{volumen_retenido_m3:,.0f} m³", textposition='auto'
-        ))
-        fig_vol.add_trace(go.Bar(
-            x=["Impacto Volumétrico del Evento"],
-            y=[volumen_escurre_m3],
-            name="Volumen que golpea el suelo (m³)",
-            marker_color="#e74c3c",
-            text=f"{volumen_escurre_m3:,.0f} m³", textposition='auto'
+        # Gráfico de destino del agua (Sankey simplificado en Pie Chart)
+        fig_particion = go.Figure(go.Pie(
+            labels=["Evaporada/Retenida (Secuestrada)", "Escorrentía Fustal (Por el tronco)", "Goteo Directo al Suelo"],
+            values=[retencion_pct, stemflow_pct, throughfall_pct],
+            hole=0.4,
+            marker_colors=["#2ecc71", "#8e44ad", "#3498db"],
+            textinfo="label+percent",
+            textposition="inside"
         ))
         
-        fig_vol.update_layout(
-            barmode='stack',
-            title=f"Balance Hídrico del Evento en {hectareas} ha",
-            height=300, margin=dict(l=20, r=20, t=40, b=20),
-            yaxis_title="Metros Cúbicos (m³)"
+        fig_particion.update_layout(
+            title="Destino del Agua en este Árbol",
+            showlegend=False,
+            margin=dict(l=20, r=20, t=40, b=20),
+            height=350
         )
-        st.plotly_chart(fig_vol, use_container_width=True)
+        st.plotly_chart(fig_particion, use_container_width=True)
 
-        if eficiencia_retencion_pct > 15:
-            st.success(f"🌿 **Alta Regulación:** El ecosistema actuó como un escudo, absorbiendo {volumen_retenido_m3:,.0f} toneladas de agua que, de otro modo, habrían alimentado directamente la creciente del río.")
-        else:
-            st.error(f"⚠️ **Riesgo de Avalancha:** El dosel está saturado o degradado. La mayor parte de la energía de la tormenta ({volumen_escurre_m3:,.0f} m³) está golpeando el suelo directamente.")
+    st.markdown("---")
+    with st.expander("📚 Marco Conceptual del Microsistema", expanded=False):
+        st.markdown("""
+        **La Física detrás del modelo:** El Área Foliar ($A_{hojas}$) crece exponencialmente con el diámetro del tronco mediante leyes alométricas. 
+        La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar individualmente. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas con "acumen" puntiagudo reducen el tamaño de las gotas, controlando la energía cinética del impacto y evitando la erosión del suelo.
+        """)
 
     # =========================================================================
     # MARCO CONCEPTUAL, METODOLOGÍA Y FUENTES CIENTÍFICAS
