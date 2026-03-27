@@ -1638,6 +1638,17 @@ with tab_micro:
         forma = st.radio("Morfología de la Hoja:",
                          ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
 
+        with st.expander("👁️ Ver Guía Visual de Hojas", expanded=False):
+            st.markdown("**Texturas Epidérmicas:**")
+            c_img1, c_img2 = st.columns(2)
+            c_img1.image("https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Leaf_morphology_waxy.jpg/320px-Leaf_morphology_waxy.jpg", caption="Lisa/Cerosa (Repele)")
+            c_img2.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Trichomes_on_a_leaf.jpg/320px-Trichomes_on_a_leaf.jpg", caption="Pubescente (Atrapa agua)")
+            
+            st.markdown("**Morfologías:**")
+            c_img3, c_img4 = st.columns(2)
+            c_img3.image("https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Ficus_religiosa_leaf.jpg/320px-Ficus_religiosa_leaf.jpg", caption="Acuminada (Punta de goteo)")
+            c_img4.image("https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Water_drops_on_leaf_macro.jpg/320px-Water_drops_on_leaf_macro.jpg", caption="Cóncava (Efecto copa)")    
+
     # =========================================================================
     # 🧠 MOTOR FÍSICO Y ALOMÉTRICO DEL INDIVIDUO
     # =========================================================================
@@ -1775,4 +1786,33 @@ with tab_micro:
         st.markdown("""
         **La Física detrás del modelo:** El Área Foliar ($A_{hojas}$) crece exponencialmente con el diámetro del tronco mediante leyes alométricas. 
         La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar individualmente. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas con "acumen" puntiagudo reducen el tamaño de las gotas, controlando la energía cinética del impacto y evitando la erosión del suelo.
+        """)
+
+# =========================================================================
+    # EL ALEPH DEL ÁRBOL: MARCO CONCEPTUAL, FÍSICO Y BIOLÓGICO
+    # =========================================================================
+    st.markdown("---")
+    with st.expander("📚 El Milagro de la Hoja: Marco Conceptual, Ecuaciones y Física del Bosque", expanded=False):
+        st.markdown("""
+        ### 🌿 1. La Arquitectura Fractal y la Alometría
+        Un árbol no es un cilindro de madera; es una estructura fractal diseñada matemáticamente por la evolución para maximizar su superficie en un espacio tridimensional. 
+        * **Ley Alométrica:** El diámetro del tronco (DAP) dicta la cantidad de energía y agua que el árbol puede transportar, lo que se traduce en un Área Foliar ($A_{hojas}$) predecible. Un árbol maduro despliega miles de metros cuadrados de hojas a partir de un tronco de apenas un metro de ancho.
+        * **Escorrentía Fustal (Stemflow):** El ángulo de las ramas define el destino del agua. Las ramas en "V" (ángulos agudos) actúan como un embudo gigante. El árbol "cosecha" la lluvia y la hace resbalar por su corteza para regar sus propias raíces sin causar erosión en la tierra circundante.
+
+        ### 🔬 2. Microingeniería Foliar: La Esponja Perfecta
+        La capacidad de una hoja para retener agua ($S_l$) es un milagro de la nanoescala.
+        * **Pubescencia:** Los bosques de niebla y páramos andinos están llenos de plantas con hojas "peludas" (tricomas). Estos pelos microscópicos aumentan la fricción y atrapan microgotas de la neblina, multiplicando la retención de agua.
+        * **Ceras Epicuticulares:** Las hojas lisas y cerosas hacen que el agua forme esferas perfectas que resbalan rápidamente, protegiendo a la planta del peso excesivo y los hongos.
+
+        ### 🌧️ 3. La Balística de la Tormenta (Control de Erosión)
+        Cuando una gota cae desde las nubes, alcanza su **Velocidad Terminal ($V_t$)** (Ecuación de Atlas-Ulbrich), impactando el suelo como un micrometeorito.
+        $$V_t = 9.65 - 10.3 \cdot e^{-0.6D}$$
+        
+        **El Escudo del Dosel:** El árbol recibe este impacto a máxima velocidad y reduce la Energía Cinética de la gota a cero. Luego, el agua gotea desde una altura mucho menor ($h$). La nueva velocidad de impacto ($V_h$) se calcula con la ecuación aerodinámica de Brandt (1989):
+        $$V_h = V_t \sqrt{1 - e^{-2gh/V_t^2}}$$
+
+        **El Acumen (La Punta de Goteo):** Si la gota que cae del árbol es enorme, el daño al suelo podría ser peor que la lluvia original. Para evitarlo, las plantas tropicales desarrollaron el *acumen* (una punta alargada en la hoja). Esta aguja natural rompe la tensión superficial del agua, forzando al árbol a "gotear" gotas diminutas ($D < 2\\text{ mm}$) que llegan al suelo sin energía destructiva. 
+
+        ### 🎯 El Veredicto de la Naturaleza
+        Multiplicando el Área Foliar por la microarquitectura de la hoja y la física balística, demostramos matemáticamente que talar un árbol centenario no es solo perder madera; es **apagar una máquina perfecta de regulación hídrica y disipación de energía** que ninguna tecnología humana puede replicar con tal eficiencia.
         """)
