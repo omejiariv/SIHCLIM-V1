@@ -376,13 +376,13 @@ def detectar_zona_vida_dominante(gdf_zona):
 # =========================================================================
 # 🗂️ SISTEMA DE PESTAÑAS (NAVEGACIÓN)
 # =========================================================================
-tab_factura, tab_mapa, tab_taxonomia, tab_forestal, tab_stats, tab_tendencias, tab_ecologia, tab_dosel, tab_micro = st.tabs([
+tab_factura, tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador, tab_ecologia, tab_dosel, tab_micro = st.tabs([
     "💰 La Factura de la Naturaleza", 
     "🗺️ Mapa & GBIF", 
     "🧬 Taxonomía",
     "🌲 Bosque e Inventarios",
-    "📊 Estadísticas GBIF", 
-    "📈 Tendencias & Análisis", 
+    "⚖️ Metabolismo (AFOLU)",
+    "⚖️ Comparativa de Escenarios de Carbono",
     "🌿 Ecología del Paisaje", 
     "🌳 Retención Hídrica del Dosel",
     "🔬 Microsistema del Árbol"
@@ -603,7 +603,7 @@ with tab_mapa:
         st.info("👈 Seleccione una zona en el menú lateral para visualizar el mapa.")
 
 # ==============================================================================
-# TAB 2: TAXONOMÍA
+# TAB 3: TAXONOMÍA
 # ==============================================================================
 with tab_taxonomia:
     if not gdf_bio.empty:
@@ -644,7 +644,7 @@ with tab_taxonomia:
         st.info("No hay datos de biodiversidad para mostrar estadísticas.")
         
 # ==============================================================================
-# TAB 3: CALCULADORA DE CARBONO (INTEGRADA & DOCUMENTADA)
+# TAB 4: CALCULADORA DE CARBONO (INTEGRADA & DOCUMENTADA)
 # ==============================================================================
 with tab_forestal:
     st.header("🌳 Estimación de Servicios Ecosistémicos (Carbono)")
@@ -716,7 +716,6 @@ with tab_forestal:
         st.plotly_chart(fig_diag, use_container_width=True)
         
         # 2. Tabla de Datos (Pivot Table para mejor lectura)
-# 2. Tabla de Datos (Pivot Table para mejor lectura)
         with st.expander("Ver Tabla de Datos Detallada (Hectáreas)"):
             pivot_diag = df_diagnostico.pivot_table(
                 index='Cobertura',
@@ -962,7 +961,7 @@ with tab_forestal:
                     st.error(f"Error procesando archivo: Revise que las columnas se llamen DAP y Altura. ({e})")
 
 # ==============================================================================
-# TAB 4: METABOLISMO TERRITORIAL (AFOLU COMPLETO)
+# TAB 5: METABOLISMO TERRITORIAL (AFOLU COMPLETO)
 # ==============================================================================
 with tab_afolu:
     
@@ -1192,7 +1191,7 @@ with tab_afolu:
         st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
-# TAB 4: COMPARADOR DE ESCENARIOS (NUEVO)
+# TAB 6: COMPARADOR DE ESCENARIOS (NUEVO)
 # ==============================================================================
 with tab_comparador:
     st.header("⚖️ Comparativa de Escenarios de Carbono")
@@ -1265,7 +1264,7 @@ with tab_comparador:
             st.warning("Selecciona al menos un modelo para comparar.")
 
 # =========================================================================
-# TAB 6: ECOLOGÍA DEL PAISAJE (CONECTIVIDAD RIPARIA)
+# TAB 7: ECOLOGÍA DEL PAISAJE (CONECTIVIDAD RIPARIA)
 # =========================================================================
 with tab_ecologia:
     
@@ -1404,7 +1403,7 @@ with tab_ecologia:
         render_motor_hidrologico(gdf_zona)
 
 # =========================================================================
-# PESTAÑA 7: EL MICROSISTEMA (DISEÑADOR ECOHIDROLÓGICO DEL ÁRBOL)
+# PESTAÑA 8: EL MICROSISTEMA (DISEÑADOR ECOHIDROLÓGICO DEL ÁRBOL)
 # =========================================================================
 with tab_micro:
     import plotly.graph_objects as go
@@ -1543,7 +1542,7 @@ with tab_micro:
         """)
 
 # =========================================================================
-# PESTAÑA 8: Retención del Microsistema Biológico
+# PESTAÑA 9: Retención del Microsistema Biológico
 # =========================================================================
 
 st.subheader("🔬 El Microsistema: Diseñador Ecohidrológico del Árbol")
