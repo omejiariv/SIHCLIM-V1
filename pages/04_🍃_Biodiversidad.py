@@ -1392,7 +1392,7 @@ with tab_ret_dosel:
         col_frac1, col_frac2 = st.columns([1, 2.5])
         
         with col_frac1:
-            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 10, 7, help="Más iteraciones = más hojas = mayor área de retención.")
+            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 15, 7, help="Más iteraciones = más hojas = mayor área de retención.")
             angulo_grados = st.slider("Ángulo de Ramificación (°):", 10, 90, 25)
             escala = st.slider("Factor de Reducción (Escala):", 0.5, 0.85, 0.75, step=0.05)
             
@@ -1400,7 +1400,7 @@ with tab_ret_dosel:
             
             # 🚀 EL CONTROL DE VELOCIDAD Y EL BOTÓN
             st.markdown("<br>", unsafe_allow_html=True)
-            velocidad = st.slider("⏱️ Velocidad de Animación (seg/nivel):", 0.05, 1.0, 0.25, 0.05, help="Menor tiempo = crecimiento más rápido.")
+            velocidad = st.slider("⏱️ Velocidad de Animación (seg/nivel):", 0.05, 1.5, 0.25, 0.05, help="Menor tiempo = crecimiento más rápido.")
             animar = st.button("🌱 Animar Crecimiento", use_container_width=True)
             
         with col_frac2:
