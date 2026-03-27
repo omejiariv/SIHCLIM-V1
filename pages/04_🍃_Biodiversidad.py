@@ -2228,7 +2228,7 @@ with tab_micro:
         # Desdoblamos el volumen en Útil y Muerto
         c_v1, c_v2 = st.columns(2)
         vol_util_hm3 = c_v1.number_input("Vol. Útil (Millones m³):", min_value=1.0, value=12.5, step=0.1)
-        vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Millones m³):", min_value=0.1, value=3, step=0.1)
+        vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Millones m³):", min_value=0.1, value=3.0, step=0.1)
         
         caudal_ingreso_m3s = st.number_input("Ingreso Total (Espíritu Santo + Trasvases en m³/s):", value=6.5, step=0.1, help="1.2 local + 5.3 trasvases.")
         
