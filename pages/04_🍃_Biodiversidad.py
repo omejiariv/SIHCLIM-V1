@@ -2144,79 +2144,102 @@ with tab_micro:
         """)
 
 # =========================================================================
-    # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN Y EUTROFIZACIÓN (LA FE)
+    # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN, EUTROFIZACIÓN Y DINÁMICA (LA FE)
     # =========================================================================
     st.markdown("---")
-    st.markdown("#### 🛑 6. Limnología: El Destino del Embalse")
-    st.info("El lodo que llega al río desemboca en las aguas tranquilas del embalse. Aquí calculamos cómo ese sedimento reduce la vida útil de la represa (Colmatación) y cómo los nutrientes adheridos a la tierra disparan las plagas de macrófitas (Eutrofización).")
+    st.markdown("#### 🛑 6. Limnología Integral: El Destino del Embalse La Fe")
+    st.info("Modelo dinámico que cruza la sedimentación de la cuenca Espíritu Santo con los trasvases externos (Ríos Buey, Pantanillo y Piedras) para calcular la vida útil real y el riesgo de eutrofización.")
 
     col_lim1, col_lim2 = st.columns([1, 1.5])
 
     with col_lim1:
-        st.markdown("**Escalamiento a Nivel de Cuenca:**")
-        area_cuenca_ha = st.slider("Área de la cuenca afectada por la tormenta (Hectáreas):", 10.0, 5000.0, 1000.0, 50.0, help="1 Hectárea = 10,000 m².")
+        # 1. El Aleph Geográfico (Texto solicitado)
+        with st.expander("📍 Contexto Geográfico: Cuenca Espíritu Santo", expanded=True):
+            st.write("La quebrada Espíritu Santo es el afluente natural que alimenta el embalse La Fe. El área total de captación del embalse en la Cuenca Espíritu Santo es de **173 kilómetros cuadrados**. Esta cuenca es vital para el ecosistema regional y el abastecimiento de agua en la zona del Valle de Aburrá.")
+
+        st.markdown("**Escalamiento de la Tormenta:**")
+        # 2. Slider limitado a 173 km2
+        area_cuenca_km2 = st.slider("Área afectada por la tormenta (km²):", 1.0, 173.0, 50.0, 1.0, help="Límite superior: 173 km² (Total de la cuenca Espíritu Santo).")
+        tormentas_ano = st.slider("Tormentas de esta magnitud al año:", 1, 100, 20, 1, help="Permite anualizar el impacto.")
         
-        st.markdown("**Parámetros del Embalse (Ej. La Fe):**")
-        vol_embalse_hm3 = st.number_input("Volumen Total del Embalse (Millones de m³):", min_value=1.0, value=14.6, step=1.0)
+        st.markdown("**Parámetros del Sistema (Matriz Hídrica):**")
+        vol_embalse_hm3 = st.number_input("Volumen Total del Embalse (Millones de m³):", min_value=1.0, value=14.6, step=0.1)
+        caudal_ingreso_m3s = st.number_input("Ingreso Total (Espíritu Santo + Trasvases en m³/s):", value=6.5, step=0.1, help="1.2 local + 5.3 trasvases.")
         
         st.markdown("**Carga Química del Suelo:**")
+        # 3. Nuevo uso incluido: Urbanización
         uso_suelo = st.radio(
             "Uso del suelo erosionado:",
             [
+                "Zonas en proceso acelerado de urbanización (Suelos desnudos y aguas residuales - 0.25% Fósforo)",
                 "Agrícola / Ganadero (Alta carga de fertilizantes - 0.15% Fósforo)",
                 "Suelo Degradado (Carga media - 0.05% Fósforo)",
                 "Bosque Conservado (Carga natural baja - 0.01% Fósforo)"
-            ], index=0
+            ], index=1
         )
         
-        if "0.15%" in uso_suelo:
-            pct_fosforo = 0.0015
-        elif "0.05%" in uso_suelo:
-            pct_fosforo = 0.0005
-        else:
-            pct_fosforo = 0.0001
+        if "0.25%" in uso_suelo: pct_fosforo = 0.0025
+        elif "0.15%" in uso_suelo: pct_fosforo = 0.0015
+        elif "0.05%" in uso_suelo: pct_fosforo = 0.0005
+        else: pct_fosforo = 0.0001
 
     # ==========================================
-    # MOTOR BIOQUÍMICO Y FÍSICO DEL EMBALSE
+    # MOTOR BIOQUÍMICO, FÍSICO Y TIEMPO DE RESIDENCIA
     # ==========================================
-    # 1. Escalamiento de Sedimentos a toda la cuenca
-    # sedimento_al_rio_kg viene del módulo de Manning (por m2)
-    area_cuenca_m2 = area_cuenca_ha * 10_000
+    # Escalamiento Físico
+    area_cuenca_m2 = area_cuenca_km2 * 1_000_000
     sedimento_total_tormenta_kg = sedimento_al_rio_kg * area_cuenca_m2
     
-    # 2. Colmatación (Física): Densidad aparente del lodo arcilloso asentado húmedo ~ 1,200 kg/m3
+    # 4. Colmatación y Vida Útil (Escala Anual)
     densidad_lodo_kg_m3 = 1200.0
-    volumen_lodo_m3 = sedimento_total_tormenta_kg / densidad_lodo_kg_m3
+    volumen_lodo_m3_evento = sedimento_total_tormenta_kg / densidad_lodo_kg_m3
+    volumen_lodo_anual_m3 = volumen_lodo_m3_evento * tormentas_ano
     
-    # Impacto en la vida útil (¿Qué porcentaje del embalse se llenó de lodo en esta sola tormenta?)
     vol_embalse_m3 = vol_embalse_hm3 * 1_000_000
-    pct_volumen_perdido = (volumen_lodo_m3 / vol_embalse_m3) * 100
+    vida_util_anos = vol_embalse_m3 / volumen_lodo_anual_m3 if volumen_lodo_anual_m3 > 0 else 9999
     
-    # 3. Eutrofización (Química): Carga de Fósforo (P)
-    fosforo_total_kg = sedimento_total_tormenta_kg * pct_fosforo
+    # 5. Tasa de Recambio (El Efecto Dilución)
+    volumen_ingreso_anual_m3 = caudal_ingreso_m3s * 60 * 60 * 24 * 365
+    tasa_renovacion_anual = volumen_ingreso_anual_m3 / vol_embalse_m3 if vol_embalse_m3 > 0 else 0
+    dias_residencia = 365 / tasa_renovacion_anual if tasa_renovacion_anual > 0 else 0
+
+    # Química
+    fosforo_total_kg_evento = sedimento_total_tormenta_kg * pct_fosforo
 
     # ==========================================
     # RENDERIZADO DEL DIAGNÓSTICO
     # ==========================================
     with col_lim2:
-        st.markdown("##### ⏳ Diagnóstico Tras la Tormenta")
+        st.markdown("##### ⏳ Proyección a Largo Plazo y Dinámica del Embalse")
         c_l1, c_l2 = st.columns(2)
         
-        c_l1.metric("Lodo Depositado en el Fondo", f"{volumen_lodo_m3:,.0f} m³", f"-{pct_volumen_perdido:.5f}% de capacidad", delta_color="inverse")
-        c_l2.metric("Inyección de Fósforo (P)", f"{fosforo_total_kg:,.1f} Kg", "Fertilizante detonante", delta_color="inverse")
+        # Nuevos cálculos solicitados
+        c_l1.metric("Lodo Depositado (Anual)", f"{volumen_lodo_anual_m3:,.0f} m³/año", f"Por {tormentas_ano} tormentas", delta_color="inverse")
+        
+        alerta_vida = "inverse" if vida_util_anos < 50 else "normal"
+        c_l2.metric("Vida Útil Estimada", f"{vida_util_anos:,.1f} Años", "Hasta colmatación total", delta_color=alerta_vida)
         
         st.markdown("---")
+        st.markdown("##### 🌊 Dinámica Hidráulica: El Efecto 'Lavado'")
+        c_l3, c_l4 = st.columns(2)
+        c_l3.metric("Tasa de Renovación", f"{tasa_renovacion_anual:.1f} veces/año", "Volúmenes completos", delta_color="off")
+        c_l4.metric("Tiempo de Residencia", f"{dias_residencia:.0f} Días", "Edad del agua en La Fe", delta_color="off")
         
-        # El Semáforo de la Eutrofización
-        if fosforo_total_kg > 500:
-            st.error(f"🚨 **ALERTA ROJA DE EUTROFIZACIÓN (Anoxia Inminente):** Se han inyectado {fosforo_total_kg:,.0f} Kg de fósforo al embalse. Esta cantidad de nutrientes actuará como fertilizante directo, detonando una explosión demográfica de macrófitas (*Eichhornia crassipes* - Buchón de agua) y cianobacterias. Al morir y descomponerse, esta biomasa consumirá el oxígeno disuelto (anoxia), asfixiando a los peces y elevando brutalmente los costos de potabilización.")
-        elif fosforo_total_kg > 100:
-            st.warning(f"⚠️ **Riesgo Medio (Crecimiento Algal):** La entrada de {fosforo_total_kg:,.0f} Kg de fósforo alterará la transparencia del agua y requerirá mayor dosificación de químicos en la planta de tratamiento.")
+        st.info(f"💡 **Interpretación Sistémica:** El embalse reemplaza toda su agua cada **{dias_residencia:.0f} días** gracias a la inyección masiva de los trasvases. Esto diluye la carga contaminante de la cuenca local. Sin estos trasvases, La Fe sería un pantano eutrofizado e inoperable en muy poco tiempo.")
+        
+        st.markdown("---")
+        # El Semáforo de la Eutrofización (Evento)
+        st.markdown(f"**Carga Química del Evento:** {fosforo_total_kg_evento:,.1f} Kg de Fósforo inyectados.")
+        if fosforo_total_kg_evento > 500:
+            st.error("🚨 **ALERTA ROJA (Anoxia Inminente):** Los nutrientes detonarán una explosión demográfica de macrófitas (*Buchón de agua*).")
+        elif fosforo_total_kg_evento > 100:
+            st.warning("⚠️ **Riesgo Medio (Crecimiento Algal):** Alterará la transparencia y requerirá mayor potabilización.")
         else:
-            if volumen_lodo_m3 == 0:
-                st.success("🌿 **Protección Perfecta:** El bosque y el sotobosque lograron retener el 100% de los sedimentos. El agua que llega al embalse es cristalina y oligotrófica (libre de nutrientes nocivos).")
+            if volumen_lodo_m3_evento == 0:
+                st.success("🌿 **Protección Perfecta:** El bosque y el sotobosque lograron retener el 100% de los sedimentos y nutrientes.")
             else:
-                st.info(f"✅ **Estado Oligotrófico:** La carga de fósforo es baja ({fosforo_total_kg:,.1f} Kg). El ecosistema acuático del embalse puede asimilar este impacto sin generar plagas de macrófitas.")
+                st.success("✅ **Estado Oligotrófico Asimilable:** La carga de fósforo es baja ({fosforo_total_kg:,.1f} Kg) para que la tasa de renovación la diluya sin generar plagas de macrófitas.")
+
 
     # El Aleph Limnológico
     with st.expander("📚 El Aleph de los Lagos: Colmatación, Fósforo y Anoxia", expanded=False):
