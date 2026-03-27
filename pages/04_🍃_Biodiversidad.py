@@ -1546,6 +1546,111 @@ with tab_ret_dosel:
         else:
             st.error(f"⚠️ **Riesgo de Avalancha:** El dosel está saturado o degradado. La mayor parte de la energía de la tormenta ({volumen_escurre_m3:,.0f} m³) está golpeando el suelo directamente.")
 
+# =========================================================================
+# PESTAÑA 7: RETENCIÓN HÍDRICA DEL DOSEL
+# =========================================================================
+
+st.subheader("🔬 El Microsistema: Diseñador Ecohidrológico del Árbol")
+st.info("Laboratorio de bioingeniería forestal. Modela cómo la anatomía de un solo árbol altera el ciclo del agua a escala micrométrica (Intercepción, Goteo y Escorrentía Fustal).")
+
+col_anat, col_hoja, col_graf = st.columns([1.2, 1.2, 2])
+
+with col_anat:
+    st.markdown("#### 🪵 1. Arquitectura del Árbol")
+    
+    # Modelo Alométrico simplificado: El diámetro define el Área Foliar
+    dbh_cm = st.slider("Diámetro del Tronco (DAP en cm):", 5.0, 150.0, 30.0, 1.0, help="A mayor grosor, más edad y una copa exponencialmente más grande.")
+    
+    # El ángulo define el "Efecto Embudo" (Stemflow)
+    angulo_ramas = st.select_slider(
+        "Ángulo de Ramificación:",
+        options=["Agudo (30° - Forma V)", "Medio (60° - Copa Redonda)", "Horizontal (90°)", "Llorón (120° - Hacia abajo)"],
+        value="Medio (60° - Copa Redonda)"
+    )
+
+with col_hoja:
+    st.markdown("#### 🍃 2. Microingeniería Foliar")
+    
+    textura = st.radio("Textura de la Epidermis:", 
+                       ["Lisa / Cerosa (Repele agua)", "Normal", "Pubescente (Pelos microscópicos)"], index=1)
+    
+    forma = st.radio("Morfología de la Hoja:",
+                     ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
+
+# =========================================================================
+# 🧠 MOTOR FÍSICO Y ALOMÉTRICO DEL INDIVIDUO
+# =========================================================================
+
+# 1. Alometría: Ecuación potencial empírica para Área Foliar Total (m2)
+# Basada en relaciones típicas de bosques tropicales/andinos
+area_foliar_m2 = 0.15 * (dbh_cm ** 2.1)
+
+# 2. Modificadores de Capacidad de Retención Específica (Sl en mm o L/m2)
+sl_base = 0.20 # Capacidad base genérica
+
+# Modificador por Textura
+if textura == "Lisa / Cerosa (Repele agua)": mod_tex = 0.7
+elif textura == "Pubescente (Pelos microscópicos)": mod_tex = 1.6
+else: mod_tex = 1.0
+
+# Modificador por Forma
+if forma == "Cóncava (Forma de copa)": mod_for = 1.4
+elif forma == "Acuminada (Punta de goteo larga)": mod_for = 0.8 # Drena rápido
+else: mod_for = 1.0
+
+sl_efectivo = sl_base * mod_tex * mod_for
+
+# 3. Cálculo de Volúmenes (1 mm de agua en 1 m2 = 1 Litro)
+# Volumen máximo absoluto que este árbol puede sostener en sus hojas al mismo tiempo
+volumen_retenido_litros = area_foliar_m2 * sl_efectivo
+
+# 4. Partición del Agua (Destino de la lluvia)
+# Simulamos un evento estándar que satura el árbol
+if "Agudo" in angulo_ramas:
+    stemflow_pct = 12.0 # Actúa como embudo hacia el tronco
+elif "Medio" in angulo_ramas:
+    stemflow_pct = 5.0
+elif "Horizontal" in angulo_ramas:
+    stemflow_pct = 1.0
+else:
+    stemflow_pct = 0.1 # Casi nada fluye por el tronco, todo gotea
+
+# Del 100% del agua que choca contra el árbol:
+retencion_pct = 25.0 * (sl_efectivo / 0.20) # Porcentaje base ajustado por la hoja
+retencion_pct = min(retencion_pct, 45.0) # Límite físico
+throughfall_pct = 100.0 - retencion_pct - stemflow_pct # El resto gotea al suelo
+
+# =========================================================================
+# 📊 RENDERIZADO VISUAL DEL MICROSISTEMA
+# =========================================================================
+with col_graf:
+    st.markdown(f"**Área Foliar Total Desplegada:** {area_foliar_m2:,.1f} m²")
+    st.markdown(f"**Capacidad Máxima de la Esponja:** :blue[{volumen_retenido_litros:,.1f} Litros de agua]")
+    
+    # Gráfico de destino del agua (Sankey simplificado en Pie Chart)
+    fig_particion = go.Figure(go.Pie(
+        labels=["Evaporada desde las Hojas (Secuestrada)", "Escorrentía Fustal (Fluye por el tronco)", "Precipitación Directa (Gotea al Suelo)"],
+        values=[retencion_pct, stemflow_pct, throughfall_pct],
+        hole=0.4,
+        marker_colors=["#2ecc71", "#8e44ad", "#3498db"],
+        textinfo="label+percent",
+        textposition="inside"
+    ))
+    
+    fig_particion.update_layout(
+        title="Destino de una Tormenta en este Árbol",
+        showlegend=False,
+        margin=dict(l=20, r=20, t=40, b=20),
+        height=350
+    )
+    st.plotly_chart(fig_particion, use_container_width=True)
+
+st.markdown("---")
+st.caption("""
+**La Física detrás del modelo:** El Área Foliar ($A_{hojas}$) crece exponencialmente con el diámetro del tronco mediante leyes alométricas. 
+La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas puntiagudas reducen el tamaño de las gotas de *Throughfall*, controlando la erosión.
+""")
+    
     # =========================================================================
     # MARCO CONCEPTUAL, METODOLOGÍA Y FUENTES CIENTÍFICAS
     # =========================================================================
