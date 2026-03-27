@@ -1403,7 +1403,176 @@ with tab_ecologia:
         render_motor_hidrologico(gdf_zona)
 
 # =========================================================================
-# PESTAÑA 8: EL MICROSISTEMA (DISEÑADOR ECOHIDROLÓGICO DEL ÁRBOL)
+# PESTAÑA 8: RETENCIÓN HÍDRICA DEL DOSEL
+# =========================================================================
+with tab_ret_dosel:
+    st.subheader("🌳 Servicio Ecosistémico: Retención Hídrica del Dosel")
+    st.info("Modelo eco-hidrológico de intercepción forestal. Estima cuánta agua de un aguacero es 'secuestrada' por las hojas y ramas, mitigando el riesgo de escorrentía rápida y avalanchas.")
+
+    # --- INICIO DEL JUGUETE FRACTAL DA VINCI ---
+    with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
+        st.markdown("La capacidad adaptativa (inteligencia) de un árbol para retener agua y permitir el paso de la luz, se basa en la optimización fractal de su área superficial. Juega con los parámetros matemáticos que definen el crecimiento de las ramas.")
+        
+        col_frac1, col_frac2 = st.columns([1, 2.5])
+        
+        with col_frac1:
+            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 15, 7, help="Más iteraciones = más hojas = mayor área de retención.")
+            angulo_grados = st.slider("Ángulo de Ramificación (°):", 10, 90, 25)
+            escala = st.slider("Factor de Reducción (Escala):", 0.5, 0.85, 0.75, step=0.05)
+            
+            st.caption("A mayor complejidad fractal, mayor Índice de Área Foliar (LAI) y, por tanto, mayor retención de agua calculada en el modelo inferior.")
+            
+            # 🚀 EL CONTROL DE VELOCIDAD Y EL BOTÓN
+            st.markdown("<br>", unsafe_allow_html=True)
+            velocidad = st.slider("⏱️ Velocidad de Animación (seg/nivel):", 0.05, 1.5, 0.25, 0.05, help="Menor tiempo = crecimiento más rápido.")
+            animar = st.button("🌱 Animar Crecimiento", use_container_width=True)
+            
+        with col_frac2:
+            import math
+            import time
+            import plotly.graph_objects as go
+            
+            # Contenedor dinámico para la animación
+            espacio_fractal = st.empty()
+            
+            # Función recursiva para dibujar el árbol fractal
+            def construir_arbol(x, y, angulo, longitud, nivel, x_lines, y_lines):
+                if nivel == 0:
+                    return
+                
+                # Coordenadas de la nueva rama
+                x_nuevo = x + longitud * math.cos(angulo)
+                y_nuevo = y + longitud * math.sin(angulo)
+                
+                # Agregar coordenadas (None rompe la línea para que Plotly no conecte ramas distintas)
+                x_lines.extend([x, x_nuevo, None])
+                y_lines.extend([y, y_nuevo, None])
+                
+                # Llamadas recursivas para las dos sub-ramas
+                construir_arbol(x_nuevo, y_nuevo, angulo - math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
+                construir_arbol(x_nuevo, y_nuevo, angulo + math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
+
+            def generar_figura_fractal(prof_actual):
+                x_arbol, y_arbol = [], []
+                construir_arbol(0, 0, math.pi / 2, 100, prof_actual, x_arbol, y_arbol)
+                
+                fig_fractal = go.Figure(go.Scatter(x=x_arbol, y=y_arbol, mode='lines', line=dict(color='rgba(39, 174, 96, 0.8)', width=1.5)))
+                fig_fractal.update_layout(
+                    xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
+                    margin=dict(l=0, r=0, t=0, b=0), height=350, plot_bgcolor='rgba(0,0,0,0)'
+                )
+                return fig_fractal
+
+            # Lógica de Renderizado (Estático vs Animado)
+            if animar:
+                for p in range(1, profundidad + 1):
+                    espacio_fractal.plotly_chart(generar_figura_fractal(p), use_container_width=True)
+                    time.sleep(velocidad) # <--- 🧠 AHORA LA VELOCIDAD ES DINÁMICA
+            else:
+                espacio_fractal.plotly_chart(generar_figura_fractal(profundidad), use_container_width=True)
+                
+    # --- FIN DEL JUGUETE FRACTAL ---
+    
+    st.markdown("---")
+
+    col_input, col_graf = st.columns([1, 2])
+
+    with col_input:
+        st.subheader("Parámetros Macro del Ecosistema")
+        
+        tipo_cobertura = st.selectbox(
+            "Tipo de Cobertura Vegetal:",
+            ["Bosque Andino (Nativo)", "Plantación de Pino", "Robledal", "Rastrojo Alto", "Pastos Degradados"]
+        )
+        
+        dicc_vegetacion = {
+            "Bosque Andino (Nativo)": {"Sl": 0.25, "LAI_max": 6.5},
+            "Plantación de Pino": {"Sl": 0.20, "LAI_max": 5.0},
+            "Robledal": {"Sl": 0.30, "LAI_max": 5.5},
+            "Rastrojo Alto": {"Sl": 0.15, "LAI_max": 3.5},
+            "Pastos Degradados": {"Sl": 0.05, "LAI_max": 1.5}
+        }
+        
+        params = dicc_vegetacion[tipo_cobertura]
+        
+        densidad_pct = st.slider("Estado de Conservación / Densidad (%):", 10.0, 100.0, 80.0, 5.0)
+        lai_actual = params["LAI_max"] * (densidad_pct / 100.0)
+        
+        hectareas = st.number_input("Área del polígono a evaluar (ha):", value=100.0, step=10.0)
+        
+        st.markdown("---")
+        st.subheader("El Evento Meteorológico")
+        
+        # Nuevos controles separados de Intensidad y Tiempo
+        c_lluvia1, c_lluvia2 = st.columns(2)
+        intensidad_mm_h = c_lluvia1.slider("🌧️ Intensidad (mm/hora):", 1.0, 100.0, 20.0, 1.0)
+        duracion_h = c_lluvia2.slider("⏱️ Duración (horas):", 0.5, 24.0, 2.0, 0.5)
+        
+        # Cálculo de la precipitación total bruta
+        precipitacion_mm = intensidad_mm_h * duracion_h
+        st.info(f"**Precipitación Bruta Total del Evento:** {precipitacion_mm:.1f} mm")
+
+    # Motor Físico-Matemático (Ecuación de Aston)
+    s_max_mm = params["Sl"] * lai_actual
+
+    import numpy as np
+    if s_max_mm > 0:
+        intercepcion_mm = s_max_mm * (1 - np.exp(-precipitacion_mm / s_max_mm))
+    else:
+        intercepcion_mm = 0.0
+
+    precipitacion_efectiva_mm = precipitacion_mm - intercepcion_mm
+    
+    # Prevenir división por cero si el evento es de 0 mm
+    if precipitacion_mm > 0:
+        eficiencia_retencion_pct = (intercepcion_mm / precipitacion_mm) * 100
+    else:
+        eficiencia_retencion_pct = 0.0
+
+    volumen_retenido_m3 = intercepcion_mm * hectareas * 10
+    volumen_escurre_m3 = precipitacion_efectiva_mm * hectareas * 10
+
+    with col_graf:
+        c_m1, c_m2, c_m3 = st.columns(3)
+        c_m1.metric("Capacidad Máxima Dosel", f"{s_max_mm:.2f} mm", f"LAI: {lai_actual:.1f}", delta_color="normal")
+        c_m2.metric("Agua Retenida (Intercepción)", f"{intercepcion_mm:.1f} mm", f"{eficiencia_retencion_pct:.1f}% del aguacero", delta_color="off")
+        
+        alerta_suelo = "inverse" if precipitacion_efectiva_mm > 30 else "normal"
+        c_m3.metric("Agua al Suelo (P. Efectiva)", f"{precipitacion_efectiva_mm:.1f} mm", "Golpe de escorrentía", delta_color=alerta_suelo)
+        
+        import plotly.graph_objects as go
+        fig_vol = go.Figure()
+        fig_vol.add_trace(go.Bar(
+            x=["Impacto Volumétrico del Evento"],
+            y=[volumen_retenido_m3],
+            name="Volumen 'Secuestrado' por el Bosque (m³)",
+            marker_color="#2ecc71",
+            text=f"{volumen_retenido_m3:,.0f} m³", textposition='auto'
+        ))
+        fig_vol.add_trace(go.Bar(
+            x=["Impacto Volumétrico del Evento"],
+            y=[volumen_escurre_m3],
+            name="Volumen que golpea el suelo (m³)",
+            marker_color="#e74c3c",
+            text=f"{volumen_escurre_m3:,.0f} m³", textposition='auto'
+        ))
+        
+        fig_vol.update_layout(
+            barmode='stack',
+            title=f"Balance Hídrico del Evento en {hectareas} ha",
+            height=300, margin=dict(l=20, r=20, t=40, b=20),
+            yaxis_title="Metros Cúbicos (m³)"
+        )
+        st.plotly_chart(fig_vol, use_container_width=True)
+
+        if eficiencia_retencion_pct > 15:
+            st.success(f"🌿 **Alta Regulación:** El ecosistema actuó como un escudo, absorbiendo {volumen_retenido_m3:,.0f} toneladas de agua que, de otro modo, habrían alimentado directamente la creciente del río.")
+        else:
+            st.error(f"⚠️ **Riesgo de Avalancha:** El dosel está saturado o degradado. La mayor parte de la energía de la tormenta ({volumen_escurre_m3:,.0f} m³) está golpeando el suelo directamente.")
+
+
+# =========================================================================
+# PESTAÑA 9: EL MICROSISTEMA (DISEÑADOR ECOHIDROLÓGICO DEL ÁRBOL)
 # =========================================================================
 with tab_micro:
     import plotly.graph_objects as go
@@ -1541,108 +1710,3 @@ with tab_micro:
         * **Mandelbrot, B. B. (1982).** *The Fractal Geometry of Nature.* W. H. Freeman and Co.
         """)
 
-# =========================================================================
-# PESTAÑA 9: Retención del Microsistema Biológico
-# =========================================================================
-
-st.subheader("🔬 El Microsistema: Diseñador Ecohidrológico del Árbol")
-st.info("Laboratorio de bioingeniería forestal. Modela cómo la anatomía de un solo árbol altera el ciclo del agua a escala micrométrica (Intercepción, Goteo y Escorrentía Fustal).")
-
-col_anat, col_hoja, col_graf = st.columns([1.2, 1.2, 2])
-
-with col_anat:
-    st.markdown("#### 🪵 1. Arquitectura del Árbol")
-    
-    # Modelo Alométrico simplificado: El diámetro define el Área Foliar
-    dbh_cm = st.slider("Diámetro del Tronco (DAP en cm):", 5.0, 150.0, 30.0, 1.0, help="A mayor grosor, más edad y una copa exponencialmente más grande.")
-    
-    # El ángulo define el "Efecto Embudo" (Stemflow)
-    angulo_ramas = st.select_slider(
-        "Ángulo de Ramificación:",
-        options=["Agudo (30° - Forma V)", "Medio (60° - Copa Redonda)", "Horizontal (90°)", "Llorón (120° - Hacia abajo)"],
-        value="Medio (60° - Copa Redonda)"
-    )
-
-with col_hoja:
-    st.markdown("#### 🍃 2. Microingeniería Foliar")
-    
-    textura = st.radio("Textura de la Epidermis:", 
-                       ["Lisa / Cerosa (Repele agua)", "Normal", "Pubescente (Pelos microscópicos)"], index=1)
-    
-    forma = st.radio("Morfología de la Hoja:",
-                     ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
-
-# =========================================================================
-# 🧠 MOTOR FÍSICO Y ALOMÉTRICO DEL INDIVIDUO
-# =========================================================================
-
-# 1. Alometría: Ecuación potencial empírica para Área Foliar Total (m2)
-# Basada en relaciones típicas de bosques tropicales/andinos
-area_foliar_m2 = 0.15 * (dbh_cm ** 2.1)
-
-# 2. Modificadores de Capacidad de Retención Específica (Sl en mm o L/m2)
-sl_base = 0.20 # Capacidad base genérica
-
-# Modificador por Textura
-if textura == "Lisa / Cerosa (Repele agua)": mod_tex = 0.7
-elif textura == "Pubescente (Pelos microscópicos)": mod_tex = 1.6
-else: mod_tex = 1.0
-
-# Modificador por Forma
-if forma == "Cóncava (Forma de copa)": mod_for = 1.4
-elif forma == "Acuminada (Punta de goteo larga)": mod_for = 0.8 # Drena rápido
-else: mod_for = 1.0
-
-sl_efectivo = sl_base * mod_tex * mod_for
-
-# 3. Cálculo de Volúmenes (1 mm de agua en 1 m2 = 1 Litro)
-# Volumen máximo absoluto que este árbol puede sostener en sus hojas al mismo tiempo
-volumen_retenido_litros = area_foliar_m2 * sl_efectivo
-
-# 4. Partición del Agua (Destino de la lluvia)
-# Simulamos un evento estándar que satura el árbol
-if "Agudo" in angulo_ramas:
-    stemflow_pct = 12.0 # Actúa como embudo hacia el tronco
-elif "Medio" in angulo_ramas:
-    stemflow_pct = 5.0
-elif "Horizontal" in angulo_ramas:
-    stemflow_pct = 1.0
-else:
-    stemflow_pct = 0.1 # Casi nada fluye por el tronco, todo gotea
-
-# Del 100% del agua que choca contra el árbol:
-retencion_pct = 25.0 * (sl_efectivo / 0.20) # Porcentaje base ajustado por la hoja
-retencion_pct = min(retencion_pct, 45.0) # Límite físico
-throughfall_pct = 100.0 - retencion_pct - stemflow_pct # El resto gotea al suelo
-
-# =========================================================================
-# 📊 RENDERIZADO VISUAL DEL MICROSISTEMA
-# =========================================================================
-with col_graf:
-    st.markdown(f"**Área Foliar Total Desplegada:** {area_foliar_m2:,.1f} m²")
-    st.markdown(f"**Capacidad Máxima de la Esponja:** :blue[{volumen_retenido_litros:,.1f} Litros de agua]")
-    
-    # Gráfico de destino del agua (Sankey simplificado en Pie Chart)
-    fig_particion = go.Figure(go.Pie(
-        labels=["Evaporada desde las Hojas (Secuestrada)", "Escorrentía Fustal (Fluye por el tronco)", "Precipitación Directa (Gotea al Suelo)"],
-        values=[retencion_pct, stemflow_pct, throughfall_pct],
-        hole=0.4,
-        marker_colors=["#2ecc71", "#8e44ad", "#3498db"],
-        textinfo="label+percent",
-        textposition="inside"
-    ))
-    
-    fig_particion.update_layout(
-        title="Destino de una Tormenta en este Árbol",
-        showlegend=False,
-        margin=dict(l=20, r=20, t=40, b=20),
-        height=350
-    )
-    st.plotly_chart(fig_particion, use_container_width=True)
-
-st.markdown("---")
-st.caption("""
-**La Física detrás del modelo:** El Área Foliar ($A_{hojas}$) crece exponencialmente con el diámetro del tronco mediante leyes alométricas. 
-La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas puntiagudas reducen el tamaño de las gotas de *Throughfall*, controlando la erosión.
-""")
-    
