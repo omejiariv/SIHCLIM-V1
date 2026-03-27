@@ -1546,6 +1546,41 @@ with tab_ret_dosel:
         else:
             st.error(f"⚠️ **Riesgo de Avalancha:** El dosel está saturado o degradado. La mayor parte de la energía de la tormenta ({volumen_escurre_m3:,.0f} m³) está golpeando el suelo directamente.")
 
+    # =========================================================================
+    # MARCO CONCEPTUAL, METODOLOGÍA Y FUENTES CIENTÍFICAS
+    # =========================================================================
+    st.markdown("---")
+    with st.expander("📚 Marco Conceptual, Metodologías y Fuentes Científicas", expanded=False):
+        st.markdown("""
+        ### 🔬 La Ciencia: Ecuación de Aston Modificada
+        El agua que una tormenta deja caer no llega toda al suelo. El bosque actúa como un paraguas y una esponja. Para modelar esto, usaremos la relación empírica basada en el Índice de Área Foliar (LAI) y la Capacidad de Almacenamiento Específico ($S_l$) de las hojas.
+        
+        La capacidad máxima de retención del dosel ($S_{max}$, en milímetros) se define como:
+        $$S_{max}=S_l \times LAI$$
+        
+        Cuando ocurre un evento de precipitación bruta ($P$), el agua interceptada ($I$) sigue una curva asintótica (porque una vez que las hojas se llenan, el resto escurre o gotea). Usaremos la forma exponencial clásica:
+        $$I=S_{max} \cdot (1 - e^{-P/S_{max}})$$
+        
+        El agua que efectivamente golpea el suelo y genera riesgo de avalancha (Precipitación Efectiva, $P_{eff}$) es simplemente $P - I$.
+
+        ### 🌿 La Matemática de la Naturaleza: Geometría Fractal
+        Los árboles no son cilindros ni conos perfectos; son estructuras **fractales**. Para maximizar la captura de luz y la retención de agua (es decir, para maximizar el LAI en un espacio tridimensional reducido), la naturaleza utiliza patrones de autosemejanza.
+        * **Sistemas de Lindenmayer (L-Systems):** Modelan el crecimiento vegetal mediante reglas recursivas. Cada rama se divide en sub-ramas más pequeñas siguiendo un factor de escala y un ángulo específico.
+        * **Optimización Ecohidrológica:** Esta ramificación infinita crea una "esponja aérea" con un área superficial gigantesca. Un roble maduro puede tener miles de metros cuadrados de superficie foliar desplegados a partir de un solo tronco, interceptando eficientemente la energía cinética de las gotas de lluvia.
+        
+        ### 🎯 Utilidad e Interpretación Territorial
+        * **Amortiguación de Crecientes Súbitas:** Permite cuantificar el volumen de agua que el bosque evita que llegue instantáneamente al cauce, reduciendo picos de caudal hidrográfico.
+        * **Control de Erosión Hídrica:** El follaje disipa la energía cinética de la lluvia. Si el ecosistema está degradado, la $P_{eff}$ golpea el suelo erosionándolo y arrastrando sedimentos hacia los embalses.
+        * **Valoración del Capital Natural:** Traducir hectáreas de bosque a metros cúbicos de agua retenida es el eslabón fundamental para justificar financieramente los proyectos de infraestructura verde.
+
+        ### 📖 Fuentes de Consulta de Primer Nivel
+        * **Aston, A. R. (1979).** *Rainfall interception by eight small trees.* Journal of Hydrology, 42(3-4), 383-396. (Ecuación base del modelo asintótico).
+        * **Merriam, R. A. (1960).** *A note on the interception loss equation.* Journal of Geophysical Research. (Fundamentos de la exponencial de pérdida).
+        * **Gash, J. H. C. (1979).** *An analytical model of rainfall interception by forests.* Q.J.R. Meteorol. Soc.
+        * **Lindenmayer, A. (1968).** *Mathematical models for cellular interactions in development.* Journal of Theoretical Biology. (Bases matemáticas de los fractales vegetales).
+        * **Mandelbrot, B. B. (1982).** *The Fractal Geometry of Nature.* W. H. Freeman and Co.
+        """)
+
 # =========================================================================
 # PESTAÑA 8: Retención del Microsistema Biológico
 # =========================================================================
@@ -1651,37 +1686,3 @@ st.caption("""
 La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas puntiagudas reducen el tamaño de las gotas de *Throughfall*, controlando la erosión.
 """)
     
-    # =========================================================================
-    # MARCO CONCEPTUAL, METODOLOGÍA Y FUENTES CIENTÍFICAS
-    # =========================================================================
-    st.markdown("---")
-    with st.expander("📚 Marco Conceptual, Metodologías y Fuentes Científicas", expanded=False):
-        st.markdown("""
-        ### 🔬 La Ciencia: Ecuación de Aston Modificada
-        El agua que una tormenta deja caer no llega toda al suelo. El bosque actúa como un paraguas y una esponja. Para modelar esto, usaremos la relación empírica basada en el Índice de Área Foliar (LAI) y la Capacidad de Almacenamiento Específico ($S_l$) de las hojas.
-        
-        La capacidad máxima de retención del dosel ($S_{max}$, en milímetros) se define como:
-        $$S_{max}=S_l \times LAI$$
-        
-        Cuando ocurre un evento de precipitación bruta ($P$), el agua interceptada ($I$) sigue una curva asintótica (porque una vez que las hojas se llenan, el resto escurre o gotea). Usaremos la forma exponencial clásica:
-        $$I=S_{max} \cdot (1 - e^{-P/S_{max}})$$
-        
-        El agua que efectivamente golpea el suelo y genera riesgo de avalancha (Precipitación Efectiva, $P_{eff}$) es simplemente $P - I$.
-
-        ### 🌿 La Matemática de la Naturaleza: Geometría Fractal
-        Los árboles no son cilindros ni conos perfectos; son estructuras **fractales**. Para maximizar la captura de luz y la retención de agua (es decir, para maximizar el LAI en un espacio tridimensional reducido), la naturaleza utiliza patrones de autosemejanza.
-        * **Sistemas de Lindenmayer (L-Systems):** Modelan el crecimiento vegetal mediante reglas recursivas. Cada rama se divide en sub-ramas más pequeñas siguiendo un factor de escala y un ángulo específico.
-        * **Optimización Ecohidrológica:** Esta ramificación infinita crea una "esponja aérea" con un área superficial gigantesca. Un roble maduro puede tener miles de metros cuadrados de superficie foliar desplegados a partir de un solo tronco, interceptando eficientemente la energía cinética de las gotas de lluvia.
-        
-        ### 🎯 Utilidad e Interpretación Territorial
-        * **Amortiguación de Crecientes Súbitas:** Permite cuantificar el volumen de agua que el bosque evita que llegue instantáneamente al cauce, reduciendo picos de caudal hidrográfico.
-        * **Control de Erosión Hídrica:** El follaje disipa la energía cinética de la lluvia. Si el ecosistema está degradado, la $P_{eff}$ golpea el suelo erosionándolo y arrastrando sedimentos hacia los embalses.
-        * **Valoración del Capital Natural:** Traducir hectáreas de bosque a metros cúbicos de agua retenida es el eslabón fundamental para justificar financieramente los proyectos de infraestructura verde.
-
-        ### 📖 Fuentes de Consulta de Primer Nivel
-        * **Aston, A. R. (1979).** *Rainfall interception by eight small trees.* Journal of Hydrology, 42(3-4), 383-396. (Ecuación base del modelo asintótico).
-        * **Merriam, R. A. (1960).** *A note on the interception loss equation.* Journal of Geophysical Research. (Fundamentos de la exponencial de pérdida).
-        * **Gash, J. H. C. (1979).** *An analytical model of rainfall interception by forests.* Q.J.R. Meteorol. Soc.
-        * **Lindenmayer, A. (1968).** *Mathematical models for cellular interactions in development.* Journal of Theoretical Biology. (Bases matemáticas de los fractales vegetales).
-        * **Mandelbrot, B. B. (1982).** *The Fractal Geometry of Nature.* W. H. Freeman and Co.
-        """)
