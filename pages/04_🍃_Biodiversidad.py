@@ -1398,9 +1398,17 @@ with tab_ret_dosel:
             
             st.caption("A mayor complejidad fractal, mayor Índice de Área Foliar (LAI) y, por tanto, mayor retención de agua calculada en el modelo inferior.")
             
+            # 🚀 EL BOTÓN DE ANIMACIÓN
+            st.markdown("<br>", unsafe_allow_html=True)
+            animar = st.button("🌱 Animar Crecimiento", use_container_width=True)
+            
         with col_frac2:
             import math
+            import time
             import plotly.graph_objects as go
+            
+            # Contenedor dinámico para la animación
+            espacio_fractal = st.empty()
             
             # Función recursiva para dibujar el árbol fractal
             def construir_arbol(x, y, angulo, longitud, nivel, x_lines, y_lines):
@@ -1411,7 +1419,7 @@ with tab_ret_dosel:
                 x_nuevo = x + longitud * math.cos(angulo)
                 y_nuevo = y + longitud * math.sin(angulo)
                 
-                # Agregar coordenadas (None rompe la línea)
+                # Agregar coordenadas (None rompe la línea para que Plotly no conecte ramas distintas)
                 x_lines.extend([x, x_nuevo, None])
                 y_lines.extend([y, y_nuevo, None])
                 
@@ -1419,20 +1427,27 @@ with tab_ret_dosel:
                 construir_arbol(x_nuevo, y_nuevo, angulo - math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
                 construir_arbol(x_nuevo, y_nuevo, angulo + math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
 
-            # Inicializar listas
-            x_arbol, y_arbol = [], []
-            
-            # Dibujar el tronco inicial
-            construir_arbol(0, 0, math.pi / 2, 100, profundidad, x_arbol, y_arbol)
-            
-            fig_fractal = go.Figure(go.Scatter(x=x_arbol, y=y_arbol, mode='lines', line=dict(color='rgba(39, 174, 96, 0.8)', width=1.5)))
-            fig_fractal.update_layout(
-                xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
-                margin=dict(l=0, r=0, t=0, b=0), height=350, plot_bgcolor='rgba(0,0,0,0)'
-            )
-            st.plotly_chart(fig_fractal, use_container_width=True)
-    # --- FIN DEL JUGUETE FRACTAL ---
+            def generar_figura_fractal(prof_actual):
+                x_arbol, y_arbol = [], []
+                construir_arbol(0, 0, math.pi / 2, 100, prof_actual, x_arbol, y_arbol)
+                
+                fig_fractal = go.Figure(go.Scatter(x=x_arbol, y=y_arbol, mode='lines', line=dict(color='rgba(39, 174, 96, 0.8)', width=1.5)))
+                fig_fractal.update_layout(
+                    xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
+                    margin=dict(l=0, r=0, t=0, b=0), height=350, plot_bgcolor='rgba(0,0,0,0)'
+                )
+                return fig_fractal
 
+            # Lógica de Renderizado (Estático vs Animado)
+            if animar:
+                for p in range(1, profundidad + 1):
+                    espacio_fractal.plotly_chart(generar_figura_fractal(p), use_container_width=True)
+                    time.sleep(0.25) # Velocidad de la animación (segundos por fotograma)
+            else:
+                espacio_fractal.plotly_chart(generar_figura_fractal(profundidad), use_container_width=True)
+                
+    # --- FIN DEL JUGUETE FRACTAL ---
+    
     st.markdown("---")
 
     col_input, col_graf = st.columns([1, 2])
@@ -1529,3 +1544,38 @@ with tab_ret_dosel:
             st.success(f"🌿 **Alta Regulación:** El ecosistema actuó como un escudo, absorbiendo {volumen_retenido_m3:,.0f} toneladas de agua que, de otro modo, habrían alimentado directamente la creciente del río.")
         else:
             st.error(f"⚠️ **Riesgo de Avalancha:** El dosel está saturado o degradado. La mayor parte de la energía de la tormenta ({volumen_escurre_m3:,.0f} m³) está golpeando el suelo directamente.")
+
+    # =========================================================================
+    # MARCO CONCEPTUAL, METODOLOGÍA Y FUENTES CIENTÍFICAS
+    # =========================================================================
+    st.markdown("---")
+    with st.expander("📚 Marco Conceptual, Metodologías y Fuentes Científicas", expanded=False):
+        st.markdown("""
+        ### 🔬 La Ciencia: Ecuación de Aston Modificada
+        El agua que una tormenta deja caer no llega toda al suelo. El bosque actúa como un paraguas y una esponja. Para modelar esto, usaremos la relación empírica basada en el Índice de Área Foliar (LAI) y la Capacidad de Almacenamiento Específico ($S_l$) de las hojas.
+        
+        La capacidad máxima de retención del dosel ($S_{max}$, en milímetros) se define como:
+        $$S_{max}=S_l \times LAI$$
+        
+        Cuando ocurre un evento de precipitación bruta ($P$), el agua interceptada ($I$) sigue una curva asintótica (porque una vez que las hojas se llenan, el resto escurre o gotea). Usaremos la forma exponencial clásica:
+        $$I=S_{max} \cdot (1 - e^{-P/S_{max}})$$
+        
+        El agua que efectivamente golpea el suelo y genera riesgo de avalancha (Precipitación Efectiva, $P_{eff}$) es simplemente $P - I$.
+
+        ### 🌿 La Matemática de la Naturaleza: Geometría Fractal
+        Los árboles no son cilindros ni conos perfectos; son estructuras **fractales**. Para maximizar la captura de luz y la retención de agua (es decir, para maximizar el LAI en un espacio tridimensional reducido), la naturaleza utiliza patrones de autosemejanza.
+        * **Sistemas de Lindenmayer (L-Systems):** Modelan el crecimiento vegetal mediante reglas recursivas. Cada rama se divide en sub-ramas más pequeñas siguiendo un factor de escala y un ángulo específico.
+        * **Optimización Ecohidrológica:** Esta ramificación infinita crea una "esponja aérea" con un área superficial gigantesca. Un roble maduro puede tener miles de metros cuadrados de superficie foliar desplegados a partir de un solo tronco, interceptando eficientemente la energía cinética de las gotas de lluvia.
+        
+        ### 🎯 Utilidad e Interpretación Territorial
+        * **Amortiguación de Crecientes Súbitas:** Permite cuantificar el volumen de agua que el bosque evita que llegue instantáneamente al cauce, reduciendo picos de caudal hidrográfico.
+        * **Control de Erosión Hídrica:** El follaje disipa la energía cinética de la lluvia. Si el ecosistema está degradado, la $P_{eff}$ golpea el suelo erosionándolo y arrastrando sedimentos hacia los embalses.
+        * **Valoración del Capital Natural:** Traducir hectáreas de bosque a metros cúbicos de agua retenida es el eslabón fundamental para justificar financieramente los proyectos de infraestructura verde.
+
+        ### 📖 Fuentes de Consulta de Primer Nivel
+        * **Aston, A. R. (1979).** *Rainfall interception by eight small trees.* Journal of Hydrology, 42(3-4), 383-396. (Ecuación base del modelo asintótico).
+        * **Merriam, R. A. (1960).** *A note on the interception loss equation.* Journal of Geophysical Research. (Fundamentos de la exponencial de pérdida).
+        * **Gash, J. H. C. (1979).** *An analytical model of rainfall interception by forests.* Q.J.R. Meteorol. Soc.
+        * **Lindenmayer, A. (1968).** *Mathematical models for cellular interactions in development.* Journal of Theoretical Biology. (Bases matemáticas de los fractales vegetales).
+        * **Mandelbrot, B. B. (1982).** *The Fractal Geometry of Nature.* W. H. Freeman and Co.
+        """)
