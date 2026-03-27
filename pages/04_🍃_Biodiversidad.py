@@ -2192,7 +2192,7 @@ with tab_micro:
         factor_tormenta = tr_opciones[tipo_tormenta]["factor_mm"]
         probabilidad_anual = tr_opciones[tipo_tormenta]["freq"]
         
-        area_cuenca_km2 = st.number_input("Área afectada por la tormenta (km²):", 1.0, 173.0, 50.0)
+        area_cuenca_km2 = st.number_input("Área afectada por la tormenta (km²):", 1.0, 173.0, 5.0)
         
         # --- 2. COMPOSICIÓN DEL PAISAJE ---
         st.markdown("**2. Composición del Paisaje (Mix de Usos):**")
@@ -2212,7 +2212,7 @@ with tab_micro:
         st.markdown("**3. Batimetría y Dinámica del Embalse:**")
         c_v1, c_v2 = st.columns(2)
         vol_util_hm3 = c_v1.number_input("Vol. Útil (Mm³):", min_value=1.0, value=12.5)
-        vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", min_value=0.1, value=2.1)
+        vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", min_value=0.1, value=3.0)
         caudal_ingreso_m3s = st.number_input("Ingreso Total (Espíritu Santo + Trasvases en m³/s):", value=6.5)
 
     # ==========================================
