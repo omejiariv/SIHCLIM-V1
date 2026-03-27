@@ -1409,70 +1409,6 @@ with tab_ret_dosel:
     st.subheader("🌳 Servicio Ecosistémico: Retención Hídrica del Dosel")
     st.info("Modelo eco-hidrológico de intercepción forestal. Estima cuánta agua de un aguacero es 'secuestrada' por las hojas y ramas, mitigando el riesgo de escorrentía rápida y avalanchas.")
 
-    # --- INICIO DEL JUGUETE FRACTAL DA VINCI ---
-    with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
-        st.markdown("La capacidad adaptativa (inteligencia) de un árbol para retener agua y permitir el paso de la luz, se basa en la optimización fractal de su área superficial. Juega con los parámetros matemáticos que definen el crecimiento de las ramas.")
-        
-        col_frac1, col_frac2 = st.columns([1, 2.5])
-        
-        with col_frac1:
-            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 15, 7, help="Más iteraciones = más hojas = mayor área de retención.")
-            angulo_grados = st.slider("Ángulo de Ramificación (°):", 10, 90, 25)
-            escala = st.slider("Factor de Reducción (Escala):", 0.5, 0.85, 0.75, step=0.05)
-            
-            st.caption("A mayor complejidad fractal, mayor Índice de Área Foliar (LAI) y, por tanto, mayor retención de agua calculada en el modelo inferior.")
-            
-            # 🚀 EL CONTROL DE VELOCIDAD Y EL BOTÓN
-            st.markdown("<br>", unsafe_allow_html=True)
-            velocidad = st.slider("⏱️ Velocidad de Animación (seg/nivel):", 0.05, 1.5, 0.25, 0.05, help="Menor tiempo = crecimiento más rápido.")
-            animar = st.button("🌱 Animar Crecimiento", use_container_width=True)
-            
-        with col_frac2:
-            import math
-            import time
-            import plotly.graph_objects as go
-            
-            # Contenedor dinámico para la animación
-            espacio_fractal = st.empty()
-            
-            # Función recursiva para dibujar el árbol fractal
-            def construir_arbol(x, y, angulo, longitud, nivel, x_lines, y_lines):
-                if nivel == 0:
-                    return
-                
-                # Coordenadas de la nueva rama
-                x_nuevo = x + longitud * math.cos(angulo)
-                y_nuevo = y + longitud * math.sin(angulo)
-                
-                # Agregar coordenadas (None rompe la línea para que Plotly no conecte ramas distintas)
-                x_lines.extend([x, x_nuevo, None])
-                y_lines.extend([y, y_nuevo, None])
-                
-                # Llamadas recursivas para las dos sub-ramas
-                construir_arbol(x_nuevo, y_nuevo, angulo - math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
-                construir_arbol(x_nuevo, y_nuevo, angulo + math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
-
-            def generar_figura_fractal(prof_actual):
-                x_arbol, y_arbol = [], []
-                construir_arbol(0, 0, math.pi / 2, 100, prof_actual, x_arbol, y_arbol)
-                
-                fig_fractal = go.Figure(go.Scatter(x=x_arbol, y=y_arbol, mode='lines', line=dict(color='rgba(39, 174, 96, 0.8)', width=1.5)))
-                fig_fractal.update_layout(
-                    xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
-                    margin=dict(l=0, r=0, t=0, b=0), height=350, plot_bgcolor='rgba(0,0,0,0)'
-                )
-                return fig_fractal
-
-            # Lógica de Renderizado (Estático vs Animado)
-            if animar:
-                for p in range(1, profundidad + 1):
-                    espacio_fractal.plotly_chart(generar_figura_fractal(p), use_container_width=True)
-                    time.sleep(velocidad) # <--- 🧠 AHORA LA VELOCIDAD ES DINÁMICA
-            else:
-                espacio_fractal.plotly_chart(generar_figura_fractal(profundidad), use_container_width=True)
-                
-    # --- FIN DEL JUGUETE FRACTAL ---
-    
     st.markdown("---")
 
     col_input, col_graf = st.columns([1, 2])
@@ -1614,6 +1550,70 @@ with tab_micro:
     st.subheader("🔬 El Microsistema: Diseñador Ecohidrológico del Árbol")
     st.info("Laboratorio bio-forestal. Modela cómo la anatomía de un solo árbol altera el ciclo del agua a escala micrométrica (Intercepción, Goteo y Escorrentía Fustal).")
 
+    # --- INICIO DEL JUGUETE FRACTAL DA VINCI ---
+    with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
+        st.markdown("La capacidad adaptativa (inteligencia) de un árbol para retener agua y permitir el paso de la luz, se basa en la optimización fractal de su área superficial. Juega con los parámetros matemáticos que definen el crecimiento de las ramas.")
+        
+        col_frac1, col_frac2 = st.columns([1, 2.5])
+        
+        with col_frac1:
+            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 15, 7, help="Más iteraciones = más hojas = mayor área de retención.")
+            angulo_grados = st.slider("Ángulo de Ramificación (°):", 10, 90, 25)
+            escala = st.slider("Factor de Reducción (Escala):", 0.5, 0.85, 0.75, step=0.05)
+            
+            st.caption("A mayor complejidad fractal, mayor Índice de Área Foliar (LAI) y, por tanto, mayor retención de agua calculada en el modelo inferior.")
+            
+            # 🚀 EL CONTROL DE VELOCIDAD Y EL BOTÓN
+            st.markdown("<br>", unsafe_allow_html=True)
+            velocidad = st.slider("⏱️ Velocidad de Animación (seg/nivel):", 0.05, 1.5, 0.25, 0.05, help="Menor tiempo = crecimiento más rápido.")
+            animar = st.button("🌱 Animar Crecimiento", use_container_width=True)
+            
+        with col_frac2:
+            import math
+            import time
+            import plotly.graph_objects as go
+            
+            # Contenedor dinámico para la animación
+            espacio_fractal = st.empty()
+            
+            # Función recursiva para dibujar el árbol fractal
+            def construir_arbol(x, y, angulo, longitud, nivel, x_lines, y_lines):
+                if nivel == 0:
+                    return
+                
+                # Coordenadas de la nueva rama
+                x_nuevo = x + longitud * math.cos(angulo)
+                y_nuevo = y + longitud * math.sin(angulo)
+                
+                # Agregar coordenadas (None rompe la línea para que Plotly no conecte ramas distintas)
+                x_lines.extend([x, x_nuevo, None])
+                y_lines.extend([y, y_nuevo, None])
+                
+                # Llamadas recursivas para las dos sub-ramas
+                construir_arbol(x_nuevo, y_nuevo, angulo - math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
+                construir_arbol(x_nuevo, y_nuevo, angulo + math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
+
+            def generar_figura_fractal(prof_actual):
+                x_arbol, y_arbol = [], []
+                construir_arbol(0, 0, math.pi / 2, 100, prof_actual, x_arbol, y_arbol)
+                
+                fig_fractal = go.Figure(go.Scatter(x=x_arbol, y=y_arbol, mode='lines', line=dict(color='rgba(39, 174, 96, 0.8)', width=1.5)))
+                fig_fractal.update_layout(
+                    xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
+                    margin=dict(l=0, r=0, t=0, b=0), height=350, plot_bgcolor='rgba(0,0,0,0)'
+                )
+                return fig_fractal
+
+            # Lógica de Renderizado (Estático vs Animado)
+            if animar:
+                for p in range(1, profundidad + 1):
+                    espacio_fractal.plotly_chart(generar_figura_fractal(p), use_container_width=True)
+                    time.sleep(velocidad) # <--- 🧠 AHORA LA VELOCIDAD ES DINÁMICA
+            else:
+                espacio_fractal.plotly_chart(generar_figura_fractal(profundidad), use_container_width=True)
+                
+    # --- FIN DEL JUGUETE FRACTAL ---
+    
     col_anat, col_hoja, col_graf = st.columns([1.2, 1.2, 2])
 
     with col_anat:
@@ -1703,12 +1703,8 @@ with tab_micro:
         st.plotly_chart(fig_particion, use_container_width=True)
 
     st.markdown("---")
-    with st.expander("📚 Marco Conceptual del Microsistema", expanded=False):
-        st.markdown("""
-        **La Física detrás del modelo:** El Área Foliar ($A_{hojas}$) crece exponencialmente con el diámetro del tronco mediante leyes alométricas. 
-        La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar individualmente. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas con "acumen" puntiagudo reducen el tamaño de las gotas, controlando la energía cinética del impacto y evitando la erosión del suelo.
-        """)
-# =========================================================================
+
+    # =========================================================================
     # 🌧️ MÓDULO DE BALÍSTICA Y ENERGÍA CINÉTICA (EROSIÓN)
     # =========================================================================
     st.markdown("---")
@@ -1776,3 +1772,9 @@ with tab_micro:
         c_b3.metric("Protección contra Erosión", f"-{reduccion_ek:.1f}%", "Energía destructiva disipada", delta_color="normal")
     else:
         c_b3.metric("Riesgo de Erosión Incrementado", f"+{abs(reduccion_ek):.1f}%", "El dosel alto empeora el impacto", delta_color="inverse")
+
+    with st.expander("📚 Marco Conceptual del Microsistema", expanded=False):
+        st.markdown("""
+        **La Física detrás del modelo:** El Área Foliar ($A_{hojas}$) crece exponencialmente con el diámetro del tronco mediante leyes alométricas. 
+        La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar individualmente. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas con "acumen" puntiagudo reducen el tamaño de las gotas, controlando la energía cinética del impacto y evitando la erosión del suelo.
+        """)
