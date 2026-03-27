@@ -1638,7 +1638,7 @@ with tab_micro:
         forma = st.radio("Morfología de la Hoja:",
                          ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
 
-with st.expander("👁️ Ver Guía Visual de Hojas", expanded=False):
+        with st.expander("👁️ Ver Guía Visual de Hojas", expanded=False):
             st.markdown("**1. Texturas Epidérmicas:**")
             # Creamos 3 columnas para las texturas
             c_img1, c_img2, c_img3 = st.columns(3)
