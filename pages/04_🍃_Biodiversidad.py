@@ -1816,3 +1816,113 @@ with tab_micro:
         ### 🎯 El Veredicto de la Naturaleza
         Multiplicando el Área Foliar por la microarquitectura de la hoja y la física balística, demostramos matemáticamente que talar un árbol centenario no es solo perder madera; es **apagar una máquina perfecta de regulación hídrica y disipación de energía** que ninguna tecnología humana puede replicar con tal eficiencia.
         """)
+
+# =========================================================================
+    # 🟤 4. MÓDULO DE EROSIVIDAD Y SPLASH DETACHMENT (SUELO)
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("#### 🟤 4. Erosividad y Desprendimiento de Suelo (Splash Detachment)")
+    st.info("Escala el impacto balístico de una gota a una tormenta completa sobre 1 metro cuadrado. Calcula cuántos kilogramos de tierra son arrancados físicamente por el bombardeo del agua (Modelo MMF).")
+
+    col_suelo1, col_suelo2 = st.columns([1, 1.5])
+
+    with col_suelo1:
+        evento_lluvia_mm = st.slider("🌧️ Volumen de la Tormenta (mm):", 10, 150, 50, 5, help="50 mm equivale a 50 litros de agua por cada metro cuadrado.")
+        
+        # Factor K (Erodabilidad del Suelo)
+        tipo_suelo = st.selectbox(
+            "Mecánica del Suelo (Erodabilidad - Factor K):",
+            [
+                "Suelo Arenoso/Franco-Arenoso (Alta vulnerabilidad - K=0.05)",
+                "Franco-Limoso / Cenizas Volcánicas (Media - K=0.03)",
+                "Arcilloso Estructural (Baja vulnerabilidad - K=0.015)"
+            ], index=1
+        )
+        
+        # Extracción del factor K según la selección
+        if "0.05" in tipo_suelo:
+            k_factor = 0.05
+        elif "0.03" in tipo_suelo:
+            k_factor = 0.03
+        else:
+            k_factor = 0.015
+
+    # ==========================================
+    # MOTOR FÍSICO DE EROSIÓN (MMF Simplificado)
+    # ==========================================
+    # 1. Volumen de 1 gota en mm3 (Esfera = 4/3 * pi * r^3)
+    vol_gota_nube_mm3 = (4/3) * math.pi * ((diametro_lluvia / 2)**3)
+    vol_gota_arbol_mm3 = (4/3) * math.pi * ((diametro_goteo / 2)**3)
+
+    # 2. Cantidad de gotas por metro cuadrado para alcanzar los mm de la tormenta
+    # 1 mm de lluvia en 1 m2 = 1,000,000 mm3
+    vol_tormenta_m2_mm3 = evento_lluvia_mm * 1_000_000
+    
+    # Prevenir divisiones por cero
+    if vol_gota_nube_mm3 > 0 and vol_gota_arbol_mm3 > 0:
+        num_gotas_nube = vol_tormenta_m2_mm3 / vol_gota_nube_mm3
+        num_gotas_arbol = vol_tormenta_m2_mm3 / vol_gota_arbol_mm3
+    else:
+        num_gotas_nube = 0
+        num_gotas_arbol = 0
+
+    # 3. Energía Cinética Total (Joules por m2). ek_lluvia estaba en Joules.
+    ke_total_nube = num_gotas_nube * ek_lluvia 
+    ke_total_arbol = num_gotas_arbol * ek_goteo 
+
+    # 4. Desprendimiento de Suelo (Splash Detachment en Kg / m2)
+    # Ds = K * KE
+    suelo_perdido_nube_kg = k_factor * ke_total_nube
+    suelo_perdido_arbol_kg = k_factor * ke_total_arbol
+
+    # ==========================================
+    # RENDERIZADO DEL IMPACTO
+    # ==========================================
+    with col_suelo2:
+        c_e1, c_e2 = st.columns(2)
+        c_e1.metric("Energía Tormenta (Cielo Abierto)", f"{ke_total_nube/1000:,.1f} kJ/m²", "Fuerza destructiva")
+        
+        delta_ke = ((ke_total_arbol - ke_total_nube) / ke_total_nube * 100) if ke_total_nube > 0 else 0
+        c_e2.metric("Energía Tormenta (Bajo Dosel)", f"{ke_total_arbol/1000:,.1f} kJ/m²", f"{delta_ke:.1f}%", delta_color="inverse")
+
+        # Gráfico de Suelo Perdido
+        fig_erosion = go.Figure()
+        fig_erosion.add_trace(go.Bar(
+            x=["Suelo Arrancado por la Tormenta (Kg/m²)"],
+            y=[suelo_perdido_nube_kg],
+            name="Cielo Abierto (Pasto / Suelo desnudo)",
+            marker_color="#e67e22",
+            text=f"{suelo_perdido_nube_kg:.2f} Kg", textposition='auto'
+        ))
+        fig_erosion.add_trace(go.Bar(
+            x=["Suelo Arrancado por la Tormenta (Kg/m²)"],
+            y=[suelo_perdido_arbol_kg],
+            name="Bajo el Dosel Forestal",
+            marker_color="#27ae60",
+            text=f"{suelo_perdido_arbol_kg:.2f} Kg", textposition='auto'
+        ))
+        
+        fig_erosion.update_layout(
+            title=f"Desprendimiento de Suelo (Splash Detachment)",
+            height=280, margin=dict(l=20, r=20, t=40, b=20),
+            yaxis_title="Kilogramos de tierra (Kg/m²)",
+            barmode='group',
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
+        st.plotly_chart(fig_erosion, use_container_width=True)
+
+    # El Aleph del Suelo
+    with st.expander("📚 El Aleph del Suelo: Física de la Erosión y Modelo MMF", expanded=False):
+        st.markdown("""
+        ### 🟤 La Física de la Tierra y la Tormenta
+        La erosión hídrica no comienza con el agua fluyendo, comienza con el **impacto balístico**.
+        
+        * **Mecánica del Impacto (Splash Detachment):** Cuando la Energía Cinética de la lluvia supera la fuerza de cohesión de los agregados del suelo, este "explota" a nivel microscópico. Las partículas finas (limos y arcillas) salen volando y caen taponando los poros del suelo circundante, lo que crea un sello impermeable. 
+        * **El Inicio del Fin:** Una vez que el suelo se sella, el agua ya no puede infiltrarse hacia los acuíferos subterráneos (reduciendo la recarga de aguas subterráneas de la Pestaña 2). En su lugar, el agua se acumula en la superficie y fluye a gran velocidad (Escorrentía Superficial), llevándose consigo la capa vegetal fértil hacia los cauces de los ríos.
+        
+        ### 🧪 El Modelo MMF (Morgan, Morgan & Finney)
+        Para predecir este daño, la edafología utiliza el cálculo de la Energía Cinética Total ($KE$) de la tormenta multiplicada por el factor de Erodabilidad del suelo ($K$).
+        $$D_s = K \cdot KE_{total}$$
+        
+        **La Paradoja del Dosel Alto:** Si el bosque carece de sotobosque (plantas bajas y rastrojo), y los árboles tienen hojas cóncavas a gran altura (ej. plantaciones maderables exóticas), las "súper-gotas" generadas por las hojas adquieren una energía masiva, causando **mayor erosión bajo el bosque que a cielo abierto**. Por esto, la verdadera protección hídrica requiere un bosque multi-estrato (sotobosque, subdosel y dosel).
+        """)
