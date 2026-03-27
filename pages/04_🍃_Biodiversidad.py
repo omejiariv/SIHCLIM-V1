@@ -1547,7 +1547,7 @@ with tab_ret_dosel:
             st.error(f"⚠️ **Riesgo de Avalancha:** El dosel está saturado o degradado. La mayor parte de la energía de la tormenta ({volumen_escurre_m3:,.0f} m³) está golpeando el suelo directamente.")
 
 # =========================================================================
-# PESTAÑA 7: RETENCIÓN HÍDRICA DEL DOSEL
+# PESTAÑA 8: Retención del Microsistema Biológico
 # =========================================================================
 
 st.subheader("🔬 El Microsistema: Diseñador Ecohidrológico del Árbol")
