@@ -376,7 +376,7 @@ def detectar_zona_vida_dominante(gdf_zona):
 # =========================================================================
 # 🗂️ SISTEMA DE PESTAÑAS (NAVEGACIÓN)
 # =========================================================================
-tab_factura, tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador, tab_ecologia, tab_dosel, tab_micro = st.tabs([
+tab_factura, tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador, tab_ecologia, tab_ret_dosel, tab_micro = st.tabs([
     "💰 La Factura de la Naturaleza", 
     "🗺️ Mapa & GBIF", 
     "🧬 Taxonomía",
