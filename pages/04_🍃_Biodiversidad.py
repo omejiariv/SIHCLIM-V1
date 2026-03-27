@@ -1398,8 +1398,9 @@ with tab_ret_dosel:
             
             st.caption("A mayor complejidad fractal, mayor Índice de Área Foliar (LAI) y, por tanto, mayor retención de agua calculada en el modelo inferior.")
             
-            # 🚀 EL BOTÓN DE ANIMACIÓN
+            # 🚀 EL CONTROL DE VELOCIDAD Y EL BOTÓN
             st.markdown("<br>", unsafe_allow_html=True)
+            velocidad = st.slider("⏱️ Velocidad de Animación (seg/nivel):", 0.05, 1.0, 0.25, 0.05, help="Menor tiempo = crecimiento más rápido.")
             animar = st.button("🌱 Animar Crecimiento", use_container_width=True)
             
         with col_frac2:
@@ -1442,7 +1443,7 @@ with tab_ret_dosel:
             if animar:
                 for p in range(1, profundidad + 1):
                     espacio_fractal.plotly_chart(generar_figura_fractal(p), use_container_width=True)
-                    time.sleep(0.25) # Velocidad de la animación (segundos por fotograma)
+                    time.sleep(velocidad) # <--- 🧠 AHORA LA VELOCIDAD ES DINÁMICA
             else:
                 espacio_fractal.plotly_chart(generar_figura_fractal(profundidad), use_container_width=True)
                 
