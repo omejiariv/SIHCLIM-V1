@@ -1612,7 +1612,7 @@ with tab_micro:
     import plotly.graph_objects as go
     
     st.subheader("🔬 El Microsistema: Diseñador Ecohidrológico del Árbol")
-    st.info("Laboratorio de bioingeniería forestal. Modela cómo la anatomía de un solo árbol altera el ciclo del agua a escala micrométrica (Intercepción, Goteo y Escorrentía Fustal).")
+    st.info("Laboratorio bio-forestal. Modela cómo la anatomía de un solo árbol altera el ciclo del agua a escala micrométrica (Intercepción, Goteo y Escorrentía Fustal).")
 
     col_anat, col_hoja, col_graf = st.columns([1.2, 1.2, 2])
 
