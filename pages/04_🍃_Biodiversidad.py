@@ -1941,7 +1941,7 @@ with tab_micro:
         Multiplicando el Área Foliar por la microarquitectura de la hoja y la física balística, demostramos matemáticamente que talar un árbol centenario no es solo perder madera; es **apagar una máquina perfecta de regulación hídrica y disipación de energía** que ninguna tecnología humana puede replicar con tal eficiencia.
         """)
 
-# =========================================================================
+    # =========================================================================
     # 🟤 4. MÓDULO DE EROSIVIDAD Y SPLASH DETACHMENT (SUELO)
     # =========================================================================
     st.markdown("---")
@@ -2051,7 +2051,7 @@ with tab_micro:
         **La Paradoja del Dosel Alto:** Si el bosque carece de sotobosque (plantas bajas y rastrojo), y los árboles tienen hojas cóncavas a gran altura (ej. plantaciones maderables exóticas), las "súper-gotas" generadas por las hojas adquieren una energía masiva, causando **mayor erosión bajo el bosque que a cielo abierto**. Por esto, la verdadera protección hídrica requiere un bosque multi-estrato (sotobosque, subdosel y dosel).
         """)
 
-# =========================================================================
+    # =========================================================================
     # 🌊 5. MÓDULO DE TRANSPORTE DE SEDIMENTOS (Ecuación de Manning)
     # =========================================================================
     st.markdown("---")
@@ -2143,36 +2143,101 @@ with tab_micro:
         Al añadir hojarasca, helechos, musgos y raíces superficiales, el coeficiente de fricción ($n$) aumenta dramáticamente. Esto reduce la velocidad del agua por debajo de la *velocidad crítica de arrastre*. La fuerza hidráulica pierde la batalla contra la gravedad de la partícula, obligando al lodo a decantar y depositarse en el suelo del bosque. **El agua llega al río, pero la montaña se queda en su sitio.**
         """)
 
-# =========================================================================
+    # =========================================================================
     # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN, EUTROFIZACIÓN Y DINÁMICA (LA FE)
     # =========================================================================
     st.markdown("---")
     st.markdown("#### 🛑 6. Limnología Integral: El Destino del Embalse La Fe")
-    st.info("Modelo dinámico que cruza la sedimentación de la cuenca Espíritu Santo con los trasvases externos (Ríos Buey, Pantanillo y Piedras) para calcular la vida útil real y el riesgo de eutrofización.")
+    
+    # CSS Mágico para los Tooltips de Texto Limnológico
+    st.markdown("""
+    <style>
+    .limno-tooltip {
+        position: relative;
+        display: inline-block;
+        color: #2980b9;
+        font-weight: 600;
+        cursor: help;
+        border-bottom: 1px dashed #2980b9;
+        transition: color 0.3s;
+    }
+    .limno-tooltip:hover {
+        color: #e67e22;
+        border-bottom: 1px dashed #e67e22;
+    }
+    .limno-tooltip .tooltiptext {
+        visibility: hidden;
+        width: 320px;
+        background-color: #fdfaf2; /* Color papel envejecido */
+        color: #2c3e50;
+        text-align: left;
+        border: 1px solid #d3c0a3;
+        border-radius: 5px;
+        padding: 15px;
+        position: absolute;
+        z-index: 50;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -160px;
+        opacity: 0;
+        transition: opacity 0.4s;
+        font-size: 0.9em;
+        font-family: 'Georgia', serif;
+        box-shadow: 4px 4px 12px rgba(0,0,0,0.3);
+        line-height: 1.4;
+        font-weight: normal;
+    }
+    .limno-tooltip .tooltiptext::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -8px;
+        border-width: 8px;
+        border-style: solid;
+        border-color: #fdfaf2 transparent transparent transparent;
+    }
+    .limno-tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+    }
+    .tit-limno { font-weight: bold; font-size: 1.1em; color: #8e44ad; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>
+        Modelo dinámico basado en batimetría real. Integra la sedimentación local con la hidráulica de trasvases para calcular el colapso del 
+        <span class="limno-tooltip">Volumen Muerto<span class="tooltiptext"><div class="tit-limno">La Verdadera Fecha de Caducidad</div>Es el espacio en el fondo de la presa diseñado específicamente para almacenar sedimentos. Cuando el lodo llena este volumen y alcanza las compuertas, el embalse muere operativamente, aunque todavía tenga agua en la superficie.</span></span> y el riesgo térmico por su 
+        <span class="limno-tooltip">Fetch Efectivo<span class="tooltiptext"><div class="tit-limno">El Viento Inútil (Le = 5.9 x 10^-3 km)</div>El 'fetch' es la pista que tiene el viento para soplar y crear olas que mezclen el agua. La Fe tiene un fetch tan pequeño que el viento no logra mezclar las capas profundas. Esto genera una fuerte estratificación térmica y hace que el fondo se asfixie rápidamente (anoxia) cuando llega materia orgánica.</span></span> y su 
+        <span class="limno-tooltip">Morfología Dendrítica<span class="tooltiptext"><div class="tit-limno">La Trampa Perfecta (F = 2.25)</div>El Índice de Desarrollo del Perímetro indica que La Fe tiene forma de tentáculos o ramas. Los embalses con esta forma son trampas de sedimentos ultra-eficientes, atrapando el lodo en sus "brazos" antes de que el agua llegue al centro del lago.</span></span>.
+    </div>
+    """, unsafe_allow_html=True)
 
     col_lim1, col_lim2 = st.columns([1, 1.5])
 
     with col_lim1:
-        # 1. El Aleph Geográfico (Texto solicitado)
         with st.expander("📍 Contexto Geográfico: Cuenca Espíritu Santo", expanded=True):
-            st.write("La quebrada Espíritu Santo es el afluente natural que alimenta el embalse La Fe. El área total de captación del embalse en la Cuenca Espíritu Santo es de **173 kilómetros cuadrados**. Esta cuenca es vital para el ecosistema regional y el abastecimiento de agua en la zona del Valle de Aburrá.")
+            st.write("La quebrada Espíritu Santo es el afluente natural que alimenta el embalse La Fe. El área total de captación es de **173 kilómetros cuadrados**. Esta cuenca es vital para el ecosistema regional y el abastecimiento de agua en el Valle de Aburrá.")
 
         st.markdown("**Escalamiento de la Tormenta:**")
-        # 2. Slider limitado a 173 km2
         area_cuenca_km2 = st.slider("Área afectada por la tormenta (km²):", 1.0, 173.0, 50.0, 1.0, help="Límite superior: 173 km² (Total de la cuenca Espíritu Santo).")
-        tormentas_ano = st.slider("Tormentas de esta magnitud al año:", 1, 100, 20, 1, help="Permite anualizar el impacto.")
+        tormentas_ano = st.slider("Tormentas de esta magnitud al año:", 1, 100, 20, 1)
         
-        st.markdown("**Parámetros del Sistema (Matriz Hídrica):**")
-        vol_embalse_hm3 = st.number_input("Volumen Total del Embalse (Millones de m³):", min_value=1.0, value=14.6, step=0.1)
+        st.markdown("**Batimetría y Dinámica del Embalse:**")
+        # Desdoblamos el volumen en Útil y Muerto
+        c_v1, c_v2 = st.columns(2)
+        vol_util_hm3 = c_v1.number_input("Vol. Útil (Millones m³):", min_value=1.0, value=12.5, step=0.1)
+        vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Millones m³):", min_value=0.1, value=2.1, step=0.1)
+        
         caudal_ingreso_m3s = st.number_input("Ingreso Total (Espíritu Santo + Trasvases en m³/s):", value=6.5, step=0.1, help="1.2 local + 5.3 trasvases.")
         
         st.markdown("**Carga Química del Suelo:**")
-        # 3. Nuevo uso incluido: Urbanización
         uso_suelo = st.radio(
             "Uso del suelo erosionado:",
             [
-                "Zonas en proceso acelerado de urbanización (Suelos desnudos y aguas residuales - 0.25% Fósforo)",
-                "Agrícola / Ganadero (Alta carga de fertilizantes - 0.15% Fósforo)",
+                "Zonas en proceso acelerado de urbanización (0.25% Fósforo)",
+                "Agrícola / Ganadero (Alta carga - 0.15% Fósforo)",
                 "Suelo Degradado (Carga media - 0.05% Fósforo)",
                 "Bosque Conservado (Carga natural baja - 0.01% Fósforo)"
             ], index=1
@@ -2186,60 +2251,59 @@ with tab_micro:
     # ==========================================
     # MOTOR BIOQUÍMICO, FÍSICO Y TIEMPO DE RESIDENCIA
     # ==========================================
-    # Escalamiento Físico
+    vol_embalse_hm3 = vol_util_hm3 + vol_muerto_hm3
+    vol_embalse_m3 = vol_embalse_hm3 * 1_000_000
+    vol_muerto_m3 = vol_muerto_hm3 * 1_000_000
+
     area_cuenca_m2 = area_cuenca_km2 * 1_000_000
     sedimento_total_tormenta_kg = sedimento_al_rio_kg * area_cuenca_m2
     
-    # 4. Colmatación y Vida Útil (Escala Anual)
+    # Colmatación y Vida Útil (Calculada sobre el VOLUMEN MUERTO)
     densidad_lodo_kg_m3 = 1200.0
     volumen_lodo_m3_evento = sedimento_total_tormenta_kg / densidad_lodo_kg_m3
     volumen_lodo_anual_m3 = volumen_lodo_m3_evento * tormentas_ano
     
-    vol_embalse_m3 = vol_embalse_hm3 * 1_000_000
-    vida_util_anos = vol_embalse_m3 / volumen_lodo_anual_m3 if volumen_lodo_anual_m3 > 0 else 9999
+    # LA MATEMÁTICA REAL: Años = Volumen Muerto / Lodo Anual
+    vida_util_anos = vol_muerto_m3 / volumen_lodo_anual_m3 if volumen_lodo_anual_m3 > 0 else 9999
     
-    # 5. Tasa de Recambio (El Efecto Dilución)
+    # Tasa de Recambio
     volumen_ingreso_anual_m3 = caudal_ingreso_m3s * 60 * 60 * 24 * 365
     tasa_renovacion_anual = volumen_ingreso_anual_m3 / vol_embalse_m3 if vol_embalse_m3 > 0 else 0
     dias_residencia = 365 / tasa_renovacion_anual if tasa_renovacion_anual > 0 else 0
 
-    # Química
     fosforo_total_kg_evento = sedimento_total_tormenta_kg * pct_fosforo
 
     # ==========================================
     # RENDERIZADO DEL DIAGNÓSTICO
     # ==========================================
     with col_lim2:
-        st.markdown("##### ⏳ Proyección a Largo Plazo y Dinámica del Embalse")
+        st.markdown("##### ⏳ Proyección de Vida Útil (Colmatación)")
         c_l1, c_l2 = st.columns(2)
         
-        # Nuevos cálculos solicitados
-        c_l1.metric("Lodo Depositado (Anual)", f"{volumen_lodo_anual_m3:,.0f} m³/año", f"Por {tormentas_ano} tormentas", delta_color="inverse")
+        c_l1.metric("Lodo Depositado (Anual)", f"{volumen_lodo_anual_m3:,.0f} m³/año", f"Ocupando el Volumen Muerto", delta_color="inverse")
         
-        alerta_vida = "inverse" if vida_util_anos < 50 else "normal"
-        c_l2.metric("Vida Útil Estimada", f"{vida_util_anos:,.1f} Años", "Hasta colmatación total", delta_color=alerta_vida)
+        alerta_vida = "inverse" if vida_util_anos < 30 else "normal"
+        c_l2.metric("Vida Útil Estimada", f"{vida_util_anos:,.1f} Años", "Para colapso operativo", delta_color=alerta_vida)
         
         st.markdown("---")
-        st.markdown("##### 🌊 Dinámica Hidráulica: El Efecto 'Lavado'")
+        st.markdown("##### 🌊 Dinámica Hidráulica: Efecto Dilución por Trasvases")
         c_l3, c_l4 = st.columns(2)
         c_l3.metric("Tasa de Renovación", f"{tasa_renovacion_anual:.1f} veces/año", "Volúmenes completos", delta_color="off")
         c_l4.metric("Tiempo de Residencia", f"{dias_residencia:.0f} Días", "Edad del agua en La Fe", delta_color="off")
         
-        st.info(f"💡 **Interpretación Sistémica:** El embalse reemplaza toda su agua cada **{dias_residencia:.0f} días** gracias a la inyección masiva de los trasvases. Esto diluye la carga contaminante de la cuenca local. Sin estos trasvases, La Fe sería un pantano eutrofizado e inoperable en muy poco tiempo.")
+        st.info(f"💡 El embalse reemplaza toda su agua cada **{dias_residencia:.0f} días** gracias a la inyección masiva de los trasvases externos. Esto actúa como un sistema de 'lavado' que diluye la carga contaminante de Espíritu Santo. Sin los trasvases, la estratificación térmica aniquilaría el oxígeno del embalse rápidamente.")
         
         st.markdown("---")
-        # El Semáforo de la Eutrofización (Evento)
-        st.markdown(f"**Carga Química del Evento:** {fosforo_total_kg_evento:,.1f} Kg de Fósforo inyectados.")
+        st.markdown(f"**Impacto Químico del Evento:** {fosforo_total_kg_evento:,.1f} Kg de Fósforo inyectados.")
         if fosforo_total_kg_evento > 500:
-            st.error("🚨 **ALERTA ROJA (Anoxia Inminente):** Los nutrientes detonarán una explosión demográfica de macrófitas (*Buchón de agua*).")
+            st.error("🚨 **ALERTA ROJA (Anoxia Inminente):** Nutrientes detonarán explosión demográfica de macrófitas (*Buchón*). Debido al bajo Fetch Efectivo, el viento no oxigenará el fondo, causando asfixia de peces.")
         elif fosforo_total_kg_evento > 100:
-            st.warning("⚠️ **Riesgo Medio (Crecimiento Algal):** Alterará la transparencia y requerirá mayor potabilización.")
+            st.warning("⚠️ **Riesgo Medio:** Alteración de transparencia y altos costos de tratamiento.")
         else:
             if volumen_lodo_m3_evento == 0:
-                st.success("🌿 **Protección Perfecta:** El bosque y el sotobosque lograron retener el 100% de los sedimentos y nutrientes.")
+                st.success("🌿 **Protección Perfecta:** El bosque retuvo el 100% de sedimentos y nutrientes.")
             else:
-                st.success("✅ **Estado Oligotrófico Asimilable:** La carga de fósforo es baja ({fosforo_total_kg:,.1f} Kg) para que la tasa de renovación la diluya sin generar plagas de macrófitas.")
-
+                st.success("✅ **Estado Asimilable:** Carga controlada y diluida eficazmente por la tasa de renovación.")
 
     # El Aleph Limnológico
     with st.expander("📚 El Aleph de los Lagos: Colmatación, Fósforo y Anoxia", expanded=False):
