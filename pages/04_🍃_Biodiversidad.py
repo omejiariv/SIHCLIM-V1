@@ -1638,16 +1638,25 @@ with tab_micro:
         forma = st.radio("Morfología de la Hoja:",
                          ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
 
-        with st.expander("👁️ Ver Guía Visual de Hojas", expanded=False):
-            st.markdown("**Texturas Epidérmicas:**")
-            c_img1, c_img2 = st.columns(2)
-            c_img1.image("https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Leaf_morphology_waxy.jpg/320px-Leaf_morphology_waxy.jpg", caption="Lisa/Cerosa (Repele)")
-            c_img2.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Trichomes_on_a_leaf.jpg/320px-Trichomes_on_a_leaf.jpg", caption="Pubescente (Atrapa agua)")
+with st.expander("👁️ Ver Guía Visual de Hojas", expanded=False):
+            st.markdown("**1. Texturas Epidérmicas:**")
+            # Creamos 3 columnas para las texturas
+            c_img1, c_img2, c_img3 = st.columns(3)
             
-            st.markdown("**Morfologías:**")
-            c_img3, c_img4 = st.columns(2)
-            c_img3.image("https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Ficus_religiosa_leaf.jpg/320px-Ficus_religiosa_leaf.jpg", caption="Acuminada (Punta de goteo)")
-            c_img4.image("https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Water_drops_on_leaf_macro.jpg/320px-Water_drops_on_leaf_macro.jpg", caption="Cóncava (Efecto copa)")    
+            # Usamos imágenes de un CDN seguro que no bloquea la aplicación
+            c_img1.image("https://images.unsplash.com/photo-1558293842-c0fd3db86157?w=320", caption="Lisa / Cerosa")
+            c_img2.image("https://images.unsplash.com/photo-1542840410-3092f99611a3?w=320", caption="Normal")
+            c_img3.image("https://images.unsplash.com/photo-1610991823157-789a38541999?w=320", caption="Pubescente")
+            
+            st.markdown("**2. Morfologías de la Hoja:**")
+            # Creamos 3 columnas para las formas
+            c_img4, c_img5, c_img6 = st.columns(3)
+            
+            c_img4.image("https://images.unsplash.com/photo-1520302630591-fd1c66edc19d?w=320", caption="Plana")
+            c_img5.image("https://images.unsplash.com/photo-1508514800331-5975eb7fdeaa?w=320", caption="Cóncava (Copa)")
+            c_img6.image("https://images.unsplash.com/photo-1533160914838-8e3128b5a034?w=320", caption="Acuminada (Punta)")
+            
+            st.info("💡 **Proximamente tendremos fotos de las hojas de la region andina colombiana")
 
     # =========================================================================
     # 🧠 MOTOR FÍSICO Y ALOMÉTRICO DEL INDIVIDUO
