@@ -1387,12 +1387,12 @@ with tab_ret_dosel:
 
     # --- INICIO DEL JUGUETE FRACTAL DA VINCI ---
     with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
-        st.markdown("La capacidad de un árbol para retener agua se basa en la optimización fractal de su área superficial. Juega con los parámetros matemáticos que definen el crecimiento de las ramas.")
+        st.markdown("La capacidad adaptativa (inteligencia) de un árbol para retener agua y permitir el paso de la luz, se basa en la optimización fractal de su área superficial. Juega con los parámetros matemáticos que definen el crecimiento de las ramas.")
         
         col_frac1, col_frac2 = st.columns([1, 2.5])
         
         with col_frac1:
-            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 20, 7, help="Más iteraciones = más hojas = mayor área de retención.")
+            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 12, 7, help="Más iteraciones = más hojas = mayor área de retención.")
             angulo_grados = st.slider("Ángulo de Ramificación (°):", 10, 90, 25)
             escala = st.slider("Factor de Reducción (Escala):", 0.5, 0.85, 0.75, step=0.05)
             
