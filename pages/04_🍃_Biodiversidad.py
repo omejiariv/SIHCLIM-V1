@@ -2193,7 +2193,7 @@ with tab_micro:
         freq_sugerida = tr_opciones[tipo_tormenta]["freq"]
         
         c_t1, c_t2 = st.columns(2)
-        area_cuenca_km2 = c_t1.number_input("Área afectada (km²):", 1.0, 173.0, 50.0)
+        area_cuenca_km2 = c_t1.number_input("Área afectada (km²):", 1.0, 173.0, 5.0)
         tormentas_ano = c_t2.number_input("Eventos/año:", 0.0, 100.0, float(freq_sugerida), help="La frecuencia anual sugerida se ajusta automáticamente según el Periodo de Retorno estadístico.")
         
         # --- 2. COMPOSICIÓN DEL PAISAJE ---
@@ -2219,7 +2219,7 @@ with tab_micro:
         st.markdown("**3. Batimetría y Dinámica del Embalse:**")
         c_v1, c_v2 = st.columns(2)
         vol_util_hm3 = c_v1.number_input("Vol. Útil (Mm³):", min_value=1.0, value=12.5)
-        vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", min_value=0.1, value=2.1)
+        vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", min_value=0.1, value=3.0)
         caudal_ingreso_m3s = st.number_input("Ingreso Total (Espíritu Santo + Trasvases en m³/s):", value=6.5)
 
     # ==========================================
