@@ -1392,7 +1392,7 @@ with tab_ret_dosel:
         col_frac1, col_frac2 = st.columns([1, 2.5])
         
         with col_frac1:
-            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 15, 7, help="Más iteraciones = más hojas = mayor área de retención.")
+            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 20, 7, help="Más iteraciones = más hojas = mayor área de retención.")
             angulo_grados = st.slider("Ángulo de Ramificación (°):", 10, 90, 25)
             escala = st.slider("Factor de Reducción (Escala):", 0.5, 0.85, 0.75, step=0.05)
             
