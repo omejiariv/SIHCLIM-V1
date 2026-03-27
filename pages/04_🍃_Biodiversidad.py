@@ -1378,3 +1378,104 @@ with tab_ecologia:
         
         # Invocamos la herramienta pasándole el polígono de la zona
         render_motor_hidrologico(gdf_zona)
+
+# =========================================================================
+# 🌳 MÓDULO DE SERVICIOS ECOSISTÉMICOS: RETENCIÓN DEL DOSEL
+# =========================================================================
+st.markdown("---")
+st.header("🌳 Servicio Ecosistémico: Retención Hídrica del Dosel")
+st.info("Modelo eco-hidrológico de intercepción forestal. Estima cuánta agua de un aguacero es 'secuestrada' por las hojas y ramas, mitigando el riesgo de escorrentía rápida y avalanchas.")
+
+col_input, col_graf = st.columns([1, 2])
+
+with col_input:
+    st.subheader("Parámetros del Ecosistema")
+    
+    # 1. Selección de Especie / Cobertura
+    tipo_cobertura = st.selectbox(
+        "Tipo de Cobertura Vegetal:",
+        ["Bosque Andino (Nativo)", "Plantación de Pino", "Robledal", "Rastrojo Alto", "Pastos Degradados"]
+    )
+    
+    # Diccionario científico empírico (Sl = Capacidad específica en mm, LAI base = Índice de Área Foliar)
+    # Valores de referencia genéricos para ecosistemas andinos
+    dicc_vegetacion = {
+        "Bosque Andino (Nativo)": {"Sl": 0.25, "LAI_max": 6.5},
+        "Plantación de Pino": {"Sl": 0.20, "LAI_max": 5.0},
+        "Robledal": {"Sl": 0.30, "LAI_max": 5.5},
+        "Rastrojo Alto": {"Sl": 0.15, "LAI_max": 3.5},
+        "Pastos Degradados": {"Sl": 0.05, "LAI_max": 1.5}
+    }
+    
+    params = dicc_vegetacion[tipo_cobertura]
+    
+    # 2. Modificador de Edad / Densidad
+    densidad_pct = st.slider("Estado de Conservación / Densidad (%):", 10.0, 100.0, 80.0, 5.0)
+    lai_actual = params["LAI_max"] * (densidad_pct / 100.0)
+    
+    st.markdown("---")
+    st.subheader("El Evento Climático")
+    precipitacion_mm = st.slider("🌧️ Aguacero (Precipitación Bruta en mm):", 5.0, 150.0, 45.0, 1.0, 
+                                 help="Un aguacero de 40mm a 60mm ya se considera de alta intensidad y genera alertas.")
+    
+    hectareas = st.number_input("Área del polígono a evaluar (ha):", value=100.0, step=10.0)
+
+# =========================================================================
+# 🧠 MOTOR FÍSICO-MATEMÁTICO (Ecuación de Aston / Merriam)
+# =========================================================================
+# Capacidad Máxima del Dosel (S_max)
+s_max_mm = params["Sl"] * lai_actual
+
+# Intercepción asintótica (I)
+if s_max_mm > 0:
+    intercepcion_mm = s_max_mm * (1 - np.exp(-precipitacion_mm / s_max_mm))
+else:
+    intercepcion_mm = 0.0
+
+precipitacion_efectiva_mm = precipitacion_mm - intercepcion_mm
+eficiencia_retencion_pct = (intercepcion_mm / precipitacion_mm) * 100
+
+# Traducción a volúmenes macro (1 mm en 1 ha = 10 m3)
+volumen_retenido_m3 = intercepcion_mm * hectareas * 10
+volumen_escurre_m3 = precipitacion_efectiva_mm * hectareas * 10
+
+# =========================================================================
+# 📊 RENDERIZADO DE RESULTADOS
+# =========================================================================
+with col_graf:
+    c_m1, c_m2, c_m3 = st.columns(3)
+    c_m1.metric("Capacidad Máxima Dosel", f"{s_max_mm:.2f} mm", f"LAI: {lai_actual:.1f}", delta_color="normal")
+    c_m2.metric("Agua Retenida (Intercepción)", f"{intercepcion_mm:.1f} mm", f"{eficiencia_retencion_pct:.1f}% del aguacero", delta_color="off")
+    
+    alerta_suelo = "inverse" if precipitacion_efectiva_mm > 30 else "normal"
+    c_m3.metric("Agua al Suelo (P. Efectiva)", f"{precipitacion_efectiva_mm:.1f} mm", "Golpe de escorrentía", delta_color=alerta_suelo)
+    
+    # Gráfica de distribución volumétrica
+    fig_vol = go.Figure()
+    fig_vol.add_trace(go.Bar(
+        x=["Impacto Volumétrico del Aguacero"],
+        y=[volumen_retenido_m3],
+        name="Volumen 'Secuestrado' por el Bosque (m³)",
+        marker_color="#2ecc71",
+        text=f"{volumen_retenido_m3:,.0f} m³", textposition='auto'
+    ))
+    fig_vol.add_trace(go.Bar(
+        x=["Impacto Volumétrico del Aguacero"],
+        y=[volumen_escurre_m3],
+        name="Volumen que golpea el suelo (m³)",
+        marker_color="#e74c3c",
+        text=f"{volumen_escurre_m3:,.0f} m³", textposition='auto'
+    ))
+    
+    fig_vol.update_layout(
+        barmode='stack',
+        title=f"Balance del Evento en {hectareas} ha",
+        height=300, margin=dict(l=20, r=20, t=40, b=20),
+        yaxis_title="Metros Cúbicos (m³)"
+    )
+    st.plotly_chart(fig_vol, use_container_width=True)
+
+    if eficiencia_retencion_pct > 15:
+        st.success(f"🌿 **Alta Regulación:** El ecosistema actuó como un escudo, absorbiendo {volumen_retenido_m3:,.0f} toneladas de agua que, de otro modo, habrían alimentado directamente la creciente del río.")
+    else:
+        st.error(f"⚠️ **Riesgo de Avalancha:** El dosel está saturado o degradado. La mayor parte de la energía del aguacero ({volumen_escurre_m3:,.0f} m³) está golpeando el suelo directamente.")
