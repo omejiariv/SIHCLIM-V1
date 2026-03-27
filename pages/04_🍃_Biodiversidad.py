@@ -374,9 +374,8 @@ def detectar_zona_vida_dominante(gdf_zona):
         return "bh-MB"
 
 # --- DEFINICIÓN DE TABS PRINCIPALES ---
-tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador, tab_ecologia = st.tabs([
-    "🗺️ Mapa & GBIF", "🧬 Taxonomía", "🌲 Bosque e Inventarios", "⚖️ Metabolismo (AFOLU)", "📊 Comparador", "🌿 Ecología del Paisaje"
-])
+tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador, tab_ecologia, tab_ret_dosel = st.tabs([
+    "🗺️ Mapa & GBIF", "🧬 Taxonomía", "🌲 Bosque e Inventarios", "⚖️ Metabolismo (AFOLU)", "📊 Comparador", "🌿 Ecología del Paisaje", "🌳 Retención Hídrica del Dosel"])
 
 # Variable global para datos de biodiversidad
 gdf_bio = pd.DataFrame()
@@ -1380,102 +1379,153 @@ with tab_ecologia:
         render_motor_hidrologico(gdf_zona)
 
 # =========================================================================
-# 🌳 MÓDULO DE SERVICIOS ECOSISTÉMICOS: RETENCIÓN DEL DOSEL
+# PESTAÑA 7: RETENCIÓN HÍDRICA DEL DOSEL
 # =========================================================================
-st.markdown("---")
-st.header("🌳 Servicio Ecosistémico: Retención Hídrica del Dosel")
-st.info("Modelo eco-hidrológico de intercepción forestal. Estima cuánta agua de un aguacero es 'secuestrada' por las hojas y ramas, mitigando el riesgo de escorrentía rápida y avalanchas.")
+with tab_ret_dosel:
+    st.subheader("🌳 Servicio Ecosistémico: Retención Hídrica del Dosel")
+    st.info("Modelo eco-hidrológico de intercepción forestal. Estima cuánta agua de un aguacero es 'secuestrada' por las hojas y ramas, mitigando el riesgo de escorrentía rápida y avalanchas.")
 
-col_input, col_graf = st.columns([1, 2])
+    # --- INICIO DEL JUGUETE FRACTAL DA VINCI ---
+    with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
+        st.markdown("La capacidad de un árbol para retener agua se basa en la optimización fractal de su área superficial. Juega con los parámetros matemáticos que definen el crecimiento de las ramas.")
+        
+        col_frac1, col_frac2 = st.columns([1, 2.5])
+        
+        with col_frac1:
+            profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 10, 7, help="Más iteraciones = más hojas = mayor área de retención.")
+            angulo_grados = st.slider("Ángulo de Ramificación (°):", 10, 90, 25)
+            escala = st.slider("Factor de Reducción (Escala):", 0.5, 0.85, 0.75, step=0.05)
+            
+            st.caption("A mayor complejidad fractal, mayor Índice de Área Foliar (LAI) y, por tanto, mayor retención de agua calculada en el modelo inferior.")
+            
+        with col_frac2:
+            import math
+            import plotly.graph_objects as go
+            
+            # Función recursiva para dibujar el árbol fractal
+            def construir_arbol(x, y, angulo, longitud, nivel, x_lines, y_lines):
+                if nivel == 0:
+                    return
+                
+                # Coordenadas de la nueva rama
+                x_nuevo = x + longitud * math.cos(angulo)
+                y_nuevo = y + longitud * math.sin(angulo)
+                
+                # Agregar coordenadas (None rompe la línea)
+                x_lines.extend([x, x_nuevo, None])
+                y_lines.extend([y, y_nuevo, None])
+                
+                # Llamadas recursivas para las dos sub-ramas
+                construir_arbol(x_nuevo, y_nuevo, angulo - math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
+                construir_arbol(x_nuevo, y_nuevo, angulo + math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
 
-with col_input:
-    st.subheader("Parámetros del Ecosistema")
-    
-    # 1. Selección de Especie / Cobertura
-    tipo_cobertura = st.selectbox(
-        "Tipo de Cobertura Vegetal:",
-        ["Bosque Andino (Nativo)", "Plantación de Pino", "Robledal", "Rastrojo Alto", "Pastos Degradados"]
-    )
-    
-    # Diccionario científico empírico (Sl = Capacidad específica en mm, LAI base = Índice de Área Foliar)
-    # Valores de referencia genéricos para ecosistemas andinos
-    dicc_vegetacion = {
-        "Bosque Andino (Nativo)": {"Sl": 0.25, "LAI_max": 6.5},
-        "Plantación de Pino": {"Sl": 0.20, "LAI_max": 5.0},
-        "Robledal": {"Sl": 0.30, "LAI_max": 5.5},
-        "Rastrojo Alto": {"Sl": 0.15, "LAI_max": 3.5},
-        "Pastos Degradados": {"Sl": 0.05, "LAI_max": 1.5}
-    }
-    
-    params = dicc_vegetacion[tipo_cobertura]
-    
-    # 2. Modificador de Edad / Densidad
-    densidad_pct = st.slider("Estado de Conservación / Densidad (%):", 10.0, 100.0, 80.0, 5.0)
-    lai_actual = params["LAI_max"] * (densidad_pct / 100.0)
-    
+            # Inicializar listas
+            x_arbol, y_arbol = [], []
+            
+            # Dibujar el tronco inicial
+            construir_arbol(0, 0, math.pi / 2, 100, profundidad, x_arbol, y_arbol)
+            
+            fig_fractal = go.Figure(go.Scatter(x=x_arbol, y=y_arbol, mode='lines', line=dict(color='rgba(39, 174, 96, 0.8)', width=1.5)))
+            fig_fractal.update_layout(
+                xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
+                margin=dict(l=0, r=0, t=0, b=0), height=350, plot_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig_fractal, use_container_width=True)
+    # --- FIN DEL JUGUETE FRACTAL ---
+
     st.markdown("---")
-    st.subheader("El Evento Climático")
-    precipitacion_mm = st.slider("🌧️ Aguacero (Precipitación Bruta en mm):", 5.0, 150.0, 45.0, 1.0, 
-                                 help="Un aguacero de 40mm a 60mm ya se considera de alta intensidad y genera alertas.")
-    
-    hectareas = st.number_input("Área del polígono a evaluar (ha):", value=100.0, step=10.0)
 
-# =========================================================================
-# 🧠 MOTOR FÍSICO-MATEMÁTICO (Ecuación de Aston / Merriam)
-# =========================================================================
-# Capacidad Máxima del Dosel (S_max)
-s_max_mm = params["Sl"] * lai_actual
+    col_input, col_graf = st.columns([1, 2])
 
-# Intercepción asintótica (I)
-if s_max_mm > 0:
-    intercepcion_mm = s_max_mm * (1 - np.exp(-precipitacion_mm / s_max_mm))
-else:
-    intercepcion_mm = 0.0
+    with col_input:
+        st.subheader("Parámetros Macro del Ecosistema")
+        
+        tipo_cobertura = st.selectbox(
+            "Tipo de Cobertura Vegetal:",
+            ["Bosque Andino (Nativo)", "Plantación de Pino", "Robledal", "Rastrojo Alto", "Pastos Degradados"]
+        )
+        
+        dicc_vegetacion = {
+            "Bosque Andino (Nativo)": {"Sl": 0.25, "LAI_max": 6.5},
+            "Plantación de Pino": {"Sl": 0.20, "LAI_max": 5.0},
+            "Robledal": {"Sl": 0.30, "LAI_max": 5.5},
+            "Rastrojo Alto": {"Sl": 0.15, "LAI_max": 3.5},
+            "Pastos Degradados": {"Sl": 0.05, "LAI_max": 1.5}
+        }
+        
+        params = dicc_vegetacion[tipo_cobertura]
+        
+        densidad_pct = st.slider("Estado de Conservación / Densidad (%):", 10.0, 100.0, 80.0, 5.0)
+        lai_actual = params["LAI_max"] * (densidad_pct / 100.0)
+        
+        hectareas = st.number_input("Área del polígono a evaluar (ha):", value=100.0, step=10.0)
+        
+        st.markdown("---")
+        st.subheader("El Evento Meteorológico")
+        
+        # Nuevos controles separados de Intensidad y Tiempo
+        c_lluvia1, c_lluvia2 = st.columns(2)
+        intensidad_mm_h = c_lluvia1.slider("🌧️ Intensidad (mm/hora):", 1.0, 100.0, 20.0, 1.0)
+        duracion_h = c_lluvia2.slider("⏱️ Duración (horas):", 0.5, 24.0, 2.0, 0.5)
+        
+        # Cálculo de la precipitación total bruta
+        precipitacion_mm = intensidad_mm_h * duracion_h
+        st.info(f"**Precipitación Bruta Total del Evento:** {precipitacion_mm:.1f} mm")
 
-precipitacion_efectiva_mm = precipitacion_mm - intercepcion_mm
-eficiencia_retencion_pct = (intercepcion_mm / precipitacion_mm) * 100
+    # Motor Físico-Matemático (Ecuación de Aston)
+    s_max_mm = params["Sl"] * lai_actual
 
-# Traducción a volúmenes macro (1 mm en 1 ha = 10 m3)
-volumen_retenido_m3 = intercepcion_mm * hectareas * 10
-volumen_escurre_m3 = precipitacion_efectiva_mm * hectareas * 10
-
-# =========================================================================
-# 📊 RENDERIZADO DE RESULTADOS
-# =========================================================================
-with col_graf:
-    c_m1, c_m2, c_m3 = st.columns(3)
-    c_m1.metric("Capacidad Máxima Dosel", f"{s_max_mm:.2f} mm", f"LAI: {lai_actual:.1f}", delta_color="normal")
-    c_m2.metric("Agua Retenida (Intercepción)", f"{intercepcion_mm:.1f} mm", f"{eficiencia_retencion_pct:.1f}% del aguacero", delta_color="off")
-    
-    alerta_suelo = "inverse" if precipitacion_efectiva_mm > 30 else "normal"
-    c_m3.metric("Agua al Suelo (P. Efectiva)", f"{precipitacion_efectiva_mm:.1f} mm", "Golpe de escorrentía", delta_color=alerta_suelo)
-    
-    # Gráfica de distribución volumétrica
-    fig_vol = go.Figure()
-    fig_vol.add_trace(go.Bar(
-        x=["Impacto Volumétrico del Aguacero"],
-        y=[volumen_retenido_m3],
-        name="Volumen 'Secuestrado' por el Bosque (m³)",
-        marker_color="#2ecc71",
-        text=f"{volumen_retenido_m3:,.0f} m³", textposition='auto'
-    ))
-    fig_vol.add_trace(go.Bar(
-        x=["Impacto Volumétrico del Aguacero"],
-        y=[volumen_escurre_m3],
-        name="Volumen que golpea el suelo (m³)",
-        marker_color="#e74c3c",
-        text=f"{volumen_escurre_m3:,.0f} m³", textposition='auto'
-    ))
-    
-    fig_vol.update_layout(
-        barmode='stack',
-        title=f"Balance del Evento en {hectareas} ha",
-        height=300, margin=dict(l=20, r=20, t=40, b=20),
-        yaxis_title="Metros Cúbicos (m³)"
-    )
-    st.plotly_chart(fig_vol, use_container_width=True)
-
-    if eficiencia_retencion_pct > 15:
-        st.success(f"🌿 **Alta Regulación:** El ecosistema actuó como un escudo, absorbiendo {volumen_retenido_m3:,.0f} toneladas de agua que, de otro modo, habrían alimentado directamente la creciente del río.")
+    import numpy as np
+    if s_max_mm > 0:
+        intercepcion_mm = s_max_mm * (1 - np.exp(-precipitacion_mm / s_max_mm))
     else:
-        st.error(f"⚠️ **Riesgo de Avalancha:** El dosel está saturado o degradado. La mayor parte de la energía del aguacero ({volumen_escurre_m3:,.0f} m³) está golpeando el suelo directamente.")
+        intercepcion_mm = 0.0
+
+    precipitacion_efectiva_mm = precipitacion_mm - intercepcion_mm
+    
+    # Prevenir división por cero si el evento es de 0 mm
+    if precipitacion_mm > 0:
+        eficiencia_retencion_pct = (intercepcion_mm / precipitacion_mm) * 100
+    else:
+        eficiencia_retencion_pct = 0.0
+
+    volumen_retenido_m3 = intercepcion_mm * hectareas * 10
+    volumen_escurre_m3 = precipitacion_efectiva_mm * hectareas * 10
+
+    with col_graf:
+        c_m1, c_m2, c_m3 = st.columns(3)
+        c_m1.metric("Capacidad Máxima Dosel", f"{s_max_mm:.2f} mm", f"LAI: {lai_actual:.1f}", delta_color="normal")
+        c_m2.metric("Agua Retenida (Intercepción)", f"{intercepcion_mm:.1f} mm", f"{eficiencia_retencion_pct:.1f}% del aguacero", delta_color="off")
+        
+        alerta_suelo = "inverse" if precipitacion_efectiva_mm > 30 else "normal"
+        c_m3.metric("Agua al Suelo (P. Efectiva)", f"{precipitacion_efectiva_mm:.1f} mm", "Golpe de escorrentía", delta_color=alerta_suelo)
+        
+        import plotly.graph_objects as go
+        fig_vol = go.Figure()
+        fig_vol.add_trace(go.Bar(
+            x=["Impacto Volumétrico del Evento"],
+            y=[volumen_retenido_m3],
+            name="Volumen 'Secuestrado' por el Bosque (m³)",
+            marker_color="#2ecc71",
+            text=f"{volumen_retenido_m3:,.0f} m³", textposition='auto'
+        ))
+        fig_vol.add_trace(go.Bar(
+            x=["Impacto Volumétrico del Evento"],
+            y=[volumen_escurre_m3],
+            name="Volumen que golpea el suelo (m³)",
+            marker_color="#e74c3c",
+            text=f"{volumen_escurre_m3:,.0f} m³", textposition='auto'
+        ))
+        
+        fig_vol.update_layout(
+            barmode='stack',
+            title=f"Balance Hídrico del Evento en {hectareas} ha",
+            height=300, margin=dict(l=20, r=20, t=40, b=20),
+            yaxis_title="Metros Cúbicos (m³)"
+        )
+        st.plotly_chart(fig_vol, use_container_width=True)
+
+        if eficiencia_retencion_pct > 15:
+            st.success(f"🌿 **Alta Regulación:** El ecosistema actuó como un escudo, absorbiendo {volumen_retenido_m3:,.0f} toneladas de agua que, de otro modo, habrían alimentado directamente la creciente del río.")
+        else:
+            st.error(f"⚠️ **Riesgo de Avalancha:** El dosel está saturado o degradado. La mayor parte de la energía de la tormenta ({volumen_escurre_m3:,.0f} m³) está golpeando el suelo directamente.")
