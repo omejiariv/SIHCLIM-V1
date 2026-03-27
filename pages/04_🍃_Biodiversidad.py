@@ -2143,13 +2143,13 @@ with tab_micro:
         Al añadir hojarasca, helechos, musgos y raíces superficiales, el coeficiente de fricción ($n$) aumenta dramáticamente. Esto reduce la velocidad del agua por debajo de la *velocidad crítica de arrastre*. La fuerza hidráulica pierde la batalla contra la gravedad de la partícula, obligando al lodo a decantar y depositarse en el suelo del bosque. **El agua llega al río, pero la montaña se queda en su sitio.**
         """)
 
-# =========================================================================
+    # =========================================================================
     # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN, EUTROFIZACIÓN Y DINÁMICA (LA FE)
     # =========================================================================
     st.markdown("---")
-    st.markdown("#### 🛑 6. Limnología Integral: El Destino del Embalse La Fe")
+    st.markdown("#### 🛑 6. Limnología Integral: Uniformismo y Catastrofismo en La Fe")
     
-    # CSS Mágico para los Tooltips (Se mantiene intacto)
+    # CSS Mágico para los Tooltips
     st.markdown("""
     <style>
     .limno-tooltip { position: relative; display: inline-block; color: #2980b9; font-weight: 600; cursor: help; border-bottom: 1px dashed #2980b9; transition: color 0.3s; }
@@ -2163,9 +2163,9 @@ with tab_micro:
 
     st.markdown("""
     <div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>
-        Modelo dinámico basado en batimetría real. Integra la sedimentación local con la hidráulica de trasvases para calcular el colapso del 
+        Modelo dinámico basado en batimetría real. Integra el <b>Uniformismo</b> (colmatación lenta por lluvias rutinarias) y el <b>Catastrofismo</b> (avalanchas por tormentas extremas) para calcular el colapso del 
         <span class="limno-tooltip">Volumen Muerto<span class="tooltiptext"><div class="tit-limno">La Verdadera Fecha de Caducidad</div>Es el espacio en el fondo de la presa diseñado específicamente para almacenar sedimentos. Cuando el lodo llena este volumen y alcanza las compuertas, el embalse muere operativamente.</span></span> y el riesgo térmico por su 
-        <span class="limno-tooltip">Fetch Efectivo<span class="tooltiptext"><div class="tit-limno">El Viento Inútil (Le = 5.9 x 10^-3 km)</div>La Fe tiene un fetch tan pequeño que el viento no logra mezclar las capas profundas. Esto genera una fuerte estratificación térmica y hace que el fondo se asfixie rápidamente (anoxia) cuando llega materia orgánica.</span></span> y su 
+        <span class="limno-tooltip">Fetch Efectivo<span class="tooltiptext"><div class="tit-limno">El Viento Inútil (Le = 5.9 x 10^-3 km)</div>La Fe tiene un fetch tan pequeño que el viento no logra mezclar las capas profundas. Esto genera estratificación térmica y hace que el fondo se asfixie (anoxia) cuando llega materia orgánica.</span></span> y su 
         <span class="limno-tooltip">Morfología Dendrítica<span class="tooltiptext"><div class="tit-limno">La Trampa Perfecta (F = 2.25)</div>Los embalses con forma de tentáculos o ramas son trampas de sedimentos ultra-eficientes, atrapando el lodo antes de que llegue al centro del lago.</span></span>.
     </div>
     """, unsafe_allow_html=True)
@@ -2173,32 +2173,29 @@ with tab_micro:
     col_lim1, col_lim2 = st.columns([1, 1.5])
 
     with col_lim1:
-        with st.expander("📍 Contexto Geográfico: Cuenca Espíritu Santo", expanded=True):
+        with st.expander("📍 Contexto Geográfico: Cuenca Espíritu Santo", expanded=False):
             st.write("La quebrada Espíritu Santo es el afluente natural que alimenta el embalse La Fe. El área total de captación es de **173 kilómetros cuadrados**. Esta cuenca es vital para el ecosistema regional y el abastecimiento de agua en el Valle de Aburrá.")
 
-        # --- 1. FORZAMIENTO CLIMÁTICO ---
-        st.markdown("**1. Forzamiento Climático (Magnitud del Evento):**")
+        # --- 1. FORZAMIENTO CLIMÁTICO EXTREMO ---
+        st.markdown("**1. Forzamiento Climático (El Evento Convulsivo):**")
         st.caption("Conectado a la Climatología Estadística (Periodos de Retorno - Tr).")
         
         tr_opciones = {
-            "Ordinaria (Tr < 1 año)": {"factor_mm": 1.0, "freq": 25},
-            "Fuerte (Tr 5 años)": {"factor_mm": 1.5, "freq": 4},
-            "Severa (Tr 20 años)": {"factor_mm": 2.2, "freq": 1},
-            "Extrema (Tr 50 años)": {"factor_mm": 2.8, "freq": 0.2}, # 1 vez cada 5 años estadísticamente
-            "Catastrófica (Tr 100 años)": {"factor_mm": 3.5, "freq": 0.1}
+            "Ordinaria (Tr < 1 año)": {"factor_mm": 1.0, "freq": 1.0}, # 100% de probabilidad anual
+            "Fuerte (Tr 5 años)": {"factor_mm": 2.5, "freq": 0.2},     # 20% de prob anual
+            "Severa (Tr 20 años)": {"factor_mm": 4.5, "freq": 0.05},
+            "Extrema (Tr 50 años)": {"factor_mm": 6.5, "freq": 0.02},
+            "Catastrófica (Tr 100 años)": {"factor_mm": 9.0, "freq": 0.01}
         }
         
-        tipo_tormenta = st.select_slider("Selecciona la severidad estadística:", options=list(tr_opciones.keys()), value="Ordinaria (Tr < 1 año)")
+        tipo_tormenta = st.select_slider("Severidad de la Tormenta de HOY:", options=list(tr_opciones.keys()), value="Ordinaria (Tr < 1 año)")
         factor_tormenta = tr_opciones[tipo_tormenta]["factor_mm"]
-        freq_sugerida = tr_opciones[tipo_tormenta]["freq"]
+        probabilidad_anual = tr_opciones[tipo_tormenta]["freq"]
         
-        c_t1, c_t2 = st.columns(2)
-        area_cuenca_km2 = c_t1.number_input("Área afectada (km²):", 1.0, 173.0, 5.0)
-        tormentas_ano = c_t2.number_input("Eventos/año:", 0.0, 100.0, float(freq_sugerida), help="La frecuencia anual sugerida se ajusta automáticamente según el Periodo de Retorno estadístico.")
+        area_cuenca_km2 = st.number_input("Área afectada por la tormenta (km²):", 1.0, 173.0, 50.0)
         
         # --- 2. COMPOSICIÓN DEL PAISAJE ---
         st.markdown("**2. Composición del Paisaje (Mix de Usos):**")
-        st.caption("Ajusta la intensidad de uso. La suma de los deslizadores debe acercarse al 100%.")
         
         c_p1, c_p2 = st.columns(2)
         pct_bosque = c_p1.slider("🌲 Bosque Conservado", 0, 100, 20)
@@ -2209,82 +2206,91 @@ with tab_micro:
         total_pct = pct_bosque + pct_agricola + pct_degradado + pct_urbano
         if total_pct == 0: total_pct = 1 # Prevenir división por cero
         
-        # Fracciones normalizadas
         f_bos, f_agr, f_deg, f_urb = pct_bosque/total_pct, pct_agricola/total_pct, pct_degradado/total_pct, pct_urbano/total_pct
         
-        if total_pct != 100:
-            st.warning(f"La suma es {total_pct}%. El modelo ponderará los valores automáticamente al 100%.")
-
         # --- 3. BATIMETRÍA ---
         st.markdown("**3. Batimetría y Dinámica del Embalse:**")
         c_v1, c_v2 = st.columns(2)
         vol_util_hm3 = c_v1.number_input("Vol. Útil (Mm³):", min_value=1.0, value=12.5)
-        vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", min_value=0.1, value=3.0)
+        vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", min_value=0.1, value=2.1)
         caudal_ingreso_m3s = st.number_input("Ingreso Total (Espíritu Santo + Trasvases en m³/s):", value=6.5)
 
     # ==========================================
-    # MOTOR FÍSICO, QUÍMICO Y CLIMÁTICO (CORREGIDO)
+    # MOTOR MATEMÁTICO: UNIFORMISMO VS CATASTROFISMO
     # ==========================================
-    # A. Química: Ponderación de Fósforo según el paisaje
     pct_fosforo_ponderado = (f_bos * 0.0001) + (f_agr * 0.0015) + (f_deg * 0.0005) + (f_urb * 0.0025)
-    
-    # B. Física: Multiplicador de Erosión Efectiva
-    # Asumimos que el "sedimento_al_rio_kg" calculado en el módulo 5 es un escenario agrícola estándar (factor 1.0)
-    # Bosque frena 95% (0.05), degradado multiplica x2.5, urbano (movimiento de tierras) multiplica x3.5
     factor_erosion_ponderado = (f_bos * 0.05) + (f_agr * 1.0) + (f_deg * 2.5) + (f_urb * 3.5)
 
     vol_embalse_m3 = (vol_util_hm3 + vol_muerto_hm3) * 1_000_000
     vol_muerto_m3 = vol_muerto_hm3 * 1_000_000
     area_cuenca_m2 = area_cuenca_km2 * 1_000_000
-    
-    # C. Escalamiento del Sedimento (Integrando Clima + Área + Paisaje)
-    sedimento_total_tormenta_kg = sedimento_al_rio_kg * area_cuenca_m2 * factor_erosion_ponderado * factor_tormenta
-    
-    # Colmatación (Basada en Volumen Muerto)
     densidad_lodo_kg_m3 = 1200.0
-    volumen_lodo_m3_evento = sedimento_total_tormenta_kg / densidad_lodo_kg_m3
-    volumen_lodo_anual_m3 = volumen_lodo_m3_evento * tormentas_ano
     
-    vida_util_anos = vol_muerto_m3 / volumen_lodo_anual_m3 if volumen_lodo_anual_m3 > 0 else 9999
+    # 1. LA RUTINA (UNIFORMISMO)
+    # Asumimos que ocurren ~30 eventos de lluvia ordinaria erosiva al año
+    sedimento_ordinario_kg = sedimento_al_rio_kg * area_cuenca_m2 * factor_erosion_ponderado * 1.0
+    lodo_ordinario_evento_m3 = sedimento_ordinario_kg / densidad_lodo_kg_m3
+    lodo_rutina_anual_m3 = lodo_ordinario_evento_m3 * 30 
     
-    # Tasa de Recambio
-    volumen_ingreso_anual_m3 = caudal_ingreso_m3s * 31536000 # Segundos en un año
-    tasa_renovacion_anual = volumen_ingreso_anual_m3 / vol_embalse_m3 if vol_embalse_m3 > 0 else 0
+    # 2. EL EVENTO CONVULSIVO (CATASTROFISMO)
+    # La erosividad crece geométricamente con la intensidad (factor_tormenta ** 1.8 aprox)
+    factor_erosividad_extrema = factor_tormenta ** 1.8
+    sedimento_evento_hoy_kg = sedimento_al_rio_kg * area_cuenca_m2 * factor_erosion_ponderado * factor_erosividad_extrema
+    lodo_evento_hoy_m3 = sedimento_evento_hoy_kg / densidad_lodo_kg_m3
+    
+    # 3. IMPACTO CONVULSIVO: ¿Cuántos años de envejecimiento causa esta tormenta en un solo día?
+    anos_robados = lodo_evento_hoy_m3 / lodo_rutina_anual_m3 if lodo_rutina_anual_m3 > 0 else 0
+    
+    # 4. ESPERANZA DE VIDA INTEGRAL (Rutina + Riesgo Estadístico Anualizado)
+    # Al lodo de rutina le sumamos la "probabilidad" de que ocurra el evento extremo este año
+    lodo_total_riesgo_m3 = lodo_rutina_anual_m3 + (lodo_evento_hoy_m3 * probabilidad_anual)
+    vida_util_anos = vol_muerto_m3 / lodo_total_riesgo_m3 if lodo_total_riesgo_m3 > 0 else 9999
+    
+    # Hidráulica y Química
+    tasa_renovacion_anual = (caudal_ingreso_m3s * 31536000) / vol_embalse_m3 if vol_embalse_m3 > 0 else 0
     dias_residencia = 365 / tasa_renovacion_anual if tasa_renovacion_anual > 0 else 0
-
-    fosforo_total_kg_evento = sedimento_total_tormenta_kg * pct_fosforo_ponderado
+    fosforo_total_kg_evento = sedimento_evento_hoy_kg * pct_fosforo_ponderado
 
     # ==========================================
     # RENDERIZADO DEL DIAGNÓSTICO
     # ==========================================
     with col_lim2:
-        st.markdown("##### ⏳ Proyección de Vida Útil (Colmatación)")
+        st.markdown("##### ⚡ El Impacto del Evento Convulsivo (HOY)")
+        c_e1, c_e2 = st.columns(2)
+        
+        c_e1.metric("Avalancha de Lodo (1 Día)", f"{lodo_evento_hoy_m3:,.0f} m³", "Masa entrante por la tormenta", delta_color="inverse")
+        
+        if anos_robados >= 1.0:
+            c_e2.metric("Envejecimiento Súbito", f"{anos_robados:,.1f} Años", "Años de vida robados hoy", delta_color="inverse")
+        else:
+            c_e2.metric("Envejecimiento Súbito", f"{(anos_robados*12):,.1f} Meses", "Impacto de la tormenta", delta_color="inverse")
+            
+        st.markdown("---")
+        st.markdown("##### ⏳ Proyección Integral (Rutina Uniforme + Riesgo Extremo)")
         c_l1, c_l2 = st.columns(2)
         
-        c_l1.metric("Lodo Depositado (Anual)", f"{volumen_lodo_anual_m3:,.0f} m³/año", f"Ocupando el Volumen Muerto", delta_color="inverse")
+        c_l1.metric("Tasa de Colmatación Anual", f"{lodo_total_riesgo_m3:,.0f} m³/año", "Llenando el Volumen Muerto", delta_color="off")
         
         alerta_vida = "inverse" if vida_util_anos < 30 else "normal"
-        c_l2.metric("Vida Útil Estimada", f"{vida_util_anos:,.1f} Años", "Para colapso operativo", delta_color=alerta_vida)
+        c_l2.metric("Vida Útil Estimada", f"{vida_util_anos:,.1f} Años", "Hasta colapso operativo", delta_color=alerta_vida)
         
         st.markdown("---")
-        st.markdown("##### 🌊 Dinámica Hidráulica: Efecto Dilución por Trasvases")
+        st.markdown("##### 🌊 Dinámica Hidráulica: Efecto Dilución")
         c_l3, c_l4 = st.columns(2)
-        c_l3.metric("Tasa de Renovación", f"{tasa_renovacion_anual:.1f} veces/año", "Volúmenes completos", delta_color="off")
+        c_l3.metric("Tasa de Renovación", f"{tasa_renovacion_anual:.1f} veces/año", "Por trasvases externos", delta_color="off")
         c_l4.metric("Tiempo de Residencia", f"{dias_residencia:.0f} Días", "Edad del agua en La Fe", delta_color="off")
         
-        st.info(f"💡 El embalse reemplaza toda su agua cada **{dias_residencia:.0f} días** gracias a la inyección masiva de los trasvases. Esto diluye la carga contaminante de Espíritu Santo, mitigando el impacto de las tormentas.")
-        
         st.markdown("---")
-        st.markdown(f"**Impacto Químico del Evento:** {fosforo_total_kg_evento:,.1f} Kg de Fósforo inyectados.")
+        st.markdown(f"**Impacto Químico del Evento:** {fosforo_total_kg_evento:,.1f} Kg de Fósforo inyectados hoy.")
         if fosforo_total_kg_evento > 500:
-            st.error("🚨 **ALERTA ROJA (Anoxia Inminente):** Nutrientes detonarán explosión demográfica de macrófitas (*Buchón*). Debido al bajo Fetch Efectivo, el viento no oxigenará el fondo, causando asfixia de peces.")
+            st.error("🚨 **ALERTA ROJA (Anoxia Inminente):** La tormenta arrastró una bomba de nutrientes. Debido al bajo Fetch Efectivo y a la estratificación térmica, se detonará una explosión de macrófitas y asfixia en el fondo.")
         elif fosforo_total_kg_evento > 100:
             st.warning("⚠️ **Riesgo Medio:** Alteración de transparencia y altos costos de tratamiento.")
         else:
-            if volumen_lodo_m3_evento < 100:
-                st.success("🌿 **Protección Perfecta:** El bosque amortiguó la tormenta y retuvo los sedimentos de forma excepcional.")
+            if lodo_evento_hoy_m3 < 100:
+                st.success("🌿 **Protección Perfecta:** El paisaje amortiguó la tormenta y retuvo los sedimentos.")
             else:
-                st.success("✅ **Estado Asimilable:** Carga controlada y diluida eficazmente por la tasa de renovación.")
+                st.success("✅ **Estado Asimilable:** Carga diluida eficazmente por la tasa de renovación.")
 
     # El Aleph Limnológico
     with st.expander("📚 El Aleph de los Lagos: Colmatación, Fósforo y Anoxia", expanded=False):
