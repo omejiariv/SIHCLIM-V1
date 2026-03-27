@@ -2144,6 +2144,7 @@ with tab_micro:
         """)
 
     # =========================================================================
+# =========================================================================
     # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN, EUTROFIZACIÓN Y DINÁMICA (LA FE)
     # =========================================================================
     st.markdown("---")
@@ -2181,17 +2182,17 @@ with tab_micro:
         st.caption("Conectado a la Climatología Estadística (Periodos de Retorno - Tr).")
         
         tr_opciones = {
-            "Ordinaria (Tr < 1 año)": {"factor_mm": 1.0, "freq": 1.0}, # 100% de probabilidad anual
-            "Fuerte (Tr 5 años)": {"factor_mm": 2.5, "freq": 0.2},     # 20% de prob anual
-            "Severa (Tr 20 años)": {"factor_mm": 4.5, "freq": 0.05},
-            "Extrema (Tr 50 años)": {"factor_mm": 6.5, "freq": 0.02},
-            "Catastrófica (Tr 100 años)": {"factor_mm": 9.0, "freq": 0.01}
+            "Ordinaria (Tr < 1 año)": {"factor_mm": 1.0}, 
+            "Fuerte (Tr 5 años)": {"factor_mm": 2.5},     
+            "Severa (Tr 20 años)": {"factor_mm": 4.5},
+            "Extrema (Tr 50 años)": {"factor_mm": 6.5},
+            "Catastrófica (Tr 100 años)": {"factor_mm": 9.0}
         }
         
         tipo_tormenta = st.select_slider("Severidad de la Tormenta de HOY:", options=list(tr_opciones.keys()), value="Ordinaria (Tr < 1 año)")
         factor_tormenta = tr_opciones[tipo_tormenta]["factor_mm"]
-        probabilidad_anual = tr_opciones[tipo_tormenta]["freq"]
         
+        # Valor real sugerido de área afectada ajustado a 5.0 km2
         area_cuenca_km2 = st.number_input("Área afectada por la tormenta (km²):", 1.0, 173.0, 5.0)
         
         # --- 2. COMPOSICIÓN DEL PAISAJE ---
@@ -2204,7 +2205,7 @@ with tab_micro:
         pct_urbano = c_p2.slider("🏙️ Expansión Urbana", 0, 100, 15)
         
         total_pct = pct_bosque + pct_agricola + pct_degradado + pct_urbano
-        if total_pct == 0: total_pct = 1 # Prevenir división por cero
+        if total_pct == 0: total_pct = 1 
         
         f_bos, f_agr, f_deg, f_urb = pct_bosque/total_pct, pct_agricola/total_pct, pct_degradado/total_pct, pct_urbano/total_pct
         
@@ -2212,11 +2213,13 @@ with tab_micro:
         st.markdown("**3. Batimetría y Dinámica del Embalse:**")
         c_v1, c_v2 = st.columns(2)
         vol_util_hm3 = c_v1.number_input("Vol. Útil (Mm³):", min_value=1.0, value=12.5)
+        
+        # Valor real sugerido de volumen muerto ajustado a 3.0 Mm3
         vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", min_value=0.1, value=3.0)
         caudal_ingreso_m3s = st.number_input("Ingreso Total (Espíritu Santo + Trasvases en m³/s):", value=6.5)
 
     # ==========================================
-    # MOTOR MATEMÁTICO: UNIFORMISMO VS CATASTROFISMO
+    # MOTOR MATEMÁTICO: UNIFORMISMO VS CATASTROFISMO (CORREGIDO)
     # ==========================================
     pct_fosforo_ponderado = (f_bos * 0.0001) + (f_agr * 0.0015) + (f_deg * 0.0005) + (f_urb * 0.0025)
     factor_erosion_ponderado = (f_bos * 0.05) + (f_agr * 1.0) + (f_deg * 2.5) + (f_urb * 3.5)
@@ -2227,24 +2230,27 @@ with tab_micro:
     densidad_lodo_kg_m3 = 1200.0
     
     # 1. LA RUTINA (UNIFORMISMO)
-    # Asumimos que ocurren ~30 eventos de lluvia ordinaria erosiva al año
+    # Se ajusta a 10 eventos erosivos base anuales para no sobreestimar el desgaste rutinario
     sedimento_ordinario_kg = sedimento_al_rio_kg * area_cuenca_m2 * factor_erosion_ponderado * 1.0
     lodo_ordinario_evento_m3 = sedimento_ordinario_kg / densidad_lodo_kg_m3
-    lodo_rutina_anual_m3 = lodo_ordinario_evento_m3 * 30 
+    lodo_rutina_anual_m3 = lodo_ordinario_evento_m3 * 10 
     
     # 2. EL EVENTO CONVULSIVO (CATASTROFISMO)
-    # La erosividad crece geométricamente con la intensidad (factor_tormenta ** 1.8 aprox)
     factor_erosividad_extrema = factor_tormenta ** 1.8
     sedimento_evento_hoy_kg = sedimento_al_rio_kg * area_cuenca_m2 * factor_erosion_ponderado * factor_erosividad_extrema
     lodo_evento_hoy_m3 = sedimento_evento_hoy_kg / densidad_lodo_kg_m3
     
-    # 3. IMPACTO CONVULSIVO: ¿Cuántos años de envejecimiento causa esta tormenta en un solo día?
+    # 3. IMPACTO CONVULSIVO Y ESPERANZA DE VIDA RESTANTE
     anos_robados = lodo_evento_hoy_m3 / lodo_rutina_anual_m3 if lodo_rutina_anual_m3 > 0 else 0
     
-    # 4. ESPERANZA DE VIDA INTEGRAL (Rutina + Riesgo Estadístico Anualizado)
-    # Al lodo de rutina le sumamos la "probabilidad" de que ocurra el evento extremo este año
-    lodo_total_riesgo_m3 = lodo_rutina_anual_m3 + (lodo_evento_hoy_m3 * probabilidad_anual)
-    vida_util_anos = vol_muerto_m3 / lodo_total_riesgo_m3 if lodo_total_riesgo_m3 > 0 else 9999
+    # NUEVA FÍSICA: Calculamos cuánto Volumen Muerto sobrevive a la avalancha de hoy
+    vol_muerto_restante_m3 = vol_muerto_m3 - lodo_evento_hoy_m3
+    
+    if vol_muerto_restante_m3 <= 0:
+        vida_util_anos = 0.0 # La tormenta superó la capacidad física del embalse
+    else:
+        # Los años de vida que le quedan a ese volumen restante bajo condiciones rutinarias
+        vida_util_anos = vol_muerto_restante_m3 / lodo_rutina_anual_m3 if lodo_rutina_anual_m3 > 0 else 9999
     
     # Hidráulica y Química
     tasa_renovacion_anual = (caudal_ingreso_m3s * 31536000) / vol_embalse_m3 if vol_embalse_m3 > 0 else 0
@@ -2266,13 +2272,16 @@ with tab_micro:
             c_e2.metric("Envejecimiento Súbito", f"{(anos_robados*12):,.1f} Meses", "Impacto de la tormenta", delta_color="inverse")
             
         st.markdown("---")
-        st.markdown("##### ⏳ Proyección Integral (Rutina Uniforme + Riesgo Extremo)")
+        st.markdown("##### ⏳ Proyección Integral (El saldo tras el desastre)")
         c_l1, c_l2 = st.columns(2)
         
-        c_l1.metric("Tasa de Colmatación Anual", f"{lodo_total_riesgo_m3:,.0f} m³/año", "Llenando el Volumen Muerto", delta_color="off")
+        c_l1.metric("Tasa de Colmatación Base", f"{lodo_rutina_anual_m3:,.0f} m³/año", "Desgaste por lluvias ordinarias", delta_color="off")
         
-        alerta_vida = "inverse" if vida_util_anos < 30 else "normal"
-        c_l2.metric("Vida Útil Estimada", f"{vida_util_anos:,.1f} Años", "Hasta colapso operativo", delta_color=alerta_vida)
+        if vida_util_anos <= 0:
+            c_l2.metric("Vida Útil Restante", "0.0 Años", "¡COLAPSO OPERATIVO HOY!", delta_color="inverse")
+        else:
+            alerta_vida = "inverse" if vida_util_anos < 15 else "normal"
+            c_l2.metric("Vida Útil Restante", f"{vida_util_anos:,.1f} Años", "Tras absorber la tormenta de hoy", delta_color=alerta_vida)
         
         st.markdown("---")
         st.markdown("##### 🌊 Dinámica Hidráulica: Efecto Dilución")
