@@ -1791,7 +1791,6 @@ with tab_micro:
 # =========================================================================
     # EL ALEPH DEL ÁRBOL: MARCO CONCEPTUAL, FÍSICO Y BIOLÓGICO
     # =========================================================================
-    st.markdown("---")
     with st.expander("📚 El Milagro de la Hoja: Marco Conceptual, Ecuaciones y Física del Bosque", expanded=False):
         st.markdown("""
         ### 🌿 1. La Arquitectura Fractal y la Alometría
