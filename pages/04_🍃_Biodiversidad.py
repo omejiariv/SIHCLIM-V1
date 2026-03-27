@@ -1640,23 +1640,24 @@ with tab_micro:
 
         with st.expander("👁️ Ver Guía Visual de Hojas", expanded=False):
             st.markdown("**1. Texturas Epidérmicas:**")
-            # Creamos 3 columnas para las texturas
             c_img1, c_img2, c_img3 = st.columns(3)
             
-            # Usamos imágenes de un CDN seguro que no bloquea la aplicación
-            c_img1.image("https://images.unsplash.com/photo-1558293842-c0fd3db86157?w=320", caption="Lisa / Cerosa")
-            c_img2.image("https://images.unsplash.com/photo-1542840410-3092f99611a3?w=320", caption="Normal")
-            c_img3.image("https://images.unsplash.com/photo-1610991823157-789a38541999?w=320", caption="Pubescente")
+            # Ruta maestra de tu base de datos en Supabase
+            url_base = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/imagenes/"
+            
+            # Carga de Texturas (Inyectando tus imágenes originales)
+            c_img1.image(f"{url_base}Epidermis%20Lisa%20y%20Cerosa.png", caption="Lisa / Cerosa (Repele)")
+            c_img2.image(f"{url_base}Epidermis%20Normal.png", caption="Normal")
+            c_img3.image(f"{url_base}Epidermis%20Pubescente.png", caption="Pubescente (Atrapa agua)")
             
             st.markdown("**2. Morfologías de la Hoja:**")
-            # Creamos 3 columnas para las formas
             c_img4, c_img5, c_img6 = st.columns(3)
             
-            c_img4.image("https://images.unsplash.com/photo-1520302630591-fd1c66edc19d?w=320", caption="Plana")
-            c_img5.image("https://images.unsplash.com/photo-1508514800331-5975eb7fdeaa?w=320", caption="Cóncava (Copa)")
-            c_img6.image("https://images.unsplash.com/photo-1533160914838-8e3128b5a034?w=320", caption="Acuminada (Punta)")
-            
-            st.info("💡 **Proximamente tendremos fotos de las hojas de la region andina colombiana")
+            # Carga de Formas
+            # Nota: Puse '.png' para Plana y Cóncava, y '.jpg' para Acuminada según lo que vi en tus archivos.
+            c_img4.image(f"{url_base}Morfologia%20Plana.png", caption="Plana")
+            c_img5.image(f"{url_base}Morfologia%20Concava.png", caption="Cóncava (Efecto copa)")
+            c_img6.image(f"{url_base}Morfologia%20Acuminada.jpg", caption="Acuminada (Punta de goteo)")
 
     # =========================================================================
     # 🧠 MOTOR FÍSICO Y ALOMÉTRICO DEL INDIVIDUO
