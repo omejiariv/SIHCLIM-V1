@@ -1708,4 +1708,71 @@ with tab_micro:
         **La Física detrás del modelo:** El Área Foliar ($A_{hojas}$) crece exponencialmente con el diámetro del tronco mediante leyes alométricas. 
         La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar individualmente. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas con "acumen" puntiagudo reducen el tamaño de las gotas, controlando la energía cinética del impacto y evitando la erosión del suelo.
         """)
+# =========================================================================
+    # 🌧️ MÓDULO DE BALÍSTICA Y ENERGÍA CINÉTICA (EROSIÓN)
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("#### 🌧️ 3. Balística de la Gota y Control de Erosión")
+    st.info("Simula el impacto de una gota de lluvia. El dosel absorbe la velocidad terminal de la tormenta y deja caer el agua desde una altura menor, alterando la energía cinética que destruye el suelo.")
 
+    col_gota1, col_gota2 = st.columns(2)
+
+    with col_gota1:
+        diametro_lluvia = st.slider("Diámetro de la gota de lluvia (Nubes) en mm:", 1.0, 6.0, 3.0, 0.2, help="1-2mm: Llovizna suave. 4-6mm: Tormenta convectiva fuerte.")
+        altura_dosel = st.slider("Altura de caída desde las primeras ramas (metros):", 1.0, 20.0, 5.0, 0.5)
+
+    with col_gota2:
+        # Lógica conectada a la Morfología de la Hoja (variable 'forma' definida arriba)
+        st.markdown("**El efecto de la forma de la hoja elegida arriba:**")
+        if "Acuminada" in forma:
+            diametro_goteo = 2.0
+            st.success("💧 **Punta de goteo activa:** El 'acumen' rompe la tensión superficial. El árbol filtra la tormenta y deja caer gotas pequeñas e inofensivas (2.0 mm).")
+        elif "Cóncava" in forma:
+            diametro_goteo = 5.0
+            st.warning("⚠️ **Efecto copa:** El agua se empoza en la hoja cóncava y colapsa por peso, formando 'súper gotas' gigantes (5.0 mm).")
+        else:
+            diametro_goteo = 3.5
+            st.info("💧 **Hoja plana:** Las gotas resbalan formando gotas de tamaño medio (3.5 mm).")
+
+    # MATEMÁTICAS BALÍSTICAS (Atlas-Ulbrich & Brandt)
+    import math
+
+    # Función para velocidad terminal
+    def vel_terminal(d):
+        return 9.65 - 10.3 * math.exp(-0.6 * d)
+
+    vt_lluvia = vel_terminal(diametro_lluvia)
+    vt_goteo_max = vel_terminal(diametro_goteo)
+
+    # Velocidad de caída libre con fricción desde altura h
+    g = 9.81
+    vel_goteo_h = vt_goteo_max * math.sqrt(1 - math.exp(-2 * g * altura_dosel / (vt_goteo_max**2)))
+
+    # Energía Cinética (E = 1/2 m v^2)
+    # Masa = Volumen * Densidad. Volumen de la esfera = 4/3 * pi * (r_en_metros)^3. Densidad del agua = 1000 kg/m3
+    masa_lluvia_kg = (4/3) * math.pi * ((diametro_lluvia / 2000)**3) * 1000
+    masa_goteo_kg = (4/3) * math.pi * ((diametro_goteo / 2000)**3) * 1000
+
+    ek_lluvia = 0.5 * masa_lluvia_kg * (vt_lluvia**2)
+    ek_goteo = 0.5 * masa_goteo_kg * (vel_goteo_h**2)
+
+    # Convertimos Joules a microJoules (μJ) para que los números sean más legibles
+    ek_lluvia_uj = ek_lluvia * 1e6
+    ek_goteo_uj = ek_goteo * 1e6
+    
+    # Prevenir división por cero en escenarios extremos
+    if ek_lluvia_uj > 0:
+        reduccion_ek = 100 - (ek_goteo_uj / ek_lluvia_uj * 100)
+    else:
+        reduccion_ek = 0
+
+    st.markdown("##### 💥 Análisis de Impacto y Erosión en el Suelo")
+    c_b1, c_b2, c_b3 = st.columns(3)
+
+    c_b1.metric("Impacto Directo (Sin Árbol)", f"{vt_lluvia:.1f} m/s", f"{ek_lluvia_uj:.1f} μJ de Energía", delta_color="inverse")
+    c_b2.metric("Gota Filtrada (Bajo el Árbol)", f"{vel_goteo_h:.1f} m/s", f"{ek_goteo_uj:.1f} μJ de Energía", delta_color="off")
+    
+    if reduccion_ek > 0:
+        c_b3.metric("Protección contra Erosión", f"-{reduccion_ek:.1f}%", "Energía destructiva disipada", delta_color="normal")
+    else:
+        c_b3.metric("Riesgo de Erosión Incrementado", f"+{abs(reduccion_ek):.1f}%", "El dosel alto empeora el impacto", delta_color="inverse")
