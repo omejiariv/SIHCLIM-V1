@@ -375,7 +375,6 @@ with st.expander(f"💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}", ex
 # =========================================================================
 # 4. TABLERO WRI: NEUTRALIDAD, RESILIENCIA Y CALIDAD
 # =========================================================================
-st.markdown("---")
 with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expanded=False):
     anio_analisis = st.slider("Seleccione el Año de Evaluación (Actual o Futuro):", min_value=2024, max_value=2050, value=2025, step=1)
 
@@ -526,7 +525,6 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         """)
 
 # --- OPTIMIZADOR DE INVERSIONES Y METAS (PORTAFOLIO INTEGRAL) ---
-st.markdown("<br>", unsafe_allow_html=True)
 st.subheader("💼 Portafolios de Inversión Multi-Objetivo")
 
 # -------------------------------------------------------------------------
@@ -654,7 +652,6 @@ with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO
 # =========================================================================
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
 # =========================================================================
-st.markdown("---")
 with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_seleccionado} (2024 - 2050)", expanded=False):
     st.caption("Simulación a largo plazo que integra crecimiento poblacional, pérdida base por Cambio Climático y la variabilidad cíclica/extrema del fenómeno ENSO.")
 
@@ -788,7 +785,6 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
 # =========================================================================
 # 6. METABOLISMO TERRITORIAL: DEMANDA, VERTIMIENTOS Y RESIDUOS SÓLIDOS
 # =========================================================================
-st.markdown("---")
 with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", expanded=False):
     st.info("Cálculo integrado de extracción hídrica, cargas orgánicas vertidas (DBO5) y generación de residuos sólidos (Lixiviados/Emisiones).")
 
@@ -873,7 +869,6 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
 # =========================================================================
 # 8. HUELLA HÍDRICA TERRITORIAL (CONECTADA AL GEMELO DIGITAL)
 # =========================================================================
-st.markdown("---")
 with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({nodo_seleccionado})", expanded=False):
     anio_censo = st.slider("📅 Horizonte de Simulación (Demanda y Presión):", min_value=2025, max_value=2050, value=2035, step=1)
     st.info("Cálculo de la demanda hídrica real integrando la población humana proyectada y la vocación pecuaria de la cuenca.")
