@@ -397,7 +397,20 @@ with st.expander(f"💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}", ex
 # =========================================================================
 with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expanded=False):
 
-# 🌊 ALERTA DINÁMICA ENSO (Sincronización con el Slider Lateral)
+    anio_analisis = st.slider("Seleccione el Año de Evaluación (Actual o Futuro):", min_value=2024, max_value=2050, value=2025, step=1)
+
+    delta_anios = anio_analisis - 2025
+    factor_demanda = (1 + 0.015) ** delta_anios
+    factor_clima = (1 - 0.005) ** delta_anios
+
+    q_oferta_m3s_base = sum_entradas
+    demanda_m3s_base = val_acueducto + (val_turbinado * 0.1) 
+    capacidad_embalse_m3 = datos_nodo["capacidad_util_Mm3"] * 1000000
+
+    oferta_anual_m3 = (q_oferta_m3s_base * factor_clima) * 31536000
+    consumo_anual_m3 = (demanda_m3s_base * factor_demanda) * 31536000
+
+    # 🌊 ALERTA DINÁMICA ENSO (Sincronización con el Slider Lateral)
     if factor_p < 1.0:
         # Calculamos cuántos meses de reserva le quedan al sistema si el consumo supera la oferta mermada
         if consumo_anual_m3 > oferta_anual_m3:
@@ -412,18 +425,6 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
                 La reducción de lluvias está forzando al sistema a consumir sus reservas estructurales. Si esta anomalía térmica se mantiene, Medellín y el Valle de Aburrá entrarían en <b>riesgo de racionamiento en {meses_reserva:.1f} meses</b>.
             </div>
             """, unsafe_allow_html=True)
-    anio_analisis = st.slider("Seleccione el Año de Evaluación (Actual o Futuro):", min_value=2024, max_value=2050, value=2025, step=1)
-
-    delta_anios = anio_analisis - 2025
-    factor_demanda = (1 + 0.015) ** delta_anios
-    factor_clima = (1 - 0.005) ** delta_anios
-
-    q_oferta_m3s_base = sum_entradas
-    demanda_m3s_base = val_acueducto + (val_turbinado * 0.1) 
-    capacidad_embalse_m3 = datos_nodo["capacidad_util_Mm3"] * 1000000
-
-    oferta_anual_m3 = (q_oferta_m3s_base * factor_clima) * 31536000
-    consumo_anual_m3 = (demanda_m3s_base * factor_demanda) * 31536000
 
     # --- 2. INTEGRACIÓN CARTOGRÁFICA (PREDIOS EJECUTADOS SbN) ---
     st.markdown("---")
