@@ -1629,7 +1629,7 @@ with tab_micro:
             value="Medio (60° - Copa Redonda)"
         )
 
-    with col_hoja:
+with col_hoja:
         st.markdown("#### 🍃 2. Microingeniería Foliar")
         
         textura = st.radio("Textura de la Epidermis:", 
@@ -1671,7 +1671,7 @@ with tab_micro:
                 position: absolute;
                 z-index: 10;
                 
-                /* POSICIÓN CORREGIDA: Ahora emerge DEBAJO de la imagen para no tapar el botón superior */
+                /* POSICIÓN CORREGIDA: Emerge DEBAJO de la imagen */
                 top: 105%; 
                 left: 50%;
                 margin-left: -140px;
@@ -1683,11 +1683,11 @@ with tab_micro:
                 box-shadow: 4px 4px 12px rgba(0,0,0,0.3);
                 line-height: 1.4;
                 
-                /* 🪄 TRUCO MAGIA: El ratón ignora la caja, permitiendo hacer clic en el Fullscreen */
+                /* 🪄 TRUCO MAGIA: El ratón ignora la caja, permitiendo hacer clic en la imagen */
                 pointer-events: none; 
             }
             
-            /* FLECHA CORREGIDA: Ahora apunta hacia arriba hacia la imagen */
+            /* FLECHA CORREGIDA: Apunta hacia arriba hacia la imagen */
             .botanical-tooltip .tooltiptext::after {
                 content: "";
                 position: absolute;
@@ -1715,7 +1715,9 @@ with tab_micro:
             with c_h1:
                 st.markdown(f"""
                 <div class="botanical-tooltip">
-                    <img src="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" alt="Lisa/Cerosa">
+                    <a href="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" target="_blank" title="Haz clic para ver en tamaño completo">
+                        <img src="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" alt="Lisa/Cerosa">
+                    </a>
                     <div class="tooltiptext">
                         <div class="tit-botanico">I. Lisa / Cerosa (Repele agua)</div>
                         Cada ilustración está ejecutada en medios mixtos tradicionales. Esta lámina se centra en una cutícula extremadamente hidrofóbica. El recuadro magnificado 'A' muestra un corte transversal con una capa de cera gruesa y brillante. Las gotas de agua (B) mantienen una forma esférica perfecta y ruedan ilustrando la tensión superficial en acción.
@@ -1726,7 +1728,9 @@ with tab_micro:
             with c_h2:
                 st.markdown(f"""
                 <div class="botanical-tooltip">
-                    <img src="{url_base}Epidermis%20Normal.png" alt="Normal">
+                    <a href="{url_base}Epidermis%20Normal.png" target="_blank" title="Haz clic para ver en tamaño completo">
+                        <img src="{url_base}Epidermis%20Normal.png" alt="Normal">
+                    </a>
                     <div class="tooltiptext">
                         <div class="tit-botanico">II. Epidermis Normal</div>
                         Representa una textura estándar de hoja. El recuadro 'B' muestra un corte transversal con células normales de la epidermis y el mesófilo, sin la capa de cera gruesa. Una ligera llovizna (A) forma gotas irregulares que tienden a extenderse un poco más sobre la superficie plana.
@@ -1737,7 +1741,9 @@ with tab_micro:
             with c_h3:
                 st.markdown(f"""
                 <div class="botanical-tooltip">
-                    <img src="{url_base}Epidermis%20Pubescente.png" alt="Pubescente">
+                    <a href="{url_base}Epidermis%20Pubescente.png" target="_blank" title="Haz clic para ver en tamaño completo">
+                        <img src="{url_base}Epidermis%20Pubescente.png" alt="Pubescente">
+                    </a>
                     <div class="tooltiptext">
                         <div class="tit-botanico">III. Epidermis Pubescente</div>
                         Primer plano de epidermis aterciopelada. El recuadro magnifica la superficie microscópica, detallando diferentes tipos de tricomas (C, D, E) y su estructura glandular (F), mientras que una gota de agua (B) es retenida por el aire atrapado por los pelos.
@@ -1752,7 +1758,9 @@ with tab_micro:
             with c_h4:
                 st.markdown(f"""
                 <div class="botanical-tooltip">
-                    <img src="{url_base}Morfologia%20Plana.png" alt="Plana">
+                    <a href="{url_base}Morfologia%20Plana.png" target="_blank" title="Haz clic para ver en tamaño completo">
+                        <img src="{url_base}Morfologia%20Plana.png" alt="Plana">
+                    </a>
                     <div class="tooltiptext">
                         <div class="tit-botanico">IV. Morfología Plana</div>
                         Representa la forma más fundamental (ej. un Quercus). El recuadro 'B' muestra un perfil perfectamente plano de la lámina foliar. El agua (A) se extiende de manera uniforme y plana sobre la superficie, eficiente para maximizar la luz solar en regiones menos húmedas.
@@ -1763,7 +1771,9 @@ with tab_micro:
             with c_h5:
                 st.markdown(f"""
                 <div class="botanical-tooltip">
-                    <img src="{url_base}Morfologia%20Concava.png" alt="Cóncava">
+                    <a href="{url_base}Morfologia%20Concava.png" target="_blank" title="Haz clic para ver en tamaño completo">
+                        <img src="{url_base}Morfologia%20Concava.png" alt="Cóncava">
+                    </a>
                     <div class="tooltiptext">
                         <div class="tit-botanico">V. Morfología Cóncava</div>
                         El recuadro 'B' muestra un corte profundo en forma de U, curvado hacia arriba en los bordes. El agua (A) es recolectada y dirigida hacia el centro, formando una pequeña cuenca. Ideal para canalizar agua hacia el tallo (ej. Alchemilla o Sarracenia).
@@ -1774,14 +1784,16 @@ with tab_micro:
             with c_h6:
                 st.markdown(f"""
                 <div class="botanical-tooltip">
-                    <img src="{url_base}Morfologia%20Acuminada.png" alt="Acuminada">
+                    <a href="{url_base}Morfologia%20Acuminada.png" target="_blank" title="Haz clic para ver en tamaño completo">
+                        <img src="{url_base}Morfologia%20Acuminada.png" alt="Acuminada">
+                    </a>
                     <div class="tooltiptext">
                         <div class="tit-botanico">VI. Morfología Acuminada</div>
                         Se presenta dramáticamente el extremo apical. El recuadro detalla la estrecha punta y el canal de goteo (B). Una gota de agua (A) está a punto de desprenderse. Eficiente para zonas de alta precipitación (selvas tropicales), permitiendo rápido drenaje.
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-
+                
     # =========================================================================
     # 🧠 MOTOR FÍSICO Y ALOMÉTRICO DEL INDIVIDUO
     # =========================================================================
