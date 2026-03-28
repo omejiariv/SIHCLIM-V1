@@ -1961,7 +1961,7 @@ with tab_micro:
         Multiplicando el Área Foliar por la microarquitectura de la hoja y la física balística, demostramos matemáticamente que talar un árbol centenario no es solo perder madera; es **apagar una máquina perfecta de regulación hídrica y disipación de energía** que ninguna tecnología humana puede replicar con tal eficiencia.
         """)
 
-# =========================================================================
+    # =========================================================================
     # 🟤 4. MÓDULO DE FÍSICA DE SUELOS: EROSIVIDAD (SPLASH DETACHMENT)
     # =========================================================================
     st.markdown("---")
@@ -1987,7 +1987,7 @@ with tab_micro:
     with col_suelo1:
         st.markdown("**Características de la Tormenta:**")
         volumen_tormenta_mm = st.slider("🌧️ Volumen de Lluvia (mm):", 10.0, 150.0, 50.0, step=5.0)
-        duracion_horas = st.slider("⏱️ Duración del Evento (Horas):", 1.0, 24.0, 1.0, step=0.5, help="A menor tiempo, mayor intensidad y mayor fuerza destructiva de la gota.")
+        duracion_horas = st.slider("⏱️ Duración del Evento (Horas):", 0.5, 24.0, 1.0, step=0.5, help="A menor tiempo, mayor intensidad y mayor fuerza destructiva de la gota.")
         
         st.markdown("**Mecánica del Suelo (Erodabilidad - Factor K):**")
         tipo_suelo = st.selectbox(
@@ -2001,13 +2001,16 @@ with tab_micro:
     # ==========================================
     # MOTOR FÍSICO DE EROSIÓN (Dinámica de Gotas)
     # ==========================================
+    # Cálculo de Intensidad
+    intensidad_mm_h = volumen_tormenta_mm / duracion_horas if duracion_horas > 0 else 0
+
     # 1. Volumen de 1 gota en mm³ (Esfera = 4/3 * pi * r³)
     vol_gota_nube_mm3 = (4/3) * math.pi * ((diametro_lluvia / 2)**3)
     vol_gota_arbol_mm3 = (4/3) * math.pi * ((diametro_goteo / 2)**3)
 
     # 2. Cantidad de gotas por metro cuadrado para alcanzar los mm de la tormenta
     # 1 mm de lluvia en 1 m² = 1,000,000 mm³
-    vol_tormenta_m2_mm3 = evento_lluvia_mm * 1_000_000
+    vol_tormenta_m2_mm3 = volumen_tormenta_mm * 1_000_000
     
     # Prevenir divisiones por cero
     if vol_gota_nube_mm3 > 0 and vol_gota_arbol_mm3 > 0:
@@ -2028,18 +2031,28 @@ with tab_micro:
     # 💾 GUARDIÁN DE MEMORIA ABSOLUTA: Puente de titanio hacia el Módulo 5
     st.session_state['memoria_suelo_arrancado'] = suelo_perdido_arbol_kg
 
+    # ==========================================
+    # RENDERIZADO VISUAL
+    # ==========================================
     with col_suelo2:
         c_e1, c_e2, c_e3 = st.columns(3)
         c_e1.metric("Intensidad", f"{intensidad_mm_h:.1f} mm/h", "Poder destructivo", delta_color="inverse")
-        c_e2.metric("Energía Tormenta (Cielo Abierto)", f"{energia_cinetica_cielo_abierto:.1f} MJ/ha", "Suelo Desnudo", delta_color="inverse")
-        c_e3.metric("Energía Tormenta (Bajo Dosel)", f"{energia_cinetica_bosque:.1f} MJ/ha", "-60% Amortiguación", delta_color="normal")
         
-        # Gráfico de barras
+        # Convertimos Joules a kiloJoules (kJ) para las métricas visuales
+        energia_cielo_kj = ke_total_nube / 1000
+        energia_bosque_kj = ke_total_arbol / 1000
+        delta_energia = ((energia_bosque_kj - energia_cielo_kj) / energia_cielo_kj * 100) if energia_cielo_kj > 0 else 0
+        color_delta = "inverse" if delta_energia > 0 else "normal"
+        
+        c_e2.metric("Energía (Cielo Abierto)", f"{energia_cielo_kj:,.1f} kJ/m²", "Suelo Desnudo", delta_color="inverse")
+        c_e3.metric("Energía (Bajo Dosel)", f"{energia_bosque_kj:,.1f} kJ/m²", f"{delta_energia:+.1f}% Amortiguación", delta_color=color_delta)
+        
+        # Gráfico de barras ajustado a las nuevas variables físicas
         fig_suelo = go.Figure(data=[
-            go.Bar(name='Cielo Abierto (Pasto / Suelo desnudo)', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_arrancado_cielo_abierto], marker_color='#e67e22', text=[f"{suelo_arrancado_cielo_abierto:.1f} Kg"], textposition='auto'),
-            go.Bar(name='Bajo el Dosel Forestal', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_arrancado_bosque], marker_color='#27ae60', text=[f"{suelo_arrancado_bosque:.1f} Kg"], textposition='auto')
+            go.Bar(name='Cielo Abierto (Pasto / Desnudo)', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_perdido_nube_kg], marker_color='#e67e22', text=[f"{suelo_perdido_nube_kg:.1f} Kg"], textposition='auto'),
+            go.Bar(name='Bajo el Dosel Forestal', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_perdido_arbol_kg], marker_color='#27ae60', text=[f"{suelo_perdido_arbol_kg:.1f} Kg"], textposition='auto')
         ])
-        fig_suelo.update_layout(barmode='group', height=300, margin=dict(l=10, r=10, t=30, b=10), yaxis_title="Kilogramos de tierra (Kg/m²)")
+        fig_suelo.update_layout(barmode='group', height=300, margin=dict(l=10, r=10, t=30, b=10), yaxis_title="Kilogramos de tierra (Kg/m²)", plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
         st.plotly_chart(fig_suelo, use_container_width=True)
 
     # El Aleph del Suelo
@@ -2049,7 +2062,7 @@ with tab_micro:
         La erosión hídrica no comienza con el agua fluyendo, comienza con el **impacto balístico**.
         
         * **Mecánica del Impacto (Splash Detachment):** Cuando la Energía Cinética de la lluvia supera la fuerza de cohesión de los agregados del suelo, este "explota" a nivel microscópico. Las partículas finas (limos y arcillas) salen volando y caen taponando los poros del suelo circundante, lo que crea un sello impermeable. 
-        * **El Inicio del Fin:** Una vez que el suelo se sella, el agua ya no puede infiltrarse hacia los acuíferos subterráneos (reduciendo la recarga de aguas subterráneas de la Pestaña 2). En su lugar, el agua se acumula en la superficie y fluye a gran velocidad (Escorrentía Superficial), llevándose consigo la capa vegetal fértil hacia los cauces de los ríos.
+        * **El Inicio del Fin:** Una vez que el suelo se sella, el agua ya no puede infiltrarse hacia los acuíferos subterráneos (reduciendo la recarga de aguas subterráneas). En su lugar, el agua se acumula en la superficie y fluye a gran velocidad (Escorrentía Superficial), llevándose consigo la capa vegetal fértil hacia los cauces de los ríos.
         
         ### 🧪 El Modelo MMF (Morgan, Morgan & Finney)
         Para predecir este daño, la edafología utiliza el cálculo de la Energía Cinética Total ($KE$) de la tormenta multiplicada por el factor de Erodabilidad del suelo ($K$).
