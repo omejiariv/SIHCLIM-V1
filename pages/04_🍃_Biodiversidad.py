@@ -2094,17 +2094,25 @@ with tab_micro:
     sdr_pct = (velocidad_escorrentia / 0.8) * 100
     sdr_pct = min(max(sdr_pct, 0.0), 100.0) # Acotar entre 0 y 100%
     
-    # 3. El Destino de la Tierra
-    # 🛡️ MÉTODO SEGURO: Recuperamos la variable del Mod 4. Si por alguna razón de indentación no la encuentra, asume 0.0 para no tumbar la app.
+    # ==========================================
+    # 3. El Destino de la Tierra (Balance de Masas)
+    # ==========================================
+    # 🛡️ MÉTODO SEGURO: Recuperamos las variables. Si por alguna razón no se calcularon antes, asumimos 0.0 para no tumbar la app.
     suelo_perdido_seguro = locals().get('suelo_perdido_arbol_kg', 0.0)
+    sdr_seguro = locals().get('sdr_pct', 0.0)
+    vel_segura = locals().get('velocidad_escorrentia', 0.0)
     
-    sedimento_al_rio_kg = suelo_perdido_seguro * (sdr_pct / 100.0)
+    # Cálculos de masa
+    sedimento_al_rio_kg = suelo_perdido_seguro * (sdr_seguro / 100.0)
     sedimento_retenido_kg = suelo_perdido_seguro - sedimento_al_rio_kg
 
+    # ==========================================
+    # RENDERIZADO DEL TRANSPORTE
+    # ==========================================
     with col_trans2:
         c_t1, c_t2, c_t3 = st.columns(3)
-        c_t1.metric("Velocidad del Flujo", f"{velocidad_escorrentia:.2f} m/s", "Ecuación de Manning")
-        c_t2.metric("Sedimento Exportado al Río", f"{sedimento_al_rio_kg:.2f} Kg/m²", f"{sdr_pct:.1f}% del lodo generado", delta_color="inverse")
+        c_t1.metric("Velocidad del Flujo", f"{vel_segura:.2f} m/s", "Ecuación de Manning", delta_color="off")
+        c_t2.metric("Sedimento Exportado al Río", f"{sedimento_al_rio_kg:.2f} Kg/m²", f"{sdr_seguro:.1f}% del lodo generado", delta_color="inverse")
         c_t3.metric("Filtro Biológico", f"{sedimento_retenido_kg:.2f} Kg/m²", "Retenido en el bosque", delta_color="normal")
         
         # Gráfico Waterfall del Destino Final
@@ -2112,25 +2120,26 @@ with tab_micro:
             orientation = "v",
             measure = ["absolute", "relative", "total"],
             x = ["Tierra Arrancada<br>(Splash)", "Retenida por Fricción<br>(Sotobosque)", "Exportada al Embalse<br>(Erosión Efectiva)"],
+            y = [suelo_perdido_seguro, -sedimento_retenido_kg, sedimento_al_rio_kg],
             textposition = "outside",
-            text = [f"{suelo_perdido_arbol_kg:.2f} Kg", f"-{sedimento_retenido_kg:.2f} Kg", f"<b>{sedimento_al_rio_kg:.2f} Kg</b>"],
-            y = [suelo_perdido_arbol_kg, -sedimento_retenido_kg, sedimento_al_rio_kg],
-            connector = {"line":{"color":"rgba(0,0,0,0.2)", "dash":"dot"}},
-            decreasing = {"marker":{"color":"#2ecc71"}}, # Verde para lo retenido (bueno)
-            increasing = {"marker":{"color":"#e74c3c"}},
-            totals = {"marker":{"color":"#8e44ad"}}      # Morado/Marrón para el lodo final
+            text = [f"{suelo_perdido_seguro:.2f} Kg", f"-{sedimento_retenido_kg:.2f} Kg", f"<b>{sedimento_al_rio_kg:.2f} Kg</b>"],
+            hovertemplate="<b>%{x}</b><br>Masa: %{y:.2f} Kg<extra></extra>",
+            connector = {"line": {"color":"rgba(0,0,0,0.2)", "dash":"dot"}},
+            decreasing = {"marker": {"color":"#2ecc71"}}, # Verde para lo retenido (Filtro positivo)
+            increasing = {"marker": {"color":"#e74c3c"}},
+            totals = {"marker": {"color":"#8e44ad"}}      # Morado para el lodo final que llega al embalse
         ))
         
         fig_viaje.update_layout(
             title="Balance de Transporte de Sedimentos",
             showlegend=False,
-            height=300,
-            margin=dict(l=20, r=20, t=40, b=20),
+            height=320,
+            margin=dict(l=20, r=20, t=40, b=30),
             plot_bgcolor='rgba(0,0,0,0)',
             yaxis_title="Kilogramos (Kg)"
         )
         st.plotly_chart(fig_viaje, use_container_width=True)
-
+        
     with st.expander("📚 El Aleph de la Hidráulica: Rugosidad y Gravedad", expanded=False):
         st.markdown("""
         ### 🌊 La Ecuación de Manning y la Ley de la Gravedad
