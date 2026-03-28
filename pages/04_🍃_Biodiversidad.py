@@ -2405,3 +2405,81 @@ with tab_micro:
         
         **Conclusión Matemática:** Conservar la microingeniería de la hoja en la cuenca alta (Módulo 2) no es filantropía ecológica; es la estrategia de reducción de costos operativos (OPEX) más inteligente y rentable para cualquier acueducto moderno.
         """)
+
+    # =========================================================================
+    # 🕳️ 8. EL MUNDO OCULTO (AGUAS SUBTERRÁNEAS Y FLUJO BASE)
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("#### 🕳️ 8. El Mundo Oculto: Aguas Subterráneas y el 'Embalse Invisible'")
+    st.info("Calcula el volumen de agua que logra infiltrarse al acuífero gracias a las raíces del bosque. Esta agua es vital: se libera lentamente (Flujo Base) manteniendo vivos los ríos durante las sequías del fenómeno de El Niño.")
+
+    col_sub1, col_sub2 = st.columns([1, 1.5])
+
+    with col_sub1:
+        st.markdown("**Dinámica del Acuífero Local:**")
+        duracion_estiaje_dias = st.slider("☀️ Días de Sequía (El Niño):", 30, 180, 90, 10, help="Tiempo en el que no lloverá y el caudal del río dependerá 100% de lo que entregue el agua subterránea.")
+        
+        st.markdown("**Valoración de Infraestructura:**")
+        costo_embalse_usd_m3 = st.number_input("Costo de Represa Gris (USD/m³):", value=2.5, step=0.5, help="Costo promedio en ingeniería civil para construir 1 m³ de almacenamiento en un embalse tradicional.")
+
+    # ==========================================
+    # MOTOR HIDROGEOLÓGICO (Conectado al Módulo 6)
+    # ==========================================
+    # 1. Magnitud del evento (Usando los factores climáticos y de área del Módulo 6)
+    precip_base_mm = 50.0 
+    precip_evento_mm = precip_base_mm * factor_tormenta
+    volumen_lluvia_total_m3 = (precip_evento_mm / 1000.0) * area_cuenca_m2
+
+    # 2. Tasas de Infiltración (Permeabilidad del suelo según la cobertura biológica)
+    tasa_inf_bosque = 0.45    # Las raíces fracturan la roca: 45% del agua entra
+    tasa_inf_agricola = 0.15  # Suelo compactado por las pezuñas del ganado
+    tasa_inf_degradado = 0.05 # Costra seca, casi impermeable
+    tasa_inf_urbano = 0.00    # Asfalto y concreto (0% infiltración)
+
+    # Infiltración ponderada según el paisaje diseñado por el usuario en el Módulo 6
+    tasa_inf_ponderada = (f_bos * tasa_inf_bosque) + (f_agr * tasa_inf_agricola) + (f_deg * tasa_inf_degradado) + (f_urb * tasa_inf_urbano)
+    
+    volumen_infiltrado_m3 = volumen_lluvia_total_m3 * tasa_inf_ponderada
+    volumen_escorrentia_superficial_m3 = volumen_lluvia_total_m3 - volumen_infiltrado_m3
+
+    # 3. Flujo Base (La liberación en cámara lenta)
+    # Convertimos el volumen infiltrado en un caudal continuo entregado al río durante toda la sequía
+    caudal_base_m3s = volumen_infiltrado_m3 / (duracion_estiaje_dias * 86400)
+    caudal_base_L_s = caudal_base_m3s * 1000
+
+    # 4. Equivalencia Financiera y Social
+    valor_acuifero_usd = volumen_infiltrado_m3 * costo_embalse_usd_m3
+    personas_salvadas = (volumen_infiltrado_m3 * 1000) / (150 * duracion_estiaje_dias) # Asumiendo 150 Litros/habitante/día
+
+    # ==========================================
+    # RENDERIZADO DEL DIAGNÓSTICO PROFUNDO
+    # ==========================================
+    with col_sub2:
+        st.markdown("##### 💧 Balance de la Tormenta: Superficie vs Subsuelo")
+        c_s1, c_s2 = st.columns(2)
+        
+        c_s1.metric("Agua Perdida (Escorrentía Rápida)", f"{volumen_escorrentia_superficial_m3/1e6:,.2f} Mm³", "Causa avalanchas hoy", delta_color="inverse")
+        c_s2.metric("Agua Salvada (Infiltración)", f"{volumen_infiltrado_m3/1e6:,.2f} Mm³", "Recarga el acuífero", delta_color="normal")
+        
+        st.markdown("---")
+        st.markdown(f"##### ☀️ Soporte durante la Sequía (Sobrevivir a El Niño por {duracion_estiaje_dias} días)")
+        c_s3, c_s4, c_s5 = st.columns(3)
+        c_s3.metric("Flujo Base del Río", f"{caudal_base_L_s:,.1f} L/s", "Caudal garantizado", delta_color="off")
+        c_s4.metric("Población Soportada", f"{personas_salvadas:,.0f} Hab", "Con 150 L/día", delta_color="off")
+        c_s5.metric("Valor del Acuífero", f"${valor_acuifero_usd/1e6:,.1f} M USD", "Ahorro en represas", delta_color="normal")
+        
+        if tasa_inf_ponderada < 0.15:
+            st.error(f"🚨 **Colapso Hídrico en Verano:** La cuenca ha perdido su permeabilidad (solo infiltra el {tasa_inf_ponderada*100:.1f}% de la lluvia). Durante El Niño, el río se secará rápidamente porque no hay flujo base, dejando sin agua a miles de personas.")
+        elif tasa_inf_ponderada > 0.30:
+            st.success(f"🌿 **El 'Embalse Invisible' Activo:** El bosque actuó como una súper-esponja. El subsuelo almacenó el {tasa_inf_ponderada*100:.1f}% de la tormenta, garantizando **{caudal_base_L_s:,.1f} Litros por segundo** continuos para el ecosistema y el acueducto durante el verano.")
+        else:
+            st.warning(f"⚠️ **Vulnerabilidad Estacional:** Infiltración media ({tasa_inf_ponderada*100:.1f}%). El flujo base mermará considerablemente al final del estiaje.")
+    
+    with st.expander("📚 El Aleph Subterráneo: Flujo Base y la Economía de la Porosidad", expanded=False):
+        st.markdown("""
+        **La paradoja del concreto:** Cuando pavimentamos o deforestamos una cuenca, el agua de la tormenta fluye velozmente por la superficie. El resultado es fatal y dual: **nos inundamos en invierno y nos secamos en verano.**
+        
+        * **La Ingeniería de las Raíces:** El sistema radicular del bosque fractura la roca madre y crea macroporos en el suelo. El agua entra por estos "tubos naturales" hacia las profundidades, recargando los acuíferos freáticos.
+        * **El Flujo Base (Baseflow):** Los ríos no fluyen en verano porque esté lloviendo. Fluyen porque el acuífero, como una esponja gigante exprimida a cámara lenta, libera agua gota a gota hacia el cauce meses después de la última tormenta. 
+        * **El Ahorro Multimillonario:** Construir un embalse cuesta millones de dólares por cada metro cúbico de almacenamiento. El ecosistema subterráneo (la porosidad del suelo) nos ofrece millones de metros cúbicos de almacenamiento geológico a **costo cero**, con la ventaja táctica de que el agua subterránea no se evapora bajo el sol abrasador de El Niño.
+        """)
