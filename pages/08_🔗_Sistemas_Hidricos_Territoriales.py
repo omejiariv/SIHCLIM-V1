@@ -143,7 +143,7 @@ st.divider()
 # 🖼️ LA OBRA MAESTRA: EL ALEPH DEL AGUA (Efecto Museo CSS Side-by-Side)
 # =========================================================================
 with st.expander("📜 Revelar el Aleph del Agua (Manuscrito Original)", expanded=False):
-    st.markdown("""
+    st.markdown("""   <--- ¡ESTAS SON LAS COMILLAS QUE FALTAN O SE BORRARON!
     <style>
     .museo-wrapper {
         display: flex;
@@ -152,7 +152,7 @@ with st.expander("📜 Revelar el Aleph del Agua (Manuscrito Original)", expande
         justify-content: center;
         gap: 2rem;
         margin: 1rem 0;
-        flex-wrap: wrap; /* Por si la pantalla es muy pequeña */
+        flex-wrap: wrap; 
     }
     .aleph-frame {
         flex: 0 0 65%; /* La imagen ocupa el 65% del ancho */
