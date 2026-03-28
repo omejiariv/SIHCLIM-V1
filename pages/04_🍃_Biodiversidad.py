@@ -1604,11 +1604,19 @@ with tab_micro:
             if st.toggle("👁️ Ver Herbario Botánico"):
                 st.markdown("""<style>.botanical-tooltip { position: relative; display: inline-block; text-align: center; margin-bottom: 20px; cursor: help; } .botanical-tooltip img { border-radius: 5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.2); transition: transform 0.3s ease; max-width: 100%; height: auto; } .botanical-tooltip:hover img { transform: scale(1.02); } .botanical-tooltip .tooltiptext { visibility: hidden; width: 280px; background-color: #fdfaf2; color: #2c3e50; text-align: left; border: 1px solid #d3c0a3; border-radius: 5px; padding: 15px; position: absolute; z-index: 10; top: 105%; left: 50%; margin-left: -140px; opacity: 0; transition: opacity 0.4s; font-size: 0.85em; font-family: 'Georgia', serif; box-shadow: 4px 4px 12px rgba(0,0,0,0.3); line-height: 1.4; pointer-events: none; } .botanical-tooltip .tooltiptext::after { content: ""; position: absolute; bottom: 100%; left: 50%; margin-left: -8px; border-width: 8px; border-style: solid; border-color: transparent transparent #fdfaf2 transparent; } .botanical-tooltip:hover .tooltiptext { visibility: visible; opacity: 1; } .tit-botanico { font-weight: bold; font-size: 1.1em; color: #5d4037; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}</style>""", unsafe_allow_html=True)
                 url_base = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/imagenes/"
+                
                 st.markdown("#### A. Textura de la Epidermis")
                 c_h1, c_h2, c_h3 = st.columns(3)
-                with c_h1: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" target="_blank"><img src="{url_base}Epidermis%20Lisa%20y%20Cerosa.png"></a><div class="tooltiptext"><div class="tit-botanico">I. Lisa / Cerosa</div>Las gotas (B) mantienen una forma esférica perfecta y ruedan ilustrando la tensión superficial.</div></div>""", unsafe_allow_html=True)
-                with c_h2: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Normal.png" target="_blank"><img src="{url_base}Epidermis%20Normal.png"></a><div class="tooltiptext"><div class="tit-botanico">II. Normal</div>Células normales sin la capa de cera gruesa. Las gotas (A) son irregulares.</div></div>""", unsafe_allow_html=True)
-                with c_h3: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Pubescente.png" target="_blank"><img src="{url_base}Epidermis%20Pubescente.png"></a><div class="tooltiptext"><div class="tit-botanico">III. Pubescente</div>Tricomas detallados (C,D,E) donde la gota (B) es retenida por el aire atrapado.</div></div>""", unsafe_allow_html=True)
+                with c_h1: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" target="_blank"><img src="{url_base}Epidermis%20Lisa%20y%20Cerosa.png"></a><div class="tooltiptext"><div class="tit-botanico">I. Lisa / Cerosa</div>Las gotas (B) mantienen una forma esférica perfecta ilustrando la tensión superficial en acción.</div></div>""", unsafe_allow_html=True)
+                with c_h2: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Normal.png" target="_blank"><img src="{url_base}Epidermis%20Normal.png"></a><div class="tooltiptext"><div class="tit-botanico">II. Epidermis Normal</div>Sin capa de cera gruesa. Una ligera llovizna (A) forma gotas irregulares que tienden a extenderse.</div></div>""", unsafe_allow_html=True)
+                with c_h3: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Pubescente.png" target="_blank"><img src="{url_base}Epidermis%20Pubescente.png"></a><div class="tooltiptext"><div class="tit-botanico">III. Epidermis Pubescente</div>Epidermis aterciopelada detallando tricomas glandulares, donde la gota (B) es retenida por aire atrapado.</div></div>""", unsafe_allow_html=True)
+
+                # 🪄 RESTAURACIÓN DE LA SECCIÓN B
+                st.markdown("#### B. Morfología de la Hoja")
+                c_h4, c_h5, c_h6 = st.columns(3)
+                with c_h4: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Plana.png" target="_blank"><img src="{url_base}Morfologia%20Plana.png"></a><div class="tooltiptext"><div class="tit-botanico">IV. Morfología Plana</div>El agua (A) se extiende de manera uniforme, eficiente para maximizar la luz solar en regiones menos húmedas.</div></div>""", unsafe_allow_html=True)
+                with c_h5: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Concava.png" target="_blank"><img src="{url_base}Morfologia%20Concava.png"></a><div class="tooltiptext"><div class="tit-botanico">V. Morfología Cóncava</div>El agua (A) es recolectada hacia el centro. Ideal para canalizar agua hacia el tallo (Efecto Embudo).</div></div>""", unsafe_allow_html=True)
+                with c_h6: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Acuminada.png" target="_blank"><img src="{url_base}Morfologia%20Acuminada.png"></a><div class="tooltiptext"><div class="tit-botanico">VI. Morfología Acuminada</div>Extremo apical detallado (Acumen). Permite un rápido drenaje y reduce el tamaño de la gota de goteo.</div></div>""", unsafe_allow_html=True)
         
         area_foliar_m2 = 0.15 * (dbh_cm ** 2.1)
         sl_base = 0.20
@@ -1746,49 +1754,80 @@ with tab_micro:
             """)
 
     # =========================================================================
-    # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN Y DINÁMICA
+    # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN Y DINÁMICA (RESTAURADO)
     # =========================================================================
     with st.expander("🛑 6. Limnología Integral: Uniformismo y Catastrofismo en La Fe", expanded=False):
         st.markdown("""<style>.limno-tooltip { position: relative; display: inline-block; color: #2980b9; font-weight: 600; cursor: help; border-bottom: 1px dashed #2980b9; } .limno-tooltip .tooltiptext { visibility: hidden; width: 320px; background-color: #fdfaf2; color: #2c3e50; text-align: left; border: 1px solid #d3c0a3; border-radius: 5px; padding: 15px; position: absolute; z-index: 50; bottom: 125%; left: 50%; margin-left: -160px; opacity: 0; transition: opacity 0.4s; font-size: 0.9em; font-family: 'Georgia', serif; box-shadow: 4px 4px 12px rgba(0,0,0,0.3); line-height: 1.4; } .limno-tooltip:hover .tooltiptext { visibility: visible; opacity: 1; } .tit-limno { font-weight: bold; font-size: 1.1em; color: #8e44ad; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}</style>""", unsafe_allow_html=True)
-        st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>Modelo dinámico. Integra el <b>Uniformismo</b> (colmatación rutinaria) y el <b>Catastrofismo</b> (avalanchas extremas) para calcular el colapso del <span class='limno-tooltip'>Volumen Muerto<span class='tooltiptext'><div class='tit-limno'>Fecha de Caducidad</div>Espacio en el fondo diseñado específicamente para sedimentos.</span></span>.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>Modelo dinámico. Integra el <b>Uniformismo</b> (rutina) y el <b>Catastrofismo</b> (avalanchas) para calcular el colapso del <span class='limno-tooltip'>Volumen Muerto<span class='tooltiptext'><div class='tit-limno'>Fecha de Caducidad</div>Espacio en el fondo diseñado para sedimentos.</span></span>.</div>", unsafe_allow_html=True)
 
         col_lim1, col_lim2 = st.columns([1, 1.5])
         with col_lim1:
             if st.toggle("📍 Ver Contexto: Cuenca Espíritu Santo"):
-                st.write("Área total de captación: **173 km²**. Esta cuenca es vital para el abastecimiento del Valle de Aburrá.")
+                st.write("Área total de captación: **173 km²**. Afluente vital para La Fe.")
             
             tipo_tormenta = st.select_slider("Severidad de la Tormenta de HOY:", options=["Ordinaria (Tr < 1 año)", "Fuerte (Tr 5 años)", "Severa (Tr 20 años)", "Extrema (Tr 50 años)", "Catastrófica (Tr 100 años)"])
             f_tor = {"Ord": 1.0, "Fue": 2.5, "Sev": 4.5, "Ext": 6.5, "Cat": 9.0}[tipo_tormenta[:3]]
             area_km2 = st.number_input("Área afectada por la tormenta (km²):", 1.0, 173.0, 5.0)
             
+            st.markdown("**Composición del Paisaje (Mix de Usos):**")
             c_p1, c_p2 = st.columns(2)
-            f_bos = c_p1.slider("🌲 Bosque Conservado (%)", 0, 100, 20) / 100
-            f_agr = c_p2.slider("🐄 Agrícola (%)", 0, 100, 50) / 100
-            vol_m_hm3 = st.number_input("Vol. Muerto (Mm³):", value=3.0)
+            pct_bosque = c_p1.slider("🌲 Bosque Conservado", 0, 100, 20)
+            pct_agricola = c_p2.slider("🐄 Agrícola / Ganadero", 0, 100, 50)
+            pct_degradado = c_p1.slider("🪨 Suelo Degradado", 0, 100, 15)
+            pct_urbano = c_p2.slider("🏙️ Expansión Urbana", 0, 100, 15)
+            
+            total_p = pct_bosque + pct_agricola + pct_degradado + pct_urbano
+            f_bos, f_agr, f_deg, f_urb = pct_bosque/total_p, pct_agricola/total_p, pct_degradado/total_p, pct_urbano/total_p
 
-        # MOTOR MATEMÁTICO LIMNOLÓGICO
-        p_fos = (f_bos * 0.0001) + (f_agr * 0.0015) + (0.30 * 0.0015) # Mix simplificado
-        f_ero = (f_bos * 0.05) + (f_agr * 1.0) + (0.30 * 3.0)
+            st.markdown("**Batimetría y Dinámica:**")
+            c_v1, c_v2 = st.columns(2)
+            vol_util_hm3 = c_v1.number_input("Vol. Útil (Mm³):", value=12.5)
+            vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", value=3.0)
+            caudal_ingreso = st.number_input("Ingreso Total (m³/s):", value=6.5)
+
+        # 🧠 MOTOR MATEMÁTICO INTEGRAL
+        p_fos = (f_bos * 0.0001) + (f_agr * 0.0015) + (f_deg * 0.0005) + (f_urb * 0.0025)
+        f_ero = (f_bos * 0.05) + (f_agr * 1.0) + (f_deg * 2.5) + (f_urb * 3.5)
         
-        lodo_anual_base = (sedimento_al_rio_kg * area_km2 * 1e6 * f_ero * 1.0) / 120.0
-        lodo_hoy_m3 = (sedimento_al_rio_kg * area_km2 * 1e6 * f_ero * (f_tor**1.8)) / 1200.0
+        # 🛡️ Recuperación de sedimento del Módulo 5
+        sed_al_rio = locals().get('sedimento_al_rio_kg', 7.02) 
+        
+        lodo_hoy_m3 = (sed_al_rio * area_km2 * 1e6 * f_ero * (f_tor**1.8)) / 1200.0
+        lodo_anual_base = (sed_al_rio * 5.0 * 1e6 * f_ero * 1.0) / 120.0 # Rutina
+        
+        # Cálculos de Vida Útil
         anos_robados = lodo_hoy_m3 / lodo_anual_base if lodo_anual_base > 0 else 0
-        fosforo_hoy = (sedimento_al_rio_kg * area_km2 * 1e6 * (f_tor**1.8)) * p_fos
+        vol_muerto_restante = (vol_muerto_hm3 * 1e6) - lodo_hoy_m3
+        vida_util_restante = vol_muerto_restante / lodo_anual_base if lodo_anual_base > 0 else 99
+        
+        # Hidráulica
+        tasa_renovacion = (caudal_ingreso * 31536000) / ((vol_util_hm3 + vol_muerto_hm3) * 1e6)
+        dias_residencia = 365 / tasa_renovacion if tasa_renovacion > 0 else 0
+        fosforo_hoy = (sed_al_rio * area_km2 * 1e6 * f_ero * (f_tor**1.8)) * p_fos
 
         with col_lim2:
-            st.markdown("##### ⚡ Impacto del Evento HOY")
+            st.markdown("##### ⚡ Impacto del Evento Convulsivo (HOY)")
             c_e1, c_e2 = st.columns(2)
-            c_e1.metric("Avalancha de Lodo", f"{lodo_hoy_m3:,.0f} m³", delta_color="inverse")
-            c_e2.metric("Envejecimiento Súbito", f"{anos_robados:,.1f} Años", "Años robados hoy", delta_color="inverse")
+            c_e1.metric("Avalancha de Lodo", f"{lodo_hoy_m3:,.0f} m³", "Masa entrante hoy", delta_color="inverse")
+            c_e2.metric("Envejecimiento Súbito", f"{anos_robados:,.1f} Años", "Vida útil robada hoy", delta_color="inverse")
             
             st.markdown("---")
+            st.markdown("##### ⏳ Proyección Integral (Saldo tras el desastre)")
+            c_p1, c_p2 = st.columns(2)
+            c_p1.metric("Tasa Colmatación Base", f"{lodo_anual_base:,.0f} m³/año", "Desgaste rutinario")
+            c_p2.metric("Vida Útil Restante", f"{max(0.0, vida_util_restante):.1f} Años", "Tras absorber el evento", delta_color="inverse" if vida_util_restante < 10 else "normal")
+
+            st.markdown("---")
+            st.markdown("##### 🌊 Dinámica Hidráulica: Efecto Dilución")
+            c_h1, c_h2 = st.columns(2)
+            c_h1.metric("Tasa de Renovación", f"{tasa_renovacion:.1f} veces/año")
+            c_h2.metric("Tiempo de Residencia", f"{dias_residencia:.0f} Días", "Edad del agua")
+
+            st.markdown("---")
             st.markdown(f"**Impacto Químico:** {fosforo_hoy:,.1f} Kg de Fósforo inyectados hoy.")
-            if fosforo_hoy > 500:
-                st.error("🚨 **ALERTA ROJA:** Riesgo de Anoxia Inminente y explosión de macrófitas.")
-            elif fosforo_hoy > 100:
-                st.warning("⚠️ **Riesgo Medio:** Alteración de transparencia y sobrecostos de tratamiento.")
-            else:
-                st.success("🌿 **Paisaje Resiliente:** La carga fue amortiguada eficazmente.")
+            if fosforo_hoy > 500: st.error("🚨 **ALERTA ROJA:** Riesgo de Anoxia Inminente.")
+            elif fosforo_hoy > 100: st.warning("⚠️ **Riesgo Medio:** Alteración de transparencia.")
+            else: st.success("🌿 **Protección:** El paisaje amortiguó la carga.")
             
         if st.toggle("📚 Revelar El Aleph de los Lagos: Colmatación y Fósforo"):
             st.markdown("""
@@ -1800,7 +1839,7 @@ with tab_micro:
             """)
             
     # =========================================================================
-    # 🚰 7. ECONOMÍA DE LA CALIDAD (PTAP)
+    # 🚰 7. ECONOMÍA DE LA CALIDAD (PTAP) - RESTAURADO
     # =========================================================================
     with st.expander("🚰 7. Economía de la Calidad: El Costo en la Planta", expanded=False):
         st.info("Traduce el daño ecológico a dólares. Calcula el sobrecosto en químicos que la empresa de acueducto debe asumir para potabilizar el agua generada por la tormenta.")
@@ -1813,37 +1852,37 @@ with tab_micro:
             c_alum = st.number_input("Sulfato Alum.:", value=450.0, step=10.0)
             c_cloro = st.number_input("Cloro Líquido:", value=1200.0, step=50.0)
 
-        # 🛡️ REPARACIÓN DE VARIABLES: Recuperamos lodo y fósforo del Módulo 6
-        # Si por alguna razón el Módulo 6 no se ha ejecutado, asume 0 para no romper la app
+        # MOTOR FINANCIERO-SANITARIO
         lodo_para_ptap = locals().get('lodo_hoy_m3', 0.0)
         fosforo_para_ptap = locals().get('fosforo_hoy', 0.0)
-
-        # MOTOR FINANCIERO-SANITARIO
         vol_dia_l = q_ptap * 86400 * 1000
         
-        # Factores de crisis derivados del lodo y fósforo
+        # 1. Escenario Base (Sin desastre)
+        ton_alum_base = (vol_dia_l * 15.0) / 1e9
+        ton_cloro_base = (vol_dia_l * 2.0) / 1e9
+        costo_base_anual_usd = ((ton_alum_base * c_alum) + (ton_cloro_base * c_cloro)) * 365
+
+        # 2. Escenario de Crisis (La Tormenta de Hoy)
         f_turb = 1.0 + (lodo_para_ptap / 10000.0)
         f_eut = 1.0 + (fosforo_para_ptap / 500.0)
-        
         extra_alum = (vol_dia_l * 15.0 * (min(f_turb, 8.0) - 1)) / 1e9
         extra_cloro = (vol_dia_l * 2.0 * (min(f_eut, 4.0) - 1)) / 1e9
         s_total = (extra_alum * c_alum) + (extra_cloro * c_cloro)
         
-        # Equivalencia Ecológica
         ha_equiv = s_total / 2500.0
 
         with col_pot2:
-            st.markdown("##### 💸 La Factura de la Tormenta")
-            c_f1, c_f2 = st.columns(2)
-            c_f1.metric("Sobrecosto PTAP HOY", f"${s_total:,.0f} USD", delta_color="inverse")
-            c_f2.metric("Impacto en Insumos", f"+{extra_alum:,.1f} Ton Alum.", delta_color="inverse")
+            st.markdown("##### 💸 La Factura de la Tormenta vs Operación Base")
+            c_f1, c_f2, c_f3 = st.columns(3)
+            # MÉTRICA RECUPERADA: Costo base anual
+            c_f1.metric("Costo Base Anual", f"${costo_base_anual_usd/1e6:,.1f} M USD", "Operación Normal")
+            c_f2.metric("Sobrecosto HOY", f"${s_total:,.0f} USD", delta_color="inverse")
+            c_f3.metric("Insumo Extra", f"+{extra_alum:,.1f} Ton Alum.", delta_color="inverse")
             
             if s_total > 5000:
                 st.error(f"⚠️ **Penalidad Financiera:** El sobrecosto de hoy equivale a lo que costaría reforestar **{ha_equiv:,.1f} hectáreas** en la cuenca alta.")
-            elif s_total > 500:
-                st.warning(f"📉 **Fuga de Capital:** La degradación de la cuenca obligó a gastar **${s_total:,.0f} USD extra** en químicos hoy.")
             else:
-                st.success("💧 **Agua de Alta Calidad:** El bosque amortiguó la tormenta. Planta operando a dosis base.")
+                st.success("💧 **Agua de Alta Calidad:** El bosque amortiguó la tormenta.")
         
         if st.toggle("📚 Revelar El Aleph Financiero"):
             st.markdown("""
@@ -1855,7 +1894,7 @@ with tab_micro:
             """)
 
     # =========================================================================
-    # 🕳️ 8. EL MUNDO OCULTO (AGUAS SUBTERRÁNEAS)
+    # 🕳️ 8. EL MUNDO OCULTO (AGUAS SUBTERRÁNEAS) - RESTAURADO
     # =========================================================================
     with st.expander("🕳️ 8. El Mundo Oculto: Aguas Subterráneas y el 'Embalse Invisible'", expanded=False):
         st.info("El caudal de los ríos en verano depende de la recarga anual acumulada. Modela cómo el bosque construye el Flujo Base que nos salva durante El Niño.")
@@ -1880,29 +1919,36 @@ with tab_micro:
 
         # MOTOR HIDROGEOLÓGICO
         vol_lluvia_m3 = (precip_anual_mm / 1000.0) * (area_acuifero_km2 * 1e6)
-        # f_bos viene del Módulo 6 (Composición del Paisaje)
-        mod_paisaje = (f_bos * 1.0) + (f_agr * 0.6) + (0.15 * 0.2) + (0.15 * 0.05)
+        mod_paisaje = (locals().get('f_bos', 0.2) * 1.0) + (locals().get('f_agr', 0.5) * 0.6) + (0.15 * 0.2) + (0.15 * 0.05)
         coef_inf_real = inf_max * mod_paisaje
         recarga_anual_m3 = vol_lluvia_m3 * coef_inf_real * sy
         caudal_base_ls = (recarga_anual_m3 / 31536000) * 1000
-        valor_acuif_usd = (recarga_anual_m3 * (dias_sequia / 365.0)) * costo_emb_usd
+        
+        # CÁLCULOS RECUPERADOS
+        vol_disponible_sequia_m3 = recarga_anual_m3 * (dias_sequia / 365.0)
+        valor_acuifero_usd = vol_disponible_sequia_m3 * costo_emb_usd
+        personas_salvadas = (vol_disponible_sequia_m3 * 1000) / (150 * dias_sequia)
 
         with col_sub2:
-            st.markdown("##### 💧 Balance Hidrológico Anual")
-            c_s1, c_s2 = st.columns(2)
-            c_s1.metric("Coef. Infiltración", f"{coef_inf_real*100:.1f}%", "Modificado por paisaje")
-            c_s2.metric("Recarga Real", f"{recarga_anual_m3/1e6:,.1f} Mm³", f"Porosidad Efe. {sy*100:.1f}%")
+            st.markdown("##### 💧 Balance Hidrológico Anual del Acuífero")
+            c_s1, c_s2, c_s3 = st.columns(3)
+            # MÉTRICAS RECUPERADAS
+            c_s1.metric("Precipitación Total", f"{vol_lluvia_m3/1e6:,.1f} Mm³", "Lluvia en 1 año")
+            c_s2.metric("Coef. Infiltración", f"{coef_inf_real*100:.1f}%", "Efecto Paisaje")
+            c_s3.metric("Recarga Real", f"{recarga_anual_m3/1e6:,.1f} Mm³", f"S_y: {sy*100:.1f}%")
             
             st.markdown("---")
-            st.markdown(f"##### ☀️ Soporte Vital (Sequía de {dias_sequia} días)")
-            c_s3, c_s4 = st.columns(2)
-            c_s3.metric("Flujo Base del Río", f"{caudal_base_ls:,.1f} L/s", "Caudal continuo")
-            c_s4.metric("Valor Infraestructura", f"${valor_acuif_usd/1e6:,.1f} M USD", "Ahorro en represas")
+            st.markdown(f"##### ☀️ Soporte Vital durante la Sequía ({dias_sequia} días)")
+            c_s4, c_s5, c_s6 = st.columns(3)
+            # MÉTRICAS RECUPERADAS
+            c_s4.metric("Flujo Base", f"{caudal_base_ls:,.1f} L/s", "Caudal 24/7")
+            c_s5.metric("Población Soportada", f"{personas_salvadas:,.0f} Hab", "Con 150 L/día")
+            c_s6.metric("Valor Infraestructura", f"${valor_acuifero_usd/1e6:,.1f} M USD", "Ahorro en represas")
             
             if caudal_base_ls < 50.0:
-                st.error("🚨 **Riesgo de Colapso:** Caudal insuficiente para mantener la vida ribereña en verano.")
+                st.error("🚨 **Riesgo de Colapso:** Caudal insuficiente para la vida ribereña.")
             elif coef_inf_real >= (inf_max * 0.8):
-                st.success(f"🌿 **El 'Embalse Invisible' Actúa:** El bosque almacenó agua para la ciudad sin gastar en concreto.")
+                st.success("🌿 **El 'Embalse Invisible' Actúa:** El bosque ahorró millones en concreto.")
 
         if st.toggle("📚 Revelar El Aleph Subterráneo"):
             st.markdown("""
