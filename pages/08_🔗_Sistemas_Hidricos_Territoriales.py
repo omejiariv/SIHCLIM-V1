@@ -155,7 +155,7 @@ with st.expander("📜 Revelar el Aleph del Agua (Manuscrito Original)", expande
         flex-wrap: wrap; 
     }
     .aleph-frame {
-        flex: 0 0 65%; /* La imagen ocupa el 65% del ancho */
+        flex: 0 0 65%;
         border: 8px solid #3e2723;
         border-radius: 4px;
         box-shadow: 0px 15px 30px rgba(0,0,0,0.8);
@@ -174,7 +174,7 @@ with st.expander("📜 Revelar el Aleph del Agua (Manuscrito Original)", expande
         filter: brightness(1.0) sepia(0) blur(0px); 
     }
     .aleph-pergamino-side {
-        flex: 1; /* El texto ocupa el resto del espacio (35%) */
+        flex: 1;
         background-color: #fdfaf2;
         color: #2c3e50;
         text-align: justify;
@@ -198,6 +198,30 @@ with st.expander("📜 Revelar el Aleph del Agua (Manuscrito Original)", expande
     .pergamino-texto { font-size: 0.9em; line-height: 1.6; }
     </style>
     """, unsafe_allow_html=True)
+
+    url_imagen_aleph = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/imagenes/El%20Aleph%20del%20Agua.png"
+
+    st.markdown(f"""
+<div class="museo-wrapper">
+    <div class="aleph-frame">
+        <img src="{url_imagen_aleph}" alt="El Aleph del Agua">
+    </div>
+    <div class="aleph-pergamino-side">
+        <div class="pergamino-titulo">El Aleph del Agua: Síntesis Visual Mística-Científica</div>
+        <div class="pergamino-texto">Esta obra está plasmada sobre un pergamino envejecido y texturizado, diseñado para emular un manuscrito de Leonardo da Vinci o las láminas de Humboldt, con una complejidad que trasciende las épocas.</div>
+        <div class="pergamino-seccion">1. El Punto Focal: El Aleph</div>
+        <div class="pergamino-texto">En el centro geométrico brilla una pequeña esfera con "fulgor casi intolerable tornasolado". Contiene la totalidad de Antioquia y del cosmos: un corte transversal molecular del H2O, el rostro sutil de Borges, el mapa de sistemas montañosos, un "populoso mar" y constelaciones.</div>
+        <div class="pergamino-seccion">2. La Estructura Fractal</div>
+        <div class="pergamino-texto">Un "Engranaje Anatómico-Hídrico" inspirado en Da Vinci. Los flujos irradian transformándose en ríos fractales, filtrándose por cortes geológicos (acuíferos). El agua bautiza la biología (bosques, páramos) y en el borde externo, se vuelve infraestructura y sociedad.</div>
+        <div class="pergamino-seccion">3. Texto y Mito</div>
+        <div class="pergamino-texto">Fragmentos de "El Aleph" y Pessoa rodean la esfera. En los rincones, deidades como Bochica, Poseidón y Tláloc observan el ciclo, superpuestos con vocabulario científico (Precipitación, Evapotranspiración).</div>
+    </div>
+</div>
+<p style="text-align: center; color: #7f8c8d; font-style: italic; font-size: 0.9em; margin-top: 15px;">
+    Acércate a la obra para encender el Aleph y revelar sus secretos.
+</p>
+    """, unsafe_allow_html=True)
+# =========================================================================
 
     url_imagen_aleph = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/imagenes/El%20Aleph%20del%20Agua.png"
 
