@@ -505,21 +505,30 @@ with c_inv3:
 # =========================================================================
 
 # 🌪️ CROSS-POLLINATION: INTERCEPCIÓN DEL EVENTO EXTREMO (Desde Pág 04)
-eco_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
-eco_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
-eco_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
+hay_tormenta_en_memoria = st.session_state.get('eco_lodo_m3', 0.0) > 0
+activar_impacto_tormenta = False
 
-if eco_lodo_m3 > 0:
+if hay_tormenta_en_memoria:
     st.markdown("""
-    <div style='background-color: rgba(231, 76, 60, 0.1); border-left: 5px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 20px;'>
-        <h4 style='color: #c0392b; margin-top: 0;'>🚨 ALERTA DE SISTEMA: Tormenta Extrema en Curso</h4>
-        El Gemelo Digital ha detectado una avalancha de sedimentos importada desde el Microsistema de Cuenca (Pág 04).
+    <div style='background-color: rgba(231, 76, 60, 0.1); border-left: 5px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 15px;'>
+        <h4 style='color: #c0392b; margin-top: 0;'>🚨 ALERTA DE SISTEMA: Avalancha en Memoria</h4>
+        El Gemelo Digital ha detectado una tormenta importada desde el Microsistema (Pág 04).
     </div>
     """, unsafe_allow_html=True)
+    
+    # El interruptor mágico
+    activar_impacto_tormenta = st.toggle("⛈️ Inyectar Impacto de Tormenta en este Modelo", value=True)
+
+# Asignación condicionada al interruptor
+eco_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0) if activar_impacto_tormenta else 0.0
+eco_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0) if activar_impacto_tormenta else 0.0
+eco_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0) if activar_impacto_tormenta else 0.0
+
+if activar_impacto_tormenta and hay_tormenta_en_memoria:
     c_a1, c_a2, c_a3 = st.columns(3)
     c_a1.metric("Avalancha de Lodo", f"{eco_lodo_m3:,.0f} m³", "Directo al embalse", delta_color="inverse")
-    c_a2.metric("Inyección de Fósforo", f"{eco_fosforo_kg:,.0f} Kg", "Detonante de Eutrofización", delta_color="inverse")
-    c_a3.metric("Sobrecosto Potabilización", f"${eco_sobrecosto_usd:,.0f} USD", "Penalidad tarifaria inmediata", delta_color="inverse")
+    c_a2.metric("Inyección de Fósforo", f"{eco_fosforo_kg:,.0f} Kg", "Detonante Eutrofización", delta_color="inverse")
+    c_a3.metric("Sobrecosto Potabilización", f"${eco_sobrecosto_usd:,.0f} USD", "Penalidad tarifaria", delta_color="inverse")
     st.markdown("---")
 
 # ⚠️ REPARACIÓN: Leemos las variables desde la memoria de la sesión
