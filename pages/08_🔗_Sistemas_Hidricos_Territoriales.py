@@ -477,19 +477,34 @@ with c_inv3:
     st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
 
 # =========================================================================
-# =========================================================================
 # --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
 # =========================================================================
 
-# ⚠️ REPARACIÓN: Leemos las variables desde la memoria de la sesión para evitar el error de "not defined"
-# ya que los inputs visuales están más abajo en la página (Streamlit lee de arriba hacia abajo).
+# 🌪️ CROSS-POLLINATION: INTERCEPCIÓN DEL EVENTO EXTREMO (Desde Pág 04)
+eco_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+eco_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
+eco_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
+
+if eco_lodo_m3 > 0:
+    st.markdown("""
+    <div style='background-color: rgba(231, 76, 60, 0.1); border-left: 5px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 20px;'>
+        <h4 style='color: #c0392b; margin-top: 0;'>🚨 ALERTA DE SISTEMA: Tormenta Extrema en Curso</h4>
+        El Gemelo Digital ha detectado una avalancha de sedimentos importada desde el Microsistema de Cuenca (Pág 04).
+    </div>
+    """, unsafe_allow_html=True)
+    c_a1, c_a2, c_a3 = st.columns(3)
+    c_a1.metric("Avalancha de Lodo", f"{eco_lodo_m3:,.0f} m³", "Directo al embalse", delta_color="inverse")
+    c_a2.metric("Inyección de Fósforo", f"{eco_fosforo_kg:,.0f} Kg", "Detonante de Eutrofización", delta_color="inverse")
+    c_a3.metric("Sobrecosto Potabilización", f"${eco_sobrecosto_usd:,.0f} USD", "Penalidad tarifaria inmediata", delta_color="inverse")
+    st.markdown("---")
+
+# ⚠️ REPARACIÓN: Leemos las variables desde la memoria de la sesión
 if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
 elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
 elif "Peñol" in nodo_seleccionado: d_hum, d_bov, d_por = 25000, 40000, 15000
 elif "Ituango" in nodo_seleccionado: d_hum, d_bov, d_por = 35000, 250000, 60000
 else: d_hum, d_bov, d_por = 20000, 25000, 10000
 
-# Extrae el dato si ya se digitó abajo, si no, usa la línea base del embalse
 pob_hum_local = st.session_state.get('sh_pob_residente', d_hum)
 pob_bov_local = st.session_state.get('sh_bovinos_ica', d_bov)
 pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
@@ -498,7 +513,10 @@ pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
 dr_difuso = 0.15 
 dr_puntual = 0.80
 
-carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual)
+# PENALIDAD BIOQUÍMICA: Sumamos el fósforo de la tormenta. 1 Kg de P detona ~10 Kg de biomasa de algas (DBO equivalente)
+carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0
+
+carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
 carga_removida_ton = sist_saneamiento * 2.5
 carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
@@ -1136,6 +1154,18 @@ with contenedor_sankey.container():
                 value.append(q)
                 color.append("rgba(231, 76, 60, 0.8)")
                 idx += 1
+
+        # 🌪️ INYECCIÓN DEL LODO AL SANKEY (Visualización del Desastre)
+        eco_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+        if eco_lodo_m3 > 0:
+            # Convertimos la avalancha de lodo a un caudal aparente (m³/s) asumiendo un pico destructivo de 12 horas
+            lodo_m3s = eco_lodo_m3 / (12 * 3600)
+            labels.append(f"Avalancha de Lodo<br>({eco_lodo_m3/1000:,.1f} dam³)")
+            source.append(idx)
+            target.append(0)
+            value.append(lodo_m3s)
+            color.append("rgba(139, 69, 19, 0.85)") # Marrón tierra hiper denso
+            idx += 1                
 
         if val_acueducto > 0:
             labels.append("Acueducto (Aburrá)")
