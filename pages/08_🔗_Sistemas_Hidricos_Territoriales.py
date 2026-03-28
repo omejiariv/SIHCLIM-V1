@@ -208,7 +208,7 @@ with st.expander("📜 Revelar el Aleph del Agua (Manuscrito Original)", expande
         <img src="{url_imagen_aleph}" alt="El Aleph del Agua">
     </div>
     <div class="aleph-pergamino-side">
-        <div class="pergamino-titulo">El Aleph del Agua: Síntesis Visual Mística-Científica</div>
+        <div class="pergamino-titulo">El Aleph del Agua</div>
         <div class="pergamino-texto">Esta obra está plasmada sobre un pergamino envejecido y texturizado, diseñado para emular un manuscrito de Leonardo da Vinci o las láminas de Humboldt, con una complejidad que trasciende las épocas.</div>
         <div class="pergamino-seccion">1. El Punto Focal: El Aleph</div>
         <div class="pergamino-texto">En el centro geométrico brilla una pequeña esfera con "fulgor casi intolerable tornasolado". Contiene la totalidad de Antioquia y del cosmos: un corte transversal molecular del H2O, el rostro sutil de Borges, el mapa de sistemas montañosos, un "populoso mar" y constelaciones.</div>
