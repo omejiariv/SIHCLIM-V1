@@ -376,192 +376,154 @@ with st.expander(f"💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}", ex
 # 4. TABLERO WRI: NEUTRALIDAD, RESILIENCIA Y CALIDAD
 # =========================================================================
 st.markdown("---")
-st.subheader(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}")
+with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expanded=False):
+    anio_analisis = st.slider("Seleccione el Año de Evaluación (Actual o Futuro):", min_value=2024, max_value=2050, value=2025, step=1)
 
-anio_analisis = st.slider("Seleccione el Año de Evaluación (Actual o Futuro):", min_value=2024, max_value=2050, value=2025, step=1)
+    delta_anios = anio_analisis - 2025
+    factor_demanda = (1 + 0.015) ** delta_anios
+    factor_clima = (1 - 0.005) ** delta_anios
 
-delta_anios = anio_analisis - 2025
-factor_demanda = (1 + 0.015) ** delta_anios
-factor_clima = (1 - 0.005) ** delta_anios
+    q_oferta_m3s_base = sum_entradas
+    demanda_m3s_base = val_acueducto + (val_turbinado * 0.1) 
+    capacidad_embalse_m3 = datos_nodo["capacidad_util_Mm3"] * 1000000
 
-q_oferta_m3s_base = sum_entradas
-demanda_m3s_base = val_acueducto + (val_turbinado * 0.1) 
-capacidad_embalse_m3 = datos_nodo["capacidad_util_Mm3"] * 1000000
+    oferta_anual_m3 = (q_oferta_m3s_base * factor_clima) * 31536000
+    consumo_anual_m3 = (demanda_m3s_base * factor_demanda) * 31536000
 
-oferta_anual_m3 = (q_oferta_m3s_base * factor_clima) * 31536000
-consumo_anual_m3 = (demanda_m3s_base * factor_demanda) * 31536000
-
-# --- 2. INTEGRACIÓN CARTOGRÁFICA (PREDIOS EJECUTADOS SbN) ---
-st.markdown("---")
-st.markdown(f"#### 🌲 Beneficios Volumétricos (SbN) en el Sistema: **{nodo_seleccionado}**")
-
-# Recuperamos las hectáreas reales que la Cirugía 1 inyectó desde Supabase
-ha_reales_sig = float(datos_nodo.get("ha_conservadas_base", 0.0))
-
-st.markdown("##### ⚙️ Escenario Base vs. Proyectado")
-activar_sig = st.toggle("✅ Incluir Área Restaurada/Conservada del SIG en el cálculo WRI", value=True, 
-                        help="Apaga este interruptor para simular el escenario contrafactual: ¿Cómo estarían los índices si no se hubieran realizado estas intervenciones?")
-
-# Si el usuario apaga el interruptor, la base para el cálculo se vuelve 0
-ha_base_calculo = ha_reales_sig if activar_sig else 0.0
-
-c_inv1, c_inv2, c_inv3 = st.columns(3)
-with c_inv1:
-    st.metric("✅ Área Restaurada/Conservada (SIG)", f"{ha_reales_sig:,.1f} ha", "Línea base actual")
-    ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0)
-    
-    ha_total = ha_base_calculo + ha_simuladas
-    beneficio_restauracion_m3 = ha_total * 2500 
-    
-with c_inv2:
-    sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM):", min_value=0, value=120, step=5)
-    beneficio_calidad_m3 = (sist_saneamiento * 1200) if activar_sig else 0
-with c_inv3:
-    volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
-    st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
-
-# =========================================================================
-# --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
-# =========================================================================
-
-# 🌪️ CROSS-POLLINATION: INTERCEPCIÓN DEL EVENTO EXTREMO (Desde Pág 04)
-# Leemos los valores originales de la memoria
-memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
-memoria_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
-memoria_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
-
-activar_tormenta = False
-
-if memoria_lodo_m3 > 0:
-    st.markdown("""
-    <div style='background-color: rgba(231, 76, 60, 0.1); border-left: 5px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 20px;'>
-        <h4 style='color: #c0392b; margin-top: 0;'>🚨 ALERTA DE SISTEMA: Avalancha en Memoria</h4>
-        El Gemelo Digital ha detectado una tormenta importada desde el Microsistema de Cuenca (Pág 04).
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # 🎚️ EL INTERRUPTOR MÁGICO (Apagado por defecto como solicitaste)
-    activar_tormenta = st.toggle("⛈️ Inyectar Impacto de Tormenta en este Modelo (Sankey)", value=False)
-    
-    if activar_tormenta:
-        c_a1, c_a2, c_a3 = st.columns(3)
-        c_a1.metric("Avalancha de Lodo", f"{memoria_lodo_m3:,.0f} m³", "Directo al embalse", delta_color="inverse")
-        c_a2.metric("Inyección de Fósforo", f"{memoria_fosforo_kg:,.0f} Kg", "Detonante de Eutrofización", delta_color="inverse")
-        c_a3.metric("Sobrecosto Potabilización", f"${memoria_sobrecosto_usd:,.0f} USD", "Penalidad tarifaria inmediata", delta_color="inverse")
+    # --- 2. INTEGRACIÓN CARTOGRÁFICA (PREDIOS EJECUTADOS SbN) ---
     st.markdown("---")
+    st.markdown(f"#### 🌲 Beneficios Volumétricos (SbN) en el Sistema: **{nodo_seleccionado}**")
 
-# Asignación condicionada al interruptor (Esto alimenta el resto de la página y el Sankey)
-eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
-eco_fosforo_kg = memoria_fosforo_kg if activar_tormenta else 0.0
-eco_sobrecosto_usd = memoria_sobrecosto_usd if activar_tormenta else 0.0
+    ha_reales_sig = float(datos_nodo.get("ha_conservadas_base", 0.0))
+    st.markdown("##### ⚙️ Escenario Base vs. Proyectado")
+    activar_sig = st.toggle("✅ Incluir Área Restaurada/Conservada del SIG en el cálculo WRI", value=True, 
+                            help="Apaga este interruptor para simular el escenario contrafactual: ¿Cómo estarían los índices si no se hubieran realizado estas intervenciones?")
 
-# ⚠️ REPARACIÓN: Leemos las variables desde la memoria de la sesión
-if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
-elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
-elif "Peñol" in nodo_seleccionado: d_hum, d_bov, d_por = 25000, 40000, 15000
-elif "Ituango" in nodo_seleccionado: d_hum, d_bov, d_por = 35000, 250000, 60000
-else: d_hum, d_bov, d_por = 20000, 25000, 10000
+    ha_base_calculo = ha_reales_sig if activar_sig else 0.0
 
-pob_hum_local = st.session_state.get('sh_pob_residente', d_hum)
-pob_bov_local = st.session_state.get('sh_bovinos_ica', d_bov)
-pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
+    c_inv1, c_inv2, c_inv3 = st.columns(3)
+    with c_inv1:
+        st.metric("✅ Área Restaurada/Conservada (SIG)", f"{ha_reales_sig:,.1f} ha", "Línea base actual")
+        ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0)
+        ha_total = ha_base_calculo + ha_simuladas
+        beneficio_restauracion_m3 = ha_total * 2500 
+        
+    with c_inv2:
+        sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM):", min_value=0, value=120, step=5)
+        beneficio_calidad_m3 = (sist_saneamiento * 1200) if activar_sig else 0
+    with c_inv3:
+        volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
+        st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
 
-# A. CALIDAD DE AGUA (Delivery Ratio y Mezcla C0 en Afluentes Naturales)
-dr_difuso = 0.15 
-dr_puntual = 0.80
+    # =========================================================================
+    # --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
+    # =========================================================================
+    memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+    memoria_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
+    memoria_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
+    activar_tormenta = False
 
-# PENALIDAD BIOQUÍMICA: Sumamos el fósforo de la tormenta. 1 Kg de P detona ~10 Kg de biomasa de algas (DBO equivalente)
-carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0
+    if memoria_lodo_m3 > 0:
+        st.markdown("""
+        <div style='background-color: rgba(231, 76, 60, 0.1); border-left: 5px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 20px;'>
+            <h4 style='color: #c0392b; margin-top: 0;'>🚨 ALERTA DE SISTEMA: Avalancha en Memoria</h4>
+            El Gemelo Digital ha detectado una tormenta importada desde el Microsistema de Cuenca (Pág 04).
+        </div>
+        """, unsafe_allow_html=True)
+        
+        activar_tormenta = st.toggle("⛈️ Inyectar Impacto de Tormenta en este Modelo (Sankey)", value=False)
+        
+        if activar_tormenta:
+            c_a1, c_a2, c_a3 = st.columns(3)
+            c_a1.metric("Avalancha de Lodo", f"{memoria_lodo_m3:,.0f} m³", "Directo al embalse", delta_color="inverse")
+            c_a2.metric("Inyección de Fósforo", f"{memoria_fosforo_kg:,.0f} Kg", "Detonante de Eutrofización", delta_color="inverse")
+            c_a3.metric("Sobrecosto Potabilización", f"${memoria_sobrecosto_usd:,.0f} USD", "Penalidad tarifaria inmediata", delta_color="inverse")
+        st.markdown("---")
 
-carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
-carga_removida_ton = sist_saneamiento * 2.5
-carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
+    eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
+    eco_fosforo_kg = memoria_fosforo_kg if activar_tormenta else 0.0
+    eco_sobrecosto_usd = memoria_sobrecosto_usd if activar_tormenta else 0.0
 
-# ¡CORRECCIÓN FÍSICA!: 1 Tonelada = 1,000,000,000 mg
-carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
+    if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
+    elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
+    elif "Peñol" in nodo_seleccionado: d_hum, d_bov, d_por = 25000, 40000, 15000
+    elif "Ituango" in nodo_seleccionado: d_hum, d_bov, d_por = 35000, 250000, 60000
+    else: d_hum, d_bov, d_por = 20000, 25000, 10000
 
-# ¡CORRECCIÓN ECO-HIDROLÓGICA!: Diluimos SOLO con los afluentes naturales de la cuenca, no con el agua de los túneles
-caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
-caudal_natural_L_s = caudal_natural_m3s * 1000
+    pob_hum_local = st.session_state.get('sh_pob_residente', d_hum)
+    pob_bov_local = st.session_state.get('sh_bovinos_ica', d_bov)
+    pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
 
-concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
+    dr_difuso = 0.15 
+    dr_puntual = 0.80
 
-# Límite normativo crítico: >10 mg/L de DBO5
-ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
+    carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0
+    carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
+    carga_removida_ton = sist_saneamiento * 2.5
+    carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
-# B. RESILIENCIA ESTRUCTURAL (Buffer de Embalse)
-# 100% = El embalse + afluentes puede sostener la demanda por más de 2 años
-buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
-ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
+    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
+    caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
+    caudal_natural_L_s = caudal_natural_m3s * 1000
+    concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
+    ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
 
-# C. ESTRÉS HÍDRICO (WEI+)
-# Validamos el consumo real de la ciudad, no el de la vereda
-consumo_real = max(consumo_anual_m3, val_acueducto * 31536000)
-wei_ratio = consumo_real / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
-ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
+    buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
+    ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
 
-# D. NEUTRALIDAD VOLUMÉTRICA
-ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real) * 100) if consumo_real > 0 else 0.0
+    consumo_real = max(consumo_anual_m3, val_acueducto * 31536000)
+    wei_ratio = consumo_real / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
+    ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
 
-def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
-    if not invertido: return ("🔴 CRÍTICO", "#c0392b") if valor < umbral_rojo else ("🟡 VULNERABLE", "#f39c12") if valor < umbral_verde else ("🟢 ÓPTIMO", "#27ae60")
-    else: return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
+    ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real) * 100) if consumo_real > 0 else 0.0
 
-def generar_leyenda(u_r, u_v, inv):
-    if not inv: return f"🔴 <b>Crítico</b> &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> &gt; {u_v}%"
-    else: return f"🟢 <b>Holgado</b> &lt; {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Moderado</b> {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 <b>Severo</b> &gt; {u_r}%"
+    def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
+        if not invertido: return ("🔴 CRÍTICO", "#c0392b") if valor < umbral_rojo else ("🟡 VULNERABLE", "#f39c12") if valor < umbral_verde else ("🟢 ÓPTIMO", "#27ae60")
+        else: return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
-st.markdown("---")
-def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number", value = valor, number = {'suffix': "%", 'font': {'size': 26}}, title = {'text': titulo, 'font': {'size': 14}},
-        gauge = {'axis': {'range': [None, 100], 'tickwidth': 1}, 'bar': {'color': color_bar}, 'bgcolor': "white",
-                 'steps': [{'range': [0, umbral_rojo], 'color': "#ffcccb" if not invertido else "#e8f8f5"},
-                           {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc"},
-                           {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}],
-                 'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}}
-    ))
-    fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10))
-    return fig
+    def generar_leyenda(u_r, u_v, inv):
+        if not inv: return f"🔴 <b>Crítico</b> &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> &gt; {u_v}%"
+        else: return f"🟢 <b>Holgado</b> &lt; {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Moderado</b> {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 <b>Severo</b> &gt; {u_r}%"
 
-col_g1, col_g2, col_g3, col_g4 = st.columns(4)
-# 🛡️ Todos invertido=False porque miden Salud
-for col, ind, tit, col_h, u_r, u_v, inv in zip(
-    [col_g1, col_g2, col_g3, col_g4], [ind_neutralidad, ind_resiliencia, ind_estres, ind_calidad],
-    ["Neutralidad", "Resiliencia", "Seguridad Hídrica (WEI+)", "Calidad de Agua"], ["#2ecc71", "#3498db", "#e74c3c", "#9b59b6"],
-    [40, 40, 40, 40], [70, 70, 70, 70], [False, False, False, False]
-):
-    with col:
-        est, color_txt = evaluar_indice(ind, u_r, u_v, inv)
-        st.plotly_chart(crear_velocimetro(ind, tit, col_h, u_r, u_v, inv), use_container_width=True)
-        st.markdown(f"<h4 style='text-align: center; color: {color_txt}; margin-top:-20px;'>{est}</h4>", unsafe_allow_html=True)
-        st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{generar_leyenda(u_r, u_v, inv)}</div>", unsafe_allow_html=True)
+    st.markdown("---")
+    def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number", value = valor, number = {'suffix': "%", 'font': {'size': 26}}, title = {'text': titulo, 'font': {'size': 14}},
+            gauge = {'axis': {'range': [None, 100], 'tickwidth': 1}, 'bar': {'color': color_bar}, 'bgcolor': "white",
+                     'steps': [{'range': [0, umbral_rojo], 'color': "#ffcccb" if not invertido else "#e8f8f5"},
+                               {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc"},
+                               {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}],
+                     'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}}
+        ))
+        fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10))
+        return fig
 
-# Caja desplegable con el glosario
-with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded=False):
-    st.markdown("""
-    ### 📖 Glosario de Indicadores
-    
-    * **Neutralidad Hídrica (Volumetric Water Benefit VWBA):**
-      * **Concepto:** Mide si el volumen de agua restituido a la cuenca mediante Soluciones Basadas en la Naturaleza (SbN) compensa la Huella Hídrica del consumo humano/industrial.
-      * **Interpretación:** Un 100% indica que se está reponiendo cada gota extraída. Valores $<40\%$ son críticos e implican deuda ecológica.
-      * **Fórmula:** $\\frac{\\sum Beneficios\\ Volumétricos\\ (m^3/a)}{Consumo\\ Total\\ (m^3/a)} \\times 100$
-      
-    * **Resiliencia Territorial:**
-      * **Concepto:** Capacidad del ecosistema (aguas subterráneas + escorrentía + buffer del embalse) para soportar eventos de sequía (El Niño) sin colapsar el suministro.
-      * **Interpretación:** Zonas con alta resiliencia ($>70\%$) son buffers climáticos naturales y estructurales. 
-      
-    * **Estrés Hídrico (Indicador Falkenmark / ODS 6.4.2):**
-      * **Concepto:** Porcentaje de la oferta total anual que está siendo extraída por los diversos sectores económicos.
-      * **Interpretación:** Valores $>40\%$ denotan estrés severo (competencia intensa por el recurso). Valores $<20\%$ indican un sistema holgado.
+    col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+    for col, ind, tit, col_h, u_r, u_v, inv in zip(
+        [col_g1, col_g2, col_g3, col_g4], [ind_neutralidad, ind_resiliencia, ind_estres, ind_calidad],
+        ["Neutralidad", "Resiliencia", "Seguridad Hídrica (WEI+)", "Calidad de Agua"], ["#2ecc71", "#3498db", "#e74c3c", "#9b59b6"],
+        [40, 40, 40, 40], [70, 70, 70, 70], [False, False, False, False]
+    ):
+        with col:
+            est, color_txt = evaluar_indice(ind, u_r, u_v, inv)
+            st.plotly_chart(crear_velocimetro(ind, tit, col_h, u_r, u_v, inv), use_container_width=True)
+            st.markdown(f"<h4 style='text-align: center; color: {color_txt}; margin-top:-20px;'>{est}</h4>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{generar_leyenda(u_r, u_v, inv)}</div>", unsafe_allow_html=True)
 
-    * **Calidad de Agua (WQI):** * Índice modificado basado en la capacidad de dilución natural (Oferta vs Extracción) y mitigación sanitaria (STAM).
-      
-    ### 🌐 Fuentes y Estándares de Referencia
-    * **WRI (World Resources Institute):** [Volumetric Water Benefit Accounting (VWBA) - Metodología Oficial](https://www.wri.org/research/volumetric-water-benefit-accounting-vwba-implementing-guidelines)
-    * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
-    * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
-    """)
+    # 🪄 MAGIA: Convertimos el expander anidado en un toggle elegante
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.toggle("📚 Mostrar Conceptos, Metodología y Fuentes (VWBA - WRI)"):
+        st.info("""
+        ### 📖 Glosario de Indicadores
+        * **Neutralidad Hídrica (Volumetric Water Benefit VWBA):** Mide si el volumen de agua restituido a la cuenca mediante Soluciones Basadas en la Naturaleza (SbN) compensa la Huella Hídrica del consumo humano/industrial.
+        * **Resiliencia Territorial:** Capacidad del ecosistema (aguas subterráneas + escorrentía + buffer del embalse) para soportar eventos de sequía (El Niño) sin colapsar el suministro.
+        * **Estrés Hídrico (Indicador Falkenmark / ODS 6.4.2):** Porcentaje de la oferta total anual que está siendo extraída por los diversos sectores económicos.
+        * **Calidad de Agua (WQI):** Índice modificado basado en la capacidad de dilución natural (Oferta vs Extracción) y mitigación sanitaria (STAM).
+          
+        ### 🌐 Fuentes y Estándares de Referencia
+        * **WRI (World Resources Institute):** [Volumetric Water Benefit Accounting (VWBA) - Metodología Oficial](https://www.wri.org/research/volumetric-water-benefit-accounting-vwba-implementing-guidelines)
+        * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
+        """)
 
 # --- OPTIMIZADOR DE INVERSIONES Y METAS (PORTAFOLIO INTEGRAL) ---
 st.markdown("<br>", unsafe_allow_html=True)
@@ -693,395 +655,320 @@ with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
 # =========================================================================
 st.markdown("---")
-st.subheader(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_seleccionado} (2024 - 2050)")
-st.caption("Simulación a largo plazo que integra crecimiento poblacional, pérdida base por Cambio Climático y la variabilidad cíclica/extrema del fenómeno ENSO.")
+with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_seleccionado} (2024 - 2050)", expanded=False):
+    st.caption("Simulación a largo plazo que integra crecimiento poblacional, pérdida base por Cambio Climático y la variabilidad cíclica/extrema del fenómeno ENSO.")
 
-# --- CREACIÓN DE LAS DOS PESTAÑAS INTERNAS ---
-tab_resumen, tab_escenarios = st.tabs(["📊 Resumen Multivariado (Onda ENSO)", "🔬 Explorador de Escenarios (Cono de Incertidumbre)"])
+    tab_resumen, tab_escenarios = st.tabs(["📊 Resumen Multivariado (Onda ENSO)", "🔬 Explorador de Escenarios (Cono de Incertidumbre)"])
+    anios_proj = list(range(2024, 2051))
 
-anios_proj = list(range(2024, 2051))
+    with tab_resumen:
+        col_t1, col_t2 = st.columns(2)
+        with col_t1: activar_cc = st.toggle("🌡️ Incluir Cambio Climático", value=True, key="t1_cc")
+        with col_t2: activar_enso = st.toggle("🌊 Incluir Variabilidad ENSO", value=True, key="t1_enso")
 
-# -------------------------------------------------------------------------
-# PESTAÑA 1: TU GRÁFICA ACTUAL (ONDA DINÁMICA)
-# -------------------------------------------------------------------------
-with tab_resumen:
-    col_t1, col_t2 = st.columns(2)
-    with col_t1: activar_cc = st.toggle("🌡️ Incluir Cambio Climático", value=True, key="t1_cc")
-    with col_t2: activar_enso = st.toggle("🌊 Incluir Variabilidad ENSO", value=True, key="t1_enso")
-
-    datos_proj = []
-    for a in anios_proj:
-        delta_a = a - 2024
-        f_dem = (1 + 0.015) ** delta_a
-        f_cc_base = (1 - 0.005) ** delta_a if activar_cc else 1.0
-        
-        f_enso = 0.0
-        estado_enso = "Neutro ⚖️"
-        if activar_enso:
-            f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
-            estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
-        
-        f_cli_total = max(0.1, f_cc_base + f_enso) 
-        
-        o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
-        c_m3 = (val_acueducto * f_dem) * 31536000
-        
-        n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
-        
-        buff_sim = (capacidad_embalse_m3 + o_m3) / c_m3 if c_m3 > 0 else 5.0
-        r = min(100.0, (buff_sim / 2.0) * 100)
-        
-        wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
-        e = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
-        
-        caudal_natural_L_s_sim = caudal_natural_L_s * f_cli_total
-        carga_mg_s_futura = carga_mg_s * f_dem
-        dbo_mg_l_sim = carga_mg_s_futura / caudal_natural_L_s_sim if caudal_natural_L_s_sim > 0 else 999.0
-        cal = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
-        
-        datos_proj.extend([
-            {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
-            {"Año": a, "Indicador": "Resiliencia", "Valor (%)": r, "Fase ENSO": estado_enso},
-            {"Año": a, "Indicador": "Seguridad Hídrica", "Valor (%)": e, "Fase ENSO": estado_enso},
-            {"Año": a, "Indicador": "Calidad", "Valor (%)": cal, "Fase ENSO": estado_enso}
-        ])
-        
-    fig_line1 = px.line(pd.DataFrame(datos_proj), x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
-                       color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Seguridad Hídrica": "#e74c3c", "Calidad": "#9b59b6"})
-    fig_line1.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.05, layer="below", annotation_text="  Zona Crítica (<40%)")
-    fig_line1.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.05, layer="below", annotation_text="  Zona Vulnerable (40-70%)")
-    fig_line1.update_layout(height=400, hovermode="x unified", yaxis_range=[0, 105])
-    st.plotly_chart(fig_line1, use_container_width=True)
-
-# -------------------------------------------------------------------------
-# PESTAÑA 2: EL EXPLORADOR DE ESCENARIOS (CONO DE INCERTIDUMBRE)
-# -------------------------------------------------------------------------
-with tab_escenarios:
-    st.markdown("Analiza la dispersión de futuros posibles para un solo indicador bajo intensidades climáticas sostenidas.")
-    
-    col_e1, col_e2 = st.columns([1, 2])
-    with col_e1:
-        ind_sel = st.selectbox("🎯 Seleccione el Indicador a Evaluar:", ["Estrés Hídrico", "Resiliencia", "Neutralidad", "Calidad"])
-        activar_cc_esc = st.toggle("🌡️ Sumar Efecto Cambio Climático", value=True, key="t2_cc")
-    
-    with col_e2:
-        diccionario_escenarios = {
-            "Onda Dinámica (Ciclo de 4.5 años)": "onda",
-            "Condición Neutra (Línea Base)": 0.0,
-            "🟡 El Niño Moderado Constante (-15%)": -0.15,
-            "🔴 El Niño Severo Constante (-35%)": -0.35,
-            "🟢 La Niña Moderada Constante (+15%)": 0.15,
-            "🔵 La Niña Fuerte Constante (+35%)": 0.35
-        }
-        
-        curvas_sel = st.multiselect(
-            "🌊 Curvas Climáticas a Superponer:", 
-            list(diccionario_escenarios.keys()), 
-            default=["Onda Dinámica (Ciclo de 4.5 años)", "Condición Neutra (Línea Base)", "🔴 El Niño Severo Constante (-35%)"]
-        )
-
-    datos_esc = []
-    for a in anios_proj:
-        delta_a = a - 2024
-        f_dem = (1 + 0.015) ** delta_a
-        f_cc_base = (1 - 0.005) ** delta_a if activar_cc_esc else 1.0
-        
-        for nombre_esc in curvas_sel:
-            val_esc = diccionario_escenarios[nombre_esc]
+        datos_proj = []
+        for a in anios_proj:
+            delta_a = a - 2024
+            f_dem = (1 + 0.015) ** delta_a
+            f_cc_base = (1 - 0.005) ** delta_a if activar_cc else 1.0
             
-            f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) if val_esc == "onda" else val_esc
-            f_cli_total = f_cc_base + f_enso
+            f_enso = 0.0
+            estado_enso = "Neutro ⚖️"
+            if activar_enso:
+                f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
+                estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
+            
+            f_cli_total = max(0.1, f_cc_base + f_enso) 
             
             o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
-            c_m3 = (demanda_m3s_base * f_dem) * 31536000
+            c_m3 = (val_acueducto * f_dem) * 31536000
             
-            if ind_sel == "Neutralidad": val = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
-            elif ind_sel == "Resiliencia": 
-                buff_sim = (capacidad_embalse_m3 + o_m3) / c_m3 if c_m3 > 0 else 5.0
-                val = min(100.0, (buff_sim / 2.0) * 100)
-            elif ind_sel == "Estrés Hídrico": 
-                wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
-                val = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
-            else: 
-                caudal_L_s_sim = (o_m3 / 31536000) * 1000
-                carga_mg_s_futura = carga_mg_s * f_dem
-                dbo_mg_l_sim = carga_mg_s_futura / caudal_L_s_sim if caudal_L_s_sim > 0 else 999.0
-                val = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
-                
-            datos_esc.append({"Año": a, "Escenario Climático": nombre_esc, "Valor (%)": val})
+            n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
             
-    if datos_esc:
-        df_esc = pd.DataFrame(datos_esc)
-        
-        color_map = {
-            "Onda Dinámica (Ciclo de 4.5 años)": "#9b59b6",  
-            "Condición Neutra (Línea Base)": "#34495e",        
-            "🟡 El Niño Moderado Constante (-15%)": "#f1c40f",
-            "🔴 El Niño Severo Constante (-35%)": "#e74c3c",
-            "🟢 La Niña Moderada Constante (+15%)": "#2ecc71",
-            "🔵 La Niña Fuerte Constante (+35%)": "#3498db"
-        }
-        
-        fig_esc = px.line(df_esc, x="Año", y="Valor (%)", color="Escenario Climático", color_discrete_map=color_map)
-        fig_esc.update_traces(line=dict(width=3)) 
-        
-        fig_esc.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.05, layer="below", annotation_text="Colapso / Crítico (<40%)")
-        fig_esc.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.05, layer="below", annotation_text="Vulnerable (40-70%)")
+            buff_sim = (capacidad_embalse_m3 + o_m3) / c_m3 if c_m3 > 0 else 5.0
+            r = min(100.0, (buff_sim / 2.0) * 100)
             
-        fig_esc.update_layout(height=450, hovermode="x unified", yaxis_range=[0, 105], legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
-        st.plotly_chart(fig_esc, use_container_width=True)
-    else:
-        st.info("👈 Seleccione al menos una curva climática para visualizar.")
+            wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
+            e = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
+            
+            caudal_natural_L_s_sim = caudal_natural_L_s * f_cli_total
+            carga_mg_s_futura = carga_mg_s * f_dem
+            dbo_mg_l_sim = carga_mg_s_futura / caudal_natural_L_s_sim if caudal_natural_L_s_sim > 0 else 999.0
+            cal = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
+            
+            datos_proj.extend([
+                {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
+                {"Año": a, "Indicador": "Resiliencia", "Valor (%)": r, "Fase ENSO": estado_enso},
+                {"Año": a, "Indicador": "Seguridad Hídrica", "Valor (%)": e, "Fase ENSO": estado_enso},
+                {"Año": a, "Indicador": "Calidad", "Valor (%)": cal, "Fase ENSO": estado_enso}
+            ])
+            
+        fig_line1 = px.line(pd.DataFrame(datos_proj), x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
+                           color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Seguridad Hídrica": "#e74c3c", "Calidad": "#9b59b6"})
+        fig_line1.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.05, layer="below", annotation_text="  Zona Crítica (<40%)")
+        fig_line1.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.05, layer="below", annotation_text="  Zona Vulnerable (40-70%)")
+        fig_line1.update_layout(height=400, hovermode="x unified", yaxis_range=[0, 105])
+        st.plotly_chart(fig_line1, use_container_width=True)
 
+    with tab_escenarios:
+        st.markdown("Analiza la dispersión de futuros posibles para un solo indicador bajo intensidades climáticas sostenidas.")
+        
+        col_e1, col_e2 = st.columns([1, 2])
+        with col_e1:
+            ind_sel = st.selectbox("🎯 Seleccione el Indicador a Evaluar:", ["Estrés Hídrico", "Resiliencia", "Neutralidad", "Calidad"])
+            activar_cc_esc = st.toggle("🌡️ Sumar Efecto Cambio Climático", value=True, key="t2_cc")
+        
+        with col_e2:
+            diccionario_escenarios = {
+                "Onda Dinámica (Ciclo de 4.5 años)": "onda",
+                "Condición Neutra (Línea Base)": 0.0,
+                "🟡 El Niño Moderado Constante (-15%)": -0.15,
+                "🔴 El Niño Severo Constante (-35%)": -0.35,
+                "🟢 La Niña Moderada Constante (+15%)": 0.15,
+                "🔵 La Niña Fuerte Constante (+35%)": 0.35
+            }
+            
+            curvas_sel = st.multiselect(
+                "🌊 Curvas Climáticas a Superponer:", 
+                list(diccionario_escenarios.keys()), 
+                default=["Onda Dinámica (Ciclo de 4.5 años)", "Condición Neutra (Línea Base)", "🔴 El Niño Severo Constante (-35%)"]
+            )
+
+        datos_esc = []
+        for a in anios_proj:
+            delta_a = a - 2024
+            f_dem = (1 + 0.015) ** delta_a
+            f_cc_base = (1 - 0.005) ** delta_a if activar_cc_esc else 1.0
+            
+            for nombre_esc in curvas_sel:
+                val_esc = diccionario_escenarios[nombre_esc]
+                
+                f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) if val_esc == "onda" else val_esc
+                f_cli_total = f_cc_base + f_enso
+                
+                o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
+                c_m3 = (demanda_m3s_base * f_dem) * 31536000
+                
+                if ind_sel == "Neutralidad": val = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
+                elif ind_sel == "Resiliencia": 
+                    buff_sim = (capacidad_embalse_m3 + o_m3) / c_m3 if c_m3 > 0 else 5.0
+                    val = min(100.0, (buff_sim / 2.0) * 100)
+                elif ind_sel == "Estrés Hídrico": 
+                    wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
+                    val = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
+                else: 
+                    caudal_L_s_sim = (o_m3 / 31536000) * 1000
+                    carga_mg_s_futura = carga_mg_s * f_dem
+                    dbo_mg_l_sim = carga_mg_s_futura / caudal_L_s_sim if caudal_L_s_sim > 0 else 999.0
+                    val = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
+                    
+                datos_esc.append({"Año": a, "Escenario Climático": nombre_esc, "Valor (%)": val})
+                
+        if datos_esc:
+            df_esc = pd.DataFrame(datos_esc)
+            
+            color_map = {
+                "Onda Dinámica (Ciclo de 4.5 años)": "#9b59b6",  
+                "Condición Neutra (Línea Base)": "#34495e",        
+                "🟡 El Niño Moderado Constante (-15%)": "#f1c40f",
+                "🔴 El Niño Severo Constante (-35%)": "#e74c3c",
+                "🟢 La Niña Moderada Constante (+15%)": "#2ecc71",
+                "🔵 La Niña Fuerte Constante (+35%)": "#3498db"
+            }
+            
+            fig_esc = px.line(df_esc, x="Año", y="Valor (%)", color="Escenario Climático", color_discrete_map=color_map)
+            fig_esc.update_traces(line=dict(width=3)) 
+            fig_esc.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.05, layer="below", annotation_text="Colapso / Crítico (<40%)")
+            fig_esc.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.05, layer="below", annotation_text="Vulnerable (40-70%)")
+            fig_esc.update_layout(height=450, hovermode="x unified", yaxis_range=[0, 105], legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
+            st.plotly_chart(fig_esc, use_container_width=True)
+        else:
+            st.info("👈 Seleccione al menos una curva climática para visualizar.")
+            
 # =========================================================================
 # 6. METABOLISMO TERRITORIAL: DEMANDA, VERTIMIENTOS Y RESIDUOS SÓLIDOS
 # =========================================================================
 st.markdown("---")
-st.header(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}")
-st.info("Cálculo integrado de extracción hídrica, cargas orgánicas vertidas (DBO5) y generación de residuos sólidos (Lixiviados/Emisiones).")
+with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", expanded=False):
+    st.info("Cálculo integrado de extracción hídrica, cargas orgánicas vertidas (DBO5) y generación de residuos sólidos (Lixiviados/Emisiones).")
 
-# --- CONEXIÓN DINÁMICA CON EL NODO SELECCIONADO (CON LÓGICA DE TRASVASE) ---
-# def_pob_res = Habitantes en la cuenca (Generan DBO y RS locales)
-# def_pob_ext = Población de la ciudad abastecida (Solo extraen agua)
-if nodo_seleccionado == "La Fe": def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 15000, 450000, 5000, 2000, 150000
-elif "Grande" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 45000, 1200000, 85000, 45000, 800000
-elif "Peñol" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 25000, 0, 40000, 15000, 120000
-elif "Ituango" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 35000, 0, 250000, 60000, 300000
-else: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 20000, 0, 25000, 10000, 50000
+    if nodo_seleccionado == "La Fe": def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 15000, 450000, 5000, 2000, 150000
+    elif "Grande" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 45000, 1200000, 85000, 45000, 800000
+    elif "Peñol" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 25000, 0, 40000, 15000, 120000
+    elif "Ituango" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 35000, 0, 250000, 60000, 300000
+    else: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 20000, 0, 25000, 10000, 50000
 
-st.markdown("### 1. Inventario Poblacional (Diferenciado) y Módulos")
+    st.markdown("### 1. Inventario Poblacional (Diferenciado) y Módulos")
 
-# --- CONEXIÓN CON MEMORIA GLOBAL (CENSOS ICA Y DEMOGRAFÍA) ---
-# Intentamos leer la memoria. Si no hay nada (el usuario no ha pasado por las otras páginas), usamos el valor por defecto de la cuenca.
-mem_pob_res = st.session_state.get('pob_residente_proy', def_pob_res)
-mem_bovinos = st.session_state.get('ica_bovinos_proy', def_bov)
-mem_porcinos = st.session_state.get('ica_porcinos_proy', def_por)
-mem_aves = st.session_state.get('ica_aves_proy', def_ave)
+    mem_pob_res = st.session_state.get('pob_residente_proy', def_pob_res)
+    mem_bovinos = st.session_state.get('ica_bovinos_proy', def_bov)
+    mem_porcinos = st.session_state.get('ica_porcinos_proy', def_por)
+    mem_aves = st.session_state.get('ica_aves_proy', def_ave)
 
-c_p1, c_p2, c_p3, c_p4 = st.columns(4)
-pob_residente = c_p1.number_input("🏘️ Pob. Residente (Cuenca):", value=int(mem_pob_res), step=1000, key="sh_pob_residente")
-pob_externa = c_p2.number_input("🏙️ Pob. Externa (Trasvase):", value=int(def_pob_ext), step=50000, key="sh_pob_externa")
-cabezas_bovinas = c_p3.number_input("🐄 Bovinos (Censo ICA):", value=int(mem_bovinos), step=1000, key="sh_bovinos_ica")
-cabezas_porcinas = c_p4.number_input("🐖 Porcinos (Censo ICA):", value=int(mem_porcinos), step=1000, key="sh_porcinos_ica")
+    c_p1, c_p2, c_p3, c_p4 = st.columns(4)
+    pob_residente = c_p1.number_input("🏘️ Pob. Residente (Cuenca):", value=int(mem_pob_res), step=1000, key="sh_pob_residente")
+    pob_externa = c_p2.number_input("🏙️ Pob. Externa (Trasvase):", value=int(def_pob_ext), step=50000, key="sh_pob_externa")
+    cabezas_bovinas = c_p3.number_input("🐄 Bovinos (Censo ICA):", value=int(mem_bovinos), step=1000, key="sh_bovinos_ica")
+    cabezas_porcinas = c_p4.number_input("🐖 Porcinos (Censo ICA):", value=int(mem_porcinos), step=1000, key="sh_porcinos_ica")
 
-with st.expander("⚙️ Ajustar Módulos de Consumo y Generación (Agua y Residuos)"):
-    c_d1, c_d2, c_d3, c_d4 = st.columns(4)
-    dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150, key="sh_dot_hum")
-    dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40, key="sh_dot_bov")
-    dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15, key="sh_dot_por")
-    cabezas_aves = c_d4.number_input("🐔 Aves (Censo ICA):", value=int(mem_aves), step=5000, key="sh_aves_ica")
-    
-    st.markdown("**Residuos Sólidos (Aplicable solo a Población Residente):**")
-    c_rs1, c_rs2 = st.columns(2)
-    kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1, key="sh_rs_generacion")
-    pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0, key="sh_rs_fraccion")
+    # 🪄 MAGIA: Convertimos el expander anidado en un toggle
+    dot_hum, dot_bov, dot_por, cabezas_aves, kg_rs_hab, pct_organico = 150, 40, 15, int(mem_aves), 0.8, 55.0
+    if st.toggle("⚙️ Mostrar y Ajustar Módulos de Consumo y Generación (Agua y Residuos)"):
+        st.markdown("<div style='padding: 10px; background-color: #f8f9fa; border-radius: 5px;'>", unsafe_allow_html=True)
+        c_d1, c_d2, c_d3, c_d4 = st.columns(4)
+        dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150, key="sh_dot_hum")
+        dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40, key="sh_dot_bov")
+        dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15, key="sh_dot_por")
+        cabezas_aves = c_d4.number_input("🐔 Aves (Censo ICA):", value=int(mem_aves), step=5000, key="sh_aves_ica")
+        
+        st.markdown("**Residuos Sólidos (Aplicable solo a Población Residente):**")
+        c_rs1, c_rs2 = st.columns(2)
+        kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1, key="sh_rs_generacion")
+        pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0, key="sh_rs_fraccion")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown("### 2. Balance Metabólico Integral")
+    st.markdown("### 2. Balance Metabólico Integral")
 
-# A. EXTRACCIÓN de Agua - Demandas Hídricas- (Suma a residentes y ciudad externa)
-pob_total_agua = pob_residente + pob_externa
-dem_hum_m3_dia = (pob_total_agua * dot_hum) / 1000
-dem_bov_m3_dia = (cabezas_bovinas * dot_bov) / 1000
-dem_por_m3_dia = (cabezas_porcinas * dot_por) / 1000
-dem_ave_m3_dia = (cabezas_aves * 0.3) / 1000
-dem_total_m3_s = (dem_hum_m3_dia + dem_bov_m3_dia + dem_por_m3_dia + dem_ave_m3_dia) / 86400
+    pob_total_agua = pob_residente + pob_externa
+    dem_hum_m3_dia = (pob_total_agua * dot_hum) / 1000
+    dem_bov_m3_dia = (cabezas_bovinas * dot_bov) / 1000
+    dem_por_m3_dia = (cabezas_porcinas * dot_por) / 1000
+    dem_ave_m3_dia = (cabezas_aves * 0.3) / 1000
+    dem_total_m3_s = (dem_hum_m3_dia + dem_bov_m3_dia + dem_por_m3_dia + dem_ave_m3_dia) / 86400
 
-# B. CARGA ORGÁNICA (Solo penaliza la Población Residente en la cuenca)
-carga_hum_ton = (pob_residente * 18.25) / 1000
-carga_bov_ton = (cabezas_bovinas * 292.0) / 1000
-carga_por_ton = (cabezas_porcinas * 91.25) / 1000
-carga_ave_ton = (cabezas_aves * 5.47) / 1000
-carga_total_ton = carga_hum_ton + carga_bov_ton + carga_por_ton + carga_ave_ton
+    carga_hum_ton = (pob_residente * 18.25) / 1000
+    carga_bov_ton = (cabezas_bovinas * 292.0) / 1000
+    carga_por_ton = (cabezas_porcinas * 91.25) / 1000
+    carga_ave_ton = (cabezas_aves * 5.47) / 1000
+    carga_total_ton = carga_hum_ton + carga_bov_ton + carga_por_ton + carga_ave_ton
 
-# C. RESIDUOS SÓLIDOS LOCALES
-rs_total_ton_ano = (pob_residente * kg_rs_hab * 365) / 1000
-rs_org_ton_ano = rs_total_ton_ano * (pct_organico / 100.0)
-rs_inorg_ton_ano = rs_total_ton_ano - rs_org_ton_ano
+    rs_total_ton_ano = (pob_residente * kg_rs_hab * 365) / 1000
+    rs_org_ton_ano = rs_total_ton_ano * (pct_organico / 100.0)
+    rs_inorg_ton_ano = rs_total_ton_ano - rs_org_ton_ano
 
-# --- VISUALIZACIÓN ---
-c_res1, c_res2 = st.columns([1, 1.5])
+    c_res1, c_res2 = st.columns([1, 1.5])
+    with c_res1:
+        st.metric("💧 Extracción Continua (Agua)", f"{dem_total_m3_s:,.2f} m³/s")
+        st.metric("☣️ Carga Orgánica al Río (DBO5)", f"{carga_total_ton:,.0f} Ton/año")
+        st.metric("🗑️ Residuos Sólidos Totales", f"{rs_total_ton_ano:,.0f} Ton/año", f"{rs_org_ton_ano:,.0f} Ton Orgánicas", delta_color="off")
+        
+        if st.button("🚀 Actualizar Dinámica del Embalse", use_container_width=True):
+            st.session_state['demanda_total_m3s'] = dem_total_m3_s
+            st.success("✅ Extracción guardada. Sube al panel superior para ver el impacto en la Resiliencia.")
 
-with c_res1:
-    st.metric("💧 Extracción Continua (Agua)", f"{dem_total_m3_s:,.2f} m³/s")
-    st.metric("☣️ Carga Orgánica al Río (DBO5)", f"{carga_total_ton:,.0f} Ton/año")
-    st.metric("🗑️ Residuos Sólidos Totales", f"{rs_total_ton_ano:,.0f} Ton/año", f"{rs_org_ton_ano:,.0f} Ton Orgánicas", delta_color="off")
-    
-    if st.button("🚀 Actualizar Dinámica del Embalse", use_container_width=True):
-        st.session_state['demanda_total_m3s'] = dem_total_m3_s
-        st.success("✅ Extracción guardada. Sube al panel superior para ver el impacto en la Resiliencia.")
-
-with c_res2:
-    # Gráfico Sunburst Combinado de Metabolismo
-    df_metab = pd.DataFrame([
-        {"Macro", "Agua (Extracción)", "Sector", "Humano", "Valor", dem_hum_m3_dia * 365},
-        {"Macro", "Agua (Extracción)", "Sector", "Agropecuario", "Valor", (dem_bov_m3_dia+dem_por_m3_dia+dem_ave_m3_dia) * 365},
-        {"Macro", "Vertimientos (DBO)", "Sector", "Humano", "Valor", carga_hum_ton},
-        {"Macro", "Vertimientos (DBO)", "Sector", "Agropecuario", "Valor", carga_bov_ton+carga_por_ton+carga_ave_ton},
-        {"Macro", "Residuos Sólidos", "Sector", "Orgánicos", "Valor", rs_org_ton_ano},
-        {"Macro", "Residuos Sólidos", "Sector", "Inorgánicos", "Valor", rs_inorg_ton_ano}
-    ], columns=["Macro", "Sub", "Sector", "Tipo", "dummy", "Valor"]) # Formato seguro para Plotly
-    
-    # Reestructuramos simple para px.sunburst
-    df_plot = pd.DataFrame({
-        "Categoria": ["Agua (Extracción Mm³/a)", "Agua (Extracción Mm³/a)", "Vertimientos (Ton DBO)", "Vertimientos (Ton DBO)", "Residuos Sólidos (Ton)", "Residuos Sólidos (Ton)"],
-        "Subcategoria": ["Urbana", "Agropecuaria", "Urbana", "Agropecuaria", "Orgánicos (Lixiviables)", "Inorgánicos (Aprovechables/Rechazo)"],
-        "Valor": [(dem_hum_m3_dia*365)/1e6, ((dem_bov_m3_dia+dem_por_m3_dia+dem_ave_m3_dia)*365)/1e6, carga_hum_ton, carga_bov_ton+carga_por_ton+carga_ave_ton, rs_org_ton_ano, rs_inorg_ton_ano]
-    })
-    
-    import plotly.express as px
-    fig_sun = px.sunburst(df_plot, path=['Categoria', 'Subcategoria'], values='Valor', 
-                          title="Distribución del Metabolismo Material (Proporcional por Categoría)",
-                          color='Categoria', color_discrete_sequence=px.colors.qualitative.Pastel)
-    fig_sun.update_layout(height=400, margin=dict(t=40, b=0, l=0, r=0))
-    st.plotly_chart(fig_sun, use_container_width=True)
+    with c_res2:
+        df_plot = pd.DataFrame({
+            "Categoria": ["Agua (Extracción Mm³/a)", "Agua (Extracción Mm³/a)", "Vertimientos (Ton DBO)", "Vertimientos (Ton DBO)", "Residuos Sólidos (Ton)", "Residuos Sólidos (Ton)"],
+            "Subcategoria": ["Urbana", "Agropecuaria", "Urbana", "Agropecuaria", "Orgánicos (Lixiviables)", "Inorgánicos (Aprovechables/Rechazo)"],
+            "Valor": [(dem_hum_m3_dia*365)/1e6, ((dem_bov_m3_dia+dem_por_m3_dia+dem_ave_m3_dia)*365)/1e6, carga_hum_ton, carga_bov_ton+carga_por_ton+carga_ave_ton, rs_org_ton_ano, rs_inorg_ton_ano]
+        })
+        
+        import plotly.express as px
+        fig_sun = px.sunburst(df_plot, path=['Categoria', 'Subcategoria'], values='Valor', 
+                              title="Distribución del Metabolismo Material",
+                              color='Categoria', color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig_sun.update_layout(height=400, margin=dict(t=40, b=0, l=0, r=0))
+        st.plotly_chart(fig_sun, use_container_width=True)
 
 # =========================================================================
 # 8. HUELLA HÍDRICA TERRITORIAL (CONECTADA AL GEMELO DIGITAL)
 # =========================================================================
 st.markdown("---")
+with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({nodo_seleccionado})", expanded=False):
+    anio_censo = st.slider("📅 Horizonte de Simulación (Demanda y Presión):", min_value=2025, max_value=2050, value=2035, step=1)
+    st.info("Cálculo de la demanda hídrica real integrando la población humana proyectada y la vocación pecuaria de la cuenca.")
 
-# 1. EL SLIDER DEL TIEMPO (Sincronizado con el futuro)
-anio_censo = st.slider("📅 Horizonte de Simulación (Demanda y Presión):", min_value=2025, max_value=2050, value=2035, step=1)
+    col_h1, col_h2 = st.columns([1, 1.5])
 
-st.header(f"💧 Metabolismo Hídrico de {nodo_seleccionado}: Presión Demográfica y Agropecuaria ({anio_censo})")
-st.info("Cálculo de la demanda hídrica real integrando la población humana proyectada y la vocación pecuaria de la cuenca.")
+    with col_h1:
+        st.subheader("1. Conexión a la Matriz Pecuaria")
+        bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
+        origen_datos_pec = "Valores Estáticos (Fallback)"
 
-col_h1, col_h2 = st.columns([1, 1.5])
+        mpios_cuenca = []
+        if "Grande" in nodo_seleccionado: mpios_cuenca = ["BELMIRA", "DON MATIAS", "SAN PEDRO DE LOS MILAGROS", "ENTRERRIOS", "SANTA ROSA DE OSOS"]
+        elif "Fe" in nodo_seleccionado: mpios_cuenca = ["EL RETIRO", "LA CEJA", "RIONEGRO"]
 
-with col_h1:
-    st.subheader("1. Conexión a la Matriz Pecuaria")
-    
-bovinos_tot, porcinos_tot, aves_tot = 0, 0, 0
-origen_datos_pec = "Valores Estáticos (Fallback)"
-
-# Identificar municipios clave según el embalse
-mpios_cuenca = []
-if "Grande" in nodo_seleccionado: mpios_cuenca = ["BELMIRA", "DON MATIAS", "SAN PEDRO DE LOS MILAGROS", "ENTRERRIOS", "SANTA ROSA DE OSOS"]
-elif "Fe" in nodo_seleccionado: mpios_cuenca = ["EL RETIRO", "LA CEJA", "RIONEGRO"]
-
-# 🚀 TURBINA CENTRAL: Extracción Limpia y Vectorial (Sin matemáticas repetidas)
-if mpios_cuenca:
-    for mpio in mpios_cuenca:
-        datos_mpio = obtener_metabolismo_exacto(mpio, anio_censo)
-        bovinos_tot += datos_mpio.get('bovinos', 0.0)
-        porcinos_tot += datos_mpio.get('porcinos', 0.0)
-        aves_tot += datos_mpio.get('aves', 0.0)
-        
-    if bovinos_tot > 0:
-        origen_datos_pec = "Matriz Maestra (Proyectada)"
-    
-# Valores de respaldo si la memoria está vacía
-if origen_datos_pec == "Valores Estáticos (Fallback)":
-    bovinos_tot = 85000 if "Grande" in nodo_seleccionado else 5000
-    porcinos_tot = 45000 if "Grande" in nodo_seleccionado else 2000
-    aves_tot = 800000 if "Grande" in nodo_seleccionado else 150000
-
-# Mensajes a la interfaz
-if origen_datos_pec == "Matriz Maestra (Proyectada)":
-    st.success(f"🧠 **Sincronización Perfecta:** Metabolismo pecuario proyectado al {anio_censo} para **{nodo_seleccionado}**.")
-else:
-    st.warning(f"⚠️ **Memoria Vacía:** Entrena el Modelo Pecuario en la pág 06a para ver proyecciones dinámicas.")
-
-st.info(f"🐄 Bovinos: **{bovinos_tot:,.0f}** | 🐖 Porcinos: **{porcinos_tot:,.0f}** | 🐔 Aves: **{aves_tot:,.0f}**")
-
-# Guardar en memoria local de la página
-st.session_state['ica_bovinos_calc'] = bovinos_tot
-st.session_state['ica_porcinos_calc'] = porcinos_tot
-st.session_state['ica_aves_calc'] = aves_tot
-    
-with col_h2:
-    st.subheader(f"2. Demanda Total y Estrés Local ({nodo_seleccionado})")
-    
-    # =========================================================================
-    # 🧠 EXTRACCIÓN DINÁMICA: POBLACIÓN HUMANA (VALLE DE ABURRÁ)
-    # =========================================================================
-    pob_global_memoria = 4000000 # Valor base de respaldo
-    mpios_amva = ["MEDELLIN", "BELLO", "ITAGUI", "ENVIGADO", "SABANETA", "COPACABANA", "LA ESTRELLA", "GIRARDOTA", "CALDAS", "BARBOSA"]
-    
-    pob_calculada = 0
-    # 🚀 TURBINA CENTRAL: Sumamos todo el Valle de Aburrá sin ecuaciones sueltas
-    for mpio in mpios_amva:
-        datos_amva = obtener_metabolismo_exacto(mpio, anio_censo)
-        if datos_amva['pob_total'] > 1000: # Evita sumar fallbacks por defecto
-            pob_calculada += datos_amva['pob_total']
+        if mpios_cuenca:
+            for mpio in mpios_cuenca:
+                datos_mpio = obtener_metabolismo_exacto(mpio, anio_censo)
+                bovinos_tot += datos_mpio.get('bovinos', 0.0)
+                porcinos_tot += datos_mpio.get('porcinos', 0.0)
+                aves_tot += datos_mpio.get('aves', 0.0)
+                
+            if bovinos_tot > 0: origen_datos_pec = "Matriz Maestra (Proyectada)"
             
-    if pob_calculada > 10000: # Validación de seguridad
-        pob_global_memoria = pob_calculada
+        if origen_datos_pec == "Valores Estáticos (Fallback)":
+            bovinos_tot = 85000 if "Grande" in nodo_seleccionado else 5000
+            porcinos_tot = 45000 if "Grande" in nodo_seleccionado else 2000
+            aves_tot = 800000 if "Grande" in nodo_seleccionado else 150000
 
-    # --- 🛡️ SIMULADOR DE SEGURIDAD HÍDRICA (Nivel de Dependencia) ---
-    st.markdown("##### 🛡️ Seguridad Hídrica: Nivel de Dependencia")
-    st.caption("Ajusta qué porcentaje de la población total del Valle de Aburrá es abastecida por este embalse.")
-    
-    dependencia_defecto = 0.0
-    if "Fe" in nodo_seleccionado: dependencia_defecto = 58.0
-    elif "Grande" in nodo_seleccionado: dependencia_defecto = 33.0
-    elif "Piedras" in nodo_seleccionado: dependencia_defecto = 9.0
-    
-    pct_dependencia = st.slider(f"% de Población dependiente de {nodo_seleccionado}:", 0.0, 100.0, dependencia_defecto, step=1.0)
-    
-    pob_real_dependiente = pob_global_memoria * (pct_dependencia / 100.0)
+        if origen_datos_pec == "Matriz Maestra (Proyectada)": st.success(f"🧠 **Sincronización Perfecta:** Metabolismo pecuario proyectado al {anio_censo} para **{nodo_seleccionado}**.")
+        else: st.warning(f"⚠️ **Memoria Vacía:** Entrena el Modelo Pecuario en la pág 06a para ver proyecciones dinámicas.")
 
-    # 2. Traemos animales (Calculados dinámicamente en col_h1)
-    cabezas_bovinas = st.session_state.get('ica_bovinos_calc', 0)
-    cabezas_porcinas = st.session_state.get('ica_porcinos_calc', 0)
-    cabezas_aves = st.session_state.get('ica_aves_calc', 0)
+        st.info(f"🐄 Bovinos: **{bovinos_tot:,.0f}** | 🐖 Porcinos: **{porcinos_tot:,.0f}** | 🐔 Aves: **{aves_tot:,.0f}**")
+
+        st.session_state['ica_bovinos_calc'] = bovinos_tot
+        st.session_state['ica_porcinos_calc'] = porcinos_tot
+        st.session_state['ica_aves_calc'] = aves_tot
         
-    c_i1, c_i2, c_i3, c_i4 = st.columns(4)
-    # Forzamos la actualización pasándole el valor calculado directamente y sin llaves antiguas
-    pob_humana = c_i1.number_input(
-        "👥 Pob. Asignada:", 
-        value=int(pob_real_dependiente), 
-        help=f"El {pct_dependencia}% de {pob_global_memoria:,.0f} habitantes del Valle de Aburrá.",
-        key=f"pob_asig_{nodo_seleccionado}_{pct_dependencia}" # Llave dinámica que rompe la caché
-    )
-    cabezas_bovinas = c_i2.number_input("🐄 Bovinos:", value=int(cabezas_bovinas))
-    cabezas_porcinas = c_i3.number_input("🐖 Porcinos:", value=int(cabezas_porcinas))
-    cabezas_aves_in = c_i4.number_input("🐔 Aves:", value=int(cabezas_aves)) 
-    
-    st.markdown(f"### 📊 Demanda Metabólica Equivalente")
-    
-    # Parámetros estándar de consumo
-    consumo_humano_ld = 150 # Litros/hab/día
-    consumo_bovino_ld = 40  # Litros/bovino/día
-    consumo_porcino_ld = 15 # Litros/cerdo/día
-    consumo_ave_ld = 0.3    # Litros/ave/día 
-    
-    demanda_humana_m3_dia = (pob_humana * consumo_humano_ld) / 1000
-    demanda_agro_m3_dia = ((cabezas_bovinas * consumo_bovino_ld) + (cabezas_porcinas * consumo_porcino_ld) + (cabezas_aves_in * consumo_ave_ld)) / 1000
-    demanda_total_m3_dia = demanda_humana_m3_dia + demanda_agro_m3_dia
-    
-    # Convertir a m3/s (Extracción Continua)
-    demanda_total_m3_s = demanda_total_m3_dia / 86400  
-    
-    # --- ⚠️ CÁLCULO DE ESTRÉS HÍDRICO LOCAL ---
-    st.markdown("---")
-    oferta_local_m3s = st.number_input("💧 Oferta Total del Sistema (m³/s) [Natural + Trasvases]:", value=5.7, step=0.1, help="Digita aquí la suma de tus Inflows (Naturales + Bombeos) para cruzar con la demanda.")
-    
-    estres_local = (demanda_total_m3_s / oferta_local_m3s) * 100 if oferta_local_m3s > 0 else 100
-    
-    # Lógica de interpretación de estrés
-    estado_estres = "Estable"
-    alerta_color = "normal"
-    if estres_local > 100:
-        estado_estres = "Colapso"
-        alerta_color = "inverse"
-    elif estres_local > 80:
-        estado_estres = "Crítico"
-        alerta_color = "inverse"
-    elif estres_local > 40:
-        estado_estres = "Alto"
-        alerta_color = "off"
-    
-    c_m1, c_m2, c_m3, c_m4 = st.columns(4)
-    c_m1.metric("Demanda Humana", f"{demanda_humana_m3_dia:,.0f} m³/d")
-    c_m2.metric("Demanda Agro", f"{demanda_agro_m3_dia:,.0f} m³/d")
-    c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s")
-    c_m4.metric(f"⚠️ Estrés ({estado_estres})", f"{estres_local:.1f}%", delta_color=alerta_color)
-    
-    if st.button("💾 Enviar Datos al Modelo Central (Toma de Decisiones)", type="primary"):
-        st.session_state['demanda_total_m3s'] = demanda_total_m3_s
-        st.session_state['aleph_oferta_hidrica'] = oferta_local_m3s
-        st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_local_m3s:.1f} m³/s")
+    with col_h2:
+        st.subheader(f"2. Demanda Total y Estrés Local ({nodo_seleccionado})")
+        pob_global_memoria = 4000000 
+        mpios_amva = ["MEDELLIN", "BELLO", "ITAGUI", "ENVIGADO", "SABANETA", "COPACABANA", "LA ESTRELLA", "GIRARDOTA", "CALDAS", "BARBOSA"]
+        
+        pob_calculada = 0
+        for mpio in mpios_amva:
+            datos_amva = obtener_metabolismo_exacto(mpio, anio_censo)
+            if datos_amva['pob_total'] > 1000: pob_calculada += datos_amva['pob_total']
+                
+        if pob_calculada > 10000: pob_global_memoria = pob_calculada
+
+        st.markdown("##### 🛡️ Seguridad Hídrica: Nivel de Dependencia")
+        st.caption("Ajusta qué porcentaje de la población total del Valle de Aburrá es abastecida por este embalse.")
+        
+        dependencia_defecto = 0.0
+        if "Fe" in nodo_seleccionado: dependencia_defecto = 58.0
+        elif "Grande" in nodo_seleccionado: dependencia_defecto = 33.0
+        elif "Piedras" in nodo_seleccionado: dependencia_defecto = 9.0
+        
+        pct_dependencia = st.slider(f"% de Población dependiente de {nodo_seleccionado}:", 0.0, 100.0, dependencia_defecto, step=1.0)
+        pob_real_dependiente = pob_global_memoria * (pct_dependencia / 100.0)
+
+        cabezas_bovinas = st.session_state.get('ica_bovinos_calc', 0)
+        cabezas_porcinas = st.session_state.get('ica_porcinos_calc', 0)
+        cabezas_aves = st.session_state.get('ica_aves_calc', 0)
+            
+        c_i1, c_i2, c_i3, c_i4 = st.columns(4)
+        pob_humana = c_i1.number_input("👥 Pob. Asignada:", value=int(pob_real_dependiente), key=f"pob_asig_{nodo_seleccionado}_{pct_dependencia}")
+        cabezas_bovinas = c_i2.number_input("🐄 Bovinos:", value=int(cabezas_bovinas))
+        cabezas_porcinas = c_i3.number_input("🐖 Porcinos:", value=int(cabezas_porcinas))
+        cabezas_aves_in = c_i4.number_input("🐔 Aves:", value=int(cabezas_aves)) 
+        
+        st.markdown(f"### 📊 Demanda Metabólica Equivalente")
+        consumo_humano_ld, consumo_bovino_ld, consumo_porcino_ld, consumo_ave_ld = 150, 40, 15, 0.3    
+        
+        demanda_humana_m3_dia = (pob_humana * consumo_humano_ld) / 1000
+        demanda_agro_m3_dia = ((cabezas_bovinas * consumo_bovino_ld) + (cabezas_porcinas * consumo_porcino_ld) + (cabezas_aves_in * consumo_ave_ld)) / 1000
+        demanda_total_m3_dia = demanda_humana_m3_dia + demanda_agro_m3_dia
+        demanda_total_m3_s = demanda_total_m3_dia / 86400  
+        
+        st.markdown("---")
+        oferta_local_m3s = st.number_input("💧 Oferta Total del Sistema (m³/s) [Natural + Trasvases]:", value=5.7, step=0.1)
+        estres_local = (demanda_total_m3_s / oferta_local_m3s) * 100 if oferta_local_m3s > 0 else 100
+        
+        estado_estres, alerta_color = ("Colapso", "inverse") if estres_local > 100 else ("Crítico", "inverse") if estres_local > 80 else ("Alto", "off") if estres_local > 40 else ("Estable", "normal")
+        
+        c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+        c_m1.metric("Demanda Humana", f"{demanda_humana_m3_dia:,.0f} m³/d")
+        c_m2.metric("Demanda Agro", f"{demanda_agro_m3_dia:,.0f} m³/d")
+        c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s")
+        c_m4.metric(f"⚠️ Estrés ({estado_estres})", f"{estres_local:.1f}%", delta_color=alerta_color)
+        
+        if st.button("💾 Enviar Datos al Modelo Central", type="primary"):
+            st.session_state['demanda_total_m3s'] = demanda_total_m3_s
+            st.session_state['aleph_oferta_hidrica'] = oferta_local_m3s
+            st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_local_m3s:.1f} m³/s")
 
 # ==============================================================================
 # 🕸️ DIBUJO DEL MAPA CONCEPTUAL (Se inyecta en la parte superior)
@@ -1164,7 +1051,7 @@ with contenedor_sankey.container():
             link=dict(source=source, target=target, value=value, color=color)
         )])
         fig_sankey.update_layout(height=480, margin=dict(l=20, r=20, t=30, b=50))
-        contenedor_sankey.plotly_chart(fig_sankey, use_container_width=True)
+        st.plotly_chart(fig_sankey, use_container_width=True)
         
 # =========================================================================
 # 8. MATEMÁTICA Y CIENCIA
