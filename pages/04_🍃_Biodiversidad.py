@@ -385,7 +385,7 @@ tab_factura, tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador, t
     "⚖️ Comparativa de Escenarios de Carbono",
     "🌿 Ecología del Paisaje", 
     "🌳 Retención Hídrica del Dosel",
-    "🔬 Microsistema del Árbol"
+    "🔬 Ecohidrología: Del Bosque a la PTAP"
 ])
 
 # ==============================================================================
@@ -1542,13 +1542,13 @@ with tab_ret_dosel:
         """)
 
 # =========================================================================
-# PESTAÑA 9: EL MICROSISTEMA (DISEÑADOR ECOHIDROLÓGICO DEL ÁRBOL)
+# PESTAÑA 9: ECOHIDROLOGÍA (EFECTO CASCADA)
 # =========================================================================
 with tab_micro:
     import plotly.graph_objects as go
     
-    st.subheader("🔬 El Microsistema: Diseñador Ecohidrológico del Árbol")
-    st.info("Laboratorio bio-forestal. Modela cómo la anatomía de un solo árbol altera el ciclo del agua a escala micrométrica (Intercepción, Goteo y Escorrentía Fustal).")
+    st.subheader("🔬 Efecto Cascada: Del Microscopio Foliar a la Planta de Tratamiento")
+    st.info("Simulador de ciclo completo (Source-to-Tap). Laboratorio de la ECOmplejidad. Modela cómo la alteración de un componente biológico microscópico (la hoja) desencadena una avalancha de impactos físicos, químicos y financieros a nivel de cuenca, embalse y acueducto.")
 
     # --- INICIO DEL JUGUETE FRACTAL DA VINCI ---
     with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
@@ -1913,7 +1913,7 @@ with tab_micro:
         La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar individualmente. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas con "acumen" puntiagudo reducen el tamaño de las gotas, controlando la energía cinética del impacto y evitando la erosión del suelo.
         """)
 
-# =========================================================================
+    # =========================================================================
     # EL ALEPH DEL ÁRBOL: MARCO CONCEPTUAL, FÍSICO Y BIOLÓGICO
     # =========================================================================
     with st.expander("📚 El Milagro de la Hoja: Marco Conceptual, Ecuaciones y Física del Bosque", expanded=False):
@@ -2316,7 +2316,7 @@ with tab_micro:
         **La solución real** no es comprar dragas multimillonarias ni aplicar herbicidas en el lago; la solución es volver al **Módulo 1** de este simulador: diseñar árboles con alto Índice de Área Foliar, promover el sotobosque y dejar que la microingeniería de la hoja frene la gota de lluvia antes de que toque el suelo.
         """)
 
-# =========================================================================
+    # =========================================================================
     # 🚰 7. ECONOMÍA DE LA CALIDAD (PLANTA DE POTABILIZACIÓN)
     # =========================================================================
     st.markdown("---")
@@ -2337,26 +2337,22 @@ with tab_micro:
     # ==========================================
     # MOTOR FINANCIERO-SANITARIO
     # ==========================================
-    # 1. Volumen tratado durante el evento (Asumimos el impacto del evento dura 24h en la planta)
+    # 1. Volumen tratado durante el evento (Asumimos el impacto dura 24h)
     volumen_diario_tratado_m3 = caudal_tratado_m3s * 86400
     volumen_diario_tratado_litros = volumen_diario_tratado_m3 * 1000
 
     # 2. Dosis Base (Día normal sin tormenta extrema)
-    dosis_base_alum_mg_l = 15.0 # 15 mg por litro
+    dosis_base_alum_mg_l = 15.0 
     dosis_base_cloro_mg_l = 2.0 
     
-    # 3. Dosis de Crisis (Detonada por el Lodo y el Fósforo calculados en el Mod 6)
-    # Relación empírica: 1 m3 de lodo extra en el embalse sube la turbiedad, requiriendo más coagulante
-    # Asumimos que la avalancha de lodo incrementa la dosis de aluminio proporcionalmente
-    factor_turbiedad = 1.0 + (lodo_evento_hoy_m3 / 10000.0) # Cada 10,000 m3 de lodo doblan la dosis
-    dosis_crisis_alum_mg_l = dosis_base_alum_mg_l * min(factor_turbiedad, 8.0) # Tope máx 8x dosis
+    # 3. Dosis de Crisis (Detonada por Lodo y Fósforo del Mod 6)
+    factor_turbiedad = 1.0 + (lodo_evento_hoy_m3 / 10000.0) 
+    dosis_crisis_alum_mg_l = dosis_base_alum_mg_l * min(factor_turbiedad, 8.0) 
     
-    # El fósforo genera materia orgánica (algas) que consume el cloro
     factor_eutrofia = 1.0 + (fosforo_total_kg_evento / 500.0) 
     dosis_crisis_cloro_mg_l = dosis_base_cloro_mg_l * min(factor_eutrofia, 4.0)
 
-    # 4. Cálculo de Toneladas requeridas para el día de la tormenta
-    # Mg a Toneladas = dividir por 1,000,000,000
+    # 4. Cálculo de Toneladas requeridas
     ton_alum_base = (volumen_diario_tratado_litros * dosis_base_alum_mg_l) / 1e9
     ton_cloro_base = (volumen_diario_tratado_litros * dosis_base_cloro_mg_l) / 1e9
     
@@ -2371,30 +2367,41 @@ with tab_micro:
     sobrecosto_cloro_usd = extra_cloro_ton * costo_cloro_usd
     sobrecosto_total_usd = sobrecosto_alum_usd + sobrecosto_cloro_usd
 
+    # 6. MÉTRICAS ANUALES Y EQUIVALENCIA ECOLÓGICA
+    costo_base_diario_usd = (ton_alum_base * costo_alum_usd) + (ton_cloro_base * costo_cloro_usd)
+    costo_base_anual_usd = costo_base_diario_usd * 365
+    
+    # Asumimos un costo de $2,500 USD por Hectárea reforestada
+    costo_reforestacion_ha_usd = 2500.0 
+    ha_equivalentes = sobrecosto_total_usd / costo_reforestacion_ha_usd if sobrecosto_total_usd > 0 else 0
+    # 1 km de río protegido con 10m a cada lado = 20m de ancho * 1000m = 20,000 m2 = 2 Hectáreas
+    km_riparios = ha_equivalentes / 2.0
+
     # ==========================================
     # RENDERIZADO DEL DIAGNÓSTICO FINANCIERO
     # ==========================================
     with col_pot2:
-        st.markdown("##### 💸 La Factura de la Tormenta (Por 1 Día de Operación)")
+        st.markdown("##### 💸 La Factura de la Tormenta vs Operación Base")
         
-        c_f1, c_f2 = st.columns(2)
-        c_f1.metric("Sobrecosto Coagulante (Lodo)", f"${sobrecosto_alum_usd:,.0f} USD", f"+{extra_alum_ton:,.1f} Ton de Aluminio", delta_color="inverse")
-        c_f2.metric("Sobrecosto Desinfectante (Algas)", f"${sobrecosto_cloro_usd:,.0f} USD", f"+{extra_cloro_ton:,.1f} Ton de Cloro", delta_color="inverse")
+        c_f1, c_f2, c_f3 = st.columns(3)
+        c_f1.metric("Costo Base Anual (Insumos)", f"${costo_base_anual_usd/1e6:,.1f} M USD", "Operación Normal", delta_color="off")
+        c_f2.metric("Sobrecosto Coagulante", f"${sobrecosto_alum_usd:,.0f} USD", f"+{extra_alum_ton:,.1f} Ton Aluminio", delta_color="inverse")
+        c_f3.metric("Sobrecosto Cloro", f"${sobrecosto_cloro_usd:,.0f} USD", f"+{extra_cloro_ton:,.1f} Ton Cloro", delta_color="inverse")
         
-        # Alerta de Estrés Operativo
+        # Alerta de Estrés Operativo con Equivalencia Ecológica
         if extra_alum_ton > (ton_alum_base * 3):
-            st.error(f"⚠️ **Riesgo de Parada de Planta:** La turbiedad es tan alta que los floculadores colapsarán. El sobrecosto operativo de **${sobrecosto_total_usd:,.0f} USD** por este único día de tormenta equivale a lo que costaría reforestar varias hectáreas de cuenca alta.")
+            st.error(f"⚠️ **Riesgo de Parada de Planta:** La turbiedad es tan alta que los floculadores colapsarán. El sobrecosto operativo de **${sobrecosto_total_usd:,.0f} USD** por este único día de tormenta equivale a lo que costaría reforestar **{ha_equivalentes:,.1f} hectáreas** en la cuenca alta, o recuperar un corredor de **{km_riparios:,.1f} km de bosque ripario** (en una franja de 10 m a lado y lado de los ríos).")
         elif extra_alum_ton > 0.1:
-            st.warning(f"📉 **Penalidad Financiera:** La degradación de la cuenca obligó a gastar **${sobrecosto_total_usd:,.0f} USD extra** hoy para cumplir con la norma de agua potable.")
+            st.warning(f"📉 **Penalidad Financiera:** La degradación de la cuenca obligó a gastar **${sobrecosto_total_usd:,.0f} USD extra** hoy. Con este dinero se podrían haber restaurado **{km_riparios:,.1f} km de corredor ripario** protector.")
         else:
-            st.success("💧 **Agua Cruda de Alta Calidad:** El bosque amortiguó la tormenta. La planta opera con dosis mínimas base, ahorrando miles de dólares al sistema tarifario.")
+            st.success(f"💧 **Agua Cruda de Alta Calidad:** El bosque amortiguó la tormenta. La planta opera con dosis base. El Costo Anual proyectado en químicos es el mínimo posible.")
             
     with st.expander("📚 El Aleph Financiero: ¿Por qué sembrar árboles es el mejor negocio?", expanded=False):
         st.markdown("""
         **La miopía gris frente a la infraestructura verde:** Históricamente, las empresas de agua han invertido millones en ampliar las plantas de tratamiento (infraestructura gris) para lidiar con el agua sucia, ignorando el ecosistema que la produce.
         
         * **El Lodo:** Alta turbiedad exige dosis masivas de Policloruro de Aluminio (PAC). Además, genera toneladas de "lodos químicos" residuales que la planta debe pagar para desechar en rellenos sanitarios.
-        * **El Fósforo:** Detona crecimientos algales. Las algas tapan los filtros de arena (reduciendo la producción de agua) y reaccionan con el Cloro formando **Trihalometanos (THMs)**, compuestos cancerígenos estrictamente regulados.
+        * **El Fósforo:** Detona crecimientos algales. Las algas tapan los filtros de arena y reaccionan con el Cloro formando **Trihalometanos (THMs)**, compuestos cancerígenos estrictamente regulados.
         
         **Conclusión Matemática:** Conservar la microingeniería de la hoja en la cuenca alta (Módulo 2) no es filantropía ecológica; es la estrategia de reducción de costos operativos (OPEX) más inteligente y rentable para cualquier acueducto moderno.
-        """)        
+        """)
