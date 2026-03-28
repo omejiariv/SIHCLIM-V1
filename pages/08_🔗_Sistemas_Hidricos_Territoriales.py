@@ -134,6 +134,7 @@ datos_nodo = sistemas_embalses[nodo_seleccionado]
 # 4. 🏷️ TÍTULOS Y UI PRINCIPAL
 # =========================================================================
 st.title(f"🔗 Metabolismo Territorial Complejo: Nodos y Trasvases ({nodo_seleccionado})")
+st.markdown("""
 Modelo de topología de redes para el **Sistema de Abastecimiento del Valle de Aburrá y Generación Eléctrica**. 
 Evalúa cómo los embalses integran las cuencas propias con los trasvases artificiales para sostener la demanda, alterando el flujo natural de los ecosistemas aportantes.
 """)
