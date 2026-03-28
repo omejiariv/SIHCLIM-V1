@@ -141,96 +141,85 @@ Evalúa cómo los embalses integran las cuencas propias con los trasvases artifi
 st.divider()
 
 # =========================================================================
-# 🖼️ LA OBRA MAESTRA: EL ALEPH DEL AGUA (Efecto Museo CSS)
+# 🖼️ LA OBRA MAESTRA: EL ALEPH DEL AGUA (Efecto Museo CSS Side-by-Side)
 # =========================================================================
 with st.expander("📜 Revelar el Aleph del Agua (Manuscrito Original)", expanded=False):
     st.markdown("""
     <style>
-    .museo-container {
+    .museo-wrapper {
         display: flex;
+        flex-direction: row;
+        align-items: stretch;
         justify-content: center;
+        gap: 2rem;
         margin: 1rem 0;
-        perspective: 1000px;
+        flex-wrap: wrap; /* Por si la pantalla es muy pequeña */
     }
     .aleph-frame {
-        position: relative;
-        display: inline-block;
+        flex: 0 0 65%; /* La imagen ocupa el 65% del ancho */
         border: 8px solid #3e2723;
         border-radius: 4px;
         box-shadow: 0px 15px 30px rgba(0,0,0,0.8);
-        cursor: crosshair;
         overflow: hidden;
-        max-width: 100%;
+        background-color: #000;
     }
     .aleph-frame img {
         display: block;
         width: 100%;
         height: auto;
-        /* Transición suave para el despertar del Aleph */
-        transition: transform 1.2s ease, filter 1.2s ease;
-        /* Estado inactivo: Oscuro, sepia y ligeramente desenfocado */
-        filter: brightness(0.4) sepia(0.6) blur(1px); 
+        transition: transform 1.5s ease, filter 1.5s ease;
+        filter: brightness(0.35) sepia(0.7) blur(1px); 
     }
-    .aleph-frame:hover img {
-        transform: scale(1.03);
-        /* Estado activo: Recobra luz y color original */
+    .museo-wrapper:hover .aleph-frame img {
+        transform: scale(1.02);
         filter: brightness(1.0) sepia(0) blur(0px); 
     }
-    .aleph-pergamino {
-        visibility: hidden;
-        width: 85%;
-        max-height: 85%;
-        background-color: rgba(253, 250, 242, 0.95);
+    .aleph-pergamino-side {
+        flex: 1; /* El texto ocupa el resto del espacio (35%) */
+        background-color: #fdfaf2;
         color: #2c3e50;
         text-align: justify;
         border: 2px solid #d3c0a3;
         border-radius: 8px;
-        padding: 30px;
-        position: absolute;
-        z-index: 100;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -40%);
+        padding: 25px;
+        box-shadow: 0px 10px 20px rgba(0,0,0,0.5);
         opacity: 0;
-        transition: all 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        transform: translateX(-30px);
+        transition: all 1.0s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         font-family: 'Georgia', serif;
-        box-shadow: 0px 10px 30px rgba(0,0,0,0.8);
         overflow-y: auto;
+        max-height: 800px;
     }
-    .aleph-frame:hover .aleph-pergamino {
-        visibility: visible;
+    .museo-wrapper:hover .aleph-pergamino-side {
         opacity: 1;
-        transform: translate(-50%, -50%);
+        transform: translateX(0);
     }
-    .pergamino-titulo { font-size: 1.6em; font-weight: bold; color: #5d4037; text-align: center; border-bottom: 2px solid #d3c0a3; padding-bottom: 10px; margin-bottom: 20px; }
-    .pergamino-seccion { font-size: 1.1em; font-weight: bold; color: #2980b9; margin-top: 15px; margin-bottom: 5px; }
-    .pergamino-texto { font-size: 0.95em; line-height: 1.6; }
+    .pergamino-titulo { font-size: 1.4em; font-weight: bold; color: #5d4037; text-align: center; border-bottom: 2px solid #d3c0a3; padding-bottom: 10px; margin-bottom: 15px; }
+    .pergamino-seccion { font-size: 1.05em; font-weight: bold; color: #2980b9; margin-top: 15px; margin-bottom: 5px; }
+    .pergamino-texto { font-size: 0.9em; line-height: 1.6; }
     </style>
     """, unsafe_allow_html=True)
 
     url_imagen_aleph = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/imagenes/El%20Aleph%20del%20Agua.png"
 
-    # IMPORTANTE: Las líneas HTML abajo no tienen indentación para evitar el error de renderizado de Streamlit
     st.markdown(f"""
-<div class="museo-container">
-<div class="aleph-frame">
-<img src="{url_imagen_aleph}" alt="El Aleph del Agua">
-<div class="aleph-pergamino">
-<div class="pergamino-titulo">El Aleph del Agua: Síntesis Visual Mística-Científica de Antioquia</div>
-<div class="pergamino-texto">Esta obra está plasmada sobre un pergamino envejecido y texturizado, diseñado para emular un manuscrito de Leonardo da Vinci, un tratado de Galileo o las láminas de Humboldt, pero con una complejidad y simultaneidad que trasciende las épocas. La imagen nos invita a escrutarla de manera Borgiana:</div>
-<div class="pergamino-seccion">1. El Punto Focal: El Aleph</div>
-<div class="pergamino-texto">En el centro geométrico, hay una pequeña esfera que brilla con un "fulgor casi intolerable tornasolado". Esta esfera no es agua líquida común. Es la "sustancia extraña" y contiene, sin disminución de tamaño, la totalidad de Antioquia y del cosmos: un corte transversal molecular del H2O, un rostro sutil y difuso (como el de Borges), el mapa detallado de Antioquia con sus sistemas montañosos e hídricos, un "populoso mar," constelaciones y la "plateada telaraña."</div>
-<div class="pergamino-seccion">2. La Estructura Fractal Anatómica: El Engranaje</div>
-<div class="pergamino-texto">Alrededor de la esfera central, la composición se estructura como un gran "Engranaje Anatómico-Hídrico Fractal," inspirado en Da Vinci. Los flujos de agua irradian desde el centro, transformándose en los ríos fractales de Antioquia, filtrándose a través de cortes geológicos que parecen venas y arterias (acuíferos y fallas). El agua bautiza la biología (bosques de niebla, páramos y criaturas vivas), y en el borde más externo, se transforma sutilmente en redes de infraestructura y asentamientos humanos.</div>
-<div class="pergamino-seccion">3. Integración de Texto y Mito</div>
-<div class="pergamino-texto">Siguiendo el estilo de los manuscritos antiguos, la lámina está saturada de "Anotaciones Marginales Caligráficas". Fragmentos de "El Aleph" y poemas de Pessoa rodean la esfera en espiral. En los rincones, como constelaciones, aparecen deidades: Bochica, Poseidón, Tláloc y una Diosa Madre del Agua. Todo esto superpuesto con vocabulario científico elegante (Precipitación, Evapotranspiración, Escorrentía).</div>
-<div class="pergamino-seccion">4. La Técnica y el Efecto Aleph</div>
-<div class="pergamino-texto">Ejecutada como un grabado al aguafuerte con detalles en punta seca sobre pergamino. Los colores son monocromáticos (sepia, grises, azules profundos), con toques selectivos de "intolerable fulgor tornasolado" solo en la esfera central, generando un efecto de profundidad y vértigo conceptual.</div>
+<div class="museo-wrapper">
+    <div class="aleph-frame">
+        <img src="{url_imagen_aleph}" alt="El Aleph del Agua">
+    </div>
+    <div class="aleph-pergamino-side">
+        <div class="pergamino-titulo">El Aleph del Agua: Síntesis Visual Mística-Científica</div>
+        <div class="pergamino-texto">Esta obra está plasmada sobre un pergamino envejecido y texturizado, diseñado para emular un manuscrito de Leonardo da Vinci o las láminas de Humboldt, con una complejidad que trasciende las épocas.</div>
+        <div class="pergamino-seccion">1. El Punto Focal: El Aleph</div>
+        <div class="pergamino-texto">En el centro geométrico brilla una pequeña esfera con "fulgor casi intolerable tornasolado". Contiene la totalidad de Antioquia y del cosmos: un corte transversal molecular del H2O, el rostro sutil de Borges, el mapa de sistemas montañosos, un "populoso mar" y constelaciones.</div>
+        <div class="pergamino-seccion">2. La Estructura Fractal</div>
+        <div class="pergamino-texto">Un "Engranaje Anatómico-Hídrico" inspirado en Da Vinci. Los flujos irradian transformándose en ríos fractales, filtrándose por cortes geológicos (acuíferos). El agua bautiza la biología (bosques, páramos) y en el borde externo, se vuelve infraestructura y sociedad.</div>
+        <div class="pergamino-seccion">3. Texto y Mito</div>
+        <div class="pergamino-texto">Fragmentos de "El Aleph" y Pessoa rodean la esfera. En los rincones, deidades como Bochica, Poseidón y Tláloc observan el ciclo, superpuestos con vocabulario científico (Precipitación, Evapotranspiración).</div>
+    </div>
 </div>
-</div>
-</div>
-<p style="text-align: center; color: #7f8c8d; font-style: italic; font-size: 0.9em; margin-top: 10px; margin-bottom: 10px;">
-Acércate a la obra para despertar el Aleph y revelar el manuscrito oculto.
+<p style="text-align: center; color: #7f8c8d; font-style: italic; font-size: 0.9em; margin-top: 15px;">
+    Acércate a la obra para encender el Aleph y revelar sus secretos.
 </p>
     """, unsafe_allow_html=True)
 
