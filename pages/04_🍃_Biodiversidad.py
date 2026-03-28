@@ -1813,11 +1813,17 @@ with tab_micro:
             c_alum = st.number_input("Sulfato Alum.:", value=450.0, step=10.0)
             c_cloro = st.number_input("Cloro Líquido:", value=1200.0, step=50.0)
 
+        # 🛡️ REPARACIÓN DE VARIABLES: Recuperamos lodo y fósforo del Módulo 6
+        # Si por alguna razón el Módulo 6 no se ha ejecutado, asume 0 para no romper la app
+        lodo_para_ptap = locals().get('lodo_hoy_m3', 0.0)
+        fosforo_para_ptap = locals().get('fosforo_hoy', 0.0)
+
         # MOTOR FINANCIERO-SANITARIO
         vol_dia_l = q_ptap * 86400 * 1000
-        # Factores de crisis derivados del lodo y fósforo calculados en el Módulo 6
-        f_turb = 1.0 + (lodo_hoy_m3 / 10000.0)
-        f_eut = 1.0 + (fos_hoy_kg / 500.0)
+        
+        # Factores de crisis derivados del lodo y fósforo
+        f_turb = 1.0 + (lodo_para_ptap / 10000.0)
+        f_eut = 1.0 + (fosforo_para_ptap / 500.0)
         
         extra_alum = (vol_dia_l * 15.0 * (min(f_turb, 8.0) - 1)) / 1e9
         extra_cloro = (vol_dia_l * 2.0 * (min(f_eut, 4.0) - 1)) / 1e9
