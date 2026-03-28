@@ -2097,10 +2097,18 @@ with tab_micro:
     # ==========================================
     # 3. El Destino de la Tierra (Balance de Masas)
     # ==========================================
-    # 🛡️ MÉTODO SEGURO: Recuperamos las variables. Si por alguna razón no se calcularon antes, asumimos 0.0 para no tumbar la app.
-    suelo_perdido_seguro = locals().get('suelo_perdido_arbol_kg', 0.0)
-    sdr_seguro = locals().get('sdr_pct', 0.0)
-    vel_segura = locals().get('velocidad_escorrentia', 0.0)
+    # 🛡️ MÉTODO SÚPER-SEGURO: Usamos try-except para atrapar las variables directamente en la memoria de Python.
+    try:
+        suelo_perdido_seguro = suelo_perdido_arbol_kg
+    except NameError:
+        suelo_perdido_seguro = 0.0
+        
+    try:
+        sdr_seguro = sdr_pct
+        vel_segura = velocidad_escorrentia
+    except NameError:
+        sdr_seguro = 0.0
+        vel_segura = 0.0
     
     # Cálculos de masa
     sedimento_al_rio_kg = suelo_perdido_seguro * (sdr_seguro / 100.0)
