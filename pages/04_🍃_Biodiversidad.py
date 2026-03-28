@@ -2144,7 +2144,6 @@ with tab_micro:
         """)
 
     # =========================================================================
-# =========================================================================
     # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN, EUTROFIZACIÓN Y DINÁMICA (LA FE)
     # =========================================================================
     st.markdown("---")
@@ -2316,3 +2315,86 @@ with tab_micro:
         
         **La solución real** no es comprar dragas multimillonarias ni aplicar herbicidas en el lago; la solución es volver al **Módulo 1** de este simulador: diseñar árboles con alto Índice de Área Foliar, promover el sotobosque y dejar que la microingeniería de la hoja frene la gota de lluvia antes de que toque el suelo.
         """)
+
+# =========================================================================
+    # 🚰 7. ECONOMÍA DE LA CALIDAD (PLANTA DE POTABILIZACIÓN)
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("#### 🚰 7. Economía de la Calidad: El Costo en la Planta de Tratamiento")
+    st.info("Traduce el daño ecológico a dólares. Calcula el sobrecosto en químicos (coagulantes y cloro) que la empresa de acueducto debe asumir para potabilizar el agua chocolatosa generada por la tormenta de hoy.")
+
+    col_pot1, col_pot2 = st.columns([1, 1.5])
+
+    with col_pot1:
+        st.markdown("**Parámetros de Potabilización (Ej. Planta La Ayurá):**")
+        caudal_tratado_m3s = st.number_input("Caudal Tratado en Planta (m³/s):", min_value=1.0, value=5.0, step=0.5, help="La Ayurá potabiliza aprox 5.0 m³/s de La Fe.")
+        
+        st.markdown("**Costo de Insumos Químicos (USD/Ton):**")
+        c_q1, c_q2 = st.columns(2)
+        costo_alum_usd = c_q1.number_input("Sulfato Alum.:", value=450.0, step=10.0)
+        costo_cloro_usd = c_q2.number_input("Cloro Líquido:", value=1200.0, step=50.0)
+
+    # ==========================================
+    # MOTOR FINANCIERO-SANITARIO
+    # ==========================================
+    # 1. Volumen tratado durante el evento (Asumimos el impacto del evento dura 24h en la planta)
+    volumen_diario_tratado_m3 = caudal_tratado_m3s * 86400
+    volumen_diario_tratado_litros = volumen_diario_tratado_m3 * 1000
+
+    # 2. Dosis Base (Día normal sin tormenta extrema)
+    dosis_base_alum_mg_l = 15.0 # 15 mg por litro
+    dosis_base_cloro_mg_l = 2.0 
+    
+    # 3. Dosis de Crisis (Detonada por el Lodo y el Fósforo calculados en el Mod 6)
+    # Relación empírica: 1 m3 de lodo extra en el embalse sube la turbiedad, requiriendo más coagulante
+    # Asumimos que la avalancha de lodo incrementa la dosis de aluminio proporcionalmente
+    factor_turbiedad = 1.0 + (lodo_evento_hoy_m3 / 10000.0) # Cada 10,000 m3 de lodo doblan la dosis
+    dosis_crisis_alum_mg_l = dosis_base_alum_mg_l * min(factor_turbiedad, 8.0) # Tope máx 8x dosis
+    
+    # El fósforo genera materia orgánica (algas) que consume el cloro
+    factor_eutrofia = 1.0 + (fosforo_total_kg_evento / 500.0) 
+    dosis_crisis_cloro_mg_l = dosis_base_cloro_mg_l * min(factor_eutrofia, 4.0)
+
+    # 4. Cálculo de Toneladas requeridas para el día de la tormenta
+    # Mg a Toneladas = dividir por 1,000,000,000
+    ton_alum_base = (volumen_diario_tratado_litros * dosis_base_alum_mg_l) / 1e9
+    ton_cloro_base = (volumen_diario_tratado_litros * dosis_base_cloro_mg_l) / 1e9
+    
+    ton_alum_crisis = (volumen_diario_tratado_litros * dosis_crisis_alum_mg_l) / 1e9
+    ton_cloro_crisis = (volumen_diario_tratado_litros * dosis_crisis_cloro_mg_l) / 1e9
+    
+    extra_alum_ton = ton_alum_crisis - ton_alum_base
+    extra_cloro_ton = ton_cloro_crisis - ton_cloro_base
+
+    # 5. Sobrecosto Financiero
+    sobrecosto_alum_usd = extra_alum_ton * costo_alum_usd
+    sobrecosto_cloro_usd = extra_cloro_ton * costo_cloro_usd
+    sobrecosto_total_usd = sobrecosto_alum_usd + sobrecosto_cloro_usd
+
+    # ==========================================
+    # RENDERIZADO DEL DIAGNÓSTICO FINANCIERO
+    # ==========================================
+    with col_pot2:
+        st.markdown("##### 💸 La Factura de la Tormenta (Por 1 Día de Operación)")
+        
+        c_f1, c_f2 = st.columns(2)
+        c_f1.metric("Sobrecosto Coagulante (Lodo)", f"${sobrecosto_alum_usd:,.0f} USD", f"+{extra_alum_ton:,.1f} Ton de Aluminio", delta_color="inverse")
+        c_f2.metric("Sobrecosto Desinfectante (Algas)", f"${sobrecosto_cloro_usd:,.0f} USD", f"+{extra_cloro_ton:,.1f} Ton de Cloro", delta_color="inverse")
+        
+        # Alerta de Estrés Operativo
+        if extra_alum_ton > (ton_alum_base * 3):
+            st.error(f"⚠️ **Riesgo de Parada de Planta:** La turbiedad es tan alta que los floculadores colapsarán. El sobrecosto operativo de **${sobrecosto_total_usd:,.0f} USD** por este único día de tormenta equivale a lo que costaría reforestar varias hectáreas de cuenca alta.")
+        elif extra_alum_ton > 0.1:
+            st.warning(f"📉 **Penalidad Financiera:** La degradación de la cuenca obligó a gastar **${sobrecosto_total_usd:,.0f} USD extra** hoy para cumplir con la norma de agua potable.")
+        else:
+            st.success("💧 **Agua Cruda de Alta Calidad:** El bosque amortiguó la tormenta. La planta opera con dosis mínimas base, ahorrando miles de dólares al sistema tarifario.")
+            
+    with st.expander("📚 El Aleph Financiero: ¿Por qué sembrar árboles es el mejor negocio?", expanded=False):
+        st.markdown("""
+        **La miopía gris frente a la infraestructura verde:** Históricamente, las empresas de agua han invertido millones en ampliar las plantas de tratamiento (infraestructura gris) para lidiar con el agua sucia, ignorando el ecosistema que la produce.
+        
+        * **El Lodo:** Alta turbiedad exige dosis masivas de Policloruro de Aluminio (PAC). Además, genera toneladas de "lodos químicos" residuales que la planta debe pagar para desechar en rellenos sanitarios.
+        * **El Fósforo:** Detona crecimientos algales. Las algas tapan los filtros de arena (reduciendo la producción de agua) y reaccionan con el Cloro formando **Trihalometanos (THMs)**, compuestos cancerígenos estrictamente regulados.
+        
+        **Conclusión Matemática:** Conservar la microingeniería de la hoja en la cuenca alta (Módulo 2) no es filantropía ecológica; es la estrategia de reducción de costos operativos (OPEX) más inteligente y rentable para cualquier acueducto moderno.
+        """)        
