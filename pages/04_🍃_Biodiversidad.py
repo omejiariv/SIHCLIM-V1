@@ -1987,7 +1987,7 @@ with tab_micro:
     with col_suelo1:
         st.markdown("**Características de la Tormenta:**")
         volumen_tormenta_mm = st.slider("🌧️ Volumen de Lluvia (mm):", 10.0, 150.0, 50.0, step=5.0)
-        duracion_horas = st.slider("⏱️ Duración del Evento (Horas):", 1.0, 24.0, 2.0, step=0.5, help="A menor tiempo, mayor intensidad y mayor fuerza destructiva de la gota.")
+        duracion_horas = st.slider("⏱️ Duración del Evento (Horas):", 1.0, 24.0, 1.0, step=0.5, help="A menor tiempo, mayor intensidad y mayor fuerza destructiva de la gota.")
         
         st.markdown("**Mecánica del Suelo (Erodabilidad - Factor K):**")
         tipo_suelo = st.selectbox(
@@ -2094,9 +2094,12 @@ with tab_micro:
     sdr_pct = (velocidad_escorrentia / 0.8) * 100
     sdr_pct = min(max(sdr_pct, 0.0), 100.0) # Acotar entre 0 y 100%
     
-    # 3. El Destino de la Tierra (Usando suelo_perdido_arbol_kg del módulo anterior)
-    sedimento_al_rio_kg = suelo_perdido_arbol_kg * (sdr_pct / 100.0)
-    sedimento_retenido_kg = suelo_perdido_arbol_kg - sedimento_al_rio_kg
+    # 3. El Destino de la Tierra
+    # 🛡️ MÉTODO SEGURO: Recuperamos la variable del Mod 4. Si por alguna razón de indentación no la encuentra, asume 0.0 para no tumbar la app.
+    suelo_perdido_seguro = locals().get('suelo_perdido_arbol_kg', 0.0)
+    
+    sedimento_al_rio_kg = suelo_perdido_seguro * (sdr_pct / 100.0)
+    sedimento_retenido_kg = suelo_perdido_seguro - sedimento_al_rio_kg
 
     with col_trans2:
         c_t1, c_t2, c_t3 = st.columns(3)
