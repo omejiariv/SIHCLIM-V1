@@ -535,13 +535,6 @@ eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
 eco_fosforo_kg = memoria_fosforo_kg if activar_tormenta else 0.0
 eco_sobrecosto_usd = memoria_sobrecosto_usd if activar_tormenta else 0.0
 
-if activar_impacto_tormenta and hay_tormenta_en_memoria:
-    c_a1, c_a2, c_a3 = st.columns(3)
-    c_a1.metric("Avalancha de Lodo", f"{eco_lodo_m3:,.0f} m³", "Directo al embalse", delta_color="inverse")
-    c_a2.metric("Inyección de Fósforo", f"{eco_fosforo_kg:,.0f} Kg", "Detonante Eutrofización", delta_color="inverse")
-    c_a3.metric("Sobrecosto Potabilización", f"${eco_sobrecosto_usd:,.0f} USD", "Penalidad tarifaria", delta_color="inverse")
-    st.markdown("---")
-
 # ⚠️ REPARACIÓN: Leemos las variables desde la memoria de la sesión
 if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
 elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
