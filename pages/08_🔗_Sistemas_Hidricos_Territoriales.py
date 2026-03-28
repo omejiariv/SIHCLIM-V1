@@ -505,24 +505,35 @@ with c_inv3:
 # =========================================================================
 
 # 🌪️ CROSS-POLLINATION: INTERCEPCIÓN DEL EVENTO EXTREMO (Desde Pág 04)
-hay_tormenta_en_memoria = st.session_state.get('eco_lodo_m3', 0.0) > 0
-activar_impacto_tormenta = False
+# Leemos los valores originales de la memoria
+memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+memoria_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
+memoria_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
 
-if hay_tormenta_en_memoria:
+activar_tormenta = False
+
+if memoria_lodo_m3 > 0:
     st.markdown("""
-    <div style='background-color: rgba(231, 76, 60, 0.1); border-left: 5px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 15px;'>
+    <div style='background-color: rgba(231, 76, 60, 0.1); border-left: 5px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 20px;'>
         <h4 style='color: #c0392b; margin-top: 0;'>🚨 ALERTA DE SISTEMA: Avalancha en Memoria</h4>
-        El Gemelo Digital ha detectado una tormenta importada desde el Microsistema (Pág 04).
+        El Gemelo Digital ha detectado una tormenta importada desde el Microsistema de Cuenca (Pág 04).
     </div>
     """, unsafe_allow_html=True)
     
-    # El interruptor mágico
-    activar_impacto_tormenta = st.toggle("⛈️ Inyectar Impacto de Tormenta en este Modelo", value=True)
+    # 🎚️ EL INTERRUPTOR MÁGICO (Apagado por defecto como solicitaste)
+    activar_tormenta = st.toggle("⛈️ Inyectar Impacto de Tormenta en este Modelo (Sankey)", value=False)
+    
+    if activar_tormenta:
+        c_a1, c_a2, c_a3 = st.columns(3)
+        c_a1.metric("Avalancha de Lodo", f"{memoria_lodo_m3:,.0f} m³", "Directo al embalse", delta_color="inverse")
+        c_a2.metric("Inyección de Fósforo", f"{memoria_fosforo_kg:,.0f} Kg", "Detonante de Eutrofización", delta_color="inverse")
+        c_a3.metric("Sobrecosto Potabilización", f"${memoria_sobrecosto_usd:,.0f} USD", "Penalidad tarifaria inmediata", delta_color="inverse")
+    st.markdown("---")
 
-# Asignación condicionada al interruptor
-eco_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0) if activar_impacto_tormenta else 0.0
-eco_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0) if activar_impacto_tormenta else 0.0
-eco_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0) if activar_impacto_tormenta else 0.0
+# Asignación condicionada al interruptor (Esto alimenta el resto de la página y el Sankey)
+eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
+eco_fosforo_kg = memoria_fosforo_kg if activar_tormenta else 0.0
+eco_sobrecosto_usd = memoria_sobrecosto_usd if activar_tormenta else 0.0
 
 if activar_impacto_tormenta and hay_tormenta_en_memoria:
     c_a1, c_a2, c_a3 = st.columns(3)
@@ -1189,7 +1200,7 @@ with contenedor_sankey.container():
                 idx += 1
 
         # 🌪️ INYECCIÓN DEL LODO AL SANKEY (Visualización del Desastre)
-        eco_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+        # 🚨 Ya no leemos de session_state, usamos la variable controlada por el Toggle
         if eco_lodo_m3 > 0:
             # Convertimos la avalancha de lodo a un caudal aparente (m³/s) asumiendo un pico destructivo de 12 horas
             lodo_m3s = eco_lodo_m3 / (12 * 3600)
@@ -1231,7 +1242,10 @@ with contenedor_sankey.container():
             value.append(datos_nodo["evaporacion_m3s"])
             color.append("rgba(189, 195, 199, 0.3)")
 
+        # 🪄 Limpieza de Tooltips de Plotly (Formatos más limpios)
         fig_sankey = go.Figure(data=[go.Sankey(
+            valueformat=".2f", # Formato de 2 decimales para el tooltip
+            valuesuffix=" m³/s", # Añade la unidad al pasar el ratón
             textfont=dict(size=15, color="black", family="Arial Black"), 
             node=dict(pad=20, thickness=30, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
             link=dict(source=source, target=target, value=value, color=color)
