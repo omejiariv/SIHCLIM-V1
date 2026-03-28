@@ -2513,3 +2513,21 @@ with tab_micro:
         ### 💰 La Economía de la Porosidad
         Construir un embalse cuesta millones de dólares por cada metro cúbico de almacenamiento. La cuenca Espíritu Santo nos ofrece **millones de metros cúbicos de almacenamiento geológico a costo cero**. La única condición de la naturaleza para usar este "tanque gigante" es mantener el bosque en la superficie para que el agua pueda entrar.
         """)
+
+# =========================================================================
+    # 🌐 9. CROSS-POLLINATION: EXPORTACIÓN AL GEMELO DIGITAL (ALEPH)
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("#### 🌐 9. Conexión al Gemelo Digital (Cross-Pollination)")
+    st.info("El ciclo se cierra aquí. Exporta el impacto físico y químico de esta tormenta hacia el simulador de Sistemas Hídricos (Pág 08) para ver cómo afecta el abastecimiento de toda la región.")
+
+    if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08)", type="primary", use_container_width=True):
+        # Inyectamos las variables calculadas en la memoria global de la sesión
+        # Usamos .get() o fallback a 0 por si alguna variable no se calculó por error de interfaz
+        st.session_state['eco_lodo_m3'] = float(lodo_evento_hoy_m3) if 'lodo_evento_hoy_m3' in locals() else 0.0
+        st.session_state['eco_fosforo_kg'] = float(fosforo_total_kg_evento) if 'fosforo_total_kg_evento' in locals() else 0.0
+        st.session_state['eco_sobrecosto_usd'] = float(sobrecosto_total_usd) if 'sobrecosto_total_usd' in locals() else 0.0
+        st.session_state['eco_flujo_base_m3s'] = float(caudal_base_m3s) if 'caudal_base_m3s' in locals() else 0.0
+        st.session_state['eco_escorrentia_m3'] = float(volumen_escorrentia_superficial_m3) if 'volumen_escorrentia_superficial_m3' in locals() else 0.0
+
+        st.success("🧠 **¡Sincronización Exitosa!** El lodo, los nutrientes y el flujo base ahora viajan por el Aleph. Ve a la **Página 08 (Sistemas Hídricos)** para ver cómo esta tormenta tiñe el diagrama de Sankey y altera los índices de seguridad hídrica.")
