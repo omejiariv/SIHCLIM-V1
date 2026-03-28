@@ -142,6 +142,26 @@ Evalúa cómo los embalses integran las cuencas propias con los trasvases artifi
 # 🪄 SOLUCIÓN AL ESPACIO EN BLANCO: El contenedor del Sankey se ancla directamente aquí
 contenedor_sankey = st.empty()
 
+# 🎨 ESTILOS PREMIUM (HOMOLOGACIÓN VISUAL DE EXPANSORES)
+st.markdown("""
+<style>
+/* Tipografía elegante para los títulos de todos los expansores */
+div[data-testid="stExpander"] details summary p {
+    font-family: 'Georgia', serif !important;
+    font-size: 1.15em !important;
+    color: #2c3e50 !important;
+    font-weight: 600 !important;
+}
+/* Bordes, sombras sutiles y fondo para las cajas */
+div[data-testid="stExpander"] {
+    border: 1px solid #d3c0a3 !important;
+    border-radius: 6px !important;
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.04) !important;
+    background-color: #ffffff;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # =========================================================================
 # 🖼️ LA OBRA MAESTRA: EL ALEPH DEL AGUA
 # =========================================================================
@@ -376,6 +396,22 @@ with st.expander(f"💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}", ex
 # 4. TABLERO WRI: NEUTRALIDAD, RESILIENCIA Y CALIDAD
 # =========================================================================
 with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expanded=False):
+
+# 🌊 ALERTA DINÁMICA ENSO (Sincronización con el Slider Lateral)
+    if factor_p < 1.0:
+        # Calculamos cuántos meses de reserva le quedan al sistema si el consumo supera la oferta mermada
+        if consumo_anual_m3 > oferta_anual_m3:
+            meses_reserva = (capacidad_embalse_m3) / ((consumo_anual_m3 - oferta_anual_m3) / 12)
+        else:
+            meses_reserva = 99.0
+            
+        if meses_reserva < 12:
+            st.markdown(f"""
+            <div style='background-color: #fdf2e9; border-left: 5px solid #e67e22; padding: 15px; border-radius: 5px; margin-bottom: 15px;'>
+                <h5 style='color: #d35400; margin-top: 0;'>⚠️ Impacto '{escenario_enso}' en Seguridad Hídrica</h5>
+                La reducción de lluvias está forzando al sistema a consumir sus reservas estructurales. Si esta anomalía térmica se mantiene, Medellín y el Valle de Aburrá entrarían en <b>riesgo de racionamiento en {meses_reserva:.1f} meses</b>.
+            </div>
+            """, unsafe_allow_html=True)
     anio_analisis = st.slider("Seleccione el Año de Evaluación (Actual o Futuro):", min_value=2024, max_value=2050, value=2025, step=1)
 
     delta_anios = anio_analisis - 2025
@@ -648,6 +684,62 @@ with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO
                 c_op_c3.metric("🌿 SbN / Humedales", f"{ton_sbn:,.0f} Ton", f"${inv_sbn:,.0f} Millones")
                 c_op_c3.caption(f"**Eficiencia:** ${costo_kg_sbn:,.0f} COP/Kg DBO")
                 c_op_c4.metric("💰 INVERSIÓN (CALIDAD)", f"${inv_total_c:,.0f} M", "Millones COP", delta_color="off")
+
+# -------------------------------------------------------------------------
+# PORTAFOLIO 3: EL ROI DE LA NATURALEZA (AHORRO EN POTABILIZACIÓN Y VIDA ÚTIL)
+# -------------------------------------------------------------------------
+with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraestructura Verde)", expanded=False):
+    st.markdown("Convierte la ecología en finanzas. Evalúa el retorno de inversión de proteger el bosque frente a los sobrecostos de potabilización y el dragado de embalses (Importa la física de la Pág 04).")
+    
+    # Leemos el impacto base de una tormenta extrema desde la memoria
+    lodo_tormenta_m3 = st.session_state.get('eco_lodo_m3', 41256.0) 
+    sobrecosto_tormenta_usd = st.session_state.get('eco_sobrecosto_usd', 85000.0)
+    
+    c_roi1, c_roi2 = st.columns([1, 2.5])
+    
+    with c_roi1:
+        st.markdown("**Parámetros del Proyecto:**")
+        ha_proteger = st.slider("Hectáreas a Proteger/Restaurar:", 100.0, 5000.0, 500.0, 50.0)
+        costo_ha_usd = st.number_input("Costo de Restauración (USD/ha):", value=2500.0, step=100.0)
+        eventos_ano = st.slider("Tormentas Severas al año:", 1, 10, 3)
+        horizonte_roi = st.slider("Años de evaluación:", 5, 30, 10)
+        
+    with c_roi2:
+        inversion_inicial_usd = ha_proteger * costo_ha_usd
+        
+        # Hipótesis conservadora: Cada hectárea protegida reduce un 0.05% el impacto de la tormenta (hasta un máximo del 85%)
+        mitigacion_pct = min((ha_proteger * 0.05), 85.0) / 100.0
+        
+        ahorro_usd_evento = sobrecosto_tormenta_usd * mitigacion_pct
+        ahorro_anual_usd = ahorro_usd_evento * eventos_ano
+        ahorro_acumulado_usd = ahorro_anual_usd * horizonte_roi
+        
+        # Retorno de Inversión (ROI)
+        roi_pct = ((ahorro_acumulado_usd - inversion_inicial_usd) / inversion_inicial_usd) * 100 if inversion_inicial_usd > 0 else 0
+        
+        # Ahorro en volumen útil (Lodo evitado)
+        lodo_evitado_m3_ano = (lodo_tormenta_m3 * mitigacion_pct) * eventos_ano
+        lodo_evitado_acumulado_m3 = lodo_evitado_m3_ano * horizonte_roi
+        
+        st.markdown("📊 **Caso de Negocio Financiero (Business Case):**")
+        c_r1, c_r2, c_r3 = st.columns(3)
+        c_r1.metric("Inversión Inicial (CAPEX)", f"${inversion_inicial_usd/1e6:,.2f} M USD")
+        c_r2.metric(f"Ahorro Químicos ({horizonte_roi} años)", f"${ahorro_acumulado_usd/1e6:,.2f} M USD", f"OPEX evitado", delta_color="normal")
+        c_r3.metric("R.O.I. Financiero", f"{roi_pct:,.0f}%", "Retorno sobre la inversión")
+        
+        st.markdown("---")
+        st.markdown("🛡️ **Protección de Infraestructura Gris (El Embalse):**")
+        c_r4, c_r5 = st.columns(2)
+        c_r4.metric("Lodo Evitado en el Embalse", f"{lodo_evitado_acumulado_m3:,.0f} m³", f"En {horizonte_roi} años", delta_color="normal")
+        
+        # Asumimos que La Fe pierde 1 año de vida por cada 400,000 m3 de lodo ingresado
+        anos_vida_recuperados = lodo_evitado_acumulado_m3 / 400000.0
+        c_r5.metric("Años de Vida Útil Salvados", f"+{anos_vida_recuperados:,.1f} Años", "Atraso del colapso estructural")
+        
+        if roi_pct > 0:
+            st.success(f"🌱 **Viabilidad Aprobada:** La infraestructura verde se paga sola. Proteger **{ha_proteger:,.0f} ha** recupera la inversión inicial y genera una ganancia neta de **${(ahorro_acumulado_usd - inversion_inicial_usd)/1e6:,.2f} M USD** en {horizonte_roi} años, solo contando el ahorro en químicos.")
+        else:
+            st.warning("⚠️ El área a proteger no genera suficiente ahorro en químicos para justificar la inversión en este horizonte de tiempo. Aumenta las hectáreas o el plazo del proyecto.")                
 
 # =========================================================================
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
