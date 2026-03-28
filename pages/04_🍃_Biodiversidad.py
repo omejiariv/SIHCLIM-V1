@@ -1949,99 +1949,76 @@ with tab_micro:
         Multiplicando el Área Foliar por la microarquitectura de la hoja y la física balística, demostramos matemáticamente que talar un árbol centenario no es solo perder madera; es **apagar una máquina perfecta de regulación hídrica y disipación de energía** que ninguna tecnología humana puede replicar con tal eficiencia.
         """)
 
-    # =========================================================================
-    # 🟤 4. MÓDULO DE EROSIVIDAD Y SPLASH DETACHMENT (SUELO)
+# =========================================================================
+    # 🟤 4. MÓDULO DE FÍSICA DE SUELOS: EROSIVIDAD (SPLASH DETACHMENT)
     # =========================================================================
     st.markdown("---")
+    
+    # Tooltip CSS para el Módulo 4
+    st.markdown("""
+    <style>
+    .tooltip-mod4 { position: relative; display: inline-block; color: #e67e22; font-weight: bold; cursor: help; border-bottom: 2px dotted #e67e22; }
+    .tooltip-mod4 .tooltiptext { visibility: hidden; width: 320px; background-color: #2c3e50; color: #fff; text-align: left; border-radius: 6px; padding: 15px; position: absolute; z-index: 50; top: 120%; left: 50%; margin-left: -160px; opacity: 0; transition: opacity 0.3s; font-size: 0.85em; font-weight: normal;}
+    .tooltip-mod4:hover .tooltiptext { visibility: visible; opacity: 1; }
+    </style>
+    """, unsafe_allow_html=True)
+    
     st.markdown("#### 🟤 4. Erosividad y Desprendimiento de Suelo (Splash Detachment)")
-    st.info("Escala el impacto balístico de una gota a una tormenta completa sobre 1 metro cuadrado. Calcula cuántos kilogramos de tierra son arrancados físicamente por el bombardeo del agua (Modelo MMF).")
+    st.markdown("""
+    <div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px;'>
+        Escala el impacto balístico. Define el volumen y la duración del evento meteorológico. Esta tierra arrancada es el primer paso del <span class="tooltip-mod4">Efecto Cascada Territorial<span class="tooltiptext">🧠 <b>Conexión Gemelo Digital:</b> Los kilogramos de tierra arrancados aquí se convertirán en toneladas de Lodo en el Módulo 6, y viajarán directamente a la <b>Página 08 (Sistemas Hídricos)</b> asfixiando el embalse en el Diagrama de Sankey y elevando la tarifa del Acueducto.</span></span>.
+    </div>
+    """, unsafe_allow_html=True)
 
     col_suelo1, col_suelo2 = st.columns([1, 1.5])
 
     with col_suelo1:
-        evento_lluvia_mm = st.slider("🌧️ Volumen de la Tormenta (mm):", 10, 150, 50, 5, help="50 mm equivale a 50 litros de agua por cada metro cuadrado.")
+        st.markdown("**Características de la Tormenta:**")
+        volumen_tormenta_mm = st.slider("🌧️ Volumen de Lluvia (mm):", 10.0, 150.0, 50.0, step=5.0)
+        duracion_horas = st.slider("⏱️ Duración del Evento (Horas):", 1.0, 24.0, 2.0, step=0.5, help="A menor tiempo, mayor intensidad y mayor fuerza destructiva de la gota.")
         
-        # Factor K (Erodabilidad del Suelo)
+        st.markdown("**Mecánica del Suelo (Erodabilidad - Factor K):**")
         tipo_suelo = st.selectbox(
-            "Mecánica del Suelo (Erodabilidad - Factor K):",
-            [
-                "Suelo Arenoso/Franco-Arenoso (Alta vulnerabilidad - K=0.05)",
-                "Franco-Limoso / Cenizas Volcánicas (Media - K=0.03)",
-                "Arcilloso Estructural (Baja vulnerabilidad - K=0.015)"
-            ], index=1
+            "Selecciona la geología base:",
+            ["Arena Fina / Suelo Desnudo (Alta - K=0.06)", 
+             "Franco-Limoso / Cenizas Volcánicas (Media - K=0.03)", 
+             "Arcilloso Compacto (Baja - K=0.01)"], index=1
         )
-        
-        # Extracción del factor K según la selección
-        if "0.05" in tipo_suelo:
-            k_factor = 0.05
-        elif "0.03" in tipo_suelo:
-            k_factor = 0.03
-        else:
-            k_factor = 0.015
+        k_factor = 0.06 if "Alta" in tipo_suelo else 0.03 if "Media" in tipo_suelo else 0.01
 
-    # ==========================================
-    # MOTOR FÍSICO DE EROSIÓN (MMF Simplificado)
-    # ==========================================
-    # 1. Volumen de 1 gota en mm3 (Esfera = 4/3 * pi * r^3)
-    vol_gota_nube_mm3 = (4/3) * math.pi * ((diametro_lluvia / 2)**3)
-    vol_gota_arbol_mm3 = (4/3) * math.pi * ((diametro_goteo / 2)**3)
-
-    # 2. Cantidad de gotas por metro cuadrado para alcanzar los mm de la tormenta
-    # 1 mm de lluvia en 1 m2 = 1,000,000 mm3
-    vol_tormenta_m2_mm3 = evento_lluvia_mm * 1_000_000
+    # MOTOR FÍSICO: Energía Cinética (Ecuación Universal de Pérdida de Suelo - RUSLE adaptada)
+    # Intensidad = Volumen / Tiempo
+    intensidad_mm_h = volumen_tormenta_mm / duracion_horas
     
-    # Prevenir divisiones por cero
-    if vol_gota_nube_mm3 > 0 and vol_gota_arbol_mm3 > 0:
-        num_gotas_nube = vol_tormenta_m2_mm3 / vol_gota_nube_mm3
-        num_gotas_arbol = vol_tormenta_m2_mm3 / vol_gota_arbol_mm3
-    else:
-        num_gotas_nube = 0
-        num_gotas_arbol = 0
+    # Fórmula empírica de Energía Cinética (MJ/ha*mm) en función de la intensidad
+    # Si la intensidad es mayor a 76 mm/h, la energía se estabiliza.
+    int_efectiva = min(intensidad_mm_h, 76.0)
+    energia_especifica = 0.283 * (1 - 0.52 * np.exp(-0.042 * int_efectiva))
+    
+    # Energía total del evento (MJ/ha)
+    energia_cinetica_cielo_abierto = energia_especifica * volumen_tormenta_mm
 
-    # 3. Energía Cinética Total (Joules por m2). ek_lluvia estaba en Joules.
-    ke_total_nube = num_gotas_nube * ek_lluvia 
-    ke_total_arbol = num_gotas_arbol * ek_goteo 
+    # El bosque nativo (con 3 estratos) absorbe aprox el 60% de la energía cinética de una lluvia intensa
+    energia_cinetica_bosque = energia_cinetica_cielo_abierto * 0.40
 
-    # 4. Desprendimiento de Suelo (Splash Detachment en Kg / m2)
-    # Ds = K * KE
-    suelo_perdido_nube_kg = k_factor * ke_total_nube
-    suelo_perdido_arbol_kg = k_factor * ke_total_arbol
+    # Desprendimiento de suelo en Kg/m2 (Splash Detachment = K * KE)
+    # Factor de conversión ajustado para métricas visuales en m2
+    suelo_arrancado_cielo_abierto = k_factor * energia_cinetica_cielo_abierto * 10
+    suelo_arrancado_bosque = k_factor * energia_cinetica_bosque * 10
 
-    # ==========================================
-    # RENDERIZADO DEL IMPACTO
-    # ==========================================
     with col_suelo2:
-        c_e1, c_e2 = st.columns(2)
-        c_e1.metric("Energía Tormenta (Cielo Abierto)", f"{ke_total_nube/1000:,.1f} kJ/m²", "Fuerza destructiva")
+        c_e1, c_e2, c_e3 = st.columns(3)
+        c_e1.metric("Intensidad", f"{intensidad_mm_h:.1f} mm/h", "Poder destructivo", delta_color="inverse")
+        c_e2.metric("Energía Tormenta (Cielo Abierto)", f"{energia_cinetica_cielo_abierto:.1f} MJ/ha", "Suelo Desnudo", delta_color="inverse")
+        c_e3.metric("Energía Tormenta (Bajo Dosel)", f"{energia_cinetica_bosque:.1f} MJ/ha", "-60% Amortiguación", delta_color="normal")
         
-        delta_ke = ((ke_total_arbol - ke_total_nube) / ke_total_nube * 100) if ke_total_nube > 0 else 0
-        c_e2.metric("Energía Tormenta (Bajo Dosel)", f"{ke_total_arbol/1000:,.1f} kJ/m²", f"{delta_ke:.1f}%", delta_color="inverse")
-
-        # Gráfico de Suelo Perdido
-        fig_erosion = go.Figure()
-        fig_erosion.add_trace(go.Bar(
-            x=["Suelo Arrancado por la Tormenta (Kg/m²)"],
-            y=[suelo_perdido_nube_kg],
-            name="Cielo Abierto (Pasto / Suelo desnudo)",
-            marker_color="#e67e22",
-            text=f"{suelo_perdido_nube_kg:.2f} Kg", textposition='auto'
-        ))
-        fig_erosion.add_trace(go.Bar(
-            x=["Suelo Arrancado por la Tormenta (Kg/m²)"],
-            y=[suelo_perdido_arbol_kg],
-            name="Bajo el Dosel Forestal",
-            marker_color="#27ae60",
-            text=f"{suelo_perdido_arbol_kg:.2f} Kg", textposition='auto'
-        ))
-        
-        fig_erosion.update_layout(
-            title=f"Desprendimiento de Suelo (Splash Detachment)",
-            height=280, margin=dict(l=20, r=20, t=40, b=20),
-            yaxis_title="Kilogramos de tierra (Kg/m²)",
-            barmode='group',
-            plot_bgcolor='rgba(0,0,0,0)'
-        )
-        st.plotly_chart(fig_erosion, use_container_width=True)
+        # Gráfico de barras
+        fig_suelo = go.Figure(data=[
+            go.Bar(name='Cielo Abierto (Pasto / Suelo desnudo)', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_arrancado_cielo_abierto], marker_color='#e67e22', text=[f"{suelo_arrancado_cielo_abierto:.1f} Kg"], textposition='auto'),
+            go.Bar(name='Bajo el Dosel Forestal', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_arrancado_bosque], marker_color='#27ae60', text=[f"{suelo_arrancado_bosque:.1f} Kg"], textposition='auto')
+        ])
+        fig_suelo.update_layout(barmode='group', height=300, margin=dict(l=10, r=10, t=30, b=10), yaxis_title="Kilogramos de tierra (Kg/m²)")
+        st.plotly_chart(fig_suelo, use_container_width=True)
 
     # El Aleph del Suelo
     with st.expander("📚 El Aleph del Suelo: Física de la Erosión y Modelo MMF", expanded=False):
