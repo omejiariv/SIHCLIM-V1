@@ -1998,25 +1998,35 @@ with tab_micro:
         )
         k_factor = 0.06 if "Alta" in tipo_suelo else 0.03 if "Media" in tipo_suelo else 0.01
 
-    # MOTOR FÍSICO: Energía Cinética (Ecuación Universal de Pérdida de Suelo - RUSLE adaptada)
-    # Intensidad = Volumen / Tiempo
-    intensidad_mm_h = volumen_tormenta_mm / duracion_horas
-    
-    # Fórmula empírica de Energía Cinética (MJ/ha*mm) en función de la intensidad
-    # Si la intensidad es mayor a 76 mm/h, la energía se estabiliza.
-    int_efectiva = min(intensidad_mm_h, 76.0)
-    energia_especifica = 0.283 * (1 - 0.52 * np.exp(-0.042 * int_efectiva))
-    
-    # Energía total del evento (MJ/ha)
-    energia_cinetica_cielo_abierto = energia_especifica * volumen_tormenta_mm
+    # ==========================================
+    # MOTOR FÍSICO DE EROSIÓN (Dinámica de Gotas)
+    # ==========================================
+    # 1. Volumen de 1 gota en mm³ (Esfera = 4/3 * pi * r³)
+    vol_gota_nube_mm3 = (4/3) * math.pi * ((diametro_lluvia / 2)**3)
+    vol_gota_arbol_mm3 = (4/3) * math.pi * ((diametro_goteo / 2)**3)
 
-    # El bosque nativo (con 3 estratos) absorbe aprox el 60% de la energía cinética de una lluvia intensa
-    energia_cinetica_bosque = energia_cinetica_cielo_abierto * 0.40
+    # 2. Cantidad de gotas por metro cuadrado para alcanzar los mm de la tormenta
+    # 1 mm de lluvia en 1 m² = 1,000,000 mm³
+    vol_tormenta_m2_mm3 = evento_lluvia_mm * 1_000_000
+    
+    # Prevenir divisiones por cero
+    if vol_gota_nube_mm3 > 0 and vol_gota_arbol_mm3 > 0:
+        num_gotas_nube = vol_tormenta_m2_mm3 / vol_gota_nube_mm3
+        num_gotas_arbol = vol_tormenta_m2_mm3 / vol_gota_arbol_mm3
+    else:
+        num_gotas_nube = 0
+        num_gotas_arbol = 0
 
-    # Desprendimiento de suelo en Kg/m2 (Splash Detachment = K * KE)
-    # Factor de conversión ajustado para métricas visuales en m2
-    suelo_arrancado_cielo_abierto = k_factor * energia_cinetica_cielo_abierto * 10
-    suelo_arrancado_bosque = k_factor * energia_cinetica_bosque * 10
+    # 3. Energía Cinética Total (Joules por m²)
+    ke_total_nube = num_gotas_nube * ek_lluvia 
+    ke_total_arbol = num_gotas_arbol * ek_goteo 
+
+    # 4. Desprendimiento de Suelo (Splash Detachment en Kg / m²)
+    suelo_perdido_nube_kg = k_factor * ke_total_nube
+    suelo_perdido_arbol_kg = k_factor * ke_total_arbol
+
+    # 💾 GUARDIÁN DE MEMORIA ABSOLUTA: Puente de titanio hacia el Módulo 5
+    st.session_state['memoria_suelo_arrancado'] = suelo_perdido_arbol_kg
 
     with col_suelo2:
         c_e1, c_e2, c_e3 = st.columns(3)
@@ -2097,12 +2107,9 @@ with tab_micro:
     # ==========================================
     # 3. El Destino de la Tierra (Balance de Masas)
     # ==========================================
-    # 🛡️ MÉTODO SÚPER-SEGURO: Usamos try-except para atrapar las variables directamente en la memoria de Python.
-    try:
-        suelo_perdido_seguro = suelo_perdido_arbol_kg
-    except NameError:
-        suelo_perdido_seguro = 0.0
-        
+    # 🛡️ MÉTODO INFALIBLE: Leemos directamente de la memoria global
+    suelo_perdido_seguro = st.session_state.get('memoria_suelo_arrancado', 0.0)
+    
     try:
         sdr_seguro = sdr_pct
         vel_segura = velocidad_escorrentia
@@ -2120,7 +2127,7 @@ with tab_micro:
     with col_trans2:
         c_t1, c_t2, c_t3 = st.columns(3)
         c_t1.metric("Velocidad del Flujo", f"{vel_segura:.2f} m/s", "Ecuación de Manning", delta_color="off")
-        c_t2.metric("Sedimento Exportado al Río", f"{sedimento_al_rio_kg:.2f} Kg/m²", f"{sdr_seguro:.1f}% del lodo generado", delta_color="inverse")
+        c_t2.metric("Sedimento Exportado al Río", f"{sedimento_al_rio_kg:.2f} Kg/m²", f"{sdr_seguro:.1f}% del lodo", delta_color="inverse")
         c_t3.metric("Filtro Biológico", f"{sedimento_retenido_kg:.2f} Kg/m²", "Retenido en el bosque", delta_color="normal")
         
         # Gráfico Waterfall del Destino Final
@@ -2133,9 +2140,9 @@ with tab_micro:
             text = [f"{suelo_perdido_seguro:.2f} Kg", f"-{sedimento_retenido_kg:.2f} Kg", f"<b>{sedimento_al_rio_kg:.2f} Kg</b>"],
             hovertemplate="<b>%{x}</b><br>Masa: %{y:.2f} Kg<extra></extra>",
             connector = {"line": {"color":"rgba(0,0,0,0.2)", "dash":"dot"}},
-            decreasing = {"marker": {"color":"#2ecc71"}}, # Verde para lo retenido (Filtro positivo)
+            decreasing = {"marker": {"color":"#2ecc71"}}, 
             increasing = {"marker": {"color":"#e74c3c"}},
-            totals = {"marker": {"color":"#8e44ad"}}      # Morado para el lodo final que llega al embalse
+            totals = {"marker": {"color":"#8e44ad"}}      
         ))
         
         fig_viaje.update_layout(
