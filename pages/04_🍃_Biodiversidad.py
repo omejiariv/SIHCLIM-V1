@@ -1629,7 +1629,7 @@ with tab_micro:
             value="Medio (60° - Copa Redonda)"
         )
 
-with col_hoja:
+    with col_hoja:
         st.markdown("#### 🍃 2. Microingeniería Foliar")
         
         textura = st.radio("Textura de la Epidermis:", 
