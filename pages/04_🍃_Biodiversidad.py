@@ -1556,7 +1556,7 @@ with tab_micro:
     """, unsafe_allow_html=True)
     
     st.subheader("🔬 Efecto Cascada: Del Microscopio Foliar a la Planta de Tratamiento")
-    st.info("Simulador de ciclo completo (Source-to-Tap). Laboratorio de la ECOmplejidad. Modela cómo la alteración de un componente biológico microscópico (la hoja) desencadena una avalancha de impactos físicos, químicos y financieros.")
+    st.info("Simulador de ciclo completo (Source-to-Tap). Laboratorio de la ECOmplejidad. Modela cómo la alteración de un componente biológico microscópico desencadena una avalancha de impactos físicos, químicos y financieros.")
 
     # --- 1. GENERADOR FRACTAL ---
     with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
@@ -1648,7 +1648,10 @@ with tab_micro:
         if red_ek > 0: c_b3.metric("Protección", f"-{red_ek:.1f}%", "Energía disipada", delta_color="normal")
         else: c_b3.metric("Riesgo", f"+{abs(red_ek):.1f}%", "Impacto aumentado", delta_color="inverse")
         if st.toggle("📚 Mostrar El Milagro de la Hoja: Física y Ecuaciones"):
-            st.markdown("""### 🌿 La Arquitectura Fractal y la Alometría... (Aquí va tu texto original del Aleph del Árbol completo)""")
+            st.markdown("""
+            **La Arquitectura Fractal:** El área foliar crece exponencialmente con el diámetro.
+            **La Balística:** El árbol reduce la energía de la lluvia a cero, y el agua vuelve a caer ganando nueva velocidad.
+            """)
 
     # --- 4. EROSIVIDAD ---
     with st.expander("🟤 4. Erosividad y Desprendimiento de Suelo (Splash Detachment)", expanded=False):
@@ -1677,16 +1680,12 @@ with tab_micro:
             fig_s.update_layout(barmode='group', height=300, margin=dict(t=30, b=0, l=10, r=10), plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.2))
             st.plotly_chart(fig_s, use_container_width=True)
         if st.toggle("📚 Mostrar El Aleph del Suelo: MMF"):
-            st.markdown("""### 🟤 La Física de la Tierra... (Aquí va tu texto original del Aleph del Suelo completo)""")
-
-            **Mecánica del Impacto (Splash Detachment):** Cuando la Energía Cinética de la lluvia supera la cohesión del suelo, las partículas finas explotan taponando los poros, creando un sello impermeable que genera avalanchas.
-            
-            **El Modelo MMF:** $D_s = K \\cdot KE_{total}$
-            
-            **La Paradoja del Dosel Alto:** Si el bosque carece de sotobosque y los árboles tienen hojas cóncavas a gran altura, las "súper-gotas" adquieren energía masiva, causando **mayor erosión bajo el bosque que a cielo abierto**.
+            st.markdown("""
+            **Mecánica del Impacto (Splash Detachment):** Cuando la Energía Cinética de la lluvia supera la cohesión del suelo, las partículas finas explotan taponando los poros.
+            **El Modelo MMF:** $D_s = K \cdot KE_{total}$.
             """)
             
-# =========================================================================
+    # =========================================================================
     # 🌊 5. MÓDULO DE TRANSPORTE DE SEDIMENTOS (Ecuación de Manning)
     # =========================================================================
     with st.expander("🌊 5. El Viaje del Lodo: Transporte de Sedimentos", expanded=False):
@@ -1712,6 +1711,7 @@ with tab_micro:
         velocidad_escorrentia = (1.0 / manning_n) * (R ** (2/3)) * math.sqrt(S)
         sdr_pct = min(max((velocidad_escorrentia / 0.8) * 100, 0.0), 100.0)
         
+        # 🛡️ Recuperación segura de la masa arrancada en el Módulo 4
         suelo_perdido_seguro = st.session_state.get('memoria_suelo_arrancado', 0.0)
         sedimento_al_rio_kg = suelo_perdido_seguro * (sdr_pct / 100.0)
         sedimento_retenido_kg = suelo_perdido_seguro - sedimento_al_rio_kg
@@ -1728,16 +1728,21 @@ with tab_micro:
                 y = [suelo_perdido_seguro, -sedimento_retenido_kg, sedimento_al_rio_kg],
                 text = [f"{suelo_perdido_seguro:.2f} Kg", f"-{sedimento_retenido_kg:.2f} Kg", f"<b>{sedimento_al_rio_kg:.2f} Kg</b>"],
                 textposition = "outside", connector = {"line": {"color":"rgba(0,0,0,0.2)", "dash":"dot"}},
-                decreasing = {"marker": {"color":"#2ecc71"}}, increasing = {"marker": {"color":"#e74c3c"}}, totals = {"marker": {"color":"#8e44ad"}}
+                decreasing = {"marker": {"color":"#2ecc71"}}, 
+                increasing = {"marker": {"color":"#e74c3c"}}, 
+                totals = {"marker": {"color":"#8e44ad"}}
             ))
-            fig_viaje.update_layout(title="Balance de Transporte", height=300, margin=dict(l=20, r=20, t=40, b=30), plot_bgcolor='rgba(0,0,0,0)')
+            fig_viaje.update_layout(title="Balance de Transporte", height=320, margin=dict(l=20, r=20, t=40, b=30), plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_viaje, use_container_width=True)
             
         if st.toggle("📚 Revelar El Aleph de la Hidráulica: Rugosidad y Gravedad"):
             st.markdown("""
             ### 🌊 La Ecuación de Manning y la Ley de la Gravedad
-            Una vez que la tierra ha sido pulverizada por la lluvia, comienza su descenso hacia los ríos. $V = \\frac{1}{n} R^{2/3} S^{1/2}$.
-            Al añadir hojarasca, helechos y raíces, el coeficiente de fricción ($n$) aumenta, reduciendo la velocidad por debajo de la *velocidad crítica de arrastre*.
+            Una vez que la tierra ha sido pulverizada por la lluvia, comienza su descenso hacia los ríos. El ingeniero Robert Manning (1889) dedujo cómo calcular la velocidad de este flujo superficial:
+            $$V = \\frac{1}{n} R^{2/3} S^{1/2}$$
+            Donde $S$ es la fuerza de la gravedad (pendiente) y $n$ es la salvación de la cuenca: **La Rugosidad**.
+            
+            **La Inteligencia del Sotobosque:** Al añadir hojarasca, helechos y raíces superficiales, el coeficiente de fricción ($n$) aumenta. Esto reduce la velocidad del agua por debajo de la *velocidad crítica de arrastre*, obligando al lodo a decantar. **El agua llega al río, pero la montaña se queda en su sitio.**
             """)
 
     # =========================================================================
@@ -1745,174 +1750,166 @@ with tab_micro:
     # =========================================================================
     with st.expander("🛑 6. Limnología Integral: Uniformismo y Catastrofismo en La Fe", expanded=False):
         st.markdown("""<style>.limno-tooltip { position: relative; display: inline-block; color: #2980b9; font-weight: 600; cursor: help; border-bottom: 1px dashed #2980b9; } .limno-tooltip .tooltiptext { visibility: hidden; width: 320px; background-color: #fdfaf2; color: #2c3e50; text-align: left; border: 1px solid #d3c0a3; border-radius: 5px; padding: 15px; position: absolute; z-index: 50; bottom: 125%; left: 50%; margin-left: -160px; opacity: 0; transition: opacity 0.4s; font-size: 0.9em; font-family: 'Georgia', serif; box-shadow: 4px 4px 12px rgba(0,0,0,0.3); line-height: 1.4; } .limno-tooltip:hover .tooltiptext { visibility: visible; opacity: 1; } .tit-limno { font-weight: bold; font-size: 1.1em; color: #8e44ad; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}</style>""", unsafe_allow_html=True)
-        st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>Modelo dinámico. Integra el <b>Uniformismo</b> y el <b>Catastrofismo</b> para calcular el colapso del <span class='limno-tooltip'>Volumen Muerto<span class='tooltiptext'><div class='tit-limno'>Fecha de Caducidad</div>Espacio diseñado para sedimentos.</span></span>.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>Modelo dinámico. Integra el <b>Uniformismo</b> (colmatación rutinaria) y el <b>Catastrofismo</b> (avalanchas extremas) para calcular el colapso del <span class='limno-tooltip'>Volumen Muerto<span class='tooltiptext'><div class='tit-limno'>Fecha de Caducidad</div>Espacio en el fondo diseñado específicamente para sedimentos.</span></span>.</div>", unsafe_allow_html=True)
 
         col_lim1, col_lim2 = st.columns([1, 1.5])
         with col_lim1:
             if st.toggle("📍 Ver Contexto: Cuenca Espíritu Santo"):
-                st.write("Área total de captación: **173 km²**. Afluente vital para La Fe.")
+                st.write("Área total de captación: **173 km²**. Esta cuenca es vital para el abastecimiento del Valle de Aburrá.")
             
             tipo_tormenta = st.select_slider("Severidad de la Tormenta de HOY:", options=["Ordinaria (Tr < 1 año)", "Fuerte (Tr 5 años)", "Severa (Tr 20 años)", "Extrema (Tr 50 años)", "Catastrófica (Tr 100 años)"])
             f_tor = {"Ord": 1.0, "Fue": 2.5, "Sev": 4.5, "Ext": 6.5, "Cat": 9.0}[tipo_tormenta[:3]]
-            area_km2 = st.number_input("Área afectada (km²):", 1.0, 173.0, 5.0)
+            area_km2 = st.number_input("Área afectada por la tormenta (km²):", 1.0, 173.0, 5.0)
             
             c_p1, c_p2 = st.columns(2)
-            f_bos, f_agr = c_p1.slider("🌲 Bosque", 0, 100, 20)/100, c_p2.slider("🐄 Agrícola", 0, 100, 50)/100
+            f_bos = c_p1.slider("🌲 Bosque Conservado (%)", 0, 100, 20) / 100
+            f_agr = c_p2.slider("🐄 Agrícola (%)", 0, 100, 50) / 100
             vol_m_hm3 = st.number_input("Vol. Muerto (Mm³):", value=3.0)
 
-        # MOTOR MATEMÁTICO
-        p_fos = (f_bos * 0.0001) + (f_agr * 0.0015) + (0.30 * 0.0015)
+        # MOTOR MATEMÁTICO LIMNOLÓGICO
+        p_fos = (f_bos * 0.0001) + (f_agr * 0.0015) + (0.30 * 0.0015) # Mix simplificado
         f_ero = (f_bos * 0.05) + (f_agr * 1.0) + (0.30 * 3.0)
+        
         lodo_anual_base = (sedimento_al_rio_kg * area_km2 * 1e6 * f_ero * 1.0) / 120.0
         lodo_hoy_m3 = (sedimento_al_rio_kg * area_km2 * 1e6 * f_ero * (f_tor**1.8)) / 1200.0
         anos_robados = lodo_hoy_m3 / lodo_anual_base if lodo_anual_base > 0 else 0
         fosforo_hoy = (sedimento_al_rio_kg * area_km2 * 1e6 * (f_tor**1.8)) * p_fos
 
         with col_lim2:
-            st.markdown("##### ⚡ Impacto HOY")
+            st.markdown("##### ⚡ Impacto del Evento HOY")
             c_e1, c_e2 = st.columns(2)
             c_e1.metric("Avalancha de Lodo", f"{lodo_hoy_m3:,.0f} m³", delta_color="inverse")
-            c_e2.metric("Envejecimiento Súbito", f"{anos_robados:,.1f} Años", delta_color="inverse")
-            st.markdown(f"**Impacto Químico:** {fosforo_hoy:,.1f} Kg de Fósforo.")
-            if fosforo_hoy > 500: st.error("🚨 **ALERTA ROJA:** Riesgo de Anoxia Inminente.")
+            c_e2.metric("Envejecimiento Súbito", f"{anos_robados:,.1f} Años", "Años robados hoy", delta_color="inverse")
             
-        if st.toggle("📚 Revelar El Aleph Limnológico"):
-            st.markdown("### ⏳ Colmatación: El Reloj de Arena... (Aquí va tu texto original)")
-
+            st.markdown("---")
+            st.markdown(f"**Impacto Químico:** {fosforo_hoy:,.1f} Kg de Fósforo inyectados hoy.")
+            if fosforo_hoy > 500:
+                st.error("🚨 **ALERTA ROJA:** Riesgo de Anoxia Inminente y explosión de macrófitas.")
+            elif fosforo_hoy > 100:
+                st.warning("⚠️ **Riesgo Medio:** Alteración de transparencia y sobrecostos de tratamiento.")
+            else:
+                st.success("🌿 **Paisaje Resiliente:** La carga fue amortiguada eficazmente.")
+            
+        if st.toggle("📚 Revelar El Aleph de los Lagos: Colmatación y Fósforo"):
+            st.markdown("""
+            ### ⏳ Colmatación: El Reloj de Arena de la Ingeniería
+            Los embalses son trampas de sedimentos. Cada metro cúbico de lodo que entra es agua potable que ya no se puede almacenar para El Niño. Cuando el lodo alcanza las compuertas de fondo, la represa muere operativamente.
+            
+            ### 🧪 La Venganza de la Tierra: Eutrofización
+            La tierra agrícola es rica en Fósforo (P). En un embalse, detona el crecimiento de macrófitas que bloquean el sol y consumen el Oxígeno Disuelto. El embalse se vuelve anóxico, aniquilando la fauna acuática.
+            """)
+            
     # =========================================================================
     # 🚰 7. ECONOMÍA DE LA CALIDAD (PTAP)
     # =========================================================================
     with st.expander("🚰 7. Economía de la Calidad: El Costo en la Planta", expanded=False):
+        st.info("Traduce el daño ecológico a dólares. Calcula el sobrecosto en químicos que la empresa de acueducto debe asumir para potabilizar el agua generada por la tormenta.")
+        
         col_pot1, col_pot2 = st.columns([1, 1.5])
         with col_pot1:
-            q_ptap = st.number_input("Caudal Tratado (m³/s):", value=5.0)
-            c_alum = st.number_input("Sulfato Alum. (USD/Ton):", value=450.0)
-            c_cloro = st.number_input("Cloro (USD/Ton):", value=1200.0)
+            st.markdown("**Parámetros de Potabilización (Planta La Ayurá):**")
+            q_ptap = st.number_input("Caudal Tratado (m³/s):", value=5.0, step=0.5)
+            st.markdown("**Costo de Insumos (USD/Ton):**")
+            c_alum = st.number_input("Sulfato Alum.:", value=450.0, step=10.0)
+            c_cloro = st.number_input("Cloro Líquido:", value=1200.0, step=50.0)
 
-        # MOTOR FINANCIERO
+        # MOTOR FINANCIERO-SANITARIO
         vol_dia_l = q_ptap * 86400 * 1000
+        # Factores de crisis derivados del lodo y fósforo calculados en el Módulo 6
         f_turb = 1.0 + (lodo_hoy_m3 / 10000.0)
-        f_eut = 1.0 + (fosforo_hoy / 500.0)
+        f_eut = 1.0 + (fos_hoy_kg / 500.0)
+        
         extra_alum = (vol_dia_l * 15.0 * (min(f_turb, 8.0) - 1)) / 1e9
         extra_cloro = (vol_dia_l * 2.0 * (min(f_eut, 4.0) - 1)) / 1e9
         s_total = (extra_alum * c_alum) + (extra_cloro * c_cloro)
+        
+        # Equivalencia Ecológica
+        ha_equiv = s_total / 2500.0
 
         with col_pot2:
-            st.metric("Sobrecosto PTAP HOY", f"${s_total:,.0f} USD", f"+{extra_alum:,.1f} Ton Alum.", delta_color="inverse")
-            if s_total > 5000: st.error(f"⚠️ **Penalidad Financiera:** Equivale a reforestar {s_total/2500:.1f} ha.")
+            st.markdown("##### 💸 La Factura de la Tormenta")
+            c_f1, c_f2 = st.columns(2)
+            c_f1.metric("Sobrecosto PTAP HOY", f"${s_total:,.0f} USD", delta_color="inverse")
+            c_f2.metric("Impacto en Insumos", f"+{extra_alum:,.1f} Ton Alum.", delta_color="inverse")
+            
+            if s_total > 5000:
+                st.error(f"⚠️ **Penalidad Financiera:** El sobrecosto de hoy equivale a lo que costaría reforestar **{ha_equiv:,.1f} hectáreas** en la cuenca alta.")
+            elif s_total > 500:
+                st.warning(f"📉 **Fuga de Capital:** La degradación de la cuenca obligó a gastar **${s_total:,.0f} USD extra** en químicos hoy.")
+            else:
+                st.success("💧 **Agua de Alta Calidad:** El bosque amortiguó la tormenta. Planta operando a dosis base.")
         
         if st.toggle("📚 Revelar El Aleph Financiero"):
-            st.markdown("### 💰 La miopía gris... (Aquí va tu texto original)")
+            st.markdown("""
+            **La miopía gris frente a la infraestructura verde:** Históricamente, se invierte en ampliar plantas de tratamiento para lidiar con el agua sucia, ignorando el ecosistema que la produce.
+            * **El Lodo:** Alta turbiedad exige dosis masivas de coagulantes y genera lodos químicos costosos de disponer.
+            * **El Fósforo:** Detona algas que tapan filtros y reaccionan con el cloro formando subproductos cancerígenos (THMs).
+            
+            **Conclusión:** Conservar el bosque no es filantropía; es la estrategia de reducción de costos operativos (OPEX) más inteligente para un acueducto.
+            """)
 
     # =========================================================================
-    # 🕳️ 8. EL MUNDO OCULTO (AGUAS SUBTERRÁNEAS Y FLUJO BASE ANUAL)
+    # 🕳️ 8. EL MUNDO OCULTO (AGUAS SUBTERRÁNEAS)
     # =========================================================================
-    st.markdown("---")
-    st.markdown("#### 🕳️ 8. El Mundo Oculto: Aguas Subterráneas y el 'Embalse Invisible'")
-    st.info("El caudal de los ríos en verano no depende de la lluvia de hoy, sino de la recarga acumulada en toda la cuenca durante el año. Modela cómo la porosidad del suelo y las raíces del bosque construyen el Flujo Base que nos salva en El Niño.")
+    with st.expander("🕳️ 8. El Mundo Oculto: Aguas Subterráneas y el 'Embalse Invisible'", expanded=False):
+        st.info("El caudal de los ríos en verano depende de la recarga anual acumulada. Modela cómo el bosque construye el Flujo Base que nos salva durante El Niño.")
 
-    col_sub1, col_sub2 = st.columns([1, 1.5])
+        col_sub1, col_sub2 = st.columns([1, 1.5])
+        with col_sub1:
+            st.markdown("**1. Escala Territorial (Régimen Anual):**")
+            c_a1, c_a2 = st.columns(2)
+            area_acuifero_km2 = c_a1.slider("Área Recarga (km²):", 1.0, 173.0, 173.0)
+            precip_anual_mm = c_a2.slider("Lluvia (mm/año):", 1000, 4000, 2200)
+            
+            st.markdown("**2. Hidrogeología (Porosidad):**")
+            geologia = st.selectbox("Formación Geológica:", ["Rocas Ígneas (Batolito)", "Depósitos Aluviales (Arenas)", "Arcillas Compactas"])
+            
+            inf_max = 0.40 if "Aluviales" in geologia else 0.15 if "Arcillas" in geologia else 0.25
+            sy = 0.20 if "Aluviales" in geologia else 0.05 if "Arcillas" in geologia else 0.12
 
-    with col_sub1:
-        st.markdown("**1. Escala Territorial y Climática (Régimen Anual):**")
-        c_a1, c_a2 = st.columns(2)
-        area_acuifero_km2 = c_a1.slider("Área de Recarga (km²):", 1.0, 173.0, 173.0, 1.0, help="Área total de la cuenca Espíritu Santo.")
-        precip_anual_mm = c_a2.slider("Precipitación Anual (mm/año):", 1000, 4000, 2200, 100, help="Lluvia acumulada de todo un año.")
-        
-        st.markdown("**2. Hidrogeología (Porosidad y Retención):**")
-        geologia = st.selectbox(
-            "Tipo de Acuífero / Formación Geológica:",
-            [
-                "Rocas Ígneas/Metamórficas Fracturadas (Batolito Antioqueño)",
-                "Depósitos Aluviales / Arenas (Alta porosidad)",
-                "Arcillas Compactas (Baja permeabilidad)"
-            ], index=0
-        )
-        
-        # Parámetros Hidrogeológicos Base según Geología
-        if "Aluviales" in geologia:
-            inf_max = 0.40  # Hasta 40% de la lluvia se puede infiltrar
-            sy = 0.20       # Porosidad efectiva (Specific Yield): 20% es agua liberable
-        elif "Arcillas" in geologia:
-            inf_max = 0.15
-            sy = 0.05
-        else: # Batolito Fracturado (Típico de La Fe)
-            inf_max = 0.25
-            sy = 0.12
+            st.markdown("**3. Demanda en Estiaje:**")
+            c_e1, c_e2 = st.columns(2)
+            dias_sequia = c_e1.number_input("Días Sequía (El Niño):", value=90)
+            costo_emb_usd = c_e2.number_input("Costo m³ Embalse:", value=2.5)
 
-        st.markdown("**3. Demanda en Estiaje:**")
-        c_e1, c_e2 = st.columns(2)
-        duracion_estiaje_dias = c_e1.number_input("Días de Sequía (El Niño):", min_value=30, value=90, step=15)
-        costo_embalse_usd_m3 = c_e2.number_input("Costo Represa ($/m³):", value=2.5, step=0.5)
+        # MOTOR HIDROGEOLÓGICO
+        vol_lluvia_m3 = (precip_anual_mm / 1000.0) * (area_acuifero_km2 * 1e6)
+        # f_bos viene del Módulo 6 (Composición del Paisaje)
+        mod_paisaje = (f_bos * 1.0) + (f_agr * 0.6) + (0.15 * 0.2) + (0.15 * 0.05)
+        coef_inf_real = inf_max * mod_paisaje
+        recarga_anual_m3 = vol_lluvia_m3 * coef_inf_real * sy
+        caudal_base_ls = (recarga_anual_m3 / 31536000) * 1000
+        valor_acuif_usd = (recarga_anual_m3 * (dias_sequia / 365.0)) * costo_emb_usd
 
-    # ==========================================
-    # MOTOR HIDROGEOLÓGICO Y ECOLOGÍA DE POROS
-    # ==========================================
-    # 1. Volumen Bruto Llovido en el Año
-    volumen_lluvia_anual_m3 = (precip_anual_mm / 1000.0) * (area_acuifero_km2 * 1_000_000)
+        with col_sub2:
+            st.markdown("##### 💧 Balance Hidrológico Anual")
+            c_s1, c_s2 = st.columns(2)
+            c_s1.metric("Coef. Infiltración", f"{coef_inf_real*100:.1f}%", "Modificado por paisaje")
+            c_s2.metric("Recarga Real", f"{recarga_anual_m3/1e6:,.1f} Mm³", f"Porosidad Efe. {sy*100:.1f}%")
+            
+            st.markdown("---")
+            st.markdown(f"##### ☀️ Soporte Vital (Sequía de {dias_sequia} días)")
+            c_s3, c_s4 = st.columns(2)
+            c_s3.metric("Flujo Base del Río", f"{caudal_base_ls:,.1f} L/s", "Caudal continuo")
+            c_s4.metric("Valor Infraestructura", f"${valor_acuif_usd/1e6:,.1f} M USD", "Ahorro en represas")
+            
+            if caudal_base_ls < 50.0:
+                st.error("🚨 **Riesgo de Colapso:** Caudal insuficiente para mantener la vida ribereña en verano.")
+            elif coef_inf_real >= (inf_max * 0.8):
+                st.success(f"🌿 **El 'Embalse Invisible' Actúa:** El bosque almacenó agua para la ciudad sin gastar en concreto.")
 
-    # 2. Modificador Biológico de Infiltración (Conectado al Módulo 6)
-    # El bosque maximiza la infiltración base geológica. El asfalto la aniquila.
-    modificador_paisaje = (f_bos * 1.0) + (f_agr * 0.6) + (f_deg * 0.2) + (f_urb * 0.05)
-    coef_infiltracion_real = inf_max * modificador_paisaje
-    
-    volumen_infiltrado_anual_m3 = volumen_lluvia_anual_m3 * coef_infiltracion_real
-    
-    # 3. Recarga Real (Agua Liberable - Porosidad Efectiva / Specific Yield)
-    # El agua que realmente drena hacia el río por gravedad, venciendo la retención del suelo.
-    recarga_real_anual_m3 = volumen_infiltrado_anual_m3 * sy
-    
-    # 4. Flujo Base Continuo (La liberación en cámara lenta)
-    # Distribuimos la recarga anual a lo largo de los 365 días del año en m3/s
-    caudal_base_m3s = recarga_real_anual_m3 / 31536000 # Segundos en un año
-    caudal_base_L_s = caudal_base_m3s * 1000
+        if st.toggle("📚 Revelar El Aleph Subterráneo"):
+            st.markdown("""
+            **La Ingeniería de las Raíces:** El bosque actúa como un taladro natural que crea macroporos para recargar los acuíferos. El asfalto anula esta infiltración.
+            
+            ### 🔬 Porosidad vs Rendimiento Específico ($S_y$)
+            * **Retención:** Agua que queda atrapada en el suelo por capilaridad.
+            * **Rendimiento:** Agua liberable que alimenta manantiales.
+            
+            **Economía de la Porosidad:** La cuenca nos ofrece almacenamiento geológico a costo cero. Solo debemos mantener el bosque para que el agua pueda entrar.
+            """)
 
-    # 5. Equivalencia Financiera y Social durante el Estiaje
-    volumen_disponible_sequia_m3 = recarga_real_anual_m3 * (duracion_estiaje_dias / 365.0)
-    valor_acuifero_usd = volumen_disponible_sequia_m3 * costo_embalse_usd_m3
-    personas_salvadas = (volumen_disponible_sequia_m3 * 1000) / (150 * duracion_estiaje_dias) 
-
-    # ==========================================
-    # RENDERIZADO DEL DIAGNÓSTICO PROFUNDO
-    # ==========================================
-    with col_sub2:
-        st.markdown("##### 💧 Balance Hidrológico Anual del Acuífero")
-        c_s1, c_s2, c_s3 = st.columns(3)
-        
-        c_s1.metric("Precipitación Total", f"{volumen_lluvia_anual_m3/1e6:,.1f} Mm³", "Lluvia en 1 año", delta_color="off")
-        c_s2.metric("Coef. Infiltración", f"{coef_infiltracion_real*100:.1f}%", f"Modificado por paisaje", delta_color="normal")
-        c_s3.metric("Recarga Real Liberable", f"{recarga_real_anual_m3/1e6:,.1f} Mm³", f"Porosidad Efe. ({sy*100:.1f}%)", delta_color="normal")
-        
-        st.markdown("---")
-        st.markdown(f"##### ☀️ Soporte vital durante la Sequía ({duracion_estiaje_dias} días)")
-        c_s4, c_s5, c_s6 = st.columns(3)
-        
-        estado_caudal = "normal" if caudal_base_L_s > 500 else "off" if caudal_base_L_s > 100 else "inverse"
-        c_s4.metric("Flujo Base del Río", f"{caudal_base_L_s:,.1f} L/s", "Caudal continuo 24/7", delta_color=estado_caudal)
-        c_s5.metric("Población Soportada", f"{personas_salvadas:,.0f} Hab", "Con 150 L/día", delta_color="off")
-        c_s6.metric("Valor de Infraestructura", f"${valor_acuifero_usd/1e6:,.1f} M USD", "Ahorro en represas", delta_color="normal")
-        
-        if caudal_base_L_s < 50.0:
-            st.error(f"🚨 **Riesgo de Colapso Hídrico:** La deforestación y la geología impiden una recarga adecuada. El caudal base ({caudal_base_L_s:,.1f} L/s) es insuficiente para mantener vivo el ecosistema ribereño durante El Niño.")
-        elif coef_infiltracion_real >= (inf_max * 0.8):
-            st.success(f"🌿 **El 'Embalse Invisible' Actúa:** El bosque nativo optimizó la porosidad de la roca. El subsuelo almacenó **{recarga_real_anual_m3/1e6:,.1f} millones de m³**, garantizando agua abundante para la ciudad en verano sin gastar un dólar en concreto.")
-        else:
-            st.warning(f"⚠️ **Acuífero Subutilizado:** La degradación de la cuenca está desperdiciando el potencial geológico. Podrías infiltrar mucha más agua si aumentas el bosque en el Módulo 6.")
-    
-    with st.expander("📚 El Aleph Subterráneo: Flujo Base, Geología y la Paradoja del Concreto", expanded=False):
-        st.markdown("""
-        **La Ingeniería de las Raíces:** El sistema radicular del bosque actúa como un taladro natural que fractura la roca madre y crea macroporos. El agua entra por estos "tubos" hacia las profundidades, recargando los acuíferos freáticos. Si pavimentamos la cuenca, anulamos esta infiltración, provocando inundaciones en invierno y sequías en verano.
-        
-        ### 🔬 Física de Suelos: Porosidad vs Rendimiento Específico ($S_y$)
-        No toda el agua que se infiltra en la tierra puede ser aprovechada por el río. 
-        * **Retención Específica ($S_r$):** El agua que queda adherida a las partículas de tierra por capilaridad y fuerzas electrostáticas. Las arcillas tienen mucha porosidad, pero atrapan casi toda el agua.
-        * **Rendimiento Específico ($S_y$):** Es el porcentaje de agua que el suelo *sí deja escurrir libremente por gravedad*. Esta es el agua liberable que alimenta los manantiales y construye el Flujo Base.
-        
-        ### 💰 La Economía de la Porosidad
-        Construir un embalse cuesta millones de dólares por cada metro cúbico de almacenamiento. La cuenca Espíritu Santo nos ofrece **millones de metros cúbicos de almacenamiento geológico a costo cero**. La única condición de la naturaleza para usar este "tanque gigante" es mantener el bosque en la superficie para que el agua pueda entrar.
-        """)
-
-# =========================================================================
+    # =========================================================================
     # 🌐 9. CROSS-POLLINATION: EXPORTACIÓN AL GEMELO DIGITAL (ALEPH)
     # =========================================================================
     st.markdown("---")
@@ -1920,12 +1917,18 @@ with tab_micro:
     st.info("El ciclo se cierra aquí. Exporta el impacto físico y químico de esta tormenta hacia el simulador de Sistemas Hídricos (Pág 08) para ver cómo afecta el abastecimiento de toda la región.")
 
     if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08)", type="primary", use_container_width=True):
-        # Inyectamos las variables calculadas en la memoria global de la sesión
-        # Usamos .get() o fallback a 0 por si alguna variable no se calculó por error de interfaz
-        st.session_state['eco_lodo_m3'] = float(lodo_evento_hoy_m3) if 'lodo_evento_hoy_m3' in locals() else 0.0
-        st.session_state['eco_fosforo_kg'] = float(fosforo_total_kg_evento) if 'fosforo_total_kg_evento' in locals() else 0.0
-        st.session_state['eco_sobrecosto_usd'] = float(sobrecosto_total_usd) if 'sobrecosto_total_usd' in locals() else 0.0
-        st.session_state['eco_flujo_base_m3s'] = float(caudal_base_m3s) if 'caudal_base_m3s' in locals() else 0.0
-        st.session_state['eco_escorrentia_m3'] = float(volumen_escorrentia_superficial_m3) if 'volumen_escorrentia_superficial_m3' in locals() else 0.0
+        # 🧠 Inyectamos las variables calculadas en la memoria global de la sesión.
+        # Usamos nombres estandarizados para que la Página 08 los reconozca al instante.
+        
+        st.session_state['eco_lodo_m3'] = float(locals().get('lodo_hoy_m3', 0.0))
+        st.session_state['eco_fosforo_kg'] = float(locals().get('fosforo_hoy', 0.0))
+        st.session_state['eco_sobrecosto_usd'] = float(locals().get('s_total', 0.0))
+        st.session_state['eco_flujo_base_m3s'] = float(locals().get('caudal_base_ls', 0.0) / 1000.0) # Convertido a m3/s
+        
+        # Guardamos también la configuración del paisaje para reportes futuros
+        st.session_state['cache_paisaje'] = {
+            "bosque": locals().get('f_bos', 0.0),
+            "agricola": locals().get('f_agr', 0.0)
+        }
 
-        st.success("🧠 **¡Sincronización Exitosa!** El lodo, los nutrientes y el flujo base ahora viajan por el Aleph. Ve a la **Página 08 (Sistemas Hídricos)** para ver cómo esta tormenta tiñe el diagrama de Sankey y altera los índices de seguridad hídrica.")
+        st.success("🧠 **¡Sincronización Exitosa!** El lodo, los nutrientes y el flujo base ahora viajan por el Aleph. Ve a la **Página 08 (Sistemas Hídricos)** para activar el interruptor de tormenta y ver el desastre en el Sankey.")
