@@ -1670,25 +1670,33 @@ with tab_micro:
                 padding: 15px;
                 position: absolute;
                 z-index: 10;
-                bottom: 105%;
+                
+                /* POSICIÓN CORREGIDA: Ahora emerge DEBAJO de la imagen para no tapar el botón superior */
+                top: 105%; 
                 left: 50%;
                 margin-left: -140px;
+                
                 opacity: 0;
                 transition: opacity 0.4s;
                 font-size: 0.85em;
                 font-family: 'Georgia', serif; /* Tipografía elegante */
                 box-shadow: 4px 4px 12px rgba(0,0,0,0.3);
                 line-height: 1.4;
+                
+                /* 🪄 TRUCO MAGIA: El ratón ignora la caja, permitiendo hacer clic en el Fullscreen */
+                pointer-events: none; 
             }
+            
+            /* FLECHA CORREGIDA: Ahora apunta hacia arriba hacia la imagen */
             .botanical-tooltip .tooltiptext::after {
                 content: "";
                 position: absolute;
-                top: 100%;
+                bottom: 100%; /* Se ancla en la parte superior de la caja de texto */
                 left: 50%;
                 margin-left: -8px;
                 border-width: 8px;
                 border-style: solid;
-                border-color: #fdfaf2 transparent transparent transparent;
+                border-color: transparent transparent #fdfaf2 transparent;
             }
             .botanical-tooltip:hover .tooltiptext {
                 visibility: visible;
