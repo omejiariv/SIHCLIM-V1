@@ -1547,530 +1547,220 @@ with tab_ret_dosel:
 with tab_micro:
     import plotly.graph_objects as go
     
+    # 🎨 ESTILOS PREMIUM (HOMOLOGACIÓN VISUAL DE EXPANSORES)
+    st.markdown("""
+    <style>
+    div[data-testid="stExpander"] details summary p { font-family: 'Georgia', serif !important; font-size: 1.15em !important; color: #2c3e50 !important; font-weight: 600 !important; }
+    div[data-testid="stExpander"] { border: 1px solid #d3c0a3 !important; border-radius: 6px !important; box-shadow: 2px 2px 8px rgba(0,0,0,0.04) !important; background-color: #ffffff; }
+    </style>
+    """, unsafe_allow_html=True)
+    
     st.subheader("🔬 Efecto Cascada: Del Microscopio Foliar a la Planta de Tratamiento")
     st.info("Simulador de ciclo completo (Source-to-Tap). Laboratorio de la ECOmplejidad. Modela cómo la alteración de un componente biológico microscópico (la hoja) desencadena una avalancha de impactos físicos, químicos y financieros a nivel de cuenca, embalse y acueducto.")
 
-    # --- INICIO DEL JUGUETE FRACTAL DA VINCI ---
+    # --- 0. EL CÓDIGO DE LA NATURALEZA ---
     with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
         st.markdown("La capacidad adaptativa (inteligencia) de un árbol para retener agua y permitir el paso de la luz, se basa en la optimización fractal de su área superficial. Juega con los parámetros matemáticos que definen el crecimiento de las ramas.")
         
         col_frac1, col_frac2 = st.columns([1, 2.5])
-        
         with col_frac1:
             profundidad = st.slider("Nivel de Ramificación (Iteraciones):", 2, 15, 7, help="Más iteraciones = más hojas = mayor área de retención.")
             angulo_grados = st.slider("Ángulo de Ramificación (°):", 10, 90, 25)
             escala = st.slider("Factor de Reducción (Escala):", 0.5, 0.85, 0.75, step=0.05)
+            st.caption("A mayor complejidad fractal, mayor Índice de Área Foliar (LAI) y mayor retención de agua calculada en el modelo inferior.")
             
-            st.caption("A mayor complejidad fractal, mayor Índice de Área Foliar (LAI) y, por tanto, mayor retención de agua calculada en el modelo inferior.")
-            
-            # 🚀 EL CONTROL DE VELOCIDAD Y EL BOTÓN
             st.markdown("<br>", unsafe_allow_html=True)
             velocidad = st.slider("⏱️ Velocidad de Animación (seg/nivel):", 0.05, 1.5, 0.25, 0.05, help="Menor tiempo = crecimiento más rápido.")
             animar = st.button("🌱 Animar Crecimiento", use_container_width=True)
             
         with col_frac2:
-            import math
-            import time
-            import plotly.graph_objects as go
-            
-            # Contenedor dinámico para la animación
+            import math, time
             espacio_fractal = st.empty()
             
-            # Función recursiva para dibujar el árbol fractal
             def construir_arbol(x, y, angulo, longitud, nivel, x_lines, y_lines):
-                if nivel == 0:
-                    return
-                
-                # Coordenadas de la nueva rama
-                x_nuevo = x + longitud * math.cos(angulo)
-                y_nuevo = y + longitud * math.sin(angulo)
-                
-                # Agregar coordenadas (None rompe la línea para que Plotly no conecte ramas distintas)
+                if nivel == 0: return
+                x_nuevo, y_nuevo = x + longitud * math.cos(angulo), y + longitud * math.sin(angulo)
                 x_lines.extend([x, x_nuevo, None])
                 y_lines.extend([y, y_nuevo, None])
-                
-                # Llamadas recursivas para las dos sub-ramas
                 construir_arbol(x_nuevo, y_nuevo, angulo - math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
                 construir_arbol(x_nuevo, y_nuevo, angulo + math.radians(angulo_grados), longitud * escala, nivel - 1, x_lines, y_lines)
 
             def generar_figura_fractal(prof_actual):
                 x_arbol, y_arbol = [], []
                 construir_arbol(0, 0, math.pi / 2, 100, prof_actual, x_arbol, y_arbol)
-                
                 fig_fractal = go.Figure(go.Scatter(x=x_arbol, y=y_arbol, mode='lines', line=dict(color='rgba(39, 174, 96, 0.8)', width=1.5)))
-                fig_fractal.update_layout(
-                    xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
-                    margin=dict(l=0, r=0, t=0, b=0), height=350, plot_bgcolor='rgba(0,0,0,0)'
-                )
+                fig_fractal.update_layout(xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1), margin=dict(l=0, r=0, t=0, b=0), height=350, plot_bgcolor='rgba(0,0,0,0)')
                 return fig_fractal
 
-            # Lógica de Renderizado (Estático vs Animado)
             if animar:
                 for p in range(1, profundidad + 1):
                     espacio_fractal.plotly_chart(generar_figura_fractal(p), use_container_width=True)
-                    time.sleep(velocidad) # <--- 🧠 AHORA LA VELOCIDAD ES DINÁMICA
-            else:
-                espacio_fractal.plotly_chart(generar_figura_fractal(profundidad), use_container_width=True)
+                    time.sleep(velocidad)
+            else: espacio_fractal.plotly_chart(generar_figura_fractal(profundidad), use_container_width=True)
+
+    # --- 1 y 2. ARQUITECTURA Y MICROINGENIERÍA ---
+    with st.expander("🪵 1. & 2. Arquitectura y Microingeniería Foliar", expanded=False):
+        col_anat, col_hoja, col_graf = st.columns([1.2, 1.2, 2])
+
+        with col_anat:
+            st.markdown("#### 🪵 Arquitectura del Árbol")
+            dbh_cm = st.slider("Diámetro del Tronco (DAP en cm):", 5.0, 150.0, 30.0, 1.0, help="A mayor grosor, más edad y una copa exponencialmente más grande.")
+            angulo_ramas = st.select_slider("Ángulo de Ramificación:", options=["Agudo (30° - Forma V)", "Medio (60° - Copa Redonda)", "Horizontal (90°)", "Llorón (120° - Hacia abajo)"], value="Medio (60° - Copa Redonda)")
+
+        with col_hoja:
+            st.markdown("#### 🍃 Microingeniería Foliar")
+            textura = st.radio("Textura de la Epidermis:", ["Lisa / Cerosa (Repele agua)", "Normal", "Pubescente (Pelos microscópicos)"], index=1)
+            forma = st.radio("Morfología de la Hoja:", ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
+
+            # 🪄 MAGIA: El expander anidado se convierte en un Toggle para cumplir reglas de Streamlit
+            if st.toggle("👁️ Ver Herbario Botánico (Ilustraciones Científicas)"):
+                st.markdown("""
+                <style>
+                .botanical-tooltip { position: relative; display: inline-block; text-align: center; margin-bottom: 20px; cursor: help; }
+                .botanical-tooltip img { border-radius: 5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.2); transition: transform 0.3s ease; max-width: 100%; height: auto; }
+                .botanical-tooltip:hover img { transform: scale(1.02); }
+                .botanical-tooltip .tooltiptext { visibility: hidden; width: 280px; background-color: #fdfaf2; color: #2c3e50; text-align: left; border: 1px solid #d3c0a3; border-radius: 5px; padding: 15px; position: absolute; z-index: 10; top: 105%; left: 50%; margin-left: -140px; opacity: 0; transition: opacity 0.4s; font-size: 0.85em; font-family: 'Georgia', serif; box-shadow: 4px 4px 12px rgba(0,0,0,0.3); line-height: 1.4; pointer-events: none; }
+                .botanical-tooltip .tooltiptext::after { content: ""; position: absolute; bottom: 100%; left: 50%; margin-left: -8px; border-width: 8px; border-style: solid; border-color: transparent transparent #fdfaf2 transparent; }
+                .botanical-tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
+                .tit-botanico { font-weight: bold; font-size: 1.1em; color: #5d4037; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}
+                </style>
+                """, unsafe_allow_html=True)
+                url_base = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/imagenes/"
                 
-    # --- FIN DEL JUGUETE FRACTAL ---
-    
-    col_anat, col_hoja, col_graf = st.columns([1.2, 1.2, 2])
+                st.markdown("#### A. Textura de la Epidermis")
+                c_h1, c_h2, c_h3 = st.columns(3)
+                with c_h1: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" target="_blank"><img src="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" alt="Lisa/Cerosa"></a><div class="tooltiptext"><div class="tit-botanico">I. Lisa / Cerosa (Repele agua)</div>Corte transversal con una capa de cera gruesa y brillante. Las gotas (B) mantienen una forma esférica perfecta ilustrando la tensión superficial en acción.</div></div>""", unsafe_allow_html=True)
+                with c_h2: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Normal.png" target="_blank"><img src="{url_base}Epidermis%20Normal.png" alt="Normal"></a><div class="tooltiptext"><div class="tit-botanico">II. Epidermis Normal</div>Células normales de la epidermis y el mesófilo, sin la capa de cera gruesa. Una ligera llovizna (A) forma gotas irregulares que tienden a extenderse.</div></div>""", unsafe_allow_html=True)
+                with c_h3: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Pubescente.png" target="_blank"><img src="{url_base}Epidermis%20Pubescente.png" alt="Pubescente"></a><div class="tooltiptext"><div class="tit-botanico">III. Epidermis Pubescente</div>Epidermis aterciopelada detallando diferentes tricomas y su estructura glandular. Una gota de agua (B) es retenida por el aire atrapado por los pelos.</div></div>""", unsafe_allow_html=True)
 
-    with col_anat:
-        st.markdown("#### 🪵 1. Arquitectura del Árbol")
-        
-        # Modelo Alométrico simplificado: El diámetro define el Área Foliar
-        dbh_cm = st.slider("Diámetro del Tronco (DAP en cm):", 5.0, 150.0, 30.0, 1.0, help="A mayor grosor, más edad y una copa exponencialmente más grande.")
-        
-        # El ángulo define el "Efecto Embudo" (Stemflow)
-        angulo_ramas = st.select_slider(
-            "Ángulo de Ramificación:",
-            options=["Agudo (30° - Forma V)", "Medio (60° - Copa Redonda)", "Horizontal (90°)", "Llorón (120° - Hacia abajo)"],
-            value="Medio (60° - Copa Redonda)"
-        )
+                st.markdown("#### B. Morfología de la Hoja")
+                c_h4, c_h5, c_h6 = st.columns(3)
+                with c_h4: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Plana.png" target="_blank"><img src="{url_base}Morfologia%20Plana.png" alt="Plana"></a><div class="tooltiptext"><div class="tit-botanico">IV. Morfología Plana</div>El agua (A) se extiende de manera uniforme y plana sobre la superficie, eficiente para maximizar la luz solar en regiones menos húmedas.</div></div>""", unsafe_allow_html=True)
+                with c_h5: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Concava.png" target="_blank"><img src="{url_base}Morfologia%20Concava.png" alt="Cóncava"></a><div class="tooltiptext"><div class="tit-botanico">V. Morfología Cóncava</div>El agua (A) es recolectada y dirigida hacia el centro, formando una pequeña cuenca. Ideal para canalizar agua hacia el tallo.</div></div>""", unsafe_allow_html=True)
+                with c_h6: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Acuminada.png" target="_blank"><img src="{url_base}Morfologia%20Acuminada.png" alt="Acuminada"></a><div class="tooltiptext"><div class="tit-botanico">VI. Morfología Acuminada</div>Extremo apical detallado. Una gota de agua (A) está a punto de desprenderse. Eficiente para rápido drenaje en selvas tropicales.</div></div>""", unsafe_allow_html=True)
 
-    with col_hoja:
-        st.markdown("#### 🍃 2. Microingeniería Foliar")
-        
-        textura = st.radio("Textura de la Epidermis:", 
-                           ["Lisa / Cerosa (Repele agua)", "Normal", "Pubescente (Pelos microscópicos)"], index=1)
-        
-        forma = st.radio("Morfología de la Hoja:",
-                         ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
+        # 🧠 MOTOR FÍSICO Y ALOMÉTRICO
+        area_foliar_m2 = 0.15 * (dbh_cm ** 2.1)
+        sl_base = 0.20 
+        mod_tex = 0.7 if textura == "Lisa / Cerosa (Repele agua)" else 1.6 if textura == "Pubescente (Pelos microscópicos)" else 1.0
+        mod_for = 1.4 if forma == "Cóncava (Forma de copa)" else 0.8 if forma == "Acuminada (Punta de goteo larga)" else 1.0
+        sl_efectivo = sl_base * mod_tex * mod_for
+        volumen_retenido_litros = area_foliar_m2 * sl_efectivo
 
-        with st.expander("👁️ Ver Herbario Botánico (Ilustraciones Científicas)", expanded=False):
-            # CSS Mágico para crear tooltips estilo enciclopedia del siglo XIX
+        stemflow_pct = 12.0 if "Agudo" in angulo_ramas else 5.0 if "Medio" in angulo_ramas else 1.0 if "Horizontal" in angulo_ramas else 0.1
+        retencion_pct = min(25.0 * (sl_efectivo / 0.20), 45.0) 
+        throughfall_pct = 100.0 - retencion_pct - stemflow_pct
+
+        with col_graf:
+            st.markdown(f"**Área Foliar Total Desplegada:** {area_foliar_m2:,.1f} m²")
+            st.markdown(f"**Capacidad Máxima de la Esponja:** :blue[{volumen_retenido_litros:,.1f} Litros de agua]")
+            
+            fig_particion = go.Figure(go.Pie(labels=["Evaporada/Retenida (Secuestrada)", "Escorrentía Fustal (Tronco)", "Goteo Directo al Suelo"], values=[retencion_pct, stemflow_pct, throughfall_pct], hole=0.4, marker_colors=["#2ecc71", "#8e44ad", "#3498db"], textinfo="label+percent", textposition="inside"))
+            fig_particion.update_layout(title="Destino del Agua en este Árbol", showlegend=False, margin=dict(l=20, r=20, t=40, b=20), height=350)
+            st.plotly_chart(fig_particion, use_container_width=True)
+
+    # --- 3. BALÍSTICA DE LA GOTA ---
+    with st.expander("🌧️ 3. Balística de la Gota y Control de Erosión", expanded=False):
+        st.info("Simula el impacto de una gota de lluvia. El dosel absorbe la velocidad terminal de la tormenta y deja caer el agua desde una altura menor, alterando la energía cinética que destruye el suelo.")
+        col_gota1, col_gota2 = st.columns(2)
+
+        with col_gota1:
+            diametro_lluvia = st.slider("Diámetro de la gota de lluvia (Nubes) en mm:", 1.0, 6.0, 3.0, 0.2)
+            altura_dosel = st.slider("Altura de caída desde las primeras ramas (metros):", 1.0, 20.0, 5.0, 0.5)
+
+        with col_gota2:
+            st.markdown("**El efecto de la forma de la hoja elegida arriba:**")
+            if "Acuminada" in forma: diametro_goteo = 2.0; st.success("💧 **Punta de goteo activa:** El árbol filtra la tormenta y deja caer gotas pequeñas e inofensivas (2.0 mm).")
+            elif "Cóncava" in forma: diametro_goteo = 5.0; st.warning("⚠️ **Efecto copa:** El agua se empoza y colapsa por peso, formando 'súper gotas' gigantes (5.0 mm).")
+            else: diametro_goteo = 3.5; st.info("💧 **Hoja plana:** Las gotas resbalan formando gotas de tamaño medio (3.5 mm).")
+
+        import math
+        def vel_terminal(d): return 9.65 - 10.3 * math.exp(-0.6 * d)
+        vt_lluvia = vel_terminal(diametro_lluvia)
+        vt_goteo_max = vel_terminal(diametro_goteo)
+        vel_goteo_h = vt_goteo_max * math.sqrt(1 - math.exp(-2 * 9.81 * altura_dosel / (vt_goteo_max**2)))
+
+        masa_lluvia_kg = (4/3) * math.pi * ((diametro_lluvia / 2000)**3) * 1000
+        masa_goteo_kg = (4/3) * math.pi * ((diametro_goteo / 2000)**3) * 1000
+
+        ek_lluvia_uj = (0.5 * masa_lluvia_kg * (vt_lluvia**2)) * 1e6
+        ek_goteo_uj = (0.5 * masa_goteo_kg * (vel_goteo_h**2)) * 1e6
+        reduccion_ek = 100 - (ek_goteo_uj / ek_lluvia_uj * 100) if ek_lluvia_uj > 0 else 0
+
+        st.markdown("##### 💥 Análisis de Impacto y Erosión en el Suelo")
+        c_b1, c_b2, c_b3 = st.columns(3)
+        c_b1.metric("Impacto Directo (Sin Árbol)", f"{vt_lluvia:.1f} m/s", f"{ek_lluvia_uj:.1f} μJ de Energía", delta_color="inverse")
+        c_b2.metric("Gota Filtrada (Bajo el Árbol)", f"{vel_goteo_h:.1f} m/s", f"{ek_goteo_uj:.1f} μJ de Energía", delta_color="off")
+        if reduccion_ek > 0: c_b3.metric("Protección contra Erosión", f"-{reduccion_ek:.1f}%", "Energía destructiva disipada", delta_color="normal")
+        else: c_b3.metric("Riesgo de Erosión Incrementado", f"+{abs(reduccion_ek):.1f}%", "El dosel alto empeora el impacto", delta_color="inverse")
+
+        # 🪄 MAGIA: Expansores Teóricos convertidos en Toggles
+        if st.toggle("📚 Mostrar Marcos Conceptuales y Física del Bosque"):
             st.markdown("""
-            <style>
-            .botanical-tooltip {
-                position: relative;
-                display: inline-block;
-                text-align: center;
-                margin-bottom: 20px;
-                cursor: help;
-            }
-            .botanical-tooltip img {
-                border-radius: 5px;
-                box-shadow: 2px 2px 8px rgba(0,0,0,0.2);
-                transition: transform 0.3s ease;
-                max-width: 100%;
-                height: auto;
-            }
-            .botanical-tooltip:hover img {
-                transform: scale(1.02);
-            }
-            .botanical-tooltip .tooltiptext {
-                visibility: hidden;
-                width: 280px;
-                background-color: #fdfaf2; /* Color papel envejecido */
-                color: #2c3e50;
-                text-align: left;
-                border: 1px solid #d3c0a3;
-                border-radius: 5px;
-                padding: 15px;
-                position: absolute;
-                z-index: 10;
-                
-                /* POSICIÓN CORREGIDA: Emerge DEBAJO de la imagen */
-                top: 105%; 
-                left: 50%;
-                margin-left: -140px;
-                
-                opacity: 0;
-                transition: opacity 0.4s;
-                font-size: 0.85em;
-                font-family: 'Georgia', serif; /* Tipografía elegante */
-                box-shadow: 4px 4px 12px rgba(0,0,0,0.3);
-                line-height: 1.4;
-                
-                /* 🪄 TRUCO MAGIA: El ratón ignora la caja, permitiendo hacer clic en la imagen */
-                pointer-events: none; 
-            }
+            **La Física detrás del modelo:** El Área Foliar crece exponencialmente con el diámetro del tronco. 
+            La Capacidad de Retención ($S_l$) varía según la microanatomía. Ramas agudas generan mayor *Stemflow*, mientras que hojas con "acumen" puntiagudo reducen el tamaño de las gotas, controlando la energía cinética del impacto.
             
-            /* FLECHA CORREGIDA: Apunta hacia arriba hacia la imagen */
-            .botanical-tooltip .tooltiptext::after {
-                content: "";
-                position: absolute;
-                bottom: 100%; /* Se ancla en la parte superior de la caja de texto */
-                left: 50%;
-                margin-left: -8px;
-                border-width: 8px;
-                border-style: solid;
-                border-color: transparent transparent #fdfaf2 transparent;
-            }
-            .botanical-tooltip:hover .tooltiptext {
-                visibility: visible;
-                opacity: 1;
-            }
-            .tit-botanico { font-weight: bold; font-size: 1.1em; color: #5d4037; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}
-            </style>
-            """, unsafe_allow_html=True)
+            **La Balística:** La gota de nube alcanza su **Velocidad Terminal ($V_t$)** (Ecuación de Atlas-Ulbrich). El árbol reduce esta energía a cero, y el agua vuelve a caer desde altura $h$ ganando una nueva velocidad (Brandt, 1989).
+            """)
 
-            url_base = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/imagenes/"
+    # --- 4. EROSIVIDAD ---
+    with st.expander("🟤 4. Erosividad y Desprendimiento de Suelo (Splash Detachment)", expanded=False):
+        st.markdown("""<style>.tooltip-mod4 { position: relative; display: inline-block; color: #e67e22; font-weight: bold; cursor: help; border-bottom: 2px dotted #e67e22; } .tooltip-mod4 .tooltiptext { visibility: hidden; width: 320px; background-color: #2c3e50; color: #fff; text-align: left; border-radius: 6px; padding: 15px; position: absolute; z-index: 50; top: 120%; left: 50%; margin-left: -160px; opacity: 0; transition: opacity 0.3s; font-size: 0.85em; font-weight: normal;} .tooltip-mod4:hover .tooltiptext { visibility: visible; opacity: 1; }</style>""", unsafe_allow_html=True)
+        st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px;'>Escala el impacto balístico. Define el volumen y duración del evento. Esta tierra es el primer paso del <span class="tooltip-mod4">Efecto Cascada Territorial<span class="tooltiptext">🧠 <b>Conexión Gemelo Digital:</b> Los kilogramos arrancados se convertirán en Lodo en el Módulo 6, y viajarán a la <b>Página 08</b> asfixiando el embalse.</span></span>.</div>", unsafe_allow_html=True)
+
+        col_suelo1, col_suelo2 = st.columns([1, 1.5])
+        with col_suelo1:
+            volumen_tormenta_mm = st.slider("🌧️ Volumen de Lluvia (mm):", 10.0, 150.0, 50.0, step=5.0)
+            duracion_horas = st.slider("⏱️ Duración del Evento (Horas):", 1.0, 24.0, 1.0, step=0.5)
+            tipo_suelo = st.selectbox("Mecánica del Suelo (Erodabilidad - Factor K):", ["Arena Fina / Suelo Desnudo (Alta - K=0.06)", "Franco-Limoso / Cenizas Volcánicas (Media - K=0.03)", "Arcilloso Compacto (Baja - K=0.01)"], index=1)
+            k_factor = 0.06 if "Alta" in tipo_suelo else 0.03 if "Media" in tipo_suelo else 0.01
+
+        intensidad_mm_h = volumen_tormenta_mm / duracion_horas if duracion_horas > 0 else 0
+        vol_gota_nube_mm3 = (4/3) * math.pi * ((diametro_lluvia / 2)**3)
+        vol_gota_arbol_mm3 = (4/3) * math.pi * ((diametro_goteo / 2)**3)
+        vol_tormenta_m2_mm3 = volumen_tormenta_mm * 1_000_000
+        
+        num_gotas_nube = vol_tormenta_m2_mm3 / vol_gota_nube_mm3 if vol_gota_nube_mm3 > 0 else 0
+        num_gotas_arbol = vol_tormenta_m2_mm3 / vol_gota_arbol_mm3 if vol_gota_arbol_mm3 > 0 else 0
+
+        # ek_lluvia y ek_goteo estaban en Joules, convertimos a kJ
+        ke_total_nube = (num_gotas_nube * (ek_lluvia_uj / 1e6)) 
+        ke_total_arbol = (num_gotas_arbol * (ek_goteo_uj / 1e6)) 
+
+        suelo_perdido_nube_kg = k_factor * ke_total_nube
+        suelo_perdido_arbol_kg = k_factor * ke_total_arbol
+
+        # 💾 GUARDIÁN DE MEMORIA: Puente de titanio hacia el Módulo 5 y 8
+        st.session_state['memoria_suelo_arrancado'] = suelo_perdido_arbol_kg
+
+        with col_suelo2:
+            c_e1, c_e2, c_e3 = st.columns(3)
+            c_e1.metric("Intensidad", f"{intensidad_mm_h:.1f} mm/h", "Poder destructivo", delta_color="inverse")
             
-            # --- FILA 1: TEXTURAS ---
-            st.markdown("#### A. Textura de la Epidermis (Pase el cursor sobre las láminas)")
-            c_h1, c_h2, c_h3 = st.columns(3)
+            energia_cielo_kj = ke_total_nube / 1000
+            energia_bosque_kj = ke_total_arbol / 1000
+            delta_energia = ((energia_bosque_kj - energia_cielo_kj) / energia_cielo_kj * 100) if energia_cielo_kj > 0 else 0
+            color_delta = "inverse" if delta_energia > 0 else "normal"
             
-            with c_h1:
-                st.markdown(f"""
-                <div class="botanical-tooltip">
-                    <a href="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" target="_blank" title="Haz clic para ver en tamaño completo">
-                        <img src="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" alt="Lisa/Cerosa">
-                    </a>
-                    <div class="tooltiptext">
-                        <div class="tit-botanico">I. Lisa / Cerosa (Repele agua)</div>
-                        Cada ilustración está ejecutada en medios mixtos tradicionales. Esta lámina se centra en una cutícula extremadamente hidrofóbica. El recuadro magnificado 'A' muestra un corte transversal con una capa de cera gruesa y brillante. Las gotas de agua (B) mantienen una forma esférica perfecta y ruedan ilustrando la tensión superficial en acción.
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+            c_e2.metric("Energía (Cielo Abierto)", f"{energia_cielo_kj:,.1f} kJ/m²", "Suelo Desnudo", delta_color="inverse")
+            c_e3.metric("Energía (Bajo Dosel)", f"{energia_bosque_kj:,.1f} kJ/m²", f"{delta_energia:+.1f}% Amortiguación", delta_color=color_delta)
+            
+            fig_suelo = go.Figure(data=[
+                go.Bar(name='Cielo Abierto (Pasto / Desnudo)', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_perdido_nube_kg], marker_color='#e67e22', text=[f"{suelo_perdido_nube_kg:.1f} Kg"], textposition='auto'),
+                go.Bar(name='Bajo el Dosel Forestal', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_perdido_arbol_kg], marker_color='#27ae60', text=[f"{suelo_perdido_arbol_kg:.1f} Kg"], textposition='auto')
+            ])
+            fig_suelo.update_layout(barmode='group', height=300, margin=dict(l=10, r=10, t=30, b=10), yaxis_title="Kilogramos de tierra (Kg/m²)", plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+            st.plotly_chart(fig_suelo, use_container_width=True)
 
-            with c_h2:
-                st.markdown(f"""
-                <div class="botanical-tooltip">
-                    <a href="{url_base}Epidermis%20Normal.png" target="_blank" title="Haz clic para ver en tamaño completo">
-                        <img src="{url_base}Epidermis%20Normal.png" alt="Normal">
-                    </a>
-                    <div class="tooltiptext">
-                        <div class="tit-botanico">II. Epidermis Normal</div>
-                        Representa una textura estándar de hoja. El recuadro 'B' muestra un corte transversal con células normales de la epidermis y el mesófilo, sin la capa de cera gruesa. Una ligera llovizna (A) forma gotas irregulares que tienden a extenderse un poco más sobre la superficie plana.
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with c_h3:
-                st.markdown(f"""
-                <div class="botanical-tooltip">
-                    <a href="{url_base}Epidermis%20Pubescente.png" target="_blank" title="Haz clic para ver en tamaño completo">
-                        <img src="{url_base}Epidermis%20Pubescente.png" alt="Pubescente">
-                    </a>
-                    <div class="tooltiptext">
-                        <div class="tit-botanico">III. Epidermis Pubescente</div>
-                        Primer plano de epidermis aterciopelada. El recuadro magnifica la superficie microscópica, detallando diferentes tipos de tricomas (C, D, E) y su estructura glandular (F), mientras que una gota de agua (B) es retenida por el aire atrapado por los pelos.
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            # --- FILA 2: MORFOLOGÍA ---
-            st.markdown("#### B. Morfología de la Hoja")
-            c_h4, c_h5, c_h6 = st.columns(3)
-
-            with c_h4:
-                st.markdown(f"""
-                <div class="botanical-tooltip">
-                    <a href="{url_base}Morfologia%20Plana.png" target="_blank" title="Haz clic para ver en tamaño completo">
-                        <img src="{url_base}Morfologia%20Plana.png" alt="Plana">
-                    </a>
-                    <div class="tooltiptext">
-                        <div class="tit-botanico">IV. Morfología Plana</div>
-                        Representa la forma más fundamental (ej. un Quercus). El recuadro 'B' muestra un perfil perfectamente plano de la lámina foliar. El agua (A) se extiende de manera uniforme y plana sobre la superficie, eficiente para maximizar la luz solar en regiones menos húmedas.
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with c_h5:
-                st.markdown(f"""
-                <div class="botanical-tooltip">
-                    <a href="{url_base}Morfologia%20Concava.png" target="_blank" title="Haz clic para ver en tamaño completo">
-                        <img src="{url_base}Morfologia%20Concava.png" alt="Cóncava">
-                    </a>
-                    <div class="tooltiptext">
-                        <div class="tit-botanico">V. Morfología Cóncava</div>
-                        El recuadro 'B' muestra un corte profundo en forma de U, curvado hacia arriba en los bordes. El agua (A) es recolectada y dirigida hacia el centro, formando una pequeña cuenca. Ideal para canalizar agua hacia el tallo (ej. Alchemilla o Sarracenia).
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with c_h6:
-                st.markdown(f"""
-                <div class="botanical-tooltip">
-                    <a href="{url_base}Morfologia%20Acuminada.png" target="_blank" title="Haz clic para ver en tamaño completo">
-                        <img src="{url_base}Morfologia%20Acuminada.png" alt="Acuminada">
-                    </a>
-                    <div class="tooltiptext">
-                        <div class="tit-botanico">VI. Morfología Acuminada</div>
-                        Se presenta dramáticamente el extremo apical. El recuadro detalla la estrecha punta y el canal de goteo (B). Una gota de agua (A) está a punto de desprenderse. Eficiente para zonas de alta precipitación (selvas tropicales), permitiendo rápido drenaje.
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-    # =========================================================================
-    # 🧠 MOTOR FÍSICO Y ALOMÉTRICO DEL INDIVIDUO
-    # =========================================================================
-    
-    # 1. Alometría: Ecuación potencial empírica para Área Foliar Total (m2)
-    area_foliar_m2 = 0.15 * (dbh_cm ** 2.1)
-
-    # 2. Modificadores de Capacidad de Retención Específica (Sl en mm o L/m2)
-    sl_base = 0.20 # Capacidad base genérica
-
-    # Modificador por Textura
-    if textura == "Lisa / Cerosa (Repele agua)": mod_tex = 0.7
-    elif textura == "Pubescente (Pelos microscópicos)": mod_tex = 1.6
-    else: mod_tex = 1.0
-
-    # Modificador por Forma
-    if forma == "Cóncava (Forma de copa)": mod_for = 1.4
-    elif forma == "Acuminada (Punta de goteo larga)": mod_for = 0.8
-    else: mod_for = 1.0
-
-    sl_efectivo = sl_base * mod_tex * mod_for
-
-    # 3. Cálculo de Volúmenes (1 mm de agua en 1 m2 = 1 Litro)
-    volumen_retenido_litros = area_foliar_m2 * sl_efectivo
-
-    # 4. Partición del Agua (Destino de la lluvia)
-    if "Agudo" in angulo_ramas:
-        stemflow_pct = 12.0
-    elif "Medio" in angulo_ramas:
-        stemflow_pct = 5.0
-    elif "Horizontal" in angulo_ramas:
-        stemflow_pct = 1.0
-    else:
-        stemflow_pct = 0.1
-
-    retencion_pct = 25.0 * (sl_efectivo / 0.20)
-    retencion_pct = min(retencion_pct, 45.0) # Límite físico
-    throughfall_pct = 100.0 - retencion_pct - stemflow_pct
-
-    # =========================================================================
-    # 📊 RENDERIZADO VISUAL DEL MICROSISTEMA
-    # =========================================================================
-    with col_graf:
-        st.markdown(f"**Área Foliar Total Desplegada:** {area_foliar_m2:,.1f} m²")
-        st.markdown(f"**Capacidad Máxima de la Esponja:** :blue[{volumen_retenido_litros:,.1f} Litros de agua]")
-        
-        # Gráfico de destino del agua (Sankey simplificado en Pie Chart)
-        fig_particion = go.Figure(go.Pie(
-            labels=["Evaporada/Retenida (Secuestrada)", "Escorrentía Fustal (Por el tronco)", "Goteo Directo al Suelo"],
-            values=[retencion_pct, stemflow_pct, throughfall_pct],
-            hole=0.4,
-            marker_colors=["#2ecc71", "#8e44ad", "#3498db"],
-            textinfo="label+percent",
-            textposition="inside"
-        ))
-        
-        fig_particion.update_layout(
-            title="Destino del Agua en este Árbol",
-            showlegend=False,
-            margin=dict(l=20, r=20, t=40, b=20),
-            height=350
-        )
-        st.plotly_chart(fig_particion, use_container_width=True)
-
-    # =========================================================================
-    # 🌧️ MÓDULO DE BALÍSTICA Y ENERGÍA CINÉTICA (EROSIÓN)
-    # =========================================================================
-    st.markdown("---")
-    st.markdown("#### 🌧️ 3. Balística de la Gota y Control de Erosión")
-    st.info("Simula el impacto de una gota de lluvia. El dosel absorbe la velocidad terminal de la tormenta y deja caer el agua desde una altura menor, alterando la energía cinética que destruye el suelo.")
-
-    col_gota1, col_gota2 = st.columns(2)
-
-    with col_gota1:
-        diametro_lluvia = st.slider("Diámetro de la gota de lluvia (Nubes) en mm:", 1.0, 6.0, 3.0, 0.2, help="1-2mm: Llovizna suave. 4-6mm: Tormenta convectiva fuerte.")
-        altura_dosel = st.slider("Altura de caída desde las primeras ramas (metros):", 1.0, 20.0, 5.0, 0.5)
-
-    with col_gota2:
-        # Lógica conectada a la Morfología de la Hoja (variable 'forma' definida arriba)
-        st.markdown("**El efecto de la forma de la hoja elegida arriba:**")
-        if "Acuminada" in forma:
-            diametro_goteo = 2.0
-            st.success("💧 **Punta de goteo activa:** El 'acumen' rompe la tensión superficial. El árbol filtra la tormenta y deja caer gotas pequeñas e inofensivas (2.0 mm).")
-        elif "Cóncava" in forma:
-            diametro_goteo = 5.0
-            st.warning("⚠️ **Efecto copa:** El agua se empoza en la hoja cóncava y colapsa por peso, formando 'súper gotas' gigantes (5.0 mm).")
-        else:
-            diametro_goteo = 3.5
-            st.info("💧 **Hoja plana:** Las gotas resbalan formando gotas de tamaño medio (3.5 mm).")
-
-    # MATEMÁTICAS BALÍSTICAS (Atlas-Ulbrich & Brandt)
-    import math
-
-    # Función para velocidad terminal
-    def vel_terminal(d):
-        return 9.65 - 10.3 * math.exp(-0.6 * d)
-
-    vt_lluvia = vel_terminal(diametro_lluvia)
-    vt_goteo_max = vel_terminal(diametro_goteo)
-
-    # Velocidad de caída libre con fricción desde altura h
-    g = 9.81
-    vel_goteo_h = vt_goteo_max * math.sqrt(1 - math.exp(-2 * g * altura_dosel / (vt_goteo_max**2)))
-
-    # Energía Cinética (E = 1/2 m v^2)
-    # Masa = Volumen * Densidad. Volumen de la esfera = 4/3 * pi * (r_en_metros)^3. Densidad del agua = 1000 kg/m3
-    masa_lluvia_kg = (4/3) * math.pi * ((diametro_lluvia / 2000)**3) * 1000
-    masa_goteo_kg = (4/3) * math.pi * ((diametro_goteo / 2000)**3) * 1000
-
-    ek_lluvia = 0.5 * masa_lluvia_kg * (vt_lluvia**2)
-    ek_goteo = 0.5 * masa_goteo_kg * (vel_goteo_h**2)
-
-    # Convertimos Joules a microJoules (μJ) para que los números sean más legibles
-    ek_lluvia_uj = ek_lluvia * 1e6
-    ek_goteo_uj = ek_goteo * 1e6
-    
-    # Prevenir división por cero en escenarios extremos
-    if ek_lluvia_uj > 0:
-        reduccion_ek = 100 - (ek_goteo_uj / ek_lluvia_uj * 100)
-    else:
-        reduccion_ek = 0
-
-    st.markdown("##### 💥 Análisis de Impacto y Erosión en el Suelo")
-    c_b1, c_b2, c_b3 = st.columns(3)
-
-    c_b1.metric("Impacto Directo (Sin Árbol)", f"{vt_lluvia:.1f} m/s", f"{ek_lluvia_uj:.1f} μJ de Energía", delta_color="inverse")
-    c_b2.metric("Gota Filtrada (Bajo el Árbol)", f"{vel_goteo_h:.1f} m/s", f"{ek_goteo_uj:.1f} μJ de Energía", delta_color="off")
-    
-    if reduccion_ek > 0:
-        c_b3.metric("Protección contra Erosión", f"-{reduccion_ek:.1f}%", "Energía destructiva disipada", delta_color="normal")
-    else:
-        c_b3.metric("Riesgo de Erosión Incrementado", f"+{abs(reduccion_ek):.1f}%", "El dosel alto empeora el impacto", delta_color="inverse")
-
-    with st.expander("📚 Marco Conceptual del Microsistema", expanded=False):
-        st.markdown("""
-        **La Física detrás del modelo:** El Área Foliar ($A_{hojas}$) crece exponencialmente con el diámetro del tronco mediante leyes alométricas. 
-        La Capacidad de Retención ($S_l$) varía drásticamente según la microanatomía de la hoja. Al multiplicar $A_{hojas} \\times S_l$, obtenemos los **litros exactos** que el dosel puede secuestrar individualmente. Ramas agudas generan mayor *Stemflow* (agua canalizada suavemente a las raíces), mientras que hojas con "acumen" puntiagudo reducen el tamaño de las gotas, controlando la energía cinética del impacto y evitando la erosión del suelo.
-        """)
-
-    # =========================================================================
-    # EL ALEPH DEL ÁRBOL: MARCO CONCEPTUAL, FÍSICO Y BIOLÓGICO
-    # =========================================================================
-    with st.expander("📚 El Milagro de la Hoja: Marco Conceptual, Ecuaciones y Física del Bosque", expanded=False):
-        st.markdown("""
-        ### 🌿 1. La Arquitectura Fractal y la Alometría
-        Un árbol no es un cilindro de madera; es una estructura fractal diseñada matemáticamente por la evolución para maximizar su superficie en un espacio tridimensional. 
-        * **Ley Alométrica:** El diámetro del tronco (DAP) dicta la cantidad de energía y agua que el árbol puede transportar, lo que se traduce en un Área Foliar ($A_{hojas}$) predecible. Un árbol maduro despliega miles de metros cuadrados de hojas a partir de un tronco de apenas un metro de ancho.
-        * **Escorrentía Fustal (Stemflow):** El ángulo de las ramas define el destino del agua. Las ramas en "V" (ángulos agudos) actúan como un embudo gigante. El árbol "cosecha" la lluvia y la hace resbalar por su corteza para regar sus propias raíces sin causar erosión en la tierra circundante.
-
-        ### 🔬 2. Microingeniería Foliar: La Esponja Perfecta
-        La capacidad de una hoja para retener agua ($S_l$) es un milagro de la nanoescala.
-        * **Pubescencia:** Los bosques de niebla y páramos andinos están llenos de plantas con hojas "peludas" (tricomas). Estos pelos microscópicos aumentan la fricción y atrapan microgotas de la neblina, multiplicando la retención de agua.
-        * **Ceras Epicuticulares:** Las hojas lisas y cerosas hacen que el agua forme esferas perfectas que resbalan rápidamente, protegiendo a la planta del peso excesivo y los hongos.
-
-        ### 🌧️ 3. La Balística de la Tormenta (Control de Erosión)
-        Cuando una gota cae desde las nubes, alcanza su **Velocidad Terminal ($V_t$)** (Ecuación de Atlas-Ulbrich), impactando el suelo como un micrometeorito.
-        $$V_t = 9.65 - 10.3 \cdot e^{-0.6D}$$
-        
-        **El Escudo del Dosel:** El árbol recibe este impacto a máxima velocidad y reduce la Energía Cinética de la gota a cero. Luego, el agua gotea desde una altura mucho menor ($h$). La nueva velocidad de impacto ($V_h$) se calcula con la ecuación aerodinámica de Brandt (1989):
-        $$V_h = V_t \sqrt{1 - e^{-2gh/V_t^2}}$$
-
-        **El Acumen (La Punta de Goteo):** Si la gota que cae del árbol es enorme, el daño al suelo podría ser peor que la lluvia original. Para evitarlo, las plantas tropicales desarrollaron el *acumen* (una punta alargada en la hoja). Esta aguja natural rompe la tensión superficial del agua, forzando al árbol a "gotear" gotas diminutas ($D < 2\\text{ mm}$) que llegan al suelo sin energía destructiva. 
-
-        ### 🎯 El Veredicto de la Naturaleza
-        Multiplicando el Área Foliar por la microarquitectura de la hoja y la física balística, demostramos matemáticamente que talar un árbol centenario no es solo perder madera; es **apagar una máquina perfecta de regulación hídrica y disipación de energía** que ninguna tecnología humana puede replicar con tal eficiencia.
-        """)
-
-    # =========================================================================
-    # 🟤 4. MÓDULO DE FÍSICA DE SUELOS: EROSIVIDAD (SPLASH DETACHMENT)
-    # =========================================================================
-    st.markdown("---")
-    
-    # Tooltip CSS para el Módulo 4
-    st.markdown("""
-    <style>
-    .tooltip-mod4 { position: relative; display: inline-block; color: #e67e22; font-weight: bold; cursor: help; border-bottom: 2px dotted #e67e22; }
-    .tooltip-mod4 .tooltiptext { visibility: hidden; width: 320px; background-color: #2c3e50; color: #fff; text-align: left; border-radius: 6px; padding: 15px; position: absolute; z-index: 50; top: 120%; left: 50%; margin-left: -160px; opacity: 0; transition: opacity 0.3s; font-size: 0.85em; font-weight: normal;}
-    .tooltip-mod4:hover .tooltiptext { visibility: visible; opacity: 1; }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("#### 🟤 4. Erosividad y Desprendimiento de Suelo (Splash Detachment)")
-    st.markdown("""
-    <div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px;'>
-        Escala el impacto balístico. Define el volumen y la duración del evento meteorológico. Esta tierra arrancada es el primer paso del <span class="tooltip-mod4">Efecto Cascada Territorial<span class="tooltiptext">🧠 <b>Conexión Gemelo Digital:</b> Los kilogramos de tierra arrancados aquí se convertirán en toneladas de Lodo en el Módulo 6, y viajarán directamente a la <b>Página 08 (Sistemas Hídricos)</b> asfixiando el embalse en el Diagrama de Sankey y elevando la tarifa del Acueducto.</span></span>.
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_suelo1, col_suelo2 = st.columns([1, 1.5])
-
-    with col_suelo1:
-        st.markdown("**Características de la Tormenta:**")
-        volumen_tormenta_mm = st.slider("🌧️ Volumen de Lluvia (mm):", 10.0, 150.0, 50.0, step=5.0)
-        duracion_horas = st.slider("⏱️ Duración del Evento (Horas):", 0.5, 24.0, 1.0, step=0.5, help="A menor tiempo, mayor intensidad y mayor fuerza destructiva de la gota.")
-        
-        st.markdown("**Mecánica del Suelo (Erodabilidad - Factor K):**")
-        tipo_suelo = st.selectbox(
-            "Selecciona la geología base:",
-            ["Arena Fina / Suelo Desnudo (Alta - K=0.06)", 
-             "Franco-Limoso / Cenizas Volcánicas (Media - K=0.03)", 
-             "Arcilloso Compacto (Baja - K=0.01)"], index=1
-        )
-        k_factor = 0.06 if "Alta" in tipo_suelo else 0.03 if "Media" in tipo_suelo else 0.01
-
-    # ==========================================
-    # MOTOR FÍSICO DE EROSIÓN (Dinámica de Gotas)
-    # ==========================================
-    # Cálculo de Intensidad
-    intensidad_mm_h = volumen_tormenta_mm / duracion_horas if duracion_horas > 0 else 0
-
-    # 1. Volumen de 1 gota en mm³ (Esfera = 4/3 * pi * r³)
-    vol_gota_nube_mm3 = (4/3) * math.pi * ((diametro_lluvia / 2)**3)
-    vol_gota_arbol_mm3 = (4/3) * math.pi * ((diametro_goteo / 2)**3)
-
-    # 2. Cantidad de gotas por metro cuadrado para alcanzar los mm de la tormenta
-    # 1 mm de lluvia en 1 m² = 1,000,000 mm³
-    vol_tormenta_m2_mm3 = volumen_tormenta_mm * 1_000_000
-    
-    # Prevenir divisiones por cero
-    if vol_gota_nube_mm3 > 0 and vol_gota_arbol_mm3 > 0:
-        num_gotas_nube = vol_tormenta_m2_mm3 / vol_gota_nube_mm3
-        num_gotas_arbol = vol_tormenta_m2_mm3 / vol_gota_arbol_mm3
-    else:
-        num_gotas_nube = 0
-        num_gotas_arbol = 0
-
-    # 3. Energía Cinética Total (Joules por m²)
-    ke_total_nube = num_gotas_nube * ek_lluvia 
-    ke_total_arbol = num_gotas_arbol * ek_goteo 
-
-    # 4. Desprendimiento de Suelo (Splash Detachment en Kg / m²)
-    suelo_perdido_nube_kg = k_factor * ke_total_nube
-    suelo_perdido_arbol_kg = k_factor * ke_total_arbol
-
-    # 💾 GUARDIÁN DE MEMORIA ABSOLUTA: Puente de titanio hacia el Módulo 5
-    st.session_state['memoria_suelo_arrancado'] = suelo_perdido_arbol_kg
-
-    # ==========================================
-    # RENDERIZADO VISUAL
-    # ==========================================
-    with col_suelo2:
-        c_e1, c_e2, c_e3 = st.columns(3)
-        c_e1.metric("Intensidad", f"{intensidad_mm_h:.1f} mm/h", "Poder destructivo", delta_color="inverse")
-        
-        # Convertimos Joules a kiloJoules (kJ) para las métricas visuales
-        energia_cielo_kj = ke_total_nube / 1000
-        energia_bosque_kj = ke_total_arbol / 1000
-        delta_energia = ((energia_bosque_kj - energia_cielo_kj) / energia_cielo_kj * 100) if energia_cielo_kj > 0 else 0
-        color_delta = "inverse" if delta_energia > 0 else "normal"
-        
-        c_e2.metric("Energía (Cielo Abierto)", f"{energia_cielo_kj:,.1f} kJ/m²", "Suelo Desnudo", delta_color="inverse")
-        c_e3.metric("Energía (Bajo Dosel)", f"{energia_bosque_kj:,.1f} kJ/m²", f"{delta_energia:+.1f}% Amortiguación", delta_color=color_delta)
-        
-        # Gráfico de barras ajustado a las nuevas variables físicas
-        fig_suelo = go.Figure(data=[
-            go.Bar(name='Cielo Abierto (Pasto / Desnudo)', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_perdido_nube_kg], marker_color='#e67e22', text=[f"{suelo_perdido_nube_kg:.1f} Kg"], textposition='auto'),
-            go.Bar(name='Bajo el Dosel Forestal', x=['Suelo Arrancado (Kg/m²)'], y=[suelo_perdido_arbol_kg], marker_color='#27ae60', text=[f"{suelo_perdido_arbol_kg:.1f} Kg"], textposition='auto')
-        ])
-        fig_suelo.update_layout(barmode='group', height=300, margin=dict(l=10, r=10, t=30, b=10), yaxis_title="Kilogramos de tierra (Kg/m²)", plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
-        st.plotly_chart(fig_suelo, use_container_width=True)
-
-    # El Aleph del Suelo
-    with st.expander("📚 El Aleph del Suelo: Física de la Erosión y Modelo MMF", expanded=False):
-        st.markdown("""
-        ### 🟤 La Física de la Tierra y la Tormenta
-        La erosión hídrica no comienza con el agua fluyendo, comienza con el **impacto balístico**.
-        
-        * **Mecánica del Impacto (Splash Detachment):** Cuando la Energía Cinética de la lluvia supera la fuerza de cohesión de los agregados del suelo, este "explota" a nivel microscópico. Las partículas finas (limos y arcillas) salen volando y caen taponando los poros del suelo circundante, lo que crea un sello impermeable. 
-        * **El Inicio del Fin:** Una vez que el suelo se sella, el agua ya no puede infiltrarse hacia los acuíferos subterráneos (reduciendo la recarga de aguas subterráneas). En su lugar, el agua se acumula en la superficie y fluye a gran velocidad (Escorrentía Superficial), llevándose consigo la capa vegetal fértil hacia los cauces de los ríos.
-        
-        ### 🧪 El Modelo MMF (Morgan, Morgan & Finney)
-        Para predecir este daño, la edafología utiliza el cálculo de la Energía Cinética Total ($KE$) de la tormenta multiplicada por el factor de Erodabilidad del suelo ($K$).
-        $$D_s = K \cdot KE_{total}$$
-        
-        **La Paradoja del Dosel Alto:** Si el bosque carece de sotobosque (plantas bajas y rastrojo), y los árboles tienen hojas cóncavas a gran altura (ej. plantaciones maderables exóticas), las "súper-gotas" generadas por las hojas adquieren una energía masiva, causando **mayor erosión bajo el bosque que a cielo abierto**. Por esto, la verdadera protección hídrica requiere un bosque multi-estrato (sotobosque, subdosel y dosel).
-        """)
-
+        if st.toggle("📚 Mostrar El Aleph del Suelo: Física de la Erosión y Modelo MMF"):
+            st.markdown("""
+            **Mecánica del Impacto (Splash Detachment):** Cuando la Energía Cinética de la lluvia supera la cohesión del suelo, las partículas finas explotan taponando los poros, creando un sello impermeable que genera avalanchas.
+            
+            **El Modelo MMF:** $D_s = K \\cdot KE_{total}$
+            
+            **La Paradoja del Dosel Alto:** Si el bosque carece de sotobosque y los árboles tienen hojas cóncavas a gran altura, las "súper-gotas" adquieren energía masiva, causando **mayor erosión bajo el bosque que a cielo abierto**.
+            """)
+            
     # =========================================================================
     # 🌊 5. MÓDULO DE TRANSPORTE DE SEDIMENTOS (Ecuación de Manning)
     # =========================================================================
