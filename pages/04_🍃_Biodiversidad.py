@@ -1962,25 +1962,21 @@ with tab_micro:
             """)
 
     # =========================================================================
-    # 🌐 9. CROSS-POLLINATION: EXPORTACIÓN AL GEMELO DIGITAL (ALEPH)
+    # 🌐 9. CONEXIÓN AL GEMELO DIGITAL (CROSS-POLLINATION)
     # =========================================================================
     st.markdown("---")
     st.markdown("#### 🌐 9. Conexión al Gemelo Digital (Cross-Pollination)")
-    st.info("El ciclo se cierra aquí. Exporta el impacto físico y químico de esta tormenta hacia el simulador de Sistemas Hídricos (Pág 08) para ver cómo afecta el abastecimiento de toda la región.")
+    st.info("Exporta el impacto de esta tormenta simulada hacia el simulador de Sistemas Hídricos (Pág 08).")
 
     if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08)", type="primary", use_container_width=True):
-        # 🧠 Inyectamos las variables calculadas en la memoria global de la sesión.
-        # Usamos nombres estandarizados para que la Página 08 los reconozca al instante.
+        # 🧠 EXTRACCIÓN MAESTRA: Recuperamos los valores de los módulos comprimidos
+        lodo_final = locals().get('lodo_hoy_m3', 0.0)
+        fosforo_final = locals().get('fosforo_hoy', 0.0)
+        costo_final = locals().get('s_total', 0.0)
         
-        st.session_state['eco_lodo_m3'] = float(locals().get('lodo_hoy_m3', 0.0))
-        st.session_state['eco_fosforo_kg'] = float(locals().get('fosforo_hoy', 0.0))
-        st.session_state['eco_sobrecosto_usd'] = float(locals().get('s_total', 0.0))
-        st.session_state['eco_flujo_base_m3s'] = float(locals().get('caudal_base_ls', 0.0) / 1000.0) # Convertido a m3/s
+        # Inyectamos en la memoria global
+        st.session_state['eco_lodo_m3'] = float(lodo_final)
+        st.session_state['eco_fosforo_kg'] = float(fosforo_final)
+        st.session_state['eco_sobrecosto_usd'] = float(costo_final)
         
-        # Guardamos también la configuración del paisaje para reportes futuros
-        st.session_state['cache_paisaje'] = {
-            "bosque": locals().get('f_bos', 0.0),
-            "agricola": locals().get('f_agr', 0.0)
-        }
-
-        st.success("🧠 **¡Sincronización Exitosa!** El lodo, los nutrientes y el flujo base ahora viajan por el Aleph. Ve a la **Página 08 (Sistemas Hídricos)** para activar el interruptor de tormenta y ver el desastre en el Sankey.")
+        st.success(f"🧠 **¡Sincronización Exitosa!** Lodo: {lodo_final:,.0f} m³ | Fósforo: {fosforo_final:,.1f} Kg. Ve a la Página 08 para ver el efecto cascada.")
