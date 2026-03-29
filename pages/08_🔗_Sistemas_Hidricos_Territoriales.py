@@ -711,47 +711,47 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
     with c_roi2:
         inversion_total = ha_proteger * costo_ha_usd
         
-        # Hipótesis de Mitigación (Curva de eficiencia SbN)
-        mitigacion_pct = min((ha_proteger * 0.05), 85.0) / 100.0
+        # --- NUEVA LÓGICA DE MITIGACIÓN DINÁMICA (Sin techos rígidos) ---
+        # Usamos una función de saturación: Mitigación = (1 - e^(-ha / 1200)) * 0.95
+        # Esto permite que el beneficio siga creciendo después de las 1650 ha, pero más lento.
+        mitigacion_pct = (1 - np.exp(-ha_proteger / 1200.0)) * 0.95
         
         # 💰 1. BENEFICIO QUÍMICO (OPEX EVITADO)
         ahorro_anual_quimicos = (sobrecosto_tormenta_usd * mitigacion_pct) * eventos_ano
         total_quimicos = ahorro_anual_quimicos * horizonte_roi
         
         # 💰 2. BENEFICIO DE INFRAESTRUCTURA (EVITACIÓN DE DRAGADO)
-        # Dragar 1m3 de lodo mecánicamente cuesta ~12 USD. La naturaleza lo previene.
         costo_dragado_m3 = 12.0 
         lodo_evitado_m3_total = (lodo_tormenta_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
         total_dragado_evitado = lodo_evitado_m3_total * costo_dragado_m3
         
         # 💰 3. VALOR DEL AGUA PROTEGIDA (VENTA DE SERVICIO)
-        # El bosque garantiza flujo base en sequía. Asumimos 3% de la oferta anual protegida.
         vol_agua_protegida_m3 = (oferta_anual_m3 * 0.03) * horizonte_roi
-        tarifa_bloque_usd = 0.45 # USD/m3 (Valor de venta mayorista)
+        tarifa_bloque_usd = 0.45 
         total_venta_agua = vol_agua_protegida_m3 * tarifa_bloque_usd
         
-        # 💰 4. BENEFICIO ENERGÉTICO (Solo si hay turbinado)
+        # 💰 4. BENEFICIO ENERGÉTICO
         total_energia = 0.0
         if val_turbinado > 0:
-            kwh_salvados = vol_agua_protegida_m3 * datos_nodo["factor_energia_kwh_m3"]
-            total_energia = kwh_salvados * 0.08 # 0.08 USD/kWh
+            kwh_salvados = vol_agua_protegida_m3 * datos_nodo.get("factor_energia_kwh_m3", 0.65)
+            total_energia = kwh_salvados * 0.08 
 
         # --- SUMATORIA FINAL ---
         beneficio_total = total_quimicos + total_dragado_evitado + total_venta_agua + total_energia
         roi_real = ((beneficio_total - inversion_total) / inversion_total) * 100 if inversion_total > 0 else 0
         
-        # --- RENDERIZADO DE RESULTADOS REFINADO (PUNTO 1 Y 2) ---
+        # --- RENDERIZADO DE RESULTADOS ---
         st.markdown("##### 📊 Caso de Negocio Integral (Triple Línea de Beneficio)")
         c_r1, c_r2, c_r3 = st.columns(3)
         c_r1.metric("Inversión (CAPEX)", f"${inversion_total/1e6:,.2f} M USD")
         c_r2.metric("Beneficio Total Proyectado", f"${beneficio_total/1e6:,.2f} M USD", "Impacto Multinivel")
         c_r3.metric("R.O.I. Estratégico", f"{roi_real:,.0f}%", delta_color="normal" if roi_real > 0 else "inverse")
         
-        # 🧪 DESGLOSE TÉCNICO DE BENEFICIOS (Recuperando el valor de tratamiento)
+        # 🧪 DESGLOSE TÉCNICO
         with st.expander("🔍 Ver Desglose de Beneficios Acumulados", expanded=True):
             st.markdown(f"Distribución del valor generado en **{horizonte_roi} años**:")
             d1, d2, d3, d4 = st.columns(4)
-            d1.write(f"**Tratamiento (Insumos):**\n${total_quimicos/1e6:,.2f} M USD")
+            d1.write(f"**Tratamiento:**\n${total_quimicos/1e6:,.2f} M USD")
             d2.write(f"**Evitación Dragado:**\n${total_dragado_evitado/1e6:,.2f} M USD")
             d3.write(f"**Agua Garantizada:**\n${total_venta_agua/1e6:,.2f} M USD")
             d4.write(f"**Energía Firme:**\n${total_energia/1e6:,.2f} M USD")
@@ -765,18 +765,12 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         c_r4.metric("Lodo Evitado (Total)", f"{lodo_evitado_m3_total:,.0f} m³", "Previene colmatación")
         c_r5.metric("Vida Útil Salvada", f"+{anos_salvados:,.1f} Años", "Atraso del colapso funcional")
         
-        # 📝 MENSAJE DE VIABILIDAD LIMPIO (Sin errores de pegado)
+        # 📝 MENSAJE DE VIABILIDAD LIMPIO
         if roi_real > 0:
-            # Formateamos los strings por separado para evitar el pegado de texto
             ratio = beneficio_total / inversion_total
-            msg = (
-                f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **{ratio:.1f} USD** por cada dólar invertido. "
-                f"El mayor peso financiero recae en la **evitación de dragado** (${total_dragado_evitado/1e6:.1f} M) "
-                f"y el **agua protegida** (${total_venta_agua/1e6:.1f} M)."
-            )
-            st.success(msg)
+            st.success(f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **{ratio:.1f} USD** por cada dólar invertido. El mayor peso financiero recae en la **evitación de dragado** (${total_dragado_evitado/1e6:.1f} M) y el **agua protegida** (${total_venta_agua/1e6:.1f} M).")
         else:
-            st.warning("⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es bajo, pero el valor existencial del recurso es incalculable.")
+            st.warning("⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es bajo, pero el valor existencial del recurso trasciende la contabilidad.")
 
 # =========================================================================
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
@@ -1199,6 +1193,7 @@ with contenedor_sankey.container():
         reparto_lodo = l_susp_s / len(salidas_con_infra) if salidas_con_infra else 0
 
         for lab, val, col in destinos:
+     
             if val > 0:
                 target_node = idx
                 labels.append(lab)
@@ -1209,12 +1204,37 @@ with contenedor_sankey.container():
                     source.append(0); target.append(target_node); value.append(reparto_lodo); color.append("rgba(205, 133, 63, 0.5)")
                 idx += 1
 
-        # 5. RENDER FINAL
+        # =====================================================================
+        # 🚀 INYECCIÓN DE TOOLTIPS DE CALIDAD (Ubicación: Justo antes del Render)
+        # =====================================================================
+        concentraciones = {
+            "🌲 Bosques (Infiltración)": 0.5,
+            "🚜 Agrícola (Escorrentía)": 450.0,
+            "🐄 Pastos (Compactación)": 180.0,
+            "🏙️ Urbano (Impermeable)": 85.0
+        }
+
+        link_tooltips = []
+        for i in range(len(source)):
+            nombre_origen = labels[source[i]]
+            if nombre_origen in concentraciones:
+                conc = concentraciones[nombre_origen]
+                link_tooltips.append(f"Carga Sedimento: {conc} mg/L<br>Estado: {'🟢 Óptimo' if conc < 10 else '🔴 Crítico'}")
+            elif "Lodo" in nombre_origen or "Sedimento" in nombre_origen:
+                link_tooltips.append("Carga de Sedimento Puro (Evento Torrencial)")
+            else:
+                link_tooltips.append("Mezcla de Caudales en Embalse")
+
+        # --- 5. RENDER FINAL ACTUALIZADO ---
         fig_sankey = go.Figure(data=[go.Sankey(
             valueformat=".2f", valuesuffix=" m³/s",
             textfont=dict(size=12, color="black", family="Georgia, serif"),
             node=dict(pad=18, thickness=22, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
-            link=dict(source=source, target=target, value=value, color=color)
+            link=dict(
+                source=source, target=target, value=value, color=color,
+                customdata=link_tooltips,
+                hovertemplate='<b>Origen:</b> %{source.label}<br><b>Destino:</b> %{target.label}<br><b>Caudal:</b> %{value}%{valuesuffix}<br>%{customdata}<extra></extra>'
+            )
         )])
         fig_sankey.update_layout(height=600, margin=dict(l=10, r=10, t=10, b=10), font_family="Georgia")
         st.plotly_chart(fig_sankey, use_container_width=True)
