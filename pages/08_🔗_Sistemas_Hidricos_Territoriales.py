@@ -451,72 +451,73 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
         st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
 
-# =========================================================================
-# --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
-# =========================================================================
+    # =========================================================================
+    # --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
+    # =========================================================================
 
-# 🌪️ CROSS-POLLINATION: CAPTURA DE DATOS (Lógica de fondo)
-# Leemos los valores de la memoria, pero la activación se controla en el Sankey
-memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
-memoria_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
-memoria_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
+    # 🌪️ CROSS-POLLINATION: CAPTURA DE DATOS (Lógica de fondo)
+    memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+    memoria_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
+    memoria_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
 
-# El estado de 'activar_tormenta' se recupera del toggle ubicado en el Sankey más abajo
-# Para evitar errores de ejecución, inicializamos la variable si no existe
-if 'activar_tormenta_sankey' not in st.session_state:
-    st.session_state['activar_tormenta_sankey'] = False
+    # Recuperamos el estado de activación desde el toggle del Sankey (Módulo 9)
+    if 'activar_tormenta_sankey' not in st.session_state:
+        st.session_state['activar_tormenta_sankey'] = False
 
-activar_tormenta = st.session_state['activar_tormenta_sankey']
+    activar_tormenta = st.session_state['activar_tormenta_sankey']
 
-# Asignación condicionada para los motores de cálculo
-eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
-eco_fosforo_kg = memoria_fosforo_kg if activar_tormenta else 0.0
-eco_sobrecosto_usd = memoria_sobrecosto_usd if activar_tormenta else 0.0
+    # Asignación condicionada para los motores de cálculo
+    eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
+    eco_fosforo_kg = memoria_fosforo_kg if activar_tormenta else 0.0
+    eco_sobrecosto_usd = memoria_sobrecosto_usd if activar_tormenta else 0.0
 
-# --- CONFIGURACIÓN DE POBLACIÓN Y CARGAS POR NODO ---
-if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
-elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
-elif "Peñol" in nodo_seleccionado: d_hum, d_bov, d_por = 25000, 40000, 15000
-elif "Ituango" in nodo_seleccionado: d_hum, d_bov, d_por = 35000, 250000, 60000
-else: d_hum, d_bov, d_por = 20000, 25000, 10000
+    # --- CONFIGURACIÓN DE POBLACIÓN Y CARGAS POR NODO ---
+    if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
+    elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
+    elif "Peñol" in nodo_seleccionado: d_hum, d_bov, d_por = 25000, 40000, 15000
+    elif "Ituango" in nodo_seleccionado: d_hum, d_bov, d_por = 35000, 250000, 60000
+    else: d_hum, d_bov, d_por = 20000, 25000, 10000
 
-pob_hum_local = st.session_state.get('sh_pob_residente', d_hum)
-pob_bov_local = st.session_state.get('sh_bovinos_ica', d_bov)
-pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
+    pob_hum_local = st.session_state.get('sh_pob_residente', d_hum)
+    pob_bov_local = st.session_state.get('sh_bovinos_ica', d_bov)
+    pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
 
-dr_difuso = 0.15 
-dr_puntual = 0.80
+    dr_difuso = 0.15 
+    dr_puntual = 0.80
 
-# PENALIDAD POR TORMENTA: Sumamos el fósforo si la tormenta está activa
-carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0
-carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
-carga_removida_ton = sist_saneamiento * 2.5
-carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
+    # PENALIDAD POR TORMENTA: Sumamos el fósforo si la tormenta está activa
+    carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0
+    carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
+    carga_removida_ton = sist_saneamiento * 2.5
+    carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
-# --- CÁLCULO DE ÍNDICES WRI ---
-carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
-caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
-caudal_natural_L_s = caudal_natural_m3s * 1000
-concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
+    # --- CÁLCULO DE ÍNDICES WRI ---
+    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
+    caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
+    caudal_natural_L_s = caudal_natural_m3s * 1000
+    concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
 
-# 1. Índice de Calidad de Agua
-ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
+    # 1. Índice de Calidad de Agua
+    ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
 
-# 2. Índice de Resiliencia (Buffer del Embalse)
-buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
-ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
+    # 2. Índice de Resiliencia (Buffer del Embalse)
+    buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
+    ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
 
-# 3. Índice de Estrés Hídrico (WEI+)
-consumo_real = max(consumo_anual_m3, val_acueducto * 31536000)
-wei_ratio = consumo_real / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
-ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
+    # 3. Índice de Estrés Hídrico (WEI+)
+    consumo_real = max(consumo_anual_m3, val_acueducto * 31536000)
+    wei_ratio = consumo_real / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
+    ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
 
-# 4. Índice de Neutralidad Volumétrica
-ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real) * 100) if consumo_real > 0 else 0.0
+    # 4. Índice de Neutralidad Volumétrica
+    ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real) * 100) if consumo_real > 0 else 0.0
 
+    # --- FUNCIONES DE EVALUACIÓN Y RENDERIZADO ---
     def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
-        if not invertido: return ("🔴 CRÍTICO", "#c0392b") if valor < umbral_rojo else ("🟡 VULNERABLE", "#f39c12") if valor < umbral_verde else ("🟢 ÓPTIMO", "#27ae60")
-        else: return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
+        if not invertido: 
+            return ("🔴 CRÍTICO", "#c0392b") if valor < umbral_rojo else ("🟡 VULNERABLE", "#f39c12") if valor < umbral_verde else ("🟢 ÓPTIMO", "#27ae60")
+        else: 
+            return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
     def generar_leyenda(u_r, u_v, inv):
         if not inv: return f"🔴 <b>Crítico</b> &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> &gt; {u_v}%"
@@ -536,16 +537,16 @@ ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real) * 100) if cons
         return fig
 
     col_g1, col_g2, col_g3, col_g4 = st.columns(4)
-    for col, ind, tit, col_h, u_r, u_v, inv in zip(
-        [col_g1, col_g2, col_g3, col_g4], [ind_neutralidad, ind_resiliencia, ind_estres, ind_calidad],
-        ["Neutralidad", "Resiliencia", "Seguridad Hídrica (WEI+)", "Calidad de Agua"], ["#2ecc71", "#3498db", "#e74c3c", "#9b59b6"],
-        [40, 40, 40, 40], [70, 70, 70, 70], [False, False, False, False]
-    ):
+    indices = [ind_neutralidad, ind_resiliencia, ind_estres, ind_calidad]
+    titulos = ["Neutralidad", "Resiliencia", "Seguridad Hídrica (WEI+)", "Calidad de Agua"]
+    colores = ["#2ecc71", "#3498db", "#e74c3c", "#9b59b6"]
+
+    for col, ind, tit, col_h in zip([col_g1, col_g2, col_g3, col_g4], indices, titulos, colores):
         with col:
-            est, color_txt = evaluar_indice(ind, u_r, u_v, inv)
-            st.plotly_chart(crear_velocimetro(ind, tit, col_h, u_r, u_v, inv), use_container_width=True)
+            est, color_txt = evaluar_indice(ind, 40, 70)
+            st.plotly_chart(crear_velocimetro(ind, tit, col_h, 40, 70), use_container_width=True)
             st.markdown(f"<h4 style='text-align: center; color: {color_txt}; margin-top:-20px;'>{est}</h4>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{generar_leyenda(u_r, u_v, inv)}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{generar_leyenda(40, 70, False)}</div>", unsafe_allow_html=True)
 
     # 🪄 MAGIA: Convertimos el expander anidado en un toggle elegante
     st.markdown("<br>", unsafe_allow_html=True)
@@ -553,15 +554,15 @@ ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real) * 100) if cons
         st.info("""
         ### 📖 Glosario de Indicadores
         * **Neutralidad Hídrica (Volumetric Water Benefit VWBA):** Mide si el volumen de agua restituido a la cuenca mediante Soluciones Basadas en la Naturaleza (SbN) compensa la Huella Hídrica del consumo humano/industrial.
-        * **Resiliencia Territorial:** Capacidad del ecosistema (aguas subterráneas + escorrentía + buffer del embalse) para soportar eventos de sequía (El Niño) sin colapsar el suministro.
+        * **Resiliencia Territorial:** Capacidad del ecosistema para soportar eventos de sequía (El Niño) sin colapsar el suministro.
         * **Estrés Hídrico (Indicador Falkenmark / ODS 6.4.2):** Porcentaje de la oferta total anual que está siendo extraída por los diversos sectores económicos.
-        * **Calidad de Agua (WQI):** Índice modificado basado en la capacidad de dilución natural (Oferta vs Extracción) y mitigación sanitaria (STAM).
+        * **Calidad de Agua (WQI):** Índice modificado basado en la capacidad de dilución natural y mitigación sanitaria.
           
         ### 🌐 Fuentes y Estándares de Referencia
-        * **WRI (World Resources Institute):** [Volumetric Water Benefit Accounting (VWBA) - Metodología Oficial](https://www.wri.org/research/volumetric-water-benefit-accounting-vwba-implementing-guidelines)
-        * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
+        * **WRI (World Resources Institute):** Volumetric Water Benefit Accounting (VWBA).
+        * **CEO Water Mandate:** Resiliencia hídrica corporativa.
         """)
-
+        
 # --- OPTIMIZADOR DE INVERSIONES Y METAS (PORTAFOLIO INTEGRAL) ---
 st.subheader("💼 Portafolios de Inversión Multi-Objetivo")
 
