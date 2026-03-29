@@ -569,9 +569,14 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     buf_din = (cap_dinamica + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
     ind_resiliencia_real = min(100.0, (buf_din / 2.0) * 100)
 
-    # B. Calidad (WQI): Dilución real considerando trasvases activos
-    caudal_dilucion = sum(datos_nodo["afluentes_naturales"].values()) + val_trasvases_bombeo
-    caudal_L_s = (caudal_dilucion if caudal_dilucion > 0 else 1.0) * 1000
+    # B. Calidad (WQI): Dilución real considerando trasvases activos (Reparación de NameError)
+    # Calculamos el caudal de dilución sumando naturales y los inputs de bombeo/trasvases
+    q_natural_total = sum(datos_nodo["afluentes_naturales"].values())
+    q_bombeo_total = sum(trasvases_inputs.values()) if 'trasvases_inputs' in locals() else 0.0
+    
+    caudal_dilucion_total = q_natural_total + q_bombeo_total
+    caudal_L_s = (caudal_dilucion_total if caudal_dilucion_total > 0 else 1.0) * 1000
+    
     carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
     conc_dbo = carga_mg_s / caudal_L_s
     # Umbral de 50 mg/L para sensibilidad regional
