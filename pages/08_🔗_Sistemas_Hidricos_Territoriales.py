@@ -709,7 +709,6 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         horizonte_roi = st.slider("Años de evaluación del Proyecto:", 5, 30, 10)
         
     with c_roi2:
-with c_roi2:
         inversion_total = ha_proteger * costo_ha_usd
         
         # --- MOTOR DE MITIGACIÓN DINÁMICA ---
