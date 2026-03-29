@@ -491,23 +491,29 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     carga_removida_ton = sist_saneamiento * 2.5
     carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
-    # =========================================================================
+# =========================================================================
     # 🚨 REPARACIÓN FINAL: MOTOR WRI (COHERENCIA PROYECTO VS HISTÓRICO)
     # =========================================================================
     # 1. Seguridad Hídrica (Reflejo del Estrés Local del Módulo 8)
-    # Si el estrés es 47%, la seguridad es 53%. Es un vínculo directo de integridad.
     consumo_real_validado = max(consumo_anual_m3, (val_acueducto * 31536000))
     estres_decimal = consumo_real_validado / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
-    # ind_estres representa ahora el % de Seguridad (100 - % estrés)
     ind_estres = max(0.0, min(100.0, 100.0 - (estres_decimal * 100))) 
 
-    # 2. Neutralidad Hídrica (VWBA): Diferenciación Proyecto vs Histórico
-    # volumen_repuesto_m3 ya integra (ha_base * 2500) + (ha_simuladas * 2500)
+    # 2. Neutralidad Hídrica (VWBA)
     ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real_validado) * 100) if consumo_real_validado > 0 else 0.0
     
-    # 3. Resiliencia y Calidad (Lógica física mantenida)
-    buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
+    # 3. Resiliencia (Buffer del Embalse)
+    buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
     ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
+
+    # 4. Calidad de Agua (Cálculo de DBO recuperado)
+    # Reconstruimos la física de carga para evitar el NameError
+    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
+    caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
+    caudal_natural_L_s = caudal_natural_m3s * 1000
+    
+    # Definición de la variable faltante
+    concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
     ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
 
     # --- FUNCIONES DE EVALUACIÓN Y RENDERIZADO ---
@@ -518,8 +524,8 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
             return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
     def generar_leyenda(u_r, u_v, inv):
-        if not inv: return f"🔴 <b>Crítico</b> < {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> > {u_v}%"
-        else: return f"🟢 <b>Holgado</b> < {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Moderado</b> {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 <b>Severo</b> > {u_r}%"
+        if not inv: return f"🔴 Crítico < {u_r}% | 🟡 Vulnerable {u_r}-{u_v}% | 🟢 Óptimo > {u_v}%"
+        else: return f"🟢 Holgado < {u_v}% | 🟡 Moderado {u_v}-{u_r}% | 🔴 Severo > {u_r}%"
 
     st.markdown("---")
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
