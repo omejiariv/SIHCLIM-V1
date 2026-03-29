@@ -451,67 +451,68 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
         st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
 
-    # =========================================================================
-    # --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
-    # =========================================================================
-    memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
-    memoria_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
-    memoria_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
-    activar_tormenta = False
+# =========================================================================
+# --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
+# =========================================================================
 
-    if memoria_lodo_m3 > 0:
-        st.markdown("""
-        <div style='background-color: rgba(231, 76, 60, 0.1); border-left: 5px solid #e74c3c; padding: 15px; border-radius: 5px; margin-bottom: 20px;'>
-            <h4 style='color: #c0392b; margin-top: 0;'>🚨 ALERTA DE SISTEMA: Avalancha en Memoria</h4>
-            El Gemelo Digital ha detectado una tormenta importada desde el Microsistema de Cuenca (Pág 04).
-        </div>
-        """, unsafe_allow_html=True)
-        
-        activar_tormenta = st.toggle("⛈️ Inyectar Impacto de Tormenta en este Modelo (Sankey)", value=False)
-        
-        if activar_tormenta:
-            c_a1, c_a2, c_a3 = st.columns(3)
-            c_a1.metric("Avalancha de Lodo", f"{memoria_lodo_m3:,.0f} m³", "Directo al embalse", delta_color="inverse")
-            c_a2.metric("Inyección de Fósforo", f"{memoria_fosforo_kg:,.0f} Kg", "Detonante de Eutrofización", delta_color="inverse")
-            c_a3.metric("Sobrecosto Potabilización", f"${memoria_sobrecosto_usd:,.0f} USD", "Penalidad tarifaria inmediata", delta_color="inverse")
-        st.markdown("---")
+# 🌪️ CROSS-POLLINATION: CAPTURA DE DATOS (Lógica de fondo)
+# Leemos los valores de la memoria, pero la activación se controla en el Sankey
+memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+memoria_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
+memoria_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
 
-    eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
-    eco_fosforo_kg = memoria_fosforo_kg if activar_tormenta else 0.0
-    eco_sobrecosto_usd = memoria_sobrecosto_usd if activar_tormenta else 0.0
+# El estado de 'activar_tormenta' se recupera del toggle ubicado en el Sankey más abajo
+# Para evitar errores de ejecución, inicializamos la variable si no existe
+if 'activar_tormenta_sankey' not in st.session_state:
+    st.session_state['activar_tormenta_sankey'] = False
 
-    if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
-    elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
-    elif "Peñol" in nodo_seleccionado: d_hum, d_bov, d_por = 25000, 40000, 15000
-    elif "Ituango" in nodo_seleccionado: d_hum, d_bov, d_por = 35000, 250000, 60000
-    else: d_hum, d_bov, d_por = 20000, 25000, 10000
+activar_tormenta = st.session_state['activar_tormenta_sankey']
 
-    pob_hum_local = st.session_state.get('sh_pob_residente', d_hum)
-    pob_bov_local = st.session_state.get('sh_bovinos_ica', d_bov)
-    pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
+# Asignación condicionada para los motores de cálculo
+eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
+eco_fosforo_kg = memoria_fosforo_kg if activar_tormenta else 0.0
+eco_sobrecosto_usd = memoria_sobrecosto_usd if activar_tormenta else 0.0
 
-    dr_difuso = 0.15 
-    dr_puntual = 0.80
+# --- CONFIGURACIÓN DE POBLACIÓN Y CARGAS POR NODO ---
+if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
+elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
+elif "Peñol" in nodo_seleccionado: d_hum, d_bov, d_por = 25000, 40000, 15000
+elif "Ituango" in nodo_seleccionado: d_hum, d_bov, d_por = 35000, 250000, 60000
+else: d_hum, d_bov, d_por = 20000, 25000, 10000
 
-    carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0
-    carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
-    carga_removida_ton = sist_saneamiento * 2.5
-    carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
+pob_hum_local = st.session_state.get('sh_pob_residente', d_hum)
+pob_bov_local = st.session_state.get('sh_bovinos_ica', d_bov)
+pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
 
-    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
-    caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
-    caudal_natural_L_s = caudal_natural_m3s * 1000
-    concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
-    ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
+dr_difuso = 0.15 
+dr_puntual = 0.80
 
-    buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
-    ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
+# PENALIDAD POR TORMENTA: Sumamos el fósforo si la tormenta está activa
+carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0
+carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
+carga_removida_ton = sist_saneamiento * 2.5
+carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
-    consumo_real = max(consumo_anual_m3, val_acueducto * 31536000)
-    wei_ratio = consumo_real / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
-    ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
+# --- CÁLCULO DE ÍNDICES WRI ---
+carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
+caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
+caudal_natural_L_s = caudal_natural_m3s * 1000
+concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
 
-    ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real) * 100) if consumo_real > 0 else 0.0
+# 1. Índice de Calidad de Agua
+ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
+
+# 2. Índice de Resiliencia (Buffer del Embalse)
+buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
+ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
+
+# 3. Índice de Estrés Hídrico (WEI+)
+consumo_real = max(consumo_anual_m3, val_acueducto * 31536000)
+wei_ratio = consumo_real / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
+ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
+
+# 4. Índice de Neutralidad Volumétrica
+ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real) * 100) if consumo_real > 0 else 0.0
 
     def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
         if not invertido: return ("🔴 CRÍTICO", "#c0392b") if valor < umbral_rojo else ("🟡 VULNERABLE", "#f39c12") if valor < umbral_verde else ("🟢 ÓPTIMO", "#27ae60")
@@ -1059,86 +1060,66 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
             st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_local_m3s:.1f} m³/s")
 
 # ==============================================================================
-# 🕸️ DIBUJO DEL MAPA CONCEPTUAL (Se inyecta en la parte superior)
+# 🕸️ DIBUJO DEL MAPA CONCEPTUAL (REUBICACIÓN DEL CONTROL DE TORMENTA)
 # ==============================================================================
 with contenedor_sankey.container():
     with st.expander("🕸️ Mapa Conceptual: Topología del Metabolismo Hídrico", expanded=False):
-        st.markdown(f"Visualización en tiempo real de las transferencias de caudal (m³/s) para el **Embalse {nodo_seleccionado}**.")
         
+        # 🌪️ EL PUENTE DE MANDO: Recuperamos la alerta y el interruptor aquí
+        memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+        activar_tormenta = False
+
+        if memoria_lodo_m3 > 0:
+            st.markdown(f"""
+            <div style='background-color: rgba(231, 76, 60, 0.05); border-left: 5px solid #e74c3c; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
+                <span style='color: #c0392b; font-weight: bold;'>🚨 Tormenta en Memoria:</span> Se detectó un evento de <b>{memoria_lodo_m3:,.0f} m³</b> desde el Microsistema (Pág 04).
+            </div>
+            """, unsafe_allow_html=True)
+            activar_tormenta = st.toggle("⛈️ Visualizar impacto de la Avalancha en los flujos", value=False)
+            
+            if activar_tormenta:
+                st.info("💡 Observa cómo el flujo marrón de sedimentos ingresa al nodo, reduciendo la resiliencia operativa.")
+            st.markdown("---")
+
+        # Lógica de variables filtrada por el interruptor
+        eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
+        
+        # --- DIBUJO DEL DIAGRAMA ---
         labels = [f"Embalse {nodo_seleccionado}"]
         source, target, value, color = [], [], [], []
         idx = 1
 
         for nombre, q in afluentes_inputs.items():
             if q > 0:
-                labels.append(nombre)
-                source.append(idx)
-                target.append(0)
-                value.append(q)
-                color.append("rgba(46, 204, 113, 0.6)")
-                idx += 1
+                labels.append(nombre); source.append(idx); target.append(0); value.append(q); color.append("rgba(46, 204, 113, 0.6)"); idx += 1
 
         for nombre, q in trasvases_inputs.items():
             if q > 0:
-                labels.append(f"Bombeo {nombre} ⚡(-)")
-                source.append(idx)
-                target.append(0)
-                value.append(q)
-                color.append("rgba(231, 76, 60, 0.8)")
-                idx += 1
+                labels.append(f"Bombeo {nombre} ⚡(-)"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.8)"); idx += 1
 
-        # 🌪️ INYECCIÓN DEL LODO AL SANKEY (Visualización del Desastre)
-        # 🚨 Ya no leemos de session_state, usamos la variable controlada por el Toggle
+        # 🌪️ INYECCIÓN DEL LODO (Solo si el toggle está activo)
         if eco_lodo_m3 > 0:
-            # Convertimos la avalancha de lodo a un caudal aparente (m³/s) asumiendo un pico destructivo de 12 horas
             lodo_m3s = eco_lodo_m3 / (12 * 3600)
             labels.append(f"Avalancha de Lodo<br>({eco_lodo_m3/1000:,.1f} dam³)")
-            source.append(idx)
-            target.append(0)
-            value.append(lodo_m3s)
-            color.append("rgba(139, 69, 19, 0.85)") # Marrón tierra hiper denso
-            idx += 1                
+            source.append(idx); target.append(0); value.append(lodo_m3s); color.append("rgba(139, 69, 19, 0.85)"); idx += 1                
 
-        if val_acueducto > 0:
-            labels.append("Acueducto (Aburrá)")
-            source.append(0)
-            target.append(idx)
-            value.append(val_acueducto)
-            color.append("rgba(52, 152, 219, 0.6)")
-            idx += 1
-            
-        if val_turbinado > 0:
-            labels.append("Generación ⚡(+)")
-            source.append(0)
-            target.append(idx)
-            value.append(val_turbinado)
-            color.append("rgba(241, 196, 15, 0.8)")
-            idx += 1
-            
-        if val_ecologico > 0:
-            labels.append("Río Abajo (Eco)")
-            source.append(0)
-            target.append(idx)
-            value.append(val_ecologico)
-            color.append("rgba(149, 165, 166, 0.6)")
-            idx += 1
-            
-        if datos_nodo["evaporacion_m3s"] > 0:
-            labels.append("Evaporación")
-            source.append(0)
-            target.append(idx)
-            value.append(datos_nodo["evaporacion_m3s"])
-            color.append("rgba(189, 195, 199, 0.3)")
+        # Salidas (Acueducto, Energía, Eco, Evaporación)
+        salidas = [("Acueducto (Aburrá)", val_acueducto, "rgba(52, 152, 219, 0.6)"),
+                   ("Generación ⚡(+)", val_turbinado, "rgba(241, 196, 15, 0.8)"),
+                   ("Río Abajo (Eco)", val_ecologico, "rgba(149, 165, 166, 0.6)"),
+                   ("Evaporación", datos_nodo["evaporacion_m3s"], "rgba(189, 195, 199, 0.3)")]
+        
+        for lab, val, col in salidas:
+            if val > 0:
+                labels.append(lab); source.append(0); target.append(idx); value.append(val); color.append(col); idx += 1
 
-        # 🪄 Limpieza de Tooltips de Plotly (Formatos más limpios)
         fig_sankey = go.Figure(data=[go.Sankey(
-            valueformat=".2f", # Formato de 2 decimales para el tooltip
-            valuesuffix=" m³/s", # Añade la unidad al pasar el ratón
-            textfont=dict(size=15, color="black", family="Arial Black"), 
-            node=dict(pad=20, thickness=30, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
+            valueformat=".2f", valuesuffix=" m³/s",
+            textfont=dict(size=14, color="black", family="Georgia, serif"),
+            node=dict(pad=15, thickness=20, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
             link=dict(source=source, target=target, value=value, color=color)
         )])
-        fig_sankey.update_layout(height=480, margin=dict(l=20, r=20, t=30, b=50))
+        fig_sankey.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig_sankey, use_container_width=True)
         
 # =========================================================================
