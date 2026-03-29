@@ -520,7 +520,7 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
     ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
 
-    # =========================================================================
+# =========================================================================
     # 🎨 FUNCIONES DE EVALUACIÓN Y RENDERIZADO (INTEGRIDAD TOTAL)
     # =========================================================================
     def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
@@ -531,21 +531,19 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
 
     def generar_leyenda(u_r, u_v, inv):
         if not inv: 
-            return f"🔴 Crítico < {u_r}% | 🟡 Vulnerable {u_r}-{u_v}% | 🟢 Óptimo > {u_v}%"
+            return f"🔴 < {u_r}% | 🟡 {u_r}-{u_v}% | 🟢 > {u_v}%"
         else: 
-            return f"🟢 Holgado < {u_v}% | 🟡 Moderado {u_v}-{u_r}% | 🔴 Severo > {u_r}%"
-
-    st.markdown("---")
+            return f"🟢 < {u_v}% | 🟡 {u_v}-{u_r}% | 🔴 > {u_r}%"
 
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
-        # 🚨 AJUSTE DE TÍTULO EN TIEMPO REAL
+        # 🌪️ AJUSTE DE TÍTULO ANTE TORMENTA
         if "Resiliencia" in titulo and st.session_state.get('activar_tormenta_sankey', False):
             titulo = f"🌪️ {titulo} (Colmatación)"
 
         fig = go.Figure(go.Indicator(
             mode = "gauge+number", value = valor,
-            number = {'suffix': "%", 'font': {'size': 26}},
-            title = {'text': titulo, 'font': {'size': 14}},
+            number = {'suffix': "%", 'font': {'size': 24}, 'valueformat': ".1f"},
+            title = {'text': titulo, 'font': {'size': 14, 'family': 'Georgia'}},
             gauge = {
                 'axis': {'range': [None, 100], 'tickwidth': 1},
                 'bar': {'color': color_bar},
@@ -555,27 +553,42 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
                     {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc"},
                     {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}
                 ],
-                'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}
+                'threshold': {'line': {'color': "black", 'width': 3}, 'thickness': 0.75, 'value': valor}
             }
         ))
-        
-        if "Neutralidad" in titulo and nodo_seleccionado == "La Fe":
-            st.caption("ℹ️ Basado en el aporte marginal de la Quebrada Espíritu Santo frente a la demanda metropolitana.")
-
-        fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10))
+        fig.update_layout(height=200, margin=dict(l=15, r=15, t=40, b=10))
         return fig
 
-    col_g1, col_g2, col_g3, col_g4 = st.columns(4)
-    indices = [ind_neutralidad, ind_resiliencia, ind_estres, ind_calidad]
-    titulos = ["Neutralidad", "Resiliencia", "Seguridad Hídrica (WEI+)", "Calidad de Agua"]
-    colores = ["#2ecc71", "#3498db", "#e74c3c", "#9b59b6"]
+    # 🌪️ RECALCULO DE RESILIENCIA EN TIEMPO REAL (Antes del Render)
+    cap_dinamica = capacidad_embalse_m3
+    if st.session_state.get('activar_tormenta_sankey', False):
+        cap_dinamica -= st.session_state.get('eco_lodo_fondo_m3', 0.0)
+        cap_dinamica = max(0, cap_dinamica)
+    
+    buf_din = (cap_dinamica + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
+    ind_resiliencia_real = min(100.0, (buf_din / 2.0) * 100)
 
-    for col, ind, tit, col_h in zip([col_g1, col_g2, col_g3, col_g4], indices, titulos, colores):
-        with col:
-            est, color_txt = evaluar_indice(ind, 40, 70)
-            st.plotly_chart(crear_velocimetro(ind, tit, col_h, 40, 70), use_container_width=True)
-            st.markdown(f"<h4 style='text-align: center; color: {color_txt}; margin-top:-20px;'>{est}</h4>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center; font-size: 13px; color: #7F8C8D; margin-top: -5px;'>{generar_leyenda(40, 70, False)}</div>", unsafe_allow_html=True)
+    # Configuración de visualización
+    col_g = st.columns(4)
+    data_viz = [
+        {"val": ind_neutralidad, "tit": "Neutralidad", "col": "#2ecc71", "u_r": 40, "u_v": 70, "inv": False},
+        {"val": ind_resiliencia_real, "tit": "Resiliencia", "col": "#3498db", "u_r": 30, "u_v": 60, "inv": False},
+        {"val": ind_estres, "tit": "Seguridad (WEI+)", "col": "#e74c3c", "u_r": 40, "u_v": 75, "inv": False},
+        {"val": ind_calidad, "tit": "Calidad (WQI)", "col": "#9b59b6", "u_r": 50, "u_v": 80, "inv": False}
+    ]
+
+    for i, item in enumerate(data_viz):
+        with col_g[i]:
+            est, color_txt = evaluar_indice(item["val"], item["u_r"], item["u_v"], item["inv"])
+            st.plotly_chart(crear_velocimetro(item["val"], item["tit"], item["col"], item["u_r"], item["u_v"], item["inv"]), use_container_width=True)
+            
+            # Subtítulos de Estado y Leyenda
+            st.markdown(f"<p style='text-align: center; color: {color_txt}; font-weight: bold; margin-top:-25px; font-size: 15px;'>{est}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align: center; font-size: 11px; color: #95a5a6; margin-top: -10px;'>{generar_leyenda(item['u_r'], item['u_v'], item['inv'])}</p>", unsafe_allow_html=True)
+            
+            # Aclaración específica para La Fe en Neutralidad
+            if item["tit"] == "Neutralidad" and nodo_seleccionado == "La Fe":
+                st.caption("ℹ️ Aporte marginal Q. Esp. Santo vs Valle de Aburrá")
 
     # 🪄 MAGIA: Convertimos el expander anidado en un toggle elegante
     st.markdown("<br>", unsafe_allow_html=True)
