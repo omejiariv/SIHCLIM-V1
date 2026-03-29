@@ -1066,11 +1066,19 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
 with contenedor_sankey.container():
     with st.expander("🕸️ Mapa Conceptual: Topología del Metabolismo Hídrico", expanded=False):
         
-        # 🌪️ CAPTURA DE VARIABLES DEL PUENTE (CROSS-POLLINATION)
+        # 🔍 1. CAPTURA Y "BUSCADOR DE SEGURIDAD" (Evita el Cero persistente)
         memoria_lodo_total = st.session_state.get('eco_lodo_total_m3', 0.0)
         lodo_colas = st.session_state.get('eco_lodo_colas_m3', 0.0)
         lodo_fondo = st.session_state.get('eco_lodo_fondo_m3', 0.0)
-        lodo_suspension = st.session_state.get('eco_lodo_suspension_m3', 0.0)
+        
+        # Buscamos en todas las llaves posibles por si hubo un cambio de nombre en el Aleph
+        lodo_suspension = st.session_state.get('eco_lodo_suspension_m3', 
+                          st.session_state.get('eco_lodo_abrasivo_m3', 0.0))
+
+        # 🛠️ DEBUG VISUAL (Solo se muestra si hay un error de datos)
+        if memoria_lodo_total > 0 and lodo_suspension == 0:
+            st.warning("⚠️ Datos de suspensión no detectados. Verificando Aleph...")
+            st.json({k: v for k, v in st.session_state.items() if 'eco_' in k})
 
         if memoria_lodo_total > 0:
             st.markdown(f"""
@@ -1080,77 +1088,64 @@ with contenedor_sankey.container():
             </div>
             """, unsafe_allow_html=True)
             
-            # Sincronizamos el estado del toggle con el session_state para que los índices WRI reaccionen
-            activar_tormenta = st.toggle("⛈️ Inyectar Trifurcación de Lodos en el Sistema", value=st.session_state.get('activar_tormenta_sankey', False))
+            activar_tormenta = st.toggle("⛈️ Inyectar Trifurcación de Lodos en el Sistema", 
+                                         value=st.session_state.get('activar_tormenta_sankey', False))
             st.session_state['activar_tormenta_sankey'] = activar_tormenta
             
             if activar_tormenta:
                 col_i1, col_i2, col_i3 = st.columns(3)
                 col_i1.metric("En Colas (Cota Alta)", f"{lodo_colas:,.0f} m³", "Depósito Periférico")
                 col_i2.metric("En Fondo (Torre)", f"{lodo_fondo:,.0f} m³", "Vida Útil Robada", delta_color="inverse")
+                # Aquí forzamos la visualización del lodo de suspensión
                 col_i3.metric("Suspendido (Abrasión)", f"{lodo_suspension:,.0f} m³", "Riesgo Máquinas", delta_color="inverse")
             st.markdown("---")
 
-        # --- LÓGICA DINÁMICA DEL DIAGRAMA ---
+        # --- 2. LÓGICA DINÁMICA DEL DIAGRAMA ---
         labels = [f"Embalse {nodo_seleccionado}"]
         source, target, value, color = [], [], [], []
         idx = 1
 
-        # 1. ENTRADAS: Afluentes y Trasvases
+        # Entradas
         for nombre, q in afluentes_inputs.items():
             if q > 0:
                 labels.append(nombre); source.append(idx); target.append(0); value.append(q); color.append("rgba(46, 204, 113, 0.4)"); idx += 1
-        for nombre, q in trasvases_inputs.items():
-            if q > 0:
-                labels.append(f"Bombeo {nombre}"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.4)"); idx += 1
-
-        # 🌪️ 2. INYECCIÓN DE LA TRIFURCACIÓN DE LODO (Solo si el toggle está activo)
+        
+        # 🌪️ 3. DIBUJO DE LA TRIFURCACIÓN (Solo si el toggle está activo)
+        l_susp_s = 0.0
         if st.session_state.get('activar_tormenta_sankey', False) and memoria_lodo_total > 0:
-            # A. Lodo en Colas (Entra y se queda estático en la periferia)
+            # Colas
             l_colas_s = lodo_colas / (12 * 3600)
-            labels.append("Depósito en Colas (Cota Alta)")
-            source.append(idx); target.append(0); value.append(l_colas_s); color.append("rgba(210, 180, 140, 0.7)"); idx += 1
-            
-            # B. Lodo de Fondo (Entra y colmata el Volumen Muerto)
+            labels.append("Depósito en Colas"); source.append(idx); target.append(0); value.append(l_colas_s); color.append("rgba(210, 180, 140, 0.7)"); idx += 1
+            # Fondo
             l_fondo_s = lodo_fondo / (12 * 3600)
-            labels.append("Lodo de Fondo (Colmatación)")
-            source.append(idx); target.append(0); value.append(l_fondo_s); color.append("rgba(101, 67, 33, 0.9)"); idx += 1
-            
-            # C. Lodo Suspendido (ENTRA al embalse para luego SALIR)
+            labels.append("Lodo de Fondo"); source.append(idx); target.append(0); value.append(l_fondo_s); color.append("rgba(101, 67, 33, 0.9)"); idx += 1
+            # Suspensión (Viajero)
             l_susp_s = lodo_suspension / (12 * 3600)
             if l_susp_s > 0:
-                labels.append("Sedimento Abrasivo (Suspensión)")
-                source.append(idx); target.append(0); value.append(l_susp_s); color.append("rgba(205, 133, 63, 0.8)"); idx += 1
-        else:
-            l_susp_s = 0.0
+                labels.append("Sedimento Abrasivo"); source.append(idx); target.append(0); value.append(l_susp_s); color.append("rgba(205, 133, 63, 0.8)"); idx += 1
 
-        # 3. SALIDAS: Nodos de Destino y Conexión de Lodo Viajero
+        # 4. SALIDAS Y VENA MARRÓN
         destinos = [
             ("Acueducto (Consumo)", val_acueducto, "rgba(52, 152, 219, 0.6)"),
             ("Generación Eléctrica", val_turbinado, "rgba(241, 196, 15, 0.7)"),
             ("Caudal Ecológico", val_ecologico, "rgba(149, 165, 166, 0.5)")
         ]
 
-        # Calculamos cuántas salidas de infraestructura están activas para repartir el lodo
-        salidas_activas = sum(1 for lab, val, col in destinos if val > 0 and ("Acueducto" in lab or "Generación" in lab))
-        reparto_lodo = l_susp_s / salidas_activas if salidas_activas > 0 else 0
+        salidas_con_infra = [d for d in destinos if d[1] > 0 and ("Acueducto" in d[0] or "Generación" in d[0])]
+        reparto_lodo = l_susp_s / len(salidas_con_infra) if salidas_con_infra else 0
 
         for lab, val, col in destinos:
             if val > 0:
-                target_node = idx # El índice actual corresponde a este nodo de salida
+                target_node = idx
                 labels.append(lab)
-                
-                # A. Flujo de agua principal
                 source.append(0); target.append(target_node); value.append(val); color.append(col)
                 
-                # B. 💉 INYECCIÓN DE LA VENA MARRÓN (Lodo Suspendido)
-                # Solo inyectamos si la salida es infraestructura (Acueducto o Generación)
+                # Inyección del flujo abrasivo
                 if reparto_lodo > 0 and ("Acueducto" in lab or "Generación" in lab):
                     source.append(0); target.append(target_node); value.append(reparto_lodo); color.append("rgba(205, 133, 63, 0.5)")
-                
                 idx += 1
 
-        # 4. RENDERIZADO FINAL
+        # 5. RENDER
         fig_sankey = go.Figure(data=[go.Sankey(
             valueformat=".2f", valuesuffix=" m³/s",
             textfont=dict(size=13, color="black", family="Georgia, serif"),
