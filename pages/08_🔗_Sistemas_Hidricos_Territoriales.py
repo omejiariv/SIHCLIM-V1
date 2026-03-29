@@ -1061,66 +1061,97 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
             st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_local_m3s:.1f} m³/s")
 
 # ==============================================================================
-# 🕸️ DIBUJO DEL MAPA CONCEPTUAL (REUBICACIÓN DEL CONTROL DE TORMENTA)
+# 🕸️ MAPA CONCEPTUAL: TOPOLOGÍA DEL METABOLISMO HÍDRICO (VERSION TRIFURCADA)
 # ==============================================================================
 with contenedor_sankey.container():
     with st.expander("🕸️ Mapa Conceptual: Topología del Metabolismo Hídrico", expanded=False):
         
-        # 🌪️ EL PUENTE DE MANDO: Recuperamos la alerta y el interruptor aquí
-        memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
-        activar_tormenta = False
+        # 🌪️ CAPTURA DE VARIABLES DEL PUENTE (CROSS-POLLINATION)
+        memoria_lodo_total = st.session_state.get('eco_lodo_total_m3', 0.0)
+        lodo_colas = st.session_state.get('eco_lodo_colas_m3', 0.0)
+        lodo_fondo = st.session_state.get('eco_lodo_fondo_m3', 0.0)
+        lodo_suspension = st.session_state.get('eco_lodo_suspension_m3', 0.0)
 
-        if memoria_lodo_m3 > 0:
+        if memoria_lodo_total > 0:
             st.markdown(f"""
             <div style='background-color: rgba(231, 76, 60, 0.05); border-left: 5px solid #e74c3c; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
-                <span style='color: #c0392b; font-weight: bold;'>🚨 Tormenta en Memoria:</span> Se detectó un evento de <b>{memoria_lodo_m3:,.0f} m³</b> desde el Microsistema (Pág 04).
+                <span style='color: #c0392b; font-weight: bold;'>🚨 Evento de Ingeniería Detectado:</span> 
+                La avenida torrencial de <b>{memoria_lodo_total:,.0f} m³</b> ha sido particionada físicamente.
             </div>
             """, unsafe_allow_html=True)
-            activar_tormenta = st.toggle("⛈️ Visualizar impacto de la Avalancha en los flujos", value=False)
+            
+            # Sincronizamos el estado del toggle con el session_state para que los índices WRI reaccionen
+            activar_tormenta = st.toggle("⛈️ Inyectar Trifurcación de Lodos en el Sistema", value=st.session_state.get('activar_tormenta_sankey', False))
+            st.session_state['activar_tormenta_sankey'] = activar_tormenta
             
             if activar_tormenta:
-                st.info("💡 Observa cómo el flujo marrón de sedimentos ingresa al nodo, reduciendo la resiliencia operativa.")
+                col_i1, col_i2, col_i3 = st.columns(3)
+                col_i1.metric("En Colas (Cota Alta)", f"{lodo_colas:,.0f} m³", "Depósito Periférico")
+                col_i2.metric("En Fondo (Torre)", f"{lodo_fondo:,.0f} m³", "Vida Útil Robada", delta_color="inverse")
+                col_i3.metric("Suspendido (Abrasión)", f"{lodo_suspension:,.0f} m³", "Riesgo Máquinas", delta_color="inverse")
             st.markdown("---")
 
-        # Lógica de variables filtrada por el interruptor
-        eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
-        
-        # --- DIBUJO DEL DIAGRAMA ---
+        # --- LÓGICA DINÁMICA DEL DIAGRAMA ---
         labels = [f"Embalse {nodo_seleccionado}"]
         source, target, value, color = [], [], [], []
         idx = 1
 
+        # Afluentes y Trasvases
         for nombre, q in afluentes_inputs.items():
             if q > 0:
-                labels.append(nombre); source.append(idx); target.append(0); value.append(q); color.append("rgba(46, 204, 113, 0.6)"); idx += 1
-
+                labels.append(nombre); source.append(idx); target.append(0); value.append(q); color.append("rgba(46, 204, 113, 0.4)"); idx += 1
         for nombre, q in trasvases_inputs.items():
             if q > 0:
-                labels.append(f"Bombeo {nombre} ⚡(-)"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.8)"); idx += 1
+                labels.append(f"Bombeo {nombre}"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.4)"); idx += 1
 
-        # 🌪️ INYECCIÓN DEL LODO (Solo si el toggle está activo)
-        if eco_lodo_m3 > 0:
-            lodo_m3s = eco_lodo_m3 / (12 * 3600)
-            labels.append(f"Avalancha de Lodo<br>({eco_lodo_m3/1000:,.1f} dam³)")
-            source.append(idx); target.append(0); value.append(lodo_m3s); color.append("rgba(139, 69, 19, 0.85)"); idx += 1                
-
-        # Salidas (Acueducto, Energía, Eco, Evaporación)
-        salidas = [("Acueducto (Aburrá)", val_acueducto, "rgba(52, 152, 219, 0.6)"),
-                   ("Generación ⚡(+)", val_turbinado, "rgba(241, 196, 15, 0.8)"),
-                   ("Río Abajo (Eco)", val_ecologico, "rgba(149, 165, 166, 0.6)"),
-                   ("Evaporación", datos_nodo["evaporacion_m3s"], "rgba(189, 195, 199, 0.3)")]
+        # 🌪️ DIBUJO DE LA TRIFURCACIÓN DE LODO (Solo si el toggle está activo)
+        if st.session_state['activar_tormenta_sankey'] and memoria_lodo_total > 0:
+            # 1. Lodo en Colas (Entra y se queda "al lado", no afecta la salida operativa)
+            lodo_colas_s = lodo_colas / (12 * 3600)
+            labels.append("Depósito en Colas (Cotas Altas)")
+            source.append(idx); target.append(0); value.append(lodo_colas_s); color.append("rgba(210, 180, 140, 0.8)"); idx += 1
+            
+            # 2. Lodo de Fondo (Entra y colmata la torre)
+            lodo_fondo_s = lodo_fondo / (12 * 3600)
+            labels.append("Lodo de Fondo (Colmatación)")
+            source.append(idx); target.append(0); value.append(lodo_fondo_s); color.append("rgba(101, 67, 33, 0.9)"); idx += 1
+            
+            # 3. Lodo Suspendido (ENTRA al embalse y SALE por las conducciones)
+            lodo_susp_s = lodo_suspension / (12 * 3600)
+            labels.append("Sedimentos Abrasivos (Suspensión)")
+            source.append(idx); target.append(0); value.append(lodo_susp_s); color.append("rgba(205, 133, 63, 0.7)"); idx_lodo_in = idx; idx += 1
+            
+            # Conexión del lodo suspendido a las SALIDAS
+            # Guardamos índices de destino para la "lija líquida"
+            idx_out = idx # Referencia para los nodos de salida
         
-        for lab, val, col in salidas:
+        # Nodos de Salida (Acueducto, Energía, etc.)
+        # Aquí definimos los destinos para poder mapear el lodo viajero
+        destinos = [
+            ("Acueducto (Consumo)", val_acueducto, "rgba(52, 152, 219, 0.6)"),
+            ("Generación Eléctrica", val_turbinado, "rgba(241, 196, 15, 0.7)"),
+            ("Caudal Ecológico", val_ecologico, "rgba(149, 165, 166, 0.5)")
+        ]
+
+        for lab, val, col in destinos:
             if val > 0:
-                labels.append(lab); source.append(0); target.append(idx); value.append(val); color.append(col); idx += 1
+                target_node = idx
+                labels.append(lab); source.append(0); target.append(target_node); value.append(val); color.append(col); idx += 1
+                
+                # Si la tormenta está activa, inyectamos la "vena" de lodo en la tubería de salida
+                if st.session_state['activar_tormenta_sankey'] and memoria_lodo_total > 0:
+                    # El lodo suspendido se reparte proporcionalmente a las salidas de túnel
+                    if "Acueducto" in lab or "Generación" in lab:
+                        reparto_lodo = lodo_susp_s * 0.5 
+                        source.append(0); target.append(target_node); value.append(reparto_lodo); color.append("rgba(205, 133, 63, 0.4)")
 
         fig_sankey = go.Figure(data=[go.Sankey(
             valueformat=".2f", valuesuffix=" m³/s",
-            textfont=dict(size=14, color="black", family="Georgia, serif"),
-            node=dict(pad=15, thickness=20, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
+            textfont=dict(size=13, color="black", family="Georgia, serif"),
+            node=dict(pad=20, thickness=25, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
             link=dict(source=source, target=target, value=value, color=color)
         )])
-        fig_sankey.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10))
+        fig_sankey.update_layout(height=500, margin=dict(l=10, r=10, t=10, b=10), font_family="Georgia")
         st.plotly_chart(fig_sankey, use_container_width=True)
         
 # =========================================================================
