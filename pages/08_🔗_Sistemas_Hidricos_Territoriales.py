@@ -1118,8 +1118,9 @@ with contenedor_sankey.container():
             
             # C. Lodo Suspendido (ENTRA al embalse para luego SALIR)
             l_susp_s = lodo_suspension / (12 * 3600)
-            labels.append("Sedimento Abrasivo (Suspensión)")
-            source.append(idx); target.append(0); value.append(l_susp_s); color.append("rgba(205, 133, 63, 0.8)"); idx += 1
+            if l_susp_s > 0:
+                labels.append("Sedimento Abrasivo (Suspensión)")
+                source.append(idx); target.append(0); value.append(l_susp_s); color.append("rgba(205, 133, 63, 0.8)"); idx += 1
         else:
             l_susp_s = 0.0
 
@@ -1130,20 +1131,21 @@ with contenedor_sankey.container():
             ("Caudal Ecológico", val_ecologico, "rgba(149, 165, 166, 0.5)")
         ]
 
+        # Calculamos cuántas salidas de infraestructura están activas para repartir el lodo
+        salidas_activas = sum(1 for lab, val, col in destinos if val > 0 and ("Acueducto" in lab or "Generación" in lab))
+        reparto_lodo = l_susp_s / salidas_activas if salidas_activas > 0 else 0
+
         for lab, val, col in destinos:
             if val > 0:
-                target_node = idx
+                target_node = idx # El índice actual corresponde a este nodo de salida
                 labels.append(lab)
-                # Flujo de agua principal (Azul/Amarillo)
+                
+                # A. Flujo de agua principal
                 source.append(0); target.append(target_node); value.append(val); color.append(col)
                 
-                # 🚀 INYECCIÓN DE LA VENA MARRÓN (Lodo Suspendido)
-                # Si hay lodo suspendido y el destino es Acueducto o Generación, conectamos el flujo viajero
-                if l_susp_s > 0 and ("Acueducto" in lab or "Generación" in lab):
-                    # Repartimos el lodo suspendido proporcionalmente a las salidas de infraestructura
-                    # (Dividimos por 2 asumiendo que ambas están activas, o ajustamos según flujo)
-                    divisor = sum(1 for d in destinos if val_acueducto > 0 and val_turbinado > 0) or 1
-                    reparto_lodo = l_susp_s / divisor
+                # B. 💉 INYECCIÓN DE LA VENA MARRÓN (Lodo Suspendido)
+                # Solo inyectamos si la salida es infraestructura (Acueducto o Generación)
+                if reparto_lodo > 0 and ("Acueducto" in lab or "Generación" in lab):
                     source.append(0); target.append(target_node); value.append(reparto_lodo); color.append("rgba(205, 133, 63, 0.5)")
                 
                 idx += 1
