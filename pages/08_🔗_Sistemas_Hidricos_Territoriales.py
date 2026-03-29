@@ -689,14 +689,15 @@ with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO
                 c_op_c4.metric("💰 INVERSIÓN (CALIDAD)", f"${inv_total_c:,.0f} M", "Millones COP", delta_color="off")
 
 # -------------------------------------------------------------------------
-# PORTAFOLIO 3: EL ROI DE LA NATURALEZA (AHORRO EN POTABILIZACIÓN Y VIDA ÚTIL)
+# PORTAFOLIO 3: EL ROI DE LA NATURALEZA (AHORRO INTEGRAL Y VALOR EXISTENCIAL)
 # -------------------------------------------------------------------------
 with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraestructura Verde)", expanded=False):
-    st.markdown("Convierte la ecología en finanzas. Evalúa el retorno de inversión de proteger el bosque frente a los sobrecostos de potabilización y el dragado de embalses (Importa la física de la Pág 04).")
+    st.markdown("Convierte la ecología en finanzas estratégicas. Evalúa el retorno de inversión (ROI) sumando ahorros en químicos, protección de vida útil (evitación de dragado) y valor de venta del agua garantizada.")
     
-    # Leemos el impacto base de una tormenta extrema desde la memoria
-    lodo_tormenta_m3 = st.session_state.get('eco_lodo_m3', 41256.0) 
-    sobrecosto_tormenta_usd = st.session_state.get('eco_sobrecosto_usd', 85000.0)
+    # Leemos el impacto base sincronizado desde la Pág 04
+    lodo_tormenta_m3 = st.session_state.get('eco_lodo_total_m3', 41256.0) 
+    lodo_fondo_m3 = st.session_state.get('eco_lodo_fondo_m3', 18565.0) # Solo el de fondo afecta vida útil
+    sobrecosto_tormenta_usd = st.session_state.get('eco_sobrecosto_usd', 15141.0)
     
     c_roi1, c_roi2 = st.columns([1, 2.5])
     
@@ -704,45 +705,61 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         st.markdown("**Parámetros del Proyecto:**")
         ha_proteger = st.slider("Hectáreas a Proteger/Restaurar:", 100.0, 5000.0, 500.0, 50.0)
         costo_ha_usd = st.number_input("Costo de Restauración (USD/ha):", value=2500.0, step=100.0)
-        eventos_ano = st.slider("Tormentas Severas al año:", 1, 10, 3)
-        horizonte_roi = st.slider("Años de evaluación:", 5, 30, 10)
+        eventos_ano = st.slider("Avenidas Torrenciales al año:", 1, 10, 3)
+        horizonte_roi = st.slider("Años de evaluación del Proyecto:", 5, 30, 10)
         
     with c_roi2:
-        inversion_inicial_usd = ha_proteger * costo_ha_usd
+        inversion_total = ha_proteger * costo_ha_usd
         
-        # Hipótesis conservadora: Cada hectárea protegida reduce un 0.05% el impacto de la tormenta (hasta un máximo del 85%)
+        # Hipótesis de Mitigación (Curva de eficiencia SbN)
         mitigacion_pct = min((ha_proteger * 0.05), 85.0) / 100.0
         
-        ahorro_usd_evento = sobrecosto_tormenta_usd * mitigacion_pct
-        ahorro_anual_usd = ahorro_usd_evento * eventos_ano
-        ahorro_acumulado_usd = ahorro_anual_usd * horizonte_roi
+        # 💰 1. BENEFICIO QUÍMICO (OPEX EVITADO)
+        ahorro_anual_quimicos = (sobrecosto_tormenta_usd * mitigacion_pct) * eventos_ano
+        total_quimicos = ahorro_anual_quimicos * horizonte_roi
         
-        # Retorno de Inversión (ROI)
-        roi_pct = ((ahorro_acumulado_usd - inversion_inicial_usd) / inversion_inicial_usd) * 100 if inversion_inicial_usd > 0 else 0
+        # 💰 2. BENEFICIO DE INFRAESTRUCTURA (EVITACIÓN DE DRAGADO)
+        # Dragar 1m3 de lodo mecánicamente cuesta ~12 USD. La naturaleza lo previene.
+        costo_dragado_m3 = 12.0 
+        lodo_evitado_m3_total = (lodo_tormenta_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
+        total_dragado_evitado = lodo_evitado_m3_total * costo_dragado_m3
         
-        # Ahorro en volumen útil (Lodo evitado)
-        lodo_evitado_m3_ano = (lodo_tormenta_m3 * mitigacion_pct) * eventos_ano
-        lodo_evitado_acumulado_m3 = lodo_evitado_m3_ano * horizonte_roi
+        # 💰 3. VALOR DEL AGUA PROTEGIDA (VENTA DE SERVICIO)
+        # El bosque garantiza flujo base en sequía. Asumimos 3% de la oferta anual protegida.
+        vol_agua_protegida_m3 = (oferta_anual_m3 * 0.03) * horizonte_roi
+        tarifa_bloque_usd = 0.45 # USD/m3 (Valor de venta mayorista)
+        total_venta_agua = vol_agua_protegida_m3 * tarifa_bloque_usd
         
-        st.markdown("📊 **Caso de Negocio Financiero (Business Case):**")
+        # 💰 4. BENEFICIO ENERGÉTICO (Solo si hay turbinado)
+        total_energia = 0.0
+        if val_turbinado > 0:
+            kwh_salvados = vol_agua_protegida_m3 * datos_nodo["factor_energia_kwh_m3"]
+            total_energia = kwh_salvados * 0.08 # 0.08 USD/kWh
+
+        # --- SUMATORIA FINAL ---
+        beneficio_total = total_quimicos + total_dragado_evitado + total_venta_agua + total_energia
+        roi_real = ((beneficio_total - inversion_total) / inversion_total) * 100 if inversion_total > 0 else 0
+        
+        st.markdown("##### 📊 Caso de Negocio Integral (Triple Línea de Beneficio)")
         c_r1, c_r2, c_r3 = st.columns(3)
-        c_r1.metric("Inversión Inicial (CAPEX)", f"${inversion_inicial_usd/1e6:,.2f} M USD")
-        c_r2.metric(f"Ahorro Químicos ({horizonte_roi} años)", f"${ahorro_acumulado_usd/1e6:,.2f} M USD", f"OPEX evitado", delta_color="normal")
-        c_r3.metric("R.O.I. Financiero", f"{roi_pct:,.0f}%", "Retorno sobre la inversión")
+        c_r1.metric("Inversión (CAPEX)", f"${inversion_total/1e6:,.2f} M USD")
+        c_r2.metric("Beneficio Total Proyectado", f"${beneficio_total/1e6:,.2f} M USD", "Impacto Multinivel")
+        c_r3.metric("R.O.I. Estratégico", f"{roi_real:,.0f}%", delta_color="normal" if roi_real > 0 else "inverse")
         
         st.markdown("---")
-        st.markdown("🛡️ **Protección de Infraestructura Gris (El Embalse):**")
+        st.markdown("##### 🛡️ Resiliencia de Activos Grises")
         c_r4, c_r5 = st.columns(2)
-        c_r4.metric("Lodo Evitado en el Embalse", f"{lodo_evitado_acumulado_m3:,.0f} m³", f"En {horizonte_roi} años", delta_color="normal")
+        # Solo el lodo de FONDO evitado se usa para años de vida útil
+        lodo_fondo_evitado = (lodo_fondo_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
+        anos_salvados = lodo_fondo_evitado / 400000.0 # Factor de colmatación crítica
         
-        # Asumimos que La Fe pierde 1 año de vida por cada 400,000 m3 de lodo ingresado
-        anos_vida_recuperados = lodo_evitado_acumulado_m3 / 400000.0
-        c_r5.metric("Años de Vida Útil Salvados", f"+{anos_vida_recuperados:,.1f} Años", "Atraso del colapso estructural")
+        c_r4.metric("Lodo Evitado (Total)", f"{lodo_evitado_m3_total:,.0f} m³", f"Previene colmatación")
+        c_r5.metric("Vida Útil Salvada", f"+{anos_salvados:,.1f} Años", "Atraso del colapso funcional")
         
-        if roi_pct > 0:
-            st.success(f"🌱 **Viabilidad Aprobada:** La infraestructura verde se paga sola. Proteger **{ha_proteger:,.0f} ha** recupera la inversión inicial y genera una ganancia neta de **${(ahorro_acumulado_usd - inversion_inicial_usd)/1e6:,.2f} M USD** en {horizonte_roi} años, solo contando el ahorro en químicos.")
+        if roi_real > 0:
+            st.success(f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **${beneficio_total/inversion_total:.1f} USD** por cada dólar invertido. El mayor peso financiero recae en la **evitación de dragado (${total_dragado_evitado/1e6:.1f}M)** y el **agua protegida (${total_venta_agua/1e6:.1f}M)**.")
         else:
-            st.warning("⚠️ El área a proteger no genera suficiente ahorro en químicos para justificar la inversión en este horizonte de tiempo. Aumenta las hectáreas o el plazo del proyecto.")                
+            st.warning(f"⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es del {roi_real:.1f}%. Sin embargo, el valor **existencial** del agua para el territorio trasciende esta contabilidad. El costo de una falla sistémica en el abastecimiento sería de miles de millones de dólares.")
 
 # =========================================================================
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
