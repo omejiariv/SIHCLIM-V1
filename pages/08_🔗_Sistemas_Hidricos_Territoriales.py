@@ -1057,21 +1057,27 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
 
     st.markdown("### 2. Balance Metabólico Integral")
 
-    # Cálculos Hídricos Consolidados (2b. Inclusión de Aves)
+    # =========================================================================
+    # ⚖️ BALANCE METABÓLICO INTEGRAL (VERSIÓN ESTRUCTURAL)
+    # =========================================================================
+    # 🌊 1. Cálculos Hídricos Consolidados
     pob_total_agua = pob_residente + pob_externa
     dem_hum_m3_dia = (pob_total_agua * dot_hum) / 1000
-    # Agregamos consumo avícola: 0.3 L/día/ave
+    # Consumo avícola: 0.3 L/día/ave
     dem_agro_m3_dia = ((cabezas_bovinas * dot_bov) + (cabezas_porcinas * dot_por) + (cabezas_aves * 0.3)) / 1000
     dem_total_m3_s = (dem_hum_m3_dia + dem_agro_m3_dia) / 86400
 
-    # Cálculos de Carga Orgánica (Factores IDEAM/WRI)
+    # ☣️ 2. Cálculos de Carga Orgánica (Masa de contaminantes local)
     carga_hum_ton = (pob_residente * 18.25) / 1000
     carga_bov_ton = (cabezas_bovinas * 292.0) / 1000
     carga_por_ton = (cabezas_porcinas * 91.25) / 1000
     carga_ave_ton = (cabezas_aves * 5.47) / 1000
     carga_total_ton = carga_hum_ton + carga_bov_ton + carga_por_ton + carga_ave_ton
+    
+    # 🚨 CLAVE: Guardamos la carga para el motor de dilución WRI aguas abajo
+    st.session_state['carga_dbo_total_ton'] = carga_total_ton
 
-    # Cálculos de Residuos Sólidos
+    # 🗑️ 3. Cálculos de Residuos Sólidos
     rs_total_ton_ano = (pob_residente * kg_rs_hab * 365) / 1000
     rs_org_ton_ano = rs_total_ton_ano * (pct_organico / 100.0)
     rs_inorg_ton_ano = rs_total_ton_ano - rs_org_ton_ano
@@ -1087,7 +1093,7 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
             st.success("✅ Extracción y metabolismo guardados en el Aleph.")
 
     with c_res2:
-        # Gráfico Sunburst actualizado con categoría Avicultura (Punto 2b)
+        # Gráfico Sunburst: Distribución del Metabolismo Material
         df_plot = pd.DataFrame({
             "Categoria": ["Agua", "Agua", "Vertimientos", "Vertimientos", "Vertimientos", "Residuos", "Residuos"],
             "Subcategoria": ["Urbana", "Agropecuaria", "Urbana", "Bovinos/Porcinos", "Avicultura", "Orgánicos", "Inorgánicos"],
