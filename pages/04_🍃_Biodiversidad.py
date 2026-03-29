@@ -1754,11 +1754,11 @@ with tab_micro:
             """)
 
     # =========================================================================
-    # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN Y DINÁMICA (RESTAURADO)
+    # 🛑 6. MÓDULO DE LIMNOLOGÍA: COLMATACIÓN Y DINÁMICA (RESTAURADO + PARTICIÓN)
     # =========================================================================
     with st.expander("🛑 6. Limnología Integral: Uniformismo y Catastrofismo en La Fe", expanded=False):
         st.markdown("""<style>.limno-tooltip { position: relative; display: inline-block; color: #2980b9; font-weight: 600; cursor: help; border-bottom: 1px dashed #2980b9; } .limno-tooltip .tooltiptext { visibility: hidden; width: 320px; background-color: #fdfaf2; color: #2c3e50; text-align: left; border: 1px solid #d3c0a3; border-radius: 5px; padding: 15px; position: absolute; z-index: 50; bottom: 125%; left: 50%; margin-left: -160px; opacity: 0; transition: opacity 0.4s; font-size: 0.9em; font-family: 'Georgia', serif; box-shadow: 4px 4px 12px rgba(0,0,0,0.3); line-height: 1.4; } .limno-tooltip:hover .tooltiptext { visibility: visible; opacity: 1; } .tit-limno { font-weight: bold; font-size: 1.1em; color: #8e44ad; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}</style>""", unsafe_allow_html=True)
-        st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>Modelo dinámico. Integra el <b>Uniformismo</b> (rutina) y el <b>Catastrofismo</b> (avalanchas) para calcular el colapso del <span class='limno-tooltip'>Volumen Muerto<span class='tooltiptext'><div class='tit-limno'>Fecha de Caducidad</div>Espacio en el fondo diseñado para sedimentos.</span></span>.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>Modelo dinámico. Integra el <b>Uniformismo</b> (rutina) y el <b>Catastrofismo</b> (avenidas torrenciales) para calcular el colapso del <span class='limno-tooltip'>Volumen Muerto<span class='tooltiptext'><div class='tit-limno'>Fecha de Caducidad</div>Espacio en el fondo diseñado para sedimentos.</span></span>.</div>", unsafe_allow_html=True)
 
         col_lim1, col_lim2 = st.columns([1, 1.5])
         with col_lim1:
@@ -1785,57 +1785,72 @@ with tab_micro:
             vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", value=3.0)
             caudal_ingreso = st.number_input("Ingreso Total (m³/s):", value=6.5)
 
-        # 🧠 MOTOR MATEMÁTICO INTEGRAL
+            # --- 🚀 NUEVA FUNCIONALIDAD: PARTICIÓN DE SEDIMENTOS ---
+            st.markdown("**Destino Físico de Sedimentos (Realismo de Ingeniería):**")
+            c_part1, c_part2, c_part3 = st.columns(3)
+            p_colas = c_part1.slider("% Colas (Delta)", 0, 100, 40, help="Material grueso que se queda en la entrada del río.")
+            p_fondo = c_part2.slider("% Fondo (Muerto)", 0, 100, 45, help="Material fino que decanta en la presa.")
+            p_susp = c_part3.slider("% Suspendido", 0, 100, 15, help="Material abrasivo que viaja a las turbinas/túneles.")
+            
+            if (p_colas + p_fondo + p_susp) != 100:
+                st.warning(f"⚠️ La suma debe ser 100%. Actual: {p_colas+p_fondo+p_susp}%")
+
+        # 🧠 MOTOR MATEMÁTICO INTEGRAL ACTUALIZADO
         p_fos = (f_bos * 0.0001) + (f_agr * 0.0015) + (f_deg * 0.0005) + (f_urb * 0.0025)
         f_ero = (f_bos * 0.05) + (f_agr * 1.0) + (f_deg * 2.5) + (f_urb * 3.5)
         
-        # 🛡️ Recuperación de sedimento del Módulo 5
         sed_al_rio = locals().get('sedimento_al_rio_kg', 7.02) 
+        lodo_total_m3 = (sed_al_rio * area_km2 * 1e6 * f_ero * (f_tor**1.8)) / 1200.0
         
-        lodo_hoy_m3 = (sed_al_rio * area_km2 * 1e6 * f_ero * (f_tor**1.8)) / 1200.0
-        lodo_anual_base = (sed_al_rio * 5.0 * 1e6 * f_ero * 1.0) / 120.0 # Rutina
+        # Lógica de Partición
+        lodo_colas_m3 = lodo_total_m3 * (p_colas / 100)
+        lodo_fondo_m3 = lodo_total_m3 * (p_fondo / 100)
+        lodo_turbinas_m3 = lodo_total_m3 * (p_susp / 100) # Factor abrasivo
         
-        # Cálculos de Vida Útil
-        anos_robados = lodo_hoy_m3 / lodo_anual_base if lodo_anual_base > 0 else 0
-        vol_muerto_restante = (vol_muerto_hm3 * 1e6) - lodo_hoy_m3
+        lodo_anual_base = (sed_al_rio * 5.0 * 1e6 * f_ero * 1.0) / 120.0
+        
+        # La Vida Útil Real solo se afecta por lo que decanta (Colas + Fondo)
+        lodo_decantado_hoy = lodo_colas_m3 + lodo_fondo_m3
+        anos_robados = lodo_decantado_hoy / lodo_anual_base if lodo_anual_base > 0 else 0
+        vol_muerto_restante = (vol_muerto_hm3 * 1e6) - lodo_decantado_hoy
         vida_util_restante = vol_muerto_restante / lodo_anual_base if lodo_anual_base > 0 else 99
         
-        # Hidráulica
+        # Hidráulica y Química
         tasa_renovacion = (caudal_ingreso * 31536000) / ((vol_util_hm3 + vol_muerto_hm3) * 1e6)
         dias_residencia = 365 / tasa_renovacion if tasa_renovacion > 0 else 0
         fosforo_hoy = (sed_al_rio * area_km2 * 1e6 * f_ero * (f_tor**1.8)) * p_fos
 
         with col_lim2:
-            st.markdown("##### ⚡ Impacto del Evento Convulsivo (HOY)")
-            c_e1, c_e2 = st.columns(2)
-            c_e1.metric("Avalancha de Lodo", f"{lodo_hoy_m3:,.0f} m³", "Masa entrante hoy", delta_color="inverse")
-            c_e2.metric("Envejecimiento Súbito", f"{anos_robados:,.1f} Años", "Vida útil robada hoy", delta_color="inverse")
+            st.markdown("##### ⚡ Impacto del Evento Torrencial (HOY)")
+            c_e1, c_e2, c_e3 = st.columns(3)
+            c_e1.metric("Lodo en Colas", f"{lodo_colas_m3:,.0f} m³", "Capa deltaica")
+            c_e2.metric("Lodo en Fondo", f"{lodo_fondo_m3:,.0f} m³", "Capa profunda")
+            c_e3.metric("Lodo Suspendido", f"{lodo_turbinas_m3:,.0f} m³", "Riesgo Abrasión", delta_color="inverse")
             
             st.markdown("---")
             st.markdown("##### ⏳ Proyección Integral (Saldo tras el desastre)")
             c_p1, c_p2 = st.columns(2)
             c_p1.metric("Tasa Colmatación Base", f"{lodo_anual_base:,.0f} m³/año", "Desgaste rutinario")
-            c_p2.metric("Vida Útil Restante", f"{max(0.0, vida_util_restante):.1f} Años", "Tras absorber el evento", delta_color="inverse" if vida_util_restante < 10 else "normal")
+            c_p2.metric("Vida Útil Restante", f"{max(0.0, vida_util_restante):.1f} Años", "Post-evento", delta_color="inverse" if vida_util_restante < 15 else "normal")
 
             st.markdown("---")
-            st.markdown("##### 🌊 Dinámica Hidráulica: Efecto Dilución")
+            st.markdown("##### 🌊 Dinámica Hidráulica y Riesgo Químico")
             c_h1, c_h2 = st.columns(2)
             c_h1.metric("Tasa de Renovación", f"{tasa_renovacion:.1f} veces/año")
             c_h2.metric("Tiempo de Residencia", f"{dias_residencia:.0f} Días", "Edad del agua")
 
-            st.markdown("---")
-            st.markdown(f"**Impacto Químico:** {fosforo_hoy:,.1f} Kg de Fósforo inyectados hoy.")
-            if fosforo_hoy > 500: st.error("🚨 **ALERTA ROJA:** Riesgo de Anoxia Inminente.")
-            elif fosforo_hoy > 100: st.warning("⚠️ **Riesgo Medio:** Alteración de transparencia.")
-            else: st.success("🌿 **Protección:** El paisaje amortiguó la carga.")
+            st.info(f"**Impacto Químico:** {fosforo_hoy:,.1f} Kg de Fósforo inyectados hoy.")
+            if fosforo_hoy > 500: st.error("🚨 **ALERTA ROJA:** Inminente Eutrofización y Anoxia.")
+            elif fosforo_hoy > 100: st.warning("⚠️ **Riesgo Medio:** Alteración de transparencia y altos costos PTAP.")
+            else: st.success("🌿 **Protección:** El paisaje amortiguó eficazmente la carga.")
             
         if st.toggle("📚 Revelar El Aleph de los Lagos: Colmatación y Fósforo"):
             st.markdown("""
             ### ⏳ Colmatación: El Reloj de Arena de la Ingeniería
-            Los embalses son trampas de sedimentos. Cada metro cúbico de lodo que entra es agua potable que ya no se puede almacenar para El Niño. Cuando el lodo alcanza las compuertas de fondo, la represa muere operativamente.
+            Los embalses son trampas de sedimentos. No todo el lodo llega al fondo; los granos gruesos se depositan en las **Colas del Embalse**, reduciendo la capacidad útil. Los sedimentos más finos quedan **suspendidos**, viajando por los túneles y desgastando álabes de turbinas por abrasión mecánica (cuarzos y circones).
             
             ### 🧪 La Venganza de la Tierra: Eutrofización
-            La tierra agrícola es rica en Fósforo (P). En un embalse, detona el crecimiento de macrófitas que bloquean el sol y consumen el Oxígeno Disuelto. El embalse se vuelve anóxico, aniquilando la fauna acuática.
+            La carga de fósforo detona el crecimiento de macrófitas. El embalse se vuelve anóxico en el fondo, aniquilando la fauna acuática y encareciendo la potabilización.
             """)
             
     # =========================================================================
@@ -1966,17 +1981,27 @@ with tab_micro:
     # =========================================================================
     st.markdown("---")
     st.markdown("#### 🌐 9. Conexión al Gemelo Digital (Cross-Pollination)")
-    st.info("Exporta el impacto de esta tormenta simulada hacia el simulador de Sistemas Hídricos (Pág 08).")
+    st.info("Exporta el impacto físico, químico y de ingeniería de esta tormenta simulada hacia el simulador de Sistemas Hídricos (Pág 08).")
 
     if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08)", type="primary", use_container_width=True):
         # 🧠 EXTRACCIÓN MAESTRA: Recuperamos los valores de los módulos comprimidos
-        lodo_final = locals().get('lodo_hoy_m3', 0.0)
+        # Incluimos la nueva partición de lodo abrasivo para el riesgo de infraestructura
+        lodo_total = locals().get('lodo_total_m3', 0.0)
+        lodo_abrasivo = locals().get('lodo_turbinas_m3', 0.0)
         fosforo_final = locals().get('fosforo_hoy', 0.0)
         costo_final = locals().get('s_total', 0.0)
         
-        # Inyectamos en la memoria global
-        st.session_state['eco_lodo_m3'] = float(lodo_final)
+        # Inyectamos en la memoria global de la sesión (Session State)
+        st.session_state['eco_lodo_m3'] = float(lodo_total)
+        st.session_state['eco_lodo_abrasivo_m3'] = float(lodo_abrasivo)
         st.session_state['eco_fosforo_kg'] = float(fosforo_final)
         st.session_state['eco_sobrecosto_usd'] = float(costo_final)
         
-        st.success(f"🧠 **¡Sincronización Exitosa!** Lodo: {lodo_final:,.0f} m³ | Fósforo: {fosforo_final:,.1f} Kg. Ve a la Página 08 para ver el efecto cascada.")
+        st.success(f"""
+            🧠 **¡Sincronización Exitosa!**
+            * Lodo Total: {lodo_total:,.0f} m³
+            * Lodo Abrasivo (Suspensión): {lodo_abrasivo:,.0f} m³
+            * Fósforo Inyectado: {fosforo_final:,.1f} Kg
+            
+            Los datos han cruzado el Aleph. Ve a la **Página 08 (Sistemas Hídricos)** para visualizar el impacto en los flujos y la infraestructura.
+        """)
