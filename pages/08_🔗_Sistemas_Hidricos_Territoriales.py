@@ -520,7 +520,7 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
     ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
 
-# =========================================================================
+    # =========================================================================
     # 🎨 FUNCIONES DE EVALUACIÓN Y RENDERIZADO (INTEGRIDAD TOTAL)
     # =========================================================================
     def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
@@ -536,7 +536,7 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
             return f"🟢 < {u_v}% | 🟡 {u_v}-{u_r}% | 🔴 > {u_r}%"
 
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
-        # 🌪️ AJUSTE DE TÍTULO ANTE TORMENTA
+        # 🌪️ AJUSTE DE TÍTULO ANTE TORMENTA (REACCIÓN FÍSICA)
         if "Resiliencia" in titulo and st.session_state.get('activar_tormenta_sankey', False):
             titulo = f"🌪️ {titulo} (Colmatación)"
 
@@ -559,7 +559,8 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         fig.update_layout(height=200, margin=dict(l=15, r=15, t=40, b=10))
         return fig
 
-    # 🌪️ RECALCULO DE RESILIENCIA EN TIEMPO REAL (Antes del Render)
+    # --- 🌪️ RECALCULO DINÁMICO ANTES DEL RENDER ---
+    # A. Resiliencia: Sensible a colmatación inmediata
     cap_dinamica = capacidad_embalse_m3
     if st.session_state.get('activar_tormenta_sankey', False):
         cap_dinamica -= st.session_state.get('eco_lodo_fondo_m3', 0.0)
@@ -568,13 +569,21 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     buf_din = (cap_dinamica + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
     ind_resiliencia_real = min(100.0, (buf_din / 2.0) * 100)
 
-    # Configuración de visualización
+    # B. Calidad (WQI): Dilución real considerando trasvases activos
+    caudal_dilucion = sum(datos_nodo["afluentes_naturales"].values()) + val_trasvases_bombeo
+    caudal_L_s = (caudal_dilucion if caudal_dilucion > 0 else 1.0) * 1000
+    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
+    conc_dbo = carga_mg_s / caudal_L_s
+    # Umbral de 50 mg/L para sensibilidad regional
+    ind_calidad_real = max(0.0, min(100.0, 100.0 - ((conc_dbo / 50.0) * 100)))
+
+    # --- 📦 CONFIGURACIÓN DE VISUALIZACIÓN ---
     col_g = st.columns(4)
     data_viz = [
         {"val": ind_neutralidad, "tit": "Neutralidad", "col": "#2ecc71", "u_r": 40, "u_v": 70, "inv": False},
         {"val": ind_resiliencia_real, "tit": "Resiliencia", "col": "#3498db", "u_r": 30, "u_v": 60, "inv": False},
         {"val": ind_estres, "tit": "Seguridad (WEI+)", "col": "#e74c3c", "u_r": 40, "u_v": 75, "inv": False},
-        {"val": ind_calidad, "tit": "Calidad (WQI)", "col": "#9b59b6", "u_r": 50, "u_v": 80, "inv": False}
+        {"val": ind_calidad_real, "tit": "Calidad (WQI)", "col": "#9b59b6", "u_r": 50, "u_v": 80, "inv": False}
     ]
 
     for i, item in enumerate(data_viz):
