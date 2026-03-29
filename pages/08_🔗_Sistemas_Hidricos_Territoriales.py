@@ -753,64 +753,66 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         costo_geotecnico_anual = 45000.0 # USD/año en inspecciones extra por sedimentos
         total_ahorro_tuneles = (costo_geotecnico_anual * mitigacion_pct) * horizonte_roi
 
-        # --- SUMATORIA INTEGRAL ---
+        # =====================================================================
+        # 💰 MOTOR FINANCIERO INTEGRAL Y CASO DE NEGOCIO (SbN)
+        # =====================================================================
+        # --- SUMATORIA DE BENEFICIOS ---
         beneficio_total = (total_quimicos + total_dragado_evitado + total_venta_agua + 
                            total_energia + total_ahorro_turbinas + total_ahorro_tuneles)
+        
         roi_real = ((beneficio_total - inversion_total) / inversion_total) * 100 if inversion_total > 0 else 0
         
-        # ... (Recuadro de Dimensionamiento Territorial con área unificada a 17,300 ha) ...
+        # --- 📍 RECUADRO DE DIMENSIONAMIENTO TERRITORIAL UNIFICADO ---
         area_unificada = 17300.0
         pct_esf = (ha_proteger / area_unificada) * 100
         st.markdown(f"""
         <div style="background-color: #f1f8e9; border: 1px solid #c5e1a5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
             <p style="margin: 0; color: #33691e; font-size: 0.95em;">
-                📍 <b>Dimensionamiento Territorial:</b> Estás interviniendo el <b>{pct_esf:.1f}%</b> del área total de la cuenca ({area_unificada:,.0f} ha).
+                📍 <b>Dimensionamiento Territorial:</b> Estás interviniendo el <b>{pct_esf:.1f}%</b> del área total de la cuenca ({area_unificada:,.0f} ha).<br>
+                🚀 <b>Punto Óptimo:</b> Se requieren <b>3,594 ha</b> restauradas para alcanzar el 95% de la protección hidrológica máxima.
             </p>
         </div>
         """, unsafe_allow_html=True)
 
-        # ... (Métricas de Inversión y Beneficio) ...
-
-        with st.expander("🔍 Ver Desglose de Beneficios Acumulados", expanded=True):
-            st.markdown(f"Distribución del valor generado en **{horizonte_roi} años**:")
-            d_c1, d_c2, d_c3 = st.columns(3)
-            d_c1.write(f"• **Tratamiento (Insumos):** ${total_quimicos/1e6:,.2f} M USD")
-            d_c1.write(f"• **Evitación Dragado:** ${total_dragado_evitado/1e6:,.2f} M USD")
-            d_c2.write(f"• **Agua y Energía Firme:** ${(total_venta_agua + total_energia)/1e6:,.2f} M USD")
-            d_c2.write(f"• **Mantenimiento Álabes:** ${total_ahorro_turbinas/1e6:,.2f} M USD")
-            d_c3.write(f"• **Mantenimiento Túneles:** ${total_ahorro_tuneles/1e6:,.2f} M USD")
-            d_c3.write(f"**⚡ TOTAL:** ${beneficio_total/1e6:,.2f} M USD")
-
-        # --- RENDERIZADO DE RESULTADOS ---
+        # --- 📊 RENDERIZADO DE RESULTADOS PRINCIPALES ---
         st.markdown("##### 📊 Caso de Negocio Integral (Inversión Basada en la Naturaleza)")
         c_r1, c_r2, c_r3 = st.columns(3)
         c_r1.metric("Inversión (CAPEX)", f"${inversion_total/1e6:,.2f} M USD")
         c_r2.metric("Beneficio Proyectado", f"${beneficio_total/1e6:,.2f} M USD", "Impacto Multinivel")
         c_r3.metric("R.O.I. Estratégico", f"{roi_real:,.0f}%", delta_color="normal" if roi_real > 0 else "inverse")
         
+        # --- 🔍 DESGLOSE TÉCNICO DE BENEFICIOS ACUMULADOS ---
         with st.expander("🔍 Ver Desglose de Beneficios Acumulados", expanded=True):
             st.markdown(f"Distribución del valor generado en **{horizonte_roi} años**:")
-            d1, d2 = st.columns(2)
-            d3, d4 = st.columns(2)
-            d1.write(f"• **Tratamiento e Insumos:** ${total_quimicos/1e6:,.2f} M USD")
-            d2.write(f"• **Evitación de Dragado:** ${total_dragado_evitado/1e6:,.2f} M USD")
-            d3.write(f"• **Agua y Energía Firme:** ${(total_venta_agua + total_energia)/1e6:,.2f} M USD")
-            d4.write(f"• **Mantenimiento Mecánico:** ${total_mantenimiento_evitado/1e6:,.2f} M USD")
+            d_c1, d_c2, d_c3 = st.columns(3)
+            
+            with d_c1:
+                st.write(f"• **Tratamiento:** ${total_quimicos/1e6:,.2f} M USD")
+                st.write(f"• **Dragado Evitado:** ${total_dragado_evitado/1e6:,.2f} M USD")
+            with d_c2:
+                st.write(f"• **Agua y Energía:** ${(total_venta_agua + total_energia)/1e6:,.2f} M USD")
+                st.write(f"• **Abrasión Álabes:** ${total_ahorro_turbinas/1e6:,.2f} M USD")
+            with d_c3:
+                st.write(f"• **Mantenimiento Túneles:** ${total_ahorro_tuneles/1e6:,.2f} M USD")
+                st.write(f"**⚡ TOTAL:** :green[${beneficio_total/1e6:,.2f} M USD]")
 
         st.markdown("---")
+        
+        # --- 🛡️ RESILIENCIA DE INFRAESTRUCTURA ---
         st.markdown("##### 🛡️ Resiliencia de Activos Grises")
         c_r4, c_r5 = st.columns(2)
         lodo_fondo_evitado = (lodo_fondo_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
         anos_salvados = lodo_fondo_evitado / 400000.0 
+        
         c_r4.metric("Lodo Evitado (Total)", f"{lodo_evitado_m3_total:,.0f} m³", "Protección estructural")
         c_r5.metric("Vida Útil Salvada", f"+{anos_salvados:,.1f} Años", "Atraso del colapso funcional")
         
-        # 📝 MENSAJE DE VIABILIDAD FINAL
+        # --- 📝 MENSAJE FINAL DE VIABILIDAD ---
         if roi_real > 0:
             ratio = beneficio_total / inversion_total
             st.success(f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **{ratio:.1f} USD** por cada dólar invertido. El mayor peso financiero recae en la **evitación de dragado** (${total_dragado_evitado/1e6:.1f} M) y el **agua protegida** (${total_venta_agua/1e6:.1f} M).")
         else:
-            st.warning("⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es bajo, pero el valor existencial del recurso trasciende la contabilidad.")
+            st.warning("⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es bajo, pero el valor existencial del recurso trasciende la contabilidad tradicional.")
 
 # =========================================================================
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
