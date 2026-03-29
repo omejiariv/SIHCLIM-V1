@@ -924,36 +924,44 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
 with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", expanded=False):
     st.info("Cálculo integrado de extracción hídrica, cargas orgánicas vertidas (DBO5) y generación de residuos sólidos (Lixiviados/Emisiones).")
 
-    if nodo_seleccionado == "La Fe": def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 15000, 450000, 5000, 2000, 150000
-    elif "Grande" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 45000, 1200000, 85000, 45000, 800000
-    elif "Peñol" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 25000, 0, 40000, 15000, 120000
-    elif "Ituango" in nodo_seleccionado: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 35000, 0, 250000, 60000, 300000
-    else: def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 20000, 0, 25000, 10000, 50000
+    # 🔍 SINCRONIZACIÓN MAESTRA: Recuperamos los datos unificados del Módulo 8 (Punto 2a)
+    # Si no existen en memoria, usamos los fallbacks por sistema
+    if nodo_seleccionado == "La Fe": 
+        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 15000, 450000, 5000, 2000, 150000
+    elif "Grande" in nodo_seleccionado: 
+        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 45000, 1200000, 85000, 45000, 800000
+    elif "Peñol" in nodo_seleccionado: 
+        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 25000, 0, 40000, 15000, 120000
+    elif "Ituango" in nodo_seleccionado: 
+        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 35000, 0, 250000, 60000, 300000
+    else: 
+        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 20000, 0, 25000, 10000, 50000
 
-    st.markdown("### 1. Inventario Poblacional (Diferenciado) y Módulos")
+    # Prioridad 1: Datos sincronizados de Huella Hídrica (Módulo 8)
+    pob_sinc = st.session_state.get(f'pob_asig_{nodo_seleccionado}', def_pob_res)
+    bov_sinc = st.session_state.get('ica_bovinos_calc', def_bov)
+    por_sinc = st.session_state.get('ica_porcinos_calc', def_por)
+    ave_sinc = st.session_state.get('ica_aves_calc', def_ave)
 
-    mem_pob_res = st.session_state.get('pob_residente_proy', def_pob_res)
-    mem_bovinos = st.session_state.get('ica_bovinos_proy', def_bov)
-    mem_porcinos = st.session_state.get('ica_porcinos_proy', def_por)
-    mem_aves = st.session_state.get('ica_aves_proy', def_ave)
+    st.markdown("### 1. Inventario Poblacional Sincronizado (Censo Real + Proyección)")
 
-    c_p1, c_p2, c_p3, c_p4 = st.columns(4)
-    pob_residente = c_p1.number_input("🏘️ Pob. Residente (Cuenca):", value=int(mem_pob_res), step=1000, key="sh_pob_residente")
-    pob_externa = c_p2.number_input("🏙️ Pob. Externa (Trasvase):", value=int(def_pob_ext), step=50000, key="sh_pob_externa")
-    cabezas_bovinas = c_p3.number_input("🐄 Bovinos (Censo ICA):", value=int(mem_bovinos), step=1000, key="sh_bovinos_ica")
-    cabezas_porcinas = c_p4.number_input("🐖 Porcinos (Censo ICA):", value=int(mem_porcinos), step=1000, key="sh_porcinos_ica")
+    c_p1, c_p2, c_p3, c_p4, c_p5 = st.columns(5)
+    pob_residente = c_p1.number_input("🏘️ Pob. Residente:", value=int(pob_sinc), step=1000, key="sh_pob_residente")
+    pob_externa = c_p2.number_input("🏙️ Pob. Externa:", value=int(def_pob_ext), step=50000, key="sh_pob_externa")
+    cabezas_bovinas = c_p3.number_input("🐄 Bovinos:", value=int(bov_sinc), step=1000, key="sh_bovinos_ica")
+    cabezas_porcinas = c_p4.number_input("🐖 Porcinos:", value=int(por_sinc), step=1000, key="sh_porcinos_ica")
+    cabezas_aves = c_p5.number_input("🐔 Aves:", value=int(ave_sinc), step=5000, key="sh_aves_ica") # 2b. Inclusión de Aves
 
-    # 🪄 MAGIA: Convertimos el expander anidado en un toggle
-    dot_hum, dot_bov, dot_por, cabezas_aves, kg_rs_hab, pct_organico = 150, 40, 15, int(mem_aves), 0.8, 55.0
-    if st.toggle("⚙️ Mostrar y Ajustar Módulos de Consumo y Generación (Agua y Residuos)"):
+    # 🪄 Módulos de Consumo y Generación
+    dot_hum, dot_bov, dot_por, kg_rs_hab, pct_organico = 150, 40, 15, 0.8, 55.0
+    if st.toggle("⚙️ Mostrar y Ajustar Módulos de Consumo y Generación"):
         st.markdown("<div style='padding: 10px; background-color: #f8f9fa; border-radius: 5px;'>", unsafe_allow_html=True)
-        c_d1, c_d2, c_d3, c_d4 = st.columns(4)
+        c_d1, c_d2, c_d3 = st.columns(3)
         dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150, key="sh_dot_hum")
         dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40, key="sh_dot_bov")
         dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15, key="sh_dot_por")
-        cabezas_aves = c_d4.number_input("🐔 Aves (Censo ICA):", value=int(mem_aves), step=5000, key="sh_aves_ica")
         
-        st.markdown("**Residuos Sólidos (Aplicable solo a Población Residente):**")
+        st.markdown("**Residuos Sólidos (Población Residente):**")
         c_rs1, c_rs2 = st.columns(2)
         kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1, key="sh_rs_generacion")
         pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0, key="sh_rs_fraccion")
@@ -961,19 +969,20 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
 
     st.markdown("### 2. Balance Metabólico Integral")
 
+    # Cálculos Hídricos
     pob_total_agua = pob_residente + pob_externa
     dem_hum_m3_dia = (pob_total_agua * dot_hum) / 1000
-    dem_bov_m3_dia = (cabezas_bovinas * dot_bov) / 1000
-    dem_por_m3_dia = (cabezas_porcinas * dot_por) / 1000
-    dem_ave_m3_dia = (cabezas_aves * 0.3) / 1000
-    dem_total_m3_s = (dem_hum_m3_dia + dem_bov_m3_dia + dem_por_m3_dia + dem_ave_m3_dia) / 86400
+    dem_agro_m3_dia = ((cabezas_bovinas * dot_bov) + (cabezas_porcinas * dot_por) + (cabezas_aves * 0.3)) / 1000
+    dem_total_m3_s = (dem_hum_m3_dia + dem_agro_m3_dia) / 86400
 
+    # Cálculos de Carga Orgánica (2b. Inclusión de Aves)
     carga_hum_ton = (pob_residente * 18.25) / 1000
     carga_bov_ton = (cabezas_bovinas * 292.0) / 1000
     carga_por_ton = (cabezas_porcinas * 91.25) / 1000
     carga_ave_ton = (cabezas_aves * 5.47) / 1000
     carga_total_ton = carga_hum_ton + carga_bov_ton + carga_por_ton + carga_ave_ton
 
+    # Cálculos de Residuos
     rs_total_ton_ano = (pob_residente * kg_rs_hab * 365) / 1000
     rs_org_ton_ano = rs_total_ton_ano * (pct_organico / 100.0)
     rs_inorg_ton_ano = rs_total_ton_ano - rs_org_ton_ano
@@ -982,26 +991,29 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
     with c_res1:
         st.metric("💧 Extracción Continua (Agua)", f"{dem_total_m3_s:,.2f} m³/s")
         st.metric("☣️ Carga Orgánica al Río (DBO5)", f"{carga_total_ton:,.0f} Ton/año")
-        st.metric("🗑️ Residuos Sólidos Totales", f"{rs_total_ton_ano:,.0f} Ton/año", f"{rs_org_ton_ano:,.0f} Ton Orgánicas", delta_color="off")
+        st.metric("🗑️ Residuos Sólidos Totales", f"{rs_total_ton_ano:,.0f} Ton/año", f"{rs_org_ton_ano:,.0f} Ton Orgánicas")
         
         if st.button("🚀 Actualizar Dinámica del Embalse", use_container_width=True):
             st.session_state['demanda_total_m3s'] = dem_total_m3_s
-            st.success("✅ Extracción guardada. Sube al panel superior para ver el impacto en la Resiliencia.")
+            st.success("✅ Extracción guardada en el Aleph.")
 
     with c_res2:
+        # Gráfico actualizado con categoría Avicultura (2b)
         df_plot = pd.DataFrame({
-            "Categoria": ["Agua (Extracción Mm³/a)", "Agua (Extracción Mm³/a)", "Vertimientos (Ton DBO)", "Vertimientos (Ton DBO)", "Residuos Sólidos (Ton)", "Residuos Sólidos (Ton)"],
-            "Subcategoria": ["Urbana", "Agropecuaria", "Urbana", "Agropecuaria", "Orgánicos (Lixiviables)", "Inorgánicos (Aprovechables/Rechazo)"],
-            "Valor": [(dem_hum_m3_dia*365)/1e6, ((dem_bov_m3_dia+dem_por_m3_dia+dem_ave_m3_dia)*365)/1e6, carga_hum_ton, carga_bov_ton+carga_por_ton+carga_ave_ton, rs_org_ton_ano, rs_inorg_ton_ano]
+            "Categoria": ["Agua", "Agua", "Vertimientos", "Vertimientos", "Vertimientos", "Residuos", "Residuos"],
+            "Subcategoria": ["Urbana", "Agropecuaria", "Urbana", "Bovinos/Porcinos", "Avicultura", "Orgánicos", "Inorgánicos"],
+            "Valor": [
+                (dem_hum_m3_dia*365)/1e6, (dem_agro_m3_dia*365)/1e6, 
+                carga_hum_ton, (carga_bov_ton + carga_por_ton), carga_ave_ton,
+                rs_org_ton_ano, rs_inorg_ton_ano
+            ]
         })
         
-        import plotly.express as px
         fig_sun = px.sunburst(df_plot, path=['Categoria', 'Subcategoria'], values='Valor', 
                               title="Distribución del Metabolismo Material",
                               color='Categoria', color_discrete_sequence=px.colors.qualitative.Pastel)
         fig_sun.update_layout(height=400, margin=dict(t=40, b=0, l=0, r=0))
         st.plotly_chart(fig_sun, use_container_width=True)
-
 # =========================================================================
 # 8. HUELLA HÍDRICA TERRITORIAL (CONECTADA AL GEMELO DIGITAL)
 # =========================================================================
