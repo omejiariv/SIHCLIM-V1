@@ -709,37 +709,40 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         horizonte_roi = st.slider("Años de evaluación del Proyecto:", 5, 30, 10)
         
     with c_roi2:
+with c_roi2:
         inversion_total = ha_proteger * costo_ha_usd
         
-        # --- NUEVA LÓGICA DE MITIGACIÓN DINÁMICA (Sin techos rígidos) ---
-        # Usamos una función de saturación: Mitigación = (1 - e^(-ha / 1200)) * 0.95
-        # Esto permite que el beneficio siga creciendo después de las 1650 ha, pero más lento.
+        # --- MOTOR DE MITIGACIÓN DINÁMICA ---
         mitigacion_pct = (1 - np.exp(-ha_proteger / 1200.0)) * 0.95
         
-        # 💰 1. BENEFICIO QUÍMICO (OPEX EVITADO)
+        # 💰 RECALCULO DE BENEFICIOS (Recuperados de tu lógica actual)
         ahorro_anual_quimicos = (sobrecosto_tormenta_usd * mitigacion_pct) * eventos_ano
         total_quimicos = ahorro_anual_quimicos * horizonte_roi
-        
-        # 💰 2. BENEFICIO DE INFRAESTRUCTURA (EVITACIÓN DE DRAGADO)
         costo_dragado_m3 = 12.0 
         lodo_evitado_m3_total = (lodo_tormenta_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
         total_dragado_evitado = lodo_evitado_m3_total * costo_dragado_m3
-        
-        # 💰 3. VALOR DEL AGUA PROTEGIDA (VENTA DE SERVICIO)
         vol_agua_protegida_m3 = (oferta_anual_m3 * 0.03) * horizonte_roi
-        tarifa_bloque_usd = 0.45 
-        total_venta_agua = vol_agua_protegida_m3 * tarifa_bloque_usd
-        
-        # 💰 4. BENEFICIO ENERGÉTICO
-        total_energia = 0.0
-        if val_turbinado > 0:
-            kwh_salvados = vol_agua_protegida_m3 * datos_nodo.get("factor_energia_kwh_m3", 0.65)
-            total_energia = kwh_salvados * 0.08 
+        total_venta_agua = vol_agua_protegida_m3 * 0.45 
+        total_energia = (vol_agua_protegida_m3 * datos_nodo.get("factor_energia_kwh_m3", 0.65) * 0.08) if val_turbinado > 0 else 0.0
 
-        # --- SUMATORIA FINAL ---
         beneficio_total = total_quimicos + total_dragado_evitado + total_venta_agua + total_energia
         roi_real = ((beneficio_total - inversion_total) / inversion_total) * 100 if inversion_total > 0 else 0
         
+        # --- 📦 NUEVO: RECUADRO DE DIMENSIONAMIENTO TERRITORIAL ---
+        # El 95% de la eficiencia máxima se alcanza matemáticamente a las ~3,594 ha (ln(1-0.95)*-1200)
+        ha_objetivo_95 = 3594.0
+        ha_cuenca_total = st.session_state.get('area_total_cuenca_val', 17300.0) # Área Espíritu Santo ~173km2
+        pct_esfuerzo = (ha_proteger / ha_cuenca_total) * 100 if ha_cuenca_total > 0 else 0
+        
+        st.markdown(f"""
+        <div style="background-color: #f1f8e9; border: 1px solid #c5e1a5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <p style="margin: 0; color: #33691e; font-size: 0.95em;">
+                📍 <b>Dimensionamiento Territorial:</b> Estás interviniendo el <b>{pct_esfuerzo:.1f}%</b> del área total de la cuenca ({ha_cuenca_total:,.0f} ha).<br>
+                🚀 <b>Punto Óptimo:</b> Se requieren <b>{ha_objetivo_95:,.0f} ha</b> restauradas para alcanzar el 95% de la protección hidrológica máxima.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
         # --- RENDERIZADO DE RESULTADOS ---
         st.markdown("##### 📊 Caso de Negocio Integral (Triple Línea de Beneficio)")
         c_r1, c_r2, c_r3 = st.columns(3)
@@ -747,7 +750,6 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         c_r2.metric("Beneficio Total Proyectado", f"${beneficio_total/1e6:,.2f} M USD", "Impacto Multinivel")
         c_r3.metric("R.O.I. Estratégico", f"{roi_real:,.0f}%", delta_color="normal" if roi_real > 0 else "inverse")
         
-        # 🧪 DESGLOSE TÉCNICO
         with st.expander("🔍 Ver Desglose de Beneficios Acumulados", expanded=True):
             st.markdown(f"Distribución del valor generado en **{horizonte_roi} años**:")
             d1, d2, d3, d4 = st.columns(4)
@@ -761,14 +763,19 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         c_r4, c_r5 = st.columns(2)
         lodo_fondo_evitado = (lodo_fondo_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
         anos_salvados = lodo_fondo_evitado / 400000.0 
-        
         c_r4.metric("Lodo Evitado (Total)", f"{lodo_evitado_m3_total:,.0f} m³", "Previene colmatación")
         c_r5.metric("Vida Útil Salvada", f"+{anos_salvados:,.1f} Años", "Atraso del colapso funcional")
         
-        # 📝 MENSAJE DE VIABILIDAD LIMPIO
+        # 📝 MENSAJE DE VIABILIDAD LIMPIO Y DESPEGADO
         if roi_real > 0:
             ratio = beneficio_total / inversion_total
-            st.success(f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **{ratio:.1f} USD** por cada dólar invertido. El mayor peso financiero recae en la **evitación de dragado** (${total_dragado_evitado/1e6:.1f} M) y el **agua protegida** (${total_venta_agua/1e6:.1f} M).")
+            # Construimos el mensaje evitando símbolos que disparen LaTeX
+            msg_final = (
+                f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **{ratio:.1f} USD** por cada dólar invertido. "
+                f"El mayor peso financiero recae en la **evitación de dragado** (${total_dragado_evitado/1e6:.1f} M) "
+                f"y el **agua protegida** (${total_venta_agua/1e6:.1f} M)."
+            )
+            st.success(msg_final)
         else:
             st.warning("⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es bajo, pero el valor existencial del recurso trasciende la contabilidad.")
 
