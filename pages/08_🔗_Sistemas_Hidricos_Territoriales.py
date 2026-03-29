@@ -711,26 +711,38 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
     with c_roi2:
         inversion_total = ha_proteger * costo_ha_usd
         
-        # --- MOTOR DE MITIGACIÓN DINÁMICA ---
+        # --- MOTOR DE MITIGACIÓN DINÁMICA (Curva de Saturación) ---
         mitigacion_pct = (1 - np.exp(-ha_proteger / 1200.0)) * 0.95
         
-        # 💰 RECALCULO DE BENEFICIOS (Recuperados de tu lógica actual)
+        # 💰 1. BENEFICIO QUÍMICO (OPEX EVITADO)
         ahorro_anual_quimicos = (sobrecosto_tormenta_usd * mitigacion_pct) * eventos_ano
         total_quimicos = ahorro_anual_quimicos * horizonte_roi
+        
+        # 💰 2. BENEFICIO DE INFRAESTRUCTURA (EVITACIÓN DE DRAGADO)
         costo_dragado_m3 = 12.0 
         lodo_evitado_m3_total = (lodo_tormenta_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
         total_dragado_evitado = lodo_evitado_m3_total * costo_dragado_m3
+        
+        # 💰 3. VALOR DEL AGUA PROTEGIDA (VENTA DE SERVICIO)
         vol_agua_protegida_m3 = (oferta_anual_m3 * 0.03) * horizonte_roi
         total_venta_agua = vol_agua_protegida_m3 * 0.45 
+        
+        # 💰 4. BENEFICIO ENERGÉTICO
         total_energia = (vol_agua_protegida_m3 * datos_nodo.get("factor_energia_kwh_m3", 0.65) * 0.08) if val_turbinado > 0 else 0.0
 
-        beneficio_total = total_quimicos + total_dragado_evitado + total_venta_agua + total_energia
+        # 💰 5. MANTENIMIENTO EVITADO (PENALIDAD POR ABRASIÓN)
+        # El lodo suspendido (lija líquida) daña álabes. Proteger la cuenca evita este sobrecosto.
+        lodo_susp_m3 = st.session_state.get('eco_lodo_suspension_m3', 0.0)
+        costo_mantenimiento_lodo = 2.5 # USD por m3 de lodo suspendido
+        total_mantenimiento_evitado = (lodo_susp_m3 * mitigacion_pct * costo_mantenimiento_lodo) * eventos_ano * horizonte_roi
+
+        # --- SUMATORIA FINAL ---
+        beneficio_total = total_quimicos + total_dragado_evitado + total_venta_agua + total_energia + total_mantenimiento_evitado
         roi_real = ((beneficio_total - inversion_total) / inversion_total) * 100 if inversion_total > 0 else 0
         
-        # --- 📦 NUEVO: RECUADRO DE DIMENSIONAMIENTO TERRITORIAL ---
-        # El 95% de la eficiencia máxima se alcanza matemáticamente a las ~3,594 ha (ln(1-0.95)*-1200)
+        # --- 📦 RECUADRO DE DIMENSIONAMIENTO TERRITORIAL ---
         ha_objetivo_95 = 3594.0
-        ha_cuenca_total = st.session_state.get('area_total_cuenca_val', 17300.0) # Área Espíritu Santo ~173km2
+        ha_cuenca_total = st.session_state.get('area_total_cuenca_val', 17300.0)
         pct_esfuerzo = (ha_proteger / ha_cuenca_total) * 100 if ha_cuenca_total > 0 else 0
         
         st.markdown(f"""
@@ -743,38 +755,33 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         """, unsafe_allow_html=True)
 
         # --- RENDERIZADO DE RESULTADOS ---
-        st.markdown("##### 📊 Caso de Negocio Integral (Triple Línea de Beneficio)")
+        st.markdown("##### 📊 Caso de Negocio Integral (Inversión Basada en la Naturaleza)")
         c_r1, c_r2, c_r3 = st.columns(3)
         c_r1.metric("Inversión (CAPEX)", f"${inversion_total/1e6:,.2f} M USD")
-        c_r2.metric("Beneficio Total Proyectado", f"${beneficio_total/1e6:,.2f} M USD", "Impacto Multinivel")
+        c_r2.metric("Beneficio Proyectado", f"${beneficio_total/1e6:,.2f} M USD", "Impacto Multinivel")
         c_r3.metric("R.O.I. Estratégico", f"{roi_real:,.0f}%", delta_color="normal" if roi_real > 0 else "inverse")
         
         with st.expander("🔍 Ver Desglose de Beneficios Acumulados", expanded=True):
             st.markdown(f"Distribución del valor generado en **{horizonte_roi} años**:")
-            d1, d2, d3, d4 = st.columns(4)
-            d1.write(f"**Tratamiento:**\n${total_quimicos/1e6:,.2f} M USD")
-            d2.write(f"**Evitación Dragado:**\n${total_dragado_evitado/1e6:,.2f} M USD")
-            d3.write(f"**Agua Garantizada:**\n${total_venta_agua/1e6:,.2f} M USD")
-            d4.write(f"**Energía Firme:**\n${total_energia/1e6:,.2f} M USD")
+            d1, d2 = st.columns(2)
+            d3, d4 = st.columns(2)
+            d1.write(f"• **Tratamiento e Insumos:** ${total_quimicos/1e6:,.2f} M USD")
+            d2.write(f"• **Evitación de Dragado:** ${total_dragado_evitado/1e6:,.2f} M USD")
+            d3.write(f"• **Agua y Energía Firme:** ${(total_venta_agua + total_energia)/1e6:,.2f} M USD")
+            d4.write(f"• **Mantenimiento Mecánico:** ${total_mantenimiento_evitado/1e6:,.2f} M USD")
 
         st.markdown("---")
         st.markdown("##### 🛡️ Resiliencia de Activos Grises")
         c_r4, c_r5 = st.columns(2)
         lodo_fondo_evitado = (lodo_fondo_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
         anos_salvados = lodo_fondo_evitado / 400000.0 
-        c_r4.metric("Lodo Evitado (Total)", f"{lodo_evitado_m3_total:,.0f} m³", "Previene colmatación")
+        c_r4.metric("Lodo Evitado (Total)", f"{lodo_evitado_m3_total:,.0f} m³", "Protección estructural")
         c_r5.metric("Vida Útil Salvada", f"+{anos_salvados:,.1f} Años", "Atraso del colapso funcional")
         
-        # 📝 MENSAJE DE VIABILIDAD LIMPIO Y DESPEGADO
+        # 📝 MENSAJE DE VIABILIDAD FINAL
         if roi_real > 0:
             ratio = beneficio_total / inversion_total
-            # Construimos el mensaje evitando símbolos que disparen LaTeX
-            msg_final = (
-                f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **{ratio:.1f} USD** por cada dólar invertido. "
-                f"El mayor peso financiero recae en la **evitación de dragado** (${total_dragado_evitado/1e6:.1f} M) "
-                f"y el **agua protegida** (${total_venta_agua/1e6:.1f} M)."
-            )
-            st.success(msg_final)
+            st.success(f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **{ratio:.1f} USD** por cada dólar invertido. El mayor peso financiero recae en la **evitación de dragado** (${total_dragado_evitado/1e6:.1f} M) y el **agua protegida** (${total_venta_agua/1e6:.1f} M).")
         else:
             st.warning("⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es bajo, pero el valor existencial del recurso trasciende la contabilidad.")
 
@@ -1100,30 +1107,33 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
 with contenedor_sankey.container():
     with st.expander("🕸️ Mapa Conceptual: Topología del Metabolismo Hídrico", expanded=False):
         
-        # 🔍 1. CAPTURA DE COBERTURAS REALES (Desde el motor de Pág 04)
-        ha_bosque = st.session_state.get('aleph_ha_bosque', 3460.0) 
-        ha_agricola = st.session_state.get('aleph_ha_agricola', 8650.0)
-        ha_pastos = st.session_state.get('aleph_ha_pastos', 2595.0)
-        ha_urbana = st.session_state.get('aleph_ha_urbana', 2595.0)
+        # 🔍 1. CAPTURA DE COBERTURAS REALES (Desde el motor de Pág 04 - Supabase)
+        # Priorizamos datos reales de Supabase; de lo contrario, usamos una distribución base profesional
+        area_ref = datos_nodo.get("ha_conservadas_base", 3460.0)
+        ha_bosque = st.session_state.get('aleph_ha_bosque', area_ref) 
+        ha_agricola = st.session_state.get('aleph_ha_agricola', area_ref * 2.5)
+        ha_pastos = st.session_state.get('aleph_ha_pastos', area_ref * 0.75)
+        ha_urbana = st.session_state.get('aleph_area_urbana', area_ref * 0.75)
         
         area_total_cuenca = ha_bosque + ha_agricola + ha_pastos + ha_urbana
         st.session_state['area_total_cuenca_val'] = area_total_cuenca
 
+        # 🌪️ CAPTURA DEL IMPACTO FÍSICO (Sincronización con Módulo 6 de Pág 04)
         memoria_lodo_total = st.session_state.get('eco_lodo_total_m3', 0.0)
         lodo_colas = st.session_state.get('eco_lodo_colas_m3', 0.0)
         lodo_fondo = st.session_state.get('eco_lodo_fondo_m3', 0.0)
         lodo_suspension = st.session_state.get('eco_lodo_suspension_m3', 
                           st.session_state.get('eco_lodo_abrasivo_m3', 0.0))
 
-        # 🛠️ DEBUG VISUAL Y EVENTO DE INGENIERÍA
         if memoria_lodo_total > 0:
             st.markdown(f"""
             <div style='background-color: rgba(231, 76, 60, 0.05); border-left: 5px solid #e74c3c; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
                 <span style='color: #c0392b; font-weight: bold;'>🚨 Evento de Ingeniería Detectado:</span> 
-                La avenida torrencial de <b>{memoria_lodo_total:,.0f} m³</b> ha sido particionada físicamente.
+                La avenida torrencial de <b>{memoria_lodo_total:,.0f} m³</b> ha sido particionada físicamente según cotas de captación.
             </div>
             """, unsafe_allow_html=True)
             
+            # Sincronizamos el estado del toggle para disparar el ROI y el Sankey
             activar_tormenta = st.toggle("⛈️ Inyectar Trifurcación de Lodos en el Sistema", 
                                          value=st.session_state.get('activar_tormenta_sankey', False))
             st.session_state['activar_tormenta_sankey'] = activar_tormenta
@@ -1131,7 +1141,11 @@ with contenedor_sankey.container():
             if activar_tormenta:
                 col_i1, col_i2, col_i3 = st.columns(3)
                 col_i1.metric("En Colas (Cota Alta)", f"{lodo_colas:,.0f} m³", "Depósito Periférico")
-                col_i2.metric("En Fondo (Torre)", f"{lodo_fondo:,.0f} m³", "Vida Útil Robada", delta_color="inverse")
+                
+                # Cálculo de años robados basado en el lodo de fondo que colmata la torre
+                anos_robados_hoy = lodo_fondo / 400000.0 if lodo_fondo > 0 else 0
+                col_i2.metric("En Fondo (Torre)", f"{lodo_fondo:,.0f} m³", f"{anos_robados_hoy:+.2f} Años Vida Útil", delta_color="inverse")
+                
                 col_i3.metric("Suspendido (Abrasión)", f"{lodo_suspension:,.0f} m³", "Riesgo Máquinas", delta_color="inverse")
             st.markdown("---")
 
