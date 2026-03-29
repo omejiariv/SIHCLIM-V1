@@ -491,7 +491,7 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     carga_removida_ton = sist_saneamiento * 2.5
     carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
-# =========================================================================
+    # =========================================================================
     # 🚨 REPARACIÓN FINAL: MOTOR WRI (COHERENCIA PROYECTO VS HISTÓRICO)
     # =========================================================================
     # 1. Seguridad Hídrica (Reflejo del Estrés Local del Módulo 8)
@@ -502,21 +502,27 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     # 2. Neutralidad Hídrica (VWBA)
     ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real_validado) * 100) if consumo_real_validado > 0 else 0.0
     
-    # 3. Resiliencia (Buffer del Embalse)
-    buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
+    # 3. Resiliencia Dinámica (Buffer del Embalse - Sensibilidad a Tormentas)
+    # 🚨 AJUSTE FÍSICO: Si hay tormenta, el lodo de fondo reduce la capacidad útil
+    capacidad_util_ajustada = capacidad_embalse_m3
+    if st.session_state.get('activar_tormenta_sankey', False):
+        lodo_fondo_inyectado = st.session_state.get('eco_lodo_fondo_m3', 0.0)
+        capacidad_util_ajustada -= lodo_fondo_inyectado
+        capacidad_util_ajustada = max(0, capacidad_util_ajustada)
+
+    buffer_ratio = (capacidad_util_ajustada + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
     ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
 
     # 4. Calidad de Agua (Cálculo de DBO recuperado)
-    # Reconstruimos la física de carga para evitar el NameError
     carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
     caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
     caudal_natural_L_s = caudal_natural_m3s * 1000
-    
-    # Definición de la variable faltante
     concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
     ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
 
-    # --- FUNCIONES DE EVALUACIÓN Y RENDERIZADO ---
+    # =========================================================================
+    # 🎨 FUNCIONES DE EVALUACIÓN Y RENDERIZADO (INTEGRIDAD TOTAL)
+    # =========================================================================
     def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
         if not invertido: 
             return ("🔴 CRÍTICO", "#c0392b") if valor < umbral_rojo else ("🟡 VULNERABLE", "#f39c12") if valor < umbral_verde else ("🟢 ÓPTIMO", "#27ae60")
@@ -524,19 +530,38 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
             return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
     def generar_leyenda(u_r, u_v, inv):
-        if not inv: return f"🔴 Crítico < {u_r}% | 🟡 Vulnerable {u_r}-{u_v}% | 🟢 Óptimo > {u_v}%"
-        else: return f"🟢 Holgado < {u_v}% | 🟡 Moderado {u_v}-{u_r}% | 🔴 Severo > {u_r}%"
+        if not inv: 
+            return f"🔴 Crítico < {u_r}% | 🟡 Vulnerable {u_r}-{u_v}% | 🟢 Óptimo > {u_v}%"
+        else: 
+            return f"🟢 Holgado < {u_v}% | 🟡 Moderado {u_v}-{u_r}% | 🔴 Severo > {u_r}%"
 
     st.markdown("---")
+
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
+        # 🚨 AJUSTE DE TÍTULO EN TIEMPO REAL
+        if "Resiliencia" in titulo and st.session_state.get('activar_tormenta_sankey', False):
+            titulo = f"🌪️ {titulo} (Colmatación)"
+
         fig = go.Figure(go.Indicator(
-            mode = "gauge+number", value = valor, number = {'suffix': "%", 'font': {'size': 26}}, title = {'text': titulo, 'font': {'size': 14}},
-            gauge = {'axis': {'range': [None, 100], 'tickwidth': 1}, 'bar': {'color': color_bar}, 'bgcolor': "white",
-                     'steps': [{'range': [0, umbral_rojo], 'color': "#ffcccb" if not invertido else "#e8f8f5"},
-                               {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc"},
-                               {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}],
-                     'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}}
+            mode = "gauge+number", value = valor,
+            number = {'suffix': "%", 'font': {'size': 26}},
+            title = {'text': titulo, 'font': {'size': 14}},
+            gauge = {
+                'axis': {'range': [None, 100], 'tickwidth': 1},
+                'bar': {'color': color_bar},
+                'bgcolor': "white",
+                'steps': [
+                    {'range': [0, umbral_rojo], 'color': "#ffcccb" if not invertido else "#e8f8f5"},
+                    {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc"},
+                    {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}
+                ],
+                'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}
+            }
         ))
+        
+        if "Neutralidad" in titulo and nodo_seleccionado == "La Fe":
+            st.caption("ℹ️ Basado en el aporte marginal de la Quebrada Espíritu Santo frente a la demanda metropolitana.")
+
         fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10))
         return fig
 
