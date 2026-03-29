@@ -1211,39 +1211,43 @@ with contenedor_sankey.container():
                 idx += 1
 
         # =====================================================================
-        # 🚀 INYECCIÓN DE TOOLTIPS DE CALIDAD (Ubicación: Justo antes del Render)
+        # 🧪 INYECCIÓN DE CALIDAD MULTIVARIABLE (DBO, P, N)
         # =====================================================================
-        concentraciones = {
-            "🌲 Bosques (Infiltración)": 0.5,
-            "🚜 Agrícola (Escorrentía)": 450.0,
-            "🐄 Pastos (Compactación)": 180.0,
-            "🏙️ Urbano (Impermeable)": 85.0
+        # Valores típicos por uso (mg/L) [DBO, Fósforo, Nitrógeno, Sedimentos]
+        calidad_usos = {
+            "🌲 Bosques (Infiltración)": {"dbo": 0.5, "p": 0.01, "n": 0.2, "sed": 0.5},
+            "🚜 Agrícola (Escorrentía)": {"dbo": 12.0, "p": 0.85, "n": 4.5, "sed": 450.0},
+            "🐄 Pastos (Compactación)": {"dbo": 25.0, "p": 1.20, "n": 6.8, "sed": 180.0},
+            "🏙️ Urbano (Impermeable)": {"dbo": 180.0, "p": 4.50, "n": 15.0, "sed": 85.0}
         }
 
         link_tooltips = []
         for i in range(len(source)):
             nombre_origen = labels[source[i]]
-            if nombre_origen in concentraciones:
-                conc = concentraciones[nombre_origen]
-                link_tooltips.append(f"Carga Sedimento: {conc} mg/L<br>Estado: {'🟢 Óptimo' if conc < 10 else '🔴 Crítico'}")
-            elif "Lodo" in nombre_origen or "Sedimento" in nombre_origen:
-                link_tooltips.append("Carga de Sedimento Puro (Evento Torrencial)")
+            nombre_destino = labels[target[i]]
+            
+            if nombre_origen in calidad_usos:
+                c = calidad_usos[nombre_origen]
+                txt = (f"<b>Calidad del Aporte:</b><br>"
+                       f"• DBO: {c['dbo']} mg/L<br>"
+                       f"• Fósforo: {c['p']} mg/L<br>"
+                       f"• Nitrógeno: {c['n']} mg/L<br>"
+                       f"• Sedimentos: {c['sed']} mg/L")
+                link_tooltips.append(txt)
+            elif "Embalse" in nombre_origen:
+                link_tooltips.append(f"<b>Agua en Tratamiento</b><br>Mezcla de cuenca y trasvases")
+            elif "Lodo" in nombre_origen:
+                link_tooltips.append("<b>Carga Sólida Extrema</b><br>Evento Torrencial")
             else:
-                link_tooltips.append("Mezcla de Caudales en Embalse")
+                link_tooltips.append(f"Flujo de {nombre_origen}")
 
-        # --- 5. RENDER FINAL ACTUALIZADO ---
-        fig_sankey = go.Figure(data=[go.Sankey(
-            valueformat=".2f", valuesuffix=" m³/s",
-            textfont=dict(size=12, color="black", family="Georgia, serif"),
-            node=dict(pad=18, thickness=22, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
+        # --- RE-RENDERIZADO DEL SANKEY ---
+        fig_sankey.update_traces(
             link=dict(
-                source=source, target=target, value=value, color=color,
                 customdata=link_tooltips,
-                hovertemplate='<b>Origen:</b> %{source.label}<br><b>Destino:</b> %{target.label}<br><b>Caudal:</b> %{value}%{valuesuffix}<br>%{customdata}<extra></extra>'
+                hovertemplate='<b>De:</b> %{source.label}<br><b>A:</b> %{target.label}<br><b>Caudal:</b> %{value}%{valuesuffix}<br>%{customdata}<extra></extra>'
             )
-        )])
-        fig_sankey.update_layout(height=600, margin=dict(l=10, r=10, t=10, b=10), font_family="Georgia")
-        st.plotly_chart(fig_sankey, use_container_width=True)
+        )
         
 # =========================================================================
 # 8. MATEMÁTICA Y CIENCIA
