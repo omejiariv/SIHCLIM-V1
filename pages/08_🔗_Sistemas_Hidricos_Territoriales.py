@@ -924,8 +924,8 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
 with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", expanded=False):
     st.info("Cálculo integrado de extracción hídrica, cargas orgánicas vertidas (DBO5) y generación de residuos sólidos (Lixiviados/Emisiones).")
 
-    # 🔍 SINCRONIZACIÓN MAESTRA: Recuperamos los datos unificados del Módulo 8 (Punto 2a)
-    # Si no existen en memoria, usamos los fallbacks por sistema
+    # 🔍 SINCRONIZACIÓN MAESTRA: Puente de datos con el Módulo 8 (Punto 2a)
+    # Definimos primero los fallbacks por sistema
     if nodo_seleccionado == "La Fe": 
         def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 15000, 450000, 5000, 2000, 150000
     elif "Grande" in nodo_seleccionado: 
@@ -937,7 +937,8 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
     else: 
         def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 20000, 0, 25000, 10000, 50000
 
-    # Prioridad 1: Datos sincronizados de Huella Hídrica (Módulo 8)
+    # 🚀 EXTRACCIÓN DINÁMICA: Leemos los cálculos del Módulo 8 para evitar discrepancias
+    # La población asignada del Módulo 8 (basada en el 58% para La Fe) se convierte en la base aquí.
     pob_sinc = st.session_state.get(f'pob_asig_{nodo_seleccionado}', def_pob_res)
     bov_sinc = st.session_state.get('ica_bovinos_calc', def_bov)
     por_sinc = st.session_state.get('ica_porcinos_calc', def_por)
@@ -946,12 +947,14 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
     st.markdown("### 1. Inventario Poblacional Sincronizado (Censo Real + Proyección)")
 
     c_p1, c_p2, c_p3, c_p4, c_p5 = st.columns(5)
-    pob_residente = c_p1.number_input("🏘️ Pob. Residente:", value=int(pob_sinc), step=1000, key="sh_pob_residente")
-    pob_externa = c_p2.number_input("🏙️ Pob. Externa:", value=int(def_pob_ext), step=50000, key="sh_pob_externa")
-    cabezas_bovinas = c_p3.number_input("🐄 Bovinos:", value=int(bov_sinc), step=1000, key="sh_bovinos_ica")
-    cabezas_porcinas = c_p4.number_input("🐖 Porcinos:", value=int(por_sinc), step=1000, key="sh_porcinos_ica")
-    cabezas_aves = c_p5.number_input("🐔 Aves:", value=int(ave_sinc), step=5000, key="sh_aves_ica") # 2b. Inclusión de Aves
-
+    
+    # Renderizamos los inputs usando los valores sincronizados para que coincidan con el panel inferior
+    pob_residente = c_p1.number_input("🏘️ Pob. Residente:", value=int(pob_sinc), step=1000, key="sh_sinc_pob_res")
+    pob_externa = c_p2.number_input("🏙️ Pob. Externa:", value=int(def_pob_ext), step=50000, key="sh_sinc_pob_ext")
+    cabezas_bovinas = c_p3.number_input("🐄 Bovinos:", value=int(bov_sinc), step=1000, key="sh_sinc_bovinos")
+    cabezas_porcinas = c_p4.number_input("🐖 Porcinos:", value=int(por_sinc), step=1000, key="sh_sinc_porcinos")
+    cabezas_aves = c_p5.number_input("🐔 Aves:", value=int(ave_sinc), step=5000, key="sh_sinc_aves")
+    
     # 🪄 Módulos de Consumo y Generación
     dot_hum, dot_bov, dot_por, kg_rs_hab, pct_organico = 150, 40, 15, 0.8, 55.0
     if st.toggle("⚙️ Mostrar y Ajustar Módulos de Consumo y Generación"):
