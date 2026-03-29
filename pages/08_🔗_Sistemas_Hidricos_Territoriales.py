@@ -1096,7 +1096,7 @@ with contenedor_sankey.container():
         source, target, value, color = [], [], [], []
         idx = 1
 
-        # Afluentes y Trasvases
+        # 1. ENTRADAS: Afluentes y Trasvases
         for nombre, q in afluentes_inputs.items():
             if q > 0:
                 labels.append(nombre); source.append(idx); target.append(0); value.append(q); color.append("rgba(46, 204, 113, 0.4)"); idx += 1
@@ -1104,29 +1104,26 @@ with contenedor_sankey.container():
             if q > 0:
                 labels.append(f"Bombeo {nombre}"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.4)"); idx += 1
 
-        # 🌪️ DIBUJO DE LA TRIFURCACIÓN DE LODO (Solo si el toggle está activo)
-        if st.session_state['activar_tormenta_sankey'] and memoria_lodo_total > 0:
-            # 1. Lodo en Colas (Entra y se queda "al lado", no afecta la salida operativa)
-            lodo_colas_s = lodo_colas / (12 * 3600)
-            labels.append("Depósito en Colas (Cotas Altas)")
-            source.append(idx); target.append(0); value.append(lodo_colas_s); color.append("rgba(210, 180, 140, 0.8)"); idx += 1
+        # 🌪️ 2. INYECCIÓN DE LA TRIFURCACIÓN DE LODO (Solo si el toggle está activo)
+        if st.session_state.get('activar_tormenta_sankey', False) and memoria_lodo_total > 0:
+            # A. Lodo en Colas (Entra y se queda estático en la periferia)
+            l_colas_s = lodo_colas / (12 * 3600)
+            labels.append("Depósito en Colas (Cota Alta)")
+            source.append(idx); target.append(0); value.append(l_colas_s); color.append("rgba(210, 180, 140, 0.7)"); idx += 1
             
-            # 2. Lodo de Fondo (Entra y colmata la torre)
-            lodo_fondo_s = lodo_fondo / (12 * 3600)
+            # B. Lodo de Fondo (Entra y colmata el Volumen Muerto)
+            l_fondo_s = lodo_fondo / (12 * 3600)
             labels.append("Lodo de Fondo (Colmatación)")
-            source.append(idx); target.append(0); value.append(lodo_fondo_s); color.append("rgba(101, 67, 33, 0.9)"); idx += 1
+            source.append(idx); target.append(0); value.append(l_fondo_s); color.append("rgba(101, 67, 33, 0.9)"); idx += 1
             
-            # 3. Lodo Suspendido (ENTRA al embalse y SALE por las conducciones)
-            lodo_susp_s = lodo_suspension / (12 * 3600)
-            labels.append("Sedimentos Abrasivos (Suspensión)")
-            source.append(idx); target.append(0); value.append(lodo_susp_s); color.append("rgba(205, 133, 63, 0.7)"); idx_lodo_in = idx; idx += 1
-            
-            # Conexión del lodo suspendido a las SALIDAS
-            # Guardamos índices de destino para la "lija líquida"
-            idx_out = idx # Referencia para los nodos de salida
-        
-        # Nodos de Salida (Acueducto, Energía, etc.)
-        # Aquí definimos los destinos para poder mapear el lodo viajero
+            # C. Lodo Suspendido (ENTRA al embalse para luego SALIR)
+            l_susp_s = lodo_suspension / (12 * 3600)
+            labels.append("Sedimento Abrasivo (Suspensión)")
+            source.append(idx); target.append(0); value.append(l_susp_s); color.append("rgba(205, 133, 63, 0.8)"); idx += 1
+        else:
+            l_susp_s = 0.0
+
+        # 3. SALIDAS: Nodos de Destino y Conexión de Lodo Viajero
         destinos = [
             ("Acueducto (Consumo)", val_acueducto, "rgba(52, 152, 219, 0.6)"),
             ("Generación Eléctrica", val_turbinado, "rgba(241, 196, 15, 0.7)"),
@@ -1136,15 +1133,22 @@ with contenedor_sankey.container():
         for lab, val, col in destinos:
             if val > 0:
                 target_node = idx
-                labels.append(lab); source.append(0); target.append(target_node); value.append(val); color.append(col); idx += 1
+                labels.append(lab)
+                # Flujo de agua principal (Azul/Amarillo)
+                source.append(0); target.append(target_node); value.append(val); color.append(col)
                 
-                # Si la tormenta está activa, inyectamos la "vena" de lodo en la tubería de salida
-                if st.session_state['activar_tormenta_sankey'] and memoria_lodo_total > 0:
-                    # El lodo suspendido se reparte proporcionalmente a las salidas de túnel
-                    if "Acueducto" in lab or "Generación" in lab:
-                        reparto_lodo = lodo_susp_s * 0.5 
-                        source.append(0); target.append(target_node); value.append(reparto_lodo); color.append("rgba(205, 133, 63, 0.4)")
+                # 🚀 INYECCIÓN DE LA VENA MARRÓN (Lodo Suspendido)
+                # Si hay lodo suspendido y el destino es Acueducto o Generación, conectamos el flujo viajero
+                if l_susp_s > 0 and ("Acueducto" in lab or "Generación" in lab):
+                    # Repartimos el lodo suspendido proporcionalmente a las salidas de infraestructura
+                    # (Dividimos por 2 asumiendo que ambas están activas, o ajustamos según flujo)
+                    divisor = sum(1 for d in destinos if val_acueducto > 0 and val_turbinado > 0) or 1
+                    reparto_lodo = l_susp_s / divisor
+                    source.append(0); target.append(target_node); value.append(reparto_lodo); color.append("rgba(205, 133, 63, 0.5)")
+                
+                idx += 1
 
+        # 4. RENDERIZADO FINAL
         fig_sankey = go.Figure(data=[go.Sankey(
             valueformat=".2f", valuesuffix=" m³/s",
             textfont=dict(size=13, color="black", family="Georgia, serif"),
