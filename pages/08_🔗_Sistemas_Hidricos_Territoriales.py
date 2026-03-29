@@ -751,10 +751,10 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         with st.expander("🔍 Ver Desglose de Beneficios Acumulados", expanded=True):
             st.markdown(f"Distribución del valor generado en **{horizonte_roi} años**:")
             d1, d2, d3, d4 = st.columns(4)
-            d1.write(f"**Tratamiento (Insumos):**\n${total_quimicos/1e6:,.2f} M")
-            d2.write(f"**Evitación Dragado:**\n${total_dragado_evitado/1e6:,.2f} M")
-            d3.write(f"**Agua Garantizada:**\n${total_venta_agua/1e6:,.2f} M")
-            d4.write(f"**Energía Firme:**\n${total_energia/1e6:,.2f} M")
+            d1.write(f"**Tratamiento (Insumos):**\n${total_quimicos/1e6:,.2f} M USD")
+            d2.write(f"**Evitación Dragado:**\n${total_dragado_evitado/1e6:,.2f} M USD")
+            d3.write(f"**Agua Garantizada:**\n${total_venta_agua/1e6:,.2f} M USD")
+            d4.write(f"**Energía Firme:**\n${total_energia/1e6:,.2f} M USD")
 
         st.markdown("---")
         st.markdown("##### 🛡️ Resiliencia de Activos Grises")
@@ -1095,23 +1095,27 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
             st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_local_m3s:.1f} m³/s")
 
 # ==============================================================================
-# 🕸️ MAPA CONCEPTUAL: TOPOLOGÍA DEL METABOLISMO HÍDRICO (VERSION TRIFURCADA)
+# 🕸️ MAPA CONCEPTUAL: TOPOLOGÍA DEL METABOLISMO HÍDRICO (VERSIÓN TRIFURCADA + USOS SUELO)
 # ==============================================================================
 with contenedor_sankey.container():
     with st.expander("🕸️ Mapa Conceptual: Topología del Metabolismo Hídrico", expanded=False):
         
-        # 🔍 1. CAPTURA Y "BUSCADOR DE SEGURIDAD" (Evita el Cero persistente)
+        # 🔍 1. CAPTURA DE VARIABLES Y COBERTURAS (Desde el Aleph de Pág 04)
+        ha_bosque = st.session_state.get('aleph_ha_bosque', 100.0) 
+        ha_agricola = st.session_state.get('aleph_ha_agricola', 50.0)
+        ha_pastos = st.session_state.get('aleph_ha_pastos', 50.0)
+        ha_urbana = st.session_state.get('aleph_area_urbana', 10.0)
+        area_total_cuenca = ha_bosque + ha_agricola + ha_pastos + ha_urbana
+
         memoria_lodo_total = st.session_state.get('eco_lodo_total_m3', 0.0)
         lodo_colas = st.session_state.get('eco_lodo_colas_m3', 0.0)
         lodo_fondo = st.session_state.get('eco_lodo_fondo_m3', 0.0)
-        
-        # Buscamos en todas las llaves posibles por si hubo un cambio de nombre en el Aleph
         lodo_suspension = st.session_state.get('eco_lodo_suspension_m3', 
                           st.session_state.get('eco_lodo_abrasivo_m3', 0.0))
 
-        # 🛠️ DEBUG VISUAL (Solo se muestra si hay un error de datos)
+        # 🛠️ DEBUG VISUAL (Solo se muestra si hay un error crítico de datos)
         if memoria_lodo_total > 0 and lodo_suspension == 0:
-            st.warning("⚠️ Datos de suspensión no detectados. Verificando Aleph...")
+            st.warning("⚠️ Datos de suspensión no detectados en el Aleph.")
             st.json({k: v for k, v in st.session_state.items() if 'eco_' in k})
 
         if memoria_lodo_total > 0:
@@ -1130,33 +1134,59 @@ with contenedor_sankey.container():
                 col_i1, col_i2, col_i3 = st.columns(3)
                 col_i1.metric("En Colas (Cota Alta)", f"{lodo_colas:,.0f} m³", "Depósito Periférico")
                 col_i2.metric("En Fondo (Torre)", f"{lodo_fondo:,.0f} m³", "Vida Útil Robada", delta_color="inverse")
-                # Aquí forzamos la visualización del lodo de suspensión
                 col_i3.metric("Suspendido (Abrasión)", f"{lodo_suspension:,.0f} m³", "Riesgo Máquinas", delta_color="inverse")
             st.markdown("---")
 
-        # --- 2. LÓGICA DINÁMICA DEL DIAGRAMA ---
-        labels = [f"Embalse {nodo_seleccionado}"]
+        # --- 2. LÓGICA DINÁMICA DEL DIAGRAMA: DEL PAISAJE A LA CANILLA ---
+        labels = [f"Embalse {nodo_seleccionado}"] # Nodo 0
         source, target, value, color = [], [], [], []
         idx = 1
 
-        # Entradas
-        for nombre, q in afluentes_inputs.items():
-            if q > 0:
-                labels.append(nombre); source.append(idx); target.append(0); value.append(q); color.append("rgba(46, 204, 113, 0.4)"); idx += 1
+        # A. NODOS DE ORIGEN (USOS DEL SUELO)
+        usos_nodos = [
+            ("🌲 Bosques (Infiltración)", ha_bosque, "rgba(39, 174, 96, 0.6)"),
+            ("🚜 Agrícola (Escorrentía)", ha_agricola, "rgba(241, 196, 15, 0.6)"),
+            ("🐄 Pastos (Compactación)", ha_pastos, "rgba(230, 126, 34, 0.6)"),
+            ("🏙️ Urbano (Impermeable)", ha_urbana, "rgba(149, 165, 166, 0.6)")
+        ]
         
-        # 🌪️ 3. DIBUJO DE LA TRIFURCACIÓN (Solo si el toggle está activo)
+        indices_usos = {}
+        for nom, area, col in usos_nodos:
+            labels.append(nom); indices_usos[nom] = idx; idx += 1
+
+        # B. NODOS INTERMEDIARIOS (RÍOS) Y CONEXIÓN DESDE EL SUELO
+        indices_rios = {}
+        for nombre_rio, q_rio in afluentes_inputs.items():
+            labels.append(nombre_rio); current_rio_idx = idx; indices_rios[nombre_rio] = idx
+            
+            # El agua del río nace proporcionalmente de los usos del suelo
+            for nom_u, area, col_u in usos_nodos:
+                flujo_desde_suelo = (q_rio * (area / area_total_cuenca)) if area_total_cuenca > 0 else 0
+                if flujo_desde_suelo > 0.01:
+                    source.append(indices_usos[nom_u]); target.append(current_rio_idx); value.append(flujo_desde_suelo); color.append(col_u)
+            
+            # El río llega al Embalse (Nodo 0)
+            source.append(current_rio_idx); target.append(0); value.append(q_rio); color.append("rgba(52, 152, 219, 0.5)")
+            idx += 1
+
+        # 🌪️ 3. DIBUJO DE LA TRIFURCACIÓN DE LODO (Solo si el toggle está activo)
         l_susp_s = 0.0
         if st.session_state.get('activar_tormenta_sankey', False) and memoria_lodo_total > 0:
-            # Colas
+            # Lodo Colas
             l_colas_s = lodo_colas / (12 * 3600)
             labels.append("Depósito en Colas"); source.append(idx); target.append(0); value.append(l_colas_s); color.append("rgba(210, 180, 140, 0.7)"); idx += 1
-            # Fondo
+            # Lodo Fondo
             l_fondo_s = lodo_fondo / (12 * 3600)
             labels.append("Lodo de Fondo"); source.append(idx); target.append(0); value.append(l_fondo_s); color.append("rgba(101, 67, 33, 0.9)"); idx += 1
-            # Suspensión (Viajero)
+            # Lodo Suspensión
             l_susp_s = lodo_suspension / (12 * 3600)
             if l_susp_s > 0:
                 labels.append("Sedimento Abrasivo"); source.append(idx); target.append(0); value.append(l_susp_s); color.append("rgba(205, 133, 63, 0.8)"); idx += 1
+
+        # C. TRASVASES (ENTRADA DIRECTA AL EMBALSE)
+        for nombre, q in trasvases_inputs.items():
+            if q > 0:
+                labels.append(f"Bombeo {nombre}"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.4)"); idx += 1
 
         # 4. SALIDAS Y VENA MARRÓN
         destinos = [
@@ -1174,19 +1204,19 @@ with contenedor_sankey.container():
                 labels.append(lab)
                 source.append(0); target.append(target_node); value.append(val); color.append(col)
                 
-                # Inyección del flujo abrasivo
+                # Inyección del flujo abrasivo en las bandas de salida
                 if reparto_lodo > 0 and ("Acueducto" in lab or "Generación" in lab):
                     source.append(0); target.append(target_node); value.append(reparto_lodo); color.append("rgba(205, 133, 63, 0.5)")
                 idx += 1
 
-        # 5. RENDER
+        # 5. RENDER FINAL
         fig_sankey = go.Figure(data=[go.Sankey(
             valueformat=".2f", valuesuffix=" m³/s",
-            textfont=dict(size=13, color="black", family="Georgia, serif"),
-            node=dict(pad=20, thickness=25, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
+            textfont=dict(size=12, color="black", family="Georgia, serif"),
+            node=dict(pad=18, thickness=22, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
             link=dict(source=source, target=target, value=value, color=color)
         )])
-        fig_sankey.update_layout(height=500, margin=dict(l=10, r=10, t=10, b=10), font_family="Georgia")
+        fig_sankey.update_layout(height=600, margin=dict(l=10, r=10, t=10, b=10), font_family="Georgia")
         st.plotly_chart(fig_sankey, use_container_width=True)
         
 # =========================================================================
