@@ -729,32 +729,39 @@ with tab_forestal:
             
         st.divider()
 
-        # =====================================================================
-        # 🌐 CONEXIÓN AL ALEPH (ST.SESSION_STATE) - AHORA VISIBLE Y BLINDADO
+# =====================================================================
+        # 🌐 CONEXIÓN AL ALEPH (ST.SESSION_STATE) - DATOS REALES SUPABASE
         # =====================================================================
         try:
-            area_agricola_total = 0.0
-            area_urbana_total = 0.0
-            area_pastos_total = 0.0
+            # Inicializamos contadores para el puente de datos
+            distribucion_real = {
+                'bosque': 0.0, 'agricola': 0.0, 'pastos': 0.0, 'urbano': 0.0
+            }
             
-            for index, row in df_diagnostico.iterrows():
+            for _, row in df_diagnostico.iterrows():
                 cov_id = int(row['COV_ID'])
-                hectareas = float(row['Hectareas'])
+                ha = float(row['Hectareas'])
                 
-                if cov_id in [5, 6, 8]: area_agricola_total += hectareas
-                elif cov_id in [7, 10]: area_pastos_total += hectareas
-                elif cov_id in [1, 2, 3, 4]: area_urbana_total += hectareas
+                if cov_id == 9: distribucion_real['bosque'] += ha
+                elif cov_id in [5, 6, 8]: distribucion_real['agricola'] += ha
+                elif cov_id in [7, 10]: distribucion_real['pastos'] += ha
+                elif cov_id in [1, 2, 3, 4]: distribucion_real['urbano'] += ha
             
-            st.session_state['aleph_ha_agricola'] = area_agricola_total
-            st.session_state['aleph_ha_pastos'] = area_pastos_total
-            st.session_state['aleph_area_urbana'] = area_urbana_total
+            # Inyección en la memoria global para el Sankey de la Pág 08
+            st.session_state['aleph_ha_bosque'] = distribucion_real['bosque']
+            st.session_state['aleph_ha_agricola'] = distribucion_real['agricola']
+            st.session_state['aleph_ha_pastos'] = distribucion_real['pastos']
+            st.session_state['aleph_ha_urbana'] = distribucion_real['urbano']
             st.session_state['aleph_territorio_origen'] = str(nombre_seleccion)
             
-            st.success(f"🌐 **El Aleph activo:** Las áreas de {nombre_seleccion} ({area_agricola_total:,.1f} Ha Agrícolas y {area_pastos_total:,.1f} Ha en Pastos) han sido enviadas al simulador de Calidad de Agua.")
+            # Área total para el recuadro de dimensionamiento territorial
+            st.session_state['area_total_cuenca_val'] = sum(distribucion_real.values())
+            
+            st.success(f"📡 **Datos Geoespaciales Sincronizados:** El Sankey de la Pág 08 ahora usa las {st.session_state['area_total_cuenca_val']:,.1f} ha reales de {nombre_seleccion}.")
             
         except Exception as e:
-            st.error(f"Error de conexión en Aleph: {e}")
-        # =====================================================================
+            st.error(f"Error en puente de datos: {e}")
+# =====================================================================
         
         st.divider()
         
