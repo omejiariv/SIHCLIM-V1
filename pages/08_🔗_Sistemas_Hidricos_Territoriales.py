@@ -740,26 +740,43 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         beneficio_total = total_quimicos + total_dragado_evitado + total_venta_agua + total_energia
         roi_real = ((beneficio_total - inversion_total) / inversion_total) * 100 if inversion_total > 0 else 0
         
+        # --- RENDERIZADO DE RESULTADOS REFINADO (PUNTO 1 Y 2) ---
         st.markdown("##### 📊 Caso de Negocio Integral (Triple Línea de Beneficio)")
         c_r1, c_r2, c_r3 = st.columns(3)
         c_r1.metric("Inversión (CAPEX)", f"${inversion_total/1e6:,.2f} M USD")
         c_r2.metric("Beneficio Total Proyectado", f"${beneficio_total/1e6:,.2f} M USD", "Impacto Multinivel")
         c_r3.metric("R.O.I. Estratégico", f"{roi_real:,.0f}%", delta_color="normal" if roi_real > 0 else "inverse")
         
+        # 🧪 DESGLOSE TÉCNICO DE BENEFICIOS (Recuperando el valor de tratamiento)
+        with st.expander("🔍 Ver Desglose de Beneficios Acumulados", expanded=True):
+            st.markdown(f"Distribución del valor generado en **{horizonte_roi} años**:")
+            d1, d2, d3, d4 = st.columns(4)
+            d1.write(f"**Tratamiento (Insumos):**\n${total_quimicos/1e6:,.2f} M")
+            d2.write(f"**Evitación Dragado:**\n${total_dragado_evitado/1e6:,.2f} M")
+            d3.write(f"**Agua Garantizada:**\n${total_venta_agua/1e6:,.2f} M")
+            d4.write(f"**Energía Firme:**\n${total_energia/1e6:,.2f} M")
+
         st.markdown("---")
         st.markdown("##### 🛡️ Resiliencia de Activos Grises")
         c_r4, c_r5 = st.columns(2)
-        # Solo el lodo de FONDO evitado se usa para años de vida útil
         lodo_fondo_evitado = (lodo_fondo_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
-        anos_salvados = lodo_fondo_evitado / 400000.0 # Factor de colmatación crítica
+        anos_salvados = lodo_fondo_evitado / 400000.0 
         
-        c_r4.metric("Lodo Evitado (Total)", f"{lodo_evitado_m3_total:,.0f} m³", f"Previene colmatación")
+        c_r4.metric("Lodo Evitado (Total)", f"{lodo_evitado_m3_total:,.0f} m³", "Previene colmatación")
         c_r5.metric("Vida Útil Salvada", f"+{anos_salvados:,.1f} Años", "Atraso del colapso funcional")
         
+        # 📝 MENSAJE DE VIABILIDAD LIMPIO (Sin errores de pegado)
         if roi_real > 0:
-            st.success(f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **${beneficio_total/inversion_total:.1f} USD** por cada dólar invertido. El mayor peso financiero recae en la **evitación de dragado (${total_dragado_evitado/1e6:.1f}M)** y el **agua protegida (${total_venta_agua/1e6:.1f}M)**.")
+            # Formateamos los strings por separado para evitar el pegado de texto
+            ratio = beneficio_total / inversion_total
+            msg = (
+                f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **{ratio:.1f} USD** por cada dólar invertido. "
+                f"El mayor peso financiero recae en la **evitación de dragado** (${total_dragado_evitado/1e6:.1f} M) "
+                f"y el **agua protegida** (${total_venta_agua/1e6:.1f} M)."
+            )
+            st.success(msg)
         else:
-            st.warning(f"⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es del {roi_real:.1f}%. Sin embargo, el valor **existencial** del agua para el territorio trasciende esta contabilidad. El costo de una falla sistémica en el abastecimiento sería de miles de millones de dólares.")
+            st.warning("⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es bajo, pero el valor existencial del recurso es incalculable.")
 
 # =========================================================================
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
