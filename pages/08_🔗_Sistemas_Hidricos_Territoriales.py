@@ -491,36 +491,24 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     carga_removida_ton = sist_saneamiento * 2.5
     carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
-    # --- CÁLCULO DE ÍNDICES WRI ---
     # =========================================================================
-    # 🚨 REPARACIÓN MAESTRA: MOTOR DE ÍNDICES WRI (SINCRONIZACIÓN TOTAL)
+    # 🚨 REPARACIÓN FINAL: MOTOR WRI (COHERENCIA PROYECTO VS HISTÓRICO)
     # =========================================================================
-    # 1. Validación de Cargas y Calidad
-    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 
-    caudal_natural_m3s = sum(datos_nodo["afluentes_naturales"].values())
-    caudal_natural_L_s = caudal_natural_m3s * 1000
-    concentracion_dbo_mg_l = carga_mg_s / caudal_natural_L_s if caudal_natural_L_s > 0 else 999.0
+    # 1. Seguridad Hídrica (Reflejo del Estrés Local del Módulo 8)
+    # Si el estrés es 47%, la seguridad es 53%. Es un vínculo directo de integridad.
+    consumo_real_validado = max(consumo_anual_m3, (val_acueducto * 31536000))
+    estres_decimal = consumo_real_validado / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
+    # ind_estres representa ahora el % de Seguridad (100 - % estrés)
+    ind_estres = max(0.0, min(100.0, 100.0 - (estres_decimal * 100))) 
 
-    # Índice de Calidad de Agua (Escala WQI simplificada)
-    ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
-
-    # 2. Índice de Resiliencia (Buffer Estructural + Oferta)
-    # Evaluamos la capacidad del sistema para absorber choques de demanda o sequía
+    # 2. Neutralidad Hídrica (VWBA): Diferenciación Proyecto vs Histórico
+    # volumen_repuesto_m3 ya integra (ha_base * 2500) + (ha_simuladas * 2500)
+    ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real_validado) * 100) if consumo_real_validado > 0 else 0.0
+    
+    # 3. Resiliencia y Calidad (Lógica física mantenida)
     buffer_ratio = (capacidad_embalse_m3 + oferta_anual_m3) / consumo_anual_m3 if consumo_anual_m3 > 0 else 5.0
     ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
-
-    # 3. Índice de Estrés Hídrico (WEI+ / Escala Internacional)
-    # 🚨 CORRECCIÓN: Usamos el consumo real validado (Acueducto + Fracción de Energía)
-    consumo_real_validado = max(consumo_anual_m3, (val_acueducto * 31536000))
-    # El estrés compara qué tanto de la oferta anual natural estamos 'secuestrando'
-    wei_ratio = consumo_real_validado / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
-    # Umbral de alerta internacional (WRI): >40% es estrés alto
-    ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
-
-    # 4. Índice de Neutralidad Volumétrica (VWBA)
-    # 🚨 CORRECCIÓN: Aseguramos que volumen_repuesto_m3 (SbN) se compare con el consumo total
-    # Si la naturaleza devuelve lo que la ciudad consume, la neutralidad tiende al 100%
-    ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real_validado) * 100) if consumo_real_validado > 0 else 0.0
+    ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
 
     # --- FUNCIONES DE EVALUACIÓN Y RENDERIZADO ---
     def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
@@ -530,8 +518,8 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
             return ("🟢 HOLGADO", "#27ae60") if valor < umbral_verde else ("🟡 MODERADO", "#f39c12") if valor < umbral_rojo else ("🔴 CRÍTICO", "#c0392b")
 
     def generar_leyenda(u_r, u_v, inv):
-        if not inv: return f"🔴 <b>Crítico</b> &lt; {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> &gt; {u_v}%"
-        else: return f"🟢 <b>Holgado</b> &lt; {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Moderado</b> {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 <b>Severo</b> &gt; {u_r}%"
+        if not inv: return f"🔴 <b>Crítico</b> < {u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Vulnerable</b> {u_r}-{u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟢 <b>Óptimo</b> > {u_v}%"
+        else: return f"🟢 <b>Holgado</b> < {u_v}% &nbsp;&nbsp;|&nbsp;&nbsp; 🟡 <b>Moderado</b> {u_v}-{u_r}% &nbsp;&nbsp;|&nbsp;&nbsp; 🔴 <b>Severo</b> > {u_r}%"
 
     st.markdown("---")
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
@@ -809,10 +797,19 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         
         # --- 📝 MENSAJE FINAL DE VIABILIDAD ---
         if roi_real > 0:
-            ratio = beneficio_total / inversion_total
-            st.success(f"✅ **VIABILIDAD ESTRATÉGICA:** La naturaleza devuelve **{ratio:.1f} USD** por cada dólar invertido. El mayor peso financiero recae en la **evitación de dragado** (${total_dragado_evitado/1e6:.1f} M) y el **agua protegida** (${total_venta_agua/1e6:.1f} M).")
+            ratio_retorno = beneficio_total / inversion_total
+            ahorro_dragado_m = total_dragado_evitado / 1e6
+            ahorro_agua_m = total_venta_agua / 1e6
+            
+            # Construcción de string pura para evitar errores de renderizado
+            msg_exito = (
+                f"✅ VIABILIDAD ESTRATÉGICA: La naturaleza devuelve {ratio_retorno:.1f} USD por cada dólar invertido. "
+                f"El mayor peso financiero recae en la evitación de dragado ({ahorro_dragado_m:.1f} M USD) "
+                f"y el agua protegida ({ahorro_agua_m:.1f} M USD)."
+            )
+            st.success(msg_exito)
         else:
-            st.warning("⚠️ **ANÁLISIS DE LARGO PLAZO:** El retorno directo es bajo, pero el valor existencial del recurso trasciende la contabilidad tradicional.")
+            st.warning("⚠️ ANÁLISIS DE LARGO PLAZO: El retorno directo es bajo, pero el valor existencial del recurso trasciende la contabilidad.")
 
 # =========================================================================
 # 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR DE ESCENARIOS)
