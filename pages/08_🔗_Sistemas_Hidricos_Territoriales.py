@@ -1100,12 +1100,14 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
 with contenedor_sankey.container():
     with st.expander("🕸️ Mapa Conceptual: Topología del Metabolismo Hídrico", expanded=False):
         
-        # 🔍 1. CAPTURA DE VARIABLES Y COBERTURAS (Desde el Aleph de Pág 04)
-        ha_bosque = st.session_state.get('aleph_ha_bosque', 100.0) 
-        ha_agricola = st.session_state.get('aleph_ha_agricola', 50.0)
-        ha_pastos = st.session_state.get('aleph_ha_pastos', 50.0)
-        ha_urbana = st.session_state.get('aleph_area_urbana', 10.0)
+        # 🔍 1. CAPTURA DE COBERTURAS REALES (Desde el motor de Pág 04)
+        ha_bosque = st.session_state.get('aleph_ha_bosque', 3460.0) 
+        ha_agricola = st.session_state.get('aleph_ha_agricola', 8650.0)
+        ha_pastos = st.session_state.get('aleph_ha_pastos', 2595.0)
+        ha_urbana = st.session_state.get('aleph_ha_urbana', 2595.0)
+        
         area_total_cuenca = ha_bosque + ha_agricola + ha_pastos + ha_urbana
+        st.session_state['area_total_cuenca_val'] = area_total_cuenca
 
         memoria_lodo_total = st.session_state.get('eco_lodo_total_m3', 0.0)
         lodo_colas = st.session_state.get('eco_lodo_colas_m3', 0.0)
@@ -1113,11 +1115,7 @@ with contenedor_sankey.container():
         lodo_suspension = st.session_state.get('eco_lodo_suspension_m3', 
                           st.session_state.get('eco_lodo_abrasivo_m3', 0.0))
 
-        # 🛠️ DEBUG VISUAL (Solo se muestra si hay un error crítico de datos)
-        if memoria_lodo_total > 0 and lodo_suspension == 0:
-            st.warning("⚠️ Datos de suspensión no detectados en el Aleph.")
-            st.json({k: v for k, v in st.session_state.items() if 'eco_' in k})
-
+        # 🛠️ DEBUG VISUAL Y EVENTO DE INGENIERÍA
         if memoria_lodo_total > 0:
             st.markdown(f"""
             <div style='background-color: rgba(231, 76, 60, 0.05); border-left: 5px solid #e74c3c; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
@@ -1137,7 +1135,7 @@ with contenedor_sankey.container():
                 col_i3.metric("Suspendido (Abrasión)", f"{lodo_suspension:,.0f} m³", "Riesgo Máquinas", delta_color="inverse")
             st.markdown("---")
 
-        # --- 2. LÓGICA DINÁMICA DEL DIAGRAMA: DEL PAISAJE A LA CANILLA ---
+        # --- 2. LÓGICA DINÁMICA DEL DIAGRAMA ---
         labels = [f"Embalse {nodo_seleccionado}"] # Nodo 0
         source, target, value, color = [], [], [], []
         idx = 1
@@ -1154,36 +1152,28 @@ with contenedor_sankey.container():
         for nom, area, col in usos_nodos:
             labels.append(nom); indices_usos[nom] = idx; idx += 1
 
-        # B. NODOS INTERMEDIARIOS (RÍOS) Y CONEXIÓN DESDE EL SUELO
-        indices_rios = {}
+        # B. CONEXIÓN SUELO -> RÍOS -> EMBALSE
         for nombre_rio, q_rio in afluentes_inputs.items():
-            labels.append(nombre_rio); current_rio_idx = idx; indices_rios[nombre_rio] = idx
-            
-            # El agua del río nace proporcionalmente de los usos del suelo
+            labels.append(nombre_rio); current_rio_idx = idx
             for nom_u, area, col_u in usos_nodos:
                 flujo_desde_suelo = (q_rio * (area / area_total_cuenca)) if area_total_cuenca > 0 else 0
                 if flujo_desde_suelo > 0.01:
                     source.append(indices_usos[nom_u]); target.append(current_rio_idx); value.append(flujo_desde_suelo); color.append(col_u)
-            
-            # El río llega al Embalse (Nodo 0)
             source.append(current_rio_idx); target.append(0); value.append(q_rio); color.append("rgba(52, 152, 219, 0.5)")
             idx += 1
 
-        # 🌪️ 3. DIBUJO DE LA TRIFURCACIÓN DE LODO (Solo si el toggle está activo)
+        # 🌪️ 3. TRIFURCACIÓN DE LODO (Si el toggle está activo)
         l_susp_s = 0.0
         if st.session_state.get('activar_tormenta_sankey', False) and memoria_lodo_total > 0:
-            # Lodo Colas
             l_colas_s = lodo_colas / (12 * 3600)
             labels.append("Depósito en Colas"); source.append(idx); target.append(0); value.append(l_colas_s); color.append("rgba(210, 180, 140, 0.7)"); idx += 1
-            # Lodo Fondo
             l_fondo_s = lodo_fondo / (12 * 3600)
             labels.append("Lodo de Fondo"); source.append(idx); target.append(0); value.append(l_fondo_s); color.append("rgba(101, 67, 33, 0.9)"); idx += 1
-            # Lodo Suspensión
             l_susp_s = lodo_suspension / (12 * 3600)
             if l_susp_s > 0:
                 labels.append("Sedimento Abrasivo"); source.append(idx); target.append(0); value.append(l_susp_s); color.append("rgba(205, 133, 63, 0.8)"); idx += 1
 
-        # C. TRASVASES (ENTRADA DIRECTA AL EMBALSE)
+        # C. TRASVASES
         for nombre, q in trasvases_inputs.items():
             if q > 0:
                 labels.append(f"Bombeo {nombre}"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.4)"); idx += 1
@@ -1194,18 +1184,13 @@ with contenedor_sankey.container():
             ("Generación Eléctrica", val_turbinado, "rgba(241, 196, 15, 0.7)"),
             ("Caudal Ecológico", val_ecologico, "rgba(149, 165, 166, 0.5)")
         ]
-
         salidas_con_infra = [d for d in destinos if d[1] > 0 and ("Acueducto" in d[0] or "Generación" in d[0])]
         reparto_lodo = l_susp_s / len(salidas_con_infra) if salidas_con_infra else 0
 
         for lab, val, col in destinos:
-     
             if val > 0:
-                target_node = idx
-                labels.append(lab)
+                target_node = idx; labels.append(lab)
                 source.append(0); target.append(target_node); value.append(val); color.append(col)
-                
-                # Inyección del flujo abrasivo en las bandas de salida
                 if reparto_lodo > 0 and ("Acueducto" in lab or "Generación" in lab):
                     source.append(0); target.append(target_node); value.append(reparto_lodo); color.append("rgba(205, 133, 63, 0.5)")
                 idx += 1
@@ -1213,7 +1198,6 @@ with contenedor_sankey.container():
         # =====================================================================
         # 🧪 INYECCIÓN DE CALIDAD MULTIVARIABLE (DBO, P, N)
         # =====================================================================
-        # Valores típicos por uso (mg/L) [DBO, Fósforo, Nitrógeno, Sedimentos]
         calidad_usos = {
             "🌲 Bosques (Infiltración)": {"dbo": 0.5, "p": 0.01, "n": 0.2, "sed": 0.5},
             "🚜 Agrícola (Escorrentía)": {"dbo": 12.0, "p": 0.85, "n": 4.5, "sed": 450.0},
@@ -1224,8 +1208,6 @@ with contenedor_sankey.container():
         link_tooltips = []
         for i in range(len(source)):
             nombre_origen = labels[source[i]]
-            nombre_destino = labels[target[i]]
-            
             if nombre_origen in calidad_usos:
                 c = calidad_usos[nombre_origen]
                 txt = (f"<b>Calidad del Aporte:</b><br>"
@@ -1234,20 +1216,24 @@ with contenedor_sankey.container():
                        f"• Nitrógeno: {c['n']} mg/L<br>"
                        f"• Sedimentos: {c['sed']} mg/L")
                 link_tooltips.append(txt)
-            elif "Embalse" in nombre_origen:
-                link_tooltips.append(f"<b>Agua en Tratamiento</b><br>Mezcla de cuenca y trasvases")
-            elif "Lodo" in nombre_origen:
+            elif "Lodo" in nombre_origen or "Sedimento" in nombre_origen:
                 link_tooltips.append("<b>Carga Sólida Extrema</b><br>Evento Torrencial")
             else:
                 link_tooltips.append(f"Flujo de {nombre_origen}")
 
-        # --- RE-RENDERIZADO DEL SANKEY ---
-        fig_sankey.update_traces(
+        # 5. RENDER FINAL (Ya no dispara NameError)
+        fig_sankey = go.Figure(data=[go.Sankey(
+            valueformat=".2f", valuesuffix=" m³/s",
+            textfont=dict(size=12, color="black", family="Georgia, serif"),
+            node=dict(pad=18, thickness=22, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
             link=dict(
+                source=source, target=target, value=value, color=color,
                 customdata=link_tooltips,
                 hovertemplate='<b>De:</b> %{source.label}<br><b>A:</b> %{target.label}<br><b>Caudal:</b> %{value}%{valuesuffix}<br>%{customdata}<extra></extra>'
             )
-        )
+        )])
+        fig_sankey.update_layout(height=600, margin=dict(l=10, r=10, t=10, b=10), font_family="Georgia")
+        st.plotly_chart(fig_sankey, use_container_width=True)
         
 # =========================================================================
 # 8. MATEMÁTICA Y CIENCIA
