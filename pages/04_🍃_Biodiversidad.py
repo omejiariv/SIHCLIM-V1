@@ -1795,24 +1795,27 @@ with tab_micro:
             if (p_colas + p_fondo + p_susp) != 100:
                 st.warning(f"⚠️ La suma debe ser 100%. Actual: {p_colas+p_fondo+p_susp}%")
 
-        # 🧠 MOTOR MATEMÁTICO INTEGRAL ACTUALIZADO
+        # 🧠 MOTOR MATEMÁTICO INTEGRAL ACTUALIZADO (Partición por Cota y Abrasión)
         p_fos = (f_bos * 0.0001) + (f_agr * 0.0015) + (f_deg * 0.0005) + (f_urb * 0.0025)
         f_ero = (f_bos * 0.05) + (f_agr * 1.0) + (f_deg * 2.5) + (f_urb * 3.5)
         
         sed_al_rio = locals().get('sedimento_al_rio_kg', 7.02) 
         lodo_total_m3 = (sed_al_rio * area_km2 * 1e6 * f_ero * (f_tor**1.8)) / 1200.0
         
-        # Lógica de Partición
-        lodo_colas_m3 = lodo_total_m3 * (p_colas / 100)
-        lodo_fondo_m3 = lodo_total_m3 * (p_fondo / 100)
-        lodo_turbinas_m3 = lodo_total_m3 * (p_susp / 100) # Factor abrasivo
+        # --- LÓGICA DE PARTICIÓN TÉCNICA ---
+        lodo_colas_m3 = lodo_total_m3 * (p_colas / 100)      # Depósito en cotas altas (Delta)
+        lodo_fondo_m3 = lodo_total_m3 * (p_fondo / 100)      # Depósito en Volumen Muerto (Peligro estructural)
+        lodo_turbinas_m3 = lodo_total_m3 * (p_susp / 100)    # Sedimento en suspensión (Abrasión mecánica)
         
+        # Tasa de colmatación base anual (Uniformismo)
         lodo_anual_base = (sed_al_rio * 5.0 * 1e6 * f_ero * 1.0) / 120.0
         
-        # La Vida Útil Real solo se afecta por lo que decanta (Colas + Fondo)
-        lodo_decantado_hoy = lodo_colas_m3 + lodo_fondo_m3
-        anos_robados = lodo_decantado_hoy / lodo_anual_base if lodo_anual_base > 0 else 0
-        vol_muerto_restante = (vol_muerto_hm3 * 1e6) - lodo_decantado_hoy
+        # 🚨 REFINAMIENTO OPERATIVO:
+        # Solo el lodo de FONDO reduce la vida útil operativa (Cota de Captación).
+        # El lodo en colas reduce capacidad útil pero NO colmata la torre de salida hoy.
+        anos_robados = lodo_fondo_m3 / lodo_anual_base if lodo_anual_base > 0 else 0
+        
+        vol_muerto_restante = (vol_muerto_hm3 * 1e6) - lodo_fondo_m3
         vida_util_restante = vol_muerto_restante / lodo_anual_base if lodo_anual_base > 0 else 99
         
         # Hidráulica y Química
@@ -1821,17 +1824,21 @@ with tab_micro:
         fosforo_hoy = (sed_al_rio * area_km2 * 1e6 * f_ero * (f_tor**1.8)) * p_fos
 
         with col_lim2:
-            st.markdown("##### ⚡ Impacto del Evento Torrencial (HOY)")
+            st.markdown("##### ⚡ Impacto de la Avenida Torrencial (HOY)")
             c_e1, c_e2, c_e3 = st.columns(3)
-            c_e1.metric("Lodo en Colas", f"{lodo_colas_m3:,.0f} m³", "Capa deltaica")
-            c_e2.metric("Lodo en Fondo", f"{lodo_fondo_m3:,.0f} m³", "Capa profunda")
+            # Visualización de la Trifurcación
+            c_e1.metric("Lodo en Colas", f"{lodo_colas_m3:,.0f} m³", "Cota alta (Delta)")
+            c_e2.metric("Lodo en Fondo", f"{lodo_fondo_m3:,.0f} m³", "Volumen Muerto", delta_color="inverse")
             c_e3.metric("Lodo Suspendido", f"{lodo_turbinas_m3:,.0f} m³", "Riesgo Abrasión", delta_color="inverse")
             
             st.markdown("---")
-            st.markdown("##### ⏳ Proyección Integral (Saldo tras el desastre)")
+            st.markdown("##### ⏳ Proyección Integral (Impacto en la Infraestructura)")
             c_p1, c_p2 = st.columns(2)
             c_p1.metric("Tasa Colmatación Base", f"{lodo_anual_base:,.0f} m³/año", "Desgaste rutinario")
-            c_p2.metric("Vida Útil Restante", f"{max(0.0, vida_util_restante):.1f} Años", "Post-evento", delta_color="inverse" if vida_util_restante < 15 else "normal")
+            
+            # La vida útil restante ahora es mucho más precisa
+            estado_vida = "inverse" if vida_util_restante < 15 else "normal"
+            c_p2.metric("Vida Útil Restante", f"{max(0.0, vida_util_restante):.1f} Años", "Post-sedimentación", delta_color=estado_vida)
 
             st.markdown("---")
             st.markdown("##### 🌊 Dinámica Hidráulica y Riesgo Químico")
@@ -1981,27 +1988,36 @@ with tab_micro:
     # =========================================================================
     st.markdown("---")
     st.markdown("#### 🌐 9. Conexión al Gemelo Digital (Cross-Pollination)")
-    st.info("Exporta el impacto físico, químico y de ingeniería de esta tormenta simulada hacia el simulador de Sistemas Hídricos (Pág 08).")
+    st.info("Exporta la partición física, química y el riesgo de infraestructura de esta avenida torrencial hacia el simulador territorial (Pág 08).")
 
     if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08)", type="primary", use_container_width=True):
-        # 🧠 EXTRACCIÓN MAESTRA: Recuperamos los valores de los módulos comprimidos
-        # Incluimos la nueva partición de lodo abrasivo para el riesgo de infraestructura
+        # 🧠 ENVIAMOS LA TRIFURCACIÓN TÉCNICA DE LODO
+        # Recuperamos los valores calculados en el Módulo 6
         lodo_total = locals().get('lodo_total_m3', 0.0)
+        lodo_colas = locals().get('lodo_colas_m3', 0.0)
+        lodo_fondo = locals().get('lodo_fondo_m3', 0.0)
         lodo_abrasivo = locals().get('lodo_turbinas_m3', 0.0)
+        
+        # Datos químicos y financieros
         fosforo_final = locals().get('fosforo_hoy', 0.0)
         costo_final = locals().get('s_total', 0.0)
         
-        # Inyectamos en la memoria global de la sesión (Session State)
-        st.session_state['eco_lodo_m3'] = float(lodo_total)
+        # 💾 Inyección en la Memoria Global (st.session_state)
+        # Esto permite que la Página 08 dibuje el Sankey con las tres venas de lodo
+        st.session_state['eco_lodo_total_m3'] = float(lodo_total)
+        st.session_state['eco_lodo_colas_m3'] = float(lodo_colas)
+        st.session_state['eco_lodo_fondo_m3'] = float(lodo_fondo)
         st.session_state['eco_lodo_abrasivo_m3'] = float(lodo_abrasivo)
+        
         st.session_state['eco_fosforo_kg'] = float(fosforo_final)
         st.session_state['eco_sobrecosto_usd'] = float(costo_final)
         
         st.success(f"""
-            🧠 **¡Sincronización Exitosa!**
-            * Lodo Total: {lodo_total:,.0f} m³
-            * Lodo Abrasivo (Suspensión): {lodo_abrasivo:,.0f} m³
-            * Fósforo Inyectado: {fosforo_final:,.1f} Kg
+            🧠 **Sincronización de Ingeniería Exitosa:**
+            Los datos han cruzado el Aleph con partición física:
+            * **Lodo en Colas (Cota Alta):** {lodo_colas:,.0f} m³
+            * **Lodo en Fondo (Vol. Muerto):** {lodo_fondo:,.0f} m³
+            * **Lodo Suspendido (Abrasión):** {lodo_abrasivo:,.0f} m³
             
-            Los datos han cruzado el Aleph. Ve a la **Página 08 (Sistemas Hídricos)** para visualizar el impacto en los flujos y la infraestructura.
+            Ve a la **Página 08 (Sistemas Hídricos)** para visualizar este impacto trifurcado en el Mapa Conceptual.
         """)
