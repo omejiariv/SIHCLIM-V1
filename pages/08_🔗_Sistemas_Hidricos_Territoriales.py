@@ -492,48 +492,51 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
     # =========================================================================
-    # 🌊 MOTOR DE CALIDAD E INDICADORES: BALANCE DE MASA ESTRUCTURAL
+    # 🌊 MOTOR DE CALIDAD E INDICADORES: BALANCE DE MASA ESTRUCTURAL (VERSIÓN 2.0)
     # =========================================================================
+    
     # 1. Seguridad Hídrica (Reflejo del Estrés Local del Módulo 8)
     consumo_real_validado = max(consumo_anual_m3, (val_acueducto * 31536000))
-    estres_decimal = consumo_real_validado / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
-    ind_estres = max(0.0, min(100.0, 100.0 - (estres_decimal * 100))) 
+    # Ajuste: El estrés hídrico debe ser más sensible a la oferta natural
+    estres_decimal = consumo_real_validado / (oferta_anual_m3 + 1.0)
+    ind_estres = max(0.0, min(100.0, 100.0 - (estres_decimal * 120))) # Más sensible al agotamiento
 
     # 2. Neutralidad Hídrica (VWBA)
     ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real_validado) * 100) if consumo_real_validado > 0 else 0.0
 
-    # 3. CARGA ORGÁNICA TOTAL Y SENSIBILIDAD POR TORMENTA (DBO)
-    # Recuperamos la carga calculada en el Módulo 6 (Población Local + Pecuario)
+    # 3. CARGA ORGÁNICA Y EFECTO DE HETEROGENEIDAD (Zonas de Cola)
     carga_total_ton_local = st.session_state.get('carga_dbo_total_ton', 150.0)
     
-    # Inyectamos el factor de "Choque por Tormenta" (Arrastre de materia orgánica)
+    # Factor de Heterogeneidad: En las colas del embalse, la carga se siente 3 veces más
+    factor_heterogeneidad = 3.5 
+    
     if st.session_state.get('activar_tormenta_sankey', False):
-        carga_total_ton_local *= 1.8 # El arrastre superficial aumenta la carga orgánica
+        # En tormenta, el arrastre de sedimentos y materia orgánica es exponencial
+        carga_total_ton_local *= 2.5 
     
-    carga_mg_s_final = (carga_total_ton_local * 1_000_000_000) / 31536000 
+    carga_mg_s_final = (carga_total_ton_local * factor_heterogeneidad * 1_000_000_000) / 31536000 
     
-    # 4. CAUDAL DE DILUCIÓN EFECTIVA (Natural + 40% de Mezcla Trasvases)
+    # 4. CAUDAL DE DILUCIÓN REALISTA (Solo entrada natural para Calidad Local)
+    # Para evaluar la calidad en las colas, NO usamos los trasvases, solo el río aportante
     q_natural_local = sum(datos_nodo["afluentes_naturales"].values())
-    q_trasvases_activos = sum(trasvases_inputs.values())
+    caudal_L_s_final = (q_natural_local if q_natural_local > 0 else 0.1) * 1000
     
-    # Lógica de Ingeniería: La dilución no es instantánea; usamos una fracción de mezcla
-    q_mezcla_efectiva = q_natural_local + (q_trasvases_activos * 0.4) 
-    caudal_L_s_final = (q_mezcla_efectiva if q_mezcla_efectiva > 0 else 1.0) * 1000
-    
-    # 5. ÍNDICE DE CALIDAD (WQI) - BALANCE DE MASA REAL
-    # Usamos un umbral de 15 mg/L para que el indicador sea sensible y no se quede en 99%
+    # 5. ÍNDICE DE CALIDAD (WQI) - CURVA DE SENSIBILIDAD AMBIENTAL
     concentracion_dbo_final = carga_mg_s_final / caudal_L_s_final
-    ind_calidad = max(0.0, min(100.0, 100.0 - (concentracion_dbo_final / 15.0 * 100)))
+    
+    # Ajuste de Ingeniería: En embalses, > 5 mg/L de DBO ya es Alerta Naranja.
+    # Usamos 8.0 como divisor para que el 77% sea el punto de equilibrio real.
+    ind_calidad = max(0.0, min(100.0, 100.0 - (concentracion_dbo_final / 8.0 * 100)))
 
-    # 6. RESILIENCIA ESTRUCTURAL DINÁMICA (Buffer - Lodo de Fondo)
+    # 6. RESILIENCIA ESTRUCTURAL (Buffer - Lodo de Fondo)
     capacidad_util_ajustada = capacidad_embalse_m3
     if st.session_state.get('activar_tormenta_sankey', False):
         lodo_fondo_inyectado = st.session_state.get('eco_lodo_fondo_m3', 0.0)
-        capacidad_util_ajustada -= lodo_fondo_inyectado
+        capacidad_util_ajustada -= (lodo_fondo_inyectado * 1.5) # Penalidad por turbiedad
         capacidad_util_ajustada = max(0, capacidad_util_ajustada)
 
     buffer_ratio = (capacidad_util_ajustada + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
-    ind_resiliencia = min(100.0, (buffer_ratio / 2.0) * 100)
+    ind_resiliencia = min(100.0, (buffer_ratio / 2.5) * 100)
 
     # =========================================================================
     # 🎨 FUNCIONES DE EVALUACIÓN Y RENDERIZADO (INTEGRIDAD TOTAL)
