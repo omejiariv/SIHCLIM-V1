@@ -136,7 +136,7 @@ datos_nodo = sistemas_embalses[nodo_seleccionado]
 st.title(f"🔗 Metabolismo Territorial Complejo: Nodos y Trasvases ({nodo_seleccionado})")
 st.markdown("""
 Modelo de topología de redes para el **Sistema de Abastecimiento del Valle de Aburrá y Generación Eléctrica**. 
-Evalúa cómo los embalses integran las cuencas propias con los trasvases artificiales para sostener la demanda, alterando el flujo natural de los ecosistemas aportantes.
+Evalúa cómo los embalses integran las cuencas propias con los trasvases requeridos para sostener la demanda, con flujos natural de los ecosistemas externos aportantes.
 """)
 
 # 🪄 SOLUCIÓN AL ESPACIO EN BLANCO: El contenedor del Sankey se ancla directamente aquí
@@ -468,25 +468,41 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         st.session_state['activar_tormenta_sankey'] = False
     activar_tormenta = st.session_state['activar_tormenta_sankey']
 
-    # --- CONFIGURACIÓN DE POBLACIÓN Y CARGAS ---
+    # =========================================================================
+    # ☣️ MOTOR DE CARGAS Y SANEAMIENTO
+    # =========================================================================
+    # 1. Configuración de Población Local (Sincronización con Módulo 8)
     pob_hum_local = st.session_state.get(f'pob_asig_{nodo_seleccionado}', 15000)
     pob_bov_local = st.session_state.get('ica_bovinos_calc', 5000)
     pob_por_local = st.session_state.get('ica_porcinos_calc', 2000)
 
-    # 🚨 FACTOR DE FILTRACIÓN SbN (Vínculo Estructural)
+    # 2. Factor de Filtración SbN (Vínculo Estructural)
+    # El bosque actúa como riñón: retiene carga si el SIG está activo.
     eficiencia_filtro_bosque = 0.60 if activar_sig else 0.0
     dr_difuso = 0.15 * (1.0 - eficiencia_filtro_bosque)
     dr_puntual = 0.80 
 
-    # ☣️ CÁLCULO DE CARGA NETA (Con corrección de NameError)
-    # El fósforo de la tormenta se traduce a carga orgánica (DBO equivalente)
+    # 3. Cálculo de Carga de Tormenta (Blindaje NameError)
+    # El fósforo se traduce a carga orgánica equivalente si la tormenta ocurre.
+    eco_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
     carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0 if activar_tormenta else 0.0
     
+    # Carga Bruta que llega al sistema (Materia Orgánica Local)
     carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
     
-    # La remoción por STAM solo ocurre si los sistemas están activos/mantenidos
-    carga_removida_ton = sist_saneamiento * 2.5
+    # 4. Balance de Remoción (Blindaje de Cero por Saneamiento Base)
+    # 🚨 MEJORA: Definimos unidades STAM existentes que no dependen del toggle SIG.
+    sist_saneamiento_base = 40 
+    sist_saneamiento_total = sist_saneamiento_base + (sist_saneamiento if activar_sig else 0)
+    
+    # Remoción calculada: 2.2 Ton DBO/año por unidad (Ajustado para realismo ambiental)
+    carga_removida_ton = sist_saneamiento_total * 2.2
+    
+    # Carga Final que entra al Embalse (Masa que será diluida)
     carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
+    
+    # Guardamos el estado para el Módulo de Metabolismo
+    st.session_state['carga_dbo_total_ton'] = carga_final_rio_ton
 
     # =========================================================================
     # 🌊 MOTOR DE CALIDAD E INDICADORES: BALANCE DE MASA ESTRUCTURAL
