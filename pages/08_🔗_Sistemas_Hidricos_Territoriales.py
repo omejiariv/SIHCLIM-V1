@@ -459,30 +459,29 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     # --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
     # =========================================================================
 
-    # 🌪️ CROSS-POLLINATION: CAPTURA DE DATOS (Lógica de fondo)
-    memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
-    memoria_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
+    # 🌪️ CROSS-POLLINATION: CAPTURA DE DATOS (Blindaje de Variables)
+    # Recuperamos los datos de la Pág 04. Si no existen, inicializamos en 0.0 para evitar NameError
+    eco_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+    eco_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
 
     if 'activar_tormenta_sankey' not in st.session_state:
         st.session_state['activar_tormenta_sankey'] = False
     activar_tormenta = st.session_state['activar_tormenta_sankey']
 
     # --- CONFIGURACIÓN DE POBLACIÓN Y CARGAS ---
-    # Sincronización con el Módulo 8 (Huella Hídrica)
     pob_hum_local = st.session_state.get(f'pob_asig_{nodo_seleccionado}', 15000)
     pob_bov_local = st.session_state.get('ica_bovinos_calc', 5000)
     pob_por_local = st.session_state.get('ica_porcinos_calc', 2000)
 
     # 🚨 FACTOR DE FILTRACIÓN SbN (Vínculo Estructural)
-    # Si el bosque está activo (activar_sig), retiene el 60% de la carga difusa.
-    # Si está apagado, la carga pecuaria entra al 100% al sistema.
     eficiencia_filtro_bosque = 0.60 if activar_sig else 0.0
-    
     dr_difuso = 0.15 * (1.0 - eficiencia_filtro_bosque)
-    dr_puntual = 0.80 # La carga humana suele ser más directa (vertimiento)
+    dr_puntual = 0.80 
 
-    # Cálculo de carga neta con penalidad por tormenta
+    # ☣️ CÁLCULO DE CARGA NETA (Con corrección de NameError)
+    # El fósforo de la tormenta se traduce a carga orgánica (DBO equivalente)
     carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0 if activar_tormenta else 0.0
+    
     carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
     
     # La remoción por STAM solo ocurre si los sistemas están activos/mantenidos
