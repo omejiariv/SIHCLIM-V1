@@ -587,58 +587,46 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         return fig
 
     # =========================================================================
-    # 🎛️ PANEL DE CALIBRACIÓN AVANZADA: SENSIBILIDAD AMBIENTAL
+    # 🎛️ PANEL DE CALIBRACIÓN AVANZADA (WQI): SENSIBILIDAD AMBIENTAL
     # =========================================================================
-    with st.expander("⚙️ Calibración del Modelo de Calidad (WQI)", expanded=False):
-        st.caption("Ajuste los parámetros de sensibilidad física para la dilución y colapso del sistema.")
-        
+    with st.expander("⚙️ Calibración del Modelo de Calidad (WQI)", expanded=True):
+        st.caption("Ajuste los parámetros físicos para evitar el colapso matemático por saturación de carga.")
         c_cal1, c_cal2 = st.columns(2)
-        
         with c_cal1:
             umbral_dbo_colapso = st.slider(
                 "Umbral de Colapso DBO (mg/L):", 
-                5.0, 40.0, 25.0, 1.0,
-                help="Concentración de materia orgánica en la cual el índice de calidad cae a cero. "
-                     "Literatura: 5-10 mg/L para ecosistemas prístinos; 20-30 mg/L para sistemas con asimilación moderada."
+                5.0, 50.0, 25.0, 1.0, # Subimos a 25.0 para salir del cero
+                help="Concentración donde la calidad cae a 0%. Sugerido La Fe: 25-30 mg/L."
             )
-            
         with c_cal2:
             factor_zona_critica = st.slider(
-                "Factor de Zona Crítica (Heterogeneidad):", 
+                "Factor de Zona Crítica:", 
                 1.0, 10.0, 2.5, 0.5,
-                help="Multiplicador de concentración para las 'colas' del embalse. Refleja la falta de mezcla perfecta. "
-                     "Seleccione 1.0 para mezcla total; 2.5 para embalses alargados; >5.0 para eventos de choque localizados."
+                help="Multiplicador de concentración en colas del embalse. 2.5 es estándar para embalses alargados."
             )
 
     # =========================================================================
-    # 🧪 RECÁLCULO DINÁMICO CON PARÁMETROS DE CALIBRACIÓN
+    # 🌪️ RECÁLCULO DINÁMICO DE ALTA SENSIBILIDAD
     # =========================================================================
-    
-    # 1. SEGURIDAD HÍDRICA (WEI+): Sincronización de consumo validado
+    # 1. SEGURIDAD HÍDRICA (WEI+)
     val_seguridad = max(0.0, min(100.0, 100.0 - (consumo_real_validado / (oferta_anual_m3 + 1.0) * 120)))
 
-    # 2. RESILIENCIA ESTRUCTURAL: Sensible a colmatación por tormenta
+    # 2. RESILIENCIA ESTRUCTURAL
     cap_dinamica = capacidad_embalse_m3
     if st.session_state.get('activar_tormenta_sankey', False):
         cap_dinamica -= (st.session_state.get('eco_lodo_fondo_m3', 0.0) * 1.5)
         cap_dinamica = max(0, cap_dinamica)
-    
-    buf_din = (cap_dinamica + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
-    val_resiliencia = min(100.0, (buf_din / 2.5) * 100)
+    val_resiliencia = min(100.0, ((cap_dinamica + oferta_anual_m3) / consumo_real_validado / 2.5) * 100) if consumo_real_validado > 0 else 100.0
 
-    # 3. CALIDAD (WQI): Balance de Masa Realista (Efecto Colas del Embalse)
-    q_natural_local = sum(datos_nodo["afluentes_naturales"].values())
-    caudal_L_s_calidad = (q_natural_local if q_natural_local > 0 else 0.1) * 1000
+    # 3. CALIDAD (WQI): Aplicación de Calibración
+    q_nat_loc = sum(datos_nodo["afluentes_naturales"].values())
+    caudal_L_s_calc = (q_nat_loc if q_nat_loc > 0 else 0.1) * 1000
+    carga_mg_s_calc = (carga_final_rio_ton * 1e9) / 31536000
     
-    # Carga neta que trae el efecto de filtración SbN
-    carga_neta_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
-    
-    # Aplicamos los parámetros calibrados por el usuario
-    factor_ajustado = factor_zona_critica if not st.session_state.get('activar_tormenta_sankey', False) else (factor_zona_critica * 1.5)
-    conc_dbo_final = (carga_neta_mg_s * factor_ajustado) / caudal_L_s_calidad
-    
-    # El divisor ahora es dinámico según el slider
-    val_calidad = max(0.0, min(100.0, 100.0 - (conc_dbo_final / umbral_dbo_colapso * 100)))
+    # El factor se incrementa bajo tormenta para simular el 'tapón' de carga inicial
+    f_ajustado = factor_zona_critica if not st.session_state.get('activar_tormenta_sankey', False) else (factor_zona_critica * 1.5)
+    conc_dbo_inst = (carga_mg_s_calc * f_ajustado) / caudal_L_s_calc
+    val_calidad = max(0.0, min(100.0, 100.0 - (conc_dbo_inst / umbral_dbo_colapso * 100)))
 
     # --- 📦 CONFIGURACIÓN DE VISUALIZACIÓN (SIN LATENCIA) ---
     col_g = st.columns(4)
@@ -986,17 +974,18 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
             # Eventos cíclicos de tormenta (cada 3 años) para ver "dientes de sierra"
             carga_tormenta_f = (st.session_state.get('eco_fosforo_kg', 0.0) * 10 / 1000) if (activar_tormenta and a % 3 == 0) else 0.0
             
+            # --- 🧪 CALIDAD PROYECTADA CON CALIBRACIÓN DINÁMICA ---
             carga_neta_f = carga_pecuaria_f + carga_humana_f + carga_tormenta_f
-            remocion_f = (40 + (sist_saneamiento if activar_sig else 0)) * 2.2 # Saneamiento Base + SIG
-            
+            remocion_f = (40 + (sist_saneamiento if activar_sig else 0)) * 2.2 
             carga_final_ton_f = max(0.5, carga_neta_f - remocion_f)
             
-            # Dilución dinámica
+            # Dilución proyectada
             q_mezcla_f = (sum(datos_nodo["afluentes_naturales"].values()) * f_cli_total) + (sum(trasvases_inputs.values()) * 0.4)
             caudal_L_s_f = (q_mezcla_f if q_mezcla_f > 0 else 1.0) * 1000
             
-            concentracion_f = (carga_final_ton_f * 3.5 * 1e9) / (caudal_L_s_f * 31536000) # 3.5 es el factor de heterogeneidad
-            cal = max(0.0, min(100.0, 100.0 - (concentracion_f / 8.0 * 100)))
+            # 🚨 SINCRONIZACIÓN: Usamos umbral_dbo_colapso y factor_zona_critica de los sliders
+            concentracion_f = (carga_final_ton_f * factor_zona_critica * 1e9) / (caudal_L_s_f * 31536000)
+            cal = max(0.0, min(100.0, 100.0 - (concentracion_f / umbral_dbo_colapso * 100)))
             
             datos_proj.extend([
                 {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
