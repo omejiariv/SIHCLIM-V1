@@ -546,72 +546,98 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         else: 
             return f"🟢 < {u_v}% | 🟡 {u_v}-{u_r}% | 🔴 > {u_r}%"
 
+    # =========================================================================
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
-        # 🌪️ AJUSTE DE TÍTULO ANTE TORMENTA (REACCIÓN FÍSICA)
+        # 🌪️ AJUSTE DE TÍTULO ANTE TORMENTA
         if "Resiliencia" in titulo and st.session_state.get('activar_tormenta_sankey', False):
             titulo = f"🌪️ {titulo} (Colmatación)"
 
+        # 🚨 CORRECCIÓN DE VISIBILIDAD: Forzamos la aparición del número central
         fig = go.Figure(go.Indicator(
-            mode = "gauge+number", value = valor,
-            number = {'suffix': "%", 'font': {'size': 24}, 'valueformat': ".1f"},
-            title = {'text': titulo, 'font': {'size': 14, 'family': 'Georgia'}},
+            mode = "gauge+number", 
+            value = valor,
+            number = {
+                'suffix': "%", 
+                'font': {'size': 28, 'color': '#2c3e50', 'family': 'Arial'}, 
+                'valueformat': ".1f"
+            },
+            title = {'text': titulo, 'font': {'size': 16, 'family': 'Georgia', 'color': '#34495e'}},
             gauge = {
-                'axis': {'range': [None, 100], 'tickwidth': 1},
+                'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
                 'bar': {'color': color_bar},
                 'bgcolor': "white",
+                'borderwidth': 2,
+                'bordercolor': "gray",
                 'steps': [
                     {'range': [0, umbral_rojo], 'color': "#ffcccb" if not invertido else "#e8f8f5"},
                     {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc"},
                     {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}
                 ],
-                'threshold': {'line': {'color': "black", 'width': 3}, 'thickness': 0.75, 'value': valor}
+                'threshold': {
+                    'line': {'color': "black", 'width': 4}, 
+                    'thickness': 0.75, 
+                    'value': valor
+                }
             }
         ))
-        fig.update_layout(height=200, margin=dict(l=15, r=15, t=40, b=10))
+        # Ajustamos márgenes para que el número no se corte en ninguna pantalla
+        fig.update_layout(height=230, margin=dict(l=25, r=25, t=50, b=10))
         return fig
 
-    # --- 🌪️ RECALCULO DINÁMICO ANTES DEL RENDER ---
-    # A. Resiliencia: Sensible a colmatación inmediata
+    # =========================================================================
+    # 🌪️ MOTOR DE RECÁLCULO DINÁMICO (PRE-RENDERIZADO)
+    # =========================================================================
+    
+    # 1. SEGURIDAD HÍDRICA (WEI+): Sincronización de consumo validado
+    val_seguridad = max(0.0, min(100.0, 100.0 - (consumo_real_validado / (oferta_anual_m3 + 1.0) * 120)))
+
+    # 2. RESILIENCIA ESTRUCTURAL: Sensible a colmatación por tormenta
     cap_dinamica = capacidad_embalse_m3
     if st.session_state.get('activar_tormenta_sankey', False):
-        cap_dinamica -= st.session_state.get('eco_lodo_fondo_m3', 0.0)
+        # Penalidad por lodo de fondo inyectado hoy
+        cap_dinamica -= (st.session_state.get('eco_lodo_fondo_m3', 0.0) * 1.5)
         cap_dinamica = max(0, cap_dinamica)
     
     buf_din = (cap_dinamica + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
-    ind_resiliencia_real = min(100.0, (buf_din / 2.0) * 100)
+    val_resiliencia = min(100.0, (buf_din / 2.5) * 100)
 
-    # B. Calidad (WQI): Dilución real considerando trasvases activos (Reparación de NameError)
-    # Calculamos el caudal de dilución sumando naturales y los inputs de bombeo/trasvases
-    q_natural_total = sum(datos_nodo["afluentes_naturales"].values())
-    q_bombeo_total = sum(trasvases_inputs.values()) if 'trasvases_inputs' in locals() else 0.0
+    # 3. CALIDAD (WQI): Balance de Masa Realista (Efecto Colas del Embalse)
+    # 🚨 MEJORA: Para evaluar salud ambiental local, NO sumamos trasvases masivos
+    q_natural_local = sum(datos_nodo["afluentes_naturales"].values())
+    caudal_L_s_calidad = (q_natural_local if q_natural_local > 0 else 0.1) * 1000
     
-    caudal_dilucion_total = q_natural_total + q_bombeo_total
-    caudal_L_s = (caudal_dilucion_total if caudal_dilucion_total > 0 else 1.0) * 1000
+    # Recuperamos la carga orgánica que trae el efecto de filtración SbN
+    carga_neta_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
     
-    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
-    conc_dbo = carga_mg_s / caudal_L_s
-    # Umbral de 50 mg/L para sensibilidad regional
-    ind_calidad_real = max(0.0, min(100.0, 100.0 - ((conc_dbo / 50.0) * 100)))
+    # Factor de heterogeneidad (Concentración en zonas de entrada)
+    factor_zona_critica = 3.5 if not st.session_state.get('activar_tormenta_sankey', False) else 5.0
+    conc_dbo_final = (carga_neta_mg_s * factor_zona_critica) / caudal_L_s_calidad
+    
+    # Umbral de 8.0 mg/L para que el indicador sea reactivo y honesto
+    val_calidad = max(0.0, min(100.0, 100.0 - (conc_dbo_final / 8.0 * 100)))
 
-    # --- 📦 CONFIGURACIÓN DE VISUALIZACIÓN ---
+    # --- 📦 CONFIGURACIÓN DE VISUALIZACIÓN (SIN LATENCIA) ---
     col_g = st.columns(4)
     data_viz = [
         {"val": ind_neutralidad, "tit": "Neutralidad", "col": "#2ecc71", "u_r": 40, "u_v": 70, "inv": False},
-        {"val": ind_resiliencia_real, "tit": "Resiliencia", "col": "#3498db", "u_r": 30, "u_v": 60, "inv": False},
-        {"val": ind_estres, "tit": "Seguridad (WEI+)", "col": "#e74c3c", "u_r": 40, "u_v": 75, "inv": False},
-        {"val": ind_calidad_real, "tit": "Calidad (WQI)", "col": "#9b59b6", "u_r": 50, "u_v": 80, "inv": False}
+        {"val": val_resiliencia, "tit": "Resiliencia", "col": "#3498db", "u_r": 30, "u_v": 60, "inv": False},
+        {"val": val_seguridad, "tit": "Seguridad (WEI+)", "col": "#e74c3c", "u_r": 40, "u_v": 75, "inv": False},
+        {"val": val_calidad, "tit": "Calidad (WQI)", "col": "#9b59b6", "u_r": 50, "u_v": 80, "inv": False}
     ]
 
     for i, item in enumerate(data_viz):
         with col_g[i]:
+            # Evaluamos estado antes de pintar
             est, color_txt = evaluar_indice(item["val"], item["u_r"], item["u_v"], item["inv"])
+            
+            # Renderizamos el velocímetro optimizado (ahora con números visibles)
             st.plotly_chart(crear_velocimetro(item["val"], item["tit"], item["col"], item["u_r"], item["u_v"], item["inv"]), use_container_width=True)
             
-            # Subtítulos de Estado y Leyenda
-            st.markdown(f"<p style='text-align: center; color: {color_txt}; font-weight: bold; margin-top:-25px; font-size: 15px;'>{est}</p>", unsafe_allow_html=True)
-            st.markdown(f"<p style='text-align: center; font-size: 11px; color: #95a5a6; margin-top: -10px;'>{generar_leyenda(item['u_r'], item['u_v'], item['inv'])}</p>", unsafe_allow_html=True)
+            # Subtítulos de Estado y Leyenda con contraste mejorado
+            st.markdown(f"<p style='text-align: center; color: {color_txt}; font-weight: bold; margin-top:-35px; font-size: 16px;'>{est}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align: center; font-size: 11px; color: #7f8c8d; margin-top: -10px;'>{generar_leyenda(item['u_r'], item['u_v'], item['inv'])}</p>", unsafe_allow_html=True)
             
-            # Aclaración específica para La Fe en Neutralidad
+            # Aclaración específica para La Fe
             if item["tit"] == "Neutralidad" and nodo_seleccionado == "La Fe":
                 st.caption("ℹ️ Aporte marginal Q. Esp. Santo vs Valle de Aburrá")
 
