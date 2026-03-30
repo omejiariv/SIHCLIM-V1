@@ -426,27 +426,28 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
             </div>
             """, unsafe_allow_html=True)
 
-    # --- 2. INTEGRACIÓN CARTOGRÁFICA (PREDIOS EJECUTADOS SbN) ---
+    # --- 2. INTEGRACIÓN CARTOGRÁFICA Y SIMULACIÓN SbN DINÁMICA ---
     st.markdown("---")
     st.markdown(f"#### 🌲 Beneficios Volumétricos (SbN) en el Sistema: **{nodo_seleccionado}**")
 
     ha_reales_sig = float(datos_nodo.get("ha_conservadas_base", 0.0))
     st.markdown("##### ⚙️ Escenario Base vs. Proyectado")
     activar_sig = st.toggle("✅ Incluir Área Restaurada/Conservada del SIG en el cálculo WRI", value=True, 
-                            help="Apaga este interruptor para simular el escenario contrafactual: ¿Cómo estarían los índices si no se hubieran realizado estas intervenciones?")
+                            help="Apaga este interruptor para simular el escenario contrafactual.")
 
+    # 🚨 MEJORA ESTRUCTURAL: Definimos el área activa que realmente opera como filtro
     ha_base_calculo = ha_reales_sig if activar_sig else 0.0
 
     c_inv1, c_inv2, c_inv3 = st.columns(3)
     with c_inv1:
         st.metric("✅ Área Restaurada/Conservada (SIG)", f"{ha_reales_sig:,.1f} ha", "Línea base actual")
-        ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0)
-        ha_total = ha_base_calculo + ha_simuladas
-        # Beneficio hídrico: 2500 m3/ha/año de infiltración efectiva
-        beneficio_restauracion_m3 = ha_total * 2500 
+        ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0, key="sim_ha_new")
+        
+        # El área total es la suma de la base activa más lo que el usuario quiera simular
+        ha_operativas_totales = ha_base_calculo + ha_simuladas
+        beneficio_restauracion_m3 = ha_operativas_totales * 2500 
         
     with c_inv2:
-        # 🚨 SINCRONIZACIÓN: El saneamiento rural también se ve afectado si se apaga el escenario proyectado
         val_base_stam = 120
         sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM):", min_value=0, value=val_base_stam if activar_sig else 0, step=5)
         beneficio_calidad_m3 = (sist_saneamiento * 1200) 
@@ -456,52 +457,36 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
 
     # =========================================================================
-    # --- 3. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA WRI / IDEAM) ---
+    # ☣️ MOTOR DE CARGAS CON FILTRACIÓN DINÁMICA (Base + Simulación)
     # =========================================================================
 
-    # 🌪️ CROSS-POLLINATION: CAPTURA DE DATOS (Blindaje de Variables)
-    # Recuperamos los datos de la Pág 04. Si no existen, inicializamos en 0.0 para evitar NameError
-    eco_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
+    # 🌪️ CAPTURA DE DATOS (Blindaje de Variables)
     eco_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
+    activar_tormenta = st.session_state.get('activar_tormenta_sankey', False)
 
-    if 'activar_tormenta_sankey' not in st.session_state:
-        st.session_state['activar_tormenta_sankey'] = False
-    activar_tormenta = st.session_state['activar_tormenta_sankey']
-
-    # =========================================================================
-    # ☣️ MOTOR DE CARGAS Y SANEAMIENTO
-    # =========================================================================
-    # 1. Configuración de Población Local (Sincronización con Módulo 8)
+    # 1. Configuración de Población Local
     pob_hum_local = st.session_state.get(f'pob_asig_{nodo_seleccionado}', 15000)
     pob_bov_local = st.session_state.get('ica_bovinos_calc', 5000)
     pob_por_local = st.session_state.get('ica_porcinos_calc', 2000)
 
-    # 2. Factor de Filtración SbN (Vínculo Estructural)
-    # El bosque actúa como riñón: retiene carga si el SIG está activo.
-    eficiencia_filtro_bosque = 0.60 if activar_sig else 0.0
-    dr_difuso = 0.15 * (1.0 - eficiencia_filtro_bosque)
+    # 2. FACTOR DE FILTRACIÓN DINÁMICO (Vínculo Estructural con Simulación)
+    # A más hectáreas (reales o simuladas), mayor es el factor de filtración.
+    # 3600 ha equivalen al 60% de eficiencia de retención.
+    eficiencia_filtro_dinamico = min(0.90, (ha_operativas_totales / 6000.0)) if ha_operativas_totales > 0 else 0.0
+    
+    dr_difuso = 0.15 * (1.0 - eficiencia_filtro_dinamico)
     dr_puntual = 0.80 
 
-    # 3. Cálculo de Carga de Tormenta (Blindaje NameError)
-    # El fósforo se traduce a carga orgánica equivalente si la tormenta ocurre.
-    eco_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
+    # 3. Cálculo de Carga Neta (Ahora sensible a la simulación manual)
     carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0 if activar_tormenta else 0.0
-    
-    # Carga Bruta que llega al sistema (Materia Orgánica Local)
     carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
     
-    # 4. Balance de Remoción (Blindaje de Cero por Saneamiento Base)
-    # 🚨 MEJORA: Definimos unidades STAM existentes que no dependen del toggle SIG.
+    # 4. Balance de Remoción (Saneamiento Base + Proyectado)
     sist_saneamiento_base = 40 
-    sist_saneamiento_total = sist_saneamiento_base + (sist_saneamiento if activar_sig else 0)
-    
-    # Remoción calculada: 2.2 Ton DBO/año por unidad (Ajustado para realismo ambiental)
+    sist_saneamiento_total = sist_saneamiento_base + sist_saneamiento
     carga_removida_ton = sist_saneamiento_total * 2.2
     
-    # Carga Final que entra al Embalse (Masa que será diluida)
     carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
-    
-    # Guardamos el estado para el Módulo de Metabolismo
     st.session_state['carga_dbo_total_ton'] = carga_final_rio_ton
 
     # =========================================================================
