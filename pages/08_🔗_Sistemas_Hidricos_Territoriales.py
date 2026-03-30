@@ -1074,56 +1074,51 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
             st.plotly_chart(fig_esc, use_container_width=True)
             
 # =========================================================================
-# 6. METABOLISMO TERRITORIAL: DEMANDA, VERTIMIENTOS Y RESIDUOS SÓLIDOS
+# 6. METABOLISMO TERRITORIAL: PRIORIDAD DE CENSO REAL (SINCRONIZADO)
 # =========================================================================
 with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", expanded=False):
-    st.info("Cálculo integrado de extracción hídrica, cargas orgánicas vertidas (DBO5) y generación de residuos sólidos (Lixiviados/Emisiones).")
+    st.info("Cálculo integrado de extracción hídrica y cargas orgánicas. Los datos nacen sincronizados con el modelo de Huella Hídrica del Módulo 8.")
 
-    # 🔍 SINCRONIZACIÓN MAESTRA: PRIORIDAD ABSOLUTA A LOS DATOS CALCULADOS ABAJO (Punto 2a)
-    # Definimos los fallbacks técnicos por si la memoria está vacía
+    # 🔍 SINCRONIZACIÓN MAESTRA: Prioridad absoluta a los datos calculados en el Módulo 8
+    # Definimos los fallbacks técnicos solo si la memoria está completamente vacía
     if nodo_seleccionado == "La Fe": 
-        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 15000, 450000, 5000, 2000, 150000
+        f_pob, f_ext, f_bov, f_por, f_ave = 15000, 450000, 5000, 2000, 150000
     elif "Grande" in nodo_seleccionado: 
-        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 45000, 1200000, 85000, 45000, 800000
-    elif "Peñol" in nodo_seleccionado: 
-        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 25000, 0, 40000, 15000, 120000
-    elif "Ituango" in nodo_seleccionado: 
-        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 35000, 0, 250000, 60000, 300000
+        f_pob, f_ext, f_bov, f_por, f_ave = 45000, 1200000, 85000, 45000, 800000
     else: 
-        def_pob_res, def_pob_ext, def_bov, def_por, def_ave = 20000, 0, 25000, 10000, 50000
+        f_pob, f_ext, f_bov, f_por, f_ave = 20000, 0, 25000, 10000, 50000
 
-    # 🚀 EXTRACCIÓN DINÁMICA: Leemos los cálculos del Módulo 8 (Huella Hídrica)
-    # Si el usuario mueve el slider de población o año abajo, estos valores cambian instantáneamente.
-    pob_sinc = st.session_state.get(f'pob_asig_{nodo_seleccionado}', def_pob_res)
-    bov_sinc = st.session_state.get('ica_bovinos_calc', def_bov)
-    por_sinc = st.session_state.get('ica_porcinos_calc', def_por)
-    ave_sinc = st.session_state.get('ica_aves_calc', def_ave)
+    # 🚀 EXTRACCIÓN MAESTRA (Soldadura de Variables):
+    # Recuperamos los valores exactos que el usuario ve en el Módulo 8
+    pob_sinc = st.session_state.get(f'pob_asig_{nodo_seleccionado}', f_pob)
+    bov_sinc = st.session_state.get('ica_bovinos_calc', f_bov)
+    por_sinc = st.session_state.get('ica_porcinos_calc', f_por)
+    ave_sinc = st.session_state.get('ica_aves_calc', f_ave)
 
     st.markdown("### 1. Inventario Poblacional Sincronizado (Censo Real + Proyección)")
 
     c_p1, c_p2, c_p3, c_p4, c_p5 = st.columns(5)
     
-    # Renderizamos los inputs usando los valores sincronizados como 'value'
-    # Las llaves 'sh_sinc_...' aseguran que Streamlit refresque el widget con el dato de la memoria
-    pob_residente = c_p1.number_input("🏘️ Pob. Residente:", value=int(pob_sinc), step=1000, key="sh_sinc_pob_final")
-    pob_externa = c_p2.number_input("🏙️ Pob. Externa:", value=int(def_pob_ext), step=50000, key="sh_sinc_ext_final")
-    cabezas_bovinas = c_p3.number_input("🐄 Bovinos:", value=int(bov_sinc), step=1000, key="sh_sinc_bov_final")
-    cabezas_porcinas = c_p4.number_input("🐖 Porcinos:", value=int(por_sinc), step=1000, key="sh_sinc_por_final")
-    cabezas_aves = c_p5.number_input("🐔 Aves:", value=int(ave_sinc), step=5000, key="sh_sinc_ave_final")
+    # 🚨 MEJORA: Los widgets ahora escriben en las mismas llaves de memoria que el Módulo 8
+    pob_residente = c_p1.number_input("🏘️ Pob. Residente:", value=int(pob_sinc), step=1000, key=f"pob_asig_{nodo_seleccionado}_met")
+    pob_externa = c_p2.number_input("🏙️ Pob. Externa:", value=int(f_ext), step=50000)
+    cabezas_bovinas = c_p3.number_input("🐄 Bovinos:", value=int(bov_sinc), step=1000, key="ica_bovinos_calc_met")
+    cabezas_porcinas = c_p4.number_input("🐖 Porcinos:", value=int(por_sinc), step=1000, key="ica_porcinos_calc_met")
+    cabezas_aves = c_p5.number_input("🐔 Aves:", value=int(ave_sinc), step=5000, key="ica_aves_calc_met")
     
     # 🪄 Módulos de Consumo y Generación (Ajustes Técnicos)
     dot_hum, dot_bov, dot_por, kg_rs_hab, pct_organico = 150, 40, 15, 0.8, 55.0
     if st.toggle("⚙️ Mostrar y Ajustar Módulos de Consumo y Generación"):
         st.markdown("<div style='padding: 10px; background-color: #f8f9fa; border-radius: 5px;'>", unsafe_allow_html=True)
         c_d1, c_d2, c_d3 = st.columns(3)
-        dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150, key="sh_dot_hum_v2")
-        dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40, key="sh_dot_bov_v2")
-        dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15, key="sh_dot_por_v2")
+        dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150)
+        dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40)
+        dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15)
         
         st.markdown("**Residuos Sólidos (Población Residente):**")
         c_rs1, c_rs2 = st.columns(2)
-        kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1, key="sh_rs_gen_v2")
-        pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0, key="sh_rs_frac_v2")
+        kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1)
+        pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0)
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("### 2. Balance Metabólico Integral")
