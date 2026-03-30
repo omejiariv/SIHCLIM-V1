@@ -168,23 +168,60 @@ def main():
 
     stations_for_analysis = df_long[Config.STATION_NAME_COL].unique().tolist()
 
-    # --- C. BARRA LATERAL (NAVEGACIÓN) ---
-    with st.sidebar:
-        st.divider()
-        st.markdown("### 🚀 Navegación")
-        selected_module = st.radio(
-            "Ir a:",
-            [
-                "🏠 Inicio", "🚨 Monitoreo", "🗺️ Distribución", "📈 Gráficos", 
-                "📊 Estadísticas", "🔮 Pronóstico Climático", "📉 Tendencias", 
-                "⚠️ Anomalías", "🔗 Correlación", "🌊 Extremos", 
-                "🌍 Mapas Avanzados", "🧪 Sesgo", "🌿 Cobertura", 
-                "🌱 Zonas Vida", "🌡️ Clima Futuro", "📄 Reporte", "✨ Mapas Isoyetas HD"
-            ]
-        )
-        st.markdown("---")
+    # =========================================================================
+    # --- C. JERARQUÍA DE NAVEGACIÓN (Centro de Comando Principal) ---
+    # =========================================================================
+    st.title(f"🌦️ Análisis Hidroclimático: {nombre_zona}")
 
-        # Filtro de Tiempo
+    st.markdown("""
+    <style>
+    /* Estilo premium para botones */
+    div[data-testid="stButton"] button[kind="primary"] {
+        background: linear-gradient(135deg, #2c3e50, #3498db); border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    div[data-testid="stButton"] button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1a252f, #2980b9); transform: translateY(-2px);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### 🎛️ Centro de Comando y Módulos de Análisis")
+    
+    # 1. Agrupamos los módulos en Categorías para no abrumar al usuario
+    col_nav1, col_nav2, col_nav3 = st.columns([1.5, 1.5, 1])
+    
+    with col_nav1:
+        categoria_nav = st.selectbox(
+            "📂 Categoría de Análisis:",
+            ["📊 Analítica y Monitoreo Base", "🔬 Ciencia y Pronóstico Climático", "🌍 Gemelo Digital (Modelación Avanzada)"]
+        )
+        
+    with col_nav2:
+        if "Analítica" in categoria_nav:
+            opciones = ["🏠 Inicio", "🚨 Monitoreo", "🗺️ Distribución", "📈 Gráficos", "📊 Estadísticas", "📄 Reporte"]
+        elif "Ciencia" in categoria_nav:
+            opciones = ["🔮 Pronóstico Climático", "📉 Tendencias", "⚠️ Anomalías", "🔗 Correlación", "🌊 Extremos", "🧪 Sesgo"]
+        else:
+            opciones = ["🌍 Mapas Avanzados (Motor Aleph)", "✨ Mapas Isoyetas HD", "🌿 Cobertura", "🌱 Zonas Vida", "🌡️ Clima Futuro"]
+            
+        selected_module_raw = st.selectbox("🎯 Módulo Específico:", opciones)
+
+    with col_nav3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        # El botón salvavidas, ahora visible y accesible en la barra superior
+        if st.button("🔄 Refrescar Memoria", help="Limpia el caché y recarga los datos desde cero", use_container_width=True):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            keys_to_delete = ['df_long', 'gdf_stations', 'gdf_subcuencas', 'uploaded_file_hash']
+            for key in keys_to_delete:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+
+    st.markdown("---")
+
+    # --- D. FILTROS EN BARRA LATERAL (TIEMPO Y LIMPIEZA) ---
+    with st.sidebar:
         with st.expander("⏳ Tiempo y Limpieza", expanded=False):
             min_y = int(df_long[Config.YEAR_COL].min())
             max_y = int(df_long[Config.YEAR_COL].max())
@@ -195,22 +232,7 @@ def main():
             ignore_nulls = c2.checkbox("🚫 Sin Nulos", value=False)
             apply_interp = st.checkbox("🔄 Interpolación", value=False)
 
-        # --- AQUÍ VA EL BOTÓN SALVAVIDAS ---
-        if st.button("🔄 Refrescar Datos", help="Borra memoria y recarga"):
-            # 1. Borrar caché de funciones (consultas SQL)
-            st.cache_data.clear()
-            st.cache_resource.clear()
-            
-            # 2. 🔥 CLAVE: Borrar las variables guardadas en memoria 🔥
-            keys_to_delete = ['df_long', 'gdf_stations', 'gdf_subcuencas', 'uploaded_file_hash']
-            for key in keys_to_delete:
-                if key in st.session_state:
-                    del st.session_state[key]
-            
-            # 3. Recargar
-            st.rerun()
-
-    # --- D. PROCESAMIENTO ---
+    # --- E. PROCESAMIENTO ---
     mask_time = (df_long[Config.YEAR_COL] >= year_range[0]) & (df_long[Config.YEAR_COL] <= year_range[1])
     df_monthly_filtered = df_long.loc[mask_time].copy()
     
@@ -239,8 +261,25 @@ def main():
         "user_loc": None, "gdf_zona": gdf_zona 
     }
 
-    # --- E. ENRUTADOR DE MÓDULOS ---
-    st.title(f"🌦️ Análisis: {nombre_zona}")
+    # Limpiamos el nombre para que los 'elif' de tu código sigan funcionando intactos
+    selected_module = "🌍 Mapas Avanzados" if "Mapas Avanzados" in selected_module_raw else selected_module_raw
+
+    # =========================================================================
+    # --- F. ENRUTADOR DE MÓDULOS ---
+    # =========================================================================
+
+    # 👑 TRATAMIENTO VIP PARA EL MOTOR ALEPH (Si fue seleccionado)
+    if selected_module == "🌍 Mapas Avanzados":
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 25px; border-radius: 12px; color: white; margin-bottom: 25px; box-shadow: 0 10px 20px rgba(0,0,0,0.15);">
+            <h2 style="color: white; margin-top: 0; display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.2em;">🌍</span> Motor Aleph: Modelación Hidrológica Distribuida
+            </h2>
+            <p style="font-size: 1.05em; opacity: 0.95; line-height: 1.5; margin-bottom: 0;">
+                El nodo central del Gemelo Digital. Aquí la meteorología se fusiona con la topografía (Modelos de Elevación Digital) y las coberturas vegetales satelitales para calcular recarga, infiltración y caudales en cada pixel del territorio.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
     # Módulos Estándar (Usando visualizer.py)
     if selected_module == "🏠 Inicio": viz.display_welcome_tab()
