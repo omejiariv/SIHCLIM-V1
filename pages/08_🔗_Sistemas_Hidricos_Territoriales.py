@@ -909,7 +909,14 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
         with col_t1: activar_cc = st.toggle("🌡️ Incluir Cambio Climático", value=True, key="t1_cc")
         with col_t2: activar_enso = st.toggle("🌊 Incluir Variabilidad ENSO", value=True, key="t1_enso")
 
+        # --- BUCLE DE PROYECCIÓN 2050 CON COHERENCIA ECOSISTÉMICA ---
         datos_proj = []
+        
+        # 1. Recuperamos el estado de salud actual del bosque (SIG)
+        # Determina si el futuro es "verde" (filtración activa) o "gris" (carga cruda)
+        eficiencia_futura = 0.60 if activar_sig else 0.0
+        dr_difuso_futuro = 0.15 * (1.0 - eficiencia_futura)
+
         for a in anios_proj:
             delta_a = a - 2024
             f_dem = (1 + 0.015) ** delta_a
@@ -923,33 +930,38 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
             
             f_cli_total = max(0.1, f_cc_base + f_enso) 
             
-            # 1. Oferta y Demanda Futura
+            # Oferta y Demanda Futura
             o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
             c_m3 = (val_acueducto * f_dem) * 31536000
             
-            # 2. Neutralidad Futura
+            # Neutralidad y Resiliencia Futura
             n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
-            
-            # 3. Resiliencia Futura (Basado en Buffer)
             buff_sim = (capacidad_embalse_m3 + o_m3) / c_m3 if c_m3 > 0 else 5.0
             r = min(100.0, (buff_sim / 2.0) * 100)
             
-            # 4. Seguridad Hídrica (Estrés WEI+)
+            # Seguridad Hídrica (Estrés WEI+)
             wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
             e = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
             
-            # 5. Calidad Futura (Balance de Masas Estructural proyectado)
-            # Dilución dinámica: Caudal natural afectado por clima + Fracción de Trasvases
-            q_natural_f = sum(datos_nodo["afluentes_naturales"].values()) * f_cli_total
-            q_mezcla_f = q_natural_f + (sum(trasvases_inputs.values()) * 0.4)
+            # --- 🧪 CALIDAD PROYECTADA SENSIBLE AL BOSQUE ---
+            # Carga proyectada: La población crece, y la filtración depende del SIG
+            carga_pecuaria_f = ((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso_futuro
+            carga_humana_f = (pob_hum_local * f_dem * 0.018) * 0.80
+            
+            # Eventos cíclicos de tormenta (cada 3 años) para ver "dientes de sierra"
+            carga_tormenta_f = (st.session_state.get('eco_fosforo_kg', 0.0) * 10 / 1000) if (activar_tormenta and a % 3 == 0) else 0.0
+            
+            carga_neta_f = carga_pecuaria_f + carga_humana_f + carga_tormenta_f
+            remocion_f = (40 + (sist_saneamiento if activar_sig else 0)) * 2.2 # Saneamiento Base + SIG
+            
+            carga_final_ton_f = max(0.5, carga_neta_f - remocion_f)
+            
+            # Dilución dinámica
+            q_mezcla_f = (sum(datos_nodo["afluentes_naturales"].values()) * f_cli_total) + (sum(trasvases_inputs.values()) * 0.4)
             caudal_L_s_f = (q_mezcla_f if q_mezcla_f > 0 else 1.0) * 1000
             
-            # Carga orgánica futura escalada por demanda
-            carga_mg_s_f = carga_mg_s_final * f_dem
-            conc_dbo_f = carga_mg_s_f / caudal_L_s_f
-            
-            # Calidad con umbral de 15 mg/L (Consistencia con motor principal)
-            cal = max(0.0, min(100.0, 100.0 - (conc_dbo_f / 15.0 * 100)))
+            concentracion_f = (carga_final_ton_f * 3.5 * 1e9) / (caudal_L_s_f * 31536000) # 3.5 es el factor de heterogeneidad
+            cal = max(0.0, min(100.0, 100.0 - (concentracion_f / 8.0 * 100)))
             
             datos_proj.extend([
                 {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
