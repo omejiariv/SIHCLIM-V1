@@ -135,8 +135,8 @@ datos_nodo = sistemas_embalses[nodo_seleccionado]
 # =========================================================================
 st.title(f"🔗 Metabolismo Territorial Complejo: Nodos y Trasvases ({nodo_seleccionado})")
 st.markdown("""
-Modelo de topología de redes para el **Sistema de Abastecimiento del Valle de Aburrá y Generación Eléctrica**. 
-Evalúa cómo los embalses integran las cuencas propias con los trasvases requeridos para sostener la demanda, con flujos natural de los ecosistemas externos aportantes.
+Modelo de topología de redes para el **Sistema de Abastecimiento de Agua del Valle de Aburrá y Generación Eléctrica**. 
+Evalúa cómo los embalses integran las cuencas propias con los trasvases requeridos para sostener la demanda, con flujos naturales de los ecosistemas externos aportantes.
 """)
 
 # 🪄 SOLUCIÓN AL ESPACIO EN BLANCO: El contenedor del Sankey se ancla directamente aquí
@@ -871,7 +871,7 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         st.markdown("---")
         
         # --- 🛡️ RESILIENCIA DE INFRAESTRUCTURA ---
-        st.markdown("##### 🛡️ Resiliencia de Activos Grises")
+        st.markdown("##### 🛡️ Resiliencia de Activos Grises en los años de evaluacion del proyecto")
         c_r4, c_r5 = st.columns(2)
         lodo_fondo_evitado = (lodo_fondo_m3 * mitigacion_pct) * eventos_ano * horizonte_roi
         anos_salvados = lodo_fondo_evitado / 400000.0 
