@@ -553,20 +553,21 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
     
         # 🌪️ AJUSTE DE TÍTULO ANTE TORMENTA
-        
         if "Resiliencia" in titulo and st.session_state.get('activar_tormenta_sankey', False):
             titulo = f"🌪️ {titulo} (Colmatación)"
 
         # 🚨 CORRECCIÓN DE VISIBILIDAD: Forzamos la aparición del número central
         fig = go.Figure(go.Indicator(
             mode = "gauge+number", 
-            value = valor,
+            value = float(valor), # Garantizamos que ingrese como escalar numérico
             number = {
                 'suffix': "%", 
-                'font': {'size': 28, 'color': '#2c3e50', 'family': 'Arial'}, 
+                # Reducimos de 28 a 24 para que valores como "100.0%" no desborden la caja
+                'font': {'size': 24, 'color': '#2c3e50', 'family': 'Arial'}, 
                 'valueformat': ".1f"
             },
-            title = {'text': titulo, 'font': {'size': 16, 'family': 'Georgia', 'color': '#34495e'}},
+            # Reducimos sutilmente el título para evitar colisiones superiores
+            title = {'text': titulo, 'font': {'size': 14, 'family': 'Georgia', 'color': '#34495e'}},
             gauge = {
                 'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
                 'bar': {'color': color_bar},
@@ -585,10 +586,11 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
                 }
             }
         ))
-        # Ajustamos márgenes para que el número no se corte en ninguna pantalla
-        fig.update_layout(height=230, margin=dict(l=25, r=25, t=50, b=10))
+        
+        # 🛠️ AMPLIACIÓN DE MÁRGENES: Elevamos 'height' a 240 y el margen inferior 'b' a 30
+        fig.update_layout(height=240, margin=dict(l=20, r=20, t=50, b=30))
         return fig
-
+        
     # =========================================================================
     # 🎛️ PANEL DE CALIBRACIÓN AVANZADA (WQI): SENSIBILIDAD AMBIENTAL
     # =========================================================================
