@@ -442,11 +442,15 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         st.metric("✅ Área Restaurada/Conservada (SIG)", f"{ha_reales_sig:,.1f} ha", "Línea base actual")
         ha_simuladas = st.number_input("➕ Adicionar Hectáreas (Simulación):", min_value=0.0, value=0.0, step=50.0)
         ha_total = ha_base_calculo + ha_simuladas
+        # Beneficio hídrico: 2500 m3/ha/año de infiltración efectiva
         beneficio_restauracion_m3 = ha_total * 2500 
         
     with c_inv2:
-        sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM):", min_value=0, value=120, step=5)
-        beneficio_calidad_m3 = (sist_saneamiento * 1200) if activar_sig else 0
+        # 🚨 SINCRONIZACIÓN: El saneamiento rural también se ve afectado si se apaga el escenario proyectado
+        val_base_stam = 120
+        sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM):", min_value=0, value=val_base_stam if activar_sig else 0, step=5)
+        beneficio_calidad_m3 = (sist_saneamiento * 1200) 
+        
     with c_inv3:
         volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
         st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3/1e6:,.2f} Mm³/año", "Total compensado")
@@ -458,81 +462,70 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     # 🌪️ CROSS-POLLINATION: CAPTURA DE DATOS (Lógica de fondo)
     memoria_lodo_m3 = st.session_state.get('eco_lodo_m3', 0.0)
     memoria_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
-    memoria_sobrecosto_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
 
-    # Recuperamos el estado de activación desde el toggle del Sankey (Módulo 9)
     if 'activar_tormenta_sankey' not in st.session_state:
         st.session_state['activar_tormenta_sankey'] = False
-
     activar_tormenta = st.session_state['activar_tormenta_sankey']
 
-    # Asignación condicionada para los motores de cálculo
-    eco_lodo_m3 = memoria_lodo_m3 if activar_tormenta else 0.0
-    eco_fosforo_kg = memoria_fosforo_kg if activar_tormenta else 0.0
-    eco_sobrecosto_usd = memoria_sobrecosto_usd if activar_tormenta else 0.0
+    # --- CONFIGURACIÓN DE POBLACIÓN Y CARGAS ---
+    # Sincronización con el Módulo 8 (Huella Hídrica)
+    pob_hum_local = st.session_state.get(f'pob_asig_{nodo_seleccionado}', 15000)
+    pob_bov_local = st.session_state.get('ica_bovinos_calc', 5000)
+    pob_por_local = st.session_state.get('ica_porcinos_calc', 2000)
 
-    # --- CONFIGURACIÓN DE POBLACIÓN Y CARGAS POR NODO ---
-    if nodo_seleccionado == "La Fe": d_hum, d_bov, d_por = 15000, 5000, 2000
-    elif "Grande" in nodo_seleccionado: d_hum, d_bov, d_por = 45000, 85000, 45000
-    elif "Peñol" in nodo_seleccionado: d_hum, d_bov, d_por = 25000, 40000, 15000
-    elif "Ituango" in nodo_seleccionado: d_hum, d_bov, d_por = 35000, 250000, 60000
-    else: d_hum, d_bov, d_por = 20000, 25000, 10000
+    # 🚨 FACTOR DE FILTRACIÓN SbN (Vínculo Estructural)
+    # Si el bosque está activo (activar_sig), retiene el 60% de la carga difusa.
+    # Si está apagado, la carga pecuaria entra al 100% al sistema.
+    eficiencia_filtro_bosque = 0.60 if activar_sig else 0.0
+    
+    dr_difuso = 0.15 * (1.0 - eficiencia_filtro_bosque)
+    dr_puntual = 0.80 # La carga humana suele ser más directa (vertimiento)
 
-    pob_hum_local = st.session_state.get('sh_pob_residente', d_hum)
-    pob_bov_local = st.session_state.get('sh_bovinos_ica', d_bov)
-    pob_por_local = st.session_state.get('sh_porcinos_ica', d_por)
-
-    dr_difuso = 0.15 
-    dr_puntual = 0.80
-
-    # PENALIDAD POR TORMENTA: Sumamos el fósforo si la tormenta está activa
-    carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0
+    # Cálculo de carga neta con penalidad por tormenta
+    carga_tormenta_ton = (eco_fosforo_kg * 10) / 1000.0 if activar_tormenta else 0.0
     carga_neta_ton = (((pob_bov_local * 0.18) + (pob_por_local * 0.11)) * dr_difuso) + ((pob_hum_local * 0.018) * dr_puntual) + carga_tormenta_ton
+    
+    # La remoción por STAM solo ocurre si los sistemas están activos/mantenidos
     carga_removida_ton = sist_saneamiento * 2.5
     carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
 
     # =========================================================================
-    # 🌊 MOTOR DE CALIDAD E INDICADORES: BALANCE DE MASA ESTRUCTURAL (VERSIÓN 2.0)
+    # 🌊 MOTOR DE CALIDAD E INDICADORES: BALANCE DE MASA ESTRUCTURAL
     # =========================================================================
     
-    # 1. Seguridad Hídrica (Reflejo del Estrés Local del Módulo 8)
+    # 1. Seguridad Hídrica (WEI+)
     consumo_real_validado = max(consumo_anual_m3, (val_acueducto * 31536000))
-    # Ajuste: El estrés hídrico debe ser más sensible a la oferta natural
     estres_decimal = consumo_real_validado / (oferta_anual_m3 + 1.0)
-    ind_estres = max(0.0, min(100.0, 100.0 - (estres_decimal * 120))) # Más sensible al agotamiento
+    ind_estres = max(0.0, min(100.0, 100.0 - (estres_decimal * 120))) 
 
     # 2. Neutralidad Hídrica (VWBA)
     ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real_validado) * 100) if consumo_real_validado > 0 else 0.0
 
-    # 3. CARGA ORGÁNICA Y EFECTO DE HETEROGENEIDAD (Zonas de Cola)
-    carga_total_ton_local = st.session_state.get('carga_dbo_total_ton', 150.0)
+    # 3. Calidad de Agua (WQI) con Efecto de Zona Crítica
+    # Recuperamos la carga orgánica del Módulo 6
+    carga_total_ton_local = carga_final_rio_ton 
+    factor_heterogeneidad = 3.5 # Las colas del embalse sufren mayor concentración
     
-    # Factor de Heterogeneidad: En las colas del embalse, la carga se siente 3 veces más
-    factor_heterogeneidad = 3.5 
-    
-    if st.session_state.get('activar_tormenta_sankey', False):
-        # En tormenta, el arrastre de sedimentos y materia orgánica es exponencial
-        carga_total_ton_local *= 2.5 
+    if activar_tormenta:
+        carga_total_ton_local *= 2.5 # Arrastre masivo superficial
     
     carga_mg_s_final = (carga_total_ton_local * factor_heterogeneidad * 1_000_000_000) / 31536000 
     
-    # 4. CAUDAL DE DILUCIÓN REALISTA (Solo entrada natural para Calidad Local)
-    # Para evaluar la calidad en las colas, NO usamos los trasvases, solo el río aportante
+    # Caudal de dilución (Solo natural para evaluar impacto en colas)
     q_natural_local = sum(datos_nodo["afluentes_naturales"].values())
     caudal_L_s_final = (q_natural_local if q_natural_local > 0 else 0.1) * 1000
     
-    # 5. ÍNDICE DE CALIDAD (WQI) - CURVA DE SENSIBILIDAD AMBIENTAL
     concentracion_dbo_final = carga_mg_s_final / caudal_L_s_final
-    
-    # Ajuste de Ingeniería: En embalses, > 5 mg/L de DBO ya es Alerta Naranja.
-    # Usamos 8.0 como divisor para que el 77% sea el punto de equilibrio real.
+    # Divisor 8.0 para que >4mg/L de DBO empiece a desplomar el índice (Realismo en embalses)
     ind_calidad = max(0.0, min(100.0, 100.0 - (concentracion_dbo_final / 8.0 * 100)))
 
-    # 6. RESILIENCIA ESTRUCTURAL (Buffer - Lodo de Fondo)
+    # 4. Resiliencia Estructural (Buffer - Lodo de Fondo)
     capacidad_util_ajustada = capacidad_embalse_m3
-    if st.session_state.get('activar_tormenta_sankey', False):
+    if activar_tormenta:
         lodo_fondo_inyectado = st.session_state.get('eco_lodo_fondo_m3', 0.0)
-        capacidad_util_ajustada -= (lodo_fondo_inyectado * 1.5) # Penalidad por turbiedad
+        # Si no hay bosque (activar_sig OFF), el lodo de fondo es un 40% más severo por falta de retención
+        penalidad_sbn = 1.0 if activar_sig else 1.4
+        capacidad_util_ajustada -= (lodo_fondo_inyectado * 1.5 * penalidad_sbn)
         capacidad_util_ajustada = max(0, capacidad_util_ajustada)
 
     buffer_ratio = (capacidad_util_ajustada + oferta_anual_m3) / consumo_real_validado if consumo_real_validado > 0 else 5.0
