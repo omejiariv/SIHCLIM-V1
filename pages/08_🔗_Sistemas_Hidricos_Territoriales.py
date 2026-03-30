@@ -548,7 +548,9 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
 
     # =========================================================================
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
+    
         # 🌪️ AJUSTE DE TÍTULO ANTE TORMENTA
+        
         if "Resiliencia" in titulo and st.session_state.get('activar_tormenta_sankey', False):
             titulo = f"🌪️ {titulo} (Colmatación)"
 
@@ -585,7 +587,31 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
         return fig
 
     # =========================================================================
-    # 🌪️ MOTOR DE RECÁLCULO DINÁMICO (PRE-RENDERIZADO)
+    # 🎛️ PANEL DE CALIBRACIÓN AVANZADA: SENSIBILIDAD AMBIENTAL
+    # =========================================================================
+    with st.expander("⚙️ Calibración del Modelo de Calidad (WQI)", expanded=False):
+        st.caption("Ajuste los parámetros de sensibilidad física para la dilución y colapso del sistema.")
+        
+        c_cal1, c_cal2 = st.columns(2)
+        
+        with c_cal1:
+            umbral_dbo_colapso = st.slider(
+                "Umbral de Colapso DBO (mg/L):", 
+                5.0, 40.0, 25.0, 1.0,
+                help="Concentración de materia orgánica en la cual el índice de calidad cae a cero. "
+                     "Literatura: 5-10 mg/L para ecosistemas prístinos; 20-30 mg/L para sistemas con asimilación moderada."
+            )
+            
+        with c_cal2:
+            factor_zona_critica = st.slider(
+                "Factor de Zona Crítica (Heterogeneidad):", 
+                1.0, 10.0, 2.5, 0.5,
+                help="Multiplicador de concentración para las 'colas' del embalse. Refleja la falta de mezcla perfecta. "
+                     "Seleccione 1.0 para mezcla total; 2.5 para embalses alargados; >5.0 para eventos de choque localizados."
+            )
+
+    # =========================================================================
+    # 🧪 RECÁLCULO DINÁMICO CON PARÁMETROS DE CALIBRACIÓN
     # =========================================================================
     
     # 1. SEGURIDAD HÍDRICA (WEI+): Sincronización de consumo validado
@@ -594,7 +620,6 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     # 2. RESILIENCIA ESTRUCTURAL: Sensible a colmatación por tormenta
     cap_dinamica = capacidad_embalse_m3
     if st.session_state.get('activar_tormenta_sankey', False):
-        # Penalidad por lodo de fondo inyectado hoy
         cap_dinamica -= (st.session_state.get('eco_lodo_fondo_m3', 0.0) * 1.5)
         cap_dinamica = max(0, cap_dinamica)
     
@@ -602,19 +627,18 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     val_resiliencia = min(100.0, (buf_din / 2.5) * 100)
 
     # 3. CALIDAD (WQI): Balance de Masa Realista (Efecto Colas del Embalse)
-    # 🚨 MEJORA: Para evaluar salud ambiental local, NO sumamos trasvases masivos
     q_natural_local = sum(datos_nodo["afluentes_naturales"].values())
     caudal_L_s_calidad = (q_natural_local if q_natural_local > 0 else 0.1) * 1000
     
-    # Recuperamos la carga orgánica que trae el efecto de filtración SbN
+    # Carga neta que trae el efecto de filtración SbN
     carga_neta_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
     
-    # Factor de heterogeneidad (Concentración en zonas de entrada)
-    factor_zona_critica = 3.5 if not st.session_state.get('activar_tormenta_sankey', False) else 5.0
-    conc_dbo_final = (carga_neta_mg_s * factor_zona_critica) / caudal_L_s_calidad
+    # Aplicamos los parámetros calibrados por el usuario
+    factor_ajustado = factor_zona_critica if not st.session_state.get('activar_tormenta_sankey', False) else (factor_zona_critica * 1.5)
+    conc_dbo_final = (carga_neta_mg_s * factor_ajustado) / caudal_L_s_calidad
     
-    # Umbral de 8.0 mg/L para que el indicador sea reactivo y honesto
-    val_calidad = max(0.0, min(100.0, 100.0 - (conc_dbo_final / 8.0 * 100)))
+    # El divisor ahora es dinámico según el slider
+    val_calidad = max(0.0, min(100.0, 100.0 - (conc_dbo_final / umbral_dbo_colapso * 100)))
 
     # --- 📦 CONFIGURACIÓN DE VISUALIZACIÓN (SIN LATENCIA) ---
     col_g = st.columns(4)
