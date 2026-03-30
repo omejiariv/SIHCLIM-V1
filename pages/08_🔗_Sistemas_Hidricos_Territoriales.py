@@ -464,11 +464,11 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     eco_fosforo_kg = st.session_state.get('eco_fosforo_kg', 0.0)
     activar_tormenta = st.session_state.get('activar_tormenta_sankey', False)
 
-    # 1. Configuración de Población Local
-    pob_hum_local = st.session_state.get(f'pob_asig_{nodo_seleccionado}', 15000)
-    pob_bov_local = st.session_state.get('ica_bovinos_calc', 5000)
-    pob_por_local = st.session_state.get('ica_porcinos_calc', 2000)
-
+    # 1. Configuración de Población Local (Conectado a Módulo 6)
+    pob_hum_local = st.session_state.get(f'pob_asig_{nodo_seleccionado}_met', 15000)
+    pob_bov_local = st.session_state.get('ica_bovinos_calc_met', 5000)
+    pob_por_local = st.session_state.get('ica_porcinos_calc_met', 2000)
+    
     # 2. FACTOR DE FILTRACIÓN DINÁMICO (Vínculo Estructural con Simulación)
     # A más hectáreas (reales o simuladas), mayor es el factor de filtración.
     # 3600 ha equivalen al 60% de eficiencia de retención.
@@ -487,7 +487,9 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     carga_removida_ton = sist_saneamiento_total * 2.2
     
     carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
-    st.session_state['carga_dbo_total_ton'] = carga_final_rio_ton
+    
+    # 🚨 INTERVENCIÓN 3: Prevenir sobreescritura de la carga total del Módulo 6
+    st.session_state['carga_dbo_mitigada_ton'] = carga_final_rio_ton
 
     # =========================================================================
     # 🌊 MOTOR DE CALIDAD E INDICADORES: BALANCE DE MASA ESTRUCTURAL
@@ -502,7 +504,7 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_real_validado) * 100) if consumo_real_validado > 0 else 0.0
 
     # 3. Calidad de Agua (WQI) con Efecto de Zona Crítica
-    # Recuperamos la carga orgánica del Módulo 6
+    # Recuperamos la carga orgánica local
     carga_total_ton_local = carga_final_rio_ton 
     factor_heterogeneidad = 3.5 # Las colas del embalse sufren mayor concentración
     
@@ -511,9 +513,10 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     
     carga_mg_s_final = (carga_total_ton_local * factor_heterogeneidad * 1_000_000_000) / 31536000 
     
-    # Caudal de dilución (Solo natural para evaluar impacto en colas)
+    # Caudal de dilución (Natural + Trasvases para dilución real en embalse)
     q_natural_local = sum(datos_nodo["afluentes_naturales"].values())
-    caudal_L_s_final = (q_natural_local if q_natural_local > 0 else 0.1) * 1000
+    q_trasvases_local = sum(trasvases_inputs.values())
+    caudal_L_s_final = ((q_natural_local + q_trasvases_local) if (q_natural_local + q_trasvases_local) > 0 else 0.1) * 1000
     
     concentracion_dbo_final = carga_mg_s_final / caudal_L_s_final
     # Divisor 8.0 para que >4mg/L de DBO empiece a desplomar el índice (Realismo en embalses)
@@ -620,7 +623,8 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
 
     # 3. CALIDAD (WQI): Aplicación de Calibración
     q_nat_loc = sum(datos_nodo["afluentes_naturales"].values())
-    caudal_L_s_calc = (q_nat_loc if q_nat_loc > 0 else 0.1) * 1000
+    q_tras_loc = sum(trasvases_inputs.values())
+    caudal_L_s_calc = ((q_nat_loc + q_tras_loc) if (q_nat_loc + q_tras_loc) > 0 else 0.1) * 1000
     carga_mg_s_calc = (carga_final_rio_ton * 1e9) / 31536000
     
     # El factor se incrementa bajo tormenta para simular el 'tapón' de carga inicial
@@ -739,7 +743,7 @@ with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO
     st.markdown("Combina infraestructura gris y verde para estimar el presupuesto necesario para limpiar la cuenca.")
     
     # Lee la carga del metabolismo (Sección 6) a través de la memoria global
-    carga_total_ton = st.session_state.get('carga_total_ton', 1000.0)
+    carga_total_ton = st.session_state.get('carga_dbo_total_ton', 1000.0)
     carga_removida_actual = 0.0 
     
     col_c1, col_c2 = st.columns([1, 2.5])
