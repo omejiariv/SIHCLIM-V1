@@ -1705,19 +1705,32 @@ with tab_micro:
             textura = st.radio("Textura de la Epidermis:", ["Lisa / Cerosa (Repele agua)", "Normal", "Pubescente (Pelos microscópicos)"], index=1)
             forma = st.radio("Morfología de la Hoja:", ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
             
-            # ... (Aquí se mantiene intacto el bloque "👁️ Ver Herbario Botánico" que ya tienes) ...
-            
+            if st.toggle("👁️ Ver Herbario Botánico"):
+                st.markdown("""<style>.botanical-tooltip { position: relative; display: inline-block; text-align: center; margin-bottom: 20px; cursor: help; } .botanical-tooltip img { border-radius: 5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.2); transition: transform 0.3s ease; max-width: 100%; height: auto; } .botanical-tooltip:hover img { transform: scale(1.02); } .botanical-tooltip .tooltiptext { visibility: hidden; width: 280px; background-color: #fdfaf2; color: #2c3e50; text-align: left; border: 1px solid #d3c0a3; border-radius: 5px; padding: 15px; position: absolute; z-index: 10; top: 105%; left: 50%; margin-left: -140px; opacity: 0; transition: opacity 0.4s; font-size: 0.85em; font-family: 'Georgia', serif; box-shadow: 4px 4px 12px rgba(0,0,0,0.3); line-height: 1.4; pointer-events: none; } .botanical-tooltip .tooltiptext::after { content: ""; position: absolute; bottom: 100%; left: 50%; margin-left: -8px; border-width: 8px; border-style: solid; border-color: transparent transparent #fdfaf2 transparent; } .botanical-tooltip:hover .tooltiptext { visibility: visible; opacity: 1; } .tit-botanico { font-weight: bold; font-size: 1.1em; color: #5d4037; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}</style>""", unsafe_allow_html=True)
+                url_base = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/imagenes/"
+                
+                st.markdown("#### A. Textura de la Epidermis")
+                c_h1, c_h2, c_h3 = st.columns(3)
+                with c_h1: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Lisa%20y%20Cerosa.png" target="_blank"><img src="{url_base}Epidermis%20Lisa%20y%20Cerosa.png"></a><div class="tooltiptext"><div class="tit-botanico">I. Lisa / Cerosa</div>Las gotas (B) mantienen una forma esférica perfecta ilustrando la tensión superficial en acción.</div></div>""", unsafe_allow_html=True)
+                with c_h2: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Normal.png" target="_blank"><img src="{url_base}Epidermis%20Normal.png"></a><div class="tooltiptext"><div class="tit-botanico">II. Epidermis Normal</div>Sin capa de cera gruesa. Una ligera llovizna (A) forma gotas irregulares que tienden a extenderse.</div></div>""", unsafe_allow_html=True)
+                with c_h3: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Pubescente.png" target="_blank"><img src="{url_base}Epidermis%20Pubescente.png"></a><div class="tooltiptext"><div class="tit-botanico">III. Epidermis Pubescente</div>Epidermis aterciopelada detallando tricomas glandulares, donde la gota (B) es retenida por aire atrapado.</div></div>""", unsafe_allow_html=True)
+
+                # 🪄 RESTAURACIÓN DE LA SECCIÓN B
+                st.markdown("#### B. Morfología de la Hoja")
+                c_h4, c_h5, c_h6 = st.columns(3)
+                with c_h4: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Plana.png" target="_blank"><img src="{url_base}Morfologia%20Plana.png"></a><div class="tooltiptext"><div class="tit-botanico">IV. Morfología Plana</div>El agua (A) se extiende de manera uniforme, eficiente para maximizar la luz solar en regiones menos húmedas.</div></div>""", unsafe_allow_html=True)
+                with c_h5: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Concava.png" target="_blank"><img src="{url_base}Morfologia%20Concava.png"></a><div class="tooltiptext"><div class="tit-botanico">V. Morfología Cóncava</div>El agua (A) es recolectada hacia el centro. Ideal para canalizar agua hacia el tallo (Efecto Embudo).</div></div>""", unsafe_allow_html=True)
+                with c_h6: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Acuminada.png" target="_blank"><img src="{url_base}Morfologia%20Acuminada.png"></a><div class="tooltiptext"><div class="tit-botanico">VI. Morfología Acuminada</div>Extremo apical detallado (Acumen). Permite un rápido drenaje y reduce el tamaño de la gota de goteo.</div></div>""", unsafe_allow_html=True)
+        
         area_foliar_m2 = 0.15 * (dbh_cm ** 2.1)
         sl_base = 0.20
         
-        # --- MODIFICADORES FÍSICOS ---
+        # --- MODIFICADORES FÍSICOS (Con Tamaño Incluido) ---
         mod_tex = 0.7 if "Lisa" in textura else 1.6 if "Pubescente" in textura else 1.0
         mod_for = 1.4 if "Cóncava" in forma else 0.8 if "Acuminada" in forma else 1.0
         mod_tam = 0.85 if "Micrófila" in tamano_hoja else 1.25 if "Macrófila" in tamano_hoja else 1.0
         
-        # El tamaño ahora altera la capacidad de almacenamiento por metro cuadrado
         sl_efectivo = sl_base * mod_tex * mod_for * mod_tam
-        
         volumen_retenido_litros = area_foliar_m2 * sl_efectivo
         stemflow_pct = 12.0 if "Agudo" in angulo_ramas else 5.0 if "Medio" in angulo_ramas else 1.0 if "Horizontal" in angulo_ramas else 0.1
         retencion_pct = min(25.0 * (sl_efectivo / 0.20), 45.0)
