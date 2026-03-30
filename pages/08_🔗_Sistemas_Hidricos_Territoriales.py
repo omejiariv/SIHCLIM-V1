@@ -912,21 +912,33 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
             
             f_cli_total = max(0.1, f_cc_base + f_enso) 
             
+            # 1. Oferta y Demanda Futura
             o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
             c_m3 = (val_acueducto * f_dem) * 31536000
             
+            # 2. Neutralidad Futura
             n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
             
+            # 3. Resiliencia Futura (Basado en Buffer)
             buff_sim = (capacidad_embalse_m3 + o_m3) / c_m3 if c_m3 > 0 else 5.0
             r = min(100.0, (buff_sim / 2.0) * 100)
             
+            # 4. Seguridad Hídrica (Estrés WEI+)
             wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
             e = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
             
-            caudal_natural_L_s_sim = caudal_natural_L_s * f_cli_total
-            carga_mg_s_futura = carga_mg_s * f_dem
-            dbo_mg_l_sim = carga_mg_s_futura / caudal_natural_L_s_sim if caudal_natural_L_s_sim > 0 else 999.0
-            cal = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
+            # 5. Calidad Futura (Balance de Masas Estructural proyectado)
+            # Dilución dinámica: Caudal natural afectado por clima + Fracción de Trasvases
+            q_natural_f = sum(datos_nodo["afluentes_naturales"].values()) * f_cli_total
+            q_mezcla_f = q_natural_f + (sum(trasvases_inputs.values()) * 0.4)
+            caudal_L_s_f = (q_mezcla_f if q_mezcla_f > 0 else 1.0) * 1000
+            
+            # Carga orgánica futura escalada por demanda
+            carga_mg_s_f = carga_mg_s_final * f_dem
+            conc_dbo_f = carga_mg_s_f / caudal_L_s_f
+            
+            # Calidad con umbral de 15 mg/L (Consistencia con motor principal)
+            cal = max(0.0, min(100.0, 100.0 - (conc_dbo_f / 15.0 * 100)))
             
             datos_proj.extend([
                 {"Año": a, "Indicador": "Neutralidad", "Valor (%)": n, "Fase ENSO": estado_enso},
@@ -974,12 +986,11 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
             
             for nombre_esc in curvas_sel:
                 val_esc = diccionario_escenarios[nombre_esc]
-                
                 f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) if val_esc == "onda" else val_esc
-                f_cli_total = f_cc_base + f_enso
+                f_cli_total = max(0.1, f_cc_base + f_enso)
                 
                 o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
-                c_m3 = (demanda_m3s_base * f_dem) * 31536000
+                c_m3 = (val_acueducto * f_dem) * 31536000
                 
                 if ind_sel == "Neutralidad": val = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
                 elif ind_sel == "Resiliencia": 
@@ -989,16 +1000,17 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
                     wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
                     val = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
                 else: 
-                    caudal_L_s_sim = (o_m3 / 31536000) * 1000
-                    carga_mg_s_futura = carga_mg_s * f_dem
-                    dbo_mg_l_sim = carga_mg_s_futura / caudal_L_s_sim if caudal_L_s_sim > 0 else 999.0
-                    val = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
+                    # Calidad Proyectada Escenario
+                    q_n_esc = sum(datos_nodo["afluentes_naturales"].values()) * f_cli_total
+                    q_m_esc = q_n_esc + (sum(trasvases_inputs.values()) * 0.4)
+                    caudal_L_s_esc = (q_m_esc if q_m_esc > 0 else 1.0) * 1000
+                    carga_f_esc = carga_mg_s_final * f_dem
+                    val = max(0.0, min(100.0, 100.0 - ((carga_f_esc / caudal_L_s_esc) / 15.0 * 100)))
                     
                 datos_esc.append({"Año": a, "Escenario Climático": nombre_esc, "Valor (%)": val})
                 
         if datos_esc:
             df_esc = pd.DataFrame(datos_esc)
-            
             color_map = {
                 "Onda Dinámica (Ciclo de 4.5 años)": "#9b59b6",  
                 "Condición Neutra (Línea Base)": "#34495e",        
@@ -1007,15 +1019,12 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
                 "🟢 La Niña Moderada Constante (+15%)": "#2ecc71",
                 "🔵 La Niña Fuerte Constante (+35%)": "#3498db"
             }
-            
             fig_esc = px.line(df_esc, x="Año", y="Valor (%)", color="Escenario Climático", color_discrete_map=color_map)
             fig_esc.update_traces(line=dict(width=3)) 
             fig_esc.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.05, layer="below", annotation_text="Colapso / Crítico (<40%)")
             fig_esc.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.05, layer="below", annotation_text="Vulnerable (40-70%)")
             fig_esc.update_layout(height=450, hovermode="x unified", yaxis_range=[0, 105], legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
             st.plotly_chart(fig_esc, use_container_width=True)
-        else:
-            st.info("👈 Seleccione al menos una curva climática para visualizar.")
             
 # =========================================================================
 # 6. METABOLISMO TERRITORIAL: DEMANDA, VERTIMIENTOS Y RESIDUOS SÓLIDOS
