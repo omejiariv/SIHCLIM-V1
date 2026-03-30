@@ -171,10 +171,11 @@ def main():
     # =========================================================================
     # --- C. JERARQUÍA DE NAVEGACIÓN (Centro de Comando Principal) ---
     # =========================================================================
-    st.title(f"🌦️ Análisis Hidroclimático: {nombre_zona}")
-
+    
+    # 🛡️ PARCHE CSS: Evita que el módulo 'Inicio' elimine el margen superior
     st.markdown("""
     <style>
+    .block-container { padding-top: 3rem !important; }
     /* Estilo premium para botones */
     div[data-testid="stButton"] button[kind="primary"] {
         background: linear-gradient(135deg, #2c3e50, #3498db); border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -185,6 +186,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
+    st.title(f"🌦️ Análisis Hidroclimático: {nombre_zona}")
     st.markdown("### 🎛️ Centro de Comando y Módulos de Análisis")
     
     # 1. Agrupamos los módulos en Categorías para no abrumar al usuario
@@ -381,10 +383,14 @@ def main():
                 
                 # CASO 1: Archivo en Memoria (BytesIO desde Supabase)
                 if isinstance(tif_path, (io.BytesIO, bytes)) or hasattr(tif_path, 'read'):
+                    
+                    # 🛡️ BLINDAJE BytesIO: Rebobinar el puntero al inicio (EOF Fix)
+                    if hasattr(tif_path, 'seek'):
+                        tif_path.seek(0)
+                        
                     with MemoryFile(tif_path) as memfile:
                         with memfile.open() as src:
                             return _core_process(src)
-
                 # CASO 2: Ruta de archivo normal (String)
                 else:
                     with rasterio.open(tif_path) as src:
