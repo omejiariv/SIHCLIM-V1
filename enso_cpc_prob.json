@@ -9913,9 +9913,250 @@
                             "season": "JJA"
                         }
                     ]
+                },
+                {
+                    "month": 11,
+                    "probabilities": [
+                        {
+                            "elnino": 0,
+                            "lanina": 82,
+                            "neutral": 18,
+                            "season": "NDJ"
+                        },
+                        {
+                            "elnino": 0,
+                            "lanina": 54,
+                            "neutral": 46,
+                            "season": "DJF"
+                        },
+                        {
+                            "elnino": 1,
+                            "lanina": 31,
+                            "neutral": 68,
+                            "season": "JFM"
+                        },
+                        {
+                            "elnino": 6,
+                            "lanina": 15,
+                            "neutral": 79,
+                            "season": "FMA"
+                        },
+                        {
+                            "elnino": 13,
+                            "lanina": 9,
+                            "neutral": 78,
+                            "season": "MAM"
+                        },
+                        {
+                            "elnino": 25,
+                            "lanina": 7,
+                            "neutral": 68,
+                            "season": "AMJ"
+                        },
+                        {
+                            "elnino": 35,
+                            "lanina": 7,
+                            "neutral": 58,
+                            "season": "MJJ"
+                        },
+                        {
+                            "elnino": 44,
+                            "lanina": 7,
+                            "neutral": 49,
+                            "season": "JJA"
+                        },
+                        {
+                            "elnino": 47,
+                            "lanina": 9,
+                            "neutral": 44,
+                            "season": "JAS"
+                        }
+                    ]
                 }
             ],
             "year": 2025
+        },
+        {
+            "months": [
+                {
+                    "month": 0,
+                    "probabilities": [
+                        {
+                            "elnino": 0,
+                            "lanina": 52,
+                            "neutral": 48,
+                            "season": "DJF"
+                        },
+                        {
+                            "elnino": 0,
+                            "lanina": 25,
+                            "neutral": 75,
+                            "season": "JFM"
+                        },
+                        {
+                            "elnino": 2,
+                            "lanina": 11,
+                            "neutral": 87,
+                            "season": "FMA"
+                        },
+                        {
+                            "elnino": 11,
+                            "lanina": 6,
+                            "neutral": 83,
+                            "season": "MAM"
+                        },
+                        {
+                            "elnino": 25,
+                            "lanina": 5,
+                            "neutral": 70,
+                            "season": "AMJ"
+                        },
+                        {
+                            "elnino": 38,
+                            "lanina": 6,
+                            "neutral": 56,
+                            "season": "MJJ"
+                        },
+                        {
+                            "elnino": 50,
+                            "lanina": 6,
+                            "neutral": 44,
+                            "season": "JJA"
+                        },
+                        {
+                            "elnino": 57,
+                            "lanina": 6,
+                            "neutral": 37,
+                            "season": "JAS"
+                        },
+                        {
+                            "elnino": 61,
+                            "lanina": 7,
+                            "neutral": 32,
+                            "season": "ASO"
+                        }
+                    ]
+                },
+                {
+                    "month": 1,
+                    "probabilities": [
+                        {
+                            "elnino": 0,
+                            "lanina": 89,
+                            "neutral": 11,
+                            "season": "JFM"
+                        },
+                        {
+                            "elnino": 0,
+                            "lanina": 40,
+                            "neutral": 60,
+                            "season": "FMA"
+                        },
+                        {
+                            "elnino": 1,
+                            "lanina": 9,
+                            "neutral": 90,
+                            "season": "MAM"
+                        },
+                        {
+                            "elnino": 7,
+                            "lanina": 1,
+                            "neutral": 92,
+                            "season": "AMJ"
+                        },
+                        {
+                            "elnino": 25,
+                            "lanina": 1,
+                            "neutral": 74,
+                            "season": "MJJ"
+                        },
+                        {
+                            "elnino": 42,
+                            "lanina": 2,
+                            "neutral": 56,
+                            "season": "JJA"
+                        },
+                        {
+                            "elnino": 52,
+                            "lanina": 3,
+                            "neutral": 45,
+                            "season": "JAS"
+                        },
+                        {
+                            "elnino": 59,
+                            "lanina": 3,
+                            "neutral": 38,
+                            "season": "ASO"
+                        },
+                        {
+                            "elnino": 61,
+                            "lanina": 6,
+                            "neutral": 33,
+                            "season": "SON"
+                        }
+                    ]
+                },
+                {
+                    "month": 2,
+                    "probabilities": [
+                        {
+                            "elnino": 0,
+                            "lanina": 31,
+                            "neutral": 69,
+                            "season": "FMA"
+                        },
+                        {
+                            "elnino": 1,
+                            "lanina": 6,
+                            "neutral": 93,
+                            "season": "MAM"
+                        },
+                        {
+                            "elnino": 15,
+                            "lanina": 1,
+                            "neutral": 84,
+                            "season": "AMJ"
+                        },
+                        {
+                            "elnino": 45,
+                            "lanina": 0,
+                            "neutral": 55,
+                            "season": "MJJ"
+                        },
+                        {
+                            "elnino": 62,
+                            "lanina": 0,
+                            "neutral": 38,
+                            "season": "JJA"
+                        },
+                        {
+                            "elnino": 72,
+                            "lanina": 1,
+                            "neutral": 27,
+                            "season": "JAS"
+                        },
+                        {
+                            "elnino": 80,
+                            "lanina": 1,
+                            "neutral": 19,
+                            "season": "ASO"
+                        },
+                        {
+                            "elnino": 82,
+                            "lanina": 1,
+                            "neutral": 17,
+                            "season": "SON"
+                        },
+                        {
+                            "elnino": 83,
+                            "lanina": 1,
+                            "neutral": 16,
+                            "season": "OND"
+                        }
+                    ]
+                }
+            ],
+            "year": 2026
         }
     ]
 }
