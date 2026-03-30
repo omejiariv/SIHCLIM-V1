@@ -1634,10 +1634,34 @@ with tab_micro:
         stemflow_pct = 12.0 if "Agudo" in angulo_ramas else 5.0 if "Medio" in angulo_ramas else 1.0 if "Horizontal" in angulo_ramas else 0.1
         retencion_pct = min(25.0 * (sl_efectivo / 0.20), 45.0)
         throughfall_pct = 100.0 - retencion_pct - stemflow_pct
+
+        # --- BLOQUE ACTUALIZADO: RENDERIZADO DEL GRÁFICO DE TORTA CON LEYENDA TÉCNICA ---
         with col_graf:
             st.markdown(f"**Área Foliar:** {area_foliar_m2:,.1f} m² | **Capacidad:** :blue[{volumen_retenido_litros:,.1f} Litros]")
-            fig_p = go.Figure(go.Pie(labels=["Retenida", "Por el tronco", "Al Suelo"], values=[retencion_pct, stemflow_pct, throughfall_pct], hole=0.4, marker_colors=["#2ecc71", "#8e44ad", "#3498db"], textinfo="percent"))
-            fig_p.update_layout(title="Destino del Agua", showlegend=False, height=300, margin=dict(t=30, b=0, l=0, r=0))
+            
+            # Definición del gráfico con leyenda descriptiva y porcentajes
+            fig_p = go.Figure(go.Pie(
+                labels=["Agua Retenida (Dosel)", "Escurrimiento Tronco (Stemflow)", "Agua al Suelo (Throughfall)"], 
+                values=[retencion_pct, stemflow_pct, throughfall_pct], 
+                hole=0.4, 
+                marker_colors=["#2ecc71", "#8e44ad", "#3498db"], 
+                textinfo="percent",
+                insidetextorientation='radial'
+            ))
+            
+            fig_p.update_layout(
+                title="Distribución del Destino del Agua", 
+                showlegend=True, 
+                legend=dict(
+                    orientation="h", 
+                    yanchor="bottom", 
+                    y=-0.3, 
+                    xanchor="center", 
+                    x=0.5
+                ),
+                height=350, 
+                margin=dict(t=50, b=80, l=10, r=10)
+            )
             st.plotly_chart(fig_p, use_container_width=True)
 
     # --- 3. BALÍSTICA ---
