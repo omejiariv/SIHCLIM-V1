@@ -1333,7 +1333,16 @@ with tab_ecologia:
                 st.metric("Área Total del Corredor", f"{area_total_ha:,.1f} ha")
                 
                 # 2. GAP ANALYSIS: COBERTURAS VS. RED DE DRENAJE
-                pct_bosque_existente = 35.0 
+                # Leemos el área real de bosque desde el Gemelo Digital (calculado en Tab 4)
+                ha_bosque_aleph = st.session_state.get('aleph_ha_bosque', 0.0)
+                area_cuenca_aleph = st.session_state.get('area_total_cuenca_val', 0.0)
+                
+                # Dinamismo total: si hay datos satelitales, los usa; si no, asume 35% de línea base
+                if area_cuenca_aleph > 0:
+                    pct_bosque_existente = (ha_bosque_aleph / area_cuenca_aleph) * 100
+                else:
+                    pct_bosque_existente = 35.0 
+                    
                 ha_bosque = area_total_ha * (pct_bosque_existente / 100.0)
                 ha_deficit = area_total_ha - ha_bosque
                 
@@ -1906,8 +1915,9 @@ with tab_micro:
             c_cloro = st.number_input("Cloro Líquido:", value=1200.0, step=50.0)
 
         # MOTOR FINANCIERO-SANITARIO
-        lodo_para_ptap = locals().get('lodo_hoy_m3', 0.0)
-        fosforo_para_ptap = locals().get('fosforo_hoy', 0.0)
+        # Leemos las variables directamente del Módulo 6 que acaba de ejecutarse
+        lodo_para_ptap = lodo_total_m3
+        fosforo_para_ptap = fosforo_hoy
         vol_dia_l = q_ptap * 86400 * 1000
         
         # 1. Escenario Base (Sin desastre)
@@ -2023,15 +2033,15 @@ with tab_micro:
 
     if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08)", type="primary", use_container_width=True):
         # 🧠 ENVIAMOS LA TRIFURCACIÓN TÉCNICA DE LODO
-        # Recuperamos los valores calculados en el Módulo 6
-        lodo_total = locals().get('lodo_total_m3', 0.0)
-        lodo_colas = locals().get('lodo_colas_m3', 0.0)
-        lodo_fondo = locals().get('lodo_fondo_m3', 0.0)
-        lodo_abrasivo = locals().get('lodo_turbinas_m3', 0.0)
+        # Asignación directa y segura desde las variables del Módulo 6 y 7
+        lodo_total = lodo_total_m3
+        lodo_colas = lodo_colas_m3
+        lodo_fondo = lodo_fondo_m3
+        lodo_abrasivo = lodo_turbinas_m3 
         
         # Datos químicos y financieros
-        fosforo_final = locals().get('fosforo_hoy', 0.0)
-        costo_final = locals().get('s_total', 0.0)
+        fosforo_final = fosforo_hoy
+        costo_final = s_total
         
         # 💾 Inyección en la Memoria Global (st.session_state)
         # Esto permite que la Página 08 dibuje el Sankey con las tres venas de lodo
