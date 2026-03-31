@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from modules.utils import encender_gemelo_digital, normalizar_texto
 import plotly.express as px
 import plotly.graph_objects as go
 from scipy.optimize import curve_fit
@@ -12,6 +13,9 @@ import json
 import unicodedata
 import re
 import warnings
+
+# Encendemos el sistema inmunológico
+encender_gemelo_digital()
 
 warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Modelo Demográfico Integral", page_icon="📈", layout="wide")
@@ -984,10 +988,13 @@ if 'año_sel' in locals() and 'escala_sel' in locals():
     st.session_state['aleph_escala'] = escala_sel
     st.session_state['aleph_anio'] = año_sel
     st.session_state['aleph_pob_total'] = float(pob_total_aleph)
-    
-    # Podrías agregar un pequeño indicador visual opcional (o dejarlo en silencio)
-    st.sidebar.success("🔗 Contexto demográfico sincronizado con módulos hídricos.")
 
+# 💉 INYECCIÓN AL TORRENTE SANGUÍNEO (Nuevas llaves para Pág 07 y 08)
+    st.session_state['pob_hum_calc_met'] = float(pob_total_aleph)
+    st.session_state[f'pob_asig_{lugar_activo}_met'] = float(pob_total_aleph)
+    
+    st.sidebar.success(f"🔗 Contexto demográfico de {lugar_activo} sincronizado.")
+    
 # ==============================================================================
 # TAB 2: MODELOS Y OPTIMIZACIÓN MATEMÁTICA (SOLVER)
 # ==============================================================================
