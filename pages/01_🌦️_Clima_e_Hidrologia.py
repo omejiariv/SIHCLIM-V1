@@ -645,6 +645,25 @@ def main():
                             ind_erosividad = 0.07 * (v_ppt ** 1.5)
 
                             # --- 5. RENDERIZADO (5 COLUMNAS) ---
+                            # 🎨 INYECCIÓN CSS: Convertimos st.metric en Tarjetas Premium
+                            st.markdown("""
+                            <style>
+                            div[data-testid="metric-container"] {
+                                background-color: #fdfdfd;
+                                border: 1px solid #e0e0e0;
+                                padding: 15px;
+                                border-radius: 8px;
+                                box-shadow: 2px 2px 8px rgba(0,0,0,0.04);
+                                transition: transform 0.2s ease;
+                            }
+                            div[data-testid="metric-container"]:hover {
+                                transform: translateY(-2px);
+                                box-shadow: 2px 4px 12px rgba(0,0,0,0.08);
+                                border-color: #3498db;
+                            }
+                            </style>
+                            """, unsafe_allow_html=True)
+
                             k1, k2, k3, k4, k5 = st.columns(5)
                             
                             # COL 1: MORFOMETRÍA
