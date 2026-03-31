@@ -211,6 +211,78 @@ if gdf_zona_seleccionada is not None:
             # Texto Analista
             texto_analisis = analista_hidrologico(slope_mean, hi_global)
 
+            # =========================================================================
+            # 🧠 MOTOR HIDROLÓGICO EN BACKGROUND (DISPONIBLE PARA TODAS LAS PESTAÑAS)
+            # =========================================================================
+            import tempfile
+            from rasterio import features
+            
+            grid = None; acc = None; fdir = None
+            crs_actual = meta.get('crs', 'EPSG:3116')
+            
+            with st.spinner("Despertando motor hidrológico (PySheds)..."):
+                # Solo calculamos si cambió la zona para no saturar la memoria
+                if st.session_state.get('ultima_zona_procesada') != nombre_zona or st.session_state.get('gdf_rios') is None:
+                    with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
+                        try:
+                            # Preparar DEM para PySheds
+                            meta_t = meta.copy()
+                            meta_t.update(driver='GTiff', dtype='float64', nodata=-9999.0)
+                            dem_clean = np.where(np.isnan(arr_elevacion), -9999.0, arr_elevacion)
+                            
+                            with rasterio.open(tmp.name, 'w', **meta_t) as dst: 
+                                dst.write(dem_clean.astype('float64'), 1)
+                            
+                            if PYSHEDS_AVAILABLE:
+                                grid = Grid.from_raster(tmp.name)
+                                dem_grid = grid.read_raster(tmp.name, nodata=-9999.0)
+                                
+                                flooded = grid.fill_depressions(dem_grid)
+                                resolved = grid.resolve_flats(flooded)
+                                
+                                dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
+                                fdir = grid.flowdir(resolved, dirmap=dirmap)
+                                acc = grid.accumulation(fdir, dirmap=dirmap)
+                                
+                                # Extracción base de ríos con un umbral estándar seguro (ej. 100 celdas)
+                                branches = grid.extract_river_network(fdir, acc > 100, dirmap=dirmap)
+                                
+                                if branches and len(branches["features"]) > 0:
+                                    gdf_streams_raw = gpd.GeoDataFrame.from_features(branches["features"], crs=crs_actual)
+                                    
+                                    if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
+                                        zona_crs = gdf_zona_seleccionada.to_crs(crs_actual)
+                                        gdf_streams = gpd.clip(gdf_streams_raw, zona_crs)
+                                    else:
+                                        gdf_streams = gdf_streams_raw
+                                        
+                                    if not gdf_streams.empty:
+                                        gdf_streams_m = gdf_streams.to_crs(epsg=3116)
+                                        gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
+                                        st.session_state['gdf_rios'] = gdf_streams
+                                    else:
+                                        st.session_state['gdf_rios'] = None
+                                else:
+                                    st.session_state['gdf_rios'] = None
+                                    
+                            # Guardamos en sesión para no recalcular si el usuario cambia de pestaña
+                            st.session_state['grid_obj'] = grid
+                            st.session_state['acc_obj'] = acc
+                            st.session_state['fdir_obj'] = fdir
+                            st.session_state['ultima_zona_procesada'] = nombre_zona
+                            
+                        except Exception as e:
+                            pass
+                        finally:
+                            try: os.remove(tmp.name)
+                            except: pass
+
+            # Rescatamos los objetos de la memoria para usarlos en las pestañas
+            grid = st.session_state.get('grid_obj')
+            acc = st.session_state.get('acc_obj')
+            fdir = st.session_state.get('fdir_obj')
+            # =========================================================================
+
             # KPIs
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Mínima", f"{min_el:.0f} m")
@@ -405,6 +477,11 @@ if gdf_zona_seleccionada is not None:
             # --- TAB 4: HIDROLOGÍA (VERSIÓN FINAL INTEGRADA Y CORREGIDA) ---
             with tab4:
                 import sys
+                import math
+                import numpy as np
+                import geopandas as gpd
+                from shapely.geometry import MultiLineString
+                
                 sys.setrecursionlimit(20000) # Estabilidad
                 
                 st.subheader(f"🌊 Hidrología: Red de Drenaje y Cuencas - {nombre_zona}")
@@ -412,45 +489,25 @@ if gdf_zona_seleccionada is not None:
                 c_conf, c_map = st.columns([1, 3])
                 with c_conf:
                     st.markdown("#### ⚙️ Configuración")
-                    # Raster de primero en la lista para probar fácil
                     opciones = ["Vectores (Líneas)", "Raster (Acumulación)", "Catchment (Mascara)", "Divisoria (Línea)"]
                     modo_viz = st.radio("Visualización:", opciones)
                     umbral = st.slider("Umbral Acumulación", 5, 5000, 100, 5)
 
                 with c_map:
-                    # 1. PROCESAMIENTO (CÁLCULO PURO)
-                    import tempfile
-                    from shapely.geometry import shape, Point
-                    from rasterio import features
-                    from rasterio.transform import rowcol
+                    # 1. PROCESAMIENTO (RESCATE DE MEMORIA BACKGROUND)
+                    # Ya no necesitamos tempfile ni recalcular el DEM, tomamos el motor del background
+                    grid = st.session_state.get('grid_obj')
+                    acc = st.session_state.get('acc_obj')
+                    fdir = st.session_state.get('fdir_obj')
+                    crs_actual = meta.get('crs', 'EPSG:3116') if 'meta' in locals() else 'EPSG:3116'
                     
-                    grid = None; acc = None; fdir = None
-                    crs_actual = meta.get('crs', 'EPSG:3116')
-
-                    with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
-                        try:
-                            # 1. Blindaje de bordes: Convertimos NaN a -9999 para que PySheds reconozca las paredes
-                            meta_t = meta.copy()
-                            meta_t.update(driver='GTiff', dtype='float64', nodata=-9999.0)
-                            dem_clean = np.where(np.isnan(arr_elevacion), -9999.0, arr_elevacion)
-                            
-                            with rasterio.open(tmp.name, 'w', **meta_t) as dst: 
-                                dst.write(dem_clean.astype('float64'), 1)
-                            
-                            grid = Grid.from_raster(tmp.name)
-                            dem_grid = grid.read_raster(tmp.name, nodata=-9999.0)
-                            
-                            # --- 🌟 LA CURA PARA LOS RÍOS ROTOS ---
-                            # Usamos fill_depressions (más poderoso) en lugar de fill_pits
-                            flooded = grid.fill_depressions(dem_grid)
-                            resolved = grid.resolve_flats(flooded)
-                            
+                    if grid is not None and acc is not None and fdir is not None:
+                        with st.spinner("Aplicando Leyes de Horton y extrayendo red..."):
                             dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
-                            fdir = grid.flowdir(resolved, dirmap=dirmap)
-                            acc = grid.accumulation(fdir, dirmap=dirmap)
                             
-                            # Vectorización y Strahler
+                            # Vectorización dinámica (Es rapidísima porque fdir y acc ya están en RAM)
                             branches = grid.extract_river_network(fdir, acc > umbral, dirmap=dirmap)
+                            
                             if branches and len(branches["features"]) > 0:
                                 gdf_streams_raw = gpd.GeoDataFrame.from_features(branches["features"], crs=crs_actual)
                                 
@@ -470,8 +527,6 @@ if gdf_zona_seleccionada is not None:
                                     try:
                                         inv_affine = ~grid.affine
                                         orden_list = []
-                                        import math
-                                        
                                         Ra = 4.5 # Relación de Área de Horton estándar
                                         
                                         for geom in gdf_streams.geometry:
@@ -484,14 +539,14 @@ if gdf_zona_seleccionada is not None:
                                                     try:
                                                         c_f, r_f = inv_affine * p
                                                         c, r = int(round(c_f)), int(round(r_f))
-                                                        # Leemos la acumulación en el río
+                                                        # Leemos la acumulación raster subyacente al río vectorial
                                                         rmin, rmax = max(0, r-1), min(acc.shape[0], r+2)
                                                         cmin, cmax = max(0, c-1), min(acc.shape[1], c+2)
                                                         window = acc[rmin:rmax, cmin:cmax]
                                                         if window.size > 0:
                                                             acc_vals.append(np.max(window))
                                                     except: pass
-                                                    
+                                            
                                             if acc_vals:
                                                 acc_max = max(acc_vals)
                                                 if acc_max >= umbral:
@@ -501,20 +556,26 @@ if gdf_zona_seleccionada is not None:
                                                     orden = 1
                                             else:
                                                 orden = 1
-                                                
-                                            orden_list.append(max(1, orden))
                                             
+                                            orden_list.append(max(1, orden))
+                                        
                                         gdf_streams['Orden_Strahler'] = orden_list
                                         
                                     except Exception as e:
                                         gdf_streams['Orden_Strahler'] = 1 
-                                        
+                                    
+                                    # Guardamos en sesión el resultado dinámico
                                     st.session_state['gdf_rios'] = gdf_streams
                                     df_strahler = gdf_streams.groupby('Orden_Strahler').agg(
                                         Num_Segmentos=('geometry', 'count'),
                                         Longitud_Km=('longitud_km', 'sum')
                                     ).reset_index()
                                     st.session_state['geomorfo_strahler_df'] = df_strahler
+                                    
+                                    st.success(f"✅ Red generada: {len(gdf_streams)} segmentos.")
+                                    
+                                    # (Nota: Aquí debajo va tu código original para renderizar el mapa 
+                                    #  con Folium/Plotly basándose en el 'modo_viz')
                                 else:
                                     st.session_state['gdf_rios'] = None
                                     st.session_state['geomorfo_strahler_df'] = None
@@ -868,11 +929,19 @@ if gdf_zona_seleccionada is not None:
                         # Cálculo Final Racional
                         q_peak = 0.278 * c_runoff * i_rain_calc * area_km2
                         
-                        # 🌐 INYECCIÓN AL ALEPH: Reemplazamos el caudal máximo global con este, que es hiper-preciso
-                        st.session_state['aleph_q_max_m3s'] = float(q_peak)
+                        # 🌐 INYECCIÓN AL ALEPH (BLINDADA)
+                        # Guardamos el valor empírico localmente para que otros módulos lo comparen si lo desean
+                        st.session_state['geomorfo_q_pico_racional'] = float(q_peak)
                         
-                        st.metric("Caudal Pico Definitivo (Q)", f"{q_peak:,.2f} m³/s", "Inyectado a la Turbina Central (Amenazas)")
-                        st.caption("Fórmula: $Q = 0.278 \cdot C \cdot I \cdot A$")
+                        # 🛡️ Solo sobreescribimos el Q_max maestro si la Pág 01 NO lo ha calculado aún
+                        origen_q = "Modelo Racional (Geomorfología)"
+                        if 'aleph_q_max_m3s' not in st.session_state or st.session_state['aleph_q_max_m3s'] == 0.0:
+                            st.session_state['aleph_q_max_m3s'] = float(q_peak)
+                        else:
+                            origen_q = "Aleph Distribuido (Pág 01 - Preservado)"
+                        
+                        st.metric("Caudal Pico (Q)", f"{q_peak:,.2f} m³/s", f"Método: {origen_q}")
+                        st.caption("Fórmula Racional: $Q = 0.278 \cdot C \cdot I \cdot A$")
     
                 except Exception as e:
                     st.error(f"Error en cálculos: {e}")
