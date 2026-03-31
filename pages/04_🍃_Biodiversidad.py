@@ -1625,7 +1625,7 @@ with tab_micro:
 
     # --- 1. GENERADOR FRACTAL OPTIMIZADO ---
     with st.expander("🌿 El Código de la Naturaleza (Generador Fractal de Dosel)", expanded=False):
-        st.markdown("La capacidad adaptativa de un árbol para retener agua se basa en la optimización fractal de su área superficial.")
+        st.markdown("La capacidad adaptativa de un árbol para retener agua y capturar luz se basa en la optimización fractal de su área superficial.")
         col_frac1, col_frac2 = st.columns([1, 2.5])
         
         with col_frac1:
@@ -1691,17 +1691,19 @@ with tab_micro:
 
     # --- 2. ANATOMÍA Y MICROINGENIERÍA ---
     with st.expander("🪵 1. & 2. Arquitectura del Árbol y Microingeniería Foliar", expanded=False):
+        import math
         col_anat, col_hoja, col_graf = st.columns([1.2, 1.2, 2])
+        
         with col_anat:
             st.markdown("#### 🪵 1. Arquitectura del Árbol")
             dbh_cm = st.slider("Diámetro del Tronco (DAP en cm):", 5.0, 150.0, 30.0, 1.0)
+            area_dosel_m2 = st.slider("Área del Dosel (Proyección al Suelo en m²):", 1.0, 150.0, 25.0, 1.0)
+            iteraciones_ramas = st.slider("Nivel de Ramificación (Complejidad Fractal):", 2, 15, 7, help="A mayor nivel, mayor superficie leñosa y foliar desplegada.")
             angulo_ramas = st.select_slider("Ángulo de Ramificación:", options=["Agudo (30° - Forma V)", "Medio (60° - Copa Redonda)", "Horizontal (90°)", "Llorón (120° - Hacia abajo)"], value="Medio (60° - Copa Redonda)")
+            
         with col_hoja:
             st.markdown("#### 🍃 2. Microingeniería Foliar")
-            
-            # --- NUEVA VARIABLE: Tamaño ---
             tamano_hoja = st.select_slider("Área Foliar (Tamaño):", options=["Micrófila (< 5 cm²)", "Mesófila (5 - 50 cm²)", "Macrófila (> 50 cm²)"], value="Mesófila (5 - 50 cm²)")
-            
             textura = st.radio("Textura de la Epidermis:", ["Lisa / Cerosa (Repele agua)", "Normal", "Pubescente (Pelos microscópicos)"], index=1)
             forma = st.radio("Morfología de la Hoja:", ["Plana", "Cóncava (Forma de copa)", "Acuminada (Punta de goteo larga)"], index=0)
             
@@ -1715,32 +1717,50 @@ with tab_micro:
                 with c_h2: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Normal.png" target="_blank"><img src="{url_base}Epidermis%20Normal.png"></a><div class="tooltiptext"><div class="tit-botanico">II. Epidermis Normal</div>Sin capa de cera gruesa. Una ligera llovizna (A) forma gotas irregulares que tienden a extenderse.</div></div>""", unsafe_allow_html=True)
                 with c_h3: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Epidermis%20Pubescente.png" target="_blank"><img src="{url_base}Epidermis%20Pubescente.png"></a><div class="tooltiptext"><div class="tit-botanico">III. Epidermis Pubescente</div>Epidermis aterciopelada detallando tricomas glandulares, donde la gota (B) es retenida por aire atrapado.</div></div>""", unsafe_allow_html=True)
 
-                # 🪄 RESTAURACIÓN DE LA SECCIÓN B
                 st.markdown("#### B. Morfología de la Hoja")
                 c_h4, c_h5, c_h6 = st.columns(3)
                 with c_h4: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Plana.png" target="_blank"><img src="{url_base}Morfologia%20Plana.png"></a><div class="tooltiptext"><div class="tit-botanico">IV. Morfología Plana</div>El agua (A) se extiende de manera uniforme, eficiente para maximizar la luz solar en regiones menos húmedas.</div></div>""", unsafe_allow_html=True)
                 with c_h5: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Concava.png" target="_blank"><img src="{url_base}Morfologia%20Concava.png"></a><div class="tooltiptext"><div class="tit-botanico">V. Morfología Cóncava</div>El agua (A) es recolectada hacia el centro. Ideal para canalizar agua hacia el tallo (Efecto Embudo).</div></div>""", unsafe_allow_html=True)
                 with c_h6: st.markdown(f"""<div class="botanical-tooltip"><a href="{url_base}Morfologia%20Acuminada.png" target="_blank"><img src="{url_base}Morfologia%20Acuminada.png"></a><div class="tooltiptext"><div class="tit-botanico">VI. Morfología Acuminada</div>Extremo apical detallado (Acumen). Permite un rápido drenaje y reduce el tamaño de la gota de goteo.</div></div>""", unsafe_allow_html=True)
         
-        area_foliar_m2 = 0.15 * (dbh_cm ** 2.1)
-        sl_base = 0.20
+        # --- CÁLCULOS BIOMÉTRICOS Y FRACTALES ---
+        area_foliar_base_m2 = 0.15 * (dbh_cm ** 2.1)
+        # La complejidad fractal multiplica el área foliar desplegada
+        area_foliar_m2 = area_foliar_base_m2 * (1 + (iteraciones_ramas * 0.08))
         
-        # --- MODIFICADORES FÍSICOS (Con Tamaño Incluido) ---
+        # Área superficial de Tronco y Ramas (Aproximación de cilindro base + explosión fractal)
+        area_tronco_ramas_m2 = (math.pi * (dbh_cm / 100.0) * 6.0) * (1.18 ** iteraciones_ramas)
+        
+        # Factor de Área Superficial (LAI a nivel de individuo)
+        factor_area_superficial = area_foliar_m2 / area_dosel_m2 if area_dosel_m2 > 0 else 0
+        
+        # Modificadores de Retención
+        sl_base = 0.20
         mod_tex = 0.7 if "Lisa" in textura else 1.6 if "Pubescente" in textura else 1.0
         mod_for = 1.4 if "Cóncava" in forma else 0.8 if "Acuminada" in forma else 1.0
         mod_tam = 0.85 if "Micrófila" in tamano_hoja else 1.25 if "Macrófila" in tamano_hoja else 1.0
         
         sl_efectivo = sl_base * mod_tex * mod_for * mod_tam
         volumen_retenido_litros = area_foliar_m2 * sl_efectivo
+        
         stemflow_pct = 12.0 if "Agudo" in angulo_ramas else 5.0 if "Medio" in angulo_ramas else 1.0 if "Horizontal" in angulo_ramas else 0.1
         retencion_pct = min(25.0 * (sl_efectivo / 0.20), 45.0)
         throughfall_pct = 100.0 - retencion_pct - stemflow_pct
 
-        # --- BLOQUE ACTUALIZADO: RENDERIZADO DEL GRÁFICO DE TORTA CON LEYENDA TÉCNICA ---
+        # --- RENDERIZADO DEL PANEL DERECHO ---
         with col_graf:
-            st.markdown(f"**Área Foliar:** {area_foliar_m2:,.1f} m² | **Capacidad:** :blue[{volumen_retenido_litros:,.1f} Litros]")
+            st.markdown("#### 📐 Biometría Estructural")
+            c_bio1, c_bio2 = st.columns(2)
+            c_bio1.metric("Área Foliar Total", f"{area_foliar_m2:,.1f} m²", "Súper-superficie de captura")
+            c_bio2.metric("Área Leñosa (Tronco/Ramas)", f"{area_tronco_ramas_m2:,.1f} m²", "Estructura de soporte")
             
-            # Definición del gráfico con leyenda descriptiva y porcentajes
+            c_bio3, c_bio4 = st.columns(2)
+            c_bio3.metric("Factor Área Superficial", f"{factor_area_superficial:.1f}", "m² hoja / m² suelo (LAI local)")
+            c_bio4.metric("Capacidad de Retención", f"{volumen_retenido_litros:,.1f} L", "Agua secuestrada", delta_color="normal")
+            
+            st.markdown("---")
+            
+            # Gráfico de torta
             fig_p = go.Figure(go.Pie(
                 labels=["Agua Retenida (Dosel)", "Escurrimiento Tronco (Stemflow)", "Agua al Suelo (Throughfall)"], 
                 values=[retencion_pct, stemflow_pct, throughfall_pct], 
@@ -1751,20 +1771,14 @@ with tab_micro:
             ))
             
             fig_p.update_layout(
-                title="Distribución del Destino del Agua", 
+                title="Distribución del Destino de la Lluvia", 
                 showlegend=True, 
-                legend=dict(
-                    orientation="h", 
-                    yanchor="bottom", 
-                    y=-0.3, 
-                    xanchor="center", 
-                    x=0.5
-                ),
-                height=350, 
-                margin=dict(t=50, b=80, l=10, r=10)
+                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+                height=320, 
+                margin=dict(t=30, b=80, l=10, r=10)
             )
             st.plotly_chart(fig_p, use_container_width=True)
-
+            
     # --- 3. BALÍSTICA ---
     with st.expander("🌧️ 3. Balística de la Gota y Control de Erosión", expanded=False):
         col_gota1, col_gota2 = st.columns(2)
