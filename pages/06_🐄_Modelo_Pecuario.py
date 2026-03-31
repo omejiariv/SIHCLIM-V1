@@ -11,6 +11,13 @@ import plotly.graph_objects as go
 # =====================================================================
 st.set_page_config(page_title="Modelo Demográfico Pecuario", page_icon="🐄", layout="wide")
 
+# 💉 ENCENDIDO DEL SISTEMA INMUNOLÓGICO Y VARIABLES GLOBALES
+try:
+    from modules.utils import encender_gemelo_digital
+    encender_gemelo_digital()
+except Exception:
+    pass
+
 @st.cache_data(ttl=3600)
 def cargar_historico_pecuario():
     # URL directa a tu archivo maestro en Supabase
@@ -137,11 +144,11 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
         st.success(f"✅ ¡Entrenamiento exitoso! {len(df_matriz_pec)} modelos matemáticos creados. Desplázate hacia abajo para validarlos y exportarlos.")
         
 # =====================================================================
-# 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
+# 🔬 VALIDADOR VISUAL COMPARATIVO Y SINCRONIZADOR
 # =====================================================================
 if 'df_matriz_pecuaria' in st.session_state:
     st.divider()
-    st.subheader("🔬 Validador Visual Pecuario (Especie vs Especie)")
+    st.subheader("🔬 Validador Visual Pecuario y Sincronización Hídrica")
     
     df_mat = st.session_state['df_matriz_pecuaria']
     
@@ -157,8 +164,34 @@ if 'df_matriz_pecuaria' in st.session_state:
     with c_nav3:
         anio_futuro = st.slider("3. Proyectar hasta el año:", min_value=2025, max_value=2050, value=2035, step=1)
         
+    # ==============================================================================
+    # 🧠 TRANSMISIÓN AL CEREBRO GLOBAL (EL ALEPH)
+    # ==============================================================================
+    def calcular_proyeccion_especie(df, nivel, terr, esp, anio_obj):
+        df_f = df[(df['Nivel'] == nivel) & (df['Territorio'] == terr) & (df['Especie'] == esp)]
+        if df_f.empty: return 0.0
+        f = df_f.iloc[0]
+        x_norm = anio_obj - f['Año_Base']
+        mod = f['Modelo_Recomendado']
+        if mod == 'Logístico': return f['Log_K'] / (1 + f['Log_a'] * np.exp(-f['Log_r'] * x_norm))
+        elif mod == 'Exponencial': return f['Exp_a'] * np.exp(f['Exp_b'] * x_norm)
+        else: return f['Poly_A']*(x_norm**3) + f['Poly_B']*(x_norm**2) + f['Poly_C']*x_norm + f['Poly_D']
+
+    # Extraer valores exactos para inyección
+    res_bov = calcular_proyeccion_especie(df_mat, nivel_val, terr_val, 'Bovinos', anio_futuro)
+    res_por = calcular_proyeccion_especie(df_mat, nivel_val, terr_val, 'Porcinos', anio_futuro)
+    res_ave = calcular_proyeccion_especie(df_mat, nivel_val, terr_val, 'Aves', anio_futuro)
+
+    # 💾 INYECCIÓN AL TORRENTE SANGUÍNEO (Evitando valores negativos matemáticos)
+    st.session_state['ica_bovinos_calc_met'] = float(max(0, res_bov))
+    st.session_state['ica_porcinos_calc_met'] = float(max(0, res_por))
+    st.session_state['ica_aves_calc_met'] = float(max(0, res_ave))
+    st.session_state['aleph_lugar_pecuario'] = terr_val
+    
+    st.success(f"🔗 Carga pecuaria de **{terr_val}** para el año **{anio_futuro}** sincronizada con Módulo de Calidad e Hídrico.")
     st.markdown("---")
     
+    # --- RENDERIZADO VISUAL ---
     def renderizar_panel_pecuario(especie_sel, key_suffix):
         df_filtrado = df_mat[(df_mat['Nivel'] == nivel_val) & (df_mat['Territorio'] == terr_val) & (df_mat['Especie'] == especie_sel)]
         if df_filtrado.empty:
@@ -169,14 +202,10 @@ if 'df_matriz_pecuaria' in st.session_state:
         mejor_modelo = fila_terr['Modelo_Recomendado']
         
         # Reconstruir Histórico
-        if nivel_val == 'Departamental':
-            df_hist = df_pecuario.groupby('Anio')[especie_sel].sum().reset_index()
-        elif nivel_val == 'Municipal':
-            df_hist = df_pecuario[df_pecuario['Municipio_Norm'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
-        elif nivel_val == 'Subcuenca':
-            df_hist = df_pecuario[df_pecuario['Subcuenca'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
-        else: # Sistema Hidrico
-            df_hist = df_pecuario[df_pecuario['Sistema'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
+        if nivel_val == 'Departamental': df_hist = df_pecuario.groupby('Anio')[especie_sel].sum().reset_index()
+        elif nivel_val == 'Municipal': df_hist = df_pecuario[df_pecuario['Municipio_Norm'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
+        elif nivel_val == 'Subcuenca': df_hist = df_pecuario[df_pecuario['Subcuenca'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
+        else: df_hist = df_pecuario[df_pecuario['Sistema'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
             
         df_hist = df_hist.sort_values(by='Anio')
         x_hist = df_hist['Anio'].values
@@ -193,7 +222,6 @@ if 'df_matriz_pecuaria' in st.session_state:
         
         fig = go.Figure()
         
-        # Diccionario de colores e íconos para la gráfica
         color_data = {'Bovinos': 'brown', 'Porcinos': 'deeppink', 'Aves': 'goldenrod'}
         icono = {'Bovinos': '🐄', 'Porcinos': '🐖', 'Aves': '🐔'}
         
@@ -220,7 +248,6 @@ if 'df_matriz_pecuaria' in st.session_state:
 
         st.plotly_chart(fig, use_container_width=True, key=f"plot_{key_suffix}")
         
-        # Le agregamos el lado (Izquierdo/Derecho) al título para que nunca se repita
         lado = "Panel Izquierdo" if key_suffix == "g1" else "Panel Derecho"
         with st.expander(f"📐 Parámetros del Modelo de {especie_sel} ({lado})", expanded=False):
             df_coefs = pd.DataFrame([
@@ -247,7 +274,6 @@ if 'df_matriz_pecuaria' in st.session_state:
     st.subheader("💾 Exportar Cerebro Pecuario (Para Producción)")
     st.info("💡 Tu matriz ya está en memoria. Puedes inyectarla directamente a la base de datos o descargarla como archivo de respaldo.")
     
-    # Rescatamos la matriz de la memoria
     df_matriz_pec = st.session_state['df_matriz_pecuaria']
     
     col_btn1, col_btn2 = st.columns(2)
@@ -264,7 +290,6 @@ if 'df_matriz_pecuaria' in st.session_state:
                     st.error(f"Error SQL: {e}")
                     
     with col_btn2:
-        # El botón de descarga siempre estará visible mientras la matriz exista en memoria
         csv_matriz = df_matriz_pec.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Descargar Matriz (CSV de Respaldo)", 
