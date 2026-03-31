@@ -481,6 +481,10 @@ if gdf_zona_seleccionada is not None:
                 import numpy as np
                 import geopandas as gpd
                 from shapely.geometry import MultiLineString
+                import plotly.express as px
+                import plotly.graph_objects as go
+                from rasterio import features
+                from shapely.geometry import shape
                 
                 sys.setrecursionlimit(20000) # Estabilidad
                 
@@ -495,7 +499,6 @@ if gdf_zona_seleccionada is not None:
 
                 with c_map:
                     # 1. PROCESAMIENTO (RESCATE DE MEMORIA BACKGROUND)
-                    # Ya no necesitamos tempfile ni recalcular el DEM, tomamos el motor del background
                     grid = st.session_state.get('grid_obj')
                     acc = st.session_state.get('acc_obj')
                     fdir = st.session_state.get('fdir_obj')
@@ -505,7 +508,7 @@ if gdf_zona_seleccionada is not None:
                         with st.spinner("Aplicando Leyes de Horton y extrayendo red..."):
                             dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                             
-                            # Vectorización dinámica (Es rapidísima porque fdir y acc ya están en RAM)
+                            # Vectorización dinámica
                             branches = grid.extract_river_network(fdir, acc > umbral, dirmap=dirmap)
                             
                             if branches and len(branches["features"]) > 0:
@@ -523,7 +526,6 @@ if gdf_zona_seleccionada is not None:
                                     gdf_streams['longitud_km'] = gdf_streams_m.length / 1000.0
                                     
                                     # --- 🌟 MAGIA MATEMÁTICA: LEY DE ÁREAS DE HORTON ---
-                                    # En lugar de topología frágil, usamos física de fluidos logarítmica.
                                     try:
                                         inv_affine = ~grid.affine
                                         orden_list = []
@@ -539,7 +541,6 @@ if gdf_zona_seleccionada is not None:
                                                     try:
                                                         c_f, r_f = inv_affine * p
                                                         c, r = int(round(c_f)), int(round(r_f))
-                                                        # Leemos la acumulación raster subyacente al río vectorial
                                                         rmin, rmax = max(0, r-1), min(acc.shape[0], r+2)
                                                         cmin, cmax = max(0, c-1), min(acc.shape[1], c+2)
                                                         window = acc[rmin:rmax, cmin:cmax]
@@ -550,7 +551,6 @@ if gdf_zona_seleccionada is not None:
                                             if acc_vals:
                                                 acc_max = max(acc_vals)
                                                 if acc_max >= umbral:
-                                                    # Fórmula de Horton
                                                     orden = int(math.floor(math.log(acc_max / umbral, Ra))) + 1
                                                 else:
                                                     orden = 1
@@ -574,26 +574,21 @@ if gdf_zona_seleccionada is not None:
                                     
                                     st.success(f"✅ Red generada: {len(gdf_streams)} segmentos.")
                                     
-                                    # (Nota: Aquí debajo va tu código original para renderizar el mapa 
-                                    #  con Folium/Plotly basándose en el 'modo_viz')
                                 else:
                                     st.session_state['gdf_rios'] = None
                                     st.session_state['geomorfo_strahler_df'] = None
                             else:
                                 st.session_state['gdf_rios'] = None
                                 st.session_state['geomorfo_strahler_df'] = None
-                        except Exception as e: 
-                            st.warning(f"Error procesando hidrología: {e}")
-                        finally: 
-                            try: os.remove(tmp.name)
-                            except: pass
                                 
+                    # =========================================================
                     # 2. LÓGICA DE VISUALIZACIÓN
+                    # =========================================================
                     if grid is not None and acc is not None:
                         
                         # --- PUNTOS CLAVE ---
-                        lat_c, lon_c = 0,0
-                        r_smart, c_smart = 0,0
+                        lat_c, lon_c = 0, 0
+                        r_smart, c_smart = 0, 0
                         
                         if gdf_zona_seleccionada is not None:
                             cent = gdf_zona_seleccionada.to_crs("EPSG:4326").geometry.centroid.iloc[0]
@@ -605,8 +600,8 @@ if gdf_zona_seleccionada is not None:
                         try:
                             if gdf_zona_seleccionada is not None:
                                 gdf_p = gdf_zona_seleccionada.to_crs(meta['crs'])
-                                shapes = ((g, 1) for g in gdf_p.geometry)
-                                mask_poly = features.rasterize(shapes, out_shape=acc.shape, transform=transform, fill=0, dtype='uint8')
+                                shapes_list = ((g, 1) for g in gdf_p.geometry)
+                                mask_poly = features.rasterize(shapes_list, out_shape=acc.shape, transform=transform, fill=0, dtype='uint8')
                                 acc_masked = np.where(mask_poly==1, acc, -1)
                                 idx_s = np.argmax(acc_masked)
                                 r_smart, c_smart = np.unravel_index(idx_s, acc_masked.shape)
@@ -628,21 +623,17 @@ if gdf_zona_seleccionada is not None:
                                     st.rerun()
 
                         # --- MAPAS ---
-                        
                         # CASO A: RASTER (RECORTE EXACTO AL POLÍGONO)
                         if modo_viz == "Raster (Acumulación)":
-                            # Máscara para ocultar el agua fuera de la cuenca
                             acc_viz = acc.copy()
                             try:
                                 if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
                                     gdf_p = gdf_zona_seleccionada.to_crs(meta['crs'])
-                                    shapes = ((g, 1) for g in gdf_p.geometry)
-                                    mask_poly = features.rasterize(shapes, out_shape=acc.shape, transform=transform, fill=0, dtype='uint8')
-                                    # Ponemos np.nan (nulo) a lo que está fuera para que sea transparente
+                                    shapes_list = ((g, 1) for g in gdf_p.geometry)
+                                    mask_poly = features.rasterize(shapes_list, out_shape=acc.shape, transform=transform, fill=0, dtype='uint8')
                                     acc_viz = np.where(mask_poly == 1, acc_viz, np.nan)
                             except Exception as e: pass
 
-                            # Cálculo dinámico de resolución
                             h, w = acc_viz.shape
                             factor = 1
                             if h > 1000 or w > 1000: factor = int(max(h, w) / 800)
@@ -659,28 +650,23 @@ if gdf_zona_seleccionada is not None:
                         else:
                             fig = go.Figure()
                             
-                            # 1. Oficial (Verde)
                             if gdf_zona_seleccionada is not None:
                                 poly = gdf_zona_seleccionada.to_crs("EPSG:4326").geometry.iloc[0]
                                 if poly.geom_type=='Polygon': xx,yy=poly.exterior.coords.xy
                                 else: xx,yy=max(poly.geoms, key=lambda a:a.area).exterior.coords.xy
                                 fig.add_trace(go.Scattermapbox(mode="lines", lon=list(xx), lat=list(yy), line={'width':2, 'color':'#00FF00'}, name="Oficial"))
 
-                            # 2. VECTORES (LÍNEAS CALCULADAS EN VIVO)
                             if modo_viz == "Vectores (Líneas)":
                                 r_viz = st.session_state.get('gdf_rios')
                                 if r_viz is not None and not r_viz.empty:
                                     r_viz_4326 = r_viz.to_crs("EPSG:4326")
-                                    
-                                    # Paleta de colores hidro: de claro a oscuro según jerarquía
                                     colores_orden = {1: '#85C1E9', 2: '#3498DB', 3: '#2874A6', 4: '#1A5276', 5: '#0E2F44'}
                                     
-                                    # Dibujamos iterando orden por orden
                                     for orden in sorted(r_viz_4326['Orden_Strahler'].unique()):
                                         l, lt, tx = [], [], []
                                         tramos = r_viz_4326[r_viz_4326['Orden_Strahler'] == orden]
                                         color = colores_orden.get(orden, '#0E2F44')
-                                        grosor = 1 + (orden * 0.8) # Más grueso a medida que sube el orden
+                                        grosor = 1 + (orden * 0.8) 
                                         
                                         for _, row in tramos.iterrows():
                                             g = row.geometry
@@ -703,14 +689,17 @@ if gdf_zona_seleccionada is not None:
                                 else:
                                     st.warning("No hay ríos visibles. Disminuya el umbral de acumulación.")
                                     
-                            # 3. CATCHMENT / DIVISORIA
                             elif modo_viz in ["Catchment (Mascara)", "Divisoria (Línea)"]:
-                                if 'x_pour_calib' not in st.session_state: st.session_state['x_pour_calib']=int(c_smart); st.session_state['y_pour_calib']=int(r_smart)
+                                if 'x_pour_calib' not in st.session_state: 
+                                    st.session_state['x_pour_calib']=int(c_smart)
+                                    st.session_state['y_pour_calib']=int(r_smart)
+                                    
                                 st.markdown("##### 🔧 Ajuste Manual")
-                                c1,c2 = st.columns(2)
+                                c1, c2 = st.columns(2)
                                 with c1: xp=st.number_input("X:", value=st.session_state['x_pour_calib'])
                                 with c2: yp=st.number_input("Y:", value=st.session_state['y_pour_calib'])
-                                st.session_state['x_pour_calib']=xp; st.session_state['y_pour_calib']=yp
+                                st.session_state['x_pour_calib']=xp
+                                st.session_state['y_pour_calib']=yp
                                 
                                 try:
                                     catch = grid.catchment(x=xp, y=yp, fdir=fdir, dirmap=dirmap, xytype='index')
@@ -728,10 +717,7 @@ if gdf_zona_seleccionada is not None:
                                 except: pass
 
                             fig.update_layout(mapbox_style="carto-positron", mapbox_zoom=11, mapbox_center={"lat": lat_c, "lon": lon_c}, height=600, margin=dict(l=0,r=0,t=0,b=0))
-                            
-                            # 🌟 Guardamos el mapa en la memoria para poder descargarlo luego
                             st.session_state['fig_mapa_hidro'] = fig 
-                            
                             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
 
                     else: st.warning("Procesando...")
