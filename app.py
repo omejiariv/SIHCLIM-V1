@@ -13,6 +13,15 @@ st.set_page_config(
 )
 
 # ==============================================================================
+# 💉 INYECTAR TORRENTE SANGUÍNEO AL INICIO (Sistema Inmunológico)
+# ==============================================================================
+try:
+    from modules.utils import inicializar_torrente_sanguineo
+    inicializar_torrente_sanguineo()
+except Exception as e:
+    pass # Fallback silencioso para no romper la UI en caso de error de importación
+
+# ==============================================================================
 # 🔒 MURO DE SEGURIDAD GLOBAL (ACCESO BETA)
 # ==============================================================================
 def muro_de_acceso_beta():
