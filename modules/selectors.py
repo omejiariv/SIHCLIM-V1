@@ -162,7 +162,8 @@ def render_selector_espacial():
                 if gdf_zona.crs and gdf_zona.crs.to_string() != "EPSG:4326":
                      gdf_zona = gdf_zona.to_crs("EPSG:4326")
                 
-                buff_km = st.slider("Radio Buffer (km):", 0, 50, 5)
+                # 🔥 EL CAMBIO MAESTRO: st.session_state se adueña del valor (Single Source of Truth)
+                buff_km = st.slider("Radio Buffer (Área de Influencia en km):", min_value=0.0, max_value=50.0, value=15.0, step=1.0, key="buffer_global_km")
                 buff_deg = buff_km / 111.0 
                 
                 minx, miny, maxx, maxy = gdf_zona.total_bounds
@@ -187,9 +188,8 @@ def render_selector_espacial():
                     if buff_deg > 0:
                         zona_buffered['geometry'] = zona_buffered.geometry.buffer(buff_deg)
                     
-                    # 🔥 EL CAMBIO MAESTRO: sjoin es 100 veces más rápido que unary_union
+                    # Intersección de alta velocidad
                     est_in = gpd.sjoin(gdf_ptos, zona_buffered, how="inner", predicate="intersects")
-                    # Removemos duplicados por si un punto toca el borde de dos polígonos
                     est_in = est_in.drop_duplicates(subset=['id_estacion'])
                     
                     if not est_in.empty:
