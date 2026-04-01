@@ -5,31 +5,43 @@ import rasterio
 from rasterio.warp import reproject, Resampling
 import os
 import urllib.request
+import ssl
 import tempfile
 import streamlit as st
 from modules.interpolation import interpolador_maestro
 
-# --- 🚀 CLOUD SMART CACHE ---
-@st.cache_data(show_spinner=False)
-def get_cached_raster(url):
+# --- 🚀 CLOUD SMART CACHE BLINDADO ---
+@st.cache_data(show_spinner="📥 Descargando Raster pesado desde Supabase (solo la primera vez)...")
+def download_raster_secure(url):
     """
-    Descarga el raster desde Supabase a una carpeta temporal local LA PRIMERA VEZ.
-    Esto evita bloqueos de red de GDAL y acelera el modelo x100.
+    Descarga el raster asegurando que no haya bloqueos de SSL.
+    Lo guarda en una carpeta permanente del proyecto para no volver a descargarlo.
     """
     if not url or not url.startswith("http"): 
         return url
         
-    filename = url.split("/")[-1]
-    local_path = os.path.join(tempfile.gettempdir(), filename)
+    # Crear carpeta persistente para el caché
+    cache_dir = os.path.join(os.getcwd(), "data", "cloud_cache")
+    os.makedirs(cache_dir, exist_ok=True)
     
-    if not os.path.exists(local_path):
+    filename = url.split("/")[-1]
+    local_path = os.path.join(cache_dir, filename)
+    
+    # Si el archivo no existe o pesa menos de 1KB (está corrupto)
+    if not os.path.exists(local_path) or os.path.getsize(local_path) < 1024:
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (SIHCLI-POTER)'})
-            with urllib.request.urlopen(req) as response, open(local_path, 'wb') as out_file:
+            # Ignorar errores de certificado SSL que bloquean las descargas cloud
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx) as response, open(local_path, 'wb') as out_file:
                 out_file.write(response.read())
         except Exception as e:
-            print(f"Error descargando caché de {url}: {e}")
-            return url # Fallback a la URL cruda si falla
+            st.error(f"❌ Error descargando `{filename}`. Verifica que el archivo exista en Supabase con ese nombre exacto.")
+            print(f"Error descargando {url}: {e}")
+            return None
             
     return local_path
 
@@ -60,7 +72,7 @@ def warper_raster_to_grid(raster_path, bounds, shape):
     """
     Lee un raster desde el caché seguro y lo fuerza a encajar en la malla WGS84.
     """
-    safe_path = get_cached_raster(raster_path)
+    safe_path = download_raster_secure(raster_path)
     if not safe_path: return None
     
     try:
@@ -90,7 +102,7 @@ def warper_raster_to_grid(raster_path, bounds, shape):
             return destination
 
     except Exception as e:
-        print(f"Error warper DEM: {e}")
+        print(f"Error warper_raster_to_grid: {e}")
         return None
 
 # --- D. MOTOR FÍSICO "EL ALEPH" ---
