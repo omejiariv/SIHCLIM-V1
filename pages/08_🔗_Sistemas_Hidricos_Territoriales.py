@@ -1083,10 +1083,9 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
 # 6. METABOLISMO TERRITORIAL: PRIORIDAD DE CENSO REAL (SINCRONIZADO)
 # =========================================================================
 with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", expanded=False):
-    st.info("Cálculo integrado de extracción hídrica y cargas orgánicas. Los datos nacen sincronizados con el modelo de Huella Hídrica del Módulo 8.")
+    st.info("Cálculo integrado de extracción hídrica y cargas orgánicas. Los datos nacen sincronizados con el modelo de Huella Hídrica.")
 
-    # 🔍 SINCRONIZACIÓN MAESTRA: Prioridad absoluta a los datos calculados en el Módulo 8
-    # Definimos los fallbacks técnicos solo si la memoria está completamente vacía
+    # 🔍 SINCRONIZACIÓN MAESTRA: Prioridad absoluta a los datos de la Nube (Supabase)
     if nodo_seleccionado == "La Fe": 
         f_pob, f_ext, f_bov, f_por, f_ave = 15000, 450000, 5000, 2000, 150000
     elif "Grande" in nodo_seleccionado: 
@@ -1094,8 +1093,7 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
     else: 
         f_pob, f_ext, f_bov, f_por, f_ave = 20000, 0, 25000, 10000, 50000
 
-    # 🚀 EXTRACCIÓN MAESTRA (Soldadura de Variables):
-    # Recuperamos los valores exactos que el usuario ve en el Módulo 8
+    # 🚀 EXTRACCIÓN MAESTRA (Soldadura de Variables)
     pob_sinc = st.session_state.get(f'pob_asig_{nodo_seleccionado}', f_pob)
     bov_sinc = st.session_state.get('ica_bovinos_calc', f_bov)
     por_sinc = st.session_state.get('ica_porcinos_calc', f_por)
@@ -1105,51 +1103,49 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
 
     c_p1, c_p2, c_p3, c_p4, c_p5 = st.columns(5)
     
-    # 🚨 MEJORA: Los widgets ahora escriben en las mismas llaves de memoria que el Módulo 8
-    pob_residente = c_p1.number_input("🏘️ Pob. Residente:", value=int(pob_sinc), step=1000, key=f"pob_asig_{nodo_seleccionado}_met")
-    pob_externa = c_p2.number_input("🏙️ Pob. Externa:", value=int(f_ext), step=50000)
-    cabezas_bovinas = c_p3.number_input("🐄 Bovinos:", value=int(bov_sinc), step=1000, key="ica_bovinos_calc_met")
-    cabezas_porcinas = c_p4.number_input("🐖 Porcinos:", value=int(por_sinc), step=1000, key="ica_porcinos_calc_met")
-    cabezas_aves = c_p5.number_input("🐔 Aves:", value=int(ave_sinc), step=5000, key="ica_aves_calc_met")
+    # 🚨 MEJORA: Keys únicas para evitar colisiones de UI en Streamlit
+    pob_residente = c_p1.number_input("🏘️ Pob. Residente:", value=int(pob_sinc), step=1000, key=f"ui_pob_res_{nodo_seleccionado}")
+    pob_externa = c_p2.number_input("🏙️ Pob. Externa:", value=int(f_ext), step=50000, key=f"ui_pob_ext_{nodo_seleccionado}")
+    cabezas_bovinas = c_p3.number_input("🐄 Bovinos:", value=int(bov_sinc), step=1000, key=f"ui_bov_{nodo_seleccionado}")
+    cabezas_porcinas = c_p4.number_input("🐖 Porcinos:", value=int(por_sinc), step=1000, key=f"ui_por_{nodo_seleccionado}")
+    cabezas_aves = c_p5.number_input("🐔 Aves:", value=int(ave_sinc), step=5000, key=f"ui_ave_{nodo_seleccionado}")
     
-    # 🪄 Módulos de Consumo y Generación (Ajustes Técnicos)
+    # 🪄 Módulos de Consumo y Generación
     dot_hum, dot_bov, dot_por, kg_rs_hab, pct_organico = 150, 40, 15, 0.8, 55.0
-    if st.toggle("⚙️ Mostrar y Ajustar Módulos de Consumo y Generación"):
+    if st.toggle("⚙️ Mostrar y Ajustar Módulos de Consumo y Generación", key=f"tgl_modulos_{nodo_seleccionado}"):
         st.markdown("<div style='padding: 10px; background-color: #f8f9fa; border-radius: 5px;'>", unsafe_allow_html=True)
         c_d1, c_d2, c_d3 = st.columns(3)
-        dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150)
-        dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40)
-        dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15)
+        dot_hum = c_d1.number_input("Dotación Humana (L/d):", value=150, key=f"dot_hum_{nodo_seleccionado}")
+        dot_bov = c_d2.number_input("Dotación Bovina (L/d):", value=40, key=f"dot_bov_{nodo_seleccionado}")
+        dot_por = c_d3.number_input("Dotación Porcina (L/d):", value=15, key=f"dot_por_{nodo_seleccionado}")
         
         st.markdown("**Residuos Sólidos (Población Residente):**")
         c_rs1, c_rs2 = st.columns(2)
-        kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1)
-        pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0)
+        kg_rs_hab = c_rs1.number_input("Generación RS (kg/hab/día):", value=0.8, step=0.1, key=f"rs_{nodo_seleccionado}")
+        pct_organico = c_rs2.number_input("Fracción Orgánica (%):", value=55.0, step=5.0, key=f"rs_org_{nodo_seleccionado}")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("### 2. Balance Metabólico Integral")
 
     # =========================================================================
-    # ⚖️ BALANCE METABÓLICO INTEGRAL (VERSIÓN ESTRUCTURAL)
+    # ⚖️ BALANCE METABÓLICO INTEGRAL 
     # =========================================================================
-    # 🌊 1. Cálculos Hídricos Consolidados
     pob_total_agua = pob_residente + pob_externa
     dem_hum_m3_dia = (pob_total_agua * dot_hum) / 1000
-    # Consumo avícola: 0.3 L/día/ave
     dem_agro_m3_dia = ((cabezas_bovinas * dot_bov) + (cabezas_porcinas * dot_por) + (cabezas_aves * 0.3)) / 1000
     dem_total_m3_s = (dem_hum_m3_dia + dem_agro_m3_dia) / 86400
 
-    # ☣️ 2. Cálculos de Carga Orgánica (Masa de contaminantes local)
     carga_hum_ton = (pob_residente * 18.25) / 1000
     carga_bov_ton = (cabezas_bovinas * 292.0) / 1000
     carga_por_ton = (cabezas_porcinas * 91.25) / 1000
     carga_ave_ton = (cabezas_aves * 5.47) / 1000
     carga_total_ton = carga_hum_ton + carga_bov_ton + carga_por_ton + carga_ave_ton
     
-    # 🚨 CLAVE: Guardamos la carga para el motor de dilución WRI aguas abajo
+    # 🚨 APRETÓN DE MANOS (HANDSHAKE) CON LA PÁGINA 09
     st.session_state['carga_dbo_total_ton'] = carga_total_ton
+    st.session_state['demanda_total_m3s'] = dem_total_m3_s
+    st.session_state['poblacion_servida'] = pob_total_agua # Vital para Pág 09
 
-    # 🗑️ 3. Cálculos de Residuos Sólidos
     rs_total_ton_ano = (pob_residente * kg_rs_hab * 365) / 1000
     rs_org_ton_ano = rs_total_ton_ano * (pct_organico / 100.0)
     rs_inorg_ton_ano = rs_total_ton_ano - rs_org_ton_ano
@@ -1160,12 +1156,10 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
         st.metric("☣️ Carga Orgánica al Río (DBO5)", f"{carga_total_ton:,.0f} Ton/año")
         st.metric("🗑️ Residuos Sólidos Totales", f"{rs_total_ton_ano:,.0f} Ton/año", f"{rs_org_ton_ano:,.0f} Ton Orgánicas")
         
-        if st.button("🚀 Actualizar Dinámica del Embalse", use_container_width=True):
-            st.session_state['demanda_total_m3s'] = dem_total_m3_s
+        if st.button("🚀 Actualizar Dinámica del Embalse", use_container_width=True, key=f"btn_act_{nodo_seleccionado}"):
             st.success("✅ Extracción y metabolismo guardados en el Aleph.")
 
     with c_res2:
-        # Gráfico Sunburst: Distribución del Metabolismo Material
         df_plot = pd.DataFrame({
             "Categoria": ["Agua", "Agua", "Vertimientos", "Vertimientos", "Vertimientos", "Residuos", "Residuos"],
             "Subcategoria": ["Urbana", "Agropecuaria", "Urbana", "Bovinos/Porcinos", "Avicultura", "Orgánicos", "Inorgánicos"],
@@ -1186,7 +1180,7 @@ with st.expander(f"💧 Metabolismo Hídrico y Material: {nodo_seleccionado}", e
 # 8. HUELLA HÍDRICA TERRITORIAL (CONECTADA AL GEMELO DIGITAL)
 # =========================================================================
 with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({nodo_seleccionado})", expanded=False):
-    anio_censo = st.slider("📅 Horizonte de Simulación (Demanda y Presión):", min_value=2025, max_value=2050, value=2035, step=1)
+    anio_censo = st.slider("📅 Horizonte de Simulación (Demanda y Presión):", min_value=2025, max_value=2050, value=2035, step=1, key=f"slider_anio_{nodo_seleccionado}")
     st.info("Cálculo de la demanda hídrica real integrando la población humana proyectada y la vocación pecuaria de la cuenca.")
 
     col_h1, col_h2 = st.columns([1, 1.5])
@@ -1214,11 +1208,14 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
             porcinos_tot = 45000 if "Grande" in nodo_seleccionado else 2000
             aves_tot = 800000 if "Grande" in nodo_seleccionado else 150000
 
-        if origen_datos_pec == "Matriz Maestra (Proyectada)": st.success(f"🧠 **Sincronización Perfecta:** Metabolismo pecuario proyectado al {anio_censo} para **{nodo_seleccionado}**.")
-        else: st.warning(f"⚠️ **Memoria Vacía:** Entrena el Modelo Pecuario en la pág 06a para ver proyecciones dinámicas.")
+        if origen_datos_pec == "Matriz Maestra (Proyectada)": 
+            st.success(f"🧠 **Sincronización Perfecta:** Metabolismo pecuario proyectado al {anio_censo}.")
+        else: 
+            st.warning(f"⚠️ **Memoria Vacía:** Entrena el Modelo Pecuario en la pág 06 para ver proyecciones dinámicas.")
 
         st.info(f"🐄 Bovinos: **{bovinos_tot:,.0f}** | 🐖 Porcinos: **{porcinos_tot:,.0f}** | 🐔 Aves: **{aves_tot:,.0f}**")
 
+        # Guardamos silenciosamente en el estado para que otras páginas lo lean
         st.session_state['ica_bovinos_calc'] = bovinos_tot
         st.session_state['ica_porcinos_calc'] = porcinos_tot
         st.session_state['ica_aves_calc'] = aves_tot
@@ -1238,57 +1235,36 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
         st.markdown("##### 🛡️ Seguridad Hídrica: Nivel de Dependencia")
         st.caption("Ajusta qué porcentaje de la población total del Valle de Aburrá es abastecida por este embalse.")
         
-        dependencia_defecto = 0.0
-        if "Fe" in nodo_seleccionado: dependencia_defecto = 58.0
-        elif "Grande" in nodo_seleccionado: dependencia_defecto = 33.0
-        elif "Piedras" in nodo_seleccionado: dependencia_defecto = 9.0
+        dependencia_defecto = 58.0 if "Fe" in nodo_seleccionado else 33.0 if "Grande" in nodo_seleccionado else 9.0
         
-        pct_dependencia = st.slider(f"% de Población dependiente de {nodo_seleccionado}:", 0.0, 100.0, dependencia_defecto, step=1.0)
+        pct_dependencia = st.slider(f"% de Población dependiente:", 0.0, 100.0, dependencia_defecto, step=1.0, key=f"pct_dep_{nodo_seleccionado}")
         pob_real_dependiente = pob_global_memoria * (pct_dependencia / 100.0)
 
-        cabezas_bovinas = st.session_state.get('ica_bovinos_calc', 0)
-        cabezas_porcinas = st.session_state.get('ica_porcinos_calc', 0)
-        cabezas_aves = st.session_state.get('ica_aves_calc', 0)
-            
-        c_i1, c_i2, c_i3, c_i4 = st.columns(4)
-        pob_humana = c_i1.number_input("👥 Pob. Asignada:", value=int(pob_real_dependiente), key=f"pob_asig_{nodo_seleccionado}_{pct_dependencia}")
-        cabezas_bovinas = c_i2.number_input("🐄 Bovinos:", value=int(cabezas_bovinas))
-        cabezas_porcinas = c_i3.number_input("🐖 Porcinos:", value=int(cabezas_porcinas))
-        cabezas_aves_in = c_i4.number_input("🐔 Aves:", value=int(cabezas_aves)) 
-        
-        st.markdown(f"### 📊 Demanda Metabólica Equivalente")
-        consumo_humano_ld, consumo_bovino_ld, consumo_porcino_ld, consumo_ave_ld = 150, 40, 15, 0.3    
-        
-        demanda_humana_m3_dia = (pob_humana * consumo_humano_ld) / 1000
-        demanda_agro_m3_dia = ((cabezas_bovinas * consumo_bovino_ld) + (cabezas_porcinas * consumo_porcino_ld) + (cabezas_aves_in * consumo_ave_ld)) / 1000
-        demanda_total_m3_dia = demanda_humana_m3_dia + demanda_agro_m3_dia
-        demanda_total_m3_s = demanda_total_m3_dia / 86400  
+        # Aquí solo mostramos métricas basadas en lo que calculó la Sección 6 y la proyección
+        st.markdown(f"### 📊 Demanda Metabólica Proyectada")
+        dem_hum_futura = (pob_real_dependiente * dot_hum) / 1000
+        dem_agro_futura = ((bovinos_tot * dot_bov) + (porcinos_tot * dot_por) + (aves_tot * 0.3)) / 1000
+        dem_tot_futura_m3s = (dem_hum_futura + dem_agro_futura) / 86400  
         
         st.markdown("---")
-        oferta_local_m3s = st.number_input("💧 Oferta Total del Sistema (m³/s) [Natural + Trasvases]:", value=5.7, step=0.1)
-        estres_local = (demanda_total_m3_s / oferta_local_m3s) * 100 if oferta_local_m3s > 0 else 100
+        oferta_local_m3s = st.number_input("💧 Oferta Total del Sistema (m³/s) [Natural + Trasvases]:", value=5.7, step=0.1, key=f"oferta_{nodo_seleccionado}")
+        estres_local = (dem_tot_futura_m3s / oferta_local_m3s) * 100 if oferta_local_m3s > 0 else 100
         
         estado_estres, alerta_color = ("Colapso", "inverse") if estres_local > 100 else ("Crítico", "inverse") if estres_local > 80 else ("Alto", "off") if estres_local > 40 else ("Estable", "normal")
         
         c_m1, c_m2, c_m3, c_m4 = st.columns(4)
-        c_m1.metric("Demanda Humana", f"{demanda_humana_m3_dia:,.0f} m³/d")
-        c_m2.metric("Demanda Agro", f"{demanda_agro_m3_dia:,.0f} m³/d")
-        c_m3.metric("Extracción Continua", f"{demanda_total_m3_s:,.3f} m³/s")
+        c_m1.metric("Demanda Humana", f"{dem_hum_futura:,.0f} m³/d")
+        c_m2.metric("Demanda Agro", f"{dem_agro_futura:,.0f} m³/d")
+        c_m3.metric("Extracción Proyectada", f"{dem_tot_futura_m3s:,.3f} m³/s")
         c_m4.metric(f"⚠️ Estrés ({estado_estres})", f"{estres_local:.1f}%", delta_color=alerta_color)
-        
-        if st.button("💾 Enviar Datos al Modelo Central", type="primary"):
-            st.session_state['demanda_total_m3s'] = demanda_total_m3_s
-            st.session_state['aleph_oferta_hidrica'] = oferta_local_m3s
-            st.success(f"✅ ¡Memoria actualizada! Demanda: {demanda_total_m3_s:.2f} m³/s | Oferta: {oferta_local_m3s:.1f} m³/s")
 
 # ==============================================================================
-# 🕸️ MAPA CONCEPTUAL: TOPOLOGÍA DEL METABOLISMO HÍDRICO (VERSIÓN TRIFURCADA + USOS SUELO)
+# 🕸️ MAPA CONCEPTUAL: TOPOLOGÍA DEL METABOLISMO HÍDRICO
 # ==============================================================================
 with contenedor_sankey.container():
     with st.expander("🕸️ Mapa Conceptual: Topología del Metabolismo Hídrico", expanded=False):
         
         # 🔍 1. CAPTURA DE COBERTURAS REALES (Desde el motor de Pág 04 - Supabase)
-        # Priorizamos datos reales de Supabase; de lo contrario, usamos una distribución base profesional
         area_ref = datos_nodo.get("ha_conservadas_base", 3460.0)
         ha_bosque = st.session_state.get('aleph_ha_bosque', area_ref) 
         ha_agricola = st.session_state.get('aleph_ha_agricola', area_ref * 2.5)
@@ -1296,7 +1272,10 @@ with contenedor_sankey.container():
         ha_urbana = st.session_state.get('aleph_area_urbana', area_ref * 0.75)
         
         area_total_cuenca = ha_bosque + ha_agricola + ha_pastos + ha_urbana
+        
+        # 🚨 HANDSHAKE DE ÁREA: Convertimos hectáreas a km2 para que la Pág 09 lo lea perfecto
         st.session_state['area_total_cuenca_val'] = area_total_cuenca
+        st.session_state['aleph_area_km2'] = area_total_cuenca / 100.0
 
         # 🌪️ CAPTURA DEL IMPACTO FÍSICO (Sincronización con Módulo 6 de Pág 04)
         memoria_lodo_total = st.session_state.get('eco_lodo_total_m3', 0.0)
@@ -1305,7 +1284,7 @@ with contenedor_sankey.container():
         lodo_suspension = st.session_state.get('eco_lodo_suspension_m3', 
                           st.session_state.get('eco_lodo_abrasivo_m3', 0.0))
 
-        if memoria_lodo_total > 0:
+if memoria_lodo_total > 0:
             st.markdown(f"""
             <div style='background-color: rgba(231, 76, 60, 0.05); border-left: 5px solid #e74c3c; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
                 <span style='color: #c0392b; font-weight: bold;'>🚨 Evento de Ingeniería Detectado:</span> 
@@ -1313,9 +1292,12 @@ with contenedor_sankey.container():
             </div>
             """, unsafe_allow_html=True)
             
-            # Sincronizamos el estado del toggle para disparar el ROI y el Sankey
-            activar_tormenta = st.toggle("⛈️ Inyectar Trifurcación de Lodos en el Sistema", 
-                                         value=st.session_state.get('activar_tormenta_sankey', False))
+            # 🚨 MEJORA: KEY ÚNICA en el toggle para evitar colisiones si cambias rápido de embalse
+            activar_tormenta = st.toggle(
+                "⛈️ Inyectar Trifurcación de Lodos en el Sistema", 
+                value=st.session_state.get('activar_tormenta_sankey', False),
+                key=f"tgl_lodos_{nodo_seleccionado}" 
+            )
             st.session_state['activar_tormenta_sankey'] = activar_tormenta
             
             if activar_tormenta:
@@ -1347,6 +1329,7 @@ with contenedor_sankey.container():
             labels.append(nom); indices_usos[nom] = idx; idx += 1
 
         # B. CONEXIÓN SUELO -> RÍOS -> EMBALSE
+        # Asume que afluentes_inputs y area_total_cuenca ya están calculados arriba
         for nombre_rio, q_rio in afluentes_inputs.items():
             labels.append(nombre_rio); current_rio_idx = idx
             for nom_u, area, col_u in usos_nodos:
@@ -1401,21 +1384,25 @@ with contenedor_sankey.container():
 
         link_tooltips = []
         for i in range(len(source)):
-            nombre_origen = labels[source[i]]
-            if nombre_origen in calidad_usos:
-                c = calidad_usos[nombre_origen]
-                txt = (f"<b>Calidad del Aporte:</b><br>"
-                       f"• DBO: {c['dbo']} mg/L<br>"
-                       f"• Fósforo: {c['p']} mg/L<br>"
-                       f"• Nitrógeno: {c['n']} mg/L<br>"
-                       f"• Sedimentos: {c['sed']} mg/L")
-                link_tooltips.append(txt)
-            elif "Lodo" in nombre_origen or "Sedimento" in nombre_origen:
-                link_tooltips.append("<b>Carga Sólida Extrema</b><br>Evento Torrencial")
+            # Blindaje adicional: Aseguramos no salirnos del índice
+            if source[i] < len(labels):
+                nombre_origen = labels[source[i]]
+                if nombre_origen in calidad_usos:
+                    c = calidad_usos[nombre_origen]
+                    txt = (f"<b>Calidad del Aporte:</b><br>"
+                           f"• DBO: {c['dbo']} mg/L<br>"
+                           f"• Fósforo: {c['p']} mg/L<br>"
+                           f"• Nitrógeno: {c['n']} mg/L<br>"
+                           f"• Sedimentos: {c['sed']} mg/L")
+                    link_tooltips.append(txt)
+                elif "Lodo" in nombre_origen or "Sedimento" in nombre_origen:
+                    link_tooltips.append("<b>Carga Sólida Extrema</b><br>Evento Torrencial")
+                else:
+                    link_tooltips.append(f"Flujo de {nombre_origen}")
             else:
-                link_tooltips.append(f"Flujo de {nombre_origen}")
+                link_tooltips.append("Flujo")
 
-        # 5. RENDER FINAL (Ya no dispara NameError)
+        # 5. RENDER FINAL
         fig_sankey = go.Figure(data=[go.Sankey(
             valueformat=".2f", valuesuffix=" m³/s",
             textfont=dict(size=12, color="black", family="Georgia, serif"),
