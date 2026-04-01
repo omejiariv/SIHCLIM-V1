@@ -6,6 +6,7 @@ from rasterio.warp import reproject, Resampling
 from rasterio.transform import from_bounds
 import os
 from modules.interpolation import interpolador_maestro
+import warnings
 
 # --- A. BASE DE CONOCIMIENTO ---
 CLC_C_BASE = {
@@ -33,10 +34,11 @@ def interpolar_variable(gdf_puntos, columna_valor, grid_x, grid_y, method='krigi
     Z_Interp = np.nan_to_num(Z_Interp, nan=0)
     return np.maximum(Z_Interp, 0), Z_Error
 
-# --- C. WARPING (LECTURA DE RASTERS) ---
+# --- C. WARPING (LECTURA DE RASTERS EN LA NUBE) ---
 def warper_raster_to_grid(raster_path, bounds, shape):
     """
-    Lee un raster y lo fuerza a encajar en la malla WGS84 (Lat/Lon).
+    Lee un raster (desde URL de Supabase o local) y lo fuerza a encajar en la malla WGS84.
+    Utiliza un entorno optimizado para lectura Cloud-Native.
     """
     if not raster_path: return None
     
@@ -44,30 +46,39 @@ def warper_raster_to_grid(raster_path, bounds, shape):
         dst_crs = 'EPSG:4326'
         minx, miny, maxx, maxy = bounds
         
-        with rasterio.open(raster_path) as src:
-            dst_transform = rasterio.transform.from_bounds(
-                minx, miny, maxx, maxy, shape[1], shape[0]
-            )
-            
-            destination = np.zeros(shape, dtype=np.float32)
-
-            reproject(
-                source=rasterio.band(src, 1),
-                destination=destination,
-                src_transform=src.transform,
-                src_crs=src.crs,
-                dst_transform=dst_transform,
-                dst_crs=dst_crs,
-                resampling=Resampling.bilinear,
-                dst_nodata=np.nan 
-            )
-            
-            if np.isnan(destination).all():
-                return None
+        # ☁️ MAGIA CLOUD: Configuramos GDAL para leer sobre HTTP/HTTPS eficientemente
+        env_kwargs = {
+            'GDAL_DISABLE_READDIR_ON_OPEN': 'EMPTY_DIR',
+            'CPL_VSIL_CURL_ALLOWED_EXTENSIONS': 'tif',
+            'GDAL_HTTP_UNSAFESSL': 'YES' # Útil si hay problemas de certificado
+        }
+        
+        with rasterio.Env(**env_kwargs):
+            with rasterio.open(raster_path) as src:
+                dst_transform = rasterio.transform.from_bounds(
+                    minx, miny, maxx, maxy, shape[1], shape[0]
+                )
                 
-            return destination
+                destination = np.zeros(shape, dtype=np.float32)
+
+                reproject(
+                    source=rasterio.band(src, 1),
+                    destination=destination,
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=dst_transform,
+                    dst_crs=dst_crs,
+                    resampling=Resampling.bilinear,
+                    dst_nodata=np.nan 
+                )
+                
+                if np.isnan(destination).all():
+                    return None
+                    
+                return destination
 
     except Exception as e:
+        # Silenciamos el error para producción, pero el fallback de numpy seguirá funcionando
         return None
 
 
@@ -77,7 +88,6 @@ def run_distributed_model(Z_P, grid_x, grid_y, paths, bounds):
     Calcula el balance hídrico distribuido.
     RETORNA: Diccionario con CLAVES LARGAS Y NUMERADAS para visualización directa.
     """
-    import numpy as np
     shape = grid_x.shape
     
     # --- 1. ELEVACIÓN Y TEMPERATURA ---
