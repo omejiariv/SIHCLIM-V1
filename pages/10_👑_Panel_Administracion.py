@@ -153,7 +153,7 @@ st.markdown("---")
 
 tabs = st.tabs([
     "📡 Estaciones", "🌧️ Lluvia", "📊 Índices", "🏠 Predios", "🌊 Cuencas", "🏙️ Municipios", "🌲 Coberturas",
-    "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Red de Drenaje", "🌧️ Zona de Peligro", "👥 Demografía", "🗺️ Aduana SIG"
+    "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Red de Drenaje", "🌧️ Zona de Peligro", "👥 Demografía", "🗺️ Aduana SIG", "☁️ Gestión Cloud"
 ])
 
 # --- PESTAÑA DE CONFIGURACIÓN INICIAL
@@ -1342,8 +1342,33 @@ with tabs[15]:
         except Exception as e:
             st.error(f"No se pudo conectar con el explorador. Detalle: {e}")
 
+# Añade "☁️ Gestión Cloud" a tu lista de st.tabs([...])
 
+with tabs[16]: # La nueva pestaña
+    st.header("☁️ Centro de Control de Activos Cloud")
+    
+    # 1. Selector de Bucket (Para no mezclar Rasters con Tablas)
+    bucket_selector = st.radio("Selecciona el depósito:", ["rasters", "sihcli_maestros"], horizontal=True)
+    
+    col_u, col_l = st.columns([1, 1])
+    
+    with col_u:
+        st.subheader("📤 Carga Directa")
+        f = st.file_uploader("Subir activo hídrico/espacial", type=['tif', 'geojson', 'csv', 'parquet'], key="cloud_up")
+        if f and st.button("🚀 Enviar a la Nube", use_container_width=True):
+            content_type = "image/tiff" if f.name.endswith('.tif') else "application/json"
+            # Tu lógica de upload que ya tienes, pero usando bucket_selector
+            res = cliente_supabase.storage.from_(bucket_selector).upload(
+                path=f.name, file=f.getvalue(), 
+                file_options={"content-type": content_type, "upsert": "true"}
+            )
+            st.success(f"Activo {f.name} sincronizado en {bucket_selector}")
 
-
-
+    with col_l:
+        st.subheader("📂 Inventario en Vivo")
+        # Listado automático para verificar que la Pág 09 verá los datos
+        archivos = cliente_supabase.storage.from_(bucket_selector).list()
+        if archivos:
+            df_cloud = pd.DataFrame(archivos)
+            st.dataframe(df_cloud[['name', 'created_at']], use_container_width=True)
 
