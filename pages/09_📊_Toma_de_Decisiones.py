@@ -20,7 +20,7 @@ import os
 
 # --- 1. CONFIGURACIÓN Y CARGA DE MÓDULOS ---
 st.set_page_config(page_title="Sihcli-Poter: Toma de Decisiones", page_icon="🎯", layout="wide")
-# Encendido automático del Gemelo Digital (Lectura de matrices maestras)
+# Encendido automático del Gemelo Digital
 from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
 
@@ -42,7 +42,7 @@ except Exception as e:
     st.error(f"Error de sistema: {e}")
     st.stop()
 
-# --- 2. EXPLICACIÓN METODOLÓGICA (Caja de Mensaje) ---
+# --- 2. EXPLICACIÓN METODOLÓGICA ---
 def render_metodologia():
     with st.expander("🔬 METODOLOGÍA Y GUÍA DEL TABLERO", expanded=False):
         st.markdown("""
@@ -61,6 +61,9 @@ def load_context_layers(gdf_zona_bounds):
     minx, miny, maxx, maxy = gdf_zona_bounds
     from shapely.geometry import box
     roi = gpd.GeoDataFrame(geometry=[box(minx, miny, maxx, maxy)], crs="EPSG:4326")
+    
+    # ⚠️ ADAPTADO A LA NUBE: Si ya subiste estos a Supabase, idealmente se leerían vía SQL.
+    # Mantenemos esto como fallback local por ahora hasta refactorizar completamente las capas SIG aquí.
     base_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
     
     files = {
@@ -90,7 +93,6 @@ with st.sidebar:
     raw_bio = st.slider("🍃 Valor Biótico (Biodiversidad)", 0, 10, 4)
     raw_socio = st.slider("👥 Presión Socioeconómica", 0, 10, 5)
     
-    # Normalización matemática (AHP)
     suma_pesos = raw_agua + raw_bio + raw_socio if (raw_agua + raw_bio + raw_socio) > 0 else 1
     w_agua = raw_agua / suma_pesos
     w_bio = raw_bio / suma_pesos
@@ -107,54 +109,40 @@ with st.sidebar:
 if gdf_zona is not None and not gdf_zona.empty:
     engine = get_engine()
 
-# ==============================================================================
+    # ==============================================================================
     # 🧠 CEREBRO MAESTRO: CONEXIÓN A LA TURBINA CENTRAL
     # ==============================================================================
-    from modules.utils import obtener_metabolismo_exacto
-    
     lugar_actual = nombre_zona
-    
-    # Un slider nativo y rápido para viajar en el tiempo
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
         
-    # 🚀 TURBINA CENTRAL: METABOLISMO EN VIVO (Lectura Ultrarrápida)
-    # Busca directamente en las Matrices Maestras alojadas en Supabase / Memoria
+    # 1. Fallback de Metabolismo Local
     datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
     pob_total = datos_metabolismo.get('pob_total', 0)
     bovinos = datos_metabolismo.get('bovinos', 0)
     porcinos = datos_metabolismo.get('porcinos', 0)
     aves = datos_metabolismo.get('aves', 0)
 
-    # 🛑 BISTURÍ DE INTEGRIDAD: Cero estimaciones al vuelo.
-    # Si la base devuelve 0, es porque el nombre exacto de esta cuenca/territorio 
-    # NO existe en las Matrices Maestras Demográfica o Pecuaria.
     if pob_total == 0 and bovinos == 0:
-        st.warning(f"⚠️ **Vacío de Datos:** '{nombre_zona}' no fue encontrado en las Matrices Maestras Demográfica y Pecuaria. Para ver la presión real, debes ir a los módulos respectivos y forjar las matrices asegurando que incluyan la capa de subcuencas.")
+        st.warning(f"⚠️ **Vacío de Datos:** '{nombre_zona}' no fue encontrado en las Matrices Maestras. Calculando con valores aproximados.")
 
-    # 🧠 CÁLCULO DINÁMICO DE DEMANDA (L/día convertidos a m³/s)
+    # 🧠 CÁLCULO DINÁMICO DE DEMANDA (L/día convertidos a m³/s) - Fallback
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
     
-    # 🛡️ EL BISTURÍ: Inyectar la nueva demanda en la memoria. CERO MENTIRAS.
-    if demanda_dinamica_m3s > 0:
-        st.session_state['demanda_total_m3s'] = demanda_dinamica_m3s
-        demanda_m3s = demanda_dinamica_m3s
-    else:
-        # Si no hay humanos ni vacas, la demanda es CERO. Nada de 6.5 m3/s fantasmas.
-        demanda_m3s = 0.0 
-        st.session_state['demanda_total_m3s'] = 0.0
+    # 🤝 EL APRETÓN DE MANOS (HANDSHAKE): LECTURA ESTRICTA
+    # Si la Pág 08 ya calculó una demanda más precisa, la respetamos. NO la sobrescribimos.
+    demanda_m3s = float(st.session_state.get('demanda_total_m3s', demanda_dinamica_m3s))
+    
+    # Leemos la población servida real que designó la Pág 08 (o usamos el total local si no existe)
+    poblacion_mostrar = st.session_state.get('poblacion_servida', pob_total)
         
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
     
     st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
     
-    # --- ⚡ FASE 2: CONEXIÓN DE ALTA VELOCIDAD A LA MATRIZ MAESTRA ---
-    # Adiós a la dependencia de la memoria volátil. Leemos directamente de la base de datos pre-calculada.
-    
     @st.cache_data(ttl=3600)
     def obtener_física_matriz(territorio_nombre):
         try:
-            # Buscamos el territorio ignorando mayúsculas/minúsculas y espacios extra
             q = text("SELECT * FROM matriz_hidrologica_maestra WHERE LOWER(trim(\"Territorio\")) = LOWER(trim(:t)) LIMIT 1")
             df_m = pd.read_sql(q, engine, params={'t': str(territorio_nombre)})
             if not df_m.empty:
@@ -166,16 +154,13 @@ if gdf_zona is not None and not gdf_zona.empty:
 
     if datos_matriz:
         q_medio_real = datos_matriz.get('Caudal_Medio_m3s', 0.0)
-        # El estiaje (Q_min) se fundamenta en la recarga profunda que aporta el acuífero
         q_min_real = (datos_matriz.get('Recarga_mm', 0.0) * datos_matriz.get('Area_km2', 10.0) * 1000) / 31536000
         
-        # Guardamos en memoria para que el Tab 4 (WRI) los consuma sin fallar
         st.session_state['aleph_area_km2'] = datos_matriz.get('Area_km2', 10.0)
         st.session_state['aleph_recarga_mm'] = datos_matriz.get('Recarga_mm', 0.0)
         
-        st.success(f"⚡ **Sincronización Exitosa:** Física de '{nombre_zona}' extraída de la Matriz Maestra en milisegundos.")
+        st.success(f"⚡ **Sincronización Exitosa:** Física de '{nombre_zona}' extraída de la Matriz Maestra.")
     else:
-        # 🛡️ Fallback Dinámico: Por si seleccionan un territorio nuevo que aún no está en la matriz
         if gdf_zona is not None and not gdf_zona.empty:
             area_emergencia = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
         else:
@@ -186,17 +171,14 @@ if gdf_zona is not None and not gdf_zona.empty:
         
         st.session_state['aleph_area_km2'] = area_emergencia
         st.session_state['aleph_recarga_mm'] = 350.0
-        
-        st.warning(f"⚠️ '{nombre_zona}' no fue encontrado en la Matriz Maestra. Usando aproximación geométrica. Para máxima precisión, forja la matriz en 'Clima e Hidrología'.")
+        st.warning(f"⚠️ Usando aproximación geométrica para '{nombre_zona}'.")
 
-    # 🎚️ Selector de Escenario (Controla qué variable física usamos)
     tipo_oferta = st.radio("Escenario Hidrológico de Simulación:", 
                            ["🌊 Caudal Medio (Condiciones Normales)", "🏜️ Caudal Mínimo / Estiaje (Q95)"], 
                            horizontal=True)
                            
     oferta_dinamica = q_min_real if "Mínimo" in tipo_oferta else q_medio_real
 
-    # Cajón Manual Híbrido: Muestra el caudal real, pero permite alterarlo manualmente si se desea
     with st.expander("⚙️ Calibración de Oferta Hídrica Base", expanded=False):
         oferta_base = st.number_input(
             "Caudal de Simulación (m³/s):", 
@@ -205,51 +187,53 @@ if gdf_zona is not None and not gdf_zona.empty:
             help="Dato heredado de la modelación física. Cambia automáticamente según el escenario seleccionado."
         )
 
-    # 3. Motor de Estrés Hídrico (Integrando Tiempo, Cambio Climático y ENSO)
     oferta_nominal = float(oferta_base)
     
-    # A. Factor de Cambio Climático (Degradación de oferta a largo plazo)
-    # Asumimos que la cuenca pierde un 0.5% de su recarga hídrica por cada año futuro (desde 2024)
     anio_base_cc = 2024
     if int(anio_actual) > anio_base_cc:
         anios_futuro = int(anio_actual) - anio_base_cc
-        tasa_degradacion = anios_futuro * 0.005  # 0.5% por año
+        tasa_degradacion = anios_futuro * 0.005
         oferta_nominal = oferta_nominal * (1 - tasa_degradacion)
 
-    # B. Factor de Variabilidad Climática (ENSO - Choques a corto plazo)
     if "Niño Severo" in fase_enso: oferta_nominal *= 0.55
     elif "Niño Moderado" in fase_enso: oferta_nominal *= 0.75
     elif "Niña" in fase_enso: oferta_nominal *= 1.20
 
-    # C. Cálculo de Estrés Final
     estres_hidrico = (demanda_m3s / oferta_nominal) * 100 if oferta_nominal > 0 else 100
     st.session_state['estres_hidrico_global'] = estres_hidrico
 
     # --- RENDERIZADO DE LOS 4 KPIs GLOBALES ---
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric(f"👥 Población ({lugar_actual} - {int(anio_actual)})", f"{int(pob_total):,.0f} hab")
+        st.metric(f"👥 Población Beneficiada", f"{int(poblacion_mostrar):,.0f} hab")
     with col2:
-        st.metric("💧 Demanda Continua", f"{demanda_m3s:,.2f} m³/s", "Humana + Pecuaria", delta_color="off")
+        fuente_demanda = "De Pág 08 (Preciso)" if 'demanda_total_m3s' in st.session_state else "Estimado Local"
+        st.metric("💧 Demanda Continua", f"{demanda_m3s:,.2f} m³/s", fuente_demanda, delta_color="off")
     with col3:
         st.metric("🌍 Fase ENSO Actual", fase_enso, help="Afecta el nivel de la oferta a corto plazo.")
     with col4:
         alerta_estres = "inverse" if estres_hidrico > 80 else "normal"
         if estres_hidrico > 100: alerta_estres = "inverse" 
-        
-        # Agregamos en la ayuda (help) el impacto del tiempo
-        msg_ayuda = "Relación Demanda/Oferta. Incluye degradación climática anual (0.5%/año) e impacto ENSO."
-        st.metric("⚠️ Estrés Hídrico", f"{estres_hidrico:,.1f} %", "Crítico" if estres_hidrico > 80 else "Estable", delta_color=alerta_estres, help=msg_ayuda)
+        st.metric("⚠️ Estrés Hídrico", f"{estres_hidrico:,.1f} %", "Crítico" if estres_hidrico > 80 else "Estable", delta_color=alerta_estres)
     
     st.divider()
 
+    # --- PRE-PROCESAMIENTO DE CAPAS (BLINDAJE DE SCOPE) ---
+    # Cargamos las capas aquí arriba para que TODAS las pestañas puedan usarlas sin riesgo de NameError
+    capas = {}
+    try:
+        if gdf_zona is not None and not gdf_zona.empty:
+            capas = load_context_layers(tuple(gdf_zona.total_bounds))
+    except Exception as e:
+        st.warning(f"Aviso al cargar capas de contexto espacial: {e}")
+
     # --- AHORA SÍ DIBUJAMOS LAS PESTAÑAS ---
     tab1, tab2, tab3, tab4 = st.tabs(["🎯 SÍNTESIS DE PRIORIZACIÓN", "🌊 HIDROLOGÍA", "🛡️ SIGA-CAL", "📊 ESTÁNDARES WRI"])
+    
     with tab1:
         st.subheader(f"🗺️ Visor Geográfico Integrado: {nombre_zona}")
             
         # --- 🌡️ TERMÓMETRO TERRITORIAL (Reacciona al Estrés Hídrico) ---
-        # Usamos la variable local 'estres_hidrico' calculada líneas arriba para reactividad instantánea
         if estres_hidrico > 100:
             color_alerta = '#8B0000' # Rojo Oscuro (Colapso)
             opacidad_alerta = 0.5
@@ -285,39 +269,31 @@ if gdf_zona is not None and not gdf_zona.empty:
             tooltip=f"Estrés Hídrico: {estres_hidrico:.1f}%"
         ).add_to(m)
 
-        # Carga de las otras capas de contexto (Protegido por si alguna capa falta)
-        try:
-            capas = load_context_layers(tuple(gdf_zona.total_bounds))
-                
-            if v_geo and capas.get('geomorf') is not None:
-                folium.GeoJson(capas['geomorf'], name="Geomorfología",
-                               style_function=lambda x: {'fillColor': 'gray', 'fillOpacity': 0.2, 'color': 'black', 'weight': 1},
-                               tooltip=folium.GeoJsonTooltip(fields=['unidad'], aliases=['Unidad:'])).add_to(m)
+        # Inyección de las otras capas de contexto
+        if v_geo and capas.get('geomorf') is not None:
+            folium.GeoJson(capas['geomorf'], name="Geomorfología",
+                           style_function=lambda x: {'fillColor': 'gray', 'fillOpacity': 0.2, 'color': 'black', 'weight': 1},
+                           tooltip=folium.GeoJsonTooltip(fields=['unidad'], aliases=['Unidad:'])).add_to(m)
 
-            if v_drain and capas.get('drenaje') is not None:
-                folium.GeoJson(capas['drenaje'], name="Ríos", style_function=lambda x: {'color': '#3498db', 'weight': 2}).add_to(m)
+        if v_drain and capas.get('drenaje') is not None:
+            folium.GeoJson(capas['drenaje'], name="Ríos", style_function=lambda x: {'color': '#3498db', 'weight': 2}).add_to(m)
 
-            if capas.get('predios') is not None:
-                folium.GeoJson(capas['predios'], name="Predios CV", 
-                               style_function=lambda x: {'fillColor': 'orange', 'color': 'darkorange'}).add_to(m)
-        except Exception as e:
-            st.warning(f"Aviso de renderizado de capas: {e}")
+        if capas.get('predios') is not None:
+            folium.GeoJson(capas['predios'], name="Predios CV", 
+                           style_function=lambda x: {'fillColor': 'orange', 'color': 'darkorange'}).add_to(m)
 
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=600, key="mapa_final")
 
         # --- TABLA DE CRUCE: GEOMORFOLOGÍA VS PRIORIDAD ---
         st.markdown("### 📊 Análisis de Suelo y Prioridad")
-        try:
-            if capas.get('geomorf') is not None:
-                df_analisis = pd.DataFrame({
-                    "Unidad Geomorfológica": capas['geomorf']['unidad'].unique(),
-                    "Prioridad Promedio": [round(np.random.uniform(0.4, 0.9), 2) for _ in range(len(capas['geomorf']['unidad'].unique()))],
-                    "Recomendación": "Restauración Activa / Conservación"
-                })
-                st.table(df_analisis)
-        except:
-            pass
+        if capas.get('geomorf') is not None:
+            df_analisis = pd.DataFrame({
+                "Unidad Geomorfológica": capas['geomorf']['unidad'].unique(),
+                "Prioridad Promedio": [round(np.random.uniform(0.4, 0.9), 2) for _ in range(len(capas['geomorf']['unidad'].unique()))],
+                "Recomendación": "Restauración Activa / Conservación"
+            })
+            st.table(df_analisis)
 
     with tab2:
         st.subheader("💧 Análisis Hidrológico Integrado")
@@ -333,14 +309,12 @@ if gdf_zona is not None and not gdf_zona.empty:
     with tab4:
         import plotly.express as px
         import plotly.graph_objects as go
-        import numpy as np
-        import pandas as pd
         
         st.subheader(f"🌐 Inteligencia Territorial (WRI): {nombre_zona}")
         st.markdown("Transforma las métricas biofísicas de la cuenca/municipio en indicadores estandarizados, evalúa portafolios de inversión y simula escenarios climáticos (ENSO).")
         
         # --- 1. RECUPERACIÓN DE DATOS BASE Y METABOLISMO ---
-        # 🚀 Cálculo espacial exacto del área en vivo (Adiós al fallback de 100km2)
+        # 🚀 Cálculo espacial exacto del área en vivo
         if gdf_zona is not None and not gdf_zona.empty:
             area_km2_real = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
         else:
@@ -348,10 +322,10 @@ if gdf_zona is not None and not gdf_zona.empty:
             
         area_km2 = float(st.session_state.get('aleph_area_km2', area_km2_real))
         recarga_mm_base = float(st.session_state.get('aleph_recarga_mm', 350.0))
-        carga_total_ton = float(st.session_state.get('carga_total_ton', 500.0))
         
-        # 🛡️ UNIFICACIÓN TOTAL: Obligamos al tablero WRI a usar la oferta y demanda exactas del panel global
-        # (Esto garantiza que las proyecciones WRI reaccionen al Año, ENSO y Vacas/Humanos)
+        # 🤝 EL APRETÓN DE MANOS: Leemos la DBO exacta de la Pág 08
+        carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', 500.0))
+        
         q_oferta_m3s_base = oferta_nominal 
         demanda_m3s_base = demanda_m3s
         
@@ -373,7 +347,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 predios_en_cuenca = gpd.clip(predios_4326, gdf_zona_4326)
                 if not predios_en_cuenca.empty:
                     ha_reales_sig = predios_en_cuenca.to_crs(epsg=3116).area.sum() / 10000.0
-            except Exception as e:
+            except Exception:
                 pass # Fallback silencioso
                 
         # 🎚️ EL BOTÓN DE "REALIDAD ALTERNATIVA"
@@ -391,13 +365,11 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.markdown("<br>", unsafe_allow_html=True)
             with st.expander("🌿 Infraestructura Verde: Potencial de Reforestación Riparia", expanded=True):
                 
-                # 🌍 VERIFICACIÓN DEL NEXO FÍSICO (¿Hay riesgo activo?)
                 amenaza_activa = 'aleph_twi_umbral' in st.session_state
                 
                 if amenaza_activa:
                     st.success("🧠 **Nexo Físico Activo:** Integrando zona de amenaza extrema (Inundación/Avalancha) como área de restauración obligatoria.")
                     
-                    # 📣 EL MANIFIESTO DEL ARQUITECTO
                     st.markdown(f"""
                     <div style="border-left: 5px solid #2ecc71; padding: 15px; background-color: rgba(46, 204, 113, 0.1); border-radius: 5px; margin-bottom: 15px;">
                         <h4 style="color: #27ae60; margin-top: 0;">🌳 Manifiesto de Resiliencia</h4>
@@ -413,7 +385,6 @@ if gdf_zona is not None and not gdf_zona.empty:
 
                 c_rip1, c_rip2, c_rip3 = st.columns(3)
                 
-                # 🧠 Leemos el buffer de Biodiversidad (Si el usuario ya lo ajustó allá)
                 buffer_memoria = st.session_state.get('buffer_m_ripario', buffer_defecto)
                 
                 ancho_buffer = c_rip1.number_input(
@@ -426,7 +397,6 @@ if gdf_zona is not None and not gdf_zona.empty:
                 longitud_total_km = df_str['Longitud_Km'].sum()
                 c_rip2.metric("Longitud Total de Cauces", f"{longitud_total_km:,.2f} km")
                 
-                # Fórmula Hectáreas: (Longitud (m) * Ancho_Total (m)) / 10,000
                 ha_riparias_potenciales = (longitud_total_km * 1000 * (ancho_buffer * 2)) / 10000.0
                 c_rip3.metric("Potencial Ripario (SbN)", f"{ha_riparias_potenciales:,.1f} ha", "Área disponible para restauración", delta_color="normal")
                 
@@ -441,7 +411,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.metric("✅ Área Conservada (Base SIG)", f"{ha_reales_sig:,.1f} ha")
             ha_simuladas = st.number_input("➕ Adicionar Hectáreas Extra (Manual):", min_value=0.0, value=0.0, step=10.0, key="td_ha_sim")
             
-            # El cálculo final suma el SIG, las manuales y las riparias detectadas por el algoritmo
+            # El cálculo final
             ha_total = ha_base_calculo + ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
             beneficio_restauracion_m3 = ha_total * 2500
             
@@ -459,18 +429,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         # --- 3. PORTAFOLIOS DE INVERSIÓN (CANTIDAD Y CALIDAD) ---
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader(f"💼 Portafolios de Inversión Multi-Objetivo ({lugar_actual} - {anio_actual})")
-        
-        # --- CONEXIÓN AL ALEPH (Aseguramos que los datos base existan) ---
-        demanda_m3s = st.session_state.get('demanda_total_m3s', 6.5)
-        consumo_anual_m3 = demanda_m3s * 31536000
-        carga_total_ton = st.session_state.get('carga_total_ton', 500.0) # Toneladas DBO5 al año
-        
-        # Variables de respaldo por si el usuario no pasó por la sección 2
-        ha_simuladas = locals().get('ha_simuladas', 0.0)
-        ha_riparias_potenciales = locals().get('ha_riparias_potenciales', 0.0)
-        sumar_riparias = locals().get('sumar_riparias', False)
-        volumen_repuesto_m3 = locals().get('volumen_repuesto_m3', 0.0)
-        sist_saneamiento = locals().get('sist_saneamiento', 0)
 
         # ====================================================================
         # Portafolio 1: Neutralidad (Cantidad)
@@ -560,7 +518,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                     else: 
                         st.error("❌ La suma de los porcentajes de saneamiento debe ser exactamente 100%.")
                         
-# --- 4. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA: IDEAM, USGS, WRI) ---
+        # --- 4. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA: IDEAM, USGS, WRI) ---
         
         # A. CALIDAD DEL AGUA (Carga Másica, Delivery Ratio y Mezcla C0)
         # Factor de Entrega (Delivery Ratio): 
@@ -709,7 +667,6 @@ if gdf_zona is not None and not gdf_zona.empty:
                 
                 # 4. Calidad (C0 con Delivery Ratio y Crecimiento de Carga)
                 caudal_L_s_sim = (o_m3 / 31536000) * 1000
-                # La carga contaminante crece al mismo ritmo que la demografía/ganadería (f_dem)
                 carga_mg_s_futura = carga_mg_s * f_dem
                 dbo_mg_l_sim = carga_mg_s_futura / caudal_L_s_sim if caudal_L_s_sim > 0 else 999.0
                 cal = max(0.0, min(100.0, 100.0 - ((dbo_mg_l_sim / 10.0) * 100)))
@@ -724,11 +681,8 @@ if gdf_zona is not None and not gdf_zona.empty:
             fig_line1 = px.line(pd.DataFrame(datos_proj), x="Año", y="Valor (%)", color="Indicador", hover_data=["Fase ENSO"],
                                color_discrete_map={"Neutralidad": "#2ecc71", "Resiliencia": "#3498db", "Seguridad (Inv. Estrés)": "#e74c3c", "Calidad": "#9b59b6"})
             
-            # 🛡️ ZONAS DE RIESGO: Como ahora todo es "Salud" (100=Bueno, 0=Malo), el peligro está abajo
             fig_line1.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.1, layer="below", annotation_text="  Zona Crítica (<40%)")
             fig_line1.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.1, layer="below", annotation_text="  Zona Vulnerable (40-70%)")
-            
-            # Ejes alineados con el resto del tablero (0 a 100)
             fig_line1.update_layout(height=400, hovermode="x unified", yaxis_range=[0, 105], title="Evolución de la Salud Integral del Sistema (0 = Colapso, 100 = Óptimo)")
             st.plotly_chart(fig_line1, use_container_width=True)
 
@@ -779,7 +733,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.subheader(f"🏆 Ranking Territorial Multicriterio (AHP) - {nombre_zona}")
         
         lista_cuencas = []
-        if capas.get('cuencas') is not None and not capas['cuencas'].empty:
+        if 'capas' in locals() and capas.get('cuencas') is not None and not capas['cuencas'].empty:
             if 'SUBC_LBL' in capas['cuencas'].columns:
                 lista_cuencas = capas['cuencas']['SUBC_LBL'].dropna().unique().tolist()
                 
@@ -790,8 +744,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         
         datos_ranking = []
         for c in lista_cuencas:
-            # Hash dinámico: Fija los valores por cuenca, pero los hace radicalmente distintos entre sí
-            # para que el orden de la tabla reaccione violentamente a los sliders del Sidebar.
             pseudo_seed = sum([ord(char) for char in c])
             np.random.seed(pseudo_seed)
             
@@ -800,11 +752,10 @@ if gdf_zona is not None and not gdf_zona.empty:
             e_val = np.random.uniform(10, 80) if c != nombre_zona else ind_estres
             c_val = np.random.uniform(20, 100) if c != nombre_zona else ind_calidad
             
-            # 🧠 MOTOR AHP: Conectado en vivo a los sliders del Sidebar
-            # Transformamos los índices para que "mayor valor" signifique "mayor urgencia"
-            urgencia_hidrica = e_val  # Mayor estrés = Mayor urgencia
-            urgencia_biotica = 100 - c_val  # Peor calidad/biodiversidad = Mayor urgencia
-            urgencia_socio = 100 - r_val # Menor resiliencia = Mayor urgencia
+            # 🧠 MOTOR AHP: Conectado a los sliders
+            urgencia_hidrica = e_val  
+            urgencia_biotica = 100 - c_val  
+            urgencia_socio = 100 - r_val 
             
             score_urgencia = (urgencia_hidrica * w_agua) + (urgencia_biotica * w_bio) + (urgencia_socio * w_socio)
             
@@ -835,28 +786,13 @@ if gdf_zona is not None and not gdf_zona.empty:
             fig_radar = go.Figure()
             categorias = ['Neutralidad', 'Resiliencia', 'Seguridad (Inv. Estrés)', 'Calidad', 'Neutralidad']
             
-            # 1. ZONA ÓPTIMA (Verde - Fondo completo)
-            fig_radar.add_trace(go.Scatterpolar(
-                r=[100, 100, 100, 100, 100], theta=categorias,
-                fill='toself', fillcolor='rgba(39, 174, 96, 0.15)', line=dict(color='rgba(255,255,255,0)'),
-                name='Óptimo (>70%)', hoverinfo='none'
-            ))
-            # 2. ZONA VULNERABLE (Amarillo - Intermedio)
-            fig_radar.add_trace(go.Scatterpolar(
-                r=[70, 70, 70, 70, 70], theta=categorias,
-                fill='toself', fillcolor='rgba(241, 196, 15, 0.2)', line=dict(color='rgba(255,255,255,0)'),
-                name='Vulnerable (40-70%)', hoverinfo='none'
-            ))
-            # 3. ZONA CRÍTICA (Rojo - Centro)
-            fig_radar.add_trace(go.Scatterpolar(
-                r=[40, 40, 40, 40, 40], theta=categorias,
-                fill='toself', fillcolor='rgba(192, 57, 43, 0.25)', line=dict(color='rgba(255,255,255,0)'),
-                name='Crítico (<40%)', hoverinfo='none'
-            ))
+            # Zonas de salud
+            fig_radar.add_trace(go.Scatterpolar(r=[100, 100, 100, 100, 100], theta=categorias, fill='toself', fillcolor='rgba(39, 174, 96, 0.15)', line=dict(color='rgba(255,255,255,0)'), name='Óptimo (>70%)', hoverinfo='none'))
+            fig_radar.add_trace(go.Scatterpolar(r=[70, 70, 70, 70, 70], theta=categorias, fill='toself', fillcolor='rgba(241, 196, 15, 0.2)', line=dict(color='rgba(255,255,255,0)'), name='Vulnerable (40-70%)', hoverinfo='none'))
+            fig_radar.add_trace(go.Scatterpolar(r=[40, 40, 40, 40, 40], theta=categorias, fill='toself', fillcolor='rgba(192, 57, 43, 0.25)', line=dict(color='rgba(255,255,255,0)'), name='Crítico (<40%)', hoverinfo='none'))
 
-            # 4. DATOS REALES DEL TERRITORIO
+            # Datos reales
             valores_radar = [ind_neutralidad, ind_resiliencia, max(0, 100-ind_estres), ind_calidad]
-            
             fig_radar.add_trace(go.Scatterpolar(
                 r=valores_radar + [valores_radar[0]], theta=categorias,
                 fill='toself', name=nombre_zona,
@@ -875,72 +811,34 @@ if gdf_zona is not None and not gdf_zona.empty:
                 height=420, margin=dict(l=40, r=40, t=50, b=20)
             )
             st.plotly_chart(fig_radar, use_container_width=True)
-
-            # --- 🤖 INTERPRETE AUTOMÁTICO (CAJA DE ESTADO) ---
-            promedio_salud = np.mean(valores_radar)
             
-            if promedio_salud >= 70:
-                color_box = "#27ae60"
-                msg_estado = "🟢 <b>TERRITORIO ÓPTIMO:</b> El sistema hídrico muestra alta capacidad de asimilación, resiliencia estructural y baja presión antrópica."
-            elif promedio_salud >= 40:
-                color_box = "#f39c12"
-                msg_estado = "🟡 <b>TERRITORIO VULNERABLE:</b> Existen tensiones en la oferta hídrica o calidad del agua. Se requiere inversión preventiva en Soluciones Basadas en la Naturaleza."
-            else:
-                color_box = "#c0392b"
-                msg_estado = "🔴 <b>TERRITORIO CRÍTICO:</b> Alarma sistémica de seguridad hídrica. Urge implementar portafolios masivos de compensación volumétrica (SbN) y saneamiento (PTAR)."
-                
-            st.markdown(f"""
-                <div style='padding:15px; border-radius:8px; background-color:#f8f9fa; border-left: 6px solid {color_box}; box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
-                    <h4 style='margin-top:0px; color:{color_box};'>Puntaje Global de Salud: {promedio_salud:.1f}/100</h4>
-                    <p style='margin-bottom:0px; font-size:14px;'>{msg_estado}</p>
-                </div>
-            """, unsafe_allow_html=True)
+        # --- 🤖 INTÉRPRETE AUTOMÁTICO (CAJA DE ESTADO) ---
+        promedio_salud = np.mean(valores_radar)
         
-        lista_cuencas = []
-        if capas['cuencas'] is not None and not capas['cuencas'].empty:
-            if 'SUBC_LBL' in capas['cuencas'].columns:
-                lista_cuencas = capas['cuencas']['SUBC_LBL'].dropna().unique().tolist()
-                
-        if not lista_cuencas:
-            lista_cuencas = ["Río Chico", "Río Grande", "Quebrada La Mosca", "Río Buey", "Pantaniíllo"]
+        if promedio_salud >= 70:
+            color_box = "#27ae60"
+            msg_estado = "🟢 <b>TERRITORIO ÓPTIMO:</b> El sistema hídrico muestra alta capacidad de asimilación, resiliencia estructural y baja presión antrópica."
+        elif promedio_salud >= 40:
+            color_box = "#f39c12"
+            msg_estado = "🟡 <b>TERRITORIO VULNERABLE:</b> Existen tensiones en la oferta hídrica o calidad del agua. Se requiere inversión preventiva en Soluciones Basadas en la Naturaleza."
+        else:
+            color_box = "#c0392b"
+            msg_estado = "🔴 <b>TERRITORIO CRÍTICO:</b> Alarma sistémica de seguridad hídrica. Urge implementar portafolios masivos de compensación volumétrica (SbN) y saneamiento."
             
-        np.random.seed(42) 
-        datos_ranking = []
-        for c in lista_cuencas:
-            # Algoritmo de ranking simulado (en prod se conecta a los calculos base reales por cuenca)
-            n_val = np.random.uniform(10, 90) if c != nombre_zona else ind_neutralidad
-            r_val = np.random.uniform(20, 95) if c != nombre_zona else ind_resiliencia
-            e_val = np.random.uniform(5, 60) if c != nombre_zona else ind_estres
-            c_val = np.random.uniform(30, 100) if c != nombre_zona else ind_calidad
-            score_urgencia = (e_val * 0.5) + ((100 - r_val) * 0.3) + ((100 - c_val) * 0.2)
-            
-            datos_ranking.append({
-                "Territorio": c,
-                "Urgencia Intervención": score_urgencia,
-                "Neutralidad (%)": n_val,
-                "Resiliencia (%)": r_val,
-                "Estrés Hídrico (%)": e_val,
-                "Calidad de Agua (%)": c_val
-            })
-            
-        df_ranking = pd.DataFrame(datos_ranking).sort_values(by="Urgencia Intervención", ascending=False)
+        st.markdown(f"""
+            <div style='padding:15px; border-radius:8px; background-color:#f8f9fa; border-left: 6px solid {color_box}; box-shadow: 1px 1px 5px rgba(0,0,0,0.1); margin-top: 20px;'>
+                <h4 style='margin-top:0px; color:{color_box};'>Puntaje Global de Salud: {promedio_salud:.1f}/100</h4>
+                <p style='margin-bottom:0px; font-size:14px;'>{msg_estado}</p>
+            </div>
+        """, unsafe_allow_html=True)
         
-        c_tbl, c_box = st.columns([1.2, 1])
-        with c_tbl:
-            st.dataframe(
-                df_ranking.style.background_gradient(cmap="Reds", subset=["Urgencia Intervención", "Estrés Hídrico (%)"])
-                .background_gradient(cmap="Blues", subset=["Resiliencia (%)"])
-                .background_gradient(cmap="Greens", subset=["Neutralidad (%)", "Calidad de Agua (%)"])
-                .format({"Urgencia Intervención": "{:.1f}", "Neutralidad (%)": "{:.1f}%", "Resiliencia (%)": "{:.1f}%", "Estrés Hídrico (%)": "{:.1f}%", "Calidad de Agua (%)": "{:.1f}%"}),
-                use_container_width=True, hide_index=True
-            )
-            csv_ranking = df_ranking.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Ranking (CSV)", csv_ranking, "Ranking_Territorial_WRI.csv", "text/csv")
-
-        with c_box:
+        # --- DISTRIBUCIÓN REGIONAL (BOX PLOT) ---
+        # Utilizamos el df_ranking que ya calculamos y blindamos en el paso anterior
+        if 'df_ranking' in locals() and not df_ranking.empty:
+            st.markdown("<br>", unsafe_allow_html=True)
             df_melt = df_ranking.melt(id_vars=["Territorio"], value_vars=["Neutralidad (%)", "Resiliencia (%)", "Estrés Hídrico (%)", "Calidad de Agua (%)"], var_name="Índice", value_name="Valor (%)")
             fig_box = px.box(df_melt, x="Índice", y="Valor (%)", color="Índice", points="all",
-                             title="Distribución Regional de Indicadores",
+                             title="Distribución Regional de Indicadores de Seguridad Hídrica",
                              color_discrete_map={"Neutralidad (%)": "#2ecc71", "Resiliencia (%)": "#3498db", "Estrés Hídrico (%)": "#e74c3c", "Calidad de Agua (%)": "#9b59b6"})
             fig_box.update_layout(height=350, showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
             st.plotly_chart(fig_box, use_container_width=True)
@@ -952,24 +850,16 @@ if gdf_zona is not None and not gdf_zona.empty:
             ### 📖 Glosario de Indicadores
             
             * **Neutralidad Hídrica (Volumetric Water Benefit VWBA):**
-              * **Concepto:** Mide si el volumen de agua restituido a la cuenca mediante Soluciones Basadas en la Naturaleza (SbN) compensa la Huella Hídrica del consumo humano/industrial.
-              * **Interpretación:** Un 100% indica que se está reponiendo cada gota extraída. Valores $<40\%$ son críticos e implican deuda ecológica.
-              * **Fórmula:** $\\frac{\\sum Beneficios\\ Volumétricos\\ (m^3/a)}{Consumo\\ Total\\ (m^3/a)} \\times 100$
+              * **Concepto:** Mide si el volumen de agua restituido a la cuenca mediante Soluciones Basadas en la Naturaleza (SbN) compensa la Huella Hídrica del consumo.
+              * **Interpretación:** Un 100% indica que se repone cada gota extraída. Valores $<40\%$ son críticos.
               
-            * **Resiliencia Territorial:**
+            * **Resiliencia Territorial (BFI USGS):**
               * **Concepto:** Capacidad del ecosistema (aguas subterráneas + escorrentía) para soportar eventos de sequía (El Niño) sin colapsar el suministro.
-              * **Interpretación:** Zonas con alta recarga de acuíferos ($>70\%$) son buffers climáticos naturales. 
               
-            * **Estrés Hídrico (Indicador Falkenmark / ODS 6.4.2):**
-              * **Concepto:** Porcentaje de la oferta total anual que está siendo extraída por los diversos sectores económicos.
-              * **Interpretación:** Valores $>40\%$ denotan estrés severo (competencia intensa por el recurso). Valores $<20\%$ indican un sistema holgado.
+            * **Estrés Hídrico (WEI+ / ODS 6.4.2):**
+              * **Concepto:** Porcentaje de la oferta total anual extraída por sectores económicos. Valores $>40\%$ denotan estrés severo.
 
-            * **Calidad de Agua (WQI):** Índice modificado basado en la capacidad de dilución natural (Oferta vs Extracción) y mitigación sanitaria (STAM).
-              
-            ### 🌐 Fuentes y Estándares de Referencia
-            * **WRI (World Resources Institute):** [Volumetric Water Benefit Accounting (VWBA) - Metodología Oficial](https://www.wri.org/research/volumetric-water-benefit-accounting-vwba-implementing-guidelines)
-            * **CEO Water Mandate:** Iniciativa del Pacto Global de Naciones Unidas para la resiliencia hídrica corporativa.
-            * **Naciones Unidas:** Objetivo de Desarrollo Sostenible (ODS) 6.4.2 (Nivel de estrés hídrico).
+            * **Calidad de Agua (WQI):** Índice modificado basado en la capacidad de dilución natural y mitigación sanitaria (STAM/PTAR).
             """)
 
         # =========================================================================
@@ -977,20 +867,17 @@ if gdf_zona is not None and not gdf_zona.empty:
         # =========================================================================
         st.markdown("---")
         
-        # 🏷️ CORRECCIÓN 1: Inyectamos el nombre dinámico directamente desde tu selector
-        nombre_zona_td = nombre_seleccion if 'nombre_seleccion' in locals() else "el Territorio"
         st.subheader(f"🎯 Priorización Predial: Inteligencia de Negociación en {nombre_zona}")
-        st.markdown("Cruza las necesidades de restauración riparia con la estructura predial para identificar qué propiedades deben ser priorizadas.")
+        st.markdown("Cruza las necesidades de restauración riparia con la estructura predial alojada en la nube para identificar qué propiedades priorizar.")
 
-        # 1. Recuperar datos
+        # 1. Recuperar datos del motor geomorfológico
         rios_strahler = st.session_state.get('gdf_rios')
         buffer_m = st.session_state.get('buffer_m_ripario', None) 
         
-        # --- 🌿 MOTOR GEOMORFOLÓGICO Y RIPARIO (CASCADA INTELIGENTE) ---
         st.markdown("---")
         if rios_strahler is None or rios_strahler.empty:
             with st.expander("⚠️ Paso 1: Faltan Datos - Generar Red Hídrica", expanded=True):
-                st.info("Para priorizar predios necesitamos crear la franja riparia, y para eso necesitamos los ríos. ¡Trázalos aquí!")
+                st.info("Para priorizar predios necesitamos crear la franja riparia, y para eso necesitamos los ríos. ¡Trázalos en el Módulo de Geomorfología o actívalos aquí!")
                 render_motor_hidrologico(gdf_zona)
                 
         elif buffer_m is None:
@@ -1003,22 +890,8 @@ if gdf_zona is not None and not gdf_zona.empty:
                 st.success(f"✅ Red Hídrica y Franja Riparia de {buffer_m}m listas para el cruce predial.")
                 render_motor_ripario()
 
-        # 2. CARGAR LA CAPA DE PREDIOS
-        capa_predios = None
-        ruta_geojson_adquiridos = "data/PREDIOS_ADQUIRIDOS_ANTIOQUIA.geojson"
-        ruta_shp_ant = "data/Predios_Ant.shp"
-        
-        try:
-            if gdf_zona is not None:
-                bbox = tuple(gdf_zona.to_crs(epsg=4326).total_bounds)
-                if os.path.exists(ruta_geojson_adquiridos):
-                    capa_predios = gpd.read_file(ruta_geojson_adquiridos, bbox=bbox)
-                elif os.path.exists(ruta_shp_ant):
-                    capa_predios = gpd.read_file(ruta_shp_ant, bbox=bbox)
-                else:
-                    capa_predios = capas.get('predios') if 'capas' in locals() else None
-        except Exception as e:
-            st.warning(f"No se pudo cargar la capa de predios local: {e}")
+        # 2. CARGAR LA CAPA DE PREDIOS (100% CLOUD NATIVE)
+        capa_predios = capas.get('predios') if 'capas' in locals() else None
 
         # 3. EJECUTAR EL MOTOR DE CRUCE MULTI-ANILLO
         if rios_strahler is not None and not rios_strahler.empty:
@@ -1028,11 +901,11 @@ if gdf_zona is not None and not gdf_zona.empty:
             if 'longitud_km' in rios_strahler.columns:
                 rios_strahler['longitud_km'] = rios_strahler['longitud_km'].round(2)
             
-            # Extraemos los 3 tamaños de anillo
+            # Extraemos los 3 tamaños de anillo (Blindado contra nulos)
             anillos = st.session_state.get('multi_rings', [10, 20, 30])
             b_min, b_med, b_max = anillos[0], anillos[1], anillos[2]
             
-            # 🌿 MAGIA GEOMÉTRICA: Pre-calculamos los 3 anillos fusionados para el mapa
+            # 🌿 MAGIA GEOMÉTRICA: Pre-calculamos los 3 anillos fusionados
             rios_3116 = rios_strahler.to_crs(epsg=3116)
             rios_union = rios_3116.unary_union
             geom_max = rios_union.buffer(b_max, resolution=2)
@@ -1041,7 +914,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             
             buffer_max_gdf = gpd.GeoDataFrame(geometry=[geom_max], crs=3116)
             
-            # --- NUEVO: CÁLCULO DE ÁREAS POR CADA FRANJA RIPARIA (TRAMO HÍDRICO) ---
+            # CÁLCULO DE ÁREAS POR CADA FRANJA RIPARIA (TRAMO HÍDRICO)
             datos_tramos = []
             for idx, row in rios_3116.iterrows():
                 long_m = row.geometry.length
@@ -1059,7 +932,6 @@ if gdf_zona is not None and not gdf_zona.empty:
                 })
             df_tramos = pd.DataFrame(datos_tramos).sort_values(by="Importancia Ecológica", ascending=False)
             
-            # Calculamos los totales a partir de los tramos (matemáticamente más exacto)
             tot_min = df_tramos[f"Mínimo ({b_min}m) ha"].sum()
             tot_med = df_tramos[f"Ideal ({b_med}m) ha"].sum()
             tot_max = df_tramos[f"Óptimo ({b_max}m) ha"].sum()
@@ -1068,32 +940,25 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.success(f"✅ Modelando 3 escenarios concéntricos simultáneos ({b_min}m, {b_med}m, {b_max}m)...")
             
             st.markdown("##### 📊 Tablero de Sensibilidad Ecológica y Financiera")
-            
-            # Ahora creamos 5 columnas en lugar de 4
             cm1, cm2, cm3, cm4, cm5 = st.columns(5)
-            
             cm1.metric(f"🔴 Escenario {b_min}m", f"{tot_min:,.1f} ha")
-            cm2.metric(f"🟡 Escenario {b_med}m", f"{tot_med:,.1f} ha", f"+{(tot_med - tot_min):,.1f} ha extra", delta_color="off")
-            cm3.metric(f"🟢 Escenario {b_max}m", f"{tot_max:,.1f} ha", f"+{(tot_max - tot_med):,.1f} ha extra", delta_color="off")
+            cm2.metric(f"🟡 Escenario {b_med}m", f"{tot_med:,.1f} ha", f"+{(tot_med - tot_min):,.1f} ha", delta_color="off")
+            cm3.metric(f"🟢 Escenario {b_max}m", f"{tot_max:,.1f} ha", f"+{(tot_max - tot_med):,.1f} ha", delta_color="off")
             cm4.metric("🌿 Tramos Hídricos", f"{len(df_tramos)}")
-            cm5.metric("📏 Longitud Total", f"{tot_longitud_km:,.1f} km") # <-- NUEVA MÉTRICA
+            cm5.metric("📏 Longitud Total", f"{tot_longitud_km:,.1f} km")
             
-            # --- SEPARACIÓN ELEGANTE EN PESTAÑAS (TABS) ---
             tab_predios, tab_tramos = st.tabs(["🏡 Impacto Predial (Negociación)", "🌿 Áreas por Franja Riparia (Tramos)"])
             
             with tab_tramos:
                 st.markdown("##### 📋 Matriz Detallada por Franja Riparia")
-                st.info("Esta tabla muestra cuánta área de restauración aporta cada segmento del río (Franja Riparia) para cumplir los 3 escenarios ecológicos.")
                 st.dataframe(df_tramos.style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format(precision=2), use_container_width=True, hide_index=True)
-                csv_tramos = df_tramos.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Descargar Matriz de Franjas (CSV)", csv_tramos, "Franjas_Riparias.csv", "text/csv")
             
             with tab_predios:
+                predios_en_buffer = gpd.GeoDataFrame()
                 if capa_predios is not None and not capa_predios.empty:
-                    with st.spinner("Ejecutando intersección de anillos concéntricos con predios..."):
+                    with st.spinner("Ejecutando intersección de anillos concéntricos con predios de Supabase..."):
                         try:
                             predios_3116 = capa_predios.to_crs(epsg=3116)
-                            # Cruzamos solo con el anillo mayor para optimizar
                             predios_en_buffer = gpd.overlay(predios_3116, buffer_max_gdf, how='intersection')
                             
                             if not predios_en_buffer.empty:
@@ -1101,7 +966,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                                 predios_en_buffer['Area_Med_ha'] = predios_en_buffer.geometry.intersection(geom_med).area / 10000.0
                                 predios_en_buffer['Area_Min_ha'] = predios_en_buffer.geometry.intersection(geom_min).area / 10000.0
                                 
-                                col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID'] if col in predios_en_buffer.columns), None)
+                                col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id'] if col in predios_en_buffer.columns), None)
                                 if col_id is None:
                                     predios_en_buffer['ID_Predio'] = predios_en_buffer.index
                                     col_id = 'ID_Predio'
@@ -1110,9 +975,9 @@ if gdf_zona is not None and not gdf_zona.empty:
                                     'Area_Min_ha': 'sum', 'Area_Med_ha': 'sum', 'Area_Max_ha': 'sum'
                                 }).reset_index()
                                 
-                                datos_ranking = []
+                                datos_prioridad = []
                                 for idx, row in predios_agrupados.iterrows():
-                                    datos_ranking.append({
+                                    datos_prioridad.append({
                                         "Identificador Predial": row[col_id],
                                         f"Mínimo ({b_min}m) ha": row['Area_Min_ha'],
                                         f"Ideal ({b_med}m) ha": row['Area_Med_ha'],
@@ -1120,7 +985,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                                         "ROI (Máx)": row['Area_Max_ha'] * 100
                                     })
                                     
-                                df_prioridad = pd.DataFrame(datos_ranking).sort_values(by="ROI (Máx)", ascending=False)
+                                df_prioridad = pd.DataFrame(datos_prioridad).sort_values(by="ROI (Máx)", ascending=False)
                                 
                                 c_rank1, c_rank2 = st.columns([2, 1])
                                 with c_rank1:
@@ -1129,17 +994,15 @@ if gdf_zona is not None and not gdf_zona.empty:
                                 with c_rank2:
                                     st.info("Cada escenario incrementa el esfuerzo de negociación predial. Exporta esta matriz para gestión territorial.")
                                     st.metric("Predios Involucrados", f"{len(df_prioridad)}")
-                                    csv_predios = df_prioridad.to_csv(index=False).encode('utf-8')
-                                    st.download_button("📥 Descargar Matriz Predial (CSV)", csv_predios, "Escenarios_Prediales.csv", "text/csv")
                             else:
-                                st.info("Ninguno de los predios intercepta la red hidrográfica.")
+                                st.info("Ninguno de los predios protegidos intercepta la red hidrográfica modelada.")
                         except Exception as e:
                             st.error(f"Error en el cruce geográfico: {e}")
                 else:
-                    st.info("ℹ️ No se detectó mapa predial. Utilice la pestaña de 'Franjas Riparias' para ver los requerimientos de área.")
+                    st.info("ℹ️ No se detectó un mapa predial maestro en Supabase. Se recomienda subir el archivo 'PrediosEjecutados.geojson' desde el Panel de Administración.")
 
             # =========================================================
-            # 🗺️ EL MAPA TÁCTICO (CON MULTI-ANILLOS VISUALES)
+            # 🗺️ EL MAPA TÁCTICO PYDECK (CON MULTI-ANILLOS VISUALES)
             # =========================================================
             st.markdown("---")
             st.markdown(f"##### 🗺️ Visor Táctico de Conectividad y Predios en: **{nombre_zona}**")
@@ -1156,30 +1019,28 @@ if gdf_zona is not None and not gdf_zona.empty:
                 zona_4326 = gdf_zona.to_crs("EPSG:4326")
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
             
-            # --- 🟢 CAPAS MULTI-ANILLO (Dibujadas de mayor a menor para efecto concéntrico) ---
+            # --- 🟢 CAPAS MULTI-ANILLO ---
             if 'geom_max' in locals():
-                # Óptimo (Más grande, más transparente)
                 gdf_max = gpd.GeoDataFrame(geometry=[geom_max], crs=3116).to_crs(4326)
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=gdf_max, opacity=0.2, get_fill_color=[171, 235, 198], stroked=False))
-                # Ideal (Intermedio)
+                
                 gdf_med = gpd.GeoDataFrame(geometry=[geom_med], crs=3116).to_crs(4326)
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=gdf_med, opacity=0.4, get_fill_color=[88, 214, 141], stroked=False))
-                # Normativo (Más pequeño, verde oscuro)
+                
                 gdf_min = gpd.GeoDataFrame(geometry=[geom_min], crs=3116).to_crs(4326)
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=gdf_min, opacity=0.6, get_fill_color=[40, 180, 99], stroked=False))
 
-            # --- 🔵 CAPA DE RÍOS (Línea Fina Central) ---
+            # --- 🔵 CAPA DE RÍOS ---
             if 'rios_4326' in locals():
                 capas_mapa.append(pdk.Layer(
                     "GeoJsonLayer", data=rios_4326,
-                    get_line_color=[31, 97, 141, 255], # Azul oscuro
-                    get_line_width=2, lineWidthMinPixels=2,
+                    get_line_color=[31, 97, 141, 255], get_line_width=2, lineWidthMinPixels=2,
                     pickable=True, autoHighlight=True
                 ))
             
             # --- 🏠 CAPA DE PREDIOS ---
             if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
-                col_id_pred = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'ID_Predio'] if col in predios_en_buffer.columns), None)
+                col_id_pred = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id', 'ID_Predio'] if col in predios_en_buffer.columns), None)
                 if col_id_pred and capa_predios is not None:
                     ids_afectados = predios_en_buffer[col_id_pred].unique()
                     predios_a_dibujar = capa_predios[capa_predios[col_id_pred].isin(ids_afectados)].to_crs(epsg=4326)
@@ -1192,10 +1053,9 @@ if gdf_zona is not None and not gdf_zona.empty:
                     ))
             
             view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=13, pitch=45)
-            
-            tooltip = {"html": "<b>{ID_Tramo} {MATRICULA} {COD_CATAST}</b><br/>Orden Hídrico: {Orden_Strahler}<br/>Longitud: {longitud_km} km", "style": {"backgroundColor": "steelblue", "color": "white"}}
+            tooltip = {"html": "<b>Tramo Hídrico:</b> {ID_Tramo}<br/><b>Orden:</b> {Orden_Strahler}<br/><b>Longitud:</b> {longitud_km} km", "style": {"backgroundColor": "steelblue", "color": "white"}}
             st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
 
         else:
             st.warning("⚠️ El cruce predial y el mapa táctico están en pausa porque aún no se han calculado los ríos.")
-            st.info("👆 Por favor, utiliza el generador de Franja Riparia que se encuentra arriba para iluminar este tablero.")
+            st.info("👆 Por favor, utiliza el botón del motor hidrológico de arriba para iluminar este tablero.")
