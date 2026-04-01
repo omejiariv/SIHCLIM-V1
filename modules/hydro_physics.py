@@ -42,6 +42,10 @@ def warper_raster_to_grid(raster_path, bounds, shape):
     """
     if not raster_path: return None
     
+    # 🚀 FIX CLAVE: Obligar a GDAL a usar el protocolo de red virtual para URLs
+    if raster_path.startswith("http"):
+        raster_path = raster_path.replace("https://", "/vsicurl/https://").replace("http://", "/vsicurl/http://")
+        
     try:
         dst_crs = 'EPSG:4326'
         minx, miny, maxx, maxy = bounds
@@ -50,7 +54,7 @@ def warper_raster_to_grid(raster_path, bounds, shape):
         env_kwargs = {
             'GDAL_DISABLE_READDIR_ON_OPEN': 'EMPTY_DIR',
             'CPL_VSIL_CURL_ALLOWED_EXTENSIONS': 'tif',
-            'GDAL_HTTP_UNSAFESSL': 'YES' # Útil si hay problemas de certificado
+            'GDAL_HTTP_UNSAFESSL': 'YES'
         }
         
         with rasterio.Env(**env_kwargs):
@@ -78,9 +82,9 @@ def warper_raster_to_grid(raster_path, bounds, shape):
                 return destination
 
     except Exception as e:
-        # Silenciamos el error para producción, pero el fallback de numpy seguirá funcionando
+        # Imprimimos el error en consola para monitoreo
+        print(f"Error crítico leyendo raster en la nube ({raster_path}): {e}")
         return None
-
 
 # --- D. MOTOR FÍSICO "EL ALEPH" ---
 def run_distributed_model(Z_P, grid_x, grid_y, paths, bounds):
