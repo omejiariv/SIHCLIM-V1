@@ -465,17 +465,26 @@ def main():
                 # Si falla la BD o no existe la tabla, seguimos sin bocatomas (no es crítico)
                 gdf_bocatomas = None
 
-            # 1. CONFIGURACIÓN GRID
-            c1, c2 = st.columns(2)
-            buffer_km = c1.slider("Buffer Análisis (km)", 0.0, 50.0, 20.0)
-            grid_res = c2.slider("Resolución Grid (Celdas)", 50, 400, 150)
+            # 1. CONFIGURACIÓN GRID Y SINCRONIZACIÓN ESPACIAL
+            # 🤝 LECTURA MAESTRA: El lienzo toma el tamaño exacto que el Sidebar le dicte
+            buffer_km = float(st.session_state.get("buffer_global_km", 15.0))
+            
+            st.info(f"📏 Modelando con un área de influencia de **{buffer_km} km** (Configurado en el panel lateral).")
+            
+            # Dejamos solo el slider de resolución para no saturar la interfaz
+            grid_res = st.slider("Resolución del Grid (Celdas)", min_value=50, max_value=400, value=150, help="Mayor resolución = más detalle pero más tiempo de cálculo.")
             
             # 2. GEOMETRÍA
             if gdf_zona is None: gdf_zona = gdf_filtered
+            
+            # Conversión aproximada de km a grados (1 grado ~ 111 km en el ecuador)
             buffer_deg = buffer_km / 111.0
+            
+            # Aplicamos el buffer a la zona para definir la "caja" (Bounding Box) del mapa
             gdf_buffer = gdf_zona.buffer(buffer_deg) if buffer_km > 0 else gdf_zona
             minx, miny, maxx, maxy = gdf_buffer.total_bounds
             
+            # Creamos la malla matemática (Meshgrid)
             xi = np.linspace(minx, maxx, grid_res)
             yi = np.linspace(miny, maxy, grid_res)
             grid_x, grid_y = np.meshgrid(xi, yi)
