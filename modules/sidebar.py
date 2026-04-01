@@ -3,12 +3,10 @@
 import pandas as pd
 import streamlit as st
 
-import modules.db_manager as db_manager  # Importar el gestor de base de datos
+import modules.db_manager as db_manager  
 from modules.config import Config
 
-# Identificador de usuario (temporalmente genérico, idealmente vendría de un login)
 CURRENT_USER = "default_user"
-
 
 def create_sidebar(gdf_stations, df_long):
     with st.sidebar:
@@ -31,7 +29,6 @@ def create_sidebar(gdf_stations, df_long):
 
             st.markdown("---")
 
-            # Filtro por % de datos
             min_pct = st.slider(
                 "Mínimo % de Datos Disponibles:",
                 0,
@@ -54,12 +51,10 @@ def create_sidebar(gdf_stations, df_long):
         valid_stations_by_pct = gdf_stations[Config.STATION_NAME_COL].unique()
 
         if min_pct > 0 and df_long is not None:
-            # Calcular porcentaje real basado en los datos cargados
             counts = df_long.groupby(Config.STATION_NAME_COL)[
                 Config.PRECIPITATION_COL
             ].count()
 
-            # Calcular total teórico de meses (Años * 12)
             if not df_long.empty:
                 n_years = (
                     df_long[Config.YEAR_COL].max() - df_long[Config.YEAR_COL].min() + 1
@@ -70,17 +65,11 @@ def create_sidebar(gdf_stations, df_long):
 
         # B. Filtro por Altitud
         altitude_options = [
-            "Todos",
-            "0-500",
-            "500-1000",
-            "1000-1500",
-            "1500-2000",
-            "2000-3000",
-            ">3000",
+            "Todos", "0-500", "500-1000", "1000-1500", 
+            "1500-2000", "2000-3000", ">3000",
         ]
         selected_alt_range = st.selectbox("Filtrar por Altitud (m):", altitude_options)
 
-        # Aplicar filtros base (Estaciones válidas por % y luego Altitud)
         gdf_filtered_base = gdf_stations[
             gdf_stations[Config.STATION_NAME_COL].isin(valid_stations_by_pct)
         ].copy()
@@ -99,7 +88,7 @@ def create_sidebar(gdf_stations, df_long):
                         & (gdf_filtered_base[Config.ALTITUDE_COL] < max_alt)
                     ]
                 except:
-                    pass  # Manejo de errores si el formato del string falla
+                    pass 
 
         # C. Región (CON PERSISTENCIA)
         selected_regions = []
@@ -108,23 +97,19 @@ def create_sidebar(gdf_stations, df_long):
                 gdf_filtered_base[Config.REGION_COL].astype(str).unique()
             )
 
-            # Recuperar preferencia guardada
             saved_regions = db_manager.get_user_preference(
                 CURRENT_USER, "selected_regions", []
             )
 
-            # Validar que las regiones guardadas sigan existiendo en los datos actuales
             if isinstance(saved_regions, list):
                 valid_saved = [r for r in saved_regions if r in all_regions]
             else:
                 valid_saved = []
 
-            # Widget Multiselect con valor por defecto recuperado
             selected_regions = st.multiselect(
                 "Región:", all_regions, default=valid_saved
             )
 
-            # Guardar si hay cambios (comparando conjuntos para ignorar orden)
             if set(selected_regions) != set(valid_saved):
                 db_manager.save_user_preference(
                     CURRENT_USER, "selected_regions", selected_regions
@@ -166,7 +151,6 @@ def create_sidebar(gdf_stations, df_long):
                         "⚠️ Muchas estaciones seleccionadas. El rendimiento puede variar."
                     )
             else:
-                # Por defecto seleccionar las primeras 3 si no se eligen todas
                 default_stations = (
                     available_stations[:3] if len(available_stations) > 0 else []
                 )
@@ -178,7 +162,6 @@ def create_sidebar(gdf_stations, df_long):
                 label_visibility="collapsed",
             )
 
-        # Crear GDF final basado en la selección
         gdf_final = gdf_stations[
             gdf_stations[Config.STATION_NAME_COL].isin(stations_for_analysis)
         ]
@@ -195,10 +178,9 @@ def create_sidebar(gdf_stations, df_long):
             try:
                 min_y = int(df_long[Config.YEAR_COL].min())
                 max_y = int(df_long[Config.YEAR_COL].max())
-                # El slider ahora vive dentro del form, no recargará la página al moverlo
                 year_range = st.slider("Años:", min_y, max_y, (max_y - 10, max_y))
             except:
-                year_range = (1980, 2020)  # Fallback por seguridad
+                year_range = (1980, 2020)  
 
             # --- 4. FILTRO DE MESES ---
             st.markdown("### 📆 Análisis Estacional")
@@ -208,7 +190,6 @@ def create_sidebar(gdf_stations, df_long):
                 "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
             ]
 
-            # Checkbox para seleccionar todos
             sel_all_months = st.checkbox("Seleccionar todos los meses", value=True, key="sel_all_months")
             
             if sel_all_months:
@@ -224,14 +205,12 @@ def create_sidebar(gdf_stations, df_long):
             )
             
             st.markdown("---")
-            # ESTE ES EL BOTÓN CLAVE: Nada se procesa hasta que hagas clic aquí
             boton_aplicar = st.form_submit_button("🔄 Actualizar Gráficos y Mapa", type="primary")
 
         # ==============================================================================
-        # FIN DEL FORMULARIO - A partir de aquí el código sigue normal
+        # FIN DEL FORMULARIO
         # ==============================================================================
 
-        # Mapear nombres a números (1-12) fuera del form para el procesamiento
         mapa_meses = {m: i + 1 for i, m in enumerate(meses_nombres)}
         selected_months_nums = [mapa_meses[m] for m in selected_months]
 
@@ -250,10 +229,9 @@ def create_sidebar(gdf_stations, df_long):
             mask_mes = df_temp[Config.MONTH_COL].isin(selected_months_nums)
             df_monthly_filtered = df_temp.loc[mask_mes].copy()
         else:
-            # Si no hay meses seleccionados, DataFrame vacío con estructura correcta
             df_monthly_filtered = pd.DataFrame(columns=df_long.columns)
 
-        # C. Filtros de Calidad (Nulos y Ceros)
+        # C. Filtros de Calidad
         if exclude_nulls:
             df_monthly_filtered = df_monthly_filtered.dropna(
                 subset=[Config.PRECIPITATION_COL]
@@ -287,7 +265,6 @@ def create_sidebar(gdf_stations, df_long):
             st.cache_data.clear()
             st.rerun()
 
-        # Determinamos el string de interpolación para el resumen
         str_interpolacion = "Si" if run_complete_series else "No"
 
         # RETORNO
