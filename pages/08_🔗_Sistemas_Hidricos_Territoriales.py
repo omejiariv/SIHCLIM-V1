@@ -1284,7 +1284,7 @@ with contenedor_sankey.container():
         lodo_suspension = st.session_state.get('eco_lodo_suspension_m3', 
                           st.session_state.get('eco_lodo_abrasivo_m3', 0.0))
 
-if memoria_lodo_total > 0:
+        if memoria_lodo_total > 0:
             st.markdown(f"""
             <div style='background-color: rgba(231, 76, 60, 0.05); border-left: 5px solid #e74c3c; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
                 <span style='color: #c0392b; font-weight: bold;'>🚨 Evento de Ingeniería Detectado:</span> 
