@@ -3,10 +3,35 @@
 import numpy as np
 import rasterio
 from rasterio.warp import reproject, Resampling
-from rasterio.transform import from_bounds
 import os
+import urllib.request
+import tempfile
+import streamlit as st
 from modules.interpolation import interpolador_maestro
-import warnings
+
+# --- 🚀 CLOUD SMART CACHE ---
+@st.cache_data(show_spinner=False)
+def get_cached_raster(url):
+    """
+    Descarga el raster desde Supabase a una carpeta temporal local LA PRIMERA VEZ.
+    Esto evita bloqueos de red de GDAL y acelera el modelo x100.
+    """
+    if not url or not url.startswith("http"): 
+        return url
+        
+    filename = url.split("/")[-1]
+    local_path = os.path.join(tempfile.gettempdir(), filename)
+    
+    if not os.path.exists(local_path):
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (SIHCLI-POTER)'})
+            with urllib.request.urlopen(req) as response, open(local_path, 'wb') as out_file:
+                out_file.write(response.read())
+        except Exception as e:
+            print(f"Error descargando caché de {url}: {e}")
+            return url # Fallback a la URL cruda si falla
+            
+    return local_path
 
 # --- A. BASE DE CONOCIMIENTO ---
 CLC_C_BASE = {
@@ -19,9 +44,6 @@ CLC_C_BASE = {
 
 # --- B. INTERPOLACIÓN PUENTE ---
 def interpolar_variable(gdf_puntos, columna_valor, grid_x, grid_y, method='kriging', dem_array=None):
-    """
-    Función puente que llama al interpolador maestro.
-    """
     Z_Interp, Z_Error = interpolador_maestro(
         df_puntos=gdf_puntos,
         col_val=columna_valor,
@@ -30,68 +52,49 @@ def interpolar_variable(gdf_puntos, columna_valor, grid_x, grid_y, method='krigi
         metodo=method,
         dem_grid=dem_array
     )
-    
     Z_Interp = np.nan_to_num(Z_Interp, nan=0)
     return np.maximum(Z_Interp, 0), Z_Error
 
-# --- C. WARPING (LECTURA DE RASTERS EN LA NUBE) ---
+# --- C. WARPING (AHORA USANDO CACHÉ LOCAL OPTIMIZADO) ---
 def warper_raster_to_grid(raster_path, bounds, shape):
     """
-    Lee un raster (desde URL de Supabase o local) y lo fuerza a encajar en la malla WGS84.
-    Utiliza un entorno optimizado para lectura Cloud-Native.
+    Lee un raster desde el caché seguro y lo fuerza a encajar en la malla WGS84.
     """
-    if not raster_path: return None
+    safe_path = get_cached_raster(raster_path)
+    if not safe_path: return None
     
-    # 🚀 FIX CLAVE: Obligar a GDAL a usar el protocolo de red virtual para URLs
-    if raster_path.startswith("http"):
-        raster_path = raster_path.replace("https://", "/vsicurl/https://").replace("http://", "/vsicurl/http://")
-        
     try:
         dst_crs = 'EPSG:4326'
         minx, miny, maxx, maxy = bounds
         
-        # ☁️ MAGIA CLOUD: Configuramos GDAL para leer sobre HTTP/HTTPS eficientemente
-        env_kwargs = {
-            'GDAL_DISABLE_READDIR_ON_OPEN': 'EMPTY_DIR',
-            'CPL_VSIL_CURL_ALLOWED_EXTENSIONS': 'tif',
-            'GDAL_HTTP_UNSAFESSL': 'YES'
-        }
-        
-        with rasterio.Env(**env_kwargs):
-            with rasterio.open(raster_path) as src:
-                dst_transform = rasterio.transform.from_bounds(
-                    minx, miny, maxx, maxy, shape[1], shape[0]
-                )
-                
-                destination = np.zeros(shape, dtype=np.float32)
+        with rasterio.open(safe_path) as src:
+            dst_transform = rasterio.transform.from_bounds(
+                minx, miny, maxx, maxy, shape[1], shape[0]
+            )
+            destination = np.zeros(shape, dtype=np.float32)
 
-                reproject(
-                    source=rasterio.band(src, 1),
-                    destination=destination,
-                    src_transform=src.transform,
-                    src_crs=src.crs,
-                    dst_transform=dst_transform,
-                    dst_crs=dst_crs,
-                    resampling=Resampling.bilinear,
-                    dst_nodata=np.nan 
-                )
+            reproject(
+                source=rasterio.band(src, 1),
+                destination=destination,
+                src_transform=src.transform,
+                src_crs=src.crs,
+                dst_transform=dst_transform,
+                dst_crs=dst_crs,
+                resampling=Resampling.bilinear,
+                dst_nodata=np.nan 
+            )
+            
+            if np.isnan(destination).all():
+                return None
                 
-                if np.isnan(destination).all():
-                    return None
-                    
-                return destination
+            return destination
 
     except Exception as e:
-        # Imprimimos el error en consola para monitoreo
-        print(f"Error crítico leyendo raster en la nube ({raster_path}): {e}")
+        print(f"Error warper DEM: {e}")
         return None
 
 # --- D. MOTOR FÍSICO "EL ALEPH" ---
 def run_distributed_model(Z_P, grid_x, grid_y, paths, bounds):
-    """
-    Calcula el balance hídrico distribuido.
-    RETORNA: Diccionario con CLAVES LARGAS Y NUMERADAS para visualización directa.
-    """
     shape = grid_x.shape
     
     # --- 1. ELEVACIÓN Y TEMPERATURA ---
@@ -125,13 +128,13 @@ def run_distributed_model(Z_P, grid_x, grid_y, paths, bounds):
 
     # --- 4. COBERTURA Y ESCORRENTÍA ---
     Z_C = np.full_like(Z_P, 0.45) 
-    Z_Cob_Viz = None # Para visualización
+    Z_Cob_Viz = None
 
     if paths.get('cobertura'):
         try:
             Z_Cob = warper_raster_to_grid(paths['cobertura'], bounds, shape)
             if Z_Cob is not None:
-                Z_Cob_Viz = Z_Cob # Guardamos para mostrar
+                Z_Cob_Viz = Z_Cob 
                 def map_c(code): return CLC_C_BASE.get(int(code), 0.50)
                 vfunc = np.vectorize(map_c)
                 Z_C = vfunc(np.nan_to_num(Z_Cob, nan=0))
@@ -149,7 +152,7 @@ def run_distributed_model(Z_P, grid_x, grid_y, paths, bounds):
     Z_C_Inv = np.maximum(1.0 - Z_C_Mod, 0.05)
     Z_Erosion = np.nan_to_num((Z_P * 0.5) * 0.3 * (1 + Z_Slope_Pct * 5) * (1.0 / Z_C_Inv), nan=0.0)
 
-    # --- 7. DICCIONARIO FINAL (CLAVES AMIGABLES) ---
+    # --- 7. DICCIONARIO FINAL ---
     resultados = {
         '1. Precipitación (mm/año)': Z_P,
         '2. Temperatura Media (°C)': Z_T,
@@ -157,13 +160,12 @@ def run_distributed_model(Z_P, grid_x, grid_y, paths, bounds):
         '4. Elevación (msnm)': Z_Alt,
         '5. Escorrentía Superficial (mm/año)': Z_Q_Sup,
         '6. Infiltración (mm/año)': Z_Inf,
-        '7. Recarga Potencial (mm/año)': Z_Inf,  # Asumimos Inf = Recarga Potencial
+        '7. Recarga Potencial (mm/año)': Z_Inf,
         '8. Recarga Real (mm/año)': Z_Rec_Real,
         '9. Rendimiento Hídrico (L/s/km²)': Z_Rendimiento,
         '10. Susceptibilidad Erosión (Adim)': Z_Erosion
     }
 
-    # Agregamos Cobertura solo si se pudo procesar
     if Z_Cob_Viz is not None:
         resultados['11. Cobertura de Suelo (Clase)'] = Z_Cob_Viz
 
