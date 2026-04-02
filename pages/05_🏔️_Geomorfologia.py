@@ -627,26 +627,48 @@ if gdf_zona_seleccionada is not None:
                         c_runoff = st.slider("Coeficiente de Escorrentía (C):", 0.1, 1.0, float(c_sugerido), 0.05, help=f"Valor sugerido basado en coberturas satelitales: {c_sugerido:.2f}\nPredomina: {detalle_cob}")
                         if c_sugerido != 0.5: st.caption(f"🛰️ **C Calculado:** {c_sugerido:.2f} ({detalle_cob})")
 
-                        ppt_100a_memoria = st.session_state.get('aleph_ppt_100a', 120.0) 
-                        if 'aleph_ppt_100a' in st.session_state: st.success(f"🧠 **Gumbel Sincronizado:** Lluvia Tr=100 años es de **{ppt_100a_memoria:.1f} mm**.")
+                        # 🌍 BISTURÍ: INYECCIÓN ESTADÍSTICA (GUMBEL Y DESAGREGACIÓN)
+                        st.markdown("---")
+                        st.markdown("##### ⛈️ Tormenta de Diseño (Nexo Estadístico)")
                         
-                        p_diseno = st.number_input("Precipitación Extrema 24h [mm]:", min_value=10.0, value=float(ppt_100a_memoria), step=5.0)
+                        ppt_100a_memoria = float(st.session_state.get('aleph_ppt_100a', 120.0))
                         
+                        if 'aleph_ppt_100a' in st.session_state:
+                            st.success(f"🧠 **Gumbel Sincronizado:** Extremo Histórico Tr=100 años es de **{ppt_100a_memoria:.1f} mm**.")
+                            st.caption("💡 *Nota: Si este valor proviene del historial mensual, representa el mes más lluvioso, no un evento de 24 horas.*")
+                        
+                        # Corrector de Escala (Mensual a 24h)
+                        es_mensual = st.checkbox("🔄 El valor sincronizado es Mensual (Desagregar a 24h)", value=ppt_100a_memoria > 300)
+                        
+                        if es_mensual:
+                            factor_24h = st.slider("Factor de escala (Mes a 24h):", 0.1, 0.5, 0.30, 0.05, help="En zonas tropicales andinas, el día más lluvioso suele aportar entre el 25% y 35% de la lluvia del mes más extremo.")
+                            p_24h_sugerido = ppt_100a_memoria * factor_24h
+                        else:
+                            p_24h_sugerido = ppt_100a_memoria
+                            
+                        p_diseno = st.number_input("Precipitación Extrema 24h ($P_{24}$) [mm]:", min_value=10.0, value=float(p_24h_sugerido), step=5.0)
+                        
+                        # --- MAGIA HIDROLÓGICA: CURVA IDF SINTÉTICA ---
+                        # Para no asumir que todo P24 cae en el Tc, usamos una desagregación típica de tormenta
+                        # I = (P24 / 24) * (24 / Tc)^0.65  <-- Muy usada en Colombia cuando no hay IDF local
                         tc_horas = tc_kirpich_min / 60 if tc_kirpich_min > 0 else 1.0
-                        i_rain_calc = p_diseno / tc_horas
-                        st.info(f"⚡ **Intensidad Desagregada (I):** {i_rain_calc:.1f} mm/h *(Asumiendo el peor escenario en {tc_horas:.2f}h)*.")
                         
+                        i_rain_calc = (p_diseno / 24.0) * ((24.0 / tc_horas) ** 0.65)
+                        
+                        st.info(f"⚡ **Intensidad Desagregada (I):** {i_rain_calc:.1f} mm/h *(Ajustada con curva IDF sintética para un Tc de {tc_horas:.2f}h)*.")
+                        
+                        # Cálculo Final Racional
                         q_peak = 0.278 * c_runoff * i_rain_calc * area_km2
                         st.session_state['geomorfo_q_pico_racional'] = float(q_peak)
                         
                         origen_q = "Modelo Racional (Geomorfología)"
-                        if 'aleph_q_max_m3s' not in st.session_state or st.session_state['aleph_q_max_m3s'] == 0.0: st.session_state['aleph_q_max_m3s'] = float(q_peak)
-                        else: origen_q = "Aleph Distribuido (Pág 01 - Preservado)"
+                        if 'aleph_q_max_m3s' not in st.session_state or st.session_state['aleph_q_max_m3s'] == 0.0: 
+                            st.session_state['aleph_q_max_m3s'] = float(q_peak)
+                        else: 
+                            origen_q = "Aleph Distribuido (Pág 01 - Preservado)"
                         
                         st.metric("Caudal Pico (Q)", f"{q_peak:,.2f} m³/s", f"Método: {origen_q}")
-    
-                except Exception as e:
-                    st.error(f"Error en cálculos: {e}")
+                        st.caption("Fórmula Racional: $Q = 0.278 \cdot C \cdot I \cdot A$")
 
             # --- TAB 7: AMENAZAS ---
             with tab7:
