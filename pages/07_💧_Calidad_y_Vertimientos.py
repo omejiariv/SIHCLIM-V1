@@ -12,6 +12,7 @@ import requests
 import io
 import geopandas as gpd
 from modules import selectors
+from modules.config import Config
 
 warnings.filterwarnings("ignore")
 
@@ -92,201 +93,86 @@ def cargar_maestros_nube(tipo="vertimientos"):
         st.error(f"❌ Error crítico procesando la base de {tipo}: {e}")
         return gpd.GeoDataFrame()
         
-@st.cache_data
+from modules.config import Config
+
+@st.cache_data(show_spinner=False, ttl=3600)
 def cargar_municipios():
-    ruta = "data/Pob_mpios_colombia.csv"
-    if os.path.exists(ruta):
-        df = leer_csv_robusto(ruta)
+    try:
+        # ☁️ NUBE: Leemos el maestro demográfico oficial desde Supabase
+        df = pd.read_parquet(Config.POBLACION_MAESTRA_URL)
         if 'departamento' in df.columns: df.rename(columns={'departamento': 'depto_nom'}, inplace=True)
         if not df.empty and 'municipio' in df.columns:
             df.dropna(subset=['municipio'], inplace=True)
             df['municipio'] = df['municipio'].astype(str).str.strip().str.title()
             df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
             return df
+    except Exception as e:
+        pass
     return pd.DataFrame()
 
-@st.cache_data
-def cargar_veredas():
-    ruta = "data/veredas_Antioquia.xlsx"
-    return pd.read_excel(ruta) if os.path.exists(ruta) else pd.DataFrame()
-
-# ==============================================================================
-# 🌉 PUENTES DE COMPATIBILIDAD (Para no romper las gráficas existentes)
-# ==============================================================================
-@st.cache_data(show_spinner=False)
-def cargar_vertimientos():
-    import pandas as pd
-    gdf = cargar_maestros_nube("vertimientos")
-    if gdf.empty: return pd.DataFrame()
-    
-    df = pd.DataFrame(gdf)
-    df['caudal_vert_lps'] = df['Caudal_Lps']
-    df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
-    df['tipo_vertimiento'] = df['Tipo_Vertimiento']
-    df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
-    
-    # Extracción de coordenadas
-    centroides = gdf.geometry.centroid
-    df['coordenada_x'] = centroides.x.fillna(0)
-    df['coordenada_y'] = centroides.y.fillna(0)
-    
-    # 🛡️ EXTIRPACIÓN DE LA COLUMNA ASESINA DE MEMORIA
-    if 'geometry' in df.columns:
-        df = df.drop(columns=['geometry'])
-        
-    return df
-
-@st.cache_data(show_spinner=False)
-def cargar_concesiones():
-    import pandas as pd
-    gdf = cargar_maestros_nube("concesiones")
-    if gdf.empty: return pd.DataFrame()
-    
-    df = pd.DataFrame(gdf)
-    df['caudal_lps'] = df['Caudal_Lps']
-    df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
-    df['tipo_agua'] = df['Tipo_Fuente']
-    df['uso_detalle'] = df['Uso_Agua']
-    df['estado'] = df['Estado']
-    df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
-    
-    # Extracción de coordenadas
-    centroides = gdf.geometry.centroid
-    df['coordenada_x'] = centroides.x.fillna(0)
-    df['coordenada_y'] = centroides.y.fillna(0)
-    
-    def clasificar_uso(u):
-        u = normalizar_texto(u)
-        if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento']): return 'Doméstico'
-        elif any(x in u for x in ['agricola', 'pecuario', 'riego']): return 'Agrícola/Pecuario'
-        elif any(x in u for x in ['industrial', 'mineria']): return 'Industrial'
-        else: return 'Otros'
-        
-    df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
-    
-    # 🛡️ EXTIRPACIÓN DE LA COLUMNA ASESINA DE MEMORIA
-    if 'geometry' in df.columns:
-        df = df.drop(columns=['geometry'])
-        
-    return df
-    
-@st.cache_data
-def cargar_censo_bovino():
-    ruta_xlsx = "data/censos_ICA/Censo_ICA_Bovinos_2023.xlsx"
-    ruta_csv = "data/censos_ICA/Censo_ICA_Bovinos_2023.csv"
-    df = pd.DataFrame()
-    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
-    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
-    if not df.empty:
-        df.columns = df.columns.str.upper().str.replace(' ', '_').str.strip()
-        df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
-    return df
-
-@st.cache_data
-def cargar_censo_porcino():
-    ruta_xlsx = "data/censos_ICA/Censo_ICA_Porcinos_2023.xlsx"
-    ruta_csv = "data/censos_ICA/Censo_ICA_Porcinos_2023.csv"
-    df = pd.DataFrame()
-    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
-    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
-    if not df.empty:
-        df.columns = df.columns.str.upper().str.replace(' ', '_').str.strip()
-        df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
-    return df
-
-@st.cache_data
-def cargar_censo_aviar():
-    ruta_xlsx = "data/censos_ICA/Censo_ICA_Aves_2025.xlsx"
-    ruta_csv = "data/censos_ICA/Censo_ICA_Aves_2025.csv"
-    df = pd.DataFrame()
-    if os.path.exists(ruta_xlsx): df = pd.read_excel(ruta_xlsx)
-    elif os.path.exists(ruta_csv): df = leer_csv_robusto(ruta_csv)
-    if not df.empty:
-        df.columns = df.columns.str.upper().str.replace(' ', '_').str.strip()
-        df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
-    return df
+@st.cache_data(show_spinner=False, ttl=3600)
+def cargar_maestros_pecuarios():
+    """Descarga los archivos maestros pecuarios desde Supabase a la memoria RAM"""
+    import unicodedata
+    urls = {
+        "bovinos": f"{Config.BUCKET_MAESTROS}/Censo_Maestro_Bovinos.csv",
+        "porcinos": f"{Config.BUCKET_MAESTROS}/Censo_Maestro_Porcinos.csv",
+        "aves": f"{Config.BUCKET_MAESTROS}/Censo_Maestro_Aves.csv"
+    }
+    dfs = {}
+    for key, url in urls.items():
+        try:
+            df_temp = pd.read_csv(url, encoding='utf-8-sig', sep=None, engine='python')
+            df_temp.columns = df_temp.columns.str.upper().str.replace(' ', '_').str.strip()
+            if 'MUNICIPIO' in df_temp.columns:
+                df_temp['MUNICIPIO_NORM'] = df_temp['MUNICIPIO'].astype(str).str.upper().apply(
+                    lambda x: unicodedata.normalize('NFKD', x).encode('ascii', 'ignore').decode('utf-8')
+                )
+            dfs[key] = df_temp
+        except Exception:
+            dfs[key] = pd.DataFrame()
+    return dfs
 
 @st.cache_data(show_spinner=False, ttl=86400)
 def cargar_territorio_maestro():
-    import pandas as pd
-    import streamlit as st
     from supabase import create_client
     import io
     import unicodedata
     
-    # Búsqueda exhaustiva de credenciales (A prueba de balas)
-    url_sb = None
-    key_sb = None
-    if "SUPABASE_URL" in st.secrets:
-        url_sb = st.secrets["SUPABASE_URL"]
-        key_sb = st.secrets["SUPABASE_KEY"]
-    elif "supabase" in st.secrets:
-        url_sb = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
-        key_sb = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
-    elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
-        url_sb = st.secrets["iri"]["SUPABASE_URL"]
-        key_sb = st.secrets["iri"]["SUPABASE_KEY"]
-    elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
-        url_sb = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-        key_sb = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+    url_sb = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url") or st.secrets.get("connections", {}).get("supabase", {}).get("SUPABASE_URL")
+    key_sb = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key") or st.secrets.get("connections", {}).get("supabase", {}).get("SUPABASE_KEY")
         
-    if not url_sb or not key_sb:
-        return pd.DataFrame()
+    if not url_sb or not key_sb: return pd.DataFrame()
         
     try:
         cliente = create_client(url_sb, key_sb)
-        bucket = "sihcli_maestros"
-        archivo = "territorio_maestro.xlsx"
-        
-        # Descargamos el archivo directamente a la memoria de Python
-        res = cliente.storage.from_(bucket).download(archivo)
+        res = cliente.storage.from_("sihcli_maestros").download("territorio_maestro.xlsx")
         df_territorio = pd.read_excel(io.BytesIO(res))
         
-        # Normalizador interno para cruces exactos
         def normalizar(texto):
             if pd.isna(texto): return ""
             return unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
             
-        # Limpieza y estandarización
         df_territorio.columns = df_territorio.columns.str.lower().str.strip()
-        
-        if 'municipio' in df_territorio.columns:
-            df_territorio['municipio_norm'] = df_territorio['municipio'].apply(normalizar)
-            
-        if 'region' in df_territorio.columns:
-            df_territorio['region'] = df_territorio['region'].astype(str).str.title()
-            
-        if 'car' in df_territorio.columns:
-            df_territorio['car'] = df_territorio['car'].astype(str).str.upper()
-            
+        if 'municipio' in df_territorio.columns: df_territorio['municipio_norm'] = df_territorio['municipio'].apply(normalizar)
+        if 'region' in df_territorio.columns: df_territorio['region'] = df_territorio['region'].astype(str).str.title()
+        if 'car' in df_territorio.columns: df_territorio['car'] = df_territorio['car'].astype(str).str.upper()
         return df_territorio
-        
     except Exception as e:
-        import streamlit as st
-        st.error(f"❌ Error cargando territorio_maestro: {e}")
         return pd.DataFrame()
 
-@st.cache_data
-def cargar_cuencas_mpios():
-    ruta = "data/cuencas_mpios_proporcion.csv"
-    if os.path.exists(ruta):
-        return leer_csv_robusto(ruta)
-    return pd.DataFrame()
-
 # ---------------------------------------------------------------------
-# 🚀 INICIALIZACIÓN DE DATOS MAESTROS
+# 🚀 INICIALIZACIÓN DE DATOS MAESTROS (100% CLOUD)
 # ---------------------------------------------------------------------
 df_mpios = cargar_municipios()                                         
-df_veredas = cargar_veredas()   
-
-# Llamamos directamente a nuestros puentes de compatibilidad en la Nube
 df_concesiones = cargar_concesiones()
 df_vertimientos = cargar_vertimientos()
 df_territorio = cargar_territorio_maestro()
-df_bovinos = cargar_censo_bovino()
-df_porcinos = cargar_censo_porcino()
-df_aves = cargar_censo_aviar()
-df_cuencas_mpios = cargar_cuencas_mpios()
+
+dict_pecuarios = cargar_maestros_pecuarios()
+df_bovinos = dict_pecuarios.get("bovinos", pd.DataFrame())
+df_porcinos = dict_pecuarios.get("porcinos", pd.DataFrame())
+df_aves = dict_pecuarios.get("aves", pd.DataFrame())
 
 # ==============================================================================
 # 🌍 SELECTOR ESPACIAL Y RECEPTOR DE CONTEXTO (SÍNTESIS UNIFICADA)
@@ -803,6 +689,10 @@ with tab_fuentes:
     dbo_aves = cabezas_aves * factor_dbo_aves
     
     carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
+    
+    # 🤝 EL APRETÓN DE MANOS HACIA LA PÁGINA 09 (WRI)
+    # Convertimos de kg/día a Toneladas/año y lo inyectamos al Aleph
+    st.session_state['carga_dbo_total_ton'] = float((carga_total_dbo * 365) / 1000.0)
     
     coef_retorno = 0.85
     q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400) + ((cabezas_porcinos * 40)/86400)
