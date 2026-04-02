@@ -870,19 +870,42 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.subheader(f"🎯 Priorización Predial: Inteligencia de Negociación en {nombre_zona}")
         st.markdown("Cruza las necesidades de restauración riparia con la estructura predial alojada en la nube para identificar qué propiedades priorizar.")
 
-        # 1. Recuperar datos del motor geomorfológico
-        rios_strahler = st.session_state.get('gdf_rios')
+        # 1. Recuperar datos del motor geomorfológico (CON BLINDAJE ESPACIAL)
+        rios_strahler_crudos = st.session_state.get('gdf_rios')
         buffer_m = st.session_state.get('buffer_m_ripario', None) 
+        
+        rios_strahler = None
+        
+        # 🛡️ FILTRO DE PERTENENCIA: Asegurar que los ríos de la memoria pertenezcan a la cuenca actual
+        if rios_strahler_crudos is not None and not rios_strahler_crudos.empty and gdf_zona is not None:
+            try:
+                # Reproyectamos ambos a Magna Sirgas (Metros) para hacer un cruce geométrico perfecto
+                rios_3116 = rios_strahler_crudos.to_crs(epsg=3116)
+                zona_3116 = gdf_zona.to_crs(epsg=3116)
+                
+                # Hacemos un "Clip" (Recorte). Solo sobreviven los ríos que caen dentro de R. Chico (o la zona elegida)
+                rios_clip = gpd.clip(rios_3116, zona_3116)
+                
+                if not rios_clip.empty:
+                    # Si sobrevivieron ríos, los usamos
+                    rios_strahler = rios_clip
+                else:
+                    # Si quedó vacío, significa que la memoria tenía ríos de otra cuenca. Los descartamos.
+                    rios_strahler = None
+                    
+            except Exception as e:
+                st.warning(f"Aviso validando red hídrica: {e}")
+                rios_strahler = None
         
         st.markdown("---")
         if rios_strahler is None or rios_strahler.empty:
             with st.expander("⚠️ Paso 1: Faltan Datos - Generar Red Hídrica", expanded=True):
-                st.info("Para priorizar predios necesitamos crear la franja riparia, y para eso necesitamos los ríos. ¡Trázalos en el Módulo de Geomorfología o actívalos aquí!")
+                st.info(f"Para priorizar predios necesitamos la red hídrica exacta de **{nombre_zona}**. ¡Trázalos usando el Motor Hidrológico!")
                 render_motor_hidrologico(gdf_zona)
                 
         elif buffer_m is None:
             with st.expander("⚠️ Paso 2: Configurar Franja Riparia", expanded=True):
-                st.success("✅ ¡Ríos detectados! Ahora define el ancho de la zona de protección riparia.")
+                st.success("✅ ¡Ríos detectados en la zona! Ahora define el ancho de la zona de protección riparia.")
                 render_motor_ripario()
                 
         else:
@@ -892,7 +915,7 @@ if gdf_zona is not None and not gdf_zona.empty:
 
         # 2. CARGAR LA CAPA DE PREDIOS (100% CLOUD NATIVE)
         capa_predios = capas.get('predios') if 'capas' in locals() else None
-
+        
         # 3. EJECUTAR EL MOTOR DE CRUCE MULTI-ANILLO
         if rios_strahler is not None and not rios_strahler.empty:
             
