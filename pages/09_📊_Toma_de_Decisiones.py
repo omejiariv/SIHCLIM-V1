@@ -407,12 +407,14 @@ if gdf_zona is not None and not gdf_zona.empty:
 
                 c_rip1, c_rip2, c_rip3 = st.columns(3)
                 
-                buffer_memoria = st.session_state.get('buffer_m_ripario', buffer_defecto)
+                # 🛡️ BLINDAJE: Si la variable existe pero es None, forzamos el valor por defecto
+                val_memoria = st.session_state.get('buffer_m_ripario')
+                buffer_memoria = float(val_memoria) if val_memoria is not None else float(buffer_defecto)
                 
                 ancho_buffer = c_rip1.number_input(
                     "Ancho de Aislamiento (m/lado):", 
                     min_value=5.0, max_value=250.0, 
-                    value=float(buffer_memoria), step=5.0, key="td_buffer_rip",
+                    value=buffer_memoria, step=5.0, key="td_buffer_rip",
                     help="Calculado automáticamente por la física de caudales extremos si el Nexo Físico está activo."
                 )
                 
