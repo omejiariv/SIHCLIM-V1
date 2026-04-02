@@ -501,11 +501,18 @@ def main():
             gdf_calc['ppt_std'] = pd.to_numeric(gdf_calc['ppt_std'], errors='coerce').fillna(0)
             gdf_calc['popup_html'] = gdf_calc.apply(generar_popup_html_avanzado, axis=1)
 
-            # 4. PROCESAMIENTO DEM (Visualización Previa)
+            # 4. PROCESAMIENTO DEM Y COBERTURAS
+            # Usamos las rutas directas de Config (que ahora apuntan a la nube)
+            dem_path = Config.DEM_FILE_PATH
+            cov_path = Config.LAND_COVER_RASTER_PATH
+
             dem_array = None
-            with st.spinner("🏔️ Procesando topografía..."):
-                try: dem_array = local_warper_force_4326(dem_path, bounds_calc, grid_x.shape)
-                except: pass
+            with st.spinner("🏔️ Conectando con Supabase y procesando topografía..."):
+                try: 
+                    # Usa el mismo warper que construimos para hydro_physics
+                    dem_array = physics.warper_raster_to_grid(dem_path, bounds_calc, grid_x.shape)
+                except Exception as e: 
+                    st.warning(f"Aviso Topografía: {e}")
             
             # 5. EJECUCIÓN
             metodo = st.selectbox("Método Interpolación", ['kriging', 'idw', 'spline', 'ked'])
@@ -518,16 +525,14 @@ def main():
                 if col_close.button("❌ Cerrar"):
                     st.session_state['ejecutar_aleph'] = False; st.rerun()
 
-                with st.spinner("Calculando balance hídrico distribuido..."):
+                with st.spinner("Calculando balance hídrico distribuido (esto puede tardar unos segundos)..."):
                     try:
                         # 0. CARGAR MUNICIPIOS (Capa Contexto)
                         gdf_municipios = None
                         try:
                             from modules.db_manager import get_engine
                             eng = get_engine()
-                            # Intentamos cargar municipios si existen en BD
                             gdf_municipios = gpd.read_postgis("SELECT * FROM municipios", eng, geom_col="geometry")
-                            # Aseguramos proyección
                             if gdf_municipios.crs != "EPSG:4326":
                                 gdf_municipios = gdf_municipios.to_crs("EPSG:4326")
                         except: pass
@@ -537,21 +542,20 @@ def main():
                         gdf_calc = gdf_calc.merge(df_anios_count, on=Config.STATION_NAME_COL, how='left').fillna(0)
 
                         # A. INTERPOLACIÓN HISTÓRICA BASE
-                        dem_safe = np.nan_to_num(dem_array, nan=0)
+                        dem_safe = np.nan_to_num(dem_array, nan=0) if dem_array is not None else None
                         Z_P_base, Z_Err = physics.interpolar_variable(
                             gdf_calc, 'ppt_media', grid_x, grid_y, method=metodo, dem_array=dem_safe
                         )
                         if metodo == 'ked': Z_P_base = np.maximum(Z_P_base, 0)
 
-                        # 🌍 B. BISTURÍ: INYECCIÓN DE ESCENARIOS CMIP6 (Cambio Climático)
-                        # Buscamos si el usuario ajustó los sliders en la pestaña del simulador
+                        # B. BISTURÍ: INYECCIÓN DE ESCENARIOS CMIP6 (Cambio Climático)
                         delta_ppt_sim = st.session_state.get('sim_delta_ppt', 0.0) 
                         delta_temp_sim = st.session_state.get('sim_delta_temp', 0.0)
 
-                        # 🛡️ BLINDAJE: Nombramos la variable final como 'Z_P' para que el resto del código no falle
                         Z_P = Z_P_base * (1 + (delta_ppt_sim / 100.0))
                         
-                        # C. MOTOR FÍSICO DISTRIBUIDO (Ahora corre con el clima del futuro)
+                        # C. MOTOR FÍSICO DISTRIBUIDO (Conectado a la Nube)
+                        # AQUÍ ASEGURAMOS QUE cov_path y dem_path SE ENVÍAN AL MOTOR
                         matrices_finales = physics.run_distributed_model(
                             Z_P, grid_x, grid_y, {'dem': dem_path, 'cobertura': cov_path}, bounds_calc
                         )
@@ -730,31 +734,21 @@ def main():
     elif selected_module == "🧪 Sesgo": viz.display_bias_correction_tab(**display_args)
     elif selected_module == "🌿 Cobertura": viz.display_land_cover_analysis_tab(**display_args)
 
-    # --- ZONAS DE VIDA (CONECTADO A SUPABASE) ---
+    # --- ZONAS DE VIDA (NATIVO EN LA NUBE) ---
     elif selected_module == "🌱 Zonas Vida":
-        # 1. Aseguramos tener los mapas en memoria
+        # 1. Le pasamos las URLs directas a los argumentos del visualizador
+        display_args['dem_file'] = Config.DEM_FILE_PATH
+        display_args['ppt_file'] = Config.PRECIP_RASTER_PATH
+        
+        # 2. Llamamos al visualizador
         try:
-            # Usamos la función de carga que definimos antes (cargar_raster_db)
-            dem_bytes = cargar_raster_db("DemAntioquia_EPSG3116.tif")
-            pp_bytes = cargar_raster_db("PPAMAnt.tif")
+            viz.display_life_zones_tab(**display_args)
+        except Exception as e:
+            st.error(f"⚠️ Error renderizando Zonas de Vida: {e}. Asegúrate de que los Rasters estén en Supabase.")
             
-            if dem_bytes and pp_bytes:
-                # 2. Inyectamos los archivos en memoria a los argumentos
-                # Esto sobreescribe cualquier ruta de texto vieja que tuviera display_args
-                display_args['dem_file'] = dem_bytes
-                display_args['ppt_file'] = pp_bytes
-                
-                # 3. Llamamos al visualizador
-                viz.display_life_zones_tab(**display_args)
-            else:
-                st.error("⚠️ No se encontraron los mapas 'DemAntioquia_EPSG3116.tif' o 'PPAMAnt.tif' en Supabase.")
-                st.info("Ve al Panel de Administración -> Pestaña Mapas y súbelos.")
-        except NameError:
-             st.error("Falta definir la función 'cargar_raster_db' al inicio del archivo.")
-    
     elif selected_module == "🌡️ Clima Futuro": viz.display_climate_scenarios_tab(**display_args)
     
-# --- ISOYETAS HD (CORREGIDO) ---
+    # --- ISOYETAS HD (CORREGIDO) ---
     elif selected_module == "✨ Mapas Isoyetas HD":
         st.header("🗺️ Isoyetas Alta Definición (RBF)")
         col1, col2 = st.columns([1,3])
