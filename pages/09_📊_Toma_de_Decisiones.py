@@ -34,6 +34,33 @@ Integración Multicriterio para la **Seguridad Hídrica**, la **Conservación de
 """)
 st.divider()
 
+# 🎨 INYECCIÓN CSS PREMIUM (Para Expanders estilo Gerencial)
+st.markdown("""
+<style>
+/* Estilo para los expansores (menús desplegables) */
+div[data-testid="stExpander"] {
+    background-color: #ffffff;
+    border: 1px solid #e0e6ed;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.04);
+    margin-bottom: 12px;
+}
+div[data-testid="stExpander"] summary {
+    background-color: #f8fafc;
+    border-radius: 8px;
+    padding: 10px 15px;
+}
+div[data-testid="stExpander"] summary:hover {
+    background-color: #f1f5f9;
+}
+div[data-testid="stExpander"] summary p {
+    font-size: 1.1rem !important;
+    font-weight: 600 !important;
+    color: #1e293b !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 try:
     from modules.impacto_serv_ecosist import render_sigacal_analysis
     from modules import selectors
@@ -130,10 +157,9 @@ if gdf_zona is not None and not gdf_zona.empty:
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
     
     # 🤝 EL APRETÓN DE MANOS (HANDSHAKE): LECTURA ESTRICTA
-    # Si la Pág 08 ya calculó una demanda más precisa, la respetamos. NO la sobrescribimos.
     demanda_m3s = float(st.session_state.get('demanda_total_m3s', demanda_dinamica_m3s))
     
-    # Leemos la población servida real que designó la Pág 08 (o usamos el total local si no existe)
+    # Leemos la población servida real que designó la Pág 08
     poblacion_mostrar = st.session_state.get('poblacion_servida', pob_total)
         
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
@@ -219,7 +245,6 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.divider()
 
     # --- PRE-PROCESAMIENTO DE CAPAS (BLINDAJE DE SCOPE) ---
-    # Cargamos las capas aquí arriba para que TODAS las pestañas puedan usarlas sin riesgo de NameError
     capas = {}
     try:
         if gdf_zona is not None and not gdf_zona.empty:
@@ -227,11 +252,9 @@ if gdf_zona is not None and not gdf_zona.empty:
     except Exception as e:
         st.warning(f"Aviso al cargar capas de contexto espacial: {e}")
 
-    # --- AHORA SÍ DIBUJAMOS LAS PESTAÑAS ---
-    tab1, tab2, tab3, tab4 = st.tabs(["🎯 SÍNTESIS DE PRIORIZACIÓN", "🌊 HIDROLOGÍA", "🛡️ SIGA-CAL", "📊 ESTÁNDARES WRI"])
+    # --- AHORA SÍ DIBUJAMOS LOS EXPANDERS (ANTES TABS) ---
     
-    with tab1:
-        st.subheader(f"🗺️ Visor Geográfico Integrado: {nombre_zona}")
+    with st.expander(f"🗺️ SÍNTESIS DE PRIORIZACIÓN: {nombre_zona}", expanded=True):
             
         # --- 🌡️ TERMÓMETRO TERRITORIAL (Reacciona al Estrés Hídrico) ---
         if estres_hidrico > 100:
@@ -295,18 +318,17 @@ if gdf_zona is not None and not gdf_zona.empty:
             })
             st.table(df_analisis)
 
-    with tab2:
-        st.subheader("💧 Análisis Hidrológico Integrado")
+    with st.expander("💧 ANÁLISIS HIDROLÓGICO INTEGRADO", expanded=False):
         st.info("Balance calculado mediante modelo Turc con gradiente térmico altitudinal.")
         # [GRÁFICOS DE BALANCE AQUÍ]
 
-    with tab3:
+    with st.expander("🛡️ ANÁLISIS DE SERVICIOS ECOSISTÉMICOS (SIGA-CAL)", expanded=False):
         render_sigacal_analysis(gdf_predios=capas.get('predios'))
 
     # =========================================================================
     # TABLERO WRI, CALIDAD Y PROYECCIONES (INTEGRADO CON METABOLISMO Y ENSO)
     # =========================================================================
-    with tab4:
+    with st.expander(f"🌐 INTELIGENCIA TERRITORIAL (WRI): {nombre_zona}", expanded=False):
         import plotly.express as px
         import plotly.graph_objects as go
         
@@ -350,7 +372,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             except Exception:
                 pass # Fallback silencioso
                 
-        # 🎚️ EL BOTÓN DE "REALIDAD ALTERNATIVA"
+# 🎚️ EL BOTÓN DE "REALIDAD ALTERNATIVA"
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG en la línea base", value=True, key="td_toggle_sig",
                                 help="Apaga este interruptor para simular el escenario contrafactual.")
         
@@ -727,8 +749,8 @@ if gdf_zona is not None and not gdf_zona.empty:
                 fig_esc.update_traces(line=dict(width=3)) 
                 fig_esc.update_layout(height=400, hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
                 st.plotly_chart(fig_esc, use_container_width=True)
-
-        # --- 6. RANKING TERRITORIAL MULTICRITERIO (AHP) Y RADAR ---
+                
+# --- 6. RANKING TERRITORIAL MULTICRITERIO (AHP) Y RADAR ---
         st.markdown("---")
         st.subheader(f"🏆 Ranking Territorial Multicriterio (AHP) - {nombre_zona}")
         
@@ -970,6 +992,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             cm4.metric("🌿 Tramos Hídricos", f"{len(df_tramos)}")
             cm5.metric("📏 Longitud Total", f"{tot_longitud_km:,.1f} km")
             
+            # Los sub-tabs se mantienen para organizar la información inferior de manera compacta
             tab_predios, tab_tramos = st.tabs(["🏡 Impacto Predial (Negociación)", "🌿 Áreas por Franja Riparia (Tramos)"])
             
             with tab_tramos:
@@ -1061,19 +1084,25 @@ if gdf_zona is not None and not gdf_zona.empty:
                     pickable=True, autoHighlight=True
                 ))
             
-            # --- 🏠 CAPA DE PREDIOS ---
+            # --- 🏠 CAPA DE PREDIOS (BLINDADA CONTRA FALTA DE IDs) ---
             if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
-                col_id_pred = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id', 'ID_Predio'] if col in predios_en_buffer.columns), None)
-                if col_id_pred and capa_predios is not None:
-                    ids_afectados = predios_en_buffer[col_id_pred].unique()
-                    predios_a_dibujar = capa_predios[capa_predios[col_id_pred].isin(ids_afectados)].to_crs(epsg=4326)
+                # Buscamos un ID oficial en la capa original
+                col_id_oficial = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id'] if capa_predios is not None and col in capa_predios.columns), None)
+                
+                if col_id_oficial:
+                    # Si hay ID oficial, dibujamos los polígonos originales completos
+                    ids_afectados = predios_en_buffer[col_id_oficial].unique()
+                    predios_a_dibujar = capa_predios[capa_predios[col_id_oficial].isin(ids_afectados)].to_crs(epsg=4326)
+                else:
+                    # Si no hay ID o si no existe la capa original, dibujamos la capa que ya cruzó con los anillos
+                    predios_a_dibujar = predios_en_buffer.to_crs(epsg=4326)
                     
-                    capas_mapa.append(pdk.Layer(
-                        "GeoJsonLayer", data=predios_a_dibujar, opacity=0.4,
-                        stroked=True, filled=True, get_fill_color=[255, 165, 0, 150],
-                        get_line_color=[255, 140, 0, 255], get_line_width=2,
-                        pickable=True, autoHighlight=True
-                    ))
+                capas_mapa.append(pdk.Layer(
+                    "GeoJsonLayer", data=predios_a_dibujar, opacity=0.4,
+                    stroked=True, filled=True, get_fill_color=[255, 165, 0, 150],
+                    get_line_color=[255, 140, 0, 255], get_line_width=2,
+                    pickable=True, autoHighlight=True
+                ))
             
             view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=13, pitch=45)
             tooltip = {"html": "<b>Tramo Hídrico:</b> {ID_Tramo}<br/><b>Orden:</b> {Orden_Strahler}<br/><b>Longitud:</b> {longitud_km} km", "style": {"backgroundColor": "steelblue", "color": "white"}}
