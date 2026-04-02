@@ -669,11 +669,13 @@ if gdf_zona_seleccionada is not None:
                         
                         st.metric("Caudal Pico (Q)", f"{q_peak:,.2f} m³/s", f"Método: {origen_q}")
                         st.caption("Fórmula Racional: $Q = 0.278 \cdot C \cdot I \cdot A$")
+                
+                except Exception as e:
+                    st.error(f"Error en cálculos hidrológicos: {e}")
 
             # --- TAB 7: AMENAZAS ---
             with tab7:
                 st.subheader("🚨 Zonificación de Amenazas Hidrológicas")
-
                 def mapa_amenaza_contexto(mask_binaria, color_amenaza, titulo, gdf_oficial):
                     from rasterio import features
                     fig = go.Figure()
