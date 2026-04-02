@@ -110,6 +110,64 @@ def cargar_municipios():
         pass
     return pd.DataFrame()
 
+# 🌉 PUENTES DE COMPATIBILIDAD (RECUPERADOS)
+@st.cache_data(show_spinner=False)
+def cargar_vertimientos():
+    import pandas as pd
+    gdf = cargar_maestros_nube("vertimientos")
+    if gdf.empty: return pd.DataFrame()
+    
+    df = pd.DataFrame(gdf)
+    df['caudal_vert_lps'] = df['Caudal_Lps']
+    df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
+    df['tipo_vertimiento'] = df['Tipo_Vertimiento']
+    df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
+    
+    # Extracción de coordenadas
+    centroides = gdf.geometry.centroid
+    df['coordenada_x'] = centroides.x.fillna(0)
+    df['coordenada_y'] = centroides.y.fillna(0)
+    
+    # 🛡️ EXTIRPACIÓN DE LA COLUMNA ASESINA DE MEMORIA
+    if 'geometry' in df.columns:
+        df = df.drop(columns=['geometry'])
+        
+    return df
+
+@st.cache_data(show_spinner=False)
+def cargar_concesiones():
+    import pandas as pd
+    gdf = cargar_maestros_nube("concesiones")
+    if gdf.empty: return pd.DataFrame()
+    
+    df = pd.DataFrame(gdf)
+    df['caudal_lps'] = df['Caudal_Lps']
+    df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
+    df['tipo_agua'] = df['Tipo_Fuente']
+    df['uso_detalle'] = df['Uso_Agua']
+    df['estado'] = df['Estado']
+    df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
+    
+    # Extracción de coordenadas
+    centroides = gdf.geometry.centroid
+    df['coordenada_x'] = centroides.x.fillna(0)
+    df['coordenada_y'] = centroides.y.fillna(0)
+    
+    def clasificar_uso(u):
+        u = normalizar_texto(u)
+        if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento']): return 'Doméstico'
+        elif any(x in u for x in ['agricola', 'pecuario', 'riego']): return 'Agrícola/Pecuario'
+        elif any(x in u for x in ['industrial', 'mineria']): return 'Industrial'
+        else: return 'Otros'
+        
+    df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
+    
+    # 🛡️ EXTIRPACIÓN DE LA COLUMNA ASESINA DE MEMORIA
+    if 'geometry' in df.columns:
+        df = df.drop(columns=['geometry'])
+        
+    return df
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestros_pecuarios():
     """Descarga los archivos maestros pecuarios desde Supabase a la memoria RAM"""
@@ -176,7 +234,7 @@ df_aves = dict_pecuarios.get("aves", pd.DataFrame())
 
 # ==============================================================================
 # 🌍 SELECTOR ESPACIAL Y RECEPTOR DE CONTEXTO (SÍNTESIS UNIFICADA)
-# ==============================================================================
+# ========================================================================
 from modules import selectors
 
 ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona = selectors.render_selector_espacial()
