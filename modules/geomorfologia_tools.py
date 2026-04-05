@@ -1,3 +1,5 @@
+# modules/geomorfologia_tools.py
+
 import streamlit as st
 import os
 
@@ -26,12 +28,18 @@ def render_motor_hidrologico(gdf_zona):
                     from pysheds.grid import Grid
                     import geopandas as gpd
                     
-                    DEM_PATH = os.path.join("data", "DemAntioquia_EPSG3116.tif")
-                    if os.path.exists(DEM_PATH) and gdf_zona is not None:
+                    # --- 🚀 INYECCIÓN CLOUD NATIVE (SMART CACHE) ---
+                    from modules.config import Config
+                    from modules.hydro_physics import download_raster_secure
+                    
+                    DEM_PATH = Config.DEM_FILE_PATH
+                    safe_path = download_raster_secure(DEM_PATH)
+                    
+                    if safe_path and gdf_zona is not None:
                         geom_valida = gdf_zona.copy()
                         geom_valida['geometry'] = geom_valida.buffer(0)
                         
-                        with rasterio.open(DEM_PATH) as src:
+                        with rasterio.open(safe_path) as src:
                             out_image, out_transform = mask(src, geom_valida.to_crs(src.crs).geometry.values, crop=True)
                             out_meta = src.meta.copy()
                             out_meta.update({"driver": "GTiff", "height": out_image.shape[1], "width": out_image.shape[2], "transform": out_transform, "count": 1, "nodata": -9999.0})
@@ -66,6 +74,6 @@ def render_motor_hidrologico(gdf_zona):
                                     st.success("✅ Red hídrica calculada exitosamente.")
                                     st.rerun() 
                     else:
-                        st.error("❌ No se encontró el archivo base en data/")
+                        st.error("❌ No se pudo descargar el modelo de elevación de Supabase.")
                 except Exception as e:
                     st.error(f"Error calculando hidrología: {e}")
