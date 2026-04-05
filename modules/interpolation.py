@@ -550,24 +550,12 @@ def interpolate_spatial(df_points, val_col, gx, gy, method='linear'):
     return gz
 
 # -----------------------------------------------------------------------------
-# MOTOR DE INTERPOLACIÓN UNIFICADO (PARA EL MODELO FÍSICO)
+# MOTOR DE INTERPOLACIÓN UNIFICADO (BLINDADO CONTRA DATOS DISPERSOS)
 # -----------------------------------------------------------------------------
 def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', modelo_variograma='spherical', dem_grid=None):
-    """
-    Función pura que conecta el modelo hidrológico con la geoestadística.
-    
-    Args:
-        df_puntos: GeoDataFrame con las estaciones.
-        col_val: Nombre de la columna a interpolar (ej: 'ppt_media').
-        grid_x, grid_y: Mallas de coordenadas destino (numpy arrays).
-        metodo: 'kriging', 'ked' (con elevación), 'idw', 'spline', 'trend', 'nearest'.
-        modelo_variograma: 'spherical', 'exponential', 'gaussian', 'linear' (Aplica a Kriging).
-        dem_grid: (Opcional) Array numpy con el DEM interpolado al mismo grid (para KED).
-    
-    Returns:
-        Z_grid (array): Matriz de valores interpolados.
-        Sigma_grid (array): Matriz de varianza del error (solo Kriging).
-    """
+    import gstools as gs
+    from scipy.interpolate import Rbf, griddata
+
     # 1. Preparar datos
     lons = df_puntos.geometry.x.values
     lats = df_puntos.geometry.y.values
@@ -577,118 +565,111 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
     mask = ~np.isnan(vals)
     lons, lats, vals = lons[mask], lats[mask], vals[mask]
     
-    # Límites históricos para control de sobreoscilación
-    if len(vals) > 0:
-        val_min = np.min(vals)
-        val_max = np.max(vals)
-    else:
-        return np.zeros_like(grid_x), None
-    
-    if len(vals) < 4:
-        # Fallback a vecino más cercano si hay muy pocos datos
+    if len(vals) < 3:
+        # Fallback extremo
         z = griddata((lons, lats), vals, (grid_x, grid_y), method='nearest')
         return np.nan_to_num(z), None
 
+    val_min, val_max = np.min(vals), np.max(vals)
+    varianza = np.var(vals)
+    if varianza == 0: varianza = 0.01 # Evitar colapso matemático
+
+    # Calcular distancia máxima para forzar un variograma cuando los datos fallan
+    lons_m, lats_m = np.meshgrid(lons, lats)
+    max_dist = np.max(np.sqrt((lons_m - lons_m.T)**2 + (lats_m - lats_m.T)**2))
+    rango_teorico = max_dist / 2.0
+
     # 2. Selección de Método
     try:
-        # --- A. KRIGING ORDINARIO (Geoestadística Robusta) ---
+        # --- A. KRIGING ORDINARIO ---
         if metodo == 'kriging':
-            bin_center, gamma = gs.vario_estimate((lons, lats), vals)
-            
-            # Selección dinámica del modelo de variograma
-            if modelo_variograma == 'spherical':
-                model = gs.Spherical(dim=2)
-            elif modelo_variograma == 'exponential':
-                model = gs.Exponential(dim=2)
-            elif modelo_variograma == 'gaussian':
-                model = gs.Gaussian(dim=2)
-            else:
-                model = gs.Linear(dim=2)
+            # Selección de modelo
+            if modelo_variograma == 'spherical': model = gs.Spherical(dim=2)
+            elif modelo_variograma == 'exponential': model = gs.Exponential(dim=2)
+            elif modelo_variograma == 'gaussian': model = gs.Gaussian(dim=2)
+            else: model = gs.Linear(dim=2)
                 
-            model.fit_variogram(bin_center, gamma, nugget=True)
+            # SALVAVIDAS: Si hay menos de 15 puntos, el variograma empírico colapsa a plano.
+            if len(vals) < 15:
+                model.var = varianza
+                model.len_scale = rango_teorico
+                model.nugget = varianza * 0.05
+            else:
+                try:
+                    bin_center, gamma = gs.vario_estimate((lons, lats), vals)
+                    model.fit_variogram(bin_center, gamma, nugget=True)
+                    # Si ajusta una línea plana (pepita pura), forzar variabilidad
+                    if model.var < 1e-4:
+                        model.var = varianza
+                        model.len_scale = rango_teorico
+                        model.nugget = varianza * 0.05
+                except:
+                    model.var = varianza
+                    model.len_scale = rango_teorico
             
-            # Ejecutar Kriging
             krig = gs.krige.Ordinary(model, (lons, lats), vals)
+            # Extracción correcta de ejes 1D desde mgrid para evitar problemas de forma
+            z_krig, ss_krig = krig.structured([grid_x[:,0], grid_y[0,:]]) 
             
-            # SOLUCIÓN: Usar evaluación desestructurada (flatten) igual que en IDW
-            # para evitar problemas con los ejes de mgrid/meshgrid
-            z_flat, ss_flat = krig(grid_x.flatten(), grid_y.flatten())
-            z_krig = z_flat.reshape(grid_x.shape)
-            ss_krig = ss_flat.reshape(grid_x.shape)
-            
-            # Recorte de seguridad para Kriging
             z_krig = np.clip(z_krig, a_min=val_min, a_max=val_max)
-            
             return z_krig, np.sqrt(ss_krig)
 
         # --- B. KRIGING CON DERIVA EXTERNA (KED) ---
         elif metodo == 'ked' and dem_grid is not None:
             from scipy.interpolate import RectBivariateSpline
+            x_axes, y_axes = grid_x[:,0], grid_y[0,:]
             
-            # Corrección de ejes para el DEM
-            x_uniques = grid_x[:, 0]
-            y_uniques = grid_y[0, :]
+            dem_interpolator = RectBivariateSpline(y_axes, x_axes, dem_grid)
+            elev_stations = dem_interpolator.ev(lats, lons)
             
-            dem_interpolator = RectBivariateSpline(x_uniques, y_uniques, dem_grid)
-            elev_stations = dem_interpolator.ev(lons, lats)
-            
-            bin_center, gamma = gs.vario_estimate((lons, lats), vals)
             model = gs.Spherical(dim=2)
-            model.fit_variogram(bin_center, gamma, nugget=True)
+            if len(vals) < 15:
+                model.var = varianza
+                model.len_scale = rango_teorico
+            else:
+                try:
+                    bin_center, gamma = gs.vario_estimate((lons, lats), vals)
+                    model.fit_variogram(bin_center, gamma, nugget=True)
+                    if model.var < 1e-4:
+                        model.var = varianza
+                        model.len_scale = rango_teorico
+                except:
+                    model.var = varianza
+                    model.len_scale = rango_teorico
             
             krig = gs.krige.ExtDrift(model, (lons, lats), vals, drift_src=elev_stations)
-            
-            # SOLUCIÓN KED: Pasar el DEM aplanado
-            z_flat, ss_flat = krig(grid_x.flatten(), grid_y.flatten(), drift_tgt=dem_grid.flatten())
-            z_ked = z_flat.reshape(grid_x.shape)
-            ss_ked = ss_flat.reshape(grid_x.shape)
+            z_ked, ss_ked = krig.structured([x_axes, y_axes], drift_tgt=dem_grid)
             
             z_ked = np.clip(z_ked, a_min=val_min, a_max=val_max)
-            
             return z_ked, np.sqrt(ss_ked)
 
-        # --- C. IDW (Distancia Inversa) ---
+        # --- C. IDW ---
         elif metodo == 'idw':
             xi, yi = grid_x.flatten(), grid_y.flatten()
             dist = np.sqrt((xi[:,None]-lons[None,:])**2 + (yi[:,None]-lats[None,:])**2)
             dist = np.where(dist == 0, 1e-10, dist) 
             weights = 1.0 / dist**2
             z_idw = np.sum(weights * vals, axis=1) / np.sum(weights, axis=1)
-            
-            # El IDW matemáticamente no se sale de los rangos, pero no está de más
-            z_idw_reshaped = np.clip(z_idw.reshape(grid_x.shape), a_min=val_min, a_max=val_max)
-            return z_idw_reshaped, None
+            return np.clip(z_idw.reshape(grid_x.shape), a_min=val_min, a_max=val_max), None
 
-        # --- D. SPLINE (Suavizado Geométrico) ---
+        # --- D. SPLINE ---
         elif metodo == 'spline':
-            # 'thin_plate' es excelente para superficies suaves como lluvia
-            rbf = Rbf(lons, lats, vals, function='thin_plate')
+            # Cambio de 'thin_plate' a 'linear' (menor sobreoscilación en datos escasos)
+            rbf = Rbf(lons, lats, vals, function='linear')
             z_rbf = rbf(grid_x, grid_y)
-            
-            # CORRECCIÓN DE OVERSHOOTING: Forzar a límites históricos
             z_rbf = np.clip(z_rbf, a_min=val_min, a_max=val_max)
-            
             return z_rbf, None
             
-        # --- E. TENDENCIA LINEAL (Trend) ---
+        # --- E. TENDENCIA LINEAL ---
         elif metodo == 'trend':
-            # Interpolación usando método lineal simple de griddata
             z_trend = griddata((lons, lats), vals, (grid_x, grid_y), method='linear')
-            
-            # Rellenar NaNs externos con el vecino más cercano para evitar huecos blancos
             mask_nan = np.isnan(z_trend)
             if np.any(mask_nan):
                 z_nearest = griddata((lons, lats), vals, (grid_x[mask_nan], grid_y[mask_nan]), method='nearest')
                 z_trend[mask_nan] = z_nearest
-                
-            z_trend = np.clip(z_trend, a_min=val_min, a_max=val_max)
-            return z_trend, None
+            return np.clip(z_trend, a_min=val_min, a_max=val_max), None
 
     except Exception as e:
-        print(f"Error en interpolación ({metodo}): {e}")
-        # Fallback de seguridad: Vecino más cercano
+        print(f"Fallback activado. Error: {e}")
         z = griddata((lons, lats), vals, (grid_x, grid_y), method='nearest')
         return np.nan_to_num(z), None
-    
-    # Default fallback
-    return np.zeros_like(grid_x), None
