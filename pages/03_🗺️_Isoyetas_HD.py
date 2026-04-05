@@ -1,4 +1,4 @@
-# pages/03_🗺️_Isoyetas_HD.py
+# pages/03_🗺️_Isoyetas_HD.py (PARTE 1)
 
 import streamlit as st
 import pandas as pd
@@ -15,16 +15,55 @@ try:
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules.config import Config
     from modules import db_manager, selectors
+    
+    # AÑADIR LA IMPORTACIÓN DEL INTERPOLADOR MAESTRO
+    from modules.interpolation import interpolador_maestro 
+    
     try:
         from modules.data_processor import complete_series
     except ImportError:
         complete_series = None
 except:
-    # Fallback por si la estructura de carpetas varía
     from modules import db_manager, selectors
     from modules.config import Config
+    from modules.interpolation import interpolador_maestro
     complete_series = None
 
+# ==========================================
+# SECCIÓN DE UI: SELECTORES DE INTERPOLACIÓN
+# ==========================================
+st.sidebar.markdown("### ⚙️ Configuración del Modelo")
+
+# 1. Selector principal de método
+opciones_metodo = {
+    "Kriging Ordinario": "kriging",
+    "Kriging con Deriva Externa (KED)": "ked",
+    "Spline (Thin Plate)": "spline",
+    "Distancia Inversa (IDW)": "idw",
+    "Tendencia Lineal": "trend"
+}
+
+metodo_seleccionado = st.sidebar.selectbox(
+    "Método de Interpolación:",
+    options=list(opciones_metodo.keys()),
+    index=0,
+    help="Selecciona el algoritmo matemático para espacializar la precipitación."
+)
+
+metodo_codigo = opciones_metodo[metodo_seleccionado]
+
+# 2. Selector condicional (Solo aparece si eligen Kriging)
+modelo_var_codigo = 'spherical' # valor por defecto
+if "Kriging" in metodo_seleccionado:
+    modelo_var_seleccionado = st.sidebar.selectbox(
+        "Modelo de Variograma:",
+        options=["Esférico", "Exponencial", "Gaussiano"],
+        index=0
+    )
+    # Mapeo a los nombres que espera gstools
+    mapa_variogramas = {"Esférico": "spherical", "Exponencial": "exponential", "Gaussiano": "gaussian"}
+    modelo_var_codigo = mapa_variogramas[modelo_var_seleccionado]
+    
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Isoyetas HD", page_icon="🗺️", layout="wide")
 st.title("🗺️ Generador Avanzado de Isoyetas (Escenarios & Pronósticos)")
@@ -36,12 +75,12 @@ with st.expander("📘 Ficha Técnica: Metodología, Utilidad y Fuentes", expand
     Las **isoyetas** son líneas que unen puntos de igual precipitación. Este mapa permite visualizar la distribución espacial de la lluvia acumulada.
 
     ### 2. Metodología de Interpolación
-    Se utiliza el algoritmo **RBF (Radial Basis Function)** con núcleo *Thin-Plate Spline*. 
-    * Genera una superficie suave y continua, minimizando la curvatura total.
-    * Ideal para campos de lluvia en zonas de montaña.
+    Se utiliza un motor geoestadístico avanzado que permite la selección dinámica entre Kriging, Spline, IDW y Polinomios de Tendencia.
+    * Genera superficies espaciales continuas ajustadas a la variabilidad topográfica y climática.
+    * Incorpora control de límites (clipping) para evitar anomalías en zonas sin datos.
 
     ### 3. Fuentes de Información
-    * **Datos:** Base de datos consolidada SIHCLI.
+    * **Datos:** Base de datos consolidada SIHCLIM.
     * **Cartografía:** Límites oficiales IGAC y CuencaVerde.
     
     ### 4. Modos de Análisis
@@ -265,7 +304,7 @@ ignore_nulls = c2.checkbox("🚫 No Nulos", value=True, key='chk_nulls')
 
 do_interp_temp = False
 if complete_series: do_interp_temp = st.sidebar.checkbox("🔄 Interpolación Temporal", value=False, key='chk_interp')
-suavidad = st.sidebar.slider("🖌️ Suavizado (RBF):", 0.0, 2.0, 0.1, key='slider_smooth')
+suavidad = st.sidebar.slider("🖌️ Suavizado (Solo para Spline):", 0.0, 2.0, 0.1, key='slider_smooth')
 
 # --- 7. LÓGICA ESPACIAL Y RENDERIZADO ---
 bounds = gdf_zona.total_bounds
@@ -354,23 +393,29 @@ with tab_mapa:
             if ignore_nulls: df_final = df_final.dropna(subset=['valor'])
             
             if len(df_final) >= 3:
-                with st.spinner(f"Interpolando {len(df_final)} puntos..."):
+                with st.spinner(f"Interpolando {len(df_final)} puntos usando {metodo_seleccionado}..."):
                     grid_res = 200 
                     
-                    x_raw, y_raw, z_raw = df_final['lon_calc'].values, df_final['lat_calc'].values, df_final['valor'].values
-                    x_mean, x_std = x_raw.mean(), x_raw.std()
-                    y_mean, y_std = y_raw.mean(), y_raw.std()
-                    x_norm = (x_raw - x_mean) / x_std
-                    y_norm = (y_raw - y_mean) / y_std
-                    
+                    # Generamos la grilla sobre las coordenadas crudas
                     gx_raw, gy_raw = np.mgrid[q_minx:q_maxx:complex(0, grid_res), q_miny:q_maxy:complex(0, grid_res)]
-                    gx_norm = (gx_raw - x_mean) / x_std
-                    gy_norm = (gy_raw - y_mean) / y_std
                     
+                    # Convertimos a GeoDataFrame para el motor
+                    gdf_final = gpd.GeoDataFrame(
+                        df_final, 
+                        geometry=gpd.points_from_xy(df_final.lon_calc, df_final.lat_calc), 
+                        crs="EPSG:4326"
+                    )
+                    
+                    # INYECCIÓN DEL NUEVO MOTOR DE INTERPOLACIÓN
                     try:
-                        rbf = Rbf(x_norm, y_norm, z_raw, function='thin_plate', smooth=suavidad)
-                        grid_z = rbf(gx_norm, gy_norm)
-                        grid_z = np.maximum(grid_z, 0) 
+                        grid_z, sigma_z = interpolador_maestro(
+                            df_puntos=gdf_final,
+                            col_val='valor',
+                            grid_x=gx_raw,
+                            grid_y=gy_raw,
+                            metodo=metodo_codigo,
+                            modelo_variograma=modelo_var_codigo
+                        )
                     except Exception as e:
                         st.warning(f"Error matemático en interpolación: {e}")
                         grid_z = np.zeros_like(gx_raw)
@@ -380,8 +425,11 @@ with tab_mapa:
                     
                     # --- GRAFICAR ---
                     fig = go.Figure()
-                    tit = f"Isoyetas: {tipo_analisis} | {nombre_zona}"
-                    if tipo_analisis == "Año Específico": tit = f"Isoyetas: {tipo_analisis} ({params_analisis['year']}) | {nombre_zona}"
+                    
+                    # Título actualizado para mostrar el método
+                    tit = f"Isoyetas ({metodo_seleccionado}): {tipo_analisis} | {nombre_zona}"
+                    if tipo_analisis == "Año Específico": 
+                        tit = f"Isoyetas ({metodo_seleccionado}): {tipo_analisis} ({params_analisis['year']}) | {nombre_zona}"
                     
                     df_final['hover_val'] = df_final['valor'].apply(lambda x: f"{x:,.0f}")
                     c_muni = df_final[col_muni].fillna('-') if col_muni else ["-"]*len(df_final)
@@ -397,7 +445,7 @@ with tab_mapa:
                         opacity=0.8, connectgaps=True, line_smoothing=1.3
                     ))
                     
-                    # INYECCIÓN: Agrega las capas según el estado de los checkboxes
+                    # Agrega las capas según el estado de los checkboxes
                     add_context_layers_robust(fig, q_minx, q_miny, q_maxx, q_maxy, ver_cuencas, ver_municipios)
                     
                     fig.add_trace(go.Scatter(
