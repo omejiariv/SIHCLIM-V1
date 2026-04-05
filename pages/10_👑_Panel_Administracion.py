@@ -1036,20 +1036,71 @@ with tabs[13]:
                 
 # ==============================================================================
 # TAB 14: GESTIÓN DEMOGRÁFICA (ACTUALIZADA PARA SUBIDA A SUPABASE)
+# ==============================================================================
 with tabs[14]:
     st.header("👥 Gestión de Datos Demográficos y Poblacionales")
     
-    # 🕵️ Detector Inteligente de Secretos (Versión Refinada)
-    s = st.secrets
-    url_supabase = s.get("SUPABASE_URL") or s.get("supabase", {}).get("url") or s.get("connections", {}).get("supabase", {}).get("SUPABASE_URL")
-    key_supabase = s.get("SUPABASE_KEY") or s.get("supabase", {}).get("key") or s.get("connections", {}).get("supabase", {}).get("SUPABASE_KEY")
-
-    if url_supabase and key_supabase:
-        st.success("✅ Conexión con Supabase establecida y verificada.")
-    else:
-        st.error("🚨 No se encuentran las credenciales en st.secrets.")
-        st.info("Estructura requerida en secrets.toml:\n\nSUPABASE_URL = '...'\nSUPABASE_KEY = '...'")
+    # 1. Usamos tu propio conector centralizado (100% seguro)
+    try:
+        from modules.admin_utils import init_supabase
+        cliente_supabase = init_supabase()
+        if cliente_supabase:
+            st.success("✅ Streamlit está leyendo los secretos de Supabase correctamente (vía admin_utils).")
+        else:
+            raise ValueError("El cliente Supabase no se inicializó.")
+    except Exception as e:
+        st.error("🚨 Streamlit AÚN NO encuentra los secretos de Supabase.")
         st.stop()
+
+    st.markdown("""
+    Aquí puedes actualizar la base de datos maestra (`.parquet`) enviándola directamente al almacenamiento en la nube (Supabase).
+    Esto nos permite superar los límites de tamaño de GitHub y centralizar la información.
+    """)
+    
+    st.divider()
+    col_izq, col_der = st.columns([1, 1])
+    
+    with col_izq:
+        st.subheader("1. Subir Archivo Parquet")
+        archivo_subido = st.file_uploader(
+            "Sube tu archivo optimizado (Formato .parquet, max 100MB)", 
+            type=['parquet'],
+            help="Este archivo contiene toda la historia y proyección demográfica de Colombia."
+        )
+        
+    with col_der:
+        st.subheader("2. Enviar a la Nube (Supabase)")
+        if archivo_subido is not None:
+            try:
+                df_nuevo = pd.read_parquet(archivo_subido)
+                st.success(f"✅ Archivo leído correctamente: {len(df_nuevo):,} registros detectados.")
+                
+                with st.expander("👁️ Vista Previa Rápida"):
+                    st.dataframe(df_nuevo.head(5), use_container_width=True)
+                
+                if st.button("🚀 Subir a Supabase Storage", type="primary", use_container_width=True):
+                    with st.spinner("Conectando con Supabase y transfiriendo el archivo..."):
+                        try:
+                            nombre_bucket = "sihcli_maestros" # <-- ¡Asegúrate de que este es tu bucket!
+                            nombre_archivo_destino = "Poblacion_Colombia_Maestra.parquet"
+                            
+                            archivo_subido.seek(0)
+                            file_bytes = archivo_subido.read()
+                            
+                            respuesta = cliente_supabase.storage.from_(nombre_bucket).upload(
+                                path=nombre_archivo_destino, 
+                                file=file_bytes, 
+                                file_options={"content-type": "application/vnd.apache.parquet", "upsert": "true"}
+                            )
+                            
+                            st.balloons()
+                            st.success(f"🎉 ¡Éxito! Archivo `{nombre_archivo_destino}` subido a Supabase correctamente.")
+                        except Exception as e:
+                            st.error(f"❌ Error al subir a Supabase: {str(e)}")
+            except Exception as e:
+                st.error(f"❌ Ocurrió un error al leer el archivo Parquet: {e}")
+        else:
+            st.info("👆 Sube un archivo en el panel izquierdo para habilitar el envío.")
             
 # =====================================================================
 # TAB 15: MÓDULO DE CARGA ESPACIAL (SHAPEFILE -> GEOJSON -> SUPABASE)
