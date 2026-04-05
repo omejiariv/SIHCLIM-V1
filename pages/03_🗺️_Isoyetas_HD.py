@@ -30,6 +30,12 @@ st.set_page_config(page_title="Isoyetas HD", page_icon="🗺️", layout="wide")
 st.title("🗺️ Generador Avanzado de Isoyetas (Escenarios & Pronósticos)")
 
 # ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Isoyetas HD")
+
+# ==========================================
 # SECCIÓN DE UI: SELECTORES DE INTERPOLACIÓN
 # ==========================================
 st.sidebar.markdown("### ⚙️ Configuración del Modelo")
