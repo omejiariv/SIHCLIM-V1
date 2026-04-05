@@ -7,12 +7,11 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from scipy.interpolate import griddata
+from scipy.interpolate import Rbf, griddata
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import LeaveOneOut
 
 from modules.config import Config
-
 
 # -----------------------------------------------------------------------------
 # FUNCIÓN _perform_loocv (ESTA ES LA FUNCIÓN QUE FALTABA)
@@ -499,8 +498,6 @@ def create_kriging_by_basin(_gdf_points, grid_lon, grid_lat, value_col="Valor"):
     return grid_z, variance
 
 
-from scipy.interpolate import Rbf, griddata
-
 def generate_grid_coordinates(bounds, resolution=100j):
     """
     Genera las coordenadas X, Y para la malla de interpolación.
@@ -523,6 +520,10 @@ def interpolate_spatial(df_points, val_col, gx, gy, method='linear'):
     
     if len(pts) < 3: return None
     
+    # Límites para evitar sobreoscilación (overshooting)
+    val_min = np.min(vals)
+    val_max = np.max(vals)
+    
     gz = None
     
     # 1. Interpolación Principal
@@ -531,6 +532,8 @@ def interpolate_spatial(df_points, val_col, gx, gy, method='linear'):
             # Thin Plate Spline es excelente para topografía suave
             rbf = Rbf(pts[:, 0], pts[:, 1], vals, function="thin_plate")
             gz = rbf(gx, gy)
+            # Aplicar recorte para evitar picos irreales
+            gz = np.clip(gz, a_min=val_min, a_max=val_max)
         except:
             pass # Fallback a linear
             
@@ -549,7 +552,7 @@ def interpolate_spatial(df_points, val_col, gx, gy, method='linear'):
 # -----------------------------------------------------------------------------
 # MOTOR DE INTERPOLACIÓN UNIFICADO (PARA EL MODELO FÍSICO)
 # -----------------------------------------------------------------------------
-def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', dem_grid=None):
+def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', modelo_variograma='spherical', dem_grid=None):
     """
     Función pura que conecta el modelo hidrológico con la geoestadística.
     
@@ -557,7 +560,8 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', d
         df_puntos: GeoDataFrame con las estaciones.
         col_val: Nombre de la columna a interpolar (ej: 'ppt_media').
         grid_x, grid_y: Mallas de coordenadas destino (numpy arrays).
-        metodo: 'kriging', 'ked' (con elevación), 'idw', 'spline', 'nearest'.
+        metodo: 'kriging', 'ked' (con elevación), 'idw', 'spline', 'trend', 'nearest'.
+        modelo_variograma: 'spherical', 'exponential', 'gaussian', 'linear' (Aplica a Kriging).
         dem_grid: (Opcional) Array numpy con el DEM interpolado al mismo grid (para KED).
     
     Returns:
@@ -573,9 +577,15 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', d
     mask = ~np.isnan(vals)
     lons, lats, vals = lons[mask], lats[mask], vals[mask]
     
+    # Límites históricos para control de sobreoscilación
+    if len(vals) > 0:
+        val_min = np.min(vals)
+        val_max = np.max(vals)
+    else:
+        return np.zeros_like(grid_x), None
+    
     if len(vals) < 4:
         # Fallback a vecino más cercano si hay muy pocos datos
-        from scipy.interpolate import griddata
         z = griddata((lons, lats), vals, (grid_x, grid_y), method='nearest')
         return np.nan_to_num(z), None
 
@@ -583,71 +593,94 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', d
     try:
         # --- A. KRIGING ORDINARIO (Geoestadística Robusta) ---
         if metodo == 'kriging':
-            # Estimar variograma automáticamente
             bin_center, gamma = gs.vario_estimate((lons, lats), vals)
-            model = gs.Spherical(dim=2)
+            
+            # Selección dinámica del modelo de variograma
+            if modelo_variograma == 'spherical':
+                model = gs.Spherical(dim=2)
+            elif modelo_variograma == 'exponential':
+                model = gs.Exponential(dim=2)
+            elif modelo_variograma == 'gaussian':
+                model = gs.Gaussian(dim=2)
+            else:
+                model = gs.Linear(dim=2)
+                
             model.fit_variogram(bin_center, gamma, nugget=True)
             
             # Ejecutar Kriging
             krig = gs.krige.Ordinary(model, (lons, lats), vals)
-            z_krig, ss_krig = krig.structured([grid_x[0,:], grid_y[:,0]]) # Asume grid regular rectangular
-            # Si el grid no es regular (meshgrid curvo), usar execute con loop (más lento) o flat
+            z_krig, ss_krig = krig.structured([grid_x[0,:], grid_y[:,0]]) 
+            
             if z_krig.shape != grid_x.shape:
                  z_krig, ss_krig = krig.execute('grid', grid_x[0,:], grid_y[:,0])
             
-            return z_krig, np.sqrt(ss_krig) # Devolvemos Desviación Estándar (Sigma)
+            # Recorte de seguridad para Kriging (opcional pero recomendado en hidrología)
+            z_krig = np.clip(z_krig, a_min=val_min, a_max=val_max)
+            
+            return z_krig, np.sqrt(ss_krig)
 
-        # --- B. KRIGING CON DERIVA EXTERNA (KED) - ¡LA JOYA PARA MONTAÑA! ---
+        # --- B. KRIGING CON DERIVA EXTERNA (KED) ---
         elif metodo == 'ked' and dem_grid is not None:
-            # Necesitamos la elevación en los puntos de las estaciones
-            # Muestreamos el DEM en las coordenadas de las estaciones
-            # Nota: Esto es una aproximación rápida. Lo ideal es tener la Z en el GDF.
             from scipy.interpolate import RectBivariateSpline
-            # Asumimos que grid_x y grid_y son regulares
             x_range = grid_x[0,:]
             y_range = grid_y[:,0]
             
-            # Interpolador del DEM
             dem_interpolator = RectBivariateSpline(y_range, x_range, dem_grid)
             elev_stations = dem_interpolator.ev(lats, lons)
             
-            # Variograma
             bin_center, gamma = gs.vario_estimate((lons, lats), vals)
             model = gs.Spherical(dim=2)
             model.fit_variogram(bin_center, gamma, nugget=True)
             
-            # KED: Usa la elevación como variable secundaria
             krig = gs.krige.ExtDrift(model, (lons, lats), vals, drift_src=elev_stations)
-            # Pasamos el DEM completo como 'drift target'
             z_ked, ss_ked = krig.structured([x_range, y_range], drift_tgt=dem_grid)
+            
+            z_ked = np.clip(z_ked, a_min=val_min, a_max=val_max)
             
             return z_ked, np.sqrt(ss_ked)
 
         # --- C. IDW (Distancia Inversa) ---
         elif metodo == 'idw':
-            # Implementación vectorizada manual (más rápida que loops)
             xi, yi = grid_x.flatten(), grid_y.flatten()
             dist = np.sqrt((xi[:,None]-lons[None,:])**2 + (yi[:,None]-lats[None,:])**2)
-            dist = np.where(dist == 0, 1e-10, dist) # Evitar div/0
+            dist = np.where(dist == 0, 1e-10, dist) 
             weights = 1.0 / dist**2
             z_idw = np.sum(weights * vals, axis=1) / np.sum(weights, axis=1)
-            return z_idw.reshape(grid_x.shape), None
+            
+            # El IDW matemáticamente no se sale de los rangos, pero no está de más
+            z_idw_reshaped = np.clip(z_idw.reshape(grid_x.shape), a_min=val_min, a_max=val_max)
+            return z_idw_reshaped, None
 
         # --- D. SPLINE (Suavizado Geométrico) ---
         elif metodo == 'spline':
-            from scipy.interpolate import Rbf
             # 'thin_plate' es excelente para superficies suaves como lluvia
             rbf = Rbf(lons, lats, vals, function='thin_plate')
             z_rbf = rbf(grid_x, grid_y)
+            
+            # CORRECCIÓN DE OVERSHOOTING: Forzar a límites históricos
+            z_rbf = np.clip(z_rbf, a_min=val_min, a_max=val_max)
+            
             return z_rbf, None
+            
+        # --- E. TENDENCIA LINEAL (Trend) ---
+        elif metodo == 'trend':
+            # Interpolación usando método lineal simple de griddata
+            z_trend = griddata((lons, lats), vals, (grid_x, grid_y), method='linear')
+            
+            # Rellenar NaNs externos con el vecino más cercano para evitar huecos blancos
+            mask_nan = np.isnan(z_trend)
+            if np.any(mask_nan):
+                z_nearest = griddata((lons, lats), vals, (grid_x[mask_nan], grid_y[mask_nan]), method='nearest')
+                z_trend[mask_nan] = z_nearest
+                
+            z_trend = np.clip(z_trend, a_min=val_min, a_max=val_max)
+            return z_trend, None
 
     except Exception as e:
         print(f"Error en interpolación ({metodo}): {e}")
         # Fallback de seguridad: Vecino más cercano
-        from scipy.interpolate import griddata
         z = griddata((lons, lats), vals, (grid_x, grid_y), method='nearest')
         return np.nan_to_num(z), None
     
     # Default fallback
     return np.zeros_like(grid_x), None
-
