@@ -394,8 +394,8 @@ with tab_mapa:
                     
                     # --- GRAFICAR ---
                     fig = go.Figure()
-                    tit = f"Isoyetas: {tipo_analisis} ({nombre_zona})"
-                    if tipo_analisis == "Año Específico": tit = f"Isoyetas: {tipo_analisis} ({params_analisis['year']})"
+                    tit = f"Isoyetas: {tipo_analisis}"
+                    if tipo_analisis == "Año Específico": tit += f" ({params_analisis['year']})"
                     
                     # Datos hover
                     df_final['hover_val'] = df_final['valor'].apply(lambda x: f"{x:,.0f}")
@@ -404,6 +404,7 @@ with tab_mapa:
                     c_cuenca = df_final[col_cuenca].fillna('-') if col_cuenca else ["-"]*len(df_final)
                     custom_data = np.stack((c_muni, c_alt, c_cuenca, df_final['hover_val']), axis=-1)
                     
+                    # 1. Contornos Rellenos
                     fig.add_trace(go.Contour(
                         z=grid_z.T, x=np.linspace(q_minx, q_maxx, grid_res), y=np.linspace(q_miny, q_maxy, grid_res),
                         colorscale=paleta_colores, zmin=z_min, zmax=z_max,
@@ -412,8 +413,10 @@ with tab_mapa:
                         opacity=0.8, connectgaps=True, line_smoothing=1.3
                     ))
                     
+                    # 2. Capas de Contexto (Municipios/Cuencas)
                     add_context_layers_robust(fig, q_minx, q_miny, q_maxx, q_maxy)
                     
+                    # 3. Puntos Estaciones
                     fig.add_trace(go.Scatter(
                         x=df_final['lon_calc'], y=df_final['lat_calc'], mode='markers',
                         marker=dict(size=6, color='black', line=dict(width=1, color='white')),
@@ -422,13 +425,19 @@ with tab_mapa:
                         name="Estaciones"
                     ))
                     
+                    # Configuración final (ALINEADO CORRECTAMENTE)
                     fig.update_layout(
-                        title=tit, height=650, margin=dict(l=0,r=0,t=40,b=0),
-                        xaxis=dict(visible=False, scaleanchor="y", scaleratio=1), 
+                        title=tit, height=650, 
+                        margin=dict(l=0,r=0,t=40,b=0),
+                        xaxis=dict(visible=False, scaleanchor="y", scaleratio=1), # Aspect ratio 1:1 real
                         yaxis=dict(visible=False), 
                         plot_bgcolor='white', hovermode='closest'
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # 🔍 MAGIA AÑADIDA: Habilitamos el zoom con la rueda del ratón
+                    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
+                    
+                    # Reporte Automático
                     st.info(generar_analisis_texto_corregido(df_final, tipo_analisis))
                     
             else:
