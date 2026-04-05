@@ -1036,96 +1036,20 @@ with tabs[13]:
                 
 # ==============================================================================
 # TAB 14: GESTIÓN DEMOGRÁFICA (ACTUALIZADA PARA SUBIDA A SUPABASE)
-# ==============================================================================
 with tabs[14]:
     st.header("👥 Gestión de Datos Demográficos y Poblacionales")
     
-    # 1. Búsqueda inteligente de las credenciales de Supabase (A prueba de balas)
-    url_supabase = None
-    key_supabase = None
-    if "SUPABASE_URL" in st.secrets:
-        url_supabase = st.secrets["SUPABASE_URL"]
-        key_supabase = st.secrets["SUPABASE_KEY"]
-    elif "supabase" in st.secrets:
-        url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
-        key_supabase = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
-    elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
-        url_supabase = st.secrets["iri"]["SUPABASE_URL"]
-        key_supabase = st.secrets["iri"]["SUPABASE_KEY"]
-    elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
-        url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-        key_supabase = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+    # 🕵️ Detector Inteligente de Secretos (Versión Refinada)
+    s = st.secrets
+    url_supabase = s.get("SUPABASE_URL") or s.get("supabase", {}).get("url") or s.get("connections", {}).get("supabase", {}).get("SUPABASE_URL")
+    key_supabase = s.get("SUPABASE_KEY") or s.get("supabase", {}).get("key") or s.get("connections", {}).get("supabase", {}).get("SUPABASE_KEY")
 
     if url_supabase and key_supabase:
-        st.success("✅ Streamlit está leyendo los secretos de Supabase correctamente.")
+        st.success("✅ Conexión con Supabase establecida y verificada.")
     else:
-        st.error("🚨 Streamlit AÚN NO encuentra los secretos de Supabase. Revisa la estructura de tu archivo secrets.toml.")
+        st.error("🚨 No se encuentran las credenciales en st.secrets.")
+        st.info("Estructura requerida en secrets.toml:\n\nSUPABASE_URL = '...'\nSUPABASE_KEY = '...'")
         st.stop()
-
-    st.markdown("""
-    Aquí puedes actualizar la base de datos maestra (`.parquet`) enviándola directamente al almacenamiento en la nube (Supabase).
-    Esto nos permite superar los límites de tamaño de GitHub y centralizar la información.
-    """)
-    
-    st.divider()
-    
-    col_izq, col_der = st.columns([1, 1])
-    
-    # --- COLUMNA 1: Subida del Archivo ---
-    with col_izq:
-        st.subheader("1. Subir Archivo Parquet")
-        archivo_subido = st.file_uploader(
-            "Sube tu archivo optimizado (Formato .parquet, max 100MB)", 
-            type=['parquet'],
-            help="Este archivo contiene toda la historia y proyección demográfica de Colombia."
-        )
-        
-    # --- COLUMNA 2: Procesamiento y Envío a Supabase ---
-    with col_der:
-        st.subheader("2. Enviar a la Nube (Supabase)")
-        
-        if archivo_subido is not None:
-            # 1. Validación rápida para asegurar que es legible
-            try:
-                df_nuevo = pd.read_parquet(archivo_subido)
-                st.success(f"✅ Archivo leído correctamente: {len(df_nuevo):,} registros detectados.")
-                
-                with st.expander("👁️ Vista Previa Rápida"):
-                    st.dataframe(df_nuevo.head(5), use_container_width=True)
-                
-                # 2. Botón de Subida a Supabase
-                if st.button("🚀 Subir a Supabase Storage", type="primary", use_container_width=True):
-                    with st.spinner("Conectando con Supabase y transfiriendo el archivo..."):
-                        try:
-                            # --- CONEXIÓN A SUPABASE ---
-                            from supabase import create_client, Client
-                            supabase: Client = create_client(url_supabase, key_supabase)
-                            
-                            nombre_bucket = "sihcli_maestros" # <-- ¡Asegúrate de que este es tu bucket!
-                            nombre_archivo_destino = "Poblacion_Colombia_Maestra.parquet"
-                            
-                            # Volvemos a poner el puntero del archivo al inicio
-                            archivo_subido.seek(0)
-                            file_bytes = archivo_subido.read()
-                            
-                            # --- SUBIDA AL BUCKET ---
-                            # Usamos upsert=True para que sobrescriba si el archivo ya existe
-                            respuesta = supabase.storage.from_(nombre_bucket).upload(
-                                path=nombre_archivo_destino, 
-                                file=file_bytes, 
-                                file_options={"content-type": "application/vnd.apache.parquet", "upsert": "true"}
-                            )
-                            
-                            st.balloons()
-                            st.success(f"🎉 ¡Éxito! Archivo `{nombre_archivo_destino}` subido a Supabase correctamente.")
-                            
-                        except Exception as e:
-                            st.error(f"❌ Error al subir a Supabase: {str(e)}")
-                            
-            except Exception as e:
-                st.error(f"❌ Ocurrió un error al leer el archivo Parquet: {e}")
-        else:
-            st.info("👆 Sube un archivo en el panel izquierdo para habilitar el envío.")
             
 # =====================================================================
 # TAB 15: MÓDULO DE CARGA ESPACIAL (SHAPEFILE -> GEOJSON -> SUPABASE)
