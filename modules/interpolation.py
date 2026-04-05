@@ -609,12 +609,14 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
             
             # Ejecutar Kriging
             krig = gs.krige.Ordinary(model, (lons, lats), vals)
-            z_krig, ss_krig = krig.structured([grid_x[0,:], grid_y[:,0]]) 
             
-            if z_krig.shape != grid_x.shape:
-                 z_krig, ss_krig = krig.execute('grid', grid_x[0,:], grid_y[:,0])
+            # SOLUCIÓN: Usar evaluación desestructurada (flatten) igual que en IDW
+            # para evitar problemas con los ejes de mgrid/meshgrid
+            z_flat, ss_flat = krig(grid_x.flatten(), grid_y.flatten())
+            z_krig = z_flat.reshape(grid_x.shape)
+            ss_krig = ss_flat.reshape(grid_x.shape)
             
-            # Recorte de seguridad para Kriging (opcional pero recomendado en hidrología)
+            # Recorte de seguridad para Kriging
             z_krig = np.clip(z_krig, a_min=val_min, a_max=val_max)
             
             return z_krig, np.sqrt(ss_krig)
@@ -622,18 +624,24 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
         # --- B. KRIGING CON DERIVA EXTERNA (KED) ---
         elif metodo == 'ked' and dem_grid is not None:
             from scipy.interpolate import RectBivariateSpline
-            x_range = grid_x[0,:]
-            y_range = grid_y[:,0]
             
-            dem_interpolator = RectBivariateSpline(y_range, x_range, dem_grid)
-            elev_stations = dem_interpolator.ev(lats, lons)
+            # Corrección de ejes para el DEM
+            x_uniques = grid_x[:, 0]
+            y_uniques = grid_y[0, :]
+            
+            dem_interpolator = RectBivariateSpline(x_uniques, y_uniques, dem_grid)
+            elev_stations = dem_interpolator.ev(lons, lats)
             
             bin_center, gamma = gs.vario_estimate((lons, lats), vals)
             model = gs.Spherical(dim=2)
             model.fit_variogram(bin_center, gamma, nugget=True)
             
             krig = gs.krige.ExtDrift(model, (lons, lats), vals, drift_src=elev_stations)
-            z_ked, ss_ked = krig.structured([x_range, y_range], drift_tgt=dem_grid)
+            
+            # SOLUCIÓN KED: Pasar el DEM aplanado
+            z_flat, ss_flat = krig(grid_x.flatten(), grid_y.flatten(), drift_tgt=dem_grid.flatten())
+            z_ked = z_flat.reshape(grid_x.shape)
+            ss_ked = ss_flat.reshape(grid_x.shape)
             
             z_ked = np.clip(z_ked, a_min=val_min, a_max=val_max)
             
