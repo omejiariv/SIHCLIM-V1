@@ -1051,8 +1051,8 @@ with tabs[12]:
 # ==============================================================================
 # TAB 13: ZONA DE PELIGRO (MANTENIDA)
 # ==============================================================================
-with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
-    st.header("Zona de Peligro") 
+with tabs[13]:  
+    st.header("☣️ Zona de Peligro") 
     
     st.subheader("🧹 Limpieza de Tablas Obsoletas")
     st.warning("Se ha detectado una tabla antigua llamada 'precipitacion_mensual' que causa conflictos.")
@@ -1079,29 +1079,46 @@ with tabs[13]:  # <--- NOTA: AHORA ES TAB 13
         if st.button("EJECUTAR REINICIO DE FÁBRICA", key="btn_nuke_final", type="primary"):
             try:
                 with engine.connect() as conn:
-                    # (Tu código de borrado original va aquí)
                     try: conn.rollback()
                     except: pass
                     
                     conn.execute(text("DROP TABLE IF EXISTS precipitacion CASCADE"))
                     conn.execute(text("DROP TABLE IF EXISTS estaciones CASCADE"))
                     conn.execute(text("DROP TABLE IF EXISTS indices_climaticos CASCADE"))
-                    # ... (resto de tablas)
                     conn.commit()
                     
                 st.success("✅ Base de datos reiniciada.")
                 st.balloons()
             except Exception as e: st.error(f"Error: {e}")
-    
+
 # ==============================================================================
 # TAB 14: GESTIÓN DEMOGRÁFICA (ACTUALIZADA PARA SUBIDA A SUPABASE)
 # ==============================================================================
 with tabs[14]:
     st.header("👥 Gestión de Datos Demográficos y Poblacionales")
-if "SUPABASE_URL" in st.secrets:
-    st.success("✅ Streamlit SÍ está leyendo los secretos.")
-else:
-    st.error("🚨 Streamlit AÚN NO encuentra los secretos. (Revisa si creaste la carpeta .streamlit/secrets.toml)")
+    
+    # 1. Búsqueda inteligente de las credenciales de Supabase (A prueba de balas)
+    url_supabase = None
+    key_supabase = None
+    if "SUPABASE_URL" in st.secrets:
+        url_supabase = st.secrets["SUPABASE_URL"]
+        key_supabase = st.secrets["SUPABASE_KEY"]
+    elif "supabase" in st.secrets:
+        url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+        key_supabase = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
+    elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
+        url_supabase = st.secrets["iri"]["SUPABASE_URL"]
+        key_supabase = st.secrets["iri"]["SUPABASE_KEY"]
+    elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
+        url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+        key_supabase = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
+
+    if url_supabase and key_supabase:
+        st.success("✅ Streamlit está leyendo los secretos de Supabase correctamente.")
+    else:
+        st.error("🚨 Streamlit AÚN NO encuentra los secretos de Supabase. Revisa la estructura de tu archivo secrets.toml.")
+        st.stop()
+
     st.markdown("""
     Aquí puedes actualizar la base de datos maestra (`.parquet`) enviándola directamente al almacenamiento en la nube (Supabase).
     Esto nos permite superar los límites de tamaño de GitHub y centralizar la información.
@@ -1134,26 +1151,18 @@ else:
                     st.dataframe(df_nuevo.head(5), use_container_width=True)
                 
                 # 2. Botón de Subida a Supabase
-                st.warning("⚠️ Asegúrate de que las credenciales de Supabase estén en tus secrets.")
-                
                 if st.button("🚀 Subir a Supabase Storage", type="primary", use_container_width=True):
                     with st.spinner("Conectando con Supabase y transfiriendo el archivo..."):
                         try:
                             # --- CONEXIÓN A SUPABASE ---
                             from supabase import create_client, Client
+                            supabase: Client = create_client(url_supabase, key_supabase)
                             
-                            # Intentamos obtener credenciales de Streamlit Secrets
-                            url: str = st.secrets["https://ldunpssoxvifemoyeuac.supabase.co"]
-                            key: str = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkdW5wc3NveHZpZmVtb3lldWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzNDk1NzQsImV4cCI6MjA3ODkyNTU3NH0.UDlf1aFBDCR8WS87ldS_D3cUl3g0HVfIVoekn1ZBAkI"]
-                            supabase: Client = create_client(url, key)
-                            
-                            nombre_bucket = "sihcli_maestros" # <-- ¡CAMBIA ESTO por el nombre de tu bucket!
+                            nombre_bucket = "sihcli_maestros" # <-- ¡Asegúrate de que este es tu bucket!
                             nombre_archivo_destino = "Poblacion_Colombia_Maestra.parquet"
                             
                             # Volvemos a poner el puntero del archivo al inicio
                             archivo_subido.seek(0)
-                            
-                            # Leemos los bytes del archivo
                             file_bytes = archivo_subido.read()
                             
                             # --- SUBIDA AL BUCKET ---
@@ -1167,8 +1176,6 @@ else:
                             st.balloons()
                             st.success(f"🎉 ¡Éxito! Archivo `{nombre_archivo_destino}` subido a Supabase correctamente.")
                             
-                        except KeyError:
-                            st.error("🚨 Faltan las credenciales de Supabase en `st.secrets`.")
                         except Exception as e:
                             st.error(f"❌ Error al subir a Supabase: {str(e)}")
                             
@@ -1176,7 +1183,7 @@ else:
                 st.error(f"❌ Ocurrió un error al leer el archivo Parquet: {e}")
         else:
             st.info("👆 Sube un archivo en el panel izquierdo para habilitar el envío.")
-
+            
 # =====================================================================
 # TAB 15: MÓDULO DE CARGA ESPACIAL (SHAPEFILE -> GEOJSON -> SUPABASE)
 # =====================================================================
