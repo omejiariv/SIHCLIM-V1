@@ -394,8 +394,11 @@ with tab_mapa:
                     
                     # --- GRAFICAR ---
                     fig = go.Figure()
-                    tit = f"Isoyetas: {tipo_analisis}"
-                    if tipo_analisis == "Año Específico": tit += f" ({params_analisis['year']})"
+                    
+                    # 🏷️ INYECCIÓN DEL NOMBRE DE LA ZONA EN EL TÍTULO
+                    tit = f"Isoyetas: {tipo_analisis} | {nombre_zona}"
+                    if tipo_analisis == "Año Específico": 
+                        tit = f"Isoyetas: {tipo_analisis} ({params_analisis['year']}) | {nombre_zona}"
                     
                     # Datos hover
                     df_final['hover_val'] = df_final['valor'].apply(lambda x: f"{x:,.0f}")
@@ -425,17 +428,18 @@ with tab_mapa:
                         name="Estaciones"
                     ))
                     
-                    # Configuración final (ALINEADO CORRECTAMENTE)
+                    # Configuración final (ALINEADO CORRECTAMENTE + PAN ACTIVADO)
                     fig.update_layout(
                         title=tit, height=650, 
                         margin=dict(l=0,r=0,t=40,b=0),
                         xaxis=dict(visible=False, scaleanchor="y", scaleratio=1), # Aspect ratio 1:1 real
                         yaxis=dict(visible=False), 
-                        plot_bgcolor='white', hovermode='closest'
+                        plot_bgcolor='white', hovermode='closest',
+                        dragmode='pan' # 🖐️ Activa la herramienta de arrastre (Mano) por defecto
                     )
                     
-                    # 🔍 MAGIA AÑADIDA: Habilitamos el zoom con la rueda del ratón
-                    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
+                    # 🔍 MAGIA AÑADIDA: Habilitamos el zoom con la rueda del ratón y la barra de herramientas
+                    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                     
                     # Reporte Automático
                     st.info(generar_analisis_texto_corregido(df_final, tipo_analisis))
