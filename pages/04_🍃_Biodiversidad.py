@@ -52,6 +52,47 @@ def save_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 # ==============================================================================
+# 🎓 MARCO TEÓRICO Y FUNDAMENTACIÓN CIENTÍFICA DEL MÓDULO
+# ==============================================================================
+with st.expander("🎓 Fundamentación Científica: El Ecosistema como Infraestructura (Ver Documentación)", expanded=False):
+    st.markdown("""
+    ### 1. El Paradigma de la "Factura de la Naturaleza" (Source-to-Tap)
+    La economía ecológica moderna ha dejado de ver a la naturaleza como un mero "paisaje" para entenderla como **Infraestructura Verde**. Este módulo cuantifica el costo de reposición (*Replacement Cost Method*): el valor económico que la sociedad tendría que pagar en infraestructura gris (plantas desalinizadoras, bombas de alta presión, redes de tuberías y plantas de tratamiento de lodos) para replicar los servicios ecosistémicos del ciclo del agua.
+    * **Metodología:** Basado en los principios de valoración de ecosistemas de **Costanza et al. (1997)** y el marco *SEEA-EA* (System of Environmental-Economic Accounting) de las Naciones Unidas.
+
+    ### 2. Dinámica del Carbono (MDL y Modelos Alométricos)
+    La mitigación del cambio climático requiere estimaciones robustas de biomasa. 
+    * **Ecuación de Crecimiento:** Utilizamos el modelo clásico de **Von Bertalanffy** ajustado para especies tropicales, el cual describe una curva sigmoidea de crecimiento biológico que se estabiliza al llegar a la senectud del bosque:
+      $$B_t = A \cdot (1 - e^{-k \cdot t})^{\\frac{1}{1-m}}$$
+      *(Donde $B_t$ es la biomasa en el tiempo $t$, $A$ es la asíntota máxima, y $k$ la tasa de crecimiento).*
+    * **Inventarios Ex-post:** Para mediciones reales en campo, integramos las ecuaciones alométricas pan-tropicales de **Álvarez et al. (2012)** y **Chave et al. (2014)**, utilizando el Diámetro a la Altura del Pecho (DAP) y la altura total, ajustadas por la Zona de Vida de Holdridge.
+
+    ### 3. Ecohidrología y Retención del Dosel (Efecto Esponja)
+    La atenuación de crecientes súbitas comienza en las hojas. El bosque intercepta la precipitación bruta ($P$) antes de que golpee el suelo, reduciendo la escorrentía superficial.
+    * **Modelo Asintótico (Aston, 1979 / Gash, 1979):** El agua interceptada ($I$) depende de la Capacidad Máxima del Dosel ($S_{max}$) que a su vez es una función del Índice de Área Foliar (LAI).
+      $$I = S_{max} \cdot (1 - e^{-P / S_{max}})$$
+    * **Geometría Fractal:** Las copas de los árboles optimizan su superficie de captura siguiendo patrones de autosemejanza (*Sistemas de Lindenmayer*), permitiendo que un solo individuo despliegue miles de metros cuadrados de área foliar real sobre una huella de suelo reducida.
+
+    ### 4. Mecánica del Impacto y Transporte de Sedimentos (Manning & MMF)
+    La porción de lluvia que atraviesa el dosel (*throughfall*) impacta el suelo con una energía cinética ($KE$) devastadora.
+    * **Splash Detachment:** Basado en el modelo *Morgan-Morgan-Finney (MMF)*, la disgregación de partículas es proporcional a la energía de la tormenta y a la erodabilidad del suelo (Factor K).
+    * **Fricción Hidráulica:** El lodo es transportado por la ladera según la Ecuación de **Manning**. El sotobosque y las raíces incrementan drásticamente el coeficiente de rugosidad ($n$), reduciendo la velocidad del flujo ($V$) y forzando la decantación de los sedimentos antes de que alcancen el río.
+      $$V = \\frac{1}{n} R^{2/3} S^{1/2}$$
+
+    ### 5. Limnología y Eutrofización en Embalses
+    El sedimento exportado (Lodo + Fósforo) viaja hasta los embalses alterando su batimetría y química.
+    * **Abrasión y Colmatación:** Las arenas gruesas rellenan el *Volumen Muerto*, acortando la vida útil de la presa, mientras las arcillas en suspensión pasan por las turbinas causando abrasión mecánica.
+    * **Impacto Sanitario (PTAP):** El exceso de materia orgánica y fósforo detona eventos de eutrofización. Esto dispara exponencialmente el consumo de coagulantes (Sulfato de Aluminio) y desinfectantes (Cloro) en las Plantas de Tratamiento de Agua Potable, demostrando que **la conservación de la cuenca alta es, de hecho, el primer y más barato paso de la potabilización.**
+
+    ---
+    **Fuentes Bibliográficas Clave:**
+    1. *Costanza, R., et al. (1997).* The value of the world's ecosystem services and natural capital. **Nature**.
+    2. *Álvarez, E., et al. (2012).* Tree above-ground biomass allometries for carbon pools in Colombia. **Forest Ecology and Management**.
+    3. *Aston, A. R. (1979).* Rainfall interception by eight small trees. **Journal of Hydrology**.
+    4. *Morgan, R. P. C., et al. (1984).* A predictive model for the assessment of soil erosion risk. **Journal of Agricultural Engineering Research**.
+    """)
+
+# ==============================================================================
 # ☁️ DESCARGA GLOBAL DE RASTERS (SMART CACHE)
 # Todos los mapas se descargan al disco 1 sola vez para alimentar todas las pestañas
 # ==============================================================================
