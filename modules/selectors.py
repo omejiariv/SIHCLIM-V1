@@ -11,33 +11,32 @@ from modules.config import Config
 # ====================================================================
 # --- NUEVA FUNCIÓN: MENÚ DE NAVEGACIÓN EXPANDIBLE ---
 # ====================================================================
+Has dicho
 def renderizar_menu_navegacion(pagina_actual):
+
     """
     Genera un menú expandible en el sidebar indicando la página actual.
     Reemplaza la navegación nativa de Streamlit para ahorrar espacio.
     """
     titulo_expander = f"📂 Navegación | Actual: {pagina_actual}"
-    
+
     with st.sidebar.expander(titulo_expander, expanded=False):
         st.page_link("app.py", label="Inicio", icon="🏠")
-        st.page_link("pages/01_Clima_e_Hidrologia.py", label="Clima e Hidrología", icon="🌦️")
-        st.page_link("pages/02_Aguas_Subterraneas.py", label="Aguas Subterráneas", icon="💧")
+        st.page_link("pages/01_🌦️_Clima_e_Hidrologia.py", label="Clima e Hidrología", icon="🌦️")
+        st.page_link("pages/02_💧_Aguas_Subterraneas.py", label="Aguas Subterráneas", icon="💧")
         st.page_link("pages/03_🗺️_Isoyetas_HD.py", label="Isoyetas HD", icon="🗺️")
-        st.page_link("pages/04_Biodiversidad.py", label="Biodiversidad", icon="🌱")
-        st.page_link("pages/05_Geomorfologia.py", label="Geomorfología", icon="⛰️")
-        st.page_link("pages/06_Modelo_Pecuario.py", label="Modelo Pecuario", icon="🐄")
-        st.page_link("pages/07_Modelo_Demografico.py", label="Modelo Demográfico", icon="👥")
-        st.page_link("pages/08_Calidad_y_Vertimientos.py", label="Calidad y Vertimientos", icon="🧪")
-        st.page_link("pages/09_Sistemas_Hidricos_Territoriales.py", label="Sistemas Hídricos", icon="🌊")
-        st.page_link("pages/10_Toma_de_Decisiones.py", label="Toma de Decisiones", icon="⚖️")
-        st.page_link("pages/11_Panel_Administracion.py", label="Panel Administración", icon="⚙️")
-        st.page_link("pages/12_Generador.py", label="Generador", icon="✨")
-        st.page_link("pages/13_Ayuda_y_Docs.py", label="Ayuda y Docs", icon="📚")
+        st.page_link("pages/04_🍃_Biodiversidad.py", label="Biodiversidad", icon="🌱")
+        st.page_link("pages/05_🏔️_Geomorfologia.py", label="Geomorfología", icon="⛰️")
+        st.page_link("pages/06_🐄_Modelo_Pecuario.py", label="Modelo Pecuario", icon="🐄")
+        st.page_link("pages/06_📈_Modelo_Demografico.py", label="Modelo Demográfico", icon="👥")
+        st.page_link("pages/07_💧_Calidad_y_Vertimientos.py", label="Calidad y Vertimientos", icon="🧪")
+        st.page_link("pages/08_🔗_Sistemas_Hidricos_Territoriales.py", label="Sistemas Hídricos", icon="🌊")
+        st.page_link("pages/09_📊_Toma_de_Decisiones.py", label="Toma de Decisiones", icon="⚖️")
+        st.page_link("pages/10_👑_Panel_Administracion.py", label="Panel Administración", icon="⚙️")
+        st.page_link("pages/11_⚙️_Generador.py", label="Generador", icon="✨")
+        st.page_link("pages/12_📚_Ayuda_y_Docs.py", label="Ayuda y Docs", icon="📚")
         st.page_link("pages/14_Diagnostico.py", label="Diagnóstico", icon="🩺")
-        st.page_link("pages/15_Detective.py", label="Detective", icon="🕵️")
-        
-        # (Nota: Verifica que el nombre exacto del archivo corresponda a tu carpeta 'pages/')
-
+        st.page_link("pages/14_🕵️_Detective.py", label="Detective", icon="🕵️")
 # ====================================================================
 
 # 🔥 OPTIMIZACIÓN: Guardamos los mapas pesados en RAM para no colapsar la base de datos
