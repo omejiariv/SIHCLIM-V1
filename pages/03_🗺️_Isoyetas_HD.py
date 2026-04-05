@@ -514,31 +514,39 @@ if len(df_filtered_meta) > 0:
         if 'df_final' in locals() and not df_final.empty:
             st.subheader("💾 Descargas GIS")
             
-            # Tabla previa (BLINDADA CONTRA NULOS)
+            # 🛡️ ESCUDO ANTI-NULOS EXTREMO PARA LA TABLA PREVIA
             cols_show = []
-            for c in [col_id, col_nom, 'valor', col_cuenca]:
-                if c is not None and c in df_final.columns:
-                    cols_show.append(c)
             
+            # 1. Verificamos si las variables existen en la memoria y NO son nulas
+            for var_name in ['col_id', 'col_nom', 'col_cuenca']:
+                if var_name in locals() and locals()[var_name] is not None:
+                    col_actual = locals()[var_name]
+                    # 2. Verificamos si la columna realmente existe en el DataFrame
+                    if col_actual in df_final.columns:
+                        cols_show.append(col_actual)
+            
+            # Siempre queremos mostrar el valor interpolado de la lluvia
+            if 'valor' in df_final.columns:
+                cols_show.append('valor')
+            elif 'lluvia_mm' in df_final.columns:
+                cols_show.append('lluvia_mm')
+                
+            # 3. Mostrar la tabla de forma segura
             if cols_show:
                 st.dataframe(df_final[cols_show].head(50), use_container_width=True)
             else:
+                # Fallback: Si no encontró ninguna columna conocida, muestra todo
                 st.dataframe(df_final.head(50), use_container_width=True)
             
             c1, c2, c3 = st.columns(3)
             
             # GeoJSON
             gdf_out = gpd.GeoDataFrame(df_final, geometry=gpd.points_from_xy(df_final.lon_calc, df_final.lat_calc), crs="EPSG:4326")
-            c1.download_button("🌍 GeoJSON (Puntos)", gdf_out.to_json(), f"isoyetas_{tipo_analisis}.geojson", "application/json")
+            c1.download_button("🌍 GeoJSON (Puntos)", gdf_out.to_json().encode('utf-8'), f"isoyetas_{tipo_analisis}.geojson", "application/json")
             
-            # Raster ASC
-            if 'grid_z' in locals():
-                asc = generar_raster_ascii(grid_z, q_minx, q_miny, (q_maxx-q_minx)/grid_res, grid_res, grid_res)
-                c2.download_button("⬛ Raster (.asc)", asc, f"raster_{tipo_analisis}.asc", "text/plain")
-            
-            # CSV
-            csv = df_final.to_csv(index=False).encode('utf-8')
-            c3.download_button("📊 CSV (Excel)", csv, f"datos_{tipo_analisis}.csv", "text/csv")
-
-else:
-    st.info("👈 Seleccione una Región o Cuenca en el menú lateral para iniciar.")
+            # Raster ASC (Si existe la grilla)
+            if 'grid_z' in locals() and 'generar_raster_ascii' in globals():
+                try:
+                    asc = generar_raster_ascii(grid_z, q_minx, q_miny, (q_maxx-q_minx)/grid_res, grid_res, grid_res)
+                    c2.download_button("🔲 Raster ASCII (.asc)", asc, f"isoyetas_{tipo_analisis}.asc", "text/plain")
+                except: pass
