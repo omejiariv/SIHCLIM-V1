@@ -30,6 +30,13 @@ except Exception as e:
 
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Monitor de Biodiversidad", page_icon="🍃", layout="wide")
+
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Biodiversidad y Servicios Ecosistémicos")
+
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
 from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
