@@ -156,79 +156,6 @@ tabs = st.tabs([
     "💧 Bocatomas", "⛰️ Hidrogeología", "🌱 Suelos", "🛠️ SQL", "📚 Inventario", "🌧️ Red de Drenaje", "🌧️ Zona de Peligro", "👥 Demografía", "🗺️ Aduana SIG", "☁️ Gestión Cloud"
 ])
 
-# --- PESTAÑA DE CONFIGURACIÓN INICIAL
-
-st.markdown("### 🛠️ Zona de Peligro: Reinicio del Sistema")
-with st.expander("Mostrar Controles de Reinicio de Base de Datos", expanded=True):
-    st.warning("⚠️ ESTA ACCIÓN ES IRREVERSIBLE. BORRARÁ TODOS LOS DATOS.")
-    
-    if st.button("🔥 EJECUTAR REINICIO TOTAL (CASCADE) 🔥", key="btn_nuke_v3"):
-        try:
-            with engine.begin() as conn:
-                st.write("⏳ Iniciando secuencia de borrado...")
-                
-                # 1. BORRADO EN ORDEN INVERSO (Hijos primero, luego Padres)
-                # Usamos CASCADE en todo por seguridad
-                conn.execute(text("DROP TABLE IF EXISTS precipitacion CASCADE;"))
-                conn.execute(text("DROP TABLE IF EXISTS indices_climaticos CASCADE;"))
-                conn.execute(text("DROP TABLE IF EXISTS estaciones CASCADE;"))
-                
-                st.write("✅ Tablas eliminadas. Creando nueva estructura...")
-                
-                # 2. CREACIÓN DE TABLAS
-                # Estaciones (Padre)
-                conn.execute(text("""
-                    CREATE TABLE estaciones (
-                        id_estacion TEXT PRIMARY KEY,
-                        nombre TEXT,
-                        longitud FLOAT,
-                        latitud FLOAT,
-                        altitud FLOAT,
-                        municipio TEXT,
-                        departamento TEXT,
-                        subregion TEXT,
-                        corriente TEXT
-                    );
-                """))
-                
-                # Índices
-                conn.execute(text("""
-                    CREATE TABLE indices_climaticos (
-                        fecha DATE PRIMARY KEY,
-                        enso_año TEXT,
-                        enso_mes TEXT,
-                        anomalia_oni FLOAT,
-                        temp_sst FLOAT,
-                        temp_media FLOAT,
-                        soi FLOAT,
-                        iod FLOAT,
-                        fase_enso TEXT
-                    );
-                """))
-                
-                # Precipitacion (Hija)
-                conn.execute(text("""
-                    CREATE TABLE precipitacion (
-                        fecha DATE,
-                        id_estacion TEXT,
-                        valor FLOAT,
-                        origen TEXT,
-                        PRIMARY KEY (fecha, id_estacion),
-                        CONSTRAINT fk_estacion FOREIGN KEY (id_estacion) REFERENCES estaciones(id_estacion)
-                    );
-                    CREATE INDEX idx_precip_fecha ON precipitacion(fecha);
-                    CREATE INDEX idx_precip_estacion ON precipitacion(id_estacion);
-                """))
-                
-            st.success("✅ ¡BASE DE DATOS REINICIADA CORRECTAMENTE!")
-            st.balloons()
-            time.sleep(2)
-            st.rerun() # Recarga la página automáticamente
-            
-        except Exception as e:
-            st.error(f"❌ Error crítico: {e}")
-
-
 # ==============================================================================
 # TAB 0: GESTIÓN DE ESTACIONES (CON DESBLOQUEO DE TRANSACCIÓN)
 # ==============================================================================
@@ -1049,48 +976,64 @@ with tabs[12]:
                 st.warning("⚠️ Debes seleccionar los archivos primero.")
 
 # ==============================================================================
-# TAB 13: ZONA DE PELIGRO (MANTENIDA)
+# TAB 13: ZONA DE PELIGRO (REFINADA)
 # ==============================================================================
 with tabs[13]:  
-    st.header("☣️ Zona de Peligro") 
-    
-    st.subheader("🧹 Limpieza de Tablas Obsoletas")
-    st.warning("Se ha detectado una tabla antigua llamada 'precipitacion_mensual' que causa conflictos.")
-    
-    if st.button("🗑️ Eliminar Tabla 'precipitacion_mensual' (SOLO BASURA)", type="primary"):
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("DROP TABLE IF EXISTS precipitacion_mensual"))
-                conn.commit()
-            st.success("✅ Tabla 'precipitacion_mensual' eliminada.")
-            time.sleep(2)
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error al eliminar: {e}")
-            
-    st.divider()
+    st.header("☣️ Zona de Peligro: Reinicio del Sistema") 
     
     st.error("""
-    **¡CUIDADO!**
-    Esta zona permite reiniciar la base de datos. Úsala solo si es estrictamente necesario.
+    **¡CUIDADO EXTREMO!**
+    Esta zona permite ejecutar un **Reinicio de Fábrica (Wipe)** de la base de datos relacional (PostgreSQL). 
+    Úsala solo si la estructura de tablas está corrupta. Perderás todos los datos de estaciones, lluvias e índices cargados.
     """)
     
-    with st.expander("💣 MOSTRAR BOTÓN DE RESET"):
-        if st.button("EJECUTAR REINICIO DE FÁBRICA", key="btn_nuke_final", type="primary"):
+    with st.expander("💣 MOSTRAR CONTROLES DE REINICIO DE BASE DE DATOS"):
+        st.warning("⚠️ ESTA ACCIÓN ES IRREVERSIBLE. SE RECONSTRUIRÁ LA ARQUITECTURA VACÍA.")
+        if st.button("🔥 EJECUTAR REINICIO TOTAL (CASCADE) 🔥", key="btn_nuke_final", type="primary"):
             try:
                 with engine.connect() as conn:
                     try: conn.rollback()
                     except: pass
                     
+                    st.write("⏳ Destruyendo tablas actuales...")
                     conn.execute(text("DROP TABLE IF EXISTS precipitacion CASCADE"))
                     conn.execute(text("DROP TABLE IF EXISTS estaciones CASCADE"))
                     conn.execute(text("DROP TABLE IF EXISTS indices_climaticos CASCADE"))
+                    
+                    st.write("🏗️ Reconstruyendo arquitectura vacía...")
+                    # 1. Estaciones
+                    conn.execute(text("""
+                        CREATE TABLE estaciones (
+                            id_estacion TEXT PRIMARY KEY, nombre TEXT, longitud FLOAT, latitud FLOAT, 
+                            altitud FLOAT, municipio TEXT, departamento TEXT, subregion TEXT, corriente TEXT
+                        );
+                    """))
+                    # 2. Índices
+                    conn.execute(text("""
+                        CREATE TABLE indices_climaticos (
+                            fecha DATE PRIMARY KEY, enso_año TEXT, enso_mes TEXT, anomalia_oni FLOAT, 
+                            temp_sst FLOAT, temp_media FLOAT, soi FLOAT, iod FLOAT, fase_enso TEXT
+                        );
+                    """))
+                    # 3. Precipitación
+                    conn.execute(text("""
+                        CREATE TABLE precipitacion (
+                            fecha DATE, id_estacion TEXT, valor FLOAT, origen TEXT,
+                            PRIMARY KEY (fecha, id_estacion),
+                            CONSTRAINT fk_estacion FOREIGN KEY (id_estacion) REFERENCES estaciones(id_estacion)
+                        );
+                        CREATE INDEX idx_precip_fecha ON precipitacion(fecha);
+                        CREATE INDEX idx_precip_estacion ON precipitacion(id_estacion);
+                    """))
                     conn.commit()
                     
-                st.success("✅ Base de datos reiniciada.")
+                st.success("✅ Base de datos relacional reiniciada y reconstruida desde cero.")
                 st.balloons()
-            except Exception as e: st.error(f"Error: {e}")
-
+                time.sleep(2)
+                st.rerun()
+            except Exception as e: 
+                st.error(f"Error crítico en reconstrucción: {e}")
+                
 # ==============================================================================
 # TAB 14: GESTIÓN DEMOGRÁFICA (ACTUALIZADA PARA SUBIDA A SUPABASE)
 # ==============================================================================
