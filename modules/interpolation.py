@@ -581,6 +581,12 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
 
     # 2. Selección de Método
     try:
+        # --- PROTECCIÓN ANTI-CRASH PARA KED ---
+        if metodo == 'ked' and dem_grid is None:
+            # Si piden KED pero no hay elevación, hacemos fallback automático a Kriging Ordinario
+            print("Advertencia: KED requiere un DEM. Haciendo fallback a Kriging Ordinario.")
+            metodo = 'kriging'
+            
         # --- A. KRIGING ORDINARIO ---
         if metodo == 'kriging':
             # Selección de modelo
@@ -673,3 +679,6 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
         print(f"Fallback activado. Error: {e}")
         z = griddata((lons, lats), vals, (grid_x, grid_y), method='nearest')
         return np.nan_to_num(z), None
+        
+    # Default fallback final para evitar "NoneType unpack"
+    return np.zeros_like(grid_x), None
