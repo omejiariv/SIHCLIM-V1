@@ -32,6 +32,12 @@ except ImportError:
 st.set_page_config(page_title="SIHCLI-POTER", page_icon="🌦️", layout="wide")
 warnings.filterwarnings("ignore")
 
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Clima e Hidrología")
+
 # ==============================================================================
 # 📡 1. CONEXIÓN SATELITAL (AUTO-FETCH ENSO DESDE COLUMBIA UNIVERSITY)
 # ==============================================================================
