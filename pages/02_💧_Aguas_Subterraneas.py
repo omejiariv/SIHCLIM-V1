@@ -42,6 +42,12 @@ except ImportError as e:
 # Configuración de Página
 st.set_page_config(page_title="Aguas Subterráneas", page_icon="💧", layout="wide")
 
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Aguas Subterráneas")
+
 # 🧠 Encendido automático del Gemelo Digital (Lectura de matrices maestras)
 try:
     from modules.utils import encender_gemelo_digital
