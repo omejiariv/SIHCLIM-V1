@@ -1344,9 +1344,46 @@ with tabs[15]:
 
 # Añade "☁️ Gestión Cloud" a tu lista de st.tabs([...])
 
-with tabs[16]: # La nueva pestaña
-    st.header("☁️ Centro de Control de Activos Cloud")
+# ==============================================================================
+# TAB 16: GESTIÓN CLOUD Y SMART CACHE
+# ==============================================================================
+with tabs[16]: 
+    st.header("☁️ Centro de Control de Activos Cloud y Caché")
     
+    # --- NUEVO: CONTROL DEL SMART CACHE ---
+    st.markdown("### 🧹 Mantenimiento del Smart Cache")
+    st.info("El Gemelo Digital guarda temporalmente los mapas pesados en el servidor local para acelerar la aplicación. Si subiste un mapa nuevo a Supabase, purga el caché para forzar la actualización automática.")
+    
+    if st.button("♻️ Purgar Caché Espacial (Forzar Sincronización)", type="primary"):
+        with st.spinner("Vaciando memoria RAM y caché físico..."):
+            # 1. Limpiar caché de memoria de Streamlit
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            
+            # 2. Limpiar carpeta física 'data/cloud_cache'
+            cache_dir = os.path.join(current_dir, '..', 'data', 'cloud_cache')
+            archivos_borrados = 0
+            if os.path.exists(cache_dir):
+                for filename in os.listdir(cache_dir):
+                    file_path = os.path.join(cache_dir, filename)
+                    try:
+                        if os.path.isfile(file_path) or os.path.islink(file_path):
+                            os.unlink(file_path)
+                            archivos_borrados += 1
+                        elif os.path.isdir(file_path):
+                            shutil.rmtree(file_path)
+                            archivos_borrados += 1
+                    except Exception as e:
+                        st.warning(f"No se pudo borrar {file_path}: {e}")
+            
+            st.success(f"✅ ¡Caché purgado con éxito! Se eliminaron {archivos_borrados} archivos temporales. Los módulos descargarán las versiones más recientes desde Supabase la próxima vez que se soliciten.")
+            time.sleep(2)
+            st.rerun()
+
+    st.divider()
+
+    # --- GESTIÓN DE BUCKETS ---
+    st.markdown("### 📡 Sincronización de Depósitos (Buckets)")
     # 1. Selector de Bucket (Para no mezclar Rasters con Tablas)
     bucket_selector = st.radio("Selecciona el depósito:", ["rasters", "sihcli_maestros"], horizontal=True)
     
@@ -1354,21 +1391,36 @@ with tabs[16]: # La nueva pestaña
     
     with col_u:
         st.subheader("📤 Carga Directa")
-        f = st.file_uploader("Subir activo hídrico/espacial", type=['tif', 'geojson', 'csv', 'parquet'], key="cloud_up")
+        f = st.file_uploader("Subir activo hídrico/espacial", type=['tif', 'geojson', 'csv', 'parquet'], key="cloud_up_final")
         if f and st.button("🚀 Enviar a la Nube", use_container_width=True):
             content_type = "image/tiff" if f.name.endswith('.tif') else "application/json"
-            # Tu lógica de upload que ya tienes, pero usando bucket_selector
-            res = cliente_supabase.storage.from_(bucket_selector).upload(
-                path=f.name, file=f.getvalue(), 
-                file_options={"content-type": content_type, "upsert": "true"}
-            )
-            st.success(f"Activo {f.name} sincronizado en {bucket_selector}")
+            try:
+                res = cliente_supabase.storage.from_(bucket_selector).upload(
+                    path=f.name, file=f.getvalue(), 
+                    file_options={"content-type": content_type, "upsert": "true"}
+                )
+                st.success(f"✅ Activo {f.name} sincronizado en {bucket_selector}")
+                time.sleep(1.5)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error al subir: {e}")
 
     with col_l:
         st.subheader("📂 Inventario en Vivo")
         # Listado automático para verificar que la Pág 09 verá los datos
-        archivos = cliente_supabase.storage.from_(bucket_selector).list()
-        if archivos:
-            df_cloud = pd.DataFrame(archivos)
-            st.dataframe(df_cloud[['name', 'created_at']], use_container_width=True)
-
+        try:
+            archivos = cliente_supabase.storage.from_(bucket_selector).list()
+            if archivos:
+                df_cloud = pd.DataFrame(archivos)
+                # Filtramos las carpetas invisibles de Supabase
+                df_cloud = df_cloud[~df_cloud['name'].isin(['.emptyFolderPlaceholder', '.emptyFolder'])]
+                if not df_cloud.empty and 'created_at' in df_cloud.columns:
+                    # Formatear la fecha para que sea legible
+                    df_cloud['created_at'] = pd.to_datetime(df_cloud['created_at']).dt.strftime('%Y-%m-%d %H:%M')
+                    st.dataframe(df_cloud[['name', 'created_at']], use_container_width=True, hide_index=True)
+                else:
+                    st.info("No hay archivos válidos en este depósito.")
+            else:
+                st.info("El depósito está vacío.")
+        except Exception as e:
+            st.warning(f"No se pudo conectar al bucket: {e}")
