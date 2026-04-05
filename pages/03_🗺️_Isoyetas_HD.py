@@ -414,10 +414,18 @@ if len(df_filtered_meta) > 0:
                 df_final = pd.merge(df_agg, gdf_meta[cols_finales], on=col_id)
                 
                 # Limpieza de duplicados espaciales (promediar si hay 2 estaciones en el mismo pixel)
-                df_final = df_final.groupby(['lat_calc', 'lon_calc']).agg({
-                    col_id: 'first', col_nom: 'first', 'valor': 'mean', 
-                    col_muni: 'first', col_alt: 'first', col_cuenca: 'first'
-                }).reset_index()
+                # 🛡️ ESCUDO ANTI-NULOS PARA LA AGRUPACIÓN
+                agg_dict = {
+                    col_id: 'first', 
+                    col_nom: 'first', 
+                    'valor': 'mean'
+                }
+                if col_muni: agg_dict[col_muni] = 'first'
+                if col_alt: agg_dict[col_alt] = 'first'
+                if col_cuenca: agg_dict[col_cuenca] = 'first'
+                
+                # Limpieza de duplicados espaciales (promediar si hay 2 estaciones en el mismo pixel)
+                df_final = df_final.groupby(['lat_calc', 'lon_calc']).agg(agg_dict).reset_index()
 
                 if ignore_zeros: df_final = df_final[df_final['valor'] > 1] # Filtro lluvia fantasma
                 if ignore_nulls: df_final = df_final.dropna(subset=['valor'])
