@@ -1,4 +1,4 @@
-# pages/03_🗺️_Isoyetas_HD.py (BLOQUE 1)
+# pages/03_🗺️_Isoyetas_HD.py
 
 import streamlit as st
 import pandas as pd
@@ -346,6 +346,11 @@ with tab_mapa:
                         st.info(generar_analisis_texto_corregido(df_final, tipo_analisis))
                 else:
                     st.warning("⚠️ Quedaron menos de 3 estaciones válidas después de aplicar los filtros de calidad temporal para este año.")
+            
+            else: 
+                st.warning(f"⚠️ Las estaciones en esta zona no tienen registros consolidados para el modo seleccionado ({tipo_analisis}). Intenta con un año anterior o activa la 'Interpolación Temporal'.")
+            # --------------------------------
+
         else:
             st.warning("No hay registros en la base de datos para esta zona y periodo.")
             
