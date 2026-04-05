@@ -58,7 +58,7 @@ if not ids_sel or gdf_zona is None or gdf_zona.empty:
     st.info("👈 Seleccione un Territorio (Cuenca, Municipio o Región) en el menú lateral para iniciar.")
     st.stop()
 
-# --- 4. FUNCIONES DE SOPORTE (AHORA CON ALERTAS DE ERROR) ---
+# --- 4. FUNCIONES DE SOPORTE ---
 @st.cache_data(ttl=3600)
 def load_geojson_cached(filename):
     possible_paths = [
@@ -75,9 +75,8 @@ def load_geojson_cached(filename):
                     gdf = gdf.to_crs("EPSG:4326")
                 return gdf
             except: continue
-            
-    # ALERTA VISUAL SI FALLA
-    st.toast(f"❌ Error crítico: No se encontró el archivo de cartografía '{filename}'. Revisa la carpeta 'data'.", icon="⚠️")
+    # CORRECCIÓN DE CACHÉ: Se elimina st.toast para evitar CacheReplayClosureError
+    print(f"Advertencia: No se encontró el archivo {filename}")
     return None
 
 def detectar_columna(df, keywords):
@@ -144,6 +143,55 @@ def add_context_layers_robust(fig, show_cuencas=True, show_muni=False):
                     x, y = p.exterior.xy
                     fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=1.5, color='rgba(0, 100, 255, 0.8)'), text=f"🌊 {name}", hoverinfo='text', showlegend=False))
 
+# RESTAURADO: Funciones auxiliares
+def calcular_pronostico(df_anual, target_year):
+    proyecciones = []
+    for station in df_anual['station_id'].unique():
+        datos_est = df_anual[df_anual['station_id'] == station].dropna()
+        if len(datos_est) >= 5: 
+            try:
+                x = datos_est['year'].values
+                y = datos_est['total_anual'].values
+                slope, intercept = np.polyfit(x, y, 1)
+                pred = (slope * target_year) + intercept
+                proyecciones.append({'station_id': station, 'valor': max(0, pred)}) 
+            except: pass
+    return pd.DataFrame(proyecciones)
+
+def generar_analisis_texto_corregido(df_stats, tipo_analisis):
+    if df_stats.empty: return "No hay datos suficientes."
+    avg_val = df_stats['valor'].mean()
+    min_val = df_stats['valor'].min()
+    max_val = df_stats['valor'].max()
+    diff = max_val - min_val
+    
+    try:
+        est_max = df_stats.loc[df_stats['valor'].idxmax()]['nombre']
+        est_min = df_stats.loc[df_stats['valor'].idxmin()]['nombre']
+    except:
+        est_max, est_min = "N/A", "N/A"
+    
+    if diff < 600: conclusion = "un comportamiento regional relativamente uniforme."
+    elif diff < 1500: conclusion = "un gradiente de precipitación moderado."
+    else: conclusion = "una **fuerte variabilidad orográfica**."
+    
+    return f"""
+    ### 📝 Análisis Automático
+    * **Promedio:** {avg_val:,.0f} mm
+    * **Rango:** {diff:,.0f} mm
+    * **Conclusión:** El territorio presenta {conclusion}
+    * **Máximo:** {est_max} ({max_val:,.0f} mm)
+    * **Mínimo:** {est_min} ({min_val:,.0f} mm)
+    """
+
+def generar_raster_ascii(grid_z, minx, miny, cellsize, nrows, ncols):
+    header = f"ncols        {ncols}\nnrows        {nrows}\nxllcorner    {minx}\nyllcorner    {miny}\ncellsize     {cellsize}\nNODATA_value -9999\n"
+    grid_fill = np.nan_to_num(grid_z.T, nan=-9999)
+    body = ""
+    for row in np.flipud(grid_fill.T): 
+        body += " ".join([f"{val:.2f}" for val in row]) + "\n"
+    return header + body
+
 # pages/03_🗺️_Isoyetas_HD.py (BLOQUE 2)
 
 # --- 5. SIDEBAR: CONFIGURACIÓN DEL MAPA ---
@@ -159,8 +207,6 @@ elif tipo_analisis == "Pronóstico Futuro":
     params_analisis['target'] = st.sidebar.slider("🔮 Proyección:", 2026, 2040, 2026)
 
 paleta_colores = st.sidebar.selectbox("🎨 Escala de Color:", options=["YlGnBu", "Jet", "Portland", "Viridis", "RdBu"], index=0)
-
-# ELIMINADO: El segundo slider de buffer confuso ha sido removido.
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🗺️ Capas Vectoriales")
@@ -191,7 +237,6 @@ with tab_mapa:
     try:
         engine = db_manager.get_engine()
         
-        # SINCRONIZACIÓN PERFECTA: Usamos exactamente las estaciones que encontró el módulo principal
         ids_clean = [str(i).replace("'", "") for i in ids_sel] 
         ids_sql = "('" + "','".join(ids_clean) + "')"
         
@@ -209,7 +254,6 @@ with tab_mapa:
             
             df_proc['year'] = df_proc['fecha'].dt.year
             
-            # EL DELATOR: Te avisa si el filtro temporal está asesinando tus datos
             if not do_interp_temp:
                 estaciones_antes = df_proc['id_estacion'].nunique()
                 year_counts = df_proc.groupby(['id_estacion', 'year'])['valor'].count().reset_index(name='count')
@@ -230,13 +274,17 @@ with tab_mapa:
             elif tipo_analisis == "Promedio Multianual":
                 mask = (df_annual_sums['year'] >= params_analisis['start']) & (df_annual_sums['year'] <= params_analisis['end'])
                 df_agg = df_annual_sums[mask].groupby('station_id')['total_anual'].mean().reset_index(name='valor')
+            elif tipo_analisis == "Pronóstico Futuro":
+                df_agg = calcular_pronostico(df_annual_sums, params_analisis['target'])
             else:
-                df_agg = df_annual_sums.groupby('station_id')['total_anual'].max().reset_index(name='valor') # Fallback simple
+                df_agg = df_annual_sums.groupby('station_id')['total_anual'].max().reset_index(name='valor')
                 
             # --- GENERACIÓN DE ISOYETAS ---
             if not df_agg.empty:
                 df_agg = df_agg.rename(columns={'station_id': col_id})
-                cols_merge = list(set([col_id, col_nom, 'lat_calc', 'lon_calc'] + ([col_muni] if col_muni else []) + ([col_alt] if col_alt else []) + ([col_cuenca] if col_cuenca else [])))
+                
+                # CORRECCIÓN DE TYPO: cols_finales ahora está correctamente declarada
+                cols_finales = list(set([col_id, col_nom, 'lat_calc', 'lon_calc'] + ([col_muni] if col_muni else []) + ([col_alt] if col_alt else []) + ([col_cuenca] if col_cuenca else [])))
                 df_final = pd.merge(df_agg, gdf_meta[cols_finales], on=col_id).groupby(['lat_calc', 'lon_calc']).first().reset_index()
 
                 if ignore_zeros: df_final = df_final[df_final['valor'] > 1] 
@@ -246,7 +294,6 @@ with tab_mapa:
                     with st.spinner(f"Interpolando {len(df_final)} estaciones válidas..."):
                         grid_res = 200 
                         
-                        # Cuadro de enmarcado inteligente basado en las estaciones encontradas
                         margin_lon = (df_final['lon_calc'].max() - df_final['lon_calc'].min()) * 0.15 or 0.1
                         margin_lat = (df_final['lat_calc'].max() - df_final['lat_calc'].min()) * 0.15 or 0.1
                         q_minx, q_maxx = df_final['lon_calc'].min() - margin_lon, df_final['lon_calc'].max() + margin_lon
@@ -269,6 +316,12 @@ with tab_mapa:
                         
                         df_final['hover_val'] = df_final['valor'].apply(lambda x: f"{x:,.0f}")
                         
+                        # Preparando datos enriquecidos para el tooltip del mapa
+                        c_muni = df_final[col_muni].fillna('-') if col_muni else ["-"]*len(df_final)
+                        c_alt = df_final[col_alt].fillna(0) if col_alt else [0]*len(df_final)
+                        c_cuenca = df_final[col_cuenca].fillna('-') if col_cuenca else ["-"]*len(df_final)
+                        custom_data = np.stack((c_muni, c_alt, c_cuenca, df_final['hover_val']), axis=-1)
+                        
                         fig.add_trace(go.Contour(
                             z=grid_z.T, x=np.linspace(q_minx, q_maxx, grid_res), y=np.linspace(q_miny, q_maxy, grid_res),
                             colorscale=paleta_colores, zmin=z_min, zmax=z_max, colorbar=dict(title="mm/año"),
@@ -276,20 +329,45 @@ with tab_mapa:
                             opacity=0.8, connectgaps=True, line_smoothing=1.3
                         ))
                         
-                        # Agrega las capas de fondo
                         add_context_layers_robust(fig, ver_cuencas, ver_municipios)
                         
                         fig.add_trace(go.Scatter(
                             x=df_final['lon_calc'], y=df_final['lat_calc'], mode='markers',
                             marker=dict(size=6, color='black', line=dict(width=1, color='white')),
-                            text=df_final[col_nom], hovertemplate="<b>%{text}</b><br>Valor: %{customdata} mm<extra></extra>", customdata=df_final['hover_val'], name="Estaciones"
+                            text=df_final[col_nom], 
+                            hovertemplate="<b>%{text}</b><br>Valor: %{customdata[3]} mm<br>🏙️: %{customdata[0]}<br>⛰️: %{customdata[1]} m<extra></extra>", 
+                            customdata=custom_data, 
+                            name="Estaciones"
                         ))
                         
                         fig.update_layout(title=tit, height=650, margin=dict(l=0,r=0,t=40,b=0), xaxis=dict(visible=False, scaleanchor="y", scaleratio=1), yaxis=dict(visible=False), plot_bgcolor='white', dragmode='pan')
                         st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
+                        
+                        st.info(generar_analisis_texto_corregido(df_final, tipo_analisis))
                 else:
                     st.warning("⚠️ Quedaron menos de 3 estaciones válidas después de aplicar los filtros de calidad temporal para este año.")
         else:
-            st.warning("No hay registros en la base de datos para esta zona y año.")
+            st.warning("No hay registros en la base de datos para esta zona y periodo.")
+            
+        with st.expander("🔍 Ver Datos Crudos", expanded=False):
+            if not df_agg.empty and 'df_final' in locals(): st.dataframe(df_final)
+
     except Exception as e:
         st.error(f"Error procesando datos: {e}")
+
+# --- 8. DESCARGAS GIS ---
+with tab_datos:
+    if 'df_final' in locals() and not df_final.empty:
+        st.subheader("💾 Descargas GIS")
+        cols_show = [c for c in [col_id, col_nom, col_cuenca, 'valor'] if c in df_final.columns]
+        st.dataframe(df_final[cols_show].head(50) if cols_show else df_final.head(50), use_container_width=True)
+        
+        c1, c2, c3 = st.columns(3)
+        gdf_out = gpd.GeoDataFrame(df_final, geometry=gpd.points_from_xy(df_final.lon_calc, df_final.lat_calc), crs="EPSG:4326")
+        c1.download_button("🌍 GeoJSON (Puntos)", gdf_out.to_json().encode('utf-8'), f"isoyetas_{tipo_analisis}.geojson", "application/json")
+        
+        if 'grid_z' in locals():
+            asc = generar_raster_ascii(grid_z, q_minx, q_miny, (q_maxx-q_minx)/grid_res, grid_res, grid_res)
+            c2.download_button("⬛ Raster (.asc)", asc, f"raster_{tipo_analisis}.asc", "text/plain")
+        
+        c3.download_button("📊 CSV (Excel)", df_final.to_csv(index=False).encode('utf-8'), f"datos_{tipo_analisis}.csv", "text/csv")
