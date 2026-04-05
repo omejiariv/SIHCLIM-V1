@@ -23,11 +23,16 @@ from sqlalchemy import text
 import geopandas as gpd
 from rasterio.io import MemoryFile
 
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS (SOLUCIÓN AL NAMEERROR) ---
 try:
+    from modules import selectors
     from modules.admin_utils import init_supabase
 except ImportError:
-    st.error("⚠️ Error crítico: No se encuentra modules.admin_utils")
-
+    # Fallback de rutas por si hay problemas de lectura entre carpetas
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from modules import selectors
+    from modules.admin_utils import init_supabase
+    
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="SIHCLI-POTER", page_icon="🌦️", layout="wide")
 warnings.filterwarnings("ignore")
