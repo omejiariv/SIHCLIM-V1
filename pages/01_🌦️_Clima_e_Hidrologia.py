@@ -200,7 +200,8 @@ def main():
         
     with col_nav2:
         if "Analítica" in categoria_nav:
-            opciones = ["🏠 Inicio", "🚨 Monitoreo", "🗺️ Distribución", "📈 Gráficos", "📊 Estadísticas", "📄 Reporte"]
+            # 🚀 AQUÍ ESTÁ EL CAMBIO: Movimos "🗺️ Distribución" a la posición 0
+            opciones = ["🗺️ Distribución", "🚨 Monitoreo", "📈 Gráficos", "📊 Estadísticas", "📄 Reporte", "🏠 Inicio"]
         elif "Ciencia" in categoria_nav:
             opciones = ["🔮 Pronóstico Climático", "📉 Tendencias", "⚠️ Anomalías", "🔗 Correlación", "🌊 Extremos", "🧪 Sesgo"]
         else:
