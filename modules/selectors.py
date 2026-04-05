@@ -11,7 +11,6 @@ from modules.config import Config
 # ====================================================================
 # --- NUEVA FUNCIÓN: MENÚ DE NAVEGACIÓN EXPANDIBLE ---
 # ====================================================================
-Has dicho
 def renderizar_menu_navegacion(pagina_actual):
 
     """
@@ -35,7 +34,7 @@ def renderizar_menu_navegacion(pagina_actual):
         st.page_link("pages/10_👑_Panel_Administracion.py", label="Panel Administración", icon="⚙️")
         st.page_link("pages/11_⚙️_Generador.py", label="Generador", icon="✨")
         st.page_link("pages/12_📚_Ayuda_y_Docs.py", label="Ayuda y Docs", icon="📚")
-        st.page_link("pages/14_Diagnostico.py", label="Diagnóstico", icon="🩺")
+        st.page_link("pages/13_🚑_Diagnostico.py", label="Diagnóstico", icon="🩺")
         st.page_link("pages/14_🕵️_Detective.py", label="Detective", icon="🕵️")
 # ====================================================================
 
