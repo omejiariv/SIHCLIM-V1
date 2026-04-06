@@ -466,14 +466,14 @@ if gdf_zona is not None and not gdf_zona.empty:
             vol_escorrentia_final = vol_escorrentia_base - vol_regulado_sbn
             vol_infiltracion_final = vol_infiltracion_base + vol_regulado_sbn
             
-            # Nodos del Sankey
+            # Nodos del Sankey (Ahora con Negrilla HTML para mayor legibilidad)
             labels = [
-                "Lluvia Total",             # 0
-                "Evapotranspiración",       # 1
-                "Escorrentía Rápida (Riesgo)", # 2
-                "Suelo / Acuífero (Recarga)", # 3
-                "Flujo Base (Oferta Segura)",  # 4
-                "Regulación Forestal (SbN)"   # 5
+                "<b>Lluvia Total</b>",             # 0
+                "<b>Evapotranspiración</b>",       # 1
+                "<b>Escorrentía Rápida (Riesgo)</b>", # 2
+                "<b>Suelo / Acuífero (Recarga)</b>",  # 3
+                "<b>Flujo Base (Oferta Segura)</b>",  # 4
+                "<b>Regulación Forestal (SbN)</b>"    # 5
             ]
             
             # Enlaces (Links)
@@ -491,17 +491,22 @@ if gdf_zona is not None and not gdf_zona.empty:
             color_sbn = "rgba(46, 204, 113, 0.6)" if vol_regulado_sbn > 0 else "rgba(189, 195, 199, 0.2)"
             color_links = ["rgba(241, 196, 15, 0.4)", "rgba(231, 76, 60, 0.5)", "rgba(52, 152, 219, 0.4)", "rgba(41, 128, 185, 0.6)", color_sbn]
             
+            # 🎨 RENDERIZADO VISUAL MEJORADO
             fig_sankey = go.Figure(data=[go.Sankey(
                 valueformat=".0f", valuesuffix=" m³/año",
+                # 1. Aumentamos el tamaño y forzamos negro puro
+                textfont=dict(size=14, color="#000000", family="Georgia, serif"), 
                 node=dict(
-                    pad=15, thickness=20, line=dict(color="black", width=0.5),
+                    # 2. Aumentamos grosor y padding para que el texto no se asfixie
+                    pad=25, thickness=25, line=dict(color="black", width=0.5),
                     label=labels,
                     color=["#34495e", "#f39c12", "#e74c3c", "#3498db", "#2980b9", "#2ecc71"]
                 ),
                 link=dict(source=source, target=target, value=value, color=color_links)
             )])
             
-            fig_sankey.update_layout(height=350, margin=dict(l=10, r=10, t=25, b=10))
+            # 3. Aumentamos un poco la altura (de 350 a 400) para evitar colisiones de texto
+            fig_sankey.update_layout(height=400, margin=dict(l=20, r=20, t=30, b=20), font_family="Georgia")
             
             c_sk1, c_sk2 = st.columns([1, 2.5])
             with c_sk1:
@@ -510,7 +515,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 st.caption("A mayor inversión en SbN, más grueso será el canal verde, reduciendo la escorrentía rápida (rojo).")
             with c_sk2:
                 st.plotly_chart(fig_sankey, use_container_width=True)
-
+                
         # --- 2. PORTAFOLIOS DE INVERSIÓN ---
         st.markdown("---")
         st.markdown(f"#### 💼 2. Portafolios de Inversión Multi-Objetivo")
