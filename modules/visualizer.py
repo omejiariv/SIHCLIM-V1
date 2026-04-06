@@ -45,6 +45,7 @@ import branca.colormap as cm
 import pymannkendall as mk
 from prophet import Prophet
 from statsmodels.tsa.seasonal import seasonal_decompose
+from modules.maps_engine import generar_mapa_interactivo
 
 import streamlit as st
 
@@ -138,86 +139,7 @@ def _get_user_location_sidebar(key_suffix=""):
         return None
 
 # ==============================================================================
-# 3. GENERADORES DE POPUPS HTML (Limpios y sin redundancias)
-# ==============================================================================
-
-def generar_popup_estacion(row, valor_col='ppt_media'):
-    nombre = str(row.get('nombre', 'Estación')).replace("'", "")
-    muni = str(row.get('municipio', 'N/A')).replace("'", "")
-    altura = float(row.get('altitud', 0))
-    valor = float(row.get(valor_col, 0))
-    std = float(row.get('ppt_std', 0))
-    anios = int(row.get('n_anios', 0))
-    
-    return f"""
-    <div style='font-family:sans-serif; font-size:12px; min-width:160px; line-height:1.4;'>
-        <b style='color:#1f77b4; font-size:14px'>{nombre}</b>
-        <hr style='margin:4px 0; border-top:1px solid #ddd'>
-        📍 <b>Mpio:</b> {muni}<br>
-        ⛰️ <b>Altitud:</b> {altura:.0f} msnm<br>
-        💧 <b>P. Media:</b> {valor:.0f} mm/año<br>
-        📉 <b>Desv. Std:</b> ±{std:.0f} mm<br>
-        📅 <b>Registro:</b> {anios} años
-    </div>
-    """
-
-def generar_popup_bocatoma(row):
-    nombre = str(row.get('nombre_acu', 'Bocatoma')).replace("'", "")
-    fuente = str(row.get('fuente_aba', 'N/A')).replace("'", "")
-    mpio = str(row.get('municipio', '')).strip()
-    vereda = str(row.get('veredas', '')).strip()
-    ubicacion = f"{mpio} - {vereda}" if vereda else mpio
-    tipo = str(row.get('tipo', 'N/A'))
-    entidad = str(row.get('entidad_ad', 'N/A'))
-
-    return f"""
-    <div style='font-family:sans-serif; font-size:12px; min-width:180px;'>
-        <b style='color:#16a085; font-size:14px'>🚰 {nombre}</b>
-        <hr style='margin:4px 0; border-top:1px solid #ddd'>
-        📍 <b>Ubicación:</b> {ubicacion}<br>
-        🌊 <b>Fuente:</b> {fuente}<br>
-        ⚙️ <b>Tipo:</b> {tipo}<br>
-        🏢 <b>Entidad:</b> {entidad}
-    </div>
-    """
-
-def generar_popup_predio(row):
-    """Versión corregida: un solo return estructurado."""
-    datos_norm = {k.lower(): v for k, v in row.items()}
-    def get_seguro(col_key, default='N/A'):
-        val = datos_norm.get(col_key.lower(), default)
-        if val is None or str(val).lower() in ['none', 'nan', 'null', '']: return default
-        return str(val).strip()
-
-    nombre = get_seguro('nombre_pre', 'Predio')
-    pk = get_seguro('pk_predios')
-    anio = get_seguro('año_acuer', '-')
-    mpio = get_seguro('nomb_mpio')
-    vereda = get_seguro('nombre_ver')
-    ubicacion = f"{mpio} / {vereda}" if (mpio != 'N/A' or vereda != 'N/A') else "N/A"
-    embalse = get_seguro('embalse')
-    mecanismo = get_seguro('mecanism')
-    
-    try:
-        val_area = float(datos_norm.get('area_ha', 0))
-        area_txt = f"{val_area:.2f} ha"
-    except: area_txt = "N/A"
-
-    return f"""
-    <div style='font-family:sans-serif; font-size:12px; min-width:200px;'>
-        <b style='color:#d35400; font-size:14px'>🏡 {nombre}</b>
-        <hr style='margin:4px 0; border-top:1px solid #ddd'>
-        🔑 <b>PK:</b> {pk}<br>
-        📅 <b>Año:</b> {anio}<br>
-        📍 <b>Ubicación:</b> {ubicacion}<br>
-        💧 <b>Embalse:</b> {embalse}<br>
-        📜 <b>Mecanismo:</b> {mecanismo}<br>
-        📐 <b>Área:</b> {area_txt}
-    </div>
-    """
-
-# ==============================================================================
-# 4. PESTAÑA DE BIENVENIDA (PÁGINA DE INICIO)
+# 3. PESTAÑA DE BIENVENIDA (PÁGINA DE INICIO)
 # ==============================================================================
 def display_welcome_tab():
     st.markdown("""<style>.block-container { padding-top: 1rem; } h1 { margin-top: -3rem; }</style>""", unsafe_allow_html=True)
@@ -6020,9 +5942,10 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
             # Leyenda
             colors_hex = [mcolors.to_hex(cmap(i)) for i in np.linspace(0, 1, 15)]
             cm.LinearColormap(colors=colors_hex, vmin=vmin, vmax=vmax, caption=nombre_capa).add_to(m)
-        except: pass
+        except Exception as e: 
+            print(f"Error renderizando raster: {e}")
 
-    # 2. ISOLÍNEAS (MÉTODO LIMPIO ALLSEGS - Con etiquetas - SIN LÍNEAS RECTAS)
+    # 2. ISOLÍNEAS (Método limpio Allsegs con etiquetas)
     if grid_data is not None:
         fg_iso = folium.FeatureGroup(name="〰️ Isolíneas", overlay=True, show=True)
         try:
@@ -6040,15 +5963,14 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
                 for segment in level_segs:
                     lat_lon_coords = [[pt[1], pt[0]] for pt in segment]
                     
-                    if len(lat_lon_coords) > 10: # Solo líneas significativas
-                        # Línea
+                    if len(lat_lon_coords) > 10: # Evitar micro-líneas
+                        # Trazar la línea
                         folium.PolyLine(
                             lat_lon_coords, color='black', weight=0.6, opacity=0.5,
                             tooltip=f"{val:.1f}"
                         ).add_to(fg_iso)
                         
                         # ETIQUETA DE TEXTO (DivIcon)
-                        # Ponemos la etiqueta en el punto medio de la línea
                         mid_idx = len(lat_lon_coords) // 2
                         mid_point = lat_lon_coords[mid_idx]
                         
@@ -6061,13 +5983,12 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
                             )
                         ).add_to(fg_iso)
 
-        except Exception as e: print(f"Iso error: {e}")
+        except Exception as e: 
+            print(f"Error renderizando isolíneas: {e}")
         fg_iso.add_to(m)
 
-    # 3. MUNICIPIOS (Con Tooltip)
+    # 3. MUNICIPIOS (Con Tooltip de Área)
     if gdf_municipios is not None and not gdf_municipios.empty:
-        # Pre-calculamos el campo formateado para el tooltip
-        # Asumimos MPIO_NAREA en km2 -> Ha = km2 * 100
         if 'MPIO_NAREA' in gdf_municipios.columns:
             gdf_municipios['area_ha_fmt'] = (gdf_municipios['MPIO_NAREA'] * 100).apply(lambda x: f"{x:,.1f} ha")
             col_area = 'area_ha_fmt'
@@ -6076,7 +5997,6 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
 
         col_name = next((c for c in gdf_municipios.columns if 'MPIO_CNMBR' in c or 'nombre' in c), None)
         
-        # Configurar campos del tooltip
         fields = []
         aliases = []
         if col_name: 
@@ -6090,37 +6010,32 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
             tooltip=folium.GeoJsonTooltip(fields=fields, aliases=aliases) if fields else None
         ).add_to(m)
 
-    # 4. CAPAS ZONA
+    # 4. CAPAS ZONA (Límites de Cuenca y Buffer)
     if gdf_zona is not None:
         folium.GeoJson(gdf_zona, name="🟦 Cuenca", style_function=lambda x: {'color': 'black', 'weight': 2, 'fill': False}).add_to(m)
     if gdf_buffer is not None:
         folium.GeoJson(gdf_buffer, name="⭕ Buffer", style_function=lambda x: {'color': 'red', 'weight': 1, 'dashArray': '5, 5', 'fill': False}).add_to(m)
 
-    # 5. PREDIOS (Interacción Rica)
+    # 5. PREDIOS (Interacción Rica con conversión de CRS segura)
     if gdf_predios is not None and not gdf_predios.empty:
         fg_predios = folium.FeatureGroup(name="🏡 Predios", show=True)
         
-        # A. Asegurar Proyección (Vital para que no caigan en el océano)
         try:
             if gdf_predios.crs is not None and gdf_predios.crs.to_string() != "EPSG:4326":
                 gdf_viz = gdf_predios.to_crs(epsg=4326)
             else:
                 gdf_viz = gdf_predios
         except:
-            gdf_viz = gdf_predios # Si falla la conversión, usamos el original
+            gdf_viz = gdf_predios 
             
-        # B. Iteración Segura
         for _, row in gdf_viz.iterrows():
             if row.geometry and not row.geometry.is_empty:
                 try:
-                    # Intento 1: Popup Rico (Con tus datos)
                     html = generar_popup_predio(row)
                     popup_obj = folium.Popup(html, max_width=250)
                 except:
-                    # Intento 2: Popup Básico (Si falla el HTML, que al menos salga el nombre)
                     popup_obj = folium.Popup(str(row.get('nombre_pre', 'Predio')), max_width=200)
 
-                # Dibujamos el polígono
                 folium.GeoJson(
                     row.geometry,
                     style_function=lambda x: {'color': '#e67e22', 'weight': 1.5, 'fillOpacity': 0.3, 'fillColor': '#f39c12'},
@@ -6130,7 +6045,7 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
 
         fg_predios.add_to(m)
 
-    # 6. BOCATOMAS (Puntos con Popup HTML Rico)
+    # 6. BOCATOMAS
     if gdf_bocatomas is not None and not gdf_bocatomas.empty:
         fg_bocas = folium.FeatureGroup(name="🚰 Bocatomas", show=True)
         for _, row in gdf_bocatomas.iterrows():
@@ -6144,7 +6059,7 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
                 ).add_to(fg_bocas)
         fg_bocas.add_to(m)
 
-    # 7. ESTACIONES (Puntos con Popup HTML Rico)
+    # 7. ESTACIONES
     if gdf_stations is not None and not gdf_stations.empty:
         fg_est = folium.FeatureGroup(name="🌦️ Estaciones")
         for _, row in gdf_stations.iterrows():
@@ -6157,7 +6072,7 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
             ).add_to(fg_est)
         fg_est.add_to(m)
 
-    # Controles
+    # Controles de UI del Mapa
     folium.LayerControl(position='topright', collapsed=False).add_to(m)
     Fullscreen().add_to(m)
     MousePosition().add_to(m)
