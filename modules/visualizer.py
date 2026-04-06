@@ -46,6 +46,7 @@ import pymannkendall as mk
 from prophet import Prophet
 from statsmodels.tsa.seasonal import seasonal_decompose
 from modules.maps_engine import generar_mapa_interactivo
+import modules.charts_engine as ce
 
 import streamlit as st
 
@@ -1777,7 +1778,7 @@ def display_spatial_distribution_tab(
 
 
 # =============================================================================
-# 2. FUNCIÓN MAESTRA DE GRÁFICOS (FUSIÓN: VIEJO + NUEVO 🏗️)
+# 2. FUNCIÓN MAESTRA DE GRÁFICOS (UI LIMPIA GRACIAS AL CHARTS_ENGINE)
 # =============================================================================
 def display_graphs_tab(
     df_monthly_filtered, 
@@ -1794,75 +1795,48 @@ def display_graphs_tab(
         return
 
     # --- 1. DETECCIÓN COLUMNAS ---
-    col_anio = 'Año'
-    col_valor = 'valor'
-    col_estacion = 'id_estacion'
-
-    if df_anual_melted is not None and not df_anual_melted.empty:
-        col_anio = find_col(df_anual_melted, ['Año', 'year', 'anio']) or 'Año'
-        col_valor = find_col(df_anual_melted, ['valor', 'value', 'precipitacion']) or 'valor'
-        col_estacion = find_col(df_anual_melted, ['id_estacion', 'codigo', 'station', 'nombre']) or 'id_estacion'
+    col_anio = find_col(df_anual_melted, ['Año', 'year', 'anio']) or 'Año'
+    col_valor = find_col(df_anual_melted, ['valor', 'value', 'precipitacion']) or 'valor'
+    col_estacion = find_col(df_anual_melted, ['id_estacion', 'codigo', 'station', 'nombre']) or 'id_estacion'
 
     # --- 2. PREPARACIÓN DATOS ---
-    if "Mes" not in df_monthly_filtered.columns:
-        df_monthly_filtered["Mes"] = df_monthly_filtered["fecha"].dt.month
-    if "Año" not in df_monthly_filtered.columns:
-        df_monthly_filtered["Año"] = df_monthly_filtered["fecha"].dt.year
-    
-    # CRÍTICO: MES_NUM para ordenar
+    if "Mes" not in df_monthly_filtered.columns: df_monthly_filtered["Mes"] = df_monthly_filtered["fecha"].dt.month
+    if "Año" not in df_monthly_filtered.columns: df_monthly_filtered["Año"] = df_monthly_filtered["fecha"].dt.year
     df_monthly_filtered['MES_NUM'] = df_monthly_filtered['fecha'].dt.month
 
-    meses_orden = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
-                   7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
-    
+    meses_orden = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
     if "Nombre_Mes" not in df_monthly_filtered.columns:
         df_monthly_filtered["Nombre_Mes"] = df_monthly_filtered["Mes"].map(meses_orden)
 
-    # --- ESTRUCTURA DE PESTAÑAS (RESTAURADA SEGÚN TU RESPALDO) ---
-    tab_names = [
-        "1. Serie Anual",
-        "2. Ranking Multianual",
-        "3. Serie Mensual",
-        "4. Ciclo Anual (Promedio)",
-        "5. Distribución de Frecuencias", # RESTAURADO
-        "6. Análisis Estacional Detallado", # RESTAURADO (Spaghetti+Box)
-        "7. Comparativa Multiescalar"
-    ]
-    tabs = st.tabs(tab_names)
+    # --- ESTRUCTURA DE PESTAÑAS ---
+    tabs = st.tabs([
+        "1. Serie Anual", "2. Ranking Multianual", "3. Serie Mensual", 
+        "4. Ciclo Anual (Promedio)", "5. Distribución de Frecuencias", 
+        "6. Análisis Estacional Detallado", "7. Comparativa Multiescalar"
+    ])
 
     # --- TAB 1: SERIE ANUAL ---
     with tabs[0]:
         st.markdown("##### Precipitación Total Anual")
         if df_anual_melted is not None:
-            fig_anual = px.line(
-                df_anual_melted, x=col_anio, y=col_valor, color=col_estacion, markers=True,
-                labels={col_valor: "Lluvia (mm)", col_anio: "Año"}
-            )
+            fig_anual = ce.plot_serie_anual(df_anual_melted, col_anio, col_valor, col_estacion)
             st.plotly_chart(fig_anual, use_container_width=True)
-            st.session_state["report_fig_anual"] = fig_anual
             st.download_button("📥 CSV Anual", df_anual_melted.to_csv(index=False).encode("utf-8"), "anual.csv")
 
-    # --- TAB 2: RANKING MULTIANUAL (RESTAURADO: ORDENAMIENTO) ---
+    # --- TAB 2: RANKING MULTIANUAL ---
     with tabs[1]:
         st.markdown("##### Ranking de Precipitación Media")
         if df_anual_melted is not None:
             avg_ppt = df_anual_melted.groupby(col_estacion)[col_valor].mean().reset_index()
-            lbl_val = "Precipitación Media (mm)"
-            avg_ppt.rename(columns={col_valor: lbl_val}, inplace=True)
+            avg_ppt.rename(columns={col_valor: "Precipitación Media (mm)"}, inplace=True)
 
             c_sort, _ = st.columns([1, 2])
-            with c_sort:
-                sort_opt = st.radio("Ordenar:", ["Mayor a Menor", "Menor a Mayor", "Alfabético"], horizontal=True)
+            with c_sort: sort_opt = st.radio("Ordenar:", ["Mayor a Menor", "Menor a Mayor", "Alfabético"], horizontal=True)
 
-            if sort_opt == "Mayor a Menor": avg_ppt = avg_ppt.sort_values(lbl_val, ascending=False)
-            elif sort_opt == "Menor a Mayor": avg_ppt = avg_ppt.sort_values(lbl_val, ascending=True)
-            else: avg_ppt = avg_ppt.sort_values(col_estacion)
-
-            fig_rank = px.bar(avg_ppt, x=col_estacion, y=lbl_val, color=lbl_val, color_continuous_scale='Blues', text_auto=".0f")
+            fig_rank = ce.plot_ranking_multianual(avg_ppt, col_estacion, "Precipitación Media (mm)", sort_opt)
             st.plotly_chart(fig_rank, use_container_width=True)
-            st.session_state["report_fig_ranking"] = fig_rank
 
-    # --- TAB 3: SERIE MENSUAL (RESTAURADO: CHECKBOXES) ---
+    # --- TAB 3: SERIE MENSUAL ---
     with tabs[2]:
         st.markdown("##### Serie Histórica Mensual")
         col_opts, col_chart = st.columns([1, 4])
@@ -1871,98 +1845,42 @@ def display_graphs_tab(
             show_markers = st.checkbox("Mostrar Puntos", value=False)
 
         with col_chart:
-            fig_mensual = px.line(
-                df_monthly_filtered, x='fecha', y='valor', color='id_estacion',
-                markers=show_markers, title="Precipitación Mensual"
-            )
-            if show_regional:
-                reg_mean = df_monthly_filtered.groupby('fecha')['valor'].mean().reset_index()
-                fig_mensual.add_trace(go.Scatter(
-                    x=reg_mean['fecha'], y=reg_mean['valor'], mode="lines",
-                    name="PROMEDIO REGIONAL", line=dict(color="black", width=3, dash="dash")
-                ))
+            fig_mensual = ce.plot_serie_mensual(df_monthly_filtered, show_markers, show_regional)
             st.plotly_chart(fig_mensual, use_container_width=True)
 
-    # --- TAB 4: CICLO ANUAL (RESTAURADO: COMPARACIÓN AÑO) ---
+    # --- TAB 4: CICLO ANUAL ---
     with tabs[3]:
         st.markdown("##### Régimen de Lluvias (Ciclo Promedio)")
-        # 1. Calcular promedio
-        ciclo = df_monthly_filtered.groupby(['Mes', 'Nombre_Mes', 'id_estacion'])['valor'].mean().reset_index().sort_values('Mes')
-        
-        # 2. Selector Año (Mejorado)
         years_avail = sorted(df_monthly_filtered['Año'].unique(), reverse=True)
         year_comp = st.selectbox("Comparar con Año específico:", [None] + years_avail, key="ciclo_year_comp")
 
-        fig_ciclo = px.line(
-            ciclo, x='Nombre_Mes', y='valor', color='id_estacion', markers=True,
-            title="Ciclo Anual Promedio"
-        )
-        
-        # 3. Traza de comparación
-        if year_comp:
-            df_year = df_monthly_filtered[df_monthly_filtered['Año'] == year_comp].sort_values('Mes')
-            for est in df_year['id_estacion'].unique():
-                df_y_st = df_year[df_year['id_estacion'] == est]
-                fig_ciclo.add_trace(go.Scatter(
-                    x=df_y_st['Nombre_Mes'], y=df_y_st['valor'],
-                    mode='lines+markers', name=f"{est} ({year_comp})",
-                    line=dict(dash='dot', width=2), marker=dict(symbol='x')
-                ))
-
+        fig_ciclo = ce.plot_ciclo_anual(df_monthly_filtered, year_comp)
         st.plotly_chart(fig_ciclo, use_container_width=True)
-        st.session_state["report_fig_ciclo"] = fig_ciclo
 
-    # --- TAB 5: DISTRIBUCIÓN (RESTAURADO TOTALMENTE 🎻) ---
+    # --- TAB 5: DISTRIBUCIÓN ---
     with tabs[4]:
         st.markdown("##### Análisis Estadístico de Distribución")
         c1, c2, c3 = st.columns(3)
-        with c1:
-            data_src = st.radio("Datos:", ["Anual (Totales)", "Mensual (Detalle)"], horizontal=True)
-        with c2:
-            chart_typ = st.radio("Gráfico:", ["Violín", "Histograma", "ECDF"], horizontal=True)
-        with c3:
-            sort_ord = st.selectbox("Orden:", ["Alfabético", "Mayor a Menor"])
+        with c1: data_src = st.radio("Datos:", ["Anual (Totales)", "Mensual (Detalle)"], horizontal=True)
+        with c2: chart_typ = st.radio("Gráfico:", ["Violín", "Histograma", "ECDF"], horizontal=True)
+        with c3: sort_ord = st.selectbox("Orden:", ["Alfabético", "Mayor a Menor"])
 
         df_plot = df_anual_melted if "Anual" in data_src else df_monthly_filtered
         
-        # Ordenar categorías
-        cat_orders = {}
-        if sort_ord != "Alfabético":
-            medians = df_plot.groupby(col_estacion)[col_valor].median()
-            order_list = medians.sort_values(ascending=False).index.tolist()
-            cat_orders = {col_estacion: order_list}
-
-        if "Violín" in chart_typ:
-            fig_dist = px.violin(df_plot, x=col_estacion, y=col_valor, color=col_estacion, box=True, points="all", category_orders=cat_orders)
-        elif "Histograma" in chart_typ:
-            fig_dist = px.histogram(df_plot, x=col_valor, color=col_estacion, marginal="box", barmode="overlay", category_orders=cat_orders)
-        else:
-            fig_dist = px.ecdf(df_plot, x=col_valor, color=col_estacion)
-
-        fig_dist.update_layout(height=600, showlegend=(chart_typ != "Violín"))
+        fig_dist = ce.plot_distribucion_estadistica(df_plot, col_estacion, col_valor, chart_typ, sort_ord)
         st.plotly_chart(fig_dist, use_container_width=True)
 
-    # -------------------------------------------------------------------------
-    # TAB 5: ANÁLISIS ESTACIONAL DETALLADO (CORREGIDO 🔧)
-    # -------------------------------------------------------------------------
+    # --- TAB 6: ANÁLISIS ESTACIONAL DETALLADO ---
     with tabs[5]:
         st.markdown("#### 📅 Ciclo Anual Comparativo (Spaghetti Plot)")
-        
-        # Selector de Estación
         sel_st_detail = st.selectbox("Analizar Estación:", stations_for_analysis, key="st_detail_seasonal")
 
         if sel_st_detail:
-            # 🔥 CORRECCIÓN CLAVE: Usamos 'col_estacion' detectada, no 'id_estacion' fija
             df_st = df_monthly_filtered[df_monthly_filtered[col_estacion] == sel_st_detail].copy()
-            
-            # Aseguramos orden numérico para que el gráfico no salga loco
-            if 'MES_NUM' not in df_st.columns:
-                df_st['MES_NUM'] = df_st['fecha'].dt.month
             df_st = df_st.sort_values('MES_NUM')
 
             c_hl, c_type = st.columns([1, 1])
             with c_hl:
-                # Detectamos columna de año
                 c_anio_local = find_col(df_st, ['Año', 'year', 'anio']) or 'Año'
                 years = sorted(df_st[c_anio_local].unique(), reverse=True)
                 hl_year = st.selectbox("Resaltar Año:", [None] + list(years), key="hl_year_seasonal")
@@ -1970,89 +1888,31 @@ def display_graphs_tab(
                 chart_mode = st.radio("Visualización:", ["Líneas (Spaghetti)", "Cajas (Variabilidad)"], horizontal=True)
 
             if chart_mode == "Líneas (Spaghetti)":
-                fig_multi = go.Figure()
-                for yr in years:
-                    df_y = df_st[df_st[c_anio_local] == yr].sort_values("MES_NUM")
-                    
-                    color, width, opacity, show_leg = "rgba(200, 200, 200, 0.4)", 1, 0.5, False
-                    if hl_year and yr == hl_year:
-                        color, width, opacity, show_leg = "red", 4, 1.0, True
-                    
-                    fig_multi.add_trace(go.Scatter(
-                        x=df_y["Nombre_Mes"], y=df_y[col_valor], mode="lines",
-                        name=str(yr), line=dict(color=color, width=width), opacity=opacity, showlegend=show_leg
-                    ))
-                
-                # Promedio
-                clim = df_st.groupby("MES_NUM")[col_valor].mean().sort_index()
-                # Reconstruir nombres de meses ordenados
-                meses_mapa = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
-                names_clim = [meses_mapa.get(m, str(m)) for m in clim.index]
-                
-                fig_multi.add_trace(go.Scatter(
-                    x=names_clim, y=clim.values, mode="lines+markers",
-                    name="Promedio Histórico", line=dict(color="black", width=3, dash="dot")
-                ))
-                fig_multi.update_xaxes(categoryorder='array', categoryarray=list(meses_mapa.values()), title="Mes")
+                fig_multi = ce.plot_spaghetti_estacional(df_st, c_anio_local, col_valor, hl_year)
                 st.plotly_chart(fig_multi, use_container_width=True)
-            
-            else: # Cajas
-                fig_box = px.box(
-                    df_st, x="Nombre_Mes", y=col_valor, color="Nombre_Mes", points="all",
-                    category_orders={"Nombre_Mes": ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]}
-                )
-                fig_box.update_layout(showlegend=False)
+            else: 
+                fig_box = ce.plot_cajas_estacional(df_st, col_valor)
                 st.plotly_chart(fig_box, use_container_width=True)
 
-            # Tabla comparativa
+            # Tabla comparativa (Mantenida en UI porque es tabla, no gráfico)
             if hl_year:
                 st.markdown(f"###### 🔎 Detalle: Año {hl_year} vs Promedio Histórico")
-                
-                # 1. Definir los datos del Año Seleccionado
-                # Forzamos una copia para no alterar el original
                 df_year_select = df_st[df_st[c_anio_local] == hl_year].copy()
-                
-                if df_year_select.empty:
-                    st.warning(f"No hay datos registrados para el año {hl_year}.")
+                if df_year_select.empty: st.warning(f"No hay datos registrados para el año {hl_year}.")
                 else:
-                    # 2. Estandarización de Índice (La Clave Estructural 🔑)
-                    # Convertimos MES_NUM a entero explícito en ambos lados para garantizar el cruce
                     df_year_select['MES_NUM'] = df_year_select['MES_NUM'].astype(int)
                     serie_anio = df_year_select.set_index("MES_NUM")[col_valor]
-                    
-                    # Calculamos el promedio y también aseguramos su índice como entero
                     df_promedio = df_st.groupby("MES_NUM")[col_valor].mean()
                     df_promedio.index = df_promedio.index.astype(int)
                     
-                    # 3. Fusión Explícita (Merge)
-                    # Unimos usando el índice entero. 'inner' solo muestra meses que existen en el año seleccionado.
-                    comp_df = pd.DataFrame({
-                        "Año Seleccionado": serie_anio,
-                        "Promedio Histórico": df_promedio
-                    }).dropna() # Eliminamos cualquier desajuste
-
-                    if comp_df.empty:
-                         st.info("No se pudieron alinear los meses del año seleccionado con el promedio.")
-                    else:
-                        # 4. Cálculos y Formato
-                        comp_df["Diferencia (%)"] = (
-                            (comp_df["Año Seleccionado"] - comp_df["Promedio Histórico"]) 
-                            / comp_df["Promedio Histórico"]
-                        ) * 100
-
-                        # Mapeo de nombres de meses
-                        meses_mapa = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
-                                      7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
-                        comp_df.index = comp_df.index.map(meses_mapa)
-
-                        # Mostrar tabla
+                    comp_df = pd.DataFrame({"Año Seleccionado": serie_anio, "Promedio Histórico": df_promedio}).dropna()
+                    if not comp_df.empty:
+                        comp_df["Diferencia (%)"] = ((comp_df["Año Seleccionado"] - comp_df["Promedio Histórico"]) / comp_df["Promedio Histórico"]) * 100
+                        comp_df.index = comp_df.index.map(meses_orden)
                         st.dataframe(comp_df.style.format("{:.1f}").background_gradient(subset=["Diferencia (%)"], cmap="RdYlGn"))
 
     # --- TAB 7: COMPARATIVA MULTIESCALAR ---
     with tabs[6]:
-        # Llamada a la función externa blindada
-        # Pasamos None en el primer argumento para activar el bypass SQL
-        # gdf_stations y gdf_subcuencas vienen de los argumentos de la función display_graphs_tab
         display_multiscale_tab(None, gdf_stations, gdf_subcuencas)
             
 def display_weekly_forecast_tab(stations_for_analysis, gdf_filtered, **kwargs):
