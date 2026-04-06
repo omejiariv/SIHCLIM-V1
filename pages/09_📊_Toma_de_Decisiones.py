@@ -442,7 +442,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
             st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Impacto total simulado")
 
-# ==============================================================================
+        # ==============================================================================
         # 🔬 MOTOR DE REGULACIÓN HIDROLÓGICA Y TERMODINÁMICA (SANKEY DINÁMICO)
         # ==============================================================================
         with st.container(border=True):
@@ -450,11 +450,12 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.markdown("Integración de la termodinámica del bosque: Intercepción del dosel foliar, regulación de Evapotranspiración (ETP) y recarga del flujo base.")
             
             # 1. Parámetros Base
+            area_km2 = float(st.session_state.get('aleph_area_km2', 10.0)) # ⬅️ ESTA ES LA LÍNEA QUE FALTABA
             area_cuenca_ha = area_km2 * 100
             pct_bosque = min(1.0, ha_total / area_cuenca_ha) if area_cuenca_ha > 0 else 0.0
             
             ppt_mm_estimada = (oferta_anual_m3 / (area_km2 * 1000)) * 2.5 
-            vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000 
+            vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000
             
             # 2. CONEXIÓN CON BIODIVERSIDAD: Retención del Dosel (Intercepción)
             # Se conecta a la Pág 04, si no hay dato, asume 25% óptimo
