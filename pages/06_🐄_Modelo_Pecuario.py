@@ -11,6 +11,12 @@ import plotly.graph_objects as go
 # =====================================================================
 st.set_page_config(page_title="Modelo Demográfico Pecuario", page_icon="🐄", layout="wide")
 
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Geomorfología")
+
 # 💉 ENCENDIDO DEL SISTEMA INMUNOLÓGICO Y VARIABLES GLOBALES
 try:
     from modules.utils import encender_gemelo_digital
