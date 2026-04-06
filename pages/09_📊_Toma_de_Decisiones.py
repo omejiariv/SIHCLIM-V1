@@ -30,7 +30,6 @@ try:
     from modules.impacto_serv_ecosist import render_sigacal_analysis
     from modules.db_manager import get_engine
 except ImportError:
-    # Fallback de rutas por si hay problemas de lectura entre carpetas
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors
     from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
@@ -43,10 +42,7 @@ except ImportError:
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
-# Llama al menú expandible y resalta la página actual
 selectors.renderizar_menu_navegacion("Toma de Decisiones")
-
-# Encendido automático del Gemelo Digital
 encender_gemelo_digital()
 
 # =========================================================================
@@ -62,7 +58,6 @@ st.divider()
 # 🎨 INYECCIÓN CSS PREMIUM (Para Expanders estilo Gerencial)
 st.markdown("""
 <style>
-/* Estilo para los expansores (menús desplegables) */
 div[data-testid="stExpander"] {
     background-color: #ffffff;
     border: 1px solid #e0e6ed;
@@ -94,22 +89,18 @@ def render_metodologia():
         Este módulo es la **Síntesis Estratégica** de Sihcli-Poter. Integra dos visiones:
         
         1. **Análisis Multicriterio Espacial (SMCA):** Identifica *dónde* actuar cruzando Balance Hídrico, Biodiversidad y Geomorfología.
-        2. **Estándares Corporativos (WRI):** Mide el *impacto volumétrico* de las intervenciones usando la metodología VWBA del World Resources Institute.
+        2. **Estándares Corporativos (WRI):** Mide el *impacto volumétrico* de las intervenciones usando la metodología VWBA.
         """)
 
 # --- 3. FUNCIONES DE CARGA ROBUSTAS ---
 @st.cache_data(ttl=3600)
 def load_context_layers(gdf_zona_bounds):
-    """Carga capas asegurando que las llaves existan siempre para evitar KeyError."""
     layers = {'cuencas': None, 'predios': None, 'drenaje': None, 'geomorf': None}
     minx, miny, maxx, maxy = gdf_zona_bounds
     from shapely.geometry import box
     roi = gpd.GeoDataFrame(geometry=[box(minx, miny, maxx, maxy)], crs="EPSG:4326")
     
-    # ⚠️ ADAPTADO A LA NUBE: Si ya subiste estos a Supabase, idealmente se leerían vía SQL.
-    # Mantenemos esto como fallback local por ahora hasta refactorizar completamente las capas SIG aquí.
     base_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
-    
     files = {
         'cuencas': "SubcuencasAinfluencia.geojson",
         'predios': "PrediosEjecutados.geojson",
@@ -143,7 +134,6 @@ with st.sidebar:
     w_socio = raw_socio / suma_pesos
     
     st.info(f"**Pesos Finales:**\nHídrico: {w_agua*100:.0f}% | Biótico: {w_bio*100:.0f}% | Socio: {w_socio*100:.0f}%")
-    
     st.divider()
     st.subheader("👁️ Visibilidad de Capas SIG")
     v_sat = st.checkbox("Fondo Satelital", True)
@@ -153,13 +143,10 @@ with st.sidebar:
 if gdf_zona is not None and not gdf_zona.empty:
     engine = get_engine()
 
-    # ==============================================================================
-    # 🧠 CEREBRO MAESTRO: CONEXIÓN A LA TURBINA CENTRAL
-    # ==============================================================================
     lugar_actual = nombre_zona
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
         
-    # 1. Fallback de Metabolismo Local
+    # 1. Metabolismo Local
     datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
     pob_total = datos_metabolismo.get('pob_total', 0)
     bovinos = datos_metabolismo.get('bovinos', 0)
@@ -167,29 +154,20 @@ if gdf_zona is not None and not gdf_zona.empty:
     aves = datos_metabolismo.get('aves', 0)
 
     if pob_total == 0 and bovinos == 0:
-        st.warning(f"⚠️ **Vacío de Datos:** '{nombre_zona}' no fue encontrado en las Matrices Maestras. Calculando con valores aproximados.")
+        st.warning(f"⚠️ **Vacío de Datos:** '{nombre_zona}' no fue encontrado en las Matrices Maestras.")
 
-    # 🧠 CÁLCULO DINÁMICO DE DEMANDA (L/día convertidos a m³/s) - Fallback
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
-    
-    # 🤝 EL APRETÓN DE MANOS (HANDSHAKE): LECTURA ESTRICTA
     demanda_m3s = float(st.session_state.get('demanda_total_m3s', demanda_dinamica_m3s))
-    
-    # Leemos la población servida real que designó la Pág 08
     poblacion_mostrar = st.session_state.get('poblacion_servida', pob_total)
-        
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
-    
-    st.markdown("### 🎛️ Panel Global de Control y Monitoreo")
     
     @st.cache_data(ttl=3600)
     def obtener_física_matriz(territorio_nombre):
         try:
             q = text("SELECT * FROM matriz_hidrologica_maestra WHERE LOWER(trim(\"Territorio\")) = LOWER(trim(:t)) LIMIT 1")
             df_m = pd.read_sql(q, engine, params={'t': str(territorio_nombre)})
-            if not df_m.empty:
-                return df_m.iloc[0].to_dict()
+            if not df_m.empty: return df_m.iloc[0].to_dict()
         except: pass
         return None
 
@@ -198,118 +176,125 @@ if gdf_zona is not None and not gdf_zona.empty:
     if datos_matriz:
         q_medio_real = datos_matriz.get('Caudal_Medio_m3s', 0.0)
         q_min_real = (datos_matriz.get('Recarga_mm', 0.0) * datos_matriz.get('Area_km2', 10.0) * 1000) / 31536000
-        
         st.session_state['aleph_area_km2'] = datos_matriz.get('Area_km2', 10.0)
         st.session_state['aleph_recarga_mm'] = datos_matriz.get('Recarga_mm', 0.0)
-        
-        st.success(f"⚡ **Sincronización Exitosa:** Física de '{nombre_zona}' extraída de la Matriz Maestra.")
     else:
-        if gdf_zona is not None and not gdf_zona.empty:
-            area_emergencia = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
-        else:
-            area_emergencia = 10.0
-        
+        area_emergencia = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0 if gdf_zona is not None else 10.0
         q_medio_real = (350.0 * area_emergencia * 1000) / 31536000 
         q_min_real = q_medio_real * 0.25 
-        
         st.session_state['aleph_area_km2'] = area_emergencia
         st.session_state['aleph_recarga_mm'] = 350.0
-        st.warning(f"⚠️ Usando aproximación geométrica para '{nombre_zona}'.")
 
     tipo_oferta = st.radio("Escenario Hidrológico de Simulación:", 
-                           ["🌊 Caudal Medio (Condiciones Normales)", "🏜️ Caudal Mínimo / Estiaje (Q95)"], 
-                           horizontal=True)
-                           
+                           ["🌊 Caudal Medio (Condiciones Normales)", "🏜️ Caudal Mínimo / Estiaje (Q95)"], horizontal=True)
     oferta_dinamica = q_min_real if "Mínimo" in tipo_oferta else q_medio_real
 
     with st.expander("⚙️ Calibración de Oferta Hídrica Base", expanded=False):
-        oferta_base = st.number_input(
-            "Caudal de Simulación (m³/s):", 
-            value=float(oferta_dinamica), 
-            step=0.01, format="%.3f",
-            help="Dato heredado de la modelación física. Cambia automáticamente según el escenario seleccionado."
-        )
+        oferta_base = st.number_input("Caudal de Simulación (m³/s):", value=float(oferta_dinamica), step=0.01, format="%.3f")
 
     oferta_nominal = float(oferta_base)
-    
     anio_base_cc = 2024
     if int(anio_actual) > anio_base_cc:
-        anios_futuro = int(anio_actual) - anio_base_cc
-        tasa_degradacion = anios_futuro * 0.005
-        oferta_nominal = oferta_nominal * (1 - tasa_degradacion)
+        oferta_nominal *= (1 - ((int(anio_actual) - anio_base_cc) * 0.005))
 
     if "Niño Severo" in fase_enso: oferta_nominal *= 0.55
     elif "Niño Moderado" in fase_enso: oferta_nominal *= 0.75
     elif "Niña" in fase_enso: oferta_nominal *= 1.20
 
-    estres_hidrico = (demanda_m3s / oferta_nominal) * 100 if oferta_nominal > 0 else 100
-    st.session_state['estres_hidrico_global'] = estres_hidrico
-
-    # --- RENDERIZADO DE LOS 4 KPIs GLOBALES ---
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric(f"👥 Población Beneficiada", f"{int(poblacion_mostrar):,.0f} hab")
-    with col2:
-        fuente_demanda = "De Pág 08 (Preciso)" if 'demanda_total_m3s' in st.session_state else "Estimado Local"
-        st.metric("💧 Demanda Continua", f"{demanda_m3s:,.2f} m³/s", fuente_demanda, delta_color="off")
-    with col3:
-        st.metric("🌍 Fase ENSO Actual", fase_enso, help="Afecta el nivel de la oferta a corto plazo.")
-    with col4:
-        alerta_estres = "inverse" if estres_hidrico > 80 else "normal"
-        if estres_hidrico > 100: alerta_estres = "inverse" 
-        st.metric("⚠️ Estrés Hídrico", f"{estres_hidrico:,.1f} %", "Crítico" if estres_hidrico > 80 else "Estable", delta_color=alerta_estres)
+    # ==============================================================================
+    # 🧠 NÚCLEO MATEMÁTICO BASE (CENTRO DE COMANDO EJECUTIVO)
+    # ==============================================================================
+    oferta_anual_m3 = oferta_nominal * 31536000
+    recarga_anual_m3 = float(st.session_state.get('aleph_recarga_mm', 350.0)) * float(st.session_state.get('aleph_area_km2', 10.0)) * 1000
+    consumo_anual_m3 = demanda_m3s * 31536000
     
+    # Supuestos de Calidad para Línea Base
+    carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', 500.0))
+    sist_saneamiento_base = 50 
+    carga_removida_ton = sist_saneamiento_base * 2.5
+    carga_final_rio_ton = max(0.0, carga_total_ton - carga_removida_ton)
+    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
+    caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000
+    concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
+
+    # 🎯 Cálculo de los 4 KPIs
+    wei_ratio = consumo_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
+    ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
+    
+    bfi_ratio = recarga_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 0.0
+    factor_supervivencia = min(1.0, recarga_anual_m3 / consumo_anual_m3) if consumo_anual_m3 > 0 else 1.0
+    ind_resiliencia = max(0.0, min(100.0, (bfi_ratio / 0.70) * 100 * factor_supervivencia))
+    
+    ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
+    ind_neutralidad = 0.0 # Se asume 0 hasta simular proyectos abajo
+
+    estres_hidrico_porcentaje = (wei_ratio) * 100
+    st.session_state['estres_hidrico_global'] = estres_hidrico_porcentaje
+
+    # ==============================================================================
+    # 🎛️ PANEL EJECUTIVO: SALUD TERRITORIAL (TOP DASHBOARD)
+    # ==============================================================================
+    st.markdown("### 🎛️ Centro de Comando: Salud Territorial Base")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("👥 Población Servida", f"{int(poblacion_mostrar):,.0f} hab")
+    col2.metric("💧 Demanda Continua", f"{demanda_m3s:,.2f} m³/s")
+    col3.metric("🌍 Fase ENSO Actual", fase_enso)
+    col4.metric("⚠️ Estrés Hídrico Neto", f"{estres_hidrico_porcentaje:,.1f} %", "Crítico" if estres_hidrico_porcentaje > 40 else "Estable", delta_color="inverse")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number", value = valor,
+            number = {'suffix': "%", 'font': {'size': 24}}, title = {'text': titulo, 'font': {'size': 14}},
+            gauge = {
+                'axis': {'range': [None, 100], 'tickwidth': 1}, 'bar': {'color': color_bar}, 'bgcolor': "white",
+                'steps': [
+                    {'range': [0, umbral_rojo], 'color': "#ffcccb" if not invertido else "#e8f8f5"},
+                    {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc"},
+                    {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}
+                ],
+                'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}
+            }
+        ))
+        fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10))
+        return fig
+
+    col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+    with col_g1: st.plotly_chart(crear_velocimetro(ind_neutralidad, "Neutralidad (Actual)", "#2ecc71", 40, 80), use_container_width=True)
+    with col_g2: st.plotly_chart(crear_velocimetro(ind_resiliencia, "Resiliencia Estructural", "#3498db", 30, 70), use_container_width=True)
+    with col_g3: st.plotly_chart(crear_velocimetro(ind_estres, "Seguridad vs Estrés", "#e74c3c", 40, 20, invertido=True), use_container_width=True)
+    with col_g4: st.plotly_chart(crear_velocimetro(ind_calidad, "Calidad del Agua", "#9b59b6", 40, 70), use_container_width=True)
+
     st.divider()
 
-    # --- PRE-PROCESAMIENTO DE CAPAS (BLINDAJE DE SCOPE) ---
+    # --- PRE-PROCESAMIENTO DE CAPAS ---
     capas = {}
     try:
         if gdf_zona is not None and not gdf_zona.empty:
             capas = load_context_layers(tuple(gdf_zona.total_bounds))
     except Exception as e:
-        st.warning(f"Aviso al cargar capas de contexto espacial: {e}")
+        st.warning(f"Aviso al cargar capas SIG: {e}")
 
-    # --- AHORA SÍ DIBUJAMOS LOS EXPANDERS (ANTES TABS) ---
-    
-    with st.expander(f"🗺️ SÍNTESIS DE PRIORIZACIÓN: {nombre_zona}", expanded=True):
-            
-        # --- 🌡️ TERMÓMETRO TERRITORIAL (Reacciona al Estrés Hídrico) ---
-        if estres_hidrico > 100:
-            color_alerta = '#8B0000' # Rojo Oscuro (Colapso)
-            opacidad_alerta = 0.5
-        elif estres_hidrico > 80:
-            color_alerta = '#E74C3C' # Rojo Claro (Crítico)
-            opacidad_alerta = 0.4
-        elif estres_hidrico > 40:
-            color_alerta = '#F39C12' # Naranja (Alto)
-            opacidad_alerta = 0.3
-        else:
-            color_alerta = '#3498DB' # Azul (Estable)
-            opacidad_alerta = 0.2
+    # ==============================================================================
+    # 🗺️ MAPA TÁCTICO DE PRIORIZACIÓN
+    # ==============================================================================
+    with st.expander(f"🗺️ SÍNTESIS ESPACIAL: {nombre_zona}", expanded=True):
+        if estres_hidrico_porcentaje > 80: color_alerta, opacidad_alerta = '#8B0000', 0.5
+        elif estres_hidrico_porcentaje > 40: color_alerta, opacidad_alerta = '#E74C3C', 0.4
+        elif estres_hidrico_porcentaje > 20: color_alerta, opacidad_alerta = '#F39C12', 0.3
+        else: color_alerta, opacidad_alerta = '#3498DB', 0.2
 
-        # Mapa Profesional
         m = folium.Map(location=[gdf_zona.centroid.y.iloc[0], gdf_zona.centroid.x.iloc[0]], zoom_start=12, tiles="cartodbpositron")
+        if v_sat: folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite').add_to(m)
             
-        if v_sat:
-            folium.TileLayer(
-                tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                attr='Esri', name='Satélite'
-            ).add_to(m)
-            
-        # 🗺️ DIBUJAMOS EL POLÍGONO DEL MUNICIPIO/CUENCA CON EL COLOR DE ALARMA
         folium.GeoJson(
-            gdf_zona, 
-            name=f"Estado: {nombre_zona}",
-            style_function=lambda feature, c=color_alerta, o=opacidad_alerta: {
-                'fillColor': c, 
-                'fillOpacity': o, 
-                'color': c, 
-                'weight': 2
-            },
-            tooltip=f"Estrés Hídrico: {estres_hidrico:.1f}%"
+            gdf_zona, name=f"Estado: {nombre_zona}",
+            style_function=lambda feature, c=color_alerta, o=opacidad_alerta: {'fillColor': c, 'fillOpacity': o, 'color': c, 'weight': 2},
+            tooltip=f"Estrés Hídrico: {estres_hidrico_porcentaje:.1f}%"
         ).add_to(m)
 
-        # Inyección de las otras capas de contexto
         if v_geo and capas.get('geomorf') is not None:
             folium.GeoJson(capas['geomorf'], name="Geomorfología",
                            style_function=lambda x: {'fillColor': 'gray', 'fillOpacity': 0.2, 'color': 'black', 'weight': 1},
@@ -319,13 +304,11 @@ if gdf_zona is not None and not gdf_zona.empty:
             folium.GeoJson(capas['drenaje'], name="Ríos", style_function=lambda x: {'color': '#3498db', 'weight': 2}).add_to(m)
 
         if capas.get('predios') is not None:
-            folium.GeoJson(capas['predios'], name="Predios CV", 
-                           style_function=lambda x: {'fillColor': 'orange', 'color': 'darkorange'}).add_to(m)
+            folium.GeoJson(capas['predios'], name="Predios CV", style_function=lambda x: {'fillColor': 'orange', 'color': 'darkorange'}).add_to(m)
 
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=600, key="mapa_final")
 
-        # --- TABLA DE CRUCE: GEOMORFOLOGÍA VS PRIORIDAD ---
         st.markdown("### 📊 Análisis de Suelo y Prioridad")
         if capas.get('geomorf') is not None:
             df_analisis = pd.DataFrame({
@@ -335,129 +318,70 @@ if gdf_zona is not None and not gdf_zona.empty:
             })
             st.table(df_analisis)
 
-    with st.expander("💧 ANÁLISIS HIDROLÓGICO INTEGRADO", expanded=False):
-        st.info("Balance calculado mediante modelo Turc con gradiente térmico altitudinal.")
-        # [GRÁFICOS DE BALANCE AQUÍ]
-
-    with st.expander("🛡️ ANÁLISIS DE SERVICIOS ECOSISTÉMICOS (SIGA-CAL)", expanded=False):
-        render_sigacal_analysis(gdf_predios=capas.get('predios'))
-
+# =========================================================================
+    # BLOQUE 2: SIMULADOR DE INVERSIONES Y PORTAFOLIOS (WRI)
     # =========================================================================
-    # TABLERO WRI, CALIDAD Y PROYECCIONES (INTEGRADO CON METABOLISMO Y ENSO)
-    # =========================================================================
-    with st.expander(f"🌐 INTELIGENCIA TERRITORIAL (WRI): {nombre_zona}", expanded=False):
+    with st.expander(f"💼 SIMULADOR DE INVERSIONES Y PORTAFOLIOS (WRI): {nombre_zona}", expanded=False):
         import plotly.express as px
-        import plotly.graph_objects as go
         
-        st.subheader(f"🌐 Inteligencia Territorial (WRI): {nombre_zona}")
-        st.markdown("Transforma las métricas biofísicas de la cuenca/municipio en indicadores estandarizados, evalúa portafolios de inversión y simula escenarios climáticos (ENSO).")
+        st.markdown("Transforma las métricas biofísicas en indicadores estandarizados, simula portafolios de inversión y visualiza el impacto de los proyectos en la seguridad hídrica.")
         
-        # --- 1. RECUPERACIÓN DE DATOS BASE Y METABOLISMO ---
-        # 🚀 Cálculo espacial exacto del área en vivo
-        if gdf_zona is not None and not gdf_zona.empty:
-            area_km2_real = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0
-        else:
-            area_km2_real = 100.0
-            
-        area_km2 = float(st.session_state.get('aleph_area_km2', area_km2_real))
-        recarga_mm_base = float(st.session_state.get('aleph_recarga_mm', 350.0))
-        
-        # 🤝 EL APRETÓN DE MANOS: Leemos la DBO exacta de la Pág 08
-        carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', 500.0))
-        
-        q_oferta_m3s_base = oferta_nominal 
-        demanda_m3s_base = demanda_m3s
-        
-        oferta_anual_m3 = q_oferta_m3s_base * 31536000
-        recarga_anual_m3 = recarga_mm_base * area_km2 * 1000
-        consumo_anual_m3 = demanda_m3s_base * 31536000
-
-        # --- 2. INTEGRACIÓN CARTOGRÁFICA (PREDIOS EJECUTADOS) ---
+        # --- 1. INTEGRACIÓN CARTOGRÁFICA Y SOLUCIONES BASADAS EN LA NATURALEZA (SbN) ---
         st.markdown("---")
-        st.markdown(f"#### 🌲 Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
-        st.info("El sistema realiza un geoprocesamiento en vivo (clip espacial) para calcular las hectáreas exactas de los predios que caen dentro de los límites de la selección.")
+        st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-        # Cálculo de Hectáreas Reales desde el SIG
+        # Cálculo de Hectáreas Reales desde el SIG (Protegido)
         ha_reales_sig = 0.0
-        if capas.get('predios') is not None and not capas['predios'].empty and gdf_zona is not None and not gdf_zona.empty:
+        if capas.get('predios') is not None and not capas['predios'].empty and gdf_zona is not None:
             try:
-                gdf_zona_4326 = gdf_zona.to_crs("EPSG:4326") if gdf_zona.crs != "EPSG:4326" else gdf_zona
-                predios_4326 = capas['predios'].to_crs("EPSG:4326") if capas['predios'].crs != "EPSG:4326" else capas['predios']
-                predios_en_cuenca = gpd.clip(predios_4326, gdf_zona_4326)
-                if not predios_en_cuenca.empty:
-                    ha_reales_sig = predios_en_cuenca.to_crs(epsg=3116).area.sum() / 10000.0
-            except Exception:
-                pass # Fallback silencioso
-                
-# 🎚️ EL BOTÓN DE "REALIDAD ALTERNATIVA"
-        activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG en la línea base", value=True, key="td_toggle_sig",
-                                help="Apaga este interruptor para simular el escenario contrafactual.")
-        
+                gdf_z = gdf_zona.to_crs("EPSG:4326")
+                gdf_p = capas['predios'].to_crs("EPSG:4326")
+                predios_clip = gpd.clip(gdf_p, gdf_z)
+                if not predios_clip.empty:
+                    ha_reales_sig = predios_clip.to_crs(epsg=3116).area.sum() / 10000.0
+            except Exception: pass
+            
+        activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         ha_base_calculo = ha_reales_sig if activar_sig else 0.0
         
-        # --- 🌟 CONEXIÓN CON BOSQUES RIPARIOS (GEOMORFOLOGÍA / BIODIVERSIDAD) ---
+        # Conexión Riparia (Nexo Físico)
         ha_riparias_potenciales = 0.0
         sumar_riparias = False
         df_str = st.session_state.get('geomorfo_strahler_df')
         
         if df_str is not None and not df_str.empty:
             st.markdown("<br>", unsafe_allow_html=True)
-            with st.expander("🌿 Infraestructura Verde: Potencial de Reforestación Riparia", expanded=True):
+            with st.container(border=True):
+                st.markdown("🌿 **Infraestructura Verde: Potencial de Reforestación Riparia**")
                 
-                amenaza_activa = 'aleph_twi_umbral' in st.session_state
-                
-                if amenaza_activa:
-                    st.success("🧠 **Nexo Físico Activo:** Integrando zona de amenaza extrema (Inundación/Avalancha) como área de restauración obligatoria.")
-                    
-                    st.markdown(f"""
-                    <div style="border-left: 5px solid #2ecc71; padding: 15px; background-color: rgba(46, 204, 113, 0.1); border-radius: 5px; margin-bottom: 15px;">
-                        <h4 style="color: #27ae60; margin-top: 0;">🌳 Manifiesto de Resiliencia</h4>
-                        <b style="font-size: 0.95em;">Se requiere crear un bosque de protección y un corredor de biodiversidad sobre estas zonas de peligro para amortiguar el golpe, proteger a la población, restaurar el cauce natural del río y contribuir con la Seguridad Hídrica Integral de la cuenca {nombre_zona}.</b>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    q_max_memoria = st.session_state.get('aleph_q_max_m3s', 50.0)
-                    buffer_defecto = max(30.0, float(np.log10(q_max_memoria + 1) * 35.0))
+                if 'aleph_twi_umbral' in st.session_state:
+                    st.success("🧠 **Nexo Físico Activo:** Integrando zona de amenaza de inundación/avalancha como área de restauración prioritaria.")
+                    q_max = st.session_state.get('aleph_q_max_m3s', 50.0)
+                    buffer_defecto = max(30.0, float(np.log10(q_max + 1) * 35.0))
                 else:
-                    st.markdown("El modelo detectó una red hidrográfica. Dimensiona las franjas forestales protectoras (buffer) para integrarlas como **Soluciones Basadas en la Naturaleza (SbN)** al cálculo financiero WRI.")
                     buffer_defecto = 30.0
 
-                c_rip1, c_rip2, c_rip3 = st.columns(3)
-                
-                # 🛡️ BLINDAJE: Si la variable existe pero es None, forzamos el valor por defecto
-                val_memoria = st.session_state.get('buffer_m_ripario')
-                buffer_memoria = float(val_memoria) if val_memoria is not None else float(buffer_defecto)
-                
-                ancho_buffer = c_rip1.number_input(
-                    "Ancho de Aislamiento (m/lado):", 
-                    min_value=5.0, max_value=250.0, 
-                    value=buffer_memoria, step=5.0, key="td_buffer_rip",
-                    help="Calculado automáticamente por la física de caudales extremos si el Nexo Físico está activo."
-                )
+                cr1, cr2, cr3 = st.columns(3)
+                val_memoria = st.session_state.get('buffer_m_ripario', buffer_defecto)
+                ancho_buffer = cr1.number_input("Ancho de Aislamiento (m/lado):", min_value=5.0, value=float(val_memoria), step=5.0, key="td_buffer_rip")
                 
                 longitud_total_km = df_str['Longitud_Km'].sum()
-                c_rip2.metric("Longitud Total de Cauces", f"{longitud_total_km:,.2f} km")
+                cr2.metric("Longitud de Cauces", f"{longitud_total_km:,.2f} km")
                 
                 ha_riparias_potenciales = (longitud_total_km * 1000 * (ancho_buffer * 2)) / 10000.0
-                c_rip3.metric("Potencial Ripario (SbN)", f"{ha_riparias_potenciales:,.1f} ha", "Área disponible para restauración", delta_color="normal")
+                cr3.metric("Potencial Ripario (SbN)", f"{ha_riparias_potenciales:,.1f} ha")
                 
-                sumar_riparias = st.checkbox("📥 Incorporar estas hectáreas riparias a la simulación financiera WRI", value=True, key="td_sumar_rip")
+                sumar_riparias = st.checkbox("📥 Incorporar hectáreas riparias a la simulación WRI", value=True, key="td_sumar_rip")
         else:
-            st.info("💡 **Tip:** Visita el módulo de **Geomorfología** y calcula la red de drenaje para desbloquear el diseño automático de corredores riparios.")
+            st.info("💡 **Tip:** Usa el motor de Geomorfología para detectar la red de drenaje y calcular corredores riparios automáticamente.")
         
-        # --- RESUMEN DE BENEFICIOS VOLUMÉTRICOS ---
-        st.markdown("<br>", unsafe_allow_html=True)
+        # Inputs del Simulador
         c_inv1, c_inv2, c_inv3 = st.columns(3)
         with c_inv1:
             st.metric("✅ Área Conservada (Base SIG)", f"{ha_reales_sig:,.1f} ha")
             ha_simuladas = st.number_input("➕ Adicionar Hectáreas Extra (Manual):", min_value=0.0, value=0.0, step=10.0, key="td_ha_sim")
-            
-            # El cálculo final
             ha_total = ha_base_calculo + ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
             beneficio_restauracion_m3 = ha_total * 2500
-            
-            if sumar_riparias and ha_riparias_potenciales > 0:
-                st.caption(f"*(Incluye {ha_riparias_potenciales:,.1f} ha riparias)*")
             
         with c_inv2:
             sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM/PTAR):", min_value=0, value=50, step=5, key="td_stam")
@@ -465,19 +389,18 @@ if gdf_zona is not None and not gdf_zona.empty:
             
         with c_inv3:
             volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
-            st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Total compensado")
+            st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Impacto total simulado")
 
-        # --- 3. PORTAFOLIOS DE INVERSIÓN (CANTIDAD Y CALIDAD) ---
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader(f"💼 Portafolios de Inversión Multi-Objetivo ({lugar_actual} - {anio_actual})")
+        # --- 2. PORTAFOLIOS DE INVERSIÓN ---
+        st.markdown("---")
+        st.markdown(f"#### 💼 2. Portafolios de Inversión Multi-Objetivo")
 
-        # ====================================================================
-        # Portafolio 1: Neutralidad (Cantidad)
-        # ====================================================================
-        with st.expander("🎯 1. Optimización de Brechas: Oferta y Demanda (Neutralidad)", expanded=False):
+        # Portafolio 1: Cantidad
+        with st.container(border=True):
+            st.markdown("🎯 **Portafolio 1: Neutralidad Volumétrica (Cantidad)**")
             col_m1, col_m2 = st.columns([1, 2.5])
             with col_m1:
-                meta_neutralidad = st.slider("Objetivo Neutralidad (%)", 10.0, 100.0, 100.0, 5.0, key="td_meta_n")
+                meta_neutralidad = st.slider("Meta Neutralidad (%)", 10.0, 100.0, 100.0, 5.0, key="td_meta_n")
                 costo_ha = st.number_input("Restauración (1 ha) [M COP]:", value=8.5, step=0.5, key="td_c_ha")
                 costo_stam_n = st.number_input("Saneamiento (1 STAM) [M COP]:", value=15.0, step=1.0, key="td_c_stamn")
                 costo_lps = st.number_input("Eficiencia (1 L/s) [M COP]:", value=120.0, step=10.0, key="td_c_lps")
@@ -485,180 +408,98 @@ if gdf_zona is not None and not gdf_zona.empty:
             with col_m2:
                 vol_requerido_m3 = (meta_neutralidad / 100.0) * consumo_anual_m3
                 brecha_m3 = vol_requerido_m3 - volumen_repuesto_m3
-                
-                # --- ⚖️ CONTABILIDAD ESTRICTA: Cobrar los Proyectos Simulados ---
                 ha_proyectos_simulados = ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
                 costo_proyectos_simulados = ha_proyectos_simulados * costo_ha
                 
                 if brecha_m3 <= 0: 
-                    st.success("✅ ¡Se cumple la meta de Neutralidad Volumétrica!")
-                    if costo_proyectos_simulados > 0:
-                        st.info(f"💰 Inversión en proyectos simulados (Riparios/Manuales): **${costo_proyectos_simulados:,.0f} Millones COP**")
+                    st.success("✅ ¡Se cumple la meta de Neutralidad Volumétrica con los proyectos simulados!")
+                    st.info(f"💰 Inversión en proyectos simulados (SbN): **${costo_proyectos_simulados:,.0f} Millones COP**")
                 else:
                     st.warning(f"⚠️ Faltan compensar **{brecha_m3/1e6:,.2f} Millones de m³/año**.")
-                    c_mix1, c_mix2, c_mix3 = st.columns(3)
-                    pct_a = c_mix1.number_input("% Restauración", 0, 100, 40, key="td_pct_a")
-                    pct_b = c_mix2.number_input("% Saneamiento", 0, 100, 40, key="td_pct_b")
-                    pct_c = c_mix3.number_input("% Eficiencia", 0, 100, 20, key="td_pct_c")
+                    cmix1, cmix2, cmix3 = st.columns(3)
+                    pct_a = cmix1.number_input("% Cierre vía Restauración", 0, 100, 40, key="td_pct_a")
+                    pct_b = cmix2.number_input("% Cierre vía Saneamiento", 0, 100, 40, key="td_pct_b")
+                    pct_c = cmix3.number_input("% Cierre vía Eficiencia", 0, 100, 20, key="td_pct_c")
                     
                     if (pct_a + pct_b + pct_c) == 100:
                         ha_req = (brecha_m3 * (pct_a/100)) / 2500.0
                         stam_req = (brecha_m3 * (pct_b/100)) / 1200.0
                         lps_req = ((brecha_m3 * (pct_c/100)) * 1000) / 31536000 
                         
-                        # INVERSIÓN TOTAL = Lo que falta para la brecha + Lo que ya pusimos en la simulación
                         inv_brecha = (ha_req * costo_ha) + (stam_req * costo_stam_n) + (lps_req * costo_lps)
                         inv_total = inv_brecha + costo_proyectos_simulados
                         
-                        st.markdown("📊 **Requerimientos Físicos y Presupuesto Final:**")
-                        c_op1, c_op2, c_op3, c_op4 = st.columns(4)
-                        
-                        c_op1.metric("🌲 Restaurar Total", f"{(ha_req + ha_proyectos_simulados):,.1f} ha", help="Incluye Riparias/Manuales + Brecha")
-                        c_op2.metric("🚽 Saneamiento", f"{stam_req:,.0f} STAM")
-                        c_op3.metric("🚰 Eficiencia", f"{lps_req:,.1f} L/s")
-                        c_op4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M", help="Costo de la brecha + proyectos simulados.")
-                    else: 
-                        st.error("❌ La suma de los porcentajes de intervención debe ser exactamente 100%.")
+                        co1, co2, co3, co4 = st.columns(4)
+                        co1.metric("🌲 Restaurar Total", f"{(ha_req + ha_proyectos_simulados):,.1f} ha")
+                        co2.metric("🚽 STAM", f"{stam_req:,.0f} unds")
+                        co3.metric("🚰 Eficiencia", f"{lps_req:,.1f} L/s")
+                        co4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M")
+                    else: st.error("La suma de los porcentajes debe ser exactamente 100%.")
 
-        # ====================================================================
-        # Portafolio 2: Calidad (Saneamiento DBO5)
-        # ====================================================================
-        with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO5)", expanded=False):
+        # Portafolio 2: Calidad
+        with st.container(border=True):
+            st.markdown("🎯 **Portafolio 2: Remoción de Cargas (Calidad DBO5)**")
             col_c1, col_c2 = st.columns([1, 2.5])
             with col_c1:
                 meta_remocion = st.slider("Meta Remoción DBO (%)", 10.0, 100.0, 85.0, 5.0, key="td_meta_c")
                 costo_ptar = st.number_input("PTAR (1 Ton/a) [M COP]:", value=150.0, step=10.0, key="td_c_ptar")
                 costo_stam_c = st.number_input("STAM (1 Ton/a) [M COP]:", value=45.0, step=5.0, key="td_c_stamc")
-                costo_sbn = st.number_input("SbN (1 Ton/a) [M COP]:", value=12.0, step=2.0, key="td_c_sbn")
-            
+                costo_sbn_c = st.number_input("SbN (1 Ton/a) [M COP]:", value=12.0, step=2.0, key="td_c_sbn_c")
             with col_c2:
                 carga_objetivo = (meta_remocion / 100.0) * carga_total_ton
-                brecha_ton = carga_objetivo - (sist_saneamiento * 0.5) # Aprox 0.5 ton removidas por STAM existente
+                brecha_ton = carga_objetivo - (sist_saneamiento * 0.5) 
                 
-                if brecha_ton <= 0: 
-                    st.success("✅ ¡Se cumple la meta de Remoción de Cargas!")
+                if brecha_ton <= 0: st.success("✅ ¡Meta de Remoción de Cargas alcanzada con la simulación!")
                 else:
-                    st.warning(f"⚠️ Faltan remover **{brecha_ton:,.1f} Ton/año** de DBO5. (Base Inyectada: {carga_total_ton:,.0f} Ton)")
-                    c_mc1, c_mc2, c_mc3 = st.columns(3)
-                    pct_ptar = c_mc1.number_input("% PTAR", 0, 100, 50, key="td_pct_ptar")
-                    pct_stam_c = c_mc2.number_input("% STAM Rural", 0, 100, 30, key="td_pct_stam_c")
-                    pct_sbn_c = c_mc3.number_input("% SbN Filtros", 0, 100, 20, key="td_pct_sbn_c")
+                    st.warning(f"⚠️ Faltan remover **{brecha_ton:,.1f} Ton/año** de DBO5.")
+                    cmc1, cmc2, cmc3 = st.columns(3)
+                    pct_ptar = cmc1.number_input("% Cierre vía PTAR", 0, 100, 50, key="td_pct_ptar")
+                    pct_stam_c = cmc2.number_input("% Cierre vía STAM", 0, 100, 30, key="td_pct_stam_c")
+                    pct_sbn_c = cmc3.number_input("% Cierre vía SbN", 0, 100, 20, key="td_pct_sbn_c")
                     
                     if (pct_ptar + pct_stam_c + pct_sbn_c) == 100:
                         t_ptar = brecha_ton * (pct_ptar/100)
                         t_stam = brecha_ton * (pct_stam_c/100)
                         t_sbn = brecha_ton * (pct_sbn_c/100)
-                        inv_tot_c = (t_ptar * costo_ptar) + (t_stam * costo_stam_c) + (t_sbn * costo_sbn)
+                        inv_tot_c = (t_ptar * costo_ptar) + (t_stam * costo_stam_c) + (t_sbn * costo_sbn_c)
                         
-                        st.markdown("📊 **Requerimientos de Remoción y Presupuesto:**")
-                        c_oc1, c_oc2, c_oc3, c_oc4 = st.columns(4)
-                        c_oc1.metric("🏙️ PTAR", f"{t_ptar:,.0f} Ton")
-                        c_oc2.metric("🏡 STAM Rural", f"{t_stam:,.0f} Ton")
-                        c_oc3.metric("🌿 SbN Biofiltros", f"{t_sbn:,.0f} Ton")
-                        c_oc4.metric("💰 INVERSIÓN CALIDAD", f"${inv_tot_c:,.0f} M")
-                    else: 
-                        st.error("❌ La suma de los porcentajes de saneamiento debe ser exactamente 100%.")
-                        
-        # --- 4. MOTORES DE CÁLCULO ESTRICTOS (EVIDENCIA CIENTÍFICA: IDEAM, USGS, WRI) ---
-        
-        # A. CALIDAD DEL AGUA (Carga Másica, Delivery Ratio y Mezcla C0)
-        # Factor de Entrega (Delivery Ratio): 
-        # - Carga difusa (Ganadería): Atenuación en suelo/pastos. Llega ~15% al cauce principal.
-        # - Carga puntual (Humanos urbanos/descargas directas): Llega ~80% al cauce.
-        dr_difuso = 0.15 
-        dr_puntual = 0.80
-        
-        # Generación Bruta (Ton DBO5/año)
-        dbo_bov_bruta = bovinos * 0.18
-        dbo_por_bruta = porcinos * 0.11
-        dbo_hum_bruta = pob_total * 0.018
-        
-        # Carga Neta que efectivamente entra al cauce (Ton/año)
-        carga_neta_ton = ((dbo_bov_bruta + dbo_por_bruta) * dr_difuso) + (dbo_hum_bruta * dr_puntual)
-        carga_removida_ton = sist_saneamiento * 2.5 # ~2.5 Ton removidas por STAM/PTAR al año
-        carga_final_rio_ton = max(0.0, carga_neta_ton - carga_removida_ton)
-        
-        # Mezcla (Ecuación de Continuidad Básica C0). mg/L = (mg/s) / (L/s)
-        carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000 # Conversión de Ton/año a mg/s
-        caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000   # Conversión de m3/año a L/s
-        
-        concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
-        
-        # Índice de Calidad: Límite normativo crítico es >10 mg/L de DBO5 (Umbral de anoxia)
-        ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
+                        coc1, coc2, coc3, coc4 = st.columns(4)
+                        coc1.metric("🏙️ PTAR", f"{t_ptar:,.0f} Ton")
+                        coc2.metric("🏡 STAM Rural", f"{t_stam:,.0f} Ton")
+                        coc3.metric("🌿 SbN Biofiltros", f"{t_sbn:,.0f} Ton")
+                        coc4.metric("💰 INVERSIÓN CALIDAD", f"${inv_tot_c:,.0f} M")
+                    else: st.error("La suma debe ser exactamente 100%.")
 
-        # B. RESILIENCIA ESTRUCTURAL (Baseflow Index - BFI del USGS)
-        # BFI = Recarga / Oferta Total. La teoría eco-hidrológica dicta que >70% es un buffer óptimo.
-        bfi_ratio = recarga_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 0.0
-        score_bfi = min(100.0, (bfi_ratio / 0.70) * 100)
-        
-        # Factor de estrés de estiaje: ¿La recarga base soporta el consumo humano en época sin lluvia?
-        factor_supervivencia = min(1.0, recarga_anual_m3 / consumo_anual_m3) if consumo_anual_m3 > 0 else 1.0
-        ind_resiliencia = max(0.0, min(100.0, score_bfi * factor_supervivencia))
-
-        # C. ESTRÉS HÍDRICO (Water Exploitation Index WEI+ - Agencia Europea M.A.)
-        # WEI = Consumo / Oferta. >40% indica estrés hídrico severo.
-        wei_ratio = consumo_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
-        ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
-
-        # D. NEUTRALIDAD VOLUMÉTRICA (VWBA - WRI)
-        ind_neutralidad = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
-        
+        # --- 3. IMPACTO PROYECTADO (NUEVOS INDICADORES) ---
         st.markdown("---")
-        st.subheader(f"🧭 Tablero de Seguridad Hídrica Integral: {nombre_zona}")
+        st.markdown("#### 🚀 3. Impacto Proyectado en la Salud Territorial")
+        st.info("Los siguientes velocímetros recalculan la salud de la cuenca asumiendo que se implementan los proyectos simulados en los pasos anteriores.")
         
-        def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
-            if not invertido:
-                if valor < umbral_rojo: return "🔴 CRÍTICO", "#c0392b"
-                elif valor < umbral_verde: return "🟡 VULNERABLE", "#f39c12"
-                else: return "🟢 ÓPTIMO", "#27ae60"
-            else:
-                if valor < umbral_verde: return "🟢 HOLGADO", "#27ae60"
-                elif valor < umbral_rojo: return "🟡 MODERADO", "#f39c12"
-                else: return "🔴 CRÍTICO", "#c0392b"
-
-        def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
-            fig = go.Figure(go.Indicator(
-                mode = "gauge+number", value = valor,
-                number = {'suffix': "%", 'font': {'size': 26}}, title = {'text': titulo, 'font': {'size': 14}},
-                gauge = {
-                    'axis': {'range': [None, 100], 'tickwidth': 1},
-                    'bar': {'color': color_bar},
-                    'bgcolor': "white",
-                    'steps': [
-                        {'range': [0, umbral_rojo], 'color': "#ffcccb" if not invertido else "#e8f8f5"},
-                        {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc"},
-                        {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}
-                    ],
-                    'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}
-                }
-            ))
-            fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10))
-            return fig
-
-        col_g1, col_g2, col_g3, col_g4 = st.columns(4)
-        est_neu, col_neu = evaluar_indice(ind_neutralidad, 40, 80)
-        est_res, col_res = evaluar_indice(ind_resiliencia, 30, 70)
-        est_est, col_est = evaluar_indice(ind_estres, 40, 20, invertido=True)
-        est_cal, col_cal = evaluar_indice(ind_calidad, 40, 70)
-
-        with col_g1: 
-            st.plotly_chart(crear_velocimetro(ind_neutralidad, "Neutralidad", "#2ecc71", 40, 80), use_container_width=True)
-            st.markdown(f"<h4 style='text-align: center; color: {col_neu}; margin-top:-20px;'>{est_neu}</h4>", unsafe_allow_html=True)
-        with col_g2: 
-            st.plotly_chart(crear_velocimetro(ind_resiliencia, "Resiliencia", "#3498db", 30, 70), use_container_width=True)
-            st.markdown(f"<h4 style='text-align: center; color: {col_res}; margin-top:-20px;'>{est_res}</h4>", unsafe_allow_html=True)
-        with col_g3: 
-            st.plotly_chart(crear_velocimetro(ind_estres, "Estrés Hídrico", "#e74c3c", 40, 20, invertido=True), use_container_width=True)
-            st.markdown(f"<h4 style='text-align: center; color: {col_est}; margin-top:-20px;'>{est_est}</h4>", unsafe_allow_html=True)
-        with col_g4:
-            st.plotly_chart(crear_velocimetro(ind_calidad, "Calidad del Agua", "#9b59b6", 40, 70), use_container_width=True)
-            st.markdown(f"<h4 style='text-align: center; color: {col_cal}; margin-top:-20px;'>{est_cal}</h4>", unsafe_allow_html=True)
-
-        # --- 5. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR ENSO) ---
-        st.markdown("---")
-        st.subheader(f"📈 Proyección Dinámica de Seguridad Hídrica (2024 - 2050) - {nombre_zona}")
+        # Recálculo con beneficios simulados
+        carga_removida_sim = sist_saneamiento * 2.5
+        carga_final_rio_sim = max(0.0, carga_total_ton - carga_removida_sim)
+        carga_mg_s_sim = (carga_final_rio_sim * 1_000_000_000) / 31536000
+        conc_dbo_sim = carga_mg_s_sim / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
         
+        ind_calidad_sim = max(0.0, min(100.0, 100.0 - ((conc_dbo_sim / 10.0) * 100)))
+        ind_neutralidad_sim = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
+        
+        # Asumimos que la reforestación mejora la resiliencia (recarga/infiltración) en un porcentaje marginal
+        mejora_infiltracion = (ha_total / (area_km2 * 100)) * 0.10 
+        bfi_ratio_sim = bfi_ratio * (1 + mejora_infiltracion)
+        ind_resiliencia_sim = max(0.0, min(100.0, (bfi_ratio_sim / 0.70) * 100 * factor_supervivencia))
+
+        cg1, cg2, cg3 = st.columns(3)
+        with cg1: st.plotly_chart(crear_velocimetro(ind_neutralidad_sim, "Neutralidad (Proyectada)", "#2ecc71", 40, 80), use_container_width=True)
+        with cg2: st.plotly_chart(crear_velocimetro(ind_resiliencia_sim, "Resiliencia (Proyectada)", "#3498db", 30, 70), use_container_width=True)
+        with cg3: st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), use_container_width=True)
+
+# =========================================================================
+    # BLOQUE 3: PROYECCIÓN CLIMÁTICA, RANKING AHP Y PREPARACIÓN PREDIAL
+    # =========================================================================
+    
+    # --- 1. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR ENSO) ---
+    with st.expander(f"📈 PROYECCIÓN DINÁMICA DE SEGURIDAD HÍDRICA (2024 - 2050): {nombre_zona}", expanded=False):
         tab_resumen, tab_escenarios = st.tabs(["📊 Resumen Multivariado (Onda ENSO)", "🔬 Explorador de Escenarios (Cono)"])
         anios_proj = list(range(2024, 2051))
 
@@ -681,32 +522,25 @@ if gdf_zona is not None and not gdf_zona.empty:
                     f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) 
                     estado_enso = "Niña 🌧️" if f_enso > 0.1 else "Niño ☀️" if f_enso < -0.1 else "Neutro ⚖️"
                 
-                # 🛡️ Escudo anti-negativos para evitar colapsos matemáticos si el Niño es muy fuerte
+                # 🛡️ Escudo anti-negativos para evitar colapsos matemáticos
                 f_cli_total = max(0.1, f_cc_base + f_enso) 
                 
-                # =========================================================
-                # 🔬 PROYECCIÓN DE VOLÚMENES FÍSICOS
-                # =========================================================
-                o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
-                r_m3 = (recarga_mm_base * f_cli_total) * area_km2 * 1000
-                c_m3 = (demanda_m3s_base * f_dem) * 31536000
+                # 🔬 PROYECCIÓN DE VOLÚMENES FÍSICOS (Conectado al Bloque 1 y 2)
+                # NOTA: Usamos 'oferta_nominal' y 'demanda_m3s' del Top Dashboard
+                o_m3 = (oferta_nominal * f_cli_total) * 31536000
+                r_m3 = (float(st.session_state.get('aleph_recarga_mm', 350.0)) * f_cli_total) * float(st.session_state.get('aleph_area_km2', 10.0)) * 1000
+                c_m3 = (demanda_m3s * f_dem) * 31536000
                 
-                # =========================================================
-                # ⚖️ NÚCLEO MATEMÁTICO ESTRICTO EN LA SIMULACIÓN FUTURA
-                # =========================================================
-                # 1. Neutralidad (VWBA)
+                # ⚖️ NÚCLEO MATEMÁTICO FUTURO
                 n = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
                 
-                # 2. Resiliencia (BFI y Supervivencia)
                 bfi_sim = r_m3 / o_m3 if o_m3 > 0 else 0.0
                 fact_superv_sim = min(1.0, r_m3 / c_m3) if c_m3 > 0 else 1.0
                 r = max(0.0, min(100.0, (bfi_sim / 0.70) * 100 * fact_superv_sim))
                 
-                # 3. Seguridad Hídrica (Inverso del WEI+)
                 wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
                 e = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
                 
-                # 4. Calidad (C0 con Delivery Ratio y Crecimiento de Carga)
                 caudal_L_s_sim = (o_m3 / 31536000) * 1000
                 carga_mg_s_futura = carga_mg_s * f_dem
                 dbo_mg_l_sim = carga_mg_s_futura / caudal_L_s_sim if caudal_L_s_sim > 0 else 999.0
@@ -750,9 +584,9 @@ if gdf_zona is not None and not gdf_zona.empty:
                     f_enso = 0.25 * np.sin((2 * np.pi * delta_a) / 4.5) if val_esc == "onda" else val_esc
                     f_cli_total = f_cc_base + f_enso
                     
-                    o_m3 = (q_oferta_m3s_base * f_cli_total) * 31536000
-                    r_m3 = (recarga_mm_base * f_cli_total) * area_km2 * 1000
-                    c_m3 = (demanda_m3s_base * f_dem) * 31536000
+                    o_m3 = (oferta_nominal * f_cli_total) * 31536000
+                    r_m3 = (float(st.session_state.get('aleph_recarga_mm', 350.0)) * f_cli_total) * float(st.session_state.get('aleph_area_km2', 10.0)) * 1000
+                    c_m3 = (demanda_m3s * f_dem) * 31536000
                     
                     if ind_sel == "Neutralidad": val = min(100.0, (volumen_repuesto_m3 / c_m3) * 100) if c_m3 > 0 else 100.0
                     elif ind_sel == "Resiliencia": val = min(100.0, ((r_m3 + o_m3) / ((c_m3+1) * 2)) * 100)
@@ -768,11 +602,9 @@ if gdf_zona is not None and not gdf_zona.empty:
                 fig_esc.update_traces(line=dict(width=3)) 
                 fig_esc.update_layout(height=400, hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
                 st.plotly_chart(fig_esc, use_container_width=True)
-                
-# --- 6. RANKING TERRITORIAL MULTICRITERIO (AHP) Y RADAR ---
-        st.markdown("---")
-        st.subheader(f"🏆 Ranking Territorial Multicriterio (AHP) - {nombre_zona}")
-        
+
+    # --- 2. RANKING TERRITORIAL MULTICRITERIO (AHP) Y RADAR ---
+    with st.expander(f"🏆 RANKING TERRITORIAL MULTICRITERIO (AHP)", expanded=False):
         lista_cuencas = []
         if 'capas' in locals() and capas.get('cuencas') is not None and not capas['cuencas'].empty:
             if 'SUBC_LBL' in capas['cuencas'].columns:
@@ -781,7 +613,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         if not lista_cuencas:
             lista_cuencas = ["Río Chico", "Río Grande", "Quebrada La Mosca", "Río Buey", "Pantanillo"]
             
-        st.caption(f"🔄 Reordenado en vivo usando Pesos AHP: Hídrico ({w_agua*100:.0f}%) | Biótico ({w_bio*100:.0f}%) | Socioeconómico ({w_socio*100:.0f}%)")
+        st.caption(f"🔄 Reordenado en vivo usando Pesos AHP (Panel Lateral): Hídrico ({w_agua*100:.0f}%) | Biótico ({w_bio*100:.0f}%) | Socioeconómico ({w_socio*100:.0f}%)")
         
         datos_ranking = []
         for c in lista_cuencas:
@@ -801,12 +633,9 @@ if gdf_zona is not None and not gdf_zona.empty:
             score_urgencia = (urgencia_hidrica * w_agua) + (urgencia_biotica * w_bio) + (urgencia_socio * w_socio)
             
             datos_ranking.append({
-                "Territorio": c,
-                "Índice Prioridad (AHP)": score_urgencia,
-                "Neutralidad (%)": n_val,
-                "Resiliencia (%)": r_val,
-                "Estrés Hídrico (%)": e_val,
-                "Calidad de Agua (%)": c_val
+                "Territorio": c, "Índice Prioridad (AHP)": score_urgencia,
+                "Neutralidad (%)": n_val, "Resiliencia (%)": r_val,
+                "Estrés Hídrico (%)": e_val, "Calidad de Agua (%)": c_val
             })
             
         df_ranking = pd.DataFrame(datos_ranking).sort_values(by="Índice Prioridad (AHP)", ascending=False)
@@ -820,257 +649,213 @@ if gdf_zona is not None and not gdf_zona.empty:
                 .format({"Índice Prioridad (AHP)": "{:.1f}", "Neutralidad (%)": "{:.1f}%", "Resiliencia (%)": "{:.1f}%", "Estrés Hídrico (%)": "{:.1f}%", "Calidad de Agua (%)": "{:.1f}%"}),
                 use_container_width=True, hide_index=True
             )
-            csv_ranking = df_ranking.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Ranking AHP (CSV)", csv_ranking, "Ranking_Territorial_AHP.csv", "text/csv")
+            st.download_button("📥 Descargar Ranking AHP (CSV)", df_ranking.to_csv(index=False).encode('utf-8'), "Ranking_Territorial_AHP.csv", "text/csv")
+
+            # DISTRIBUCIÓN REGIONAL (BOX PLOT)
+            df_melt = df_ranking.melt(id_vars=["Territorio"], value_vars=["Neutralidad (%)", "Resiliencia (%)", "Estrés Hídrico (%)", "Calidad de Agua (%)"], var_name="Índice", value_name="Valor (%)")
+            fig_box = px.box(df_melt, x="Índice", y="Valor (%)", color="Índice", points="all", title="Distribución Regional de Indicadores",
+                             color_discrete_map={"Neutralidad (%)": "#2ecc71", "Resiliencia (%)": "#3498db", "Estrés Hídrico (%)": "#e74c3c", "Calidad de Agua (%)": "#9b59b6"})
+            fig_box.update_layout(height=300, showlegend=False, margin=dict(t=30, b=0, l=0, r=0))
+            st.plotly_chart(fig_box, use_container_width=True)
 
         with c_rad:
             fig_radar = go.Figure()
             categorias = ['Neutralidad', 'Resiliencia', 'Seguridad (Inv. Estrés)', 'Calidad', 'Neutralidad']
             
-            # Zonas de salud
-            fig_radar.add_trace(go.Scatterpolar(r=[100, 100, 100, 100, 100], theta=categorias, fill='toself', fillcolor='rgba(39, 174, 96, 0.15)', line=dict(color='rgba(255,255,255,0)'), name='Óptimo (>70%)', hoverinfo='none'))
-            fig_radar.add_trace(go.Scatterpolar(r=[70, 70, 70, 70, 70], theta=categorias, fill='toself', fillcolor='rgba(241, 196, 15, 0.2)', line=dict(color='rgba(255,255,255,0)'), name='Vulnerable (40-70%)', hoverinfo='none'))
-            fig_radar.add_trace(go.Scatterpolar(r=[40, 40, 40, 40, 40], theta=categorias, fill='toself', fillcolor='rgba(192, 57, 43, 0.25)', line=dict(color='rgba(255,255,255,0)'), name='Crítico (<40%)', hoverinfo='none'))
+            fig_radar.add_trace(go.Scatterpolar(r=[100]*5, theta=categorias, fill='toself', fillcolor='rgba(39, 174, 96, 0.15)', line=dict(color='rgba(255,255,255,0)'), name='Óptimo (>70%)', hoverinfo='none'))
+            fig_radar.add_trace(go.Scatterpolar(r=[70]*5, theta=categorias, fill='toself', fillcolor='rgba(241, 196, 15, 0.2)', line=dict(color='rgba(255,255,255,0)'), name='Vulnerable (40-70%)', hoverinfo='none'))
+            fig_radar.add_trace(go.Scatterpolar(r=[40]*5, theta=categorias, fill='toself', fillcolor='rgba(192, 57, 43, 0.25)', line=dict(color='rgba(255,255,255,0)'), name='Crítico (<40%)', hoverinfo='none'))
 
-            # Datos reales
             valores_radar = [ind_neutralidad, ind_resiliencia, max(0, 100-ind_estres), ind_calidad]
             fig_radar.add_trace(go.Scatterpolar(
                 r=valores_radar + [valores_radar[0]], theta=categorias,
-                fill='toself', name=nombre_zona,
-                line=dict(color='#2c3e50', width=3),
-                fillcolor='rgba(41, 128, 185, 0.7)',
-                mode='lines+markers', marker=dict(size=8, color='#2c3e50')
+                fill='toself', name=nombre_zona, line=dict(color='#2c3e50', width=3),
+                fillcolor='rgba(41, 128, 185, 0.7)', mode='lines+markers', marker=dict(size=8, color='#2c3e50')
             ))
 
             fig_radar.update_layout(
-                polar=dict(
-                    radialaxis=dict(visible=True, range=[0, 100], tickvals=[40, 70, 100], ticktext=["40%", "70%", "100%"]),
-                    angularaxis=dict(tickfont=dict(size=11, color="black", weight="bold"))
-                ),
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100], tickvals=[40, 70, 100], ticktext=["40%", "70%", "100%"]),
+                           angularaxis=dict(tickfont=dict(size=11, color="black", weight="bold"))),
                 showlegend=True, legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
-                title=dict(text="Huella de Salud Territorial", font=dict(size=18)),
-                height=420, margin=dict(l=40, r=40, t=50, b=20)
+                title=dict(text="Huella de Salud Territorial", font=dict(size=18)), height=380, margin=dict(l=40, r=40, t=50, b=20)
             )
             st.plotly_chart(fig_radar, use_container_width=True)
             
-        # --- 🤖 INTÉRPRETE AUTOMÁTICO (CAJA DE ESTADO) ---
-        promedio_salud = np.mean(valores_radar)
-        
-        if promedio_salud >= 70:
-            color_box = "#27ae60"
-            msg_estado = "🟢 <b>TERRITORIO ÓPTIMO:</b> El sistema hídrico muestra alta capacidad de asimilación, resiliencia estructural y baja presión antrópica."
-        elif promedio_salud >= 40:
-            color_box = "#f39c12"
-            msg_estado = "🟡 <b>TERRITORIO VULNERABLE:</b> Existen tensiones en la oferta hídrica o calidad del agua. Se requiere inversión preventiva en Soluciones Basadas en la Naturaleza."
-        else:
-            color_box = "#c0392b"
-            msg_estado = "🔴 <b>TERRITORIO CRÍTICO:</b> Alarma sistémica de seguridad hídrica. Urge implementar portafolios masivos de compensación volumétrica (SbN) y saneamiento."
+            promedio_salud = np.mean(valores_radar)
+            color_box, msg_estado = ("#27ae60", "🟢 <b>TERRITORIO ÓPTIMO</b>") if promedio_salud >= 70 else ("#f39c12", "🟡 <b>TERRITORIO VULNERABLE</b>") if promedio_salud >= 40 else ("#c0392b", "🔴 <b>TERRITORIO CRÍTICO</b>")
+            st.markdown(f"<div style='padding:10px; border-radius:5px; border-left: 5px solid {color_box}; background-color:#f8f9fa;'>{msg_estado}<br>Puntaje Salud: {promedio_salud:.1f}/100</div>", unsafe_allow_html=True)
+
+    # --- 3. GLOSARIO METODOLÓGICO Y FUENTES ---
+    with st.expander("📚 Glosario Metodológico (VWBA - WRI)", expanded=False):
+        st.markdown("""
+        * **Neutralidad Hídrica (VWBA):** Volumen de agua restituido mediante SbN vs Huella Hídrica. Objetivo: 100%.
+        * **Resiliencia Territorial (BFI USGS):** Capacidad del ecosistema base para soportar eventos de sequía.
+        * **Estrés Hídrico (WEI+):** Extracción vs Oferta. >40% indica estrés severo.
+        * **Calidad de Agua (WQI):** Dilución natural de DBO5 y mitigación sanitaria.
+        """)
+
+    # =========================================================================
+    # PRIORIZACIÓN PREDIAL PARA CONECTIVIDAD RIPARIA
+    # =========================================================================
+    st.markdown("---")
+    st.subheader(f"🎯 Inteligencia de Negociación: Priorización Predial ({nombre_zona})")
+    st.markdown("Cruza las necesidades de restauración riparia con la estructura predial alojada en la nube para identificar qué propiedades priorizar.")
+
+    rios_strahler_crudos = st.session_state.get('gdf_rios')
+    buffer_m = st.session_state.get('buffer_m_ripario', None) 
+    rios_strahler = None
+    
+    if rios_strahler_crudos is not None and not rios_strahler_crudos.empty and gdf_zona is not None:
+        try:
+            rios_3116 = rios_strahler_crudos.to_crs(epsg=3116)
+            zona_3116 = gdf_zona.to_crs(epsg=3116)
+            rios_clip = gpd.clip(rios_3116, zona_3116)
+            if not rios_clip.empty: rios_strahler = rios_clip
+        except Exception as e:
+            st.warning(f"Aviso validando red hídrica: {e}")
             
-        st.markdown(f"""
-            <div style='padding:15px; border-radius:8px; background-color:#f8f9fa; border-left: 6px solid {color_box}; box-shadow: 1px 1px 5px rgba(0,0,0,0.1); margin-top: 20px;'>
-                <h4 style='margin-top:0px; color:{color_box};'>Puntaje Global de Salud: {promedio_salud:.1f}/100</h4>
-                <p style='margin-bottom:0px; font-size:14px;'>{msg_estado}</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # --- DISTRIBUCIÓN REGIONAL (BOX PLOT) ---
-        # Utilizamos el df_ranking que ya calculamos y blindamos en el paso anterior
-        if 'df_ranking' in locals() and not df_ranking.empty:
-            st.markdown("<br>", unsafe_allow_html=True)
-            df_melt = df_ranking.melt(id_vars=["Territorio"], value_vars=["Neutralidad (%)", "Resiliencia (%)", "Estrés Hídrico (%)", "Calidad de Agua (%)"], var_name="Índice", value_name="Valor (%)")
-            fig_box = px.box(df_melt, x="Índice", y="Valor (%)", color="Índice", points="all",
-                             title="Distribución Regional de Indicadores de Seguridad Hídrica",
-                             color_discrete_map={"Neutralidad (%)": "#2ecc71", "Resiliencia (%)": "#3498db", "Estrés Hídrico (%)": "#e74c3c", "Calidad de Agua (%)": "#9b59b6"})
-            fig_box.update_layout(height=350, showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
-            st.plotly_chart(fig_box, use_container_width=True)
-
-        # 7. GLOSARIO METODOLÓGICO Y FUENTES
-        st.markdown("---")
-        with st.expander("📚 Conceptos, Metodología y Fuentes (VWBA - WRI)", expanded=False):
-            st.markdown("""
-            ### 📖 Glosario de Indicadores
+    if rios_strahler is None or rios_strahler.empty:
+        with st.expander("⚠️ Paso 1: Faltan Datos - Generar Red Hídrica", expanded=True):
+            st.info(f"Para priorizar predios necesitamos la red hídrica exacta de **{nombre_zona}**. ¡Trázalos usando el Motor Hidrológico!")
+            render_motor_hidrologico(gdf_zona)
             
-            * **Neutralidad Hídrica (Volumetric Water Benefit VWBA):**
-              * **Concepto:** Mide si el volumen de agua restituido a la cuenca mediante Soluciones Basadas en la Naturaleza (SbN) compensa la Huella Hídrica del consumo.
-              * **Interpretación:** Un 100% indica que se repone cada gota extraída. Valores $<40\%$ son críticos.
-              
-            * **Resiliencia Territorial (BFI USGS):**
-              * **Concepto:** Capacidad del ecosistema (aguas subterráneas + escorrentía) para soportar eventos de sequía (El Niño) sin colapsar el suministro.
-              
-            * **Estrés Hídrico (WEI+ / ODS 6.4.2):**
-              * **Concepto:** Porcentaje de la oferta total anual extraída por sectores económicos. Valores $>40\%$ denotan estrés severo.
+    elif buffer_m is None:
+        with st.expander("⚠️ Paso 2: Configurar Franja Riparia", expanded=True):
+            st.success("✅ ¡Ríos detectados en la zona! Ahora define el ancho de la zona de protección riparia.")
+            render_motor_ripario()
+            
+    else:
+        with st.expander("⚙️ Recalcular Franja Riparia", expanded=False):
+            st.success(f"✅ Red Hídrica y Franja Riparia de {buffer_m}m listas para el cruce predial.")
+            render_motor_ripario()
 
-            * **Calidad de Agua (WQI):** Índice modificado basado en la capacidad de dilución natural y mitigación sanitaria (STAM/PTAR).
-            """)
-
+# =========================================================================
+        # BLOQUE 4: MOTOR DE CRUCE MULTI-ANILLO Y VISOR 3D (PYDECK)
         # =========================================================================
-        # PRIORIZACIÓN PREDIAL PARA CONECTIVIDAD RIPARIA
-        # =========================================================================
-        st.markdown("---")
         
-        st.subheader(f"🎯 Priorización Predial: Inteligencia de Negociación en {nombre_zona}")
-        st.markdown("Cruza las necesidades de restauración riparia con la estructura predial alojada en la nube para identificar qué propiedades priorizar.")
+        # 2. Cargar Capa Predial (100% Cloud Native o Fallback Local)
+        capa_predios = capas.get('predios')
 
-        # 1. Recuperar datos del motor geomorfológico (CON BLINDAJE ESPACIAL)
-        rios_strahler_crudos = st.session_state.get('gdf_rios')
-        buffer_m = st.session_state.get('buffer_m_ripario', None) 
-        
-        rios_strahler = None
-        
-        # 🛡️ FILTRO DE PERTENENCIA: Asegurar que los ríos de la memoria pertenezcan a la cuenca actual
-        if rios_strahler_crudos is not None and not rios_strahler_crudos.empty and gdf_zona is not None:
-            try:
-                # Reproyectamos ambos a Magna Sirgas (Metros) para hacer un cruce geométrico perfecto
-                rios_3116 = rios_strahler_crudos.to_crs(epsg=3116)
-                zona_3116 = gdf_zona.to_crs(epsg=3116)
-                
-                # Hacemos un "Clip" (Recorte). Solo sobreviven los ríos que caen dentro de R. Chico (o la zona elegida)
-                rios_clip = gpd.clip(rios_3116, zona_3116)
-                
-                if not rios_clip.empty:
-                    # Si sobrevivieron ríos, los usamos
-                    rios_strahler = rios_clip
-                else:
-                    # Si quedó vacío, significa que la memoria tenía ríos de otra cuenca. Los descartamos.
-                    rios_strahler = None
-                    
-            except Exception as e:
-                st.warning(f"Aviso validando red hídrica: {e}")
-                rios_strahler = None
-        
-        st.markdown("---")
-        if rios_strahler is None or rios_strahler.empty:
-            with st.expander("⚠️ Paso 1: Faltan Datos - Generar Red Hídrica", expanded=True):
-                st.info(f"Para priorizar predios necesitamos la red hídrica exacta de **{nombre_zona}**. ¡Trázalos usando el Motor Hidrológico!")
-                render_motor_hidrologico(gdf_zona)
-                
-        elif buffer_m is None:
-            with st.expander("⚠️ Paso 2: Configurar Franja Riparia", expanded=True):
-                st.success("✅ ¡Ríos detectados en la zona! Ahora define el ancho de la zona de protección riparia.")
-                render_motor_ripario()
-                
-        else:
-            with st.expander("⚙️ Recalcular Franja Riparia", expanded=False):
-                st.success(f"✅ Red Hídrica y Franja Riparia de {buffer_m}m listas para el cruce predial.")
-                render_motor_ripario()
-
-        # 2. CARGAR LA CAPA DE PREDIOS (100% CLOUD NATIVE)
-        capa_predios = capas.get('predios') if 'capas' in locals() else None
-        
-        # 3. EJECUTAR EL MOTOR DE CRUCE MULTI-ANILLO
+        # 3. Ejecutar el Motor de Cruce
         if rios_strahler is not None and not rios_strahler.empty:
             
-            rios_strahler = rios_strahler.reset_index(drop=True)
-            rios_strahler['ID_Tramo'] = ["Segmento " + str(i+1) for i in range(len(rios_strahler))]
-            if 'longitud_km' in rios_strahler.columns:
-                rios_strahler['longitud_km'] = rios_strahler['longitud_km'].round(2)
-            
-            # Extraemos los 3 tamaños de anillo (Blindado contra nulos)
-            anillos = st.session_state.get('multi_rings', [10, 20, 30])
-            b_min, b_med, b_max = anillos[0], anillos[1], anillos[2]
-            
-            # 🌿 MAGIA GEOMÉTRICA: Pre-calculamos los 3 anillos fusionados
-            rios_3116 = rios_strahler.to_crs(epsg=3116)
-            rios_union = rios_3116.unary_union
-            geom_max = rios_union.buffer(b_max, resolution=2)
-            geom_med = rios_union.buffer(b_med, resolution=2)
-            geom_min = rios_union.buffer(b_min, resolution=2)
-            
-            buffer_max_gdf = gpd.GeoDataFrame(geometry=[geom_max], crs=3116)
-            
-            # CÁLCULO DE ÁREAS POR CADA FRANJA RIPARIA (TRAMO HÍDRICO)
-            datos_tramos = []
-            for idx, row in rios_3116.iterrows():
-                long_m = row.geometry.length
-                orden = row.get('Orden_Strahler', 1)
-                long_km = long_m / 1000.0
+            with st.container(border=True):
+                st.markdown("#### ⚙️ Simulación Concéntrica de Franjas de Protección")
                 
-                datos_tramos.append({
-                    "ID Franja (Tramo)": row['ID_Tramo'],
-                    "Orden de Strahler": orden,
-                    "Longitud (Km)": long_km,
-                    f"Mínimo ({b_min}m) ha": (long_m * (b_min * 2)) / 10000.0,
-                    f"Ideal ({b_med}m) ha": (long_m * (b_med * 2)) / 10000.0,
-                    f"Óptimo ({b_max}m) ha": (long_m * (b_max * 2)) / 10000.0,
-                    "Importancia Ecológica": (orden * 50) + (long_km * 10)
-                })
-            df_tramos = pd.DataFrame(datos_tramos).sort_values(by="Importancia Ecológica", ascending=False)
-            
-            tot_min = df_tramos[f"Mínimo ({b_min}m) ha"].sum()
-            tot_med = df_tramos[f"Ideal ({b_med}m) ha"].sum()
-            tot_max = df_tramos[f"Óptimo ({b_max}m) ha"].sum()
-            tot_longitud_km = df_tramos["Longitud (Km)"].sum() 
+                # Preparación de la red hídrica
+                rios_strahler = rios_strahler.reset_index(drop=True)
+                rios_strahler['ID_Tramo'] = ["Segmento " + str(i+1) for i in range(len(rios_strahler))]
+                if 'longitud_km' in rios_strahler.columns:
+                    rios_strahler['longitud_km'] = rios_strahler['longitud_km'].round(2)
+                
+                # Extraer tamaños de anillo (Mínimo, Ideal, Óptimo)
+                anillos = st.session_state.get('multi_rings', [10, 20, 30])
+                b_min, b_med, b_max = anillos[0], anillos[1], anillos[2]
+                
+                # 🌿 MAGIA GEOMÉTRICA: Pre-cálculo de anillos fusionados
+                rios_3116 = rios_strahler.to_crs(epsg=3116)
+                rios_union = rios_3116.unary_union
+                
+                geom_max = rios_union.buffer(b_max, resolution=2)
+                geom_med = rios_union.buffer(b_med, resolution=2)
+                geom_min = rios_union.buffer(b_min, resolution=2)
+                
+                buffer_max_gdf = gpd.GeoDataFrame(geometry=[geom_max], crs=3116)
+                
+                # CÁLCULO DE ÁREAS POR TRAMO HÍDRICO
+                datos_tramos = []
+                for idx, row in rios_3116.iterrows():
+                    long_m = row.geometry.length
+                    orden = row.get('Orden_Strahler', 1)
+                    long_km = long_m / 1000.0
+                    
+                    datos_tramos.append({
+                        "ID Franja (Tramo)": row['ID_Tramo'],
+                        "Orden de Strahler": orden,
+                        "Longitud (Km)": long_km,
+                        f"Mínimo ({b_min}m) ha": (long_m * (b_min * 2)) / 10000.0,
+                        f"Ideal ({b_med}m) ha": (long_m * (b_med * 2)) / 10000.0,
+                        f"Óptimo ({b_max}m) ha": (long_m * (b_max * 2)) / 10000.0,
+                        "Importancia Ecológica": (orden * 50) + (long_km * 10)
+                    })
+                df_tramos = pd.DataFrame(datos_tramos).sort_values(by="Importancia Ecológica", ascending=False)
+                
+                tot_min = df_tramos[f"Mínimo ({b_min}m) ha"].sum()
+                tot_med = df_tramos[f"Ideal ({b_med}m) ha"].sum()
+                tot_max = df_tramos[f"Óptimo ({b_max}m) ha"].sum()
+                tot_longitud_km = df_tramos["Longitud (Km)"].sum() 
 
-            st.success(f"✅ Modelando 3 escenarios concéntricos simultáneos ({b_min}m, {b_med}m, {b_max}m)...")
-            
-            st.markdown("##### 📊 Tablero de Sensibilidad Ecológica y Financiera")
-            cm1, cm2, cm3, cm4, cm5 = st.columns(5)
-            cm1.metric(f"🔴 Escenario {b_min}m", f"{tot_min:,.1f} ha")
-            cm2.metric(f"🟡 Escenario {b_med}m", f"{tot_med:,.1f} ha", f"+{(tot_med - tot_min):,.1f} ha", delta_color="off")
-            cm3.metric(f"🟢 Escenario {b_max}m", f"{tot_max:,.1f} ha", f"+{(tot_max - tot_med):,.1f} ha", delta_color="off")
-            cm4.metric("🌿 Tramos Hídricos", f"{len(df_tramos)}")
-            cm5.metric("📏 Longitud Total", f"{tot_longitud_km:,.1f} km")
-            
-            # Los sub-tabs se mantienen para organizar la información inferior de manera compacta
-            tab_predios, tab_tramos = st.tabs(["🏡 Impacto Predial (Negociación)", "🌿 Áreas por Franja Riparia (Tramos)"])
-            
-            with tab_tramos:
-                st.markdown("##### 📋 Matriz Detallada por Franja Riparia")
-                st.dataframe(df_tramos.style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format(precision=2), use_container_width=True, hide_index=True)
-            
-            with tab_predios:
-                predios_en_buffer = gpd.GeoDataFrame()
-                if capa_predios is not None and not capa_predios.empty:
-                    with st.spinner("Ejecutando intersección de anillos concéntricos con predios de Supabase..."):
-                        try:
-                            predios_3116 = capa_predios.to_crs(epsg=3116)
-                            predios_en_buffer = gpd.overlay(predios_3116, buffer_max_gdf, how='intersection')
-                            
-                            if not predios_en_buffer.empty:
-                                predios_en_buffer['Area_Max_ha'] = predios_en_buffer.geometry.area / 10000.0
-                                predios_en_buffer['Area_Med_ha'] = predios_en_buffer.geometry.intersection(geom_med).area / 10000.0
-                                predios_en_buffer['Area_Min_ha'] = predios_en_buffer.geometry.intersection(geom_min).area / 10000.0
+                st.success(f"✅ Modelando 3 escenarios concéntricos simultáneos ({b_min}m, {b_med}m, {b_max}m)...")
+                
+                # MÉTRICAS TÁCTICAS
+                cm1, cm2, cm3, cm4, cm5 = st.columns(5)
+                cm1.metric(f"🔴 Escenario {b_min}m", f"{tot_min:,.1f} ha")
+                cm2.metric(f"🟡 Escenario {b_med}m", f"{tot_med:,.1f} ha", f"+{(tot_med - tot_min):,.1f} ha", delta_color="off")
+                cm3.metric(f"🟢 Escenario {b_max}m", f"{tot_max:,.1f} ha", f"+{(tot_max - tot_med):,.1f} ha", delta_color="off")
+                cm4.metric("🌿 Tramos Hídricos", f"{len(df_tramos)}")
+                cm5.metric("📏 Longitud Total", f"{tot_longitud_km:,.1f} km")
+                
+                tab_predios, tab_tramos = st.tabs(["🏡 Impacto Predial (Negociación)", "🌿 Áreas por Franja Riparia (Tramos)"])
+                
+                with tab_tramos:
+                    st.markdown("##### 📋 Matriz Detallada por Franja Riparia")
+                    st.dataframe(df_tramos.style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format(precision=2), use_container_width=True, hide_index=True)
+                
+                with tab_predios:
+                    predios_en_buffer = gpd.GeoDataFrame()
+                    if capa_predios is not None and not capa_predios.empty:
+                        with st.spinner("Ejecutando intersección de anillos concéntricos con predios de Supabase..."):
+                            try:
+                                predios_3116 = capa_predios.to_crs(epsg=3116)
+                                # Cruce espacial estricto
+                                predios_en_buffer = gpd.overlay(predios_3116, buffer_max_gdf, how='intersection')
                                 
-                                col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id'] if col in predios_en_buffer.columns), None)
-                                if col_id is None:
-                                    predios_en_buffer['ID_Predio'] = predios_en_buffer.index
-                                    col_id = 'ID_Predio'
+                                if not predios_en_buffer.empty:
+                                    predios_en_buffer['Area_Max_ha'] = predios_en_buffer.geometry.area / 10000.0
+                                    predios_en_buffer['Area_Med_ha'] = predios_en_buffer.geometry.intersection(geom_med).area / 10000.0
+                                    predios_en_buffer['Area_Min_ha'] = predios_en_buffer.geometry.intersection(geom_min).area / 10000.0
                                     
-                                predios_agrupados = predios_en_buffer.groupby(col_id).agg({
-                                    'Area_Min_ha': 'sum', 'Area_Med_ha': 'sum', 'Area_Max_ha': 'sum'
-                                }).reset_index()
-                                
-                                datos_prioridad = []
-                                for idx, row in predios_agrupados.iterrows():
-                                    datos_prioridad.append({
-                                        "Identificador Predial": row[col_id],
-                                        f"Mínimo ({b_min}m) ha": row['Area_Min_ha'],
-                                        f"Ideal ({b_med}m) ha": row['Area_Med_ha'],
-                                        f"Óptimo ({b_max}m) ha": row['Area_Max_ha'],
-                                        "ROI (Máx)": row['Area_Max_ha'] * 100
-                                    })
+                                    col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id'] if col in predios_en_buffer.columns), None)
+                                    if col_id is None:
+                                        predios_en_buffer['ID_Predio'] = predios_en_buffer.index
+                                        col_id = 'ID_Predio'
+                                        
+                                    predios_agrupados = predios_en_buffer.groupby(col_id).agg({
+                                        'Area_Min_ha': 'sum', 'Area_Med_ha': 'sum', 'Area_Max_ha': 'sum'
+                                    }).reset_index()
                                     
-                                df_prioridad = pd.DataFrame(datos_prioridad).sort_values(by="ROI (Máx)", ascending=False)
-                                
-                                c_rank1, c_rank2 = st.columns([2, 1])
-                                with c_rank1:
-                                    st.markdown("##### 📋 Top 15 Predios Estratégicos")
-                                    st.dataframe(df_prioridad.head(15).style.background_gradient(cmap="YlOrRd", subset=["ROI (Máx)"]).format(precision=2), use_container_width=True, hide_index=True)
-                                with c_rank2:
-                                    st.info("Cada escenario incrementa el esfuerzo de negociación predial. Exporta esta matriz para gestión territorial.")
-                                    st.metric("Predios Involucrados", f"{len(df_prioridad)}")
-                            else:
-                                st.info("Ninguno de los predios protegidos intercepta la red hidrográfica modelada.")
-                        except Exception as e:
-                            st.error(f"Error en el cruce geográfico: {e}")
-                else:
-                    st.info("ℹ️ No se detectó un mapa predial maestro en Supabase. Se recomienda subir el archivo 'PrediosEjecutados.geojson' desde el Panel de Administración.")
+                                    datos_prioridad = []
+                                    for idx, row in predios_agrupados.iterrows():
+                                        datos_prioridad.append({
+                                            "Identificador Predial": row[col_id],
+                                            f"Mínimo ({b_min}m) ha": row['Area_Min_ha'],
+                                            f"Ideal ({b_med}m) ha": row['Area_Med_ha'],
+                                            f"Óptimo ({b_max}m) ha": row['Area_Max_ha'],
+                                            "ROI (Máx)": row['Area_Max_ha'] * 100
+                                        })
+                                        
+                                    df_prioridad = pd.DataFrame(datos_prioridad).sort_values(by="ROI (Máx)", ascending=False)
+                                    
+                                    c_rank1, c_rank2 = st.columns([2, 1])
+                                    with c_rank1:
+                                        st.markdown("##### 📋 Top 15 Predios Estratégicos")
+                                        st.dataframe(df_prioridad.head(15).style.background_gradient(cmap="YlOrRd", subset=["ROI (Máx)"]).format(precision=2), use_container_width=True, hide_index=True)
+                                    with c_rank2:
+                                        st.info("Exporta esta matriz para dirigir las campañas de gestión territorial.")
+                                        st.metric("Predios Involucrados", f"{len(df_prioridad)}")
+                                        st.download_button("📥 Descargar Matriz Predial", df_prioridad.to_csv(index=False).encode('utf-8'), "Prioridad_Predios.csv", "text/csv")
+                                else:
+                                    st.info("Ninguno de los predios protegidos intercepta la red hidrográfica modelada en esta simulación.")
+                            except Exception as e:
+                                st.error(f"Error técnico en el cruce geográfico: {e}")
+                    else:
+                        st.info("ℹ️ No se detectó un mapa predial maestro en la base de datos para esta zona.")
 
             # =========================================================
-            # 🗺️ EL MAPA TÁCTICO PYDECK (CON MULTI-ANILLOS VISUALES)
+            # 🗺️ EL MAPA TÁCTICO PYDECK (VISOR 3D DE NEGOCIACIÓN)
             # =========================================================
             st.markdown("---")
-            st.markdown(f"##### 🗺️ Visor Táctico de Conectividad y Predios en: **{nombre_zona}**")
+            st.markdown(f"#### 🗺️ Visor Táctico de Conectividad y Predios: **{nombre_zona}**")
             import pydeck as pdk
             
             try:
@@ -1080,11 +865,12 @@ if gdf_zona is not None and not gdf_zona.empty:
             
             capas_mapa = []
             
+            # Capa 1: Límite de Cuenca/Zona
             if gdf_zona is not None:
                 zona_4326 = gdf_zona.to_crs("EPSG:4326")
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=zona_4326, opacity=1, stroked=True, get_line_color=[0, 200, 0, 255], get_line_width=3, filled=False))
             
-            # --- 🟢 CAPAS MULTI-ANILLO ---
+            # Capa 2: Anillos Concéntricos (Niveles de Prioridad)
             if 'geom_max' in locals():
                 gdf_max = gpd.GeoDataFrame(geometry=[geom_max], crs=3116).to_crs(4326)
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=gdf_max, opacity=0.2, get_fill_color=[171, 235, 198], stroked=False))
@@ -1095,7 +881,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 gdf_min = gpd.GeoDataFrame(geometry=[geom_min], crs=3116).to_crs(4326)
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=gdf_min, opacity=0.6, get_fill_color=[40, 180, 99], stroked=False))
 
-            # --- 🔵 CAPA DE RÍOS ---
+            # Capa 3: Red Hídrica (Strahler)
             if 'rios_4326' in locals():
                 capas_mapa.append(pdk.Layer(
                     "GeoJsonLayer", data=rios_4326,
@@ -1103,17 +889,14 @@ if gdf_zona is not None and not gdf_zona.empty:
                     pickable=True, autoHighlight=True
                 ))
             
-            # --- 🏠 CAPA DE PREDIOS (BLINDADA CONTRA FALTA DE IDs) ---
+            # Capa 4: Predios Estratégicos (Afectados)
             if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
-                # Buscamos un ID oficial en la capa original
                 col_id_oficial = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id'] if capa_predios is not None and col in capa_predios.columns), None)
                 
                 if col_id_oficial:
-                    # Si hay ID oficial, dibujamos los polígonos originales completos
                     ids_afectados = predios_en_buffer[col_id_oficial].unique()
                     predios_a_dibujar = capa_predios[capa_predios[col_id_oficial].isin(ids_afectados)].to_crs(epsg=4326)
                 else:
-                    # Si no hay ID o si no existe la capa original, dibujamos la capa que ya cruzó con los anillos
                     predios_a_dibujar = predios_en_buffer.to_crs(epsg=4326)
                     
                 capas_mapa.append(pdk.Layer(
@@ -1123,6 +906,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                     pickable=True, autoHighlight=True
                 ))
             
+            # Renderizado 3D
             view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=13, pitch=45)
             tooltip = {"html": "<b>Tramo Hídrico:</b> {ID_Tramo}<br/><b>Orden:</b> {Orden_Strahler}<br/><b>Longitud:</b> {longitud_km} km", "style": {"backgroundColor": "steelblue", "color": "white"}}
             st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
