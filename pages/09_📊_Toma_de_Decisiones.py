@@ -478,25 +478,33 @@ if gdf_zona is not None and not gdf_zona.empty:
         # 🛡️ FIX: Recuperamos el área de la memoria de forma segura
         area_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
         
-        # Recálculo con beneficios simulados
+        # 1. Recálculo de Calidad (DBO5)
         carga_removida_sim = sist_saneamiento * 2.5
         carga_final_rio_sim = max(0.0, carga_total_ton - carga_removida_sim)
         carga_mg_s_sim = (carga_final_rio_sim * 1_000_000_000) / 31536000
         conc_dbo_sim = carga_mg_s_sim / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
-        
         ind_calidad_sim = max(0.0, min(100.0, 100.0 - ((conc_dbo_sim / 10.0) * 100)))
+        
+        # 2. Recálculo de Neutralidad (VWBA)
         ind_neutralidad_sim = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
         
-        # Asumimos que la reforestación mejora la resiliencia (recarga/infiltración) en un porcentaje marginal
+        # 3. Recálculo de Resiliencia (Infiltración mejorada por reforestación)
         mejora_infiltracion = (ha_total / (area_km2 * 100)) * 0.10 
         bfi_ratio_sim = bfi_ratio * (1 + mejora_infiltracion)
         ind_resiliencia_sim = max(0.0, min(100.0, (bfi_ratio_sim / 0.70) * 100 * factor_supervivencia))
 
-        cg1, cg2, cg3 = st.columns(3)
-        # 🛡️ FIX WARNINGS: Actualizado a la nueva sintaxis de Streamlit para evitar alertas futuras
+        # 4. Recálculo de Seguridad vs Estrés (WEI+ Simulado)
+        # El agua "repuesta" por SbN y PTARs se suma a la oferta hídrica efectiva de la cuenca
+        oferta_efectiva_sim = oferta_anual_m3 + volumen_repuesto_m3
+        wei_ratio_sim = consumo_anual_m3 / oferta_efectiva_sim if oferta_efectiva_sim > 0 else 1.0
+        ind_estres_sim = max(0.0, min(100.0, 100.0 - (wei_ratio_sim / 0.40) * 60))
+
+        # Renderizado de los 4 velocímetros
+        cg1, cg2, cg3, cg4 = st.columns(4)
         with cg1: st.plotly_chart(crear_velocimetro(ind_neutralidad_sim, "Neutralidad (Proyectada)", "#2ecc71", 40, 80), width="stretch")
         with cg2: st.plotly_chart(crear_velocimetro(ind_resiliencia_sim, "Resiliencia (Proyectada)", "#3498db", 30, 70), width="stretch")
-        with cg3: st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), width="stretch")
+        with cg3: st.plotly_chart(crear_velocimetro(ind_estres_sim, "Seguridad vs Estrés (Proy.)", "#e74c3c", 40, 20, invertido=True), width="stretch")
+        with cg4: st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), width="stretch")
             
 # =========================================================================
     # BLOQUE 3: PROYECCIÓN CLIMÁTICA, RANKING AHP Y PREPARACIÓN PREDIAL
