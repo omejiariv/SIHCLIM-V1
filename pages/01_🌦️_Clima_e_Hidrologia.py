@@ -539,35 +539,26 @@ def main():
 
                 with st.spinner("Calculando balance hídrico distribuido (esto puede tardar unos segundos)..."):
                     try:
-                        # 0. CARGAR MUNICIPIOS (Capa Contexto - Restaurada v2)
+                        # 0. CARGAR MUNICIPIOS (Bypass v2)
                         gdf_municipios = None
                         try:
                             from modules.db_manager import get_engine
                             eng = get_engine()
-                            # Intentamos leer la tabla v2 para evitar el bloqueo de la original
-                            # Si lograste subirla con el panel, usa este nombre:
-                            query = "SELECT * FROM municipios_v2" 
+                            # Leemos la tabla v2 que acabas de subir
+                            gdf_municipios = gpd.read_postgis("SELECT * FROM municipios_v2", eng, geom_col="geometry")
                             
-                            gdf_municipios = gpd.read_postgis(query, eng, geom_col="geometry")
-                            
-                            # Asegurar el sistema de coordenadas WGS84
+                            # Forzar sistema de coordenadas para Folium
                             if gdf_municipios.crs is None:
                                 gdf_municipios.set_crs("EPSG:4326", inplace=True)
                             elif gdf_municipios.crs != "EPSG:4326":
                                 gdf_municipios = gdf_municipios.to_crs("EPSG:4326")
-                                
-                            # Renombrar columnas si es necesario para que el resto de la app las entienda
-                            # (Opcional, dependiendo de cómo las use tu visualizador)
-                            gdf_municipios = gdf_municipios.rename(columns={
-                                'nombre_municipio': 'municipio',
-                                'id_municipio': 'cod_dane'
-                            })
+                            
+                            # Limpieza de nombres para el popup
+                            gdf_municipios = gdf_municipios.rename(columns={'MPIO_CNMBR': 'Municipio'})
                             
                         except Exception as e:
-                            print(f"Error cargando municipios_v2: {e}")
-                            # Fallback por si la tabla v2 aún no existe o falló
-                            gdf_municipios = None
-
+                            st.warning(f"Capa de municipios v2 no disponible aún: {e}")
+                            
                         # 1. DATOS ESTACIONES
                         df_anios_count = df_monthly_filtered.groupby(Config.STATION_NAME_COL)[Config.YEAR_COL].nunique().reset_index(name='n_anios')
                         gdf_calc = gdf_calc.merge(df_anios_count, on=Config.STATION_NAME_COL, how='left').fillna(0)
