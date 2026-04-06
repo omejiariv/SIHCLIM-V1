@@ -269,7 +269,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}
             }
         ))
-        fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10))
+        fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10), font_family="Georgia")
         return fig
 
     # --- RENDERIZADO DE VELOCÍMETROS ---
