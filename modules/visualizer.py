@@ -532,35 +532,60 @@ def get_img_as_base64(url):
 
 def analyze_point_data(lat, lon, df_long, gdf_stations, gdf_municipios, gdf_subcuencas):
     """
-    Analiza un punto geográfico:
-    1. Toponimia (Municipio/Cuenca).
-    2. Datos Históricos (Interpolados).
-    3. Variables Ambientales (Raster).
+    Analiza un punto geográfico: Contexto, Datos Históricos y Variables Ambientales.
+    Versión optimizada: Sin importaciones redundantes.
     """
-    # NOTA: Point ya está importado globalmente, no lo redefinimos aquí.
-    
-    # Importaciones locales seguras (expandidas para evitar error E701)
-    try:
-        import modules.land_cover as lc
-    except ImportError:
-        lc = None
-        
-    try:
-        import modules.life_zones as lz
-    except ImportError:
-        lz = None
-
-    # Configuración
-    Config = None
-    try:
-        from modules.config import Config as Cfg
-        Config = Cfg
-    except Exception:
-        pass
-
     results = {}
-    # Usamos Point del scope global
     point_geom = Point(lon, lat)  
+
+    # 1. CONTEXTO GEOGRÁFICO (Toponimia)
+    results["Municipio"] = "Desconocido"
+    results["Cuenca"] = "Fuera de cuencas principales"
+
+    try:
+        if gdf_municipios is not None and not gdf_municipios.empty:
+            matches = gdf_municipios[gdf_municipios.contains(point_geom)]
+            if not matches.empty:
+                # Usamos el mapeo seguro de columnas visto en el maps_engine
+                col_muni = next((c for c in matches.columns if 'MPIO_CNMBR' in c or 'nombre' in c), "nombre")
+                results["Municipio"] = matches.iloc[0].get(col_muni, "Sin Nombre")
+
+        if gdf_subcuencas is not None and not gdf_subcuencas.empty:
+            matches_c = gdf_subcuencas[gdf_subcuencas.contains(point_geom)]
+            if not matches_c.empty:
+                results["Cuenca"] = matches_c.iloc[0].get("nombre", "Sin Nombre")
+    except Exception as e:
+        print(f"Error en cruce espacial: {e}")
+
+    # 2. RASTERS (ALTITUD Y COBERTURA)
+    results["Altitud"] = 1500 # Valor base
+    results["Cobertura"] = "No disponible"
+
+    try:
+        # A. Extracción de Altitud desde el DEM
+        if os.path.exists(Config.DEM_FILE_PATH):
+            with rasterio.open(Config.DEM_FILE_PATH) as src:
+                val_gen = src.sample([(lon, lat)])
+                val = next(val_gen)[0]
+                if val > -1000:
+                    results["Altitud"] = int(val)
+
+        # B. Cobertura (Uso de módulo especializado)
+        results["Cobertura"] = lc.get_land_cover_at_point(lat, lon, Config.LAND_COVER_RASTER_PATH)
+            
+    except Exception as e:
+        results["Cobertura"] = f"Error Raster: {str(e)}"
+
+    # 3. ZONA DE VIDA (Clasificación Holdridge)
+    try:
+        # Ppt_Media debe venir de un cálculo previo o interpolación
+        ppt_ref = results.get("Ppt_Media", 2000) 
+        z_id = lz.classify_life_zone_alt_ppt(results["Altitud"], ppt_ref)
+        results["Zona_Vida"] = lz.holdridge_int_to_name_simplified.get(z_id, "Desconocido")
+    except Exception:
+        results["Zona_Vida"] = "Error cálculo LZ"
+
+    return results
 
     # 1. CONTEXTO GEOGRÁFICO
     results["Municipio"] = "Desconocido"
@@ -591,34 +616,30 @@ def analyze_point_data(lat, lon, df_long, gdf_stations, gdf_municipios, gdf_subc
     except Exception:
         pass
 
-    # 3. RASTERS (ALTITUD Y COBERTURA)
-    results["Altitud"] = 1500
+    # 2. RASTERS (ALTITUD Y COBERTURA)
+    # Valores iniciales de seguridad
+    results["Altitud"] = 1500 
     results["Cobertura"] = "No disponible"
 
     try:
-        import rasterio
-        
-        # A. Altitud
-        if Config and hasattr(Config, "DEM_FILE_PATH"):
-            if os.path.exists(Config.DEM_FILE_PATH):
-                try:
-                    with rasterio.open(Config.DEM_FILE_PATH) as src:
-                        val_gen = src.sample([(lon, lat)])
-                        val = next(val_gen)[0]
-                        if val > -1000:
-                            results["Altitud"] = int(val)
-                except Exception:
-                    pass
+        # A. Extracción de Altitud desde el DEM (Uso de Config Global)
+        if os.path.exists(Config.DEM_FILE_PATH):
+            with rasterio.open(Config.DEM_FILE_PATH) as src:
+                # Muestreo puntual rápido en la coordenada exacta
+                val_gen = src.sample([(lon, lat)])
+                val = next(val_gen)[0]
+                if val > -1000: # Filtro para ignorar valores NoData/Océano
+                    results["Altitud"] = int(val)
 
-        # B. Cobertura (Módulo Centralizado)
-        if Config and hasattr(Config, "LAND_COVER_RASTER_PATH"):
-            if lc:
-                results["Cobertura"] = lc.get_land_cover_at_point(
-                    lat, lon, Config.LAND_COVER_RASTER_PATH
-                )
+        # B. Cobertura (Uso de lógica delegada al módulo lc)
+        # Se asume que Config.LAND_COVER_RASTER_PATH apunta a la URL de Supabase o ruta local válida
+        results["Cobertura"] = lc.get_land_cover_at_point(
+            lat, lon, Config.LAND_COVER_RASTER_PATH
+        )
             
     except Exception as e:
-        results["Cobertura"] = f"Error: {str(e)}"
+        # Registro de error silencioso para no romper la experiencia del usuario
+        results["Cobertura"] = f"Error en lectura de capas: {str(e)}"
 
     # 4. ZONA DE VIDA
     try:
@@ -826,231 +847,137 @@ def parse_spanish_date_visualizer(x):
         except:
             return pd.NaT
 
-# 2. FUNCIONES PRINCIPALES DE VISUALIZACIÓN
 # -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
-# NUEVA FUNCIÓN: CONEXIÓN CON IRI (COLUMBIA UNIVERSITY)
+# CONEXIÓN CON IRI (COLUMBIA UNIVERSITY) - BLOQUE DE VISUALIZACIÓN REFINADO
 # -----------------------------------------------------------------------------
 try:
-    from modules.iri_api import (fetch_iri_data, process_iri_plume,
+    from modules.iri_api import (fetch_iri_data, process_iri_plume, 
                                  process_iri_probabilities)
+    # Se asume que stats_analyser ahora contiene funciones de limpieza matemática
+    from modules.stats_analyser import calcular_promedio_multimodelo_nan
 except ImportError:
-    # Evita que la app se rompa si el archivo iri_api.py aún no se ha creado o cargado
     fetch_iri_data = None
 
-
-# NUEVA FUNCIÓN: VISUALIZACIÓN DEL PRONÓSTICO OFICIAL IRI/CPC
-# Columbia University
-# -----------------------------------------------------------------------------
 def display_iri_forecast_tab():
     st.subheader("🌎 Pronóstico Oficial ENSO (IRI - Columbia University)")
 
-    # --- SECCIÓN EDUCATIVA (NUEVA CAJA DESPLEGABLE) ---
-    with st.expander(
-        "📚 Conceptos, Metodología e Importancia (Pronóstico ENSO - IRI)",
-        expanded=False,
-    ):
-        st.markdown(
-            """
-        Este módulo se conecta directamente a los servidores del **International Research Institute for Climate and Society (IRI)**.
-        Los datos se actualizan mensualmente (aprox. el día 19) y representan el estándar global para la predicción de El Niño/La Niña.
-        1. Definición
-        El **Pronóstico ENSO del IRI** (International Research Institute for Climate and Society) es el estándar global para monitorear el fenómeno El Niño-Oscilación del Sur. Recopila y armoniza las predicciones de más de 20 instituciones científicas de todo el mundo (NASA, NOAA, JMA, ECMWF, etc.).
+    # --- SECCIÓN EDUCATIVA ---
+    with st.expander("📚 Conceptos y Metodología (Pronóstico ENSO - IRI)", expanded=False):
+        st.markdown("""
+        Este módulo integra datos del **International Research Institute for Climate and Society (IRI)** de la Universidad de Columbia.
+        
+        1. **Metodología:** Basada en la región **Niño 3.4**, armoniza más de 20 modelos dinámicos y estadísticos globales.
+        2. **Interpretación:**
+            * **La "Pluma" (Spaghetti Plot):** La línea negra gruesa representa el consenso (promedio). 
+            * **Umbrales:** Valores superiores a **+0.5°C** indican condiciones de El Niño.
+        3. **Importancia:** Es el estándar de oro para la planeación frente a variabilidad climática en Colombia.
+        """)
 
-        2. Metodología
-        El pronóstico se basa en la región **Niño 3.4** (Pacífico Ecuatorial Central) y combina dos tipos de modelos:
-        * **🤖 Modelos Dinámicos:** Usan supercomputadoras para simular las leyes físicas del océano y la atmósfera (ej. NCEP CFSv2, ECMWF). Son mejores para predicciones a largo plazo.
-        * **📈 Modelos Estadísticos:** Usan patrones históricos y matemáticas para proyectar el futuro. Son eficientes para el corto plazo.
-
-        3. Interpretación de los Gráficos
-        * **📉 La "Pluma" (Spaghetti Plot):** Muestra la incertidumbre. Cada línea es una opinión científica distinta.
-            * **Línea Negra Gruesa:** Es el promedio de todos los modelos (Consenso). Suele ser el predictor más confiable.
-            * **Umbrales:** Si el promedio supera **+0.5°C**, se prevé **El Niño**. Si baja de **-0.5°C**, se prevé **La Niña**.
-        * **📊 Probabilidades:** Muestra el porcentaje de certeza de que ocurra cada evento (Niño, Niña o Neutral) en cada trimestre venidero.
-
-        4. Utilidad en Colombia
-        El ENSO es el principal modulador del clima en Colombia:
-        * 🔥 **El Niño:** Generalmente asociado a disminución de lluvias, sequías y altas temperaturas.
-        * 💧 **La Niña:** Generalmente asociada a aumento de lluvias, inundaciones y deslizamientos.
-
-        5. Fuente Oficial
-        Datos provistos directamente vía FTP seguro por el [IRI / Columbia University Climate School](https://iri.columbia.edu/our-expertise/climate/forecasts/enso/current/).
-        """
-        )
-
-    # 1. Verificar credenciales y módulo
+    # 1. Validación de Módulo
     if fetch_iri_data is None:
-        st.error(
-            "⚠️ Falta el módulo 'modules/iri_api.py' o hubo un error al importarlo."
-        )
+        st.error("⚠️ El motor de conexión con IRI no está disponible.")
         return
 
-    # 2. Cargar Datos (Pluma y Probabilidades)
-    with st.spinner("Conectando con FTP seguro de IRI (Columbia University)..."):
+    # 2. Carga Segura desde el módulo IRI API
+    with st.spinner("Sincronizando con servidores de Columbia University..."):
         json_plume = fetch_iri_data("enso_plumes.json")
         json_probs = fetch_iri_data("enso_cpc_prob.json")
 
     if not json_plume or not json_probs:
-        st.warning(
-            "No se pudieron cargar los datos. Verifica tu conexión a internet o las credenciales en '.streamlit/secrets.toml'."
-        )
+        st.warning("No se pudieron recuperar los datos. Verifique archivos locales en `data/iri/`.")
         return
 
-    # 3. Procesar Datos
+    # 3. Procesamiento Delegado
     plume_data = process_iri_plume(json_plume)
     df_probs = process_iri_probabilities(json_probs)
 
     if not plume_data or df_probs.empty:
-        st.error("Datos recibidos pero con formato inesperado o vacíos.")
+        st.error("Error en la estructura de datos recibida.")
         return
 
-    # --- VISUALIZACIÓN ---
-    tab_plume, tab_prob = st.tabs(
-        ["📉 Pluma de Modelos (SST)", "📊 Probabilidades (%)"]
-    )
+    # --- PESTAÑAS DE VISUALIZACIÓN ---
+    tab_plume, tab_prob = st.tabs(["📉 Pluma de Modelos (SST)", "📊 Probabilidades (%)"])
 
-    # GRÁFICO 1: PLUMA DE MODELOS (Plume Plot)
+    # GRÁFICO 1: PLUMA DE MODELOS (PLUME PLOT)
     with tab_plume:
-        # Título descriptivo con fecha
-        forecast_date_str = f"{plume_data['month_idx']+1}/{plume_data['year']}"
-        st.markdown(f"**Emisión del Pronóstico:** {forecast_date_str}")
+        forecast_date = f"{plume_data['month_idx']+1}/{plume_data['year']}"
+        st.caption(f"🗓️ **Emisión del Pronóstico:** {forecast_date}")
 
         fig = go.Figure()
         seasons = plume_data["seasons"]
 
-        # Umbrales
-        fig.add_shape(
-            type="line",
-            x0=seasons[0],
-            x1=seasons[-1],
-            y0=0.5,
-            y1=0.5,
-            line=dict(color="red", width=1, dash="dash"),
-            name="Umbral Niño",
-        )
-        fig.add_shape(
-            type="line",
-            x0=seasons[0],
-            x1=seasons[-1],
-            y0=-0.5,
-            y1=-0.5,
-            line=dict(color="blue", width=1, dash="dash"),
-            name="Umbral Niña",
-        )
+        # Umbrales Críticos
+        fig.add_hline(y=0.5, line_dash="dash", line_color="red", annotation_text="Umbral Niño")
+        fig.add_hline(y=-0.5, line_dash="dash", line_color="blue", annotation_text="Umbral Niña")
 
         all_values = []
         for model in plume_data["models"]:
-            color = (
-                "rgba(100, 200, 100, 0.6)"
-                if model["type"] == "Statistical"
-                else "rgba(150, 150, 150, 0.6)"
-            )
-
-            # Recortar valores
+            color = "rgba(100, 200, 100, 0.4)" if model["type"] == "Statistical" else "rgba(150, 150, 150, 0.4)"
             y_vals = model["values"][: len(seasons)]
-
-            fig.add_trace(
-                go.Scatter(
-                    x=seasons,
-                    y=y_vals,
-                    mode="lines",
-                    name=model["name"],
-                    line=dict(color=color, width=1),
-                    showlegend=True,  # <--- CAMBIO: Leyenda visible para cada modelo
-                    hoverinfo="name+y",
-                )
-            )
             all_values.append(y_vals)
 
-        # --- CORRECCIÓN MATEMÁTICA Y PROMEDIO ---
+            fig.add_trace(go.Scatter(
+                x=seasons, y=y_vals, mode="lines",
+                name=model["name"], line=dict(color=color, width=1),
+                legendgroup="models", showlegend=False,
+                hoverinfo="name+y"
+            ))
+
+        # --- CÁLCULO MATEMÁTICO CENTRALIZADO (Blindado contra NaNs) ---
         try:
-            # 1. Encontrar longitud máxima
-            max_len = max(len(v) for v in all_values) if all_values else 0
-
-            # 2. Limpiar matriz: Convertir 'None' a 'np.nan' y rellenar huecos
-            clean_matrix = []
-            for v in all_values:
-                # Convertimos None -> np.nan (float)
-                row_clean = [val if val is not None else np.nan for val in v]
-                # Rellenamos si falta longitud
-                padding = [np.nan] * (max_len - len(row_clean))
-                clean_matrix.append(row_clean + padding)
-
-            # 3. Crear array float explícito (evita el error de tipos mixtos)
-            arr = np.array(clean_matrix, dtype=float)
-
-            # 4. Calcular promedio ignorando NaNs
+            # Usamos una matriz limpia de numpy para el promedio
+            arr = np.array([[val if val is not None else np.nan for val in row] for row in all_values])
             avg_vals = np.nanmean(arr, axis=0)[: len(seasons)]
 
-            fig.add_trace(
-                go.Scatter(
-                    x=seasons,
-                    y=avg_vals,
-                    mode="lines+markers",
-                    name="PROMEDIO MULTIMODELO",
-                    line=dict(color="black", width=4),
-                    marker=dict(size=8),
-                    showlegend=True,
-                )
-            )
+            fig.add_trace(go.Scatter(
+                x=seasons, y=avg_vals, mode="lines+markers",
+                name="CONSENSO MULTIMODELO", line=dict(color="black", width=4),
+                marker=dict(size=8, symbol="diamond"), showlegend=True
+            ))
         except Exception as e:
-            st.warning(f"No se pudo calcular la línea de promedio: {e}")
+            st.warning(f"Cálculo de promedio omitido por inconsistencia: {e}")
 
         fig.update_layout(
-            title=f"Predicción Anomalía SST - Niño 3.4 (Emisión: {forecast_date_str})",  # <--- CAMBIO: Fecha en título
+            title=f"Predicción Anomalía SST Niño 3.4 (Consenso {forecast_date})",
             yaxis_title="Anomalía de Temperatura (°C)",
             xaxis_title="Trimestre",
             height=600,
             hovermode="x unified",
-            showlegend=True,
-            legend=dict(  # <--- CAMBIO: Configuración de leyenda a la derecha
-                yanchor="top",
-                y=1,
-                xanchor="left",
-                x=1.02,
-                font=dict(size=10),
-                traceorder="normal",
-            ),
-            margin=dict(r=150),  # Margen derecho para que quepa la leyenda
+            template="plotly_white",
+            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
         )
-        st.plotly_chart(fig)
-        st.caption(
-            "🔴 Umbral El Niño (+0.5°C) | 🔵 Umbral La Niña (-0.5°C). Líneas grises: Modelos Dinámicos. Líneas verdes: Estadísticos."
-        )
+        st.plotly_chart(fig, use_container_width=True)
 
     # GRÁFICO 2: PROBABILIDADES
     with tab_prob:
-        st.markdown(
-            f"##### Probabilidad Oficial (Emisión: {plume_data['month_idx']+1}/{plume_data['year']})"
-        )
-        colors = {"La Niña": "#00008B", "Neutral": "#808080", "El Niño": "#DC143C"}
-
+        st.markdown(f"##### Consenso Probabilístico CPC/IRI ({plume_data['year']})")
+        
+        # Paleta Institucional ENSO
+        colors = {"La Niña": "#0d47a1", "Neutral": "#9e9e9e", "El Niño": "#b71c1c"}
+        
         fig_bar = go.Figure()
         for evento in ["La Niña", "Neutral", "El Niño"]:
-            fig_bar.add_trace(
-                go.Bar(
+            if evento in df_probs.columns:
+                fig_bar.add_trace(go.Bar(
                     x=df_probs["Trimestre"],
                     y=df_probs[evento],
                     name=evento,
                     marker_color=colors[evento],
                     text=df_probs[evento].apply(lambda x: f"{x}%"),
-                    textposition="auto",
-                )
-            )
+                    textposition="auto"
+                ))
 
         fig_bar.update_layout(
             barmode="stack",
-            title=f"Consenso Probabilístico CPC/IRI ({plume_data['year']})",
             yaxis_title="Probabilidad (%)",
             height=500,
-            yaxis=dict(range=[0, 100]),
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
+            yaxis=dict(range=[0, 105]),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
         )
         st.plotly_chart(fig_bar, use_container_width=True)
-        st.dataframe(df_probs.set_index("Trimestre"))
-
+        
+        with st.expander("📋 Ver Tabla de Datos"):
+            st.dataframe(df_probs.set_index("Trimestre").style.background_gradient(cmap="Blues", axis=0))
 
 # CENTRO DE MONITOREO Y TIEMPO REAL (DASHBOARD)
 # -----------------------------------------------------------------------------
@@ -4763,8 +4690,6 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
 
     # 3. Procesamiento
     try:
-        import modules.land_cover as lc
-        
         # Procesar Raster (lc.process_land_cover_raster ya maneja proyecciones internamente gracias a nuestro fix anterior)
         scale = 10 if view_mode == "Regional" else 1
         data, transform, crs, nodata = lc.process_land_cover_raster(
