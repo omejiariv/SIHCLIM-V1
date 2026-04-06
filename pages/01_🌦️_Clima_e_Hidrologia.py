@@ -539,16 +539,20 @@ def main():
 
                 with st.spinner("Calculando balance hídrico distribuido (esto puede tardar unos segundos)..."):
                     try:
-                        # 0. CARGAR MUNICIPIOS (Capa Contexto)
+                        # 0. CARGAR MUNICIPIOS (Capa Contexto - Restaurada v2)
                         gdf_municipios = None
                         try:
                             from modules.db_manager import get_engine
                             eng = get_engine()
-                            gdf_municipios = gpd.read_postgis("SELECT * FROM municipios", eng, geom_col="geom")
-                            if gdf_municipios.crs != "EPSG:4326":
+                            # Usamos municipios_v2 y validamos el nombre de la columna geométrica
+                            gdf_municipios = gpd.read_postgis("SELECT * FROM municipios_v2", eng, geom_col="geometry")
+                            
+                            if gdf_municipios.crs is None:
+                                gdf_municipios.set_crs("EPSG:4326", inplace=True)
+                            elif gdf_municipios.crs != "EPSG:4326":
                                 gdf_municipios = gdf_municipios.to_crs("EPSG:4326")
                         except Exception as e:
-                            print(f"Error cargando municipios: {e}")
+                            print(f"Error cargando municipios_v2: {e}")
 
                         # 1. DATOS ESTACIONES
                         df_anios_count = df_monthly_filtered.groupby(Config.STATION_NAME_COL)[Config.YEAR_COL].nunique().reset_index(name='n_anios')
