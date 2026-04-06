@@ -1,21 +1,40 @@
 # pages/08_🔗_Sistemas_Hidricos_Territoriales.py
 
-import streamlit as st
-import plotly.graph_objects as go
-import plotly.express as px
+import os
+import sys
+
 import pandas as pd
 import numpy as np
-import os
+import plotly.graph_objects as go
+import plotly.express as px
 import geopandas as gpd
-from modules.demografia_tools import render_motor_demografico
+
+import streamlit as st
 
 # =========================================================================
 # 1. CONFIGURACIÓN Y DICCIONARIO BASE (Debe ir primero)
 # =========================================================================
 st.set_page_config(page_title="Metabolismo Complejo", page_icon="🔗", layout="wide")
 
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
+try:
+    from modules import selectors
+    from modules.demografia_tools import render_motor_demografico
+    from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
+except ImportError:
+    # Fallback de rutas por si hay problemas de lectura entre carpetas
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from modules import selectors
+    from modules.demografia_tools import render_motor_demografico
+    from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
+
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Sistemas Hídricos")
+
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
-from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
 
 # Datos paramétricos (Estructura Ampliada)
