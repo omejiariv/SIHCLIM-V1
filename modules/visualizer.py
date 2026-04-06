@@ -42,7 +42,6 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import branca.colormap as cm
 
-import pymannkendall as mk
 from prophet import Prophet
 from statsmodels.tsa.seasonal import seasonal_decompose
 from modules.maps_engine import generar_mapa_interactivo
@@ -55,6 +54,12 @@ from modules.config import Config
 import modules.analysis as analysis
 import modules.life_zones as lz
 import modules.land_cover as lc
+from modules.stats_analyser import (
+    get_safe_cols, 
+    calcular_tendencia_mk_estacion, 
+    calcular_anomalias_climatologicas,
+    obtener_resumen_extremos
+)
 
 # Importaciones seguras de APIs externas
 try:
@@ -544,11 +549,6 @@ def analyze_point_data(lat, lon, df_long, gdf_stations, gdf_municipios, gdf_subc
         import modules.life_zones as lz
     except ImportError:
         lz = None
-
-    try:
-        import pymannkendall as mk
-    except ImportError:
-        mk = None
 
     # Configuración
     Config = None
@@ -2750,36 +2750,14 @@ def display_trends_and_forecast_tab(**kwargs):
         st.markdown("#### Análisis de Tendencia no Paramétrica (Mann-Kendall)")
         st.caption(f"Evaluando serie: **{station_name_title}**")
 
-        try:
-            # Mann-Kendall Test Original
-            res = mk.original_test(ts_clean)
+        # USAR EL NUEVO MÓDULO
+        # ts_clean es tu serie de tiempo ya filtrada
+        trend, p_val, slope = calcular_tendencia_mk_estacion(ts_clean)
 
-            # Métricas Clave
-            c1, c2, c3 = st.columns(3)
-
-            # Interpretación visual de la tendencia
-            trend_icon = "➖"
-            if res.trend == "increasing":
-                trend_icon = "📈 (Aumento)"
-            elif res.trend == "decreasing":
-                trend_icon = "📉 (Disminución)"
-
-            c1.metric("Dirección Tendencia", trend_icon)
-            c2.metric("Pendiente (Sen)", f"{res.slope:.3f} mm/mes")
-
-            # Interpretación de Significancia
-            is_significant = res.p < 0.05
-            sig_text = (
-                "Significativo (Confianza > 95%)"
-                if is_significant
-                else "No Significativo"
-            )
-            c3.metric(
-                "Significancia Estadística",
-                sig_text,
-                delta=f"p-value: {res.p:.4f}",
-                delta_color="normal" if is_significant else "off",
-            )
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Tendencia", trend)
+        c2.metric("P-Valor", f"{p_val:.4f}")
+        c3.metric("Pendiente (Sen)", f"{slope:.2f} mm/año")
 
             # Gráfico Visual
             df_plot = ts_clean.reset_index()
@@ -4259,21 +4237,19 @@ def display_climate_scenarios_tab(**kwargs):
         ]
     )
 
-    # --- TAB 1: MAPA DE RIESGO (MEJORADO VISUALMENTE) ---
+    # --- TAB 1: MAPA DE RIESGO (MOTOR DE ANÁLISIS ESPACIAL) ---
     with tab_risk:
         st.markdown("#### Vulnerabilidad Hídrica: Tendencias de Precipitación")
-        st.caption(f"**Zona de Análisis:** {basin_name}")  # Mostramos el nombre aquí
+        st.caption(f"**Zona de Análisis:** {basin_name}")
 
         with st.expander("ℹ️ Acerca de este Mapa de Riesgo", expanded=False):
             st.markdown(
                 """
-            Este mapa muestra la **tendencia espacial histórica** de la lluvia interpolando la pendiente de Sen (Mann-Kendall).
-            * **Objetivo:** Identificar zonas que se están secando (Vulnerables) o humedeciendo.
-            * **Interpretación:**
-                * **Azul:** Zonas donde la lluvia está aumentando.
-                * **Rojo:** Zonas donde la lluvia está disminuyendo (Riesgo de Sequía).
-            * **Metodología:** Se calcula la tendencia para cada estación con >10 años de datos y se interpola espacialmente.
-            """
+                Este mapa visualiza la **dinámica espacial del cambio** en la lluvia mediante la interpolación de la pendiente de Sen.
+                * **Rojo (Valores Negativos):** Zonas con tendencia a la disminución de lluvias (Riesgo de sequía/déficit).
+                * **Azul (Valores Positivos):** Zonas con tendencia al aumento de lluvias (Posible riesgo de inundación/exceso).
+                * **Puntos Amarillos:** Representan las estaciones físicas. El **borde grueso** indica que la tendencia es estadísticamente significativa (p < 0.05).
+                """
             )
 
         c1, c2 = st.columns(2)
@@ -4281,224 +4257,175 @@ def display_climate_scenarios_tab(**kwargs):
             "Recortar por Cuenca Seleccionada", value=True, key="risk_mask_cb"
         )
 
-        if st.button("Generar Mapa de Vulnerabilidad"):
-            with st.spinner("Interpolando tendencias regionales..."):
+        if st.button("🚀 Generar Mapa de Vulnerabilidad"):
+            with st.spinner("Ejecutando análisis regional de Mann-Kendall..."):
                 trend_data = []
                 if df_anual is not None:
                     stations_pool = df_anual[Config.STATION_NAME_COL].unique()
+                    
                     for stn in stations_pool:
                         sub = df_anual[df_anual[Config.STATION_NAME_COL] == stn]
-                        if len(sub) > 10:
+                        
+                        # 1. Llamada al motor estadístico modular (Blindado)
+                        # Retorna: trend_type, p_val, slope, icon, sig_text
+                        res_mk = calcular_tendencia_mk_estacion(sub[Config.PRECIPITATION_COL])
+                        trend_type, p_val, slope, icon, sig_text = res_mk
+                        
+                        if trend_type != "Insuficiente":
                             try:
-                                res = mk.original_test(sub[Config.PRECIPITATION_COL])
+                                # 2. Asociación Espacial
                                 if gdf_stations is not None:
-                                    loc = gdf_stations[
-                                        gdf_stations[Config.STATION_NAME_COL] == stn
-                                    ]
+                                    loc = gdf_stations[gdf_stations[Config.STATION_NAME_COL] == stn]
+                                    
                                     if not loc.empty:
                                         iloc = loc.iloc[0]
-                                        muni = (
-                                            iloc[Config.MUNICIPALITY_COL]
-                                            if Config.MUNICIPALITY_COL in iloc
-                                            else "Desconocido"
-                                        )
-                                        trend_data.append(
-                                            {
-                                                "lat": iloc["latitude"],
-                                                "lon": iloc["longitude"],
-                                                "slope": res.slope,
-                                                "trend": res.trend,
-                                                "p": res.p,
-                                                "name": stn,
-                                                "municipio": muni,
-                                            }
-                                        )
-                            except:
-                                pass
+                                        muni = iloc[Config.MUNICIPALITY_COL] if Config.MUNICIPALITY_COL in iloc else "Desconocido"
+                                        
+                                        trend_data.append({
+                                            "lat": iloc["latitude"],
+                                            "lon": iloc["longitude"],
+                                            "slope": slope,     # Magnitud del cambio
+                                            "trend": trend_type,
+                                            "icon": icon,
+                                            "p": p_val,
+                                            "sig": sig_text,
+                                            "name": stn,
+                                            "municipio": muni
+                                        })
+                            except Exception:
+                                continue
 
+                # --- PROCESO DE INTERPOLACIÓN Y RENDERIZADO ---
                 if len(trend_data) >= 4:
                     df_trend = pd.DataFrame(trend_data)
 
-                    # Interpolación
+                    # Configuración de Grilla (Resolución mejorada)
                     grid_res = 200j
                     grid_x, grid_y = np.mgrid[
-                        df_trend.lon.min() - 0.1 : df_trend.lon.max() + 0.1 : grid_res,
-                        df_trend.lat.min() - 0.1 : df_trend.lat.max() + 0.1 : grid_res,
+                        df_trend.lon.min() - 0.05 : df_trend.lon.max() + 0.05 : grid_res,
+                        df_trend.lat.min() - 0.05 : df_trend.lat.max() + 0.05 : grid_res,
                     ]
 
                     from scipy.interpolate import griddata
-
+                    # Interpolación Cúbica para suavidad visual en tendencias
                     grid_z = griddata(
-                        df_trend[["lon", "lat"]].values,
-                        df_trend["slope"].values,
-                        (grid_x, grid_y),
-                        method="cubic",
+                        (df_trend.lon, df_trend.lat), 
+                        df_trend.slope, 
+                        (grid_x, grid_y), 
+                        method='cubic'
                     )
-
-                    # Máscara Geométrica (Recorte)
+                    
+                    # --- MÁSCARA GEOMÉTRICA (Recorte de precisión) ---
                     if use_mask and basin_geom is not None:
                         try:
                             from shapely.geometry import Point
                             from shapely.prepared import prep
 
-                            poly = (
-                                basin_geom.unary_union
-                                if hasattr(basin_geom, "unary_union")
-                                else basin_geom
-                            )
+                            poly = basin_geom.unary_union if hasattr(basin_geom, "unary_union") else basin_geom
                             prep_poly = prep(poly)
 
                             flat_x = grid_x.flatten()
                             flat_y = grid_y.flatten()
                             flat_z = grid_z.flatten()
 
-                            # Optimización: Solo verificar puntos que no son NaN (ahorra tiempo si griddata ya puso NaNs afuera del convex hull)
-                            mask_array = np.isnan(flat_z)  # True donde ya es NaN
-
-                            # Verificamos los puntos válidos
-                            valid_indices = np.where(~mask_array)[0]
+                            # Aplicamos recorte solo a puntos válidos (not NaN)
+                            valid_indices = np.where(~np.isnan(flat_z))[0]
                             for idx in valid_indices:
-                                if not prep_poly.contains(
-                                    Point(flat_x[idx], flat_y[idx])
-                                ):
+                                if not prep_poly.contains(Point(flat_x[idx], flat_y[idx])):
                                     flat_z[idx] = np.nan
 
                             grid_z = flat_z.reshape(grid_x.shape)
                         except Exception as e:
-                            st.warning(f"No se pudo recortar visualmente: {e}")
+                            st.warning(f"Aviso: Recorte visual omitido ({e})")
 
+                    # --- CONSTRUCCIÓN DEL MAPA PLOTLY ---
                     fig = go.Figure()
 
-                    # Mapa de Calor / Contornos
-                    fig.add_trace(
-                        go.Contour(
-                            z=grid_z.T,
-                            x=grid_x[:, 0],
-                            y=grid_y[0, :],
-                            colorscale="RdBu",
-                            colorbar=dict(
-                                title="Tendencia (mm/año)",
-                                titleside="right",
-                                thickness=15,
-                                len=0.7,  # Hacemos la barra un poco más corta para que no choque
-                            ),
-                            zmid=0,
-                            opacity=0.8,
-                            contours=dict(showlines=False),
-                            connectgaps=False,
-                        )
-                    )
+                    # 1. Capa de Contorno (Tendencia)
+                    fig.add_trace(go.Contour(
+                        z=grid_z.T,
+                        x=grid_x[:, 0],
+                        y=grid_y[0, :],
+                        colorscale="RdBu", # Rojo (Baja) a Azul (Sube)
+                        zmid=0,
+                        opacity=0.85,
+                        contours=dict(showlines=False, project_z=True),
+                        colorbar=dict(
+                            title="Pendiente (mm/año)",
+                            thickness=20,
+                            len=0.75,
+                            outlinewidth=0
+                        ),
+                        connectgaps=False,
+                        hoverinfo='skip'
+                    ))
 
-                    # Puntos de Estaciones (MEJORADOS VISUALMENTE)
-                    # Usamos color de relleno amarillo pálido para resaltar sobre azul/rojo
-                    # Borde negro siempre visible
-                    # Grosor de borde indica significancia
-                    df_trend["line_width"] = df_trend["p"].apply(
-                        lambda x: 2 if x < 0.05 else 1
-                    )
+                    # 2. Capa de Estaciones (Indicadores de Calidad)
+                    # El ancho de línea (line_width) representa la significancia estadística
+                    df_trend["line_width"] = df_trend["p"].apply(lambda x: 2.5 if x < 0.05 else 0.8)
+                    
+                    fig.add_trace(go.Scatter(
+                        x=df_trend.lon,
+                        y=df_trend.lat,
+                        mode="markers",
+                        text=df_trend.apply(
+                            lambda r: f"<b>{r['name']}</b><br>Municipio: {r['municipio']}<br>Pendiente: {r['slope']:.2f} mm/año<br>Confianza: {r['sig']}",
+                            axis=1
+                        ),
+                        hoverinfo="text",
+                        marker=dict(
+                            size=11,
+                            color="#FFFD01", # Amarillo puro para máximo contraste
+                            line=dict(width=df_trend["line_width"], color="black")
+                        ),
+                        name="Estaciones"
+                    ))
 
-                    fig.add_trace(
-                        go.Scatter(
-                            x=df_trend.lon,
-                            y=df_trend.lat,
-                            mode="markers",
-                            text=df_trend.apply(
-                                lambda r: f"<b>{r['name']}</b><br>Mun: {r['municipio']}<br>Pendiente: {r['slope']:.2f}<br>Sig: {'Sí' if r['p']<0.05 else 'No'}",
-                                axis=1,
-                            ),
-                            marker=dict(
-                                size=10,
-                                color="#FFFFE0",  # LightYellow (Resalta sobre oscuros)
-                                line=dict(
-                                    width=df_trend["line_width"],
-                                    color="black",  # Borde negro para contraste
-                                ),
-                            ),
-                            name="Estaciones",
-                        )
-                    )
-
-                    # Borde de la Cuenca
+                    # 3. Línea de Contorno de Cuenca
                     if basin_geom is not None:
                         try:
-                            poly = (
-                                basin_geom.unary_union
-                                if hasattr(basin_geom, "unary_union")
-                                else basin_geom
-                            )
-                            if poly.geom_type == "Polygon":
-                                x, y = poly.exterior.xy
-                                fig.add_trace(
-                                    go.Scatter(
-                                        x=list(x),
-                                        y=list(y),
-                                        mode="lines",
-                                        line=dict(color="black", width=2),
-                                        name="Límite Cuenca",
-                                    )
-                                )
-                            elif poly.geom_type == "MultiPolygon":
-                                for i, p in enumerate(poly.geoms):
-                                    x, y = p.exterior.xy
-                                    fig.add_trace(
-                                        go.Scatter(
-                                            x=list(x),
-                                            y=list(y),
-                                            mode="lines",
-                                            line=dict(color="black", width=2),
-                                            showlegend=(i == 0),
-                                            name="Límite Cuenca",
-                                        )
-                                    )
-                        except:
-                            pass
+                            # Soporte para Polygon y MultiPolygon
+                            geoms = poly.geoms if hasattr(poly, "geoms") else [poly]
+                            for i, p in enumerate(geoms):
+                                bx, by = p.exterior.xy
+                                fig.add_trace(go.Scatter(
+                                    x=list(bx), y=list(by),
+                                    mode="lines",
+                                    line=dict(color="black", width=2.5),
+                                    name="Límite Cuenca" if i == 0 else "",
+                                    showlegend=(i == 0),
+                                    hoverinfo='skip'
+                                ))
+                        except: pass
 
-                    # Configuración de Layout (LEYENDA AJUSTADA)
+                    # Ajustes de Layout Profesionales
                     fig.update_layout(
-                        title=f"Tendencia Espacial de Precipitación<br><sup>{basin_name}</sup>",  # Título con subtítulo de cuenca
-                        xaxis_title="Longitud",
-                        yaxis_title="Latitud",
-                        height=650,  # Un poco más alto
-                        yaxis=dict(scaleanchor="x", scaleratio=1),
-                        legend=dict(
-                            orientation="h",
-                            yanchor="top",
-                            y=-0.1,  # Movemos la leyenda DEBAJO del gráfico
-                            xanchor="center",
-                            x=0.5,
-                        ),
-                        margin=dict(
-                            l=20, r=20, t=60, b=80
-                        ),  # Más margen abajo para la leyenda
+                        title=dict(text=f"Vulnerabilidad Climática: {basin_name}", font=dict(size=18)),
+                        xaxis=dict(title="Longitud", showgrid=False, zeroline=False),
+                        yaxis=dict(title="Latitud", showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1),
+                        height=700,
+                        template="plotly_white",
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
+                        margin=dict(l=20, r=20, t=80, b=100)
                     )
-                    st.plotly_chart(fig)
 
-                    c_d1, c_d2 = st.columns(2)
-                    with c_d1:
-                        geojson = df_trend.to_json(orient="records")
-                        st.download_button(
-                            "📥 Descargar Puntos (JSON)",
-                            geojson,
-                            "tendencias_puntos.json",
-                            "application/json",
-                        )
-                    with c_d2:
-                        flat_x = grid_x.flatten()
-                        flat_y = grid_y.flatten()
-                        flat_z = grid_z.flatten()
-                        df_grid = pd.DataFrame(
-                            {"lon": flat_x, "lat": flat_y, "tendencia": flat_z}
-                        ).dropna()
-                        csv_grid = df_grid.to_csv(index=False).encode("utf-8")
-                        st.download_button(
-                            "📥 Descargar Grilla (CSV)",
-                            csv_grid,
-                            "tendencias_grilla.csv",
-                            "text/csv",
-                        )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    # --- ZONA DE DESCARGAS ---
+                    st.success(f"Análisis completado para {len(trend_data)} estaciones.")
+                    cd1, cd2 = st.columns(2)
+                    with cd1:
+                        st.download_button("📥 Descargar Tendencias (JSON)", 
+                                           df_trend.to_json(orient="records"), 
+                                           "vulnerabilidad_puntos.json", "application/json")
+                    with cd2:
+                        df_grid = pd.DataFrame({"lon": grid_x.flatten(), "lat": grid_y.flatten(), "slope": grid_z.flatten()}).dropna()
+                        st.download_button("📥 Descargar Grilla (CSV)", 
+                                           df_grid.to_csv(index=False), 
+                                           "vulnerabilidad_espacial.csv", "text/csv")
                 else:
-                    st.warning("Datos insuficientes para interpolar.")
-
+                    st.error("⚠️ Se requieren al menos 4 estaciones con series históricas (>10 años) para generar la interpolación regional.")
+                    
     # --- TAB 2: SIMULADOR CMIP6 (MANTENIDO IGUAL) ---
     with tab_cmip6:
         # (El código del simulador se mantiene idéntico al bloque anterior que ya funcionaba)
