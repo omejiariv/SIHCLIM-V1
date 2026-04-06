@@ -2745,39 +2745,51 @@ def display_trends_and_forecast_tab(**kwargs):
         ]
     )
 
-    # --- TAB 1: TENDENCIA MANN-KENDALL (INDEPENDIENTE Y RESTAURADA) ---
+    # --- TAB 1: TENDENCIA MANN-KENDALL (MOTOR MODULARIZADO) ---
     with tabs[0]:
         st.markdown("#### Análisis de Tendencia no Paramétrica (Mann-Kendall)")
         st.caption(f"Evaluando serie: **{station_name_title}**")
 
-        # USAR EL NUEVO MÓDULO
-        # ts_clean es tu serie de tiempo ya filtrada
-        trend, p_val, slope = calcular_tendencia_mk_estacion(ts_clean)
+        try:
+            # 1. Llamada al módulo unificado
+            # Ahora devuelve: trend_type, p_val, slope, icon, significancia
+            res_mk = calcular_tendencia_mk_estacion(ts_clean)
+            trend_type, p_val, slope, icon, significancia = res_mk
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Tendencia", trend)
-        c2.metric("P-Valor", f"{p_val:.4f}")
-        c3.metric("Pendiente (Sen)", f"{slope:.2f} mm/año")
+            # 2. Mostrar métricas organizadas en columnas
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Tendencia", icon)
+            c2.metric("Pendiente (Sen)", f"{slope:.2f} mm/año")
+            c3.metric("Confianza Estadística", significancia)
 
-            # Gráfico Visual
+            # Nota al pie automática si no es significativo
+            if "No Significativo" in significancia:
+                st.info("💡 Aunque se observa una dirección en la tendencia, la variabilidad de los datos no permite asegurar con un 95% de confianza que no sea producto del azar.")
+            
+            # --- 3. GRÁFICO VISUAL DE TENDENCIA ---
             df_plot = ts_clean.reset_index()
             df_plot.columns = ["Fecha", "Precipitación"]
 
-            # Línea de tendencia calculada (y = mx + b)
-            # Aproximación visual usando índices numéricos para la pendiente
+            # Cálculo del Intercepto para la visualización (y = mx + b)
+            # Para que la línea pase por el centro de la nube de datos: b = mediana(y) - m * mediana(x)
             x_nums = np.arange(len(df_plot))
-            y_trend = res.slope * x_nums + res.intercept
+            intercept = df_plot["Precipitación"].median() - (slope * np.median(x_nums))
+            y_trend = slope * x_nums + intercept
 
             fig = go.Figure()
+            
+            # Serie Histórica
             fig.add_trace(
                 go.Scatter(
                     x=df_plot["Fecha"],
                     y=df_plot["Precipitación"],
                     mode="lines",
                     name="Serie Histórica",
-                    line=dict(color="gray", width=1),
+                    line=dict(color="rgba(128, 128, 128, 0.5)", width=1.5),
                 )
             )
+            
+            # Línea de Tendencia de Sen
             fig.add_trace(
                 go.Scatter(
                     x=df_plot["Fecha"],
@@ -2789,16 +2801,27 @@ def display_trends_and_forecast_tab(**kwargs):
             )
 
             fig.update_layout(
-                title="Ajuste de Tendencia (Theil-Sen)", hovermode="x unified"
+                title=f"Ajuste de Tendencia (Theil-Sen): {icon}",
+                hovermode="x unified",
+                xaxis_title="Año / Periodo",
+                yaxis_title="Precipitación (mm)",
+                template="plotly_white",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            st.plotly_chart(fig)
+            
+            st.plotly_chart(fig, use_container_width=True)
 
-            with st.expander("Ver detalles estadísticos completos"):
-                st.write(res)
+            with st.expander("🔍 Ver detalles estadísticos técnicos"):
+                st.write({
+                    "Resultado": trend_type,
+                    "P-Valor": p_val,
+                    "Pendiente (Sen)": slope,
+                    "Interpretación": significancia
+                })
 
         except Exception as e:
-            st.error(f"No se pudo calcular la tendencia: {e}")
-
+            st.error(f"⚠️ Error al procesar la tendencia climática: {e}")
+            
     # --- TAB 2: DESCOMPOSICIÓN ---
     with tabs[1]:
         try:
