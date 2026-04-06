@@ -1,12 +1,26 @@
-# 12_📚_Ayuda_y_Docs.py
+# pages/12_📚_Ayuda_y_Docs.py
+
+import os
+import sys
 
 import streamlit as st
-import os
 
+# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
 st.set_page_config(page_title="Ayuda y Documentación", page_icon="📚", layout="wide")
 
-st.title("📚 Centro de Documentación y Ayuda")
-st.markdown("---")
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
+try:
+    from modules import selectors
+except ImportError:
+    # Fallback de rutas por si hay problemas de lectura entre carpetas
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from modules import selectors
+
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Ayuda y Docs")
 
 # ==============================================================================
 # 🔒 MURO DE SEGURIDAD GLOBAL (ACCESO BETA)
@@ -33,8 +47,14 @@ def muro_de_acceso_beta():
         # 🛑 st.stop() es la magia: evita que Python siga leyendo el código hacia abajo
         st.stop() 
 
-# Llamamos a la función para activar el escudo
+# Llamamos a la función para activar el escudo ANTES de mostrar el contenido
 muro_de_acceso_beta()
+
+# ==============================================================================
+# --- CONTENIDO DE LA PÁGINA (SOLO VISIBLE SI PASAN EL MURO) ---
+# ==============================================================================
+st.title("📚 Centro de Documentación y Ayuda")
+st.markdown("---")
 # ==============================================================================
 
 tab1, tab2 = st.tabs(["📘 Documentación Técnica", "📖 Manual de Usuario"])
