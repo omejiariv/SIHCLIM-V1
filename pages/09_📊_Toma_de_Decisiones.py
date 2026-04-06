@@ -2,7 +2,9 @@
 # SIHCLI-POTER: MÓDULO MAESTRO DE TOMA DE DECISIONES (SÍNTESIS TOTAL)
 # =================================================================
 
-import streamlit as st
+import os
+import sys
+
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -12,16 +14,39 @@ from streamlit_folium import st_folium
 from folium import plugins
 from sqlalchemy import create_engine, text
 from scipy.interpolate import griddata
-from modules.demografia_tools import render_motor_demografico
-from modules.biodiversidad_tools import render_motor_ripario
-from modules.geomorfologia_tools import render_motor_hidrologico
-import sys
-import os
 
-# --- 1. CONFIGURACIÓN Y CARGA DE MÓDULOS ---
+import streamlit as st
+
+# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
 st.set_page_config(page_title="Sihcli-Poter: Toma de Decisiones", page_icon="🎯", layout="wide")
+
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
+try:
+    from modules import selectors
+    from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
+    from modules.demografia_tools import render_motor_demografico
+    from modules.biodiversidad_tools import render_motor_ripario
+    from modules.geomorfologia_tools import render_motor_hidrologico
+    from modules.impacto_serv_ecosist import render_sigacal_analysis
+    from modules.db_manager import get_engine
+except ImportError:
+    # Fallback de rutas por si hay problemas de lectura entre carpetas
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from modules import selectors
+    from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
+    from modules.demografia_tools import render_motor_demografico
+    from modules.biodiversidad_tools import render_motor_ripario
+    from modules.geomorfologia_tools import render_motor_hidrologico
+    from modules.impacto_serv_ecosist import render_sigacal_analysis
+    from modules.db_manager import get_engine
+
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Toma de Decisiones")
+
 # Encendido automático del Gemelo Digital
-from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
 
 # =========================================================================
@@ -60,14 +85,6 @@ div[data-testid="stExpander"] summary p {
 }
 </style>
 """, unsafe_allow_html=True)
-
-try:
-    from modules.impacto_serv_ecosist import render_sigacal_analysis
-    from modules import selectors
-    from modules.db_manager import get_engine
-except Exception as e:
-    st.error(f"Error de sistema: {e}")
-    st.stop()
 
 # --- 2. EXPLICACIÓN METODOLÓGICA ---
 def render_metodologia():
