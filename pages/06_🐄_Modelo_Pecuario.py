@@ -1,23 +1,40 @@
-# 06__🐄_Modelo_Pecuario.py
+# pages/06_🐄_Modelo_Pecuario.py
 
-import streamlit as st
+import os
+import sys
+import warnings
+
 import pandas as pd
 import numpy as np
-from scipy.optimize import curve_fit
+import plotly.express as px
 import plotly.graph_objects as go
+from shapely.geometry import shape
 
-# =====================================================================
-# CONFIGURACIÓN DE PÁGINA Y CARGA DE DATOS
-# =====================================================================
-st.set_page_config(page_title="Modelo Demográfico Pecuario", page_icon="🐄", layout="wide")
+import streamlit as st
+
+# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
+st.set_page_config(page_title="Modelo Pecuario", page_icon="🐄", layout="wide")
+warnings.filterwarnings('ignore')
+
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
+try:
+    from modules import selectors
+    from modules.utils import encender_gemelo_digital
+except ImportError:
+    # Fallback de rutas por si hay problemas de lectura entre carpetas
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from modules import selectors
+    from modules.utils import encender_gemelo_digital
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
-# Llama al menú expandible y resalta la página actual
-selectors.renderizar_menu_navegacion("Geomorfología")
+# Llama al menú expandible y resalta la página actual (Corregido)
+selectors.renderizar_menu_navegacion("Modelo Pecuario")
 
+# ====================================================================
 # 💉 ENCENDIDO DEL SISTEMA INMUNOLÓGICO Y VARIABLES GLOBALES
+# ====================================================================
 try:
     from modules.utils import encender_gemelo_digital
     encender_gemelo_digital()
