@@ -475,6 +475,9 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("#### 🚀 3. Impacto Proyectado en la Salud Territorial")
         st.info("Los siguientes velocímetros recalculan la salud de la cuenca asumiendo que se implementan los proyectos simulados en los pasos anteriores.")
         
+        # 🛡️ FIX: Recuperamos el área de la memoria de forma segura
+        area_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
+        
         # Recálculo con beneficios simulados
         carga_removida_sim = sist_saneamiento * 2.5
         carga_final_rio_sim = max(0.0, carga_total_ton - carga_removida_sim)
@@ -490,10 +493,11 @@ if gdf_zona is not None and not gdf_zona.empty:
         ind_resiliencia_sim = max(0.0, min(100.0, (bfi_ratio_sim / 0.70) * 100 * factor_supervivencia))
 
         cg1, cg2, cg3 = st.columns(3)
-        with cg1: st.plotly_chart(crear_velocimetro(ind_neutralidad_sim, "Neutralidad (Proyectada)", "#2ecc71", 40, 80), use_container_width=True)
-        with cg2: st.plotly_chart(crear_velocimetro(ind_resiliencia_sim, "Resiliencia (Proyectada)", "#3498db", 30, 70), use_container_width=True)
-        with cg3: st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), use_container_width=True)
-
+        # 🛡️ FIX WARNINGS: Actualizado a la nueva sintaxis de Streamlit para evitar alertas futuras
+        with cg1: st.plotly_chart(crear_velocimetro(ind_neutralidad_sim, "Neutralidad (Proyectada)", "#2ecc71", 40, 80), width="stretch")
+        with cg2: st.plotly_chart(crear_velocimetro(ind_resiliencia_sim, "Resiliencia (Proyectada)", "#3498db", 30, 70), width="stretch")
+        with cg3: st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), width="stretch")
+            
 # =========================================================================
     # BLOQUE 3: PROYECCIÓN CLIMÁTICA, RANKING AHP Y PREPARACIÓN PREDIAL
     # =========================================================================
