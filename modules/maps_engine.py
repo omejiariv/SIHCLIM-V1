@@ -88,9 +88,7 @@ def generar_popup_predio(row):
     </div>
     """
 
-# ==============================================================================
-# 2. MOTOR MAESTRO DE MAPAS FOLIUM
-# ==============================================================================
+# --- B. MAPA INTERACTIVO MAESTRO ---
 def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buffer, 
                              gdf_predios=None, gdf_bocatomas=None, gdf_municipios=None,
                              nombre_capa="Variable", cmap_name="Spectral_r", opacidad=0.7):
@@ -129,9 +127,10 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
             # Leyenda
             colors_hex = [mcolors.to_hex(cmap(i)) for i in np.linspace(0, 1, 15)]
             cm.LinearColormap(colors=colors_hex, vmin=vmin, vmax=vmax, caption=nombre_capa).add_to(m)
-        except: pass
+        except Exception as e: 
+            print(f"Error renderizando raster: {e}")
 
-    # 2. ISOLÍNEAS
+    # 2. ISOLÍNEAS (Método limpio Allsegs con etiquetas)
     if grid_data is not None:
         fg_iso = folium.FeatureGroup(name="〰️ Isolíneas", overlay=True, show=True)
         try:
@@ -148,31 +147,47 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
                 val = contours.levels[i]
                 for segment in level_segs:
                     lat_lon_coords = [[pt[1], pt[0]] for pt in segment]
-                    if len(lat_lon_coords) > 10:
-                        folium.PolyLine(lat_lon_coords, color='black', weight=0.6, opacity=0.5, tooltip=f"{val:.1f}").add_to(fg_iso)
+                    
+                    if len(lat_lon_coords) > 10: # Evitar micro-líneas
+                        # Trazar la línea
+                        folium.PolyLine(
+                            lat_lon_coords, color='black', weight=0.6, opacity=0.5,
+                            tooltip=f"{val:.1f}"
+                        ).add_to(fg_iso)
+                        
+                        # ETIQUETA DE TEXTO (DivIcon)
                         mid_idx = len(lat_lon_coords) // 2
                         mid_point = lat_lon_coords[mid_idx]
+                        
                         folium.map.Marker(
                             mid_point,
                             icon=DivIcon(
-                                icon_size=(150,36), icon_anchor=(0,0),
+                                icon_size=(150,36),
+                                icon_anchor=(0,0),
                                 html=f'<div style="font-size: 9pt; font-weight: bold; color: #333; text-shadow: 1px 1px 0 #fff;">{val:.0f}</div>'
                             )
                         ).add_to(fg_iso)
-        except Exception as e: print(f"Iso error: {e}")
+
+        except Exception as e: 
+            print(f"Error renderizando isolíneas: {e}")
         fg_iso.add_to(m)
 
-    # 3. MUNICIPIOS
+    # 3. MUNICIPIOS (Con Tooltip de Área)
     if gdf_municipios is not None and not gdf_municipios.empty:
         if 'MPIO_NAREA' in gdf_municipios.columns:
             gdf_municipios['area_ha_fmt'] = (gdf_municipios['MPIO_NAREA'] * 100).apply(lambda x: f"{x:,.1f} ha")
             col_area = 'area_ha_fmt'
-        else: col_area = None
+        else:
+            col_area = None
 
         col_name = next((c for c in gdf_municipios.columns if 'MPIO_CNMBR' in c or 'nombre' in c), None)
-        fields, aliases = [], []
-        if col_name: fields.append(col_name); aliases.append('Municipio:')
-        if col_area: fields.append(col_area); aliases.append('Área:')
+        
+        fields = []
+        aliases = []
+        if col_name: 
+            fields.append(col_name); aliases.append('Municipio:')
+        if col_area:
+            fields.append(col_area); aliases.append('Área:')
 
         folium.GeoJson(
             gdf_municipios, name="🏛️ Municipios",
@@ -180,29 +195,39 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
             tooltip=folium.GeoJsonTooltip(fields=fields, aliases=aliases) if fields else None
         ).add_to(m)
 
-    # 4. CAPAS ZONA
+    # 4. CAPAS ZONA (Límites de Cuenca y Buffer)
     if gdf_zona is not None:
         folium.GeoJson(gdf_zona, name="🟦 Cuenca", style_function=lambda x: {'color': 'black', 'weight': 2, 'fill': False}).add_to(m)
     if gdf_buffer is not None:
         folium.GeoJson(gdf_buffer, name="⭕ Buffer", style_function=lambda x: {'color': 'red', 'weight': 1, 'dashArray': '5, 5', 'fill': False}).add_to(m)
 
-    # 5. PREDIOS
+    # 5. PREDIOS (Interacción Rica con conversión de CRS segura)
     if gdf_predios is not None and not gdf_predios.empty:
         fg_predios = folium.FeatureGroup(name="🏡 Predios", show=True)
+        
         try:
-            gdf_viz = gdf_predios.to_crs(epsg=4326) if gdf_predios.crs and gdf_predios.crs.to_string() != "EPSG:4326" else gdf_predios
-        except: gdf_viz = gdf_predios
+            if gdf_predios.crs is not None and gdf_predios.crs.to_string() != "EPSG:4326":
+                gdf_viz = gdf_predios.to_crs(epsg=4326)
+            else:
+                gdf_viz = gdf_predios
+        except:
+            gdf_viz = gdf_predios 
             
         for _, row in gdf_viz.iterrows():
             if row.geometry and not row.geometry.is_empty:
-                try: popup_obj = folium.Popup(generar_popup_predio(row), max_width=250)
-                except: popup_obj = folium.Popup(str(row.get('nombre_pre', 'Predio')), max_width=200)
+                try:
+                    html = generar_popup_predio(row)
+                    popup_obj = folium.Popup(html, max_width=250)
+                except:
+                    popup_obj = folium.Popup(str(row.get('nombre_pre', 'Predio')), max_width=200)
 
                 folium.GeoJson(
                     row.geometry,
                     style_function=lambda x: {'color': '#e67e22', 'weight': 1.5, 'fillOpacity': 0.3, 'fillColor': '#f39c12'},
-                    popup=popup_obj, tooltip=str(row.get('nombre_pre', 'Predio'))
+                    popup=popup_obj,
+                    tooltip=str(row.get('nombre_pre', 'Predio'))
                 ).add_to(fg_predios)
+
         fg_predios.add_to(m)
 
     # 6. BOCATOMAS
@@ -210,10 +235,11 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
         fg_bocas = folium.FeatureGroup(name="🚰 Bocatomas", show=True)
         for _, row in gdf_bocatomas.iterrows():
             if row.geometry:
+                html = generar_popup_bocatoma(row)
                 folium.CircleMarker(
                     location=[row.geometry.y, row.geometry.x],
                     radius=6, color='white', weight=1, fill=True, fill_color='#16a085', fill_opacity=1,
-                    popup=folium.Popup(generar_popup_bocatoma(row), max_width=200),
+                    popup=folium.Popup(html, max_width=200),
                     tooltip=str(row.get('nombre_predio', 'Bocatoma'))
                 ).add_to(fg_bocas)
         fg_bocas.add_to(m)
@@ -222,14 +248,16 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
     if gdf_stations is not None and not gdf_stations.empty:
         fg_est = folium.FeatureGroup(name="🌦️ Estaciones")
         for _, row in gdf_stations.iterrows():
+            html = generar_popup_estacion(row)
             folium.CircleMarker(
                 location=[row.geometry.y, row.geometry.x],
                 radius=5, color='black', weight=1, fill=True, fill_color='#3498db', fill_opacity=1,
-                popup=folium.Popup(generar_popup_estacion(row), max_width=200),
+                popup=folium.Popup(html, max_width=200),
                 tooltip=row.get('nombre', 'Estación')
             ).add_to(fg_est)
         fg_est.add_to(m)
 
+    # Controles de UI del Mapa
     folium.LayerControl(position='topright', collapsed=False).add_to(m)
     Fullscreen().add_to(m)
     MousePosition().add_to(m)
