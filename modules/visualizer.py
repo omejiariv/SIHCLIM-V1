@@ -5151,8 +5151,15 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
         Config = Cfg
     except: pass
     
-    raster_path = "data/Cob25m_WGS84.tif"
-    if Config and hasattr(Config, "LAND_COVER_RASTER_PATH"):
+    # --- ☁️ MIGRACIÓN A SUPABASE STORAGE ---
+    # Ya no leemos desde la carpeta data/ de GitHub
+    SUPABASE_PROJECT_ID = "ldunpssoxvifemoyeuac" # Tu ID de proyecto
+    url_nube = f"https://{SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public/rasters/Cob25m_WGS84.tif"
+    
+    raster_path = url_nube
+    
+    # Si tienes la ruta definida explícitamente en tu archivo config.yaml o config.py, la respeta
+    if Config and hasattr(Config, "LAND_COVER_RASTER_PATH") and str(Config.LAND_COVER_RASTER_PATH).startswith("http"):
         raster_path = Config.LAND_COVER_RASTER_PATH
 
     # 2. Control de Vista
