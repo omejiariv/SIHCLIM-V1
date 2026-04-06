@@ -55,9 +55,15 @@ Integración Multicriterio para la **Seguridad Hídrica**, la **Conservación de
 """)
 st.divider()
 
-# 🎨 INYECCIÓN CSS PREMIUM (Para Expanders estilo Gerencial)
+# 🎨 INYECCIÓN CSS PREMIUM (Para Expanders y Tipografía Gerencial)
 st.markdown("""
 <style>
+/* 1. CAMBIO DE TIPOGRAFÍA GLOBAL AL ESTILO 'GEORGIA' */
+html, body, [class*="css"]  {
+    font-family: 'Georgia', serif !important;
+}
+
+/* 2. ESTILO PARA LOS EXPANDERS */
 div[data-testid="stExpander"] {
     background-color: #ffffff;
     border: 1px solid #e0e6ed;
@@ -77,6 +83,7 @@ div[data-testid="stExpander"] summary p {
     font-size: 1.1rem !important;
     font-weight: 600 !important;
     color: #1e293b !important;
+    font-family: 'Georgia', serif !important; /* Asegura la fuente en los títulos */
 }
 </style>
 """, unsafe_allow_html=True)
