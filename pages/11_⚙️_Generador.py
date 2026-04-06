@@ -1,19 +1,34 @@
 # pages/11_⚙️_Generador.py
 
-import streamlit as st
-import geopandas as gpd
-import pandas as pd
+import os
+import sys
+import io
 import tempfile
 import zipfile
-import io
-import os
 import warnings
 
-warnings.filterwarnings('ignore')
-st.set_page_config(page_title="Generador Espacial", page_icon="⚙️", layout="wide")
+import pandas as pd
+import geopandas as gpd
 
-st.title("⚙️ Centro de Geoprocesamiento y Transformación")
-st.info("Herramientas de administrador para cruces espaciales, compresión y estandarización de cartografía web.")
+import streamlit as st
+
+# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
+st.set_page_config(page_title="Generador Espacial", page_icon="⚙️", layout="wide")
+warnings.filterwarnings('ignore')
+
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
+try:
+    from modules import selectors
+except ImportError:
+    # Fallback de rutas por si hay problemas de lectura entre carpetas
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from modules import selectors
+
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Generador")
 
 # ==============================================================================
 # 🔒 MURO DE SEGURIDAD GLOBAL (ACCESO BETA)
@@ -40,8 +55,14 @@ def muro_de_acceso_beta():
         # 🛑 st.stop() es la magia: evita que Python siga leyendo el código hacia abajo
         st.stop() 
 
-# Llamamos a la función para activar el escudo
+# Llamamos a la función para activar el escudo ANTES de mostrar el contenido
 muro_de_acceso_beta()
+
+# ==============================================================================
+# --- CONTENIDO DE LA PÁGINA (SOLO VISIBLE SI PASAN EL MURO) ---
+# ==============================================================================
+st.title("⚙️ Centro de Geoprocesamiento y Transformación")
+st.info("Herramientas de administrador para cruces espaciales, compresión y estandarización de cartografía web.")
 # ==============================================================================
 
 tab1, tab2, tab3 = st.tabs([
