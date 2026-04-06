@@ -2070,34 +2070,38 @@ def display_satellite_imagery_tab(gdf_filtered):
 
 def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_zona, gdf_buffer, gdf_predios, gdf_bocatomas=None, gdf_municipios=None):
     """
-    Interfaz: Selectores + Mapa.
+    Interfaz Maestra: Selectores + Mapa Interactivos.
+    Centraliza la visualización de todas las capas ráster y vectoriales.
     """
-    # 1. Panel de Control Visual
+    from modules.maps_engine import generar_mapa_interactivo
+    from streamlit_folium import st_folium
+
+    # 1. PANEL DE CONTROL VISUAL
     opciones = sorted(list(matrices.keys()))
     
     c1, c2, c3 = st.columns([3, 2, 2])
     
     with c1:
-        # Selector de Capa (Precipitación, Elevación, etc.)
-        capa_sel = st.selectbox("Capa a Visualizar:", opciones)
+        capa_sel = st.selectbox("Capa a Visualizar:", opciones, key="capa_main_sel")
     
     with c2:
-        # --- AQUÍ ESTÁ EL SELECTOR DE ESCALAS DE COLOR QUE PEDISTE ---
         paletas = ["Spectral_r", "viridis", "RdYlBu", "YlGnBu", "terrain", "magma", "jet", "coolwarm", "Greys", "Blues", "Reds"]
         
-        # Inteligencia para sugerir la mejor paleta por defecto
+        # Inteligencia para sugerir la mejor paleta según la capa
         idx_def = 0
         if 'Elevación' in capa_sel: idx_def = paletas.index('terrain')
         elif 'Precipitación' in capa_sel: idx_def = paletas.index('Spectral_r')
         elif 'Temperatura' in capa_sel: idx_def = paletas.index('RdYlBu')
         elif 'Erosión' in capa_sel: idx_def = paletas.index('Reds')
+        elif 'Escorrentía' in capa_sel: idx_def = paletas.index('Blues')
         
-        cmap_user = st.selectbox("Paleta de Color:", paletas, index=idx_def)
+        cmap_user = st.selectbox("Paleta de Color:", paletas, index=idx_def, key="cmap_main_sel")
     
     with c3:
-        opacidad = st.slider("Opacidad:", 0.0, 1.0, 0.7)
-    
-    # 2. Generación del Mapa
+        opacidad = st.slider("Opacidad:", 0.0, 1.0, 0.7, key="opacidad_main_slider")
+
+    # 2. GENERACIÓN DEL MAPA USANDO EL MOTOR EXTERNO
+    # Obtenemos la matriz de datos de la capa seleccionada
     grid_z = matrices[capa_sel]
     
     m = generar_mapa_interactivo(
@@ -2110,13 +2114,12 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
         gdf_bocatomas=gdf_bocatomas,
         gdf_municipios=gdf_municipios,
         nombre_capa=capa_sel,
-        cmap_name=cmap_user, # <--- Pasamos la elección del usuario al mapa
+        cmap_name=cmap_user,
         opacidad=opacidad
     )
     
-    st_folium(m, use_container_width=True, height=600)
-
-
+    # 3. RENDERIZADO
+    st_folium(m, use_container_width=True, height=600, key=f"map_{capa_sel}")
 
 # PESTAÑA DE PRONÓSTICO CLIMÁTICO (INDICES + GENERADOR)
 
@@ -5890,41 +5893,6 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
     
     return m
 
-# --- C. RENDERIZADOR ---
-def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_zona, gdf_buffer, gdf_predios, gdf_bocatomas=None, gdf_municipios=None):
-    # Panel de Control
-    opciones = sorted(list(matrices.keys()))
-    c1, c2, c3 = st.columns([3, 2, 2])
-    
-    with c1: capa_sel = st.selectbox("Capa a Visualizar:", opciones)
-    
-    with c2:
-        paletas = ["Spectral_r", "viridis", "RdYlBu", "YlGnBu", "terrain", "magma", "jet", "coolwarm", "Greys", "Blues", "Reds"]
-        idx_def = 0
-        if 'Elevación' in capa_sel: idx_def = paletas.index('terrain')
-        elif 'Precipitación' in capa_sel: idx_def = paletas.index('Spectral_r')
-        elif 'Temperatura' in capa_sel: idx_def = paletas.index('RdYlBu')
-        elif 'Erosión' in capa_sel: idx_def = paletas.index('Reds')
-        elif 'Escorrentía' in capa_sel: idx_def = paletas.index('Blues')
-        cmap_user = st.selectbox("Paleta de Color:", paletas, index=idx_def)
-    
-    with c3: opacidad = st.slider("Opacidad:", 0.0, 1.0, 0.7)
-    
-    m = generar_mapa_interactivo(
-        grid_data=matrices[capa_sel],
-        bounds=gdf_buffer.total_bounds,
-        gdf_stations=gdf_stations,
-        gdf_zona=gdf_zona,
-        gdf_buffer=gdf_buffer,
-        gdf_predios=gdf_predios,
-        gdf_bocatomas=gdf_bocatomas,
-        gdf_municipios=gdf_municipios,
-        nombre_capa=capa_sel,
-        cmap_name=cmap_user,
-        opacidad=opacidad
-    )
-    st_folium(m, use_container_width=True, height=600)
-    
 # -------------------------------------------------------------------------
 # FUNCIÓN COMPARATIVA MULTIESCALAR (VERSIÓN PREMIUM: CON SELECTOR DE ETIQUETA 🏷️)
 # -------------------------------------------------------------------------
