@@ -1,21 +1,37 @@
-import streamlit as st
+import os
+import sys
+import numpy as np
 import pandas as pd
 import geopandas as gpd
 import rasterio
 from rasterio.mask import mask
 from rasterio import features
 from rasterio.io import MemoryFile
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
-import os
 from shapely.geometry import shape, LineString, MultiLineString, Polygon
-from modules import selectors
 
-# --- 🚀 IMPORTACIONES CLOUD NATIVE ---
+import streamlit as st
+
+# --- 1. CONFIGURACIÓN DE PÁGINA ---
+# Nota: set_page_config SIEMPRE debe ser el primer comando de Streamlit
+st.set_page_config(page_title="Geomorfología Pro", page_icon="🏔️", layout="wide")
+
+# Aseguramos que python encuentre los módulos
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+# --- 🚀 IMPORTACIONES CLOUD NATIVE Y MÓDULOS ---
+from modules import selectors
 from modules.config import Config
 from modules.hydro_physics import download_raster_secure
+
+try:
+    from modules.db_manager import get_engine
+except ImportError:
+    from db_manager import get_engine
 
 # Intentamos importar pysheds
 try:
@@ -29,22 +45,14 @@ try:
 except ImportError:
     land_cover = None
 
-import sys
-# Aseguramos que python encuentre los módulos
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
-
-try:
-    from modules.db_manager import get_engine
-except ImportError:
-    from db_manager import get_engine
-
-# Inicializar conexión
+# Inicializar conexión a Base de Datos
 engine = get_engine()
 
-# Configuración de Página
-st.set_page_config(page_title="Geomorfología Pro", page_icon="🏔️", layout="wide")
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Geomorfología")
 
 # --- INICIALIZACIÓN DE VARIABLES DE ESTADO ---
 if 'gdf_contours' not in st.session_state: st.session_state['gdf_contours'] = None
