@@ -549,9 +549,24 @@ def main():
 
                         # A. INTERPOLACIÓN HISTÓRICA BASE
                         dem_safe = np.nan_to_num(dem_array, nan=0) if dem_array is not None else None
-                        Z_P_base, Z_Err = physics.interpolar_variable(
-                            gdf_calc, 'ppt_media', grid_x, grid_y, method=metodo, dem_array=dem_safe
-                        )
+                        
+                        # 💉 BISTURÍ: Enrutamos el Motor Aleph hacia nuestro nuevo interpolador blindado
+                        try:
+                            from modules.interpolation import interpolador_maestro
+                            Z_P_base, Z_Err = interpolador_maestro(
+                                df_puntos=gdf_calc, 
+                                col_val='ppt_media', 
+                                grid_x=grid_x, 
+                                grid_y=grid_y, 
+                                metodo=str(metodo).lower(), 
+                                dem_grid=dem_safe
+                            )
+                        except Exception as e:
+                            st.warning(f"Error en interpolador maestro: {e}. Usando fallback...")
+                            Z_P_base, Z_Err = physics.interpolar_variable(
+                                gdf_calc, 'ppt_media', grid_x, grid_y, method=metodo, dem_array=dem_safe
+                            )
+                            
                         if metodo == 'ked': Z_P_base = np.maximum(Z_P_base, 0)
 
                         # B. BISTURÍ: INYECCIÓN DE ESCENARIOS CMIP6 (Cambio Climático)
