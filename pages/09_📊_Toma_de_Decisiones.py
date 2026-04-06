@@ -442,77 +442,88 @@ if gdf_zona is not None and not gdf_zona.empty:
             volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
             st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Impacto total simulado")
 
-        # ==============================================================================
-        # 🔬 MOTOR DE REGULACIÓN HIDROLÓGICA (SANKEY DINÁMICO)
+# ==============================================================================
+        # 🔬 MOTOR DE REGULACIÓN HIDROLÓGICA Y TERMODINÁMICA (SANKEY DINÁMICO)
         # ==============================================================================
         with st.container(border=True):
-            st.markdown("#### ⚖️ Dinámica de Regulación Hidrológica (Efecto Esponja)")
-            st.markdown("Basado en la ecuación de continuidad $\\frac{\\Delta S}{\\Delta t}$, la restauración forestal traslada volumen de la escorrentía directa hacia el flujo base.")
+            st.markdown("#### ⚖️ Dinámica de Regulación Eco-Hidrológica (Source-to-Tap)")
+            st.markdown("Integración de la termodinámica del bosque: Intercepción del dosel foliar, regulación de Evapotranspiración (ETP) y recarga del flujo base.")
             
-            # Matemática para el Sankey (Estimación Turc/Holdridge paramétrica)
-            area_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
-            ppt_mm_estimada = (oferta_anual_m3 / (area_km2 * 1000)) * 2.5 # Aproximación de lluvia total
-            vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000 # m3/año
+            # 1. Parámetros Base
+            area_cuenca_ha = area_km2 * 100
+            pct_bosque = min(1.0, ha_total / area_cuenca_ha) if area_cuenca_ha > 0 else 0.0
             
-            # Línea base (Sin restauración)
-            vol_etp = vol_lluvia_total * 0.45 # Evapotranspiración natural (45%)
-            vol_escorrentia_base = vol_lluvia_total * 0.40 # Escorrentía rápida/Picos (40%)
-            vol_infiltracion_base = vol_lluvia_total * 0.15 # Flujo base/Recarga (15%)
+            ppt_mm_estimada = (oferta_anual_m3 / (area_km2 * 1000)) * 2.5 
+            vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000 
             
-            # Dinámica de Restauración (El bosque frena la escorrentía y la infiltra)
-            # Asumimos que cada hectárea restaurada convierte 2500 m3 de escorrentía rápida en infiltración
-            vol_regulado_sbn = min(vol_escorrentia_base * 0.8, ha_total * 2500) 
+            # 2. CONEXIÓN CON BIODIVERSIDAD: Retención del Dosel (Intercepción)
+            # Se conecta a la Pág 04, si no hay dato, asume 25% óptimo
+            eficiencia_dosel_max = st.session_state.get('bio_eficiencia_retencion_pct', 25.0) / 100.0
+            # Suelo degradado retiene 5%. El bosque escala hasta el máximo.
+            pct_intercepcion = 0.05 + ((eficiencia_dosel_max - 0.05) * pct_bosque)
+            vol_intercepcion = vol_lluvia_total * pct_intercepcion
+
+            # 3. DINÁMICA DE EVAPOTRANSPIRACIÓN (ETP)
+            # El suelo desnudo evapora el agua superficial rápido (35%), el bosque transpira y regula (hasta 45%)
+            pct_etp = 0.35 + (0.10 * pct_bosque)
+            vol_etp = vol_lluvia_total * pct_etp
+
+            # 4. PRECIPITACIÓN EFECTIVA Y ESCORRENTÍA VS INFILTRACIÓN
+            vol_al_suelo = vol_lluvia_total - vol_intercepcion - vol_etp
             
-            vol_escorrentia_final = vol_escorrentia_base - vol_regulado_sbn
-            vol_infiltracion_final = vol_infiltracion_base + vol_regulado_sbn
+            # Sin bosque se infiltra el 20%, con bosque hasta el 70% del agua que llega al suelo
+            pct_infiltracion = 0.20 + (0.50 * pct_bosque)
+            vol_infiltracion = vol_al_suelo * pct_infiltracion
+            vol_escorrentia = vol_al_suelo - vol_infiltracion
             
-            # Nodos del Sankey (Ahora con Negrilla HTML para mayor legibilidad)
+            # Nodos del Sankey
             labels = [
-                "<b>Lluvia Total</b>",             # 0
-                "<b>Evapotranspiración</b>",       # 1
-                "<b>Escorrentía Rápida (Riesgo)</b>", # 2
-                "<b>Suelo / Acuífero (Recarga)</b>",  # 3
-                "<b>Flujo Base (Oferta Segura)</b>",  # 4
-                "<b>Regulación Forestal (SbN)</b>"    # 5
+                "<b>Lluvia Total</b>",                  # 0
+                "<b>Retención del Dosel (Hojas)</b>",     # 1
+                "<b>Evapotranspiración (ETP)</b>",        # 2
+                "<b>Escorrentía Rápida (Riesgo)</b>",     # 3
+                "<b>Infiltración (Acuífero)</b>",         # 4
+                "<b>Flujo Base (Oferta Segura)</b>"       # 5
             ]
             
             # Enlaces (Links)
-            source = [0, 0, 0, 3, 5]
-            target = [1, 2, 3, 4, 3]
+            source = [0, 0, 0, 0, 4]
+            target = [1, 2, 3, 4, 5]
             value = [
-                vol_etp,                  # Lluvia -> ETP
-                vol_escorrentia_final,    # Lluvia -> Escorrentía (Lo que queda tras regular)
-                vol_infiltracion_base,    # Lluvia -> Infiltración natural
-                vol_infiltracion_final,   # Acuífero -> Flujo base (Oferta continua)
-                vol_regulado_sbn          # SbN -> Acuífero (El agua "atrapada" por el bosque)
+                vol_intercepcion,  # Lluvia -> Dosel (Vuelve a la atmósfera)
+                vol_etp,           # Lluvia -> ETP
+                vol_escorrentia,   # Lluvia -> Escorrentía
+                vol_infiltracion,  # Lluvia -> Suelo/Acuífero
+                vol_infiltracion   # Acuífero -> Río (Flujo regulado)
             ]
             
-            # Colores dinámicos
-            color_sbn = "rgba(46, 204, 113, 0.6)" if vol_regulado_sbn > 0 else "rgba(189, 195, 199, 0.2)"
-            color_links = ["rgba(241, 196, 15, 0.4)", "rgba(231, 76, 60, 0.5)", "rgba(52, 152, 219, 0.4)", "rgba(41, 128, 185, 0.6)", color_sbn]
+            color_links = [
+                "rgba(46, 204, 113, 0.5)",  # Verde: Dosel
+                "rgba(241, 196, 15, 0.4)",  # Amarillo: ETP
+                "rgba(231, 76, 60, 0.6)",   # Rojo: Escorrentía (Peligro)
+                "rgba(52, 152, 219, 0.4)",  # Azul: Infiltración
+                "rgba(41, 128, 185, 0.6)"   # Azul oscuro: Flujo Base
+            ]
             
-            # 🎨 RENDERIZADO VISUAL MEJORADO
             fig_sankey = go.Figure(data=[go.Sankey(
                 valueformat=".0f", valuesuffix=" m³/año",
-                # 1. Aumentamos el tamaño y forzamos negro puro
-                textfont=dict(size=14, color="#000000", family="Georgia, serif"), 
+                textfont=dict(size=14, color="#000000", family="Georgia, serif"),
                 node=dict(
-                    # 2. Aumentamos grosor y padding para que el texto no se asfixie
                     pad=25, thickness=25, line=dict(color="black", width=0.5),
                     label=labels,
-                    color=["#34495e", "#f39c12", "#e74c3c", "#3498db", "#2980b9", "#2ecc71"]
+                    color=["#34495e", "#2ecc71", "#f39c12", "#e74c3c", "#3498db", "#2980b9"]
                 ),
                 link=dict(source=source, target=target, value=value, color=color_links)
             )])
             
-            # 3. Aumentamos un poco la altura (de 350 a 400) para evitar colisiones de texto
-            fig_sankey.update_layout(height=400, margin=dict(l=20, r=20, t=30, b=20), font_family="Georgia")
+            fig_sankey.update_layout(height=420, margin=dict(l=20, r=20, t=30, b=20), font_family="Georgia")
             
             c_sk1, c_sk2 = st.columns([1, 2.5])
             with c_sk1:
-                st.metric("🌧️ Lluvia Total", f"{vol_lluvia_total/1e6:,.1f} M m³")
-                st.metric("🌲 Agua Regulada por Bosque", f"{vol_regulado_sbn/1e6:,.2f} M m³", "Trasladada al flujo base", delta_color="normal")
-                st.caption("A mayor inversión en SbN, más grueso será el canal verde, reduciendo la escorrentía rápida (rojo).")
+                st.metric("🌧️ Lluvia Total", f"{vol_lluvia_total/1e6:,.1f} Mm³")
+                st.metric("🍃 Agua Retenida en Dosel", f"{vol_intercepcion/1e6:,.1f} Mm³", "Regulación microclimática", delta_color="normal")
+                st.metric("💧 Oferta Regulada (Infiltrada)", f"{vol_infiltracion/1e6:,.1f} Mm³", "Trasladada al flujo base", delta_color="normal")
+                st.caption("A mayor inversión en área conservada (SbN), aumenta la intercepción foliar y la infiltración, reduciendo drásticamente la vena roja de escorrentía rápida.")
             with c_sk2:
                 st.plotly_chart(fig_sankey, use_container_width=True)
                 
