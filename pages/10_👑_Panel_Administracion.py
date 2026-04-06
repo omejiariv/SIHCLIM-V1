@@ -1,36 +1,45 @@
 # pages/10_👑_Panel_Administracion.py
 
-import streamlit as st
-import pandas as pd
-import json
+import os
+import sys
 import io
 import time
-import sys
-import os
+import json
 import tempfile
 import zipfile
+import shutil
+
+import pandas as pd
 import geopandas as gpd
 import rasterio
 from sqlalchemy import text
 import folium
 from streamlit_folium import st_folium
 from shapely.geometry import shape
-import shutil
-
-from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
 from supabase import create_client
 
-# --- 1. CONFIGURACIÓN DE RUTAS E IMPORTACIONES ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
+import streamlit as st
 
+# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
+st.set_page_config(page_title="Panel de Administración", page_icon="👑", layout="wide")
+
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
 try:
+    from modules import selectors
+    from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
     from modules.db_manager import get_engine
 except ImportError:
-    from db_manager import get_engine
+    # Fallback de rutas por si hay problemas de lectura entre carpetas
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from modules import selectors
+    from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
+    from modules.db_manager import get_engine
 
-st.set_page_config(page_title="Panel de Administración", page_icon="👑", layout="wide")
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Panel Administración")
 
 # ==============================================================================
 # 0. 🔒 MURO DE SEGURIDAD (ACCESO ESTRICTO)
