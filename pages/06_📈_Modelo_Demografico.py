@@ -1,24 +1,43 @@
-# 06_📈_Modelo_Demografico.py
+# pages/06_📈_Modelo_Demografico.py
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-from modules.utils import encender_gemelo_digital, normalizar_texto
-import plotly.express as px
-import plotly.graph_objects as go
-from scipy.optimize import curve_fit
 import os
+import sys
 import time
 import json
 import unicodedata
 import re
 import warnings
 
+import pandas as pd
+import numpy as np
+from scipy.optimize import curve_fit
+import plotly.express as px
+import plotly.graph_objects as go
+
+import streamlit as st
+
+# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
+st.set_page_config(page_title="Modelo Demográfico Integral", page_icon="📈", layout="wide")
+warnings.filterwarnings('ignore')
+
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
+try:
+    from modules import selectors
+    from modules.utils import encender_gemelo_digital, normalizar_texto
+except ImportError:
+    # Fallback de rutas por si hay problemas de lectura entre carpetas
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from modules import selectors
+    from modules.utils import encender_gemelo_digital, normalizar_texto
+
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Modelo Demográfico")
+
 # Encendemos el sistema inmunológico
 encender_gemelo_digital()
-
-warnings.filterwarnings('ignore')
-st.set_page_config(page_title="Modelo Demográfico Integral", page_icon="📈", layout="wide")
 
 st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
 st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
