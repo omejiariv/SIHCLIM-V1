@@ -22,19 +22,30 @@ def get_safe_cols(df):
 
 def calcular_tendencia_mk_estacion(serie_tiempo):
     """
-    Calcula la tendencia de Mann-Kendall para una serie individual.
-    Retorna: (Tendencia, P-valor, Pendiente de Sen).
+    Calcula Mann-Kendall con interpretación visual y significancia estadística.
     """
     try:
         serie_limpia = serie_tiempo.dropna()
         if len(serie_limpia) < 10:
-            return "Insuficiente", 1.0, 0.0
+            return "Insuficiente", 1.0, 0.0, "➖ Estable", "Datos Insuficientes"
         
         res = mk.original_test(serie_limpia)
-        return res.trend, res.p, res.slope
+        
+        # 1. Icono Visual
+        trend_icon = "➖ Estable"
+        if res.trend == "increasing":
+            trend_icon = "📈 (Aumento)"
+        elif res.trend == "decreasing":
+            trend_icon = "📉 (Disminución)"
+            
+        # 2. Interpretación de Significancia (Confianza al 95%)
+        is_significant = res.p < 0.05
+        sig_text = "✅ Significativo (Confianza > 95%)" if is_significant else "⚠️ No Significativo"
+            
+        return res.trend, res.p, res.slope, trend_icon, sig_text
     except Exception as e:
-        return f"Error: {e}", 1.0, 0.0
-
+        return f"Error: {e}", 1.0, 0.0, "❌ Error", "N/A"
+        
 def calcular_anomalias_climatologicas(df_mensual, df_historico, inicio_base=1991, fin_base=2020):
     """
     Calcula anomalías respecto a un periodo de referencia (Baseline).
