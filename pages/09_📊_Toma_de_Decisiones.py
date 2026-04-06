@@ -350,11 +350,12 @@ if gdf_zona is not None and not gdf_zona.empty:
             })
             st.table(df_analisis)
 
-# =========================================================================
-    # BLOQUE 2: SIMULADOR DE INVERSIONES Y PORTAFOLIOS (WRI)
+    # =========================================================================
+    # BLOQUE 2: SIMULADOR DE INVERSIONES Y PORTAFOLIOS (WRI) + SANKEY
     # =========================================================================
     with st.expander(f"💼 SIMULADOR DE INVERSIONES Y PORTAFOLIOS (WRI): {nombre_zona}", expanded=False):
         import plotly.express as px
+        import plotly.graph_objects as go
         
         st.markdown("Transforma las métricas biofísicas en indicadores estandarizados, simula portafolios de inversión y visualiza el impacto de los proyectos en la seguridad hídrica.")
         
@@ -362,31 +363,31 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-        # 🛡️ CÁLCULO DE HECTÁREAS CON CURACIÓN TOPOLÓGICA PROFUNDA
+        # 🛡️ CÁLCULO DE HECTÁREAS (Fuerza Bruta de Coordenadas y Topología)
         ha_reales_sig = 0.0
         if capas.get('predios') is not None and not capas['predios'].empty and gdf_zona is not None:
             try:
-                # 1. Reproyectar a Magna Sirgas (Metros) desde el inicio para mayor precisión
-                gdf_z_3116 = gdf_zona.to_crs(epsg=3116).copy()
-                gdf_p_3116 = capas['predios'].to_crs(epsg=3116).copy()
+                # Forzar CRS inicial en caso de que venga corrupto del GeoJSON y reproyectar a métrico
+                gdf_p = capas['predios']
+                if gdf_p.crs is None: gdf_p.set_crs(epsg=4326, inplace=True)
                 
-                # 2. Curación Topológica: Arregla polígonos mal dibujados (moños, auto-intersecciones)
+                gdf_z_3116 = gdf_zona.to_crs(epsg=3116)
+                gdf_p_3116 = gdf_p.to_crs(epsg=3116)
+                
+                # Curación y recorte
                 gdf_z_3116.geometry = gdf_z_3116.geometry.make_valid()
                 gdf_p_3116.geometry = gdf_p_3116.geometry.make_valid()
                 
-                # 3. Intersección estricta (Overlay es más seguro que Clip para calcular áreas)
                 predios_clip = gpd.overlay(gdf_p_3116, gdf_z_3116, how='intersection')
-                
                 if not predios_clip.empty:
-                    # 4. Cálculo de área real en Hectáreas
                     ha_reales_sig = predios_clip.area.sum() / 10000.0
-            except Exception as e:
-                st.error(f"Error topológico calculando predios de CuencaVerde: {e}")
+            except Exception as e: 
+                st.warning(f"Error topológico calculando predios: {e}")
             
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         ha_base_calculo = ha_reales_sig if activar_sig else 0.0
         
-        # Conexión Riparia (Nexo Físico)
+        # --- Conexión Riparia (Nexo Físico) ---
         ha_riparias_potenciales = 0.0
         sumar_riparias = False
         df_str = st.session_state.get('geomorfo_strahler_df')
@@ -417,13 +418,14 @@ if gdf_zona is not None and not gdf_zona.empty:
         else:
             st.info("💡 **Tip:** Usa el motor de Geomorfología para detectar la red de drenaje y calcular corredores riparios automáticamente.")
         
-        # Inputs del Simulador
+        # --- Inputs del Simulador ---
+        st.markdown("<br>", unsafe_allow_html=True)
         c_inv1, c_inv2, c_inv3 = st.columns(3)
         with c_inv1:
             st.metric("✅ Área Conservada (Base SIG)", f"{ha_reales_sig:,.1f} ha")
             ha_simuladas = st.number_input("➕ Adicionar Hectáreas Extra (Manual):", min_value=0.0, value=0.0, step=10.0, key="td_ha_sim")
             ha_total = ha_base_calculo + ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
-            beneficio_restauracion_m3 = ha_total * 2500
+            beneficio_restauracion_m3 = ha_total * 2500 # 2500 m3/ha/año (Factor WRI estándar)
             
         with c_inv2:
             sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM/PTAR):", min_value=0, value=50, step=5, key="td_stam")
@@ -432,6 +434,75 @@ if gdf_zona is not None and not gdf_zona.empty:
         with c_inv3:
             volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
             st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Impacto total simulado")
+
+        # ==============================================================================
+        # 🔬 MOTOR DE REGULACIÓN HIDROLÓGICA (SANKEY DINÁMICO)
+        # ==============================================================================
+        with st.container(border=True):
+            st.markdown("#### ⚖️ Dinámica de Regulación Hidrológica (Efecto Esponja)")
+            st.markdown("Basado en la ecuación de continuidad $\\frac{\\Delta S}{\\Delta t}$, la restauración forestal traslada volumen de la escorrentía directa hacia el flujo base.")
+            
+            # Matemática para el Sankey (Estimación Turc/Holdridge paramétrica)
+            area_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
+            ppt_mm_estimada = (oferta_anual_m3 / (area_km2 * 1000)) * 2.5 # Aproximación de lluvia total
+            vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000 # m3/año
+            
+            # Línea base (Sin restauración)
+            vol_etp = vol_lluvia_total * 0.45 # Evapotranspiración natural (45%)
+            vol_escorrentia_base = vol_lluvia_total * 0.40 # Escorrentía rápida/Picos (40%)
+            vol_infiltracion_base = vol_lluvia_total * 0.15 # Flujo base/Recarga (15%)
+            
+            # Dinámica de Restauración (El bosque frena la escorrentía y la infiltra)
+            # Asumimos que cada hectárea restaurada convierte 2500 m3 de escorrentía rápida en infiltración
+            vol_regulado_sbn = min(vol_escorrentia_base * 0.8, ha_total * 2500) 
+            
+            vol_escorrentia_final = vol_escorrentia_base - vol_regulado_sbn
+            vol_infiltracion_final = vol_infiltracion_base + vol_regulado_sbn
+            
+            # Nodos del Sankey
+            labels = [
+                "Lluvia Total",             # 0
+                "Evapotranspiración",       # 1
+                "Escorrentía Rápida (Riesgo)", # 2
+                "Suelo / Acuífero (Recarga)", # 3
+                "Flujo Base (Oferta Segura)",  # 4
+                "Regulación Forestal (SbN)"   # 5
+            ]
+            
+            # Enlaces (Links)
+            source = [0, 0, 0, 3, 5]
+            target = [1, 2, 3, 4, 3]
+            value = [
+                vol_etp,                  # Lluvia -> ETP
+                vol_escorrentia_final,    # Lluvia -> Escorrentía (Lo que queda tras regular)
+                vol_infiltracion_base,    # Lluvia -> Infiltración natural
+                vol_infiltracion_final,   # Acuífero -> Flujo base (Oferta continua)
+                vol_regulado_sbn          # SbN -> Acuífero (El agua "atrapada" por el bosque)
+            ]
+            
+            # Colores dinámicos
+            color_sbn = "rgba(46, 204, 113, 0.6)" if vol_regulado_sbn > 0 else "rgba(189, 195, 199, 0.2)"
+            color_links = ["rgba(241, 196, 15, 0.4)", "rgba(231, 76, 60, 0.5)", "rgba(52, 152, 219, 0.4)", "rgba(41, 128, 185, 0.6)", color_sbn]
+            
+            fig_sankey = go.Figure(data=[go.Sankey(
+                valueformat=".0f", valuesuffix=" m³/año",
+                node=dict(
+                    pad=15, thickness=20, line=dict(color="black", width=0.5),
+                    label=labels,
+                    color=["#34495e", "#f39c12", "#e74c3c", "#3498db", "#2980b9", "#2ecc71"]
+                ),
+                link=dict(source=source, target=target, value=value, color=color_links)
+            )])
+            
+            fig_sankey.update_layout(height=350, margin=dict(l=10, r=10, t=25, b=10))
+            
+            c_sk1, c_sk2 = st.columns([1, 2.5])
+            with c_sk1:
+                st.metric("🌧️ Lluvia Total", f"{vol_lluvia_total/1e6:,.1f} M m³")
+                st.metric("🌲 Agua Regulada por Bosque", f"{vol_regulado_sbn/1e6:,.2f} M m³", "Trasladada al flujo base", delta_color="normal")
+                st.caption("A mayor inversión en SbN, más grueso será el canal verde, reduciendo la escorrentía rápida (rojo).")
+            with c_sk2:
+                st.plotly_chart(fig_sankey, use_container_width=True)
 
         # --- 2. PORTAFOLIOS DE INVERSIÓN ---
         st.markdown("---")
@@ -519,27 +590,22 @@ if gdf_zona is not None and not gdf_zona.empty:
         
         area_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
         
-        # 1. Recálculo Calidad
         carga_removida_sim = sist_saneamiento * 2.5
         carga_final_rio_sim = max(0.0, carga_total_ton - carga_removida_sim)
         carga_mg_s_sim = (carga_final_rio_sim * 1_000_000_000) / 31536000
         conc_dbo_sim = carga_mg_s_sim / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
         ind_calidad_sim = max(0.0, min(100.0, 100.0 - ((conc_dbo_sim / 10.0) * 100)))
         
-        # 2. Recálculo Neutralidad
         ind_neutralidad_sim = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
         
-        # 3. Recálculo Resiliencia
         mejora_infiltracion = (ha_total / (area_km2 * 100)) * 0.10 
         bfi_ratio_sim = bfi_ratio * (1 + mejora_infiltracion)
         ind_resiliencia_sim = max(0.0, min(100.0, (bfi_ratio_sim / 0.70) * 100 * factor_supervivencia))
 
-        # 4. ⚠️ FIX: Recálculo de Estrés (WEI+ Simulado)
-        # Sumamos el agua repuesta (SbN/PTAR) a la oferta base para ver si baja el estrés
         oferta_efectiva_sim = oferta_anual_m3 + volumen_repuesto_m3
         wei_ratio_sim = consumo_anual_m3 / oferta_efectiva_sim if oferta_efectiva_sim > 0 else 1.0
         estres_sim_porcentaje = wei_ratio_sim * 100
-        estres_gauge_sim_val = min(100.0, estres_sim_porcentaje) # Limitamos la aguja visual a 100
+        estres_gauge_sim_val = min(100.0, estres_sim_porcentaje)
 
         cg1, cg2, cg3, cg4 = st.columns(4)
         with cg1: st.plotly_chart(crear_velocimetro(ind_neutralidad_sim, "Neutralidad (Proyectada)", "#2ecc71", 40, 80), width="stretch")
