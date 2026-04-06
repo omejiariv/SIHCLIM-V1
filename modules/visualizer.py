@@ -1,94 +1,83 @@
 # modules/visualizer.py
 
+# ==============================================================================
+# 1. BLOQUE MAESTRO DE IMPORTACIONES (Optimizado y Centralizado)
+# ==============================================================================
 import os
-from math import cos, radians
-
-import streamlit as st
-
-from folium.plugins import Fullscreen, FloatImage
-from folium.features import DivIcon
-
-import rasterio
+import io
+import sys
+import base64
 import tempfile
 import zipfile
 import shutil
-import folium
-import geopandas as gpd
+import requests
+from math import cos, radians
+
 import numpy as np
 import pandas as pd
-import base64
+from scipy import stats
+import scipy.ndimage as ndimage
+from scipy.ndimage import gaussian_filter
+from scipy.interpolate import Rbf, griddata
+
+import geopandas as gpd
+from shapely.geometry import Point, LineString, MultiLineString, Polygon, MultiPolygon, box
+import rasterio
+from rasterio import features
+from rasterio.transform import from_origin, array_bounds
+from pyproj import Transformer
+
+import folium
+from folium import plugins
+from folium.plugins import Fullscreen, FloatImage, LocateControl, MarkerCluster, Draw, MeasureControl, MousePosition
+from folium.features import DivIcon
+from streamlit_folium import st_folium, folium_static
+
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import branca.colormap as cm
-import branca.colormap as bcm
-from rasterio import features
-from rasterio.transform import from_origin
-from rasterio.transform import array_bounds
-from pyproj import Transformer
+
 import pymannkendall as mk
-import requests
-import io
-import sys
-from folium import plugins
-from folium.plugins import LocateControl, MarkerCluster
-from plotly.subplots import make_subplots
 from prophet import Prophet
-from scipy import stats
-import scipy.ndimage as ndimage
-from scipy.ndimage import gaussian_filter
-from matplotlib import path as mpath
-from folium.plugins import Fullscreen, Draw, MeasureControl, MousePosition
-
-# Desactivar explícitamente LaTeX en el renderizado de etiquetas
-st.set_option('client.showErrorDetails', False)
-
-# Imports de Ciencia de Datos y Análisis
-
-from scipy.interpolate import Rbf, griddata
-from shapely.geometry import Point
-from shapely.geometry import LineString, MultiLineString, Point, box
-from shapely.geometry import MultiPolygon, Polygon
 from statsmodels.tsa.seasonal import seasonal_decompose
-from streamlit_folium import st_folium, folium_static
 
+import streamlit as st
+
+# --- MÓDULOS INTERNOS ---
+from modules.config import Config
+import modules.analysis as analysis
 import modules.life_zones as lz
 import modules.land_cover as lc
 
-# Módulos Internos
-
-from modules.config import Config
-import modules.analysis as analysis
-
-# Importar funciones de análisis (Manejo de errores por si faltan)
+# Importaciones seguras de APIs externas
 try:
-    from modules.analysis import (calculate_climatic_indices,
-                                  calculate_duration_curve,
-                                  calculate_hydrological_balance,
-                                  calculate_hypsometric_curve,
-                                  calculate_morphometry,
-                                  calculate_percentiles_extremes,
-                                  calculate_return_periods, calculate_spei,
-                                  calculate_water_balance_turc,
-                                  classify_holdridge_point,
-                                  estimate_temperature,
-                                  generate_life_zone_raster)
-
+    from modules.iri_api import fetch_iri_data, process_iri_plume, process_iri_probabilities
 except ImportError:
-    # Dummies para evitar crash visual si falta backend
-    def calculate_morphometry(g):
-        return {
-            "area_km2": 100,
-            "perimetro_km": 50,
-            "alt_prom_m": 1500,
-            "pendiente_prom": 15,
-        }
+    fetch_iri_data = None
 
-# =============================================================================
-# UTILIDAD: BÚSQUEDA INSENSIBLE A MAYÚSCULAS/MINÚSCULAS 🦅
-# =============================================================================
+try:
+    from modules.openmeteo_api import get_weather_forecast_detailed, get_historical_monthly_series, get_weather_forecast_simple
+except ImportError:
+    pass
+
+try:
+    from modules.forecasting import generate_sarima_forecast, generate_prophet_forecast
+except ImportError:
+    pass
+
+# --- CONFIGURACIONES GLOBALES ---
+st.set_option('client.showErrorDetails', False) # Desactivar LaTeX en el renderizado
+matplotlib.use('Agg') # Backend seguro para evitar errores de hilos en el servidor
+
+# ==============================================================================
+# 2. FUNCIONES AUXILIARES (HELPERS) BLINDADAS
+# ==============================================================================
+
 def find_col(df, candidates):
     """Busca una columna en el DF ignorando mayúsculas/minúsculas."""
     if df is None or df.empty: return None
@@ -98,181 +87,196 @@ def find_col(df, candidates):
             return df.columns[df_cols.index(cand.lower())]
     return None
 
-    def calculate_hydrological_balance(p, t, g):
-        return {"P": p, "ET": p * 0.6, "Q_mm": p * 0.4, "Vol": (p * 0.4 * 100) / 1000}
-
-    def calculate_duration_curve(ts, c, a):
-        return None
-
-    def calculate_climatic_indices(ts, a):
-        return {}
-
-    def calculate_hypsometric_curve(g):
-        return None
-
 def get_safe_cols(df):
-    """
-    Función PARCHE para compatibilidad. 
-    Detecta si el DF usa nombres nuevos (latitud, nombre) o viejos (Latitud_geo, Nom_Est).
-    """
+    """Detecta nombres de columnas geográficas (soporta formatos viejos y nuevos)."""
     if df is None or df.empty: return None, None, None
-    
-    # 1. Detectar Latitud
-    c_lat = next((c for c in ['latitud', 'Latitud', 'Latitud_geo', 'lat', 'LATITUD'] if c in df.columns), None)
-    
-    # 2. Detectar Longitud
-    c_lon = next((c for c in ['longitud', 'Longitud', 'Longitud_geo', 'lon', 'LONGITUD'] if c in df.columns), None)
-    
-    # 3. Detectar Nombre
+    c_lat = next((c for c in ['latitud', 'Latitud', 'Latitud_geo', 'lat', 'LATITUD', 'latitude'] if c in df.columns), None)
+    c_lon = next((c for c in ['longitud', 'Longitud', 'Longitud_geo', 'lon', 'LONGITUD', 'longitude'] if c in df.columns), None)
     c_nom = next((c for c in ['nombre', 'Nombre', 'Nom_Est', 'station_name', 'ESTACION'] if c in df.columns), None)
-    
     return c_lat, c_lon, c_nom
-# ------------------------------------------------
 
-# PESTAÑA DE BIENVENIDA (PÁGINA DE INICIO RENOVADA)
+@st.cache_data(ttl=3600)
+def get_img_as_base64(url):
+    """Descarga imagen a Base64 para evitar bloqueos de hotlinking en HTML."""
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            encoded = base64.b64encode(r.content).decode()
+            return f"data:image/png;base64,{encoded}"
+    except: pass
+    return None
+
+def parse_spanish_date_visualizer(x):
+    """Convierte fechas en español ('ene-70') a datetime real."""
+    if pd.isna(x) or str(x).strip() == "": return pd.NaT
+    if isinstance(x, pd.Timestamp): return x
+    
+    x_str = str(x).lower().strip()
+    trans = {"ene": "Jan", "feb": "Feb", "mar": "Mar", "abr": "Apr", "may": "May", "jun": "Jun",
+             "jul": "Jul", "ago": "Aug", "sep": "Sep", "oct": "Oct", "nov": "Nov", "dic": "Dec"}
+    
+    for es, en in trans.items():
+        if es in x_str:
+            x_str = x_str.replace(es, en)
+            break
+    try: return pd.to_datetime(x_str, format="%b-%y")
+    except:
+        try: return pd.to_datetime(x_str)
+        except: return pd.NaT
+
+def _get_user_location_sidebar(key_suffix=""):
+    """Agrega controles en el sidebar para ubicar al usuario en mapas."""
+    with st.sidebar.expander(f"📍 Mi Ubicación ({key_suffix})", expanded=False):
+        st.caption("Ingrese coordenadas para ver su ubicación en mapas estáticos.")
+        u_lat = st.number_input("Latitud:", value=6.25, format="%.4f", step=0.01, key=f"u_lat_{key_suffix}")
+        u_lon = st.number_input("Longitud:", value=-75.56, format="%.4f", step=0.01, key=f"u_lon_{key_suffix}")
+        show_loc = st.checkbox("Mostrar en mapa", value=False, key=f"show_loc_{key_suffix}")
+        if show_loc:
+            st.success(f"📍 Ubicación activa:\nLat: {u_lat}\nLon: {u_lon}")
+            return (u_lat, u_lon)
+        return None
+
+# ==============================================================================
+# 3. GENERADORES DE POPUPS HTML (Limpios y sin redundancias)
+# ==============================================================================
+
+def generar_popup_estacion(row, valor_col='ppt_media'):
+    nombre = str(row.get('nombre', 'Estación')).replace("'", "")
+    muni = str(row.get('municipio', 'N/A')).replace("'", "")
+    altura = float(row.get('altitud', 0))
+    valor = float(row.get(valor_col, 0))
+    std = float(row.get('ppt_std', 0))
+    anios = int(row.get('n_anios', 0))
+    
+    return f"""
+    <div style='font-family:sans-serif; font-size:12px; min-width:160px; line-height:1.4;'>
+        <b style='color:#1f77b4; font-size:14px'>{nombre}</b>
+        <hr style='margin:4px 0; border-top:1px solid #ddd'>
+        📍 <b>Mpio:</b> {muni}<br>
+        ⛰️ <b>Altitud:</b> {altura:.0f} msnm<br>
+        💧 <b>P. Media:</b> {valor:.0f} mm/año<br>
+        📉 <b>Desv. Std:</b> ±{std:.0f} mm<br>
+        📅 <b>Registro:</b> {anios} años
+    </div>
+    """
+
+def generar_popup_bocatoma(row):
+    nombre = str(row.get('nombre_acu', 'Bocatoma')).replace("'", "")
+    fuente = str(row.get('fuente_aba', 'N/A')).replace("'", "")
+    mpio = str(row.get('municipio', '')).strip()
+    vereda = str(row.get('veredas', '')).strip()
+    ubicacion = f"{mpio} - {vereda}" if vereda else mpio
+    tipo = str(row.get('tipo', 'N/A'))
+    entidad = str(row.get('entidad_ad', 'N/A'))
+
+    return f"""
+    <div style='font-family:sans-serif; font-size:12px; min-width:180px;'>
+        <b style='color:#16a085; font-size:14px'>🚰 {nombre}</b>
+        <hr style='margin:4px 0; border-top:1px solid #ddd'>
+        📍 <b>Ubicación:</b> {ubicacion}<br>
+        🌊 <b>Fuente:</b> {fuente}<br>
+        ⚙️ <b>Tipo:</b> {tipo}<br>
+        🏢 <b>Entidad:</b> {entidad}
+    </div>
+    """
+
+def generar_popup_predio(row):
+    """Versión corregida: un solo return estructurado."""
+    datos_norm = {k.lower(): v for k, v in row.items()}
+    def get_seguro(col_key, default='N/A'):
+        val = datos_norm.get(col_key.lower(), default)
+        if val is None or str(val).lower() in ['none', 'nan', 'null', '']: return default
+        return str(val).strip()
+
+    nombre = get_seguro('nombre_pre', 'Predio')
+    pk = get_seguro('pk_predios')
+    anio = get_seguro('año_acuer', '-')
+    mpio = get_seguro('nomb_mpio')
+    vereda = get_seguro('nombre_ver')
+    ubicacion = f"{mpio} / {vereda}" if (mpio != 'N/A' or vereda != 'N/A') else "N/A"
+    embalse = get_seguro('embalse')
+    mecanismo = get_seguro('mecanism')
+    
+    try:
+        val_area = float(datos_norm.get('area_ha', 0))
+        area_txt = f"{val_area:.2f} ha"
+    except: area_txt = "N/A"
+
+    return f"""
+    <div style='font-family:sans-serif; font-size:12px; min-width:200px;'>
+        <b style='color:#d35400; font-size:14px'>🏡 {nombre}</b>
+        <hr style='margin:4px 0; border-top:1px solid #ddd'>
+        🔑 <b>PK:</b> {pk}<br>
+        📅 <b>Año:</b> {anio}<br>
+        📍 <b>Ubicación:</b> {ubicacion}<br>
+        💧 <b>Embalse:</b> {embalse}<br>
+        📜 <b>Mecanismo:</b> {mecanismo}<br>
+        📐 <b>Área:</b> {area_txt}
+    </div>
+    """
+
+# ==============================================================================
+# 4. PESTAÑA DE BIENVENIDA (PÁGINA DE INICIO)
 # ==============================================================================
 def display_welcome_tab():
-    # CSS para ajustar márgenes
-    st.markdown(
-        """
-        <style>
-        .block-container { padding-top: 1rem; }
-        h1 { margin-top: -3rem; }
-        </style>
-    """,
-        unsafe_allow_html=True,
-    )
-
+    st.markdown("""<style>.block-container { padding-top: 1rem; } h1 { margin-top: -3rem; }</style>""", unsafe_allow_html=True)
     st.title(f"Bienvenido a {Config.APP_TITLE}")
-    st.caption(
-        "Sistema de Información Hidroclimática Integrada para la Gestión Integral del Agua y la Biodiversidad en el Norte de la Region Andina"
-    )
+    st.caption("Sistema de Información Hidroclimática Integrada para la Gestión Integral del Agua y la Biodiversidad en el Norte de la Region Andina")
 
-    # Pestañas de Inicio
-    tab_intro, tab_clima, tab_modulos, tab_aleph = st.tabs(
-        [
-            "📘 Presentación del Sistema",
-            "🏔️ Climatología Andina",
-            "🛠️ Módulos y Capacidades",
-            "📖 El Aleph",
-        ]
-    )
+    tab_intro, tab_clima, tab_modulos, tab_aleph = st.tabs(["📘 Presentación del Sistema", "🏔️ Climatología Andina", "🛠️ Módulos y Capacidades", "📖 El Aleph"])
 
-    # --- PESTAÑA 1: PRESENTACIÓN (SIN LOGO) ---
     with tab_intro:
-        # Usamos el ancho completo ahora
-        st.markdown(
-            """
+        st.markdown("""
         ### Origen y Visión
-        **SIHCLI-POTER** nace de la necesidad imperativa de integrar datos, ciencia y tecnología para la toma de decisiones informadas en el territorio.
-        En un contexto de variabilidad climática creciente, la gestión del recurso hídrico y el ordenamiento territorial requieren herramientas que transformen datos dispersos en conocimiento accionable.
+        **SIHCLI-POTER** nace de la necesidad imperativa de integrar datos, ciencia y tecnología para la toma de decisiones informadas en el territorio. En un contexto de variabilidad climática creciente, la gestión del recurso hídrico y el ordenamiento territorial requieren herramientas que transformen datos dispersos en conocimiento accionable.
 
         Este sistema no es solo un repositorio de datos; es un **cerebro analítico** diseñado para procesar, modelar y visualizar la complejidad hidrometeorológica de la región Andina.
-        Su arquitectura modular permite desde el monitoreo en tiempo real hasta la proyección de escenarios de cambio climático a largo plazo.
 
         ### Aplicaciones Clave
-        * **Gestión del Riesgo:** Alertas tempranas y mapas de vulnerabilidad ante eventos extremos (sequías e inundaciones).
-        * **Planeación Territorial (POT):** Insumos técnicos para la zonificación ambiental y la gestión de cuencas.
-        * **Agricultura de Precisión:** Calendarios de siembra basados en pronósticos estacionales y zonas de vida.
-        * **Investigación:** Base de datos depurada y herramientas estadísticas para estudios académicos.
+        * **Gestión del Riesgo:** Alertas tempranas y mapas de vulnerabilidad.
+        * **Planeación Territorial (POT):** Insumos técnicos para zonificación.
+        * **Agricultura de Precisión:** Calendarios de siembra y zonas de vida.
+        * **Investigación:** Base de datos depurada.
 
         ---
-        **Versión:** 2.0 (Cloud-Native) | **Desarrollado por:** omejia - POTER.
-        """
-        )
+        **Versión:** 3.0 (Cloud-Native) | **Desarrollado por:** omejia - POTER.
+        """)
 
-    # --- PESTAÑA 2: CLIMATOLOGÍA ANDINA ---
     with tab_clima:
-        st.markdown(
-            """
+        st.markdown("""
         ### La Danza del Clima en los Andes
-        La región Andina es un mosaico climático de una complejidad fascinante.
-        Aquí, la geografía no es solo un escenario, sino un actor protagonista que esculpe el clima kilómetro a kilómetro.
+        La geografía no es solo un escenario, sino un actor protagonista que esculpe el clima kilómetro a kilómetro.
 
-        **La Verticalidad como Destino:**
-        En los Andes, viajar hacia arriba es como viajar hacia los polos.
-        En pocos kilómetros lineales, pasamos del calor húmedo de los valles interandinos (bosque seco tropical) a la neblina perpetua de los bosques de niebla, y finalmente al gélido silencio de los páramos y las nieves perpetuas. Esta **zonificación altitudinal** (bien descrita por Holdridge) define la vocación del suelo y la biodiversidad.
+        **La Verticalidad como Destino:** Pasamos del calor de los valles a la neblina de los bosques, y finalmente al gélido silencio de los páramos.
+        **El Pulso de Dos Océanos:** Somos un país anfibio, respirando la humedad del Pacífico y la Amazonía.
+        **La Variabilidad (ENSO):** * 🔥 **El Niño:** Océano caliente, atmósfera estable, sequía.
+        * 💧 **La Niña:** Océano frío, vientos rápidos, inundaciones.
+        """)
 
-        **El Pulso de Dos Océanos:**
-        Somos un país anfibio, respirando la humedad que llega tanto del Pacífico (Chocó Biogeográfico) como de la Amazonía.
-        Los vientos alisios chocan contra nuestras cordilleras, descargando su humedad en las vertientes orientales y creando "fábricas de agua" que alimentan nuestros grandes ríos.
-
-        **La Variabilidad (ENSO):**
-        Este sistema complejo no es estático. Está sometido al latido irregular del Pacífico Ecuatorial:
-        * **El Niño (Fase Cálida):** Cuando el océano se calienta, la atmósfera sobre nosotros se estabiliza, las nubes se disipan y la sequía amenaza, trayendo consigo el riesgo de incendios y desabastecimiento.
-        * **La Niña (Fase Fría):** Cuando el océano se enfría, los vientos se aceleran y la humedad se condensa con furia, desbordando ríos y saturando laderas.
-
-        Entender esta climatología no es solo leer termómetros; es comprender la interacción dinámica entre la montaña, el viento y el océano.
-        """
-        )
-
-    # --- PESTAÑA 3: MÓDULOS ---
     with tab_modulos:
-        st.markdown(
-            """
+        st.markdown("""
         ### Arquitectura del Sistema
-        SIHCLI-POTER está estructurado en módulos especializados interconectados:
+        SIHCLI-POTER está estructurado en módulos especializados:
+        1. 🚨 **Monitoreo:** Tiempo Real y Alertas.
+        2. 🗺️ **Distribución Espacial:** Mapas interactivos.
+        3. 🔮 **Pronóstico Climático:** Integración con el IRI (Columbia University).
+        4. 📉 **Tendencias:** Análisis estadístico (Mann-Kendall).
+        5. 🛰️ **Satélite:** Corrección de Sesgo (ERA5-Land).
+        6. 🌱 **Zonas de Vida:** Clasificación de Holdridge.
+        """)
 
-        1.  **🚨 Monitoreo (Tiempo Real):**
-            * Tablero de control con las últimas lecturas de estaciones telemétricas.
-            * Alertas inmediatas de umbrales críticos.
-
-        2.  **🗺️ Distribución Espacial:**
-            * Mapas interactivos para visualizar la red de monitoreo.
-            * Análisis de cobertura espacial y densidad de datos.
-
-        3.  **🔮 Pronóstico Climático & ENSO:**
-            * Integración directa con el **IRI (Columbia University)** para pronósticos oficiales de El Niño/La Niña.
-            * Modelos de predicción local (Prophet, SARIMA) y análisis de probabilidades.
-
-        4.  **📉 Tendencias y Riesgo:**
-            * Análisis estadístico de largo plazo (Mann-Kendall) para detectar si llueve más o menos que antes.
-            * Mapas de vulnerabilidad hídrica interpolados.
-
-        5.  **🛰️ Satélite y Sesgo:**
-            * Comparación de datos de tierra vs. reanálisis satelital (ERA5-Land).
-            * Herramientas para corregir y rellenar series históricas.
-
-        6.  **🌱 Zonas de Vida y Cobertura:**
-            * Cálculo automático de la clasificación de Holdridge.
-            * Análisis de uso del suelo y cobertura vegetal.
-        """
-        )
-
-    # --- PESTAÑA 4: EL ALEPH ---
     with tab_aleph:
         c_text, c_img = st.columns([3, 1])
         with c_text:
-            st.markdown(
-                """
+            st.markdown("""
             > *"Borges y el Aleph: La metáfora perfecta de la información total."*
 
-            ### Fragmento de "El Aleph"
-
-            "... Todo lenguaje es un alfabeto de símbolos cuyo ejercicio presupone un pasado que los interlocutores comparten;
-            ¿cómo transmitir a los otros el infinito Aleph, que mi temerosa memoria apenas abarca? (...)
-
-            En la parte inferior del escalón, hacia la derecha, vi una pequeña esfera tornasolada, de casi intolerable fulgor.
-            Al principio la creí giratoria; luego comprendí que ese movimiento era una ilusión producida por los vertiginosos espectáculos que encerraba.
-            El diámetro del Aleph sería de dos o tres centímetros, pero el espacio cósmico estaba ahí, sin disminución de tamaño.
-            Cada cosa (la luna del espejo, digamos) era infinitas cosas, porque yo la veía claramente desde todos los puntos del universo.
-
-            Vi el populoso mar, vi el alba y la tarde, vi las muchedumbres de América,
-            vi una plateada telaraña en el centro de una negra pirámide, vi un laberinto roto (era Londres),
-            vi interminables ojos inmediatos escrutándose en mí como en un espejo, vi todos los espejos del planeta y ninguno me reflejó...
-
-            **Vi el engranaje del amor y la modificación de la muerte, vi el Aleph, desde todos los puntos,
-            vi en el Aleph la tierra, y en la tierra otra vez el Aleph y en el Aleph la tierra, vi mi cara y mis vísceras, vi tu cara, y sentí vértigo y lloré,
-            porque mis ojos habían visto ese objeto secreto y conjetural, cuyo nombre usurpan los hombres, pero que ningún hombre ha mirado: el inconcebible universo."**
-
+            "...vi el engranaje del amor y la modificación de la muerte, vi el Aleph, desde todos los puntos, vi en el Aleph la tierra, y en la tierra otra vez el Aleph y en el Aleph la tierra, vi mi cara y mis vísceras, vi tu cara, y sentí vértigo y lloré, porque mis ojos habían visto ese objeto secreto y conjetural, cuyo nombre usurpan los hombres, pero que ningún hombre ha mirado: el inconcebible universo."
             — *Jorge Luis Borges (1945)*
-            """
-            )
+            """)
         with c_img:
-            st.info(
-                "El Aleph del tiempo, del clima, del agua, de la biodiversidad, ... del terri-torio."
-            )
-
+            st.info("El Aleph del tiempo, del clima, del agua, de la biodiversidad, ... del terri-torio.")
 
 # -----------------------------------------------------------------------------
 # 1. FUNCIONES AUXILIARES
@@ -3795,174 +3799,6 @@ def display_correlation_tab(**kwargs):
 
         except Exception as e:
             st.error(f"Error generando la matriz de correlación: {e}")
-
-
-def display_enso_tab(**kwargs):
-    st.subheader("🌊 Fenómeno ENSO (El Niño - Oscilación del Sur)")
-
-    # Recuperamos el DataFrame histórico que viene de la base de datos
-    df_enso = kwargs.get("df_enso")
-
-    # CREAMOS LAS PESTAÑAS
-    # 1. Pronóstico Oficial (Nuevo, datos del IRI)
-    # 2. Histórico ONI (Tu gráfico original que funciona bien)
-    tab_iri, tab_historico = st.tabs(
-        ["🔮 Pronóstico Oficial (IRI/CPC)", "📜 Histórico ONI"]
-    )
-
-    # ---------------------------------------------------------
-    # PESTAÑA 1: PRONÓSTICO IRI (NUEVO - DATOS LOCALES)
-    # ---------------------------------------------------------
-    with tab_iri:
-        st.info(
-            "ℹ️ Datos oficiales del IRI (International Research Institute for Climate and Society) - Columbia University. Actualización Mensual."
-        )
-
-        # Cargar datos desde archivos locales
-        json_plumas = fetch_iri_data("enso_plumes.json")
-        json_probs = fetch_iri_data("enso_iri_prob.json")
-
-        if json_plumas and json_probs:
-            col1, col2 = st.columns(2)
-
-            # A. Gráfico de Plumas
-            with col1:
-                st.markdown("#### 🍝 Modelos de Predicción (Plumas)")
-                data_plume = process_iri_plume(json_plumas)
-
-                if data_plume:
-                    fig_plume = go.Figure()
-                    seasons = data_plume["seasons"]
-
-                    for model in data_plume["models"]:
-                        is_dynamic = model["type"] == "Dynamical"
-                        color = (
-                            "rgba(100, 149, 237, 0.6)"
-                            if is_dynamic
-                            else "rgba(255, 165, 0, 0.6)"
-                        )
-                        name_prefix = "Dinámico" if is_dynamic else "Estadístico"
-
-                        fig_plume.add_trace(
-                            go.Scatter(
-                                x=seasons,
-                                y=model["values"],
-                                mode="lines",
-                                name=f"{name_prefix}: {model['name']}",
-                                line=dict(color=color, width=1.5),
-                                opacity=0.7,
-                                showlegend=False,
-                                hovertemplate=f"<b>{model['name']}</b><br>%{{y:.2f}} °C<extra></extra>",
-                            )
-                        )
-
-                    fig_plume.add_hline(
-                        y=0.5,
-                        line_dash="dash",
-                        line_color="red",
-                        annotation_text="El Niño",
-                    )
-                    fig_plume.add_hline(
-                        y=-0.5,
-                        line_dash="dash",
-                        line_color="blue",
-                        annotation_text="La Niña",
-                    )
-                    fig_plume.add_hline(y=0, line_color="black", opacity=0.3)
-
-                    fig_plume.update_layout(
-                        yaxis_title="Anomalía SST (°C)",
-                        xaxis_title="Trimestres",
-                        height=450,
-                        margin=dict(l=40, r=40, t=40, b=40),
-                        hovermode="x unified",
-                    )
-                    st.plotly_chart(fig_plume, use_container_width=True)
-                else:
-                    st.warning("Error procesando plumas.")
-
-            # B. Gráfico de Probabilidades
-            with col2:
-                st.markdown("#### 📊 Probabilidad Multimodelo")
-                df_probs = process_iri_probabilities(json_probs)
-
-                if df_probs is not None and not df_probs.empty:
-                    df_melt = df_probs.melt(
-                        id_vars="Trimestre",
-                        var_name="Evento",
-                        value_name="Probabilidad",
-                    )
-                    color_map = {
-                        "El Niño": "#FF4B4B",
-                        "La Niña": "#1C83E1",
-                        "Neutral": "#808495",
-                    }
-
-                    fig_probs = px.bar(
-                        df_melt,
-                        x="Trimestre",
-                        y="Probabilidad",
-                        color="Evento",
-                        color_discrete_map=color_map,
-                        text="Probabilidad",
-                        barmode="group",
-                    )
-                    fig_probs.update_traces(
-                        texttemplate="%{text:.0f}%", textposition="outside"
-                    )
-                    fig_probs.update_layout(
-                        yaxis_title="Probabilidad (%)",
-                        yaxis=dict(range=[0, 105]),
-                        height=450,
-                        legend=dict(
-                            orientation="h",
-                            yanchor="bottom",
-                            y=1.02,
-                            xanchor="right",
-                            x=1,
-                        ),
-                    )
-                    st.plotly_chart(fig_probs, use_container_width=True)
-                else:
-                    st.warning("Error procesando probabilidades.")
-        else:
-            st.error(
-                "⚠️ No se encontraron los archivos JSON en `data/iri/`. Verifica que los hayas subido."
-            )
-
-    # ---------------------------------------------------------
-    # PESTAÑA 2: HISTÓRICO ONI (USANDO TU FUNCIÓN ORIGINAL)
-    # ---------------------------------------------------------
-    with tab_historico:
-        st.markdown("#### 📉 Índice Oceánico del Niño (ONI) - Histórico")
-
-        if df_enso is not None and not df_enso.empty:
-            # Limpieza básica de fechas para asegurar que el gráfico funcione
-            data = df_enso.copy()
-
-            # Intento de conversión de fechas seguro
-            if data[Config.DATE_COL].dtype == "object":
-                try:
-                    # Intentamos usar pd.to_datetime directo primero
-                    data[Config.DATE_COL] = pd.to_datetime(
-                        data[Config.DATE_COL], errors="coerce"
-                    )
-                except:
-                    pass
-
-            data = data.dropna(subset=[Config.DATE_COL])
-
-            if Config.ENSO_ONI_COL in data.columns:
-                # AQUÍ LLAMAMOS A TU FUNCIÓN PRESERVADA
-                fig_oni = create_enso_chart(data)
-                st.plotly_chart(fig_oni, use_container_width=True)
-            else:
-                st.warning(
-                    f"No se encontró la columna '{Config.ENSO_ONI_COL}' en los datos."
-                )
-        else:
-            st.info("No hay datos históricos cargados.")
-
 
 def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=None, **kwargs):
     """
