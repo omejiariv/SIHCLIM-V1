@@ -1430,7 +1430,7 @@ with tab_micro:
             **La Inteligencia del Sotobosque:** Al añadir hojarasca, helechos y raíces superficiales, el coeficiente de fricción ($n$) aumenta. Esto reduce la velocidad del agua por debajo de la *velocidad crítica de arrastre*, obligando al lodo a decantar. **El agua llega al río, pero la montaña se queda en su sitio.**
             """)
 
-    with st.expander("🛑 6. Limnología Integral: Uniformismo y Catastrofismo en La Fe", expanded=False):
+    with st.expander(f"🛑 6. Limnología Integral: Uniformismo y Catastrofismo en {nombre_seleccion}", expanded=False):
         st.markdown("""<style>.limno-tooltip { position: relative; display: inline-block; color: #2980b9; font-weight: 600; cursor: help; border-bottom: 1px dashed #2980b9; } .limno-tooltip .tooltiptext { visibility: hidden; width: 320px; background-color: #fdfaf2; color: #2c3e50; text-align: left; border: 1px solid #d3c0a3; border-radius: 5px; padding: 15px; position: absolute; z-index: 50; bottom: 125%; left: 50%; margin-left: -160px; opacity: 0; transition: opacity 0.4s; font-size: 0.9em; font-family: 'Georgia', serif; box-shadow: 4px 4px 12px rgba(0,0,0,0.3); line-height: 1.4; } .limno-tooltip:hover .tooltiptext { visibility: visible; opacity: 1; } .tit-limno { font-weight: bold; font-size: 1.1em; color: #8e44ad; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}</style>""", unsafe_allow_html=True)
         st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>Modelo dinámico. Integra el <b>Uniformismo</b> (rutina) y el <b>Catastrofismo</b> (avenidas torrenciales) para calcular el colapso del <span class='limno-tooltip'>Volumen Muerto<span class='tooltiptext'><div class='tit-limno'>Fecha de Caducidad</div>Espacio en el fondo diseñado para sedimentos.</span></span>.</div>", unsafe_allow_html=True)
 
@@ -1634,31 +1634,28 @@ with tab_micro:
 
     st.markdown("---")
     st.markdown("#### 🌐 9. Conexión al Gemelo Digital (Cross-Pollination)")
-    st.info("Exporta la partición física, química y el riesgo de infraestructura de esta avenida torrencial hacia el simulador territorial (Pág 08).")
+    st.info("Exporta la retención del dosel, la partición física, química y el riesgo de infraestructura hacia los simuladores de Toma de Decisiones y Sistemas Hídricos.")
 
-    if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08)", type="primary", use_container_width=True):
-        lodo_total = lodo_total_m3
-        lodo_colas = lodo_colas_m3
-        lodo_fondo = lodo_fondo_m3
-        lodo_abrasivo = lodo_turbinas_m3 
+    if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08 y 09)", type="primary", use_container_width=True):
+        # Datos Lodos / Química
+        st.session_state['eco_lodo_total_m3'] = float(lodo_total_m3)
+        st.session_state['eco_lodo_colas_m3'] = float(lodo_colas_m3)
+        st.session_state['eco_lodo_fondo_m3'] = float(lodo_fondo_m3)
+        st.session_state['eco_lodo_abrasivo_m3'] = float(lodo_turbinas_m3)
+        st.session_state['eco_fosforo_kg'] = float(fosforo_hoy)
+        st.session_state['eco_sobrecosto_usd'] = float(s_total)
         
-        fosforo_final = fosforo_hoy
-        costo_final = s_total
-        
-        st.session_state['eco_lodo_total_m3'] = float(lodo_total)
-        st.session_state['eco_lodo_colas_m3'] = float(lodo_colas)
-        st.session_state['eco_lodo_fondo_m3'] = float(lodo_fondo)
-        st.session_state['eco_lodo_abrasivo_m3'] = float(lodo_abrasivo)
-        
-        st.session_state['eco_fosforo_kg'] = float(fosforo_final)
-        st.session_state['eco_sobrecosto_usd'] = float(costo_final)
+        # 🌿 NUEVO: Datos de Retención Hídrica del Dosel para el Sankey de la Pág 09
+        # Estas variables ya existen en tu código arriba en la pestaña 'tab_ret_dosel'
+        st.session_state['bio_eficiencia_retencion_pct'] = float(eficiencia_retencion_pct)
+        st.session_state['bio_s_max_mm'] = float(s_max_mm)
         
         st.success(f"""
             🧠 **Sincronización de Ingeniería Exitosa:**
-            Los datos han cruzado el Aleph con partición física:
-            * **Lodo en Colas (Cota Alta):** {lodo_colas:,.0f} m³
-            * **Lodo en Fondo (Vol. Muerto):** {lodo_fondo:,.0f} m³
-            * **Lodo Suspendido (Abrasión):** {lodo_abrasivo:,.0f} m³
+            Los datos han cruzado el Aleph con éxito para **{nombre_seleccion}**:
+            * **Eficiencia Retención Dosel:** {eficiencia_retencion_pct:.1f}% (Enviado al Sankey Pág 09)
+            * **Lodo en Fondo (Vol. Muerto):** {lodo_fondo_m3:,.0f} m³
+            * **Lodo Suspendido (Abrasión):** {lodo_turbinas_m3:,.0f} m³
             
-            Ve a la **Página 08 (Sistemas Hídricos)** para visualizar este impacto trifurcado en el Mapa Conceptual.
+            Ve a las **Páginas 08 (Sistemas Hídricos) y 09 (Toma de Decisiones)** para visualizar la integración total.
         """)
