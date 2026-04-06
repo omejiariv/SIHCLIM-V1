@@ -850,14 +850,13 @@ def parse_spanish_date_visualizer(x):
 # -----------------------------------------------------------------------------
 # CONEXIÓN CON IRI (COLUMBIA UNIVERSITY) - BLOQUE DE VISUALIZACIÓN REFINADO
 # -----------------------------------------------------------------------------
+# --- IMPORTACIÓN ROBUSTA DE IRI ---
 try:
-    from modules.iri_api import (fetch_iri_data, process_iri_plume, 
-                                 process_iri_probabilities)
-    # Se asume que stats_analyser ahora contiene funciones de limpieza matemática
-    from modules.stats_analyser import calcular_promedio_multimodelo_nan
-except ImportError:
+    from modules.iri_api import fetch_iri_data, process_iri_plume, process_iri_probabilities
+except ImportError as e:
+    st.error(f"Error crítico: No se pudo cargar 'modules/iri_api.py'. Verifique la existencia del archivo. Detalle: {e}")
     fetch_iri_data = None
-
+    
 def display_iri_forecast_tab():
     st.subheader("🌎 Pronóstico Oficial ENSO (IRI - Columbia University)")
 
@@ -873,10 +872,10 @@ def display_iri_forecast_tab():
         3. **Importancia:** Es el estándar de oro para la planeación frente a variabilidad climática en Colombia.
         """)
 
-    # 1. Validación de Módulo
+    # --- VALIDACIÓN DE SEGURIDAD (Cura para el TypeError) ---
     if fetch_iri_data is None:
-        st.error("⚠️ El motor de conexión con IRI no está disponible.")
-        return
+        st.error("⚠️ El motor de conexión con IRI no se cargó correctamente. Verifique que el archivo 'modules/iri_api.py' exista.")
+        return # Detiene la ejecución aquí para evitar que la app falle
 
     # 2. Carga Segura desde el módulo IRI API
     with st.spinner("Sincronizando con servidores de Columbia University..."):
@@ -914,7 +913,10 @@ def display_iri_forecast_tab():
         for model in plume_data["models"]:
             color = "rgba(100, 200, 100, 0.4)" if model["type"] == "Statistical" else "rgba(150, 150, 150, 0.4)"
             y_vals = model["values"][: len(seasons)]
-            all_values.append(y_vals)
+            
+            # Limpieza de valores para el promedio
+            clean_row = [val if val is not None else np.nan for val in y_vals]
+            all_values.append(clean_row)
 
             fig.add_trace(go.Scatter(
                 x=seasons, y=y_vals, mode="lines",
@@ -923,10 +925,9 @@ def display_iri_forecast_tab():
                 hoverinfo="name+y"
             ))
 
-        # --- CÁLCULO MATEMÁTICO CENTRALIZADO (Blindado contra NaNs) ---
+        # --- CÁLCULO MATEMÁTICO CENTRALIZADO ---
         try:
-            # Usamos una matriz limpia de numpy para el promedio
-            arr = np.array([[val if val is not None else np.nan for val in row] for row in all_values])
+            arr = np.array(all_values)
             avg_vals = np.nanmean(arr, axis=0)[: len(seasons)]
 
             fig.add_trace(go.Scatter(
