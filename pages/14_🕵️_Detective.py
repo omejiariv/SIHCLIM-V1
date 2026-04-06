@@ -1,4 +1,4 @@
-# pages/14_🕵️_Detective.py
+# pages/13_🕵️_Detective.py
 
 import os
 import sys
