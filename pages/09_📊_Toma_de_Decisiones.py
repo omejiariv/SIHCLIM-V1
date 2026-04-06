@@ -362,16 +362,26 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-        # Cálculo de Hectáreas Reales desde el SIG (Protegido)
+        # 🛡️ CÁLCULO DE HECTÁREAS CON CURACIÓN TOPOLÓGICA PROFUNDA
         ha_reales_sig = 0.0
         if capas.get('predios') is not None and not capas['predios'].empty and gdf_zona is not None:
             try:
-                gdf_z = gdf_zona.to_crs("EPSG:4326")
-                gdf_p = capas['predios'].to_crs("EPSG:4326")
-                predios_clip = gpd.clip(gdf_p, gdf_z)
+                # 1. Reproyectar a Magna Sirgas (Metros) desde el inicio para mayor precisión
+                gdf_z_3116 = gdf_zona.to_crs(epsg=3116).copy()
+                gdf_p_3116 = capas['predios'].to_crs(epsg=3116).copy()
+                
+                # 2. Curación Topológica: Arregla polígonos mal dibujados (moños, auto-intersecciones)
+                gdf_z_3116.geometry = gdf_z_3116.geometry.make_valid()
+                gdf_p_3116.geometry = gdf_p_3116.geometry.make_valid()
+                
+                # 3. Intersección estricta (Overlay es más seguro que Clip para calcular áreas)
+                predios_clip = gpd.overlay(gdf_p_3116, gdf_z_3116, how='intersection')
+                
                 if not predios_clip.empty:
-                    ha_reales_sig = predios_clip.to_crs(epsg=3116).area.sum() / 10000.0
-            except Exception: pass
+                    # 4. Cálculo de área real en Hectáreas
+                    ha_reales_sig = predios_clip.area.sum() / 10000.0
+            except Exception as e:
+                st.error(f"Error topológico calculando predios de CuencaVerde: {e}")
             
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         ha_base_calculo = ha_reales_sig if activar_sig else 0.0
