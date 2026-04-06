@@ -566,7 +566,7 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
     mask = ~np.isnan(vals)
     lons, lats, vals = lons[mask], lats[mask], vals[mask]
     
-    # Micro-ruido (Jitter)
+    # Micro-ruido (Jitter) para evitar el colapso por coordenadas idénticas
     np.random.seed(42)
     lons = lons + np.random.normal(0, 1e-6, size=len(lons))
     lats = lats + np.random.normal(0, 1e-6, size=len(lats))
@@ -582,10 +582,6 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
     lons_m, lats_m = np.meshgrid(lons, lats)
     max_dist = np.max(np.sqrt((lons_m - lons_m.T)**2 + (lats_m - lats_m.T)**2))
     rango_teorico = max_dist / 2.0 if max_dist > 0 else 0.1
-
-    # Extracción de ejes para GSTools (Ultra Optimizado)
-    x_axes = grid_x[:,0]
-    y_axes = grid_y[0,:]
 
     # 2. Selección de Método
     try:
@@ -617,8 +613,10 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
             
             krig = gs.krige.Ordinary(model, (lons, lats), vals)
             
-            # 💉 FIX DEFINITIVO: Usamos 'structured' y AGREGAMOS 'return_var=True'
-            z_krig, ss_krig = krig.structured([x_axes, y_axes], return_var=True)
+            # 💉 FIX DEFINITIVO: Aplanamos la malla, pedimos varianza y reconstruimos la forma original
+            z_flat, ss_flat = krig(grid_x.flatten(), grid_y.flatten(), return_var=True)
+            z_krig = z_flat.reshape(grid_x.shape)
+            ss_krig = ss_flat.reshape(grid_x.shape)
             
             if np.isnan(z_krig).all():
                 raise ValueError("Kriging devolvió matriz vacía.")
@@ -651,7 +649,9 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
             krig = gs.krige.ExtDrift(model, (lons, lats), vals, drift_src=elev_stations)
             
             # 💉 FIX DEFINITIVO KED
-            z_ked, ss_ked = krig.structured([x_axes, y_axes], drift_tgt=dem_grid, return_var=True)
+            z_flat, ss_flat = krig(grid_x.flatten(), grid_y.flatten(), drift_tgt=dem_grid.flatten(), return_var=True)
+            z_ked = z_flat.reshape(grid_x.shape)
+            ss_ked = ss_flat.reshape(grid_x.shape)
             
             if np.isnan(z_ked).all():
                 raise ValueError("KED devolvió matriz vacía.")
@@ -686,16 +686,12 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
 
     except Exception as e:
         print(f"Fallback activado en interpolador_maestro. Error original: {e}")
-        # --- FALLBACK SUAVIZADO ---
+        # --- FALLBACK 100% SEGURO (Sin desenfoques peligrosos) ---
         z_lin = griddata((lons, lats), vals, (grid_x, grid_y), method='linear')
         mask_nan = np.isnan(z_lin)
         if np.any(mask_nan):
             z_near = griddata((lons, lats), vals, (grid_x[mask_nan], grid_y[mask_nan]), method='nearest')
             z_lin[mask_nan] = z_near
-        
-        # Suavizamos el fallback para que no se vea tan poligonal si cae aquí
-        from scipy.ndimage import gaussian_filter
-        z_lin = gaussian_filter(z_lin, sigma=1.0)
         
         return np.clip(z_lin, a_min=val_min, a_max=val_max), None
         
