@@ -370,26 +370,37 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-        # 🛡️ CÁLCULO DE HECTÁREAS (Fuerza Bruta de Coordenadas y Topología)
+        # 🛡️ CÁLCULO DE HECTÁREAS (Intersección Espacial Sjoin - Máxima Robustez)
         ha_reales_sig = 0.0
         if capas.get('predios') is not None and not capas['predios'].empty and gdf_zona is not None:
             try:
-                # Forzar CRS inicial en caso de que venga corrupto del GeoJSON y reproyectar a métrico
-                gdf_p = capas['predios']
+                gdf_p = capas['predios'].copy()
+                gdf_z = gdf_zona.copy()
+
+                # Forzar CRS inicial por si el GeoJSON viene sin él
                 if gdf_p.crs is None: gdf_p.set_crs(epsg=4326, inplace=True)
-                
-                gdf_z_3116 = gdf_zona.to_crs(epsg=3116)
+                if gdf_z.crs is None: gdf_z.set_crs(epsg=4326, inplace=True)
+
+                # Reproyectar a Magna Sirgas (Métrico) para cálculo de área
                 gdf_p_3116 = gdf_p.to_crs(epsg=3116)
+                gdf_z_3116 = gdf_z.to_crs(epsg=3116)
+
+                # Curación topológica profunda: make_valid + buffer(0)
+                gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
+                gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(0)
+
+                # MAGIA: En lugar de "recortar", hacemos un Spatial Join (sjoin). 
+                # Si el predio "toca" (intersects) la cuenca, lo contamos.
+                intersected = gpd.sjoin(gdf_p_3116, gdf_z_3116, how='inner', predicate='intersects')
                 
-                # Curación y recorte
-                gdf_z_3116.geometry = gdf_z_3116.geometry.make_valid()
-                gdf_p_3116.geometry = gdf_p_3116.geometry.make_valid()
-                
-                predios_clip = gpd.overlay(gdf_p_3116, gdf_z_3116, how='intersection')
-                if not predios_clip.empty:
-                    ha_reales_sig = predios_clip.area.sum() / 10000.0
+                if not intersected.empty:
+                    # Extraer los predios únicos que intersectan (para no duplicar si tocan varios bordes)
+                    predios_unicos = gdf_p_3116.loc[intersected.index.unique()]
+                    # Sumar el área real de esos predios en hectáreas
+                    ha_reales_sig = predios_unicos.area.sum() / 10000.0
+
             except Exception as e: 
-                st.warning(f"Error topológico calculando predios: {e}")
+                st.warning(f"Error topológico en Spatial Join de predios: {e}")
             
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         ha_base_calculo = ha_reales_sig if activar_sig else 0.0
