@@ -244,6 +244,17 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     st.markdown("<br>", unsafe_allow_html=True)
     
+    # --- FUNCIONES DE RENDERIZADO VISUAL ---
+    def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
+        if not invertido:
+            if valor < umbral_rojo: return "🔴 CRÍTICO", "#c0392b"
+            elif valor < umbral_verde: return "🟡 VULNERABLE", "#f39c12"
+            else: return "🟢 ÓPTIMO", "#27ae60"
+        else:
+            if valor < umbral_verde: return "🟢 HOLGADO", "#27ae60"
+            elif valor < umbral_rojo: return "🟡 MODERADO", "#f39c12"
+            else: return "🔴 CRÍTICO", "#c0392b"
+
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
         fig = go.Figure(go.Indicator(
             mode = "gauge+number", value = valor,
@@ -261,32 +272,35 @@ if gdf_zona is not None and not gdf_zona.empty:
         fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10))
         return fig
 
-    # 🎯 Calculo para limitar la aguja visual del estrés al 100% (Aunque el real sea 547%)
+    # --- RENDERIZADO DE VELOCÍMETROS ---
+    # Topamos la aguja en 100 para que no se "rompa" el gráfico si el estrés es de 500%
     estres_gauge_val = min(100.0, estres_hidrico_porcentaje)
 
     col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+    
+    # Calculamos los textos de estado
     est_neu, col_neu = evaluar_indice(ind_neutralidad, 40, 80)
     est_res, col_res = evaluar_indice(ind_resiliencia, 30, 70)
-    # Evaluamos con el estrés real (547%), pero umbrales invertidos (40, 20)
+    # Para el texto, usamos el valor real de estrés (ej. 547%)
     est_est, col_est = evaluar_indice(estres_hidrico_porcentaje, 40, 20, invertido=True) 
     est_cal, col_cal = evaluar_indice(ind_calidad, 40, 70)
 
+    # Dibujamos las columnas (usando width="stretch" para evitar las alertas amarillas de Streamlit)
     with col_g1: 
-        st.plotly_chart(crear_velocimetro(ind_neutralidad, "Neutralidad", "#2ecc71", 40, 80), use_container_width=True)
+        st.plotly_chart(crear_velocimetro(ind_neutralidad, "Neutralidad (Actual)", "#2ecc71", 40, 80), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_neu}; margin-top:-20px;'>{est_neu}</h4>", unsafe_allow_html=True)
     with col_g2: 
-        st.plotly_chart(crear_velocimetro(ind_resiliencia, "Resiliencia", "#3498db", 30, 70), use_container_width=True)
+        st.plotly_chart(crear_velocimetro(ind_resiliencia, "Resiliencia Estructural", "#3498db", 30, 70), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_res}; margin-top:-20px;'>{est_res}</h4>", unsafe_allow_html=True)
     with col_g3: 
-        # ⚠️ FIX: Para la aguja invertida, los pasos a Plotly deben ir de menor a mayor (20, 40)
-        st.plotly_chart(crear_velocimetro(estres_gauge_val, "Nivel de Estrés", "#e74c3c", 20, 40, invertido=True), use_container_width=True)
+        # Nota: En aguja invertida, para Plotly, los colores van de 20 a 40
+        st.plotly_chart(crear_velocimetro(estres_gauge_val, "Nivel de Estrés", "#e74c3c", 20, 40, invertido=True), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_est}; margin-top:-20px;'>{est_est}</h4>", unsafe_allow_html=True)
     with col_g4:
-        st.plotly_chart(crear_velocimetro(ind_calidad, "Calidad del Agua", "#9b59b6", 40, 70), use_container_width=True)
+        st.plotly_chart(crear_velocimetro(ind_calidad, "Calidad del Agua", "#9b59b6", 40, 70), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_cal}; margin-top:-20px;'>{est_cal}</h4>", unsafe_allow_html=True)
 
     st.divider()
-
     # --- PRE-PROCESAMIENTO DE CAPAS ---
     capas = {}
     try:
