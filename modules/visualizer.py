@@ -6146,5 +6146,3 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         st.plotly_chart(fig, use_container_width=True)
         st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv")
 
-
-
