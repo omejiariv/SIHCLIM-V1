@@ -544,15 +544,29 @@ def main():
                         try:
                             from modules.db_manager import get_engine
                             eng = get_engine()
-                            # Usamos municipios_v2 y validamos el nombre de la columna geométrica
-                            gdf_municipios = gpd.read_postgis("SELECT * FROM municipios_v2", eng, geom_col="geometry")
+                            # Intentamos leer la tabla v2 para evitar el bloqueo de la original
+                            # Si lograste subirla con el panel, usa este nombre:
+                            query = "SELECT * FROM municipios_v2" 
                             
+                            gdf_municipios = gpd.read_postgis(query, eng, geom_col="geometry")
+                            
+                            # Asegurar el sistema de coordenadas WGS84
                             if gdf_municipios.crs is None:
                                 gdf_municipios.set_crs("EPSG:4326", inplace=True)
                             elif gdf_municipios.crs != "EPSG:4326":
                                 gdf_municipios = gdf_municipios.to_crs("EPSG:4326")
+                                
+                            # Renombrar columnas si es necesario para que el resto de la app las entienda
+                            # (Opcional, dependiendo de cómo las use tu visualizador)
+                            gdf_municipios = gdf_municipios.rename(columns={
+                                'nombre_municipio': 'municipio',
+                                'id_municipio': 'cod_dane'
+                            })
+                            
                         except Exception as e:
                             print(f"Error cargando municipios_v2: {e}")
+                            # Fallback por si la tabla v2 aún no existe o falló
+                            gdf_municipios = None
 
                         # 1. DATOS ESTACIONES
                         df_anios_count = df_monthly_filtered.groupby(Config.STATION_NAME_COL)[Config.YEAR_COL].nunique().reset_index(name='n_anios')
