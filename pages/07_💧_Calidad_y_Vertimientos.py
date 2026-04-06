@@ -1,25 +1,43 @@
-import streamlit as st
+import os
+import sys
+import io
+import unicodedata
+import warnings
+import requests
+
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import os
-import unicodedata
-import warnings
-from modules.utils import normalizar_texto, leer_csv_robusto
-from modules.demografia_tools import render_motor_demografico
-import requests
-import io
 import geopandas as gpd
-from modules import selectors
-from modules.config import Config
 
+import streamlit as st
+
+# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
+st.set_page_config(page_title="Calidad y Vertimientos", page_icon="💧", layout="wide")
 warnings.filterwarnings("ignore")
 
-st.set_page_config(page_title="Calidad y Vertimientos", page_icon="💧", layout="wide")
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
+try:
+    from modules import selectors
+    from modules.config import Config
+    from modules.utils import normalizar_texto, leer_csv_robusto, encender_gemelo_digital, obtener_metabolismo_exacto
+    from modules.demografia_tools import render_motor_demografico
+except ImportError:
+    # Fallback de rutas por si hay problemas de lectura entre carpetas
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from modules import selectors
+    from modules.config import Config
+    from modules.utils import normalizar_texto, leer_csv_robusto, encender_gemelo_digital, obtener_metabolismo_exacto
+    from modules.demografia_tools import render_motor_demografico
+
+# ==========================================
+# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# ==========================================
+# Llama al menú expandible y resalta la página actual
+selectors.renderizar_menu_navegacion("Calidad y Vertimientos")
 
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
-from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
 
 st.title("💧 Demanda, Calidad del Agua y Metabolismo Hídrico")
