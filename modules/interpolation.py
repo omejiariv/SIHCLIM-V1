@@ -550,7 +550,7 @@ def interpolate_spatial(df_points, val_col, gx, gy, method='linear'):
     return gz
 
 # -----------------------------------------------------------------------------
-# MOTOR DE INTERPOLACIÓN UNIFICADO (BLINDADO CONTRA DATOS DISPERSOS)
+# MOTOR DE INTERPOLACIÓN UNIFICADO (BLINDADO CONTRA DATOS DISPERSOS Y FORMAS)
 # -----------------------------------------------------------------------------
 def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', modelo_variograma='spherical', dem_grid=None):
     import gstools as gs
@@ -566,42 +566,35 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
     mask = ~np.isnan(vals)
     lons, lats, vals = lons[mask], lats[mask], vals[mask]
     
-    # --- 💉 VACUNA 1: MICRO-RUIDO (Jitter) ---
-    # Previene el error de "Matriz Singular" si hay estaciones con coordenadas idénticas
-    np.random.seed(42) # Semilla fija para no causar parpadeo visual
+    # Micro-ruido (Jitter) para evitar el colapso por coordenadas idénticas
+    np.random.seed(42)
     lons = lons + np.random.normal(0, 1e-6, size=len(lons))
     lats = lats + np.random.normal(0, 1e-6, size=len(lats))
     
     if len(vals) < 3:
-        # Fallback extremo
         z = griddata((lons, lats), vals, (grid_x, grid_y), method='nearest')
         return np.nan_to_num(z), None
 
     val_min, val_max = np.min(vals), np.max(vals)
     varianza = np.var(vals)
-    if varianza == 0: varianza = 0.01 # Evitar colapso matemático
+    if varianza == 0: varianza = 0.01
 
-    # Calcular distancia máxima para forzar un variograma cuando los datos fallan
     lons_m, lats_m = np.meshgrid(lons, lats)
     max_dist = np.max(np.sqrt((lons_m - lons_m.T)**2 + (lats_m - lats_m.T)**2))
     rango_teorico = max_dist / 2.0 if max_dist > 0 else 0.1
 
     # 2. Selección de Método
     try:
-        # --- PROTECCIÓN ANTI-CRASH PARA KED ---
         if metodo == 'ked' and dem_grid is None:
-            print("Advertencia: KED requiere un DEM. Haciendo fallback a Kriging Ordinario.")
             metodo = 'kriging'
             
         # --- A. KRIGING ORDINARIO ---
         if metodo == 'kriging':
-            # Selección de modelo
             if modelo_variograma == 'spherical': model = gs.Spherical(dim=2)
             elif modelo_variograma == 'exponential': model = gs.Exponential(dim=2)
             elif modelo_variograma == 'gaussian': model = gs.Gaussian(dim=2)
             else: model = gs.Linear(dim=2)
                 
-            # SALVAVIDAS: Si hay menos de 15 puntos, el variograma empírico colapsa.
             if len(vals) < 15:
                 model.var = float(varianza)
                 model.len_scale = float(rango_teorico)
@@ -610,7 +603,6 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
                 try:
                     bin_center, gamma = gs.vario_estimate((lons, lats), vals)
                     model.fit_variogram(bin_center, gamma, nugget=True)
-                    # Si ajusta una línea plana, forzar variabilidad
                     if model.var < 1e-4 or np.isnan(model.var):
                         model.var = float(varianza)
                         model.len_scale = float(rango_teorico)
@@ -620,22 +612,26 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
                     model.len_scale = float(rango_teorico)
             
             krig = gs.krige.Ordinary(model, (lons, lats), vals)
-            z_krig, ss_krig = krig.structured([grid_x[:,0], grid_y[0,:]]) 
             
-            # --- 💉 VACUNA 2: DETECTOR DE FALLO SILENCIOSO ---
+            # 💉 FIX DEFINITIVO: Evaluamos punto por punto (flatten) y redibujamos la matriz 
+            # Esto evita que el meshgrid envíe líneas 1D a gstools
+            z_flat, ss_flat = krig(grid_x.flatten(), grid_y.flatten())
+            z_krig = z_flat.reshape(grid_x.shape)
+            ss_krig = ss_flat.reshape(grid_x.shape)
+            
             if np.isnan(z_krig).all():
-                raise ValueError("Kriging devolvió matriz vacía (Matriz Singular o Variograma Plano).")
+                raise ValueError("Kriging devolvió matriz vacía.")
             
             z_krig = np.clip(z_krig, a_min=val_min, a_max=val_max)
             return z_krig, np.sqrt(np.abs(ss_krig))
 
         # --- B. KRIGING CON DERIVA EXTERNA (KED) ---
         elif metodo == 'ked' and dem_grid is not None:
-            from scipy.interpolate import RectBivariateSpline
-            x_axes, y_axes = grid_x[:,0], grid_y[0,:]
-            
-            dem_interpolator = RectBivariateSpline(y_axes, x_axes, dem_grid)
-            elev_stations = dem_interpolator.ev(lats, lons)
+            # Interpolamos el DEM hacia las estaciones
+            elev_stations = griddata((grid_x.flatten(), grid_y.flatten()), dem_grid.flatten(), (lons, lats), method='linear')
+            mask_nan_elev = np.isnan(elev_stations)
+            if np.any(mask_nan_elev):
+                elev_stations[mask_nan_elev] = griddata((grid_x.flatten(), grid_y.flatten()), dem_grid.flatten(), (lons[mask_nan_elev], lats[mask_nan_elev]), method='nearest')
             
             model = gs.Spherical(dim=2)
             if len(vals) < 15:
@@ -653,13 +649,14 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
                     model.len_scale = float(rango_teorico)
             
             krig = gs.krige.ExtDrift(model, (lons, lats), vals, drift_src=elev_stations)
-            z_ked, ss_ked = krig.structured([x_axes, y_axes], drift_tgt=dem_grid)
+            z_flat, ss_flat = krig(grid_x.flatten(), grid_y.flatten(), drift_tgt=dem_grid.flatten())
+            z_ked = z_flat.reshape(grid_x.shape)
             
             if np.isnan(z_ked).all():
                 raise ValueError("KED devolvió matriz vacía.")
             
             z_ked = np.clip(z_ked, a_min=val_min, a_max=val_max)
-            return z_ked, np.sqrt(np.abs(ss_ked))
+            return z_ked, np.sqrt(np.abs(ss_flat.reshape(grid_x.shape)))
 
         # --- C. IDW ---
         elif metodo == 'idw':
@@ -669,8 +666,6 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
             weights = 1.0 / dist**2
             z_idw = np.sum(weights * vals, axis=1) / np.sum(weights, axis=1)
             z_idw = z_idw.reshape(grid_x.shape)
-            if np.isnan(z_idw).all():
-                raise ValueError("IDW generó NaNs.")
             return np.clip(z_idw, a_min=val_min, a_max=val_max), None
 
         # --- D. SPLINE ---
@@ -690,8 +685,7 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
 
     except Exception as e:
         print(f"Fallback activado en interpolador_maestro. Error original: {e}")
-        # --- 💉 VACUNA 3: FALLBACK SUAVIZADO ---
-        # Usamos interpolación Lineal rellenando bordes con Nearest, para que luzca bien aunque Kriging falle.
+        # --- FALLBACK SUAVIZADO ---
         z_lin = griddata((lons, lats), vals, (grid_x, grid_y), method='linear')
         mask_nan = np.isnan(z_lin)
         if np.any(mask_nan):
@@ -699,5 +693,4 @@ def interpolador_maestro(df_puntos, col_val, grid_x, grid_y, metodo='kriging', m
             z_lin[mask_nan] = z_near
         return np.clip(z_lin, a_min=val_min, a_max=val_max), None
         
-    # Default fallback final
     return np.zeros_like(grid_x), None
