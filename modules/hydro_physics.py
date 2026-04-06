@@ -3,46 +3,41 @@
 import numpy as np
 import rasterio
 from rasterio.warp import reproject, Resampling
+from rasterio.io import MemoryFile
 import os
+import io
 import urllib.request
 import ssl
-import tempfile
 import streamlit as st
+
+# Importamos el interpolador maestro blindado
 from modules.interpolation import interpolador_maestro
 
 # --- 🚀 CLOUD SMART CACHE BLINDADO ---
-@st.cache_data(show_spinner="📥 Descargando Raster pesado desde Supabase (solo la primera vez)...")
+@st.cache_data(show_spinner="📥 Descargando Raster desde Supabase...")
 def download_raster_secure(url):
     """
     Descarga el raster asegurando que no haya bloqueos de SSL.
-    Lo guarda en una carpeta permanente del proyecto para no volver a descargarlo.
     """
-    if not url or not url.startswith("http"): 
+    if not url or not isinstance(url, str) or not url.startswith("http"): 
         return url
         
-    # Crear carpeta persistente para el caché
     cache_dir = os.path.join(os.getcwd(), "data", "cloud_cache")
     os.makedirs(cache_dir, exist_ok=True)
-    
     filename = url.split("/")[-1]
     local_path = os.path.join(cache_dir, filename)
     
-    # Si el archivo no existe o pesa menos de 1KB (está corrupto)
     if not os.path.exists(local_path) or os.path.getsize(local_path) < 1024:
         try:
-            # Ignorar errores de certificado SSL que bloquean las descargas cloud
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
-            
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, context=ctx) as response, open(local_path, 'wb') as out_file:
                 out_file.write(response.read())
         except Exception as e:
-            st.error(f"❌ Error descargando `{filename}`. Verifica que el archivo exista en Supabase con ese nombre exacto.")
             print(f"Error descargando {url}: {e}")
             return None
-            
     return local_path
 
 # --- A. BASE DE CONOCIMIENTO ---
@@ -61,48 +56,54 @@ def interpolar_variable(gdf_puntos, columna_valor, grid_x, grid_y, method='krigi
         col_val=columna_valor,
         grid_x=grid_x,
         grid_y=grid_y,
-        metodo=method,
+        metodo=method.lower(),
         dem_grid=dem_array
     )
     Z_Interp = np.nan_to_num(Z_Interp, nan=0)
     return np.maximum(Z_Interp, 0), Z_Error
 
-# --- C. WARPING (AHORA USANDO CACHÉ LOCAL OPTIMIZADO) ---
+# --- C. WARPING (NUBE Y LOCAL) ---
+def _ejecutar_reproject(src, bounds, shape):
+    """Función interna modularizada para re-proyectar cualquier fuente raster."""
+    dst_crs = 'EPSG:4326'
+    minx, miny, maxx, maxy = bounds
+    dst_transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, shape[1], shape[0])
+    destination = np.zeros(shape, dtype=np.float32)
+
+    reproject(
+        source=rasterio.band(src, 1),
+        destination=destination,
+        src_transform=src.transform,
+        src_crs=src.crs,
+        dst_transform=dst_transform,
+        dst_crs=dst_crs,
+        resampling=Resampling.bilinear,
+        dst_nodata=np.nan 
+    )
+    if np.isnan(destination).all(): return None
+    return destination
+
 def warper_raster_to_grid(raster_path, bounds, shape):
-    """
-    Lee un raster desde el caché seguro y lo fuerza a encajar en la malla WGS84.
-    """
+    """Lee un raster (ya sea desde URL o desde la RAM) y lo ajusta a la malla."""
+    # 1. Si el archivo viene desde la RAM (Supabase BytesIO)
+    if isinstance(raster_path, (io.BytesIO, bytes)) or hasattr(raster_path, 'read'):
+        if hasattr(raster_path, 'seek'): raster_path.seek(0) # Rebobinar
+        try:
+            with MemoryFile(raster_path) as memfile:
+                with memfile.open() as src:
+                    return _ejecutar_reproject(src, bounds, shape)
+        except Exception as e:
+            print(f"Error warper_raster_to_grid (Memoria): {e}")
+            return None
+            
+    # 2. Si el archivo es un string (Ruta local o URL)
     safe_path = download_raster_secure(raster_path)
     if not safe_path: return None
-    
     try:
-        dst_crs = 'EPSG:4326'
-        minx, miny, maxx, maxy = bounds
-        
         with rasterio.open(safe_path) as src:
-            dst_transform = rasterio.transform.from_bounds(
-                minx, miny, maxx, maxy, shape[1], shape[0]
-            )
-            destination = np.zeros(shape, dtype=np.float32)
-
-            reproject(
-                source=rasterio.band(src, 1),
-                destination=destination,
-                src_transform=src.transform,
-                src_crs=src.crs,
-                dst_transform=dst_transform,
-                dst_crs=dst_crs,
-                resampling=Resampling.bilinear,
-                dst_nodata=np.nan 
-            )
-            
-            if np.isnan(destination).all():
-                return None
-                
-            return destination
-
+            return _ejecutar_reproject(src, bounds, shape)
     except Exception as e:
-        print(f"Error warper_raster_to_grid: {e}")
+        print(f"Error warper_raster_to_grid (Local): {e}")
         return None
 
 # --- D. MOTOR FÍSICO "EL ALEPH" ---
@@ -118,12 +119,10 @@ def run_distributed_model(Z_P, grid_x, grid_y, paths, bounds):
                 Z_Alt = np.nan_to_num(Z_dem_raw, nan=np.nanmean(Z_dem_raw))
         except: pass
     
-    # Gradiente Térmico
     Z_T = np.maximum(28.0 - (0.006 * Z_Alt), 1.0)
 
     # --- 2. ETR (TURC) ---
     L = 300 + (25 * Z_T) + (0.05 * (Z_T**3))
-    
     with np.errstate(divide='ignore', invalid='ignore'):
         ratio_seguro = np.clip(Z_P / L, 0, 500) 
         denom = np.sqrt(0.9 + (ratio_seguro)**2)
@@ -141,7 +140,6 @@ def run_distributed_model(Z_P, grid_x, grid_y, paths, bounds):
     # --- 4. COBERTURA Y ESCORRENTÍA ---
     Z_C = np.full_like(Z_P, 0.45) 
     Z_Cob_Viz = None
-
     if paths.get('cobertura'):
         try:
             Z_Cob = warper_raster_to_grid(paths['cobertura'], bounds, shape)
@@ -177,7 +175,6 @@ def run_distributed_model(Z_P, grid_x, grid_y, paths, bounds):
         '9. Rendimiento Hídrico (L/s/km²)': Z_Rendimiento,
         '10. Susceptibilidad Erosión (Adim)': Z_Erosion
     }
-
     if Z_Cob_Viz is not None:
         resultados['11. Cobertura de Suelo (Clase)'] = Z_Cob_Viz
 
