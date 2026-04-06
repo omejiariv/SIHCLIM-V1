@@ -3,39 +3,55 @@
 import json
 import os
 import pandas as pd
+import requests
 import streamlit as st
 
-# --- 📂 NUEVA RUTA CORREGIDA (Acorde a la limpieza de GitHub) ---
+# --- 🌐 RUTAS DE CONEXIÓN ---
+IRI_BASE_URL = "https://iri.columbia.edu/our-expertise/climate/forecasts/enso/current/"
 LOCAL_DATA_PATH = "iri"
 
-@st.cache_data(show_spinner=False, ttl=3600) # Caché de 1 hora para evitar lecturas constantes
+@st.cache_data(show_spinner=False, ttl=3600) # Caché de 1 hora para no saturar al IRI
 def fetch_iri_data(filename):
     """
-    Carga los datos del IRI desde archivos locales (JSON) de la carpeta /iri.
+    Descarga los datos del IRI directamente de los servidores de Columbia University.
+    Tiene un fallback (respaldo) a los archivos locales si el servidor falla.
     """
-    file_path = os.path.join(LOCAL_DATA_PATH, filename)
+    url = f"{IRI_BASE_URL}{filename}"
+    
+    # 1. INTENTO EN VIVO (Conexión a Columbia University)
+    try:
+        # Timeout de 5 segundos para que la app no se quede colgada si el IRI está caído
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Aviso: Servidor IRI retornó {response.status_code}. Usando respaldo.")
+    except requests.exceptions.RequestException as e:
+        print(f"Aviso: No se pudo conectar al IRI ({e}). Usando respaldo local.")
 
+    # 2. SISTEMA DE RESPALDO (Fallback a la carpeta local /iri)
+    file_path = os.path.join(LOCAL_DATA_PATH, filename)
     try:
         if not os.path.exists(file_path):
-            # Intento de fallback: buscar en la raíz del proyecto por si acaso
+            # Intento de fallback extra en raíz por si acaso
             if os.path.exists(filename):
                 file_path = filename
             else:
-                st.error(f"⚠️ Archivo no encontrado: `{file_path}`. Verifica que esté en la carpeta `iri/`.")
+                st.error(f"⚠️ Servidor IRI caído y no se encontró el respaldo local `{file_path}`.")
                 return None
 
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
     except json.JSONDecodeError:
-        st.error(f"❌ El archivo `{filename}` no es un JSON válido o está corrupto.")
+        st.error(f"❌ El archivo de respaldo `{filename}` no es un JSON válido o está corrupto.")
         return None
     except Exception as e:
-        st.error(f"❌ Error leyendo archivo `{filename}`: {e}")
+        st.error(f"❌ Error leyendo archivo local `{filename}`: {e}")
         return None
 
 
-# --- FUNCIONES DE PROCESAMIENTO (BLINDADAS CON .get()) ---
+# --- FUNCIONES DE PROCESAMIENTO (BLINDADAS) ---
 
 @st.cache_data(show_spinner=False)
 def process_iri_plume(data_json):
