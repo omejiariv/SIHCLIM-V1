@@ -31,13 +31,6 @@ try:
     from modules.db_manager import get_engine
 except ImportError:
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from modules import selectors
-    from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
-    from modules.demografia_tools import render_motor_demografico
-    from modules.biodiversidad_tools import render_motor_ripario
-    from modules.geomorfologia_tools import render_motor_hidrologico
-    from modules.impacto_serv_ecosist import render_sigacal_analysis
-    from modules.db_manager import get_engine
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
@@ -153,15 +146,32 @@ if gdf_zona is not None and not gdf_zona.empty:
     lugar_actual = nombre_zona
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
         
-    # 1. Metabolismo Local
-    datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
+    # ==============================================================================
+    # 🧠 ENRUTADOR DEMOGRÁFICO INTELIGENTE (Solución a Población 0)
+    # ==============================================================================
+    nombre_lower = str(nombre_zona).lower()
+    municipio_proxy = nombre_zona
+    
+    # Si es una subcuenca, apuntamos al municipio principal que la representa
+    if "chico" in nombre_lower: municipio_proxy = "belmira"
+    elif "grande" in nombre_lower: municipio_proxy = "don matias"
+    elif "fe" in nombre_lower or "pantanillo" in nombre_lower: municipio_proxy = "el retiro"
+    elif "aburra" in nombre_lower or "medellin" in nombre_lower: municipio_proxy = "medellin"
+
+    datos_metabolismo = obtener_metabolismo_exacto(municipio_proxy, anio_actual)
     pob_total = datos_metabolismo.get('pob_total', 0)
     bovinos = datos_metabolismo.get('bovinos', 0)
     porcinos = datos_metabolismo.get('porcinos', 0)
     aves = datos_metabolismo.get('aves', 0)
 
-    if pob_total == 0 and bovinos == 0:
-        st.warning(f"⚠️ **Vacío de Datos:** '{nombre_zona}' no fue encontrado en las Matrices Maestras.")
+    # Fallback extremo de seguridad por si falla la base de datos
+    if pob_total == 0:
+        st.warning(f"⚠️ **Ajuste Automático:** '{nombre_zona}' no arrojó datos, aplicando aproximación demográfica base.")
+        if "chico" in nombre_lower: pob_total = 12500
+        elif "grande" in nombre_lower: pob_total = 45000
+        elif "fe" in nombre_lower: pob_total = 25000
+        elif "aburra" in nombre_lower: pob_total = 4000000
+        else: pob_total = 10000
 
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
@@ -233,7 +243,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     ind_resiliencia = max(0.0, min(100.0, (bfi_ratio / 0.70) * 100 * factor_supervivencia))
     
     ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
-    ind_neutralidad = 0.0 # Se asume 0 hasta simular proyectos abajo
+    ind_neutralidad = 0.0 
 
     estres_hidrico_porcentaje = (wei_ratio) * 100
     st.session_state['estres_hidrico_global'] = estres_hidrico_porcentaje
@@ -279,20 +289,15 @@ if gdf_zona is not None and not gdf_zona.empty:
         fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10), font_family="Georgia")
         return fig
 
-    # --- RENDERIZADO DE VELOCÍMETROS ---
-    # Topamos la aguja en 100 para que no se "rompa" el gráfico si el estrés es de 500%
     estres_gauge_val = min(100.0, estres_hidrico_porcentaje)
 
     col_g1, col_g2, col_g3, col_g4 = st.columns(4)
     
-    # Calculamos los textos de estado
     est_neu, col_neu = evaluar_indice(ind_neutralidad, 40, 80)
     est_res, col_res = evaluar_indice(ind_resiliencia, 30, 70)
-    # Para el texto, usamos el valor real de estrés (ej. 547%)
     est_est, col_est = evaluar_indice(estres_hidrico_porcentaje, 40, 20, invertido=True) 
     est_cal, col_cal = evaluar_indice(ind_calidad, 40, 70)
 
-    # Dibujamos las columnas (usando width="stretch" para evitar las alertas amarillas de Streamlit)
     with col_g1: 
         st.plotly_chart(crear_velocimetro(ind_neutralidad, "Neutralidad (Actual)", "#2ecc71", 40, 80), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_neu}; margin-top:-20px;'>{est_neu}</h4>", unsafe_allow_html=True)
@@ -300,7 +305,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.plotly_chart(crear_velocimetro(ind_resiliencia, "Resiliencia Estructural", "#3498db", 30, 70), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_res}; margin-top:-20px;'>{est_res}</h4>", unsafe_allow_html=True)
     with col_g3: 
-        # Nota: En aguja invertida, para Plotly, los colores van de 20 a 40
         st.plotly_chart(crear_velocimetro(estres_gauge_val, "Nivel de Estrés", "#e74c3c", 20, 40, invertido=True), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_est}; margin-top:-20px;'>{est_est}</h4>", unsafe_allow_html=True)
     with col_g4:
@@ -370,23 +374,21 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-# 🛡️ ALGORITMO DE TRIPLE BLINDAJE (Nube + CRS + Enrutador Semántico Inteligente)
+        # 🛡️ ALGORITMO DEFINITIVO (Búsqueda Dinámica de Columnas y Monitor de Diagnóstico)
         @st.cache_data(ttl=3600, show_spinner=False)
         def obtener_hectareas_predios_maestros(_gdf_zona, nombre_zona_txt):
-            import requests, tempfile
-            import unicodedata
+            import requests, tempfile, unicodedata
             import pandas as pd
             import geopandas as gpd
             
             ha_calc = 0.0
-            info_debug = "Cálculo local fallido."
+            info_debug = "Iniciando cálculo..."
             
             try:
-                # 1. Conexión directa a Supabase
+                # 1. Conexión a Supabase
                 url_supabase = None
                 if "SUPABASE_URL" in st.secrets: url_supabase = st.secrets["SUPABASE_URL"]
                 elif "supabase" in st.secrets: url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
-                elif "connections" in st.secrets and "supabase" in st.secrets["connections"]: url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
                 
                 gdf_p = None
                 if url_supabase:
@@ -399,71 +401,52 @@ if gdf_zona is not None and not gdf_zona.empty:
                         gdf_p = gpd.read_file(tmp_path_p)
 
                 if gdf_p is None or gdf_p.empty:
-                    return 0.0, "Capa vacía o no descargada desde la nube."
+                    return 0.0, "❌ Error: No se pudo descargar el archivo PrediosEjecutados desde Supabase."
 
-                # 2. DETECCIÓN AUTOMÁTICA DE CRS
-                if gdf_p.crs is None:
-                    minx, miny, maxx, maxy = gdf_p.total_bounds
-                    if maxx > 3000000: gdf_p.set_crs(epsg=9377, inplace=True)
-                    elif maxx > 180: gdf_p.set_crs(epsg=3116, inplace=True)
-                    else: gdf_p.set_crs(epsg=4326, inplace=True)
-                
+                # BUSCADOR DINÁMICO DE COLUMNA DE ÁREA
+                col_area = next((c for c in gdf_p.columns if 'area' in c.lower() or 'ha' in c.lower()), None)
+
+                # 2. CRS
+                if gdf_p.crs is None: gdf_p.set_crs(epsg=4326, inplace=True)
                 gdf_p_3116 = gdf_p.to_crs(epsg=3116)
                 gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
                 
-                # Curación topológica extrema
+                # Curación de topología
                 gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
                 gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(100) # 100m de margen
                 
-                # 3. CRUCE ESPACIAL (Spatial Join)
+                # 3. SPATIAL JOIN
                 intersected = gpd.sjoin(gdf_p_3116, gdf_z_3116, how='inner', predicate='intersects')
                 
                 if not intersected.empty:
                     predios_unicos = gdf_p_3116.loc[intersected.index.unique()]
-                    if 'AREA_HA' in predios_unicos.columns:
-                        ha_calc = pd.to_numeric(predios_unicos['AREA_HA'], errors='coerce').sum()
+                    if col_area:
+                        ha_calc = pd.to_numeric(predios_unicos[col_area], errors='coerce').sum()
                     else:
                         ha_calc = predios_unicos.area.sum() / 10000.0
-                    info_debug = f"✅ Intersección espacial: {len(predios_unicos)} predios cruzados."
+                    info_debug = f"✅ CRUCE ESPACIAL EXITOSO: {len(predios_unicos)} predios interceptan. Columna sumada: {col_area if col_area else 'Geometría pura'}."
                 else:
-                    # 4. RESCATE SEMÁNTICO INTELIGENTE (Fuzzy Matching para Subcuencas)
-                    term_raw = unicodedata.normalize('NFKD', str(nombre_zona_txt).lower()).encode('ascii', 'ignore').decode('utf-8')
+                    # 4. RESCATE SEMÁNTICO EXTREMO
+                    term_raw = str(nombre_zona_txt).lower()
+                    termino_busqueda = "chico" if "chico" in term_raw else "grande" if "grande" in term_raw else "fe" if "fe" in term_raw else "aburra"
                     
-                    # Diccionario maestro para enrutar subcuencas a sus embalses en Supabase
-                    mapeo_embalses = {
-                        "chico": "riogrande", "grande": "riogrande", "animas": "riogrande",
-                        "fe": "fe", "pantani": "fe", "buey": "fe", "piedras": "fe",
-                        "aburra": "aburra", "medellin": "aburra", "porce": "porce"
-                    }
+                    mask = pd.Series(False, index=gdf_p.index)
+                    for col in gdf_p.select_dtypes(include=['object']).columns:
+                        mask = mask | gdf_p[col].astype(str).str.lower().str.contains(termino_busqueda, na=False)
                     
-                    termino_busqueda = term_raw
-                    for clave, valor_oficial in mapeo_embalses.items():
-                        if clave in term_raw:
-                            termino_busqueda = valor_oficial
-                            break
-                            
-                    termino_busqueda = termino_busqueda.replace("r. ", "").replace("rio ", "").replace("quebrada ", "").strip()
-                    
-                    if termino_busqueda:
-                        mask = pd.Series(False, index=gdf_p.index)
-                        for col in gdf_p.select_dtypes(include=['object']).columns:
-                            col_str = gdf_p[col].astype(str).str.lower().apply(lambda x: unicodedata.normalize('NFKD', x).encode('ascii', 'ignore').decode('utf-8'))
-                            mask = mask | col_str.str.contains(termino_busqueda, na=False)
-                        
-                        match_df = gdf_p[mask]
-                        if not match_df.empty:
-                            if 'AREA_HA' in match_df.columns:
-                                ha_calc = pd.to_numeric(match_df['AREA_HA'], errors='coerce').sum()
-                            else:
-                                match_3116 = match_df.to_crs(epsg=3116)
-                                ha_calc = match_3116.area.sum() / 10000.0
-                            info_debug = f"⚠️ Rescate semántico ('{termino_busqueda}'): {len(match_df)} predios encontrados."
+                    match_df = gdf_p[mask]
+                    if not match_df.empty:
+                        if col_area:
+                            ha_calc = pd.to_numeric(match_df[col_area], errors='coerce').sum()
                         else:
-                            # NOTA: Si después de todo esto da 0, es porque FÍSICAMENTE y SEMÁNTICAMENTE no hay predios de CV ahí.
-                            info_debug = f"ℹ️ Sin predios detectados en o asociados a '{nombre_zona_txt}'."
+                            match_3116 = match_df.to_crs(epsg=3116)
+                            ha_calc = match_3116.area.sum() / 10000.0
+                        info_debug = f"⚠️ RESCATE SEMÁNTICO: 0 cruces geométricos, pero {len(match_df)} predios contienen la palabra '{termino_busqueda}'."
+                    else:
+                        info_debug = f"❌ SIN RESULTADOS: No hay intersección espacial ni predios con la palabra '{termino_busqueda}'."
 
             except Exception as e: 
-                info_debug = f"Error crítico: {e}"
+                info_debug = f"❌ ERROR CRÍTICO EN FUNCIÓN: {e}"
                 
             return ha_calc, info_debug
 
@@ -473,7 +456,8 @@ if gdf_zona is not None and not gdf_zona.empty:
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
         
-        if ha_reales_sig > 0: st.caption(msg_debug)
+        # 🚨 MOSTRAR SIEMPRE EL DIAGNÓSTICO
+        st.info(f"🕵️ **Diagnóstico del Motor:** {msg_debug}")
         
         # --- Conexión Riparia (Nexo Físico) ---
         ha_riparias_potenciales = 0.0
@@ -522,7 +506,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         with c_inv3:
             volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
             st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Impacto total simulado")
-
+            
         # ==============================================================================
         # 🔬 MOTOR DE REGULACIÓN HIDROLÓGICA Y TERMODINÁMICA (SANKEY DINÁMICO)
         # ==============================================================================
