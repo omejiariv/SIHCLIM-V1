@@ -370,7 +370,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-        # 🛡️ ALGORITMO DE TRIPLE BLINDAJE (Nube + CRS + Rescate Semántico)
+# 🛡️ ALGORITMO DE TRIPLE BLINDAJE (Nube + CRS + Enrutador Semántico Inteligente)
         @st.cache_data(ttl=3600, show_spinner=False)
         def obtener_hectareas_predios_maestros(_gdf_zona, nombre_zona_txt):
             import requests, tempfile
@@ -382,7 +382,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             info_debug = "Cálculo local fallido."
             
             try:
-                # 1. Conexión directa a Supabase (Saltándose el clip roto local)
+                # 1. Conexión directa a Supabase
                 url_supabase = None
                 if "SUPABASE_URL" in st.secrets: url_supabase = st.secrets["SUPABASE_URL"]
                 elif "supabase" in st.secrets: url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
@@ -426,15 +426,29 @@ if gdf_zona is not None and not gdf_zona.empty:
                         ha_calc = predios_unicos.area.sum() / 10000.0
                     info_debug = f"✅ Intersección espacial: {len(predios_unicos)} predios cruzados."
                 else:
-                    # 4. RESCATE SEMÁNTICO (Busca el nombre en la tabla como hace la Pág 08)
-                    term = unicodedata.normalize('NFKD', str(nombre_zona_txt).lower()).encode('ascii', 'ignore').decode('utf-8')
-                    term = term.replace("r. ", "").replace("rio ", "").replace("quebrada ", "").strip()
+                    # 4. RESCATE SEMÁNTICO INTELIGENTE (Fuzzy Matching para Subcuencas)
+                    term_raw = unicodedata.normalize('NFKD', str(nombre_zona_txt).lower()).encode('ascii', 'ignore').decode('utf-8')
                     
-                    if term:
+                    # Diccionario maestro para enrutar subcuencas a sus embalses en Supabase
+                    mapeo_embalses = {
+                        "chico": "riogrande", "grande": "riogrande", "animas": "riogrande",
+                        "fe": "fe", "pantani": "fe", "buey": "fe", "piedras": "fe",
+                        "aburra": "aburra", "medellin": "aburra", "porce": "porce"
+                    }
+                    
+                    termino_busqueda = term_raw
+                    for clave, valor_oficial in mapeo_embalses.items():
+                        if clave in term_raw:
+                            termino_busqueda = valor_oficial
+                            break
+                            
+                    termino_busqueda = termino_busqueda.replace("r. ", "").replace("rio ", "").replace("quebrada ", "").strip()
+                    
+                    if termino_busqueda:
                         mask = pd.Series(False, index=gdf_p.index)
                         for col in gdf_p.select_dtypes(include=['object']).columns:
                             col_str = gdf_p[col].astype(str).str.lower().apply(lambda x: unicodedata.normalize('NFKD', x).encode('ascii', 'ignore').decode('utf-8'))
-                            mask = mask | col_str.str.contains(term, na=False)
+                            mask = mask | col_str.str.contains(termino_busqueda, na=False)
                         
                         match_df = gdf_p[mask]
                         if not match_df.empty:
@@ -443,9 +457,10 @@ if gdf_zona is not None and not gdf_zona.empty:
                             else:
                                 match_3116 = match_df.to_crs(epsg=3116)
                                 ha_calc = match_3116.area.sum() / 10000.0
-                            info_debug = f"⚠️ Rescate semántico: {len(match_df)} predios encontrados por nombre."
+                            info_debug = f"⚠️ Rescate semántico ('{termino_busqueda}'): {len(match_df)} predios encontrados."
                         else:
-                            info_debug = "❌ Sin intersección espacial ni coincidencias semánticas."
+                            # NOTA: Si después de todo esto da 0, es porque FÍSICAMENTE y SEMÁNTICAMENTE no hay predios de CV ahí.
+                            info_debug = f"ℹ️ Sin predios detectados en o asociados a '{nombre_zona_txt}'."
 
             except Exception as e: 
                 info_debug = f"Error crítico: {e}"
