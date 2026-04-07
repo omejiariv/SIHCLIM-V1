@@ -370,16 +370,13 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-        # 🛡️ CÁLCULO DE HECTÁREAS (Conexión a Supabase + Intersección Espacial)
-        ha_reales_sig = 0.0
-        gdf_p = capas.get('predios') if 'capas' in locals() else None
-        
-        # 1. FALLBACK CLOUD: Si no hay capa local, la descargamos de Supabase (Igual que en Pág 08)
-        if gdf_p is None or gdf_p.empty:
+        # 🛡️ FUNCIÓN BLINDADA: Descarga el archivo puro y calcula el área sin depender del mapa
+        @st.cache_data(ttl=3600)
+        def obtener_hectareas_predios_maestros(_gdf_zona):
+            ha_calc = 0.0
+            gdf_p = None
             try:
-                import requests, tempfile
-                
-                # Extraer credenciales
+                # 1. Intentar conexión directa a Supabase (La Nube)
                 url_supabase = None
                 if "SUPABASE_URL" in st.secrets: url_supabase = st.secrets["SUPABASE_URL"]
                 elif "supabase" in st.secrets: url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
@@ -387,45 +384,50 @@ if gdf_zona is not None and not gdf_zona.empty:
                 
                 if url_supabase:
                     ruta_predios = f"{url_supabase}/storage/v1/object/public/sihcli_maestros/Puntos_de_interes/PrediosEjecutados.geojson"
-                    res = requests.get(ruta_predios)
-                    if res.status_code == 200:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp_p:
-                            tmp_p.write(res.content)
-                            tmp_path_p = tmp_p.name
-                        gdf_p = gpd.read_file(tmp_path_p)
-            except Exception as e:
-                pass # Silencioso si falla la conexión
+                    gdf_p = gpd.read_file(ruta_predios)
+            except: pass
+                
+            # 2. Fallback Local (Leer el archivo crudo si no hay internet)
+            if gdf_p is None or gdf_p.empty:
+                try:
+                    fpath = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'PrediosEjecutados.geojson'))
+                    if os.path.exists(fpath): 
+                        gdf_p = gpd.read_file(fpath)
+                except: pass
 
-        # 2. CRUCE ESPACIAL (Spatial Join)
-        if gdf_p is not None and not gdf_p.empty and gdf_zona is not None:
-            try:
-                # Asegurar sistemas de coordenadas
-                if gdf_p.crs is None: gdf_p.set_crs(epsg=4326, inplace=True)
-                
-                gdf_p_3116 = gdf_p.to_crs(epsg=3116)
-                gdf_z_3116 = gdf_zona.to_crs(epsg=3116)
-                
-                # Curación topológica
-                gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
-                gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(0)
-                
-                # Preguntamos qué predios "tocan" la cuenca
-                intersected = gpd.sjoin(gdf_p_3116, gdf_z_3116, how='inner', predicate='intersects')
-                
-                if not intersected.empty:
-                    # Filtramos los predios únicos para no duplicar sumas
-                    predios_unicos = gdf_p_3116.loc[intersected.index.unique()]
+            # 3. Intersección Matemática Estricta (Spatial Join)
+            if gdf_p is not None and not gdf_p.empty and _gdf_zona is not None:
+                try:
+                    # Garantizar CRS
+                    if gdf_p.crs is None: gdf_p.set_crs(epsg=4326, inplace=True)
+                    gdf_p_3116 = gdf_p.to_crs(epsg=3116)
+                    gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
                     
-                    # 3. LECTURA DE COLUMNA OFICIAL (Igual que en Pág 08)
-                    if 'AREA_HA' in predios_unicos.columns:
-                        ha_reales_sig = pd.to_numeric(predios_unicos['AREA_HA'], errors='coerce').sum()
-                    else:
-                        # Si no existe la columna, calculamos el área geométrica
-                        ha_reales_sig = predios_unicos.area.sum() / 10000.0
+                    # Curación topológica (Cura polígonos rotos del SIG)
+                    gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
+                    gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(0)
+                    
+                    # ¿Qué predios tocan la cuenca?
+                    intersected = gpd.sjoin(gdf_p_3116, gdf_z_3116, how='inner', predicate='intersects')
+                    
+                    if not intersected.empty:
+                        # Seleccionamos predios únicos para no duplicar si cruzan varios bordes
+                        predios_unicos = gdf_p_3116.loc[intersected.index.unique()]
                         
-            except Exception as e: 
-                st.warning(f"Aviso calculando intersección de predios: {e}")
-            
+                        # Suma de la columna oficial (Como en la pág 08) o cálculo geométrico
+                        if 'AREA_HA' in predios_unicos.columns:
+                            ha_calc = pd.to_numeric(predios_unicos['AREA_HA'], errors='coerce').sum()
+                        else:
+                            ha_calc = predios_unicos.area.sum() / 10000.0
+                except Exception as e: 
+                    print(f"Error topológico interno: {e}")
+                    
+            return ha_calc
+
+        # Ejecutamos la función
+        with st.spinner("Calculando inventario predial de alta precisión..."):
+            ha_reales_sig = obtener_hectareas_predios_maestros(gdf_zona)
+        
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
         
