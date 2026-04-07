@@ -370,66 +370,98 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-        # 🛡️ FUNCIÓN BLINDADA: Descarga el archivo puro y calcula el área sin depender del mapa
+        # 🛡️ ALGORITMO DE TRIPLE BLINDAJE (CRS Inteligente + Sjoin + Rescate Semántico)
         @st.cache_data(ttl=3600)
-        def obtener_hectareas_predios_maestros(_gdf_zona):
+        def obtener_hectareas_predios_maestros(_gdf_zona, nombre_zona_txt):
             ha_calc = 0.0
-            gdf_p = None
+            info_debug = ""
             try:
-                # 1. Intentar conexión directa a Supabase (La Nube)
+                # 1. Conexión a Supabase
                 url_supabase = None
                 if "SUPABASE_URL" in st.secrets: url_supabase = st.secrets["SUPABASE_URL"]
                 elif "supabase" in st.secrets: url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
                 elif "connections" in st.secrets and "supabase" in st.secrets["connections"]: url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
                 
+                gdf_p = None
                 if url_supabase:
                     ruta_predios = f"{url_supabase}/storage/v1/object/public/sihcli_maestros/Puntos_de_interes/PrediosEjecutados.geojson"
-                    gdf_p = gpd.read_file(ruta_predios)
-            except: pass
+                    import requests, tempfile
+                    res = requests.get(ruta_predios)
+                    if res.status_code == 200:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp_p:
+                            tmp_p.write(res.content)
+                            tmp_path_p = tmp_p.name
+                        gdf_p = gpd.read_file(tmp_path_p)
+
+                if gdf_p is None or gdf_p.empty:
+                    return 0.0, "Capa vacía o no descargada desde la nube."
+
+                # 2. DETECCIÓN AUTOMÁTICA DE CRS (El gran salvador de coordenadas colombianas)
+                if gdf_p.crs is None:
+                    minx, miny, maxx, maxy = gdf_p.total_bounds
+                    if maxx > 3000000: # CTM12 / Origen Nacional (EPSG:9377)
+                        gdf_p.set_crs(epsg=9377, inplace=True)
+                    elif maxx > 180:   # Magna Sirgas Origen Bogotá (EPSG:3116)
+                        gdf_p.set_crs(epsg=3116, inplace=True)
+                    else:              # WGS84 Geográficas (EPSG:4326)
+                        gdf_p.set_crs(epsg=4326, inplace=True)
                 
-            # 2. Fallback Local (Leer el archivo crudo si no hay internet)
-            if gdf_p is None or gdf_p.empty:
-                try:
-                    fpath = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'PrediosEjecutados.geojson'))
-                    if os.path.exists(fpath): 
-                        gdf_p = gpd.read_file(fpath)
-                except: pass
-
-            # 3. Intersección Matemática Estricta (Spatial Join)
-            if gdf_p is not None and not gdf_p.empty and _gdf_zona is not None:
-                try:
-                    # Garantizar CRS
-                    if gdf_p.crs is None: gdf_p.set_crs(epsg=4326, inplace=True)
-                    gdf_p_3116 = gdf_p.to_crs(epsg=3116)
-                    gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
+                # Unificamos todo a EPSG:3116 (Métrico) para operaciones espaciales
+                gdf_p_3116 = gdf_p.to_crs(epsg=3116)
+                gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
+                
+                # Curación topológica extrema
+                gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
+                # Damos un buffer de 100m a la cuenca para "atrapar" predios dibujados ligeramente afuera
+                gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(100) 
+                
+                # 3. CRUCE ESPACIAL (Spatial Join)
+                intersected = gpd.sjoin(gdf_p_3116, gdf_z_3116, how='inner', predicate='intersects')
+                
+                if not intersected.empty:
+                    predios_unicos = gdf_p_3116.loc[intersected.index.unique()]
+                    if 'AREA_HA' in predios_unicos.columns:
+                        ha_calc = pd.to_numeric(predios_unicos['AREA_HA'], errors='coerce').sum()
+                    else:
+                        ha_calc = predios_unicos.area.sum() / 10000.0
+                    info_debug = f"✅ Intersección exitosa: {len(predios_unicos)} predios encontrados."
+                else:
+                    # 4. RESCATE SEMÁNTICO (Estilo Pág 08): Busca el nombre en la tabla si falla la geometría
+                    import unicodedata
+                    term = unicodedata.normalize('NFKD', str(nombre_zona_txt).lower()).encode('ascii', 'ignore').decode('utf-8')
+                    term = term.replace("r. ", "").replace("rio ", "").replace("quebrada ", "").strip()
                     
-                    # Curación topológica (Cura polígonos rotos del SIG)
-                    gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
-                    gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(0)
-                    
-                    # ¿Qué predios tocan la cuenca?
-                    intersected = gpd.sjoin(gdf_p_3116, gdf_z_3116, how='inner', predicate='intersects')
-                    
-                    if not intersected.empty:
-                        # Seleccionamos predios únicos para no duplicar si cruzan varios bordes
-                        predios_unicos = gdf_p_3116.loc[intersected.index.unique()]
+                    if term:
+                        mask = pd.Series(False, index=gdf_p.index)
+                        for col in gdf_p.select_dtypes(include=['object']).columns:
+                            col_str = gdf_p[col].astype(str).str.lower().apply(lambda x: unicodedata.normalize('NFKD', x).encode('ascii', 'ignore').decode('utf-8'))
+                            mask = mask | col_str.str.contains(term, na=False)
                         
-                        # Suma de la columna oficial (Como en la pág 08) o cálculo geométrico
-                        if 'AREA_HA' in predios_unicos.columns:
-                            ha_calc = pd.to_numeric(predios_unicos['AREA_HA'], errors='coerce').sum()
+                        match_df = gdf_p[mask]
+                        if not match_df.empty:
+                            if 'AREA_HA' in match_df.columns:
+                                ha_calc = pd.to_numeric(match_df['AREA_HA'], errors='coerce').sum()
+                            else:
+                                match_3116 = match_df.to_crs(epsg=3116)
+                                ha_calc = match_3116.area.sum() / 10000.0
+                            info_debug = f"⚠️ Rescate semántico: {len(match_df)} predios asociados por nombre."
                         else:
-                            ha_calc = predios_unicos.area.sum() / 10000.0
-                except Exception as e: 
-                    print(f"Error topológico interno: {e}")
-                    
-            return ha_calc
+                            info_debug = "❌ Sin intersección espacial ni coincidencias semánticas."
 
-        # Ejecutamos la función
+            except Exception as e: 
+                info_debug = f"Error crítico: {e}"
+                
+            return ha_calc, info_debug
+
+        # Ejecutamos la súper función
         with st.spinner("Calculando inventario predial de alta precisión..."):
-            ha_reales_sig = obtener_hectareas_predios_maestros(gdf_zona)
-        
+            ha_reales_sig, msg_debug = obtener_hectareas_predios_maestros(gdf_zona, nombre_zona)
+            
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
+        
+        # Muestra silenciosamente qué método funcionó
+        if ha_reales_sig > 0: st.caption(msg_debug)
         
         # --- Conexión Riparia (Nexo Físico) ---
         ha_riparias_potenciales = 0.0
