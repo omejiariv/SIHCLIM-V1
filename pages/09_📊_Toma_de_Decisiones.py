@@ -334,6 +334,18 @@ if gdf_zona is not None and not gdf_zona.empty:
         elif estres_hidrico_porcentaje > 20: color_alerta, opacidad_alerta = '#F39C12', 0.3
         else: color_alerta, opacidad_alerta = '#3498DB', 0.2
 
+        # ------------------------------------------------------------------
+        # 👇 NUEVO: Calcular las coordenadas centrales del mapa
+        # ------------------------------------------------------------------
+        if gdf_zona is not None and not gdf_zona.empty:
+            bounds = gdf_zona.total_bounds # [minx, miny, maxx, maxy]
+            centro_x = (bounds[0] + bounds[2]) / 2.0
+            centro_y = (bounds[1] + bounds[3]) / 2.0
+        else:
+            # Coordenadas de respaldo (Antioquia por defecto) por si el GDF falla
+            centro_y, centro_x = 6.2442, -75.5812
+        # ------------------------------------------------------------------
+
         # --- Mapa Base ---
         m = folium.Map(location=[centro_y, centro_x], zoom_start=11, tiles="CartoDB positron")
         
