@@ -257,6 +257,69 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
             ).add_to(fg_est)
         fg_est.add_to(m)
 
+    # ==========================================================================
+    # 👇 INICIO DEL NUEVO BLOQUE: 8. MODELO DE ELEVACIÓN DIGITAL (DEM) - EE
+    # ==========================================================================
+    try:
+        import ee
+        # NOTA: Asumimos que ee.Initialize() ya se ejecutó en el archivo principal de Streamlit
+        
+        # 1. Definir la función puente para Folium (por si no se ha definido en este contexto)
+        if not hasattr(folium.Map, 'add_ee_layer'):
+            def add_ee_layer(self, ee_image_object, vis_params, name, show=False):
+                map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
+                folium.raster_layers.TileLayer(
+                    tiles=map_id_dict['tile_fetcher'].url_format,
+                    attr='Map Data &copy; Google Earth Engine',
+                    name=name,
+                    overlay=True,
+                    control=True,
+                    show=show
+                ).add_to(self)
+            folium.Map.add_ee_layer = add_ee_layer
+
+        # 2. Definir la Región de Interés (ROI) usando el GeoDataFrame de la zona
+        if gdf_zona is not None and not gdf_zona.empty:
+            geom_unificada = gdf_zona.geometry.unary_union
+            roi_ee = ee.Geometry(geom_unificada.__geo_interface__)
+        else:
+            # Fallback a los bounds generales si no hay polígono
+            roi_ee = ee.Geometry.Rectangle([minx, miny, maxx, maxy])
+
+        # 3. Cargar el DEM (NASADEM 30m) y recortarlo a la zona de estudio
+        dem = ee.Image("NASA/NASADEM_HGT/001").select('elevation').clip(roi_ee)
+
+        # 4. Calcular derivados geomorfológicos
+        slope = ee.Terrain.slope(dem)
+        # Azimut 315 (noroeste) y elevación 45 son los estándares para sombreado topográfico
+        hillshade = ee.Terrain.hillshade(dem, azimuth=315, elevation=45) 
+
+        # 5. Parámetros visuales (Hipsometría clásica)
+        dem_vis = {
+            'min': 1000, # Ajusta estos valores según la altura de tu cuenca
+            'max': 3000, 
+            'palette': ['#006600', '#002200', '#fff700', '#ab7634', '#c4d0ff', '#ffffff']
+        }
+
+        # 6. Añadir las capas al mapa (las iniciamos apagadas 'show=False' para no saturar)
+        m.add_ee_layer(hillshade, {'min': 0, 'max': 255}, '⛰️ Relieve (Hillshade)', show=False)
+        m.add_ee_layer(dem, dem_vis, '🆙 Elevación (Hipsometría)', show=False)
+        m.add_ee_layer(slope, {'min': 0, 'max': 45, 'palette': ['white', 'red']}, '⚠️ Mapa de Pendientes', show=False)
+
+    except Exception as e:
+        print(f"Aviso: No se pudieron cargar las capas DEM de Earth Engine en maps_engine.py. Detalle: {e}")
+    # ==========================================================================
+    # 👆 FIN DEL NUEVO BLOQUE
+    # ==========================================================================
+
+    # Controles de UI del Mapa (Mantenemos tu código original intacto)
+    folium.LayerControl(position='topright', collapsed=False).add_to(m)
+    Fullscreen().add_to(m)
+    MousePosition().add_to(m)
+    MeasureControl(position='bottomleft').add_to(m)
+    
+    return m
+                                 
     # Controles de UI del Mapa
     folium.LayerControl(position='topright', collapsed=False).add_to(m)
     Fullscreen().add_to(m)
