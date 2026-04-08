@@ -168,10 +168,14 @@ if gdf_zona is not None and not gdf_zona.empty:
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
 
-    # Respetar datos inyectados por otros motores (ej. si el usuario modificó la demanda en otra página)
-    # de lo contrario, usar el cálculo riguroso recién obtenido.
-    demanda_m3s = float(st.session_state.get('demanda_total_m3s', demanda_dinamica_m3s))
-    poblacion_mostrar = float(st.session_state.get('poblacion_servida', pob_total))
+    # 1. ACTUALIZAR LA MEMORIA GLOBAL con el cálculo fresco de la zona seleccionada
+    st.session_state['demanda_total_m3s'] = demanda_dinamica_m3s
+    st.session_state['poblacion_servida'] = pob_total
+
+    # 2. ASIGNAR LAS VARIABLES para mostrar en este tablero
+    demanda_m3s = float(demanda_dinamica_m3s)
+    poblacion_mostrar = float(pob_total)
+    
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
     
     @st.cache_data(ttl=3600)
