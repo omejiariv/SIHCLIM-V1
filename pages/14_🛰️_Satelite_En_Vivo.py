@@ -92,29 +92,75 @@ if iniciar_conexion_gee():
                            .filterBounds(roi_ee) \
                            .filterDate('2023-01-01', '2024-01-01')
             
-            # Magia: Tomamos el promedio (mode) y lo RECTORTAMOS con la forma exacta de la cuenca
+            # Magia: Tomamos el promedio (mode) y lo RECORTAMOS con la forma exacta de la cuenca
             dw_imagen = dw_coleccion.select('label').mode().clip(roi_ee)
-            # ==========================================================
-            # 🧠 CÁLCULO DE ÁREA FORESTAL EN TIEMPO REAL (PIXEL COUNT)
-            # ==========================================================
-            # En Dynamic World, la clase 1 corresponde a "Árboles / Bosque"
-            mascara_bosque = dw_imagen.eq(1)
             
-            # Multiplicamos los píxeles de bosque por su área real (10x10m = 100m2) y sumamos todo
-            area_bosque_m2 = mascara_bosque.multiply(ee.Image.pixelArea()).reduceRegion(
-                reducer=ee.Reducer.sum(),
-                geometry=roi_ee,
-                scale=10, # Resolución de Sentinel-2
-                maxPixels=1e9
-            ).get('label')
-            
-            # Extraemos el número, lo convertimos a Hectáreas y lo guardamos en la memoria global
+            # ==========================================================
+            # 🧠 INVENTARIO TOTAL DE COBERTURAS EN TIEMPO REAL
+            # ==========================================================
             try:
-                ha_bosque_satelite = ee.Number(area_bosque_m2).divide(10000).getInfo()
+                # 1. Agrupar píxeles por clase y sumar su área (m2)
+                pixel_area = ee.Image.pixelArea()
+                area_por_clase = pixel_area.addBands(dw_imagen).reduceRegion(
+                    reducer=ee.Reducer.sum().group(groupField=1, groupName='clase'),
+                    geometry=roi_ee,
+                    scale=10, # Resolución de 10x10 metros
+                    maxPixels=1e9
+                ).get('groups')
+                
+                # 2. Traer los datos desde los servidores de Google a Python
+                estadisticas = area_por_clase.getInfo()
+                
+                # 3. Diccionario de Clases Oficial de Dynamic World
+                nombres_clases = {
+                    0: "Agua", 1: "Bosques", 2: "Pastos", 3: "Cultivos", 
+                    4: "Matorrales", 5: "Suelo Desnudo", 6: "Urbano / Infraestructura", 
+                    7: "Nieve", 8: "Nubes"
+                }
+                
+                # 4. Procesar resultados
+                resultados = []
+                ha_bosque_satelite = 0.0
+                
+                for item in estadisticas:
+                    clase_id = int(item['clase'])
+                    area_ha = item['sum'] / 10000.0 # Convertir m2 a Hectáreas
+                    nombre = nombres_clases.get(clase_id, "Desconocido")
+                    resultados.append({"Cobertura": nombre, "Área (ha)": area_ha})
+                    
+                    if clase_id == 1: # Guardamos el Bosque para el Simulador WRI
+                        ha_bosque_satelite = area_ha
+                
                 st.session_state['satelite_ha_bosque'] = ha_bosque_satelite
-                st.info(f"🌲 **Auditoría Satelital:** Se han detectado **{ha_bosque_satelite:,.1f} ha** de cobertura boscosa en {nombre_zona}.")
+                
+                # 5. Renderizar Gráfico y Tabla en Streamlit
+                if resultados:
+                    import pandas as pd
+                    import plotly.express as px
+                    
+                    df_coberturas = pd.DataFrame(resultados).sort_values(by="Área (ha)", ascending=False)
+                    
+                    st.markdown("### 📊 Inventario Satelital de Uso de Suelo")
+                    c_graf, c_tabla = st.columns([2, 1])
+                    
+                    with c_tabla:
+                        st.dataframe(df_coberturas.style.format({"Área (ha)": "{:,.1f}"}), use_container_width=True)
+                        
+                    with c_graf:
+                        fig_pie = px.pie(
+                            df_coberturas, values='Área (ha)', names='Cobertura', hole=0.4, 
+                            color='Cobertura', color_discrete_map={
+                                "Agua": "#419BDF", "Bosques": "#397D49", "Pastos": "#88B053", 
+                                "Cultivos": "#7A87C6", "Matorrales": "#E49635", "Suelo Desnudo": "#DFC35A", 
+                                "Urbano / Infraestructura": "#C4281B", "Nieve": "#A59B8F", "Nubes": "#B39FE1"
+                            }
+                        )
+                        fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                        
             except Exception as e:
-                pass
+                st.warning(f"Error procesando estadísticas satelitales: {e}")
+            # ==========================================================
             # ==========================================================
             
             # 3. Paleta Oficial de Dynamic World
