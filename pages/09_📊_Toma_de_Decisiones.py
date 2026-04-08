@@ -379,60 +379,55 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-        # 🛡️ ALGORITMO DEFINITIVO: EXTRACCIÓN PÚBLICA E HÍBRIDA (Espacial + Regex)
+        # 🛡️ ALGORITMO DEFINITIVO: CORTE QUIRÚRGICO (CLIP) Y EXTRACCIÓN DE GEOMETRÍAS
         @st.cache_data(ttl=3600, show_spinner=False)
-        def obtener_hectareas_predios_maestros(_gdf_zona, nombre_zona_txt):
+        def obtener_predios_y_hectareas(_gdf_zona, nombre_zona_txt):
             import requests, tempfile
             import pandas as pd
             import geopandas as gpd
             
             ha_calc = 0.0
-            info_debug = "Iniciando rastreo de predios..."
+            info_debug = "Descargando predios..."
+            gdf_predios_final = None # Aquí guardaremos el mapa a pintar
             
             try:
-                # 1. CONEXIÓN DIRECTA AL BUCKET
                 url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
                 res = requests.get(url_predios)
-                if res.status_code != 200: return 0.0, f"❌ Fallo descarga. Código: {res.status_code}"
+                if res.status_code != 200: return 0.0, f"❌ Fallo descarga API", None
 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp_p:
-                    tmp_p.write(res.content)
-                    tmp_path_p = tmp_p.name
-                gdf_p = gpd.read_file(tmp_path_p)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp:
+                    tmp.write(res.content)
+                    tmp_path = tmp.name
+                gdf_p = gpd.read_file(tmp_path)
 
-                if gdf_p is None or gdf_p.empty: return 0.0, "❌ Error: El GeoJSON de predios está vacío."
+                if gdf_p.empty: return 0.0, "❌ GeoJSON vacío", None
 
-                # CURA DE COORDENADAS (Forzamos 4326 para borrar el metadata viejo OGC:CRS84)
+                # Homologamos a coordenadas métricas (EPSG:3116)
                 gdf_p.set_crs(epsg=4326, allow_override=True, inplace=True)
+                gdf_p_3116 = gdf_p.to_crs(epsg=3116)
+                gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
                 
-                # Buscar la columna exacta de área (CV suele usar 'AREA_HA')
-                col_area = 'AREA_HA' if 'AREA_HA' in gdf_p.columns else next((c for c in gdf_p.columns if 'area' in c.lower() or 'ha' in c.lower()), None)
+                # Curamos errores de dibujo
+                gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
+                gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(0)
+                
+                # ✂️ LA MAGIA: Recortamos los predios con el molde exacto de la cuenca
+                recorte_exacto = gpd.clip(gdf_p_3116, gdf_z_3116)
+                
+                if not recorte_exacto.empty:
+                    # Calculamos el área matemática PURA solo de lo que quedó adentro
+                    ha_calc = recorte_exacto.area.sum() / 10000.0
+                    info_debug = f"✅ CORTE EXACTO: {len(recorte_exacto)} fragmentos de predios operan físicamente dentro de la cuenca."
+                    
+                    # Lo devolvemos a coordenadas de GPS para poder pintarlo en Folium
+                    gdf_predios_final = recorte_exacto.to_crs(epsg=4326)
+                else:
+                    info_debug = f"ℹ️ ZONA VIRGEN: Ningún predio cae dentro de {nombre_zona_txt}."
 
-                # =================================================================
-                # INTENTO 1: BÚSQUEDA SEMÁNTICA AVANZADA (Regex)
-                # =================================================================
-                term_raw = str(nombre_zona_txt).lower()
+            except Exception as e: 
+                info_debug = f"❌ ERROR GEOMÉTRICO: {e}"
                 
-                # Mapeo inteligente (Si es Chico, busca Chico, Belmira, San Pedro o Riogrande)
-                if "chico" in term_raw: regex_term = "chico|riogrande|belmira|san pedro"
-                elif "grande" in term_raw: regex_term = "grande|riogrande|don matias"
-                elif "fe" in term_raw or "pantanillo" in term_raw: regex_term = "fe|retiro|pantanillo"
-                else: regex_term = term_raw
-                
-                mask = pd.Series(False, index=gdf_p.index)
-                for col in gdf_p.select_dtypes(include=['object']).columns:
-                    mask = mask | gdf_p[col].astype(str).str.lower().str.contains(regex_term, regex=True, na=False)
-                
-                match_df = gdf_p[mask]
-                
-                if not match_df.empty:
-                    if col_area:
-                        ha_calc = pd.to_numeric(match_df[col_area], errors='coerce').sum()
-                    else:
-                        match_3116 = match_df.to_crs(epsg=3116)
-                        ha_calc = match_3116.area.sum() / 10000.0
-                    info_debug = f"✅ BÚSQUEDA AVANZADA: {len(match_df)} predios encontrados mediante metadatos ('{regex_term}')."
-                    return ha_calc, info_debug
+            return ha_calc, info_debug, gdf_predios_final
                 
                 # =================================================================
                 # INTENTO 2: CRUCE ESPACIAL PROFUNDO (Si falla la tabla)
