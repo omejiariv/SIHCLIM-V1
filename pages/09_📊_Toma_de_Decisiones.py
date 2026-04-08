@@ -374,7 +374,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-        # 🛡️ ALGORITMO DEFINITIVO (Búsqueda Dinámica de Columnas y Monitor de Diagnóstico)
+# 🛡️ ALGORITMO DEFINITIVO: CONEXIÓN DIRECTA AL BUCKET PÚBLICO
         @st.cache_data(ttl=3600, show_spinner=False)
         def obtener_hectareas_predios_maestros(_gdf_zona, nombre_zona_txt):
             import requests, tempfile, unicodedata
@@ -382,40 +382,37 @@ if gdf_zona is not None and not gdf_zona.empty:
             import geopandas as gpd
             
             ha_calc = 0.0
-            info_debug = "Iniciando cálculo..."
+            info_debug = "Iniciando descarga pública..."
             
             try:
-                # 1. Conexión a Supabase
-                url_supabase = None
-                if "SUPABASE_URL" in st.secrets: url_supabase = st.secrets["SUPABASE_URL"]
-                elif "supabase" in st.secrets: url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+                # 1. URL PÚBLICA DIRECTA (Tu nuevo Bucket)
+                url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
                 
-                gdf_p = None
-                if url_supabase:
-                    ruta_predios = f"{url_supabase}/storage/v1/object/public/sihcli_maestros/Puntos_de_interes/PrediosEjecutados.geojson"
-                    res = requests.get(ruta_predios)
-                    if res.status_code == 200:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp_p:
-                            tmp_p.write(res.content)
-                            tmp_path_p = tmp_p.name
-                        gdf_p = gpd.read_file(tmp_path_p)
+                res = requests.get(url_predios)
+                if res.status_code == 200:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp_p:
+                        tmp_p.write(res.content)
+                        tmp_path_p = tmp_p.name
+                    gdf_p = gpd.read_file(tmp_path_p)
+                else:
+                    return 0.0, f"❌ Fallo al descargar de Supabase. Código: {res.status_code}"
 
                 if gdf_p is None or gdf_p.empty:
-                    return 0.0, "❌ Error: No se pudo descargar el archivo PrediosEjecutados desde Supabase."
+                    return 0.0, "❌ Error: El archivo GeoJSON está vacío."
 
                 # BUSCADOR DINÁMICO DE COLUMNA DE ÁREA
                 col_area = next((c for c in gdf_p.columns if 'area' in c.lower() or 'ha' in c.lower()), None)
 
-                # 2. CRS
+                # 2. HOMOLOGACIÓN DE COORDENADAS (CRS 3116 - Origen Nacional)
                 if gdf_p.crs is None: gdf_p.set_crs(epsg=4326, inplace=True)
                 gdf_p_3116 = gdf_p.to_crs(epsg=3116)
                 gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
                 
-                # Curación de topología
+                # Curación de topología (Evitar errores de geometrías rotas)
                 gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
                 gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(100) # 100m de margen
                 
-                # 3. SPATIAL JOIN
+                # 3. CRUCE ESPACIAL (¿Dónde coinciden los predios de CV con la cuenca?)
                 intersected = gpd.sjoin(gdf_p_3116, gdf_z_3116, how='inner', predicate='intersects')
                 
                 if not intersected.empty:
@@ -424,9 +421,9 @@ if gdf_zona is not None and not gdf_zona.empty:
                         ha_calc = pd.to_numeric(predios_unicos[col_area], errors='coerce').sum()
                     else:
                         ha_calc = predios_unicos.area.sum() / 10000.0
-                    info_debug = f"✅ CRUCE ESPACIAL EXITOSO: {len(predios_unicos)} predios interceptan. Columna sumada: {col_area if col_area else 'Geometría pura'}."
+                    info_debug = f"✅ CRUCE SIG EXITOSO: {len(predios_unicos)} predios de CuencaVerde interceptan {nombre_zona_txt}."
                 else:
-                    # 4. RESCATE SEMÁNTICO EXTREMO
+                    # 4. RESCATE SEMÁNTICO (Si el SIG falla, buscamos por texto)
                     term_raw = str(nombre_zona_txt).lower()
                     termino_busqueda = "chico" if "chico" in term_raw else "grande" if "grande" in term_raw else "fe" if "fe" in term_raw else "aburra"
                     
@@ -441,9 +438,9 @@ if gdf_zona is not None and not gdf_zona.empty:
                         else:
                             match_3116 = match_df.to_crs(epsg=3116)
                             ha_calc = match_3116.area.sum() / 10000.0
-                        info_debug = f"⚠️ RESCATE SEMÁNTICO: 0 cruces geométricos, pero {len(match_df)} predios contienen la palabra '{termino_busqueda}'."
+                        info_debug = f"⚠️ RESCATE SEMÁNTICO: 0 cruces geométricos, pero se encontraron {len(match_df)} predios con la palabra '{termino_busqueda}'."
                     else:
-                        info_debug = f"❌ SIN RESULTADOS: No hay intersección espacial ni predios con la palabra '{termino_busqueda}'."
+                        info_debug = f"ℹ️ ZONA VIRGEN: No se detectan intervenciones de CuencaVerde registradas en {nombre_zona_txt}."
 
             except Exception as e: 
                 info_debug = f"❌ ERROR CRÍTICO EN FUNCIÓN: {e}"
