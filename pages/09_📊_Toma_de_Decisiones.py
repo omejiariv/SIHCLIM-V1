@@ -517,39 +517,11 @@ if gdf_zona is not None and not gdf_zona.empty:
                 info_debug = f"❌ ERROR GEOMÉTRICO: {e}"
                 
             return ha_calc, info_debug, gdf_predios_final
-                
-                # =================================================================
-                # INTENTO 2: CRUCE ESPACIAL PROFUNDO (Si falla la tabla)
-                # =================================================================
-                gdf_p_3116 = gdf_p.to_crs(epsg=3116)
-                gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
-                
-                gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
-                gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(100)
-                
-                intersected = gpd.sjoin(gdf_p_3116, gdf_z_3116, how='inner', predicate='intersects')
-                
-                if not intersected.empty:
-                    predios_unicos = gdf_p_3116.loc[intersected.index.unique()]
-                    if col_area:
-                        ha_calc = pd.to_numeric(predios_unicos[col_area], errors='coerce').sum()
-                    else:
-                        ha_calc = predios_unicos.area.sum() / 10000.0
-                    info_debug = f"✅ CRUCE ESPACIAL: {len(predios_unicos)} predios interceptan el mapa."
-                else:
-                    info_debug = f"ℹ️ ZONA VIRGEN: 0 predios registrados en base de datos o interceptando el mapa de {nombre_zona_txt}."
-
-            except Exception as e: 
-                info_debug = f"❌ ERROR DE CÁLCULO: {e}"
-                
-            return ha_calc, info_debug
 
         with st.spinner("Descargando inventario predial de la Nube (Supabase)..."):
             ha_reales_sig, info_debug, gdf_predios_mapa = obtener_predios_y_hectareas(gdf_zona, nombre_zona)
             
-        activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         # 🛰️ INTEGRACIÓN CON EL SATÉLITE EN VIVO
-        # Si el satélite ya escaneó la zona y calculó los bosques, usamos ese súper-dato.
         ha_satelite_memoria = st.session_state.get('satelite_ha_bosque', 0.0)
         
         if ha_satelite_memoria > 0:
@@ -560,7 +532,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
         
         # 🚨 MOSTRAR SIEMPRE EL DIAGNÓSTICO
-        st.info(f"🕵️ **Diagnóstico del Motor:** {msg_debug}")
+        st.info(f"🕵️ **Diagnóstico del Motor:** {info_debug}")
         
         # --- Conexión Riparia (Nexo Físico) ---
         ha_riparias_potenciales = 0.0
