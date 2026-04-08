@@ -1,8 +1,7 @@
 import streamlit as st
 import ee
-import geemap.foliumap as geemap
+import folium
 from streamlit_folium import st_folium
-import pandas as pd
 
 st.set_page_config(page_title="Radar Satelital Vivo", page_icon="🛰️", layout="wide")
 st.title("🛰️ Radar Dynamic World (En Vivo)")
@@ -13,15 +12,11 @@ st.title("🛰️ Radar Dynamic World (En Vivo)")
 @st.cache_resource
 def iniciar_conexion_gee():
     try:
-        # Extraemos las credenciales completas de los secrets
         credenciales_dict = dict(st.secrets["gcp_service_account"])
-        
-        # Earth Engine necesita un objeto de credenciales específico
         credentials = ee.ServiceAccountCredentials(
             email=credenciales_dict["client_email"],
             key_data=credenciales_dict["private_key"]
         )
-        # Inicializamos el superordenador
         ee.Initialize(credentials)
         return True
     except Exception as e:
@@ -29,7 +24,24 @@ def iniciar_conexion_gee():
         return False
 
 # ==========================================
-# 2. RENDERIZADO DEL MAPA
+# 2. PUENTE NATIVO FOLIUM - EARTH ENGINE
+# ==========================================
+# 🧠 Esta es la ingeniería pura: Le enseñamos a Folium a leer la API de Google
+def add_ee_layer(self, ee_image_object, vis_params, name):
+    map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
+    folium.raster_layers.TileLayer(
+        tiles=map_id_dict['tile_fetcher'].url_format,
+        attr='Map Data &copy; Google Earth Engine',
+        name=name,
+        overlay=True,
+        control=True
+    ).add_to(self)
+
+# Inyectamos nuestro método dentro de la clase original de Folium
+folium.Map.add_ee_layer = add_ee_layer
+
+# ==========================================
+# 3. RENDERIZADO DEL MAPA
 # ==========================================
 if iniciar_conexion_gee():
     st.success("✅ Enlace satelital establecido con Google Earth Engine. Leyendo datos en vivo...")
@@ -62,10 +74,23 @@ if iniciar_conexion_gee():
             ]
         }
         
-        # Pintar el mapa con Geemap
-        m = geemap.Map(location=[6.1, -75.5], zoom_start=12)
-        m.add_basemap('SATELLITE') # Fondo satelital base
-        m.addLayer(dw_imagen, dw_vis, 'Cobertura Dynamic World (10m)')
+        # Pintar el mapa base
+        m = folium.Map(location=[6.1, -75.5], zoom_start=12)
         
-        # Renderizar en Streamlit
+        # Añadir capa satelital base real
+        folium.TileLayer(
+            tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+            attr='Google',
+            name='Google Satellite',
+            overlay=False,
+            control=True
+        ).add_to(m)
+        
+        # Inyectar la capa procesada por IA de Earth Engine
+        m.add_ee_layer(dw_imagen, dw_vis, 'Cobertura Dynamic World (10m)')
+        
+        # Añadir panel de control de capas
+        folium.LayerControl().add_to(m)
+        
+        # Renderizar
         st_folium(m, width=1000, height=600)
