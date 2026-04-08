@@ -528,11 +528,55 @@ if gdf_zona is not None and not gdf_zona.empty:
         macro._template = Template(leyenda_html)
         m.get_root().add_child(macro)
 
-        # Añadir Control de Capas interactivo
+        # ==========================================
+        # 4.6. NUEVO: LEYENDAS DEM Y PANTALLA COMPLETA
+        # ==========================================
+        import branca.colormap as cm
+        from folium.plugins import Fullscreen
+
+        # Leyenda Hipsométrica (Elevación)
+        colormap_elev = cm.LinearColormap(
+            colors=['#006600', '#002200', '#fff700', '#ab7634', '#c4d0ff', '#ffffff'],
+            vmin=1000, vmax=3000,
+            caption='Elevación (msnm)'
+        )
+        colormap_elev.add_to(m)
+
+        # Leyenda de Pendientes
+        colormap_slope = cm.LinearColormap(
+            colors=['white', 'red'],
+            vmin=0, vmax=45,
+            caption='Pendiente (°)'
+        )
+        colormap_slope.add_to(m)
+
+        # Habilitar el botón de Pantalla Completa
+        Fullscreen(
+            position='topleft', 
+            title='Ver en Pantalla Completa', 
+            title_cancel='Salir de Pantalla Completa'
+        ).add_to(m)
+
+        # Añadir Control de Capas interactivo (Original)
         folium.LayerControl(position='topright').add_to(m)
         
-        # Renderizar el mapa de Folium
+        # Renderizar el mapa de Folium (Original)
         st_folium(m, width="100%", height=500, returned_objects=[])
+
+        # ==========================================
+        # 4.7. NUEVO: BOTÓN DE EXPORTACIÓN A HTML
+        # ==========================================
+        # Extraemos el código HTML puro del mapa generado
+        mapa_html = m.get_root().render()
+        
+        # Creamos el botón de descarga en Streamlit
+        st.download_button(
+            label="💾 Descargar Mapa Interactivo (Archivo HTML)",
+            data=mapa_html,
+            file_name=f"Mapa_Sintesis_Territorial.html",
+            mime="text/html",
+            use_container_width=True
+        )
 
         # ==========================================
         # 5. MOSTRAR MÉTRICAS DE COBERTURA
