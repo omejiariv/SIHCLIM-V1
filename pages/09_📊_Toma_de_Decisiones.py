@@ -531,24 +531,8 @@ if gdf_zona is not None and not gdf_zona.empty:
         # ==========================================
         # 4.6. NUEVO: LEYENDAS DEM Y PANTALLA COMPLETA
         # ==========================================
-        import branca.colormap as cm
         from folium.plugins import Fullscreen
-
-        # Leyenda Hipsométrica (Elevación)
-        colormap_elev = cm.LinearColormap(
-            colors=['#006600', '#002200', '#fff700', '#ab7634', '#c4d0ff', '#ffffff'],
-            vmin=1000, vmax=3000,
-            caption='Elevación (msnm)'
-        )
-        colormap_elev.add_to(m)
-
-        # Leyenda de Pendientes
-        colormap_slope = cm.LinearColormap(
-            colors=['white', 'red'],
-            vmin=0, vmax=45,
-            caption='Pendiente (°)'
-        )
-        colormap_slope.add_to(m)
+        from branca.element import Template, MacroElement
 
         # Habilitar el botón de Pantalla Completa
         Fullscreen(
@@ -556,6 +540,43 @@ if gdf_zona is not None and not gdf_zona.empty:
             title='Ver en Pantalla Completa', 
             title_cancel='Salir de Pantalla Completa'
         ).add_to(m)
+
+        # Crear una Leyenda unificada y limpia para la Topografía en HTML
+        leyenda_topo_html = """
+        {% macro html(this, kwargs) %}
+        <div style='position: absolute; z-index:9999; background-color:rgba(255, 255, 255, 0.9);
+            border-radius:8px; padding: 15px; font-size:13px; left: 20px; bottom: 30px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15); font-family: sans-serif; pointer-events: auto; width: 220px;'>
+            
+            <h4 style='margin: 0 0 10px 0; font-size: 14px; color: #333;'>Topografía</h4>
+            
+            <div style='margin-bottom: 12px;'>
+                <strong style='font-size: 11px; color: #555;'>Elevación (msnm)</strong>
+                <div style='background: linear-gradient(to right, #006600, #002200, #fff700, #ab7634, #c4d0ff, #ffffff);
+                            height: 10px; width: 100%; border-radius: 4px; margin: 4px 0;'></div>
+                <div style='display: flex; justify-content: space-between; font-size: 10px; color: #666;'>
+                    <span>1000</span>
+                    <span>2000</span>
+                    <span>3000</span>
+                </div>
+            </div>
+            
+            <div>
+                <strong style='font-size: 11px; color: #555;'>Pendiente (Riesgo Erosión)</strong>
+                <div style='background: linear-gradient(to right, white, red);
+                            height: 10px; width: 100%; border-radius: 4px; margin: 4px 0; border: 1px solid #ccc;'></div>
+                <div style='display: flex; justify-content: space-between; font-size: 10px; color: #666;'>
+                    <span>0° (Plano)</span>
+                    <span>45°+ (Escarpado)</span>
+                </div>
+            </div>
+        </div>
+        {% endmacro %}
+        """
+        
+        macro_topo = MacroElement()
+        macro_topo._template = Template(leyenda_topo_html)
+        m.get_root().add_child(macro_topo)
 
         # Añadir Control de Capas interactivo (Original)
         folium.LayerControl(position='topright').add_to(m)
