@@ -423,11 +423,11 @@ if gdf_zona is not None and not gdf_zona.empty:
             ee.Initialize(credentials)
             
             # Función puente para Folium
-            def add_ee_layer(self, ee_image_object, vis_params, name):
+            def add_ee_layer(self, ee_image_object, vis_params, name, show=True):
                 map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
                 folium.raster_layers.TileLayer(
                     tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine',
-                    name=name, overlay=True, control=True, show=False # <--- arranca apagada
+                    name=name, overlay=True, control=True, show=show # <--- Ahora es dinámico
                 ).add_to(self)
             folium.Map.add_ee_layer = add_ee_layer
             
