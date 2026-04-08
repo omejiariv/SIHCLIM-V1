@@ -36,5 +36,7 @@ scikit-learn
 pykrige
 pysheds
 pyarrow
-earthengine-api
-geemap
+earthengine-api>=0.1.400
+geemap>=0.32.1
+python-box>=7.1.1
+xyzservices>=2024.4.0
