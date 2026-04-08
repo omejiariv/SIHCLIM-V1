@@ -107,10 +107,10 @@ st.markdown('<p class="sub-header">Sistema de Información Hidroclimática Integ
 
 # Panel de Métricas Globales (Dashboard)
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Módulos Analíticos", "14 Especializados", "Operativos") # Ajustado a 14 por la fusión
+col1.metric("Módulos Analíticos", "15 Especializados", "Operativos") # Actualizado a 15 con el satélite
 col2.metric("Resolución Temporal", "1950 - 2070", "Datos Históricos + Proyecciones")
 col3.metric("Cobertura Geográfica", "Región Andina", "Topología de Cuencas")
-col4.metric("Motores de Decisión", "WRI / AHP / Turc", "Estándares Globales")
+col4.metric("Motores de Decisión", "WRI / AHP / Earth Engine", "Estándares Globales")
 
 st.divider()
 
@@ -140,13 +140,16 @@ with tab_dashboard:
         st.page_link("pages/03_🗺️_Isoyetas_HD.py", label="**Isoyetas HD y Espacialización**", icon="🗺️")
         st.markdown("<small>Generador climático: Interpolación espacial (RBF) de lluvia y escenarios predictivos.</small>", unsafe_allow_html=True)
         
-    c4, c5, _ = st.columns(3)
+    c4, c5, c6 = st.columns(3)
     with c4:
         st.page_link("pages/04_🍃_Biodiversidad.py", label="**Biodiversidad**", icon="🍃")
         st.markdown("<small>Monitor de especies (GBIF), endemismos y valoración económica de servicios ecosistémicos.</small>", unsafe_allow_html=True)
     with c5:
         st.page_link("pages/05_🏔️_Geomorfologia.py", label="**Geomorfología**", icon="🏔️")
         st.markdown("<small>Análisis de Modelos Digitales de Elevación (DEM), redes de drenaje y morfometría.</small>", unsafe_allow_html=True)
+    with c6:
+        st.page_link("pages/14_🛰️_Satelite_En_Vivo.py", label="**Satélite en Vivo**", icon="🛰️")
+        st.markdown("<small>Conexión directa a Google Earth Engine para monitoreo de coberturas Dynamic World a 10m.</small>", unsafe_allow_html=True)
 
     st.markdown("<hr style='margin: 10px 0; border-top: 1px dashed #ccc;'>", unsafe_allow_html=True)
     
@@ -154,8 +157,8 @@ with tab_dashboard:
     st.markdown("### ⚙️ EJE 2: Metabolismo Territorial (Presiones Antrópicas)")
     st.caption("Módulos enfocados en la dinámica poblacional y el impacto sobre la red hídrica.")
     
-    c6, c7 = st.columns(2)
-    with c6:
+    c7, c8 = st.columns(2)
+    with c7:
         st.page_link("pages/06_📈_Modelo_Demografico.py", label="**Modelo Demográfico (Humanos)**", icon="📈")
         st.markdown("<small>Proyecciones poblacionales (DANE) multimodelo con inyección a la Memoria Global.</small>", unsafe_allow_html=True)
         st.write("") # Espaciador
@@ -163,7 +166,7 @@ with tab_dashboard:
         st.page_link("pages/06_🐄_Modelo_Pecuario.py", label="**Modelo Pecuario (Animales)**", icon="🐄")
         st.markdown("<small>Proyecciones de crecimiento (ICA) para Bovinos, Porcinos y Aves en escalas hidrográficas.</small>", unsafe_allow_html=True)
         
-    with c7:
+    with c8:
         st.page_link("pages/07_💧_Calidad_y_Vertimientos.py", label="**Calidad y Vertimientos**", icon="🧪")
         st.markdown("<small>Mapeo de usuarios del recurso, modelación de concesiones y cargas contaminantes DBO.</small>", unsafe_allow_html=True)
         st.write("") # Espaciador
@@ -190,7 +193,6 @@ with tab_dashboard:
     st.markdown("### 🛠️ EJE 4: Soporte Técnico y Herramientas")
     st.caption("Utilidades del sistema para mantenimiento, documentación y depuración del gemelo digital.")
     
-    # Ajustado a 3 columnas por la unificación
     c11, c12, c13 = st.columns(3)
     with c11:
         st.page_link("pages/11_⚙️_Generador.py", label="**Generador**", icon="⚙️")
@@ -210,21 +212,20 @@ with tab_arquitectura:
     st.markdown("### Mapa Topológico del Sistema")
     st.info("Visualización jerárquica de la arquitectura de la plataforma y sus submódulos lógicos.")
     
-    # Matriz actualizada: Se retira "Diagnóstico" y se consolida todo en 14 módulos (sin contar Inicio)
     ids = ['SIHCLI-POTER', 'Soporte Biofísico', 'Metabolismo Territorial', 'Síntesis Estratégica', 'Herramientas', 
-           'Clima e Hidrología', 'Aguas Subterráneas', 'Isoyetas HD', 'Biodiversidad', 'Geomorfología',
+           'Clima e Hidrología', 'Aguas Subterráneas', 'Isoyetas HD', 'Biodiversidad', 'Geomorfología', 'Satélite en Vivo',
            'Modelo Demográfico', 'Modelo Pecuario', 'Calidad y Vertimientos', 'Sistemas Hídricos', 
            'Toma de Decisiones', 'Panel Administración',
            'Generador', 'Ayuda y Docs', 'Detective']
             
     parents = ['', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER',
-               'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico',
+               'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico',
                'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial',
                'Síntesis Estratégica', 'Síntesis Estratégica',
                'Herramientas', 'Herramientas', 'Herramientas']
                 
     values = [100, 35, 35, 20, 10, 
-              7, 7, 7, 7, 7, 
+              5.8, 5.8, 5.8, 5.8, 5.8, 6.0, 
               8.75, 8.75, 8.75, 8.75, 
               10, 10, 
               3.3, 3.3, 3.4]
