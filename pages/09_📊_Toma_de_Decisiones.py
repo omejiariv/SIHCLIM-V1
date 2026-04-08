@@ -441,6 +441,25 @@ if gdf_zona is not None and not gdf_zona.empty:
             # Inyectar al mapa
             m.add_ee_layer(dw_imagen, dw_vis, '🛰️ Uso de Suelo (Satélite IA)')
 
+            # ==========================================
+            # 👇 NUEVO BLOQUE DEM (Pegar esto aquí)
+            # ==========================================
+            # Cargar el DEM (NASADEM 30m) y recortarlo a la zona
+            dem = ee.Image("NASA/NASADEM_HGT/001").select('elevation').clip(roi_ee)
+            
+            # Calcular Pendiente y Hillshade
+            slope = ee.Terrain.slope(dem)
+            hillshade = ee.Terrain.hillshade(dem, azimuth=315, elevation=45)
+            
+            # Parámetros visuales
+            dem_vis = {'min': 1000, 'max': 3000, 'palette': ['#006600', '#002200', '#fff700', '#ab7634', '#c4d0ff', '#ffffff']}
+            
+            # Añadir al mapa (arrancan apagadas)
+            m.add_ee_layer(hillshade, {'min': 0, 'max': 255}, '⛰️ Relieve (Hillshade)', show=False)
+            m.add_ee_layer(dem, dem_vis, '🆙 Elevación (Hipsometría)', show=False)
+            m.add_ee_layer(slope, {'min': 0, 'max': 45, 'palette': ['white', 'red']}, '⚠️ Mapa de Pendientes', show=False)
+            # ==========================================
+
             # --- CÁLCULO DE ÁREAS ---
             with st.spinner("Calculando superficies de uso de suelo..."):
                 # Multiplicar el área del pixel por las bandas de clases
