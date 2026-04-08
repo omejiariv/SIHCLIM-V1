@@ -35,6 +35,7 @@ def renderizar_menu_navegacion(pagina_actual):
         st.page_link("pages/11_⚙️_Generador.py", label="Generador", icon="✨")
         st.page_link("pages/12_📚_Ayuda_y_Docs.py", label="Ayuda y Docs", icon="📚")
         st.page_link("pages/13_🕵️_Detective.py", label="Detective", icon="🕵️")
+        st.page_link("pages/14_🛰️_Satelite_En_Vivo.py", label="Satélite en Vivo", icon="🛰️")
 # ====================================================================
 
 # 🔥 OPTIMIZACIÓN: Guardamos los mapas pesados en RAM para no colapsar la base de datos
