@@ -334,67 +334,117 @@ if gdf_zona is not None and not gdf_zona.empty:
         elif estres_hidrico_porcentaje > 20: color_alerta, opacidad_alerta = '#F39C12', 0.3
         else: color_alerta, opacidad_alerta = '#3498DB', 0.2
 
-            # --- Mapa Base ---
-            m = folium.Map(location=[centro_y, centro_x], zoom_start=11, tiles="CartoDB positron")
-            
-            # 1. Capa Satélite Google (Fondo real)
-            folium.TileLayer(
-                tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
-                attr='Google', name='Google Satellite', overlay=False, control=True
-            ).add_to(m)
-            
-            # 2. Capa de la Cuenca (Borde)
+        # --- Mapa Base ---
+        m = folium.Map(location=[centro_y, centro_x], zoom_start=11, tiles="CartoDB positron")
+        
+        # 1. Capa Satélite Google (Fondo real)
+        folium.TileLayer(
+            tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+            attr='Google', name='Google Satellite', overlay=False, control=True
+        ).add_to(m)
+        
+        # 2. Capa de la Cuenca (Borde)
+        folium.GeoJson(
+            gdf_zona, name=f"Límite {nombre_zona}",
+            style_function=lambda x: {'color': 'blue', 'weight': 3, 'fillOpacity': 0.1}
+        ).add_to(m)
+
+        # ==========================================
+        # 3. NUEVA CAPA: PREDIOS INTERVENIDOS (SIG)
+        # ==========================================
+        if gdf_predios_mapa is not None and not gdf_predios_mapa.empty:
             folium.GeoJson(
-                gdf_zona, name=f"Límite {nombre_zona}",
-                style_function=lambda x: {'color': 'blue', 'weight': 3, 'fillOpacity': 0.1}
+                gdf_predios_mapa, 
+                name="🟢 Áreas Restauradas (CV)",
+                style_function=lambda x: {'fillColor': '#00ff00', 'color': '#003300', 'weight': 1, 'fillOpacity': 0.7}
             ).add_to(m)
 
-            # ==========================================
-            # 3. NUEVA CAPA: PREDIOS INTERVENIDOS (SIG)
-            # ==========================================
-            if gdf_predios_mapa is not None and not gdf_predios_mapa.empty:
-                folium.GeoJson(
-                    gdf_predios_mapa, 
-                    name="🟢 Áreas Restauradas (CV)",
-                    style_function=lambda x: {'fillColor': '#00ff00', 'color': '#003300', 'weight': 1, 'fillOpacity': 0.7}
-                ).add_to(m)
-
-            # ==========================================
-            # 4. NUEVA CAPA: SATÉLITE EN VIVO (Uso de Suelo)
-            # ==========================================
-            try:
-                import ee
-                # Inicializar Earth Engine usando la función que ya tenemos en memoria (o los secrets)
-                credenciales_dict = dict(st.secrets["gcp_service_account"])
-                credentials = ee.ServiceAccountCredentials(email=credenciales_dict["client_email"], key_data=credenciales_dict["private_key"])
-                ee.Initialize(credentials)
-                
-                # Función puente para Folium
-                def add_ee_layer(self, ee_image_object, vis_params, name):
-                    map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
-                    folium.raster_layers.TileLayer(
-                        tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine',
-                        name=name, overlay=True, control=True, show=False # <--- 'show=False' arranca apagada para no tapar todo
-                    ).add_to(self)
-                folium.Map.add_ee_layer = add_ee_layer
-                
-                # Calcular la capa
-                geom_unificada = gdf_zona.geometry.unary_union
-                roi_ee = ee.Geometry(geom_unificada.__geo_interface__)
-                dw_coleccion = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(roi_ee).filterDate('2023-01-01', '2024-01-01')
-                dw_imagen = dw_coleccion.select('label').mode().clip(roi_ee)
-                dw_vis = {'min': 0, 'max': 8, 'palette': ['#419BDF', '#397D49', '#88B053', '#7A87C6', '#E49635', '#DFC35A', '#C4281B', '#A59B8F', '#B39FE1']}
-                
-                # Inyectar al mapa
-                m.add_ee_layer(dw_imagen, dw_vis, '🛰️ Uso de Suelo (Satélite IA)')
-            except Exception as e:
-                pass # Si hay error con el satélite, que el mapa siga funcionando
-
-            # Añadir Control de Capas interactivo
-            folium.LayerControl(position='topright').add_to(m)
+        # ==========================================
+        # 4. NUEVA CAPA: SATÉLITE EN VIVO + CÁLCULO DE ÁREAS
+        # ==========================================
+        areas_data = [] # Lista para almacenar el cálculo de coberturas
+        try:
+            import ee
+            # Inicializar Earth Engine usando la función que ya tenemos en memoria (o los secrets)
+            credenciales_dict = dict(st.secrets["gcp_service_account"])
+            credentials = ee.ServiceAccountCredentials(email=credenciales_dict["client_email"], key_data=credenciales_dict["private_key"])
+            ee.Initialize(credentials)
             
-            st_folium(m, width="100%", height=500, returned_objects=[])
+            # Función puente para Folium
+            def add_ee_layer(self, ee_image_object, vis_params, name):
+                map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
+                folium.raster_layers.TileLayer(
+                    tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine',
+                    name=name, overlay=True, control=True, show=False # <--- arranca apagada
+                ).add_to(self)
+            folium.Map.add_ee_layer = add_ee_layer
+            
+            # Configurar ROI y calcular la capa
+            geom_unificada = gdf_zona.geometry.unary_union
+            roi_ee = ee.Geometry(geom_unificada.__geo_interface__)
+            dw_coleccion = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(roi_ee).filterDate('2023-01-01', '2024-01-01')
+            dw_imagen = dw_coleccion.select('label').mode().clip(roi_ee)
+            dw_vis = {'min': 0, 'max': 8, 'palette': ['#419BDF', '#397D49', '#88B053', '#7A87C6', '#E49635', '#DFC35A', '#C4281B', '#A59B8F', '#B39FE1']}
+            
+            # Inyectar al mapa
+            m.add_ee_layer(dw_imagen, dw_vis, '🛰️ Uso de Suelo (Satélite IA)')
 
+            # --- CÁLCULO DE ÁREAS ---
+            with st.spinner("Calculando superficies de uso de suelo..."):
+                # Multiplicar el área del pixel por las bandas de clases
+                area_image = ee.Image.pixelArea().addBands(dw_imagen)
+                areas_ee = area_image.reduceRegion(
+                    reducer=ee.Reducer.sum().group(groupField=1, groupName='clase'),
+                    geometry=roi_ee,
+                    scale=10, # Dynamic World está a 10m de resolución
+                    maxPixels=1e10
+                ).getInfo()
+
+                # Diccionario de clases que solicitaste (según catálogo de Dynamic World)
+                nombres_clases = {
+                    0: "💧 Agua",
+                    1: "🌳 Bosque",
+                    2: "🌾 Pastos",
+                    5: "🌿 Matorrales",
+                    6: "🏙️ Urbano",
+                    7: "🟫 Suelo Desnudo"
+                }
+
+                if 'groups' in areas_ee:
+                    for grupo in areas_ee['groups']:
+                        clase_id = int(grupo['clase'])
+                        # Filtrar solo las áreas solicitadas
+                        if clase_id in nombres_clases:
+                            area_ha = grupo['sum'] / 10000.0 # Convertir m² a Hectáreas
+                            areas_data.append({
+                                "Cobertura": nombres_clases[clase_id],
+                                "Área (Ha)": area_ha
+                            })
+
+        except Exception as e:
+            st.warning(f"Aviso de Satélite: No se pudieron procesar las capas en Earth Engine. ({e})") # Para no frenar la app
+
+        # Añadir Control de Capas interactivo
+        folium.LayerControl(position='topright').add_to(m)
+        
+        # Renderizar el mapa de Folium
+        st_folium(m, width="100%", height=500, returned_objects=[])
+
+        # ==========================================
+        # 5. MOSTRAR MÉTRICAS DE COBERTURA
+        # ==========================================
+        if areas_data:
+            st.markdown("### 🌍 Distribución de Coberturas en la Zona (Ha)")
+            df_areas = pd.DataFrame(areas_data).sort_values(by="Área (Ha)", ascending=False).reset_index(drop=True)
+            
+            # Crear columnas dinámicas según la cantidad de coberturas encontradas
+            cols = st.columns(len(df_areas))
+            for idx, row in df_areas.iterrows():
+                cols[idx].metric(label=row["Cobertura"], value=f"{row['Área (Ha)']:,.2f}")
+
+        # ==========================================
+        # 6. ANÁLISIS DE SUELO
+        # ==========================================
         st.markdown("### 📊 Análisis de Suelo y Prioridad")
         if capas.get('geomorf') is not None:
             df_analisis = pd.DataFrame({
@@ -403,7 +453,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 "Recomendación": "Restauración Activa / Conservación"
             })
             st.table(df_analisis)
-
+            
     # =========================================================================
     # BLOQUE 2: SIMULADOR DE INVERSIONES Y PORTAFOLIOS (WRI) + SANKEY
     # =========================================================================
