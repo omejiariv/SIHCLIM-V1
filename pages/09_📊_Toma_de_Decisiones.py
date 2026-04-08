@@ -486,6 +486,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp:
                     tmp.write(res.content)
                     tmp_path = tmp.name
+                    
                 gdf_p = gpd.read_file(tmp_path)
 
                 if gdf_p.empty: return 0.0, "❌ GeoJSON vacío", None
