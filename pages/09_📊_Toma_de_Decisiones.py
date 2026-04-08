@@ -476,6 +476,39 @@ if gdf_zona is not None and not gdf_zona.empty:
         except Exception as e:
             st.warning(f"Aviso de Satélite: No se pudieron procesar las capas en Earth Engine. ({e})") # Para no frenar la app
 
+        # ==========================================
+        # 4.5. NUEVO: LEYENDA FLOTANTE DE COBERTURAS
+        # ==========================================
+        from branca.element import Template, MacroElement
+
+        leyenda_html = """
+        {% macro html(this, kwargs) %}
+        <div id='maplegend' class='maplegend' 
+            style='position: absolute; z-index:9999; background-color:rgba(255, 255, 255, 0.9);
+            border-radius:8px; padding: 15px; font-size:13px; right: 20px; bottom: 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15); font-family: sans-serif; pointer-events: auto;'>
+            
+        <h4 style='margin: 0 0 10px 0; font-size: 14px; color: #333;'>Coberturas de Suelo <br><small style='font-weight: normal; color: #666; font-size: 11px;'>(Dynamic World 10m)</small></h4>
+        
+        <div class='legend-scale'>
+          <ul class='legend-labels' style='list-style: none; padding: 0; margin: 0; color: #444;'>
+            <li style='display: flex; align-items: center; margin-bottom: 6px;'><span style='background:#419BDF; width: 16px; height: 16px; border-radius: 3px; margin-right: 8px; display: inline-block;'></span>Agua</li>
+            <li style='display: flex; align-items: center; margin-bottom: 6px;'><span style='background:#397D49; width: 16px; height: 16px; border-radius: 3px; margin-right: 8px; display: inline-block;'></span>Bosques</li>
+            <li style='display: flex; align-items: center; margin-bottom: 6px;'><span style='background:#E4A63F; width: 16px; height: 16px; border-radius: 3px; margin-right: 8px; display: inline-block;'></span>Pastos</li>
+            <li style='display: flex; align-items: center; margin-bottom: 6px;'><span style='background:#A55194; width: 16px; height: 16px; border-radius: 3px; margin-right: 8px; display: inline-block;'></span>Cultivos</li>
+            <li style='display: flex; align-items: center; margin-bottom: 6px;'><span style='background:#D3702A; width: 16px; height: 16px; border-radius: 3px; margin-right: 8px; display: inline-block;'></span>Matorrales</li>
+            <li style='display: flex; align-items: center; margin-bottom: 6px;'><span style='background:#8D6B53; width: 16px; height: 16px; border-radius: 3px; margin-right: 8px; display: inline-block;'></span>Suelo Desnudo</li>
+            <li style='display: flex; align-items: center; margin-bottom: 6px;'><span style='background:#C4281B; width: 16px; height: 16px; border-radius: 3px; margin-right: 8px; display: inline-block;'></span>Infraestructura / Urbano</li>
+          </ul>
+        </div>
+        </div>
+        {% endmacro %}
+        """
+        
+        macro = MacroElement()
+        macro._template = Template(leyenda_html)
+        m.get_root().add_child(macro)
+
         # Añadir Control de Capas interactivo
         folium.LayerControl(position='topright').add_to(m)
         
