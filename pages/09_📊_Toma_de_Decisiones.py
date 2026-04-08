@@ -325,59 +325,55 @@ if gdf_zona is not None and not gdf_zona.empty:
     except Exception as e:
         st.warning(f"Aviso al cargar capas SIG: {e}")
 
-        # 🛡️ ALGORITMO DEFINITIVO: CORTE QUIRÚRGICO (CLIP) Y EXTRACCIÓN DE GEOMETRÍAS
-        @st.cache_data(ttl=3600, show_spinner=False)
-        def obtener_predios_y_hectareas(_gdf_zona, nombre_zona_txt):
-            import requests, tempfile
-            import pandas as pd
-            import geopandas as gpd
+    # ==============================================================================
+    # 📥 MOTOR DE DESCARGA PREDIAL (AHORA FUERA DEL EXCEPT, SIEMPRE SE EJECUTA)
+    # ==============================================================================
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def obtener_predios_y_hectareas(_gdf_zona, nombre_zona_txt):
+        import requests, tempfile
+        import pandas as pd
+        import geopandas as gpd
+        
+        ha_calc = 0.0
+        info_debug = "Descargando predios..."
+        gdf_predios_final = None 
+        
+        try:
+            url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
+            res = requests.get(url_predios)
+            if res.status_code != 200: return 0.0, f"❌ Fallo descarga API", None
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp:
+                tmp.write(res.content)
+                tmp_path = tmp.name
+                
+            gdf_p = gpd.read_file(tmp_path)
+
+            if gdf_p.empty: return 0.0, "❌ GeoJSON vacío", None
+
+            gdf_p.set_crs(epsg=4326, allow_override=True, inplace=True)
+            gdf_p_3116 = gdf_p.to_crs(epsg=3116)
+            gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
             
-            ha_calc = 0.0
-            info_debug = "Descargando predios..."
-            gdf_predios_final = None # Aquí guardaremos el mapa a pintar
+            gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
+            gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(0)
             
-            try:
-                url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
-                res = requests.get(url_predios)
-                if res.status_code != 200: return 0.0, f"❌ Fallo descarga API", None
+            recorte_exacto = gpd.clip(gdf_p_3116, gdf_z_3116)
+            
+            if not recorte_exacto.empty:
+                ha_calc = recorte_exacto.area.sum() / 10000.0
+                info_debug = f"✅ CORTE EXACTO: {len(recorte_exacto)} fragmentos de predios operan físicamente dentro de la cuenca."
+                gdf_predios_final = recorte_exacto.to_crs(epsg=4326)
+            else:
+                info_debug = f"ℹ️ ZONA VIRGEN: Ningún predio cae dentro de {nombre_zona_txt}."
 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp:
-                    tmp.write(res.content)
-                    tmp_path = tmp.name
-                    
-                gdf_p = gpd.read_file(tmp_path)
+        except Exception as e: 
+            info_debug = f"❌ ERROR GEOMÉTRICO: {e}"
+            
+        return ha_calc, info_debug, gdf_predios_final
 
-                if gdf_p.empty: return 0.0, "❌ GeoJSON vacío", None
-
-                # Homologamos a coordenadas métricas (EPSG:3116)
-                gdf_p.set_crs(epsg=4326, allow_override=True, inplace=True)
-                gdf_p_3116 = gdf_p.to_crs(epsg=3116)
-                gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
-                
-                # Curamos errores de dibujo
-                gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
-                gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(0)
-                
-                # ✂️ LA MAGIA: Recortamos los predios con el molde exacto de la cuenca
-                recorte_exacto = gpd.clip(gdf_p_3116, gdf_z_3116)
-                
-                if not recorte_exacto.empty:
-                    # Calculamos el área matemática PURA solo de lo que quedó adentro
-                    ha_calc = recorte_exacto.area.sum() / 10000.0
-                    info_debug = f"✅ CORTE EXACTO: {len(recorte_exacto)} fragmentos de predios operan físicamente dentro de la cuenca."
-                    
-                    # Lo devolvemos a coordenadas de GPS para poder pintarlo en Folium
-                    gdf_predios_final = recorte_exacto.to_crs(epsg=4326)
-                else:
-                    info_debug = f"ℹ️ ZONA VIRGEN: Ningún predio cae dentro de {nombre_zona_txt}."
-
-            except Exception as e: 
-                info_debug = f"❌ ERROR GEOMÉTRICO: {e}"
-                
-            return ha_calc, info_debug, gdf_predios_final
-
-        with st.spinner("Descargando inventario predial de la Nube (Supabase)..."):
-            ha_reales_sig, info_debug, gdf_predios_mapa = obtener_predios_y_hectareas(gdf_zona, nombre_zona)    
+    with st.spinner("Descargando inventario predial de la Nube (Supabase)..."):
+        ha_reales_sig, info_debug, gdf_predios_mapa = obtener_predios_y_hectareas(gdf_zona, nombre_zona)
 
     # ==============================================================================
     # 🗺️ MAPA TÁCTICO DE PRIORIZACIÓN
