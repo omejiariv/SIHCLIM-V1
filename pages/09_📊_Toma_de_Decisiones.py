@@ -147,41 +147,31 @@ if gdf_zona is not None and not gdf_zona.empty:
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
         
     # ==============================================================================
-    # 🧠 ENRUTADOR DEMOGRÁFICO INTELIGENTE (Soporte Multi-Municipio)
+    # 🧠 NÚCLEO DEMOGRÁFICO ESTRICTO (Conexión Directa a Matriz Maestra)
     # ==============================================================================
-    nombre_lower = str(nombre_zona).lower()
-    
-    # 1. Definimos todos los municipios que componen la cuenca
-    if "chico" in nombre_lower: municipios_proxy = ["belmira", "san pedro"] 
-    elif "grande" in nombre_lower: municipios_proxy = ["don matias", "entrerrios", "santa rosa de osos"]
-    elif "fe" in nombre_lower or "pantanillo" in nombre_lower: municipios_proxy = ["el retiro"]
-    elif "aburra" in nombre_lower or "medellin" in nombre_lower: municipios_proxy = ["medellin"]
-    else: municipios_proxy = [nombre_zona]
+    # Consultamos la unidad territorial exacta a la función metabólica, sin parches ni aproximaciones.
+    datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
 
-    # 2. Sumamos los datos metabólicos de todos los municipios involucrados
-    pob_total = 0; bovinos = 0; porcinos = 0; aves = 0
-    
-    for mun in municipios_proxy:
-        datos_mun = obtener_metabolismo_exacto(mun, anio_actual)
-        if datos_mun:
-            pob_total += datos_mun.get('pob_total', 0)
-            bovinos += datos_mun.get('bovinos', 0)
-            porcinos += datos_mun.get('porcinos', 0)
-            aves += datos_mun.get('aves', 0)
+    if datos_metabolismo:
+        pob_total = datos_metabolismo.get('pob_total', 0)
+        bovinos = datos_metabolismo.get('bovinos', 0)
+        porcinos = datos_metabolismo.get('porcinos', 0)
+        aves = datos_metabolismo.get('aves', 0)
+    else:
+        # Salvaguarda metodológica: Si no hay datos en la BD para este polígono, 
+        # asignamos cero estricto e informamos, en lugar de falsear la realidad territorial.
+        pob_total = 0
+        bovinos = 0; porcinos = 0; aves = 0
+        st.warning(f"⚠️ **Aviso Metodológico:** La unidad territorial '{nombre_zona}' no arrojó resultados poblacionales directos en la Matriz Demográfica.")
 
-    # 3. Fallback extremo de seguridad
-    if pob_total == 0:
-        st.warning(f"⚠️ **Ajuste Automático:** '{nombre_zona}' no arrojó datos, aplicando aproximación demográfica base.")
-        if "chico" in nombre_lower: pob_total = 38000 # Belmira + San Pedro
-        elif "grande" in nombre_lower: pob_total = 45000
-        elif "fe" in nombre_lower: pob_total = 25000
-        elif "aburra" in nombre_lower: pob_total = 4000000
-        else: pob_total = 10000
-
+    # Cálculo volumétrico estricto
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
+
+    # Respetar datos inyectados por otros motores (ej. si el usuario modificó la demanda en otra página)
+    # de lo contrario, usar el cálculo riguroso recién obtenido.
     demanda_m3s = float(st.session_state.get('demanda_total_m3s', demanda_dinamica_m3s))
-    poblacion_mostrar = st.session_state.get('poblacion_servida', pob_total)
+    poblacion_mostrar = float(st.session_state.get('poblacion_servida', pob_total))
     fase_enso = st.session_state.get('enso_fase', 'Neutro')
     
     @st.cache_data(ttl=3600)
