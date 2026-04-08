@@ -334,28 +334,66 @@ if gdf_zona is not None and not gdf_zona.empty:
         elif estres_hidrico_porcentaje > 20: color_alerta, opacidad_alerta = '#F39C12', 0.3
         else: color_alerta, opacidad_alerta = '#3498DB', 0.2
 
-        m = folium.Map(location=[gdf_zona.centroid.y.iloc[0], gdf_zona.centroid.x.iloc[0]], zoom_start=12, tiles="cartodbpositron")
-        if v_sat: folium.TileLayer(tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='Satélite').add_to(m)
+            # --- Mapa Base ---
+            m = folium.Map(location=[centro_y, centro_x], zoom_start=11, tiles="CartoDB positron")
             
-        folium.GeoJson(
-            gdf_zona, name=f"Estado: {nombre_zona}",
-            style_function=lambda feature, c=color_alerta, o=opacidad_alerta: {'fillColor': c, 'fillOpacity': o, 'color': c, 'weight': 2},
-            tooltip=f"Estrés Hídrico: {estres_hidrico_porcentaje:.1f}%"
-        ).add_to(m)
+            # 1. Capa Satélite Google (Fondo real)
+            folium.TileLayer(
+                tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+                attr='Google', name='Google Satellite', overlay=False, control=True
+            ).add_to(m)
+            
+            # 2. Capa de la Cuenca (Borde)
+            folium.GeoJson(
+                gdf_zona, name=f"Límite {nombre_zona}",
+                style_function=lambda x: {'color': 'blue', 'weight': 3, 'fillOpacity': 0.1}
+            ).add_to(m)
 
-        if v_geo and capas.get('geomorf') is not None:
-            folium.GeoJson(capas['geomorf'], name="Geomorfología",
-                           style_function=lambda x: {'fillColor': 'gray', 'fillOpacity': 0.2, 'color': 'black', 'weight': 1},
-                           tooltip=folium.GeoJsonTooltip(fields=['unidad'], aliases=['Unidad:'])).add_to(m)
+            # ==========================================
+            # 3. NUEVA CAPA: PREDIOS INTERVENIDOS (SIG)
+            # ==========================================
+            if gdf_predios_mapa is not None and not gdf_predios_mapa.empty:
+                folium.GeoJson(
+                    gdf_predios_mapa, 
+                    name="🟢 Áreas Restauradas (CV)",
+                    style_function=lambda x: {'fillColor': '#00ff00', 'color': '#003300', 'weight': 1, 'fillOpacity': 0.7}
+                ).add_to(m)
 
-        if v_drain and capas.get('drenaje') is not None:
-            folium.GeoJson(capas['drenaje'], name="Ríos", style_function=lambda x: {'color': '#3498db', 'weight': 2}).add_to(m)
+            # ==========================================
+            # 4. NUEVA CAPA: SATÉLITE EN VIVO (Uso de Suelo)
+            # ==========================================
+            try:
+                import ee
+                # Inicializar Earth Engine usando la función que ya tenemos en memoria (o los secrets)
+                credenciales_dict = dict(st.secrets["gcp_service_account"])
+                credentials = ee.ServiceAccountCredentials(email=credenciales_dict["client_email"], key_data=credenciales_dict["private_key"])
+                ee.Initialize(credentials)
+                
+                # Función puente para Folium
+                def add_ee_layer(self, ee_image_object, vis_params, name):
+                    map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
+                    folium.raster_layers.TileLayer(
+                        tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine',
+                        name=name, overlay=True, control=True, show=False # <--- 'show=False' arranca apagada para no tapar todo
+                    ).add_to(self)
+                folium.Map.add_ee_layer = add_ee_layer
+                
+                # Calcular la capa
+                geom_unificada = gdf_zona.geometry.unary_union
+                roi_ee = ee.Geometry(geom_unificada.__geo_interface__)
+                dw_coleccion = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(roi_ee).filterDate('2023-01-01', '2024-01-01')
+                dw_imagen = dw_coleccion.select('label').mode().clip(roi_ee)
+                dw_vis = {'min': 0, 'max': 8, 'palette': ['#419BDF', '#397D49', '#88B053', '#7A87C6', '#E49635', '#DFC35A', '#C4281B', '#A59B8F', '#B39FE1']}
+                
+                # Inyectar al mapa
+                m.add_ee_layer(dw_imagen, dw_vis, '🛰️ Uso de Suelo (Satélite IA)')
+            except Exception as e:
+                pass # Si hay error con el satélite, que el mapa siga funcionando
 
-        if capas.get('predios') is not None:
-            folium.GeoJson(capas['predios'], name="Predios CV", style_function=lambda x: {'fillColor': 'orange', 'color': 'darkorange'}).add_to(m)
-
-        folium.LayerControl().add_to(m)
-        st_folium(m, width="100%", height=600, key="mapa_final")
+            # Añadir Control de Capas interactivo
+            folium.LayerControl(position='topright').add_to(m)
+            
+            st_folium(m, width="100%", height=500, returned_objects=[])
 
         st.markdown("### 📊 Análisis de Suelo y Prioridad")
         if capas.get('geomorf') is not None:
@@ -456,7 +494,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             return ha_calc, info_debug
 
         with st.spinner("Descargando inventario predial de la Nube (Supabase)..."):
-            ha_reales_sig, msg_debug = obtener_hectareas_predios_maestros(gdf_zona, nombre_zona)
+            ha_reales_sig, info_debug, gdf_predios_mapa = obtener_predios_y_hectareas(gdf_zona, nombre_zona)
             
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         # 🛰️ INTEGRACIÓN CON EL SATÉLITE EN VIVO
