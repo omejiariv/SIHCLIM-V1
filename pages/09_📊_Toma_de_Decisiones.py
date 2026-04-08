@@ -147,27 +147,32 @@ if gdf_zona is not None and not gdf_zona.empty:
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
         
     # ==============================================================================
-    # 🧠 ENRUTADOR DEMOGRÁFICO INTELIGENTE (Solución a Población 0)
+    # 🧠 ENRUTADOR DEMOGRÁFICO INTELIGENTE (Soporte Multi-Municipio)
     # ==============================================================================
     nombre_lower = str(nombre_zona).lower()
-    municipio_proxy = nombre_zona
     
-    # Si es una subcuenca, apuntamos al municipio principal que la representa
-    if "chico" in nombre_lower: municipio_proxy = "belmira"
-    elif "grande" in nombre_lower: municipio_proxy = "don matias"
-    elif "fe" in nombre_lower or "pantanillo" in nombre_lower: municipio_proxy = "el retiro"
-    elif "aburra" in nombre_lower or "medellin" in nombre_lower: municipio_proxy = "medellin"
+    # 1. Definimos todos los municipios que componen la cuenca
+    if "chico" in nombre_lower: municipios_proxy = ["belmira", "san pedro"] 
+    elif "grande" in nombre_lower: municipios_proxy = ["don matias", "entrerrios", "santa rosa de osos"]
+    elif "fe" in nombre_lower or "pantanillo" in nombre_lower: municipios_proxy = ["el retiro"]
+    elif "aburra" in nombre_lower or "medellin" in nombre_lower: municipios_proxy = ["medellin"]
+    else: municipios_proxy = [nombre_zona]
 
-    datos_metabolismo = obtener_metabolismo_exacto(municipio_proxy, anio_actual)
-    pob_total = datos_metabolismo.get('pob_total', 0)
-    bovinos = datos_metabolismo.get('bovinos', 0)
-    porcinos = datos_metabolismo.get('porcinos', 0)
-    aves = datos_metabolismo.get('aves', 0)
+    # 2. Sumamos los datos metabólicos de todos los municipios involucrados
+    pob_total = 0; bovinos = 0; porcinos = 0; aves = 0
+    
+    for mun in municipios_proxy:
+        datos_mun = obtener_metabolismo_exacto(mun, anio_actual)
+        if datos_mun:
+            pob_total += datos_mun.get('pob_total', 0)
+            bovinos += datos_mun.get('bovinos', 0)
+            porcinos += datos_mun.get('porcinos', 0)
+            aves += datos_mun.get('aves', 0)
 
-    # Fallback extremo de seguridad por si falla la base de datos
+    # 3. Fallback extremo de seguridad
     if pob_total == 0:
         st.warning(f"⚠️ **Ajuste Automático:** '{nombre_zona}' no arrojó datos, aplicando aproximación demográfica base.")
-        if "chico" in nombre_lower: pob_total = 12500
+        if "chico" in nombre_lower: pob_total = 38000 # Belmira + San Pedro
         elif "grande" in nombre_lower: pob_total = 45000
         elif "fe" in nombre_lower: pob_total = 25000
         elif "aburra" in nombre_lower: pob_total = 4000000
@@ -374,45 +379,70 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("---")
         st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
         
-# 🛡️ ALGORITMO DEFINITIVO: CONEXIÓN DIRECTA AL BUCKET PÚBLICO
+        # 🛡️ ALGORITMO DEFINITIVO: EXTRACCIÓN PÚBLICA E HÍBRIDA (Espacial + Regex)
         @st.cache_data(ttl=3600, show_spinner=False)
         def obtener_hectareas_predios_maestros(_gdf_zona, nombre_zona_txt):
-            import requests, tempfile, unicodedata
+            import requests, tempfile
             import pandas as pd
             import geopandas as gpd
             
             ha_calc = 0.0
-            info_debug = "Iniciando descarga pública..."
+            info_debug = "Iniciando rastreo de predios..."
             
             try:
-                # 1. URL PÚBLICA DIRECTA (Tu nuevo Bucket)
+                # 1. CONEXIÓN DIRECTA AL BUCKET
                 url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
-                
                 res = requests.get(url_predios)
-                if res.status_code == 200:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp_p:
-                        tmp_p.write(res.content)
-                        tmp_path_p = tmp_p.name
-                    gdf_p = gpd.read_file(tmp_path_p)
-                else:
-                    return 0.0, f"❌ Fallo al descargar de Supabase. Código: {res.status_code}"
+                if res.status_code != 200: return 0.0, f"❌ Fallo descarga. Código: {res.status_code}"
 
-                if gdf_p is None or gdf_p.empty:
-                    return 0.0, "❌ Error: El archivo GeoJSON está vacío."
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp_p:
+                    tmp_p.write(res.content)
+                    tmp_path_p = tmp_p.name
+                gdf_p = gpd.read_file(tmp_path_p)
 
-                # BUSCADOR DINÁMICO DE COLUMNA DE ÁREA
-                col_area = next((c for c in gdf_p.columns if 'area' in c.lower() or 'ha' in c.lower()), None)
+                if gdf_p is None or gdf_p.empty: return 0.0, "❌ Error: El GeoJSON de predios está vacío."
 
-                # 2. HOMOLOGACIÓN DE COORDENADAS (CRS 3116 - Origen Nacional)
-                if gdf_p.crs is None: gdf_p.set_crs(epsg=4326, inplace=True)
+                # CURA DE COORDENADAS (Forzamos 4326 para borrar el metadata viejo OGC:CRS84)
+                gdf_p.set_crs(epsg=4326, allow_override=True, inplace=True)
+                
+                # Buscar la columna exacta de área (CV suele usar 'AREA_HA')
+                col_area = 'AREA_HA' if 'AREA_HA' in gdf_p.columns else next((c for c in gdf_p.columns if 'area' in c.lower() or 'ha' in c.lower()), None)
+
+                # =================================================================
+                # INTENTO 1: BÚSQUEDA SEMÁNTICA AVANZADA (Regex)
+                # =================================================================
+                term_raw = str(nombre_zona_txt).lower()
+                
+                # Mapeo inteligente (Si es Chico, busca Chico, Belmira, San Pedro o Riogrande)
+                if "chico" in term_raw: regex_term = "chico|riogrande|belmira|san pedro"
+                elif "grande" in term_raw: regex_term = "grande|riogrande|don matias"
+                elif "fe" in term_raw or "pantanillo" in term_raw: regex_term = "fe|retiro|pantanillo"
+                else: regex_term = term_raw
+                
+                mask = pd.Series(False, index=gdf_p.index)
+                for col in gdf_p.select_dtypes(include=['object']).columns:
+                    mask = mask | gdf_p[col].astype(str).str.lower().str.contains(regex_term, regex=True, na=False)
+                
+                match_df = gdf_p[mask]
+                
+                if not match_df.empty:
+                    if col_area:
+                        ha_calc = pd.to_numeric(match_df[col_area], errors='coerce').sum()
+                    else:
+                        match_3116 = match_df.to_crs(epsg=3116)
+                        ha_calc = match_3116.area.sum() / 10000.0
+                    info_debug = f"✅ BÚSQUEDA AVANZADA: {len(match_df)} predios encontrados mediante metadatos ('{regex_term}')."
+                    return ha_calc, info_debug
+                
+                # =================================================================
+                # INTENTO 2: CRUCE ESPACIAL PROFUNDO (Si falla la tabla)
+                # =================================================================
                 gdf_p_3116 = gdf_p.to_crs(epsg=3116)
                 gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
                 
-                # Curación de topología (Evitar errores de geometrías rotas)
                 gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
-                gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(100) # 100m de margen
+                gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(100)
                 
-                # 3. CRUCE ESPACIAL (¿Dónde coinciden los predios de CV con la cuenca?)
                 intersected = gpd.sjoin(gdf_p_3116, gdf_z_3116, how='inner', predicate='intersects')
                 
                 if not intersected.empty:
@@ -421,29 +451,12 @@ if gdf_zona is not None and not gdf_zona.empty:
                         ha_calc = pd.to_numeric(predios_unicos[col_area], errors='coerce').sum()
                     else:
                         ha_calc = predios_unicos.area.sum() / 10000.0
-                    info_debug = f"✅ CRUCE SIG EXITOSO: {len(predios_unicos)} predios de CuencaVerde interceptan {nombre_zona_txt}."
+                    info_debug = f"✅ CRUCE ESPACIAL: {len(predios_unicos)} predios interceptan el mapa."
                 else:
-                    # 4. RESCATE SEMÁNTICO (Si el SIG falla, buscamos por texto)
-                    term_raw = str(nombre_zona_txt).lower()
-                    termino_busqueda = "chico" if "chico" in term_raw else "grande" if "grande" in term_raw else "fe" if "fe" in term_raw else "aburra"
-                    
-                    mask = pd.Series(False, index=gdf_p.index)
-                    for col in gdf_p.select_dtypes(include=['object']).columns:
-                        mask = mask | gdf_p[col].astype(str).str.lower().str.contains(termino_busqueda, na=False)
-                    
-                    match_df = gdf_p[mask]
-                    if not match_df.empty:
-                        if col_area:
-                            ha_calc = pd.to_numeric(match_df[col_area], errors='coerce').sum()
-                        else:
-                            match_3116 = match_df.to_crs(epsg=3116)
-                            ha_calc = match_3116.area.sum() / 10000.0
-                        info_debug = f"⚠️ RESCATE SEMÁNTICO: 0 cruces geométricos, pero se encontraron {len(match_df)} predios con la palabra '{termino_busqueda}'."
-                    else:
-                        info_debug = f"ℹ️ ZONA VIRGEN: No se detectan intervenciones de CuencaVerde registradas en {nombre_zona_txt}."
+                    info_debug = f"ℹ️ ZONA VIRGEN: 0 predios registrados en base de datos o interceptando el mapa de {nombre_zona_txt}."
 
             except Exception as e: 
-                info_debug = f"❌ ERROR CRÍTICO EN FUNCIÓN: {e}"
+                info_debug = f"❌ ERROR DE CÁLCULO: {e}"
                 
             return ha_calc, info_debug
 
