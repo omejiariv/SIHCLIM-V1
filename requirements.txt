@@ -31,9 +31,10 @@ cmdstanpy
 sqlalchemy
 psycopg2-binary
 geoalchemy2
-sqlalchemy
 supabase
 scikit-learn
 pykrige
 pysheds
 pyarrow
+earthengine-api
+geemap
