@@ -94,6 +94,28 @@ if iniciar_conexion_gee():
             
             # Magia: Tomamos el promedio (mode) y lo RECTORTAMOS con la forma exacta de la cuenca
             dw_imagen = dw_coleccion.select('label').mode().clip(roi_ee)
+            # ==========================================================
+            # 🧠 CÁLCULO DE ÁREA FORESTAL EN TIEMPO REAL (PIXEL COUNT)
+            # ==========================================================
+            # En Dynamic World, la clase 1 corresponde a "Árboles / Bosque"
+            mascara_bosque = dw_imagen.eq(1)
+            
+            # Multiplicamos los píxeles de bosque por su área real (10x10m = 100m2) y sumamos todo
+            area_bosque_m2 = mascara_bosque.multiply(ee.Image.pixelArea()).reduceRegion(
+                reducer=ee.Reducer.sum(),
+                geometry=roi_ee,
+                scale=10, # Resolución de Sentinel-2
+                maxPixels=1e9
+            ).get('label')
+            
+            # Extraemos el número, lo convertimos a Hectáreas y lo guardamos en la memoria global
+            try:
+                ha_bosque_satelite = ee.Number(area_bosque_m2).divide(10000).getInfo()
+                st.session_state['satelite_ha_bosque'] = ha_bosque_satelite
+                st.info(f"🌲 **Auditoría Satelital:** Se han detectado **{ha_bosque_satelite:,.1f} ha** de cobertura boscosa en {nombre_zona}.")
+            except Exception as e:
+                pass
+            # ==========================================================
             
             # 3. Paleta Oficial de Dynamic World
             dw_vis = {
