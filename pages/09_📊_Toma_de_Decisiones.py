@@ -502,7 +502,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             # Crear columnas dinámicas según la cantidad de coberturas encontradas
             cols = st.columns(len(df_areas))
             for idx, row in df_areas.iterrows():
-                cols[idx].metric(label=row["Cobertura"], value=f"{row['Área (Ha)']:,.2f}")
+                cols[idx].metric(label=row["Cobertura"], value=f"{row['Área (Ha)']:,.0f}")
 
         # ==========================================
         # 6. ANÁLISIS DE SUELO
