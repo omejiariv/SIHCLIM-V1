@@ -83,8 +83,9 @@ if iniciar_conexion_gee():
             minx, miny, maxx, maxy = gdf_zona.total_bounds
             
             # Extraemos la geometría exacta (con todas sus curvas) para recortar el mapa
-            geom_json = json.loads(gdf_zona.to_json())['features'][0]['geometry']
-            roi_ee = ee.Geometry(geom_json)
+            geom_unificada = gdf_zona.geometry.unary_union
+            # Convertimos esa figura maestra al lenguaje que entiende el satélite
+            roi_ee = ee.Geometry(geom_unificada.__geo_interface__)
             
             # 2. Consultar Dynamic World para el último año
             dw_coleccion = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1') \
