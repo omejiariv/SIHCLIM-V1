@@ -454,7 +454,16 @@ if gdf_zona is not None and not gdf_zona.empty:
             ha_reales_sig, msg_debug = obtener_hectareas_predios_maestros(gdf_zona, nombre_zona)
             
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
-        ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
+        # 🛰️ INTEGRACIÓN CON EL SATÉLITE EN VIVO
+        # Si el satélite ya escaneó la zona y calculó los bosques, usamos ese súper-dato.
+        ha_satelite_memoria = st.session_state.get('satelite_ha_bosque', 0.0)
+        
+        if ha_satelite_memoria > 0:
+            activar_sig = st.toggle("🛰️ Usar Hectáreas de Bosque detectadas por Satélite (Dynamic World)", value=True, key="td_toggle_sat")
+            ha_base_calculo = float(ha_satelite_memoria) if activar_sig else float(ha_reales_sig)
+        else:
+            activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
+            ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
         
         # 🚨 MOSTRAR SIEMPRE EL DIAGNÓSTICO
         st.info(f"🕵️ **Diagnóstico del Motor:** {msg_debug}")
