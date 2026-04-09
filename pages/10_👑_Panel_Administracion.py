@@ -1276,7 +1276,69 @@ with tabs[15]:
         except Exception as e:
             st.error(f"No se pudo conectar con el explorador. Detalle: {e}")
 
-# Añade "☁️ Gestión Cloud" a tu lista de st.tabs([...])
+        # ==============================================================================
+        # 🚀 CÁPSULA DE INYECCIÓN POSTGIS (CAPAS DEMOGRÁFICAS DASIMÉTRICAS)
+        # ==============================================================================
+        st.markdown("---")
+        st.subheader("🧠 Motor de Inyección Espacial (Modelado Demográfico)")
+        st.info("⚠️ **NOTA TÉCNICA:** A diferencia del Gestor de Archivos superior (que sube al Storage), este panel inyecta los polígonos directamente como Tablas Geográficas en PostgreSQL.")
+        
+        with st.expander("🛠️ Abrir Panel de Migración a PostGIS", expanded=False):
+            st.markdown("Sube los tres archivos maestros de distribución poblacional para habilitar el cálculo dasimétrico:")
+            
+            col_cab, col_cen, col_dan = st.columns(3)
+            with col_cab:
+                file_cab = st.file_uploader("1. Cabeceras", type=['geojson', 'json'], help="Sube: CabeceraMunicipal_GisAnt_PG.geojson")
+            with col_cen:
+                file_cen = st.file_uploader("2. Centros Poblados", type=['geojson', 'json'], help="Sube: CentrosPoblados_GisAnt_PG.geojson")
+            with col_dan:
+                file_dan = st.file_uploader("3. Sectores Rurales", type=['geojson', 'json'], help="Sube: MGN_ANM_DANE1.json")
+
+            if st.button("⚡ Ejecutar Fusión a Base de Datos", type="primary", use_container_width=True):
+                if not (file_cab and file_cen and file_dan):
+                    st.warning("⚠️ Por favor, carga los tres archivos maestros para ejecutar la operación.")
+                else:
+                    # Las importaciones están aquí adentro para no poner pesada la app al iniciar
+                    import geopandas as gpd
+                    from modules.db_manager import get_engine
+                    
+                    engine = get_engine()
+                    capas = {
+                        "cabeceras_municipales": file_cab,
+                        "centros_poblados": file_cen,
+                        "mgn_sectores_dane": file_dan
+                    }
+                    
+                    barra_progreso = st.progress(0)
+                    estado_texto = st.empty()
+                    
+                    try:
+                        progreso = 0
+                        for nombre_tabla, archivo in capas.items():
+                            estado_texto.markdown(f"⏳ Convirtiendo `{nombre_tabla}` a geometría espacial...")
+                            
+                            # Cargar a memoria
+                            gdf = gpd.read_file(archivo)
+                            
+                            # Blindaje Topológico (Todo a minúsculas y CRS EPSG:4326)
+                            gdf.columns = [c.lower() for c in gdf.columns]
+                            if gdf.crs is None or gdf.crs.to_string() != "EPSG:4326":
+                                gdf = gdf.to_crs("EPSG:4326")
+                                
+                            estado_texto.markdown(f"🚀 Inyectando `{nombre_tabla}` a PostgreSQL...")
+                            
+                            # Inyección a BD (Reemplaza si ya existe para evitar duplicados)
+                            gdf.to_sql(nombre_tabla, engine, if_exists='replace', index=False, chunksize=500)
+                            
+                            progreso += 33
+                            barra_progreso.progress(progreso)
+                        
+                        barra_progreso.progress(100)
+                        estado_texto.success("✅ ¡Fusión Espacial Completada! El Modelo Demográfico ya puede consumir estas capas.")
+                        st.balloons()
+                        
+                    except Exception as e:
+                        st.error(f"❌ Fallo crítico en la inyección: {e}")
 
 # ==============================================================================
 # TAB 16: GESTIÓN CLOUD Y SMART CACHE
