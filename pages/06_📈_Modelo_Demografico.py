@@ -1488,11 +1488,17 @@ with tab_matriz:
                     engine_geo = get_engine()
                     
                     # 1. Preparar Geometría de Cuencas (Proyectado a metros para precisión)
-                    q_cue = text("SELECT nom_nss3 AS subc_lbl, geometry FROM cuencas WHERE nom_nss3 IS NOT NULL")
+                    # 🔥 FIX: Red de Seguridad COALESCE para capturar TODAS las cuencas, 
+                    # usando su máximo nivel de detalle disponible (NSS3, NSS2, NSS1 o SZH)
+                    q_cue = text("""
+                        SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, 
+                               geometry 
+                        FROM cuencas 
+                        WHERE COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) IS NOT NULL
+                    """)
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     
                     # 🔥 SANACIÓN TOPOLÓGICA 1: "Planchamos" los polígonos de las cuencas
-                    # Esto elimina auto-intersecciones y nudos que causan el TopologyException
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
                     gdf_cue_diss = gdf_cue.dissolve(by='subc_lbl').reset_index()
