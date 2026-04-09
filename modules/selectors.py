@@ -71,57 +71,64 @@ def render_selector_espacial():
         
         try:
             # ==========================================
-            # --- A. POR CUENCA ---
+            # --- A. POR CUENCA (Embudo Jerárquico NSS) ---
             # ==========================================
             if modo == "Por Cuenca":
                 try:
                     gdf_cuencas = cargar_mapa_cuencas() # ⚡ Carga instantánea desde Caché
                     
-                    # --- FILTRO BLINDADO DE COLUMNAS ---
-                    columnas_permitidas = ['AH', 'ZH', 'SZH', 'Zona', 'N_NSS1', 'SUBC_LBL', 'N-NSS3', 'COD']
-                    permitidas_lower = [c.lower() for c in columnas_permitidas]
-                    
-                    # Rescatamos las columnas ignorando mayúsculas/minúsculas
-                    columnas_reales = [col for col in gdf_cuencas.columns if col.lower() in permitidas_lower]
-                    
-                    # FALLBACK: Si no hay coincidencias, traemos las de texto
-                    if not columnas_reales:
-                        columnas_reales = [c for c in gdf_cuencas.columns if c.lower() not in ['geometry', 'gid', 'objectid', 'shape_length', 'shape_area']]
-                    
-                    mapa_nombres = {c.lower(): c.upper() for c in columnas_reales}
-                    
-                    # Índice por defecto seguro
-                    default_idx = 0
-                    cols_lower = [c.lower() for c in columnas_reales]
-                    if 'subc_lbl' in cols_lower: default_idx = cols_lower.index('subc_lbl')
-                    elif 'zona' in cols_lower: default_idx = cols_lower.index('zona')
-                    
-                    if len(columnas_reales) == 0:
-                        st.error("⚠️ La tabla de cuencas no tiene columnas de texto.")
-                    else:
-                        col_nom = st.selectbox(
-                            "📂 Columna de Nombres:", 
-                            options=columnas_reales, 
-                            index=min(default_idx, max(0, len(columnas_reales)-1)),
-                            format_func=lambda x: mapa_nombres.get(x.lower(), x) if x else "",
-                            help="Seleccione el nivel de jerarquía hidrográfica."
-                        )
+                    # 1. Filtro Macro: ZONA (Ej. Bajo Cauca)
+                    # Aseguramos que la columna exista para evitar errores
+                    if 'Zona' in gdf_cuencas.columns:
+                        zonas_disp = sorted(gdf_cuencas['Zona'].dropna().unique())
+                        zona_sel = st.selectbox("🌍 1. Macro-Zona:", ["-- Seleccione --"] + zonas_disp)
                         
-                        if col_nom:
-                            # Limpiamos nulos y organizamos alfabéticamente
-                            valores_brutos = gdf_cuencas[col_nom].dropna().astype(str).unique().tolist()
-                            lista_limpia = sorted([v.strip() for v in valores_brutos if v.strip() != ""])
+                        if zona_sel != "-- Seleccione --":
+                            # Filtramos la tabla de cuencas a solo la Zona elegida
+                            gdf_zona_filt = gdf_cuencas[gdf_cuencas['Zona'] == zona_sel]
                             
-                            if len(lista_limpia) > 0:
-                                sel = st.selectbox("🌊 Seleccione Territorio:", lista_limpia)
-                                if sel:
-                                    nombre_zona = sel
-                                    gdf_zona = gdf_cuencas[gdf_cuencas[col_nom].astype(str).str.strip() == sel]
-                            else:
-                                st.warning("La columna seleccionada no contiene datos.")
+                            # 2. Filtro Medio: Subzona Hidrográfica (SZH)
+                            szh_disp = sorted(gdf_zona_filt['NOM_SZH'].dropna().unique())
+                            szh_sel = st.selectbox("🌊 2. Subzona Hidrográfica (SZH):", ["-- Seleccione --"] + szh_disp)
+                            
+                            if szh_sel != "-- Seleccione --":
+                                # Filtramos la tabla un nivel más abajo
+                                gdf_szh_filt = gdf_zona_filt[gdf_zona_filt['NOM_SZH'] == szh_sel]
+                                
+                                # 3. Selector de Nivel de Detalle (NSS)
+                                nivel_nss = st.radio(
+                                    "🔎 3. Nivel de Detalle (Resolución):",
+                                    ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Microcuenca)"],
+                                    horizontal=True
+                                )
+                                
+                                # Diccionario puente entre el Radio Button y el nombre real de la columna
+                                mapa_cols_nss = {
+                                    "NSS1 (Macro)": "NOM_NSS1",
+                                    "NSS2 (Intermedia)": "NOM_NSS2",
+                                    "NSS3 (Microcuenca)": "NOM_NSS3"
+                                }
+                                col_objetivo = mapa_cols_nss[nivel_nss]
+                                
+                                # 4. Selección Final del Territorio
+                                if col_objetivo in gdf_szh_filt.columns:
+                                    territorios_disp = sorted(gdf_szh_filt[col_objetivo].dropna().unique())
+                                    sel_final = st.selectbox(f"🎯 4. Territorio Objetivo:", territorios_disp)
+                                    
+                                    if sel_final:
+                                        nombre_zona = sel_final
+                                        gdf_zona = gdf_szh_filt[gdf_szh_filt[col_objetivo] == sel_final]
+                                        
+                                        # Consolidar geometrías en caso de que un nombre agrupe varios polígonos
+                                        if len(gdf_zona) > 1:
+                                            gdf_zona = gpd.GeoDataFrame({'geometry': [gdf_zona.unary_union]}, crs=gdf_zona.crs)
+                                else:
+                                    st.warning(f"La columna {col_objetivo} no existe en la base de datos.")
+                    else:
+                        st.error("⚠️ La nueva capa de cuencas no tiene la columna 'Zona'. Verifica la importación.")
 
                 except Exception as e:
-                    st.warning(f"Error cargando cuencas: {e}")
+                    st.warning(f"Error cargando el embudo de cuencas: {e}")
 
             # ==========================================
             # --- B. POR REGIÓN ---
