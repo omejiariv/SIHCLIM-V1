@@ -1328,7 +1328,7 @@ with tabs[15]:
                             estado_texto.markdown(f"🚀 Inyectando `{nombre_tabla}` a PostgreSQL...")
                             
                             # Inyección a BD (Reemplaza si ya existe para evitar duplicados)
-                            gdf.to_sql(nombre_tabla, engine, if_exists='replace', index=False, chunksize=500)
+                            gdf.to_postgis(nombre_tabla, engine, if_exists='replace', index=False)
                             
                             progreso += 33
                             barra_progreso.progress(progreso)
