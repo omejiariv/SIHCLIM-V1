@@ -195,11 +195,22 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
             tooltip=folium.GeoJsonTooltip(fields=fields, aliases=aliases) if fields else None
         ).add_to(m)
 
-    # 4. CAPAS ZONA (Límites de Cuenca y Buffer)
-    if gdf_zona is not None:
-        folium.GeoJson(gdf_zona, name="🟦 Cuenca", style_function=lambda x: {'color': 'black', 'weight': 2, 'fill': False}).add_to(m)
+    # 4. CAPAS ZONA (Límites y Tooltips Dinámicos)
+    if gdf_zona is not None and not gdf_zona.empty:
+        # Si por alguna razón llega sin columna 'nombre', la creamos para que no falle el tooltip
+        if 'nombre' not in gdf_zona.columns:
+            gdf_zona['nombre'] = "Área de Estudio"
+
+        # Etiqueta dinámica en la leyenda y Tooltip al pasar el mouse
+        folium.GeoJson(
+            gdf_zona, 
+            name="🟦 Límite (Zona Seleccionada)", 
+            style_function=lambda x: {'color': 'black', 'weight': 2, 'fillColor': '#3498db', 'fillOpacity': 0.1},
+            tooltip=folium.GeoJsonTooltip(fields=['nombre'], aliases=['Territorio:'], style="font-weight: bold; color: #2c3e50;")
+        ).add_to(m)
+        
     if gdf_buffer is not None:
-        folium.GeoJson(gdf_buffer, name="⭕ Buffer", style_function=lambda x: {'color': 'red', 'weight': 1, 'dashArray': '5, 5', 'fill': False}).add_to(m)
+        folium.GeoJson(gdf_buffer, name="⭕ Radio de Influencia", style_function=lambda x: {'color': 'red', 'weight': 1, 'dashArray': '5, 5', 'fill': False}).add_to(m)
 
     # 5. PREDIOS (Interacción Rica con conversión de CRS segura)
     if gdf_predios is not None and not gdf_predios.empty:
