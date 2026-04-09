@@ -170,56 +170,51 @@ def render_selector_espacial():
                     st.warning(f"Error cargando el embudo de cuencas: {e}")
                     
             # ==========================================
-            # --- B. POR REGIÓN (FIX: ENVOLVENTE ESPACIAL) ---
+            # --- B. POR REGIÓN (FIX: Disolución de Municipios) ---
             # ==========================================
             elif modo == "Por Región":
                 try:
-                    df_reg = pd.read_sql("SELECT DISTINCT subregion FROM estaciones WHERE subregion IS NOT NULL ORDER BY subregion", engine)
-                    lista_reg = df_reg['subregion'].astype(str).unique().tolist()
+                    gdf_mun = cargar_mapa_municipios()
+                    # Buscamos la columna de subregión (usualmente 'subregion', 'region' o 'depto_regi')
+                    cols_mun_lower = [c.lower() for c in gdf_mun.columns]
+                    col_reg_name = next((c for c in gdf_mun.columns if c.lower() in ['subregion', 'region', 'depto_regi']), None)
                     
-                    sel = st.selectbox("📍 Seleccione Región:", lista_reg)
-                    
-                    if sel:
-                        nombre_zona = f"Región {sel}"
-                        q_geo = text(f"SELECT * FROM estaciones WHERE subregion = '{sel}'")
-                        df_pts = pd.read_sql(q_geo, engine)
+                    if col_reg_name:
+                        lista_reg = sorted(gdf_mun[col_reg_name].dropna().astype(str).unique().tolist())
+                        sel = st.selectbox("📍 Seleccione Región:", lista_reg)
                         
-                        if not df_pts.empty:
-                            pts = gpd.GeoDataFrame(
-                                df_pts, 
-                                geometry=gpd.points_from_xy(df_pts.longitud, df_pts.latitud),
-                                crs="EPSG:4326"
-                            )
-                            # 🔥 FIX ESTRUCTURAL: Convex Hull
-                            # En lugar de usar los puntos, creamos una "cinta elástica" que envuelve 
-                            # todas las estaciones de la región para crear un Polígono Real.
-                            envolvente = pts.geometry.unary_union.convex_hull.buffer(0.05) 
-                            gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[envolvente], crs="EPSG:4326")
-                        else:
-                            st.warning(f"No hay estaciones en {sel}")
+                        if sel:
+                            nombre_zona = f"Región {sel}"
+                            gdf_reg_filt = gdf_mun[gdf_mun[col_reg_name] == sel]
+                            
+                            # Fusión Topológica de todos los municipios de la región
+                            region_geom = gdf_reg_filt.unary_union
+                            # Asignamos la columna 'nombre' para el Tooltip
+                            gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[region_geom], crs=gdf_mun.crs)
+                    else:
+                        st.warning("No se encontró la columna de región en la capa de municipios.")
                 except Exception as e:
-                    st.warning(f"Error cargando regiones: {e}")
-                    
+                    st.warning(f"Error cargando regiones: {e}")        
+
             # ==========================================
             # --- C. POR MUNICIPIO ---
             # ==========================================
             elif modo == "Por Municipio":
                 try:
-                    gdf_mun = cargar_mapa_municipios() # ⚡ Carga instantánea
+                    gdf_mun = cargar_mapa_municipios() 
                     
                     cols_texto = [c for c in gdf_mun.columns if c not in ['geometry', 'gid']]
                     default_idx = 0
-                    if 'mpio_cnmbr' in cols_texto: default_idx = cols_texto.index('mpio_cnmbr')
+                    col_name = next((c for c in gdf_mun.columns if c.lower() in ['mpio_cnmbr', 'nombre_mpio', 'municipio']), cols_texto[0] if cols_texto else None)
                     
-                    col_nom = st.selectbox("📂 Columna de Nombres:", cols_texto, index=default_idx)
-                    
-                    if col_nom:
-                        lista = sorted(gdf_mun[col_nom].astype(str).unique().tolist())
-                        sel = st.selectbox("Seleccione Municipio:", lista)
+                    if col_name:
+                        lista = sorted(gdf_mun[col_name].dropna().astype(str).unique().tolist())
+                        sel = st.selectbox("🏢 Seleccione Municipio:", lista)
                         if sel:
                             nombre_zona = sel
-                            gdf_mun = gdf_mun.to_crs("EPSG:4326")
-                            gdf_zona = gdf_mun[gdf_mun[col_nom] == sel]
+                            gdf_zona = gdf_mun[gdf_mun[col_name] == sel].copy()
+                            # Asignamos la columna 'nombre' estandarizada para el Tooltip
+                            gdf_zona['nombre'] = sel
                 except Exception as e:
                     st.warning(f"Error en tabla municipios: {e}")
 
