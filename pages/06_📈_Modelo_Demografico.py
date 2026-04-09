@@ -1488,7 +1488,8 @@ with tab_matriz:
                     engine_geo = get_engine()
                     
                     # 1. Preparar Geometría de Cuencas (Proyectado a metros para precisión)
-                    q_cue = text("SELECT subc_lbl, geometry FROM cuencas")
+                    # FIX: Usamos nom_nss3 (máximo detalle) y lo disfrazamos como subc_lbl para la IA
+                    q_cue = text("SELECT nom_nss3 AS subc_lbl, geometry FROM cuencas WHERE nom_nss3 IS NOT NULL")
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue_diss = gdf_cue.dissolve(by='subc_lbl').reset_index()
                     
