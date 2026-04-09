@@ -170,51 +170,90 @@ def render_selector_espacial():
                     st.warning(f"Error cargando el embudo de cuencas: {e}")
                     
             # ==========================================
-            # --- B. POR REGIÓN (FIX: Disolución de Municipios) ---
+            # --- B. POR REGIÓN (FIX: Cruce con Archivo Maestro) ---
             # ==========================================
             elif modo == "Por Región":
                 try:
-                    gdf_mun = cargar_mapa_municipios()
-                    # Buscamos la columna de subregión (usualmente 'subregion', 'region' o 'depto_regi')
-                    cols_mun_lower = [c.lower() for c in gdf_mun.columns]
-                    col_reg_name = next((c for c in gdf_mun.columns if c.lower() in ['subregion', 'region', 'depto_regi']), None)
+                    import os
+                    import pandas as pd
                     
-                    if col_reg_name:
-                        lista_reg = sorted(gdf_mun[col_reg_name].dropna().astype(str).unique().tolist())
-                        sel = st.selectbox("📍 Seleccione Región:", lista_reg)
+                    # 1. Leer el archivo maestro para sacar las regiones y los códigos
+                    ruta_maestro = os.path.join("data", "territorio_maestro.csv")
+                    
+                    if os.path.exists(ruta_maestro):
+                        df_maestro = pd.read_csv(ruta_maestro)
                         
-                        if sel:
-                            nombre_zona = f"Región {sel}"
-                            gdf_reg_filt = gdf_mun[gdf_mun[col_reg_name] == sel]
+                        # Estandarizar nombres de columnas a minúsculas
+                        df_maestro.columns = [c.lower() for c in df_maestro.columns]
+                        
+                        if 'region' in df_maestro.columns and 'dp_mp' in df_maestro.columns:
+                            # Sacamos las regiones únicas (ej. "Suroeste", "Urabá")
+                            lista_reg = sorted([str(r).title() for r in df_maestro['region'].dropna().unique() if str(r).strip() != ""])
+                            sel_reg = st.selectbox("📍 Seleccione Región:", ["-- Seleccione --"] + lista_reg)
                             
-                            # Fusión Topológica de todos los municipios de la región
-                            region_geom = gdf_reg_filt.unary_union
-                            # Asignamos la columna 'nombre' para el Tooltip
-                            gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[region_geom], crs=gdf_mun.crs)
+                            if sel_reg != "-- Seleccione --":
+                                nombre_zona = f"Región {sel_reg}"
+                                
+                                # Extraer los códigos de municipio (DANE) que pertenecen a esa región
+                                mpios_region = df_maestro[df_maestro['region'].str.lower() == sel_reg.lower()]['dp_mp'].astype(str).str.zfill(5).tolist()
+                                
+                                # 2. Cargar geometrías del mapa y cruzarlas con los códigos
+                                gdf_mun = cargar_mapa_municipios()
+                                
+                                # Detectar la columna de código en el mapa (PostgreSQL)
+                                col_cod = next((c for c in gdf_mun.columns if c.lower() in ['cod_mpio', 'mpio_ccdgo', 'dp_mp', 'id']), None)
+                                
+                                if col_cod:
+                                    # Filtrar los polígonos del mapa usando la lista del archivo maestro
+                                    gdf_reg_filt = gdf_mun[gdf_mun[col_cod].astype(str).str.zfill(5).isin(mpios_region)]
+                                    
+                                    if not gdf_reg_filt.empty:
+                                        # ¡Fusión Topológica! Unir todos los municipios en la megaregión
+                                        region_geom = gdf_reg_filt.unary_union
+                                        gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[region_geom], crs=gdf_mun.crs)
+                                    else:
+                                        st.warning("⚠️ No se encontraron las geometrías en la BD para los municipios de esta región.")
+                                else:
+                                    st.error("⚠️ La capa de municipios en BD no tiene una columna de código (cod_mpio) para cruzar.")
+                        else:
+                            st.warning("El archivo maestro no tiene las columnas requeridas ('region' y 'dp_mp').")
                     else:
-                        st.warning("No se encontró la columna de región en la capa de municipios.")
+                        st.error(f"⚠️ No se encontró el archivo maestro en: {ruta_maestro}")
                 except Exception as e:
-                    st.warning(f"Error cargando regiones: {e}")        
+                    st.warning(f"Error procesando la región: {e}")        
 
             # ==========================================
-            # --- C. POR MUNICIPIO ---
+            # --- C. POR MUNICIPIO (FIX: Nombre Exacto y Depto) ---
             # ==========================================
             elif modo == "Por Municipio":
                 try:
                     gdf_mun = cargar_mapa_municipios() 
                     
-                    cols_texto = [c for c in gdf_mun.columns if c not in ['geometry', 'gid']]
-                    default_idx = 0
-                    col_name = next((c for c in gdf_mun.columns if c.lower() in ['mpio_cnmbr', 'nombre_mpio', 'municipio']), cols_texto[0] if cols_texto else None)
+                    # Identificar dinámicamente las columnas correctas
+                    col_mpio = next((c for c in gdf_mun.columns if c.lower() in ['mpio_nombr', 'mpio_cnmbr', 'nombre_mpio', 'municipio']), None)
+                    col_depto = next((c for c in gdf_mun.columns if c.lower() in ['dpto_cnmbr', 'dpto_nombr', 'nombre_dpto', 'departamento']), None)
                     
-                    if col_name:
-                        lista = sorted(gdf_mun[col_name].dropna().astype(str).unique().tolist())
+                    if col_mpio:
+                        # Estandarizar capitalización (ej. "Medellín")
+                        gdf_mun[col_mpio] = gdf_mun[col_mpio].astype(str).str.title()
+                        
+                        # Concatenar el Departamento si existe (ej. "Titiribí - Antioquia")
+                        if col_depto:
+                            gdf_mun[col_depto] = gdf_mun[col_depto].astype(str).str.title()
+                            gdf_mun['display_name'] = gdf_mun[col_mpio] + " - " + gdf_mun[col_depto]
+                        else:
+                            gdf_mun['display_name'] = gdf_mun[col_mpio]
+                            
+                        lista = sorted(gdf_mun['display_name'].dropna().unique().tolist())
                         sel = st.selectbox("🏢 Seleccione Municipio:", lista)
+                        
                         if sel:
-                            nombre_zona = sel
-                            gdf_zona = gdf_mun[gdf_mun[col_name] == sel].copy()
-                            # Asignamos la columna 'nombre' estandarizada para el Tooltip
-                            gdf_zona['nombre'] = sel
+                            # Rescatamos solo el nombre del municipio limpio para los balances y gráficas
+                            nombre_zona = sel.split(" - ")[0] 
+                            gdf_zona = gdf_mun[gdf_mun['display_name'] == sel].copy()
+                            gdf_zona['nombre'] = nombre_zona # Esta es la columna mágica para los Tooltips
+                    else:
+                        st.warning("⚠️ No se encontró la columna de municipio (ej. mpio_nombr) en la base de datos.")
                 except Exception as e:
                     st.warning(f"Error en tabla municipios: {e}")
 
