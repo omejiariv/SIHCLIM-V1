@@ -170,24 +170,23 @@ def render_selector_espacial():
                     st.warning(f"Error cargando el embudo de cuencas: {e}")
                     
             # ==========================================
-            # --- B. POR REGIÓN (FIX: Cruce con Archivo Maestro) ---
+            # --- B. POR REGIÓN (FIX: Leer Excel desde Supabase) ---
             # ==========================================
             elif modo == "Por Región":
                 try:
-                    import os
                     import pandas as pd
                     
-                    # 1. Leer el archivo maestro para sacar las regiones y los códigos
-                    ruta_maestro = os.path.join("data", "territorio_maestro.csv")
+                    # 1. Leer el archivo maestro desde Supabase (URL directa .xlsx)
+                    url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
                     
-                    if os.path.exists(ruta_maestro):
-                        df_maestro = pd.read_csv(ruta_maestro)
+                    try:
+                        df_maestro = pd.read_excel(url_maestro)
                         
                         # Estandarizar nombres de columnas a minúsculas
                         df_maestro.columns = [c.lower() for c in df_maestro.columns]
                         
                         if 'region' in df_maestro.columns and 'dp_mp' in df_maestro.columns:
-                            # Sacamos las regiones únicas (ej. "Suroeste", "Urabá")
+                            # Sacamos las regiones únicas
                             lista_reg = sorted([str(r).title() for r in df_maestro['region'].dropna().unique() if str(r).strip() != ""])
                             sel_reg = st.selectbox("📍 Seleccione Región:", ["-- Seleccione --"] + lista_reg)
                             
@@ -214,23 +213,24 @@ def render_selector_espacial():
                                     else:
                                         st.warning("⚠️ No se encontraron las geometrías en la BD para los municipios de esta región.")
                                 else:
-                                    st.error("⚠️ La capa de municipios en BD no tiene una columna de código (cod_mpio) para cruzar.")
+                                    st.error("⚠️ La capa de municipios en BD no tiene una columna de código (cod_mpio o dp_mp) para cruzar.")
                         else:
                             st.warning("El archivo maestro no tiene las columnas requeridas ('region' y 'dp_mp').")
-                    else:
-                        st.error(f"⚠️ No se encontró el archivo maestro en: {ruta_maestro}")
+                    except Exception as e_read:
+                        st.error(f"⚠️ Error leyendo el archivo desde Supabase. ¿Tienes instalado openpyxl? Detalles: {e_read}")
+
                 except Exception as e:
                     st.warning(f"Error procesando la región: {e}")        
 
             # ==========================================
-            # --- C. POR MUNICIPIO (FIX: Nombre Exacto y Depto) ---
+            # --- C. POR MUNICIPIO (FIX: nombre_municipio) ---
             # ==========================================
             elif modo == "Por Municipio":
                 try:
                     gdf_mun = cargar_mapa_municipios() 
                     
-                    # Identificar dinámicamente las columnas correctas
-                    col_mpio = next((c for c in gdf_mun.columns if c.lower() in ['mpio_nombr', 'mpio_cnmbr', 'nombre_mpio', 'municipio']), None)
+                    # Identificar dinámicamente las columnas correctas (Añadido 'nombre_municipio')
+                    col_mpio = next((c for c in gdf_mun.columns if c.lower() in ['nombre_municipio', 'mpio_nombr', 'mpio_cnmbr', 'nombre_mpio', 'municipio']), None)
                     col_depto = next((c for c in gdf_mun.columns if c.lower() in ['dpto_cnmbr', 'dpto_nombr', 'nombre_dpto', 'departamento']), None)
                     
                     if col_mpio:
@@ -253,10 +253,10 @@ def render_selector_espacial():
                             gdf_zona = gdf_mun[gdf_mun['display_name'] == sel].copy()
                             gdf_zona['nombre'] = nombre_zona # Esta es la columna mágica para los Tooltips
                     else:
-                        st.warning("⚠️ No se encontró la columna de municipio (ej. mpio_nombr) en la base de datos.")
+                        st.warning("⚠️ No se encontró la columna de municipio (ej. nombre_municipio) en la base de datos.")
                 except Exception as e:
                     st.warning(f"Error en tabla municipios: {e}")
-
+                    
             # ==========================================
             # --- D. DEPARTAMENTO (FIX: POLÍGONO REAL) ---
             # ==========================================
