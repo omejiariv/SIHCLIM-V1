@@ -78,22 +78,22 @@ def render_selector_espacial():
                     gdf_cuencas = cargar_mapa_cuencas() # ⚡ Carga instantánea desde Caché
                     
                     # 1. Filtro Macro: ZONA (Ej. Bajo Cauca)
-                    # Aseguramos que la columna exista para evitar errores
-                    if 'Zona' in gdf_cuencas.columns:
-                        zonas_disp = sorted(gdf_cuencas['Zona'].dropna().unique())
+                    # FIX: PostgreSQL convierte las columnas a minúsculas ('zona' en vez de 'Zona')
+                    if 'zona' in gdf_cuencas.columns:
+                        zonas_disp = sorted(gdf_cuencas['zona'].dropna().unique())
                         zona_sel = st.selectbox("🌍 1. Macro-Zona:", ["-- Seleccione --"] + zonas_disp)
                         
                         if zona_sel != "-- Seleccione --":
                             # Filtramos la tabla de cuencas a solo la Zona elegida
-                            gdf_zona_filt = gdf_cuencas[gdf_cuencas['Zona'] == zona_sel]
+                            gdf_zona_filt = gdf_cuencas[gdf_cuencas['zona'] == zona_sel]
                             
                             # 2. Filtro Medio: Subzona Hidrográfica (SZH)
-                            szh_disp = sorted(gdf_zona_filt['NOM_SZH'].dropna().unique())
+                            szh_disp = sorted(gdf_zona_filt['nom_szh'].dropna().unique())
                             szh_sel = st.selectbox("🌊 2. Subzona Hidrográfica (SZH):", ["-- Seleccione --"] + szh_disp)
                             
                             if szh_sel != "-- Seleccione --":
                                 # Filtramos la tabla un nivel más abajo
-                                gdf_szh_filt = gdf_zona_filt[gdf_zona_filt['NOM_SZH'] == szh_sel]
+                                gdf_szh_filt = gdf_zona_filt[gdf_zona_filt['nom_szh'] == szh_sel]
                                 
                                 # 3. Selector de Nivel de Detalle (NSS)
                                 nivel_nss = st.radio(
@@ -102,11 +102,11 @@ def render_selector_espacial():
                                     horizontal=True
                                 )
                                 
-                                # Diccionario puente entre el Radio Button y el nombre real de la columna
+                                # Diccionario con los nombres en minúsculas de la BD
                                 mapa_cols_nss = {
-                                    "NSS1 (Macro)": "NOM_NSS1",
-                                    "NSS2 (Intermedia)": "NOM_NSS2",
-                                    "NSS3 (Microcuenca)": "NOM_NSS3"
+                                    "NSS1 (Macro)": "nom_nss1",
+                                    "NSS2 (Intermedia)": "nom_nss2",
+                                    "NSS3 (Microcuenca)": "nom_nss3"
                                 }
                                 col_objetivo = mapa_cols_nss[nivel_nss]
                                 
@@ -125,11 +125,11 @@ def render_selector_espacial():
                                 else:
                                     st.warning(f"La columna {col_objetivo} no existe en la base de datos.")
                     else:
-                        st.error("⚠️ La nueva capa de cuencas no tiene la columna 'Zona'. Verifica la importación.")
+                        st.error("⚠️ La nueva capa de cuencas no tiene la columna 'zona'. Verifica la importación.")
 
                 except Exception as e:
                     st.warning(f"Error cargando el embudo de cuencas: {e}")
-
+                    
             # ==========================================
             # --- B. POR REGIÓN ---
             # ==========================================
