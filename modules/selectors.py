@@ -170,22 +170,21 @@ def render_selector_espacial():
                     st.warning(f"Error cargando el embudo de cuencas: {e}")
                     
             # ==========================================
-            # --- B. POR REGIÓN (FIX: Leer Excel desde Supabase) ---
+            # --- B. POR REGIÓN (FIX: Supabase + Doble Filtro) ---
             # ==========================================
             elif modo == "Por Región":
                 try:
-                    import pandas as pd
-                    
                     # 1. Leer el archivo maestro desde Supabase (URL directa .xlsx)
                     url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
                     
                     try:
+                        # pd y gpd ya están importados al inicio del archivo, no los re-importamos aquí.
                         df_maestro = pd.read_excel(url_maestro)
                         
                         # Estandarizar nombres de columnas a minúsculas
                         df_maestro.columns = [c.lower() for c in df_maestro.columns]
                         
-                        if 'region' in df_maestro.columns and 'dp_mp' in df_maestro.columns:
+                        if 'region' in df_maestro.columns and 'dp_mp' in df_maestro.columns and 'municipio' in df_maestro.columns:
                             # Sacamos las regiones únicas
                             lista_reg = sorted([str(r).title() for r in df_maestro['region'].dropna().unique() if str(r).strip() != ""])
                             sel_reg = st.selectbox("📍 Seleccione Región:", ["-- Seleccione --"] + lista_reg)
@@ -193,18 +192,42 @@ def render_selector_espacial():
                             if sel_reg != "-- Seleccione --":
                                 nombre_zona = f"Región {sel_reg}"
                                 
-                                # Extraer los códigos de municipio (DANE) que pertenecen a esa región
-                                mpios_region = df_maestro[df_maestro['region'].str.lower() == sel_reg.lower()]['dp_mp'].astype(str).str.zfill(5).tolist()
+                                # Extraer los códigos DANE y los NOMBRES de municipio del Excel
+                                df_region_filt = df_maestro[df_maestro['region'].str.lower() == sel_reg.lower()]
+                                mpios_codigos = df_region_filt['dp_mp'].astype(str).str.zfill(5).tolist()
                                 
-                                # 2. Cargar geometrías del mapa y cruzarlas con los códigos
+                                # Normalizamos nombres para hacer un cruce a prueba de tildes y mayúsculas
+                                import unicodedata
+                                def limpiar_texto(t):
+                                    if pd.isna(t): return ""
+                                    t = str(t).upper().strip()
+                                    return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                                
+                                mpios_nombres = [limpiar_texto(m) for m in df_region_filt['municipio'].tolist()]
+                                
+                                # 2. Cargar geometrías del mapa
                                 gdf_mun = cargar_mapa_municipios()
                                 
-                                # Detectar la columna de código en el mapa (PostgreSQL)
+                                # Buscar la columna de código y de nombre en el mapa (PostgreSQL)
                                 col_cod = next((c for c in gdf_mun.columns if c.lower() in ['cod_mpio', 'mpio_ccdgo', 'dp_mp', 'id']), None)
+                                col_nom = next((c for c in gdf_mun.columns if c.lower() in ['nombre_municipio', 'mpio_nombr', 'mpio_cnmbr', 'nombre_mpio', 'municipio']), None)
                                 
-                                if col_cod:
-                                    # Filtrar los polígonos del mapa usando la lista del archivo maestro
-                                    gdf_reg_filt = gdf_mun[gdf_mun[col_cod].astype(str).str.zfill(5).isin(mpios_region)]
+                                # Filtrar: O coincide el código, O coincide el nombre exacto
+                                if col_cod or col_nom:
+                                    mask_cod = pd.Series([False] * len(gdf_mun), index=gdf_mun.index)
+                                    mask_nom = pd.Series([False] * len(gdf_mun), index=gdf_mun.index)
+                                    
+                                    if col_cod:
+                                        # Si el BD guardó '145' en vez de '05145', aquí lo corregimos al vuelo
+                                        cod_bd_limpio = gdf_mun[col_cod].astype(str).str.zfill(5)
+                                        cod_bd_sin_depto = gdf_mun[col_cod].astype(str).str.zfill(3) 
+                                        mask_cod = cod_bd_limpio.isin(mpios_codigos) | ("05" + cod_bd_sin_depto).isin(mpios_codigos)
+                                        
+                                    if col_nom:
+                                        nom_bd_limpio = gdf_mun[col_nom].apply(limpiar_texto)
+                                        mask_nom = nom_bd_limpio.isin(mpios_nombres)
+                                        
+                                    gdf_reg_filt = gdf_mun[mask_cod | mask_nom]
                                     
                                     if not gdf_reg_filt.empty:
                                         # ¡Fusión Topológica! Unir todos los municipios en la megaregión
@@ -213,14 +236,14 @@ def render_selector_espacial():
                                     else:
                                         st.warning("⚠️ No se encontraron las geometrías en la BD para los municipios de esta región.")
                                 else:
-                                    st.error("⚠️ La capa de municipios en BD no tiene una columna de código (cod_mpio o dp_mp) para cruzar.")
+                                    st.error("⚠️ La capa de municipios no tiene columna de código ni de nombre reconocible.")
                         else:
-                            st.warning("El archivo maestro no tiene las columnas requeridas ('region' y 'dp_mp').")
+                            st.warning("El archivo maestro no tiene las columnas requeridas ('region', 'dp_mp', 'municipio').")
                     except Exception as e_read:
-                        st.error(f"⚠️ Error leyendo el archivo desde Supabase. ¿Tienes instalado openpyxl? Detalles: {e_read}")
+                        st.error(f"⚠️ Error leyendo el archivo desde Supabase: {e_read}")
 
                 except Exception as e:
-                    st.warning(f"Error procesando la región: {e}")        
+                    st.warning(f"Error procesando la región: {e}")
 
             # ==========================================
             # --- C. POR MUNICIPIO (FIX: nombre_municipio) ---
