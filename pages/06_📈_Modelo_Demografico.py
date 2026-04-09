@@ -1488,23 +1488,27 @@ with tab_matriz:
                     engine_geo = get_engine()
                     
                     # 1. Preparar Geometría de Cuencas (Proyectado a metros para precisión)
-                    # FIX: Usamos nom_nss3 (máximo detalle) y lo disfrazamos como subc_lbl para la IA
                     q_cue = text("SELECT nom_nss3 AS subc_lbl, geometry FROM cuencas WHERE nom_nss3 IS NOT NULL")
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
+                    
+                    # 🔥 SANACIÓN TOPOLÓGICA 1: "Planchamos" los polígonos de las cuencas
+                    # Esto elimina auto-intersecciones y nudos que causan el TopologyException
+                    gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
+                    
                     gdf_cue_diss = gdf_cue.dissolve(by='subc_lbl').reset_index()
                     
                     # 2. Selección Dinámica de la Capa de Referencia (Dasimetría)
                     if tipo_area == 'Urbana':
-                        # Buscamos la huella real de las ciudades
                         q_esp = text("SELECT mpio_nombr as mun_name, geometry FROM cabeceras_municipales")
                     elif tipo_area == 'Rural':
-                        # Buscamos la huella de centros poblados (asentamientos veredales)
                         q_esp = text("SELECT nombre_mpi as mun_name, geometry FROM centros_poblados")
                     else:
-                        # Para el total, usamos el contorno municipal tradicional
                         q_esp = text("SELECT nombre_municipio as mun_name, geometry FROM municipios")
                     
                     gdf_esp = gpd.read_postgis(q_esp, engine_geo, geom_col="geometry").to_crs(epsg=3116)
+                    
+                    # 🔥 SANACIÓN TOPOLÓGICA 2: "Planchamos" los polígonos del DANE/Municipios
+                    gdf_esp['geometry'] = gdf_esp.geometry.buffer(0)
                     
                     # 3. Normalización y Limpieza de Nombres (Cruce Robusto)
                     def clean_das(t):
