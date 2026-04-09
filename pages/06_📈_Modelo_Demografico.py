@@ -1475,58 +1475,76 @@ with tab_matriz:
                     ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Municipal', mpio, df_temp['depto_nom'].iloc[0], tipo_area)
 
                 # ================================================================
-                # 🧠 BISTURÍ ESPACIAL: 4. Nivel Cuencas (Agregado Nuevo)
-                # Reconstruye la historia poblacional de la cuenca cruzando áreas 
-                # proporcionalmente y luego entrena su propio modelo matemático predictivo.
+                # 🧠 BISTURÍ ESPACIAL V2: Alta Precisión Dasimétrica (Nivel Cuencas)
+                # Reconstruye la historia poblacional usando "Esponjas de Asentamiento"
+                # en lugar de simple proporción de área municipal.
                 # ================================================================
                 try:
                     import geopandas as gpd
                     from sqlalchemy import text
+                    import unicodedata
                     from modules.db_manager import get_engine
                     
                     engine_geo = get_engine()
-                    # Traemos geometrías de la base de datos
-                    q_mun = text("SELECT nombre_municipio, geometry FROM municipios")
-                    gdf_mun_geo = gpd.read_postgis(q_mun, engine_geo, geom_col="geometry").to_crs(epsg=3116)
-                    gdf_mun_geo['area_mun'] = gdf_mun_geo.geometry.area
                     
+                    # 1. Preparar Geometría de Cuencas (Proyectado a metros para precisión)
                     q_cue = text("SELECT subc_lbl, geometry FROM cuencas")
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
-                    # Derretimos los pedazos fragmentados de las cuencas
                     gdf_cue_diss = gdf_cue.dissolve(by='subc_lbl').reset_index()
                     
-                    # Cortamos los municipios con el molde de las cuencas
-                    inter = gpd.overlay(gdf_mun_geo, gdf_cue_diss, how='intersection')
-                    inter['proporcion'] = (inter.geometry.area / inter['area_mun']).clip(upper=1.0)
+                    # 2. Selección Dinámica de la Capa de Referencia (Dasimetría)
+                    if tipo_area == 'Urbana':
+                        # Buscamos la huella real de las ciudades
+                        q_esp = text("SELECT mpio_nombr as mun_name, geometry FROM cabeceras_municipales")
+                    elif tipo_area == 'Rural':
+                        # Buscamos la huella de centros poblados (asentamientos veredales)
+                        q_esp = text("SELECT nombre_mpi as mun_name, geometry FROM centros_poblados")
+                    else:
+                        # Para el total, usamos el contorno municipal tradicional
+                        q_esp = text("SELECT nombre_municipio as mun_name, geometry FROM municipios")
                     
-                    # Normalizamos texto para cruzar con la historia del DANE
-                    inter['mun_norm'] = inter['nombre_municipio'].str.strip().str.lower()
-                    df_area_actual['mun_norm'] = df_area_actual['municipio'].str.strip().str.lower()
+                    gdf_esp = gpd.read_postgis(q_esp, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     
-                    # Asignamos la población histórica del DANE a la cuenca según la proporción de área
-                    df_inter = inter[['mun_norm', 'subc_lbl', 'proporcion']].merge(df_area_actual, on='mun_norm', how='inner')
+                    # 3. Normalización y Limpieza de Nombres (Cruce Robusto)
+                    def clean_das(t):
+                        if not t or pd.isna(t): return ""
+                        t = str(t).lower().strip()
+                        return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                    
+                    gdf_esp['mun_norm'] = gdf_esp['mun_name'].apply(clean_das)
+                    gdf_esp_diss = gdf_esp.dissolve(by='mun_norm').reset_index()
+                    gdf_esp_diss['area_esponja'] = gdf_esp_diss.geometry.area
+                    
+                    # 4. Intersección Topológica (El "Corte" Dasimétrico)
+                    # Cruzamos las cuencas con los polígonos donde realmente vive la gente
+                    inter = gpd.overlay(gdf_esp_diss, gdf_cue_diss, how='intersection')
+                    inter['proporcion'] = (inter.geometry.area / inter['area_esponja']).clip(upper=1.0)
+                    
+                    # 5. Inyección de Datos Históricos del DANE
+                    df_area_actual['mun_norm_dane'] = df_area_actual['municipio'].apply(clean_das)
+                    
+                    df_inter = inter[['mun_norm', 'subc_lbl', 'proporcion']].merge(
+                        df_area_actual, left_on='mun_norm', right_on='mun_norm_dane', how='inner'
+                    )
+                    
+                    # La población de la cuenca es la población del municipio multiplicada por
+                    # qué tanto de su zona habitada cae dentro de la cuenca.
                     df_inter['Total_frag'] = df_inter['Total'] * df_inter['proporcion']
                     
-                    # Reconstruimos el censo de la cuenca año a año (1985, 1993, 2005...)
+                    # 6. Reconstrucción Censal y Entrenamiento de Modelos
                     df_cuencas = df_inter.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                     
-                    # 🚀 ENTRENAMOS A LA INTELIGENCIA ARTIFICIAL PARA CADA CUENCA
+                    # 🚀 ALIMENTAR EL CEREBRO PREDICTIVO
                     for cuenca in df_cuencas['subc_lbl'].unique():
                         df_temp = df_cuencas[df_cuencas['subc_lbl'] == cuenca].sort_values(by=col_anio)
-                        # Le pasamos el array de años (x) y el array de población histórica (y)
-                        ajustar_modelos(df_temp[col_anio].values, df_temp['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
                         
+                        # Solo procesamos si hay presencia humana (evita errores en cuencas vírgenes)
+                        if df_temp['Total_frag'].sum() > 0:
+                            ajustar_modelos(df_temp[col_anio].values, df_temp['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
+                            
                 except Exception as e:
-                    pass # Falla silenciosa si no hay SIG, permite que el código original siga fluyendo
-
-            # Aquí se guarda la matriz maestra final que incluye a Nacional, Depto, Munis y ahora CUENCAS
-            df_matriz = pd.DataFrame(matriz_resultados)
-            st.session_state['df_matriz_demografica'] = df_matriz
-            st.success(f"✅ Matriz generada con éxito (Urbana, Rural y Total). Total unidades procesadas: {len(df_matriz)}")
-            
-            csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Descargar Matriz 3x (CSV)", data=csv_matriz, file_name="Matriz_Multimodelo_Areas.csv", mime='text/csv')
-
+                    st.warning(f"⚠️ Nota en proceso dasimétrico ({tipo_area}): {e}")
+                    
     # =====================================================================
     # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
     # =====================================================================
