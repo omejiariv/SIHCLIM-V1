@@ -553,13 +553,16 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         from modules.db_manager import get_engine
         engine_sql = get_engine()
         
-        # Intentamos leer de Supabase directamente (sin buscar en el disco duro)
+        # Intentamos leer de Supabase probando el nombre exacto con mayúsculas y luego en minúsculas
         try:
-            # OJO: Si tu tabla en Supabase se llama diferente, cámbialo aquí
-            df_veredas = pd.read_sql("SELECT * FROM veredas_antioquia", engine_sql)
-        except Exception as e_sql:
-            st.sidebar.error(f"🛑 Error SQL: No pude leer la tabla en Supabase. Verifica que se llame exactamente 'veredas_antioquia'. Detalle: {e_sql}")
-            df_veredas = pd.DataFrame()
+            # Las comillas dobles obligan a PostgreSQL a respetar las mayúsculas
+            df_veredas = pd.read_sql('SELECT * FROM "veredas_Antioquia"', engine_sql)
+        except:
+            try:
+                df_veredas = pd.read_sql("SELECT * FROM veredas_antioquia", engine_sql)
+            except Exception as e_sql:
+                st.sidebar.error(f"🛑 Error SQL: Ve a Supabase -> Table Editor y copia el nombre EXACTO de la tabla. Pon ese nombre en el código. Detalle: {e_sql}")
+                df_veredas = pd.DataFrame()
         
         if not df_veredas.empty:
             # Limpiamos nombres de columnas
