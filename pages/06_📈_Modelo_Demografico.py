@@ -1199,36 +1199,37 @@ with tab_mapas:
         # --- FIX DEFINITIVO: RUTEO CORRECTO DE CAPAS ---
         opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson", "cuencas_SP.geojson"]
         
-        if escala_sel == "🌿 Veredal (Antioquia)": 
+        # Búsqueda ultra-segura ignorando emojis
+        if "Veredal" in escala_sel: 
             idx_geo = 1
-        elif escala_sel == "💧 Cuencas Hidrográficas":
+        elif "Cuencas" in escala_sel:
             idx_geo = 2
         else: 
             idx_geo = 0
             
         archivo_geo_input = st.selectbox("Archivo Espacial:", opciones_geo, index=idx_geo)
         
-        # --- MEJORA ANALÍTICA: SELECTOR MULTIESCALA PARA CUENCAS ---
-        if idx_geo == 2: # Si estamos en Cuencas
+        # --- MEJORA ANALÍTICA: SELECTOR MULTIESCALA BLINDADO ---
+        # Ahora depende directamente del archivo que esté visible en la caja
+        if "cuencas" in archivo_geo_input.lower():
             opciones_terr = [
                 "properties.nom_nss3", "properties.nom_nss2", "properties.nom_nss1", 
                 "properties.nom_szh", "properties.nomzh", "properties.nomah", 
                 "properties.nombre_cuenca", "properties.corpoamb", "properties.zona", "properties.depto_region"
             ]
-            idx_terr = 0 # Por defecto: nom_nss3 (Mayor detalle)
-        elif idx_geo == 1: # Si estamos en Veredas
+            idx_terr = 0 # Por defecto: nom_nss3
+        elif "veredas" in archivo_geo_input.lower():
             opciones_terr = ["properties.NOMBRE_VER", "properties.MPIO_CNMBR", "properties.nombre"]
             idx_terr = 0
-        else: # Si estamos en Municipios
+        else:
             opciones_terr = ["properties.MPIO_CNMBR", "properties.NOMBRE_VER", "properties.nombre"]
             idx_terr = 0
             
         prop_geo_input = st.selectbox("Llave Territorio (Escala de Análisis):", opciones_terr, index=idx_terr)
         
         st.markdown("**🔗 Llave Doble (Contexto)**")
-        # Las cuencas no suelen necesitar llave doble, así que le damos una opción vacía ("")
         opciones_padre = ["", "properties.DPTO_CCDGO", "properties.NOMB_MPIO"]
-        idx_padre = 0 if idx_geo == 2 else (2 if idx_geo == 1 else 1)
+        idx_padre = 0 if "cuencas" in archivo_geo_input.lower() else (2 if "veredas" in archivo_geo_input.lower() else 1)
         prop_padre_input = st.selectbox("Llave Contexto:", opciones_padre, index=idx_padre)
     
     with col_map2:
@@ -1263,8 +1264,8 @@ with tab_mapas:
                 elif "veredas" in archivo_geo_input.lower():
                     q_geo = text("SELECT * FROM veredas_geometria")
                 elif "cuencas" in archivo_geo_input.lower(): 
-                    # ¡CORRECCIÓN AQUÍ! Supabase guardó tu tabla como 'cuencas_sp'
-                    q_geo = text("SELECT * FROM cuencas_sp")
+                    # ¡Volvemos a la tabla correcta creada por tu panel de administración!
+                    q_geo = text("SELECT * FROM cuencas_geometria")
                 else:
                     q_geo = None
                     
