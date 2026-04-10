@@ -551,18 +551,24 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
     try:
         import pandas as pd
         from modules.db_manager import get_engine
+        from sqlalchemy import inspect
+        
         engine_sql = get_engine()
         
-        # Intentamos leer de Supabase probando el nombre exacto con mayúsculas y luego en minúsculas
-        try:
-            # Las comillas dobles obligan a PostgreSQL a respetar las mayúsculas
-            df_veredas = pd.read_sql('SELECT * FROM "veredas_Antioquia"', engine_sql)
-        except:
-            try:
-                df_veredas = pd.read_sql("SELECT * FROM veredas_antioquia", engine_sql)
-            except Exception as e_sql:
-                st.sidebar.error(f"🛑 Error SQL: Ve a Supabase -> Table Editor y copia el nombre EXACTO de la tabla. Pon ese nombre en el código. Detalle: {e_sql}")
-                df_veredas = pd.DataFrame()
+        # --- ESCUDO RASTREADOR DE TABLAS ---
+        # Le preguntamos a Supabase cuáles son todas las tablas que existen
+        inspector = inspect(engine_sql)
+        tablas_existentes = inspector.get_table_names()
+        
+        # Buscamos la tabla que contenga "vereda", pero que NO sea la del dibujo (geometria)
+        nombre_tabla_veredas = next((t for t in tablas_existentes if 'vereda' in t.lower() and 'geo' not in t.lower()), None)
+        
+        if nombre_tabla_veredas:
+            # Usamos comillas dobles dinámicas por si Supabase le puso mayúsculas
+            df_veredas = pd.read_sql(f'SELECT * FROM "{nombre_tabla_veredas}"', engine_sql)
+        else:
+            st.sidebar.error(f"🛑 Error: No encontré la tabla de población de veredas. Tablas disponibles en tu base de datos: {tablas_existentes}")
+            df_veredas = pd.DataFrame()
         
         if not df_veredas.empty:
             # Limpiamos nombres de columnas
