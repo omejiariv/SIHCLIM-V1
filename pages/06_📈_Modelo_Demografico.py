@@ -1197,7 +1197,7 @@ with tab_mapas:
         st.markdown("**⚙️ Configuración de la Capa**")
         
         # --- FIX DEFINITIVO: RUTEO CORRECTO DE CAPAS ---
-        opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson", "cuencas_SP.geojson"]
+        opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson", "cuencas_sp.geojson"]
         
         # Búsqueda ultra-segura ignorando emojis
         if "Veredal" in escala_sel: 
