@@ -550,45 +550,46 @@ elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)
 elif escala_sel == "🌿 Veredal (Antioquia)":
     try:
         import pandas as pd
-        # --- ESCUDO HÍBRIDO: SUPABASE + CSV (COMAS) ---
+        from modules.db_manager import get_engine
+        engine_sql = get_engine()
+        
+        # Intentamos leer de Supabase directamente (sin buscar en el disco duro)
         try:
-            # 1. Intentamos leer la tabla inyectada en Supabase (¡Tu gran avance!)
-            from modules.db_manager import get_engine
-            engine_sql = get_engine()
-            # PostGIS suele poner los nombres de tabla en minúsculas
+            # OJO: Si tu tabla en Supabase se llama diferente, cámbialo aquí
             df_veredas = pd.read_sql("SELECT * FROM veredas_antioquia", engine_sql)
-        except:
-            # 2. Si falla Supabase, leemos el CSV local (Pandas ahora detectará las comas automáticamente)
-            import os
-            ruta_veredas = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv")
-            df_veredas = pd.read_csv(ruta_veredas, encoding='utf-8') 
+        except Exception as e_sql:
+            st.sidebar.error(f"🛑 Error SQL: No pude leer la tabla en Supabase. Verifica que se llame exactamente 'veredas_antioquia'. Detalle: {e_sql}")
+            df_veredas = pd.DataFrame()
         
-        # Limpiamos nombres de columnas (quita espacios invisibles o retornos de carro)
-        df_veredas.columns = df_veredas.columns.str.strip()
-        
-        # Búsqueda dinámica de columnas (por si cambiaron de mayúsculas a minúsculas en Supabase)
-        col_ver = next((c for c in df_veredas.columns if 'vered' in c.lower()), 'Vereda')
-        col_mun = next((c for c in df_veredas.columns if 'municip' in c.lower() or 'padre' in c.lower()), 'Municipio')
-        col_pob = next((c for c in df_veredas.columns if 'pob' in c.lower() or 'hab' in c.lower()), 'Poblacion_hab')
-        
-        df_mapa_base = df_veredas.rename(columns={
-            col_ver: 'Territorio',
-            col_mun: 'Padre',
-            col_pob: 'Total'
-        })
-        
-        # Menú para filtrar municipio en el panel lateral
-        lista_mpios = sorted(df_mapa_base['Padre'].dropna().astype(str).unique())
-        mpio_sel = st.sidebar.selectbox("Municipio:", ["TODOS (Ver Mapa Completo)"] + lista_mpios)
-        
-        if mpio_sel != "TODOS (Ver Mapa Completo)":
-            df_mapa_base = df_mapa_base[df_mapa_base['Padre'] == mpio_sel]
-            titulo_terr = f"Veredas de {mpio_sel}"
+        if not df_veredas.empty:
+            # Limpiamos nombres de columnas
+            df_veredas.columns = df_veredas.columns.str.strip()
+            
+            # Búsqueda dinámica de columnas (A prueba de mayúsculas/minúsculas)
+            col_ver = next((c for c in df_veredas.columns if 'vered' in c.lower()), 'Vereda')
+            col_mun = next((c for c in df_veredas.columns if 'municip' in c.lower() or 'padre' in c.lower()), 'Municipio')
+            col_pob = next((c for c in df_veredas.columns if 'pob' in c.lower() or 'hab' in c.lower()), 'Poblacion_hab')
+            
+            df_mapa_base = df_veredas.rename(columns={
+                col_ver: 'Territorio',
+                col_mun: 'Padre',
+                col_pob: 'Total'
+            })
+            
+            # Menú para filtrar municipio
+            lista_mpios = sorted(df_mapa_base['Padre'].dropna().astype(str).unique())
+            mpio_sel = st.sidebar.selectbox("Municipio:", ["TODOS (Ver Mapa Completo)"] + lista_mpios)
+            
+            if mpio_sel != "TODOS (Ver Mapa Completo)":
+                df_mapa_base = df_mapa_base[df_mapa_base['Padre'] == mpio_sel]
+                titulo_terr = f"Veredas de {mpio_sel}"
+            else:
+                titulo_terr = "Todas las Veredas (Antioquia)"
         else:
-            titulo_terr = "Todas las Veredas (Antioquia)"
+            df_mapa_base = pd.DataFrame()
             
     except Exception as e:
-        st.sidebar.error(f"❌ Error cargando población veredal: {e}")
+        st.sidebar.error(f"❌ Error general cargando población veredal: {e}")
         df_mapa_base = pd.DataFrame()
     
 # =====================================================================
