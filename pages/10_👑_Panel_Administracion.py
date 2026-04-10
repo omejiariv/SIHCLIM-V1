@@ -1387,7 +1387,7 @@ with tabs[15]:
                 else:
                     st.warning("⚠️ Por favor, sube el archivo primero.")
 
-# ==============================================================================
+        # ==============================================================================
         # 🚀 CÁPSULA DE INYECCIÓN ESPACIAL (MAPA VEREDAL A POSTGIS)
         # ==============================================================================
         st.markdown("---")
@@ -1421,6 +1421,46 @@ with tabs[15]:
                         gdf.to_postgis('veredas_geometria', engine, if_exists='replace', index=False)
                         
                         estado.success(f"✅ ¡Éxito Absoluto! Mapa veredal inyectado en la tabla 'veredas_geometria'.")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"❌ Error crítico en la inyección: {e}")
+                else:
+                    st.warning("⚠️ Por favor, sube el archivo .geojson primero.")
+
+        # ==============================================================================
+        # 🚀 CÁPSULA DE INYECCIÓN ESPACIAL (MAPA MUNICIPAL A POSTGIS)
+        # ==============================================================================
+        st.markdown("---")
+        st.subheader("🗺️ Motor de Inyección Espacial (Cartografía Municipal)")
+        st.info("Sube el archivo GeoJSON con los polígonos de los municipios para las vistas regionales y departamentales.")
+        
+        with st.expander("🛠️ Abrir Panel de Migración GeoJSON Municipal", expanded=False):
+            file_geo_mun = st.file_uploader("Sube la geometría de Municipios", type=['geojson', 'json'], help="mgn_municipios_optimizado.geojson")
+            
+            if st.button("⚡ Ejecutar Inyección Municipal a PostGIS", type="primary", use_container_width=True):
+                if file_geo_mun:
+                    import geopandas as gpd
+                    from modules.db_manager import get_engine
+                    
+                    engine = get_engine()
+                    estado = st.empty()
+                    
+                    try:
+                        estado.info("⏳ Leyendo geometría municipal (esto puede tardar unos segundos)...")
+                        # Cargamos el mapa a la memoria
+                        gdf_mun = gpd.read_file(file_geo_mun)
+                        
+                        # Blindaje topológico y de columnas
+                        gdf_mun.columns = [c.lower() for c in gdf_mun.columns]
+                        if gdf_mun.crs is None or gdf_mun.crs.to_string() != "EPSG:4326":
+                            gdf_mun = gdf_mun.to_crs("EPSG:4326")
+                            
+                        estado.info("🚀 Inyectando polígonos a Supabase (PostGIS)...")
+                        
+                        # Guardamos explícitamente en la tabla 'municipios' que lee tu mapa
+                        gdf_mun.to_postgis('municipios', engine, if_exists='replace', index=False)
+                        
+                        estado.success(f"✅ ¡Éxito Absoluto! Mapa municipal inyectado en la tabla 'municipios'.")
                         st.balloons()
                     except Exception as e:
                         st.error(f"❌ Error crítico en la inyección: {e}")
