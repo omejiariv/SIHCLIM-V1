@@ -548,66 +548,48 @@ elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 elif escala_sel == "🌿 Veredal (Antioquia)":
-    # --- ESCUDO ANTI-FANTASMAS (Evita el Error: 'Territorio') ---
-    if 'df_mapa_base' not in locals() or df_mapa_base.empty or 'Territorio' not in df_mapa_base.columns:
-        import geopandas as gpd
-        import streamlit as st
-        st.warning("⚠️ Esperando datos poblacionales... (Asegúrate de que el archivo 'veredas_Antioquia.csv' esté cargado usando el separador punto y coma ';').")
-        gdf_final = gpd.GeoDataFrame() # Escudo activado: crea un mapa vacío seguro
-    else:
+    try:
+        import pandas as pd
+        # --- ESCUDO HÍBRIDO: SUPABASE + CSV (COMAS) ---
         try:
-            from sqlalchemy import text
-            import geopandas as gpd
+            # 1. Intentamos leer la tabla inyectada en Supabase (¡Tu gran avance!)
             from modules.db_manager import get_engine
+            engine_sql = get_engine()
+            # PostGIS suele poner los nombres de tabla en minúsculas
+            df_veredas = pd.read_sql("SELECT * FROM veredas_antioquia", engine_sql)
+        except:
+            # 2. Si falla Supabase, leemos el CSV local (Pandas ahora detectará las comas automáticamente)
+            import os
+            ruta_veredas = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv")
+            df_veredas = pd.read_csv(ruta_veredas, encoding='utf-8') 
+        
+        # Limpiamos nombres de columnas (quita espacios invisibles o retornos de carro)
+        df_veredas.columns = df_veredas.columns.str.strip()
+        
+        # Búsqueda dinámica de columnas (por si cambiaron de mayúsculas a minúsculas en Supabase)
+        col_ver = next((c for c in df_veredas.columns if 'vered' in c.lower()), 'Vereda')
+        col_mun = next((c for c in df_veredas.columns if 'municip' in c.lower() or 'padre' in c.lower()), 'Municipio')
+        col_pob = next((c for c in df_veredas.columns if 'pob' in c.lower() or 'hab' in c.lower()), 'Poblacion_hab')
+        
+        df_mapa_base = df_veredas.rename(columns={
+            col_ver: 'Territorio',
+            col_mun: 'Padre',
+            col_pob: 'Total'
+        })
+        
+        # Menú para filtrar municipio en el panel lateral
+        lista_mpios = sorted(df_mapa_base['Padre'].dropna().astype(str).unique())
+        mpio_sel = st.sidebar.selectbox("Municipio:", ["TODOS (Ver Mapa Completo)"] + lista_mpios)
+        
+        if mpio_sel != "TODOS (Ver Mapa Completo)":
+            df_mapa_base = df_mapa_base[df_mapa_base['Padre'] == mpio_sel]
+            titulo_terr = f"Veredas de {mpio_sel}"
+        else:
+            titulo_terr = "Todas las Veredas (Antioquia)"
             
-            engine_geo = get_engine()
-            
-            # 1. Leemos los dibujos directamente de Supabase
-            q_geo = text("SELECT * FROM veredas_geometria")
-            gdf_territorios = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
-            
-            # 2. Escudo Dinámico: Buscamos las columnas sin importar cómo se llamen en el GeoJSON
-            col_mpio_geo = next((c for c in gdf_territorios.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'dptompio', 'cod_mpio', 'nomb_mpio']), None)
-            col_ver_geo = next((c for c in gdf_territorios.columns if c.lower() in ['vereda', 'nombre_ver', 'ver_nombr', 'codigo_ver', 'vere_nombr']), None)
-            
-            if col_mpio_geo and col_ver_geo:
-                import unicodedata
-                import pandas as pd
-                
-                # Función para limpiar tildes y caracteres raros antes del cruce
-                def clean_map_text(t):
-                    if not t or pd.isna(t): return ""
-                    t = str(t).upper().strip()
-                    return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-                
-                # Preparamos las columnas para que encajen como piezas de Lego
-                gdf_territorios['Territorio_Merge'] = gdf_territorios[col_ver_geo].apply(clean_map_text)
-                gdf_territorios['Padre_Merge'] = gdf_territorios[col_mpio_geo].apply(clean_map_text)
-                
-                df_mapa_base['Territorio_Merge'] = df_mapa_base['Territorio'].apply(clean_map_text)
-                df_mapa_base['Padre_Merge'] = df_mapa_base['Padre'].apply(clean_map_text)
-                
-                # --- FIX: Escudo para asegurar que la variable del selector exista ---
-                mpio_seguro = locals().get('mpio_sel', globals().get('mpio_sel', "TODOS (Ver Mapa Completo)"))
-                
-                # Filtro de rendimiento: Si elegimos un municipio, solo cargamos los polígonos de ese municipio
-                if mpio_seguro != "TODOS (Ver Mapa Completo)":
-                    mpio_sel_clean = clean_map_text(mpio_seguro)
-                    gdf_territorios = gdf_territorios[gdf_territorios['Padre_Merge'] == mpio_sel_clean]
-                
-                # El Cruce Maestro: Unimos los dibujos (GeoJSON) con los números (CSV)
-                gdf_final = gdf_territorios.merge(df_mapa_base, on=['Territorio_Merge', 'Padre_Merge'], how='inner')
-                
-                if gdf_final.empty:
-                    st.warning("⚠️ El cruce entre el mapa y los datos poblacionales resultó vacío. Esto ocurre si los nombres de las veredas en el mapa no coinciden exactamente con los nombres en el CSV.")
-            else:
-                st.error(f"⚠️ El mapa no tiene columnas reconocibles de Municipio o Vereda. Columnas detectadas: {gdf_territorios.columns.tolist()}")
-                gdf_final = gpd.GeoDataFrame()
-                
-        except Exception as e:
-            st.warning(f"⚠️ Capa espacial no encontrada en Supabase. Error técnico: {e}")
-            import geopandas as gpd
-            gdf_final = gpd.GeoDataFrame()
+    except Exception as e:
+        st.sidebar.error(f"❌ Error cargando población veredal: {e}")
+        df_mapa_base = pd.DataFrame()
     
 # =====================================================================
 # --- 4. CÁLCULO DE PROYECCIONES (NUEVO PARADIGMA TOP-DOWN) ---
