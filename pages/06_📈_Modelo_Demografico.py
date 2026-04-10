@@ -1203,118 +1203,139 @@ with tab_mapas:
         prop_padre_input = st.selectbox("Llave Contexto:", opciones_padre, index=idx_padre)
     
     with col_map2:
-        ruta_geo = os.path.join(RUTA_RAIZ, "data", archivo_geo_input)
-        
-        if os.path.exists(ruta_geo) and not df_mapa_plot.empty:
+        if not df_mapa_plot.empty:
             try:
-                # 1. Crear ADN Único en Pandas
-                if prop_padre_input.strip() != "":
-                    df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].apply(normalizar_texto)
+                import json
+                import geopandas as gpd
+                from sqlalchemy import text
+                from modules.db_manager import get_engine
+                
+                engine_geo = get_engine()
+                
+                # --- FIX DEFINITIVO: DESCARGA DIRECTA DESDE SUPABASE ---
+                # En lugar de buscar en el disco duro, leemos la tabla según el selector
+                if "municipios" in archivo_geo_input.lower():
+                    q_geo = text("SELECT * FROM municipios")
+                elif "veredas" in archivo_geo_input.lower():
+                    q_geo = text("SELECT * FROM veredas_geometria")
                 else:
-                    df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto)
-
-                with open(ruta_geo, encoding='utf-8') as f:
-                    geo_data = json.load(f)
-                
-                # --- TRADUCTOR DANE DE CÓDIGOS A NOMBRES ---
-                codigos_dane_deptos = {
-                    "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", 
-                    "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", 
-                    "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", 
-                    "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", 
-                    "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", 
-                    "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLE", 
-                    "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", 
-                    "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA"
-                }
-                
-                # 2. Crear ADN Único en el GeoJSON
-                prop_key = prop_geo_input.replace("properties.", "")
-                padre_key = prop_padre_input.replace("properties.", "") if prop_padre_input.strip() else ""
-                
-                for feature in geo_data['features']:
-                    val_terr = feature['properties'].get(prop_key, "")
-                    val_padre = str(feature['properties'].get(padre_key, "")) if padre_key else ""
+                    q_geo = None
                     
-                    # Fix caracteres mutantes desde la fuente
-                    val_terr = normalizar_texto(val_terr)
+                if q_geo is not None:
+                    # Descargamos los polígonos
+                    gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
+                    # Los convertimos al instante en el formato GeoJSON que Plotly exige
+                    geo_data = json.loads(gdf_mapa.to_json())
+                else:
+                    geo_data = {'features': []}
                     
-                    if val_padre.zfill(2) in codigos_dane_deptos:
-                        val_padre = codigos_dane_deptos[val_padre.zfill(2)]
-                    
-                    # Fix espacial: Para distinguir los dos Manaures (El del Cesar es Balcón del Cesar)
-                    if val_terr == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
-                    
-                    if val_padre:
-                        feature['properties']['MATCH_ID'] = val_terr + "_" + normalizar_texto(val_padre)
+                if geo_data['features']:
+                    # 1. Crear ADN Único en Pandas
+                    if prop_padre_input.strip() != "":
+                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].apply(normalizar_texto)
                     else:
-                        feature['properties']['MATCH_ID'] = val_terr
-                        
-                q_val = 0.85 if area_mapa == "Total" else 0.90
-                max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
-                
-                # 3. Renderizar Mapa
-                fig_mapa = px.choropleth_mapbox(
-                    df_mapa_plot,
-                    geojson=geo_data,
-                    locations='MATCH_ID',        
-                    featureidkey='properties.MATCH_ID', 
-                    color='Total',
-                    color_continuous_scale="Viridis",
-                    range_color=[0, max_color],  
-                    mapbox_style="carto-positron",
-                    zoom=5 if escala_sel != "Veredal (Antioquia)" else 9, 
-                    center={"lat": 4.57, "lon": -74.29} if escala_sel != "Veredal (Antioquia)" else {"lat": 6.25, "lon": -75.56},
-                    opacity=0.8,
-                    labels={'Total': f'Población {area_mapa}'},
-                    hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
-                )
-                fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-                st.plotly_chart(fig_mapa, width='stretch')
-                
-                geo_ids_disp = [f['properties'].get('MATCH_ID', '') for f in geo_data['features']]
-                df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(geo_ids_disp)
-                faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
-                
-                if not faltantes.empty:
-                    st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el GeoJSON.")
+                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto)
+
+                    # --- TRADUCTOR DANE DE CÓDIGOS A NOMBRES ---
+                    codigos_dane_deptos = {
+                        "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", 
+                        "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", 
+                        "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", 
+                        "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", 
+                        "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", 
+                        "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLE", 
+                        "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", 
+                        "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA"
+                    }
                     
-                    # --- NUEVO: REVELADOR DE VEREDAS (RAYOS X) ---
-                    if escala_sel == "Veredal (Antioquia)":
-                        with st.expander("🔍 Ver nombres exactos dentro del mapa GeoJSON (Para arreglar el Excel)"):
-                            municipio_actual = normalizar_texto(df_mapa_plot['Padre'].iloc[0]) if not df_mapa_plot.empty else ""
+                    # 2. Crear ADN Único en el GeoJSON
+                    prop_key = prop_geo_input.replace("properties.", "")
+                    padre_key = prop_padre_input.replace("properties.", "") if prop_padre_input.strip() else ""
+                    
+                    for feature in geo_data['features']:
+                        val_terr = feature['properties'].get(prop_key, "")
+                        val_padre = str(feature['properties'].get(padre_key, "")) if padre_key else ""
+                        
+                        # Fix caracteres mutantes desde la fuente
+                        val_terr = normalizar_texto(val_terr)
+                        
+                        if val_padre.zfill(2) in codigos_dane_deptos:
+                            val_padre = codigos_dane_deptos[val_padre.zfill(2)]
+                        
+                        # Fix espacial: Para distinguir los dos Manaures
+                        if val_terr == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
+                        
+                        if val_padre:
+                            feature['properties']['MATCH_ID'] = val_terr + "_" + normalizar_texto(val_padre)
+                        else:
+                            feature['properties']['MATCH_ID'] = val_terr
                             
-                            # Extraer las veredas que SÍ están dibujadas en el mapa para este municipio
-                            veredas_en_mapa = []
-                            for f in geo_data['features']:
-                                m_padre = str(f['properties'].get(padre_key, ""))
-                                if normalizar_texto(m_padre) == municipio_actual:
-                                    veredas_en_mapa.append(f['properties'].get(prop_key, ""))
+                    q_val = 0.85 if area_mapa == "Total" else 0.90
+                    max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
+                    
+                    # 3. Renderizar Mapa
+                    fig_mapa = px.choropleth_mapbox(
+                        df_mapa_plot,
+                        geojson=geo_data,
+                        locations='MATCH_ID',        
+                        featureidkey='properties.MATCH_ID', 
+                        color='Total',
+                        color_continuous_scale="Viridis",
+                        range_color=[0, max_color],  
+                        mapbox_style="carto-positron",
+                        zoom=5 if escala_sel != "🌿 Veredal (Antioquia)" else 9, 
+                        center={"lat": 4.57, "lon": -74.29} if escala_sel != "🌿 Veredal (Antioquia)" else {"lat": 6.25, "lon": -75.56},
+                        opacity=0.8,
+                        labels={'Total': f'Población {area_mapa}'},
+                        hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
+                    )
+                    fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+                    st.plotly_chart(fig_mapa, use_container_width=True)
+                    
+                    geo_ids_disp = [f['properties'].get('MATCH_ID', '') for f in geo_data['features']]
+                    df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(geo_ids_disp)
+                    faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
+                    
+                    if not faltantes.empty:
+                        st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el GeoJSON.")
+                        
+                        # --- NUEVO: REVELADOR DE VEREDAS (RAYOS X) ---
+                        if escala_sel == "🌿 Veredal (Antioquia)":
+                            with st.expander("🔍 Ver nombres exactos dentro del mapa GeoJSON (Para arreglar el Excel)"):
+                                municipio_actual = normalizar_texto(df_mapa_plot['Padre'].iloc[0]) if not df_mapa_plot.empty else ""
+                                
+                                veredas_en_mapa = []
+                                for f in geo_data['features']:
+                                    m_padre = str(f['properties'].get(padre_key, ""))
+                                    if normalizar_texto(m_padre) == municipio_actual:
+                                        veredas_en_mapa.append(f['properties'].get(prop_key, ""))
+                                        
+                                if veredas_en_mapa:
+                                    st.write(f"El mapa tiene **{len(veredas_en_mapa)}** polígonos para este municipio. Estos son sus nombres reales:")
+                                    st.dataframe(pd.DataFrame({"Nombres exactos en el GeoJSON": sorted(veredas_en_mapa)}), use_container_width=True)
+                                    st.info("💡 **Solución:** Busca tu vereda en esta lista. Si en tu Excel dice 'La Loma' pero aquí dice 'Vda. Loma', simplemente actualiza el nombre en tu Excel o añádelo al diccionario del código.")
+                                else:
+                                    st.error("No se encontró ningún polígono para este municipio en el archivo GeoJSON. Verifica que la 'Llave Contexto' sea correcta.")
                                     
-                            if veredas_en_mapa:
-                                st.write(f"El mapa tiene **{len(veredas_en_mapa)}** polígonos para este municipio. Estos son sus nombres reales:")
-                                st.dataframe(pd.DataFrame({"Nombres exactos en el GeoJSON": sorted(veredas_en_mapa)}), use_container_width=True)
-                                st.info("💡 **Solución:** Busca tu vereda en esta lista. Si en tu Excel dice 'La Loma' pero aquí dice 'Vda. Loma', simplemente actualiza el nombre en tu Excel o añádelo al diccionario del código.")
-                            else:
-                                st.error("No se encontró ningún polígono para este municipio en el archivo GeoJSON. Verifica que la 'Llave Contexto' sea correcta.")
-                
+                else:
+                    st.warning(f"⚠️ No se encontraron geometrías en Supabase para: {archivo_geo_input}")
             except Exception as e:
-                st.error(f"❌ Error dibujando mapa: {e}")
+                st.error(f"❌ Error conectando a PostGIS para dibujar el mapa: {e}")
         else:
-            st.warning(f"⚠️ No se encontró **{archivo_geo_input}** o no hay datos para esta vista.")
+            st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
             
-    # Mostramos solo las columnas que realmente existan en la tabla actual
-    cols_existentes = [c for c in ['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa'] if c in df_mapa_plot.columns]
-    
-    # Solo ordenamos si la columna 'Total' existe (evita errores en la vista)
-    if 'Total' in cols_existentes and not df_mapa_plot.empty:
-        # ESCUDO ANTI-TEXTO: Convertimos todo a números puros antes de ordenar
-        df_mapa_plot['Total'] = pd.to_numeric(df_mapa_plot['Total'], errors='coerce').fillna(0)
-        df_mostrar = df_mapa_plot[cols_existentes].sort_values('Total', ascending=False)
-    else:
-        df_mostrar = df_mapa_plot[cols_existentes]
+        # Mostramos solo las columnas que realmente existan en la tabla actual
+        cols_existentes = [c for c in ['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa'] if c in df_mapa_plot.columns]
         
-    st.dataframe(df_mostrar, use_container_width=True)
+        # Solo ordenamos si la columna 'Total' existe (evita errores en la vista)
+        if 'Total' in cols_existentes and not df_mapa_plot.empty:
+            # ESCUDO ANTI-TEXTO: Convertimos todo a números puros antes de ordenar
+            df_mapa_plot['Total'] = pd.to_numeric(df_mapa_plot['Total'], errors='coerce').fillna(0)
+            df_mostrar = df_mapa_plot[cols_existentes].sort_values('Total', ascending=False)
+        else:
+            df_mostrar = df_mapa_plot[cols_existentes]
+            
+        st.dataframe(df_mostrar, use_container_width=True)
 
 # =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
