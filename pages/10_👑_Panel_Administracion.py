@@ -1388,6 +1388,46 @@ with tabs[15]:
                     st.warning("⚠️ Por favor, sube el archivo primero.")
 
 # ==============================================================================
+        # 🚀 CÁPSULA DE INYECCIÓN ESPACIAL (MAPA VEREDAL A POSTGIS)
+        # ==============================================================================
+        st.markdown("---")
+        st.subheader("🗺️ Motor de Inyección Espacial (Cartografía Veredal)")
+        st.info("Sube el archivo GeoJSON con los polígonos de las veredas para que el mapa demográfico pueda dibujarlas.")
+        
+        with st.expander("🛠️ Abrir Panel de Migración GeoJSON Veredal", expanded=False):
+            file_geo_ver = st.file_uploader("Sube la geometría de Veredas", type=['geojson', 'json'], help="Veredas_Antioquia_TOTAL_UrbanoyRural.geojson")
+            
+            if st.button("⚡ Ejecutar Inyección a PostGIS", type="primary", use_container_width=True):
+                if file_geo_ver:
+                    import geopandas as gpd
+                    from modules.db_manager import get_engine
+                    
+                    engine = get_engine()
+                    estado = st.empty()
+                    
+                    try:
+                        estado.info("⏳ Leyendo geometría veredal (esto puede tardar unos segundos por el tamaño del mapa)...")
+                        # Cargamos el mapa a la memoria
+                        gdf = gpd.read_file(file_geo_ver)
+                        
+                        # Blindaje topológico
+                        gdf.columns = [c.lower() for c in gdf.columns]
+                        if gdf.crs is None or gdf.crs.to_string() != "EPSG:4326":
+                            gdf = gdf.to_crs("EPSG:4326")
+                            
+                        estado.info("🚀 Inyectando polígonos a Supabase (PostGIS)...")
+                        
+                        # Usamos to_postgis (requiere geoalchemy2, que ya instalamos)
+                        gdf.to_postgis('veredas_geometria', engine, if_exists='replace', index=False)
+                        
+                        estado.success(f"✅ ¡Éxito Absoluto! Mapa veredal inyectado en la tabla 'veredas_geometria'.")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"❌ Error crítico en la inyección: {e}")
+                else:
+                    st.warning("⚠️ Por favor, sube el archivo .geojson primero.")
+
+# ==============================================================================
 # TAB 16: GESTIÓN CLOUD Y SMART CACHE
 # ==============================================================================
 with tabs[16]: 
