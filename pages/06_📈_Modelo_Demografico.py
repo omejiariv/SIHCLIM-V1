@@ -1208,23 +1208,34 @@ with tab_mapas:
             
         archivo_geo_input = st.selectbox("Archivo Espacial:", opciones_geo, index=idx_geo)
         
-        # Ampliamos las llaves para incluir las típicas del IDEAM/MapShaper (Cuencas)
-        opciones_terr = ["properties.MPIO_CNMBR", "properties.NOMBRE_VER", "properties.nombre", "properties.NOM_SUBC", "properties.nom_cuenca"]
-        idx_terr = 1 if idx_geo == 1 else (2 if idx_geo == 2 else 0)
-        prop_geo_input = st.selectbox("Llave Territorio:", opciones_terr, index=idx_terr)
+        # --- MEJORA ANALÍTICA: SELECTOR MULTIESCALA PARA CUENCAS ---
+        if idx_geo == 2: # Si estamos en Cuencas
+            opciones_terr = [
+                "properties.nom_nss3", "properties.nom_nss2", "properties.nom_nss1", 
+                "properties.nom_szh", "properties.nomzh", "properties.nomah", 
+                "properties.nombre_cuenca", "properties.corpoamb", "properties.zona", "properties.depto_region"
+            ]
+            idx_terr = 0 # Por defecto: nom_nss3 (Mayor detalle)
+        elif idx_geo == 1: # Si estamos en Veredas
+            opciones_terr = ["properties.NOMBRE_VER", "properties.MPIO_CNMBR", "properties.nombre"]
+            idx_terr = 0
+        else: # Si estamos en Municipios
+            opciones_terr = ["properties.MPIO_CNMBR", "properties.NOMBRE_VER", "properties.nombre"]
+            idx_terr = 0
+            
+        prop_geo_input = st.selectbox("Llave Territorio (Escala de Análisis):", opciones_terr, index=idx_terr)
         
         st.markdown("**🔗 Llave Doble (Contexto)**")
         # Las cuencas no suelen necesitar llave doble, así que le damos una opción vacía ("")
         opciones_padre = ["", "properties.DPTO_CCDGO", "properties.NOMB_MPIO"]
-        idx_padre = 2 if idx_geo == 1 else (1 if idx_geo == 0 else 0)
+        idx_padre = 0 if idx_geo == 2 else (2 if idx_geo == 1 else 1)
         prop_padre_input = st.selectbox("Llave Contexto:", opciones_padre, index=idx_padre)
     
     with col_map2:
         if not df_mapa_plot.empty:
             # --- ESCUDO SALVAVIDAS: ASEGURAR COLUMNAS CRÍTICAS ---
-            # Si el panel lateral olvidó renombrar la columna a 'Territorio', lo forzamos aquí
             if 'Territorio' not in df_mapa_plot.columns:
-                col_t = next((c for c in df_mapa_plot.columns if c.lower() in ['municipio', 'cuenca', 'vereda', 'nombre', 'subzona']), df_mapa_plot.columns[0] if len(df_mapa_plot.columns) > 0 else 'Territorio')
+                col_t = next((c for c in df_mapa_plot.columns if c.lower() in ['municipio', 'cuenca', 'vereda', 'nombre', 'subzona', 'nom_nss3']), df_mapa_plot.columns[0] if len(df_mapa_plot.columns) > 0 else 'Territorio')
                 df_mapa_plot = df_mapa_plot.rename(columns={col_t: 'Territorio'})
                 
             if 'Padre' not in df_mapa_plot.columns:
@@ -1251,8 +1262,9 @@ with tab_mapas:
                     q_geo = text("SELECT * FROM municipios")
                 elif "veredas" in archivo_geo_input.lower():
                     q_geo = text("SELECT * FROM veredas_geometria")
-                elif "cuencas" in archivo_geo_input.lower(): # <- ¡Aquí cargamos tu nueva topología!
-                    q_geo = text("SELECT * FROM cuencas_geometria")
+                elif "cuencas" in archivo_geo_input.lower(): 
+                    # ¡CORRECCIÓN AQUÍ! Supabase guardó tu tabla como 'cuencas_sp'
+                    q_geo = text("SELECT * FROM cuencas_sp")
                 else:
                     q_geo = None
                     
