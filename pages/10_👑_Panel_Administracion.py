@@ -1441,6 +1441,7 @@ with tabs[15]:
                 if file_geo_mun:
                     import geopandas as gpd
                     from modules.db_manager import get_engine
+                    from sqlalchemy import text
                     import time
                     
                     engine = get_engine()
@@ -1449,28 +1450,42 @@ with tabs[15]:
                     
                     try:
                         estado.info("⏳ Paso 1: Leyendo geometría municipal (esto puede tardar unos segundos)...")
-                        # Cargamos el mapa a la memoria
                         gdf_mun = gpd.read_file(file_geo_mun)
                         
-                        # Blindaje topológico y de columnas
+                        # Blindaje topológico
                         gdf_mun.columns = [c.lower() for c in gdf_mun.columns]
                         if gdf_mun.crs is None or gdf_mun.crs.to_string() != "EPSG:4326":
                             gdf_mun = gdf_mun.to_crs("EPSG:4326")
                             
-                        estado.info("⏳ Paso 2: Preparando Supabase (Borrando datos anteriores)...")
+                        estado.info("⏳ Paso 2: Cazando conexiones fantasma y forzando borrado (Modo Dios)...")
                         barra.progress(30)
                         
-                        # Intentamos forzar el borrado de la tabla con SQL directo antes de usar to_postgis
+                        # 1. Reiniciamos el pool de conexiones de Streamlit
+                        engine.dispose()
+                        
                         with engine.connect() as con:
-                            con.execute(text("DROP TABLE IF EXISTS municipios CASCADE"))
+                            # 2. Matar procesos ajenos que tengan bloqueada la tabla municipios
+                            con.execute(text("""
+                                SELECT pg_terminate_backend(pid) 
+                                FROM pg_stat_activity 
+                                WHERE pid <> pg_backend_pid() 
+                                AND query ILIKE '%municipios%';
+                            """))
+                            con.commit()
+                            
+                            # 3. Aumentar el tiempo máximo de espera a 5 minutos (300,000 milisegundos)
+                            con.execute(text("SET statement_timeout = '300000';"))
+                            
+                            # 4. Ahora sí, el borrado definitivo e implacable
+                            con.execute(text("DROP TABLE IF EXISTS municipios CASCADE;"))
                             con.commit()
                             
                         time.sleep(2) # Pausa técnica para que PostgreSQL respire
                         
-                        estado.info("🚀 Paso 3: Inyectando polígonos por bloques para evitar Timeout...")
+                        estado.info("🚀 Paso 3: Inyectando polígonos por bloques...")
                         barra.progress(60)
                         
-                        # Subimos la tabla usando 'chunksize' para no ahogar la base de datos
+                        # Subimos la tabla usando 'chunksize' para no asfixiar el tubo de subida
                         gdf_mun.to_postgis('municipios', engine, if_exists='replace', index=False, chunksize=50)
                         
                         barra.progress(100)
@@ -1481,7 +1496,7 @@ with tabs[15]:
                         st.error(f"❌ Error crítico en la inyección: {e}")
                 else:
                     st.warning("⚠️ Por favor, sube el archivo .geojson primero.")
-
+                    
 # ==============================================================================
 # TAB 16: GESTIÓN CLOUD Y SMART CACHE
 # ==============================================================================
