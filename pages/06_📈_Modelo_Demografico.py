@@ -548,55 +548,63 @@ elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 elif escala_sel == "🌿 Veredal (Antioquia)":
-    try:
-        from sqlalchemy import text
+    # --- ESCUDO ANTI-FANTASMAS (Evita el Error: 'Territorio') ---
+    if 'df_mapa_base' not in locals() or df_mapa_base.empty or 'Territorio' not in df_mapa_base.columns:
         import geopandas as gpd
-        from modules.db_manager import get_engine
-        
-        engine_geo = get_engine()
-        
-        # 1. Leemos los dibujos directamente de Supabase
-        q_geo = text("SELECT * FROM veredas_geometria")
-        gdf_territorios = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
-        
-        # 2. Escudo Dinámico: Buscamos las columnas sin importar cómo se llamen en el GeoJSON
-        col_mpio_geo = next((c for c in gdf_territorios.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'dptompio', 'cod_mpio', 'nomb_mpio']), None)
-        col_ver_geo = next((c for c in gdf_territorios.columns if c.lower() in ['vereda', 'nombre_ver', 'ver_nombr', 'codigo_ver', 'vere_nombr']), None)
-        
-        if col_mpio_geo and col_ver_geo:
-            import unicodedata
-            import pandas as pd
+        import streamlit as st
+        st.warning("⚠️ Esperando datos poblacionales del panel lateral... (Verifica la carga de datos veredales).")
+        gdf_final = gpd.GeoDataFrame() # Escudo activado: crea un mapa vacío seguro
+    else:
+        try:
+            from sqlalchemy import text
+            import geopandas as gpd
+            from modules.db_manager import get_engine
             
-            # Función para limpiar tildes y caracteres raros antes del cruce
-            def clean_map_text(t):
-                if not t or pd.isna(t): return ""
-                t = str(t).upper().strip()
-                return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+            engine_geo = get_engine()
             
-            # Preparamos las columnas para que encajen como piezas de Lego
-            gdf_territorios['Territorio_Merge'] = gdf_territorios[col_ver_geo].apply(clean_map_text)
-            gdf_territorios['Padre_Merge'] = gdf_territorios[col_mpio_geo].apply(clean_map_text)
+            # 1. Leemos los dibujos directamente de Supabase
+            q_geo = text("SELECT * FROM veredas_geometria")
+            gdf_territorios = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
             
-            df_mapa_base['Territorio_Merge'] = df_mapa_base['Territorio'].apply(clean_map_text)
-            df_mapa_base['Padre_Merge'] = df_mapa_base['Padre'].apply(clean_map_text)
+            # 2. Escudo Dinámico: Buscamos las columnas sin importar cómo se llamen en el GeoJSON
+            col_mpio_geo = next((c for c in gdf_territorios.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'dptompio', 'cod_mpio', 'nomb_mpio']), None)
+            col_ver_geo = next((c for c in gdf_territorios.columns if c.lower() in ['vereda', 'nombre_ver', 'ver_nombr', 'codigo_ver', 'vere_nombr']), None)
             
-            # Filtro de rendimiento: Si elegimos un municipio, solo cargamos los polígonos de ese municipio
-            if mpio_sel != "TODOS (Ver Mapa Completo)":
-                mpio_sel_clean = clean_map_text(mpio_sel)
-                gdf_territorios = gdf_territorios[gdf_territorios['Padre_Merge'] == mpio_sel_clean]
-            
-            # El Cruce Maestro: Unimos los dibujos (GeoJSON) con los números (CSV)
-            gdf_final = gdf_territorios.merge(df_mapa_base, on=['Territorio_Merge', 'Padre_Merge'], how='inner')
-            
-            if gdf_final.empty:
-                st.warning("⚠️ El cruce entre el mapa y los datos poblacionales resultó vacío. Esto ocurre si los nombres de las veredas en el mapa no coinciden exactamente con los nombres en el CSV.")
-        else:
-            st.error(f"⚠️ El mapa no tiene columnas reconocibles de Municipio o Vereda. Columnas detectadas: {gdf_territorios.columns.tolist()}")
+            if col_mpio_geo and col_ver_geo:
+                import unicodedata
+                import pandas as pd
+                
+                # Función para limpiar tildes y caracteres raros antes del cruce
+                def clean_map_text(t):
+                    if not t or pd.isna(t): return ""
+                    t = str(t).upper().strip()
+                    return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                
+                # Preparamos las columnas para que encajen como piezas de Lego
+                gdf_territorios['Territorio_Merge'] = gdf_territorios[col_ver_geo].apply(clean_map_text)
+                gdf_territorios['Padre_Merge'] = gdf_territorios[col_mpio_geo].apply(clean_map_text)
+                
+                df_mapa_base['Territorio_Merge'] = df_mapa_base['Territorio'].apply(clean_map_text)
+                df_mapa_base['Padre_Merge'] = df_mapa_base['Padre'].apply(clean_map_text)
+                
+                # Filtro de rendimiento: Si elegimos un municipio, solo cargamos los polígonos de ese municipio
+                if mpio_sel != "TODOS (Ver Mapa Completo)":
+                    mpio_sel_clean = clean_map_text(mpio_sel)
+                    gdf_territorios = gdf_territorios[gdf_territorios['Padre_Merge'] == mpio_sel_clean]
+                
+                # El Cruce Maestro: Unimos los dibujos (GeoJSON) con los números (CSV)
+                gdf_final = gdf_territorios.merge(df_mapa_base, on=['Territorio_Merge', 'Padre_Merge'], how='inner')
+                
+                if gdf_final.empty:
+                    st.warning("⚠️ El cruce entre el mapa y los datos poblacionales resultó vacío. Esto ocurre si los nombres de las veredas en el mapa no coinciden exactamente con los nombres en el CSV.")
+            else:
+                st.error(f"⚠️ El mapa no tiene columnas reconocibles de Municipio o Vereda. Columnas detectadas: {gdf_territorios.columns.tolist()}")
+                gdf_final = gpd.GeoDataFrame()
+                
+        except Exception as e:
+            st.warning(f"⚠️ Capa espacial no encontrada. Sube el GeoJSON Veredal en el Panel de Administración. Error técnico: {e}")
+            import geopandas as gpd
             gdf_final = gpd.GeoDataFrame()
-            
-    except Exception as e:
-        st.warning(f"⚠️ Capa espacial no encontrada. Sube el GeoJSON Veredal en el Panel de Administración. Error técnico: {e}")
-        gdf_final = gpd.GeoDataFrame()
     
 # =====================================================================
 # --- 4. CÁLCULO DE PROYECCIONES (NUEVO PARADIGMA TOP-DOWN) ---
