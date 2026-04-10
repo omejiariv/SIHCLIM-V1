@@ -737,14 +737,20 @@ tab_modelos, tab_opt, tab_mapas, tab_matriz, tab_rankings, tab_descargas = st.ta
 # ==========================================
 # PESTAÑA 1: MODELOS Y PIRÁMIDES ANIMADAS
 # ==========================================
-with tab_modelos:                                                      
-    col_graf, col_param = st.columns([3, 1])                           
+with tab_modelos:
+    col_graf, col_param = st.columns([3, 1])
     with col_graf:
         # --- FIX: ESCUDO SUPREMO ANTI-NAME ERROR ---
         titulo_seguro = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
-                
+        
         st.subheader(f"📈 Curvas de Crecimiento Poblacional - {titulo_seguro}")
         fig_curvas = go.Figure()
+        fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Logístico'], mode='lines', name='Mod. Logístico', line=dict(color='#10b981', dash='dash')))
+        fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Exponencial'], mode='lines', name='Mod. Exponencial', line=dict(color='#f59e0b', dash='dot')))
+        fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Lineal'], mode='lines', name='Mod. Lineal', line=dict(color='#6366f1', dash='dot')))
+        fig_curvas.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Reales (Censo)', marker=dict(color='#ef4444', size=8, symbol='diamond')))
+        fig_curvas.update_layout(hovermode="x unified", xaxis_title="Año", yaxis_title="Habitantes", template="plotly_white")
+        st.plotly_chart(fig_curvas, use_container_width=True)
 
     with col_param:
         st.subheader("🧮 Ecuaciones")
