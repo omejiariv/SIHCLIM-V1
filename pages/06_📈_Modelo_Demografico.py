@@ -1677,36 +1677,36 @@ with tab_rankings:
     df_rank = pd.DataFrame()
     titulo_ranking = ""
     
-        # --- FIX DEFINITIVO: RANKINGS DINÁMICOS CON ESCUDO DE VARIABLES ---
-        if "Global" in escala_sel or "Nacional" in escala_sel:
-            df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
-            df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
-            titulo_ranking = "Departamentos"
-            
-        elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
-            # Escudo: busca el nuevo nombre (agrupador_sel) o usa ANTIOQUIA por defecto
-            padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "ANTIOQUIA"))
-            df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
-            df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
-            titulo_ranking = f"Municipios de {padre_seguro}"
-            
-        elif "Municipal (Regiones)" in escala_sel:
-            padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "Oriente"))
-            if 'Macroregion' in df_mun.columns:
-                df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['Macroregion'] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
-            else:
-                df_rank = pd.DataFrame(columns=['municipio', 'Total'])
-            df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
-            titulo_ranking = f"Municipios de {padre_seguro}"
-            
+    # --- FIX DEFINITIVO: RANKINGS DINÁMICOS CON ESCUDO DE VARIABLES ---
+    if "Global" in escala_sel or "Nacional" in escala_sel:
+        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
+        df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+        titulo_ranking = "Departamentos"
+        
+    elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
+        # Escudo: busca el nuevo nombre (agrupador_sel) o usa ANTIOQUIA por defecto
+        padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "ANTIOQUIA"))
+        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
+        df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
+        titulo_ranking = f"Municipios de {padre_seguro}"
+        
+    elif "Municipal (Regiones)" in escala_sel:
+        padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "Oriente"))
+        if 'Macroregion' in df_mun.columns:
+            df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['Macroregion'] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
         else:
-            # Para Veredas o Cuencas, usamos directamente la base del mapa
-            if 'df_mapa_base' in locals() and not df_mapa_base.empty and 'Territorio' in df_mapa_base.columns:
-                df_rank = df_mapa_base.groupby('Territorio')['Total'].sum().reset_index()
-            else:
-                df_rank = pd.DataFrame(columns=['Territorio', 'Total'])
-            titulo_ranking = "Territorios Seleccionados"
-            
+            df_rank = pd.DataFrame(columns=['municipio', 'Total'])
+        df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
+        titulo_ranking = f"Municipios de {padre_seguro}"
+        
+    else:
+        # Para Veredas o Cuencas, usamos directamente la base del mapa
+        if 'df_mapa_base' in locals() and not df_mapa_base.empty and 'Territorio' in df_mapa_base.columns:
+            df_rank = df_mapa_base.groupby('Territorio')['Total'].sum().reset_index()
+        else:
+            df_rank = pd.DataFrame(columns=['Territorio', 'Total'])
+        titulo_ranking = "Territorios Seleccionados"
+        
     # Escudo Numérico Universal para la Pestaña 5
     if not df_rank.empty and 'Total' in df_rank.columns:
         df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
@@ -1748,7 +1748,7 @@ with tab_rankings:
         st.markdown("### 📈 Dinámica Poblacional (2005 - 2035)")
         
         if "Veredal" in escala_sel or "Cuencas" in escala_sel:
-            # Muestra el mensaje informativo (Como ya comprobaste, esto funciona perfecto)
+            # Muestra el mensaje informativo
             st.info("ℹ️ A escala Veredal/Cuencas, la plataforma utiliza un corte censal oficial estático. Las curvas de proyección dinámica 2005-2035 se activan desde la escala municipal hacia arriba.")
         else:
             # Obtenemos los 10 líderes del ranking independiente que acabamos de crear
@@ -1760,18 +1760,20 @@ with tab_rankings:
             if "Nacional" in escala_sel:
                 df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
                 df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+                
             elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
-                df_base_historica = df_base_historica[df_base_historica['depto_nom'] == depto_sel]
+                # Usamos el escudo también aquí para evitar NameError
+                padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "ANTIOQUIA"))
+                df_base_historica = df_base_historica[df_base_historica['depto_nom'] == padre_seguro]
                 df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                 df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
 
             elif "Regional" in escala_sel or "Municipal (Regiones)" in escala_sel:
-                # SOLUCIÓN: Usamos el mismo truco para atrapar el nombre exacto de la variable de región
-                region_activa_curvas = reg_sel if 'reg_sel' in locals() else region_sel if 'region_sel' in locals() else "Andina"
-                
-                df_base_historica = df_base_historica[df_base_historica['Macroregion'] == region_activa_curvas]
-                df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
-                df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+                padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "Oriente"))
+                if 'Macroregion' in df_base_historica.columns:
+                    df_base_historica = df_base_historica[df_base_historica['Macroregion'] == padre_seguro]
+                    df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                    df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
             
             if not df_line.empty:
                 # Filtramos las curvas para que solo muestren a los del Top 10
@@ -1783,6 +1785,7 @@ with tab_rankings:
                     group = group.sort_values('año')
                     mask = (group['año'] >= 2006) & (group['año'] <= 2019)
                     group.loc[mask, 'Total'] = np.nan
+                    # Usamos solo interpolate de Pandas sobre la columna
                     group['Total'] = group['Total'].interpolate(method='linear').ffill().bfill()
                     return group
                     
