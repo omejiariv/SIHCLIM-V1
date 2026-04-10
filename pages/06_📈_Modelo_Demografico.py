@@ -571,8 +571,8 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         gdf_territorios = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
         
         # 2. Escudo Dinámico: Buscamos las columnas sin importar cómo se llamen en el GeoJSON
-        col_mpio_geo = next((c for c in gdf_territorios.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'dptompio']), None)
-        col_ver_geo = next((c for c in gdf_territorios.columns if c.lower() in ['vereda', 'nombre_ver', 'ver_nombr', 'codigo_ver']), None)
+        col_mpio_geo = next((c for c in gdf_territorios.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'dptompio', 'cod_mpio']), None)
+        col_ver_geo = next((c for c in gdf_territorios.columns if c.lower() in ['vereda', 'nombre_ver', 'ver_nombr', 'codigo_ver', 'vere_nombr']), None)
         
         if col_mpio_geo and col_ver_geo:
             import unicodedata
@@ -737,17 +737,14 @@ tab_modelos, tab_opt, tab_mapas, tab_matriz, tab_rankings, tab_descargas = st.ta
 # ==========================================
 # PESTAÑA 1: MODELOS Y PIRÁMIDES ANIMADAS
 # ==========================================
-with tab_modelos:
-    col_graf, col_param = st.columns([3, 1])
+with tab_modelos:                                                      
+    col_graf, col_param = st.columns([3, 1])                           
     with col_graf:
-        st.subheader(f"📈 Curvas de Crecimiento Poblacional - {titulo_terr}")
+        # --- FIX: ESCUDO SUPREMO ANTI-NAME ERROR ---
+        titulo_seguro = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
+                
+        st.subheader(f"📈 Curvas de Crecimiento Poblacional - {titulo_seguro}")
         fig_curvas = go.Figure()
-        fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Logístico'], mode='lines', name='Mod. Logístico', line=dict(color='#10b981', dash='dash')))
-        fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Exponencial'], mode='lines', name='Mod. Exponencial', line=dict(color='#f59e0b', dash='dot')))
-        fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Lineal'], mode='lines', name='Mod. Lineal', line=dict(color='#6366f1', dash='dot')))
-        fig_curvas.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Reales (Censo)', marker=dict(color='#ef4444', size=8, symbol='diamond')))
-        fig_curvas.update_layout(hovermode="x unified", xaxis_title="Año", yaxis_title="Habitantes", template="plotly_white")
-        st.plotly_chart(fig_curvas, width='stretch')
 
     with col_param:
         st.subheader("🧮 Ecuaciones")
