@@ -559,78 +559,55 @@ elif escala_sel == "🏢 Municipal (Departamentos)":
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 elif escala_sel == "🌿 Veredal (Antioquia)":
-    # --- FIX: ESCUDO ANTI-VACÍO (VERIFICA QUE DF_VER EXISTA) ---
-    if df_ver is not None and not df_ver.empty:
-        col_mpio = next((c for c in df_ver.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nombre_mpi', 'mun_name', 'mpio_nombr']), 'Municipio')
-        col_ver = next((c for c in df_ver.columns if c.lower() in ['vereda', 'nombre_ver', 'ver_nombr']), 'Vereda')
-        col_pob = next((c for c in df_ver.columns if c.lower() in ['poblacion_hab', 'poblacion', 'total']), 'Poblacion_hab')
-
-        # Si el dataframe existe pero falló la búsqueda de la columna, evitamos el estrellón
-        if col_mpio in df_ver.columns:
-            mpios_veredas = ["TODOS (Ver Mapa Completo)"] + sorted(df_ver[col_mpio].dropna().astype(str).unique())
-            mpio_sel = st.sidebar.selectbox("Municipio (Antioquia)", mpios_veredas)
+    try:
+        from sqlalchemy import text
+        import geopandas as gpd
+        from modules.db_manager import get_engine
+        
+        engine_geo = get_engine()
+        
+        # 1. Leemos los dibujos directamente de Supabase
+        q_geo = text("SELECT * FROM veredas_geometria")
+        gdf_territorios = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
+        
+        # 2. Escudo Dinámico: Buscamos las columnas sin importar cómo se llamen en el GeoJSON
+        col_mpio_geo = next((c for c in gdf_territorios.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'dptompio']), None)
+        col_ver_geo = next((c for c in gdf_territorios.columns if c.lower() in ['vereda', 'nombre_ver', 'ver_nombr', 'codigo_ver']), None)
+        
+        if col_mpio_geo and col_ver_geo:
+            import unicodedata
+            import pandas as pd
             
-            if mpio_sel == "TODOS (Ver Mapa Completo)":
-                df_rural_ant = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['area_geografica'].str.lower() == 'rural')]
-                df_hist_rural = df_rural_ant.groupby('año')['Total'].sum().reset_index()
-
-                años_hist = df_hist_rural['año'].values
-                pob_hist = df_hist_rural['Total'].values
-                
-                filtro_zona = "Antioquia"
-                titulo_terr = "Todas las Veredas"
-                
-                df_mapa_base = df_ver.copy()
-                df_mapa_base = df_mapa_base.rename(columns={col_ver: 'Territorio', col_mpio: 'Padre', col_pob: 'Total'})
-                df_mapa_base['año'] = 2020 
-                df_mapa_base['area_geografica'] = 'rural'
-                
-            else:
-                veredas_lista = sorted(df_ver[df_ver[col_mpio] == mpio_sel][col_ver].dropna().astype(str).unique())
-                vereda_sel = st.sidebar.selectbox("Vereda", veredas_lista)
-                
-                # --- FIX: ESCUDO ANTI-TILDES PARA CRUCE PERFECTO ---
-                import unicodedata
-                
-                # 1. Le quitamos las tildes al municipio que seleccionaste en el menú
-                mpio_sel_clean = ''.join(c for c in unicodedata.normalize('NFD', mpio_sel) if unicodedata.category(c) != 'Mn').upper()
-                
-                # 2. Le quitamos las tildes a la columna del DANE "al vuelo"
-                mpios_dane_clean = df_mun['municipio'].str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8').str.upper()
-                
-                # 3. Cruzamos manzanas con manzanas (sin tildes)
-                df_rural_mpio = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (mpios_dane_clean == mpio_sel_clean) & (df_mun['area_geografica'].str.lower() == 'rural')]
-                df_hist_rural = df_rural_mpio.groupby('año')['Total'].sum().reset_index()
-                
-                df_mpio_veredas = df_ver[df_ver[col_mpio] == mpio_sel].copy()
-                
-                df_mpio_veredas['pob_limpia'] = pd.to_numeric(df_mpio_veredas[col_pob].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
-                
-                pob_total_veredas = df_mpio_veredas['pob_limpia'].sum()
-                pob_ver_especifica = df_mpio_veredas[df_mpio_veredas[col_ver] == vereda_sel]['pob_limpia'].sum()
-                
-                ratio_vereda = pob_ver_especifica / pob_total_veredas if pob_total_veredas > 0 else 0
-                
-                años_hist = df_hist_rural['año'].values
-                pob_hist = df_hist_rural['Total'].values * ratio_vereda
-                
-                filtro_zona = vereda_sel
-                titulo_terr = f"Vereda {vereda_sel} ({mpio_sel})"
-                
-                df_mapa_base = df_mpio_veredas.copy()
-                df_mapa_base = df_mapa_base.rename(columns={col_ver: 'Territorio', col_mpio: 'Padre', col_pob: 'Total'})
-                df_mapa_base['año'] = 2020 
-                df_mapa_base['area_geografica'] = 'rural'
+            # Función para limpiar tildes y caracteres raros antes del cruce
+            def clean_map_text(t):
+                if not t or pd.isna(t): return ""
+                t = str(t).upper().strip()
+                return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+            
+            # Preparamos las columnas para que encajen como piezas de Lego
+            gdf_territorios['Territorio_Merge'] = gdf_territorios[col_ver_geo].apply(clean_map_text)
+            gdf_territorios['Padre_Merge'] = gdf_territorios[col_mpio_geo].apply(clean_map_text)
+            
+            df_mapa_base['Territorio_Merge'] = df_mapa_base['Territorio'].apply(clean_map_text)
+            df_mapa_base['Padre_Merge'] = df_mapa_base['Padre'].apply(clean_map_text)
+            
+            # Filtro de rendimiento: Si elegimos un municipio, solo cargamos los polígonos de ese municipio
+            if mpio_sel != "TODOS (Ver Mapa Completo)":
+                mpio_sel_clean = clean_map_text(mpio_sel)
+                gdf_territorios = gdf_territorios[gdf_territorios['Padre_Merge'] == mpio_sel_clean]
+            
+            # El Cruce Maestro: Unimos los dibujos (GeoJSON) con los números (CSV)
+            gdf_final = gdf_territorios.merge(df_mapa_base, on=['Territorio_Merge', 'Padre_Merge'], how='inner')
+            
+            if gdf_final.empty:
+                st.warning("⚠️ El cruce entre el mapa y los datos poblacionales resultó vacío. Esto ocurre si los nombres de las veredas en el mapa no coinciden exactamente con los nombres en el CSV.")
         else:
-            st.sidebar.error("⚠️ La capa veredal no contiene la columna de Municipio.")
-            filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
-    else:
-        st.sidebar.warning("⚠️ No se encontró el archivo de veredas en el sistema. Verifica la capa 'veredas_Antioquia.csv'.")
-        filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
-
-# Escudo final de seguridad (asegúrate de que esta línea quede inmediatamente después del bloque de veredas)
-if 'titulo_terr' not in locals():
-    titulo_terr = filtro_zona if 'filtro_zona' in locals() else "Territorio Seleccionado"
+            st.error(f"⚠️ El mapa no tiene columnas reconocibles de Municipio o Vereda. Columnas detectadas: {gdf_territorios.columns.tolist()}")
+            gdf_final = gpd.GeoDataFrame()
+            
+    except Exception as e:
+        st.warning(f"⚠️ Capa espacial no encontrada. Sube el GeoJSON Veredal en el Panel de Administración. Error técnico: {e}")
+        gdf_final = gpd.GeoDataFrame()
     
 # =====================================================================
 # --- 4. CÁLCULO DE PROYECCIONES (NUEVO PARADIGMA TOP-DOWN) ---
