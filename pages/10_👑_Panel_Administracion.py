@@ -1340,6 +1340,53 @@ with tabs[15]:
                     except Exception as e:
                         st.error(f"❌ Fallo crítico en la inyección: {e}")
 
+        # ==============================================================================
+        # 🚀 CÁPSULA DE INYECCIÓN DE TABLAS MAESTRAS (CSV a PostgreSQL)
+        # ==============================================================================
+        st.markdown("---")
+        st.subheader("📊 Motor de Inyección Tabular (Datos Veredales)")
+        st.info("Utiliza este panel para migrar tus archivos .csv locales a tablas nativas en Supabase.")
+        
+        with st.expander("🛠️ Abrir Panel de Migración CSV", expanded=False):
+            file_ver = st.file_uploader("Sube el archivo de Veredas", type=['csv'], help="Sube: veredas_Antioquia.csv")
+            
+            if st.button("⚡ Ejecutar Inyección de Veredas a BD", type="primary", use_container_width=True):
+                if file_ver:
+                    import pandas as pd
+                    from modules.db_manager import get_engine
+                    
+                    engine = get_engine()
+                    estado = st.empty()
+                    
+                    try:
+                        estado.info("⏳ Leyendo archivo CSV...")
+                        # El archivo viene separado por punto y coma
+                        df = pd.read_csv(file_ver, sep=';')
+                        
+                        # Limpieza 1: Eliminar la fila de encabezado duplicada del archivo original
+                        if 'Municipio' in df.columns:
+                            df = df[df['Municipio'] != 'Municipio'].copy()
+                        
+                        # Limpieza 2: Todo a minúsculas para blindaje estructural en SQL
+                        df.columns = [c.lower() for c in df.columns]
+                        
+                        # Limpieza 3: Arreglar los puntos de miles en la población (ej: 1.595 -> 1595)
+                        if 'poblacion_hab' in df.columns:
+                            df['poblacion_hab'] = df['poblacion_hab'].astype(str).str.replace('.', '', regex=False).str.replace(',', '', regex=False)
+                            df['poblacion_hab'] = pd.to_numeric(df['poblacion_hab'], errors='coerce').fillna(0)
+                            
+                        estado.info("🚀 Inyectando a PostgreSQL (Supabase)...")
+                        
+                        # Inyectar a PostgreSQL
+                        df.to_sql('veredas_poblacion', engine, if_exists='replace', index=False)
+                        
+                        estado.success(f"✅ ¡Éxito Absoluto! {len(df)} veredas inyectadas en la tabla 'veredas_poblacion'.")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"❌ Error crítico en la inyección: {e}")
+                else:
+                    st.warning("⚠️ Por favor, sube el archivo primero.")
+
 # ==============================================================================
 # TAB 16: GESTIÓN CLOUD Y SMART CACHE
 # ==============================================================================
