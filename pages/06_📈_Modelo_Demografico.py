@@ -524,31 +524,20 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         st.sidebar.error("🚨 Matriz Maestra no encontrada.")
         filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
         
-elif escala_sel == "🏢 Municipal (Regiones)":
-    region_sel = st.sidebar.selectbox("Macroregión:", sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"]))
-    mpios_reg = df_mun[df_mun['Macroregion'] == region_sel]
-    municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_reg['municipio'].unique()))
+elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)"]:
+    if "Regiones" in escala_sel:
+        agrupador_col = 'Macroregion'
+        agrupador_sel = st.sidebar.selectbox("Macroregión:", sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"]))
+    else:
+        agrupador_col = 'depto_nom'
+        agrupador_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
+        
+    mpios_filtrados = df_mun[df_mun[agrupador_col] == agrupador_sel]
+    municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_filtrados['municipio'].unique()))
     
-    df_base = mpios_reg[mpios_reg['municipio'] == municipio_sel]
+    df_base = mpios_filtrados[mpios_filtrados['municipio'] == municipio_sel]
     filtro_zona = municipio_sel
-    titulo_terr = f"{municipio_sel} ({region_sel})"
-    
-    col_anio = 'año' if 'año' in df_base.columns else 'Año'
-    df_hist = df_base[df_base['area_geografica'] == 'total'].groupby(col_anio)['Total'].sum().reset_index()
-    años_hist = df_hist[col_anio].values
-    pob_hist = df_hist['Total'].values
-    
-    df_mapa_base = df_base.copy()
-    df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
-
-elif escala_sel == "🏢 Municipal (Departamentos)":
-    depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
-    mpios_depto = df_mun[df_mun['depto_nom'] == depto_sel]
-    municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_depto['municipio'].unique()))
-    
-    df_base = mpios_depto[mpios_depto['municipio'] == municipio_sel]
-    filtro_zona = municipio_sel
-    titulo_terr = f"{municipio_sel} ({depto_sel})"
+    titulo_terr = f"{municipio_sel} ({agrupador_sel})"
     
     col_anio = 'año' if 'año' in df_base.columns else 'Año'
     df_hist = df_base[df_base['area_geografica'] == 'total'].groupby(col_anio)['Total'].sum().reset_index()
@@ -1766,13 +1755,16 @@ with tab_rankings:
 # PESTAÑA 6: DESCARGAS Y EXPORTACIÓN
 # ==========================================
 with tab_descargas:
+    # --- FIX: ESCUDO SUPREMO EN DESCARGAS ---
+    titulo_seguro_descarga = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio_Seleccionado"))
+    
     st.subheader("💾 Exportación de Resultados y Series de Tiempo")
     col_d1, col_d2 = st.columns(2)
     
     with col_d1:
         st.markdown("### 📈 Curvas de Proyección (1950-2100)")
         csv_proj = df_proj.to_csv(index=False).encode('utf-8')
-        st.download_button(label="⬇️ Descargar Proyecciones (CSV)", data=csv_proj, file_name=f"Proyecciones_{titulo_terr}.csv", mime="text/csv", use_container_width=True)
+        st.download_button(label="⬇️ Descargar Proyecciones (CSV)", data=csv_proj, file_name=f"Proyecciones_{titulo_seguro_descarga}.csv", mime="text/csv", use_container_width=True)
         st.dataframe(df_proj.dropna(subset=['Real']).head(5), use_container_width=True)
 
     with col_d2:
@@ -1784,7 +1776,7 @@ with tab_descargas:
                 df_descarga_pir['Hombres'] = df_descarga_pir['Hombres'].abs()
                 
             csv_pir = df_descarga_pir.to_csv(index=False).encode('utf-8')
-            st.download_button(label=f"⬇️ Descargar Pirámide {año_sel} (CSV)", data=csv_pir, file_name=f"Piramide_{año_sel}_{titulo_terr}.csv", mime="text/csv", use_container_width=True)
+            st.download_button(label=f"⬇️ Descargar Pirámide {año_sel} (CSV)", data=csv_pir, file_name=f"Piramide_{año_sel}_{titulo_seguro_descarga}.csv", mime="text/csv", use_container_width=True)
             st.dataframe(df_descarga_pir.head(5), use_container_width=True)
 
 # ==============================================================================
