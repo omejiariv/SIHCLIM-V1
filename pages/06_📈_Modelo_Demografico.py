@@ -771,10 +771,13 @@ with tab_modelos:
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("▶️ Animación Temporal")
-    velocidad_animacion = st.sidebar.slider("Velocidad (Segundos por año)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
+    velocidad_animacion = st.sidebar.slider("Velocidad (Segundos por cuadro)", 0.1, 2.0, 0.5)
     iniciar_animacion = st.sidebar.button("▶️ Reproducir Evolución", type="primary", use_container_width=True)
 
-    st.subheader(f"Estructura Poblacional Sintética - {titulo_terr}")
+    # --- FIX: ESCUDO SUPREMO ANTI-NAME ERROR (PARA LA PIRÁMIDE) ---
+    titulo_seguro = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
+    
+    st.subheader(f"Estructura Poblacional Sintética - {titulo_seguro}")
     
     # Selector de comparación en la interfaz principal
     zona_comparacion = st.radio("Selecciona el área para comparar con la Estructura Total:", ["Urbano", "Rural"], horizontal=True)
