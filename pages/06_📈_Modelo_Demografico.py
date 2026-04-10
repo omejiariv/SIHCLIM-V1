@@ -316,13 +316,15 @@ def cargar_datos_limpios():
             pass
                 
         # =======================================================
-        # 2. Cargar datos Veredales 
+        # 2. Cargar datos Veredales (Dinámico desde Supabase)
         # =======================================================
-        df_ver = pd.DataFrame()
-        ruta_ver_1 = os.path.join(RUTA_RAIZ, "data", "veredas_Antioquia.csv")
-        
-        if os.path.exists(ruta_ver_1): 
-            df_ver = pd.read_csv(ruta_ver_1, sep=';')
+        try:
+            from modules.db_manager import get_engine
+            import pandas as pd
+            engine_db = get_engine()
+            df_ver = pd.read_sql("SELECT * FROM veredas_poblacion", engine_db)
+        except Exception as e:
+            df_ver = pd.DataFrame() # Escudo anti-errores si falla BD
             
             # --- SINCRONIZACIÓN DE NOMBRES ---
             # Hacemos que las veredas hablen el mismo idioma que el DANE (Mayúscula Inicial)
