@@ -1265,7 +1265,7 @@ with tab_mapas:
                     q_geo = text("SELECT * FROM veredas_geometria")
                 elif "cuencas" in archivo_geo_input.lower(): 
                     # ¡Volvemos a la tabla correcta creada por tu panel de administración!
-                    q_geo = text("SELECT * FROM cuencas_geometria")
+                    q_geo = text("SELECT * FROM cuencas_sp")
                 else:
                     q_geo = None
                     
