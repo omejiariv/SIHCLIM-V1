@@ -320,7 +320,6 @@ def cargar_datos_limpios():
         # =======================================================
         try:
             from modules.db_manager import get_engine
-            import pandas as pd
             engine_db = get_engine()
             df_ver = pd.read_sql("SELECT * FROM veredas_poblacion", engine_db)
         except Exception as e:
