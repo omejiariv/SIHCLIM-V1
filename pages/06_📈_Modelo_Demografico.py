@@ -571,7 +571,7 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         gdf_territorios = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
         
         # 2. Escudo Dinámico: Buscamos las columnas sin importar cómo se llamen en el GeoJSON
-        col_mpio_geo = next((c for c in gdf_territorios.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'dptompio', 'cod_mpio']), None)
+        col_mpio_geo = next((c for c in gdf_territorios.columns if c.lower() in ['municipio', 'mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'dptompio', 'cod_mpio', 'nomb_mpio']), None)
         col_ver_geo = next((c for c in gdf_territorios.columns if c.lower() in ['vereda', 'nombre_ver', 'ver_nombr', 'codigo_ver', 'vere_nombr']), None)
         
         if col_mpio_geo and col_ver_geo:
