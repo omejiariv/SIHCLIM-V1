@@ -556,7 +556,6 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         engine_sql = get_engine()
         
         # --- ESCUDO RASTREADOR DE TABLAS ---
-        # Le preguntamos a Supabase cuáles son todas las tablas que existen
         inspector = inspect(engine_sql)
         tablas_existentes = inspector.get_table_names()
         
@@ -564,26 +563,34 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         nombre_tabla_veredas = next((t for t in tablas_existentes if 'vereda' in t.lower() and 'geo' not in t.lower()), None)
         
         if nombre_tabla_veredas:
-            # Usamos comillas dobles dinámicas por si Supabase le puso mayúsculas
             df_veredas = pd.read_sql(f'SELECT * FROM "{nombre_tabla_veredas}"', engine_sql)
         else:
-            st.sidebar.error(f"🛑 Error: No encontré la tabla de población de veredas. Tablas disponibles en tu base de datos: {tablas_existentes}")
+            st.sidebar.error(f"🛑 No encontré la tabla de población de veredas. Tablas: {tablas_existentes}")
             df_veredas = pd.DataFrame()
         
         if not df_veredas.empty:
-            # Limpiamos nombres de columnas
             df_veredas.columns = df_veredas.columns.str.strip()
             
-            # Búsqueda dinámica de columnas (A prueba de mayúsculas/minúsculas)
-            col_ver = next((c for c in df_veredas.columns if 'vered' in c.lower()), 'Vereda')
-            col_mun = next((c for c in df_veredas.columns if 'municip' in c.lower() or 'padre' in c.lower()), 'Municipio')
-            col_pob = next((c for c in df_veredas.columns if 'pob' in c.lower() or 'hab' in c.lower()), 'Poblacion_hab')
+            # --- SABUESO ULTRA-AGRESIVO ---
+            col_ver = next((c for c in df_veredas.columns if any(k in c.lower() for k in ['vered', 'terr', 'nom_ver'])), None)
+            col_mun = next((c for c in df_veredas.columns if any(k in c.lower() for k in ['municip', 'padre', 'mpio', 'nom_mun'])), None)
+            col_pob = next((c for c in df_veredas.columns if any(k in c.lower() for k in ['pob', 'hab', 'total', 'valor'])), None)
+            
+            # Si el sabueso falla, usamos las posiciones de las columnas como último recurso
+            if not col_ver: col_ver = df_veredas.columns[0]
+            if not col_mun: col_mun = df_veredas.columns[1] if len(df_veredas.columns) > 1 else df_veredas.columns[0]
+            if not col_pob: col_pob = df_veredas.columns[-1]
             
             df_mapa_base = df_veredas.rename(columns={
                 col_ver: 'Territorio',
                 col_mun: 'Padre',
                 col_pob: 'Total'
             })
+            
+            # ESCUDO ANTI-KEYERROR: Asegurarnos de que 'Padre' existe sí o sí
+            if 'Padre' not in df_mapa_base.columns:
+                df_mapa_base['Padre'] = "Antioquia (Columna no detectada)"
+                st.sidebar.warning(f"⚠️ Columnas originales en BD: {df_veredas.columns.tolist()}")
             
             # Menú para filtrar municipio
             lista_mpios = sorted(df_mapa_base['Padre'].dropna().astype(str).unique())
