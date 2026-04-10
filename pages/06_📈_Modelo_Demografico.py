@@ -555,31 +555,34 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         
         engine_sql = get_engine()
         
-        # --- ESCUDO RASTREADOR DE TABLAS ---
         inspector = inspect(engine_sql)
         tablas_existentes = inspector.get_table_names()
         
-        # Buscamos la tabla que contenga "vereda", pero que NO sea la del dibujo (geometria)
         nombre_tabla_veredas = next((t for t in tablas_existentes if 'vereda' in t.lower() and 'geo' not in t.lower()), None)
         
         if nombre_tabla_veredas:
             df_veredas = pd.read_sql(f'SELECT * FROM "{nombre_tabla_veredas}"', engine_sql)
         else:
-            st.sidebar.error(f"🛑 No encontré la tabla de población de veredas. Tablas: {tablas_existentes}")
+            st.sidebar.error(f"🛑 No encontré la tabla poblacional. Tablas: {tablas_existentes}")
             df_veredas = pd.DataFrame()
         
         if not df_veredas.empty:
             df_veredas.columns = df_veredas.columns.str.strip()
+            cols_lower = [c.lower() for c in df_veredas.columns]
             
-            # --- SABUESO ULTRA-AGRESIVO ---
-            col_ver = next((c for c in df_veredas.columns if any(k in c.lower() for k in ['vered', 'terr', 'nom_ver'])), None)
-            col_mun = next((c for c in df_veredas.columns if any(k in c.lower() for k in ['municip', 'padre', 'mpio', 'nom_mun'])), None)
-            col_pob = next((c for c in df_veredas.columns if any(k in c.lower() for k in ['pob', 'hab', 'total', 'valor'])), None)
-            
-            # Si el sabueso falla, usamos las posiciones de las columnas como último recurso
-            if not col_ver: col_ver = df_veredas.columns[0]
-            if not col_mun: col_mun = df_veredas.columns[1] if len(df_veredas.columns) > 1 else df_veredas.columns[0]
-            if not col_pob: col_pob = df_veredas.columns[-1]
+            # --- FIX: SABUESO DE ALTA PRECISIÓN ---
+            # Prioridad 1: Nombres exactos (Para evitar el cruce con id-vereda_mpio)
+            if 'vereda' in cols_lower:
+                col_ver = df_veredas.columns[cols_lower.index('vereda')]
+            else:
+                col_ver = next((c for c in df_veredas.columns if 'nom_ver' in c.lower() or 'terr' in c.lower()), df_veredas.columns[2] if len(df_veredas.columns)>2 else df_veredas.columns[0])
+                
+            if 'municipio' in cols_lower:
+                col_mun = df_veredas.columns[cols_lower.index('municipio')]
+            else:
+                col_mun = next((c for c in df_veredas.columns if 'padre' in c.lower() or 'mpio' in c.lower()), df_veredas.columns[1] if len(df_veredas.columns)>1 else df_veredas.columns[0])
+                
+            col_pob = next((c for c in df_veredas.columns if 'pob' in c.lower() or 'hab' in c.lower() or 'total' in c.lower()), df_veredas.columns[-1])
             
             df_mapa_base = df_veredas.rename(columns={
                 col_ver: 'Territorio',
@@ -587,12 +590,9 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
                 col_pob: 'Total'
             })
             
-            # ESCUDO ANTI-KEYERROR: Asegurarnos de que 'Padre' existe sí o sí
             if 'Padre' not in df_mapa_base.columns:
-                df_mapa_base['Padre'] = "Antioquia (Columna no detectada)"
-                st.sidebar.warning(f"⚠️ Columnas originales en BD: {df_veredas.columns.tolist()}")
+                df_mapa_base['Padre'] = "Antioquia"
             
-            # Menú para filtrar municipio
             lista_mpios = sorted(df_mapa_base['Padre'].dropna().astype(str).unique())
             mpio_sel = st.sidebar.selectbox("Municipio:", ["TODOS (Ver Mapa Completo)"] + lista_mpios)
             
@@ -605,7 +605,7 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
             df_mapa_base = pd.DataFrame()
             
     except Exception as e:
-        st.sidebar.error(f"❌ Error general cargando población veredal: {e}")
+        st.sidebar.error(f"❌ Error general: {e}")
         df_mapa_base = pd.DataFrame()
     
 # =====================================================================
@@ -1214,6 +1214,23 @@ with tab_mapas:
     
     with col_map2:
         if not df_mapa_plot.empty:
+            # --- ESCUDO SALVAVIDAS: ASEGURAR COLUMNAS CRÍTICAS ---
+            # Si el panel lateral olvidó renombrar la columna a 'Territorio', lo forzamos aquí
+            if 'Territorio' not in df_mapa_plot.columns:
+                col_t = next((c for c in df_mapa_plot.columns if c.lower() in ['municipio', 'cuenca', 'vereda', 'nombre', 'subzona']), df_mapa_plot.columns[0] if len(df_mapa_plot.columns) > 0 else 'Territorio')
+                df_mapa_plot = df_mapa_plot.rename(columns={col_t: 'Territorio'})
+                
+            if 'Padre' not in df_mapa_plot.columns:
+                col_p = next((c for c in df_mapa_plot.columns if c.lower() in ['padre', 'depto_nom', 'departamento', 'macroregion', 'zona']), None)
+                if col_p:
+                    df_mapa_plot = df_mapa_plot.rename(columns={col_p: 'Padre'})
+                else:
+                    df_mapa_plot['Padre'] = ""
+                    
+            if 'Total' not in df_mapa_plot.columns:
+                col_tot = next((c for c in df_mapa_plot.columns if c.lower() in ['total', 'poblacion', 'pob', 'habitantes', 'valor']), df_mapa_plot.columns[-1] if len(df_mapa_plot.columns) > 0 else 'Total')
+                df_mapa_plot = df_mapa_plot.rename(columns={col_tot: 'Total'})
+
             try:
                 import json
                 import geopandas as gpd
@@ -1223,28 +1240,27 @@ with tab_mapas:
                 engine_geo = get_engine()
                 
                 # --- FIX DEFINITIVO: DESCARGA DIRECTA DESDE SUPABASE ---
-                # En lugar de buscar en el disco duro, leemos la tabla según el selector
                 if "municipios" in archivo_geo_input.lower():
                     q_geo = text("SELECT * FROM municipios")
                 elif "veredas" in archivo_geo_input.lower():
                     q_geo = text("SELECT * FROM veredas_geometria")
+                elif "cuencas" in archivo_geo_input.lower(): # <- ¡Aquí cargamos tu nueva topología!
+                    q_geo = text("SELECT * FROM cuencas_geometria")
                 else:
                     q_geo = None
                     
                 if q_geo is not None:
-                    # Descargamos los polígonos
                     gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
-                    # Los convertimos al instante en el formato GeoJSON que Plotly exige
                     geo_data = json.loads(gdf_mapa.to_json())
                 else:
                     geo_data = {'features': []}
                     
                 if geo_data['features']:
-                    # 1. Crear ADN Único en Pandas
+                    # 1. Crear ADN Único en Pandas (Convertimos a string por seguridad anti-nulos)
                     if prop_padre_input.strip() != "":
-                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].apply(normalizar_texto)
+                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].astype(str).apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].astype(str).apply(normalizar_texto)
                     else:
-                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto)
+                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].astype(str).apply(normalizar_texto)
 
                     # --- TRADUCTOR DANE DE CÓDIGOS A NOMBRES ---
                     codigos_dane_deptos = {
@@ -1264,20 +1280,16 @@ with tab_mapas:
                     
                     for feature in geo_data['features']:
                         props = feature['properties']
-                        
-                        # Buscamos la llave original, o en minúsculas (PostGIS), o en mayúsculas
                         val_terr = str(props.get(prop_key, props.get(prop_key.lower(), props.get(prop_key.upper(), ""))))
                         val_padre = ""
                         if padre_key:
                             val_padre = str(props.get(padre_key, props.get(padre_key.lower(), props.get(padre_key.upper(), ""))))
                         
-                        # Fix caracteres mutantes desde la fuente
                         val_terr = normalizar_texto(val_terr)
                         
                         if val_padre.zfill(2) in codigos_dane_deptos:
                             val_padre = codigos_dane_deptos[val_padre.zfill(2)]
                         
-                        # Fix espacial: Para distinguir los dos Manaures
                         if val_terr == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
                         
                         if val_padre:
@@ -1289,6 +1301,7 @@ with tab_mapas:
                     max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
                     
                     # 3. Renderizar Mapa
+                    import plotly.express as px
                     fig_mapa = px.choropleth_mapbox(
                         df_mapa_plot,
                         geojson=geo_data,
@@ -1298,8 +1311,8 @@ with tab_mapas:
                         color_continuous_scale="Viridis",
                         range_color=[0, max_color],  
                         mapbox_style="carto-positron",
-                        zoom=5 if escala_sel != "🌿 Veredal (Antioquia)" else 9, 
-                        center={"lat": 4.57, "lon": -74.29} if escala_sel != "🌿 Veredal (Antioquia)" else {"lat": 6.25, "lon": -75.56},
+                        zoom=5 if escala_sel not in ["🌿 Veredal (Antioquia)", "💧 Cuencas Hidrográficas"] else 8, 
+                        center={"lat": 4.57, "lon": -74.29} if escala_sel not in ["🌿 Veredal (Antioquia)", "💧 Cuencas Hidrográficas"] else {"lat": 6.55, "lon": -75.36},
                         opacity=0.8,
                         labels={'Total': f'Población {area_mapa}'},
                         hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
@@ -1314,37 +1327,31 @@ with tab_mapas:
                     if not faltantes.empty:
                         st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el GeoJSON.")
                         
-                        # --- NUEVO: REVELADOR DE VEREDAS (RAYOS X) ---
                         if escala_sel == "🌿 Veredal (Antioquia)":
                             with st.expander("🔍 Ver nombres exactos dentro del mapa GeoJSON (Para arreglar el Excel)"):
                                 municipio_actual = normalizar_texto(df_mapa_plot['Padre'].iloc[0]) if not df_mapa_plot.empty else ""
-                                
                                 veredas_en_mapa = []
                                 for f in geo_data['features']:
-                                    m_padre = str(f['properties'].get(padre_key, ""))
+                                    m_padre = str(f['properties'].get(padre_key, props.get(padre_key.lower(), "")))
                                     if normalizar_texto(m_padre) == municipio_actual:
-                                        veredas_en_mapa.append(f['properties'].get(prop_key, ""))
+                                        veredas_en_mapa.append(f['properties'].get(prop_key, props.get(prop_key.lower(), "")))
                                         
                                 if veredas_en_mapa:
                                     st.write(f"El mapa tiene **{len(veredas_en_mapa)}** polígonos para este municipio. Estos son sus nombres reales:")
                                     st.dataframe(pd.DataFrame({"Nombres exactos en el GeoJSON": sorted(veredas_en_mapa)}), use_container_width=True)
-                                    st.info("💡 **Solución:** Busca tu vereda en esta lista. Si en tu Excel dice 'La Loma' pero aquí dice 'Vda. Loma', simplemente actualiza el nombre en tu Excel o añádelo al diccionario del código.")
                                 else:
-                                    st.error("No se encontró ningún polígono para este municipio en el archivo GeoJSON. Verifica que la 'Llave Contexto' sea correcta.")
+                                    st.error("No se encontró ningún polígono para este municipio. Verifica la Llave Contexto.")
                                     
                 else:
-                    st.warning(f"⚠️ No se encontraron geometrías en Supabase para: {archivo_geo_input}")
+                    st.warning(f"⚠️ No se encontraron geometrías en Supabase para la opción seleccionada.")
             except Exception as e:
                 st.error(f"❌ Error conectando a PostGIS para dibujar el mapa: {e}")
         else:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
             
-        # Mostramos solo las columnas que realmente existan en la tabla actual
         cols_existentes = [c for c in ['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa'] if c in df_mapa_plot.columns]
         
-        # Solo ordenamos si la columna 'Total' existe (evita errores en la vista)
         if 'Total' in cols_existentes and not df_mapa_plot.empty:
-            # ESCUDO ANTI-TEXTO: Convertimos todo a números puros antes de ordenar
             df_mapa_plot['Total'] = pd.to_numeric(df_mapa_plot['Total'], errors='coerce').fillna(0)
             df_mostrar = df_mapa_plot[cols_existentes].sort_values('Total', ascending=False)
         else:
