@@ -62,14 +62,29 @@ def standardize_numeric_column(series):
     series_clean = series.astype(str).str.replace(",", ".", regex=False)
     return pd.to_numeric(series_clean, errors="coerce")
 
-def normalizar_texto(texto):
-    """
-    Limpiador extremo: Convierte texto a minúsculas, sin tildes y sin espacios extras. 
-    Ideal para evitar fallos en búsquedas SQL o cruces de bases de datos.
-    """
-    if pd.isna(texto): return ""
-    texto_str = str(texto).lower().strip()
-    return unicodedata.normalize('NFKD', texto_str).encode('ascii', 'ignore').decode('utf-8')
+def normalizar_texto(t):
+    if not t or pd.isna(t): return ""
+    import unicodedata
+    import re
+    
+    # 1. Convertir a string, quitar espacios y pasar a mayúsculas
+    t = str(t).upper().strip()
+    
+    # 2. Eliminar acentos y tildes (NFD)
+    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+    
+    # 3. Eliminar palabras 'ruido' territoriales que causan el 90% de los fallos
+    stop_words = [
+        r'\bVEREDA\b', r'\bVDA\b', r'\bSECTOR\b', r'\bCASERIO\b', 
+        r'\bCENTRO POBLADO\b', r'\bCP\b', r'\bCORREGIMIENTO\b', r'\bCORREG\b'
+    ]
+    for word in stop_words:
+        t = re.sub(word, '', t)
+    
+    # 4. Eliminar todo lo que NO sea letras o números (puntuación, paréntesis, espacios)
+    t = re.sub(r'[^A-Z0-9]', '', t)
+    
+    return t
 
 @st.cache_data
 def leer_csv_robusto(ruta):
