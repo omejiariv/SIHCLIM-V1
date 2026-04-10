@@ -589,7 +589,17 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
                 veredas_lista = sorted(df_ver[df_ver[col_mpio] == mpio_sel][col_ver].dropna().astype(str).unique())
                 vereda_sel = st.sidebar.selectbox("Vereda", veredas_lista)
                 
-                df_rural_mpio = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['municipio'].str.upper() == mpio_sel.upper()) & (df_mun['area_geografica'].str.lower() == 'rural')]
+                # --- FIX: ESCUDO ANTI-TILDES PARA CRUCE PERFECTO ---
+                import unicodedata
+                
+                # 1. Le quitamos las tildes al municipio que seleccionaste en el menú
+                mpio_sel_clean = ''.join(c for c in unicodedata.normalize('NFD', mpio_sel) if unicodedata.category(c) != 'Mn').upper()
+                
+                # 2. Le quitamos las tildes a la columna del DANE "al vuelo"
+                mpios_dane_clean = df_mun['municipio'].str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8').str.upper()
+                
+                # 3. Cruzamos manzanas con manzanas (sin tildes)
+                df_rural_mpio = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (mpios_dane_clean == mpio_sel_clean) & (df_mun['area_geografica'].str.lower() == 'rural')]
                 df_hist_rural = df_rural_mpio.groupby('año')['Total'].sum().reset_index()
                 
                 df_mpio_veredas = df_ver[df_ver[col_mpio] == mpio_sel].copy()
