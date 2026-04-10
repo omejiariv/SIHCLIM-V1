@@ -982,7 +982,8 @@ with tab_opt:
     
     if len(x_hist) == 0:
         st.info("👆 Selecciona una escala válida en el panel izquierdo.")
-    elif escala_sel == "Veredal (Antioquia)":
+    # --- FIX: EMOJI AÑADIDO PARA QUE EL CONDICIONAL FUNCIONE ---
+    elif escala_sel == "🌿 Veredal (Antioquia)":
         st.error("❌ La escala Veredal no posee serie de tiempo continua para modelación matemática pura.")
     else:
         col_opt1, col_opt2 = st.columns([1, 2.5])
@@ -1024,6 +1025,7 @@ with tab_opt:
             t_total = np.arange(0, max(t_data) + t_max + 1)
             anios_totales = t_total + t_data_raw.min()
             
+            import plotly.graph_objects as go
             fig2 = go.Figure()
             # Mostramos TODO el histórico en puntos negros
             fig2.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Históricos', marker=dict(color='black', size=8)))
@@ -1034,6 +1036,7 @@ with tab_opt:
             for mod in modelos_sel:
                 y_pred = np.zeros_like(t_total, dtype=float)
                 try:
+                    from scipy.optimize import curve_fit
                     if mod == "Exponencial":
                         if opt_auto: 
                             popt, _ = curve_fit(f_exp, t_data, p_data, p0=[p0_val, 0.01])
@@ -1098,12 +1101,12 @@ with tab_opt:
                             resultados_modelos[mod] = {"popt": [1, 10, p0_val, 0], "r2": r2_val, "latex": r"P(t) = a \cdot t^3 + b \cdot t^2 + c \cdot t + d", "vars": ["a", "b", "c", "d"]}
 
                     fig2.add_trace(go.Scatter(x=anios_totales, y=y_pred, mode='lines', name=mod, line=dict(width=3, dash='dot' if opt_auto else 'solid')))
-                except: 
+                except Exception as e: 
                     pass # Si un modelo matemático falla, simplemente no lo dibuja
 
             fig2.update_layout(title="Proyección de Modelos Dinámicos", xaxis_title="Año", yaxis_title="Población", hovermode="x unified", height=500)
             st.plotly_chart(fig2, use_container_width=True)
-
+            
         # ----------------------------------------------------------------------
         # NUEVO PANEL: AUDITORÍA DE ECUACIONES Y PARÁMETROS MATEMÁTICOS
         # ----------------------------------------------------------------------
