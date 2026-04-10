@@ -552,7 +552,7 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
     if 'df_mapa_base' not in locals() or df_mapa_base.empty or 'Territorio' not in df_mapa_base.columns:
         import geopandas as gpd
         import streamlit as st
-        st.warning("⚠️ Esperando datos poblacionales del panel lateral... (Verifica la carga de datos veredales).")
+        st.warning("⚠️ Esperando datos poblacionales... (Asegúrate de que el archivo 'veredas_Antioquia.csv' esté cargado usando el separador punto y coma ';').")
         gdf_final = gpd.GeoDataFrame() # Escudo activado: crea un mapa vacío seguro
     else:
         try:
@@ -587,9 +587,12 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
                 df_mapa_base['Territorio_Merge'] = df_mapa_base['Territorio'].apply(clean_map_text)
                 df_mapa_base['Padre_Merge'] = df_mapa_base['Padre'].apply(clean_map_text)
                 
+                # --- FIX: Escudo para asegurar que la variable del selector exista ---
+                mpio_seguro = locals().get('mpio_sel', globals().get('mpio_sel', "TODOS (Ver Mapa Completo)"))
+                
                 # Filtro de rendimiento: Si elegimos un municipio, solo cargamos los polígonos de ese municipio
-                if mpio_sel != "TODOS (Ver Mapa Completo)":
-                    mpio_sel_clean = clean_map_text(mpio_sel)
+                if mpio_seguro != "TODOS (Ver Mapa Completo)":
+                    mpio_sel_clean = clean_map_text(mpio_seguro)
                     gdf_territorios = gdf_territorios[gdf_territorios['Padre_Merge'] == mpio_sel_clean]
                 
                 # El Cruce Maestro: Unimos los dibujos (GeoJSON) con los números (CSV)
@@ -602,7 +605,7 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
                 gdf_final = gpd.GeoDataFrame()
                 
         except Exception as e:
-            st.warning(f"⚠️ Capa espacial no encontrada. Sube el GeoJSON Veredal en el Panel de Administración. Error técnico: {e}")
+            st.warning(f"⚠️ Capa espacial no encontrada en Supabase. Error técnico: {e}")
             import geopandas as gpd
             gdf_final = gpd.GeoDataFrame()
     
@@ -1253,8 +1256,13 @@ with tab_mapas:
                     padre_key = prop_padre_input.replace("properties.", "") if prop_padre_input.strip() else ""
                     
                     for feature in geo_data['features']:
-                        val_terr = feature['properties'].get(prop_key, "")
-                        val_padre = str(feature['properties'].get(padre_key, "")) if padre_key else ""
+                        props = feature['properties']
+                        
+                        # Buscamos la llave original, o en minúsculas (PostGIS), o en mayúsculas
+                        val_terr = str(props.get(prop_key, props.get(prop_key.lower(), props.get(prop_key.upper(), ""))))
+                        val_padre = ""
+                        if padre_key:
+                            val_padre = str(props.get(padre_key, props.get(padre_key.lower(), props.get(padre_key.upper(), ""))))
                         
                         # Fix caracteres mutantes desde la fuente
                         val_terr = normalizar_texto(val_terr)
