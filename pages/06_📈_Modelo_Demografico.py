@@ -482,9 +482,15 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
             filtro_zona = cuenca_sel
             titulo_terr = f"{cuenca_sel}"
             
-            # --- FIX: RECONSTRUCCIÓN MATEMÁTICA DE LA CURVA ---
-            # Extraemos los parámetros de la IA para esta cuenca específica
-            fila_cuenca = df_cuencas_solo[(df_cuencas_solo['Territorio'] == cuenca_sel) & (df_cuencas_solo['Area'] == tipo_area)].iloc[0]
+            # --- FIX: RECONSTRUCCIÓN MATEMÁTICA SEGURA ---
+            # Filtramos los datos de la cuenca seleccionada
+            cuenca_data = df_cuencas_solo[df_cuencas_solo['Territorio'] == cuenca_sel]
+            
+            # Por defecto, extraemos la curva 'Total'. Si no existe, tomamos el primer registro.
+            if 'Total' in cuenca_data['Area'].values:
+                fila_cuenca = cuenca_data[cuenca_data['Area'] == 'Total'].iloc[0]
+            else:
+                fila_cuenca = cuenca_data.iloc[0]
             
             # Recreamos el vector de años histórico + proyecciones
             años_hist = np.arange(1985, 2043) 
@@ -500,11 +506,9 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 pob_hist = a * np.exp(b * (años_hist - 1985))
             elif 'Polinomial' in modelo_ganador:
                 A, B, C, D = fila_cuenca.get('Poly_A', 0), fila_cuenca.get('Poly_B', 0), fila_cuenca.get('Poly_C', 0), fila_cuenca.get('Poly_D', 0)
-                # Normalizamos el año para el polinomio (como se hizo en el entrenamiento)
                 x_norm = años_hist - 1985
                 pob_hist = A*x_norm**3 + B*x_norm**2 + C*x_norm + D
             else:
-                # Si no hay modelo, dejamos la población estática
                 pob_hist = np.full_like(años_hist, fila_cuenca.get('Pob_Base', 0), dtype=float)
             
             df_mapa_base = pd.DataFrame({
