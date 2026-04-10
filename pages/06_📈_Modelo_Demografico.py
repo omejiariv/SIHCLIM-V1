@@ -1677,31 +1677,36 @@ with tab_rankings:
     df_rank = pd.DataFrame()
     titulo_ranking = ""
     
-    if "Nacional" in escala_sel:
-        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
-        df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
-        titulo_ranking = "Departamentos"
-        
-    elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
-        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == depto_sel)].groupby('municipio')['Total'].sum().reset_index()
-        df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
-        titulo_ranking = f"Municipios de {depto_sel}"
-        
-    elif "Regional" in escala_sel or "Municipal (Regiones)" in escala_sel:
-        # SOLUCIÓN ERROR: Capturamos la región sin importar cómo se llamó la variable arriba
-        region_activa = reg_sel if 'reg_sel' in locals() else region_sel if 'region_sel' in locals() else "Andina"
-        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['Macroregion'] == region_activa)].groupby('municipio')['Total'].sum().reset_index()
-        df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
-        titulo_ranking = f"Municipios de {region_activa}"
-        
-    else:
-        # Veredas y Cuencas
-        df_rank = df_mapa_base.copy()
-        # SOLUCIÓN ARCOÍRIS VEREDAL: Le ponemos el apellido (Municipio) a la vereda para evitar homonimias
-        if 'Padre' in df_rank.columns:
-            df_rank['Territorio'] = df_rank['Territorio'].astype(str).str.title() + " (" + df_rank['Padre'].astype(str).str.title() + ")"
-        titulo_ranking = "Territorios"
-
+        # --- FIX DEFINITIVO: RANKINGS DINÁMICOS CON ESCUDO DE VARIABLES ---
+        if "Global" in escala_sel or "Nacional" in escala_sel:
+            df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
+            df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+            titulo_ranking = "Departamentos"
+            
+        elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
+            # Escudo: busca el nuevo nombre (agrupador_sel) o usa ANTIOQUIA por defecto
+            padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "ANTIOQUIA"))
+            df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
+            df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
+            titulo_ranking = f"Municipios de {padre_seguro}"
+            
+        elif "Municipal (Regiones)" in escala_sel:
+            padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "Oriente"))
+            if 'Macroregion' in df_mun.columns:
+                df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['Macroregion'] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
+            else:
+                df_rank = pd.DataFrame(columns=['municipio', 'Total'])
+            df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
+            titulo_ranking = f"Municipios de {padre_seguro}"
+            
+        else:
+            # Para Veredas o Cuencas, usamos directamente la base del mapa
+            if 'df_mapa_base' in locals() and not df_mapa_base.empty and 'Territorio' in df_mapa_base.columns:
+                df_rank = df_mapa_base.groupby('Territorio')['Total'].sum().reset_index()
+            else:
+                df_rank = pd.DataFrame(columns=['Territorio', 'Total'])
+            titulo_ranking = "Territorios Seleccionados"
+            
     # Escudo Numérico Universal para la Pestaña 5
     if not df_rank.empty and 'Total' in df_rank.columns:
         df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
