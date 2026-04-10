@@ -1161,11 +1161,16 @@ with tab_mapas:
             else:
                 df_mapa_plot = df_mapa_año.copy()
                 
-        # --- LA NUEVA ESTRATEGIA ANTI-PELUSAS (SLIVERS TOPOLÓGICOS) ---
-        if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
-            # Eliminamos visualmente las "Cabeceras" del mapa de cuencas para borrar el ruido del GeoJSON.
-            # El astype(str) previene errores si hay valores nulos o flotantes en la columna
-            df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].astype(str).str.contains('CABECERA', case=False, na=False)]
+        # --- LA NUEVA ESTRATEGIA ANTI-PELUSAS Y ANTI-TOTALES ---
+        if 'Territorio' in df_mapa_plot.columns:
+            # 1. Eliminamos las filas de sumatoria general que no son territorios reales (El territorio "Total")
+            df_mapa_plot = df_mapa_plot[df_mapa_plot['Territorio'].astype(str).str.upper() != 'TOTAL']
+            
+            # 2. Limpieza de Cabeceras para el mapa de Cuencas
+            if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
+                # Eliminamos visualmente las "Cabeceras" del mapa de cuencas para borrar el ruido del GeoJSON.
+                # El astype(str) previene errores si hay valores nulos o flotantes en la columna
+                df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].astype(str).str.contains('CABECERA', case=False, na=False)]
             
     col_map1, col_map2 = st.columns([1, 3])
     
