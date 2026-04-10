@@ -1142,11 +1142,12 @@ with tab_opt:
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR)
 # ==========================================
 with tab_mapas:
-    # Usamos un pequeño seguro por si titulo_terr no existe en alguna escala
-    titulo_tab_mapa = titulo_terr if 'titulo_terr' in locals() else "Territorio Seleccionado"
-    st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_tab_mapa} ({año_sel})")
+    # --- FIX: ESCUDO SUPREMO ANTI-NAME ERROR ---
+    titulo_seguro_mapa = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
+    st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_seguro_mapa} ({año_sel})")
     
-    if escala_sel != "Veredal (Antioquia)":
+    # Se ajustó el nombre exacto con el emoji para que el filtro coincida perfectamente
+    if escala_sel != "🌿 Veredal (Antioquia)":
         area_mapa = st.radio("Filtro de Zona Geográfica:", ["Total", "Urbano", "Rural"], horizontal=True)
     else:
         area_mapa = "Rural"
@@ -1177,8 +1178,8 @@ with tab_mapas:
         # --- LA NUEVA ESTRATEGIA ANTI-PELUSAS (SLIVERS TOPOLÓGICOS) ---
         if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
             # Eliminamos visualmente las "Cabeceras" del mapa de cuencas para borrar el ruido del GeoJSON.
-            # (La población matemática sigue intacta en el resto de la app)
-            df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.contains('CABECERA', case=False, na=False)]
+            # El astype(str) previene errores si hay valores nulos o flotantes en la columna
+            df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].astype(str).str.contains('CABECERA', case=False, na=False)]
             
     col_map1, col_map2 = st.columns([1, 3])
     
@@ -1186,6 +1187,7 @@ with tab_mapas:
         st.markdown("**⚙️ Configuración del GeoJSON**")
         
         # --- SOLUCIÓN: SELECTORES EN CASCADA PREDEFINIDOS ---
+        # Se mantienen los nombres de variables para no romper el código de renderizado inferior
         opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson"]
         opciones_terr = ["properties.MPIO_CNMBR", "properties.NOMBRE_VER"]
         opciones_padre = ["properties.DPTO_CCDGO", "properties.NOMB_MPIO"]
@@ -1195,7 +1197,7 @@ with tab_mapas:
         else: 
             idx_geo, idx_terr, idx_padre = 0, 0, 0
             
-        archivo_geo_input = st.selectbox("Archivo en GitHub:", opciones_geo, index=idx_geo)
+        archivo_geo_input = st.selectbox("Archivo Espacial:", opciones_geo, index=idx_geo)
         prop_geo_input = st.selectbox("Llave Territorio:", opciones_terr, index=idx_terr)
         st.markdown("**🔗 Llave Doble (Anti-Homonimia)**")
         prop_padre_input = st.selectbox("Llave Contexto:", opciones_padre, index=idx_padre)
@@ -1463,14 +1465,24 @@ with tab_matriz:
                     
                     # 2. Selección Dinámica de la Capa de Referencia (Dasimetría)
                     if tipo_area == 'Urbana':
-                        q_esp = text("SELECT mpio_nombr as mun_name, geometry FROM cabeceras_municipales")
+                        q_esp = text("SELECT * FROM cabeceras_municipales")
                     elif tipo_area == 'Rural':
-                        q_esp = text("SELECT nombre_mpi as mun_name, geometry FROM centros_poblados")
+                        q_esp = text("SELECT * FROM centros_poblados")
                     else:
-                        q_esp = text("SELECT nombre_municipio as mun_name, geometry FROM municipios")
-                    
-                    gdf_esp = gpd.read_postgis(q_esp, engine_geo, geom_col="geometry").to_crs(epsg=3116)
-                    
+                        q_esp = text("SELECT * FROM municipios")
+
+                    # Leemos la tabla espacial desde Supabase sin forzar nombres en SQL
+                    gdf_esp = gpd.read_postgis(q_esp, engine_geo, geom_col="geometry")
+
+                    # --- FIX: ESCUDO RENOMBRADOR UNIVERSAL ---
+                    # Busca la columna del municipio sin importar cómo se llame en Supabase y la estandariza
+                    col_mpio_das = next((c for c in gdf_esp.columns if c.lower() in ['mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'nombre_municipio', 'municipio', 'nomb_mpio', 'mun_name']), None)
+                    if col_mpio_das:
+                        gdf_esp = gdf_esp.rename(columns={col_mpio_das: 'mun_name'})
+
+                    # Proyectamos a coordenadas planas (MAGNA-SIRGAS) para cálculos de área precisos
+                    gdf_esp = gdf_esp.to_crs(epsg=3116)
+
                     # 🔥 SANACIÓN TOPOLÓGICA 2: "Planchamos" los polígonos del DANE/Municipios
                     gdf_esp['geometry'] = gdf_esp.geometry.buffer(0)
                     
