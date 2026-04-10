@@ -1441,12 +1441,14 @@ with tabs[15]:
                 if file_geo_mun:
                     import geopandas as gpd
                     from modules.db_manager import get_engine
+                    import time
                     
                     engine = get_engine()
                     estado = st.empty()
+                    barra = st.progress(0)
                     
                     try:
-                        estado.info("⏳ Leyendo geometría municipal (esto puede tardar unos segundos)...")
+                        estado.info("⏳ Paso 1: Leyendo geometría municipal (esto puede tardar unos segundos)...")
                         # Cargamos el mapa a la memoria
                         gdf_mun = gpd.read_file(file_geo_mun)
                         
@@ -1455,14 +1457,27 @@ with tabs[15]:
                         if gdf_mun.crs is None or gdf_mun.crs.to_string() != "EPSG:4326":
                             gdf_mun = gdf_mun.to_crs("EPSG:4326")
                             
-                        estado.info("🚀 Inyectando polígonos a Supabase (PostGIS)...")
+                        estado.info("⏳ Paso 2: Preparando Supabase (Borrando datos anteriores)...")
+                        barra.progress(30)
                         
-                        # Guardamos explícitamente en la tabla 'municipios' que lee tu mapa
-                        gdf_mun.to_postgis('municipios', engine, if_exists='replace', index=False)
+                        # Intentamos forzar el borrado de la tabla con SQL directo antes de usar to_postgis
+                        with engine.connect() as con:
+                            con.execute(text("DROP TABLE IF EXISTS municipios CASCADE"))
+                            con.commit()
+                            
+                        time.sleep(2) # Pausa técnica para que PostgreSQL respire
                         
-                        estado.success(f"✅ ¡Éxito Absoluto! Mapa municipal inyectado en la tabla 'municipios'.")
+                        estado.info("🚀 Paso 3: Inyectando polígonos por bloques para evitar Timeout...")
+                        barra.progress(60)
+                        
+                        # Subimos la tabla usando 'chunksize' para no ahogar la base de datos
+                        gdf_mun.to_postgis('municipios', engine, if_exists='replace', index=False, chunksize=50)
+                        
+                        barra.progress(100)
+                        estado.success(f"✅ ¡Éxito Absoluto! {len(gdf_mun)} Municipios inyectados en la tabla 'municipios'.")
                         st.balloons()
                     except Exception as e:
+                        barra.empty()
                         st.error(f"❌ Error crítico en la inyección: {e}")
                 else:
                     st.warning("⚠️ Por favor, sube el archivo .geojson primero.")
