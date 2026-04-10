@@ -1194,22 +1194,29 @@ with tab_mapas:
     col_map1, col_map2 = st.columns([1, 3])
     
     with col_map1:
-        st.markdown("**⚙️ Configuración del GeoJSON**")
+        st.markdown("**⚙️ Configuración de la Capa**")
         
-        # --- SOLUCIÓN: SELECTORES EN CASCADA PREDEFINIDOS ---
-        # Se mantienen los nombres de variables para no romper el código de renderizado inferior
-        opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson"]
-        opciones_terr = ["properties.MPIO_CNMBR", "properties.NOMBRE_VER"]
-        opciones_padre = ["properties.DPTO_CCDGO", "properties.NOMB_MPIO"]
+        # --- FIX DEFINITIVO: RUTEO CORRECTO DE CAPAS ---
+        opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson", "cuencas_SP.geojson"]
         
-        if escala_sel in ["🌿 Veredal (Antioquia)", "💧 Cuencas Hidrográficas"]: 
-            idx_geo, idx_terr, idx_padre = 1, 1, 1
+        if escala_sel == "🌿 Veredal (Antioquia)": 
+            idx_geo = 1
+        elif escala_sel == "💧 Cuencas Hidrográficas":
+            idx_geo = 2
         else: 
-            idx_geo, idx_terr, idx_padre = 0, 0, 0
+            idx_geo = 0
             
         archivo_geo_input = st.selectbox("Archivo Espacial:", opciones_geo, index=idx_geo)
+        
+        # Ampliamos las llaves para incluir las típicas del IDEAM/MapShaper (Cuencas)
+        opciones_terr = ["properties.MPIO_CNMBR", "properties.NOMBRE_VER", "properties.nombre", "properties.NOM_SUBC", "properties.nom_cuenca"]
+        idx_terr = 1 if idx_geo == 1 else (2 if idx_geo == 2 else 0)
         prop_geo_input = st.selectbox("Llave Territorio:", opciones_terr, index=idx_terr)
-        st.markdown("**🔗 Llave Doble (Anti-Homonimia)**")
+        
+        st.markdown("**🔗 Llave Doble (Contexto)**")
+        # Las cuencas no suelen necesitar llave doble, así que le damos una opción vacía ("")
+        opciones_padre = ["", "properties.DPTO_CCDGO", "properties.NOMB_MPIO"]
+        idx_padre = 2 if idx_geo == 1 else (1 if idx_geo == 0 else 0)
         prop_padre_input = st.selectbox("Llave Contexto:", opciones_padre, index=idx_padre)
     
     with col_map2:
