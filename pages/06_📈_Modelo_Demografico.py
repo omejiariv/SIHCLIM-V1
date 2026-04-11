@@ -636,13 +636,10 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
 # =====================================================================
 
 # 1. ESCUDO DEFINITIVO ANTI-NAME ERROR
-try:
-    _ = filtro_zona
+try: _ = filtro_zona
 except NameError:
-    try:
-        filtro_zona = titulo_terr
-    except NameError:
-        filtro_zona = "Colombia"
+    try: filtro_zona = titulo_terr
+    except NameError: filtro_zona = "Colombia"
 
 territorio_busqueda = str(filtro_zona).upper().strip()
 if escala_sel == "🇨🇴 Nacional (Colombia)": territorio_busqueda = "COLOMBIA"
@@ -650,8 +647,6 @@ if escala_sel == "🇨🇴 Nacional (Colombia)": territorio_busqueda = "COLOMBIA
 # 2. ESCUDO UNIVERSAL ANTI ZIG-ZAGS (Limpia matemática y gráficas)
 if len(años_hist) > 0:
     df_clean = pd.DataFrame({'Año': años_hist, 'Pob': pob_hist})
-    
-    # --- ESCUDO INTELIGENTE: Solo limpiar si es texto ---
     if df_clean['Pob'].dtype == object:
         df_clean['Pob'] = pd.to_numeric(df_clean['Pob'].astype(str).str.replace(',', ''), errors='coerce')
     else:
@@ -659,20 +654,16 @@ if len(años_hist) > 0:
         
     df_clean = df_clean.fillna(0)
     df_clean = df_clean[df_clean['Pob'] > 0] 
-    df_clean = df_clean.groupby('Año')['Pob'].max().reset_index() 
-    df_clean = df_clean.sort_values(by='Año') 
+    df_clean = df_clean.groupby('Año')['Pob'].max().reset_index().sort_values(by='Año') 
     
     x_hist = df_clean['Año'].values.astype(float)
     y_hist = df_clean['Pob'].values.astype(float)
-    
-    # ¡LA CURA DEL ZIG-ZAG! Obligamos a Plotly a usar los datos limpios y ordenados
     años_hist = x_hist
     pob_hist = y_hist
 else:
     x_hist, y_hist = np.array([]), np.array([])
 
 # 3. Eje X Futuro
-# Escudo protector para detectar si la columna es 'año' o 'Año'
 col_anio_nac = 'año' if 'año' in df_nac.columns else 'Año'
 año_maximo = int(max(df_nac[col_anio_nac].max() if 'df_nac' in locals() and not df_nac.empty else 2100, 2100))
 x_proj = np.arange(1950, año_maximo + 1, 1) 
@@ -681,36 +672,56 @@ proyecciones = {'Año': x_proj, 'Real': [np.nan]*len(x_proj)}
 for i, año in enumerate(x_proj):
     if año in x_hist: proyecciones['Real'][i] = y_hist[np.where(x_hist == año)[0][0]]
 
-# 4. Cargar Matriz Maestra
-ruta_matriz = os.path.join(RUTA_RAIZ, "data", "Matriz_Maestra_Demografica.csv")
-df_matriz = pd.DataFrame()
-if os.path.exists(ruta_matriz):
-    df_matriz = pd.read_csv(ruta_matriz, sep=';' if ';' in open(ruta_matriz).readline() else ',')
+# 4. Cargar Matriz Maestra y aplicar Top-Down
+if 'df_matriz_demografica' in st.session_state:
+    df_matriz = st.session_state['df_matriz_demografica']
+else:
+    try: df_matriz = pd.read_csv(os.path.join(RUTA_RAIZ, "data", "Matriz_Maestra_Demografica.csv"), sep=';' if ';' in open(os.path.join(RUTA_RAIZ, "data", "Matriz_Maestra_Demografica.csv")).readline() else ',')
+    except: df_matriz = pd.DataFrame()
 
 def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
 
 row_matriz = pd.DataFrame()
-if not df_matriz.empty and escala_sel not in ["🌍 Global y Suramérica", "💧 Cuencas Hidrográficas", "Veredal (Antioquia)"]:
-    mask = df_matriz['Territorio'].astype(str).str.upper().str.strip() == territorio_busqueda
-    row_matriz = df_matriz[mask]
+modo_calc = "Cálculo en Vivo (Robusto)"
+
+if not df_matriz.empty:
+    if escala_sel == "🌿 Veredal (Antioquia)":
+        # --- LA MAGIA TOP-DOWN: Heredar la curva Rural del Municipio Padre ---
+        if mpio_sel != "TODOS (Ver Mapa Completo)":
+            mpio_padre = normalizar_texto(mpio_sel)
+            mask = (df_matriz['Nivel'] == 'Municipal') & (df_matriz['Territorio'].apply(normalizar_texto) == mpio_padre) & (df_matriz['Area'] == 'Rural')
+            row_matriz = df_matriz[mask]
+            modo_calc = f"Matriz Maestra (Top-Down Rural: {mpio_sel})"
+        else:
+            mask = (df_matriz['Nivel'] == 'Departamental') & (df_matriz['Territorio'].apply(normalizar_texto) == 'ANTIOQUIA') & (df_matriz['Area'] == 'Rural')
+            row_matriz = df_matriz[mask]
+            modo_calc = "Matriz Maestra (Top-Down Rural: Antioquia)"
+            
+    elif escala_sel not in ["🌍 Global y Suramérica", "💧 Cuencas Hidrográficas"]:
+        mask = df_matriz['Territorio'].astype(str).str.upper().str.strip() == territorio_busqueda
+        row_matriz = df_matriz[mask]
 
 # --- 5. INYECTAR RESULTADOS ---
 if not row_matriz.empty:
-    # MODO 1: MATRIZ MAESTRA
     row = row_matriz.iloc[0]
-    k_opt = float(str(row['K']).replace('.', '').replace(',', '.')) if isinstance(row['K'], str) else float(row['K'])
-    a_opt = float(str(row['a']).replace(',', '.'))
-    r_opt = float(str(row['r']).replace(',', '.'))
+    k_opt = float(str(row['Log_K']).replace('.', '').replace(',', '.')) if isinstance(row['Log_K'], str) else float(row['Log_K'])
+    a_opt = float(str(row['Log_a']).replace(',', '.'))
+    r_opt = float(str(row['Log_r']).replace(',', '.'))
     anio_base = int(row['Año_Base'])
     
     x_proj_norm = x_proj - anio_base
     proyecciones['Logístico'] = f_log(x_proj_norm, k_opt, a_opt, r_opt)
     
+    # Inyectar Polinomial y Exponencial si existen
+    if 'Poly_A' in row:
+        A, B, C, D = row['Poly_A'], row['Poly_B'], row['Poly_C'], row['Poly_D']
+        proyecciones['Lineal'] = A*(x_proj_norm**3) + B*(x_proj_norm**2) + C*x_proj_norm + D
+    if 'Exp_a' in row:
+        proyecciones['Exponencial'] = row['Exp_a'] * np.exp(row['Exp_b'] * x_proj_norm)
+        
     param_K, param_r = k_opt, r_opt
-    modo_calc = f"Matriz Maestra (R²: {row.get('R2', 'N/A')})"
-    
 else:
-    # MODO 2: FALLBACK ROBUSTO (Macroregiones, Cuencas, Veredas)
+    # MODO 2: FALLBACK ROBUSTO
     x_train, y_train = x_hist, y_hist
     x_offset = x_train[0] if len(x_train) > 0 else 1950
     x_train_norm = x_train - x_offset
@@ -718,32 +729,23 @@ else:
     
     try:
         p0_val = max(1, y_train[0] if len(y_train)>0 else 1)
-        p_final = y_train[-1] if len(y_train)>0 else p0_val
-        max_y = max(y_train)
-        
-        es_creciente = p_final >= p0_val
+        max_y = max(y_train) if len(y_train)>0 else p0_val
+        es_creciente = (y_train[-1] if len(y_train)>0 else p0_val) >= p0_val
         k_guess = max_y * 1.2 if es_creciente else max_y
         a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
         r_guess = 0.02 if es_creciente else -0.02
         
-        # Ampliamos los límites para que el modelo nunca se rinda y caiga a cero
         limites = ([max_y * 0.8, 0, -0.2], [max_y * 3.0 if es_creciente else max_y * 1.1, np.inf, 0.3])
-        
         popt_log, _ = curve_fit(f_log, x_train_norm, y_train, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
         proyecciones['Logístico'] = f_log(x_proj_norm, *popt_log)
-        
         param_K, param_r = popt_log[0], popt_log[2]
-        modo_calc = "Cálculo en Vivo (Robusto)"
-    except Exception as e:
-        # Failsafe extremo: Si las matemáticas fallan, asume el promedio reciente
+    except Exception:
         val_seguro = np.mean(y_train[-3:]) if len(y_train) >= 3 else (y_train[-1] if len(y_train)>0 else 0)
         proyecciones['Logístico'] = np.full(len(x_proj), val_seguro)
         param_K, param_r = "N/A", 0
-        modo_calc = "Ajuste Promedio (Falla Matemática)"
 
-# Uniformizamos
-proyecciones['Lineal'] = proyecciones['Logístico'] 
-proyecciones['Exponencial'] = proyecciones['Logístico']
+if 'Exponencial' not in proyecciones: proyecciones['Exponencial'] = proyecciones['Logístico']
+if 'Lineal' not in proyecciones: proyecciones['Lineal'] = proyecciones['Logístico']
 df_proj = pd.DataFrame(proyecciones)
 
 # --- CONFIGURACIÓN DE PESTAÑAS (TABS) ---
@@ -1167,7 +1169,7 @@ with tab_opt:
             st.caption("Presiona 'Optimizar Parámetros' o ajusta manualmente para visualizar las ecuaciones.")
                 
 # ==========================================
-# PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR)
+# PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR ZERO-CONFIG)
 # ==========================================
 with tab_mapas:
     titulo_seguro_mapa = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
@@ -1176,11 +1178,16 @@ with tab_mapas:
     if escala_sel == "🌍 Global y Suramérica":
         st.info("🌍 A escala Global/Suramérica la visualización espacial se encuentra desactivada. Los datos consolidados están disponibles en el panel de tendencias.")
     else:
-        if escala_sel != "🌿 Veredal (Antioquia)":
-            area_mapa = st.radio("Filtro de Zona Geográfica:", ["Total", "Urbano", "Rural"], horizontal=True)
-        else:
-            area_mapa = "Rural"
-            st.info("ℹ️ A escala veredal, toda la población es considerada rural.")
+        # Mini-menú integrado y estético
+        col_m1, col_m2 = st.columns([1, 4])
+        with col_m1:
+            if escala_sel != "🌿 Veredal (Antioquia)":
+                area_mapa = st.radio("Filtro Poblacional:", ["Total", "Urbano", "Rural"])
+            else:
+                area_mapa = "Rural"
+                st.info("ℹ️ A escala veredal, toda la población se modela como rural.")
+        with col_m2:
+            st.success("🤖 **Motor Topológico Automático:** El sistema está conectando las capas espaciales (GeoJSON) con las matrices demográficas en tiempo real.")
 
         if 'año' in df_mapa_base.columns:
             df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)].copy()
@@ -1206,7 +1213,7 @@ with tab_mapas:
                 df_mapa_plot = df_mapa_plot[df_mapa_plot['Territorio'].astype(str).str.upper() != 'TOTAL']
                 if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
                     df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].astype(str).str.contains('CABECERA', case=False, na=False)]
-                
+
         if not df_mapa_plot.empty:
             # Estandarización de columnas a prueba de balas
             if 'Territorio' not in df_mapa_plot.columns:
@@ -1228,18 +1235,24 @@ with tab_mapas:
                 
                 engine_geo = get_engine()
                 
-                # --- 1. ARCHIVO ESPACIAL AUTOMÁTICO (Sin interfaz) ---
+                # --- LÓGICA ESPACIAL AUTOMÁTICA (Bajo el Capó) ---
                 if "veredal" in escala_sel.lower(): 
                     q_geo = text("SELECT * FROM veredas_geometria")
+                    prop_geo = "NOMBRE_VER"
+                    prop_padre = "NOMB_MPIO"
                 elif "cuencas" in escala_sel.lower(): 
                     q_geo = text("SELECT * FROM cuencas_geometria")
+                    prop_geo = "NOM_NSS3" # La heurística buscará automáticamente en la jerarquía
+                    prop_padre = ""
                 else: 
                     q_geo = text("SELECT * FROM municipios")
+                    prop_geo = "MPIO_CNMBR"
+                    prop_padre = "DPTO_CCDGO"
                     
                 gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
                 
                 if not gdf_mapa.empty:
-                    # --- 2. MATCH_ID AUTOMÁTICO INTELIGENTE ---
+                    # 1. MATCH_ID Dinámico en Pandas
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) 
                         if str(row['Padre']).strip() and "cuencas" not in escala_sel.lower() 
@@ -1255,9 +1268,10 @@ with tab_mapas:
                         "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA"
                     }
                     
+                    # 2. MATCH_ID Dinámico en el GeoDataFrame (Buscador Inteligente)
                     def generar_id_geojson(row):
                         if "cuencas" in escala_sel.lower():
-                            cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah']
+                            cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
                             val_terr = next((str(row[c]) for c in cols_posibles if c in row and pd.notnull(row[c])), "")
                             return normalizar_texto(val_terr)
                         elif "veredal" in escala_sel.lower():
@@ -1274,7 +1288,7 @@ with tab_mapas:
 
                     gdf_mapa['MATCH_ID'] = gdf_mapa.apply(generar_id_geojson, axis=1)
                     
-                    # --- 3. AUTO-ENCUADRE EXACTO CON GEOPANDAS ---
+                    # 3. AUTO-ENCUADRE MILIMÉTRICO (Bounding Box)
                     ids_en_tabla = df_mapa_plot['MATCH_ID'].unique()
                     gdf_filtrado = gdf_mapa[gdf_mapa['MATCH_ID'].isin(ids_en_tabla)]
                     
@@ -1288,7 +1302,7 @@ with tab_mapas:
                         max_diff = max(maxx - minx, maxy - miny)
                         if max_diff < 0.1: zoom_level = 11.5
                         elif max_diff < 0.3: zoom_level = 10
-                        elif max_diff < 0.8: zoom_level = 9
+                        elif max_diff < 0.8: zoom_level = 8.5
                         elif max_diff < 2.5: zoom_level = 7
                         elif max_diff < 5.0: zoom_level = 6
                         else: zoom_level = 5
@@ -1297,7 +1311,7 @@ with tab_mapas:
                     q_val = 0.85 if area_mapa == "Total" else 0.90
                     max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
                     
-                    # --- 4. RENDERIZADO DEL MAPA (FULL WIDTH + MOUSE WHEEL ZOOM) ---
+                    # 4. RENDERIZADO DEL MAPA (Ancho Completo + Rueda de Mouse)
                     import plotly.express as px
                     fig_mapa = px.choropleth_mapbox(
                         df_mapa_plot,
@@ -1314,10 +1328,15 @@ with tab_mapas:
                         labels={'Total': f'Población {area_mapa}'},
                         hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
                     )
-                    fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
                     
-                    # HABILITAMOS SCROLL ZOOM EXPLICITAMENTE AQUÍ
-                    st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True})
+                    # Layout para ocupar el 100% de la pantalla
+                    fig_mapa.update_layout(
+                        margin={"r":0,"t":0,"l":0,"b":0},
+                        height=700 # Altura ampliada
+                    )
+                    
+                    # MAGIA APLICADA: scrollZoom activa la rueda del ratón
+                    st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                     
                     df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(gdf_mapa['MATCH_ID'].values)
                     faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
