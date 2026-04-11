@@ -645,6 +645,14 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         st.sidebar.error(f"❌ Error general: {e}")
         df_mapa_base = pd.DataFrame()
     
+# --- SELECTOR GLOBAL DE ÁREA (Afecta Gráficos y Mapas) ---
+st.markdown("---")
+if escala_sel != "🌿 Veredal (Antioquia)":
+    area_global = st.radio("Filtro Poblacional Global:", ["Total", "Urbano", "Rural"], horizontal=True)
+else:
+    area_global = "Rural"
+    st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
+
 # =====================================================================
 # --- 4. CÁLCULO DE PROYECCIONES (NUEVO PARADIGMA TOP-DOWN) ---
 # =====================================================================
@@ -765,14 +773,6 @@ else:
 if 'Exponencial' not in proyecciones: proyecciones['Exponencial'] = proyecciones['Logístico']
 if 'Lineal' not in proyecciones: proyecciones['Lineal'] = proyecciones['Logístico']
 df_proj = pd.DataFrame(proyecciones)
-
-# --- SELECTOR GLOBAL DE ÁREA (Afecta Gráficos y Mapas) ---
-st.markdown("---")
-if escala_sel != "🌿 Veredal (Antioquia)":
-    area_global = st.radio("Filtro Poblacional Global:", ["Total", "Urbano", "Rural"], horizontal=True)
-else:
-    area_global = "Rural"
-    st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
 
 # --- CONFIGURACIÓN DE PESTAÑAS (TABS) ---
 tab_modelos, tab_opt, tab_mapas, tab_matriz, tab_rankings, tab_descargas = st.tabs([
