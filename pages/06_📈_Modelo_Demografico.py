@@ -223,7 +223,6 @@ def cargar_datos_limpios():
             # Forzamos el nombre corto para que cruce con el GeoJSON
             'Archipiélago De San Andrés, Providencia Y Santa Catalina': 'Archipiélago De San Andrés',
             'Archipielago De San Andres': 'Archipiélago De San Andrés',
-            'Valle Del Cauca': 'Valle',
             'Bogota D.c.': 'Bogotá, D.C.'
         }
         df_master['depto_nom'] = df_master['depto_nom'].replace(reemplazos_deptos)
@@ -478,49 +477,53 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         
         if not df_cuencas_solo.empty:
             lista_cuencas = sorted(df_cuencas_solo['Territorio'].dropna().astype(str).unique())
-            cuenca_sel = st.sidebar.selectbox("🌊 Seleccione la Cuenca (Alta Precisión):", lista_cuencas)
+            # 1. CAMBIO A MULTISELECT
+            cuenca_sel = st.sidebar.multiselect("🌊 Seleccione la(s) Cuenca(s) (Alta Precisión):", lista_cuencas, default=[lista_cuencas[0]] if lista_cuencas else None)
             
-            filtro_zona = cuenca_sel
-            titulo_terr = f"{cuenca_sel}"
-            
-            # --- FIX: RECONSTRUCCIÓN MATEMÁTICA SEGURA ---
-            # Filtramos los datos de la cuenca seleccionada
-            cuenca_data = df_cuencas_solo[df_cuencas_solo['Territorio'] == cuenca_sel]
-            
-            # Por defecto, extraemos la curva 'Total'. Si no existe, tomamos el primer registro.
-            if 'Total' in cuenca_data['Area'].values:
-                fila_cuenca = cuenca_data[cuenca_data['Area'] == 'Total'].iloc[0]
+            if cuenca_sel:
+                filtro_zona = " + ".join(cuenca_sel[:2]) + ("..." if len(cuenca_sel)>2 else "")
+                titulo_terr = f"Cuencas: {filtro_zona}"
+                
+                años_hist = np.arange(1985, 2043)
+                pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
+                mapa_data = []
+                
+                # 2. MOTOR DE AGREGACIÓN: Sumamos las curvas de todas las cuencas seleccionadas
+                for c in cuenca_sel:
+                    cuenca_data = df_cuencas_solo[df_cuencas_solo['Territorio'] == c]
+                    if 'Total' in cuenca_data['Area'].values:
+                        fila = cuenca_data[cuenca_data['Area'] == 'Total'].iloc[0]
+                    else:
+                        fila = cuenca_data.iloc[0]
+                    
+                    modelo_ganador = str(fila.get('Modelo_Recomendado', 'Desconocido'))
+                    pob_temp = np.zeros_like(años_hist, dtype=float)
+                    
+                    if 'Logistico' in modelo_ganador:
+                        K, a, r = fila.get('Log_K', 0), fila.get('Log_a', 0), fila.get('Log_r', 0)
+                        pob_temp = K / (1 + a * np.exp(-r * (años_hist - 1985)))
+                    elif 'Exponencial' in modelo_ganador:
+                        a, b = fila.get('Exp_a', 0), fila.get('Exp_b', 0)
+                        pob_temp = a * np.exp(b * (años_hist - 1985))
+                    elif 'Polinomial' in modelo_ganador:
+                        A, B, C, D = fila.get('Poly_A', 0), fila.get('Poly_B', 0), fila.get('Poly_C', 0), fila.get('Poly_D', 0)
+                        x_norm = años_hist - 1985
+                        pob_temp = A*x_norm**3 + B*x_norm**2 + C*x_norm + D
+                    
+                    pob_hist_acumulada += pob_temp
+                    mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': fila.get('Pob_Base', 0)})
+                
+                pob_hist = pob_hist_acumulada
+                df_mapa_base = pd.DataFrame(mapa_data)
             else:
-                fila_cuenca = cuenca_data.iloc[0]
-            
-            # Recreamos el vector de años histórico + proyecciones
-            años_hist = np.arange(1985, 2043) 
-            
-            # Leemos el modelo ganador y aplicamos la fórmula correspondiente
-            modelo_ganador = str(fila_cuenca.get('Modelo_Recomendado', 'Desconocido'))
-            
-            if 'Logistico' in modelo_ganador:
-                K, a, r = fila_cuenca.get('Log_K', 0), fila_cuenca.get('Log_a', 0), fila_cuenca.get('Log_r', 0)
-                pob_hist = K / (1 + a * np.exp(-r * (años_hist - 1985)))
-            elif 'Exponencial' in modelo_ganador:
-                a, b = fila_cuenca.get('Exp_a', 0), fila_cuenca.get('Exp_b', 0)
-                pob_hist = a * np.exp(b * (años_hist - 1985))
-            elif 'Polinomial' in modelo_ganador:
-                A, B, C, D = fila_cuenca.get('Poly_A', 0), fila_cuenca.get('Poly_B', 0), fila_cuenca.get('Poly_C', 0), fila_cuenca.get('Poly_D', 0)
-                x_norm = años_hist - 1985
-                pob_hist = A*x_norm**3 + B*x_norm**2 + C*x_norm + D
-            else:
-                pob_hist = np.full_like(años_hist, fila_cuenca.get('Pob_Base', 0), dtype=float)
-            
-            df_mapa_base = pd.DataFrame({
-                'Territorio': [cuenca_sel], 
-                'Padre': ['Antioquia'], 
-                'Total': [fila_cuenca.get('Pob_Base', 0)]
-            })
+                # Escudo si el usuario desmarca todas las cuencas en el multiselect
+                filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Ninguna", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
         else:
+            # Escudo si la matriz existe pero no tiene datos de cuencas entrenados aún
             st.sidebar.warning("⚠️ Entrena la matriz de cuencas en la pestaña 4.")
             filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
     else:
+        # Escudo supremo: La matriz maestra no existe o está corrupta (ESTAS SON TUS LÍNEAS)
         st.sidebar.error("🚨 Matriz Maestra no encontrada.")
         filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
         
@@ -1262,16 +1265,25 @@ with tab_mapas:
                 elif "veredas" in archivo_geo_input.lower():
                     q_geo = text("SELECT * FROM veredas_geometria")
                 elif "cuencas" in archivo_geo_input.lower(): 
-                    # ¡AQUÍ ESTÁ LA CORRECCIÓN! Leemos la tabla real que creó el Admin Panel
-                    q_geo = text("SELECT * FROM cuencas_geometria")
+                    q_geo = text("SELECT * FROM cuencas") # <--- CORREGIDO AQUÍ (eliminado "_geometria")
                 else:
                     q_geo = None
                     
                 if q_geo is not None:
                     gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
                     geo_data = json.loads(gdf_mapa.to_json())
+                    
+                    # --- NUEVO MOTOR DE AUTO-ENCUADRE (BOUNDING BOX) ---
+                    center_lat, center_lon = 4.57, -74.29 # Fallback Colombia
+                    if not gdf_mapa.empty:
+                        # Reproyectamos a EPSG 4326 para obtener Lat/Lon puras
+                        gdf_4326 = gdf_mapa.to_crs(epsg=4326)
+                        bounds = gdf_4326.total_bounds # [minx, miny, maxx, maxy]
+                        center_lon = (bounds[0] + bounds[2]) / 2
+                        center_lat = (bounds[1] + bounds[3]) / 2
                 else:
                     geo_data = {'features': []}
+                    center_lat, center_lon = 4.57, -74.29
                     
                 if geo_data['features']:
                     # 1. Crear ADN Único en Pandas (Convertimos a string por seguridad anti-nulos)
@@ -1287,7 +1299,7 @@ with tab_mapas:
                         "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", 
                         "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", 
                         "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", 
-                        "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLE", 
+                        "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", 
                         "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", 
                         "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA"
                     }
@@ -1329,8 +1341,8 @@ with tab_mapas:
                         color_continuous_scale="Viridis",
                         range_color=[0, max_color],  
                         mapbox_style="carto-positron",
-                        zoom=5 if escala_sel not in ["🌿 Veredal (Antioquia)", "💧 Cuencas Hidrográficas"] else 8, 
-                        center={"lat": 4.57, "lon": -74.29} if escala_sel not in ["🌿 Veredal (Antioquia)", "💧 Cuencas Hidrográficas"] else {"lat": 6.55, "lon": -75.36},
+                        zoom=7 if escala_sel in ["🌿 Veredal (Antioquia)", "💧 Cuencas Hidrográficas"] else 5, 
+                        center={"lat": center_lat, "lon": center_lon}, # <--- AUTO-ENCUADRE APLICADO
                         opacity=0.8,
                         labels={'Total': f'Población {area_mapa}'},
                         hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
