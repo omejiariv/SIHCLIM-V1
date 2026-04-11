@@ -1218,11 +1218,15 @@ with tab_mapas:
             # --- MEJORA ANALÍTICA: SELECTOR MULTIESCALA BLINDADO ---
             if "cuencas" in archivo_geo_input.lower():
                 opciones_terr = [
-                    "properties.nom_nss3", "properties.nom_nss2", "properties.nom_nss1", 
-                    "properties.nom_szh", "properties.nomzh", "properties.nomah", 
-                    "properties.nombre_cuenca", "properties.corpoamb", "properties.zona", "properties.depto_region"
+                    # Bloque 1: Jerarquía Hidrológica (NSS3 es el mayor detalle)
+                    "properties.NOM_NSS3", "properties.NOM_NSS2", "properties.NOM_NSS1", 
+                    "properties.NOM_SZH", "properties.NOMZH", "properties.NOMAH", 
+                    # Bloque 2: Administrativo/Zonal
+                    "properties.depto_regi", "properties.Zona", 
+                    # Bloque 3: Jurisdiccional
+                    "properties.CorpoAmb"
                 ]
-                idx_terr = 0 # Por defecto: nom_nss3
+                idx_terr = 0 # Por defecto: NOM_NSS3
             elif "veredas" in archivo_geo_input.lower():
                 opciones_terr = ["properties.NOMBRE_VER", "properties.MPIO_CNMBR", "properties.nombre"]
                 idx_terr = 0
@@ -1314,6 +1318,7 @@ with tab_mapas:
                         
                         for feature in geo_data['features']:
                             props = feature['properties']
+                            # La magia: Al usar el bloque jerárquico que me pasaste, buscará exactamente estas llaves
                             val_terr = str(props.get(prop_key, props.get(prop_key.lower(), props.get(prop_key.upper(), ""))))
                             val_padre = ""
                             if padre_key:
