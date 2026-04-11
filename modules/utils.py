@@ -81,7 +81,7 @@ def normalizar_texto(t):
     for word in stop_words:
         t = re.sub(word, '', t)
     
-    # 4. Eliminar todo lo que NO sea letras o números (puntuación, paréntesis, espacios)
+    # 4. Eliminar todo lo que NO sea letras o números (puntuación, paréntesis, espacios internos)
     t = re.sub(r'[^A-Z0-9]', '', t)
     
     return t
