@@ -63,39 +63,33 @@ def inicializar_torrente_sanguineo():
 # ==============================================================================
 
 def normalizar_texto(t):
-    """
-    Motor de búsqueda infalible: Elimina ruido territorial, normaliza nombres 
-    y resuelve el conflicto de nombres cortos (Ej: Valle del Cauca -> VALLE).
-    """
     if not t or pd.isna(t): return ""
+    import unicodedata
+    import re
     
-    # 1. Limpieza básica y Mayúsculas
     t = str(t).upper().strip()
-    
-    # 2. Destructor de Prefijos (Para Veredas y Cuencas)
-    t = re.sub(r'^(VDA|VEREDA|SECTOR|CGE|CORREGIMIENTO|VDA\.|Q\.|R\.|QUEBRADA|RIO)\s+', '', t)
-    t = re.sub(r'\(.*?\)', '', t)
-    
-    # 3. Eliminar acentos
-    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    
-    # 4. Eliminar ruidos territoriales específicos
-    stop_words = [r'\bVEREDA\b', r'\bVDA\b', r'\bSECTOR\b', r'\bCORREGIMIENTO\b', r'\bMUNICIPIO\b']
+    # Limpiadores territoriales
+    stop_words = [
+        r'\bVEREDA\b', r'\bVDA\b', r'\bSECTOR\b', r'\bCASERIO\b', 
+        r'\bCENTRO POBLADO\b', r'\bCP\b', r'\bCORREGIMIENTO\b', r'\bCORREG\b', r'\bCGE\b'
+    ]
     for word in stop_words:
         t = re.sub(word, '', t)
+        
+    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+    # EL SECRETO: Eliminar también los espacios intermedios para que el MATCH_ID sea un bloque sólido
+    t = re.sub(r'[^A-Z0-9]', '', t) 
     
-    # 5. Eliminar todo lo que no sea alfanumérico
-    t = re.sub(r'[^A-Z0-9]', '', t)
-    
-    # 6. TRADUCTOR CRÍTICO (Solución Punto 2, 3 y 5 de tu diagnóstico)
-    traducciones = {
-        "VALLEDELCAUCA": "VALLE",
-        "BOGOTADC": "BOGOTA",
-        "SANJOSEDECUCUTA": "CUCUTA",
-        "SANTIAGODECALI": "CALI",
-        "MEDELLIN": "MEDELLIN"
+    diccionario_rebeldes = {
+        "BOGOTADC": "BOGOTA", "SANJOSEDECUCUTA": "CUCUTA", "LAGUAJIRA": "GUAJIRA", 
+        "VALLE": "VALLEDELCAUCA", # INVERTIDO PARA HOMOLOGAR
+        # ... (Mantén aquí el resto de tus rebeldes intactos) ...
     }
-    return traducciones.get(t, t)
+    
+    if t in diccionario_rebeldes: t = diccionario_rebeldes[t]
+    # (Mantén aquí tu diccionario de veredas intacto)
+    
+    return t
 
 @st.cache_data
 def standardize_numeric_column(series):
