@@ -1178,8 +1178,12 @@ with tab_mapas:
     titulo_seguro_mapa = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_seguro_mapa} ({año_sel})")
     
+    # --- ESCUDO INFRANQUEABLE PARA ESCALA GLOBAL ---
     if escala_sel == "🌍 Global y Suramérica":
         st.info("🌍 A escala Global/Suramérica la visualización espacial se encuentra desactivada. Los datos consolidados están disponibles en el panel de tendencias.")
+        # La ejecución del mapa muere aquí para la escala global (Evita el KeyError)
+    
+    # --- LÓGICA ESPACIAL PARA EL RESTO DE ESCALAS ---
     else:
         # Mini-menú integrado y estético
         col_m1, col_m2 = st.columns([1, 4])
@@ -1190,7 +1194,7 @@ with tab_mapas:
                 area_mapa = "Rural"
                 st.info("ℹ️ A escala veredal, toda la población se modela como rural.")
         with col_m2:
-            st.success("🤖 **Motor Topológico Automático:** El sistema está conectando las capas espaciales (GeoJSON) con las matrices demográficas en tiempo real.")
+            st.success("🤖 **Motor Topológico Automático:** Conectando capas espaciales (GeoJSON) con matrices demográficas.")
 
         if 'año' in df_mapa_base.columns:
             df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)].copy()
@@ -1238,19 +1242,13 @@ with tab_mapas:
                 
                 engine_geo = get_engine()
                 
-                # --- LÓGICA ESPACIAL AUTOMÁTICA (Bajo el Capó) ---
+                # --- LÓGICA ESPACIAL AUTOMÁTICA ---
                 if "veredal" in escala_sel.lower(): 
                     q_geo = text("SELECT * FROM veredas_geometria")
-                    prop_geo = "NOMBRE_VER"
-                    prop_padre = "NOMB_MPIO"
                 elif "cuencas" in escala_sel.lower(): 
                     q_geo = text("SELECT * FROM cuencas_geometria")
-                    prop_geo = "NOM_NSS3" # La heurística buscará automáticamente en la jerarquía
-                    prop_padre = ""
                 else: 
                     q_geo = text("SELECT * FROM municipios")
-                    prop_geo = "MPIO_CNMBR"
-                    prop_padre = "DPTO_CCDGO"
                     
                 gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
                 
@@ -1271,12 +1269,18 @@ with tab_mapas:
                         "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA"
                     }
                     
-                    # 2. MATCH_ID Dinámico en el GeoDataFrame (Buscador Inteligente)
+                    # 2. MATCH_ID Dinámico en el GeoDataFrame
                     def generar_id_geojson(row):
                         if "cuencas" in escala_sel.lower():
                             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
                             val_terr = next((str(row[c]) for c in cols_posibles if c in row and pd.notnull(row[c])), "")
+                            
+                            # 🛡️ FIX CUENCAS: Si el polígono tiene un guión ("Río Aburrá - Q. La Iguaná"), extraemos solo la parte final
+                            if "-" in str(val_terr):
+                                val_terr = str(val_terr).split("-")[-1]
+                                
                             return normalizar_texto(val_terr)
+                        
                         elif "veredal" in escala_sel.lower():
                             val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
                             val_padre = str(row.get('NOMB_MPIO', row.get('nomb_mpio', row.get('MPIO_CNMBR', ''))))
@@ -1314,7 +1318,7 @@ with tab_mapas:
                     q_val = 0.85 if area_mapa == "Total" else 0.90
                     max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
                     
-                    # 4. RENDERIZADO DEL MAPA (Ancho Completo + Rueda de Mouse)
+                    # 4. RENDERIZADO DEL MAPA
                     import plotly.express as px
                     fig_mapa = px.choropleth_mapbox(
                         df_mapa_plot,
@@ -1332,20 +1336,25 @@ with tab_mapas:
                         hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
                     )
                     
-                    # Layout para ocupar el 100% de la pantalla
-                    fig_mapa.update_layout(
-                        margin={"r":0,"t":0,"l":0,"b":0},
-                        height=700 # Altura ampliada
-                    )
-                    
-                    # MAGIA APLICADA: scrollZoom activa la rueda del ratón
+                    fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
                     st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                     
+                    # --- DEPURADOR FORENSE INYECTADO ---
                     df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(gdf_mapa['MATCH_ID'].values)
                     faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
                     
                     if not faltantes.empty:
-                        st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el polígono espacial.")
+                        st.warning(f"⚠️ {len(faltantes)} territorios no se dibujaron en el mapa por discrepancia de nombres.")
+                        with st.expander("🔍 ABRIR DEPURADOR FORENSE (Para resolver por qué no cruzó)"):
+                            st.markdown("El mapa solo se dibuja si el ID de la Tabla es idéntico al ID del Polígono. Compara ambas listas:")
+                            col_dbg1, col_dbg2 = st.columns(2)
+                            with col_dbg1:
+                                st.write("🔴 **Lo que la Tabla está buscando:**")
+                                st.dataframe(faltantes[['Territorio', 'MATCH_ID']], use_container_width=True)
+                            with col_dbg2:
+                                st.write("🟢 **Lo que el Mapa (GeoJSON) tiene disponible:**")
+                                ids_disponibles = sorted(gdf_mapa['MATCH_ID'].dropna().unique().tolist())
+                                st.dataframe(pd.DataFrame({"IDs en PostGIS": ids_disponibles}), use_container_width=True)
                 else:
                     st.warning("⚠️ No se encontraron geometrías en la base de datos para dibujar.")
             except Exception as e:
@@ -1353,16 +1362,6 @@ with tab_mapas:
         else:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
             
-        # Tabla de datos debajo del mapa
-        cols_existentes = [c for c in ['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa'] if c in df_mapa_plot.columns]
-        if 'Total' in cols_existentes and not df_mapa_plot.empty:
-            df_mapa_plot['Total'] = pd.to_numeric(df_mapa_plot['Total'], errors='coerce').fillna(0)
-            df_mostrar = df_mapa_plot[cols_existentes].sort_values('Total', ascending=False)
-        else:
-            df_mostrar = df_mapa_plot[cols_existentes]
-            
-        st.dataframe(df_mostrar, use_container_width=True)
-
 # =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
 # =====================================================================
