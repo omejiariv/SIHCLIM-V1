@@ -1197,9 +1197,8 @@ with tab_mapas:
         st.markdown("**⚙️ Configuración de la Capa**")
         
         # --- FIX DEFINITIVO: RUTEO CORRECTO DE CAPAS ---
-        opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson", "cuencas_sp.geojson"]
+        opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson", "cuencas_SP.geojson"]
         
-        # Búsqueda ultra-segura ignorando emojis
         if "Veredal" in escala_sel: 
             idx_geo = 1
         elif "Cuencas" in escala_sel:
@@ -1210,7 +1209,6 @@ with tab_mapas:
         archivo_geo_input = st.selectbox("Archivo Espacial:", opciones_geo, index=idx_geo)
         
         # --- MEJORA ANALÍTICA: SELECTOR MULTIESCALA BLINDADO ---
-        # Ahora depende directamente del archivo que esté visible en la caja
         if "cuencas" in archivo_geo_input.lower():
             opciones_terr = [
                 "properties.nom_nss3", "properties.nom_nss2", "properties.nom_nss1", 
@@ -1258,14 +1256,14 @@ with tab_mapas:
                 
                 engine_geo = get_engine()
                 
-                # --- FIX DEFINITIVO: DESCARGA DIRECTA DESDE SUPABASE ---
+                # --- FIX DEFINITIVO: LECTURA DE TABLAS EN SUPABASE ---
                 if "municipios" in archivo_geo_input.lower():
                     q_geo = text("SELECT * FROM municipios")
                 elif "veredas" in archivo_geo_input.lower():
                     q_geo = text("SELECT * FROM veredas_geometria")
                 elif "cuencas" in archivo_geo_input.lower(): 
-                    # ¡Volvemos a la tabla correcta creada por tu panel de administración!
-                    q_geo = text("SELECT * FROM cuencas_sp")
+                    # ¡AQUÍ ESTÁ LA CORRECCIÓN! Leemos la tabla real que creó el Admin Panel
+                    q_geo = text("SELECT * FROM cuencas_geometria")
                 else:
                     q_geo = None
                     
