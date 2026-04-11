@@ -1,34 +1,19 @@
 # pages/11_⚙️_Generador.py
 
-import os
-import sys
-import io
+import streamlit as st
+import geopandas as gpd
+import pandas as pd
 import tempfile
 import zipfile
+import io
+import os
 import warnings
 
-import pandas as pd
-import geopandas as gpd
-
-import streamlit as st
-
-# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
-st.set_page_config(page_title="Generador Espacial", page_icon="⚙️", layout="wide")
 warnings.filterwarnings('ignore')
+st.set_page_config(page_title="Generador Espacial", page_icon="⚙️", layout="wide")
 
-# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
-try:
-    from modules import selectors
-except ImportError:
-    # Fallback de rutas por si hay problemas de lectura entre carpetas
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from modules import selectors
-
-# ==========================================
-# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
-# ==========================================
-# Llama al menú expandible y resalta la página actual
-selectors.renderizar_menu_navegacion("Generador")
+st.title("⚙️ Centro de Geoprocesamiento y Transformación")
+st.info("Herramientas de administrador para cruces espaciales, compresión y estandarización de cartografía web.")
 
 # ==============================================================================
 # 🔒 MURO DE SEGURIDAD GLOBAL (ACCESO BETA)
@@ -55,20 +40,16 @@ def muro_de_acceso_beta():
         # 🛑 st.stop() es la magia: evita que Python siga leyendo el código hacia abajo
         st.stop() 
 
-# Llamamos a la función para activar el escudo ANTES de mostrar el contenido
+# Llamamos a la función para activar el escudo
 muro_de_acceso_beta()
-
-# ==============================================================================
-# --- CONTENIDO DE LA PÁGINA (SOLO VISIBLE SI PASAN EL MURO) ---
-# ==============================================================================
-st.title("⚙️ Centro de Geoprocesamiento y Transformación")
-st.info("Herramientas de administrador para cruces espaciales, compresión y estandarización de cartografía web.")
 # ==============================================================================
 
-tab1, tab2, tab3 = st.tabs([
+# --- ACTUALIZACIÓN: AGREGAMOS LA CUARTA PESTAÑA ---
+tab1, tab2, tab3, tab4 = st.tabs([
     "🧩 1. Intersecciones Espaciales (Cuencas)", 
     "🔄 2. Convertidor GeoJSON (Soporta ZIP y Simplificación)", 
-    "🗜️ 3. Compresor/Extractor ZIP"
+    "🗜️ 3. Compresor/Extractor ZIP",
+    "🔁 4. Convertidor GeoJSON a SHP + Atributos"
 ])
 
 # =====================================================================
@@ -78,7 +59,6 @@ with tab1:
     st.subheader("Generador de Intersecciones Espaciales")
     st.write("Cruce de mapas para calcular la proporción de cada territorio dentro de las cuencas.")
     
-    # NUEVO: Selector de nivel territorial
     nivel_cruce = st.radio("Selecciona el Nivel Territorial a cruzar con las Cuencas:", ["Municipios", "Veredas"], horizontal=True)
     
     if st.button(f"🚀 Iniciar Cruce Espacial ({nivel_cruce})", type="primary"):
@@ -293,3 +273,75 @@ with tab3:
                             file_name=os.path.basename(nombre_archivo),
                             key=f"desc_{nombre_archivo}"
                         )
+
+# =====================================================================
+# PESTAÑA 4: CONVERTIDOR GEOJSON A SHAPEFILE + VISOR DE ATRIBUTOS
+# =====================================================================
+with tab4:
+    st.subheader("🔁 Convertidor GeoJSON a Shapefile (SHP) y Visor de Atributos")
+    st.markdown("Sube un archivo **.geojson** o **.json**. Podrás previsualizar su tabla de atributos y exportarlo como un Shapefile listo para software GIS (QGIS/ArcGIS).")
+    
+    archivo_geojson_in = st.file_uploader("Sube tu archivo GeoJSON", type=['geojson', 'json'], key="up_geo2shp")
+    
+    if archivo_geojson_in:
+        with st.spinner("Leyendo estructura del archivo espacial..."):
+            try:
+                # 1. Leer el GeoJSON
+                gdf_in = gpd.read_file(archivo_geojson_in)
+                
+                # 2. Mostrar Información de la Tabla
+                st.success(f"✅ Archivo cargado correctamente. Contiene **{len(gdf_in)}** geometrías/polígonos.")
+                
+                st.markdown("#### 📋 Estructura de Campos (Atributos)")
+                
+                # Extraer nombres de campos y tipos de datos (ignorando la geometría)
+                df_info = pd.DataFrame({
+                    "Campo": gdf_in.columns,
+                    "Tipo de Dato": gdf_in.dtypes.astype(str)
+                })
+                df_info = df_info[df_info["Campo"] != "geometry"].reset_index(drop=True)
+                
+                col_info1, col_info2 = st.columns([1, 2.5])
+                with col_info1:
+                    st.dataframe(df_info, use_container_width=True)
+                
+                with col_info2:
+                    st.markdown("**Vista Previa de los Datos (Primeras 5 filas):**")
+                    # Mostrar el dataframe sin la columna geometry para que sea ligero visualmente
+                    df_vista = pd.DataFrame(gdf_in.drop(columns='geometry'))
+                    st.dataframe(df_vista.head(), use_container_width=True)
+                
+                # 3. Conversión a Shapefile empaquetado en ZIP
+                st.markdown("---")
+                st.markdown("#### 📦 Exportar a Shapefile (.shp)")
+                st.info("💡 **Nota:** El formato Shapefile exige que esté compuesto por varios archivos complementarios (.shp, .shx, .dbf, .prj, etc.). Te entregaremos un archivo **.zip** con todos los componentes debidamente empaquetados.")
+                
+                nombre_export = st.text_input("Nombre base para el archivo final:", value="Capa_Exportada")
+                
+                if st.button("🚀 Convertir y Empaquetar a SHP", type="primary"):
+                    with st.spinner("Generando y empaquetando archivos Shapefile..."):
+                        
+                        # Usamos un directorio temporal para guardar los múltiples archivos del SHP
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            shp_path = os.path.join(tmpdir, f"{nombre_export}.shp")
+                            
+                            # GeoPandas exporta el SHP. Advierte si los nombres superan los 10 caracteres (limitación del formato SHP)
+                            gdf_in.to_file(shp_path, driver='ESRI Shapefile')
+                            
+                            # Empaquetamos todo el contenido del directorio temporal en un ZIP en memoria
+                            zip_buffer = io.BytesIO()
+                            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+                                for root, dirs, files in os.walk(tmpdir):
+                                    for file in files:
+                                        filepath = os.path.join(root, file)
+                                        zip_file.write(filepath, arcname=file)
+                            
+                            st.success("✅ ¡Geometría y tabla de atributos empaquetados exitosamente!")
+                            st.download_button(
+                                label=f"📥 Descargar {nombre_export}.zip",
+                                data=zip_buffer.getvalue(),
+                                file_name=f"{nombre_export}.zip",
+                                mime="application/zip"
+                            )
+            except Exception as e:
+                st.error(f"❌ Error al procesar el archivo GeoJSON: {str(e)}")
