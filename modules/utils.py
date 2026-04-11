@@ -95,7 +95,14 @@ def normalizar_texto(t):
         
     t = re.sub(r'[^A-Z0-9]', '', t) 
     
-    diccionario_final = {"BOGOTADC": "BOGOTA", "SANJOSEDECUCUTA": "CUCUTA", "LAGUAJIRA": "GUAJIRA", "VALLE": "VALLEDELCAUCA"}
+    diccionario_final = {
+        "BOGOTADC": "BOGOTA", 
+        "SANJOSEDECUCUTA": "CUCUTA", 
+        "LAGUAJIRA": "GUAJIRA", 
+        "VALLE": "VALLEDELCAUCA",
+        "RIOAURES": "AURES",   # <--- FIX: Río Aures (Abejorral)
+        "RIOBUEY": "BUEY"      # <--- FIX: Río Buey (Abejorral)
+    }
     if t in diccionario_final: return diccionario_final[t]
     
     return t
