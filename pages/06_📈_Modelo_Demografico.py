@@ -1144,32 +1144,9 @@ with tab_opt:
             st.caption("Presiona 'Optimizar Parámetros' o ajusta manualmente para visualizar las ecuaciones.")
                 
 # ==========================================
-
-# ==========================================
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR)
 # ==========================================
 with tab_mapas:
-    # --- FIX VITAL: NORMALIZADOR EXCLUSIVO PARA EL MAPA ---
-    # Esto asegura que limpie las Veredas y homologue Valle del Cauca sin dañar otras pestañas
-    def normalizar_texto_mapa(t):
-        if not t or pd.isna(t): return ""
-        import unicodedata
-        import re
-        t = str(t).upper().strip()
-        t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-        
-        # Homologación forzada
-        if t == "VALLE": return "VALLEDELCAUCA"
-        if t == "NARIÑO": return "NARINO"
-        
-        # Trituradora de palabras basura (salva las 429 Veredas)
-        stop_words = [r'\bVEREDA\b', r'\bVDA\b', r'\bSECTOR\b', r'\bCASERIO\b', r'\bCENTRO POBLADO\b', r'\bCORREGIMIENTO\b']
-        for word in stop_words:
-            t = re.sub(word, '', t)
-            
-        t = re.sub(r'[^A-Z0-9]', '', t)
-        return t
-
     # --- FIX: ESCUDO SUPREMO ANTI-NAME ERROR ---
     titulo_seguro_mapa = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_seguro_mapa} ({año_sel})")
@@ -1232,15 +1209,14 @@ with tab_mapas:
         archivo_geo_input = st.selectbox("Archivo Espacial:", opciones_geo, index=idx_geo)
         
         # --- MEJORA ANALÍTICA: SELECTOR MULTIESCALA BLINDADO ---
-        # Garantizamos que aparezca el selector múltiple usando el idx_geo directamente
-        if idx_geo == 2 or "cuencas" in archivo_geo_input.lower():
+        if "cuencas" in archivo_geo_input.lower():
             opciones_terr = [
                 "properties.nom_nss3", "properties.nom_nss2", "properties.nom_nss1", 
                 "properties.nom_szh", "properties.nomzh", "properties.nomah", 
                 "properties.nombre_cuenca", "properties.corpoamb", "properties.zona", "properties.depto_region"
             ]
             idx_terr = 0 # Por defecto: nom_nss3
-        elif idx_geo == 1 or "veredas" in archivo_geo_input.lower():
+        elif "veredas" in archivo_geo_input.lower():
             opciones_terr = ["properties.NOMBRE_VER", "properties.MPIO_CNMBR", "properties.nombre"]
             idx_terr = 0
         else:
@@ -1251,7 +1227,7 @@ with tab_mapas:
         
         st.markdown("**🔗 Llave Doble (Contexto)**")
         opciones_padre = ["", "properties.DPTO_CCDGO", "properties.NOMB_MPIO"]
-        idx_padre = 0 if (idx_geo == 2 or "cuencas" in archivo_geo_input.lower()) else (2 if idx_geo == 1 else 1)
+        idx_padre = 0 if "cuencas" in archivo_geo_input.lower() else (2 if "veredas" in archivo_geo_input.lower() else 1)
         prop_padre_input = st.selectbox("Llave Contexto:", opciones_padre, index=idx_padre)
     
     with col_map2:
@@ -1286,7 +1262,7 @@ with tab_mapas:
                 elif "veredas" in archivo_geo_input.lower():
                     q_geo = text("SELECT * FROM veredas_geometria")
                 elif "cuencas" in archivo_geo_input.lower(): 
-                    # Restaurado a cuencas_geometria, como tenías en tu versión estable
+                    # ¡AQUÍ ESTÁ LA CORRECCIÓN! Leemos la tabla real que creó el Admin Panel
                     q_geo = text("SELECT * FROM cuencas_geometria")
                 else:
                     q_geo = None
@@ -1298,11 +1274,11 @@ with tab_mapas:
                     geo_data = {'features': []}
                     
                 if geo_data['features']:
-                    # 1. Crear ADN Único en Pandas (Usamos normalizar_texto_mapa)
+                    # 1. Crear ADN Único en Pandas (Convertimos a string por seguridad anti-nulos)
                     if prop_padre_input.strip() != "":
-                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].astype(str).apply(normalizar_texto_mapa) + "_" + df_mapa_plot['Padre'].astype(str).apply(normalizar_texto_mapa)
+                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].astype(str).apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].astype(str).apply(normalizar_texto)
                     else:
-                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].astype(str).apply(normalizar_texto_mapa)
+                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].astype(str).apply(normalizar_texto)
 
                     # --- TRADUCTOR DANE DE CÓDIGOS A NOMBRES ---
                     codigos_dane_deptos = {
@@ -1327,8 +1303,7 @@ with tab_mapas:
                         if padre_key:
                             val_padre = str(props.get(padre_key, props.get(padre_key.lower(), props.get(padre_key.upper(), ""))))
                         
-                        # Usamos normalizar_texto_mapa en GeoJSON también
-                        val_terr = normalizar_texto_mapa(val_terr)
+                        val_terr = normalizar_texto(val_terr)
                         
                         if val_padre.zfill(2) in codigos_dane_deptos:
                             val_padre = codigos_dane_deptos[val_padre.zfill(2)]
@@ -1336,7 +1311,7 @@ with tab_mapas:
                         if val_terr == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
                         
                         if val_padre:
-                            feature['properties']['MATCH_ID'] = val_terr + "_" + normalizar_texto_mapa(val_padre)
+                            feature['properties']['MATCH_ID'] = val_terr + "_" + normalizar_texto(val_padre)
                         else:
                             feature['properties']['MATCH_ID'] = val_terr
                             
@@ -1372,11 +1347,11 @@ with tab_mapas:
                         
                         if escala_sel == "🌿 Veredal (Antioquia)":
                             with st.expander("🔍 Ver nombres exactos dentro del mapa GeoJSON (Para arreglar el Excel)"):
-                                municipio_actual = normalizar_texto_mapa(df_mapa_plot['Padre'].iloc[0]) if not df_mapa_plot.empty else ""
+                                municipio_actual = normalizar_texto(df_mapa_plot['Padre'].iloc[0]) if not df_mapa_plot.empty else ""
                                 veredas_en_mapa = []
                                 for f in geo_data['features']:
                                     m_padre = str(f['properties'].get(padre_key, props.get(padre_key.lower(), "")))
-                                    if normalizar_texto_mapa(m_padre) == municipio_actual:
+                                    if normalizar_texto(m_padre) == municipio_actual:
                                         veredas_en_mapa.append(f['properties'].get(prop_key, props.get(prop_key.lower(), "")))
                                         
                                 if veredas_en_mapa:
