@@ -67,27 +67,50 @@ def normalizar_texto(t):
     import unicodedata
     import re
     
+    # 1. Mayúsculas y quitar espacios en los extremos
     t = str(t).upper().strip()
-    # Limpiadores territoriales
+    
+    # 2. Quitar tildes y diacríticos (Asegurar que quede ASCII puro)
+    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+    
+    # 3. Limpiadores Territoriales (Aspirador de ruido basado en tus archivos)
+    # Expandimos Q. y R. a QUEBRADA y RIO antes de limpiar, por si la matriz tabular los tiene completos
+    t = re.sub(r'\bQ\.\s*', 'QUEBRADA ', t)
+    t = re.sub(r'\bR\.\s*', 'RIO ', t)
+    t = re.sub(r'\bCGA\.\s*', 'CIENAGA ', t)
+    
     stop_words = [
-        r'\bVEREDA\b', r'\bVDA\b', r'\bSECTOR\b', r'\bCASERIO\b', 
+        r'\bVEREDA\b', r'\bVDA\.?\b', r'\bSECTOR\b', r'\bCASERIO\b', 
         r'\bCENTRO POBLADO\b', r'\bCP\b', r'\bCORREGIMIENTO\b', r'\bCORREG\b', r'\bCGE\b'
     ]
     for word in stop_words:
         t = re.sub(word, '', t)
         
-    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    # EL SECRETO: Eliminar también los espacios intermedios para que el MATCH_ID sea un bloque sólido
+    # 4. Homologadores de Municipios Rebeldes (Antioquia Clásico)
+    rebeldes_mpio = {
+        r'\bEL CARMEN DE VIBORAL\b': 'CARMEN DE VIBORAL',
+        r'\bSAN VICENTE FERRER\b': 'SAN VICENTE',
+        r'\bSAN JOSE DE LA MONTANA\b': 'SAN JOSE DE LA MONTANA', # Ya sin tilde por el paso 2
+        r'\bDONMATIAS\b': 'DON MATIAS',
+        r'\bSANTAFE DE ANTIOQUIA\b': 'SANTA FE DE ANTIOQUIA',
+        r'\bEL SANTUARIO\b': 'SANTUARIO',
+        r'\bEL PENOL\b': 'PENOL'
+    }
+    for regex, reemplazo in rebeldes_mpio.items():
+        t = re.sub(regex, reemplazo, t)
+        
+    # 5. EL SECRETO FINAL: Eliminar TODO lo que no sea letra o número (incluyendo espacios vacíos)
+    # Esto asegura que "LA HONDA" y " LA   HONDA " sean ambos "LAHONDA"
     t = re.sub(r'[^A-Z0-9]', '', t) 
     
-    diccionario_rebeldes = {
-        "BOGOTADC": "BOGOTA", "SANJOSEDECUCUTA": "CUCUTA", "LAGUAJIRA": "GUAJIRA", 
-        "VALLE": "VALLEDELCAUCA", # INVERTIDO PARA HOMOLOGAR
-        # ... (Mantén aquí el resto de tus rebeldes intactos) ...
+    # Excepciones específicas post-limpieza
+    diccionario_final = {
+        "BOGOTADC": "BOGOTA", 
+        "SANJOSEDECUCUTA": "CUCUTA", 
+        "LAGUAJIRA": "GUAJIRA", 
+        "VALLE": "VALLEDELCAUCA"
     }
-    
-    if t in diccionario_rebeldes: t = diccionario_rebeldes[t]
-    # (Mantén aquí tu diccionario de veredas intacto)
+    if t in diccionario_final: return diccionario_final[t]
     
     return t
 
