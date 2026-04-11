@@ -515,26 +515,31 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 mapa_data = []
                 
                 # 2. MOTOR DE AGREGACIÓN
-                for c in cuenca_sel:
+                for c in cuencas_a_graficar:
                     cuenca_data = df_cuencas_solo[df_cuencas_solo['Territorio'] == c]
                     if not cuenca_data.empty:
-                        fila = cuenca_data[cuenca_data['Area'] == 'Total'].iloc[0] if 'Total' in cuenca_data['Area'].values else cuenca_data.iloc[0]
-                        modelo_ganador = str(fila.get('Modelo_Recomendado', 'Desconocido'))
+                        # A) Sumar curvas matemáticas (Solo usamos el Total)
+                        c_total = cuenca_data[cuenca_data['Area'] == 'Total']
+                        fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
+                        modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
                         pob_temp = np.zeros_like(años_hist, dtype=float)
                         
                         if 'Logistico' in modelo_ganador:
-                            K, a, r = fila.get('Log_K', 0), fila.get('Log_a', 0), fila.get('Log_r', 0)
-                            pob_temp = K / (1 + a * np.exp(-r * (años_hist - 1985)))
+                            pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
                         elif 'Exponencial' in modelo_ganador:
-                            a, b = fila.get('Exp_a', 0), fila.get('Exp_b', 0)
-                            pob_temp = a * np.exp(b * (años_hist - 1985))
+                            pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
                         elif 'Polinomial' in modelo_ganador:
-                            A, B, C, D = fila.get('Poly_A', 0), fila.get('Poly_B', 0), fila.get('Poly_C', 0), fila.get('Poly_D', 0)
                             x_norm = años_hist - 1985
-                            pob_temp = A*x_norm**3 + B*x_norm**2 + C*x_norm + D
+                            pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
                         
                         pob_hist_acumulada += pob_temp
-                        mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': fila.get('Pob_Base', 0)})
+                        
+                        # B) Enviar datos al mapa (Total, Urbano, Rural) para que funcione el filtro
+                        for area_val in ['Total', 'Urbano', 'Rural']:
+                            c_area = cuenca_data[cuenca_data['Area'] == area_val]
+                            if not c_area.empty:
+                                val_pob = c_area.iloc[0].get('Pob_Base', 0)
+                                mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': val_pob, 'area_geografica': area_val.lower()})
                 
                 pob_hist = pob_hist_acumulada
                 df_mapa_base = pd.DataFrame(mapa_data)
@@ -1295,9 +1300,24 @@ with tab_mapas:
 
                     gdf_mapa['MATCH_ID'] = gdf_mapa.apply(generar_id_geojson, axis=1)
                     
-                    # 3. AUTO-ENCUADRE MILIMÉTRICO (Bounding Box)
-                    ids_en_tabla = df_mapa_plot['MATCH_ID'].unique()
-                    gdf_filtrado = gdf_mapa[gdf_mapa['MATCH_ID'].isin(ids_en_tabla)]
+                    # --- 3. AUTO-SANADOR Y ENCUADRE MILIMÉTRICO (Bounding Box) ---
+                    ids_geojson = gdf_mapa['MATCH_ID'].dropna().unique().tolist()
+                    df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(ids_geojson)
+                    
+                    # 🛠️ MAGIA IA: Reparación automática de nombres usando similitud (Fuzzy Matching)
+                    faltantes_iniciales = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
+                    if not faltantes_iniciales.empty:
+                        import difflib
+                        for idx, row in faltantes_iniciales.iterrows():
+                            # Busca la coincidencia más cercana en el GeoJSON (Ej: LAHONDA vs LAONDA)
+                            matches = difflib.get_close_matches(row['MATCH_ID'], ids_geojson, n=1, cutoff=0.85)
+                            if matches:
+                                df_mapa_plot.at[idx, 'MATCH_ID'] = matches[0] # ¡Curado!
+                                df_mapa_plot.at[idx, 'En_Mapa'] = True
+                    
+                    # Volvemos a extraer los IDs ya curados
+                    ids_curados = df_mapa_plot[df_mapa_plot['En_Mapa'] == True]['MATCH_ID'].unique()
+                    gdf_filtrado = gdf_mapa[gdf_mapa['MATCH_ID'].isin(ids_curados)]
                     
                     center_lat, center_lon, zoom_level = 4.57, -74.29, 5
                     if not gdf_filtrado.empty:
@@ -1316,12 +1336,15 @@ with tab_mapas:
 
                     geo_data = json.loads(gdf_mapa.to_json())
                     q_val = 0.85 if area_mapa == "Total" else 0.90
-                    max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
+                    
+                    # Usamos el dataframe final ya curado para el máximo color
+                    df_mapa_plot_final = df_mapa_plot[df_mapa_plot['En_Mapa'] == True].copy()
+                    max_color = df_mapa_plot_final['Total'].quantile(q_val) if len(df_mapa_plot_final) > 10 else (df_mapa_plot_final['Total'].max() if not df_mapa_plot_final.empty else 1)
                     
                     # 4. RENDERIZADO DEL MAPA
                     import plotly.express as px
                     fig_mapa = px.choropleth_mapbox(
-                        df_mapa_plot,
+                        df_mapa_plot, # Usamos el df con los IDs actualizados y curados
                         geojson=geo_data,
                         locations='MATCH_ID',        
                         featureidkey='properties.MATCH_ID', 
@@ -1339,21 +1362,20 @@ with tab_mapas:
                     fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
                     st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                     
-                    # --- DEPURADOR FORENSE INYECTADO ---
-                    df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(gdf_mapa['MATCH_ID'].values)
-                    faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
+                    # --- DEPURADOR FORENSE INYECTADO (SOLO MUESTRA LOS INCURABLES) ---
+                    faltantes_finales = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
                     
-                    if not faltantes.empty:
-                        st.warning(f"⚠️ {len(faltantes)} territorios no se dibujaron en el mapa por discrepancia de nombres.")
+                    if not faltantes_finales.empty:
+                        st.warning(f"⚠️ {len(faltantes_finales)} territorios no cruzaron incluso después de la sanación automática.")
                         with st.expander("🔍 ABRIR DEPURADOR FORENSE (Para resolver por qué no cruzó)"):
                             st.markdown("El mapa solo se dibuja si el ID de la Tabla es idéntico al ID del Polígono. Compara ambas listas:")
                             col_dbg1, col_dbg2 = st.columns(2)
                             with col_dbg1:
                                 st.write("🔴 **Lo que la Tabla está buscando:**")
-                                st.dataframe(faltantes[['Territorio', 'MATCH_ID']], use_container_width=True)
+                                st.dataframe(faltantes_finales[['Territorio', 'MATCH_ID']], use_container_width=True)
                             with col_dbg2:
                                 st.write("🟢 **Lo que el Mapa (GeoJSON) tiene disponible:**")
-                                ids_disponibles = sorted(gdf_mapa['MATCH_ID'].dropna().unique().tolist())
+                                ids_disponibles = sorted(ids_geojson)
                                 st.dataframe(pd.DataFrame({"IDs en PostGIS": ids_disponibles}), use_container_width=True)
                 else:
                     st.warning("⚠️ No se encontraron geometrías en la base de datos para dibujar.")
