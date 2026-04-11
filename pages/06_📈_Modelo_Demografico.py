@@ -1264,30 +1264,30 @@ with tab_mapas:
                     engine_geo = get_engine()
                     
                     # --- FIX DEFINITIVO: LECTURA DE TABLAS EN SUPABASE ---
-                if "municipios" in archivo_geo_input.lower():
-                    q_geo = text("SELECT * FROM municipios")
-                elif "veredas" in archivo_geo_input.lower():
-                    q_geo = text("SELECT * FROM veredas_geometria")
-                elif "cuencas" in archivo_geo_input.lower(): 
-                    q_geo = text("SELECT * FROM cuencas") # <--- CORREGIDO AQUÍ (eliminado "_geometria")
-                else:
-                    q_geo = None
-                    
-                if q_geo is not None:
-                    gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
-                    geo_data = json.loads(gdf_mapa.to_json())
-                    
-                    # --- NUEVO MOTOR DE AUTO-ENCUADRE (BOUNDING BOX) ---
-                    center_lat, center_lon = 4.57, -74.29 # Fallback Colombia
-                    if not gdf_mapa.empty:
-                        # Reproyectamos a EPSG 4326 para obtener Lat/Lon puras
-                        gdf_4326 = gdf_mapa.to_crs(epsg=4326)
-                        bounds = gdf_4326.total_bounds # [minx, miny, maxx, maxy]
-                        center_lon = (bounds[0] + bounds[2]) / 2
-                        center_lat = (bounds[1] + bounds[3]) / 2
-                else:
-                    geo_data = {'features': []}
-                    center_lat, center_lon = 4.57, -74.29
+                    if "municipios" in archivo_geo_input.lower():
+                        q_geo = text("SELECT * FROM municipios")
+                    elif "veredas" in archivo_geo_input.lower():
+                        q_geo = text("SELECT * FROM veredas_geometria")
+                    elif "cuencas" in archivo_geo_input.lower(): 
+                        q_geo = text("SELECT * FROM cuencas") # <--- CORREGIDO AQUÍ
+                    else:
+                        q_geo = None
+                        
+                    if q_geo is not None:
+                        gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
+                        geo_data = json.loads(gdf_mapa.to_json())
+                        
+                        # --- NUEVO MOTOR DE AUTO-ENCUADRE (BOUNDING BOX) ---
+                        center_lat, center_lon = 4.57, -74.29 # Fallback Colombia
+                        if not gdf_mapa.empty:
+                            # Reproyectamos a EPSG 4326 para obtener Lat/Lon puras
+                            gdf_4326 = gdf_mapa.to_crs(epsg=4326)
+                            bounds = gdf_4326.total_bounds # [minx, miny, maxx, maxy]
+                            center_lon = (bounds[0] + bounds[2]) / 2
+                            center_lat = (bounds[1] + bounds[3]) / 2
+                    else:
+                        geo_data = {'features': []}
+                        center_lat, center_lon = 4.57, -74.29
                         
                     if geo_data['features']:
                         # 1. Crear ADN Único en Pandas (Convertimos a string por seguridad anti-nulos)
@@ -1351,7 +1351,6 @@ with tab_mapas:
                             labels={'Total': f'Población {area_mapa}'},
                             hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
                         )
-                        
                         fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
                         st.plotly_chart(fig_mapa, use_container_width=True)
                         
