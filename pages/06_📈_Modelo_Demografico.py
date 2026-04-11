@@ -464,66 +464,86 @@ elif escala_sel == "🧩 Regional (Macroregiones)":
     df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
+    # 1. LECTURA DE LA MATRIZ MAESTRA
     if 'df_matriz_demografica' in st.session_state:
         df_matriz = st.session_state['df_matriz_demografica']
     else:
-        try:
-            df_matriz = pd.read_csv("Matriz_Multimodelo_Demografica (1).csv") 
-        except:
-            df_matriz = pd.DataFrame()
+        try: df_matriz = pd.read_csv("Matriz_Multimodelo_Demografica (1).csv") 
+        except: df_matriz = pd.DataFrame()
             
     if not df_matriz.empty and 'Nivel' in df_matriz.columns:
         df_cuencas_solo = df_matriz[df_matriz['Nivel'] == 'Cuenca']
         
         if not df_cuencas_solo.empty:
-            lista_cuencas = sorted(df_cuencas_solo['Territorio'].dropna().astype(str).unique())
-            # 1. CAMBIO A MULTISELECT
-            cuenca_sel = st.sidebar.multiselect("🌊 Seleccione la(s) Cuenca(s) (Alta Precisión):", lista_cuencas, default=[lista_cuencas[0]] if lista_cuencas else None)
+            # --- NUEVO MOTOR EN CASCADA PARA CUENCAS ---
+            try:
+                from modules.db_manager import get_engine
+                df_hier = pd.read_sql("SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3 FROM cuencas", get_engine())
+            except:
+                df_hier = pd.DataFrame()
+            
+            if not df_hier.empty:
+                st.sidebar.markdown("### 🌊 Filtros Jerárquicos")
+                ah_opts = sorted(df_hier['nomah'].dropna().unique())
+                sel_ah = st.sidebar.selectbox("1. Área Hidrográfica (AH):", ["-- Seleccione --"] + ah_opts)
+                
+                zh_opts = sorted(df_hier[df_hier['nomah'] == sel_ah]['nomzh'].dropna().unique()) if sel_ah != "-- Seleccione --" else []
+                sel_zh = st.sidebar.selectbox("2. Zona Hidrológica (ZH):", ["-- Seleccione --"] + zh_opts)
+                
+                szh_opts = sorted(df_hier[df_hier['nomzh'] == sel_zh]['nom_szh'].dropna().unique()) if sel_zh != "-- Seleccione --" else []
+                sel_szh = st.sidebar.selectbox("3. Subzona (SZH):", ["-- Seleccione --"] + szh_opts)
+                
+                resolucion = st.sidebar.radio("🔎 Resolución:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"])
+                col_res = 'nom_nss1' if 'NSS1' in resolucion else ('nom_nss2' if 'NSS2' in resolucion else 'nom_nss3')
+                
+                if sel_szh != "-- Seleccione --": cuencas_disp = sorted(df_hier[df_hier['nom_szh'] == sel_szh][col_res].dropna().unique())
+                elif sel_zh != "-- Seleccione --": cuencas_disp = sorted(df_hier[df_hier['nomzh'] == sel_zh][col_res].dropna().unique())
+                elif sel_ah != "-- Seleccione --": cuencas_disp = sorted(df_hier[df_hier['nomah'] == sel_ah][col_res].dropna().unique())
+                else: cuencas_disp = sorted(df_hier[col_res].dropna().unique())
+            else:
+                # Fallback si falla la base de datos
+                cuencas_disp = sorted(df_cuencas_solo['Territorio'].dropna().astype(str).unique())
+
+            cuenca_sel = st.sidebar.multiselect("🎯 Seleccione la(s) Cuenca(s):", cuencas_disp, default=[cuencas_disp[0]] if cuencas_disp else None)
+            # --- FIN MOTOR EN CASCADA ---
             
             if cuenca_sel:
                 filtro_zona = " + ".join(cuenca_sel[:2]) + ("..." if len(cuenca_sel)>2 else "")
                 titulo_terr = f"Cuencas: {filtro_zona}"
-                
                 años_hist = np.arange(1985, 2043)
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
                 mapa_data = []
                 
-                # 2. MOTOR DE AGREGACIÓN: Sumamos las curvas de todas las cuencas seleccionadas
+                # 2. MOTOR DE AGREGACIÓN
                 for c in cuenca_sel:
                     cuenca_data = df_cuencas_solo[df_cuencas_solo['Territorio'] == c]
-                    if 'Total' in cuenca_data['Area'].values:
-                        fila = cuenca_data[cuenca_data['Area'] == 'Total'].iloc[0]
-                    else:
-                        fila = cuenca_data.iloc[0]
-                    
-                    modelo_ganador = str(fila.get('Modelo_Recomendado', 'Desconocido'))
-                    pob_temp = np.zeros_like(años_hist, dtype=float)
-                    
-                    if 'Logistico' in modelo_ganador:
-                        K, a, r = fila.get('Log_K', 0), fila.get('Log_a', 0), fila.get('Log_r', 0)
-                        pob_temp = K / (1 + a * np.exp(-r * (años_hist - 1985)))
-                    elif 'Exponencial' in modelo_ganador:
-                        a, b = fila.get('Exp_a', 0), fila.get('Exp_b', 0)
-                        pob_temp = a * np.exp(b * (años_hist - 1985))
-                    elif 'Polinomial' in modelo_ganador:
-                        A, B, C, D = fila.get('Poly_A', 0), fila.get('Poly_B', 0), fila.get('Poly_C', 0), fila.get('Poly_D', 0)
-                        x_norm = años_hist - 1985
-                        pob_temp = A*x_norm**3 + B*x_norm**2 + C*x_norm + D
-                    
-                    pob_hist_acumulada += pob_temp
-                    mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': fila.get('Pob_Base', 0)})
+                    if not cuenca_data.empty:
+                        fila = cuenca_data[cuenca_data['Area'] == 'Total'].iloc[0] if 'Total' in cuenca_data['Area'].values else cuenca_data.iloc[0]
+                        modelo_ganador = str(fila.get('Modelo_Recomendado', 'Desconocido'))
+                        pob_temp = np.zeros_like(años_hist, dtype=float)
+                        
+                        if 'Logistico' in modelo_ganador:
+                            K, a, r = fila.get('Log_K', 0), fila.get('Log_a', 0), fila.get('Log_r', 0)
+                            pob_temp = K / (1 + a * np.exp(-r * (años_hist - 1985)))
+                        elif 'Exponencial' in modelo_ganador:
+                            a, b = fila.get('Exp_a', 0), fila.get('Exp_b', 0)
+                            pob_temp = a * np.exp(b * (años_hist - 1985))
+                        elif 'Polinomial' in modelo_ganador:
+                            A, B, C, D = fila.get('Poly_A', 0), fila.get('Poly_B', 0), fila.get('Poly_C', 0), fila.get('Poly_D', 0)
+                            x_norm = años_hist - 1985
+                            pob_temp = A*x_norm**3 + B*x_norm**2 + C*x_norm + D
+                        
+                        pob_hist_acumulada += pob_temp
+                        mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': fila.get('Pob_Base', 0)})
                 
                 pob_hist = pob_hist_acumulada
                 df_mapa_base = pd.DataFrame(mapa_data)
             else:
-                # Escudo si el usuario desmarca todas las cuencas en el multiselect
                 filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Ninguna", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
         else:
-            # Escudo si la matriz existe pero no tiene datos de cuencas entrenados aún
             st.sidebar.warning("⚠️ Entrena la matriz de cuencas en la pestaña 4.")
             filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
     else:
-        # Escudo supremo: La matriz maestra no existe o está corrupta (ESTAS SON TUS LÍNEAS)
         st.sidebar.error("🚨 Matriz Maestra no encontrada.")
         filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
         
