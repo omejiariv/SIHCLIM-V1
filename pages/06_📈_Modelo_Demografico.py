@@ -1170,15 +1170,12 @@ with tab_opt:
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR)
 # ==========================================
 with tab_mapas:
-    # --- FIX: ESCUDO SUPREMO ANTI-NAME ERROR ---
     titulo_seguro_mapa = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_seguro_mapa} ({año_sel})")
     
-    # --- ESCUDO GLOBAL: Desactivar mapa a escala mundial ---
     if escala_sel == "🌍 Global y Suramérica":
         st.info("🌍 A escala Global/Suramérica la visualización espacial se encuentra desactivada. Los datos consolidados están disponibles en el panel de tendencias.")
     else:
-        # Se ajustó el nombre exacto con el emoji para que el filtro coincida perfectamente
         if escala_sel != "🌿 Veredal (Antioquia)":
             area_mapa = st.radio("Filtro de Zona Geográfica:", ["Total", "Urbano", "Rural"], horizontal=True)
         else:
@@ -1190,12 +1187,10 @@ with tab_mapas:
         else:
             df_mapa_año = df_mapa_base.copy()
 
-        # --- ESCUDO CONTRA BASES DE DATOS VACÍAS (Global/Cuencas) ---
         if df_mapa_año.empty:
             df_mapa_plot = pd.DataFrame()
         else:
             if area_mapa == "Total":
-                # Agrupamos SOLO por las columnas que realmente existan
                 cols_agrupar = [c for c in ['Territorio', 'Padre'] if c in df_mapa_año.columns]
                 if cols_agrupar:
                     df_mapa_plot = df_mapa_año.groupby(cols_agrupar)['Total'].sum().reset_index()
@@ -1207,216 +1202,144 @@ with tab_mapas:
                 else:
                     df_mapa_plot = df_mapa_año.copy()
                     
-            # --- LA NUEVA ESTRATEGIA ANTI-PELUSAS Y ANTI-TOTALES ---
             if 'Territorio' in df_mapa_plot.columns:
-                # 1. Eliminamos las filas de sumatoria general que no son territorios reales (El territorio "Total")
                 df_mapa_plot = df_mapa_plot[df_mapa_plot['Territorio'].astype(str).str.upper() != 'TOTAL']
-                
-                # 2. Limpieza de Cabeceras para el mapa de Cuencas
                 if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
-                    # Eliminamos visualmente las "Cabeceras" del mapa de cuencas para borrar el ruido del GeoJSON.
-                    # El astype(str) previene errores si hay valores nulos o flotantes en la columna
                     df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].astype(str).str.contains('CABECERA', case=False, na=False)]
                 
-        col_map1, col_map2 = st.columns([1, 3])
-        
-        with col_map1:
-            st.markdown("**⚙️ Configuración de la Capa**")
-            
-            # --- FIX DEFINITIVO: RUTEO CORRECTO DE CAPAS ---
-            opciones_geo = ["mgn_municipios_optimizado.geojson", "Veredas_Antioquia_TOTAL_UrbanoyRural.geojson", "cuencas_SP.geojson"]
-            
-            if "Veredal" in escala_sel: 
-                idx_geo = 1
-            elif "Cuencas" in escala_sel:
-                idx_geo = 2
-            else: 
-                idx_geo = 0
-                
-            archivo_geo_input = st.selectbox("Archivo Espacial:", opciones_geo, index=idx_geo)
-            
-            # --- MEJORA ANALÍTICA: SELECTOR MULTIESCALA BLINDADO ---
-            if "cuencas" in archivo_geo_input.lower():
-                opciones_terr = [
-                    # Bloque 1: Jerarquía Hidrológica (NSS3 es el mayor detalle)
-                    "properties.NOM_NSS3", "properties.NOM_NSS2", "properties.NOM_NSS1", 
-                    "properties.NOM_SZH", "properties.NOMZH", "properties.NOMAH", 
-                    # Bloque 2: Administrativo/Zonal
-                    "properties.depto_regi", "properties.Zona", 
-                    # Bloque 3: Jurisdiccional
-                    "properties.CorpoAmb"
-                ]
-                idx_terr = 0 # Por defecto: NOM_NSS3
-            elif "veredas" in archivo_geo_input.lower():
-                opciones_terr = ["properties.NOMBRE_VER", "properties.MPIO_CNMBR", "properties.nombre"]
-                idx_terr = 0
-            else:
-                opciones_terr = ["properties.MPIO_CNMBR", "properties.NOMBRE_VER", "properties.nombre"]
-                idx_terr = 0
-                
-            prop_geo_input = st.selectbox("Llave Territorio (Escala de Análisis):", opciones_terr, index=idx_terr)
-            
-            st.markdown("**🔗 Llave Doble (Contexto)**")
-            opciones_padre = ["", "properties.DPTO_CCDGO", "properties.NOMB_MPIO"]
-            idx_padre = 0 if "cuencas" in archivo_geo_input.lower() else (2 if "veredas" in archivo_geo_input.lower() else 1)
-            prop_padre_input = st.selectbox("Llave Contexto:", opciones_padre, index=idx_padre)
-        
-        with col_map2:
-            if not df_mapa_plot.empty:
-                # --- ESCUDO SALVAVIDAS: ASEGURAR COLUMNAS CRÍTICAS ---
-                if 'Territorio' not in df_mapa_plot.columns:
-                    col_t = next((c for c in df_mapa_plot.columns if c.lower() in ['municipio', 'cuenca', 'vereda', 'nombre', 'subzona', 'nom_nss3']), df_mapa_plot.columns[0] if len(df_mapa_plot.columns) > 0 else 'Territorio')
-                    df_mapa_plot = df_mapa_plot.rename(columns={col_t: 'Territorio'})
-                    
-                if 'Padre' not in df_mapa_plot.columns:
-                    col_p = next((c for c in df_mapa_plot.columns if c.lower() in ['padre', 'depto_nom', 'departamento', 'macroregion', 'zona']), None)
-                    if col_p:
-                        df_mapa_plot = df_mapa_plot.rename(columns={col_p: 'Padre'})
-                    else:
-                        df_mapa_plot['Padre'] = ""
-                        
-                if 'Total' not in df_mapa_plot.columns:
-                    col_tot = next((c for c in df_mapa_plot.columns if c.lower() in ['total', 'poblacion', 'pob', 'habitantes', 'valor']), df_mapa_plot.columns[-1] if len(df_mapa_plot.columns) > 0 else 'Total')
-                    df_mapa_plot = df_mapa_plot.rename(columns={col_tot: 'Total'})
+        if not df_mapa_plot.empty:
+            # Estandarización de columnas a prueba de balas
+            if 'Territorio' not in df_mapa_plot.columns:
+                col_t = next((c for c in df_mapa_plot.columns if c.lower() in ['municipio', 'cuenca', 'vereda', 'nombre', 'subzona', 'nom_nss3']), df_mapa_plot.columns[0])
+                df_mapa_plot = df_mapa_plot.rename(columns={col_t: 'Territorio'})
+            if 'Padre' not in df_mapa_plot.columns:
+                col_p = next((c for c in df_mapa_plot.columns if c.lower() in ['padre', 'depto_nom', 'departamento', 'macroregion', 'zona']), None)
+                if col_p: df_mapa_plot = df_mapa_plot.rename(columns={col_p: 'Padre'})
+                else: df_mapa_plot['Padre'] = ""
+            if 'Total' not in df_mapa_plot.columns:
+                col_tot = next((c for c in df_mapa_plot.columns if c.lower() in ['total', 'poblacion', 'pob', 'habitantes', 'valor']), df_mapa_plot.columns[-1])
+                df_mapa_plot = df_mapa_plot.rename(columns={col_tot: 'Total'})
 
-                try:
-                    import json
-                    import geopandas as gpd
-                    from sqlalchemy import text
-                    from modules.db_manager import get_engine
+            try:
+                import json
+                import geopandas as gpd
+                from sqlalchemy import text
+                from modules.db_manager import get_engine
+                
+                engine_geo = get_engine()
+                
+                # --- 1. ARCHIVO ESPACIAL AUTOMÁTICO (Sin interfaz) ---
+                if "veredal" in escala_sel.lower(): 
+                    q_geo = text("SELECT * FROM veredas_geometria")
+                elif "cuencas" in escala_sel.lower(): 
+                    q_geo = text("SELECT * FROM cuencas_geometria")
+                else: 
+                    q_geo = text("SELECT * FROM municipios")
                     
-                    engine_geo = get_engine()
+                gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
+                
+                if not gdf_mapa.empty:
+                    # --- 2. MATCH_ID AUTOMÁTICO INTELIGENTE ---
+                    df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
+                        lambda row: normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) 
+                        if str(row['Padre']).strip() and "cuencas" not in escala_sel.lower() 
+                        else normalizar_texto(row['Territorio']), axis=1
+                    )
                     
-                    # --- FIX DEFINITIVO: LECTURA DE TABLAS EN SUPABASE ---
-                    if "municipios" in archivo_geo_input.lower():
-                        q_geo = text("SELECT * FROM municipios")
-                    elif "veredas" in archivo_geo_input.lower():
-                        q_geo = text("SELECT * FROM veredas_geometria")
-                    elif "cuencas" in archivo_geo_input.lower(): 
-                        q_geo = text("SELECT * FROM cuencas") # <--- CORREGIDO AQUÍ
-                    else:
-                        q_geo = None
-                        
-                    if q_geo is not None:
-                        gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
-                        geo_data = json.loads(gdf_mapa.to_json())
-                        
-                        # --- NUEVO MOTOR DE AUTO-ENCUADRE (BOUNDING BOX) ---
-                        center_lat, center_lon = 4.57, -74.29 # Fallback Colombia
-                        if not gdf_mapa.empty:
-                            # Reproyectamos a EPSG 4326 para obtener Lat/Lon puras
-                            gdf_4326 = gdf_mapa.to_crs(epsg=4326)
-                            bounds = gdf_4326.total_bounds # [minx, miny, maxx, maxy]
-                            center_lon = (bounds[0] + bounds[2]) / 2
-                            center_lat = (bounds[1] + bounds[3]) / 2
-                    else:
-                        geo_data = {'features': []}
-                        center_lat, center_lon = 4.57, -74.29
-                        
-                    if geo_data['features']:
-                        # 1. Crear ADN Único en Pandas (Convertimos a string por seguridad anti-nulos)
-                        if prop_padre_input.strip() != "":
-                            df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].astype(str).apply(normalizar_texto) + "_" + df_mapa_plot['Padre'].astype(str).apply(normalizar_texto)
+                    codigos_dane_deptos = {
+                        "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", 
+                        "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", 
+                        "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", 
+                        "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", 
+                        "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", 
+                        "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA"
+                    }
+                    
+                    def generar_id_geojson(row):
+                        if "cuencas" in escala_sel.lower():
+                            cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah']
+                            val_terr = next((str(row[c]) for c in cols_posibles if c in row and pd.notnull(row[c])), "")
+                            return normalizar_texto(val_terr)
+                        elif "veredal" in escala_sel.lower():
+                            val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
+                            val_padre = str(row.get('NOMB_MPIO', row.get('nomb_mpio', row.get('MPIO_CNMBR', ''))))
+                            if val_padre.zfill(2) in codigos_dane_deptos: val_padre = codigos_dane_deptos[val_padre.zfill(2)]
+                            return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
                         else:
-                            df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].astype(str).apply(normalizar_texto)
+                            val_terr = str(row.get('MPIO_CNMBR', row.get('mpio_cnmbr', row.get('nombre', ''))))
+                            val_padre = str(row.get('DPTO_CCDGO', row.get('dpto_ccdgo', '')))
+                            if val_padre.zfill(2) in codigos_dane_deptos: val_padre = codigos_dane_deptos[val_padre.zfill(2)]
+                            if normalizar_texto(val_terr) == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
+                            return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
 
-                        # --- TRADUCTOR DANE DE CÓDIGOS A NOMBRES ---
-                        codigos_dane_deptos = {
-                            "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", 
-                            "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", 
-                            "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", 
-                            "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", 
-                            "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", 
-                            "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", # <--- CORREGIDO AQUÍ
-                            "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", 
-                            "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA"
-                        }
+                    gdf_mapa['MATCH_ID'] = gdf_mapa.apply(generar_id_geojson, axis=1)
+                    
+                    # --- 3. AUTO-ENCUADRE EXACTO CON GEOPANDAS ---
+                    ids_en_tabla = df_mapa_plot['MATCH_ID'].unique()
+                    gdf_filtrado = gdf_mapa[gdf_mapa['MATCH_ID'].isin(ids_en_tabla)]
+                    
+                    center_lat, center_lon, zoom_level = 4.57, -74.29, 5
+                    if not gdf_filtrado.empty:
+                        gdf_4326 = gdf_filtrado.to_crs(epsg=4326)
+                        minx, miny, maxx, maxy = gdf_4326.total_bounds
+                        center_lon = (minx + maxx) / 2
+                        center_lat = (miny + maxy) / 2
                         
-                        # 2. Crear ADN Único en el GeoJSON
-                        prop_key = prop_geo_input.replace("properties.", "")
-                        padre_key = prop_padre_input.replace("properties.", "") if prop_padre_input.strip() else ""
-                        
-                        for feature in geo_data['features']:
-                            props = feature['properties']
-                            # La magia: Al usar el bloque jerárquico que me pasaste, buscará exactamente estas llaves
-                            val_terr = str(props.get(prop_key, props.get(prop_key.lower(), props.get(prop_key.upper(), ""))))
-                            val_padre = ""
-                            if padre_key:
-                                val_padre = str(props.get(padre_key, props.get(padre_key.lower(), props.get(padre_key.upper(), ""))))
-                            
-                            val_terr = normalizar_texto(val_terr)
-                            
-                            if val_padre.zfill(2) in codigos_dane_deptos:
-                                val_padre = codigos_dane_deptos[val_padre.zfill(2)]
-                            
-                            if val_terr == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
-                            
-                            if val_padre:
-                                feature['properties']['MATCH_ID'] = val_terr + "_" + normalizar_texto(val_padre)
-                            else:
-                                feature['properties']['MATCH_ID'] = val_terr
-                                
-                        q_val = 0.85 if area_mapa == "Total" else 0.90
-                        max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
-                        
-                        # 3. Renderizar Mapa
-                        import plotly.express as px
-                        fig_mapa = px.choropleth_mapbox(
-                            df_mapa_plot,
-                            geojson=geo_data,
-                            locations='MATCH_ID',        
-                            featureidkey='properties.MATCH_ID', 
-                            color='Total',
-                            color_continuous_scale="Viridis",
-                            range_color=[0, max_color],  
-                            mapbox_style="carto-positron",
-                            zoom=7 if escala_sel in ["🌿 Veredal (Antioquia)", "💧 Cuencas Hidrográficas"] else 5, 
-                            center={"lat": center_lat, "lon": center_lon}, # <--- AUTO-ENCUADRE APLICADO
-                            opacity=0.8,
-                            labels={'Total': f'Población {area_mapa}'},
-                            hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
-                        )
-                        fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-                        st.plotly_chart(fig_mapa, use_container_width=True)
-                        
-                        geo_ids_disp = [f['properties'].get('MATCH_ID', '') for f in geo_data['features']]
-                        df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(geo_ids_disp)
-                        faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
-                        
-                        if not faltantes.empty:
-                            st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el GeoJSON.")
-                            
-                            if escala_sel == "🌿 Veredal (Antioquia)":
-                                with st.expander("🔍 Ver nombres exactos dentro del mapa GeoJSON (Para arreglar el Excel)"):
-                                    municipio_actual = normalizar_texto(df_mapa_plot['Padre'].iloc[0]) if not df_mapa_plot.empty else ""
-                                    veredas_en_mapa = []
-                                    for f in geo_data['features']:
-                                        m_padre = str(f['properties'].get(padre_key, props.get(padre_key.lower(), "")))
-                                        if normalizar_texto(m_padre) == municipio_actual:
-                                            veredas_en_mapa.append(f['properties'].get(prop_key, props.get(prop_key.lower(), "")))
-                                            
-                                    if veredas_en_mapa:
-                                        st.write(f"El mapa tiene **{len(veredas_en_mapa)}** polígonos para este municipio. Estos son sus nombres reales:")
-                                        st.dataframe(pd.DataFrame({"Nombres exactos en el GeoJSON": sorted(veredas_en_mapa)}), use_container_width=True)
-                                    else:
-                                        st.error("No se encontró ningún polígono para este municipio. Verifica la Llave Contexto.")
-                                        
-                    else:
-                        st.warning(f"⚠️ No se encontraron geometrías en Supabase para la opción seleccionada.")
-                except Exception as e:
-                    st.error(f"❌ Error conectando a PostGIS para dibujar el mapa: {e}")
-            else:
-                st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
-                
-            cols_existentes = [c for c in ['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa'] if c in df_mapa_plot.columns]
+                        max_diff = max(maxx - minx, maxy - miny)
+                        if max_diff < 0.1: zoom_level = 11.5
+                        elif max_diff < 0.3: zoom_level = 10
+                        elif max_diff < 0.8: zoom_level = 9
+                        elif max_diff < 2.5: zoom_level = 7
+                        elif max_diff < 5.0: zoom_level = 6
+                        else: zoom_level = 5
+
+                    geo_data = json.loads(gdf_mapa.to_json())
+                    q_val = 0.85 if area_mapa == "Total" else 0.90
+                    max_color = df_mapa_plot['Total'].quantile(q_val) if len(df_mapa_plot) > 10 else df_mapa_plot['Total'].max()
+                    
+                    # --- 4. RENDERIZADO DEL MAPA (FULL WIDTH + MOUSE WHEEL ZOOM) ---
+                    import plotly.express as px
+                    fig_mapa = px.choropleth_mapbox(
+                        df_mapa_plot,
+                        geojson=geo_data,
+                        locations='MATCH_ID',        
+                        featureidkey='properties.MATCH_ID', 
+                        color='Total',
+                        color_continuous_scale="Viridis",
+                        range_color=[0, max_color],  
+                        mapbox_style="carto-positron",
+                        zoom=zoom_level, 
+                        center={"lat": center_lat, "lon": center_lon},
+                        opacity=0.8,
+                        labels={'Total': f'Población {area_mapa}'},
+                        hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
+                    )
+                    fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+                    
+                    # HABILITAMOS SCROLL ZOOM EXPLICITAMENTE AQUÍ
+                    st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True})
+                    
+                    df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(gdf_mapa['MATCH_ID'].values)
+                    faltantes = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
+                    
+                    if not faltantes.empty:
+                        st.warning(f"⚠️ {len(faltantes)} territorios de la tabla no cruzaron con el polígono espacial.")
+                else:
+                    st.warning("⚠️ No se encontraron geometrías en la base de datos para dibujar.")
+            except Exception as e:
+                st.error(f"❌ Error conectando a PostGIS o procesando el mapa: {e}")
+        else:
+            st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
             
-            if 'Total' in cols_existentes and not df_mapa_plot.empty:
-                df_mapa_plot['Total'] = pd.to_numeric(df_mapa_plot['Total'], errors='coerce').fillna(0)
-                df_mostrar = df_mapa_plot[cols_existentes].sort_values('Total', ascending=False)
-            else:
-                df_mostrar = df_mapa_plot[cols_existentes]
-                
-            st.dataframe(df_mostrar, use_container_width=True)
+        # Tabla de datos debajo del mapa
+        cols_existentes = [c for c in ['Territorio', 'Padre', 'Total', 'MATCH_ID', 'En_Mapa'] if c in df_mapa_plot.columns]
+        if 'Total' in cols_existentes and not df_mapa_plot.empty:
+            df_mapa_plot['Total'] = pd.to_numeric(df_mapa_plot['Total'], errors='coerce').fillna(0)
+            df_mostrar = df_mapa_plot[cols_existentes].sort_values('Total', ascending=False)
+        else:
+            df_mostrar = df_mapa_plot[cols_existentes]
+            
+        st.dataframe(df_mostrar, use_container_width=True)
 
 # =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
