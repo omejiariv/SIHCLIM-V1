@@ -702,9 +702,12 @@ if not df_matriz.empty:
         row_matriz = df_matriz[mask]
 
 # --- 5. INYECTAR RESULTADOS ---
+x_train, y_train = x_hist, y_hist
+
 if not row_matriz.empty:
     row = row_matriz.iloc[0]
     k_opt = float(str(row['Log_K']).replace('.', '').replace(',', '.')) if isinstance(row['Log_K'], str) else float(row['Log_K'])
+    # ... (el resto del código sigue igual)
     a_opt = float(str(row['Log_a']).replace(',', '.'))
     r_opt = float(str(row['Log_r']).replace(',', '.'))
     anio_base = int(row['Año_Base'])
