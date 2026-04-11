@@ -464,7 +464,6 @@ elif escala_sel == "🧩 Regional (Macroregiones)":
     df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
-    # 1. LECTURA DE LA MATRIZ MAESTRA
     if 'df_matriz_demografica' in st.session_state:
         df_matriz = st.session_state['df_matriz_demografica']
     else:
@@ -475,7 +474,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         df_cuencas_solo = df_matriz[df_matriz['Nivel'] == 'Cuenca']
         
         if not df_cuencas_solo.empty:
-            # --- NUEVO MOTOR EN CASCADA PARA CUENCAS ---
+            # --- MOTOR EN CASCADA PARA CUENCAS ---
             try:
                 from modules.db_manager import get_engine
                 df_hier = pd.read_sql("SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3 FROM cuencas", get_engine())
@@ -493,7 +492,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 szh_opts = sorted(df_hier[df_hier['nomzh'] == sel_zh]['nom_szh'].dropna().unique()) if sel_zh != "-- Seleccione --" else []
                 sel_szh = st.sidebar.selectbox("3. Subzona (SZH):", ["-- Seleccione --"] + szh_opts)
                 
-                resolucion = st.sidebar.radio("🔎 Resolución:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"])
+                resolucion = st.sidebar.radio("🔎 Resolución de visualización:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"])
                 col_res = 'nom_nss1' if 'NSS1' in resolucion else ('nom_nss2' if 'NSS2' in resolucion else 'nom_nss3')
                 
                 if sel_szh != "-- Seleccione --": cuencas_disp = sorted(df_hier[df_hier['nom_szh'] == sel_szh][col_res].dropna().unique())
@@ -501,24 +500,35 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 elif sel_ah != "-- Seleccione --": cuencas_disp = sorted(df_hier[df_hier['nomah'] == sel_ah][col_res].dropna().unique())
                 else: cuencas_disp = sorted(df_hier[col_res].dropna().unique())
             else:
-                # Fallback si falla la base de datos
                 cuencas_disp = sorted(df_cuencas_solo['Territorio'].dropna().astype(str).unique())
 
-            cuenca_sel = st.sidebar.multiselect("🎯 Seleccione la(s) Cuenca(s):", cuencas_disp, default=[cuencas_disp[0]] if cuencas_disp else None)
-            # --- FIN MOTOR EN CASCADA ---
+            cuenca_sel = st.sidebar.multiselect("🎯 Seleccione cuencas específicas (Opcional):", cuencas_disp, default=None)
             
-            if cuenca_sel:
-                filtro_zona = " + ".join(cuenca_sel[:2]) + ("..." if len(cuenca_sel)>2 else "")
-                titulo_terr = f"Cuencas: {filtro_zona}"
+            # --- PROTECCIÓN ANTI-NAME ERROR ---
+            cuencas_a_graficar = cuenca_sel if cuenca_sel else cuencas_disp
+            
+            if cuencas_a_graficar:
+                if cuenca_sel:
+                    filtro_zona = " + ".join(cuenca_sel[:2]) + ("..." if len(cuenca_sel)>2 else "")
+                    titulo_terr = f"Cuencas Seleccionadas: {filtro_zona}"
+                else:
+                    if not df_hier.empty:
+                        if sel_szh != "-- Seleccione --": titulo_terr = f"SZH: {sel_szh}"
+                        elif sel_zh != "-- Seleccione --": titulo_terr = f"ZH: {sel_zh}"
+                        elif sel_ah != "-- Seleccione --": titulo_terr = f"AH: {sel_ah}"
+                        else: titulo_terr = "Todas las Cuencas"
+                    else:
+                        titulo_terr = "Todas las Cuencas"
+                    filtro_zona = titulo_terr
+
                 años_hist = np.arange(1985, 2043)
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
                 mapa_data = []
                 
-                # 2. MOTOR DE AGREGACIÓN
+                # MOTOR DE AGREGACIÓN MULTICAPA
                 for c in cuencas_a_graficar:
                     cuenca_data = df_cuencas_solo[df_cuencas_solo['Territorio'] == c]
                     if not cuenca_data.empty:
-                        # A) Sumar curvas matemáticas (Solo usamos el Total)
                         c_total = cuenca_data[cuenca_data['Area'] == 'Total']
                         fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
                         modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
@@ -534,7 +544,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                         
                         pob_hist_acumulada += pob_temp
                         
-                        # B) Enviar datos al mapa (Total, Urbano, Rural) para que funcione el filtro
                         for area_val in ['Total', 'Urbano', 'Rural']:
                             c_area = cuenca_data[cuenca_data['Area'] == area_val]
                             if not c_area.empty:
@@ -703,7 +712,8 @@ if not df_matriz.empty:
             modo_calc = "Matriz Maestra (Top-Down Rural: Antioquia)"
             
     elif escala_sel not in ["🌍 Global y Suramérica", "💧 Cuencas Hidrográficas"]:
-        mask = df_matriz['Territorio'].astype(str).str.upper().str.strip() == territorio_busqueda
+        # El gráfico ahora busca en la Matriz respetando si elegiste Total, Urbano o Rural
+        mask = (df_matriz['Territorio'].astype(str).str.upper().str.strip() == territorio_busqueda) & (df_matriz['Area'].str.lower() == area_global.lower())
         row_matriz = df_matriz[mask]
 
 # --- 5. INYECTAR RESULTADOS ---
@@ -755,6 +765,14 @@ else:
 if 'Exponencial' not in proyecciones: proyecciones['Exponencial'] = proyecciones['Logístico']
 if 'Lineal' not in proyecciones: proyecciones['Lineal'] = proyecciones['Logístico']
 df_proj = pd.DataFrame(proyecciones)
+
+# --- SELECTOR GLOBAL DE ÁREA (Afecta Gráficos y Mapas) ---
+st.markdown("---")
+if escala_sel != "🌿 Veredal (Antioquia)":
+    area_global = st.radio("Filtro Poblacional Global:", ["Total", "Urbano", "Rural"], horizontal=True)
+else:
+    area_global = "Rural"
+    st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
 
 # --- CONFIGURACIÓN DE PESTAÑAS (TABS) ---
 tab_modelos, tab_opt, tab_mapas, tab_matriz, tab_rankings, tab_descargas = st.tabs([
