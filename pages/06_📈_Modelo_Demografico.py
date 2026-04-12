@@ -610,18 +610,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                     pob_hist_acumulada += c_pob_temp_hist
 
-                # --- 🔍 DEPURADOR FORENSE ---
-                if log_cruces:
-                    df_log = pd.DataFrame(log_cruces)
-                    faltantes = len(df_log[df_log['Estado'] == '❌ Faltante'])
-                    if faltantes > 0:
-                        st.sidebar.warning(f"⚠️ {faltantes} micro-cuencas del mapa no tienen datos en la Matriz.")
-                    with st.sidebar.expander("🔍 Ver Depurador de Cuencas"):
-                        st.dataframe(df_log, use_container_width=True)
-
-                pob_hist = pob_hist_acumulada
-                df_mapa_base = pd.DataFrame(mapa_data)
-
                 # --- 🔍 DEPURADOR FORENSE INYECTADO AL PANEL ---
                 if log_cruces:
                     df_log = pd.DataFrame(log_cruces)
