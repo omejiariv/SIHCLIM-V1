@@ -714,7 +714,7 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         df_mapa_base = pd.DataFrame()
     
 # --- SELECTOR GLOBAL DE ÁREA (Afecta Gráficos y Mapas) ---
-st.markdown("---")
+
 if escala_sel != "🌿 Veredal (Antioquia)":
     area_global = st.radio("Filtro Poblacional Global:", ["Total", "Urbano", "Rural"], horizontal=True)
 else:
