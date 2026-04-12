@@ -1727,7 +1727,6 @@ with tab_matriz:
                         texto_progreso.markdown(f"**Procesando Base Administrativa:** {mpio} ({tipo_area})... | **ETA:** {mins}m {secs}s")
 
                 # ================================================================
-# ================================================================
                 # 🧠 BISTURÍ ESPACIAL V6: Hiper-Resolución (Barrios + Gravedad)
                 # ================================================================
                 try:
@@ -1740,18 +1739,17 @@ with tab_matriz:
                     
                     engine_geo = get_engine()
                     
-                    # 1. CARGA DE ACTIVOS CLOUD
+                    # 1. CARGA DE ACTIVOS CLOUD (CON CONVERSIÓN GPS)
                     URL_CABECERAS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CabeceraMunicipal_GisAnt_PT.geojson"
                     URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
                     URL_BARRIOS_MED = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
                     
-                    # Carga de cartografía base
                     q_cue = text("SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, geometry FROM cuencas")
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
-                    # Carga de capas de población
-                    gdf_barrios = gpd.read_file(URL_BARRIOS_MED).to_crs(epsg=3116)
+                    # 🔥 REPARACIÓN CRS: Forzamos Lat/Lon antes de proyectar a metros
+                    gdf_barrios = gpd.read_file(URL_BARRIOS_MED).set_crs(epsg=4326, allow_override=True).to_crs(epsg=3116)
                     gdf_cab = gpd.read_file(URL_CABECERAS).to_crs(epsg=3116)
                     gdf_cp = gpd.read_file(URL_CENTROS_POBLADOS).to_crs(epsg=3116)
                     gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry").to_crs(epsg=3116)
@@ -1767,12 +1765,17 @@ with tab_matriz:
                     gdf_mun['mun_norm'] = gdf_mun['mpio_cnmbr'].apply(clean_v6)
 
                     # 2. PROCESAMIENTO DE PESOS DEMOGRÁFICOS (V6 Especial Medellín)
-                    # Cruzamos barrios con cuencas para saber el % de población de cada cuenca
+                    # Calculamos el peso poblacional exacto basado en el cruce de áreas
+                    gdf_barrios['area_orig'] = gdf_barrios.geometry.area
                     inter_barrios = gpd.overlay(gdf_barrios, gdf_cue, how='intersection')
-                    inter_barrios['pob_frag'] = inter_barrios['Pob_Total'] * (inter_barrios.geometry.area / inter_barrios.geometry.area) # Ajuste simple
-                    pesos_med = inter_barrios.groupby('subc_lbl')['Pob_Total'].sum()
-                    pesos_med_pct = pesos_med / pesos_med.sum()
-
+                    
+                    # Fusionamos para traer el área original y sacar la proporción
+                    inter_barrios = inter_barrios.merge(gdf_barrios[['Cod_Barrio', 'area_orig']], on='Cod_Barrio', how='left')
+                    inter_barrios['pob_frag'] = inter_barrios['Pob_Total'] * (inter_barrios.geometry.area / inter_barrios['area_orig_y'])
+                    
+                    pesos_med = inter_barrios.groupby('subc_lbl')['pob_frag'].sum()
+                    pesos_med_pct = pesos_med / pesos_med.sum() if pesos_med.sum() > 0 else {}
+                    
                     # 3. PROCESAMIENTO RURAL Y URBANO RESTO (V5.1)
                     inter_urbana = gpd.overlay(gdf_cab, gdf_cue, how='intersection')
                     inter_urbana['pct_area_urb'] = inter_urbana.geometry.area / inter_urbana.geometry.area.groupby(inter_urbana['mun_norm']).transform('sum')
