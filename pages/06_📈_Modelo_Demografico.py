@@ -1724,9 +1724,19 @@ with tab_matriz:
                     inter_dispersa = gpd.overlay(gdf_mun, gdf_cue, how='intersection')
                     inter_dispersa['pct_area_rur'] = inter_dispersa.geometry.area / inter_dispersa['area_mun_total']
 
-                    # 4. MOTOR DE DISTRIBUCIÓN HÍBRIDO V5
+                    # 4. MOTOR DE DISTRIBUCIÓN HÍBRIDO V5.1 (Con Sanador Municipal)
                     df_area_actual_v5 = df_area_actual.copy()
                     df_area_actual_v5['mun_norm_dane'] = df_area_actual_v5['municipio'].apply(clean_v5)
+                    
+                    # 🔥 SANADOR MUNICIPAL: Evita que la población caiga al abismo por nombres diferentes
+                    espacial_mpios = set(gdf_mun['mun_norm'].tolist() + cab_en_cuenca['mun_norm'].tolist() + cp_en_cuenca['mun_norm'].tolist())
+                    
+                    def curar_mpio(m):
+                        if m in espacial_mpios: return m
+                        match = difflib.get_close_matches(m, espacial_mpios, n=1, cutoff=0.75)
+                        return match[0] if match else m
+                        
+                    df_area_actual_v5['mun_norm_dane'] = df_area_actual_v5['mun_norm_dane'].apply(curar_mpio)
                     
                     df_final_cuencas = []
 
@@ -1736,11 +1746,12 @@ with tab_matriz:
                         if tipo_area == 'Urbana':
                             # 🏙️ URBANO: Reparto exacto según el área de la cabecera (Medellín se reparte perfecto)
                             cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
-                            for _, u_row in cuencas_urb.iterrows():
-                                df_temp = pob_mpio.copy()
-                                df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
-                                df_temp['subc_lbl'] = u_row['subc_lbl']
-                                df_final_cuencas.append(df_temp)
+                            if not cuencas_urb.empty:
+                                for _, u_row in cuencas_urb.iterrows():
+                                    df_temp = pob_mpio.copy()
+                                    df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
+                                    df_temp['subc_lbl'] = u_row['subc_lbl']
+                                    df_final_cuencas.append(df_temp)
                                 
                         elif tipo_area == 'Rural':
                             # 👨‍🌾 RURAL: 70% Puntos (Casitas) + 30% Polígonos (Bosque/Atrato)
