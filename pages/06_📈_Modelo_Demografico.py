@@ -685,51 +685,79 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
     
     try:
         import geopandas as gpd
-        import json
         
         @st.cache_data(ttl=3600)
         def cargar_barrios_medellin():
             URL_BARRIOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
-            # Plotly requiere estrictamente Lat/Lon (4326)
-            gdf = gpd.read_file(URL_BARRIOS)
-            return gdf.set_crs(epsg=4326, allow_override=True)
+            return gpd.read_file(URL_BARRIOS)
         
         gdf_med = cargar_barrios_medellin()
         
         if nivel_medellin == "Barrios y Veredas":
-            gdf_plot = gdf_med.copy()
+            # 🌟 NUEVO SELECTOR DE BARRIOS
+            lista_barrios = sorted(gdf_med['NombreBarr'].dropna().unique())
+            barrio_sel = st.sidebar.selectbox("Seleccione un Barrio/Vereda:", ["Todos"] + lista_barrios)
+            
+            if barrio_sel != "Todos":
+                gdf_plot = gdf_med[gdf_med['NombreBarr'] == barrio_sel].copy()
+                titulo_terr = f"Barrio: {barrio_sel}"
+                zoom_level = 14
+            else:
+                gdf_plot = gdf_med.copy()
+                titulo_terr = "Todos los Barrios y Veredas"
+                zoom_level = 11.5
+            
+            # Preparación aprueba de balas para Plotly
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str)
-            gdf_plot = gdf_plot.set_index('MATCH_ID')
-            geo_data = json.loads(gdf_plot.to_json())
+            geo_data = gdf_plot.__geo_interface__
             
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreBarr'],
-                'MATCH_ID': gdf_plot.index,
+                'MATCH_ID': gdf_plot['MATCH_ID'],
                 'Total': gdf_plot['Pob_Total'].fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
-            titulo_terr = "Barrios y Veredas (Pob. 2018)"
             
         else:
-            # Agrupación por Comunas (Primeros 2 dígitos)
+            # Agrupación por Comunas
             gdf_med['Cod_Comuna'] = gdf_med['Cod_Barrio'].astype(str).str[:2]
-            gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'})
-            gdf_comunas.index.name = 'MATCH_ID'
-            geo_data = json.loads(gdf_comunas.to_json())
+            gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'}).reset_index()
+            gdf_comunas['Nombre_Comuna'] = 'Comuna/Correg. ' + gdf_comunas['Cod_Comuna']
+            
+            # 🌟 NUEVO SELECTOR DE COMUNAS
+            lista_comunas = sorted(gdf_comunas['Nombre_Comuna'].unique())
+            comuna_sel = st.sidebar.selectbox("Seleccione una Comuna:", ["Todas"] + lista_comunas)
+            
+            if comuna_sel != "Todas":
+                gdf_plot = gdf_comunas[gdf_comunas['Nombre_Comuna'] == comuna_sel].copy()
+                titulo_terr = comuna_sel
+                zoom_level = 13
+            else:
+                gdf_plot = gdf_comunas.copy()
+                titulo_terr = "Todas las Comunas"
+                zoom_level = 11.5
+
+            gdf_plot['MATCH_ID'] = gdf_plot['Cod_Comuna'].astype(str)
+            geo_data = gdf_plot.__geo_interface__
             
             df_mapa_base = pd.DataFrame({
-                'Territorio': 'Comuna/Correg. ' + gdf_comunas.index.astype(str),
-                'MATCH_ID': gdf_comunas.index.astype(str),
-                'Total': gdf_comunas['Pob_Total'].fillna(0),
+                'Territorio': gdf_plot['Nombre_Comuna'],
+                'MATCH_ID': gdf_plot['MATCH_ID'],
+                'Total': gdf_plot['Pob_Total'].fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
-            titulo_terr = "Comunas y Corregimientos (Pob. 2018)"
         
-        filtro_zona = "Medellín (Hiper-Resolución)"
-        zoom_level = 10.5
-        center_lat, center_lon = 6.25, -75.58
+        filtro_zona = titulo_terr
+        
+        # 🌟 CÁMARA INTELIGENTE: Centra el mapa en el barrio seleccionado
+        if not gdf_plot.empty:
+            center_lat = float(gdf_plot.geometry.centroid.y.mean())
+            center_lon = float(gdf_plot.geometry.centroid.x.mean())
+        else:
+            center_lat, center_lon = 6.25, -75.58
+
         pob_hist = np.full_like(años_hist, df_mapa_base['Total'].sum())
         
     except Exception as e:
@@ -1540,22 +1568,22 @@ with tab_mapas:
                     else:
                         clave_id = 'properties.MATCH_ID'
                     
-                    fig_mapa = px.choropleth_mapbox(
-                        df_mapa_plot, 
-                        geojson=geo_data,
-                        locations='MATCH_ID',        
-                        featureidkey=clave_id, 
-                        color='Total',
-                        color_continuous_scale="Viridis",
-                        range_color=[0, max_color if max_color > 0 else 100],  
-                        mapbox_style="carto-positron",
-                        zoom=zoom_level, 
-                        center={"lat": center_lat, "lon": center_lon},
-                        opacity=0.8,
-                        hover_name='Territorio', # Título del tooltip
-                        labels={'Total': 'Habitantes', 'Padre': 'Nivel Superior'},
-                        hover_data={'Total': ':,.0f', 'Padre': True, 'MATCH_ID': False}
-                    )
+                fig_mapa = px.choropleth_mapbox(
+                    df_mapa_plot, 
+                    geojson=geo_data,
+                    locations='MATCH_ID',        
+                    featureidkey='properties.MATCH_ID', # 🔥 Unificado para todas las escalas
+                    color='Total',
+                    color_continuous_scale="Viridis",
+                    range_color=[0, max_color if max_color > 0 else 100],  
+                    mapbox_style="carto-positron",
+                    zoom=zoom_level, 
+                    center={"lat": center_lat, "lon": center_lon},
+                    opacity=0.8,
+                    hover_name='Territorio',
+                    labels={'Total': 'Habitantes', 'Padre': 'Nivel Superior'},
+                    hover_data={'Total': ':,.0f', 'Padre': True, 'MATCH_ID': False}
+                )
                     
                     fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
                     st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
