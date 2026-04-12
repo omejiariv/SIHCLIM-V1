@@ -1533,11 +1533,15 @@ with tab_mapas:
                     
                     # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
                     import plotly.express as px
+                    
+                    # 🔥 LECTURA DINÁMICA: Detecta automáticamente la estructura del GeoJSON
+                    clave_id = 'id' if 'id' in str(geo_data)[:500] else 'properties.MATCH_ID'
+                    
                     fig_mapa = px.choropleth_mapbox(
                         df_mapa_plot, 
                         geojson=geo_data,
                         locations='MATCH_ID',        
-                        featureidkey='properties.MATCH_ID', 
+                        featureidkey=clave_id, # Se adapta a Cuencas o a Medellín sin romperse
                         color='Total',
                         color_continuous_scale="Viridis",
                         range_color=[0, max_color if max_color > 0 else 100],  
@@ -1546,7 +1550,7 @@ with tab_mapas:
                         center={"lat": center_lat, "lon": center_lon},
                         opacity=0.8,
                         hover_name='Territorio', # Título del tooltip
-                        labels={'Total': 'Habitantes', 'Padre': 'Cuenca Principal'},
+                        labels={'Total': 'Habitantes', 'Padre': 'Nivel Superior'},
                         hover_data={'Total': ':,.0f', 'Padre': True, 'MATCH_ID': False}
                     )
                     
