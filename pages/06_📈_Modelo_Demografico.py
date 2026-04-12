@@ -1677,7 +1677,6 @@ with tab_matriz:
                     engine_geo = get_engine()
                     
                     # 1. CARGA DE CARTOGRAFÍA Y PUNTOS DE CONTROL
-                    # Extraemos las cuencas con su nombre de máximo detalle
                     q_cue = text("""
                         SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, 
                                geometry FROM cuencas 
@@ -1686,9 +1685,12 @@ with tab_matriz:
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
-                    # Cargamos tus nuevos archivos de puntos (Imanes de población)
-                    gdf_cab = gpd.read_file("CabeceraMunicipal_GisAnt_PT.geojson").to_crs(epsg=3116)
-                    gdf_cp = gpd.read_file("CentrosPoblados_GisAnt_PT.geojson").to_crs(epsg=3116)
+                    # ☁️ Cargamos tus nuevos archivos de puntos directamente desde Supabase
+                    URL_CABECERAS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CabeceraMunicipal_GisAnt_PT.geojson"
+                    URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
+                    
+                    gdf_cab = gpd.read_file(URL_CABECERAS).to_crs(epsg=3116)
+                    gdf_cp = gpd.read_file(URL_CENTROS_POBLADOS).to_crs(epsg=3116)
                     
                     # Función de limpieza interna para cruces perfectos
                     def clean_v4(t):
@@ -1698,16 +1700,13 @@ with tab_matriz:
                         return re.sub(r'[^a-z0-9]', '', t)
 
                     # Estandarizamos nombres en las capas de puntos
-                    # Buscamos la columna de municipio en cabeceras
                     col_cab = next((c for c in gdf_cab.columns if c.upper() in ['MPIO_NOMBR', 'MUNICIPIO', 'NOMBRE_MPI']), 'MPIO_NOMBR')
                     gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v4)
                     
-                    # Buscamos la columna de municipio en centros poblados
                     col_cp = next((c for c in gdf_cp.columns if c.upper() in ['NOMBRE_MPI', 'MUNICIPIO', 'MPIO_NOMBR']), 'NOMBRE_MPI')
                     gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v4)
                     
                     # 2. UNIONES ESPACIALES (Punto en Polígono)
-                    # Determinamos en qué micro-cuenca cae cada punto de gravedad
                     cab_en_cuenca = gpd.sjoin(gdf_cab, gdf_cue, how='inner', predicate='within')
                     cp_en_cuenca = gpd.sjoin(gdf_cp, gdf_cue, how='inner', predicate='within')
                     
@@ -1718,7 +1717,6 @@ with tab_matriz:
                     gdf_mun['mun_norm'] = gdf_mun[col_mun_name].apply(clean_v4)
                     gdf_mun['area_total'] = gdf_mun.geometry.area
                     
-                    # Intersección para el 30% de población dispersa (comunidades indígenas/afro/campesinas)
                     inter_dispersa = gpd.overlay(gdf_mun, gdf_cue, how='intersection')
                     inter_dispersa['pct_area'] = inter_dispersa.geometry.area / inter_dispersa['area_total']
 
@@ -1732,7 +1730,6 @@ with tab_matriz:
                         pob_mpio = df_area_actual_v4[df_area_actual_v4['mun_norm_dane'] == mpio]
                         
                         if tipo_area == 'Urbana':
-                            # 🏙️ 100% Urbano anclado a la cuenca de la Cabecera Municipal
                             cuencas_cab = cab_en_cuenca[cab_en_cuenca['mun_norm'] == mpio]
                             if not cuencas_cab.empty:
                                 n = len(cuencas_cab)
@@ -1743,10 +1740,8 @@ with tab_matriz:
                                     df_final_cuencas.append(df_temp)
                         
                         elif tipo_area == 'Rural':
-                            # 👨‍🌾 70% Rural anclado a Centros Poblados + 30% Disperso por Área
                             cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio]
                             
-                            # Distribución en Centros Poblados (70%)
                             if not cuencas_cp.empty:
                                 n_cp = len(cuencas_cp)
                                 for _, cp_row in cuencas_cp.iterrows():
@@ -1755,8 +1750,6 @@ with tab_matriz:
                                     df_temp['subc_lbl'] = cp_row['subc_lbl']
                                     df_final_cuencas.append(df_temp)
                             
-                            # Distribución Dispersa (30% o 100% si no hay centros poblados)
-                            # Esto captura a las comunidades en zonas boscosas (Atrato/Chocó)
                             cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio]
                             factor_area = 1.0 if cuencas_cp.empty else 0.30
                             for _, a_row in cuencas_area.iterrows():
@@ -1772,7 +1765,6 @@ with tab_matriz:
                         for cuenca in lista_todas_cuencas:
                             df_t = df_cuencas_v4[df_cuencas_v4['subc_lbl'] == cuenca].sort_values(by=col_anio)
                             if not df_t.empty and df_t['Total_frag'].sum() > 0:
-                                # Entrenamos los 3 modelos para esta micro-cuenca (Log, Exp, Poly)
                                 ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
                             
                             ops_completadas += 1
@@ -1788,7 +1780,7 @@ with tab_matriz:
                     st.warning(f"⚠️ Error en el motor de Gravedad V4 ({tipo_area}): {e}")
 
             # =====================================================================
-            # 🏁 FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
+            # 6. FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
             # =====================================================================
             if matriz_resultados:
                 df_masivo = pd.DataFrame(matriz_resultados)
@@ -1803,7 +1795,7 @@ with tab_matriz:
         # 🛑 SALVAVIDAS DE PYTHON: Este 'except' cierra el 'try' principal de todo el botón
         except Exception as e:
             st.error(f"❌ Error crítico durante el entrenamiento masivo: {e}")
-
+            
     # =====================================================================
     # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
     # =====================================================================
