@@ -360,7 +360,8 @@ escala_sel = st.sidebar.radio("Nivel de Análisis:", [
     "💧 Cuencas Hidrográficas", 
     "🏢 Municipal (Regiones)", 
     "🏢 Municipal (Departamentos)", 
-    "🌿 Veredal (Antioquia)"
+    "🌿 Veredal (Antioquia)",
+    "🏘️ Escala Intra-Urbana (Medellín)"
 ])
 
 años_hist, pob_hist = [], []
@@ -674,6 +675,67 @@ elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)
     
     df_mapa_base = df_base.copy()
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
+
+        # =====================================================================
+        # 🏘️ ESCALA INTRA-URBANA (MEDELLÍN V6)
+        # =====================================================================
+        elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
+            st.sidebar.markdown("### 🏘️ Explorador de Medellín")
+            nivel_medellin = st.sidebar.radio("Nivel de Detalle:", ["Barrios y Veredas", "Comunas y Corregimientos"])
+            
+            try:
+                import geopandas as gpd
+                
+                # Usamos caché para que el mapa cambie instantáneamente sin volver a descargar
+                @st.cache_data(ttl=3600)
+                def cargar_barrios_medellin():
+                    URL_BARRIOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
+                    return gpd.read_file(URL_BARRIOS)
+                
+                gdf_med = cargar_barrios_medellin()
+                
+                if nivel_medellin == "Barrios y Veredas":
+                    gdf_plot = gdf_med.copy()
+                    # Creamos el MATCH_ID usando tu campo 'Cod_Barrio'
+                    gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str)
+                    geo_data = gdf_plot.__geo_interface__
+                    
+                    df_mapa_base = pd.DataFrame({
+                        'Territorio': gdf_plot['NombreBarr'],
+                        'MATCH_ID': gdf_plot['MATCH_ID'],
+                        'Total': gdf_plot['Pob_Total'],
+                        'Padre': 'Medellín',
+                        'area_geografica': 'total'
+                    })
+                    titulo_terr = "Barrios y Veredas (Pob. 2018)"
+                    
+                else:
+                    # Agrupamos por Comunas usando los primeros 2 dígitos del Cod_Barrio
+                    gdf_med['Cod_Comuna'] = gdf_med['Cod_Barrio'].astype(str).str[:2]
+                    
+                    # Disolvemos polígonos y sumamos tu campo 'Pob_Total'
+                    gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'}).reset_index()
+                    gdf_comunas['MATCH_ID'] = gdf_comunas['Cod_Comuna']
+                    geo_data = gdf_comunas.__geo_interface__
+                    
+                    df_mapa_base = pd.DataFrame({
+                        'Territorio': 'Comuna/Corregimiento ' + gdf_comunas['Cod_Comuna'],
+                        'MATCH_ID': gdf_comunas['MATCH_ID'],
+                        'Total': gdf_comunas['Pob_Total'],
+                        'Padre': 'Medellín',
+                        'area_geografica': 'total'
+                    })
+                    titulo_terr = "Comunas y Corregimientos (Pob. 2018)"
+                
+                filtro_zona = "Medellín (Hiper-Resolución)"
+                zoom_level = 11.5
+                center_lat, center_lon = 6.25, -75.58
+                
+                # Mantenemos la línea base poblacional estable para la gráfica
+                pob_hist = np.full_like(años_hist, df_mapa_base['Total'].sum())
+                
+            except Exception as e:
+                st.sidebar.error(f"Error cargando datos intra-urbanos: {e}")
 
 elif escala_sel == "🌿 Veredal (Antioquia)":
     try:
