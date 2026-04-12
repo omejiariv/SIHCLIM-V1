@@ -707,12 +707,14 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todos los Barrios y Veredas"
                 zoom_level = 11.5
             
+            # 🔥 LA SOLUCIÓN: Convertir el código del barrio en el ID oficial del mapa
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str)
+            gdf_plot = gdf_plot.set_index('MATCH_ID') 
             geo_data = gdf_plot.__geo_interface__
             
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreBarr'],
-                'MATCH_ID': gdf_plot['MATCH_ID'],
+                'MATCH_ID': gdf_plot.index,
                 'Total': gdf_plot['Pob_Total'].fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
@@ -737,12 +739,14 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todas las Comunas"
                 zoom_level = 11.5
 
+            # 🔥 LA SOLUCIÓN: Convertir el código de la comuna en el ID oficial del mapa
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Comuna'].astype(str)
+            gdf_plot = gdf_plot.set_index('MATCH_ID') 
             geo_data = gdf_plot.__geo_interface__
             
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['Nombre_Comuna'],
-                'MATCH_ID': gdf_plot['MATCH_ID'],
+                'MATCH_ID': gdf_plot.index,
                 'Total': gdf_plot['Pob_Total'].fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
@@ -750,6 +754,7 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         
         filtro_zona = titulo_terr
         
+        # 🌟 CÁMARA INTELIGENTE: Centra el mapa en el barrio seleccionado
         if not gdf_plot.empty:
             center_lat = float(gdf_plot.geometry.centroid.y.mean())
             center_lon = float(gdf_plot.geometry.centroid.x.mean())
