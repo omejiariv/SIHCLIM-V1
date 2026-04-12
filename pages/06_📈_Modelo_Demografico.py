@@ -525,42 +525,60 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
                 mapa_data = []
                 
-                # 2. MOTOR DE AGREGACIÓN MULTICAPA (OPTIMIZADO CON MATCH_ID)
+                # 2. MOTOR DE AGREGACIÓN MULTICAPA (OPTIMIZADO CON SANADOR FUZZY)
                 # Pre-calculamos el ADN de la matriz para búsquedas ultra rápidas
                 df_cuencas_solo = df_cuencas_solo.copy()
                 if 'MATCH_ID' not in df_cuencas_solo.columns:
                     df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
 
+                # Extraemos los IDs de la matriz para la sanación automática
+                ids_matriz = df_cuencas_solo['MATCH_ID'].dropna().unique().tolist()
+                import difflib
+
+                cuencas_cruzadas = 0
                 for c in cuencas_a_graficar:
-                    # Normalizamos el nombre que viene de PostGIS para cruzarlo con la matriz
+                    # Normalizamos el nombre que viene de PostGIS
                     c_norm = normalizar_texto(c)
-                    cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == c_norm]
+                    match_val = None
                     
-                    if not cuenca_data.empty:
-                        c_total = cuenca_data[cuenca_data['Area'] == 'Total']
-                        fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
-                        modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
-                        pob_temp = np.zeros_like(años_hist, dtype=float)
+                    # Fuzzy Matching en tiempo real: Si no es exacto, busca similitud del 70%
+                    if c_norm in ids_matriz:
+                        match_val = c_norm
+                    else:
+                        matches = difflib.get_close_matches(c_norm, ids_matriz, n=1, cutoff=0.7)
+                        if matches: 
+                            match_val = matches[0]
+                    
+                    # Si logramos hacer match (exacto o curado), procedemos:
+                    if match_val:
+                        cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == match_val]
                         
-                        if 'Logistico' in modelo_ganador:
-                            pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
-                        elif 'Exponencial' in modelo_ganador:
-                            pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
-                        elif 'Polinomial' in modelo_ganador:
-                            x_norm = años_hist - 1985
-                            pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
-                        
-                        pob_hist_acumulada += pob_temp
-                        
-                        for area_val in ['Total', 'Urbano', 'Rural']:
-                            c_area = cuenca_data[cuenca_data['Area'] == area_val]
-                            if not c_area.empty:
-                                val_pob = c_area.iloc[0].get('Pob_Base', 0)
+                        if not cuenca_data.empty:
+                            cuencas_cruzadas += 1
+                            c_total = cuenca_data[cuenca_data['Area'] == 'Total']
+                            fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
+                            modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
+                            pob_temp = np.zeros_like(años_hist, dtype=float)
+                            
+                            if 'Logistico' in modelo_ganador:
+                                pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
+                            elif 'Exponencial' in modelo_ganador:
+                                pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
+                            elif 'Polinomial' in modelo_ganador:
+                                x_norm = años_hist - 1985
+                                pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
+                            
+                            pob_hist_acumulada += pob_temp
+                            
+                            # Alimentar el mapa forzando Total, Urbano y Rural para que los filtros funcionen
+                            for area_val in ['Total', 'Urbano', 'Rural']:
+                                c_area = cuenca_data[cuenca_data['Area'] == area_val]
+                                val_pob = c_area.iloc[0].get('Pob_Base', 0) if not c_area.empty else fila_tot.get('Pob_Base', 0)
                                 mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': val_pob, 'area_geografica': area_val.lower()})
-                            c_area = cuenca_data[cuenca_data['Area'] == area_val]
-                            if not c_area.empty:
-                                val_pob = c_area.iloc[0].get('Pob_Base', 0)
-                                mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': val_pob, 'area_geografica': area_val.lower()})
+
+                # Alerta Temprana en la UI si ninguna cuenca cruzó
+                if cuencas_cruzadas == 0 and len(cuencas_a_graficar) > 0:
+                    st.sidebar.warning(f"⚠️ Las cuencas espaciales no cruzaron con la Matriz. Ejemplo buscado: '{normalizar_texto(cuencas_a_graficar[0])}'")
                 
                 pob_hist = pob_hist_acumulada
                 df_mapa_base = pd.DataFrame(mapa_data)
