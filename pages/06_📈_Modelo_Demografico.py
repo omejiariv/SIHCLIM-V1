@@ -677,7 +677,7 @@ elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 # =====================================================================
-# 🏘️ ESCALA INTRA-URBANA (MEDELLÍN V6)
+# 🏘️ ESCALA INTRA-URBANA (MEDELLÍN V6) - CORREGIDO
 # =====================================================================
 elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
     st.sidebar.markdown("### 🏘️ Explorador de Medellín")
@@ -685,59 +685,58 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
     
     try:
         import geopandas as gpd
+        import json
         
-        # Usamos caché para que el mapa cambie instantáneamente sin volver a descargar
         @st.cache_data(ttl=3600)
         def cargar_barrios_medellin():
             URL_BARRIOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
-            return gpd.read_file(URL_BARRIOS)
+            # Plotly requiere estrictamente Lat/Lon (4326)
+            gdf = gpd.read_file(URL_BARRIOS)
+            return gdf.set_crs(epsg=4326, allow_override=True)
         
         gdf_med = cargar_barrios_medellin()
         
         if nivel_medellin == "Barrios y Veredas":
             gdf_plot = gdf_med.copy()
-            # Creamos el MATCH_ID usando tu campo 'Cod_Barrio'
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str)
-            geo_data = gdf_plot.__geo_interface__
+            gdf_plot = gdf_plot.set_index('MATCH_ID')
+            geo_data = json.loads(gdf_plot.to_json())
             
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreBarr'],
-                'MATCH_ID': gdf_plot['MATCH_ID'],
-                'Total': gdf_plot['Pob_Total'],
+                'MATCH_ID': gdf_plot.index,
+                'Total': gdf_plot['Pob_Total'].fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
             titulo_terr = "Barrios y Veredas (Pob. 2018)"
             
         else:
-            # Agrupamos por Comunas usando los primeros 2 dígitos del Cod_Barrio
+            # Agrupación por Comunas (Primeros 2 dígitos)
             gdf_med['Cod_Comuna'] = gdf_med['Cod_Barrio'].astype(str).str[:2]
-            
-            # Disolvemos polígonos y sumamos tu campo 'Pob_Total'
-            gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'}).reset_index()
-            gdf_comunas['MATCH_ID'] = gdf_comunas['Cod_Comuna']
-            geo_data = gdf_comunas.__geo_interface__
+            gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'})
+            gdf_comunas.index.name = 'MATCH_ID'
+            geo_data = json.loads(gdf_comunas.to_json())
             
             df_mapa_base = pd.DataFrame({
-                'Territorio': 'Comuna/Corregimiento ' + gdf_comunas['Cod_Comuna'],
-                'MATCH_ID': gdf_comunas['MATCH_ID'],
-                'Total': gdf_comunas['Pob_Total'],
+                'Territorio': 'Comuna/Correg. ' + gdf_comunas.index.astype(str),
+                'MATCH_ID': gdf_comunas.index.astype(str),
+                'Total': gdf_comunas['Pob_Total'].fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
             titulo_terr = "Comunas y Corregimientos (Pob. 2018)"
         
         filtro_zona = "Medellín (Hiper-Resolución)"
-        zoom_level = 11.5
+        zoom_level = 10.5
         center_lat, center_lon = 6.25, -75.58
-        
-        # Mantenemos la línea base poblacional estable para la gráfica
         pob_hist = np.full_like(años_hist, df_mapa_base['Total'].sum())
         
     except Exception as e:
         st.sidebar.error(f"Error cargando datos intra-urbanos: {e}")
 
 elif escala_sel == "🌿 Veredal (Antioquia)":
+
     try:
         import pandas as pd
         from modules.db_manager import get_engine
