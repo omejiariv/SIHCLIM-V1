@@ -525,9 +525,17 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
                 mapa_data = []
                 
-                # MOTOR DE AGREGACIÓN MULTICAPA
+                # 2. MOTOR DE AGREGACIÓN MULTICAPA (OPTIMIZADO CON MATCH_ID)
+                # Pre-calculamos el ADN de la matriz para búsquedas ultra rápidas
+                df_cuencas_solo = df_cuencas_solo.copy()
+                if 'MATCH_ID' not in df_cuencas_solo.columns:
+                    df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
+
                 for c in cuencas_a_graficar:
-                    cuenca_data = df_cuencas_solo[df_cuencas_solo['Territorio'] == c]
+                    # Normalizamos el nombre que viene de PostGIS para cruzarlo con la matriz
+                    c_norm = normalizar_texto(c)
+                    cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == c_norm]
+                    
                     if not cuenca_data.empty:
                         c_total = cuenca_data[cuenca_data['Area'] == 'Total']
                         fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
@@ -545,6 +553,10 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                         pob_hist_acumulada += pob_temp
                         
                         for area_val in ['Total', 'Urbano', 'Rural']:
+                            c_area = cuenca_data[cuenca_data['Area'] == area_val]
+                            if not c_area.empty:
+                                val_pob = c_area.iloc[0].get('Pob_Base', 0)
+                                mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': val_pob, 'area_geografica': area_val.lower()})
                             c_area = cuenca_data[cuenca_data['Area'] == area_val]
                             if not c_area.empty:
                                 val_pob = c_area.iloc[0].get('Pob_Base', 0)
