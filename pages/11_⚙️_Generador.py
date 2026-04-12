@@ -353,7 +353,7 @@ with tab4:
 # PESTAÑA 5: Generador de Diccionario Maestro (Veredas)
 # =====================================================================
 
-with tab5:
+    with tab5:
         st.markdown("### 🔗 Generador de Diccionario Maestro (Veredas)")
         st.info("Cruza las bases tabulares (DANE) con las espaciales (GeoJSON) usando el Código DANE para generar el diccionario `homologacion_veredas.csv`.")
 
@@ -369,9 +369,18 @@ with tab5:
             if st.button("🚀 Generar Diccionario de Homologación", type="primary", use_container_width=True):
                 with st.spinner("Cruzando bases de datos y analizando discrepancias..."):
                     try:
-                        # Leemos detectando automáticamente si es coma (,) o punto y coma (;)
-                        df_dane = pd.read_csv(file_dane, sep=None, engine='python')
-                        df_gis = pd.read_csv(file_gis, sep=None, engine='python')
+                        # 🛡️ LECTOR BLINDADO: Detecta separadores (;) y repara codificaciones corruptas (Latin-1/UTF-8)
+                        def leer_csv_robusto(file_obj):
+                            file_obj.seek(0) # Reinicia el puntero del archivo
+                            try:
+                                return pd.read_csv(file_obj, sep=None, engine='python', encoding='utf-8')
+                            except UnicodeDecodeError:
+                                file_obj.seek(0) # Si falla el UTF-8, reinicia y prueba con Latin-1
+                                return pd.read_csv(file_obj, sep=None, engine='python', encoding='latin1')
+
+                        # Leemos los archivos con la función robusta
+                        df_dane = leer_csv_robusto(file_dane)
+                        df_gis = leer_csv_robusto(file_gis)
 
                         # Limpiamos espacios fantasmas (invisibles) en los títulos de las columnas
                         df_dane.columns = df_dane.columns.str.strip()
