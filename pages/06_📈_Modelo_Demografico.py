@@ -572,11 +572,10 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                                 c_rur = cuenca_data[cuenca_data['Area'] == 'Rural']
                                 v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
 
-                                # 🗺️ MAPA: Pintamos el polígono en el mapa
-                                if v_t > 0:
-                                    mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
-                                    mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
-                                    mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
+                                # 🗺️ MAPA: Pintamos TODOS los polígonos (incluso los de 0 habitantes)
+                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
+                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
+                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
 
                                 # 📊 MATEMÁTICA: SOLO sumamos la población si NO se ha sumado ya en esta cuenca padre
                                 if match_val not in matrix_ids_sumados:
@@ -597,6 +596,10 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                                     c_pob_temp_hist += pob_temp
                         else:
                             log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": "Ninguno", "Estado": "❌ Faltante"})
+                            # 🔥 FIX TOPOLÓGICO: Añadimos los vacíos al mapa con población 0 para que no queden "huecos"
+                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
+                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
+                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
 
                     # Sumamos el total curado (sin multiplicadores falsos) a la gráfica
                     pob_hist_acumulada += c_pob_temp_hist
