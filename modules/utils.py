@@ -62,7 +62,20 @@ def inicializar_torrente_sanguineo():
 # 🧽 FUNCIONES MAESTRAS DE LIMPIEZA (CENTRALIZADAS)
 # ==============================================================================
 
-def normalizar_texto(t):
+import pandas as pd
+import streamlit as st
+
+@st.cache_data(ttl=3600)
+def cargar_diccionario_veredas():
+    # ☁️ LECTURA DIRECTA DESDE TU BUCKET PÚBLICO EN SUPABASE
+    url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/homologacion_veredas.csv"
+    try:
+        return pd.read_csv(url)
+    except:
+        return pd.DataFrame()
+
+# ⚠️ Fíjate que agregamos municipio_padre="" aquí en los paréntesis
+def normalizar_texto(t, municipio_padre=""):
     if not t or pd.isna(t): return ""
     import unicodedata
     import re
@@ -70,33 +83,26 @@ def normalizar_texto(t):
     t = str(t).upper().strip()
 
     # -------------------------------------------------------------
-    # 💉 NUEVA VACUNA: LECTURA DEL DICCIONARIO EXTERNO DE VEREDAS
+    # 💉 NUEVA VACUNA: LECTURA DEL DICCIONARIO EXTERNO DE VEREDAS (NUBE)
     # -------------------------------------------------------------
     # Si estamos evaluando una vereda y tenemos su municipio, creamos el ID
     if municipio_padre:
         id_busqueda = t + "_" + municipio_padre.upper().strip()
         id_busqueda = re.sub(r'[^A-Z0-9_]', '', id_busqueda) # Limpiamos caracteres raros
         
-        # Ruta a tu archivo de homologación (ajusta la ruta según tu estructura)
-        ruta_diccionario = os.path.join(os.path.dirname(__file__), "..", "data", "homologacion_veredas.csv")
+        # Leemos el archivo directamente desde Supabase usando la función que está arriba
+        df_homologacion = cargar_diccionario_veredas()
         
-        if os.path.exists(ruta_diccionario):
-            try:
-                df_homologacion = pd.read_csv(ruta_diccionario)
-                # Si encuentra el ID de la tabla, devuelve el nombre correcto del mapa
-                match = df_homologacion[df_homologacion['ID_TABLA'] == id_busqueda]
-                if not match.empty:
-                    # Retorna solo el nombre de la vereda curado (antes del guion bajo)
-                    id_curado = str(match.iloc[0]['ID_MAPA'])
-                    return id_curado.split("_")[0] 
-            except:
-                pass # Si hay error leyendo el CSV, sigue con la limpieza normal
-    # -------------------------------------------------------------    
+        if not df_homologacion.empty and 'ID_TABLA' in df_homologacion.columns:
+            match = df_homologacion[df_homologacion['ID_TABLA'] == id_busqueda]
+            if not match.empty:
+                # Retorna solo el nombre de la vereda curado (antes del guion bajo)
+                id_curado = str(match.iloc[0]['ID_MAPA'])
+                return id_curado.split("_")[0] 
+    # ------------------------------------------------------------- 
     
-    # 🚀 FIX ESTRUCTURAL CUENCAS: "Rio Aburra - Q. La Iguaná" -> "Q. La Iguaná"
-    if "-" in t:
-        t = t.split("-")[-1].strip()
-        
+    # Eliminamos el hack del guion ("-" in t) porque el Fuzzy Matching de cuencas ya se encarga de eso.
+    
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
     
     t = re.sub(r'\bQ\.\s*', 'QUEBRADA ', t)
