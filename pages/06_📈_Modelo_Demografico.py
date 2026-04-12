@@ -525,7 +525,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
                 mapa_data = []
                 
-                # 2. MOTOR DE AGREGACIÓN MULTICAPA (SÚPER-PRECISIÓN Y MAPA GRANULAR)
+                # 2. MOTOR DE AGREGACIÓN MULTICAPA (CON FILTRO ANTI-DUPLICADOS Y DEPURADOR)
                 df_cuencas_solo = df_cuencas_solo.copy()
                 if 'MATCH_ID' not in df_cuencas_solo.columns:
                     df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
@@ -534,16 +534,17 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 import difflib
 
                 cuencas_cruzadas = 0
+                log_cruces = [] # Memoria para tu Depurador Forense
+
                 for c in cuencas_a_graficar:
-                    # Extraemos todas las NSS3 que pertenecen a este territorio 'c'
                     if col_res in df_hier.columns and 'nom_nss3' in df_hier.columns:
                         micro_cuencas = df_hier[df_hier[col_res] == c]['nom_nss3'].dropna().unique()
                     else:
                         micro_cuencas = [c]
 
                     c_pob_temp_hist = np.zeros_like(años_hist, dtype=float)
+                    matrix_ids_sumados = set() # 🛡️ EL ESCUDO ANTI-MULTIPLICACIÓN
 
-                    # Sumamos todas las micro-cuencas que lo componen
                     for micro in micro_cuencas:
                         micro_norm = normalizar_texto(micro)
                         match_val = None
@@ -551,27 +552,37 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                         if micro_norm in ids_matriz:
                             match_val = micro_norm
                         else:
-                            matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.7)
+                            # Subimos la rigurosidad al 85% para evitar cruces absurdos
+                            matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.85)
                             if matches: match_val = matches[0]
 
                         if match_val:
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": match_val, "Estado": "✅ Encontrado"})
+                            
                             cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == match_val]
                             if not cuenca_data.empty:
-                                cuencas_cruzadas += 1
-
-                                # 🐛 FIX MULTIPLICACIÓN x4: Extraemos estrictamente UN SOLO REGISTRO por Área
                                 c_total = cuenca_data[cuenca_data['Area'] == 'Total']
-                                if not c_total.empty:
-                                    fila_tot = c_total.iloc[0] # Solo la primera fila (evita sumar 4 modelos a la vez)
-                                    v_t = float(fila_tot.get('Pob_Base', 0))
+                                fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
+                                
+                                v_t = float(fila_tot.get('Pob_Base', 0))
+                                
+                                c_urb = cuenca_data[cuenca_data['Area'] == 'Urbano']
+                                v_u = float(c_urb.iloc[0].get('Pob_Base', 0)) if not c_urb.empty else 0
+                                
+                                c_rur = cuenca_data[cuenca_data['Area'] == 'Rural']
+                                v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
 
-                                    c_urb = cuenca_data[cuenca_data['Area'] == 'Urbano']
-                                    v_u = float(c_urb.iloc[0].get('Pob_Base', 0)) if not c_urb.empty else 0
+                                # 🗺️ MAPA: Pintamos el polígono en el mapa
+                                if v_t > 0:
+                                    mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
+                                    mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
+                                    mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
 
-                                    c_rur = cuenca_data[cuenca_data['Area'] == 'Rural']
-                                    v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
+                                # 📊 MATEMÁTICA: SOLO sumamos la población si NO se ha sumado ya en esta cuenca padre
+                                if match_val not in matrix_ids_sumados:
+                                    matrix_ids_sumados.add(match_val)
+                                    cuencas_cruzadas += 1
 
-                                    # Matemáticas para la curva (solo se calcula una vez por micro-cuenca)
                                     modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
                                     pob_temp = np.zeros_like(años_hist, dtype=float)
 
@@ -583,21 +594,22 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                                         x_norm = años_hist - 1985
                                         pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
 
-                                    # Agregamos a la curva macro
                                     c_pob_temp_hist += pob_temp
+                        else:
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": "Ninguno", "Estado": "❌ Faltante"})
 
-                                    # 🗺️ FIX MAPA: Enviamos la MICRO-CUENCA (NSS3) al mapa para que coincida con el GeoJSON
-                                    if v_t > 0:
-                                        mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
-                                        mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
-                                        mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
-
-                    # Una vez sumadas todas las micro-cuencas, le asignamos el gran total a la curva global
+                    # Sumamos el total curado (sin multiplicadores falsos) a la gráfica
                     pob_hist_acumulada += c_pob_temp_hist
 
-                if cuencas_cruzadas == 0 and len(cuencas_a_graficar) > 0:
-                    st.sidebar.warning(f"⚠️ Las cuencas espaciales no cruzaron con la Matriz. Ejemplo: '{normalizar_texto(cuencas_a_graficar[0])}'")
-                
+                # --- 🔍 DEPURADOR FORENSE INYECTADO AL PANEL ---
+                if log_cruces:
+                    df_log = pd.DataFrame(log_cruces)
+                    faltantes = len(df_log[df_log['Estado'] == '❌ Faltante'])
+                    if faltantes > 0:
+                        st.sidebar.warning(f"⚠️ {faltantes} micro-cuencas del mapa no tienen datos en la Matriz Demográfica.")
+                    with st.sidebar.expander("🔍 Ver Depurador de Cuencas"):
+                        st.dataframe(df_log, use_container_width=True)
+
                 pob_hist = pob_hist_acumulada
                 df_mapa_base = pd.DataFrame(mapa_data)
             else:
