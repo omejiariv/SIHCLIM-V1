@@ -367,35 +367,46 @@ with tab4:
 
         if file_dane and file_gis:
             if st.button("🚀 Generar Diccionario de Homologación", type="primary", use_container_width=True):
-                with st.spinner("Cruzando bases de datos y analizando discrepancias..."):
+                with st.spinner("Realizando exorcismo de datos y cruzando bases..."):
                     try:
-                        # 🛡️ LECTOR BLINDADO: Detecta separadores (;) y repara codificaciones corruptas (Latin-1/UTF-8)
+                        # 🛡️ LECTOR MEGA-BLINDADO (Anti-BOM y Anti-Punto y Coma)
                         def leer_csv_robusto(file_obj):
-                            file_obj.seek(0) # Reinicia el puntero del archivo
+                            file_obj.seek(0)
+                            # Detectar separador manualmente leyendo una muestra
+                            sample = file_obj.read(1000).decode('utf-8', errors='ignore')
+                            sep_char = ';' if ';' in sample else ','
+                            file_obj.seek(0)
+                            
                             try:
-                                return pd.read_csv(file_obj, sep=None, engine='python', encoding='utf-8')
+                                # utf-8-sig DESTRUYE el carácter fantasma \ufeff de Excel
+                                return pd.read_csv(file_obj, sep=sep_char, encoding='utf-8-sig')
                             except UnicodeDecodeError:
-                                file_obj.seek(0) # Si falla el UTF-8, reinicia y prueba con Latin-1
-                                return pd.read_csv(file_obj, sep=None, engine='python', encoding='latin1')
+                                file_obj.seek(0)
+                                return pd.read_csv(file_obj, sep=sep_char, encoding='latin1')
 
-                        # Leemos los archivos con la función robusta
+                        # 1. Leer archivos
                         df_dane = leer_csv_robusto(file_dane)
                         df_gis = leer_csv_robusto(file_gis)
 
-                        # Limpiamos espacios fantasmas (invisibles) en los títulos de las columnas
-                        df_dane.columns = df_dane.columns.str.strip()
-                        df_gis.columns = df_gis.columns.str.strip()
+                        # 2. Exorcismo de columnas (Eliminar TODO rastro de caracteres invisibles)
+                        df_dane.columns = [str(c).replace('\ufeff', '').replace('\xef\xbb\xbf', '').strip() for c in df_dane.columns]
+                        df_gis.columns = [str(c).replace('\ufeff', '').replace('\xef\xbb\xbf', '').strip() for c in df_gis.columns]
 
-                        # Forzamos la columna llave a minúsculas por si se guardó como "Codigo_Vereda"
-                        df_dane.rename(columns=lambda x: 'codigo_vereda' if x.lower() == 'codigo_vereda' else x, inplace=True)
-                        df_gis.rename(columns=lambda x: 'codigo_vereda' if x.lower() == 'codigo_vereda' else x, inplace=True)
+                        # 3. Forzar el nombre de la llave (Si dice "codigo" en algún lado, lo volvemos codigo_vereda)
+                        df_dane.columns = ['codigo_vereda' if 'codigo' in c.lower() else c for c in df_dane.columns]
+                        df_gis.columns = ['codigo_vereda' if 'codigo' in c.lower() else c for c in df_gis.columns]
 
-                        # Estandarizar códigos a 8 dígitos por si Excel borró los ceros a la izquierda
-                        df_dane['codigo_vereda'] = df_dane['codigo_vereda'].astype(str).str.zfill(8)
-                        df_gis['codigo_vereda'] = df_gis['codigo_vereda'].astype(str).str.zfill(8)
+                        # 4. Asegurar que sean strings limpios de 8 dígitos
+                        df_dane['codigo_vereda'] = df_dane['codigo_vereda'].astype(str).str.replace(r'\.0$', '', regex=True).str.zfill(8)
+                        df_gis['codigo_vereda'] = df_gis['codigo_vereda'].astype(str).str.replace(r'\.0$', '', regex=True).str.zfill(8)
 
-                        # Cruzar bases
+                        # 5. Cruzar bases
                         df_cruce = pd.merge(df_dane, df_gis, on='codigo_vereda', suffixes=('_DANE', '_GIS'))
+
+                        # Verificar si cruzaron
+                        if df_cruce.empty:
+                            st.error("❌ Los archivos se leyeron bien, pero no hay códigos DANE que coincidan. Revisa los datos de las columnas de código.")
+                            st.stop()
 
                         # Función limpiadora interna
                         def limpiar_texto(t, municipio=""):
@@ -419,7 +430,7 @@ with tab4:
                         df_rebeldes = df_cruce[df_cruce['ID_TABLA'] != df_cruce['ID_MAPA']]
                         df_final = df_rebeldes[['ID_TABLA', 'ID_MAPA']].drop_duplicates()
 
-                        st.success(f"✅ ¡Éxito! Se detectaron y mapearon {len(df_final)} discrepancias territoriales.")
+                        st.success(f"✅ ¡Éxito Total! Se cruzaron los datos y se detectaron {len(df_final)} discrepancias territoriales.")
                         st.dataframe(df_final, use_container_width=True)
 
                         # Botón de descarga
@@ -431,7 +442,7 @@ with tab4:
                             mime="text/csv",
                             type="primary"
                         )
-                        st.info("💡 Instrucción: Descarga este archivo y guárdalo en la carpeta `data/` de tu proyecto. El `Modelo Demográfico` lo leerá automáticamente.")
+                        st.info("💡 Instrucción: Descarga este archivo y guárdalo en la carpeta `data/` de tu proyecto. El `Modelo Demográfico` lo leerá automáticamente para arreglar los mapas.")
 
                     except Exception as e:
-                        st.error(f"❌ Error durante el cruce: {e}. Revisa que las columnas se llamen exactamente como se indicó.")
+                        st.error(f"❌ Error interno durante el procesamiento: {e}")
