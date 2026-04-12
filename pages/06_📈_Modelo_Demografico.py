@@ -537,11 +537,14 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 log_cruces = [] # Memoria para tu Depurador Forense
 
                 for c in cuencas_a_graficar:
+                    # 🔥 FIX TOPOLÓGICO Y CARIBE/CORNARE: Extraemos hijos usando limpieza agresiva para evitar que las tildes oculten datos
                     if col_res in df_hier.columns:
-                        # 🔥 FIX HUECOS 1: Capturamos la geometría exacta (NSS3 o la que exista)
                         cols_lbl = [col for col in ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh'] if col in df_hier.columns]
                         df_hier['subc_lbl'] = df_hier[cols_lbl].bfill(axis=1).iloc[:, 0]
-                        micro_cuencas = df_hier[df_hier[col_res] == c]['subc_lbl'].dropna().unique()
+                        # Filtramos por el nombre exacto o normalizado para no perder a Cornare
+                        c_norm_filtro = normalizar_texto(c)
+                        hijos_hier = df_hier[(df_hier[col_res] == c) | (df_hier[col_res].apply(lambda x: normalizar_texto(str(x))) == c_norm_filtro)]['subc_lbl'].dropna().unique()
+                        micro_cuencas = hijos_hier if len(hijos_hier) > 0 else [c]
                     else:
                         micro_cuencas = [c]
 
@@ -555,7 +558,8 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                         if micro_norm in ids_matriz:
                             match_val = micro_norm
                         else:
-                            matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.85)
+                            # Aumentamos el cutoff para evitar que "Q. San Juan" (Río Chico) se robe los datos de "Río San Juan" (Urabá)
+                            matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.90)
                             if matches: match_val = matches[0]
 
                         if match_val:
@@ -567,17 +571,38 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                                 fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
                                 
                                 v_t = float(fila_tot.get('Pob_Base', 0))
-                                
                                 c_urb = cuenca_data[cuenca_data['Area'] == 'Urbano']
                                 v_u = float(c_urb.iloc[0].get('Pob_Base', 0)) if not c_urb.empty else 0
-                                
                                 c_rur = cuenca_data[cuenca_data['Area'] == 'Rural']
                                 v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
 
-                                # 🗺️ MAPA: Pintamos TODOS los polígonos (incluso los de 0 habitantes para no dejar huecos)
+                                # 🗺️ MAPA: Asociamos un PADRE ÚNICO (c) para que el mapa pueda cortar los polígonos intrusos
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
+
+                                if match_val not in matrix_ids_sumados:
+                                    matrix_ids_sumados.add(match_val)
+                                    cuencas_cruzadas += 1
+
+                                    modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
+                                    pob_temp = np.zeros_like(años_hist, dtype=float)
+
+                                    if 'Logistico' in modelo_ganador:
+                                        pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
+                                    elif 'Exponencial' in modelo_ganador:
+                                        pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
+                                    elif 'Polinomial' in modelo_ganador:
+                                        x_norm = años_hist - 1985
+                                        pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
+
+                                    c_pob_temp_hist += pob_temp
+                        else:
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": "Ninguno", "Estado": "❌ Faltante"})
+                            # 🔥 FIX HUECOS: Rellenamos con 0 para mantener la topología visual continua
+                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
+                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
+                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
 
                                 # 📊 MATEMÁTICA: SOLO sumamos la población si NO se ha sumado ya en esta cuenca padre
                                 if match_val not in matrix_ids_sumados:
@@ -1340,15 +1365,24 @@ with tab_mapas:
                     
                 gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
                 
-                # 🔥 FIX POLÍGONOS DISTANTES V2: Filtramos usando los nombres que ya cruzaron exitosamente
+                # 🔥 FIX POLÍGONOS INTRUSOS: Filtramos el GeoJSON por jerarquía topológica estricta
                 if "cuencas" in escala_sel.lower() and not df_mapa_plot.empty:
-                    # Extraemos los nombres de las micro-cuencas que el motor demográfico aprobó
-                    micro_cuencas_validas = df_mapa_plot['Territorio'].unique().tolist()
-                    # Columna dinámica para filtrar dependiendo de la base
-                    col_filtro = 'nom_nss3' if 'nom_nss3' in gdf_mapa.columns else 'subc_lbl'
-                    if col_filtro in gdf_mapa.columns:
-                        gdf_mapa = gdf_mapa[gdf_mapa[col_filtro].isin(micro_cuencas_validas)]
-                
+                    # Extraemos los NOMBRES y los PADRES para un cruce topológico perfecto
+                    df_validos = df_mapa_plot[['Territorio', 'Padre']].drop_duplicates()
+                    
+                    if col_res in gdf_mapa.columns:
+                        # Cortamos el mapa: Solo dibujamos polígonos cuyo "Padre" (ej. Magdalena Cauca) sea el que seleccionaste
+                        padres_seleccionados = df_validos['Padre'].unique().tolist()
+                        
+                        # Manejo agresivo de tildes para no perder a Cornare ni al Caribe
+                        gdf_mapa['padre_norm'] = gdf_mapa[col_res].astype(str).apply(normalizar_texto)
+                        padres_norm = [normalizar_texto(str(p)) for p in padres_seleccionados]
+                        
+                        gdf_mapa = gdf_mapa[gdf_mapa['padre_norm'].isin(padres_norm)]
+                        
+                        # Limpiamos las columnas auxiliares
+                        gdf_mapa = gdf_mapa.drop(columns=['padre_norm'], errors='ignore')
+
                 if not gdf_mapa.empty:
                     # 1. MATCH_ID Dinámico en Pandas
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
