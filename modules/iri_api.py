@@ -29,8 +29,16 @@ def fetch_iri_data(filename):
     
     # 2. INTENTO DE DESCARGA EN VIVO (HTTPS + AUTH)
     try:
-        # Usamos auth=(user, pwd) para entrar al servidor privado de Columbia
-        response = requests.get(url, auth=(user, pwd), timeout=10)
+        # 🔥 EL DISFRAZ: Simular ser un navegador humano (Chrome en Windows)
+        headers_disfraz = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Connection': 'keep-alive'
+        }
+        
+        # Usamos auth=(user, pwd) y le inyectamos los headers de disfraz
+        response = requests.get(url, auth=(user, pwd), headers=headers_disfraz, timeout=10)
         
         if response.status_code == 200:
             # st.toast(f"✅ Sincronizado: {filename} (Columbia Univ.)", icon="📡")
