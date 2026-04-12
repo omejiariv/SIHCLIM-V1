@@ -1470,7 +1470,7 @@ with tab_mapas:
                     df_mapa_plot_final = df_mapa_plot[df_mapa_plot['En_Mapa'] == True].copy()
                     max_color = df_mapa_plot_final['Total'].quantile(q_val) if len(df_mapa_plot_final) > 10 else (df_mapa_plot_final['Total'].max() if not df_mapa_plot_final.empty else 1)
                     
-                    # 4. RENDERIZADO DEL MAPA
+                    # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
                     import plotly.express as px
                     fig_mapa = px.choropleth_mapbox(
                         df_mapa_plot, 
@@ -1479,14 +1479,14 @@ with tab_mapas:
                         featureidkey='properties.MATCH_ID', 
                         color='Total',
                         color_continuous_scale="Viridis",
-                        range_color=[0, max_color],  
+                        range_color=[0, max_color if max_color > 0 else 100],  
                         mapbox_style="carto-positron",
                         zoom=zoom_level, 
                         center={"lat": center_lat, "lon": center_lon},
                         opacity=0.8,
-                        hover_name='Territorio', # 🌟 AQUÍ ESTÁ LA MAGIA DEL TOOLTIP: Título en negrita
-                        labels={'Total': f'Población {area_mapa}', 'Padre': 'Cuenca Padre'},
-                        hover_data={'Total': ':,.0f', 'Padre': True, 'MATCH_ID': False} # 🌟 Datos extra al pasar el mouse
+                        hover_name='Territorio', # Título del tooltip
+                        labels={'Total': 'Habitantes', 'Padre': 'Cuenca Principal'},
+                        hover_data={'Total': ':,.0f', 'Padre': True, 'MATCH_ID': False}
                     )
                     
                     fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
@@ -1665,7 +1665,8 @@ with tab_matriz:
                         texto_progreso.markdown(f"**Procesando Base Administrativa:** {mpio} ({tipo_area})... | **ETA:** {mins}m {secs}s")
 
                 # ================================================================
-                # 🧠 BISTURÍ ESPACIAL V5.1: Dasimetría Híbrida + Sanador Municipal
+# ================================================================
+                # 🧠 BISTURÍ ESPACIAL V6: Hiper-Resolución (Barrios + Gravedad)
                 # ================================================================
                 try:
                     import geopandas as gpd
@@ -1677,123 +1678,104 @@ with tab_matriz:
                     
                     engine_geo = get_engine()
                     
-                    # 1. CARGA DE CARTOGRAFÍA EN NUBE
+                    # 1. CARGA DE ACTIVOS CLOUD
                     URL_CABECERAS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CabeceraMunicipal_GisAnt_PT.geojson"
                     URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
+                    URL_BARRIOS_MED = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
                     
-                    q_cue = text("""
-                        SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, 
-                               geometry FROM cuencas 
-                        WHERE COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) IS NOT NULL
-                    """)
+                    # Carga de cartografía base
+                    q_cue = text("SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, geometry FROM cuencas")
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
-                    # Cabeceras (Polígonos para Medellín y megaciudades)
+                    # Carga de capas de población
+                    gdf_barrios = gpd.read_file(URL_BARRIOS_MED).to_crs(epsg=3116)
                     gdf_cab = gpd.read_file(URL_CABECERAS).to_crs(epsg=3116)
-                    gdf_cab['geometry'] = gdf_cab.geometry.buffer(0)
-                    
-                    # Centros Poblados (Puntos para Gravedad Rural)
                     gdf_cp = gpd.read_file(URL_CENTROS_POBLADOS).to_crs(epsg=3116)
-                    
-                    def clean_v5(t):
+                    gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry").to_crs(epsg=3116)
+
+                    def clean_v6(t):
                         if not t or pd.isna(t): return ""
                         t = str(t).lower().strip()
                         t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
                         return re.sub(r'[^a-z0-9]', '', t)
 
-                    col_cab = next((c for c in gdf_cab.columns if c.upper() in ['MPIO_NOMBR', 'MUNICIPIO', 'NOMBRE_MPI']), 'MPIO_NOMBR')
-                    gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v5)
-                    
-                    col_cp = next((c for c in gdf_cp.columns if c.upper() in ['NOMBRE_MPI', 'MUNICIPIO', 'MPIO_NOMBR']), 'NOMBRE_MPI')
-                    gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v5)
+                    gdf_cab['mun_norm'] = gdf_cab['MPIO_NOMBR'].apply(clean_v6)
+                    gdf_cp['mun_norm'] = gdf_cp['NOMBRE_MPI'].apply(clean_v6)
+                    gdf_mun['mun_norm'] = gdf_mun['mpio_cnmbr'].apply(clean_v6)
 
-                    # 2. PROCESAMIENTO URBANO (Corte de Huella Espacial)
-                    gdf_cab['area_cab_total'] = gdf_cab.geometry.area
+                    # 2. PROCESAMIENTO DE PESOS DEMOGRÁFICOS (V6 Especial Medellín)
+                    # Cruzamos barrios con cuencas para saber el % de población de cada cuenca
+                    inter_barrios = gpd.overlay(gdf_barrios, gdf_cue, how='intersection')
+                    inter_barrios['pob_frag'] = inter_barrios['Pob_Total'] * (inter_barrios.geometry.area / inter_barrios.geometry.area) # Ajuste simple
+                    pesos_med = inter_barrios.groupby('subc_lbl')['Pob_Total'].sum()
+                    pesos_med_pct = pesos_med / pesos_med.sum()
+
+                    # 3. PROCESAMIENTO RURAL Y URBANO RESTO (V5.1)
                     inter_urbana = gpd.overlay(gdf_cab, gdf_cue, how='intersection')
-                    inter_urbana['pct_area_urb'] = inter_urbana.geometry.area / inter_urbana['area_cab_total']
-                    
-                    # 3. PROCESAMIENTO RURAL (Gravedad + Dispersión)
+                    inter_urbana['pct_area_urb'] = inter_urbana.geometry.area / inter_urbana.geometry.area.groupby(inter_urbana['mun_norm']).transform('sum')
                     cp_en_cuenca = gpd.sjoin(gdf_cp, gdf_cue, how='inner', predicate='within')
-                    
-                    q_mun = text("SELECT * FROM municipios")
-                    gdf_mun = gpd.read_postgis(q_mun, engine_geo, geom_col="geometry").to_crs(epsg=3116)
-                    col_mun_name = next((c for c in gdf_mun.columns if c.lower() in ['mpio_cnmbr', 'municipio']), 'mpio_cnmbr')
-                    gdf_mun['mun_norm'] = gdf_mun[col_mun_name].apply(clean_v5)
-                    gdf_mun['area_mun_total'] = gdf_mun.geometry.area
-                    
                     inter_dispersa = gpd.overlay(gdf_mun, gdf_cue, how='intersection')
-                    inter_dispersa['pct_area_rur'] = inter_dispersa.geometry.area / inter_dispersa['area_mun_total']
+                    inter_dispersa['pct_area_rur'] = inter_dispersa.geometry.area / inter_dispersa.geometry.area.groupby(inter_dispersa['mun_norm']).transform('sum')
 
-                    # 4. MOTOR DE DISTRIBUCIÓN HÍBRIDO V5.1
-                    df_area_actual_v5 = df_area_actual.copy()
-                    df_area_actual_v5['mun_norm_dane'] = df_area_actual_v5['municipio'].apply(clean_v5)
+                    # 4. MOTOR DE DISTRIBUCIÓN V6
+                    df_area_actual_v6 = df_area_actual.copy()
+                    df_area_actual_v6['mun_norm_dane'] = df_area_actual_v6['municipio'].apply(clean_v6)
                     
-                    # 🔥 SANADOR MUNICIPAL FIX: Usamos las capas originales (gdf_cab y gdf_cp) que sí existen
-                    espacial_mpios = set(gdf_mun['mun_norm'].tolist() + gdf_cab['mun_norm'].tolist() + gdf_cp['mun_norm'].tolist())
-                    
-                    def curar_mpio(m):
-                        if m in espacial_mpios: return m
-                        match = difflib.get_close_matches(m, espacial_mpios, n=1, cutoff=0.75)
-                        return match[0] if match else m
-                        
-                    df_area_actual_v5['mun_norm_dane'] = df_area_actual_v5['mun_norm_dane'].apply(curar_mpio)
-                    
+                    mpios_mapa = set(gdf_mun['mun_norm'].tolist())
+                    df_area_actual_v6['mun_norm_dane'] = df_area_actual_v6['mun_norm_dane'].apply(lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x)
+
                     df_final_cuencas = []
-
-                    for mpio in df_area_actual_v5['mun_norm_dane'].unique():
-                        pob_mpio = df_area_actual_v5[df_area_actual_v5['mun_norm_dane'] == mpio]
+                    for mpio in df_area_actual_v6['mun_norm_dane'].unique():
+                        pob_mpio = df_area_actual_v6[df_area_actual_v6['mun_norm_dane'] == mpio]
                         
-                        if tipo_area == 'Urbana':
-                            # 🏙️ URBANO: Reparto exacto según el área de la cabecera
-                            cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
-                            if not cuencas_urb.empty:
+                        if mpio == 'medellin' and tipo_area == 'Urbana':
+                            # 🚀 HIPER-RESOLUCIÓN MEDELLÍN
+                            for subc, peso in pesos_med_pct.items():
+                                df_temp = pob_mpio.copy()
+                                df_temp['Total_frag'] = df_temp['Total'] * peso
+                                df_temp['subc_lbl'] = subc
+                                df_final_cuencas.append(df_temp)
+                        else:
+                            # Lógica Estándar V5.1 para el resto
+                            if tipo_area == 'Urbana':
+                                cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
                                 for _, u_row in cuencas_urb.iterrows():
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
                                     df_temp['subc_lbl'] = u_row['subc_lbl']
                                     df_final_cuencas.append(df_temp)
-                        
-                        elif tipo_area == 'Rural':
-                            # 👨‍🌾 RURAL: 70% Puntos (Casitas) + 30% Polígonos (Bosque/Atrato)
-                            cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio]
-                            
-                            if not cuencas_cp.empty:
-                                n_cp = len(cuencas_cp)
-                                for _, cp_row in cuencas_cp.iterrows():
+                            elif tipo_area == 'Rural':
+                                cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio]
+                                factor_area = 1.0 if cuencas_cp.empty else 0.30
+                                # ... (Resto de lógica rural igual a V5.1)
+                                if not cuencas_cp.empty:
+                                    for _, cp_row in cuencas_cp.iterrows():
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = (df_temp['Total'] * 0.70) / len(cuencas_cp)
+                                        df_temp['subc_lbl'] = cp_row['subc_lbl']
+                                        df_final_cuencas.append(df_temp)
+                                cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio]
+                                for _, a_row in cuencas_area.iterrows():
                                     df_temp = pob_mpio.copy()
-                                    df_temp['Total_frag'] = (df_temp['Total'] * 0.70) / n_cp
-                                    df_temp['subc_lbl'] = cp_row['subc_lbl']
+                                    df_temp['Total_frag'] = df_temp['Total'] * factor_area * a_row['pct_area_rur']
+                                    df_temp['subc_lbl'] = a_row['subc_lbl']
                                     df_final_cuencas.append(df_temp)
-                            
-                            cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio]
-                            factor_area = 1.0 if cuencas_cp.empty else 0.30
-                            for _, a_row in cuencas_area.iterrows():
-                                df_temp = pob_mpio.copy()
-                                df_temp['Total_frag'] = df_temp['Total'] * factor_area * a_row['pct_area_rur']
-                                df_temp['subc_lbl'] = a_row['subc_lbl']
-                                df_final_cuencas.append(df_temp)
 
-                    # 5. RECONSTRUCCIÓN CENSAL Y ENTRENAMIENTO
+                    # 5. ENTRENAMIENTO Y FINALIZACIÓN
                     if df_final_cuencas:
-                        df_cuencas_v5 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
-                        
+                        df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                         for cuenca in lista_todas_cuencas:
-                            df_t = df_cuencas_v5[df_cuencas_v5['subc_lbl'] == cuenca].sort_values(by=col_anio)
+                            df_t = df_cuencas_v6[df_cuencas_v6['subc_lbl'] == cuenca].sort_values(by=col_anio)
                             if not df_t.empty and df_t['Total_frag'].sum() > 0:
                                 ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
-                            
-                            ops_completadas += 1
-                            if ops_completadas % 10 == 0:
-                                porcentaje = min(ops_completadas / total_ops, 1.0)
-                                barra_progreso.progress(porcentaje)
-                                elapsed = time.time() - start_time
-                                eta = (elapsed / ops_completadas) * (total_ops - ops_completadas) if ops_completadas > 0 else 0
-                                mins, secs = divmod(int(eta), 60)
-                                texto_progreso.markdown(f"**Motor Híbrido V5:** {cuenca} ({tipo_area}) | **ETA:** {mins}m {secs}s")
+                        
+                        df_masivo = pd.DataFrame(matriz_resultados)
+                        st.session_state['df_matriz_demografica'] = df_masivo
+                        st.success(f"✅ ¡Entrenamiento V6 Exitoso! {len(df_masivo)} modelos generados.")
 
                 except Exception as e:
-                    st.warning(f"⚠️ Error en el motor Híbrido V5 ({tipo_area}): {e}")
+                    st.error(f"❌ Error en Motor V6: {e}")
 
             # =====================================================================
             # 6. FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
