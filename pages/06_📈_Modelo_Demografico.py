@@ -1782,11 +1782,28 @@ with tab_matriz:
                                 elapsed = time.time() - start_time
                                 eta = (elapsed / ops_completadas) * (total_ops - ops_completadas) if ops_completadas > 0 else 0
                                 mins, secs = divmod(int(eta), 60)
-                                texto_progreso.markdown(f"**Gravedad V4:** {cuenca} | **ETA:** {mins}m {secs}s")
+                                texto_progreso.markdown(f"**Gravedad V4:** {cuenca} ({tipo_area}) | **ETA:** {mins}m {secs}s")
 
                 except Exception as e:
                     st.warning(f"⚠️ Error en el motor de Gravedad V4 ({tipo_area}): {e}")
-                    
+
+            # =====================================================================
+            # 🏁 FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
+            # =====================================================================
+            if matriz_resultados:
+                df_masivo = pd.DataFrame(matriz_resultados)
+                barra_progreso.progress(1.0)
+                texto_progreso.success(f"✅ ¡Entrenamiento Masivo V4 Completado! {len(df_masivo)} modelos generados con éxito.")
+                st.session_state['df_matriz_demografica'] = df_masivo
+                
+                st.info("💡 Ve a la pestaña **💾 Descargas** o usa el panel de **Administración: Inyectar a SQL** para hacer los cambios permanentes en Supabase.")
+            else:
+                texto_progreso.warning("⚠️ No se generaron resultados. Verifica la conexión a la base de datos y los archivos GeoJSON.")
+
+        # 🛑 SALVAVIDAS DE PYTHON: Este 'except' cierra el 'try' principal de todo el botón
+        except Exception as e:
+            st.error(f"❌ Error crítico durante el entrenamiento masivo: {e}")
+
     # =====================================================================
     # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
     # =====================================================================
