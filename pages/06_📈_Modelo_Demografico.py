@@ -1665,7 +1665,6 @@ with tab_matriz:
                         texto_progreso.markdown(f"**Procesando Base Administrativa:** {mpio} ({tipo_area})... | **ETA:** {mins}m {secs}s")
 
                 # ================================================================
-# ================================================================
                 # 🧠 BISTURÍ ESPACIAL V5.1: Dasimetría Híbrida + Sanador Municipal
                 # ================================================================
                 try:
@@ -1798,17 +1797,16 @@ with tab_matriz:
 
             # =====================================================================
             # 6. FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
-            # =====================================================================
             if matriz_resultados:
                 df_masivo = pd.DataFrame(matriz_resultados)
                 barra_progreso.progress(1.0)
-                texto_progreso.success(f"✅ ¡Entrenamiento Masivo V5 Completado! {len(df_masivo)} modelos generados con éxito.")
+                texto_progreso.success(f"✅ ¡Entrenamiento Completado! {len(df_masivo)} modelos generados con éxito.")
                 st.session_state['df_matriz_demografica'] = df_masivo
-                
-                st.info("💡 Ve a la pestaña **💾 Descargas** o usa el panel de **Administración: Inyectar a SQL** para hacer los cambios permanentes en Supabase.")
+                st.info("💡 Ve a la pestaña Descargas o usa Inyectar a SQL para hacer los cambios permanentes.")
             else:
-                texto_progreso.warning("⚠️ No se generaron resultados. Verifica la conexión.")
+                texto_progreso.warning("⚠️ No se generaron resultados.")
 
+        # 🛑 SALVAVIDAS DE PYTHON: Cierra el 'try' principal del botón
         except Exception as e:
             st.error(f"❌ Error crítico durante el entrenamiento masivo: {e}")
             
