@@ -525,7 +525,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
                 mapa_data = []
                 
-                # 2. MOTOR DE AGREGACIÓN MULTICAPA (CON AGREGACIÓN JERÁRQUICA ASCENDENTE)
                 # 2. MOTOR DE AGREGACIÓN MULTICAPA (SÚPER-PRECISIÓN Y MAPA GRANULAR)
                 df_cuencas_solo = df_cuencas_solo.copy()
                 if 'MATCH_ID' not in df_cuencas_solo.columns:
