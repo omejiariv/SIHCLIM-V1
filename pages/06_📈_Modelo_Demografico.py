@@ -1616,130 +1616,19 @@ with tab_matriz:
                         texto_progreso.markdown(f"**Procesando Base Administrativa:** {mpio} ({tipo_area})... | **ETA:** {mins}m {secs}s")
 
                 # ================================================================
-                # 🧠 BISTURÍ ESPACIAL V2: Alta Precisión Dasimétrica (Nivel Cuencas)
-                # ================================================================
-                import geopandas as gpd
-                from sqlalchemy import text
-                import unicodedata
-                
-                # 1. Preparar Geometría de Cuencas
-                q_cue = text("SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, geometry FROM cuencas WHERE COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) IS NOT NULL")
-                gdf_cue = gpd.read_postgis(q_cue, engine_sql, geom_col="geometry").to_crs(epsg=3116)
-                gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
-                gdf_cue_diss = gdf_cue.dissolve(by='subc_lbl').reset_index()
-                
-                # 2. Selección Dinámica de la Capa de Referencia
-                if tipo_area == 'Urbana': q_esp = text("SELECT * FROM cabeceras_municipales")
-                elif tipo_area == 'Rural': q_esp = text("SELECT * FROM centros_poblados")
-                else: q_esp = text("SELECT * FROM municipios")
-
-                gdf_esp = gpd.read_postgis(q_esp, engine_sql, geom_col="geometry")
-                col_mpio_das = next((c for c in gdf_esp.columns if c.lower() in ['mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'nombre_municipio', 'municipio', 'nomb_mpio', 'mun_name']), None)
-                if col_mpio_das: gdf_esp = gdf_esp.rename(columns={col_mpio_das: 'mun_name'})
-                
-                gdf_esp = gdf_esp.to_crs(epsg=3116)
-                gdf_esp['geometry'] = gdf_esp.geometry.buffer(0)
-                
-                # 3. Limpieza y Cruce
-                def clean_das(t):
-                    if not t or pd.isna(t): return ""
-                    t = str(t).lower().strip()
-                    return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-                
-                gdf_esp['mun_norm'] = gdf_esp['mun_name'].apply(clean_das)
-                gdf_esp_diss = gdf_esp.dissolve(by='mun_norm').reset_index()
-                gdf_esp_diss['area_esponja'] = gdf_esp_diss.geometry.area
-                
-                inter = gpd.overlay(gdf_esp_diss, gdf_cue_diss, how='intersection')
-                inter['proporcion'] = (inter.geometry.area / inter['area_esponja']).clip(upper=1.0)
-                
-                df_area_actual['mun_norm_dane'] = df_area_actual['municipio'].apply(clean_das)
-                df_inter = inter[['mun_norm', 'subc_lbl', 'proporcion']].merge(df_area_actual, left_on='mun_norm', right_on='mun_norm_dane', how='inner')
-                df_inter['Total_frag'] = df_inter['Total'] * df_inter['proporcion']
-                
-                df_cuencas = df_inter.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
-                
-                for cuenca in lista_todas_cuencas:
-                    df_temp = df_cuencas[df_cuencas['subc_lbl'] == cuenca].sort_values(by=col_anio)
-                    if not df_temp.empty and df_temp['Total_frag'].sum() > 0:
-                        ajustar_modelos(df_temp[col_anio].values, df_temp['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
-                    
-                    ops_completadas += 1
-                    
-                    # 🚀 ACTUALIZAR UI
-                    if ops_completadas % 5 == 0:
-                        porcentaje = min(ops_completadas / total_ops, 1.0)
-                        barra_progreso.progress(porcentaje)
-                        elapsed = time.time() - start_time
-                        eta = max((elapsed / ops_completadas) * total_ops - elapsed, 0)
-                        mins, secs = divmod(int(eta), 60)
-                        texto_progreso.markdown(f"**Dasimetría Espacial:** {cuenca} ({tipo_area})... | **ETA:** {mins}m {secs}s")
-
-            # 4. Finalización y Carga en Sesión
-            if matriz_resultados:
-                df_masivo = pd.DataFrame(matriz_resultados)
-                barra_progreso.progress(1.0)
-                texto_progreso.success(f"✅ ¡Entrenamiento Masivo Completado! {len(df_masivo)} modelos generados con éxito.")
-                st.session_state['df_matriz_demografica'] = df_masivo
-                
-                # Desplegar botón de guardado automático (Simulando Inyección por seguridad)
-                st.info("💡 Ve a la pestaña **💾 Descargas** o usa el panel de **Administración: Inyectar a SQL** para hacer los cambios permanentes en Supabase.")
-            else:
-                texto_progreso.warning("⚠️ No se generaron resultados. Verifica la conexión a la base de datos.")
-
-        except Exception as e:
-            st.error(f"❌ Error durante el entrenamiento masivo: {e}")
-
-            df_mun_memoria = df_mun.copy() 
-            col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
-            
-            # 🔥 EL RADAR PERFECCIONADO (Identifica el Total nativo del DANE)
-            def clasificar_area(val):
-                v = str(val).lower()
-                if 'total' in v: return 'Total'
-                if 'cabecera' in v or 'urban' in v: return 'Urbana'
-                if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
-                return 'Desconocido'
-                
-            df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
-
-            # Extraemos las áreas puras sin sumas forzadas
-            for tipo_area in ['Total', 'Urbana', 'Rural']:
-                df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
-                if df_area_actual.empty: continue
-                
-                # 1. Nacional
-                df_nac_temp = df_area_actual.groupby(col_anio)['Total'].sum().reset_index().sort_values(by=col_anio)
-                ajustar_modelos(df_nac_temp[col_anio].values, df_nac_temp['Total'].values, 'Nacional', 'Colombia', 'Mundo', tipo_area)
-
-                # 2. Departamental
-                df_deptos = df_area_actual.groupby(['depto_nom', col_anio])['Total'].sum().reset_index()
-                for depto in df_deptos['depto_nom'].unique():
-                    df_temp = df_deptos[df_deptos['depto_nom'] == depto].sort_values(by=col_anio)
-                    ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Departamental', depto, 'Colombia', tipo_area)
-
-                # 3. Municipal
-                df_mpios = df_area_actual.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
-                for mpio in df_mpios['municipio'].unique():
-                    df_temp = df_mpios[df_mpios['municipio'] == mpio].sort_values(by=col_anio)
-                    ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Municipal', mpio, df_temp['depto_nom'].iloc[0], tipo_area)
-
-                # ================================================================
-                # 🧠 BISTURÍ ESPACIAL V2: Alta Precisión Dasimétrica (Nivel Cuencas)
-                # Reconstruye la historia poblacional usando "Esponjas de Asentamiento"
-                # en lugar de simple proporción de área municipal.
+                # 🧠 BISTURÍ ESPACIAL V3: Alta Precisión Dasimétrica y Sanación Fuzzy
                 # ================================================================
                 try:
                     import geopandas as gpd
                     from sqlalchemy import text
                     import unicodedata
+                    import difflib
+                    import re
                     from modules.db_manager import get_engine
                     
                     engine_geo = get_engine()
                     
-                    # 1. Preparar Geometría de Cuencas (Proyectado a metros para precisión)
-                    # 🔥 FIX: Red de Seguridad COALESCE para capturar TODAS las cuencas, 
-                    # usando su máximo nivel de detalle disponible (NSS3, NSS2, NSS1 o SZH)
+                    # 1. Preparar Geometría de Cuencas
                     q_cue = text("""
                         SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, 
                                geometry 
@@ -1747,72 +1636,74 @@ with tab_matriz:
                         WHERE COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) IS NOT NULL
                     """)
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
-                    
-                    # 🔥 SANACIÓN TOPOLÓGICA 1: "Planchamos" los polígonos de las cuencas
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
-                    gdf_cue_diss = gdf_cue.dissolve(by='subc_lbl').reset_index()
-                    
-                    # 2. Selección Dinámica de la Capa de Referencia (Dasimetría)
-                    if tipo_area == 'Urbana':
-                        q_esp = text("SELECT * FROM cabeceras_municipales")
-                    elif tipo_area == 'Rural':
-                        q_esp = text("SELECT * FROM centros_poblados")
-                    else:
-                        q_esp = text("SELECT * FROM municipios")
+                    # 2. Capa de Referencia (Corrección de Área Rural Dispersa)
+                    if tipo_area == 'Urbana': q_esp = text("SELECT * FROM cabeceras_municipales")
+                    else: q_esp = text("SELECT * FROM municipios") # Cubre todo el territorio rural disperso
 
-                    # Leemos la tabla espacial desde Supabase sin forzar nombres en SQL
                     gdf_esp = gpd.read_postgis(q_esp, engine_geo, geom_col="geometry")
-
-                    # --- FIX: ESCUDO RENOMBRADOR UNIVERSAL ---
-                    # Busca la columna del municipio sin importar cómo se llame en Supabase y la estandariza
                     col_mpio_das = next((c for c in gdf_esp.columns if c.lower() in ['mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'nombre_municipio', 'municipio', 'nomb_mpio', 'mun_name']), None)
-                    if col_mpio_das:
-                        gdf_esp = gdf_esp.rename(columns={col_mpio_das: 'mun_name'})
-
-                    # Proyectamos a coordenadas planas (MAGNA-SIRGAS) para cálculos de área precisos
+                    if col_mpio_das: gdf_esp = gdf_esp.rename(columns={col_mpio_das: 'mun_name'})
+                    
                     gdf_esp = gdf_esp.to_crs(epsg=3116)
-
-                    # 🔥 SANACIÓN TOPOLÓGICA 2: "Planchamos" los polígonos del DANE/Municipios
                     gdf_esp['geometry'] = gdf_esp.geometry.buffer(0)
                     
-                    # 3. Normalización y Limpieza de Nombres (Cruce Robusto)
+                    # 3. Sanación Fuzzy del Nombre (El Exorcismo del Merge Espacial)
                     def clean_das(t):
                         if not t or pd.isna(t): return ""
                         t = str(t).lower().strip()
-                        return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                        t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                        return re.sub(r'[^a-z0-9]', '', t)
                     
-                    gdf_esp['mun_norm'] = gdf_esp['mun_name'].apply(clean_das)
-                    gdf_esp_diss = gdf_esp.dissolve(by='mun_norm').reset_index()
-                    gdf_esp_diss['area_esponja'] = gdf_esp_diss.geometry.area
+                    # Hacemos copia para no afectar el dataframe original de la iteración
+                    df_area_actual_esp = df_area_actual.copy()
+                    df_area_actual_esp['mun_norm_dane'] = df_area_actual_esp['municipio'].apply(clean_das)
+                    lista_nombres_dane_clean = df_area_actual_esp['mun_norm_dane'].dropna().unique().tolist()
+
+                    def sanar_nombre_espacial(nombre_gis):
+                        n_clean = clean_das(nombre_gis)
+                        if n_clean in lista_nombres_dane_clean: return n_clean
+                        # Obliga a cruzar nombres corruptos (ej. medell═n -> medellin)
+                        matches = difflib.get_close_matches(n_clean, lista_nombres_dane_clean, n=1, cutoff=0.7)
+                        return matches[0] if matches else n_clean
+
+                    gdf_esp['mun_norm'] = gdf_esp['mun_name'].apply(sanar_nombre_espacial)
                     
-                    # 4. Intersección Topológica (El "Corte" Dasimétrico)
-                    # Cruzamos las cuencas con los polígonos donde realmente vive la gente
-                    inter = gpd.overlay(gdf_esp_diss, gdf_cue_diss, how='intersection')
-                    inter['proporcion'] = (inter.geometry.area / inter['area_esponja']).clip(upper=1.0)
+                    # 4. Intersección Optimizada (ANTI-COLAPSO DE MEMORIA RAM)
+                    gdf_esp['area_poly'] = gdf_esp.geometry.area
+                    esp_areas = gdf_esp.groupby('mun_norm')['area_poly'].sum().reset_index().rename(columns={'area_poly': 'area_esponja'})
                     
-                    # 5. Inyección de Datos Históricos del DANE
-                    df_area_actual['mun_norm_dane'] = df_area_actual['municipio'].apply(clean_das)
+                    inter = gpd.overlay(gdf_esp, gdf_cue, how='intersection')
+                    inter['area_frag'] = inter.geometry.area
                     
-                    df_inter = inter[['mun_norm', 'subc_lbl', 'proporcion']].merge(
-                        df_area_actual, left_on='mun_norm', right_on='mun_norm_dane', how='inner'
-                    )
+                    inter_grouped = inter.groupby(['mun_norm', 'subc_lbl'])['area_frag'].sum().reset_index()
+                    inter_final = inter_grouped.merge(esp_areas, on='mun_norm')
+                    inter_final['proporcion'] = (inter_final['area_frag'] / inter_final['area_esponja']).clip(upper=1.0)
                     
-                    # La población de la cuenca es la población del municipio multiplicada por
-                    # qué tanto de su zona habitada cae dentro de la cuenca.
+                    # 5. Fusión de Población y Reconstrucción
+                    df_inter = inter_final.merge(df_area_actual_esp, left_on='mun_norm', right_on='mun_norm_dane', how='inner')
                     df_inter['Total_frag'] = df_inter['Total'] * df_inter['proporcion']
                     
-                    # 6. Reconstrucción Censal y Entrenamiento de Modelos
                     df_cuencas = df_inter.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                     
                     # 🚀 ALIMENTAR EL CEREBRO PREDICTIVO
-                    for cuenca in df_cuencas['subc_lbl'].unique():
+                    for cuenca in lista_todas_cuencas:
                         df_temp = df_cuencas[df_cuencas['subc_lbl'] == cuenca].sort_values(by=col_anio)
-                        
-                        # Solo procesamos si hay presencia humana (evita errores en cuencas vírgenes)
-                        if df_temp['Total_frag'].sum() > 0:
+                        if not df_temp.empty and df_temp['Total_frag'].sum() > 0:
                             ajustar_modelos(df_temp[col_anio].values, df_temp['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
-                            
+                        
+                        ops_completadas += 1
+                        
+                        # Actualizador de UI
+                        if ops_completadas % 5 == 0:
+                            porcentaje = min(ops_completadas / total_ops, 1.0)
+                            barra_progreso.progress(porcentaje)
+                            elapsed = time.time() - start_time
+                            eta = max((elapsed / ops_completadas) * total_ops - elapsed, 0)
+                            mins, secs = divmod(int(eta), 60)
+                            texto_progreso.markdown(f"**Dasimetría Espacial:** {cuenca} ({tipo_area})... | **ETA:** {mins}m {secs}s")
+
                 except Exception as e:
                     st.warning(f"⚠️ Nota en proceso dasimétrico ({tipo_area}): {e}")
                     
