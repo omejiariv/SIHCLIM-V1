@@ -8,6 +8,8 @@ import zipfile
 import io
 import os
 import warnings
+import re
+import unicodedata
 
 warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Generador Espacial", page_icon="⚙️", layout="wide")
@@ -45,11 +47,12 @@ muro_de_acceso_beta()
 # ==============================================================================
 
 # --- ACTUALIZACIÓN: AGREGAMOS LA CUARTA PESTAÑA ---
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🧩 1. Intersecciones Espaciales (Cuencas)", 
     "🔄 2. Convertidor GeoJSON (Soporta ZIP y Simplificación)", 
     "🗜️ 3. Compresor/Extractor ZIP",
-    "🔁 4. Convertidor GeoJSON a SHP + Atributos"
+    "🔁 4. Convertidor GeoJSON a SHP + Atributos",
+    "🔗 5. Homologador de Veredas"
 ])
 
 # =====================================================================
@@ -345,3 +348,72 @@ with tab4:
                             )
             except Exception as e:
                 st.error(f"❌ Error al procesar el archivo GeoJSON: {str(e)}")
+
+# =====================================================================
+# PESTAÑA 5: Generador de Diccionario Maestro (Veredas)
+# =====================================================================
+
+with tab5:
+        st.markdown("### 🔗 Generador de Diccionario Maestro (Veredas)")
+        st.info("Cruza las bases tabulares (DANE) con las espaciales (GeoJSON) usando el Código DANE para generar el diccionario `homologacion_veredas.csv`.")
+
+        col_h1, col_h2 = st.columns(2)
+        with col_h1:
+            file_dane = st.file_uploader("1. Archivo Matriz (ej. veredas_dane.csv)", type=['csv'], key="dane_csv")
+            st.caption("Debe tener columnas: `codigo_vereda`, `NOMB_MPIO`, `NOMBRE_VER`")
+        with col_h2:
+            file_gis = st.file_uploader("2. Archivo Espacial (ej. veredas_gisant.csv)", type=['csv'], key="gis_csv")
+            st.caption("Debe tener columnas: `codigo_vereda`, `NOMB_MPIO`, `NOMBRE_VER`")
+
+        if file_dane and file_gis:
+            if st.button("🚀 Generar Diccionario de Homologación", type="primary", use_container_width=True):
+                with st.spinner("Cruzando bases de datos y analizando discrepancias..."):
+                    try:
+                        df_dane = pd.read_csv(file_dane)
+                        df_gis = pd.read_csv(file_gis)
+
+                        # Estandarizar códigos a 8 dígitos por si Excel borró los ceros a la izquierda
+                        df_dane['codigo_vereda'] = df_dane['codigo_vereda'].astype(str).str.zfill(8)
+                        df_gis['codigo_vereda'] = df_gis['codigo_vereda'].astype(str).str.zfill(8)
+
+                        # Cruzar bases
+                        df_cruce = pd.merge(df_dane, df_gis, on='codigo_vereda', suffixes=('_DANE', '_GIS'))
+
+                        # Función limpiadora interna
+                        def limpiar_texto(t, municipio=""):
+                            if not isinstance(t, str): return ""
+                            t = str(t).upper().strip()
+                            t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                            for word in [r'\bVEREDA\b', r'\bVDA\.?\b', r'\bSECTOR\b', r'\bCASERIO\b']:
+                                t = re.sub(word, '', t)
+                            if municipio:
+                                mun = ''.join(c for c in unicodedata.normalize('NFD', str(municipio).upper()) if unicodedata.category(c) != 'Mn')
+                                id_final = t + "_" + mun
+                            else:
+                                id_final = t
+                            return re.sub(r'[^A-Z0-9_]', '', id_final)
+
+                        # Construir los ADN
+                        df_cruce['ID_TABLA'] = df_cruce.apply(lambda row: limpiar_texto(row.get('NOMBRE_VER_DANE', ''), row.get('NOMB_MPIO_DANE', '')), axis=1)
+                        df_cruce['ID_MAPA'] = df_cruce.apply(lambda row: limpiar_texto(row.get('NOMBRE_VER_GIS', ''), row.get('NOMB_MPIO_GIS', '')), axis=1)
+
+                        # Extraer rebeldes
+                        df_rebeldes = df_cruce[df_cruce['ID_TABLA'] != df_cruce['ID_MAPA']]
+                        df_final = df_rebeldes[['ID_TABLA', 'ID_MAPA']].drop_duplicates()
+
+                        st.success(f"✅ ¡Éxito! Se detectaron y mapearon {len(df_final)} discrepancias territoriales.")
+                        st.dataframe(df_final, use_container_width=True)
+
+                        # Botón de descarga
+                        csv_dict = df_final.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Descargar homologacion_veredas.csv",
+                            data=csv_dict,
+                            file_name="homologacion_veredas.csv",
+                            mime="text/csv",
+                            type="primary"
+                        )
+                        st.info("💡 Instrucción: Descarga este archivo y guárdalo en la carpeta `data/` de tu proyecto. El `Modelo Demográfico` lo leerá automáticamente.")
+
+                    except Exception as e:
+                        st.error(f"❌ Error durante el cruce: {e}. Revisa que las columnas se llamen exactamente como se indicó.")
