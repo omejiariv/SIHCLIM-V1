@@ -1665,12 +1665,14 @@ with tab_matriz:
                         texto_progreso.markdown(f"**Procesando Base Administrativa:** {mpio} ({tipo_area})... | **ETA:** {mins}m {secs}s")
 
                 # ================================================================
-                # 🧠 BISTURÍ ESPACIAL V5: Dasimetría Híbrida (Área Urbana + Gravedad Rural)
+# ================================================================
+                # 🧠 BISTURÍ ESPACIAL V5.1: Dasimetría Híbrida + Sanador Municipal
                 # ================================================================
                 try:
                     import geopandas as gpd
                     from sqlalchemy import text
                     import unicodedata
+                    import difflib
                     import re
                     from modules.db_manager import get_engine
                     
@@ -1688,11 +1690,11 @@ with tab_matriz:
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
-                    # Cabeceras ahora se procesan como POLÍGONOS (Para Medellín y megaciudades)
+                    # Cabeceras (Polígonos para Medellín y megaciudades)
                     gdf_cab = gpd.read_file(URL_CABECERAS).to_crs(epsg=3116)
                     gdf_cab['geometry'] = gdf_cab.geometry.buffer(0)
                     
-                    # Centros Poblados se mantienen como PUNTOS (Para gravedad rural)
+                    # Centros Poblados (Puntos para Gravedad Rural)
                     gdf_cp = gpd.read_file(URL_CENTROS_POBLADOS).to_crs(epsg=3116)
                     
                     def clean_v5(t):
@@ -1724,12 +1726,12 @@ with tab_matriz:
                     inter_dispersa = gpd.overlay(gdf_mun, gdf_cue, how='intersection')
                     inter_dispersa['pct_area_rur'] = inter_dispersa.geometry.area / inter_dispersa['area_mun_total']
 
-                    # 4. MOTOR DE DISTRIBUCIÓN HÍBRIDO V5.1 (Con Sanador Municipal)
+                    # 4. MOTOR DE DISTRIBUCIÓN HÍBRIDO V5.1
                     df_area_actual_v5 = df_area_actual.copy()
                     df_area_actual_v5['mun_norm_dane'] = df_area_actual_v5['municipio'].apply(clean_v5)
                     
-                    # 🔥 SANADOR MUNICIPAL: Evita que la población caiga al abismo por nombres diferentes
-                    espacial_mpios = set(gdf_mun['mun_norm'].tolist() + cab_en_cuenca['mun_norm'].tolist() + cp_en_cuenca['mun_norm'].tolist())
+                    # 🔥 SANADOR MUNICIPAL FIX: Usamos las capas originales (gdf_cab y gdf_cp) que sí existen
+                    espacial_mpios = set(gdf_mun['mun_norm'].tolist() + gdf_cab['mun_norm'].tolist() + gdf_cp['mun_norm'].tolist())
                     
                     def curar_mpio(m):
                         if m in espacial_mpios: return m
@@ -1744,7 +1746,7 @@ with tab_matriz:
                         pob_mpio = df_area_actual_v5[df_area_actual_v5['mun_norm_dane'] == mpio]
                         
                         if tipo_area == 'Urbana':
-                            # 🏙️ URBANO: Reparto exacto según el área de la cabecera (Medellín se reparte perfecto)
+                            # 🏙️ URBANO: Reparto exacto según el área de la cabecera
                             cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
                             if not cuencas_urb.empty:
                                 for _, u_row in cuencas_urb.iterrows():
@@ -1752,10 +1754,11 @@ with tab_matriz:
                                     df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
                                     df_temp['subc_lbl'] = u_row['subc_lbl']
                                     df_final_cuencas.append(df_temp)
-                                
+                        
                         elif tipo_area == 'Rural':
                             # 👨‍🌾 RURAL: 70% Puntos (Casitas) + 30% Polígonos (Bosque/Atrato)
                             cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio]
+                            
                             if not cuencas_cp.empty:
                                 n_cp = len(cuencas_cp)
                                 for _, cp_row in cuencas_cp.iterrows():
