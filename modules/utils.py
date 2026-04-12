@@ -68,6 +68,30 @@ def normalizar_texto(t):
     import re
     
     t = str(t).upper().strip()
+
+    # -------------------------------------------------------------
+    # 💉 NUEVA VACUNA: LECTURA DEL DICCIONARIO EXTERNO DE VEREDAS
+    # -------------------------------------------------------------
+    # Si estamos evaluando una vereda y tenemos su municipio, creamos el ID
+    if municipio_padre:
+        id_busqueda = t + "_" + municipio_padre.upper().strip()
+        id_busqueda = re.sub(r'[^A-Z0-9_]', '', id_busqueda) # Limpiamos caracteres raros
+        
+        # Ruta a tu archivo de homologación (ajusta la ruta según tu estructura)
+        ruta_diccionario = os.path.join(os.path.dirname(__file__), "..", "data", "homologacion_veredas.csv")
+        
+        if os.path.exists(ruta_diccionario):
+            try:
+                df_homologacion = pd.read_csv(ruta_diccionario)
+                # Si encuentra el ID de la tabla, devuelve el nombre correcto del mapa
+                match = df_homologacion[df_homologacion['ID_TABLA'] == id_busqueda]
+                if not match.empty:
+                    # Retorna solo el nombre de la vereda curado (antes del guion bajo)
+                    id_curado = str(match.iloc[0]['ID_MAPA'])
+                    return id_curado.split("_")[0] 
+            except:
+                pass # Si hay error leyendo el CSV, sigue con la limpieza normal
+    # -------------------------------------------------------------    
     
     # 🚀 FIX ESTRUCTURAL CUENCAS: "Rio Aburra - Q. La Iguaná" -> "Q. La Iguaná"
     if "-" in t:
