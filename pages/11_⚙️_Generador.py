@@ -369,8 +369,17 @@ with tab5:
             if st.button("🚀 Generar Diccionario de Homologación", type="primary", use_container_width=True):
                 with st.spinner("Cruzando bases de datos y analizando discrepancias..."):
                     try:
-                        df_dane = pd.read_csv(file_dane)
-                        df_gis = pd.read_csv(file_gis)
+                        # Leemos detectando automáticamente si es coma (,) o punto y coma (;)
+                        df_dane = pd.read_csv(file_dane, sep=None, engine='python')
+                        df_gis = pd.read_csv(file_gis, sep=None, engine='python')
+
+                        # Limpiamos espacios fantasmas (invisibles) en los títulos de las columnas
+                        df_dane.columns = df_dane.columns.str.strip()
+                        df_gis.columns = df_gis.columns.str.strip()
+
+                        # Forzamos la columna llave a minúsculas por si se guardó como "Codigo_Vereda"
+                        df_dane.rename(columns=lambda x: 'codigo_vereda' if x.lower() == 'codigo_vereda' else x, inplace=True)
+                        df_gis.rename(columns=lambda x: 'codigo_vereda' if x.lower() == 'codigo_vereda' else x, inplace=True)
 
                         # Estandarizar códigos a 8 dígitos por si Excel borró los ceros a la izquierda
                         df_dane['codigo_vereda'] = df_dane['codigo_vereda'].astype(str).str.zfill(8)
