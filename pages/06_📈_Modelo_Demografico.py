@@ -685,16 +685,17 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
     
     try:
         import geopandas as gpd
+        import json
         
+        # 🔥 CAMBIO DE NOMBRE: Obligamos a Streamlit a borrar la memoria caché antigua
         @st.cache_data(ttl=3600)
-        def cargar_barrios_medellin():
+        def cargar_barrios_medellin_v2():
             URL_BARRIOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
             return gpd.read_file(URL_BARRIOS)
         
-        gdf_med = cargar_barrios_medellin()
+        gdf_med = cargar_barrios_medellin_v2()
         
         if nivel_medellin == "Barrios y Veredas":
-            # 🌟 NUEVO SELECTOR DE BARRIOS
             lista_barrios = sorted(gdf_med['NombreBarr'].dropna().unique())
             barrio_sel = st.sidebar.selectbox("Seleccione un Barrio/Vereda:", ["Todos"] + lista_barrios)
             
@@ -707,26 +708,23 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todos los Barrios y Veredas"
                 zoom_level = 11.5
             
-            # 🔥 LA SOLUCIÓN: Convertir el código del barrio en el ID oficial del mapa
+            # 🔥 GARANTÍA PLOTLY: El ID entra directamente como propiedad
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str)
-            gdf_plot = gdf_plot.set_index('MATCH_ID') 
-            geo_data = gdf_plot.__geo_interface__
+            geo_data = json.loads(gdf_plot.to_json())
             
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreBarr'],
-                'MATCH_ID': gdf_plot.index,
+                'MATCH_ID': gdf_plot['MATCH_ID'],
                 'Total': gdf_plot['Pob_Total'].fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
             
         else:
-            # Agrupación por Comunas
             gdf_med['Cod_Comuna'] = gdf_med['Cod_Barrio'].astype(str).str[:2]
             gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'}).reset_index()
             gdf_comunas['Nombre_Comuna'] = 'Comuna/Correg. ' + gdf_comunas['Cod_Comuna']
             
-            # 🌟 NUEVO SELECTOR DE COMUNAS
             lista_comunas = sorted(gdf_comunas['Nombre_Comuna'].unique())
             comuna_sel = st.sidebar.selectbox("Seleccione una Comuna:", ["Todas"] + lista_comunas)
             
@@ -739,14 +737,13 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todas las Comunas"
                 zoom_level = 11.5
 
-            # 🔥 LA SOLUCIÓN: Convertir el código de la comuna en el ID oficial del mapa
+            # 🔥 GARANTÍA PLOTLY
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Comuna'].astype(str)
-            gdf_plot = gdf_plot.set_index('MATCH_ID') 
-            geo_data = gdf_plot.__geo_interface__
+            geo_data = json.loads(gdf_plot.to_json())
             
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['Nombre_Comuna'],
-                'MATCH_ID': gdf_plot.index,
+                'MATCH_ID': gdf_plot['MATCH_ID'],
                 'Total': gdf_plot['Pob_Total'].fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
@@ -754,10 +751,11 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         
         filtro_zona = titulo_terr
         
-        # 🌟 CÁMARA INTELIGENTE: Centra el mapa en el barrio seleccionado
-        if not gdf_plot.empty:
-            center_lat = float(gdf_plot.geometry.centroid.y.mean())
-            center_lon = float(gdf_plot.geometry.centroid.x.mean())
+        # 🔥 CÁMARA BLINDADA: Evita el error matemático del centroid
+        if not gdf_plot.empty and (("barrio_sel" in locals() and barrio_sel != "Todos") or ("comuna_sel" in locals() and comuna_sel != "Todas")):
+            bounds = gdf_plot.total_bounds
+            center_lon = (bounds[0] + bounds[2]) / 2
+            center_lat = (bounds[1] + bounds[3]) / 2
         else:
             center_lat, center_lon = 6.25, -75.58
 
@@ -1565,17 +1563,11 @@ with tab_mapas:
                 # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
                 import plotly.express as px
                 
-                # 🔥 LECTURA EXPLÍCITA BLINDADA: Cero adivinanzas.
-                if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
-                    clave_id = 'id'
-                else:
-                    clave_id = 'properties.MATCH_ID'
-                
                 fig_mapa = px.choropleth_mapbox(
                     df_mapa_plot, 
                     geojson=geo_data,
                     locations='MATCH_ID',        
-                    featureidkey=clave_id, # 🔥 USAMOS LA VARIABLE CORRECTA
+                    featureidkey='properties.MATCH_ID', # 🔥 La llave maestra única para TODO el proyecto
                     color='Total',
                     color_continuous_scale="Viridis",
                     range_color=[0, max_color if max_color > 0 else 100],  
