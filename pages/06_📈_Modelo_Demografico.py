@@ -707,7 +707,6 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todos los Barrios y Veredas"
                 zoom_level = 11.5
             
-            # Preparación aprueba de balas para Plotly
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str)
             geo_data = gdf_plot.__geo_interface__
             
@@ -751,7 +750,6 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         
         filtro_zona = titulo_terr
         
-        # 🌟 CÁMARA INTELIGENTE: Centra el mapa en el barrio seleccionado
         if not gdf_plot.empty:
             center_lat = float(gdf_plot.geometry.centroid.y.mean())
             center_lon = float(gdf_plot.geometry.centroid.x.mean())
@@ -1559,20 +1557,20 @@ with tab_mapas:
                     df_mapa_plot_final = df_mapa_plot[df_mapa_plot['En_Mapa'] == True].copy()
                     max_color = df_mapa_plot_final['Total'].quantile(q_val) if len(df_mapa_plot_final) > 10 else (df_mapa_plot_final['Total'].max() if not df_mapa_plot_final.empty else 1)
                     
-                    # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
-                    import plotly.express as px
-                    
-                    # 🔥 LECTURA EXPLÍCITA BLINDADA: Cero adivinanzas.
-                    if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
-                        clave_id = 'id'
-                    else:
-                        clave_id = 'properties.MATCH_ID'
-                    
+                # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
+                import plotly.express as px
+                
+                # 🔥 LECTURA EXPLÍCITA BLINDADA: Cero adivinanzas.
+                if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
+                    clave_id = 'id'
+                else:
+                    clave_id = 'properties.MATCH_ID'
+                
                 fig_mapa = px.choropleth_mapbox(
                     df_mapa_plot, 
                     geojson=geo_data,
                     locations='MATCH_ID',        
-                    featureidkey='properties.MATCH_ID', # 🔥 Unificado para todas las escalas
+                    featureidkey=clave_id, # 🔥 USAMOS LA VARIABLE CORRECTA
                     color='Total',
                     color_continuous_scale="Viridis",
                     range_color=[0, max_color if max_color > 0 else 100],  
@@ -1584,25 +1582,24 @@ with tab_mapas:
                     labels={'Total': 'Habitantes', 'Padre': 'Nivel Superior'},
                     hover_data={'Total': ':,.0f', 'Padre': True, 'MATCH_ID': False}
                 )
-                    
-                    fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
-                    st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-                    
-                    # --- DEPURADOR FORENSE INYECTADO (SOLO MUESTRA LOS INCURABLES) ---
+                
+                fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
+                st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+                
+                # --- DEPURADOR FORENSE INYECTADO ---
+                if 'En_Mapa' in df_mapa_plot.columns:
                     faltantes_finales = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
-                    
                     if not faltantes_finales.empty:
-                        st.warning(f"⚠️ {len(faltantes_finales)} territorios no cruzaron incluso después de la sanación automática.")
-                        with st.expander("🔍 ABRIR DEPURADOR FORENSE (Para resolver por qué no cruzó)"):
-                            st.markdown("El mapa solo se dibuja si el ID de la Tabla es idéntico al ID del Polígono. Compara ambas listas:")
+                        st.warning(f"⚠️ {len(faltantes_finales)} territorios no cruzaron.")
+                        with st.expander("🔍 ABRIR DEPURADOR FORENSE"):
                             col_dbg1, col_dbg2 = st.columns(2)
                             with col_dbg1:
-                                st.write("🔴 **Lo que la Tabla está buscando:**")
+                                st.write("🔴 **Buscando:**")
                                 st.dataframe(faltantes_finales[['Territorio', 'MATCH_ID']], use_container_width=True)
                             with col_dbg2:
-                                st.write("🟢 **Lo que el Mapa (GeoJSON) tiene disponible:**")
-                                ids_disponibles = sorted(ids_geojson)
-                                st.dataframe(pd.DataFrame({"IDs en PostGIS": ids_disponibles}), use_container_width=True)
+                                st.write("🟢 **Disponibles:**")
+                                ids_disp = sorted(ids_geojson) if 'ids_geojson' in locals() else []
+                                st.dataframe(pd.DataFrame({"IDs en GeoJSON": ids_disp}), use_container_width=True)
                 else:
                     st.warning("⚠️ No se encontraron geometrías en la base de datos para dibujar.")
             except Exception as e:
