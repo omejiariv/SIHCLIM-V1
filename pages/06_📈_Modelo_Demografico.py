@@ -526,6 +526,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 mapa_data = []
                 
                 # 2. MOTOR DE AGREGACIÓN MULTICAPA (CON AGREGACIÓN JERÁRQUICA ASCENDENTE)
+                # 2. MOTOR DE AGREGACIÓN MULTICAPA (SÚPER-PRECISIÓN Y MAPA GRANULAR)
                 df_cuencas_solo = df_cuencas_solo.copy()
                 if 'MATCH_ID' not in df_cuencas_solo.columns:
                     df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
@@ -535,67 +536,68 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                 cuencas_cruzadas = 0
                 for c in cuencas_a_graficar:
-                    # 💡 EL SECRETO: Si estamos en NSS1 o NSS2, debemos sumar sus micro-cuencas hijas (NSS3)
-                    # Extraemos todas las NSS3 que pertenecen a este territorio 'c' usando el diccionario de jerarquía
+                    # Extraemos todas las NSS3 que pertenecen a este territorio 'c'
                     if col_res in df_hier.columns and 'nom_nss3' in df_hier.columns:
                         micro_cuencas = df_hier[df_hier[col_res] == c]['nom_nss3'].dropna().unique()
                     else:
                         micro_cuencas = [c]
-                    
+
                     c_pob_temp_hist = np.zeros_like(años_hist, dtype=float)
-                    val_tot, val_urb, val_rur = 0, 0, 0
-                    
+
                     # Sumamos todas las micro-cuencas que lo componen
                     for micro in micro_cuencas:
                         micro_norm = normalizar_texto(micro)
                         match_val = None
-                        
+
                         if micro_norm in ids_matriz:
                             match_val = micro_norm
                         else:
                             matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.7)
                             if matches: match_val = matches[0]
-                        
+
                         if match_val:
                             cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == match_val]
                             if not cuenca_data.empty:
                                 cuencas_cruzadas += 1
-                                c_total = cuenca_data[cuenca_data['Area'] == 'Total']
-                                fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
-                                
-                                # Calcular curva para esta micro-cuenca individual
-                                modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
-                                pob_temp = np.zeros_like(años_hist, dtype=float)
-                                
-                                if 'Logistico' in modelo_ganador:
-                                    pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
-                                elif 'Exponencial' in modelo_ganador:
-                                    pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
-                                elif 'Polinomial' in modelo_ganador:
-                                    x_norm = años_hist - 1985
-                                    pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
-                                
-                                c_pob_temp_hist += pob_temp
-                                
-                                # Sumar las bases (Rescatando Total, Urbano y Rural)
-                                v_t = c_total.iloc[0].get('Pob_Base', 0) if not c_total.empty else cuenca_data['Pob_Base'].sum()
-                                v_u = cuenca_data[cuenca_data['Area'] == 'Urbano']['Pob_Base'].sum()
-                                v_r = cuenca_data[cuenca_data['Area'] == 'Rural']['Pob_Base'].sum()
-                                
-                                val_tot += v_t
-                                val_urb += v_u
-                                val_rur += v_r
 
-                    # Una vez sumadas todas las micro-cuencas, le asignamos el gran total a la cuenca macro 'c'
+                                # 🐛 FIX MULTIPLICACIÓN x4: Extraemos estrictamente UN SOLO REGISTRO por Área
+                                c_total = cuenca_data[cuenca_data['Area'] == 'Total']
+                                if not c_total.empty:
+                                    fila_tot = c_total.iloc[0] # Solo la primera fila (evita sumar 4 modelos a la vez)
+                                    v_t = float(fila_tot.get('Pob_Base', 0))
+
+                                    c_urb = cuenca_data[cuenca_data['Area'] == 'Urbano']
+                                    v_u = float(c_urb.iloc[0].get('Pob_Base', 0)) if not c_urb.empty else 0
+
+                                    c_rur = cuenca_data[cuenca_data['Area'] == 'Rural']
+                                    v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
+
+                                    # Matemáticas para la curva (solo se calcula una vez por micro-cuenca)
+                                    modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
+                                    pob_temp = np.zeros_like(años_hist, dtype=float)
+
+                                    if 'Logistico' in modelo_ganador:
+                                        pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
+                                    elif 'Exponencial' in modelo_ganador:
+                                        pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
+                                    elif 'Polinomial' in modelo_ganador:
+                                        x_norm = años_hist - 1985
+                                        pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
+
+                                    # Agregamos a la curva macro
+                                    c_pob_temp_hist += pob_temp
+
+                                    # 🗺️ FIX MAPA: Enviamos la MICRO-CUENCA (NSS3) al mapa para que coincida con el GeoJSON
+                                    if v_t > 0:
+                                        mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
+                                        mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
+                                        mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
+
+                    # Una vez sumadas todas las micro-cuencas, le asignamos el gran total a la curva global
                     pob_hist_acumulada += c_pob_temp_hist
-                    
-                    if val_tot > 0: # Solo agregar al mapa si encontramos datos reales
-                        mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': val_tot, 'area_geografica': 'total'})
-                        mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': val_urb, 'area_geografica': 'urbano'})
-                        mapa_data.append({'Territorio': c, 'Padre': 'Antioquia', 'Total': val_rur, 'area_geografica': 'rural'})
 
                 if cuencas_cruzadas == 0 and len(cuencas_a_graficar) > 0:
-                    st.sidebar.warning(f"⚠️ Las cuencas espaciales no cruzaron con la Matriz. Ejemplo buscado: '{normalizar_texto(cuencas_a_graficar[0])}'")
+                    st.sidebar.warning(f"⚠️ Las cuencas espaciales no cruzaron con la Matriz. Ejemplo: '{normalizar_texto(cuencas_a_graficar[0])}'")
                 
                 pob_hist = pob_hist_acumulada
                 df_mapa_base = pd.DataFrame(mapa_data)
