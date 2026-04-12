@@ -1476,15 +1476,25 @@ with tab_matriz:
     * **Polinomial (Grado 3):** Ideal para poblaciones con fluctuaciones o declives no lineales.
     """)
     
-    if st.button("⚙️ Iniciar Entrenamiento Multimodelo (3x Áreas)", type="primary"):
-        with st.spinner("Entrenando modelos para zonas Urbanas, Rurales y Totales... Esto tomará unos segundos."):
+    # 🚀 NUEVO BOTÓN CON BARRA DE PROGRESO INTELIGENTE
+    if st.button("⚙️ Iniciar Entrenamiento Masivo de Matriz (Automático)", type="primary", use_container_width=True):
+        st.info("🧠 Iniciando motor de Machine Learning. Por favor, no recargues ni cierres la página.")
+        barra_progreso = st.progress(0)
+        texto_progreso = st.empty()
+        
+        try:
+            import time
             import numpy as np
             import pandas as pd
             from scipy.optimize import curve_fit
+            from modules.db_manager import get_engine
+            from sqlalchemy import text
+            
+            engine_sql = get_engine()
+            start_time = time.time()
             
             def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
             def f_exp(t, a, b): return a * np.exp(b * t)
-            
             def calcular_r2(y_real, y_pred):
                 ss_res = np.sum((y_real - y_pred) ** 2)
                 ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
@@ -1504,12 +1514,9 @@ with tab_matriz:
                 log_k, log_a, log_r, log_r2 = 0, 0, 0, 0
                 try:
                     k_max = max_y * 3.0 if es_creciente else max_y * 1.1
-                    # Si decrece, K_guess debe apuntar hacia abajo, no hacia el máximo
                     k_guess = max_y * 1.2 if es_creciente else (y[-1] * 0.9 if y[-1] > 0 else max_y)
                     a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
                     r_guess = 0.02 if es_creciente else -0.02
-                    
-                    # 🛡️ EL BISTURÍ: Permitir que K baje hasta el 10% del máximo si hay éxodo rural
                     k_min = max_y * 0.8 if es_creciente else max_y * 0.1
                     limites = ([k_min, 0, -0.2], [k_max, np.inf, 0.3])
                     
@@ -1539,14 +1546,149 @@ with tab_matriz:
                 mejor_r2 = dic_modelos[mejor_modelo]
 
                 matriz_resultados.append({
-                    'Area': area, 
-                    'Nivel': nivel, 'Territorio': territorio, 'Padre': padre,
+                    'Area': area, 'Nivel': nivel, 'Territorio': territorio, 'Padre': padre,
                     'Año_Base': int(x_offset), 'Pob_Base': round(p0_val, 0),
                     'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
                     'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
                     'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
                     'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
                 })
+
+            df_mun_memoria = df_mun.copy() 
+            col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
+            
+            def clasificar_area(val):
+                v = str(val).lower()
+                if 'total' in v: return 'Total'
+                if 'cabecera' in v or 'urban' in v: return 'Urbana'
+                if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
+                return 'Desconocido'
+                
+            df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
+
+            # --- 🕵️‍♂️ RECOLECCIÓN MASIVA DE CUENCAS DE LA BASE DE DATOS ---
+            # Extrae absolutamente todas las micro-cuencas disponibles en tu base
+            q_todas = text("SELECT DISTINCT nom_nss3 FROM cuencas WHERE nom_nss3 IS NOT NULL")
+            lista_todas_cuencas = pd.read_sql(q_todas, engine_sql)['nom_nss3'].tolist()
+            
+            # --- ⚙️ MOTOR DE PROGRESO UI ---
+            mpios = df_mun_memoria['municipio'].dropna().unique()
+            deptos = df_mun_memoria['depto_nom'].dropna().unique()
+            areas_a_procesar = ['Total', 'Urbana', 'Rural']
+            
+            # Total de operaciones para la barra del 100%
+            total_ops = len(areas_a_procesar) * (1 + len(deptos) + len(mpios) + len(lista_todas_cuencas))
+            ops_completadas = 0
+
+            # Extraemos las áreas puras sin sumas forzadas
+            for tipo_area in areas_a_procesar:
+                df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
+                if df_area_actual.empty: 
+                    ops_completadas += (1 + len(deptos) + len(mpios) + len(lista_todas_cuencas))
+                    continue
+                
+                # 1. Nacional
+                df_nac_temp = df_area_actual.groupby(col_anio)['Total'].sum().reset_index().sort_values(by=col_anio)
+                ajustar_modelos(df_nac_temp[col_anio].values, df_nac_temp['Total'].values, 'Nacional', 'Colombia', 'Mundo', tipo_area)
+                ops_completadas += 1
+
+                # 2. Departamental
+                df_deptos = df_area_actual.groupby(['depto_nom', col_anio])['Total'].sum().reset_index()
+                for depto in deptos:
+                    df_temp = df_deptos[df_deptos['depto_nom'] == depto].sort_values(by=col_anio)
+                    if not df_temp.empty: ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Departamental', depto, 'Colombia', tipo_area)
+                    ops_completadas += 1
+
+                # 3. Municipal
+                df_mpios = df_area_actual.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
+                for mpio in mpios:
+                    df_temp = df_mpios[df_mpios['municipio'] == mpio].sort_values(by=col_anio)
+                    if not df_temp.empty: ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Municipal', mpio, df_temp['depto_nom'].iloc[0], tipo_area)
+                    ops_completadas += 1
+                    
+                    # 🚀 ACTUALIZAR UI
+                    if ops_completadas % 10 == 0:
+                        porcentaje = min(ops_completadas / total_ops, 1.0)
+                        barra_progreso.progress(porcentaje)
+                        elapsed = time.time() - start_time
+                        eta = max((elapsed / ops_completadas) * total_ops - elapsed, 0)
+                        mins, secs = divmod(int(eta), 60)
+                        texto_progreso.markdown(f"**Procesando Base Administrativa:** {mpio} ({tipo_area})... | **ETA:** {mins}m {secs}s")
+
+                # ================================================================
+                # 🧠 BISTURÍ ESPACIAL V2: Alta Precisión Dasimétrica (Nivel Cuencas)
+                # ================================================================
+                import geopandas as gpd
+                from sqlalchemy import text
+                import unicodedata
+                
+                # 1. Preparar Geometría de Cuencas
+                q_cue = text("SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, geometry FROM cuencas WHERE COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) IS NOT NULL")
+                gdf_cue = gpd.read_postgis(q_cue, engine_sql, geom_col="geometry").to_crs(epsg=3116)
+                gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
+                gdf_cue_diss = gdf_cue.dissolve(by='subc_lbl').reset_index()
+                
+                # 2. Selección Dinámica de la Capa de Referencia
+                if tipo_area == 'Urbana': q_esp = text("SELECT * FROM cabeceras_municipales")
+                elif tipo_area == 'Rural': q_esp = text("SELECT * FROM centros_poblados")
+                else: q_esp = text("SELECT * FROM municipios")
+
+                gdf_esp = gpd.read_postgis(q_esp, engine_sql, geom_col="geometry")
+                col_mpio_das = next((c for c in gdf_esp.columns if c.lower() in ['mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'nombre_municipio', 'municipio', 'nomb_mpio', 'mun_name']), None)
+                if col_mpio_das: gdf_esp = gdf_esp.rename(columns={col_mpio_das: 'mun_name'})
+                
+                gdf_esp = gdf_esp.to_crs(epsg=3116)
+                gdf_esp['geometry'] = gdf_esp.geometry.buffer(0)
+                
+                # 3. Limpieza y Cruce
+                def clean_das(t):
+                    if not t or pd.isna(t): return ""
+                    t = str(t).lower().strip()
+                    return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                
+                gdf_esp['mun_norm'] = gdf_esp['mun_name'].apply(clean_das)
+                gdf_esp_diss = gdf_esp.dissolve(by='mun_norm').reset_index()
+                gdf_esp_diss['area_esponja'] = gdf_esp_diss.geometry.area
+                
+                inter = gpd.overlay(gdf_esp_diss, gdf_cue_diss, how='intersection')
+                inter['proporcion'] = (inter.geometry.area / inter['area_esponja']).clip(upper=1.0)
+                
+                df_area_actual['mun_norm_dane'] = df_area_actual['municipio'].apply(clean_das)
+                df_inter = inter[['mun_norm', 'subc_lbl', 'proporcion']].merge(df_area_actual, left_on='mun_norm', right_on='mun_norm_dane', how='inner')
+                df_inter['Total_frag'] = df_inter['Total'] * df_inter['proporcion']
+                
+                df_cuencas = df_inter.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
+                
+                for cuenca in lista_todas_cuencas:
+                    df_temp = df_cuencas[df_cuencas['subc_lbl'] == cuenca].sort_values(by=col_anio)
+                    if not df_temp.empty and df_temp['Total_frag'].sum() > 0:
+                        ajustar_modelos(df_temp[col_anio].values, df_temp['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
+                    
+                    ops_completadas += 1
+                    
+                    # 🚀 ACTUALIZAR UI
+                    if ops_completadas % 5 == 0:
+                        porcentaje = min(ops_completadas / total_ops, 1.0)
+                        barra_progreso.progress(porcentaje)
+                        elapsed = time.time() - start_time
+                        eta = max((elapsed / ops_completadas) * total_ops - elapsed, 0)
+                        mins, secs = divmod(int(eta), 60)
+                        texto_progreso.markdown(f"**Dasimetría Espacial:** {cuenca} ({tipo_area})... | **ETA:** {mins}m {secs}s")
+
+            # 4. Finalización y Carga en Sesión
+            if matriz_resultados:
+                df_masivo = pd.DataFrame(matriz_resultados)
+                barra_progreso.progress(1.0)
+                texto_progreso.success(f"✅ ¡Entrenamiento Masivo Completado! {len(df_masivo)} modelos generados con éxito.")
+                st.session_state['df_matriz_demografica'] = df_masivo
+                
+                # Desplegar botón de guardado automático (Simulando Inyección por seguridad)
+                st.info("💡 Ve a la pestaña **💾 Descargas** o usa el panel de **Administración: Inyectar a SQL** para hacer los cambios permanentes en Supabase.")
+            else:
+                texto_progreso.warning("⚠️ No se generaron resultados. Verifica la conexión a la base de datos.")
+
+        except Exception as e:
+            st.error(f"❌ Error durante el entrenamiento masivo: {e}")
 
             df_mun_memoria = df_mun.copy() 
             col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
