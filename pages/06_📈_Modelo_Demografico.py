@@ -534,17 +534,18 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 import difflib
 
                 cuencas_cruzadas = 0
-                log_cruces = [] # Memoria para tu Depurador Forense
+                log_cruces = []
 
                 for c in cuencas_a_graficar:
-                    # 🔥 FIX TOPOLÓGICO Y CARIBE/CORNARE: Extraemos hijos usando limpieza agresiva para evitar que las tildes oculten datos
+                    # 🔥 EXTRACCIÓN TOPOLÓGICA BLINDADA: Usamos el nivel de detalle máximo disponible
                     if col_res in df_hier.columns:
                         cols_lbl = [col for col in ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh'] if col in df_hier.columns]
                         df_hier['subc_lbl'] = df_hier[cols_lbl].bfill(axis=1).iloc[:, 0]
-                        # Filtramos por el nombre exacto o normalizado para no perder a Cornare
-                        c_norm_filtro = normalizar_texto(c)
-                        hijos_hier = df_hier[(df_hier[col_res] == c) | (df_hier[col_res].apply(lambda x: normalizar_texto(str(x))) == c_norm_filtro)]['subc_lbl'].dropna().unique()
-                        micro_cuencas = hijos_hier if len(hijos_hier) > 0 else [c]
+                        
+                        c_norm = normalizar_texto(c)
+                        # Filtramos hijos donde el padre coincida exactamente o en versión normalizada
+                        hijos = df_hier[(df_hier[col_res] == c) | (df_hier[col_res].astype(str).apply(normalizar_texto) == c_norm)]['subc_lbl'].dropna().unique()
+                        micro_cuencas = hijos if len(hijos) > 0 else [c]
                     else:
                         micro_cuencas = [c]
 
@@ -558,12 +559,12 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                         if micro_norm in ids_matriz:
                             match_val = micro_norm
                         else:
-                            # Aumentamos el cutoff para evitar que "Q. San Juan" (Río Chico) se robe los datos de "Río San Juan" (Urabá)
-                            matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.90)
+                            # Tolerancia alta (0.85) para ignorar pelusas topológicas
+                            matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.85)
                             if matches: match_val = matches[0]
 
                         if match_val:
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": match_val, "Estado": "✅ Encontrado"})
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": match_val, "Estado": "✅ Encontrado"})
                             
                             cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == match_val]
                             if not cuenca_data.empty:
@@ -571,16 +572,19 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                                 fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
                                 
                                 v_t = float(fila_tot.get('Pob_Base', 0))
+                                
                                 c_urb = cuenca_data[cuenca_data['Area'] == 'Urbano']
                                 v_u = float(c_urb.iloc[0].get('Pob_Base', 0)) if not c_urb.empty else 0
+                                
                                 c_rur = cuenca_data[cuenca_data['Area'] == 'Rural']
                                 v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
 
-                                # 🗺️ MAPA: Asociamos un PADRE ÚNICO (c) para que el mapa pueda cortar los polígonos intrusos
+                                # 🗺️ MAPA: Pintamos polígonos correctos
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
 
+                                # 📊 MATEMÁTICA: Sumar solo una vez
                                 if match_val not in matrix_ids_sumados:
                                     matrix_ids_sumados.add(match_val)
                                     cuencas_cruzadas += 1
@@ -598,38 +602,25 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                                     c_pob_temp_hist += pob_temp
                         else:
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": "Ninguno", "Estado": "❌ Faltante"})
-                            # 🔥 FIX HUECOS: Rellenamos con 0 para mantener la topología visual continua
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "Ninguno", "Estado": "❌ Faltante"})
+                            # 🔥 FIX HUECOS: Pintar vacíos con 0 habitantes para cerrar la cuenca
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
 
-                                # 📊 MATEMÁTICA: SOLO sumamos la población si NO se ha sumado ya en esta cuenca padre
-                                if match_val not in matrix_ids_sumados:
-                                    matrix_ids_sumados.add(match_val)
-                                    cuencas_cruzadas += 1
-
-                                    modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
-                                    pob_temp = np.zeros_like(años_hist, dtype=float)
-
-                                    if 'Logistico' in modelo_ganador:
-                                        pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
-                                    elif 'Exponencial' in modelo_ganador:
-                                        pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
-                                    elif 'Polinomial' in modelo_ganador:
-                                        x_norm = años_hist - 1985
-                                        pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
-
-                                    c_pob_temp_hist += pob_temp
-                        else:
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": "Ninguno", "Estado": "❌ Faltante"})
-                            # 🔥 FIX TOPOLÓGICO: Añadimos los vacíos al mapa con población 0 para que no queden "huecos"
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
-
-                    # Sumamos el total curado (sin multiplicadores falsos) a la gráfica
                     pob_hist_acumulada += c_pob_temp_hist
+
+                # --- 🔍 DEPURADOR FORENSE ---
+                if log_cruces:
+                    df_log = pd.DataFrame(log_cruces)
+                    faltantes = len(df_log[df_log['Estado'] == '❌ Faltante'])
+                    if faltantes > 0:
+                        st.sidebar.warning(f"⚠️ {faltantes} micro-cuencas del mapa no tienen datos en la Matriz.")
+                    with st.sidebar.expander("🔍 Ver Depurador de Cuencas"):
+                        st.dataframe(df_log, use_container_width=True)
+
+                pob_hist = pob_hist_acumulada
+                df_mapa_base = pd.DataFrame(mapa_data)
 
                 # --- 🔍 DEPURADOR FORENSE INYECTADO AL PANEL ---
                 if log_cruces:
