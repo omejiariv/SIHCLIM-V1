@@ -1340,9 +1340,14 @@ with tab_mapas:
                     
                 gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
                 
-                # 🔥 FIX POLÍGONOS DISTANTES: Cortamos el GeoJSON para que SOLO existan los de la cuenca seleccionada
-                if "cuencas" in escala_sel.lower() and len(territorios_sel) > 0 and col_res in gdf_mapa.columns:
-                    gdf_mapa = gdf_mapa[gdf_mapa[col_res].isin(territorios_sel)]
+                # 🔥 FIX POLÍGONOS DISTANTES V2: Filtramos usando los nombres que ya cruzaron exitosamente
+                if "cuencas" in escala_sel.lower() and not df_mapa_plot.empty:
+                    # Extraemos los nombres de las micro-cuencas que el motor demográfico aprobó
+                    micro_cuencas_validas = df_mapa_plot['Territorio'].unique().tolist()
+                    # Columna dinámica para filtrar dependiendo de la base
+                    col_filtro = 'nom_nss3' if 'nom_nss3' in gdf_mapa.columns else 'subc_lbl'
+                    if col_filtro in gdf_mapa.columns:
+                        gdf_mapa = gdf_mapa[gdf_mapa[col_filtro].isin(micro_cuencas_validas)]
                 
                 if not gdf_mapa.empty:
                     # 1. MATCH_ID Dinámico en Pandas
