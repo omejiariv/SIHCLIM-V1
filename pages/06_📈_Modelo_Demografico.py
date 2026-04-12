@@ -537,45 +537,29 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 log_cruces = [] # Memoria para tu Depurador Forense
 
                 for c in cuencas_a_graficar:
-                    if col_res in df_hier.columns and 'nom_nss3' in df_hier.columns:
-                        micro_cuencas = df_hier[df_hier[col_res] == c]['nom_nss3'].dropna().unique()
+                    if col_res in df_hier.columns:
+                        # 🔥 FIX HUECOS 1: Capturamos la geometría exacta (NSS3 o la que exista)
+                        cols_lbl = [col for col in ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh'] if col in df_hier.columns]
+                        df_hier['subc_lbl'] = df_hier[cols_lbl].bfill(axis=1).iloc[:, 0]
+                        micro_cuencas = df_hier[df_hier[col_res] == c]['subc_lbl'].dropna().unique()
                     else:
                         micro_cuencas = [c]
 
                     c_pob_temp_hist = np.zeros_like(años_hist, dtype=float)
-                    matrix_ids_sumados = set() # 🛡️ EL ESCUDO ANTI-MULTIPLICACIÓN
+                    matrix_ids_sumados = set() 
 
                     for micro in micro_cuencas:
-                        micro_norm = normalizar_texto(micro)
-                        match_val = None
-
-                        if micro_norm in ids_matriz:
-                            match_val = micro_norm
-                        else:
-                            # Subimos la rigurosidad al 85% para evitar cruces absurdos
-                            matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.85)
-                            if matches: match_val = matches[0]
-
+                        # ... (MANTÉN TU CÓDIGO NORMAL DE MATCHING Y SUMA AQUÍ) ...
+                        
                         if match_val:
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": match_val, "Estado": "✅ Encontrado"})
-                            
-                            cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == match_val]
-                            if not cuenca_data.empty:
-                                c_total = cuenca_data[cuenca_data['Area'] == 'Total']
-                                fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
-                                
-                                v_t = float(fila_tot.get('Pob_Base', 0))
-                                
-                                c_urb = cuenca_data[cuenca_data['Area'] == 'Urbano']
-                                v_u = float(c_urb.iloc[0].get('Pob_Base', 0)) if not c_urb.empty else 0
-                                
-                                c_rur = cuenca_data[cuenca_data['Area'] == 'Rural']
-                                v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
-
-                                # 🗺️ MAPA: Pintamos TODOS los polígonos (incluso los de 0 habitantes)
-                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
-                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
-                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
+                            # ... (TU CÓDIGO DE POBLACIÓN Y MAPA CUANDO HAY MATCH) ...
+                            pass # (No borres tu código interno aquí)
+                        else:
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": "Ninguno", "Estado": "❌ Faltante"})
+                            # 🔥 FIX HUECOS 2: Dibujamos los vacíos con población 0 para que la cuenca se vea continua
+                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
+                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
+                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
 
                                 # 📊 MATEMÁTICA: SOLO sumamos la población si NO se ha sumado ya en esta cuenca padre
                                 if match_val not in matrix_ids_sumados:
