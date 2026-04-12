@@ -2045,8 +2045,8 @@ if 'df_matriz_demografica' in st.session_state:
             pwd = st.text_input("Clave de Administrador:", type="password", key="pwd_sql_demo")
             
             if st.button("🚀 Confirmar Inyección", type="primary", use_container_width=True):
-                # Usa la misma clave que en el Generador Beta (Agua2026)
-                if pwd == st.secrets.get("admin_password", "Agua2026"):
+                # Usa la misma clave que en el Generador Beta (AdminPoter)
+                if pwd == st.secrets.get("admin_password", "AdminPoter"):
                     with st.spinner("Conectando con PostgreSQL (Supabase)..."):
                         try:
                             from modules.db_manager import get_engine
