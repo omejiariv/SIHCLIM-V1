@@ -1473,7 +1473,7 @@ with tab_mapas:
                     # 4. RENDERIZADO DEL MAPA
                     import plotly.express as px
                     fig_mapa = px.choropleth_mapbox(
-                        df_mapa_plot, # Usamos el df con los IDs actualizados y curados
+                        df_mapa_plot, 
                         geojson=geo_data,
                         locations='MATCH_ID',        
                         featureidkey='properties.MATCH_ID', 
@@ -1484,8 +1484,9 @@ with tab_mapas:
                         zoom=zoom_level, 
                         center={"lat": center_lat, "lon": center_lon},
                         opacity=0.8,
-                        labels={'Total': f'Población {area_mapa}'},
-                        hover_data={'Total': ':,.0f', 'MATCH_ID': False, 'Territorio': True, 'Padre': True}
+                        hover_name='Territorio', # 🌟 AQUÍ ESTÁ LA MAGIA DEL TOOLTIP: Título en negrita
+                        labels={'Total': f'Población {area_mapa}', 'Padre': 'Cuenca Padre'},
+                        hover_data={'Total': ':,.0f', 'Padre': True, 'MATCH_ID': False} # 🌟 Datos extra al pasar el mouse
                     )
                     
                     fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
