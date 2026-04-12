@@ -1269,7 +1269,7 @@ with tab_mapas:
                 if "veredal" in escala_sel.lower(): 
                     q_geo = text("SELECT * FROM veredas_geometria")
                 elif "cuencas" in escala_sel.lower(): 
-                    q_geo = text("SELECT * FROM cuencas_geometria")
+                    q_geo = text("SELECT * FROM cuencas")
                 else: 
                     q_geo = text("SELECT * FROM municipios")
                     
