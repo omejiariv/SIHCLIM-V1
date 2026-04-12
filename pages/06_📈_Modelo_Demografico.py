@@ -1534,14 +1534,17 @@ with tab_mapas:
                     # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
                     import plotly.express as px
                     
-                    # 🔥 LECTURA DINÁMICA: Detecta automáticamente la estructura del GeoJSON
-                    clave_id = 'id' if 'id' in str(geo_data)[:500] else 'properties.MATCH_ID'
+                    # 🔥 LECTURA EXPLÍCITA BLINDADA: Cero adivinanzas.
+                    if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
+                        clave_id = 'id'
+                    else:
+                        clave_id = 'properties.MATCH_ID'
                     
                     fig_mapa = px.choropleth_mapbox(
                         df_mapa_plot, 
                         geojson=geo_data,
                         locations='MATCH_ID',        
-                        featureidkey=clave_id, # Se adapta a Cuencas o a Medellín sin romperse
+                        featureidkey=clave_id, 
                         color='Total',
                         color_continuous_scale="Viridis",
                         range_color=[0, max_color if max_color > 0 else 100],  
