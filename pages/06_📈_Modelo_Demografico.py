@@ -1489,6 +1489,9 @@ with tab_matriz:
             from scipy.optimize import curve_fit
             from modules.db_manager import get_engine
             from sqlalchemy import text
+            import unicodedata
+            import difflib
+            import re
             
             engine_sql = get_engine()
             start_time = time.time()
@@ -1567,7 +1570,6 @@ with tab_matriz:
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
 
             # --- 🕵️‍♂️ RECOLECCIÓN MASIVA DE CUENCAS DE LA BASE DE DATOS ---
-            # Extrae absolutamente todas las micro-cuencas disponibles en tu base
             q_todas = text("SELECT DISTINCT nom_nss3 FROM cuencas WHERE nom_nss3 IS NOT NULL")
             lista_todas_cuencas = pd.read_sql(q_todas, engine_sql)['nom_nss3'].tolist()
             
@@ -1576,11 +1578,9 @@ with tab_matriz:
             deptos = df_mun_memoria['depto_nom'].dropna().unique()
             areas_a_procesar = ['Total', 'Urbana', 'Rural']
             
-            # Total de operaciones para la barra del 100%
             total_ops = len(areas_a_procesar) * (1 + len(deptos) + len(mpios) + len(lista_todas_cuencas))
             ops_completadas = 0
 
-            # Extraemos las áreas puras sin sumas forzadas
             for tipo_area in areas_a_procesar:
                 df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
                 if df_area_actual.empty: 
@@ -1606,7 +1606,6 @@ with tab_matriz:
                     if not df_temp.empty: ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Municipal', mpio, df_temp['depto_nom'].iloc[0], tipo_area)
                     ops_completadas += 1
                     
-                    # 🚀 ACTUALIZAR UI
                     if ops_completadas % 10 == 0:
                         porcentaje = min(ops_completadas / total_ops, 1.0)
                         barra_progreso.progress(porcentaje)
@@ -1628,7 +1627,6 @@ with tab_matriz:
                     
                     engine_geo = get_engine()
                     
-                    # 1. Preparar Geometría de Cuencas
                     q_cue = text("""
                         SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, 
                                geometry 
@@ -1638,9 +1636,8 @@ with tab_matriz:
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
-                    # 2. Capa de Referencia (Corrección de Área Rural Dispersa)
                     if tipo_area == 'Urbana': q_esp = text("SELECT * FROM cabeceras_municipales")
-                    else: q_esp = text("SELECT * FROM municipios") # Cubre todo el territorio rural disperso
+                    else: q_esp = text("SELECT * FROM municipios")
 
                     gdf_esp = gpd.read_postgis(q_esp, engine_geo, geom_col="geometry")
                     col_mpio_das = next((c for c in gdf_esp.columns if c.lower() in ['mpio_cnmbr', 'nombre_mpi', 'mpio_nombr', 'nombre_municipio', 'municipio', 'nomb_mpio', 'mun_name']), None)
@@ -1649,14 +1646,12 @@ with tab_matriz:
                     gdf_esp = gdf_esp.to_crs(epsg=3116)
                     gdf_esp['geometry'] = gdf_esp.geometry.buffer(0)
                     
-                    # 3. Sanación Fuzzy del Nombre (El Exorcismo del Merge Espacial)
                     def clean_das(t):
                         if not t or pd.isna(t): return ""
                         t = str(t).lower().strip()
                         t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
                         return re.sub(r'[^a-z0-9]', '', t)
                     
-                    # Hacemos copia para no afectar el dataframe original de la iteración
                     df_area_actual_esp = df_area_actual.copy()
                     df_area_actual_esp['mun_norm_dane'] = df_area_actual_esp['municipio'].apply(clean_das)
                     lista_nombres_dane_clean = df_area_actual_esp['mun_norm_dane'].dropna().unique().tolist()
@@ -1664,13 +1659,11 @@ with tab_matriz:
                     def sanar_nombre_espacial(nombre_gis):
                         n_clean = clean_das(nombre_gis)
                         if n_clean in lista_nombres_dane_clean: return n_clean
-                        # Obliga a cruzar nombres corruptos (ej. medell═n -> medellin)
                         matches = difflib.get_close_matches(n_clean, lista_nombres_dane_clean, n=1, cutoff=0.7)
                         return matches[0] if matches else n_clean
 
                     gdf_esp['mun_norm'] = gdf_esp['mun_name'].apply(sanar_nombre_espacial)
                     
-                    # 4. Intersección Optimizada (ANTI-COLAPSO DE MEMORIA RAM)
                     gdf_esp['area_poly'] = gdf_esp.geometry.area
                     esp_areas = gdf_esp.groupby('mun_norm')['area_poly'].sum().reset_index().rename(columns={'area_poly': 'area_esponja'})
                     
@@ -1681,13 +1674,11 @@ with tab_matriz:
                     inter_final = inter_grouped.merge(esp_areas, on='mun_norm')
                     inter_final['proporcion'] = (inter_final['area_frag'] / inter_final['area_esponja']).clip(upper=1.0)
                     
-                    # 5. Fusión de Población y Reconstrucción
                     df_inter = inter_final.merge(df_area_actual_esp, left_on='mun_norm', right_on='mun_norm_dane', how='inner')
                     df_inter['Total_frag'] = df_inter['Total'] * df_inter['proporcion']
                     
                     df_cuencas = df_inter.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                     
-                    # 🚀 ALIMENTAR EL CEREBRO PREDICTIVO
                     for cuenca in lista_todas_cuencas:
                         df_temp = df_cuencas[df_cuencas['subc_lbl'] == cuenca].sort_values(by=col_anio)
                         if not df_temp.empty and df_temp['Total_frag'].sum() > 0:
@@ -1695,7 +1686,6 @@ with tab_matriz:
                         
                         ops_completadas += 1
                         
-                        # Actualizador de UI
                         if ops_completadas % 5 == 0:
                             porcentaje = min(ops_completadas / total_ops, 1.0)
                             barra_progreso.progress(porcentaje)
@@ -1706,6 +1696,25 @@ with tab_matriz:
 
                 except Exception as e:
                     st.warning(f"⚠️ Nota en proceso dasimétrico ({tipo_area}): {e}")
+
+            # 4. Finalización y Carga en Sesión
+            if matriz_resultados:
+                df_masivo = pd.DataFrame(matriz_resultados)
+                barra_progreso.progress(1.0)
+                texto_progreso.success(f"✅ ¡Entrenamiento Masivo Completado! {len(df_masivo)} modelos generados con éxito.")
+                st.session_state['df_matriz_demografica'] = df_masivo
+                
+                st.info("💡 Ve a la pestaña **💾 Descargas** o usa el panel de **Administración: Inyectar a SQL** para hacer los cambios permanentes en Supabase.")
+            else:
+                texto_progreso.warning("⚠️ No se generaron resultados. Verifica la conexión a la base de datos.")
+
+        # 🛑 AQUÍ ESTÁ EL CIERRE QUE FALTABA (SALVAVIDAS DE PYTHON)
+        except Exception as e:
+            st.error(f"❌ Error durante el entrenamiento masivo: {e}")
+            
+    # =====================================================================
+    # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
+    # =====================================================================
                     
     # =====================================================================
     # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
