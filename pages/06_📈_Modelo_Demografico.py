@@ -41,7 +41,6 @@ encender_gemelo_digital()
 
 st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
 st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
-st.divider()
 
 # --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
 def normalizar_texto(texto):
