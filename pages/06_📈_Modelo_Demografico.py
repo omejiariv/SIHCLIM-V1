@@ -577,13 +577,15 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                         # --- LÓGICA DE ASIGNACIÓN ---
                         if match_val == "CERO_NATURAL":
-                            # Lo pintamos en el mapa con 0, pero NO lo mandamos al registro de "Faltantes"
+                            # Cuerpos de agua
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "Cuerpo de Agua", "Estado": "💧 0 hab (Natural)"})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
                             
                         elif match_val:
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": match_val, "Estado": "✅ Encontrado"})
+                            # Zonas pobladas
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": match_val, "Estado": "✅ Encontrada"})
                             
                             cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == match_val]
                             if not cuenca_data.empty:
@@ -619,20 +621,23 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                                     c_pob_temp_hist += pob_temp
                         else:
-                            # Estos son los verdaderos faltantes huérfanos
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "Ninguno", "Estado": "❌ Faltante"})
+                            # 🌿 ZONAS DESHABITADAS (Bosques, páramos, áreas sin registro DANE)
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "No Habitado", "Estado": "🌿 0 hab (Deshabitada)"})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
-                            
+
                     pob_hist_acumulada += c_pob_temp_hist
 
-                # --- 🔍 DEPURADOR FORENSE INYECTADO AL PANEL ---
+                # --- 🔍 DEPURADOR FORENSE ACTUALIZADO ---
                 if log_cruces:
                     df_log = pd.DataFrame(log_cruces)
-                    faltantes = len(df_log[df_log['Estado'] == '❌ Faltante'])
-                    if faltantes > 0:
-                        st.sidebar.warning(f"⚠️ {faltantes} micro-cuencas del mapa no tienen datos en la Matriz Demográfica.")
+                    deshabitadas = len(df_log[df_log['Estado'] == '🌿 0 hab (Deshabitada)'])
+                    agua = len(df_log[df_log['Estado'] == '💧 0 hab (Natural)'])
+                    
+                    if deshabitadas > 0 or agua > 0:
+                        st.sidebar.info(f"✅ Integración completa: Se detectaron {deshabitadas} zonas deshabitadas y {agua} cuerpos de agua (Población = 0).")
+                        
                     with st.sidebar.expander("🔍 Ver Depurador de Cuencas"):
                         st.dataframe(df_log, use_container_width=True)
 
