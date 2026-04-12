@@ -549,17 +549,35 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                     matrix_ids_sumados = set() 
 
                     for micro in micro_cuencas:
-                        # ... (MANTÉN TU CÓDIGO NORMAL DE MATCHING Y SUMA AQUÍ) ...
-                        
-                        if match_val:
-                            # ... (TU CÓDIGO DE POBLACIÓN Y MAPA CUANDO HAY MATCH) ...
-                            pass # (No borres tu código interno aquí)
+                        micro_norm = normalizar_texto(micro)
+                        match_val = None
+
+                        if micro_norm in ids_matriz:
+                            match_val = micro_norm
                         else:
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": "Ninguno", "Estado": "❌ Faltante"})
-                            # 🔥 FIX HUECOS 2: Dibujamos los vacíos con población 0 para que la cuenca se vea continua
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
+                            matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.85)
+                            if matches: match_val = matches[0]
+
+                        if match_val:
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Encontrado en Matriz": match_val, "Estado": "✅ Encontrado"})
+                            
+                            cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == match_val]
+                            if not cuenca_data.empty:
+                                c_total = cuenca_data[cuenca_data['Area'] == 'Total']
+                                fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
+                                
+                                v_t = float(fila_tot.get('Pob_Base', 0))
+                                
+                                c_urb = cuenca_data[cuenca_data['Area'] == 'Urbano']
+                                v_u = float(c_urb.iloc[0].get('Pob_Base', 0)) if not c_urb.empty else 0
+                                
+                                c_rur = cuenca_data[cuenca_data['Area'] == 'Rural']
+                                v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
+
+                                # 🗺️ MAPA: Pintamos TODOS los polígonos (incluso los de 0 habitantes para no dejar huecos)
+                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
+                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
+                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
 
                                 # 📊 MATEMÁTICA: SOLO sumamos la población si NO se ha sumado ya en esta cuenca padre
                                 if match_val not in matrix_ids_sumados:
@@ -1321,6 +1339,10 @@ with tab_mapas:
                     q_geo = text("SELECT * FROM municipios")
                     
                 gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
+                
+                # 🔥 FIX POLÍGONOS DISTANTES: Cortamos el GeoJSON para que SOLO existan los de la cuenca seleccionada
+                if "cuencas" in escala_sel.lower() and len(territorios_sel) > 0 and col_res in gdf_mapa.columns:
+                    gdf_mapa = gdf_mapa[gdf_mapa[col_res].isin(territorios_sel)]
                 
                 if not gdf_mapa.empty:
                     # 1. MATCH_ID Dinámico en Pandas
