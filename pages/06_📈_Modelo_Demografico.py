@@ -1664,19 +1664,21 @@ with tab_matriz:
                         texto_progreso.markdown(f"**Procesando Base Administrativa:** {mpio} ({tipo_area})... | **ETA:** {mins}m {secs}s")
 
                 # ================================================================
-                # 🧠 BISTURÍ ESPACIAL V4: Dasimetría por Anclaje de Puntos (Gravedad)
+                # 🧠 BISTURÍ ESPACIAL V5: Dasimetría Híbrida (Área Urbana + Gravedad Rural)
                 # ================================================================
                 try:
                     import geopandas as gpd
                     from sqlalchemy import text
                     import unicodedata
-                    import difflib
                     import re
                     from modules.db_manager import get_engine
                     
                     engine_geo = get_engine()
                     
-                    # 1. CARGA DE CARTOGRAFÍA Y PUNTOS DE CONTROL
+                    # 1. CARGA DE CARTOGRAFÍA EN NUBE
+                    URL_CABECERAS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CabeceraMunicipal_GisAnt_PT.geojson"
+                    URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
+                    
                     q_cue = text("""
                         SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, 
                                geometry FROM cuencas 
@@ -1685,63 +1687,63 @@ with tab_matriz:
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
-                    # ☁️ Cargamos tus nuevos archivos de puntos directamente desde Supabase
-                    URL_CABECERAS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CabeceraMunicipal_GisAnt_PT.geojson"
-                    URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
-                    
+                    # Cabeceras ahora se procesan como POLÍGONOS (Para Medellín y megaciudades)
                     gdf_cab = gpd.read_file(URL_CABECERAS).to_crs(epsg=3116)
+                    gdf_cab['geometry'] = gdf_cab.geometry.buffer(0)
+                    
+                    # Centros Poblados se mantienen como PUNTOS (Para gravedad rural)
                     gdf_cp = gpd.read_file(URL_CENTROS_POBLADOS).to_crs(epsg=3116)
                     
-                    # Función de limpieza interna para cruces perfectos
-                    def clean_v4(t):
+                    def clean_v5(t):
                         if not t or pd.isna(t): return ""
                         t = str(t).lower().strip()
                         t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
                         return re.sub(r'[^a-z0-9]', '', t)
 
-                    # Estandarizamos nombres en las capas de puntos
                     col_cab = next((c for c in gdf_cab.columns if c.upper() in ['MPIO_NOMBR', 'MUNICIPIO', 'NOMBRE_MPI']), 'MPIO_NOMBR')
-                    gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v4)
+                    gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v5)
                     
                     col_cp = next((c for c in gdf_cp.columns if c.upper() in ['NOMBRE_MPI', 'MUNICIPIO', 'MPIO_NOMBR']), 'NOMBRE_MPI')
-                    gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v4)
+                    gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v5)
+
+                    # 2. PROCESAMIENTO URBANO (Corte de Huella Espacial)
+                    gdf_cab['area_cab_total'] = gdf_cab.geometry.area
+                    inter_urbana = gpd.overlay(gdf_cab, gdf_cue, how='intersection')
+                    inter_urbana['pct_area_urb'] = inter_urbana.geometry.area / inter_urbana['area_cab_total']
                     
-                    # 2. UNIONES ESPACIALES (Punto en Polígono)
-                    cab_en_cuenca = gpd.sjoin(gdf_cab, gdf_cue, how='inner', predicate='within')
+                    # 3. PROCESAMIENTO RURAL (Gravedad + Dispersión)
                     cp_en_cuenca = gpd.sjoin(gdf_cp, gdf_cue, how='inner', predicate='within')
                     
-                    # 3. PREPARACIÓN DE DISPERSIÓN (Población Rural no agrupada)
                     q_mun = text("SELECT * FROM municipios")
                     gdf_mun = gpd.read_postgis(q_mun, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     col_mun_name = next((c for c in gdf_mun.columns if c.lower() in ['mpio_cnmbr', 'municipio']), 'mpio_cnmbr')
-                    gdf_mun['mun_norm'] = gdf_mun[col_mun_name].apply(clean_v4)
-                    gdf_mun['area_total'] = gdf_mun.geometry.area
+                    gdf_mun['mun_norm'] = gdf_mun[col_mun_name].apply(clean_v5)
+                    gdf_mun['area_mun_total'] = gdf_mun.geometry.area
                     
                     inter_dispersa = gpd.overlay(gdf_mun, gdf_cue, how='intersection')
-                    inter_dispersa['pct_area'] = inter_dispersa.geometry.area / inter_dispersa['area_total']
+                    inter_dispersa['pct_area_rur'] = inter_dispersa.geometry.area / inter_dispersa['area_mun_total']
 
-                    df_area_actual_v4 = df_area_actual.copy()
-                    df_area_actual_v4['mun_norm_dane'] = df_area_actual_v4['municipio'].apply(clean_v4)
-
-                    # 4. MOTOR DE DISTRIBUCIÓN JERÁRQUICA (GRAVEDAD)
+                    # 4. MOTOR DE DISTRIBUCIÓN HÍBRIDO V5
+                    df_area_actual_v5 = df_area_actual.copy()
+                    df_area_actual_v5['mun_norm_dane'] = df_area_actual_v5['municipio'].apply(clean_v5)
+                    
                     df_final_cuencas = []
 
-                    for mpio in df_area_actual_v4['mun_norm_dane'].unique():
-                        pob_mpio = df_area_actual_v4[df_area_actual_v4['mun_norm_dane'] == mpio]
+                    for mpio in df_area_actual_v5['mun_norm_dane'].unique():
+                        pob_mpio = df_area_actual_v5[df_area_actual_v5['mun_norm_dane'] == mpio]
                         
                         if tipo_area == 'Urbana':
-                            cuencas_cab = cab_en_cuenca[cab_en_cuenca['mun_norm'] == mpio]
-                            if not cuencas_cab.empty:
-                                n = len(cuencas_cab)
-                                for _, c_row in cuencas_cab.iterrows():
-                                    df_temp = pob_mpio.copy()
-                                    df_temp['Total_frag'] = df_temp['Total'] / n
-                                    df_temp['subc_lbl'] = c_row['subc_lbl']
-                                    df_final_cuencas.append(df_temp)
-                        
+                            # 🏙️ URBANO: Reparto exacto según el área de la cabecera (Medellín se reparte perfecto)
+                            cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
+                            for _, u_row in cuencas_urb.iterrows():
+                                df_temp = pob_mpio.copy()
+                                df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
+                                df_temp['subc_lbl'] = u_row['subc_lbl']
+                                df_final_cuencas.append(df_temp)
+                                
                         elif tipo_area == 'Rural':
+                            # 👨‍🌾 RURAL: 70% Puntos (Casitas) + 30% Polígonos (Bosque/Atrato)
                             cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio]
-                            
                             if not cuencas_cp.empty:
                                 n_cp = len(cuencas_cp)
                                 for _, cp_row in cuencas_cp.iterrows():
@@ -1754,16 +1756,16 @@ with tab_matriz:
                             factor_area = 1.0 if cuencas_cp.empty else 0.30
                             for _, a_row in cuencas_area.iterrows():
                                 df_temp = pob_mpio.copy()
-                                df_temp['Total_frag'] = df_temp['Total'] * factor_area * a_row['pct_area']
+                                df_temp['Total_frag'] = df_temp['Total'] * factor_area * a_row['pct_area_rur']
                                 df_temp['subc_lbl'] = a_row['subc_lbl']
                                 df_final_cuencas.append(df_temp)
 
                     # 5. RECONSTRUCCIÓN CENSAL Y ENTRENAMIENTO
                     if df_final_cuencas:
-                        df_cuencas_v4 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
+                        df_cuencas_v5 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                         
                         for cuenca in lista_todas_cuencas:
-                            df_t = df_cuencas_v4[df_cuencas_v4['subc_lbl'] == cuenca].sort_values(by=col_anio)
+                            df_t = df_cuencas_v5[df_cuencas_v5['subc_lbl'] == cuenca].sort_values(by=col_anio)
                             if not df_t.empty and df_t['Total_frag'].sum() > 0:
                                 ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
                             
@@ -1774,10 +1776,10 @@ with tab_matriz:
                                 elapsed = time.time() - start_time
                                 eta = (elapsed / ops_completadas) * (total_ops - ops_completadas) if ops_completadas > 0 else 0
                                 mins, secs = divmod(int(eta), 60)
-                                texto_progreso.markdown(f"**Gravedad V4:** {cuenca} ({tipo_area}) | **ETA:** {mins}m {secs}s")
+                                texto_progreso.markdown(f"**Motor Híbrido V5:** {cuenca} ({tipo_area}) | **ETA:** {mins}m {secs}s")
 
                 except Exception as e:
-                    st.warning(f"⚠️ Error en el motor de Gravedad V4 ({tipo_area}): {e}")
+                    st.warning(f"⚠️ Error en el motor Híbrido V5 ({tipo_area}): {e}")
 
             # =====================================================================
             # 6. FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
@@ -1785,14 +1787,13 @@ with tab_matriz:
             if matriz_resultados:
                 df_masivo = pd.DataFrame(matriz_resultados)
                 barra_progreso.progress(1.0)
-                texto_progreso.success(f"✅ ¡Entrenamiento Masivo V4 Completado! {len(df_masivo)} modelos generados con éxito.")
+                texto_progreso.success(f"✅ ¡Entrenamiento Masivo V5 Completado! {len(df_masivo)} modelos generados con éxito.")
                 st.session_state['df_matriz_demografica'] = df_masivo
                 
                 st.info("💡 Ve a la pestaña **💾 Descargas** o usa el panel de **Administración: Inyectar a SQL** para hacer los cambios permanentes en Supabase.")
             else:
-                texto_progreso.warning("⚠️ No se generaron resultados. Verifica la conexión a la base de datos y los archivos GeoJSON.")
+                texto_progreso.warning("⚠️ No se generaron resultados. Verifica la conexión.")
 
-        # 🛑 SALVAVIDAS DE PYTHON: Este 'except' cierra el 'try' principal de todo el botón
         except Exception as e:
             st.error(f"❌ Error crítico durante el entrenamiento masivo: {e}")
             
