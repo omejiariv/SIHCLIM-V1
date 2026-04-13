@@ -721,6 +721,10 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
             })
             clave_id_plotly = 'properties.MATCH_ID'
             
+            # 🛡️ ESCUDO PROTECTOR PARA MEDELLÍN (Evita el secuestro del mapa Nacional)
+            df_mapa_plot_blindado = df_mapa_base.copy()
+            geo_data_blindado = geo_data
+            
         else:
             # Comunas (Los primeros 2 dígitos del código del barrio)
             # 🔥 Aquí también forzamos el zfill(4) antes de cortar los 2 dígitos
@@ -752,6 +756,10 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 'area_geografica': 'total'
             })
             clave_id_plotly = 'properties.MATCH_ID'
+            
+            # 🛡️ ESCUDO PROTECTOR PARA COMUNAS
+            df_mapa_plot_blindado = df_mapa_base.copy()
+            geo_data_blindado = geo_data
         
         filtro_zona = titulo_terr
         
@@ -834,7 +842,6 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
 # --- SELECTOR GLOBAL DE ÁREA (Afecta Gráficos y Mapas) ---
 
 if escala_sel != "🌿 Veredal (Antioquia)":
-    area_global = st.radio("Filtro Poblacional Global:", ["Total", "Urbano", "Rural"], horizontal=True)
 else:
     area_global = "Rural"
     st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
@@ -1568,31 +1575,35 @@ with tab_mapas:
                 # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
                 import plotly.express as px
                 
-                # Definir qué propiedad del GeoJSON buscar según la escala
+                # 🔥 ACTIVACIÓN DEL BLINDAJE (Evita el secuestro hacia Nariño)
                 if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
+                    datos_para_dibujar = df_mapa_plot_blindado
+                    mapa_para_dibujar = geo_data_blindado
                     llave_geojson = clave_id_plotly
                 else:
+                    datos_para_dibujar = df_mapa_plot  
+                    mapa_para_dibujar = geo_data       
                     llave_geojson = 'properties.MATCH_ID'
                 
                 # =========================================================
                 # 🚨 ESCÁNER ESTRUCTURAL DE DATOS (RAYOS X) 🚨
                 # =========================================================
-                with st.expander("🔍 ABRIR ESCÁNER ESTRUCTURAL (Para Diagnóstico)", expanded=True):
+                with st.expander("🔍 ABRIR ESCÁNER ESTRUCTURAL (Para Diagnóstico)", expanded=False):
                     st.markdown("### 1. ¿Qué datos está recibiendo Plotly? (Tabla)")
-                    st.dataframe(df_mapa_plot[['Territorio', 'MATCH_ID', 'Total']].head(5), use_container_width=True)
+                    st.dataframe(datos_para_dibujar[['Territorio', 'MATCH_ID', 'Total']].head(5), use_container_width=True)
                     
                     st.markdown("### 2. ¿Qué mapa está cargando realmente? (GeoJSON)")
-                    if 'features' in geo_data and len(geo_data['features']) > 0:
-                        muestra_feature = geo_data['features'][0]
-                        st.write(f"Total de polígonos cargados: {len(geo_data['features'])}")
+                    if 'features' in mapa_para_dibujar and len(mapa_para_dibujar['features']) > 0:
+                        muestra_feature = mapa_para_dibujar['features'][0]
+                        st.write(f"Total de polígonos cargados: {len(mapa_para_dibujar['features'])}")
                         st.json({
                             "id_nativo_del_poligono": muestra_feature.get('id', 'NO TIENE ID NATIVO'),
                             "propiedades_del_poligono": muestra_feature.get('properties', {})
                         })
                         
                         # Prueba de fuego: ¿Cuántos cruzan?
-                        ids_en_mapa = [str(f['properties'].get('MATCH_ID', '')) for f in geo_data['features']]
-                        ids_en_tabla = df_mapa_plot['MATCH_ID'].astype(str).tolist()
+                        ids_en_mapa = [str(f['properties'].get('MATCH_ID', '')) for f in mapa_para_dibujar['features']]
+                        ids_en_tabla = datos_para_dibujar['MATCH_ID'].astype(str).tolist()
                         comunes = set(ids_en_mapa).intersection(set(ids_en_tabla))
                         
                         if len(comunes) == 0:
@@ -1603,11 +1614,12 @@ with tab_mapas:
                         st.error("❌ EL MAPA ESTÁ VACÍO. No hay polígonos en geo_data.")
                 # =========================================================
                 
+                # 🗺️ DIBUJO DEL MAPA CON VARIABLES PROTEGIDAS
                 fig_mapa = px.choropleth_mapbox(
-                    df_mapa_plot, 
-                    geojson=geo_data,
+                    datos_para_dibujar, 
+                    geojson=mapa_para_dibujar,
                     locations='MATCH_ID',        
-                    featureidkey=clave_id_plotly if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)" else 'properties.MATCH_ID', 
+                    featureidkey=llave_geojson, 
                     color='Total',
                     color_continuous_scale="Viridis",
                     range_color=[0, max_color if max_color > 0 else 100],  
@@ -1624,8 +1636,8 @@ with tab_mapas:
                 st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                 
                 # --- DEPURADOR FORENSE INYECTADO ---
-                if 'En_Mapa' in df_mapa_plot.columns:
-                    faltantes_finales = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
+                if 'En_Mapa' in datos_para_dibujar.columns:
+                    faltantes_finales = datos_para_dibujar[datos_para_dibujar['En_Mapa'] == False]
                     if not faltantes_finales.empty:
                         st.warning(f"⚠️ {len(faltantes_finales)} territorios no cruzaron.")
                         with st.expander("🔍 ABRIR DEPURADOR FORENSE"):
@@ -1637,12 +1649,6 @@ with tab_mapas:
                                 st.write("🟢 **Disponibles:**")
                                 ids_disp = sorted(ids_geojson) if 'ids_geojson' in locals() else []
                                 st.dataframe(pd.DataFrame({"IDs en GeoJSON": ids_disp}), use_container_width=True)
-                else:
-                    st.warning("⚠️ No se encontraron geometrías en la base de datos para dibujar.")
-            except Exception as e:
-                st.error(f"❌ Error conectando a PostGIS o procesando el mapa: {e}")
-        else:
-            st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
             
 # =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
