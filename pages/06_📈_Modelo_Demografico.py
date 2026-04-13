@@ -708,21 +708,23 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todos los Barrios y Veredas"
                 zoom_level = 11.5
             
+            # 🔥 EL ANTÍDOTO DE NARIÑO: Forzamos que siempre sean 4 dígitos (ej: "0101")
+            gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str).str.zfill(4)
             geo_data = json.loads(gdf_plot.to_json())
             
-            # 🔥 Llave Maestra: Usamos el Cod_Barrio nativo
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreBarr'],
-                'MATCH_ID': gdf_plot['Cod_Barrio'].astype(str), 
+                'MATCH_ID': gdf_plot['MATCH_ID'], # Usamos el ID curado
                 'Total': pd.to_numeric(gdf_plot['Pob_Total'], errors='coerce').fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
-            clave_id_plotly = 'properties.Cod_Barrio' # Le decimos a Plotly qué buscar
+            clave_id_plotly = 'properties.MATCH_ID'
             
         else:
-            # Comunas
-            gdf_med['Cod_Comuna'] = gdf_med['Cod_Barrio'].astype(str).str[:2]
+            # Comunas (Los primeros 2 dígitos del código del barrio)
+            # 🔥 Aquí también forzamos el zfill(4) antes de cortar los 2 dígitos
+            gdf_med['Cod_Comuna'] = gdf_med['Cod_Barrio'].astype(str).str.zfill(4).str[:2]
             gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'}).reset_index()
             
             lista_comunas = sorted(gdf_comunas['Cod_Comuna'].unique())
@@ -738,16 +740,18 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todas las Comunas"
                 zoom_level = 11.5
 
+            # El ID de la comuna siempre debe ser 2 dígitos (ej: "01", "15")
+            gdf_plot['MATCH_ID'] = gdf_plot['Cod_Comuna'].astype(str).str.zfill(2)
             geo_data = json.loads(gdf_plot.to_json())
             
             df_mapa_base = pd.DataFrame({
                 'Territorio': 'Comuna/Correg. ' + gdf_plot['Cod_Comuna'].astype(str),
-                'MATCH_ID': gdf_plot['Cod_Comuna'].astype(str),
+                'MATCH_ID': gdf_plot['MATCH_ID'], # Usamos el ID curado
                 'Total': pd.to_numeric(gdf_plot['Pob_Total'], errors='coerce').fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
-            clave_id_plotly = 'properties.Cod_Comuna'
+            clave_id_plotly = 'properties.MATCH_ID'
         
         filtro_zona = titulo_terr
         
@@ -1574,7 +1578,7 @@ with tab_mapas:
                     df_mapa_plot, 
                     geojson=geo_data,
                     locations='MATCH_ID',        
-                    featureidkey=llave_geojson, 
+                    featureidkey=clave_id_plotly if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)" else 'properties.MATCH_ID', 
                     color='Total',
                     color_continuous_scale="Viridis",
                     range_color=[0, max_color if max_color > 0 else 100],  
