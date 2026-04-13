@@ -688,12 +688,12 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         import json
         
         @st.cache_data(ttl=3600)
-        def cargar_barrios_medellin_v4():
+        def cargar_barrios_medellin_v5():
             URL_BARRIOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
             gdf = gpd.read_file(URL_BARRIOS)
-            return gdf.set_crs(epsg=4326, allow_override=True)
+            return gdf.to_crs(epsg=4326) # Plotly exige GPS
         
-        gdf_med = cargar_barrios_medellin_v4()
+        gdf_med = cargar_barrios_medellin_v5()
         
         if nivel_medellin == "Barrios y Veredas":
             lista_barrios = sorted(gdf_med['NombreBarr'].dropna().unique())
@@ -708,30 +708,29 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todos los Barrios y Veredas"
                 zoom_level = 11.5
             
-            # 🔥 CLAVE DE ORO: set_index obliga a que el ID coincida perfectamente
-            gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str)
-            gdf_plot = gdf_plot.set_index('MATCH_ID')
             geo_data = json.loads(gdf_plot.to_json())
             
+            # 🔥 Llave Maestra: Usamos el Cod_Barrio nativo
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreBarr'],
-                'MATCH_ID': gdf_plot.index,
+                'MATCH_ID': gdf_plot['Cod_Barrio'].astype(str), 
                 'Total': pd.to_numeric(gdf_plot['Pob_Total'], errors='coerce').fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
+            clave_id_plotly = 'properties.Cod_Barrio' # Le decimos a Plotly qué buscar
             
         else:
+            # Comunas
             gdf_med['Cod_Comuna'] = gdf_med['Cod_Barrio'].astype(str).str[:2]
-            gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'})
-            gdf_comunas.index.name = 'MATCH_ID'
+            gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'}).reset_index()
             
-            lista_comunas = sorted(gdf_comunas.index.unique())
-            comuna_sel = st.sidebar.selectbox("Seleccione una Comuna:", ["Todas"] + ['Comuna/Correg. ' + str(c) for c in lista_comunas])
+            lista_comunas = sorted(gdf_comunas['Cod_Comuna'].unique())
+            comuna_sel = st.sidebar.selectbox("Seleccione una Comuna:", ["Todas"] + ['Comuna ' + str(c) for c in lista_comunas])
             
             if comuna_sel != "Todas":
-                codigo_comuna_sel = comuna_sel.replace('Comuna/Correg. ', '')
-                gdf_plot = gdf_comunas[gdf_comunas.index == codigo_comuna_sel].copy()
+                codigo_sel = comuna_sel.replace('Comuna ', '')
+                gdf_plot = gdf_comunas[gdf_comunas['Cod_Comuna'] == codigo_sel].copy()
                 titulo_terr = comuna_sel
                 zoom_level = 13
             else:
@@ -742,12 +741,13 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
             geo_data = json.loads(gdf_plot.to_json())
             
             df_mapa_base = pd.DataFrame({
-                'Territorio': 'Comuna/Correg. ' + gdf_plot.index.astype(str),
-                'MATCH_ID': gdf_plot.index,
+                'Territorio': 'Comuna/Correg. ' + gdf_plot['Cod_Comuna'].astype(str),
+                'MATCH_ID': gdf_plot['Cod_Comuna'].astype(str),
                 'Total': pd.to_numeric(gdf_plot['Pob_Total'], errors='coerce').fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
+            clave_id_plotly = 'properties.Cod_Comuna'
         
         filtro_zona = titulo_terr
         
@@ -758,7 +758,6 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         else:
             center_lat, center_lon = 6.25, -75.58
 
-        # 🔥 RESURRECCIÓN DE LA GRÁFICA
         pob_hist = np.full_like(años_hist, df_mapa_base['Total'].sum())
         col_anio = 'Año' if 'Año' in locals() or 'Año' in globals() else 'año'
         df_hist = pd.DataFrame({col_anio: años_hist, 'Total': pob_hist})
@@ -1565,17 +1564,17 @@ with tab_mapas:
                 # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
                 import plotly.express as px
                 
-                # 🔥 LECTURA EXPLÍCITA BLINDADA
+                # Definir qué propiedad del GeoJSON buscar según la escala
                 if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
-                    clave_id = 'id'
+                    llave_geojson = clave_id_plotly
                 else:
-                    clave_id = 'properties.MATCH_ID'
+                    llave_geojson = 'properties.MATCH_ID'
                 
                 fig_mapa = px.choropleth_mapbox(
                     df_mapa_plot, 
                     geojson=geo_data,
                     locations='MATCH_ID',        
-                    featureidkey=clave_id, 
+                    featureidkey=llave_geojson, 
                     color='Total',
                     color_continuous_scale="Viridis",
                     range_color=[0, max_color if max_color > 0 else 100],  
@@ -1801,29 +1800,29 @@ with tab_matriz:
                     gdf_mun['mun_norm'] = gdf_mun['mpio_cnmbr'].apply(clean_v6)
 
                     # 2. PROCESAMIENTO DE PESOS DEMOGRÁFICOS (V6 Especial Medellín)
-                    # 🔥 FIX DEFINITIVO: Homologación GPS y Forzado Numérico
+                    # 🔥 FIX DEFINITIVO: Intersección de Áreas con Sanación Geométrica
                     
-                    # 1. Cargar barrios y forzar sistema GPS
-                    gdf_barrios = gpd.read_file(URL_BARRIOS_MED)
-                    gdf_barrios = gdf_barrios.set_crs(epsg=4326, allow_override=True)
-                    
-                    # 2. Forzar que la población se lea como número (evita vacíos)
+                    gdf_barrios = gpd.read_file(URL_BARRIOS_MED).to_crs(epsg=3116)
                     gdf_barrios['Pob_Total'] = pd.to_numeric(gdf_barrios['Pob_Total'], errors='coerce').fillna(0)
                     
-                    # 3. Forzar las cuencas a GPS para que el cruce sea compatible
-                    gdf_cue_gps = gdf_cue.to_crs(epsg=4326)
+                    # 1. SANACIÓN: buffer(0) repara cualquier polígono roto o superpuesto
+                    gdf_barrios['geometry'] = gdf_barrios.geometry.buffer(0)
+                    gdf_cue_limpio = gdf_cue.copy()
+                    gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
                     
-                    # 4. Convertir polígonos de barrios a puntos centrales exactos
-                    gdf_barrios_pts = gdf_barrios.copy()
-                    gdf_barrios_pts.geometry = gdf_barrios_pts.geometry.centroid
+                    # 2. Área original de cada barrio
+                    gdf_barrios['area_orig'] = gdf_barrios.geometry.area
                     
-                    # 5. Cruce Francotirador: ¿En qué cuenca cae el punto central de cada barrio?
-                    inter_barrios = gpd.sjoin(gdf_barrios_pts, gdf_cue_gps, how='inner', predicate='intersects')
+                    # 3. Corte exacto (Intersección)
+                    inter_barrios = gpd.overlay(gdf_barrios, gdf_cue_limpio, how='intersection')
                     
-                    # 6. Sumar y calcular proporciones
+                    # 4. Reparto proporcional de habitantes
                     if not inter_barrios.empty:
-                        pesos_med = inter_barrios.groupby('subc_lbl')['Pob_Total'].sum()
-                        pesos_med_pct = pesos_med / pesos_med.sum()
+                        inter_barrios['area_inter'] = inter_barrios.geometry.area
+                        inter_barrios['pob_frag'] = inter_barrios['Pob_Total'] * (inter_barrios['area_inter'] / inter_barrios['area_orig'])
+                        
+                        pesos_med = inter_barrios.groupby('subc_lbl')['pob_frag'].sum()
+                        pesos_med_pct = pesos_med / pesos_med.sum() if pesos_med.sum() > 0 else {}
                     else:
                         pesos_med_pct = {}
                     
