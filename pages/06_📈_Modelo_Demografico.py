@@ -687,7 +687,7 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         import geopandas as gpd
         import json
         
-        @st.cache_data(ttl=60) # Limpiamos la caché
+        @st.cache_data(ttl=60)
         def cargar_barrios_medellin_v6():
             URL_BARRIOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
             return gpd.read_file(URL_BARRIOS).to_crs(epsg=4326)
@@ -701,18 +701,11 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
             if barrio_sel != "Todos":
                 gdf_plot = gdf_med[gdf_med['NombreBarr'] == barrio_sel].copy()
                 titulo_terr = f"Barrio: {barrio_sel}"
-                zoom_level = 14
             else:
                 gdf_plot = gdf_med.copy()
                 titulo_terr = "Todos los Barrios y Veredas"
-                zoom_level = 11.5
             
-            # 🔥 ID de 4 dígitos
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str).str.zfill(4)
-            
-            # 🛡️ LA BÓVEDA: Guardamos el mapa en la RAM, fuera del alcance de variables globales
-            st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json())
-            
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreBarr'],
                 'MATCH_ID': gdf_plot['MATCH_ID'],
@@ -720,7 +713,6 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
-            clave_id_plotly = 'properties.MATCH_ID'
             
         else:
             gdf_med['Cod_Comuna'] = gdf_med['Cod_Barrio'].astype(str).str.zfill(4).str[:2]
@@ -733,17 +725,11 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 codigo_sel = comuna_sel.replace('Comuna ', '')
                 gdf_plot = gdf_comunas[gdf_comunas['Cod_Comuna'] == codigo_sel].copy()
                 titulo_terr = comuna_sel
-                zoom_level = 13
             else:
                 gdf_plot = gdf_comunas.copy()
                 titulo_terr = "Todas las Comunas"
-                zoom_level = 11.5
 
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Comuna'].astype(str).str.zfill(2)
-            
-            # 🛡️ LA BÓVEDA
-            st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json())
-            
             df_mapa_base = pd.DataFrame({
                 'Territorio': 'Comuna/Correg. ' + gdf_plot['Cod_Comuna'].astype(str),
                 'MATCH_ID': gdf_plot['MATCH_ID'],
@@ -751,20 +737,31 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
-            clave_id_plotly = 'properties.MATCH_ID'
         
+        # 🛡️ LA BÓVEDA
+        st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json())
         filtro_zona = titulo_terr
         
-        if not gdf_plot.empty:
-            bounds = gdf_plot.total_bounds
-            center_lon = (bounds[0] + bounds[2]) / 2
-            center_lat = (bounds[1] + bounds[3]) / 2
+        # 🔥 FIX MATEMÁTICO: Le decimos al buscador que use la matriz de Medellín
+        territorio_busqueda = "MEDELLÍN" 
+        
+        # 🔥 FIX HISTÓRICO: Creamos una curva histórica escalada proporcionalmente
+        col_anio_glob = 'Año' if 'Año' in df_global.columns else 'año'
+        if not df_global.empty and 'Pob_Medellin' in df_global.columns:
+            df_med_hist = df_global.dropna(subset=[col_anio_glob, 'Pob_Medellin']).sort_values(by=col_anio_glob)
+            años_hist = df_med_hist[col_anio_glob].values.astype(float)
+            pob_med_macro = df_med_hist['Pob_Medellin'].values.astype(float)
         else:
-            center_lat, center_lon = 6.25, -75.58
-
-        pob_hist = np.full_like(años_hist, df_mapa_base['Total'].sum())
-        col_anio = 'Año' if 'Año' in locals() or 'Año' in globals() else 'año'
-        df_hist = pd.DataFrame({col_anio: años_hist, 'Total': pob_hist})
+            # Fallback seguro si no encuentra a Medellín en df_global
+            años_hist = np.arange(1985, 2040).astype(float)
+            pob_med_macro = np.linspace(1500000, 2600000, len(años_hist))
+            
+        pob_total_shape = pd.to_numeric(gdf_med['Pob_Total'], errors='coerce').fillna(0).sum()
+        pob_sel_actual = df_mapa_base['Total'].sum()
+        
+        # Escalamos la población de Medellín según el tamaño del barrio seleccionado
+        factor_proporcional = (pob_sel_actual / pob_total_shape) if pob_total_shape > 0 else 0
+        pob_hist = pob_med_macro * factor_proporcional
         
     except Exception as e:
         st.sidebar.error(f"Error cargando datos intra-urbanos: {e}")
@@ -1418,7 +1415,8 @@ with tab_mapas:
             df_mapa_plot = pd.DataFrame()
         else:
             if area_mapa == "Total":
-                cols_agrupar = [c for c in ['Territorio', 'Padre'] if c in df_mapa_año.columns]
+                # 🔥 FIX CLAVE 1: Agregamos MATCH_ID al agrupador para no perderlo
+                cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_año.columns]
                 if cols_agrupar:
                     df_mapa_plot = df_mapa_año.groupby(cols_agrupar)['Total'].sum().reset_index()
                 else:
