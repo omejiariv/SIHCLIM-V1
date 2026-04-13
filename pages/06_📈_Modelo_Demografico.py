@@ -1576,17 +1576,22 @@ with tab_mapas:
                     if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                         datos_para_dibujar = df_mapa_plot.copy()
                         mapa_para_dibujar = st.session_state.get('boveda_mapa_medellin', geo_data)
-                        llave_geojson = 'properties.MATCH_ID'
                         
-                        # 🚨 CIRUGÍA DE RESCATE: El proceso global borró el MATCH_ID y movió los códigos a 'Territorio'.
-                        # Reconstruimos la llave exacta forzando los ceros a la izquierda.
+                        # 🚨 MI ERROR CORREGIDO: Plotly debe buscar la propiedad nativa del archivo, no una inventada
+                        if nivel_medellin == "Barrios y Veredas":
+                            llave_geojson = 'properties.Cod_Barrio'
+                        else:
+                            llave_geojson = 'properties.Cod_Comuna'
+                        
+                        # Reconstruimos la llave exacta forzando los ceros a la izquierda
                         z_fill_val = 4 if nivel_medellin == "Barrios y Veredas" else 2
                         datos_para_dibujar['MATCH_ID'] = datos_para_dibujar['Territorio'].astype(str).str.zfill(z_fill_val)
                         
                         # 💄 ESTÉTICA: Recuperamos los nombres reales desde el GeoJSON para el Hover
                         nombres_reales = {}
+                        prop_key = llave_geojson.split('.')[-1] # Extrae 'Cod_Barrio' o 'Cod_Comuna'
                         for f in mapa_para_dibujar.get('features', []):
-                            cod = str(f['properties'].get('MATCH_ID', ''))
+                            cod = str(f['properties'].get(prop_key, '')).zfill(z_fill_val)
                             nombre = f['properties'].get('NombreBarr', 'Comuna/Correg. ' + cod) if nivel_medellin == "Barrios y Veredas" else 'Comuna/Correg. ' + cod
                             nombres_reales[cod] = nombre
                             
@@ -1630,8 +1635,12 @@ with tab_mapas:
                     st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                     
                     # --- DEPURADOR FORENSE INYECTADO ---
-                    # Generamos un cruce en vivo para asegurarnos de que Plotly tiene lo que necesita
-                    datos_para_dibujar['En_Mapa'] = datos_para_dibujar['MATCH_ID'].isin([str(f['properties'].get('MATCH_ID', '')) for f in mapa_para_dibujar.get('features', [])])
+                    # Revisamos el cruce con la propiedad correcta
+                    prop_key_debug = llave_geojson.split('.')[-1]
+                    z_fill_debug = z_fill_val if 'z_fill_val' in locals() else 1
+                    
+                    ids_en_mapa = [str(f['properties'].get(prop_key_debug, '')).zfill(z_fill_debug) for f in mapa_para_dibujar.get('features', [])]
+                    datos_para_dibujar['En_Mapa'] = datos_para_dibujar['MATCH_ID'].isin(ids_en_mapa)
                     faltantes = datos_para_dibujar[datos_para_dibujar['En_Mapa'] == False]
                     
                     if not faltantes.empty:
@@ -1639,12 +1648,11 @@ with tab_mapas:
                         with st.expander("🔍 ABRIR DEPURADOR FORENSE"):
                             col_dbg1, col_dbg2 = st.columns(2)
                             with col_dbg1:
-                                st.write("🔴 **Buscando:**")
+                                st.write("🔴 **Buscando (Tabla):**")
                                 st.dataframe(faltantes[['Territorio', 'MATCH_ID']], use_container_width=True)
                             with col_dbg2:
-                                st.write("🟢 **Disponibles:**")
-                                ids_disp = sorted(list(set([str(f['properties'].get('MATCH_ID', '')) for f in mapa_para_dibujar.get('features', [])])))
-                                st.dataframe(pd.DataFrame({"IDs en GeoJSON": ids_disp}), use_container_width=True)
+                                st.write(f"🟢 **Disponibles (GeoJSON - {prop_key_debug}):**")
+                                st.dataframe(pd.DataFrame({"IDs": sorted(list(set(ids_en_mapa)))}), use_container_width=True)
                     else:
                         st.success("✅ CRUCE EXITOSO TOTAL. Listos para dibujar.")
                         
