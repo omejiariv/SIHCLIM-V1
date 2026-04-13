@@ -1613,6 +1613,7 @@ with tab_mapas:
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
                 st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                 
+                # --- DEPURADOR FORENSE INYECTADO ---
                 if 'En_Mapa' in datos_para_dibujar.columns:
                     faltantes = datos_para_dibujar[datos_para_dibujar['En_Mapa'] == False]
                     if not faltantes.empty:
@@ -1621,11 +1622,12 @@ with tab_mapas:
                             col_dbg1, col_dbg2 = st.columns(2)
                             with col_dbg1:
                                 st.write("🔴 **Buscando:**")
+                                # 🔥 CORRECCIÓN: Era 'faltantes', no 'faltantes_finales'
                                 st.dataframe(faltantes[['Territorio', 'MATCH_ID']], use_container_width=True)
-                            
                             with col_dbg2:
                                 st.write("🟢 **Disponibles:**")
-                                ids_disp = sorted(ids_geojson) if 'ids_geojson' in locals() else []
+                                prop_key = llave_geojson.split('.')[-1] if '.' in llave_geojson else llave_geojson
+                                ids_disp = sorted(list(set([str(f['properties'].get(prop_key, '')) for f in mapa_para_dibujar.get('features', [])])))
                                 st.dataframe(pd.DataFrame({"IDs en GeoJSON": ids_disp}), use_container_width=True)
                 else:
                     st.warning("⚠️ No se encontraron geometrías en la base de datos para dibujar.")
