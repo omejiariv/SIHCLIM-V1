@@ -842,6 +842,7 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
 # --- SELECTOR GLOBAL DE ÁREA (Afecta Gráficos y Mapas) ---
 
 if escala_sel != "🌿 Veredal (Antioquia)":
+    area_global = st.sidebar.selectbox("Filtro Poblacional:", ["Total", "Urbano", "Rural"])
 else:
     area_global = "Rural"
     st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
