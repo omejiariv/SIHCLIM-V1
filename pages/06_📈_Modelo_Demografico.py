@@ -1484,7 +1484,7 @@ with tab_mapas:
                         gdf_mapa = gdf_mapa.drop(columns=['padre_norm'], errors='ignore')
 
                 if not gdf_mapa.empty:
-                    # 1. MATCH_ID Dinámico en Pandas
+                    # 1. MATCH_ID Dinámico en Pandas (Tabla Excel/Matriz)
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) 
                         if str(row['Padre']).strip() and "cuencas" not in escala_sel.lower() 
@@ -1502,16 +1502,15 @@ with tab_mapas:
                         "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA"
                     }
                     
-                    # 2. MATCH_ID Dinámico en el GeoDataFrame
+                    # 2. MATCH_ID Dinámico en el GeoDataFrame (Mapa PostGIS)
                     def generar_id_geojson(row):
                         if "cuencas" in escala_sel.lower():
                             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
                             val_terr = next((str(row[c]) for c in cols_posibles if c in row and pd.notnull(row[c])), "")
                             
-                            # 🛡️ FIX CUENCAS: Si el polígono tiene un guión ("Río Aburrá - Q. La Iguaná"), extraemos solo la parte final
+                            # 🛡️ FIX CUENCAS: Extracción limpia
                             if "-" in str(val_terr):
                                 val_terr = str(val_terr).split("-")[-1]
-                                
                             return normalizar_texto(val_terr)
                         
                         elif "veredal" in escala_sel.lower():
@@ -1528,22 +1527,25 @@ with tab_mapas:
 
                     gdf_mapa['MATCH_ID'] = gdf_mapa.apply(generar_id_geojson, axis=1)
                     
-                    # --- 3. AUTO-SANADOR Y ENCUADRE MILIMÉTRICO (Bounding Box) ---
-                    ids_geojson = gdf_mapa['MATCH_ID'].dropna().unique().tolist()
+                    # --- 3. AUTO-SANADOR Y ENCUADRE MILIMÉTRICO ---
+                    ids_geojson = set(gdf_mapa['MATCH_ID'].dropna().unique())
                     df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(ids_geojson)
                     
-                    # 🛠️ MAGIA IA: Reparación automática de nombres usando similitud (Fuzzy Matching)
+                    # 🛠️ MAGIA IA: Reparación con umbral más estricto y seguro
                     faltantes_iniciales = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
                     if not faltantes_iniciales.empty:
                         import difflib
+                        ids_geojson_list = list(ids_geojson) # Para difflib
                         for idx, row in faltantes_iniciales.iterrows():
-                            # Busca la coincidencia más cercana en el GeoJSON (Ej: LAHONDA vs LAONDA)
-                            matches = difflib.get_close_matches(row['MATCH_ID'], ids_geojson, n=1, cutoff=0.85)
+                            # Subimos a 0.90 para cuencas (evitar falsos positivos como San Juan/San Juanito)
+                            umbral = 0.90 if "cuencas" in escala_sel.lower() else 0.85
+                            matches = difflib.get_close_matches(row['MATCH_ID'], ids_geojson_list, n=1, cutoff=umbral)
                             if matches:
-                                df_mapa_plot.at[idx, 'MATCH_ID'] = matches[0] # ¡Curado!
+                                df_mapa_plot.at[idx, 'MATCH_ID'] = matches[0] 
                                 df_mapa_plot.at[idx, 'En_Mapa'] = True
                     
-                    # Volvemos a extraer los IDs ya curados
+                    # Cortamos el GeoJSON final SOLO con los polígonos que hicieron match exitoso
+                    # Esto reemplaza al antiguo filtro destructivo de 'padre_norm'
                     ids_curados = df_mapa_plot[df_mapa_plot['En_Mapa'] == True]['MATCH_ID'].unique()
                     gdf_filtrado = gdf_mapa[gdf_mapa['MATCH_ID'].isin(ids_curados)]
                     
@@ -1562,50 +1564,56 @@ with tab_mapas:
                         elif max_diff < 5.0: zoom_level = 6
                         else: zoom_level = 5
 
-                    geo_data = json.loads(gdf_mapa.to_json())
-                    q_val = 0.85 if area_mapa == "Total" else 0.90
+                    # En lugar de usar todo gdf_mapa, usamos gdf_filtrado para aligerar la RAM en el navegador web
+                    geo_data = json.loads(gdf_filtrado.to_json()) 
                     
-                    # Usamos el dataframe final ya curado para el máximo color
+                    q_val = 0.85 if area_mapa == "Total" else 0.90
                     df_mapa_plot_final = df_mapa_plot[df_mapa_plot['En_Mapa'] == True].copy()
                     max_color = df_mapa_plot_final['Total'].quantile(q_val) if len(df_mapa_plot_final) > 10 else (df_mapa_plot_final['Total'].max() if not df_mapa_plot_final.empty else 1)
                     
                     # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
                     import plotly.express as px
+                    import copy # 🛡️ Necesario para el blindaje de memoria
                     
                     # 🔥 BLINDAJE DEFINITIVO PARA PLOTLY
                     if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                         datos_para_dibujar = df_mapa_plot.copy()
-                        mapa_para_dibujar = st.session_state.get('boveda_mapa_medellin', geo_data)
+                        
+                        # Rescatamos el mapa de la sesión y creamos una copia profunda 
+                        # para poder inyectar IDs sin alterar el estado global.
+                        mapa_bruto = st.session_state.get('boveda_mapa_medellin', geo_data)
+                        mapa_para_dibujar = copy.deepcopy(mapa_bruto)
                         
                         z_fill_val = 4 if nivel_medellin == "Barrios y Veredas" else 2
                         prop_key = 'Cod_Barrio' if nivel_medellin == "Barrios y Veredas" else 'Cod_Comuna'
                         
-                        # Limpieza extrema de IDs en la tabla
-                        datos_para_dibujar['MATCH_ID'] = datos_para_dibujar['Territorio'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(z_fill_val)
+                        # Limpieza extrema de IDs en la tabla (Match perfecto con el GeoJSON)
+                        datos_para_dibujar['MATCH_ID'] = datos_para_dibujar['MATCH_ID'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(z_fill_val)
                         
                         nombres_reales = {}
-                        # 🚨 HACK PARA PLOTLY: Inyectar el ID directamente en la raíz de cada polígono
+                        # 🚨 HACK MAESTRO: Inyectar el ID en la raíz del polígono para Plotly
                         for f in mapa_para_dibujar.get('features', []):
                             raw_val = str(f['properties'].get(prop_key, '')).replace('.0', '').strip().zfill(z_fill_val)
-                            f['id'] = raw_val # <- ESTA ES LA LLAVE MÁGICA QUE PLOTLY LEE SIN FALLAR
+                            f['id'] = raw_val 
                             
-                            nombre = f['properties'].get('NombreBarr', 'Comuna/Correg. ' + raw_val) if nivel_medellin == "Barrios y Veredas" else 'Comuna/Correg. ' + raw_val
+                            nombre = f['properties'].get('NombreBarr', f'Comuna/Correg. {raw_val}') if nivel_medellin == "Barrios y Veredas" else f'Comuna/Correg. {raw_val}'
                             nombres_reales[raw_val] = nombre
                             
                         datos_para_dibujar['Territorio'] = datos_para_dibujar['MATCH_ID'].map(nombres_reales).fillna(datos_para_dibujar['Territorio'])
                         
-                        # 🚨 ANCLAJE DE COORDENADAS: Forzamos el centro en Medellín (Adiós Nariño)
+                        # 🚨 ANCLAJE GEOGRÁFICO: Centroide exacto de Medellín
                         safe_center_lat = 6.2518
                         safe_center_lon = -75.5636
-                        llave_geojson = 'id' # Le decimos a Plotly que use la llave raíz que inyectamos
+                        llave_geojson = 'id' # Usamos la llave raíz inyectada
                         
-                        # 🚨 RESCATE DE ESCALA DE COLOR: Si todo está en 0.0, Plotly colapsa la imagen a gris.
+                        # 🚨 ESCALA DE COLOR RESILIENTE: Evita el colapso visual en gris
                         if datos_para_dibujar['Total'].sum() == 0:
-                            datos_para_dibujar['Color_Fix'] = 1 # Población ficticia solo para que dibuje color
+                            datos_para_dibujar['Color_Fix'] = 1 
                         else:
                             datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
                             
                     else:
+                        # Lógica estándar para otras escalas (Departamental, Municipal, Cuencas)
                         datos_para_dibujar = df_mapa_plot.copy()
                         mapa_para_dibujar = geo_data       
                         llave_geojson = 'properties.MATCH_ID'
@@ -1613,36 +1621,34 @@ with tab_mapas:
                         safe_center_lon = center_lon
                         datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
                     
-                    # 🗺️ DIBUJO DEL MAPA
+                    # 🗺️ DIBUJO DEL MAPA CON PARÁMETROS OPTIMIZADOS
                     try:
-                        # Eliminamos range_color para evitar bloqueos si todo es 0
                         fig_mapa = px.choropleth_mapbox(
                             datos_para_dibujar, 
                             geojson=mapa_para_dibujar,
                             locations='MATCH_ID',        
                             featureidkey=llave_geojson, 
-                            color='Color_Fix', # Usamos la columna con el parche de color
+                            color='Color_Fix', 
                             color_continuous_scale="Viridis",
                             mapbox_style="carto-positron",
-                            zoom=11.5, # Zoom fijo para abarcar todo Medellín
+                            zoom=11.5 if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)" else zoom_level,
                             center={"lat": safe_center_lat, "lon": safe_center_lon},
                             opacity=0.8,
                             hover_name='Territorio',
-                            hover_data={'Color_Fix': False, 'Total': ':,.0f', 'MATCH_ID': False}
+                            hover_data={
+                                'Color_Fix': False, 
+                                'Total': ':,.0f', 
+                                'MATCH_ID': False
+                            }
                         )
                         
                         fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
                         st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                         
-                        st.success("✅ MAPA RENDERIZADO. Si la población dice '0', ve a la pestaña 4, entrena la matriz e inyecta a Supabase.")
+                        st.success("✅ MAPA RENDERIZADO. Si los datos están en 0, recuerda procesar la matriz en la pestaña 4.")
                         
                     except Exception as e:
-                        st.error(f"❌ Error interno de Plotly al dibujar: {e}")
-                        
-            except Exception as e:
-                st.error(f"❌ Error conectando a PostGIS o procesando el mapa: {e}")
-        else:
-            st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
+                        st.error(f"❌ Error crítico en el motor de Plotly: {e}")
             
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
 # =====================================================================
