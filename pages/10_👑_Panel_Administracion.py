@@ -55,8 +55,8 @@ if not st.session_state["admin_unlocked"]:
     with col_k1:
         clave = st.text_input("Contraseña:", type="password")
         if st.button("Desbloquear Panel", type="primary", use_container_width=True):
-            # 💡 Busca en secrets, si no hay secrets, la clave es "AdminPoter2026"
-            clave_correcta = st.secrets.get("CLAVE_ADMIN", "AdminPoter2026") 
+            # 💡 Busca en secrets, si no hay secrets, la clave es "AdminPoter"
+            clave_correcta = st.secrets.get("CLAVE_ADMIN", "AdminPoter") 
             if clave == clave_correcta:
                 st.session_state["admin_unlocked"] = True
                 st.rerun()
