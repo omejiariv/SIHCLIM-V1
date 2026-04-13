@@ -1650,6 +1650,9 @@ with tab_mapas:
                                     st.write("🟢 **Disponibles:**")
                                     ids_disp = sorted(ids_geojson) if 'ids_geojson' in locals() else []
                                     st.dataframe(pd.DataFrame({"IDs en GeoJSON": ids_disp}), use_container_width=True)
+
+    except Exception as e:
+        st.sidebar.error(f"Error cargando datos intra-urbanos: {e}")
             
 # =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
