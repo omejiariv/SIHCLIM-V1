@@ -1621,7 +1621,8 @@ with tab_mapas:
                             col_dbg1, col_dbg2 = st.columns(2)
                             with col_dbg1:
                                 st.write("🔴 **Buscando:**")
-                                st.dataframe(faltantes_finales[['Territorio', 'MATCH_ID']], use_container_width=True)
+                                st.dataframe(faltantes[['Territorio', 'MATCH_ID']], use_container_width=True)
+                            
                             with col_dbg2:
                                 st.write("🟢 **Disponibles:**")
                                 ids_disp = sorted(ids_geojson) if 'ids_geojson' in locals() else []
