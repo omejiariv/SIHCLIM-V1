@@ -1565,11 +1565,17 @@ with tab_mapas:
                 # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
                 import plotly.express as px
                 
+                # 🔥 LECTURA EXPLÍCITA BLINDADA
+                if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
+                    clave_id = 'id'
+                else:
+                    clave_id = 'properties.MATCH_ID'
+                
                 fig_mapa = px.choropleth_mapbox(
                     df_mapa_plot, 
                     geojson=geo_data,
                     locations='MATCH_ID',        
-                    featureidkey='properties.MATCH_ID', # 🔥 La llave maestra única para TODO el proyecto
+                    featureidkey=clave_id, 
                     color='Total',
                     color_continuous_scale="Viridis",
                     range_color=[0, max_color if max_color > 0 else 100],  
