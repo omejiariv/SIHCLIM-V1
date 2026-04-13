@@ -1574,6 +1574,35 @@ with tab_mapas:
                 else:
                     llave_geojson = 'properties.MATCH_ID'
                 
+                # =========================================================
+                # 🚨 ESCÁNER ESTRUCTURAL DE DATOS (RAYOS X) 🚨
+                # =========================================================
+                with st.expander("🔍 ABRIR ESCÁNER ESTRUCTURAL (Para Diagnóstico)", expanded=True):
+                    st.markdown("### 1. ¿Qué datos está recibiendo Plotly? (Tabla)")
+                    st.dataframe(df_mapa_plot[['Territorio', 'MATCH_ID', 'Total']].head(5), use_container_width=True)
+                    
+                    st.markdown("### 2. ¿Qué mapa está cargando realmente? (GeoJSON)")
+                    if 'features' in geo_data and len(geo_data['features']) > 0:
+                        muestra_feature = geo_data['features'][0]
+                        st.write(f"Total de polígonos cargados: {len(geo_data['features'])}")
+                        st.json({
+                            "id_nativo_del_poligono": muestra_feature.get('id', 'NO TIENE ID NATIVO'),
+                            "propiedades_del_poligono": muestra_feature.get('properties', {})
+                        })
+                        
+                        # Prueba de fuego: ¿Cuántos cruzan?
+                        ids_en_mapa = [str(f['properties'].get('MATCH_ID', '')) for f in geo_data['features']]
+                        ids_en_tabla = df_mapa_plot['MATCH_ID'].astype(str).tolist()
+                        comunes = set(ids_en_mapa).intersection(set(ids_en_tabla))
+                        
+                        if len(comunes) == 0:
+                            st.error(f"❌ FRACASO TOTAL: La tabla tiene {len(ids_en_tabla)} IDs y el mapa tiene {len(ids_en_mapa)}, pero NINGUNO coincide.")
+                        else:
+                            st.success(f"✅ CRUCE EXITOSO: {len(comunes)} territorios coinciden perfectamente entre la tabla y el mapa.")
+                    else:
+                        st.error("❌ EL MAPA ESTÁ VACÍO. No hay polígonos en geo_data.")
+                # =========================================================
+                
                 fig_mapa = px.choropleth_mapbox(
                     df_mapa_plot, 
                     geojson=geo_data,
