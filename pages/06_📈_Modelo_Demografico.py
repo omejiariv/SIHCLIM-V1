@@ -1572,29 +1572,33 @@ with tab_mapas:
                 # 4. RENDERIZADO DEL MAPA CON TOOLTIP (HOVER)
                     import plotly.express as px
                     
-                    # 🔥 ACTIVACIÓN DEL BLINDAJE Y RECONSTRUCCIÓN DE LLAVE
+                    # 🔥 ACTIVACIÓN DEL BLINDAJE Y RECONSTRUCCIÓN DE LLAVE (FUERZA BRUTA)
                     if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                         datos_para_dibujar = df_mapa_plot.copy()
                         mapa_para_dibujar = st.session_state.get('boveda_mapa_medellin', geo_data)
                         
-                        # 🚨 MI ERROR CORREGIDO: Plotly debe buscar la propiedad nativa del archivo, no una inventada
                         if nivel_medellin == "Barrios y Veredas":
                             llave_geojson = 'properties.Cod_Barrio'
+                            z_fill_val = 4
                         else:
                             llave_geojson = 'properties.Cod_Comuna'
+                            z_fill_val = 2
                         
-                        # Reconstruimos la llave exacta forzando los ceros a la izquierda
-                        z_fill_val = 4 if nivel_medellin == "Barrios y Veredas" else 2
-                        datos_para_dibujar['MATCH_ID'] = datos_para_dibujar['Territorio'].astype(str).str.zfill(z_fill_val)
+                        prop_key = llave_geojson.split('.')[-1]
                         
-                        # 💄 ESTÉTICA: Recuperamos los nombres reales desde el GeoJSON para el Hover
+                        # 🔨 FUERZA BRUTA 1: Limpiamos la tabla (Quitamos '.0', espacios y forzamos ceros)
+                        datos_para_dibujar['MATCH_ID'] = datos_para_dibujar['Territorio'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(z_fill_val)
+                        
+                        # 🔨 FUERZA BRUTA 2: Hackeamos el GeoJSON en vivo para que use la misma llave limpia
                         nombres_reales = {}
-                        prop_key = llave_geojson.split('.')[-1] # Extrae 'Cod_Barrio' o 'Cod_Comuna'
                         for f in mapa_para_dibujar.get('features', []):
-                            cod = str(f['properties'].get(prop_key, '')).zfill(z_fill_val)
-                            nombre = f['properties'].get('NombreBarr', 'Comuna/Correg. ' + cod) if nivel_medellin == "Barrios y Veredas" else 'Comuna/Correg. ' + cod
-                            nombres_reales[cod] = nombre
+                            raw_val = str(f['properties'].get(prop_key, '')).replace('.0', '').strip().zfill(z_fill_val)
+                            f['properties'][prop_key] = raw_val # Sobreescribimos el mapa con la llave perfecta
                             
+                            nombre = f['properties'].get('NombreBarr', 'Comuna/Correg. ' + raw_val) if nivel_medellin == "Barrios y Veredas" else 'Comuna/Correg. ' + raw_val
+                            nombres_reales[raw_val] = nombre
+                            
+                        # Recuperamos los nombres para el Tooltip
                         datos_para_dibujar['Territorio'] = datos_para_dibujar['MATCH_ID'].map(nombres_reales).fillna(datos_para_dibujar['Territorio'])
                         
                     else:
@@ -1635,11 +1639,9 @@ with tab_mapas:
                     st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                     
                     # --- DEPURADOR FORENSE INYECTADO ---
-                    # Revisamos el cruce con la propiedad correcta
                     prop_key_debug = llave_geojson.split('.')[-1]
-                    z_fill_debug = z_fill_val if 'z_fill_val' in locals() else 1
+                    ids_en_mapa = [f['properties'].get(prop_key_debug, '') for f in mapa_para_dibujar.get('features', [])]
                     
-                    ids_en_mapa = [str(f['properties'].get(prop_key_debug, '')).zfill(z_fill_debug) for f in mapa_para_dibujar.get('features', [])]
                     datos_para_dibujar['En_Mapa'] = datos_para_dibujar['MATCH_ID'].isin(ids_en_mapa)
                     faltantes = datos_para_dibujar[datos_para_dibujar['En_Mapa'] == False]
                     
@@ -1651,10 +1653,10 @@ with tab_mapas:
                                 st.write("🔴 **Buscando (Tabla):**")
                                 st.dataframe(faltantes[['Territorio', 'MATCH_ID']], use_container_width=True)
                             with col_dbg2:
-                                st.write(f"🟢 **Disponibles (GeoJSON - {prop_key_debug}):**")
+                                st.write(f"🟢 **Disponibles (GeoJSON):**")
                                 st.dataframe(pd.DataFrame({"IDs": sorted(list(set(ids_en_mapa)))}), use_container_width=True)
                     else:
-                        st.success("✅ CRUCE EXITOSO TOTAL. Listos para dibujar.")
+                        st.success("✅ CRUCE EXITOSO TOTAL. Todos los polígonos han sido identificados.")
                         
             except Exception as e:
                 st.error(f"❌ Error conectando a PostGIS o procesando el mapa: {e}")
