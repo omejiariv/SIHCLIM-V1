@@ -1575,21 +1575,19 @@ with tab_mapas:
                     
                     # 🔥 BLINDAJE DEFINITIVO PARA PLOTLY
                     if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
+                        import copy
                         datos_para_dibujar = df_mapa_plot.copy()
-                        
-                        # Rescatamos el mapa de la sesión y creamos una copia profunda 
-                        # para poder inyectar IDs sin alterar el estado global.
                         mapa_bruto = st.session_state.get('boveda_mapa_medellin', geo_data)
                         mapa_para_dibujar = copy.deepcopy(mapa_bruto)
                         
                         z_fill_val = 4 if nivel_medellin == "Barrios y Veredas" else 2
                         prop_key = 'Cod_Barrio' if nivel_medellin == "Barrios y Veredas" else 'Cod_Comuna'
                         
-                        # Limpieza extrema de IDs en la tabla (Match perfecto con el GeoJSON)
-                        datos_para_dibujar['MATCH_ID'] = datos_para_dibujar['MATCH_ID'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(z_fill_val)
+                        # 🔥 FIX CLAVE 2: Forzamos la limpieza SOBRE el MATCH_ID (el código), NO sobre el nombre.
+                        if 'MATCH_ID' in datos_para_dibujar.columns:
+                            datos_para_dibujar['MATCH_ID'] = datos_para_dibujar['MATCH_ID'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(z_fill_val)
                         
                         nombres_reales = {}
-                        # 🚨 HACK MAESTRO: Inyectar el ID en la raíz del polígono para Plotly
                         for f in mapa_para_dibujar.get('features', []):
                             raw_val = str(f['properties'].get(prop_key, '')).replace('.0', '').strip().zfill(z_fill_val)
                             f['id'] = raw_val 
@@ -1598,6 +1596,22 @@ with tab_mapas:
                             nombres_reales[raw_val] = nombre
                             
                         datos_para_dibujar['Territorio'] = datos_para_dibujar['MATCH_ID'].map(nombres_reales).fillna(datos_para_dibujar['Territorio'])
+                        
+                        safe_center_lat, safe_center_lon = 6.2518, -75.5636
+                        llave_geojson = 'id' 
+                        
+                        if datos_para_dibujar['Total'].sum() == 0:
+                            datos_para_dibujar['Color_Fix'] = 1 
+                        else:
+                            datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
+                            
+                    else:
+                        datos_para_dibujar = df_mapa_plot.copy()
+                        mapa_para_dibujar = geo_data       
+                        llave_geojson = 'properties.MATCH_ID'
+                        safe_center_lat = center_lat
+                        safe_center_lon = center_lon
+                        datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
                         
                         # 🚨 ANCLAJE GEOGRÁFICO: Centroide exacto de Medellín
                         safe_center_lat = 6.2518
