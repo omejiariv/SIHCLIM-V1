@@ -1542,8 +1542,10 @@ with tab_mapas:
                     def generar_id_geojson(row):
                         if "cuencas" in escala_sel.lower():
                             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
-                            val_terr = next((str(row[c]) for c in cols_posibles if c in row and pd.notnull(row[c])), "")
-                            if "-" in str(val_terr): val_terr = str(val_terr).split("-")[-1]
+                            # 🔥 FIX: Ignora Nulos, "None" de Python y espacios en blanco ""
+                            val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "")
+                            
+                            if "-" in val_terr: val_terr = val_terr.split("-")[-1]
                             return normalizar_texto(val_terr)
                         elif "veredal" in escala_sel.lower():
                             val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
@@ -1623,35 +1625,68 @@ with tab_mapas:
                     }
                 )
                 
-                # 🔥 AÑADIR CAPA SECUNDARIA DE CUENCAS (Si el switch está activo)
+                # 🔥 AÑADIR CAPA SECUNDARIA DE CUENCAS INTERACTIVA (Vía Rápida con Jerarquía Completa)
                 if mostrar_capa_cuencas:
                     try:
                         from sqlalchemy import text
                         from modules.db_manager import get_engine
                         import geopandas as gpd
                         import json
+                        import plotly.graph_objects as go
                         
                         engine_geo = get_engine()
-                        # Extraemos solo las geometrías de las subzonas (NSS3 o similar)
-                        q_cue_overlay = text("SELECT nom_nss3, geometry FROM cuencas WHERE nom_nss3 IS NOT NULL")
+                        
+                        # 1. Traemos la jerarquía completa. 
+                        # Usamos TRIM y NULLIF para capturar vacíos en archivos de Cornare/Corpourabá.
+                        q_cue_overlay = text("""
+                            SELECT 
+                                nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, 
+                                geometry 
+                            FROM cuencas
+                        """)
                         gdf_cue_overlay = gpd.read_postgis(q_cue_overlay, engine_geo, geom_col="geometry")
                         
                         if not gdf_cue_overlay.empty:
                             gdf_cue_overlay = gdf_cue_overlay.to_crs(epsg=4326)
-                            geojson_cuencas = json.loads(gdf_cue_overlay.to_json())
                             
-                            # Inyectamos los polígonos de cuencas como contornos (líneas negras finas)
-                            fig_mapa.update_layout(
-                                mapbox_layers=[{
-                                    "sourcetype": "geojson",
-                                    "source": geojson_cuencas,
-                                    "type": "line",
-                                    "color": "black",
-                                    "line": {"width": 1.5}
-                                }]
-                            )
+                            # 2. Generamos un ID único por fila para el mapeo de Plotly
+                            gdf_cue_overlay['ID_CUE'] = gdf_cue_overlay.index.astype(str)
+                            
+                            # 3. Limpieza de nombres para el Tooltip (Sanación de Nulos y Espacios)
+                            cols_tooltip = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']
+                            for col in cols_tooltip:
+                                gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(
+                                    lambda x: str(x).strip() if pd.notnull(x) and str(x).strip() not in ["", "None", "nan"] else "No Aplica"
+                                )
+                            
+                            # 4. Construcción del GeoJSON interactivo
+                            geojson_cuencas = json.loads(gdf_cue_overlay.to_json())
+                            for i, f in enumerate(geojson_cuencas['features']):
+                                f['id'] = str(i)
+                            
+                            # 5. Inyección de la Traza Invisible (Solo contornos y Tooltips)
+                            fig_mapa.add_trace(go.Choroplethmapbox(
+                                geojson=geojson_cuencas,
+                                locations=gdf_cue_overlay['ID_CUE'],
+                                z=[0] * len(gdf_cue_overlay), # Valor base para habilitar el hover
+                                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']], # Transparente
+                                marker_line_color='black',
+                                marker_line_width=1.5,
+                                showscale=False,
+                                customdata=gdf_cue_overlay[cols_tooltip],
+                                hovertemplate=(
+                                    "<b>Microcuenca (NSS3):</b> %{customdata[5]}<br><br>" +
+                                    "<b>AH:</b> %{customdata[0]}<br>" +
+                                    "<b>ZH:</b> %{customdata[1]}<br>" +
+                                    "<b>SZH:</b> %{customdata[2]}<br>" +
+                                    "<b>NSS1:</b> %{customdata[3]}<br>" +
+                                    "<b>NSS2:</b> %{customdata[4]}<br>" +
+                                    "<extra></extra>"
+                                )
+                            ))
+                            
                     except Exception as e:
-                        st.sidebar.warning(f"No se pudo superponer la capa de cuencas: {e}")
+                        st.sidebar.warning(f"No se pudo superponer la capa de cuencas interactiva: {e}")
 
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
                 st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
@@ -1832,7 +1867,16 @@ with tab_matriz:
                     URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
                     URL_BARRIOS_MED = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
                     
-                    q_cue = text("SELECT COALESCE(nom_nss3, nom_nss2, nom_nss1, nom_szh) AS subc_lbl, geometry FROM cuencas")
+                    # 🔥 FIX: SQL Inmune a espacios en blanco (Shapefiles vacíos)
+                    q_cue = text("""
+                        SELECT COALESCE(
+                            NULLIF(TRIM(nom_nss3), ''), 
+                            NULLIF(TRIM(nom_nss2), ''), 
+                            NULLIF(TRIM(nom_nss1), ''), 
+                            NULLIF(TRIM(nom_szh), '')
+                        ) AS subc_lbl, geometry 
+                        FROM cuencas
+                    """)
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
