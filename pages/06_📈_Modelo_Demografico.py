@@ -1575,7 +1575,6 @@ with tab_mapas:
                     
                     # 🔥 BLINDAJE DEFINITIVO PARA PLOTLY
                     if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
-                        import copy
                         datos_para_dibujar = df_mapa_plot.copy()
                         mapa_bruto = st.session_state.get('boveda_mapa_medellin', geo_data)
                         mapa_para_dibujar = copy.deepcopy(mapa_bruto)
@@ -1597,26 +1596,9 @@ with tab_mapas:
                             
                         datos_para_dibujar['Territorio'] = datos_para_dibujar['MATCH_ID'].map(nombres_reales).fillna(datos_para_dibujar['Territorio'])
                         
+                        # 🚨 ANCLAJE GEOGRÁFICO: Centroide exacto de Medellín
                         safe_center_lat, safe_center_lon = 6.2518, -75.5636
                         llave_geojson = 'id' 
-                        
-                        if datos_para_dibujar['Total'].sum() == 0:
-                            datos_para_dibujar['Color_Fix'] = 1 
-                        else:
-                            datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
-                            
-                    else:
-                        datos_para_dibujar = df_mapa_plot.copy()
-                        mapa_para_dibujar = geo_data       
-                        llave_geojson = 'properties.MATCH_ID'
-                        safe_center_lat = center_lat
-                        safe_center_lon = center_lon
-                        datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
-                        
-                        # 🚨 ANCLAJE GEOGRÁFICO: Centroide exacto de Medellín
-                        safe_center_lat = 6.2518
-                        safe_center_lon = -75.5636
-                        llave_geojson = 'id' # Usamos la llave raíz inyectada
                         
                         # 🚨 ESCALA DE COLOR RESILIENTE: Evita el colapso visual en gris
                         if datos_para_dibujar['Total'].sum() == 0:
@@ -1631,7 +1613,12 @@ with tab_mapas:
                         llave_geojson = 'properties.MATCH_ID'
                         safe_center_lat = center_lat
                         safe_center_lon = center_lon
-                        datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
+                        
+                        # Protegemos también las demás escalas para que no colapsen a gris
+                        if datos_para_dibujar['Total'].sum() == 0:
+                            datos_para_dibujar['Color_Fix'] = 1 
+                        else:
+                            datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
                     
                     # 🗺️ DIBUJO DEL MAPA CON PARÁMETROS OPTIMIZADOS
                     try:
