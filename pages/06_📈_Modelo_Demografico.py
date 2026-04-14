@@ -677,11 +677,12 @@ elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 # =====================================================================
-# 🏘️ ESCALA INTRA-URBANA (MEDELLÍN V6) - CORREGIDO
+# 🏘️ ESCALA INTRA-URBANA (MEDELLÍN V7 - NOMBRES REALES)
 # =====================================================================
 elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
     st.sidebar.markdown("### 🏘️ Explorador de Medellín")
-    nivel_medellin = st.sidebar.radio("Nivel de Detalle:", ["Barrios y Veredas", "Comunas y Corregimientos"])
+    # 1. Ajuste de Nomenclatura solicitado
+    nivel_medellin = st.sidebar.radio("Nivel de Detalle:", ["Barrios y Corregimientos", "Comunas"])
     
     try:
         import geopandas as gpd
@@ -694,18 +695,31 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         
         gdf_med = cargar_barrios_medellin_v6()
         
-        if nivel_medellin == "Barrios y Veredas":
+        # Diccionario Oficial de Comunas y Corregimientos
+        dict_comunas = {
+            "01": "Popular", "02": "Santa Cruz", "03": "Manrique", "04": "Aranjuez",
+            "05": "Castilla", "06": "Doce de Octubre", "07": "Robledo", "08": "Villa Hermosa",
+            "09": "Buenos Aires", "10": "La Candelaria", "11": "Laureles - Estadio", "12": "La América",
+            "13": "San Javier", "14": "El Poblado", "15": "Guayabal", "16": "Belén",
+            "50": "Corregimiento Palmitas", "60": "Corregimiento San Cristóbal", 
+            "70": "Corregimiento Altavista", "80": "Corregimiento San Antonio de Prado", 
+            "90": "Corregimiento Santa Elena"
+        }
+        
+        if nivel_medellin == "Barrios y Corregimientos":
             lista_barrios = sorted(gdf_med['NombreBarr'].dropna().unique())
-            barrio_sel = st.sidebar.selectbox("Seleccione un Barrio/Vereda:", ["Todos"] + lista_barrios)
+            barrio_sel = st.sidebar.selectbox("Seleccione un Barrio/Corregimiento:", ["Todos"] + lista_barrios)
             
             if barrio_sel != "Todos":
                 gdf_plot = gdf_med[gdf_med['NombreBarr'] == barrio_sel].copy()
-                titulo_terr = f"Barrio: {barrio_sel}"
+                titulo_terr = f"Barrio/Correg.: {barrio_sel}"
             else:
                 gdf_plot = gdf_med.copy()
-                titulo_terr = "Todos los Barrios y Veredas"
+                titulo_terr = "Todos los Barrios y Corregimientos"
             
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str).str.zfill(4)
+            st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json())
+            
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreBarr'],
                 'MATCH_ID': gdf_plot['MATCH_ID'],
@@ -716,50 +730,47 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
             
         else:
             gdf_med['Cod_Comuna'] = gdf_med['Cod_Barrio'].astype(str).str.zfill(4).str[:2]
-            gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum', 'NombreBarr': 'first'}).reset_index()
+            gdf_comunas = gdf_med.dissolve(by='Cod_Comuna', aggfunc={'Pob_Total': 'sum'}).reset_index()
             
-            lista_comunas = sorted(gdf_comunas['Cod_Comuna'].unique())
-            comuna_sel = st.sidebar.selectbox("Seleccione una Comuna:", ["Todas"] + ['Comuna ' + str(c) for c in lista_comunas])
+            # Asignamos los nombres reales usando el diccionario
+            gdf_comunas['NombreComuna'] = gdf_comunas['Cod_Comuna'].map(dict_comunas).fillna("Comuna " + gdf_comunas['Cod_Comuna'])
+            
+            lista_comunas = sorted(gdf_comunas['NombreComuna'].unique())
+            comuna_sel = st.sidebar.selectbox("Seleccione una Comuna:", ["Todas"] + lista_comunas)
             
             if comuna_sel != "Todas":
-                codigo_sel = comuna_sel.replace('Comuna ', '')
-                gdf_plot = gdf_comunas[gdf_comunas['Cod_Comuna'] == codigo_sel].copy()
+                gdf_plot = gdf_comunas[gdf_comunas['NombreComuna'] == comuna_sel].copy()
                 titulo_terr = comuna_sel
             else:
                 gdf_plot = gdf_comunas.copy()
-                titulo_terr = "Todas las Comunas"
+                titulo_terr = "Todas las Comunas y Corregimientos"
 
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Comuna'].astype(str).str.zfill(2)
+            st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json())
+            
             df_mapa_base = pd.DataFrame({
-                'Territorio': 'Comuna/Correg. ' + gdf_plot['Cod_Comuna'].astype(str),
+                'Territorio': gdf_plot['NombreComuna'],
                 'MATCH_ID': gdf_plot['MATCH_ID'],
                 'Total': pd.to_numeric(gdf_plot['Pob_Total'], errors='coerce').fillna(0),
                 'Padre': 'Medellín',
                 'area_geografica': 'total'
             })
         
-        # 🛡️ LA BÓVEDA
-        st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json())
         filtro_zona = titulo_terr
         
-        # 🔥 FIX MATEMÁTICO: Le decimos al buscador que use la matriz de Medellín
+        # Matemáticas Históricas
         territorio_busqueda = "MEDELLÍN" 
-        
-        # 🔥 FIX HISTÓRICO: Creamos una curva histórica escalada proporcionalmente
         col_anio_glob = 'Año' if 'Año' in df_global.columns else 'año'
         if not df_global.empty and 'Pob_Medellin' in df_global.columns:
             df_med_hist = df_global.dropna(subset=[col_anio_glob, 'Pob_Medellin']).sort_values(by=col_anio_glob)
             años_hist = df_med_hist[col_anio_glob].values.astype(float)
             pob_med_macro = df_med_hist['Pob_Medellin'].values.astype(float)
         else:
-            # Fallback seguro si no encuentra a Medellín en df_global
             años_hist = np.arange(1985, 2040).astype(float)
             pob_med_macro = np.linspace(1500000, 2600000, len(años_hist))
             
         pob_total_shape = pd.to_numeric(gdf_med['Pob_Total'], errors='coerce').fillna(0).sum()
         pob_sel_actual = df_mapa_base['Total'].sum()
-        
-        # Escalamos la población de Medellín según el tamaño del barrio seleccionado
         factor_proporcional = (pob_sel_actual / pob_total_shape) if pob_total_shape > 0 else 0
         pob_hist = pob_med_macro * factor_proporcional
         
@@ -1448,37 +1459,55 @@ with tab_mapas:
                 # =========================================================
                 # 🚀 VÍA RÁPIDA (BYPASS): MEDELLÍN INTRA-URBANO
                 # =========================================================
+# =========================================================
+                # 🚀 VÍA RÁPIDA (BYPASS): MEDELLÍN INTRA-URBANO
+                # =========================================================
                 if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                     datos_para_dibujar = df_mapa_plot.copy()
                     mapa_bruto = st.session_state.get('boveda_mapa_medellin', {})
                     mapa_para_dibujar = copy.deepcopy(mapa_bruto)
                     
-                    z_fill_val = 4 if nivel_medellin == "Barrios y Veredas" else 2
-                    prop_key = 'Cod_Barrio' if nivel_medellin == "Barrios y Veredas" else 'Cod_Comuna'
+                    z_fill_val = 4 if nivel_medellin == "Barrios y Corregimientos" else 2
+                    prop_key = 'Cod_Barrio' if nivel_medellin == "Barrios y Corregimientos" else 'Cod_Comuna'
                     
-                    # 🛡️ Rescate de IDs desde df_mapa_base si fallara el group by
                     if 'MATCH_ID' not in datos_para_dibujar.columns and 'MATCH_ID' in df_mapa_base.columns:
                         datos_para_dibujar = pd.merge(datos_para_dibujar, df_mapa_base[['Territorio', 'MATCH_ID']].drop_duplicates(), on='Territorio', how='left')
                         
                     datos_para_dibujar['MATCH_ID'] = datos_para_dibujar['MATCH_ID'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(z_fill_val)
                     
+                    # Diccionario para inyectar nombres reales si no existen en el GeoJSON original
+                    dict_comunas_mapa = {
+                        "01": "Popular", "02": "Santa Cruz", "03": "Manrique", "04": "Aranjuez",
+                        "05": "Castilla", "06": "Doce de Octubre", "07": "Robledo", "08": "Villa Hermosa",
+                        "09": "Buenos Aires", "10": "La Candelaria", "11": "Laureles - Estadio", "12": "La América",
+                        "13": "San Javier", "14": "El Poblado", "15": "Guayabal", "16": "Belén",
+                        "50": "Corregimiento Palmitas", "60": "Corregimiento San Cristóbal", 
+                        "70": "Corregimiento Altavista", "80": "Corregimiento San Antonio de Prado", 
+                        "90": "Corregimiento Santa Elena"
+                    }
+
                     nombres_reales = {}
                     for f in mapa_para_dibujar.get('features', []):
                         raw_val = str(f['properties'].get(prop_key, '')).replace('.0', '').strip().zfill(z_fill_val)
                         f['id'] = raw_val 
-                        nombre = f['properties'].get('NombreBarr', f'Comuna/Correg. {raw_val}') if nivel_medellin == "Barrios y Veredas" else f'Comuna/Correg. {raw_val}'
+                        
+                        # Asignación inteligente del nombre
+                        if nivel_medellin == "Barrios y Corregimientos":
+                            nombre = f['properties'].get('NombreBarr', f'Territorio {raw_val}')
+                        else:
+                            nombre = dict_comunas_mapa.get(raw_val, f'Comuna {raw_val}')
+                            
                         nombres_reales[raw_val] = nombre
                         
                     datos_para_dibujar['Territorio'] = datos_para_dibujar['MATCH_ID'].map(nombres_reales).fillna(datos_para_dibujar['Territorio'])
                     
-                    # Centrado inteligente (Acercamiento dinámico)
                     safe_center_lat, safe_center_lon = 6.2518, -75.5636
-                    if titulo_terr in ["Todos los Barrios y Veredas", "Todas las Comunas"]:
-                        safe_zoom = 10.5
+                    if titulo_terr in ["Todos los Barrios y Corregimientos", "Todas las Comunas y Corregimientos"]:
+                        safe_zoom = 11.0
                     else:
                         safe_zoom = 13.5
                     
-                    llave_geojson = 'id' 
+                    llave_geojson = 'id'
                     
                 # =========================================================
                 # 🌍 VÍA LENTA: POSTGIS (Cuencas, Municipios, Veredas)
@@ -2022,13 +2051,13 @@ with tab_rankings:
     titulo_ranking = ""
     
     # --- FIX DEFINITIVO: RANKINGS DINÁMICOS CON ESCUDO DE VARIABLES ---
+# --- FIX DEFINITIVO: RANKINGS DINÁMICOS CON ESCUDO DE VARIABLES ---
     if "Global" in escala_sel or "Nacional" in escala_sel:
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
         df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
         titulo_ranking = "Departamentos"
         
     elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
-        # Escudo: busca el nuevo nombre (agrupador_sel) o usa ANTIOQUIA por defecto
         padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "ANTIOQUIA"))
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
         df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
@@ -2043,8 +2072,16 @@ with tab_rankings:
         df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
         titulo_ranking = f"Municipios de {padre_seguro}"
         
+    elif "Escala Intra-Urbana" in escala_sel:
+        # 🚀 MEDELLÍN: Consumimos la tabla pre-calculada
+        if 'df_mapa_base' in locals() and not df_mapa_base.empty:
+            df_rank = df_mapa_base[['Territorio', 'Total']].copy()
+        else:
+            df_rank = pd.DataFrame(columns=['Territorio', 'Total'])
+        titulo_ranking = nivel_medellin
+        
     else:
-        # Para Veredas o Cuencas, usamos directamente la base del mapa
+        # Veredas o Cuencas
         if 'df_mapa_base' in locals() and not df_mapa_base.empty and 'Territorio' in df_mapa_base.columns:
             df_rank = df_mapa_base.groupby('Territorio')['Total'].sum().reset_index()
         else:
@@ -2091,9 +2128,8 @@ with tab_rankings:
         st.markdown("---")
         st.markdown("### 📈 Dinámica Poblacional (2005 - 2035)")
         
-        if "Veredal" in escala_sel or "Cuencas" in escala_sel:
-            # Muestra el mensaje informativo
-            st.info("ℹ️ A escala Veredal/Cuencas, la plataforma utiliza un corte censal oficial estático. Las curvas de proyección dinámica 2005-2035 se activan desde la escala municipal hacia arriba.")
+        if "Veredal" in escala_sel or "Cuencas" in escala_sel or "Intra-Urbana" in escala_sel:
+            st.info("ℹ️ A escala Veredal, Cuencas o Intra-Urbana, la plataforma utiliza cortes poblacionales fijos. Las curvas comparativas dinámicas se activan desde la escala Municipal.")
         else:
             # Obtenemos los 10 líderes del ranking independiente que acabamos de crear
             top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
