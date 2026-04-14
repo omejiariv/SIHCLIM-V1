@@ -1904,61 +1904,80 @@ with tab_matriz:
                     gdf_cp['mun_norm'] = gdf_cp['NOMBRE_MPI'].apply(clean_v6)
                     gdf_mun['mun_norm'] = gdf_mun['mpio_cnmbr'].apply(clean_v6)
 
+                    # =================================================================
                     # 2. PROCESAMIENTO DE PESOS DEMOGRÁFICOS (V6 Especial Medellín)
+                    # =================================================================
                     gdf_barrios['Pob_Total'] = pd.to_numeric(gdf_barrios['Pob_Total'], errors='coerce').fillna(0)
                     
-                    # 1. SANACIÓN: buffer(0) repara cualquier polígono roto para evitar fallos de intersección
+                    # Sanación geométrica para evitar errores topológicos
                     gdf_barrios['geometry'] = gdf_barrios.geometry.buffer(0)
                     gdf_cue_limpio = gdf_cue.copy()
                     gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
                     
-                    # 2. Área original
                     gdf_barrios['area_orig'] = gdf_barrios.geometry.area
                     
-                    # 3. Corte exacto
+                    # Intersección normal
                     inter_barrios = gpd.overlay(gdf_barrios, gdf_cue_limpio, how='intersection')
-                    
                     if not inter_barrios.empty:
                         inter_barrios['area_inter'] = inter_barrios.geometry.area
+                    
+                    # 🔥 RED GRAVITACIONAL 1: Rescate de Barrios en el Agujero del AMVA
+                    barrios_in = set(inter_barrios['Cod_Barrio'].unique()) if not inter_barrios.empty else set()
+                    barrios_out = list(set(gdf_barrios['Cod_Barrio'].unique()) - barrios_in)
+                    
+                    if barrios_out:
+                        gdf_b_out = gdf_barrios[gdf_barrios['Cod_Barrio'].isin(barrios_out)].copy()
+                        gdf_b_out['temp_id'] = gdf_b_out.index
+                        gdf_b_out['geometry'] = gdf_b_out.geometry.centroid
+                        # Atrapar al más cercano
+                        rescate_b = gpd.sjoin_nearest(gdf_b_out, gdf_cue_limpio, how='inner', distance_col='dist')
+                        if not rescate_b.empty:
+                            rescate_b = rescate_b.drop_duplicates(subset=['temp_id']).drop(columns=['dist', 'temp_id'])
+                            rescate_b['area_inter'] = rescate_b['area_orig'] # Peso completo a la cuenca que lo adoptó
+                            inter_barrios = pd.concat([inter_barrios, rescate_b], ignore_index=True) if not inter_barrios.empty else rescate_b
+
+                    if not inter_barrios.empty:
                         inter_barrios['pob_frag'] = inter_barrios['Pob_Total'] * (inter_barrios['area_inter'] / inter_barrios['area_orig'])
-                        
                         pesos_med = inter_barrios.groupby('subc_lbl')['pob_frag'].sum()
                         pesos_med_pct = pesos_med / pesos_med.sum() if pesos_med.sum() > 0 else {}
                     else:
                         pesos_med_pct = {}
-                        
-                    # 3. PROCESAMIENTO RURAL Y URBANO RESTO (V5.1 + FALLBACK DE RESCATE)
-                    # A. Intersección Urbana
-                    inter_urbana = gpd.overlay(gdf_cab, gdf_cue, how='intersection')
-                    inter_urbana['area_inter'] = inter_urbana.geometry.area
-                    
-                    # 🔥 FIX: Recuperación de Áreas Urbanas Perdidas (Centroide)
-                    mpios_en_interseccion = set(inter_urbana['mun_norm'].unique())
-                    mpios_totales = set(gdf_cab['mun_norm'].unique())
-                    mpios_perdidos = list(mpios_totales - mpios_en_interseccion)
-                    
-                    if mpios_perdidos:
-                        cab_perdidas = gdf_cab[gdf_cab['mun_norm'].isin(mpios_perdidos)].copy()
-                        # Sanamos geometrías antes de calcular centroides
-                        cab_perdidas['geometry'] = cab_perdidas.geometry.buffer(0)
-                        cab_perdidas['geometry'] = cab_perdidas.centroid
-                        rescate_urb = gpd.sjoin(cab_perdidas, gdf_cue, how='inner', predicate='within')
-                        if not rescate_urb.empty:
-                            rescate_urb['area_inter'] = 1.0 # Le damos peso total a la cuenca donde cayó
-                            inter_urbana = pd.concat([inter_urbana, rescate_urb], ignore_index=True)
 
-                    # Recalculamos el porcentaje de área
-                    inter_urbana['pct_area_urb'] = inter_urbana['area_inter'] / inter_urbana.groupby('mun_norm')['area_inter'].transform('sum')
+                    # =================================================================
+                    # 3. PROCESAMIENTO RURAL Y URBANO RESTO (V5.1 + FALLBACK NEAREST)
+                    # =================================================================
+                    inter_urbana = gpd.overlay(gdf_cab, gdf_cue_limpio, how='intersection')
+                    if not inter_urbana.empty:
+                        inter_urbana['area_inter'] = inter_urbana.geometry.area
                     
-                    # B. Centros Poblados (Rural)
-                    cp_en_cuenca = gpd.sjoin(gdf_cp, gdf_cue, how='inner', predicate='within')
+                    # 🔥 RED GRAVITACIONAL 2: Rescate de Costas y Fronteras (Turbo, Apartadó)
+                    mpios_in = set(inter_urbana['mun_norm'].unique()) if not inter_urbana.empty else set()
+                    mpios_out = list(set(gdf_cab['mun_norm'].unique()) - mpios_in)
                     
-                    # C. Intersección Dispersa (Rural Resto) - 🔥 FIX DE GROUPBY APLICADO
-                    inter_dispersa = gpd.overlay(gdf_mun, gdf_cue, how='intersection')
-                    # Paso 1: Calcular área de cada fragmento
-                    inter_dispersa['area_frag'] = inter_dispersa.geometry.area 
-                    # Paso 2: Sumar el área por municipio usando la nueva columna
-                    inter_dispersa['pct_area_rur'] = inter_dispersa['area_frag'] / inter_dispersa.groupby('mun_norm')['area_frag'].transform('sum')
+                    if mpios_out:
+                        cab_out = gdf_cab[gdf_cab['mun_norm'].isin(mpios_out)].copy()
+                        cab_out['temp_id'] = cab_out.index
+                        cab_out['geometry'] = cab_out.geometry.centroid
+                        # Atrapar cabeceras huérfanas en el océano o bordes
+                        rescate_urb = gpd.sjoin_nearest(cab_out, gdf_cue_limpio, how='inner', distance_col='dist')
+                        if not rescate_urb.empty:
+                            rescate_urb = rescate_urb.drop_duplicates(subset=['temp_id']).drop(columns=['dist', 'temp_id'])
+                            rescate_urb['area_inter'] = 1.0 # Asignar un área de peso 1
+                            inter_urbana = pd.concat([inter_urbana, rescate_urb], ignore_index=True) if not inter_urbana.empty else rescate_urb
+
+                    if not inter_urbana.empty:
+                        inter_urbana['pct_area_urb'] = inter_urbana['area_inter'] / inter_urbana.groupby('mun_norm')['area_inter'].transform('sum')
+
+                    # B. Centros Poblados (Rural) - Forzamos asignación al más cercano siempre
+                    gdf_cp['temp_id_cp'] = gdf_cp.index
+                    cp_en_cuenca = gpd.sjoin_nearest(gdf_cp, gdf_cue_limpio, how='inner', distance_col='dist')
+                    cp_en_cuenca = cp_en_cuenca.drop_duplicates(subset=['temp_id_cp']).drop(columns=['dist', 'temp_id_cp'])
+                    
+                    # C. Intersección Dispersa (Rural Resto)
+                    inter_dispersa = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
+                    if not inter_dispersa.empty:
+                        inter_dispersa['area_frag'] = inter_dispersa.geometry.area 
+                        inter_dispersa['pct_area_rur'] = inter_dispersa['area_frag'] / inter_dispersa.groupby('mun_norm')['area_frag'].transform('sum')
 
                     # 4. MOTOR DE DISTRIBUCIÓN V6
                     df_area_actual_v6 = df_area_actual.copy()
