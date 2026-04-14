@@ -1905,125 +1905,130 @@ with tab_matriz:
                     gdf_mun['mun_norm'] = gdf_mun['mpio_cnmbr'].apply(clean_v6)
 
                     # =================================================================
-                    # 2. PROCESAMIENTO DE PESOS DEMOGRÁFICOS (V6 Especial Medellín)
+                    # 2. PROCESAMIENTO ESPACIAL DE MEDELLÍN (Cero Pérdidas / Cero Duplicados)
                     # =================================================================
                     gdf_barrios['Pob_Total'] = pd.to_numeric(gdf_barrios['Pob_Total'], errors='coerce').fillna(0)
                     
-                    # Sanación geométrica 
+                    # Limpieza geométrica
                     gdf_barrios['geometry'] = gdf_barrios.geometry.buffer(0)
                     gdf_cue_limpio = gdf_cue.copy()
                     gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
                     
-                    gdf_barrios['area_orig'] = gdf_barrios.geometry.area
-                    
-                    inter_barrios = gpd.overlay(gdf_barrios, gdf_cue_limpio, how='intersection')
-                    
-                    # Calcular población fraccionada capturada inicialmente
-                    if not inter_barrios.empty:
-                        inter_barrios['area_inter'] = inter_barrios.geometry.area
-                        inter_barrios['pob_frag'] = inter_barrios['Pob_Total'] * (inter_barrios['area_inter'] / inter_barrios['area_orig'])
-                    else:
-                        inter_barrios = pd.DataFrame(columns=['Cod_Barrio', 'subc_lbl', 'pob_frag'])
+                    # Intersección
+                    inter_b = gpd.overlay(gdf_barrios, gdf_cue_limpio, how='intersection')
+                    if not inter_b.empty:
+                        inter_b['area_inter'] = inter_b.geometry.area
+                        # 🧹 FILTRO ANTI-PELUSAS: Borramos astillas menores a 100 m2
+                        inter_b = inter_b[inter_b['area_inter'] > 100].copy()
                         
-                    # 🔥 IMÁN 1: Recuperación de Población Evaporada (Barrios AMVA)
-                    pob_asignada = inter_barrios.groupby('Cod_Barrio')['pob_frag'].sum().reset_index() if not inter_barrios.empty else pd.DataFrame(columns=['Cod_Barrio', 'pob_frag'])
-                    pob_asignada = pob_asignada.rename(columns={'pob_frag': 'pob_asignada'})
+                        # ⚖️ DISTRIBUCIÓN PROPORCIONAL: El área válida se recalcula para que sume 100%
+                        suma_areas_b = inter_b.groupby('Cod_Barrio')['area_inter'].transform('sum')
+                        inter_b['pct_area'] = inter_b['area_inter'] / suma_areas_b
+                        inter_b['pob_frag'] = inter_b['Pob_Total'] * inter_b['pct_area']
+                    else:
+                        inter_b = pd.DataFrame(columns=['Cod_Barrio', 'subc_lbl', 'pob_frag'])
+                        
+                    # 🧲 RESCATE DE HUÉRFANOS TOTALES (Barrios atrapados en el vacío del AMVA)
+                    barrios_in = inter_b['Cod_Barrio'].unique() if not inter_b.empty else []
+                    barrios_out = gdf_barrios[~gdf_barrios['Cod_Barrio'].isin(barrios_in)].copy()
                     
-                    rescate_b_df = gdf_barrios.merge(pob_asignada, on='Cod_Barrio', how='left')
-                    rescate_b_df['pob_asignada'] = rescate_b_df['pob_asignada'].fillna(0)
-                    rescate_b_df['pob_perdida'] = rescate_b_df['Pob_Total'] - rescate_b_df['pob_asignada']
-                    
-                    # Filtramos barrios que perdieron más de 1 habitante por fallos de intersección
-                    barrios_a_rescatar = rescate_b_df[rescate_b_df['pob_perdida'] > 1.0].copy()
-                    
-                    if not barrios_a_rescatar.empty:
-                        barrios_a_rescatar['temp_id'] = barrios_a_rescatar.index
-                        barrios_a_rescatar['geometry'] = barrios_a_rescatar.geometry.centroid
-                        rescate_b = gpd.sjoin_nearest(barrios_a_rescatar, gdf_cue_limpio, how='inner', distance_col='dist')
+                    if not barrios_out.empty:
+                        barrios_out['temp_id'] = barrios_out.index
+                        barrios_out['geometry'] = barrios_out.geometry.centroid
+                        rescate_b = gpd.sjoin_nearest(barrios_out, gdf_cue_limpio, how='inner')
                         if not rescate_b.empty:
-                            rescate_b = rescate_b.drop_duplicates(subset=['temp_id'])
-                            rescate_b['pob_frag'] = rescate_b['pob_perdida'] # Inyectamos la población perdida
-                            inter_barrios = pd.concat([inter_barrios, rescate_b[['Cod_Barrio', 'subc_lbl', 'pob_frag']]], ignore_index=True)
+                            rescate_b = rescate_b.drop_duplicates(subset=['Cod_Barrio']) # Evitar clones si hay empate de distancia
+                            rescate_b['pob_frag'] = rescate_b['Pob_Total'] # 100% al vecino más cercano
+                            inter_b = pd.concat([inter_b, rescate_b[['Cod_Barrio', 'subc_lbl', 'pob_frag']]], ignore_index=True)
 
-                    if not inter_barrios.empty:
-                        pesos_med = inter_barrios.groupby('subc_lbl')['pob_frag'].sum()
+                    if not inter_b.empty:
+                        pesos_med = inter_b.groupby('subc_lbl')['pob_frag'].sum()
                         pesos_med_pct = pesos_med / pesos_med.sum() if pesos_med.sum() > 0 else {}
                     else:
                         pesos_med_pct = {}
 
                     # =================================================================
-                    # 3. PROCESAMIENTO RURAL Y URBANO RESTO (V5.1 + FALLBACK IMÁN)
+                    # 3. PROCESAMIENTO RURAL Y URBANO RESTO (Antioquia)
                     # =================================================================
+                    # --- A. ÁREAS URBANAS (Cabeceras) ---
                     gdf_cab['geometry'] = gdf_cab.geometry.buffer(0)
-                    gdf_cab['area_orig'] = gdf_cab.geometry.area
+                    inter_u = gpd.overlay(gdf_cab, gdf_cue_limpio, how='intersection')
                     
-                    inter_urbana = gpd.overlay(gdf_cab, gdf_cue_limpio, how='intersection')
-                    
-                    if not inter_urbana.empty:
-                        inter_urbana['area_inter'] = inter_urbana.geometry.area
-                    else:
-                        inter_urbana = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'area_inter', 'area_orig'])
+                    if not inter_u.empty:
+                        inter_u['area_inter'] = inter_u.geometry.area
+                        # 🧹 FILTRO ANTI-PELUSAS: Borramos astillas menores a 1,000 m2
+                        inter_u = inter_u[inter_u['area_inter'] > 1000].copy()
                         
-                    # 🔥 IMÁN 2: Recuperación de Área Urbana Evaporada (Turbo, Apartadó, Envigado)
-                    area_asignada_u = inter_urbana.groupby('mun_norm')['area_inter'].sum().reset_index() if not inter_urbana.empty else pd.DataFrame(columns=['mun_norm', 'area_inter'])
-                    area_asignada_u = area_asignada_u.rename(columns={'area_inter': 'area_asignada'})
-                    
-                    rescate_u_df = gdf_cab.merge(area_asignada_u, on='mun_norm', how='left')
-                    rescate_u_df['area_asignada'] = rescate_u_df['area_asignada'].fillna(0)
-                    rescate_u_df['area_perdida'] = rescate_u_df['area_orig'] - rescate_u_df['area_asignada']
-                    
-                    # Rescatamos cabeceras que perdieron más del 1% de su área en el corte
-                    cab_a_rescatar = rescate_u_df[rescate_u_df['area_perdida'] > (0.01 * rescate_u_df['area_orig'])].copy()
-                    
-                    if not cab_a_rescatar.empty:
-                        cab_a_rescatar['temp_id'] = cab_a_rescatar.index
-                        cab_a_rescatar['geometry'] = cab_a_rescatar.geometry.centroid
-                        rescate_u = gpd.sjoin_nearest(cab_a_rescatar, gdf_cue_limpio, how='inner', distance_col='dist')
-                        if not rescate_u.empty:
-                            rescate_u = rescate_u.drop_duplicates(subset=['temp_id'])
-                            rescate_u['area_inter'] = rescate_u['area_perdida'] # Inyectamos el área evaporada
-                            inter_urbana = pd.concat([inter_urbana, rescate_u[['mun_norm', 'subc_lbl', 'area_inter']]], ignore_index=True)
-
-                    if not inter_urbana.empty:
-                        inter_urbana['pct_area_urb'] = inter_urbana['area_inter'] / inter_urbana.groupby('mun_norm')['area_inter'].transform('sum')
-
-                    # B. Centros Poblados (Rural) - Forzamos asignación al más cercano siempre
-                    gdf_cp['geometry'] = gdf_cp.geometry.buffer(0)
-                    gdf_cp['temp_id_cp'] = gdf_cp.index
-                    cp_en_cuenca = gpd.sjoin_nearest(gdf_cp, gdf_cue_limpio, how='inner', distance_col='dist')
-                    cp_en_cuenca = cp_en_cuenca.drop_duplicates(subset=['temp_id_cp']).drop(columns=['dist', 'temp_id_cp'])
-                    
-                    # C. Intersección Dispersa (Rural Resto)
-                    gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
-                    gdf_mun['area_orig_m'] = gdf_mun.geometry.area
-                    inter_dispersa = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
-                    
-                    if not inter_dispersa.empty:
-                        inter_dispersa['area_inter'] = inter_dispersa.geometry.area 
+                        # ⚖️ DISTRIBUCIÓN PROPORCIONAL
+                        suma_areas_u = inter_u.groupby('mun_norm')['area_inter'].transform('sum')
+                        inter_u['pct_area_urb'] = inter_u['area_inter'] / suma_areas_u
                     else:
-                        inter_dispersa = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'area_inter'])
+                        inter_u = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_urb'])
+                        
+                    # 🧲 RESCATE DE CABECERAS HUÉRFANAS (Ej. Turbo en el mar)
+                    mpios_u_in = inter_u['mun_norm'].unique() if not inter_u.empty else []
+                    mpios_u_out = gdf_cab[~gdf_cab['mun_norm'].isin(mpios_u_in)].copy()
+                    
+                    if not mpios_u_out.empty:
+                        mpios_u_out['geometry'] = mpios_u_out.geometry.centroid
+                        rescate_u = gpd.sjoin_nearest(mpios_u_out, gdf_cue_limpio, how='inner')
+                        if not rescate_u.empty:
+                            rescate_u = rescate_u.drop_duplicates(subset=['mun_norm'])
+                            rescate_u['pct_area_urb'] = 1.0 # 100% de la población va al vecino
+                            inter_u = pd.concat([inter_u, rescate_u[['mun_norm', 'subc_lbl', 'pct_area_urb']]], ignore_index=True)
 
-                    # 🔥 IMÁN 3: Recuperación de Área Rural Dispersa Evaporada (Huecos de AMVA)
-                    area_asignada_r = inter_dispersa.groupby('mun_norm')['area_inter'].sum().reset_index() if not inter_dispersa.empty else pd.DataFrame(columns=['mun_norm', 'area_inter'])
-                    area_asignada_r = area_asignada_r.rename(columns={'area_inter': 'area_asignada'})
+                    inter_urbana = inter_u # Renombrar para que el motor V6 original lo lea
+
+                    # --- B. CENTROS POBLADOS (Rural Nucleado) ---
+                    gdf_cp['geometry'] = gdf_cp.geometry.buffer(0)
+                    inter_cp = gpd.overlay(gdf_cp, gdf_cue_limpio, how='intersection')
+                    if not inter_cp.empty:
+                        inter_cp['area_inter'] = inter_cp.geometry.area
+                        inter_cp = inter_cp[inter_cp['area_inter'] > 500].copy()
+                        # Nos quedamos solo con la cuenca principal donde cayó la mayoría del polígono
+                        inter_cp = inter_cp.sort_values('area_inter', ascending=False).drop_duplicates(subset=['mun_norm', 'NOMBRE_CP'])
+                    else:
+                        inter_cp = pd.DataFrame(columns=['mun_norm', 'NOMBRE_CP', 'subc_lbl'])
+
+                    # Rescate CP
+                    cp_in = inter_cp['NOMBRE_CP'].unique() if not inter_cp.empty else []
+                    cp_out = gdf_cp[~gdf_cp['NOMBRE_CP'].isin(cp_in)].copy()
+                    if not cp_out.empty:
+                        cp_out['geometry'] = cp_out.geometry.centroid
+                        rescate_cp = gpd.sjoin_nearest(cp_out, gdf_cue_limpio, how='inner')
+                        if not rescate_cp.empty:
+                            rescate_cp = rescate_cp.drop_duplicates(subset=['NOMBRE_CP'])
+                            inter_cp = pd.concat([inter_cp, rescate_cp[['mun_norm', 'NOMBRE_CP', 'subc_lbl']]], ignore_index=True)
                     
-                    rescate_r_df = gdf_mun.merge(area_asignada_r, on='mun_norm', how='left')
-                    rescate_r_df['area_asignada'] = rescate_r_df['area_asignada'].fillna(0)
-                    rescate_r_df['area_perdida'] = rescate_r_df['area_orig_m'] - rescate_r_df['area_asignada']
+                    cp_en_cuenca = inter_cp # Renombrar para V6
+
+                    # --- C. ÁREAS RURALES DISPERSAS (Resto del Municipio) ---
+                    gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
+                    inter_r = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
                     
-                    mun_a_rescatar = rescate_r_df[rescate_r_df['area_perdida'] > (0.01 * rescate_r_df['area_orig_m'])].copy()
+                    if not inter_r.empty:
+                        inter_r['area_inter'] = inter_r.geometry.area
+                        # 🧹 FILTRO ANTI-PELUSAS: Descartamos menos de 1 hectárea (10,000 m2)
+                        inter_r = inter_r[inter_r['area_inter'] > 10000].copy() 
+                        
+                        suma_areas_r = inter_r.groupby('mun_norm')['area_inter'].transform('sum')
+                        inter_r['pct_area_rur'] = inter_r['area_inter'] / suma_areas_r
+                    else:
+                        inter_r = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_rur'])
+                        
+                    # Rescate Rural (Para municipios totalmente tapados por el agujero AMVA)
+                    mpios_r_in = inter_r['mun_norm'].unique() if not inter_r.empty else []
+                    mpios_r_out = gdf_mun[~gdf_mun['mun_norm'].isin(mpios_r_in)].copy()
                     
-                    if not mun_a_rescatar.empty:
-                        mun_a_rescatar['temp_id'] = mun_a_rescatar.index
-                        mun_a_rescatar['geometry'] = mun_a_rescatar.geometry.centroid
-                        rescate_r = gpd.sjoin_nearest(mun_a_rescatar, gdf_cue_limpio, how='inner', distance_col='dist')
+                    if not mpios_r_out.empty:
+                        mpios_r_out['geometry'] = mpios_r_out.geometry.centroid
+                        rescate_r = gpd.sjoin_nearest(mpios_r_out, gdf_cue_limpio, how='inner')
                         if not rescate_r.empty:
-                            rescate_r = rescate_r.drop_duplicates(subset=['temp_id'])
-                            rescate_r['area_inter'] = rescate_r['area_perdida']
-                            inter_dispersa = pd.concat([inter_dispersa, rescate_r[['mun_norm', 'subc_lbl', 'area_inter']]], ignore_index=True)
+                            rescate_r = rescate_r.drop_duplicates(subset=['mun_norm'])
+                            rescate_r['pct_area_rur'] = 1.0
+                            inter_r = pd.concat([inter_r, rescate_r[['mun_norm', 'subc_lbl', 'pct_area_rur']]], ignore_index=True)
 
-                    if not inter_dispersa.empty:
-                        inter_dispersa['pct_area_rur'] = inter_dispersa['area_inter'] / inter_dispersa.groupby('mun_norm')['area_inter'].transform('sum')
+                    inter_dispersa = inter_r # Renombrar para V6
 
                     # 4. MOTOR DE DISTRIBUCIÓN V6
                     df_area_actual_v6 = df_area_actual.copy()
