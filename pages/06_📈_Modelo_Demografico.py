@@ -1662,14 +1662,13 @@ with tab_mapas:
                     except Exception as e:
                         st.error(f"❌ Error crítico en el motor de Plotly: {e}")
                         
-            # 👇 ESTE ES EL BLOQUE QUE FALTABA (Cierra el 'try' de la línea ~740 de PostGIS)
             except Exception as e:
                 st.error(f"❌ Error conectando a PostGIS o procesando el mapa: {e}")
                 
-        # 👇 Cierre del 'if not df_mapa_plot.empty:'
         else:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
 
+# =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
 # =====================================================================
 with tab_matriz:
