@@ -1405,15 +1405,23 @@ with tab_mapas:
         
     # --- LÓGICA ESPACIAL PARA EL RESTO DE ESCALAS ---
     else:
-        col_m1, col_m2 = st.columns([1, 4])
+        # Mini-menú integrado y estético
+        col_m1, col_m2, col_m3 = st.columns([1, 1, 3])
         with col_m1:
             if escala_sel != "🌿 Veredal (Antioquia)":
                 area_mapa = st.radio("Filtro Poblacional:", ["Total", "Urbano", "Rural"], key="filtro_pob_mapa")
             else:
                 area_mapa = "Rural"
-                st.info("ℹ️ A escala veredal, toda la población se modela como rural.")
+                st.info("ℹ️ Escala veredal: Población rural.")
         with col_m2:
-            st.success("🤖 **Motor Topológico Automático:** Conectando capas espaciales (GeoJSON) con matrices demográficas.")
+            # 🔥 NUEVO CONTROL: Activar capa secundaria de cuencas
+            mostrar_capa_cuencas = False
+            if "Cuencas" not in escala_sel:
+                st.markdown("<br>", unsafe_allow_html=True) # Espaciado
+                mostrar_capa_cuencas = st.toggle("🌊 Superponer Cuencas", value=False)
+                
+        with col_m3:
+            st.success("🤖 **Motor Topológico Automático:** Conectando capas (GeoJSON) con matrices.")
 
         if 'año' in df_mapa_base.columns:
             df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)].copy()
@@ -1587,7 +1595,7 @@ with tab_mapas:
                     llave_geojson = 'properties.MATCH_ID'
 
                 # =========================================================
-                # 🎨 RENDERIZADO UNIFICADO
+                # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES
                 # =========================================================
                 if datos_para_dibujar['Total'].sum() == 0:
                     datos_para_dibujar['Color_Fix'] = 1 
@@ -1613,6 +1621,36 @@ with tab_mapas:
                     }
                 )
                 
+                # 🔥 AÑADIR CAPA SECUNDARIA DE CUENCAS (Si el switch está activo)
+                if mostrar_capa_cuencas:
+                    try:
+                        from sqlalchemy import text
+                        from modules.db_manager import get_engine
+                        import geopandas as gpd
+                        import json
+                        
+                        engine_geo = get_engine()
+                        # Extraemos solo las geometrías de las subzonas (NSS3 o similar)
+                        q_cue_overlay = text("SELECT nom_nss3, geometry FROM cuencas WHERE nom_nss3 IS NOT NULL")
+                        gdf_cue_overlay = gpd.read_postgis(q_cue_overlay, engine_geo, geom_col="geometry")
+                        
+                        if not gdf_cue_overlay.empty:
+                            gdf_cue_overlay = gdf_cue_overlay.to_crs(epsg=4326)
+                            geojson_cuencas = json.loads(gdf_cue_overlay.to_json())
+                            
+                            # Inyectamos los polígonos de cuencas como contornos (líneas negras finas)
+                            fig_mapa.update_layout(
+                                mapbox_layers=[{
+                                    "sourcetype": "geojson",
+                                    "source": geojson_cuencas,
+                                    "type": "line",
+                                    "color": "black",
+                                    "line": {"width": 1.5}
+                                }]
+                            )
+                    except Exception as e:
+                        st.sidebar.warning(f"No se pudo superponer la capa de cuencas: {e}")
+
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
                 st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                 
@@ -1839,12 +1877,35 @@ with tab_matriz:
                     else:
                         pesos_med_pct = {}
                     
-                    # 3. PROCESAMIENTO RURAL Y URBANO RESTO (V5.1)
+                    # 3. PROCESAMIENTO RURAL Y URBANO RESTO (V5.1 + FALLBACK DE RESCATE)
+                    # A. Intersección Urbana
                     inter_urbana = gpd.overlay(gdf_cab, gdf_cue, how='intersection')
-                    inter_urbana['pct_area_urb'] = inter_urbana.geometry.area / inter_urbana.geometry.area.groupby(inter_urbana['mun_norm']).transform('sum')
+                    inter_urbana['area_inter'] = inter_urbana.geometry.area
+                    
+                    # 🔥 FIX: Recuperación de Áreas Urbanas Perdidas (Centroide)
+                    # Si un municipio no cruzó bien en la intersección, buscamos su centroide
+                    mpios_en_interseccion = set(inter_urbana['mun_norm'].unique())
+                    mpios_totales = set(gdf_cab['mun_norm'].unique())
+                    mpios_perdidos = list(mpios_totales - mpios_en_interseccion)
+                    
+                    if mpios_perdidos:
+                        cab_perdidas = gdf_cab[gdf_cab['mun_norm'].isin(mpios_perdidos)].copy()
+                        # Usamos sjoin (cruce espacial de puntos) con los centroides
+                        cab_perdidas['geometry'] = cab_perdidas.centroid
+                        rescate_urb = gpd.sjoin(cab_perdidas, gdf_cue, how='inner', predicate='within')
+                        if not rescate_urb.empty:
+                            rescate_urb['area_inter'] = 1.0 # Le damos peso total a la cuenca donde cayó
+                            inter_urbana = pd.concat([inter_urbana, rescate_urb], ignore_index=True)
+
+                    # Recalculamos el porcentaje de área con los datos rescatados
+                    inter_urbana['pct_area_urb'] = inter_urbana['area_inter'] / inter_urbana.groupby('mun_norm')['area_inter'].transform('sum')
+                    
+                    # B. Centros Poblados (Rural)
                     cp_en_cuenca = gpd.sjoin(gdf_cp, gdf_cue, how='inner', predicate='within')
+                    
+                    # C. Intersección Dispersa (Rural Resto)
                     inter_dispersa = gpd.overlay(gdf_mun, gdf_cue, how='intersection')
-                    inter_dispersa['pct_area_rur'] = inter_dispersa.geometry.area / inter_dispersa.geometry.area.groupby(inter_dispersa['mun_norm']).transform('sum')
+                    inter_dispersa['pct_area_rur'] = inter_dispersa.geometry.area / inter_dispersa.groupby('mun_norm').geometry.area.transform('sum')
 
                     # 4. MOTOR DE DISTRIBUCIÓN V6
                     df_area_actual_v6 = df_area_actual.copy()
