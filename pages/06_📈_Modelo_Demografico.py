@@ -1532,6 +1532,7 @@ with tab_mapas:
                         
                     gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
                     
+                    # 🔥 FIX: Match ID más permisivo para Cuencas (Ignoramos el Padre en el ID para evitar falsos negativos)
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) 
                         if str(row['Padre']).strip() and "cuencas" not in escala_sel.lower() 
@@ -1560,6 +1561,9 @@ with tab_mapas:
 
                     gdf_mapa['MATCH_ID'] = gdf_mapa.apply(generar_id_geojson, axis=1)
                     
+                    # --- FIX TOPOLÓGICO: Eliminamos el filtro 'padre_norm' que borraba a Cornare ---
+                    # No filtramos gdf_mapa por padre, dejamos que el MATCH_ID haga el trabajo.
+
                     ids_geojson = set(gdf_mapa['MATCH_ID'].dropna().unique())
                     df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(ids_geojson)
                     
@@ -1883,29 +1887,32 @@ with tab_matriz:
                     inter_urbana['area_inter'] = inter_urbana.geometry.area
                     
                     # 🔥 FIX: Recuperación de Áreas Urbanas Perdidas (Centroide)
-                    # Si un municipio no cruzó bien en la intersección, buscamos su centroide
                     mpios_en_interseccion = set(inter_urbana['mun_norm'].unique())
                     mpios_totales = set(gdf_cab['mun_norm'].unique())
                     mpios_perdidos = list(mpios_totales - mpios_en_interseccion)
                     
                     if mpios_perdidos:
                         cab_perdidas = gdf_cab[gdf_cab['mun_norm'].isin(mpios_perdidos)].copy()
-                        # Usamos sjoin (cruce espacial de puntos) con los centroides
+                        # Sanamos geometrías antes de calcular centroides
+                        cab_perdidas['geometry'] = cab_perdidas.geometry.buffer(0)
                         cab_perdidas['geometry'] = cab_perdidas.centroid
                         rescate_urb = gpd.sjoin(cab_perdidas, gdf_cue, how='inner', predicate='within')
                         if not rescate_urb.empty:
                             rescate_urb['area_inter'] = 1.0 # Le damos peso total a la cuenca donde cayó
                             inter_urbana = pd.concat([inter_urbana, rescate_urb], ignore_index=True)
 
-                    # Recalculamos el porcentaje de área con los datos rescatados
+                    # Recalculamos el porcentaje de área
                     inter_urbana['pct_area_urb'] = inter_urbana['area_inter'] / inter_urbana.groupby('mun_norm')['area_inter'].transform('sum')
                     
                     # B. Centros Poblados (Rural)
                     cp_en_cuenca = gpd.sjoin(gdf_cp, gdf_cue, how='inner', predicate='within')
                     
-                    # C. Intersección Dispersa (Rural Resto)
+                    # C. Intersección Dispersa (Rural Resto) - 🔥 FIX DE GROUPBY APLICADO
                     inter_dispersa = gpd.overlay(gdf_mun, gdf_cue, how='intersection')
-                    inter_dispersa['pct_area_rur'] = inter_dispersa.geometry.area / inter_dispersa.groupby('mun_norm').geometry.area.transform('sum')
+                    # Paso 1: Calcular área de cada fragmento
+                    inter_dispersa['area_frag'] = inter_dispersa.geometry.area 
+                    # Paso 2: Sumar el área por municipio usando la nueva columna
+                    inter_dispersa['pct_area_rur'] = inter_dispersa['area_frag'] / inter_dispersa.groupby('mun_norm')['area_frag'].transform('sum')
 
                     # 4. MOTOR DE DISTRIBUCIÓN V6
                     df_area_actual_v6 = df_area_actual.copy()
