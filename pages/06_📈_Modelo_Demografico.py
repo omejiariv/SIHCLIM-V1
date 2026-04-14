@@ -1981,26 +1981,30 @@ with tab_matriz:
 
                     # --- B. CENTROS POBLADOS (Rural Nucleado) ---
                     gdf_cp['geometry'] = gdf_cp.geometry.buffer(0)
+                    gdf_cp['id_unico_cp'] = gdf_cp.index.astype(str) # 🔥 FIX: ID infalible, no depende del nombre de la columna
+                    
                     inter_cp = gpd.overlay(gdf_cp, gdf_cue_limpio, how='intersection')
+                    
                     if not inter_cp.empty:
                         inter_cp['area_inter'] = inter_cp.geometry.area
                         inter_cp = inter_cp[inter_cp['area_inter'] > 500].copy()
                         # Nos quedamos solo con la cuenca principal donde cayó la mayoría del polígono
-                        inter_cp = inter_cp.sort_values('area_inter', ascending=False).drop_duplicates(subset=['mun_norm', 'NOMBRE_CP'])
+                        inter_cp = inter_cp.sort_values('area_inter', ascending=False).drop_duplicates(subset=['id_unico_cp'])
                     else:
-                        inter_cp = pd.DataFrame(columns=['mun_norm', 'NOMBRE_CP', 'subc_lbl'])
+                        inter_cp = pd.DataFrame(columns=['mun_norm', 'id_unico_cp', 'subc_lbl'])
 
-                    # Rescate CP
-                    cp_in = inter_cp['NOMBRE_CP'].unique() if not inter_cp.empty else []
-                    cp_out = gdf_cp[~gdf_cp['NOMBRE_CP'].isin(cp_in)].copy()
+                    # Rescate CP (Centros Poblados huérfanos)
+                    cp_in = inter_cp['id_unico_cp'].unique() if not inter_cp.empty else []
+                    cp_out = gdf_cp[~gdf_cp['id_unico_cp'].isin(cp_in)].copy()
+                    
                     if not cp_out.empty:
                         cp_out['geometry'] = cp_out.geometry.centroid
                         rescate_cp = gpd.sjoin_nearest(cp_out, gdf_cue_limpio, how='inner')
                         if not rescate_cp.empty:
-                            rescate_cp = rescate_cp.drop_duplicates(subset=['NOMBRE_CP'])
-                            inter_cp = pd.concat([inter_cp, rescate_cp[['mun_norm', 'NOMBRE_CP', 'subc_lbl']]], ignore_index=True)
+                            rescate_cp = rescate_cp.drop_duplicates(subset=['id_unico_cp'])
+                            inter_cp = pd.concat([inter_cp, rescate_cp[['mun_norm', 'id_unico_cp', 'subc_lbl']]], ignore_index=True)
                     
-                    cp_en_cuenca = inter_cp # Renombrar para V6
+                    cp_en_cuenca = inter_cp # Renombrar para que el V6 original lo lea
 
                     # --- C. ÁREAS RURALES DISPERSAS (Resto del Municipio) ---
                     gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
