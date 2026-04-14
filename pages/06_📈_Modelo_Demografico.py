@@ -1414,11 +1414,9 @@ with tab_mapas:
                 area_mapa = "Rural"
                 st.info("ℹ️ Escala veredal: Población rural.")
         with col_m2:
-            # 🔥 NUEVO CONTROL: Activar capa secundaria de cuencas
-            mostrar_capa_cuencas = False
-            if "Cuencas" not in escala_sel:
-                st.markdown("<br>", unsafe_allow_html=True) # Espaciado
-                mostrar_capa_cuencas = st.toggle("🌊 Superponer Cuencas", value=False)
+            # 🔥 NUEVO CONTROL: Activar capa secundaria de cuencas SIEMPRE visible
+            st.markdown("<br>", unsafe_allow_html=True) # Espaciador para alinear con el radio button
+            mostrar_capa_cuencas = st.toggle("🌊 Superponer Cuencas", value=False)
                 
         with col_m3:
             st.success("🤖 **Motor Topológico Automático:** Conectando capas (GeoJSON) con matrices.")
@@ -1838,10 +1836,18 @@ with tab_matriz:
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
-                    # 🔥 REPARACIÓN CRS: Forzamos Lat/Lon antes de proyectar a metros
-                    gdf_barrios = gpd.read_file(URL_BARRIOS_MED).set_crs(epsg=4326, allow_override=True).to_crs(epsg=3116)
-                    gdf_cab = gpd.read_file(URL_CABECERAS).to_crs(epsg=3116)
-                    gdf_cp = gpd.read_file(URL_CENTROS_POBLADOS).to_crs(epsg=3116)
+                    # 🔥 LA CURA A LOS 2 MILLONES DESAPARECIDOS (Escudo de CRS)
+                    def cargar_y_proyectar(url):
+                        temp_gdf = gpd.read_file(url)
+                        # Si no tiene sistema de coordenadas o no es GPS, lo forzamos a GPS (4326)
+                        if temp_gdf.crs is None or temp_gdf.crs.to_epsg() != 4326:
+                            temp_gdf = temp_gdf.set_crs(epsg=4326, allow_override=True)
+                        # Luego sí proyectamos a metros (Magna Sirgas Colombia)
+                        return temp_gdf.to_crs(epsg=3116)
+
+                    gdf_barrios = cargar_y_proyectar(URL_BARRIOS_MED)
+                    gdf_cab = cargar_y_proyectar(URL_CABECERAS)
+                    gdf_cp = cargar_y_proyectar(URL_CENTROS_POBLADOS)
                     gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry").to_crs(epsg=3116)
 
                     def clean_v6(t):
@@ -1855,23 +1861,19 @@ with tab_matriz:
                     gdf_mun['mun_norm'] = gdf_mun['mpio_cnmbr'].apply(clean_v6)
 
                     # 2. PROCESAMIENTO DE PESOS DEMOGRÁFICOS (V6 Especial Medellín)
-                    # 🔥 FIX DEFINITIVO: Intersección de Áreas con Sanación Geométrica
-                    
-                    gdf_barrios = gpd.read_file(URL_BARRIOS_MED).to_crs(epsg=3116)
                     gdf_barrios['Pob_Total'] = pd.to_numeric(gdf_barrios['Pob_Total'], errors='coerce').fillna(0)
                     
-                    # 1. SANACIÓN: buffer(0) repara cualquier polígono roto o superpuesto
+                    # 1. SANACIÓN: buffer(0) repara cualquier polígono roto para evitar fallos de intersección
                     gdf_barrios['geometry'] = gdf_barrios.geometry.buffer(0)
                     gdf_cue_limpio = gdf_cue.copy()
                     gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
                     
-                    # 2. Área original de cada barrio
+                    # 2. Área original
                     gdf_barrios['area_orig'] = gdf_barrios.geometry.area
                     
-                    # 3. Corte exacto (Intersección)
+                    # 3. Corte exacto
                     inter_barrios = gpd.overlay(gdf_barrios, gdf_cue_limpio, how='intersection')
                     
-                    # 4. Reparto proporcional de habitantes
                     if not inter_barrios.empty:
                         inter_barrios['area_inter'] = inter_barrios.geometry.area
                         inter_barrios['pob_frag'] = inter_barrios['Pob_Total'] * (inter_barrios['area_inter'] / inter_barrios['area_orig'])
@@ -1880,7 +1882,7 @@ with tab_matriz:
                         pesos_med_pct = pesos_med / pesos_med.sum() if pesos_med.sum() > 0 else {}
                     else:
                         pesos_med_pct = {}
-                    
+                        
                     # 3. PROCESAMIENTO RURAL Y URBANO RESTO (V5.1 + FALLBACK DE RESCATE)
                     # A. Intersección Urbana
                     inter_urbana = gpd.overlay(gdf_cab, gdf_cue, how='intersection')
