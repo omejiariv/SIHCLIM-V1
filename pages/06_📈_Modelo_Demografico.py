@@ -1454,7 +1454,7 @@ with tab_mapas:
             # 🔥 FIX 1: FILTRO RIGUROSO ANTI-TRIPLICACIÓN
             if 'area_geografica' in df_mapa_año.columns:
                 # Filtramos el área seleccionada ANTES de sumar cualquier cosa
-                df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
+                df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'].str.lower() == area_mapa.lower()].copy()
             else:
                 df_mapa_plot = df_mapa_año.copy()
                 
@@ -1908,13 +1908,16 @@ with tab_matriz:
                     URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
                     URL_BARRIOS_MED = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
                     
-                    # 🔥 FIX: SQL Inmune a espacios en blanco (Shapefiles vacíos)
+                    # 🔥 FIX SQL: Evitar zonas vacías como Urrao por falta de nombres menores
                     q_cue = text("""
                         SELECT COALESCE(
                             NULLIF(TRIM(nom_nss3), ''), 
                             NULLIF(TRIM(nom_nss2), ''), 
                             NULLIF(TRIM(nom_nss1), ''), 
-                            NULLIF(TRIM(nom_szh), '')
+                            NULLIF(TRIM(nom_szh), ''),
+                            NULLIF(TRIM(nomzh), ''),
+                            NULLIF(TRIM(nomah), ''),
+                            'Cuenca Sin Nombre'
                         ) AS subc_lbl, geometry 
                         FROM cuencas
                     """)
@@ -2076,19 +2079,18 @@ with tab_matriz:
                     inter_dispersa = inter_r # Renombrar para V6
 
                     # 4. MOTOR DE DISTRIBUCIÓN V6 (VECTORIZADO ANTI-COLAPSO)
-                    # 🔥 ESCUDO DE ACERO: Bloqueamos la entrada a los otros 31 departamentos
                     df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
                     
-                    # 1. Primero creamos la columna
                     df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
-                    
-                    # 2. 🔥 AHORA SÍ agrupamos (ya existe la columna)
                     df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index() 
                     
                     mpios_mapa = set(gdf_mun['mun_norm'].tolist())
                     df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
                         lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
                     )
+                    
+                    # 🔥 EL FILTRO HERMÉTICO: Destruye agregados como "Valle de Aburra" que inflan los datos
+                    df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)].copy()
 
                     df_final_cuencas = pd.DataFrame()
                     
@@ -2139,11 +2141,28 @@ with tab_matriz:
                         df_final_cuencas = pd.concat([df_cp, df_r], ignore_index=True)
 
                     elif tipo_area == 'Total':
-                        # 🔥 FIX: Generar los modelos 'Total' que faltaban para estabilizar el mapa
-                        if not inter_dispersa.empty:
-                            df_tot = df_area_v6.merge(inter_dispersa[['mun_norm', 'subc_lbl', 'pct_area_rur']], left_on='mun_norm_dane', right_on='mun_norm', how='inner')
-                            df_tot['Total_frag'] = df_tot['Total'] * df_tot['pct_area_rur']
-                            df_final_cuencas = df_tot
+                        # 🔥 FIX: Aplicamos el aislamiento de Medellín al Total para evitar sobrepeso
+                        df_med = df_area_v6[df_area_v6['mun_norm_dane'] == 'medellin'].copy()
+                        if not df_med.empty and pesos_med_pct:
+                            med_list = []
+                            for subc, peso in pesos_med_pct.items():
+                                temp = df_med.copy()
+                                temp['Total_frag'] = temp['Total'] * peso
+                                temp['subc_lbl'] = subc
+                                med_list.append(temp)
+                            df_med_final = pd.concat(med_list, ignore_index=True)
+                        else:
+                            df_med_final = pd.DataFrame()
+                            
+                        df_resto = df_area_v6[df_area_v6['mun_norm_dane'] != 'medellin'].copy()
+                        if not df_resto.empty and not inter_dispersa.empty:
+                            df_resto_final = df_resto.merge(inter_dispersa[['mun_norm', 'subc_lbl', 'pct_area_rur']], 
+                                                            left_on='mun_norm_dane', right_on='mun_norm', how='inner')
+                            df_resto_final['Total_frag'] = df_resto_final['Total'] * df_resto_final['pct_area_rur']
+                        else:
+                            df_resto_final = pd.DataFrame()
+                            
+                        df_final_cuencas = pd.concat([df_med_final, df_resto_final], ignore_index=True)
 
                     # 5. ENTRENAMIENTO Y FINALIZACIÓN
                     if not df_final_cuencas.empty:
