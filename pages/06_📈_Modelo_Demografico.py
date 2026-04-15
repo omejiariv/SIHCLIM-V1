@@ -2076,7 +2076,8 @@ with tab_matriz:
                     inter_dispersa = inter_r # Renombrar para V6
 
                     # 4. MOTOR DE DISTRIBUCIÓN V6 (VECTORIZADO ANTI-COLAPSO)
-                    df_area_v6 = df_area_actual.copy()
+                    # 🔥 ESCUDO DE ACERO: Bloqueamos la entrada a los otros 31 departamentos
+                    df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
                     
                     # 1. Primero creamos la columna
                     df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
