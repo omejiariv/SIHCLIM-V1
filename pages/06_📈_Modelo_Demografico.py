@@ -554,10 +554,18 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                 cuencas_cruzadas = 0
                 log_cruces = []
+                
+                # 🔥 VACUNA 1: Memoria Global única fuera del bucle
+                matrix_ids_sumados = set() 
 
                 for c in cuencas_a_graficar:
-                    # 🔥 EXTRACCIÓN TOPOLÓGICA BLINDADA: Búsqueda directa en subc_lbl
-                    if col_res in df_hier.columns and 'subc_lbl' in df_hier.columns:
+                    # 🔥 EXTRACCIÓN TOPOLÓGICA BLINDADA: Usamos el nivel de detalle máximo disponible
+                    if col_res in df_hier.columns:
+                        # Seguro por si la columna subc_lbl se borró de la memoria temporal
+                        if 'subc_lbl' not in df_hier.columns:
+                            cols_lbl = [col for col in ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh'] if col in df_hier.columns]
+                            df_hier['subc_lbl'] = df_hier[cols_lbl].bfill(axis=1).iloc[:, 0]
+                            
                         c_norm = normalizar_texto(c)
                         hijos = df_hier[(df_hier[col_res] == c) | (df_hier[col_res].astype(str).apply(normalizar_texto) == c_norm)]['subc_lbl'].dropna().unique()
                         micro_cuencas = hijos if len(hijos) > 0 else [c]
@@ -565,7 +573,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                         micro_cuencas = [c]
 
                     c_pob_temp_hist = np.zeros_like(años_hist, dtype=float)
-                    matrix_ids_sumados = set() 
+                    # ❌ AQUÍ SE ELIMINÓ EL `matrix_ids_sumados = set()` QUE CAUSABA EL ERROR
 
                     for micro in micro_cuencas:
                         micro_norm = normalizar_texto(micro)
@@ -833,6 +841,9 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
                 col_mun = next((c for c in df_veredas.columns if 'padre' in c.lower() or 'mpio' in c.lower()), df_veredas.columns[1] if len(df_veredas.columns)>1 else df_veredas.columns[0])
                 
             col_pob = next((c for c in df_veredas.columns if 'pob' in c.lower() or 'hab' in c.lower() or 'total' in c.lower()), df_veredas.columns[-1])
+            
+            # 🔥 ESCUDO NUMÉRICO VEREDAL: Transforma cualquier texto a número puro
+            df_veredas[col_pob] = pd.to_numeric(df_veredas[col_pob].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
             
             df_mapa_base = df_veredas.rename(columns={
                 col_ver: 'Territorio',
@@ -2056,153 +2067,97 @@ with tab_matriz:
                     
                     if not inter_r.empty:
                         inter_r['area_inter'] = inter_r.geometry.area
-                        # 🧹 FILTRO ANTI-PELUSAS: Descartamos menos de 1 hectárea (10,000 m2)
                         inter_r = inter_r[inter_r['area_inter'] > 10000].copy() 
-                        
                         suma_areas_r = inter_r.groupby('mun_norm')['area_inter'].transform('sum')
                         inter_r['pct_area_rur'] = inter_r['area_inter'] / suma_areas_r
                     else:
                         inter_r = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_rur'])
                         
-                    # Rescate Rural (Para municipios totalmente tapados por el agujero AMVA)
-                    mpios_r_in = inter_r['mun_norm'].unique() if not inter_r.empty else []
-                    mpios_r_out = gdf_mun[~gdf_mun['mun_norm'].isin(mpios_r_in)].copy()
-                    
-                    if not mpios_r_out.empty:
-                        mpios_r_out['geometry'] = mpios_r_out.geometry.centroid
-                        rescate_r = gpd.sjoin_nearest(mpios_r_out, gdf_cue_limpio, how='inner')
-                        if not rescate_r.empty:
-                            rescate_r = rescate_r.drop_duplicates(subset=['mun_norm'])
-                            rescate_r['pct_area_rur'] = 1.0
-                            inter_r = pd.concat([inter_r, rescate_r[['mun_norm', 'subc_lbl', 'pct_area_rur']]], ignore_index=True)
+                    inter_dispersa = inter_r 
 
-                    inter_dispersa = inter_r # Renombrar para V6
+                    # 🔥 VACUNA 2A: Mapa Global para distribuir el 'Total' con precisión matemática
+                    inter_t = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
+                    if not inter_t.empty:
+                        inter_t['area_inter'] = inter_t.geometry.area
+                        inter_t = inter_t[inter_t['area_inter'] > 1000].copy()
+                        suma_areas_t = inter_t.groupby('mun_norm')['area_inter'].transform('sum')
+                        inter_t['pct_area_tot'] = inter_t['area_inter'] / suma_areas_t
+                    else:
+                        inter_t = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_tot'])
 
-                    # 4. MOTOR DE DISTRIBUCIÓN V6 (VECTORIZADO ANTI-COLAPSO)
-                    # 🛡️ 1. FILTRO REGIONAL (Solo Antioquia)
+                    # 4. MOTOR DE DISTRIBUCIÓN V6
                     df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
-                    
-                    # 🧹 2. LIMPIEZA DE NOMBRES
                     df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
                     
-                    # 🚫 3. DESTRUCTOR DE AGREGADOS FANTASMAS
                     agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
                     df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma), case=False, na=False)]
-                    
-                    # 🔒 4. AGRUPACIÓN SEGURA (Usamos max() en lugar de sum() o first() para garantizar la cifra real sin duplicar)
                     df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].max().reset_index() 
                     
-                    # 🗺️ 5. SINCRONIZACIÓN CON EL MAPA
                     mpios_mapa = set(gdf_mun['mun_norm'].tolist())
                     df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
                         lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
                     )
                     df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)].copy()
 
-                    df_final_cuencas = pd.DataFrame()
+                    df_final_cuencas = []
                     
-                    if tipo_area == 'Urbana':
-                        # A. Hiper-Resolución Medellín (Con Seguro de Vida)
-                        df_med = df_area_v6[df_area_v6['mun_norm_dane'] == 'medellin'].copy()
-                        if not df_med.empty:
-                            if pesos_med_pct: # Si el imán funcionó
-                                med_list = []
-                                for subc, peso in pesos_med_pct.items():
-                                    temp = df_med.copy()
-                                    temp['Total_frag'] = temp['Total'] * peso
-                                    temp['subc_lbl'] = subc
-                                    med_list.append(temp)
-                                df_med_final = pd.concat(med_list, ignore_index=True)
-                            else: # 🔥 SEGURO DE VIDA: Si falla el imán, forzamos a Medellín al Río Aburrá
-                                df_med_final = df_med.copy()
-                                df_med_final['Total_frag'] = df_med_final['Total']
-                                df_med_final['subc_lbl'] = 'Rio Aburra' 
-                        else:
-                            df_med_final = pd.DataFrame()
-                            
-                        # B. Resto de Antioquia
-                        df_resto = df_area_v6[df_area_v6['mun_norm_dane'] != 'medellin'].copy()
-                        if not df_resto.empty and not inter_urbana.empty:
-                            df_resto_final = df_resto.merge(inter_urbana[['mun_norm', 'subc_lbl', 'pct_area_urb']], 
-                                                            left_on='mun_norm_dane', right_on='mun_norm', how='inner')
-                            df_resto_final['Total_frag'] = df_resto_final['Total'] * df_resto_final['pct_area_urb']
-                        else:
-                            df_resto_final = pd.DataFrame()
-                            
-                        df_final_cuencas = pd.concat([df_med_final, df_resto_final], ignore_index=True)
+                    for mpio in df_area_v6['mun_norm_dane'].unique():
+                        pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
                         
-                    elif tipo_area == 'Rural':
-                        # A. Centros Poblados (30% del peso)
-                        if not cp_en_cuenca.empty:
-                            df_cp = df_area_v6.merge(cp_en_cuenca[['mun_norm', 'subc_lbl']], left_on='mun_norm_dane', right_on='mun_norm', how='inner')
-                            cp_counts = df_cp.groupby(['mun_norm_dane', col_anio]).size().reset_index(name='cp_count')
-                            df_cp = df_cp.merge(cp_counts, on=['mun_norm_dane', col_anio], how='left')
-                            df_cp['Total_frag'] = (df_cp['Total'] * 0.30) / df_cp['cp_count']
+                        if mpio == 'medellin':
+                            for subc, peso in pesos_med_pct.items():
+                                df_temp = pob_mpio.copy()
+                                df_temp['Total_frag'] = df_temp['Total'] * peso
+                                df_temp['subc_lbl'] = subc
+                                df_final_cuencas.append(df_temp)
                         else:
-                            df_cp = pd.DataFrame()
-                        
-                        # B. Disperso (70% del peso, o 100% si no hay CP)
-                        if not inter_dispersa.empty:
-                            df_r = df_area_v6.merge(inter_dispersa[['mun_norm', 'subc_lbl', 'pct_area_rur']], left_on='mun_norm_dane', right_on='mun_norm', how='inner')
-                            mpios_con_cp = cp_en_cuenca['mun_norm'].unique() if not cp_en_cuenca.empty else []
-                            df_r['factor_peso'] = np.where(df_r['mun_norm_dane'].isin(mpios_con_cp), 0.70, 1.0)
-                            df_r['Total_frag'] = df_r['Total'] * df_r['factor_peso'] * df_r['pct_area_rur']
-                        else:
-                            df_r = pd.DataFrame()
-                            
-                        df_final_cuencas = pd.concat([df_cp, df_r], ignore_index=True)
+                            if tipo_area == 'Urbana':
+                                cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
+                                for _, u_row in cuencas_urb.iterrows():
+                                    df_temp = pob_mpio.copy()
+                                    df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
+                                    df_temp['subc_lbl'] = u_row['subc_lbl']
+                                    df_final_cuencas.append(df_temp)
+                                    
+                            elif tipo_area == 'Rural':
+                                cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio]
+                                factor_area = 1.0 if cuencas_cp.empty else 0.70
+                                if not cuencas_cp.empty:
+                                    for _, cp_row in cuencas_cp.iterrows():
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = (df_temp['Total'] * 0.30) / len(cuencas_cp)
+                                        df_temp['subc_lbl'] = cp_row['subc_lbl']
+                                        df_final_cuencas.append(df_temp)
+                                cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio]
+                                for _, a_row in cuencas_area.iterrows():
+                                    df_temp = pob_mpio.copy()
+                                    df_temp['Total_frag'] = df_temp['Total'] * factor_area * a_row['pct_area_rur']
+                                    df_temp['subc_lbl'] = a_row['subc_lbl']
+                                    df_final_cuencas.append(df_temp)
+                                    
+                            elif tipo_area == 'Total':
+                                # 🔥 VACUNA 2B: Usa el mapa global inter_t para no perder ni un habitante
+                                cuencas_tot = inter_t[inter_t['mun_norm'] == mpio]
+                                for _, t_row in cuencas_tot.iterrows():
+                                    df_temp = pob_mpio.copy()
+                                    df_temp['Total_frag'] = df_temp['Total'] * t_row['pct_area_tot']
+                                    df_temp['subc_lbl'] = t_row['subc_lbl']
+                                    df_final_cuencas.append(df_temp)
 
-                    elif tipo_area == 'Total':
-                        # 🔥 FIX TOTAL: Unificamos Medellín y el resto de manera limpia
-                        df_med = df_area_v6[df_area_v6['mun_norm_dane'] == 'medellin'].copy()
-                        if not df_med.empty:
-                            if pesos_med_pct:
-                                med_list = []
-                                for subc, peso in pesos_med_pct.items():
-                                    temp = df_med.copy()
-                                    temp['Total_frag'] = temp['Total'] * peso
-                                    temp['subc_lbl'] = subc
-                                    med_list.append(temp)
-                                df_med_final = pd.concat(med_list, ignore_index=True)
-                            else:
-                                df_med_final = df_med.copy()
-                                df_med_final['Total_frag'] = df_med_final['Total']
-                                df_med_final['subc_lbl'] = 'Rio Aburra'
-                        else:
-                            df_med_final = pd.DataFrame()
-                            
-                        df_resto = df_area_v6[df_area_v6['mun_norm_dane'] != 'medellin'].copy()
-                        if not df_resto.empty and not inter_dispersa.empty:
-                            df_resto_final = df_resto.merge(inter_dispersa[['mun_norm', 'subc_lbl', 'pct_area_rur']], 
-                                                            left_on='mun_norm_dane', right_on='mun_norm', how='inner')
-                            df_resto_final['Total_frag'] = df_resto_final['Total'] * df_resto_final['pct_area_rur']
-                        else:
-                            df_resto_final = pd.DataFrame()
-                            
-                        df_final_cuencas = pd.concat([df_med_final, df_resto_final], ignore_index=True)
-
-                    # 5. ENTRENAMIENTO Y FINALIZACIÓN
-                    if not df_final_cuencas.empty:
-                        df_cuencas_v6 = df_final_cuencas.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
-                        
-                        # Extraemos nombres de cuencas de la base de datos limpia para evitar fallos
-                        q_todas = text("SELECT DISTINCT COALESCE(NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), NULLIF(TRIM(nom_szh), '')) AS c FROM cuencas")
-                        lista_todas_cuencas = pd.read_sql(q_todas, engine_geo)['c'].dropna().tolist()
-                        
+                    # 5. ENTRENAMIENTO DE CUENCAS
+                    if df_final_cuencas:
+                        df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                         for cuenca in lista_todas_cuencas:
                             df_t = df_cuencas_v6[df_cuencas_v6['subc_lbl'] == cuenca].sort_values(by=col_anio)
                             if not df_t.empty and df_t['Total_frag'].sum() > 0:
                                 ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
-                        
-                        df_masivo = pd.DataFrame(matriz_resultados)
-                        st.session_state['df_matriz_demografica'] = df_masivo
-                        st.success(f"✅ ¡Entrenamiento V6 Exitoso! {len(df_masivo)} modelos generados.")
 
                 except Exception as e:
                     st.error(f"❌ Error en Motor V6: {e}")
 
             # =====================================================================
             # 6. FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
+            # 🔥 VACUNA 3: Guardado Global FUERA del bucle. Abejorral y todos estarán a salvo.
             if matriz_resultados:
                 df_masivo = pd.DataFrame(matriz_resultados)
                 barra_progreso.progress(1.0)
