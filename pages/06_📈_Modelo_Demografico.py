@@ -2076,8 +2076,13 @@ with tab_matriz:
                     inter_dispersa = inter_r # Renombrar para V6
 
                     # 4. MOTOR DE DISTRIBUCIÓN V6 (VECTORIZADO ANTI-COLAPSO)
-                    # 🔥 Agrupamos para asegurar que no haya filas clonadas del DANE
-                    df_area_v6 = df_area_actual.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index() 
+                    df_area_v6 = df_area_actual.copy()
+                    
+                    # 1. Primero creamos la columna
+                    df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
+                    
+                    # 2. 🔥 AHORA SÍ agrupamos (ya existe la columna)
+                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index() 
                     
                     mpios_mapa = set(gdf_mun['mun_norm'].tolist())
                     df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
