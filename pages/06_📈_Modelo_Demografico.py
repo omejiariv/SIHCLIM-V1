@@ -1583,8 +1583,8 @@ with tab_mapas:
                     def generar_id_geojson(row):
                         if "cuencas" in escala_sel.lower():
                             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
-                            # 🔥 FIX: Ignora Nulos, "None" de Python y espacios en blanco ""
-                            val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "")
+                            # 🔥 FIX: Agregamos el fallback exacto 'Cuenca Sin Nombre' para que Urrao no quede invisible
+                            val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "Cuenca Sin Nombre")
                             
                             if "-" in val_terr: val_terr = val_terr.split("-")[-1]
                             return normalizar_texto(val_terr)
@@ -2082,14 +2082,20 @@ with tab_matriz:
                     df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
                     
                     df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
-                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index() 
+                    
+                    # 🔥 FIX: Destructor de Agregados. Eliminamos "Valle de Aburra", "Area Metropolitana", etc.
+                    agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
+                    df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma))]
+                    
+                    # 🔥 FIX: Usamos .first() en lugar de .sum() para ignorar filas clonadas por error en el CSV
+                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].first().reset_index() 
                     
                     mpios_mapa = set(gdf_mun['mun_norm'].tolist())
                     df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
                         lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
                     )
                     
-                    # 🔥 EL FILTRO HERMÉTICO: Destruye agregados como "Valle de Aburra" que inflan los datos
+                    # Filtro final de seguridad
                     df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)].copy()
 
                     df_final_cuencas = pd.DataFrame()
