@@ -696,7 +696,8 @@ elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)
     años_hist = df_hist[col_anio].values
     pob_hist = df_hist['Total'].values
     
-    df_mapa_base = df_base.copy()
+    # 🔥 FIX: Usamos 'mpios_filtrados' para mandar todo el polígono al mapa
+    df_mapa_base = mpios_filtrados.copy()
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 # =====================================================================
@@ -845,11 +846,15 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
             # 🔥 ESCUDO NUMÉRICO VEREDAL: Transforma cualquier texto a número puro
             df_veredas[col_pob] = pd.to_numeric(df_veredas[col_pob].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
             
+            # Renombramos las columnas
             df_mapa_base = df_veredas.rename(columns={
                 col_ver: 'Territorio',
                 col_mun: 'Padre',
                 col_pob: 'Total'
             })
+            
+            # 🔥 INYECCIÓN CRÍTICA PARA QUE EL MAPA FUNCIONE
+            df_mapa_base['area_geografica'] = 'rural' 
             
             if 'Padre' not in df_mapa_base.columns:
                 df_mapa_base['Padre'] = "Antioquia"
@@ -1582,11 +1587,11 @@ with tab_mapas:
                         
                     gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
                     
-                    # 🔥 FIX: Match ID más permisivo para Cuencas (Ignoramos el Padre en el ID para evitar falsos negativos)
+                    # 🔥 FIX: Match ID más permisivo para Cuencas
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
-                        lambda row: normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) 
-                        if str(row['Padre']).strip() and "cuencas" not in escala_sel.lower() 
-                        else normalizar_texto(row['Territorio']), axis=1
+                        lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
+                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
+                        axis=1
                     )
                     
                     codigos_dane_deptos = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
