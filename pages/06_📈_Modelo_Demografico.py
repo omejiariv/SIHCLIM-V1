@@ -697,7 +697,7 @@ elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)
     pob_hist = df_hist['Total'].values
     
     # 🔥 FIX: Usamos 'mpios_filtrados' para mandar todo el polígono al mapa
-    df_mapa_base = mpios_filtrados.copy()
+    df_mapa_base = df_base.copy()
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 # =====================================================================
@@ -997,7 +997,7 @@ else:
         r_guess = 0.02 if es_creciente else -0.02
         
         limites = ([max_y * 0.8, 0, -0.2], [max_y * 3.0 if es_creciente else max_y * 1.1, np.inf, 0.3])
-        popt_log, _ = curve_fit(f_log, x_train_norm, y_train, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
+        popt_log, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=10000)
         proyecciones['Logístico'] = f_log(x_proj_norm, *popt_log)
         param_K, param_r = popt_log[0], popt_log[2]
     except Exception:
@@ -1485,24 +1485,6 @@ with tab_mapas:
                     df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].astype(str).str.contains('CABECERA', case=False, na=False)]
 
         if not df_mapa_plot.empty:
-            if area_mapa == "Total":
-                cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_año.columns]
-                if cols_agrupar:
-                    df_mapa_plot = df_mapa_año.groupby(cols_agrupar)['Total'].sum().reset_index()
-                else:
-                    df_mapa_plot = df_mapa_año.copy()
-            else:
-                if 'area_geografica' in df_mapa_año.columns:
-                    df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
-                else:
-                    df_mapa_plot = df_mapa_año.copy()
-                    
-            if 'Territorio' in df_mapa_plot.columns:
-                df_mapa_plot = df_mapa_plot[df_mapa_plot['Territorio'].astype(str).str.upper() != 'TOTAL']
-                if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
-                    df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].astype(str).str.contains('CABECERA', case=False, na=False)]
-
-        if not df_mapa_plot.empty:
             if 'Territorio' not in df_mapa_plot.columns:
                 col_t = next((c for c in df_mapa_plot.columns if c.lower() in ['municipio', 'cuenca', 'vereda', 'nombre', 'subzona', 'nom_nss3']), df_mapa_plot.columns[0])
                 df_mapa_plot = df_mapa_plot.rename(columns={col_t: 'Territorio'})
@@ -1520,9 +1502,6 @@ with tab_mapas:
                 import plotly.express as px
                 
                 # =========================================================
-                # 🚀 VÍA RÁPIDA (BYPASS): MEDELLÍN INTRA-URBANO
-                # =========================================================
-# =========================================================
                 # 🚀 VÍA RÁPIDA (BYPASS): MEDELLÍN INTRA-URBANO
                 # =========================================================
                 if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
@@ -1951,29 +1930,47 @@ with tab_matriz:
                     gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                     gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                     
-                    # 🔥 LA CURA A LOS 2 MILLONES DESAPARECIDOS (Escudo de CRS)
+                    # 🔥 LA CURA A LOS 2 MILLONES DESAPARECIDOS (Escudo de CRS Optimizado)
                     def cargar_y_proyectar(url):
                         temp_gdf = gpd.read_file(url)
-                        # Si no tiene sistema de coordenadas o no es GPS, lo forzamos a GPS (4326)
-                        if temp_gdf.crs is None or temp_gdf.crs.to_epsg() != 4326:
-                            temp_gdf = temp_gdf.set_crs(epsg=4326, allow_override=True)
-                        # Luego sí proyectamos a metros (Magna Sirgas Colombia)
+                        # Si el archivo viene "huérfano" de sistema de coordenadas, asumimos WGS84 (GPS)
+                        if temp_gdf.crs is None:
+                            temp_gdf = temp_gdf.set_crs(epsg=4326)
+                        # Transformación matemática real a MAGNA-SIRGAS Origen Nacional (Metros)
                         return temp_gdf.to_crs(epsg=3116)
 
+                    # 1. Cargar activos en la nube
                     gdf_barrios = cargar_y_proyectar(URL_BARRIOS_MED)
                     gdf_cab = cargar_y_proyectar(URL_CABECERAS)
                     gdf_cp = cargar_y_proyectar(URL_CENTROS_POBLADOS)
-                    gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry").to_crs(epsg=3116)
+                    
+                    # 2. Cargar Municipios desde PostGIS y aplicar FILTRO ESPACIAL INMEDIATO (Optimización RAM)
+                    gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry")
+                    
+                    if 'dpto_ccdgo' in gdf_mun.columns:
+                        gdf_mun = gdf_mun[gdf_mun['dpto_ccdgo'] == '05'].copy()
+                    elif 'DPTO_CCDGO' in gdf_mun.columns:
+                        gdf_mun = gdf_mun[gdf_mun['DPTO_CCDGO'] == '05'].copy()
+                        
+                    # Proyectamos solo los 125 municipios (Súper rápido)
+                    gdf_mun = gdf_mun.to_crs(epsg=3116)
 
+                    # 3. Limpiador V6
                     def clean_v6(t):
                         if not t or pd.isna(t): return ""
                         t = str(t).lower().strip()
                         t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
                         return re.sub(r'[^a-z0-9]', '', t)
 
-                    gdf_cab['mun_norm'] = gdf_cab['MPIO_NOMBR'].apply(clean_v6)
-                    gdf_cp['mun_norm'] = gdf_cp['NOMBRE_MPI'].apply(clean_v6)
-                    gdf_mun['mun_norm'] = gdf_mun['mpio_cnmbr'].apply(clean_v6)
+                    # 4. Sincronización topológica con escudo de columnas (mayúsculas/minúsculas)
+                    col_cab = 'MPIO_NOMBR' if 'MPIO_NOMBR' in gdf_cab.columns else 'mpio_nombr'
+                    gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v6)
+                    
+                    col_cp = 'NOMBRE_MPI' if 'NOMBRE_MPI' in gdf_cp.columns else 'nombre_mpi'
+                    gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v6)
+                    
+                    col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
+                    gdf_mun['mun_norm'] = gdf_mun[col_mun].apply(clean_v6)
 
                     # =================================================================
                     # 2. PROCESAMIENTO ESPACIAL DE MEDELLÍN (Cero Pérdidas / Cero Duplicados)
