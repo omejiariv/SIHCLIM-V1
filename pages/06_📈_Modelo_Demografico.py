@@ -301,13 +301,14 @@ def cargar_datos_limpios():
                 df_global_csv = df_global_csv.rename(columns={'año': 'Año'})
                 
             # --- ESCUDO EXCLUSIVO PARA LA ESCALA MUNDIAL ---
-            # Limpiamos los puntos (miles) antes de que el sistema los confunda con decimales
+            # Si Pandas ya la leyó como número (ej. 8000000.0), quitar el punto la multiplicaría por 10.
             for col in df_global_csv.columns:
                 if col != 'Año':
-                    df_global_csv[col] = pd.to_numeric(
-                        df_global_csv[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '', regex=False),
-                        errors='coerce'
-                    )
+                    if df_global_csv[col].dtype == 'O': # 'O' significa Object (Texto)
+                        df_global_csv[col] = pd.to_numeric(
+                            df_global_csv[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '', regex=False),
+                            errors='coerce'
+                        )
                 
             df_global = pd.merge(df_global_csv, df_global_dinamico, on='Año', how='outer')
         except Exception as e:
@@ -2125,12 +2126,17 @@ with tab_matriz:
                     )
                     df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)]
 
+                    # 🛡️ RESCATE INTELIGENTE DE CUENCAS (Evita crear cuencas fantasma)
+                    # Buscamos el nombre EXACTO que tiene la base de datos para no perder población
+                    nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
+                    nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')                   
+                    
                     df_final_cuencas = []
                     
                     for mpio in df_area_v6['mun_norm_dane'].unique():
                         pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
                         
-                        # 🛡️ SEGURO UNIVERSAL PARA MEDELLÍN (No importa si es Total, Urbano o Rural)
+                        # 🛡️ SEGURO UNIVERSAL PARA MEDELLÍN
                         if mpio == 'medellin':
                             if pesos_med_pct:
                                 for subc, peso in pesos_med_pct.items():
@@ -2141,11 +2147,13 @@ with tab_matriz:
                             else:
                                 df_temp = pob_mpio.copy()
                                 df_temp['Total_frag'] = df_temp['Total']
-                                df_temp['subc_lbl'] = 'Rio Aburra'
+                                df_temp['subc_lbl'] = nombre_real_aburra # <--- FIX
                                 df_final_cuencas.append(df_temp)
                         
                         # 🛡️ RESTO DE ANTIOQUIA
                         else:
+                            fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra # <--- FIX
+
                             if tipo_area == 'Urbana':
                                 cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
                                 if not cuencas_urb.empty:
@@ -2157,7 +2165,7 @@ with tab_matriz:
                                 else:
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = 'Rio Leon' if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else 'Rio Aburra'
+                                    df_temp['subc_lbl'] = fallback_basin
                                     df_final_cuencas.append(df_temp)
                                     
                             elif tipo_area == 'Rural':
@@ -2182,7 +2190,7 @@ with tab_matriz:
                                 if cuencas_cp.empty and cuencas_area.empty:
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = 'Rio Leon' if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else 'Rio Aburra'
+                                    df_temp['subc_lbl'] = fallback_basin
                                     df_final_cuencas.append(df_temp)
 
                             elif tipo_area == 'Total':
@@ -2196,7 +2204,7 @@ with tab_matriz:
                                 else:
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = 'Rio Leon' if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else 'Rio Aburra'
+                                    df_temp['subc_lbl'] = fallback_basin
                                     df_final_cuencas.append(df_temp)
                                     
                     # 5. ENTRENAMIENTO DE CUENCAS
