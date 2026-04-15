@@ -467,8 +467,13 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
     if 'df_matriz_demografica' in st.session_state:
         df_matriz = st.session_state['df_matriz_demografica']
     else:
-        try: df_matriz = pd.read_csv("Matriz_Multimodelo_Demografica (1).csv") 
-        except: df_matriz = pd.DataFrame()
+        try: 
+            # 🔥 AUTORECUPERACIÓN: Buscamos primero en Supabase
+            from modules.db_manager import get_engine
+            df_matriz = pd.read_sql("SELECT * FROM matriz_maestra_demografica", get_engine())
+            st.session_state['df_matriz_demografica'] = df_matriz
+        except: 
+            df_matriz = pd.DataFrame()
             
     if not df_matriz.empty and 'Nivel' in df_matriz.columns:
         df_cuencas_solo = df_matriz[df_matriz['Nivel'] == 'Cuenca']
@@ -896,8 +901,14 @@ for i, año in enumerate(x_proj):
 if 'df_matriz_demografica' in st.session_state:
     df_matriz = st.session_state['df_matriz_demografica']
 else:
-    try: df_matriz = pd.read_csv(os.path.join(RUTA_RAIZ, "data", "Matriz_Maestra_Demografica.csv"), sep=';' if ';' in open(os.path.join(RUTA_RAIZ, "data", "Matriz_Maestra_Demografica.csv")).readline() else ',')
-    except: df_matriz = pd.DataFrame()
+    try: 
+        # 🔥 AUTORECUPERACIÓN: Buscamos primero en Supabase
+        from modules.db_manager import get_engine
+        df_matriz = pd.read_sql("SELECT * FROM matriz_maestra_demografica", get_engine())
+        st.session_state['df_matriz_demografica'] = df_matriz
+    except: 
+        try: df_matriz = pd.read_csv(os.path.join(RUTA_RAIZ, "data", "Matriz_Maestra_Demografica.csv"))
+        except: df_matriz = pd.DataFrame()
 
 def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
 
