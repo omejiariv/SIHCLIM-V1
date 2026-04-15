@@ -1467,18 +1467,20 @@ with tab_mapas:
         df_mapa_plot = pd.DataFrame()
 
         if not df_mapa_año.empty:
-            # 🔥 FIX 1: FILTRO RIGUROSO ANTI-TRIPLICACIÓN
+            # 1. FILTRO RIGUROSO ANTI-TRIPLICACIÓN (Solo lo hacemos una vez)
             if 'area_geografica' in df_mapa_año.columns:
-                # Filtramos el área seleccionada ANTES de sumar cualquier cosa
+                # Filtramos exactamente el área que pide el usuario (Total, Urbano o Rural)
                 df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'].str.lower() == area_mapa.lower()].copy()
             else:
                 df_mapa_plot = df_mapa_año.copy()
                 
+            # 2. AGRUPACIÓN LIMPIA (Garantiza que no haya duplicados)
             cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_plot.columns]
             if cols_agrupar:
-                # Agrupamos solo los registros ya filtrados (Evita sumar Total + Urbano + Rural)
+                # Sumamos la población respetando los ID únicos
                 df_mapa_plot = df_mapa_plot.groupby(cols_agrupar)['Total'].sum().reset_index()
                 
+            # 3. LIMPIEZA DE BASURA ESPACIAL Y CABECERAS
             if 'Territorio' in df_mapa_plot.columns:
                 df_mapa_plot = df_mapa_plot[df_mapa_plot['Territorio'].astype(str).str.upper() != 'TOTAL']
                 if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
@@ -1788,13 +1790,18 @@ with tab_matriz:
                 log_k, log_a, log_r, log_r2 = 0, 0, 0, 0
                 try:
                     k_max = max_y * 3.0 if es_creciente else max_y * 1.1
-                    k_guess = max_y * 1.2 if es_creciente else (y[-1] * 0.9 if y[-1] > 0 else max_y)
-                    a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
-                    r_guess = 0.02 if es_creciente else -0.02
-                    k_min = max_y * 0.8 if es_creciente else max_y * 0.1
-                    limites = ([k_min, 0, -0.2], [k_max, np.inf, 0.3])
+                    k_guess = max_y * 1.2 if es_creciente else max(1, y[-1] * 0.95)
                     
-                    popt_log, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
+                    a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
+                    a_guess = max(-0.999, a_guess) # 🔥 ESCUDO: Evita el colapso matemático
+                    r_guess = 0.02 
+                    
+                    k_min = max_y * 0.8 if es_creciente else y[-1] * 0.5
+                    
+                    # Relajamos el límite inferior de 'a' a -0.999
+                    limites = ([k_min, -0.999, 0.0001], [k_max, np.inf, 0.3])
+                    
+                    popt_log, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=10000)
                     log_k, log_a, log_r = popt_log
                     log_r2 = calcular_r2(y, f_log(x_norm, *popt_log))
                 except Exception: pass
@@ -1802,7 +1809,8 @@ with tab_matriz:
                 # 2. EXPONENCIAL
                 exp_a, exp_b, exp_r2 = 0, 0, 0
                 try:
-                    popt_exp, _ = curve_fit(f_exp, x_norm, y, p0=[p0_val, 0.01], maxfev=50000)
+                    r_exp_guess = 0.01 if es_creciente else -0.01 # Pista al solver de que la curva baja
+                    popt_exp, _ = curve_fit(f_exp, x_norm, y, p0=[p0_val, r_exp_guess], maxfev=10000)
                     exp_a, exp_b = popt_exp
                     exp_r2 = calcular_r2(y, f_exp(x_norm, *popt_exp))
                 except Exception: pass
@@ -1933,10 +1941,10 @@ with tab_matriz:
                     # 🔥 LA CURA A LOS 2 MILLONES DESAPARECIDOS (Escudo de CRS Optimizado)
                     def cargar_y_proyectar(url):
                         temp_gdf = gpd.read_file(url)
-                        # Si el archivo viene "huérfano" de sistema de coordenadas, asumimos WGS84 (GPS)
+                        # Si el GeoJSON viene "huérfano" de CRS, asumimos WGS84 (GPS)
                         if temp_gdf.crs is None:
                             temp_gdf = temp_gdf.set_crs(epsg=4326)
-                        # Transformación matemática real a MAGNA-SIRGAS Origen Nacional (Metros)
+                        # Transformación matemática a MAGNA-SIRGAS (Metros)
                         return temp_gdf.to_crs(epsg=3116)
 
                     # 1. Cargar activos en la nube
@@ -1944,15 +1952,15 @@ with tab_matriz:
                     gdf_cab = cargar_y_proyectar(URL_CABECERAS)
                     gdf_cp = cargar_y_proyectar(URL_CENTROS_POBLADOS)
                     
-                    # 2. Cargar Municipios desde PostGIS y aplicar FILTRO ESPACIAL INMEDIATO (Optimización RAM)
+                    # 2. 🚀 OPTIMIZACIÓN EXTREMA: Filtrar ANTES de proyectar
                     gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry")
                     
-                    if 'dpto_ccdgo' in gdf_mun.columns:
-                        gdf_mun = gdf_mun[gdf_mun['dpto_ccdgo'] == '05'].copy()
-                    elif 'DPTO_CCDGO' in gdf_mun.columns:
-                        gdf_mun = gdf_mun[gdf_mun['DPTO_CCDGO'] == '05'].copy()
-                        
-                    # Proyectamos solo los 125 municipios (Súper rápido)
+                    # Filtramos solo Antioquia (Código 05) para no procesar todo el país en memoria
+                    col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
+                    if col_dpto in gdf_mun.columns:
+                        gdf_mun = gdf_mun[gdf_mun[col_dpto] == '05'].copy()
+
+                    # Ahora sí proyectamos (Será instantáneo porque son 125, no 1122)
                     gdf_mun = gdf_mun.to_crs(epsg=3116)
 
                     # 3. Limpiador V6
@@ -1962,7 +1970,7 @@ with tab_matriz:
                         t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
                         return re.sub(r'[^a-z0-9]', '', t)
 
-                    # 4. Sincronización topológica con escudo de columnas (mayúsculas/minúsculas)
+                    # 4. Sincronización topológica con escudo de columnas
                     col_cab = 'MPIO_NOMBR' if 'MPIO_NOMBR' in gdf_cab.columns else 'mpio_nombr'
                     gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v6)
                     
@@ -1971,7 +1979,7 @@ with tab_matriz:
                     
                     col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
                     gdf_mun['mun_norm'] = gdf_mun[col_mun].apply(clean_v6)
-
+                    
                     # =================================================================
                     # 2. PROCESAMIENTO ESPACIAL DE MEDELLÍN (Cero Pérdidas / Cero Duplicados)
                     # =================================================================
@@ -2194,7 +2202,12 @@ with tab_matriz:
                     # 5. ENTRENAMIENTO DE CUENCAS
                     if df_final_cuencas:
                         df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
-                        for cuenca in lista_todas_cuencas:
+                        
+                        # 🔥 FIX: RESCATE DE LOS 2 MILLONES (Asegurar que los fallbacks existan)
+                        cuencas_con_datos = df_cuencas_v6['subc_lbl'].unique().tolist()
+                        lista_entrenamiento = list(set(lista_todas_cuencas + cuencas_con_datos))
+                        
+                        for cuenca in lista_entrenamiento:
                             df_t = df_cuencas_v6[df_cuencas_v6['subc_lbl'] == cuenca].sort_values(by=col_anio)
                             if not df_t.empty and df_t['Total_frag'].sum() > 0:
                                 ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
