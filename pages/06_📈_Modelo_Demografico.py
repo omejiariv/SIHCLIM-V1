@@ -1447,9 +1447,6 @@ with tab_mapas:
         else:
             df_mapa_año = df_mapa_base.copy()
 
-
-        if not df_mapa_año.empty:
-
         # 🔥 ESCUDO ANTI-NAME ERROR: Inicializamos la tabla por defecto
         df_mapa_plot = pd.DataFrame()
 
