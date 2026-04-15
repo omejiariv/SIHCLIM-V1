@@ -2079,38 +2079,44 @@ with tab_matriz:
                     inter_dispersa = inter_r # Renombrar para V6
 
                     # 4. MOTOR DE DISTRIBUCIÓN V6 (VECTORIZADO ANTI-COLAPSO)
+                    # 🛡️ 1. FILTRO REGIONAL (Solo Antioquia)
                     df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
                     
+                    # 🧹 2. LIMPIEZA DE NOMBRES
                     df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
                     
-                    # 🔥 FIX: Destructor de Agregados. Eliminamos "Valle de Aburra", "Area Metropolitana", etc.
+                    # 🚫 3. DESTRUCTOR DE AGREGADOS FANTASMAS
                     agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
-                    df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma))]
+                    df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma), case=False, na=False)]
                     
-                    # 🔥 FIX: Usamos .first() en lugar de .sum() para ignorar filas clonadas por error en el CSV
-                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].first().reset_index() 
+                    # 🔒 4. AGRUPACIÓN SEGURA (Usamos max() en lugar de sum() o first() para garantizar la cifra real sin duplicar)
+                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].max().reset_index() 
                     
+                    # 🗺️ 5. SINCRONIZACIÓN CON EL MAPA
                     mpios_mapa = set(gdf_mun['mun_norm'].tolist())
                     df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
                         lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
                     )
-                    
-                    # Filtro final de seguridad
                     df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)].copy()
 
                     df_final_cuencas = pd.DataFrame()
                     
                     if tipo_area == 'Urbana':
-                        # A. Hiper-Resolución Medellín
+                        # A. Hiper-Resolución Medellín (Con Seguro de Vida)
                         df_med = df_area_v6[df_area_v6['mun_norm_dane'] == 'medellin'].copy()
-                        if not df_med.empty and pesos_med_pct:
-                            med_list = []
-                            for subc, peso in pesos_med_pct.items():
-                                temp = df_med.copy()
-                                temp['Total_frag'] = temp['Total'] * peso
-                                temp['subc_lbl'] = subc
-                                med_list.append(temp)
-                            df_med_final = pd.concat(med_list, ignore_index=True)
+                        if not df_med.empty:
+                            if pesos_med_pct: # Si el imán funcionó
+                                med_list = []
+                                for subc, peso in pesos_med_pct.items():
+                                    temp = df_med.copy()
+                                    temp['Total_frag'] = temp['Total'] * peso
+                                    temp['subc_lbl'] = subc
+                                    med_list.append(temp)
+                                df_med_final = pd.concat(med_list, ignore_index=True)
+                            else: # 🔥 SEGURO DE VIDA: Si falla el imán, forzamos a Medellín al Río Aburrá
+                                df_med_final = df_med.copy()
+                                df_med_final['Total_frag'] = df_med_final['Total']
+                                df_med_final['subc_lbl'] = 'Rio Aburra' 
                         else:
                             df_med_final = pd.DataFrame()
                             
@@ -2147,16 +2153,21 @@ with tab_matriz:
                         df_final_cuencas = pd.concat([df_cp, df_r], ignore_index=True)
 
                     elif tipo_area == 'Total':
-                        # 🔥 FIX: Aplicamos el aislamiento de Medellín al Total para evitar sobrepeso
+                        # 🔥 FIX TOTAL: Unificamos Medellín y el resto de manera limpia
                         df_med = df_area_v6[df_area_v6['mun_norm_dane'] == 'medellin'].copy()
-                        if not df_med.empty and pesos_med_pct:
-                            med_list = []
-                            for subc, peso in pesos_med_pct.items():
-                                temp = df_med.copy()
-                                temp['Total_frag'] = temp['Total'] * peso
-                                temp['subc_lbl'] = subc
-                                med_list.append(temp)
-                            df_med_final = pd.concat(med_list, ignore_index=True)
+                        if not df_med.empty:
+                            if pesos_med_pct:
+                                med_list = []
+                                for subc, peso in pesos_med_pct.items():
+                                    temp = df_med.copy()
+                                    temp['Total_frag'] = temp['Total'] * peso
+                                    temp['subc_lbl'] = subc
+                                    med_list.append(temp)
+                                df_med_final = pd.concat(med_list, ignore_index=True)
+                            else:
+                                df_med_final = df_med.copy()
+                                df_med_final['Total_frag'] = df_med_final['Total']
+                                df_med_final['subc_lbl'] = 'Rio Aburra'
                         else:
                             df_med_final = pd.DataFrame()
                             
