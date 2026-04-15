@@ -922,10 +922,14 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
     
 # --- SELECTOR GLOBAL DE ÁREA (Afecta Gráficos y Mapas) ---
 
-if escala_sel != "🌿 Veredal (Antioquia)":
-    area_global = st.sidebar.selectbox("Filtro Poblacional:", ["Total", "Urbano", "Rural"])
-else:
+if escala_sel == "🌿 Veredal (Antioquia)":
     area_global = "Rural"
+    st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
+elif escala_sel == "🏙️ Escala Urbana (Cabeceras Antioquia)":
+    area_global = "Urbano" # <-- FIX: Forzamos la matriz urbana
+    st.info("ℹ️ A escala de Cabeceras, el motor matemático aísla la población urbana.")
+else:
+    area_global = st.sidebar.selectbox("Filtro Poblacional:", ["Total", "Urbano", "Rural"])
     st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
 
 # =====================================================================
@@ -2159,6 +2163,18 @@ with tab_matriz:
                     else:
                         inter_t = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_tot'])
 
+                    # 🧲 NUEVO: RESCATE TOTAL HUÉRFANOS (Cierra la fuga de 1.5M del AMVA)
+                    mpios_t_in = inter_t['mun_norm'].unique() if not inter_t.empty else []
+                    mpios_t_out = gdf_mun[~gdf_mun['mun_norm'].isin(mpios_t_in)].copy()
+                    
+                    if not mpios_t_out.empty:
+                        mpios_t_out['geometry'] = mpios_t_out.geometry.centroid
+                        rescate_t = gpd.sjoin_nearest(mpios_t_out, gdf_cue_limpio, how='inner')
+                        if not rescate_t.empty:
+                            rescate_t = rescate_t.drop_duplicates(subset=['mun_norm'])
+                            rescate_t['pct_area_tot'] = 1.0 # 100% de la población va a la cuenca más cercana
+                            inter_t = pd.concat([inter_t, rescate_t[['mun_norm', 'subc_lbl', 'pct_area_tot']]], ignore_index=True)
+
                     # 4. MOTOR DE DISTRIBUCIÓN V6 (ESTRUCTURAL Y LIMPIO)
                     # Filtramos Antioquia y limpiamos nombres
                     df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
@@ -2263,7 +2279,7 @@ with tab_matriz:
                     if df_final_cuencas:
                         df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                         
-                        # 🔥 FIX: RESCATE DE LOS 2 MILLONES (Asegurar que los fallbacks existan)
+                        # 🔥 FIX: Aseguramos que TODOS los municipios rescatados entren en la matriz
                         cuencas_con_datos = df_cuencas_v6['subc_lbl'].unique().tolist()
                         lista_entrenamiento = list(set(lista_todas_cuencas + cuencas_con_datos))
                         
