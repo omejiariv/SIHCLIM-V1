@@ -1426,8 +1426,29 @@ with tab_mapas:
         else:
             df_mapa_año = df_mapa_base.copy()
 
+        # 🔥 ESCUDO ANTI-NAME ERROR: Inicializamos la tabla por defecto
+        df_mapa_plot = pd.DataFrame()
+
         if not df_mapa_año.empty:
             # 🔥 FIX 1: PROTEGER EL MATCH_ID DURANTE EL GROUPBY
+            if area_mapa == "Total":
+                cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_año.columns]
+                if cols_agrupar:
+                    df_mapa_plot = df_mapa_año.groupby(cols_agrupar)['Total'].sum().reset_index()
+                else:
+                    df_mapa_plot = df_mapa_año.copy()
+            else:
+                if 'area_geografica' in df_mapa_año.columns:
+                    df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
+                else:
+                    df_mapa_plot = df_mapa_año.copy()
+                    
+            if 'Territorio' in df_mapa_plot.columns:
+                df_mapa_plot = df_mapa_plot[df_mapa_plot['Territorio'].astype(str).str.upper() != 'TOTAL']
+                if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
+                    df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].astype(str).str.contains('CABECERA', case=False, na=False)]
+
+        if not df_mapa_plot.empty:
             if area_mapa == "Total":
                 cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_año.columns]
                 if cols_agrupar:
