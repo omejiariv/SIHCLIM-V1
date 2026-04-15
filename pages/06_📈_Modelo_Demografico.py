@@ -2096,26 +2096,32 @@ with tab_matriz:
                     else:
                         inter_t = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_tot'])
 
-                    # 4. MOTOR DE DISTRIBUCIÓN V6
+                    # 4. MOTOR DE DISTRIBUCIÓN V6 (ESTRUCTURAL Y LIMPIO)
+                    # Filtramos Antioquia y limpiamos nombres
                     df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
                     df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
                     
+                    # Eliminamos basuras del DANE pero dejamos a los municipios quietos
                     agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
-                    df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma), case=False, na=False)]
-                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].max().reset_index() 
+                    df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma))]
                     
+                    # Tomamos el valor máximo para evitar duplicados, sin destruir datos
+                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].max().reset_index()
+                    
+                    # Sincronizamos con el mapa
                     mpios_mapa = set(gdf_mun['mun_norm'].tolist())
                     df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
                         lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
                     )
-                    df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)].copy()
+                    df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)]
 
                     df_final_cuencas = []
+                    
                     for mpio in df_area_v6['mun_norm_dane'].unique():
                         pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
                         
+                        # 🛡️ SEGURO UNIVERSAL PARA MEDELLÍN (No importa si es Total, Urbano o Rural)
                         if mpio == 'medellin':
-                            # 🔥 SEGURO DE VIDA MEDELLÍN: Protege Total, Urbano y Rural incondicionalmente
                             if pesos_med_pct:
                                 for subc, peso in pesos_med_pct.items():
                                     df_temp = pob_mpio.copy()
@@ -2127,8 +2133,9 @@ with tab_matriz:
                                 df_temp['Total_frag'] = df_temp['Total']
                                 df_temp['subc_lbl'] = 'Rio Aburra'
                                 df_final_cuencas.append(df_temp)
+                        
+                        # 🛡️ RESTO DE ANTIOQUIA
                         else:
-                            # Lógica Estándar V5.1 para el resto de Antioquia
                             if tipo_area == 'Urbana':
                                 cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
                                 if not cuencas_urb.empty:
@@ -2138,14 +2145,14 @@ with tab_matriz:
                                         df_temp['subc_lbl'] = u_row['subc_lbl']
                                         df_final_cuencas.append(df_temp)
                                 else:
-                                    # Rescate si cae en el mar o agujeros
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = 'Rio Leon' if mpio in ['apartado', 'turbo', 'carepa'] else 'Rio Aburra'
+                                    df_temp['subc_lbl'] = 'Rio Leon' if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else 'Rio Aburra'
                                     df_final_cuencas.append(df_temp)
                                     
-                            elif tipo_area in ['Rural', 'Total']:
+                            elif tipo_area == 'Rural':
                                 cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio]
+                                cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio]
                                 factor_area = 1.0 if cuencas_cp.empty else 0.70
                                 
                                 if not cuencas_cp.empty:
@@ -2155,20 +2162,33 @@ with tab_matriz:
                                         df_temp['subc_lbl'] = cp_row['subc_lbl']
                                         df_final_cuencas.append(df_temp)
                                         
-                                cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio]
                                 if not cuencas_area.empty:
                                     for _, a_row in cuencas_area.iterrows():
                                         df_temp = pob_mpio.copy()
                                         df_temp['Total_frag'] = df_temp['Total'] * factor_area * a_row['pct_area_rur']
                                         df_temp['subc_lbl'] = a_row['subc_lbl']
                                         df_final_cuencas.append(df_temp)
-                                else:
-                                    # Rescate Rural/Total
+                                        
+                                if cuencas_cp.empty and cuencas_area.empty:
                                     df_temp = pob_mpio.copy()
-                                    df_temp['Total_frag'] = df_temp['Total'] * factor_area
-                                    df_temp['subc_lbl'] = 'Rio Leon' if mpio in ['apartado', 'turbo', 'carepa'] else 'Rio Aburra'
+                                    df_temp['Total_frag'] = df_temp['Total']
+                                    df_temp['subc_lbl'] = 'Rio Leon' if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else 'Rio Aburra'
                                     df_final_cuencas.append(df_temp)
 
+                            elif tipo_area == 'Total':
+                                cuencas_tot = inter_t[inter_t['mun_norm'] == mpio]
+                                if not cuencas_tot.empty:
+                                    for _, t_row in cuencas_tot.iterrows():
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = df_temp['Total'] * t_row['pct_area_tot']
+                                        df_temp['subc_lbl'] = t_row['subc_lbl']
+                                        df_final_cuencas.append(df_temp)
+                                else:
+                                    df_temp = pob_mpio.copy()
+                                    df_temp['Total_frag'] = df_temp['Total']
+                                    df_temp['subc_lbl'] = 'Rio Leon' if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else 'Rio Aburra'
+                                    df_final_cuencas.append(df_temp)
+                                    
                     # 5. ENTRENAMIENTO DE CUENCAS
                     if df_final_cuencas:
                         df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
