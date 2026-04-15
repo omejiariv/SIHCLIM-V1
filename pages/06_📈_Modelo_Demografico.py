@@ -1451,19 +1451,23 @@ with tab_mapas:
         df_mapa_plot = pd.DataFrame()
 
         if not df_mapa_año.empty:
-            # 🔥 FIX 1: PROTEGER EL MATCH_ID DURANTE EL GROUPBY
-            if area_mapa == "Total":
-                cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_año.columns]
-                if cols_agrupar:
-                    df_mapa_plot = df_mapa_año.groupby(cols_agrupar)['Total'].sum().reset_index()
-                else:
-                    df_mapa_plot = df_mapa_año.copy()
+
+        # 🔥 ESCUDO ANTI-NAME ERROR: Inicializamos la tabla por defecto
+        df_mapa_plot = pd.DataFrame()
+
+        if not df_mapa_año.empty:
+            # 🔥 FIX 1: FILTRO RIGUROSO ANTI-TRIPLICACIÓN
+            if 'area_geografica' in df_mapa_año.columns:
+                # Filtramos el área seleccionada ANTES de sumar cualquier cosa
+                df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
             else:
-                if 'area_geografica' in df_mapa_año.columns:
-                    df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'] == area_mapa.lower()].copy()
-                else:
-                    df_mapa_plot = df_mapa_año.copy()
-                    
+                df_mapa_plot = df_mapa_año.copy()
+                
+            cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_plot.columns]
+            if cols_agrupar:
+                # Agrupamos solo los registros ya filtrados (Evita sumar Total + Urbano + Rural)
+                df_mapa_plot = df_mapa_plot.groupby(cols_agrupar)['Total'].sum().reset_index()
+                
             if 'Territorio' in df_mapa_plot.columns:
                 df_mapa_plot = df_mapa_plot[df_mapa_plot['Territorio'].astype(str).str.upper() != 'TOTAL']
                 if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
@@ -2077,8 +2081,8 @@ with tab_matriz:
                     inter_dispersa = inter_r # Renombrar para V6
 
                     # 4. MOTOR DE DISTRIBUCIÓN V6 (VECTORIZADO ANTI-COLAPSO)
-                    df_area_v6 = df_area_actual.copy()
-                    df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
+                    # 🔥 Agrupamos para asegurar que no haya filas clonadas del DANE
+                    df_area_v6 = df_area_actual.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index() 
                     
                     mpios_mapa = set(gdf_mun['mun_norm'].tolist())
                     df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
@@ -2101,7 +2105,7 @@ with tab_matriz:
                         else:
                             df_med_final = pd.DataFrame()
                             
-                        # B. Resto de Antioquia (Merge instantáneo en lugar de bucles)
+                        # B. Resto de Antioquia
                         df_resto = df_area_v6[df_area_v6['mun_norm_dane'] != 'medellin'].copy()
                         if not df_resto.empty and not inter_urbana.empty:
                             df_resto_final = df_resto.merge(inter_urbana[['mun_norm', 'subc_lbl', 'pct_area_urb']], 
@@ -2132,6 +2136,13 @@ with tab_matriz:
                             df_r = pd.DataFrame()
                             
                         df_final_cuencas = pd.concat([df_cp, df_r], ignore_index=True)
+
+                    elif tipo_area == 'Total':
+                        # 🔥 FIX: Generar los modelos 'Total' que faltaban para estabilizar el mapa
+                        if not inter_dispersa.empty:
+                            df_tot = df_area_v6.merge(inter_dispersa[['mun_norm', 'subc_lbl', 'pct_area_rur']], left_on='mun_norm_dane', right_on='mun_norm', how='inner')
+                            df_tot['Total_frag'] = df_tot['Total'] * df_tot['pct_area_rur']
+                            df_final_cuencas = df_tot
 
                     # 5. ENTRENAMIENTO Y FINALIZACIÓN
                     if not df_final_cuencas.empty:
