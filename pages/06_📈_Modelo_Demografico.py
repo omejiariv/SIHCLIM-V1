@@ -360,7 +360,8 @@ escala_sel = st.sidebar.radio("Nivel de Análisis:", [
     "🧩 Regional (Macroregiones)",
     "💧 Cuencas Hidrográficas", 
     "🏢 Municipal (Regiones)", 
-    "🏢 Municipal (Departamentos)", 
+    "🏢 Municipal (Departamentos)",
+    "🏙️ Escala Urbana (Cabeceras Antioquia)", 
     "🌿 Veredal (Antioquia)",
     "🏘️ Escala Intra-Urbana (Medellín)"
 ])
@@ -801,6 +802,50 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         
     except Exception as e:
         st.sidebar.error(f"Error cargando datos intra-urbanos: {e}")
+
+# =====================================================================
+# 🏙️ ESCALA URBANA (CABECERAS MUNICIPALES - ANTIOQUIA)
+# =====================================================================
+elif escala_sel == "🏙️ Escala Urbana (Cabeceras Antioquia)":
+    st.sidebar.markdown("### 🏙️ Explorador de Cabeceras")
+    
+    # 1. Filtramos solo la población urbana de Antioquia desde la base DANE
+    df_urbano_ant = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['area_geografica'] == 'urbano')].copy()
+    
+    # 2. Selector de Municipio para aislar la Cabecera
+    lista_mpios = sorted(df_urbano_ant['municipio'].dropna().unique())
+    mpio_sel = st.sidebar.selectbox("Municipio (Cabecera de):", ["TODAS (Ver Mapa Completo)"] + lista_mpios)
+    
+    if mpio_sel != "TODAS (Ver Mapa Completo)":
+        df_base = df_urbano_ant[df_urbano_ant['municipio'] == mpio_sel]
+        filtro_zona = mpio_sel
+        titulo_terr = f"Cabecera Urbana de {mpio_sel}"
+        
+        # Matemáticas Históricas para las gráficas
+        col_anio = 'año' if 'año' in df_base.columns else 'Año'
+        df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
+        df_hist = df_hist.sort_values(by=col_anio)
+        
+        años_hist = df_hist[col_anio].values
+        pob_hist = df_hist['Total'].values
+        
+        # Preparación para el mapa
+        df_mapa_base = df_base.copy()
+        df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
+    else:
+        # Vista de todo el departamento
+        filtro_zona = "Antioquia"
+        titulo_terr = "Todas las Cabeceras Urbanas (Antioquia)"
+        
+        # Matemáticas de la suma total urbana
+        col_anio = 'año' if 'año' in df_urbano_ant.columns else 'Año'
+        df_hist = df_urbano_ant.groupby(col_anio)['Total'].sum().reset_index()
+        años_hist = df_hist[col_anio].values
+        pob_hist = df_hist['Total'].values
+        
+        # Preparación para el mapa global
+        df_mapa_base = df_urbano_ant.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
+        df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 # =====================================================================
 # 🏘️ ESCALA VEREDAL
