@@ -993,19 +993,26 @@ else:
         p0_val = max(1, y_train[0] if len(y_train)>0 else 1)
         max_y = max(y_train) if len(y_train)>0 else p0_val
         es_creciente = (y_train[-1] if len(y_train)>0 else p0_val) >= p0_val
-        k_guess = max_y * 1.2 if es_creciente else max_y
+        
+        # 🔥 EL ESCUDO: Ajuste para absorber la curva de la ONU sin romperse
+        k_guess = max_y * 1.2 if es_creciente else max(1, y_train[-1] * 0.95)
         a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
+        a_guess = max(-0.999, a_guess) 
         r_guess = 0.02 if es_creciente else -0.02
         
-        limites = ([max_y * 0.8, 0, -0.2], [max_y * 3.0 if es_creciente else max_y * 1.1, np.inf, 0.3])
-        popt_log, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=10000)
+        k_min = max_y * 0.8 if es_creciente else y_train[-1] * 0.5
+        limites = ([k_min, -0.999, -0.2], [max_y * 3.0 if es_creciente else max_y * 1.1, np.inf, 0.3])
+        
+        popt_log, _ = curve_fit(f_log, x_train_norm, y_train, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
         proyecciones['Logístico'] = f_log(x_proj_norm, *popt_log)
         param_K, param_r = popt_log[0], popt_log[2]
+        
     except Exception:
+        # Si todo falla, mantenemos tu salvavidas
         val_seguro = np.mean(y_train[-3:]) if len(y_train) >= 3 else (y_train[-1] if len(y_train)>0 else 0)
         proyecciones['Logístico'] = np.full(len(x_proj), val_seguro)
         param_K, param_r = "N/A", 0
-
+        
 if 'Exponencial' not in proyecciones: proyecciones['Exponencial'] = proyecciones['Logístico']
 if 'Lineal' not in proyecciones: proyecciones['Lineal'] = proyecciones['Logístico']
 df_proj = pd.DataFrame(proyecciones)
@@ -2127,10 +2134,10 @@ with tab_matriz:
                     df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)]
 
                     # 🛡️ RESCATE INTELIGENTE DE CUENCAS (Evita crear cuencas fantasma)
-                    # Buscamos el nombre EXACTO que tiene la base de datos para no perder población
+                    # Buscamos el nombre EXACTO en la base de datos para no perder a Medellín ni a Urabá
                     nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
-                    nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')                   
-                    
+                    nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
+
                     df_final_cuencas = []
                     
                     for mpio in df_area_v6['mun_norm_dane'].unique():
@@ -2147,12 +2154,12 @@ with tab_matriz:
                             else:
                                 df_temp = pob_mpio.copy()
                                 df_temp['Total_frag'] = df_temp['Total']
-                                df_temp['subc_lbl'] = nombre_real_aburra # <--- FIX
+                                df_temp['subc_lbl'] = nombre_real_aburra
                                 df_final_cuencas.append(df_temp)
                         
                         # 🛡️ RESTO DE ANTIOQUIA
                         else:
-                            fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra # <--- FIX
+                            fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
 
                             if tipo_area == 'Urbana':
                                 cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
