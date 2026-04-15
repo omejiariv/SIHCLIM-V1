@@ -2111,8 +2111,8 @@ with tab_matriz:
                     df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)].copy()
 
                     df_final_cuencas = []
-                    for mpio in df_area_actual_v6['mun_norm_dane'].unique():
-                        pob_mpio = df_area_actual_v6[df_area_actual_v6['mun_norm_dane'] == mpio]
+                    for mpio in df_area_v6['mun_norm_dane'].unique():
+                        pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
                         
                         if mpio == 'medellin':
                             # 🔥 SEGURO DE VIDA MEDELLÍN: Protege Total, Urbano y Rural incondicionalmente
