@@ -339,7 +339,6 @@ def cargar_datos_limpios():
             df_ver = pd.DataFrame() # Escudo anti-errores si falla BD
             
             # --- SINCRONIZACIÓN DE NOMBRES ---
-            # Hacemos que las veredas hablen el mismo idioma que el DANE (Mayúscula Inicial)
             if 'Municipio' in df_ver.columns:
                 df_ver['Municipio'] = df_ver['Municipio'].astype(str).str.title()
                 
@@ -347,15 +346,36 @@ def cargar_datos_limpios():
             if 'Poblacion_hab' in df_ver.columns:
                 df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
 
-        return df_nac, df_mun, df_ver, df_global
+        # =======================================================
+        # 3. 🗺️ CARGA DEL MAESTRO TERRITORIAL (NUEVAS ESCALAS)
+        # =======================================================
+        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.csv"
+        df_maestro = pd.DataFrame()
+        try:
+            # Intentar abrir el maestro asegurando su lectura
+            df_maestro = pd.read_csv(url_maestro, sep=',', encoding='utf-8')
+            if len(df_maestro.columns) == 1:
+                df_maestro = pd.read_csv(url_maestro, sep=';', encoding='utf-8')
+            
+            if 'municipio' in df_maestro.columns:
+                df_maestro['municipio_norm'] = df_maestro['municipio'].apply(normalizar_texto)
+        except Exception as e:
+            pass
+
+        # 🛡️ ESCUDO ANTI-KEYERROR: Si falla el maestro, inicializamos las columnas clave en blanco
+        if df_maestro.empty or 'depto_nom' not in df_maestro.columns:
+            df_maestro = pd.DataFrame(columns=['depto_nom', 'municipio', 'subregion', 'car', 'municipio_norm'])
+
+        # Devolvemos df_maestro integrado al resto de los dataframes
+        return df_nac, df_mun, df_ver, df_global, df_maestro
         
     except Exception as e:
         import streamlit as st
         st.error(f"🚨 Error cargando las bases de datos: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Llamada principal a la función y escudo de seguridad para detener la app si no hay datos
-df_nac, df_mun, df_ver, df_global = cargar_datos_limpios()
+# Llamada principal a la función y extracción de df_maestro
+df_nac, df_mun, df_ver, df_global, df_maestro = cargar_datos_limpios()
 if df_nac.empty or df_mun.empty: st.stop()
 
 # --- 2. MODELOS MATEMÁTICOS ---
@@ -366,13 +386,13 @@ def modelo_logistico(x, K, r, x0): return K / (1 + np.exp(-r * (x - x0)))
 # --- 3. CONFIGURACIÓN Y FILTROS LATERALES ---
 st.sidebar.header("⚙️ 1. Selección Territorial")
 
-# 1. LA LISTA MAESTRA (Sincronizada con el Solver)
+# 1. LA LISTA MAESTRA (Sincronizada con el Solver y las Nuevas Escalas)
 escala_sel = st.sidebar.radio("Nivel de Análisis:", [
     "🌍 Global y Suramérica",
     "🇨🇴 Nacional (Colombia)", 
-    "🏛️ Departamental (Colombia)",
-    "🗺️ Subregiones (Antioquia)",
-    "🦅 Autoridades Ambientales (CARs)",   
+    "🏛️ Departamental (Colombia)", 
+    "🗺️ Subregiones (Antioquia)", # <-- NUEVA ESCALA 1
+    "🦅 Autoridades Ambientales (CARs)", # <-- NUEVA ESCALA 2
     "🧩 Regional (Macroregiones)",
     "💧 Cuencas Hidrográficas", 
     "🏢 Municipal (Regiones)", 
