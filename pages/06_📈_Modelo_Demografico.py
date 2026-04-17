@@ -329,20 +329,26 @@ def cargar_datos_limpios():
             pass
                 
         # =======================================================
-        # 2. Cargar datos Veredales (Dinámico desde Supabase)
+# =======================================================
+        # 2. Cargar datos Veredales y MATRIZ (Dinámico desde Supabase)
         # =======================================================
         try:
             from modules.db_manager import get_engine
             engine_db = get_engine()
-            df_ver = pd.read_sql("SELECT * FROM veredas_poblacion", engine_db)
-        except Exception as e:
-            df_ver = pd.DataFrame() # Escudo anti-errores si falla BD
             
-            # --- SINCRONIZACIÓN DE NOMBRES ---
+            # 1. Cargamos Veredas
+            df_ver = pd.read_sql("SELECT * FROM veredas_poblacion", engine_db)
+            
+            # 2. 🔥 FIX: CARGAMOS LA MATRIZ FRESCA RECIÉN ENTRENADA
+            df_matriz = pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine_db)
+            
+        except Exception as e:
+            df_ver = pd.DataFrame() # Escudo anti-errores
+            df_matriz = pd.DataFrame() # Si no hay conexión, queda vacía
+            
+            # --- SINCRONIZACIÓN DE NOMBRES VEREDAS ---
             if 'Municipio' in df_ver.columns:
                 df_ver['Municipio'] = df_ver['Municipio'].astype(str).str.title()
-                
-            # EL ESCUDO DEFINITIVO
             if 'Poblacion_hab' in df_ver.columns:
                 df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
 
@@ -352,7 +358,6 @@ def cargar_datos_limpios():
         url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.csv"
         df_maestro = pd.DataFrame()
         try:
-            # Intentar abrir el maestro asegurando su lectura
             df_maestro = pd.read_csv(url_maestro, sep=',', encoding='utf-8')
             if len(df_maestro.columns) == 1:
                 df_maestro = pd.read_csv(url_maestro, sep=';', encoding='utf-8')
@@ -362,22 +367,20 @@ def cargar_datos_limpios():
         except Exception as e:
             pass
 
-        # 🛡️ ESCUDO ANTI-KEYERROR: Si falla el maestro, inicializamos las columnas clave en blanco
         if df_maestro.empty or 'depto_nom' not in df_maestro.columns:
             df_maestro = pd.DataFrame(columns=['depto_nom', 'municipio', 'subregion', 'car', 'municipio_norm'])
 
-        # Devolvemos df_maestro integrado al resto de los dataframes
-        return df_nac, df_mun, df_ver, df_global, df_maestro
+        # 🔥 FIX: AHORA DEVOLVEMOS 6 DATAFRAMES, INCLUYENDO LA MATRIZ
+        return df_nac, df_mun, df_ver, df_global, df_maestro, df_matriz
         
     except Exception as e:
         import streamlit as st
         st.error(f"🚨 Error cargando las bases de datos: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Llamada principal a la función y extracción de df_maestro
-df_nac, df_mun, df_ver, df_global, df_maestro = cargar_datos_limpios()
+# 🔥 FIX: ACTUALIZAMOS LA LLAMADA PARA RECIBIR LA MATRIZ
+df_nac, df_mun, df_ver, df_global, df_maestro, df_matriz = cargar_datos_limpios()
 if df_nac.empty or df_mun.empty: st.stop()
-
 # --- 2. MODELOS MATEMÁTICOS ---
 def modelo_lineal(x, m, b): return m * x + b
 def modelo_exponencial(x, p0, r): return p0 * np.exp(r * (x - 2005))
@@ -529,41 +532,37 @@ elif escala_sel == "🧩 Regional (Macroregiones)":
     df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
-    if 'df_matriz_demografica' in st.session_state:
-        df_matriz = st.session_state['df_matriz_demografica']
-    else:
-        try: 
-            # 🔥 AUTORECUPERACIÓN: Buscamos primero en Supabase
-            from modules.db_manager import get_engine
-            df_matriz = pd.read_sql("SELECT * FROM matriz_maestra_demografica", get_engine())
-            st.session_state['df_matriz_demografica'] = df_matriz
-        except: 
-            df_matriz = pd.DataFrame()
-            
+    # 🔥 FIX FORENSE 1: Eliminamos la trampa de st.session_state. 
+    # Ahora lee directamente la df_matriz fresca y global que descargamos al inicio de la app.
     if not df_matriz.empty and 'Nivel' in df_matriz.columns:
         df_cuencas_solo = df_matriz[df_matriz['Nivel'] == 'Cuenca']
         
         if not df_cuencas_solo.empty:
             # --- MOTOR EN CASCADA PARA CUENCAS ---
-            try:
-                from modules.db_manager import get_engine
-                from sqlalchemy import text
-                
-                # 🔥 FIX TOPOLÓGICO: Sincronizamos el Mapa con el mismo idioma de la Matriz V6
-                q_hier = text("""
-                    SELECT DISTINCT 
-                        nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
-                        COALESCE(
-                            NULLIF(TRIM(nom_nss3), ''), 
-                            NULLIF(TRIM(nom_nss2), ''), 
-                            NULLIF(TRIM(nom_nss1), ''), 
-                            NULLIF(TRIM(nom_szh), '')
-                        ) AS subc_lbl
-                    FROM cuencas
-                """)
-                df_hier = pd.read_sql(q_hier, get_engine())
-            except:
-                df_hier = pd.DataFrame()
+            
+            # 🔥 FIX FORENSE 2: Cacheamos la topología para que la barra lateral no se congele 
+            # haciendo consultas SQL cada vez que seleccionas un filtro.
+            @st.cache_data(ttl=3600) # Se actualiza cada hora
+            def cargar_jerarquia_cuencas():
+                try:
+                    from modules.db_manager import get_engine
+                    from sqlalchemy import text
+                    q_hier = text("""
+                        SELECT DISTINCT 
+                            nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
+                            COALESCE(
+                                NULLIF(TRIM(nom_nss3), ''), 
+                                NULLIF(TRIM(nom_nss2), ''), 
+                                NULLIF(TRIM(nom_nss1), ''), 
+                                NULLIF(TRIM(nom_szh), '')
+                            ) AS subc_lbl
+                        FROM cuencas
+                    """)
+                    return pd.read_sql(q_hier, get_engine())
+                except:
+                    return pd.DataFrame()
+            
+            df_hier = cargar_jerarquia_cuencas()
             
             if not df_hier.empty:
                 st.sidebar.markdown("### 🌊 Filtros Jerárquicos")
@@ -638,7 +637,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                         micro_cuencas = [c]
 
                     c_pob_temp_hist = np.zeros_like(años_hist, dtype=float)
-                    # ❌ AQUÍ SE ELIMINÓ EL `matrix_ids_sumados = set()` QUE CAUSABA EL ERROR
 
                     for micro in micro_cuencas:
                         micro_norm = normalizar_texto(micro)
@@ -738,7 +736,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
             st.sidebar.warning("⚠️ Entrena la matriz de cuencas en la pestaña 4.")
             filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
     else:
-        st.sidebar.error("🚨 Matriz Maestra no encontrada.")
+        st.sidebar.error("🚨 Matriz Maestra no encontrada. Asegúrate de que existe en la base de datos.")
         filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
         
 elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)"]:
