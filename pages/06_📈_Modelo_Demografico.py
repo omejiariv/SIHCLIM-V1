@@ -370,7 +370,9 @@ st.sidebar.header("⚙️ 1. Selección Territorial")
 escala_sel = st.sidebar.radio("Nivel de Análisis:", [
     "🌍 Global y Suramérica",
     "🇨🇴 Nacional (Colombia)", 
-    "🏛️ Departamental (Colombia)", 
+    "🏛️ Departamental (Colombia)",
+    "🗺️ Subregiones (Antioquia)",
+    "🦅 Autoridades Ambientales (CARs)",   
     "🧩 Regional (Macroregiones)",
     "💧 Cuencas Hidrográficas", 
     "🏢 Municipal (Regiones)", 
@@ -464,6 +466,33 @@ elif escala_sel == "🏛️ Departamental (Colombia)":
     df_mapa_base = df_base.groupby(['municipio', col_anio])['Total'].sum().reset_index()
     df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
     df_mapa_base['Padre'] = depto_sel
+
+elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambientales (CARs)"]:
+    col_agrupadora = 'subregion' if "Subregiones" in escala_sel else 'car'
+    
+    # Filtramos el maestro solo para Antioquia
+    maestro_ant = df_maestro[df_maestro['depto_nom'].str.upper() == 'ANTIOQUIA']
+    opciones = sorted(maestro_ant[col_agrupadora].dropna().unique())
+    
+    sel_territorio = st.sidebar.selectbox(f"Seleccione {col_agrupadora.title()}:", opciones)
+    
+    # Cruzamos con df_mun para obtener la población real
+    mpios_en_zona = maestro_ant[maestro_ant[col_agrupadora] == sel_territorio]['municipio_norm'].tolist()
+    
+    # Filtramos la población
+    df_base = df_mun[df_mun['municipio'].apply(normalizar_texto).isin(mpios_en_zona)]
+    
+    filtro_zona = sel_territorio
+    titulo_terr = f"{col_agrupadora.upper()}: {sel_territorio}"
+    
+    # Matemáticas para gráficos
+    df_hist = df_base[df_base['area_geografica'] == area_global.lower()].groupby('año')['Total'].sum().reset_index()
+    años_hist = df_hist['año'].values
+    pob_hist = df_hist['Total'].values
+    
+    # Preparación para el mapa
+    df_mapa_base = df_base.copy()
+    df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 elif escala_sel == "🧩 Regional (Macroregiones)":
     regiones_list = sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"])
