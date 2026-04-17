@@ -2690,7 +2690,13 @@ if 'df_matriz_demografica' in st.session_state:
                             from modules.db_manager import get_engine
                             engine_sql = get_engine()
                             df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='replace', index=False)
+                            
+                            # 🔥 FIX: LA CURA DE LA AMNESIA
+                            # Obligamos a Streamlit a olvidar los datos viejos para que descargue esta nueva matriz
+                            st.cache_data.clear() 
+                            
                             st.success(f"✅ ¡Inyección Exitosa! {len(df_matriz_demo)} registros actualizados en PostgreSQL.")
+                            st.info("🔄 La caché ha sido limpiada. Los nuevos datos se cargarán al recargar la página.")
                         except Exception as e:
                             st.error(f"Error SQL: {e}")
                 else:
