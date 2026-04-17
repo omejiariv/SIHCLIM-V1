@@ -176,6 +176,20 @@ def normalizar_texto(texto):
         t = diccionario_veredas[t]
         
     return t
+
+@st.cache_data
+def cargar_maestro_territorial():
+    # URL de tu archivo en Supabase o ruta local
+    url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.csv"
+    try:
+        df = pd.read_csv(url_maestro)
+        # Normalizamos para que coincida con df_mun
+        df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
+        return df
+    except:
+        return pd.DataFrame()
+
+df_maestro = cargar_maestro_territorial()
     
 # --- 1. LECTURA DE DATOS LIMPIOS Y VEREDALES ---
 RUTA_RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
