@@ -723,7 +723,8 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
                 mapa_data = []
                 
-                # 2. MOTOR DE AGREGACIÓN MULTICAPA (CON FILTRO ANTI-DUPLICADOS Y DEPURADOR)
+                # =======================================================
+                # 🚀 SELLO DE BALANCE MAESTRO (CON ESCÁNER DE SELECCIÓN)
                 # =======================================================
                 df_cuencas_solo = df_cuencas_solo.copy()
                 if 'MATCH_ID' not in df_cuencas_solo.columns:
@@ -732,15 +733,49 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 ids_matriz = df_cuencas_solo['MATCH_ID'].dropna().unique().tolist()
                 import difflib
 
-                # 1. CURVA MATEMÁTICA PURA (Suma la BD exacta sin importar si el mapa falla)
+                # 1. ESCÁNER DE SELECCIÓN (Detectamos qué cuencas eligió el usuario)
+                ids_permitidos = set()
+                
+                for c in cuencas_a_graficar:
+                    if col_res in df_hier.columns:
+                        if 'subc_lbl' not in df_hier.columns:
+                            cols_lbl = [col for col in ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh'] if col in df_hier.columns]
+                            df_hier['subc_lbl'] = df_hier[cols_lbl].bfill(axis=1).iloc[:, 0]
+                            
+                        c_norm = normalizar_texto(c)
+                        hijos = df_hier[(df_hier[col_res] == c) | (df_hier[col_res].astype(str).apply(normalizar_texto) == c_norm)]['subc_lbl'].dropna().unique()
+                        micro_cuencas = hijos if len(hijos) > 0 else [c]
+                    else:
+                        micro_cuencas = [c]
+
+                    for micro in micro_cuencas:
+                        micro_norm = normalizar_texto(micro)
+                        micro_norm_clean = micro_norm.replace("QUEBRADA", "Q").replace("CN", "CANO").replace("RIO", "R")
+                        
+                        if micro_norm_clean in ids_matriz: ids_permitidos.add(micro_norm_clean)
+                        elif micro_norm in ids_matriz: ids_permitidos.add(micro_norm)
+                        else:
+                            matches = difflib.get_close_matches(micro_norm_clean, ids_matriz, n=1, cutoff=0.80)
+                            if not matches: matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.80)
+                            if matches: ids_permitidos.add(matches[0])
+
+                # Si seleccionó "Todas", anulamos el filtro para sumar el 100% de la matriz
+                if titulo_terr == "Todas las Cuencas":
+                    ids_permitidos = set(ids_matriz)
+
+                # 2. CURVA MATEMÁTICA PURA (Respeta el filtro y rescata a Medellín)
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
-                # Aseguramos que atrape 'urbano', 'urbana', 'Total' o 'total' sin importar mayúsculas
+                
+                # 🔥 FIX ANTI 1.9M: Aseguramos que atrape 'urbano', 'urbana', 'Total' o 'total' sin importar género
                 area_buscada = area_global.lower()
                 if area_buscada == 'urbano':
                     df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower().isin(['urbano', 'urbana'])]
                 else:
                     df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower() == area_buscada]
-                
+
+                # 🔥 FIX ANTI 6.4M CONGELADOS: Filtramos usando los IDs que seleccionó el usuario
+                df_matriz_pura = df_matriz_pura[df_matriz_pura['MATCH_ID'].isin(ids_permitidos)]
+
                 df_matriz_unica = df_matriz_pura.drop_duplicates(subset=['MATCH_ID'])
                 
                 for _, fila_tot in df_matriz_unica.iterrows():
@@ -757,10 +792,9 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                     
                     pob_hist_acumulada += pob_temp
                 
-                # Asignación sellada
                 pob_hist = pob_hist_acumulada
 
-                # 2. MOTOR VISUAL PARA EL MAPA (Geometría Estricta)
+                # 3. MOTOR VISUAL PARA EL MAPA (Geometría Estricta)
                 mapa_data = []
                 log_cruces = []
                 
@@ -790,7 +824,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                             if not matches: matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.80)
                             if matches: match_val = matches[0]
 
-                        # --- ASIGNACIÓN VISUAL AL GEOJSON ---
                         if match_val == "CERO_NATURAL":
                             log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "Cuerpo de Agua", "Estado": "💧 0 hab (Natural)"})
                             for a_str in ['total', 'urbano', 'rural']:
@@ -2086,8 +2119,6 @@ with tab_matriz:
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
             
             # 🔥 LA CURA A ABEJORRAL INTELIGENTE (Sella la fuga de los 272k):
-            # 🔥 SELLO DE BALANCE INTELIGENTE (Recupera los 272k habitantes)
-            # Solo creamos el 'Total' para municipios que NO lo reportaron, sin borrar los que sí existen.
             mpios_con_total = df_mun_memoria[df_mun_memoria['Categoria_Area'] == 'Total']['municipio'].unique()
             mpios_necesitan_total = df_mun_memoria[~df_mun_memoria['municipio'].isin(mpios_con_total)]['municipio'].unique()
             
@@ -2113,10 +2144,6 @@ with tab_matriz:
             
             total_ops = len(areas_a_procesar) * (1 + len(deptos) + len(mpios) + len(lista_todas_cuencas))
             ops_completadas = 0
-
-            total_ops = len(areas_a_procesar) * (1 + len(deptos) + len(mpios) + len(lista_todas_cuencas))
-            ops_completadas = 0
-
             historico_cuencas = [] # 🔥 NUEVO: Recolector maestro de fragmentos para balancear cuencas
 
             for tipo_area in areas_a_procesar:
@@ -2586,7 +2613,6 @@ with tab_rankings:
     titulo_ranking = ""
     
     # --- FIX DEFINITIVO: RANKINGS DINÁMICOS CON ESCUDO DE VARIABLES ---
-# --- FIX DEFINITIVO: RANKINGS DINÁMICOS CON ESCUDO DE VARIABLES ---
     if "Global" in escala_sel or "Nacional" in escala_sel:
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
         df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
@@ -2613,7 +2639,7 @@ with tab_rankings:
             df_rank = df_mapa_base[['Territorio', 'Total']].copy()
         else:
             df_rank = pd.DataFrame(columns=['Territorio', 'Total'])
-        titulo_ranking = nivel_medellin
+        titulo_ranking = locals().get('nivel_medellin', 'Comunas / Barrios')
         
     else:
         # Veredas o Cuencas
