@@ -2122,7 +2122,7 @@ with tab_matriz:
             df_totales_calc['Categoria_Area'] = 'Total'
             df_totales_calc['area_geografica'] = 'total'
             
-            # Reemplazamos para asegurar que todos los 125 municipios existan
+            # Reemplazamos para asegurar que todos los 125 municipios existan (Cerrando la duplicación)
             df_mun_memoria = pd.concat([df_mun_memoria[df_mun_memoria['Categoria_Area'] != 'Total'], df_totales_calc], ignore_index=True)
 
             # --- 🕵️‍♂️ RECOLECCIÓN MASIVA DE CUENCAS DE LA BASE DE DATOS ---
@@ -2138,10 +2138,13 @@ with tab_matriz:
             ops_completadas = 0
 
             for tipo_area in areas_a_procesar:
-                df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area]
+                df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area].copy()
+                
+                # 🚨 SELLO DE BALANCE MAESTRO: Si un área está vacía, bloqueamos el motor
+                # Esto evita el "Fantasma de la Inflación" de 9.1M
                 if df_area_actual.empty: 
-                    ops_completadas += (1 + len(deptos) + len(mpios) + len(lista_todas_cuencas))
-                    continue
+                    st.error(f"🚨 Error Crítico: No se encontró población en el DANE para la categoría '{tipo_area}'. Revisa la normalización.")
+                    st.stop()
                 
                 # 1. Nacional
                 df_nac_temp = df_area_actual.groupby(col_anio)['Total'].sum().reset_index().sort_values(by=col_anio)
