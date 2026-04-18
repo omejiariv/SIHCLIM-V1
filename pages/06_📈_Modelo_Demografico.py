@@ -2094,8 +2094,6 @@ with tab_matriz:
 
             historico_cuencas = [] # 🔥 NUEVO: Recolector maestro de fragmentos para balancear cuencas
 
-            for tipo_area in areas_a_procesar:           
-
             for tipo_area in areas_a_procesar:
                 df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area].copy()
                 
