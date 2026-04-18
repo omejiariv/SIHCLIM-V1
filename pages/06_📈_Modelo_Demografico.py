@@ -741,7 +741,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 else:
                     df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower() == area_buscada]
                 
-                df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower() == area_target]
                 df_matriz_unica = df_matriz_pura.drop_duplicates(subset=['MATCH_ID'])
                 
                 for _, fila_tot in df_matriz_unica.iterrows():
