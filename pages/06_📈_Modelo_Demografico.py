@@ -1257,53 +1257,58 @@ with tab_modelos:
     velocidad_animacion = st.sidebar.slider("Velocidad (Segundos por cuadro)", 0.1, 2.0, 0.5)
     iniciar_animacion = st.sidebar.button("▶️ Reproducir Evolución", type="primary", use_container_width=True)
 
-    # --- FIX: ESCUDO SUPREMO ANTI-NAME ERROR (PARA LA PIRÁMIDE) ---
+# ==========================================================================
+    # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (SINCRONIZACIÓN MAESTRA)
+    # ==========================================================================
+    # 1. Definimos el territorio de forma segura
     titulo_seguro = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
     
-    st.subheader(f"Estructura Poblacional Sintética - {titulo_seguro}")
+    st.markdown("---")
+    st.subheader(f"📊 Estructura Poblacional Sintética - {titulo_seguro}")
+
+    # 2. Lógica del "Amo Único" (Sidebar determina la Pirámide 1)
+    # Usamos capitalize() para que 'urbano' pase a 'Urbano' y coincida con las etiquetas
+    area_principal = area_global.capitalize()
     
-    # 🧠 LÓGICA DE UN SOLO AMO (Sincronización total con el Sidebar)
-    area_principal = locals().get('area_global', 'Total').capitalize()
+    # 3. Selector de Comparación Inteligente
+    # Evitamos que el usuario compare un área consigo misma (ej: Urbano vs Urbano)
+    opciones_basicas = ["Total", "Urbano", "Rural"]
+    opciones_filtradas = [opt for opt in opciones_basicas if opt != area_principal]
     
-    # Hacemos que el selector de comparación sea inteligente (evita comparar Rural vs Rural)
-    opciones_comparacion = ["Total", "Urbano", "Rural"]
-    if area_principal in opciones_comparacion:
-        opciones_comparacion.remove(area_principal)
-        
+    # Usamos una llave (key) dinámica basada en el lugar y el área para forzar el refresco
+    key_radio = f"comp_{titulo_seguro}_{area_principal}".replace(" ", "_")
+    
+    st.info(f"💡 La pirámide izquierda muestra la selección global: **{area_principal}**.")
     zona_comparacion = st.radio(
-        f"Selecciona el área para comparar con tu selección global (**{area_principal}**):", 
-        opciones_comparacion, 
-        horizontal=True
+        f"Selecciona el área para la pirámide de comparación (Derecha):",
+        opciones_filtradas,
+        horizontal=True,
+        key=key_radio
     )
 
-    # Creamos dos columnas maestras para poner las pirámides lado a lado
+    # 4. Construcción de Contenedores Visuales
     col_p1, col_p2 = st.columns(2)
     
     with col_p1:
+        # Contenedores para Pirámide 1 (Selección Sidebar)
         ph_tit_1 = st.empty()
         ph_graf_1 = st.empty()
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            ph_m_pob_1 = st.empty()
-            ph_m_hom_1 = st.empty()
-        with col_m2:
-            ph_m_muj_1 = st.empty()
-            ph_m_ind_1 = st.empty()
+        m_c1, m_c2 = st.columns(2)
+        ph_m_pob_1, ph_m_hom_1 = m_c1.empty(), m_c1.empty()
+        ph_m_muj_1, ph_m_ind_1 = m_c2.empty(), c_m2.empty() if 'c_m2' in locals() else m_c2.empty()
             
     with col_p2:
+        # Contenedores para Pirámide 2 (Comparación Local)
         ph_tit_2 = st.empty()
         ph_graf_2 = st.empty()
-        col_m3, col_m4 = st.columns(2)
-        with col_m3:
-            ph_m_pob_2 = st.empty()
-            ph_m_hom_2 = st.empty()
-        with col_m4:
-            ph_m_muj_2 = st.empty()
-            ph_m_ind_2 = st.empty()
+        m_c3, m_c4 = st.columns(2)
+        ph_m_pob_2, ph_m_hom_2 = m_c3.empty(), m_c3.empty()
+        ph_m_muj_2, ph_m_ind_2 = m_c4.empty(), m_c4.empty()
 
-    # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES (Aislado y Optimizado) ---
+    # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES (Garantía de Balance) ---
+    # Nota: Este motor debe beber de la misma df_matriz_demo que ya fue balanceada
     df_piramide_final = pd.DataFrame()
-
+    
     def generar_figura_piramide(año_obj, zona_str):
         try:
             pob_modelo_total = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
@@ -2077,23 +2082,22 @@ with tab_matriz:
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
             
             # 🔥 LA CURA A ABEJORRAL INTELIGENTE (Sella la fuga de los 272k):
-            # Solo creamos el 'Total' matemáticamente para los municipios que de verdad no lo reportaron en el DANE.
+            # 🔥 SELLO DE BALANCE INTELIGENTE (Recupera los 272k habitantes)
+            # Solo creamos el 'Total' para municipios que NO lo reportaron, sin borrar los que sí existen.
             mpios_con_total = df_mun_memoria[df_mun_memoria['Categoria_Area'] == 'Total']['municipio'].unique()
-            mpios_sin_total = df_mun_memoria[~df_mun_memoria['municipio'].isin(mpios_con_total)]['municipio'].unique()
+            mpios_necesitan_total = df_mun_memoria[~df_mun_memoria['municipio'].isin(mpios_con_total)]['municipio'].unique()
             
-            if len(mpios_sin_total) > 0:
-                df_faltantes = df_mun_memoria[df_mun_memoria['municipio'].isin(mpios_sin_total)]
-                df_urb_rur_faltantes = df_faltantes[df_faltantes['Categoria_Area'].isin(['Urbana', 'Rural'])]
+            if len(mpios_necesitan_total) > 0:
+                df_faltantes = df_mun_memoria[df_mun_memoria['municipio'].isin(mpios_necesitan_total)]
+                df_urb_rur = df_faltantes[df_faltantes['Categoria_Area'].isin(['Urbana', 'Rural'])]
                 
-                if not df_urb_rur_faltantes.empty:
+                if not df_urb_rur.empty:
                     cols_suma = [c for c in df_mun_memoria.columns if c not in ['municipio', 'depto_nom', col_anio, 'Categoria_Area', 'area_geografica', 'Macroregion']]
-                    df_totales_calc = df_urb_rur_faltantes.groupby(['depto_nom', 'municipio', col_anio])[cols_suma].sum().reset_index()
+                    df_totales_calc = df_urb_rur.groupby(['depto_nom', 'municipio', col_anio])[cols_suma].sum().reset_index()
                     df_totales_calc['Categoria_Area'] = 'Total'
                     df_totales_calc['area_geografica'] = 'total'
-                    
-                    # Añadimos los rescatados SIN destruir los originales
                     df_mun_memoria = pd.concat([df_mun_memoria, df_totales_calc], ignore_index=True)
-
+                    
             # --- 🕵️‍♂️ RECOLECCIÓN MASIVA DE CUENCAS DE LA BASE DE DATOS ---
             q_todas = text("SELECT DISTINCT nom_nss3 FROM cuencas WHERE nom_nss3 IS NOT NULL")
             lista_todas_cuencas = pd.read_sql(q_todas, engine_sql)['nom_nss3'].tolist()
@@ -2764,15 +2768,12 @@ if 'df_matriz_demografica' in st.session_state:
                             from sqlalchemy import text
                             engine_sql = get_engine()
                             
-                            # 🔥 FIX DEFINITIVO: Borrar filas, no la tabla. Mantiene permisos RLS.
+                            # 🔥 FIX DEFINITIVO: PROTOCOLO ANTI-AMNESIA - Borrar filas, no la tabla. Mantiene permisos RLS.
                             with engine_sql.begin() as conn:
                                 conn.execute(text("DELETE FROM matriz_maestra_demografica;"))
                                 
                             df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='append', index=False)
-                            
-                            # 🔥 LA CURA DE LA AMNESIA
-                            # Obligamos a Streamlit a olvidar los datos viejos para que descargue esta nueva matriz
-                            st.cache_data.clear() 
+                            st.cache_data.clear()
                             
                             st.success(f"✅ ¡Inyección Exitosa! {len(df_matriz_demo)} registros actualizados en PostgreSQL.")
                             st.info("🔄 La caché ha sido limpiada. Los nuevos datos se cargarán al recargar la página.")
