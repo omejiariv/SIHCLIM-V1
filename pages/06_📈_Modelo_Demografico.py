@@ -1426,46 +1426,39 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
 # 🧠 TRANSMISIÓN AL CEREBRO GLOBAL (EL ALEPH)
 # ==============================================================================
 if 'año_sel' in locals() and 'escala_sel' in locals():
-    # Determinamos el lugar seleccionado según la escala
-    lugar_activo = "Colombia"
-    if "Departamental" in escala_sel: lugar_activo = depto_sel if 'depto_sel' in locals() else "Antioquia"
-    elif "Municipal" in escala_sel: lugar_activo = municipio_sel if 'municipio_sel' in locals() else "Medellín"
-    elif "Regional" in escala_sel: lugar_activo = region_sel if 'region_sel' in locals() else "Andina"
-    elif "Cuencas" in escala_sel: lugar_activo = cuenca_sel if 'cuenca_sel' in locals() else "Río Grande"
-    elif "Veredal" in escala_sel: lugar_activo = vereda_sel if 'vereda_sel' in locals() else "Centro"
-
-    # Captura matemática infalible (Buscamos directamente en los vectores de la gráfica)
-    pob_total_aleph = 0
-    try:
-        if 'años_hist' in locals() and 'pob_hist' in locals() and len(años_hist) > 0:
-            import numpy as np
-            # Buscamos la población que coincide con el año seleccionado
-            idx = np.abs(np.array(años_hist) - año_sel).argmin()
-            pob_total_aleph = pob_hist[idx]
-    except Exception:
-        pass
-
     # --- ACTUALIZACIÓN DE SINCRONIZACIÓN Y BALANCE DE MASAS ---
 
-    # 1. Definimos un nombre legible para el lugar (evita el error de los corchetes [])
-    nombre_contexto = ", ".join(cuenca_sel) if cuenca_sel else "Todas las Cuencas"
+    # 1. Definimos un nombre legible y 100% seguro contra variables no definidas
+    if 'titulo_terr' in locals() and titulo_terr:
+        nombre_contexto = str(titulo_terr).replace("Cuencas Seleccionadas: ", "")
+    elif 'cuenca_sel' in locals() and cuenca_sel:
+        nombre_contexto = ", ".join(cuenca_sel)
+    else:
+        nombre_contexto = "Territorio Seleccionado"
 
     # 2. Inyectamos los datos en el Session State para persistencia
     st.session_state['aleph_lugar'] = nombre_contexto
     st.session_state['aleph_escala'] = escala_sel
     st.session_state['aleph_anio'] = año_sel
-    # Aseguramos que la población inyectada sea el valor final calculado tras el rescate
-    st.session_state['aleph_pob_total'] = float(pob_hist[-1]) if len(pob_hist) > 0 else 0.0
+    
+    # Aseguramos que la población inyectada sea el valor final calculado
+    st.session_state['aleph_pob_total'] = float(pob_hist[-1]) if 'pob_hist' in locals() and len(pob_hist) > 0 else 0.0
 
-    # 💉 INYECCIÓN AL TORRENTE SANGUÍNEO (Sincronización con modelos de demanda Pág 07 y 08)
-    # Usamos el valor de la población del año seleccionado (año_sel) para los cálculos de demanda
-    poblacion_referencia = float(pob_hist[año_sel - 1985]) if len(pob_hist) > (año_sel - 1985) else 0.0
+    # 💉 INYECCIÓN AL TORRENTE SANGUÍNEO (Sincronización con modelos Pág 07 y 08)
+    poblacion_referencia = 0.0
+    if 'pob_hist' in locals() and 'años_hist' in locals() and len(años_hist) > 0:
+        try:
+            import numpy as np
+            # Buscamos matemáticamente el año exacto en la curva
+            idx = np.abs(np.array(años_hist) - año_sel).argmin()
+            poblacion_referencia = float(pob_hist[idx])
+        except Exception:
+            poblacion_referencia = 0.0
 
     st.session_state['pob_hum_calc_met'] = poblacion_referencia
-    # Seteamos la llave dinámica para que el Aleph reconozca el territorio específico
     st.session_state[f'pob_asig_{nombre_contexto}_met'] = poblacion_referencia
 
-    # 3. Mensaje de éxito limpio y profesional en el Sidebar
+    # 3. Mensaje de éxito limpio en el Sidebar
     st.sidebar.success(f"🔗 Contexto demográfico de **{nombre_contexto}** sincronizado con éxito.")
     
 # ==============================================================================
