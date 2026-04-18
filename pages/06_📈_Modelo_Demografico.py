@@ -723,6 +723,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 mapa_data = []
                 
                 # 2. MOTOR DE AGREGACIÓN MULTICAPA (CON FILTRO ANTI-DUPLICADOS Y DEPURADOR)
+                # =======================================================
                 df_cuencas_solo = df_cuencas_solo.copy()
                 if 'MATCH_ID' not in df_cuencas_solo.columns:
                     df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
@@ -730,10 +731,34 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 ids_matriz = df_cuencas_solo['MATCH_ID'].dropna().unique().tolist()
                 import difflib
 
-                cuencas_cruzadas = 0
-                log_cruces = []
-                matrix_ids_sumados = set() 
+                # 1. CURVA MATEMÁTICA PURA (Suma la BD exacta sin importar si el mapa falla)
+                pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
+                area_target = 'urbana' if area_global.lower() == 'urbano' else area_global.lower()
+                
+                df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower() == area_target]
+                df_matriz_unica = df_matriz_pura.drop_duplicates(subset=['MATCH_ID'])
+                
+                for _, fila_tot in df_matriz_unica.iterrows():
+                    modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
+                    pob_temp = np.zeros_like(años_hist, dtype=float)
 
+                    if 'Logistico' in modelo_ganador:
+                        pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
+                    elif 'Exponencial' in modelo_ganador:
+                        pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
+                    elif 'Polinomial' in modelo_ganador:
+                        x_norm = años_hist - 1985
+                        pob_temp = fila_tot.get('Poly_A', 0)*(x_norm**3) + fila_tot.get('Poly_B', 0)*(x_norm**2) + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
+                    
+                    pob_hist_acumulada += pob_temp
+                
+                # Asignación sellada
+                pob_hist = pob_hist_acumulada
+
+                # 2. MOTOR VISUAL PARA EL MAPA (Geometría Estricta)
+                mapa_data = []
+                log_cruces = []
+                
                 for c in cuencas_a_graficar:
                     if col_res in df_hier.columns:
                         if 'subc_lbl' not in df_hier.columns:
@@ -745,8 +770,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                         micro_cuencas = hijos if len(hijos) > 0 else [c]
                     else:
                         micro_cuencas = [c]
-
-                    c_pob_temp_hist = np.zeros_like(años_hist, dtype=float)
 
                     for micro in micro_cuencas:
                         micro_norm = normalizar_texto(micro)
@@ -762,12 +785,11 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                             if not matches: matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.80)
                             if matches: match_val = matches[0]
 
-                        # --- LÓGICA DE ASIGNACIÓN AL MAPA ---
+                        # --- ASIGNACIÓN VISUAL AL GEOJSON ---
                         if match_val == "CERO_NATURAL":
                             log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "Cuerpo de Agua", "Estado": "💧 0 hab (Natural)"})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
+                            for a_str in ['total', 'urbano', 'rural']:
+                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': a_str})
                             
                         elif match_val:
                             log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": match_val, "Estado": "✅ Encontrada"})
@@ -786,82 +808,18 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
-
-                                if match_val not in matrix_ids_sumados:
-                                    matrix_ids_sumados.add(match_val)
-                                    cuencas_cruzadas += 1
-
-                                    area_buscar = 'urbana' if area_global.lower() == 'urbano' else area_global.lower()
-                                    c_target = cuenca_data[cuenca_data['Area'].str.lower() == area_buscar]
-                                    
-                                    fila_tot = c_target.iloc[0] if not c_target.empty else (c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0])
-                                    modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
-                                    pob_temp = np.zeros_like(años_hist, dtype=float)
-
-                                    if 'Logistico' in modelo_ganador:
-                                        pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
-                                    elif 'Exponencial' in modelo_ganador:
-                                        pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
-                                    elif 'Polinomial' in modelo_ganador:
-                                        x_norm = años_hist - 1985
-                                        pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
-
-                                    c_pob_temp_hist += pob_temp
                         else:
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "No Habitado", "Estado": "🌿 0 hab (Deshabitada)"})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
-                            mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
+                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "No Habitado", "Estado": "🌿 0 hab (Hueco Topológico)"})
+                            for a_str in ['total', 'urbano', 'rural']:
+                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': a_str})
 
-                    pob_hist_acumulada += c_pob_temp_hist
-
-                # =======================================================
-                # 🚀 REPARACIÓN 2: EL PROTOCOLO DE RESCATE TOPOLÓGICO
-                # (Se ejecuta FUERA del ciclo del mapa, de forma segura)
-                # =======================================================
-                if titulo_terr == "Todas las Cuencas":
-                    ids_matriz_totales = set(ids_matriz)
-                    ids_perdidos = ids_matriz_totales - matrix_ids_sumados
-                    
-                    for missing_id in ids_perdidos:
-                        cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == missing_id]
-                        
-                        area_buscar = 'urbana' if area_global.lower() == 'urbano' else area_global.lower()
-                        c_target = cuenca_data[cuenca_data['Area'].str.lower() == area_buscar]
-                        c_total = cuenca_data[cuenca_data['Area'].str.title() == 'Total']
-                        
-                        if not c_target.empty: fila_tot = c_target.iloc[0]
-                        elif not c_total.empty: fila_tot = c_total.iloc[0]
-                        else: fila_tot = cuenca_data.iloc[0]
-
-                        modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
-                        pob_temp = np.zeros_like(años_hist, dtype=float)
-
-                        if 'Logistico' in modelo_ganador:
-                            pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
-                        elif 'Exponencial' in modelo_ganador:
-                            pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
-                        elif 'Polinomial' in modelo_ganador:
-                            x_norm = años_hist - 1985
-                            pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
-
-                        pob_hist_acumulada += pob_temp
-                        matrix_ids_sumados.add(missing_id)
-                        log_cruces.append({"Micro-cuenca en Mapa": "HUECO TOPOLÓGICO", "ID Matriz": missing_id, "Estado": "⚕️ Rescatado por Matriz"})
-
-                # --- 🔍 DEPURADOR FORENSE ACTUALIZADO ---
+                # --- 🔍 DEPURADOR FORENSE ---
                 if log_cruces:
                     df_log = pd.DataFrame(log_cruces)
-                    deshabitadas = len(df_log[df_log['Estado'] == '🌿 0 hab (Deshabitada)'])
-                    agua = len(df_log[df_log['Estado'] == '💧 0 hab (Natural)'])
-                    
-                    if deshabitadas > 0 or agua > 0:
-                        st.sidebar.info(f"✅ Integración completa: Se detectaron {deshabitadas} zonas deshabitadas y {agua} cuerpos de agua (Población = 0).")
-                        
-                    with st.sidebar.expander("🔍 Ver Depurador de Cuencas"):
-                        st.dataframe(df_log, use_container_width=True)
+                    huecos = len(df_log[df_log['Estado'] == '🌿 0 hab (Hueco Topológico)'])
+                    if huecos > 0:
+                        st.sidebar.info(f"ℹ️ El mapa tiene {huecos} zonas sin polígonos. Su población ya fue salvada matemáticamente en la curva superior.")
 
-                pob_hist = pob_hist_acumulada
                 df_mapa_base = pd.DataFrame(mapa_data)
             else:
                 filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Ninguna", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
@@ -2055,16 +2013,16 @@ with tab_matriz:
                 # 1. LOGÍSTICO
                 log_k, log_a, log_r, log_r2 = 0, 0, 0, 0
                 try:
-                    k_max = max_y * 3.0 if es_creciente else max_y * 1.1
-                    k_guess = max_y * 1.2 if es_creciente else max(1, y[-1] * 0.95)
+                    # 🔥 FIX: Límite estricto de crecimiento (Corsé) para evitar explosiones
+                    k_max = max_y * 1.5 if es_creciente else max_y * 1.05
+                    k_guess = max_y * 1.1 if es_creciente else max(1, y[-1] * 0.95)
                     
                     a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
-                    a_guess = max(-0.999, a_guess) # 🔥 ESCUDO: Evita el colapso matemático
+                    a_guess = max(-0.999, a_guess) 
                     r_guess = 0.02 
                     
                     k_min = max_y * 0.8 if es_creciente else y[-1] * 0.5
                     
-                    # Relajamos el límite inferior de 'a' a -0.999
                     limites = ([k_min, -0.999, 0.0001], [k_max, np.inf, 0.3])
                     
                     popt_log, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=10000)
@@ -2352,7 +2310,6 @@ with tab_matriz:
                     cp_en_cuenca = inter_cp # Renombrar para que el V6 original lo lea
 
                     # --- C. ÁREAS RURALES DISPERSAS (Resto del Municipio) ---
-# --- C. ÁREAS RURALES DISPERSAS (Resto del Municipio) ---
                     gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
                     inter_r = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
                     
