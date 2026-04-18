@@ -593,6 +593,24 @@ elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambient
         filtro_zona = "Sin Selección"
         titulo_terr = f"{col_agrupadora.upper()}: No Disponible"
     
+    # ==========================================
+    # 🔍 ESCÁNER FORENSE DE RAYOS X
+    # ==========================================
+    st.warning("🔍 **ESCÁNER FORENSE ACTIVADO**")
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        st.write("**1. Base DANE (df_mun_ant)**")
+        st.write(f"Registros en Antioquia: `{len(df_mun_ant)}`")
+        if not df_mun_ant.empty:
+            st.write(f"Áreas detectadas: `{df_mun_ant['area_geografica'].unique()}`")
+            st.write(f"Muestra mpios: `{df_mun_ant['mun_norm_local'].dropna().unique()[:5]}`")
+    with col_d2:
+        st.write("**2. Cruce Maestro (df_base)**")
+        st.write(f"Mpios extraídos del Excel: `{mpios_en_zona}`")
+        st.write(f"Tamaño final de df_base: `{len(df_base)}`")
+    st.markdown("---")
+    # ==========================================
+    
     # Matemáticas para gráficos
     if not df_base.empty:
         df_hist = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby('año')['Total'].sum().reset_index()
