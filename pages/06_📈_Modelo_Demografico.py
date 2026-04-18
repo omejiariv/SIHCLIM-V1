@@ -405,6 +405,17 @@ escala_sel = st.sidebar.radio("Nivel de Análisis:", [
     "🏘️ Escala Intra-Urbana (Medellín)"
 ])
 
+# --- SELECTOR GLOBAL DE ÁREA (Afecta Gráficos y Mapas) ---
+
+if escala_sel == "🌿 Veredal (Antioquia)":
+    area_global = "Rural"
+    st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
+elif escala_sel == "🏙️ Escala Urbana (Cabeceras Antioquia)":
+    area_global = "Urbano" # <-- FIX: Forzamos la matriz urbana
+    st.info("ℹ️ A escala de Cabeceras, el motor matemático aísla la población urbana.")
+else:
+    area_global = st.sidebar.selectbox("Filtro Poblacional:", ["Total", "Urbano", "Rural"])
+    
 años_hist, pob_hist = [], []
 df_mapa_base = pd.DataFrame()
 
@@ -981,18 +992,6 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         st.sidebar.error(f"❌ Error general: {e}")
         df_mapa_base = pd.DataFrame()
     
-# --- SELECTOR GLOBAL DE ÁREA (Afecta Gráficos y Mapas) ---
-
-if escala_sel == "🌿 Veredal (Antioquia)":
-    area_global = "Rural"
-    st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
-elif escala_sel == "🏙️ Escala Urbana (Cabeceras Antioquia)":
-    area_global = "Urbano" # <-- FIX: Forzamos la matriz urbana
-    st.info("ℹ️ A escala de Cabeceras, el motor matemático aísla la población urbana.")
-else:
-    area_global = st.sidebar.selectbox("Filtro Poblacional:", ["Total", "Urbano", "Rural"])
-    st.info("ℹ️ A escala veredal, el motor matemático calcula todo como población rural.")
-
 # =====================================================================
 # --- 4. CÁLCULO DE PROYECCIONES (NUEVO PARADIGMA TOP-DOWN) ---
 # =====================================================================
