@@ -383,7 +383,11 @@ def cargar_datos_limpios():
 
 # 🔥 FIX: ACTUALIZAMOS LA LLAMADA PARA RECIBIR LA MATRIZ
 df_nac, df_mun, df_ver, df_global, df_maestro, df_matriz = cargar_datos_limpios()
-if df_nac.empty or df_mun.empty: st.stop()
+
+# Si los datos esenciales fallan, detenemos la app para evitar errores en cascada
+if df_nac.empty or df_mun.empty: 
+    st.error("No se pudieron cargar los datos base del DANE. Verifique la conexión a Supabase.")
+    st.stop()
     
 # --- 2. MODELOS MATEMÁTICOS ---
 def modelo_lineal(x, m, b): return m * x + b
