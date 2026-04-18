@@ -732,14 +732,10 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                 cuencas_cruzadas = 0
                 log_cruces = []
-                
-                # 🔥 VACUNA 1: Memoria Global única fuera del bucle
                 matrix_ids_sumados = set() 
 
                 for c in cuencas_a_graficar:
-                    # 🔥 EXTRACCIÓN TOPOLÓGICA BLINDADA: Usamos el nivel de detalle máximo disponible
                     if col_res in df_hier.columns:
-                        # Seguro por si la columna subc_lbl se borró de la memoria temporal
                         if 'subc_lbl' not in df_hier.columns:
                             cols_lbl = [col for col in ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh'] if col in df_hier.columns]
                             df_hier['subc_lbl'] = df_hier[cols_lbl].bfill(axis=1).iloc[:, 0]
@@ -754,61 +750,51 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                     for micro in micro_cuencas:
                         micro_norm = normalizar_texto(micro)
-                        
-                        # 🩹 1. SANADOR DE PREFIJOS: Alineamos la gramática del mapa con la de la Matriz
                         micro_norm_clean = micro_norm.replace("QUEBRADA", "Q").replace("CN", "CANO").replace("RIO", "R")
-                        
-                        # 💧 2. FILTRO DE CUERPOS DE AGUA: Embalses y ciénagas tienen 0 habitantes por naturaleza
                         es_cuerpo_agua = any(palabra in micro_norm_clean for palabra in ["EMBALSE", "CIENAGA", "REPRESA", "LAGO"])
-
                         match_val = None
 
-                        if es_cuerpo_agua:
-                            match_val = "CERO_NATURAL" # Bandera especial para que no marque error
-                        elif micro_norm_clean in ids_matriz:
-                            match_val = micro_norm_clean
-                        elif micro_norm in ids_matriz:
-                            match_val = micro_norm
+                        if es_cuerpo_agua: match_val = "CERO_NATURAL"
+                        elif micro_norm_clean in ids_matriz: match_val = micro_norm_clean
+                        elif micro_norm in ids_matriz: match_val = micro_norm
                         else:
-                            # Bajamos la rigurosidad a 0.80 para capturar las pelusas restantes
                             matches = difflib.get_close_matches(micro_norm_clean, ids_matriz, n=1, cutoff=0.80)
-                            if not matches:
-                                matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.80)
+                            if not matches: matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.80)
                             if matches: match_val = matches[0]
 
-                        # --- LÓGICA DE ASIGNACIÓN ---
+                        # --- LÓGICA DE ASIGNACIÓN AL MAPA ---
                         if match_val == "CERO_NATURAL":
-                            # Cuerpos de agua
                             log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "Cuerpo de Agua", "Estado": "💧 0 hab (Natural)"})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
                             
                         elif match_val:
-                            # Zonas pobladas
                             log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": match_val, "Estado": "✅ Encontrada"})
-                            
                             cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == match_val]
+                            
                             if not cuenca_data.empty:
-                                c_total = cuenca_data[cuenca_data['Area'] == 'Total']
-                                fila_tot = c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0]
+                                c_total = cuenca_data[cuenca_data['Area'].str.title() == 'Total']
+                                v_t = float(c_total.iloc[0].get('Pob_Base', 0)) if not c_total.empty else 0
                                 
-                                v_t = float(fila_tot.get('Pob_Base', 0))
-                                c_urb = cuenca_data[cuenca_data['Area'] == 'Urbano']
+                                c_urb = cuenca_data[cuenca_data['Area'].str.lower().isin(['urbano', 'urbana'])]
                                 v_u = float(c_urb.iloc[0].get('Pob_Base', 0)) if not c_urb.empty else 0
-                                c_rur = cuenca_data[cuenca_data['Area'] == 'Rural']
+                                
+                                c_rur = cuenca_data[cuenca_data['Area'].str.title() == 'Rural']
                                 v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
 
-                                # 🗺️ MAPA
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
 
-                                # 📊 MATEMÁTICA
                                 if match_val not in matrix_ids_sumados:
                                     matrix_ids_sumados.add(match_val)
                                     cuencas_cruzadas += 1
 
+                                    area_buscar = 'urbana' if area_mapa.lower() == 'urbano' else area_mapa.lower()
+                                    c_target = cuenca_data[cuenca_data['Area'].str.lower() == area_buscar]
+                                    
+                                    fila_tot = c_target.iloc[0] if not c_target.empty else (c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0])
                                     modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
                                     pob_temp = np.zeros_like(años_hist, dtype=float)
 
@@ -822,13 +808,46 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                                     c_pob_temp_hist += pob_temp
                         else:
-                            # 🌿 ZONAS DESHABITADAS (Bosques, páramos, áreas sin registro DANE)
                             log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "No Habitado", "Estado": "🌿 0 hab (Deshabitada)"})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'total'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'urbano'})
                             mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': 'rural'})
 
                     pob_hist_acumulada += c_pob_temp_hist
+
+                # =======================================================
+                # 🚀 REPARACIÓN 2: EL PROTOCOLO DE RESCATE TOPOLÓGICO
+                # (Se ejecuta FUERA del ciclo del mapa, de forma segura)
+                # =======================================================
+                if titulo_terr == "Todas las Cuencas":
+                    ids_matriz_totales = set(ids_matriz)
+                    ids_perdidos = ids_matriz_totales - matrix_ids_sumados
+                    
+                    for missing_id in ids_perdidos:
+                        cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == missing_id]
+                        
+                        area_buscar = 'urbana' if area_mapa.lower() == 'urbano' else area_mapa.lower()
+                        c_target = cuenca_data[cuenca_data['Area'].str.lower() == area_buscar]
+                        c_total = cuenca_data[cuenca_data['Area'].str.title() == 'Total']
+                        
+                        if not c_target.empty: fila_tot = c_target.iloc[0]
+                        elif not c_total.empty: fila_tot = c_total.iloc[0]
+                        else: fila_tot = cuenca_data.iloc[0]
+
+                        modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
+                        pob_temp = np.zeros_like(años_hist, dtype=float)
+
+                        if 'Logistico' in modelo_ganador:
+                            pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
+                        elif 'Exponencial' in modelo_ganador:
+                            pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
+                        elif 'Polinomial' in modelo_ganador:
+                            x_norm = años_hist - 1985
+                            pob_temp = fila_tot.get('Poly_A', 0)*x_norm**3 + fila_tot.get('Poly_B', 0)*x_norm**2 + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
+
+                        pob_hist_acumulada += pob_temp
+                        matrix_ids_sumados.add(missing_id)
+                        log_cruces.append({"Micro-cuenca en Mapa": "HUECO TOPOLÓGICO", "ID Matriz": missing_id, "Estado": "⚕️ Rescatado por Matriz"})
 
                 # --- 🔍 DEPURADOR FORENSE ACTUALIZADO ---
                 if log_cruces:
