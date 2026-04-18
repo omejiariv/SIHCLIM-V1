@@ -734,7 +734,12 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
                 # 1. CURVA MATEMÁTICA PURA (Suma la BD exacta sin importar si el mapa falla)
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
-                area_target = 'urbana' if area_global.lower() == 'urbano' else area_global.lower()
+                # Aseguramos que atrape 'urbano', 'urbana', 'Total' o 'total' sin importar mayúsculas
+                area_buscada = area_global.lower()
+                if area_buscada == 'urbano':
+                    df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower().isin(['urbano', 'urbana'])]
+                else:
+                    df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower() == area_buscada]
                 
                 df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower() == area_target]
                 df_matriz_unica = df_matriz_pura.drop_duplicates(subset=['MATCH_ID'])
