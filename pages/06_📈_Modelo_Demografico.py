@@ -329,7 +329,6 @@ def cargar_datos_limpios():
             pass
                 
         # =======================================================
-# =======================================================
         # 2. Cargar datos Veredales y MATRIZ (Dinámico desde Supabase)
         # =======================================================
         try:
@@ -353,24 +352,28 @@ def cargar_datos_limpios():
                 df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
 
         # =======================================================
-        # 3. 🗺️ CARGA DEL MAESTRO TERRITORIAL (NUEVAS ESCALAS)
+        # 3. 🗺️ CARGA DEL MAESTRO TERRITORIAL (Sincronizado con Supabase)
         # =======================================================
-        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.csv"
         df_maestro = pd.DataFrame()
+        # URL directa al archivo Excel que confirmaste en tu bucket
+        url_maestro_xlsx = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
+        
         try:
-            df_maestro = pd.read_csv(url_maestro, sep=',', encoding='utf-8')
-            if len(df_maestro.columns) == 1:
-                df_maestro = pd.read_csv(url_maestro, sep=';', encoding='utf-8')
-            
-            if 'municipio' in df_maestro.columns:
-                df_maestro['municipio_norm'] = df_maestro['municipio'].apply(normalizar_texto)
+            # Leemos directamente de la nube sin pasar por el disco local
+            # Nota: Asegúrate de tener 'openpyxl' instalado en tu entorno o requirements.txt
+            df_maestro = pd.read_excel(url_maestro_xlsx, engine='openpyxl')
         except Exception as e:
-            pass
+            st.error(f"🚨 Error al descargar el Maestro Territorial desde Supabase: {e}")
 
+        # Escudo de seguridad por si la descarga falla o el archivo está mal estructurado
         if df_maestro.empty or 'depto_nom' not in df_maestro.columns:
+            st.warning("⚠️ El archivo maestro llegó vacío o con errores. Usando estructura de emergencia.")
             df_maestro = pd.DataFrame(columns=['depto_nom', 'municipio', 'subregion', 'car', 'municipio_norm'])
+        else:
+            # Normalización automática: El paso más importante para que las Subregiones y CARs funcionen
+            df_maestro['municipio_norm'] = df_maestro['municipio'].astype(str).apply(normalizar_texto)
 
-        # 🔥 FIX: AHORA DEVOLVEMOS 6 DATAFRAMES, INCLUYENDO LA MATRIZ
+        # Devolvemos el maestro como el 5to elemento de la tupla
         return df_nac, df_mun, df_ver, df_global, df_maestro, df_matriz
         
     except Exception as e:
@@ -381,6 +384,7 @@ def cargar_datos_limpios():
 # 🔥 FIX: ACTUALIZAMOS LA LLAMADA PARA RECIBIR LA MATRIZ
 df_nac, df_mun, df_ver, df_global, df_maestro, df_matriz = cargar_datos_limpios()
 if df_nac.empty or df_mun.empty: st.stop()
+    
 # --- 2. MODELOS MATEMÁTICOS ---
 def modelo_lineal(x, m, b): return m * x + b
 def modelo_exponencial(x, p0, r): return p0 * np.exp(r * (x - 2005))
