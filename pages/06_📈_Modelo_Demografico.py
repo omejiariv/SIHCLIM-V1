@@ -577,8 +577,13 @@ elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambient
         df_base = df_mun_ant[df_mun_ant['mun_norm_local'].isin(mpios_en_zona)]
     # ---------------------------------------------------------
     
-    filtro_zona = sel_territorio.title()
-    titulo_terr = f"{col_agrupadora.upper()}: {filtro_zona}"
+    # 🔥 ESCUDO ANTI-NULOS: Verificamos que haya una selección válida
+    if sel_territorio:
+        filtro_zona = str(sel_territorio).title()
+        titulo_terr = f"{col_agrupadora.upper()}: {filtro_zona}"
+    else:
+        filtro_zona = "Sin Selección"
+        titulo_terr = f"{col_agrupadora.upper()}: No Disponible"
     
     # Matemáticas para gráficos
     if not df_base.empty:
