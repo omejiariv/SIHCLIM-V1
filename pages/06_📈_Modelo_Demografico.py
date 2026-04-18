@@ -2379,18 +2379,24 @@ with tab_matriz:
                     df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
                         lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
                     )
-                    df_area_v6 = df_area_v6[df_area_v6['mun_norm_dane'].isin(mpios_mapa)]
+                    
+                    # 🔥 FIX FORENSE: ELIMINAMOS LA LÍNEA QUE BORRABA MUNICIPIOS
+                    # Ya no borramos los que no coinciden perfectamente. Todos pasan al balance de masas.
 
                     nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
                     nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
 
                     df_final_cuencas = []
                     
+                    # 🛡️ ESCUDO UNIVERSAL EXTENDIDO: Protegemos a todo el Valle de Aburrá de los huecos espaciales
+                    mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
+                    
                     for mpio in df_area_v6['mun_norm_dane'].unique():
                         pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
                         
-                        if mpio == 'medellin':
-                            if pesos_med_pct:
+                        # 1. CAPTURA DIRECTA DEL AMVA
+                        if mpio in mpios_amva_rescate:
+                            if mpio == 'medellin' and pesos_med_pct:
                                 for subc, peso in pesos_med_pct.items():
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total'] * peso
@@ -2399,11 +2405,12 @@ with tab_matriz:
                             else:
                                 df_temp = pob_mpio.copy()
                                 df_temp['Total_frag'] = df_temp['Total']
-                                df_temp['subc_lbl'] = nombre_real_aburra # 🔥 FIX: Nombre exacto de BD
+                                df_temp['subc_lbl'] = nombre_real_aburra
                                 df_final_cuencas.append(df_temp)
                         
+                        # 2. RESTO DE ANTIOQUIA (Cruce Topológico)
                         else:
-                            fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra # 🔥 FIX: Nombre exacto
+                            fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
 
                             if tipo_area == 'Urbana':
                                 cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
@@ -2416,7 +2423,7 @@ with tab_matriz:
                                 else:
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = fallback_basin # 🔥 FIX
+                                    df_temp['subc_lbl'] = fallback_basin
                                     df_final_cuencas.append(df_temp)
                                     
                             elif tipo_area == 'Rural':
@@ -2441,7 +2448,7 @@ with tab_matriz:
                                 if cuencas_cp.empty and cuencas_area.empty:
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = fallback_basin # 🔥 FIX
+                                    df_temp['subc_lbl'] = fallback_basin
                                     df_final_cuencas.append(df_temp)
 
                             elif tipo_area == 'Total':
@@ -2455,7 +2462,7 @@ with tab_matriz:
                                 else:
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = fallback_basin # 🔥 FIX
+                                    df_temp['subc_lbl'] = fallback_basin
                                     df_final_cuencas.append(df_temp)
                                     
                     # 5. ENTRENAMIENTO DE CUENCAS
