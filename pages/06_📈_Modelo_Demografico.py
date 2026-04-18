@@ -791,7 +791,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                                     matrix_ids_sumados.add(match_val)
                                     cuencas_cruzadas += 1
 
-                                    area_buscar = 'urbana' if area_mapa.lower() == 'urbano' else area_mapa.lower()
+                                    area_buscar = 'urbana' if area_global.lower() == 'urbano' else area_global.lower()
                                     c_target = cuenca_data[cuenca_data['Area'].str.lower() == area_buscar]
                                     
                                     fila_tot = c_target.iloc[0] if not c_target.empty else (c_total.iloc[0] if not c_total.empty else cuenca_data.iloc[0])
@@ -826,7 +826,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                     for missing_id in ids_perdidos:
                         cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == missing_id]
                         
-                        area_buscar = 'urbana' if area_mapa.lower() == 'urbano' else area_mapa.lower()
+                        area_buscar = 'urbana' if area_global.lower() == 'urbano' else area_global.lower()
                         c_target = cuenca_data[cuenca_data['Area'].str.lower() == area_buscar]
                         c_total = cuenca_data[cuenca_data['Area'].str.title() == 'Total']
                         
