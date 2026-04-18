@@ -1487,17 +1487,28 @@ if 'año_sel' in locals() and 'escala_sel' in locals():
     except Exception:
         pass
 
-    # Inyectamos los datos en el Session State
-    st.session_state['aleph_lugar'] = lugar_activo
+    # --- ACTUALIZACIÓN DE SINCRONIZACIÓN Y BALANCE DE MASAS ---
+
+    # 1. Definimos un nombre legible para el lugar (evita el error de los corchetes [])
+    nombre_contexto = ", ".join(cuenca_sel) if cuenca_sel else "Todas las Cuencas"
+
+    # 2. Inyectamos los datos en el Session State para persistencia
+    st.session_state['aleph_lugar'] = nombre_contexto
     st.session_state['aleph_escala'] = escala_sel
     st.session_state['aleph_anio'] = año_sel
-    st.session_state['aleph_pob_total'] = float(pob_total_aleph)
+    # Aseguramos que la población inyectada sea el valor final calculado tras el rescate
+    st.session_state['aleph_pob_total'] = float(pob_hist[-1]) if len(pob_hist) > 0 else 0.0
 
-# 💉 INYECCIÓN AL TORRENTE SANGUÍNEO (Nuevas llaves para Pág 07 y 08)
-    st.session_state['pob_hum_calc_met'] = float(pob_total_aleph)
-    st.session_state[f'pob_asig_{lugar_activo}_met'] = float(pob_total_aleph)
-    
-    st.sidebar.success(f"🔗 Contexto demográfico de {lugar_activo} sincronizado.")
+    # 💉 INYECCIÓN AL TORRENTE SANGUÍNEO (Sincronización con modelos de demanda Pág 07 y 08)
+    # Usamos el valor de la población del año seleccionado (año_sel) para los cálculos de demanda
+    poblacion_referencia = float(pob_hist[año_sel - 1985]) if len(pob_hist) > (año_sel - 1985) else 0.0
+
+    st.session_state['pob_hum_calc_met'] = poblacion_referencia
+    # Seteamos la llave dinámica para que el Aleph reconozca el territorio específico
+    st.session_state[f'pob_asig_{nombre_contexto}_met'] = poblacion_referencia
+
+    # 3. Mensaje de éxito limpio y profesional en el Sidebar
+    st.sidebar.success(f"🔗 Contexto demográfico de **{nombre_contexto}** sincronizado con éxito.")
     
 # ==============================================================================
 # TAB 2: MODELOS Y OPTIMIZACIÓN MATEMÁTICA (SOLVER)
