@@ -2089,6 +2089,13 @@ with tab_matriz:
             total_ops = len(areas_a_procesar) * (1 + len(deptos) + len(mpios) + len(lista_todas_cuencas))
             ops_completadas = 0
 
+            total_ops = len(areas_a_procesar) * (1 + len(deptos) + len(mpios) + len(lista_todas_cuencas))
+            ops_completadas = 0
+
+            historico_cuencas = [] # 🔥 NUEVO: Recolector maestro de fragmentos para balancear cuencas
+
+            for tipo_area in areas_a_procesar:           
+
             for tipo_area in areas_a_procesar:
                 df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area].copy()
                 
@@ -2129,363 +2136,285 @@ with tab_matriz:
                 # 🧠 BISTURÍ ESPACIAL V6: Hiper-Resolución (Barrios + Gravedad)
                 # ================================================================
                 try:
-                    import geopandas as gpd
-                    from sqlalchemy import text
-                    import unicodedata
-                    import difflib
-                    import re
-                    from modules.db_manager import get_engine
-                    
-                    engine_geo = get_engine()
-                    
-                    # 1. CARGA DE ACTIVOS CLOUD (CON CONVERSIÓN GPS)
-                    URL_CABECERAS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CabeceraMunicipal_GisAnt_PT.geojson"
-                    URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
-                    URL_BARRIOS_MED = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
-                    
-                    # 🔥 FIX SQL: Evitar zonas vacías como Urrao por falta de nombres menores
-                    q_cue = text("""
-                        SELECT COALESCE(
-                            NULLIF(TRIM(nom_nss3), ''), 
-                            NULLIF(TRIM(nom_nss2), ''), 
-                            NULLIF(TRIM(nom_nss1), ''), 
-                            NULLIF(TRIM(nom_szh), ''),
-                            NULLIF(TRIM(nomzh), ''),
-                            NULLIF(TRIM(nomah), ''),
-                            'Cuenca Sin Nombre'
-                        ) AS subc_lbl, geometry 
-                        FROM cuencas
-                    """)
-                    gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
-                    gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
-                    
-                    # 🔥 LA CURA A LOS 2 MILLONES DESAPARECIDOS (Escudo de CRS Optimizado)
-                    def cargar_y_proyectar(url):
-                        temp_gdf = gpd.read_file(url)
-                        # Si el GeoJSON viene "huérfano" de CRS, asumimos WGS84 (GPS)
-                        if temp_gdf.crs is None:
-                            temp_gdf = temp_gdf.set_crs(epsg=4326)
-                        # Transformación matemática a MAGNA-SIRGAS (Metros)
-                        return temp_gdf.to_crs(epsg=3116)
-
-                    # 1. Cargar activos en la nube
-                    gdf_barrios = cargar_y_proyectar(URL_BARRIOS_MED)
-                    gdf_cab = cargar_y_proyectar(URL_CABECERAS)
-                    gdf_cp = cargar_y_proyectar(URL_CENTROS_POBLADOS)
-                    
-                    # 2. 🚀 OPTIMIZACIÓN EXTREMA: Filtrar ANTES de proyectar
-                    gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry")
-                    
-                    # Filtramos solo Antioquia (Código 05) para no procesar todo el país en memoria
-                    col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
-                    if col_dpto in gdf_mun.columns:
-                        gdf_mun = gdf_mun[gdf_mun[col_dpto] == '05'].copy()
-
-                    # Ahora sí proyectamos (Será instantáneo porque son 125, no 1122)
-                    gdf_mun = gdf_mun.to_crs(epsg=3116)
-
-                    # 3. Limpiador V6
-                    def clean_v6(t):
-                        if not t or pd.isna(t): return ""
-                        t = str(t).lower().strip()
-                        t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-                        return re.sub(r'[^a-z0-9]', '', t)
-
-                    # 4. Sincronización topológica con escudo de columnas
-                    col_cab = 'MPIO_NOMBR' if 'MPIO_NOMBR' in gdf_cab.columns else 'mpio_nombr'
-                    gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v6)
-                    
-                    col_cp = 'NOMBRE_MPI' if 'NOMBRE_MPI' in gdf_cp.columns else 'nombre_mpi'
-                    gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v6)
-                    
-                    col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
-                    gdf_mun['mun_norm'] = gdf_mun[col_mun].apply(clean_v6)
-                    
-                    # =================================================================
-                    # 2. PROCESAMIENTO ESPACIAL DE MEDELLÍN (Cero Pérdidas / Cero Duplicados)
-                    # =================================================================
-                    gdf_barrios['Pob_Total'] = pd.to_numeric(gdf_barrios['Pob_Total'], errors='coerce').fillna(0)
-                    
-                    # Limpieza geométrica
-                    gdf_barrios['geometry'] = gdf_barrios.geometry.buffer(0)
-                    gdf_cue_limpio = gdf_cue.copy()
-                    gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
-                    
-                    # Intersección
-                    inter_b = gpd.overlay(gdf_barrios, gdf_cue_limpio, how='intersection')
-                    if not inter_b.empty:
-                        inter_b['area_inter'] = inter_b.geometry.area
-                        # 🧹 FILTRO ANTI-PELUSAS: Borramos astillas menores a 100 m2
-                        inter_b = inter_b[inter_b['area_inter'] > 100].copy()
+                    # 🔥 FIX: Solo procesamos espacialmente Urbana y Rural. El Total se deducirá matemáticamente.
+                    if tipo_area in ['Urbana', 'Rural']:
+                        import geopandas as gpd
+                        from sqlalchemy import text
+                        import unicodedata
+                        import difflib
+                        import re
+                        from modules.db_manager import get_engine
                         
-                        # ⚖️ DISTRIBUCIÓN PROPORCIONAL: El área válida se recalcula para que sume 100%
-                        suma_areas_b = inter_b.groupby('Cod_Barrio')['area_inter'].transform('sum')
-                        inter_b['pct_area'] = inter_b['area_inter'] / suma_areas_b
-                        inter_b['pob_frag'] = inter_b['Pob_Total'] * inter_b['pct_area']
-                    else:
-                        inter_b = pd.DataFrame(columns=['Cod_Barrio', 'subc_lbl', 'pob_frag'])
+                        engine_geo = get_engine()
                         
-                    # 🧲 RESCATE DE HUÉRFANOS TOTALES (Barrios atrapados en el vacío del AMVA)
-                    barrios_in = inter_b['Cod_Barrio'].unique() if not inter_b.empty else []
-                    barrios_out = gdf_barrios[~gdf_barrios['Cod_Barrio'].isin(barrios_in)].copy()
-                    
-                    if not barrios_out.empty:
-                        barrios_out['temp_id'] = barrios_out.index
-                        barrios_out['geometry'] = barrios_out.geometry.centroid
-                        rescate_b = gpd.sjoin_nearest(barrios_out, gdf_cue_limpio, how='inner')
-                        if not rescate_b.empty:
-                            rescate_b = rescate_b.drop_duplicates(subset=['Cod_Barrio']) # Evitar clones si hay empate de distancia
-                            rescate_b['pob_frag'] = rescate_b['Pob_Total'] # 100% al vecino más cercano
-                            inter_b = pd.concat([inter_b, rescate_b[['Cod_Barrio', 'subc_lbl', 'pob_frag']]], ignore_index=True)
-
-                    if not inter_b.empty:
-                        pesos_med = inter_b.groupby('subc_lbl')['pob_frag'].sum()
-                        pesos_med_pct = pesos_med / pesos_med.sum() if pesos_med.sum() > 0 else {}
-                    else:
-                        pesos_med_pct = {}
-
-                    # =================================================================
-                    # 3. PROCESAMIENTO RURAL Y URBANO RESTO (Antioquia)
-                    # =================================================================
-                    # --- A. ÁREAS URBANAS (Cabeceras) ---
-                    gdf_cab['geometry'] = gdf_cab.geometry.buffer(0)
-                    inter_u = gpd.overlay(gdf_cab, gdf_cue_limpio, how='intersection')
-                    
-                    if not inter_u.empty:
-                        inter_u['area_inter'] = inter_u.geometry.area
-                        # 🧹 FILTRO ANTI-PELUSAS: Borramos astillas menores a 1,000 m2
-                        inter_u = inter_u[inter_u['area_inter'] > 1000].copy()
+                        # 1. CARGA DE ACTIVOS CLOUD
+                        URL_CABECERAS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CabeceraMunicipal_GisAnt_PT.geojson"
+                        URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
+                        URL_BARRIOS_MED = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
                         
-                        # ⚖️ DISTRIBUCIÓN PROPORCIONAL
-                        suma_areas_u = inter_u.groupby('mun_norm')['area_inter'].transform('sum')
-                        inter_u['pct_area_urb'] = inter_u['area_inter'] / suma_areas_u
-                    else:
-                        inter_u = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_urb'])
+                        q_cue = text("""
+                            SELECT COALESCE(
+                                NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), 
+                                NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre'
+                            ) AS subc_lbl, geometry 
+                            FROM cuencas
+                        """)
+                        gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
+                        gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
                         
-                    # 🧲 RESCATE DE CABECERAS HUÉRFANAS (Ej. Turbo en el mar)
-                    mpios_u_in = inter_u['mun_norm'].unique() if not inter_u.empty else []
-                    mpios_u_out = gdf_cab[~gdf_cab['mun_norm'].isin(mpios_u_in)].copy()
-                    
-                    if not mpios_u_out.empty:
-                        mpios_u_out['geometry'] = mpios_u_out.geometry.centroid
-                        rescate_u = gpd.sjoin_nearest(mpios_u_out, gdf_cue_limpio, how='inner')
-                        if not rescate_u.empty:
-                            rescate_u = rescate_u.drop_duplicates(subset=['mun_norm'])
-                            rescate_u['pct_area_urb'] = 1.0 # 100% de la población va al vecino
-                            inter_u = pd.concat([inter_u, rescate_u[['mun_norm', 'subc_lbl', 'pct_area_urb']]], ignore_index=True)
+                        def cargar_y_proyectar(url):
+                            temp_gdf = gpd.read_file(url)
+                            if temp_gdf.crs is None: temp_gdf = temp_gdf.set_crs(epsg=4326)
+                            return temp_gdf.to_crs(epsg=3116)
 
-                    inter_urbana = inter_u # Renombrar para que el motor V6 original lo lea
-
-                    # --- B. CENTROS POBLADOS (Rural Nucleado) ---
-                    gdf_cp['geometry'] = gdf_cp.geometry.buffer(0)
-                    gdf_cp['id_unico_cp'] = gdf_cp.index.astype(str) # 🔥 FIX: ID infalible, no depende del nombre de la columna
-                    
-                    inter_cp = gpd.overlay(gdf_cp, gdf_cue_limpio, how='intersection')
-                    
-                    if not inter_cp.empty:
-                        inter_cp['area_inter'] = inter_cp.geometry.area
-                        inter_cp = inter_cp[inter_cp['area_inter'] > 500].copy()
-                        # Nos quedamos solo con la cuenca principal donde cayó la mayoría del polígono
-                        inter_cp = inter_cp.sort_values('area_inter', ascending=False).drop_duplicates(subset=['id_unico_cp'])
-                    else:
-                        inter_cp = pd.DataFrame(columns=['mun_norm', 'id_unico_cp', 'subc_lbl'])
-
-                    # Rescate CP (Centros Poblados huérfanos)
-                    cp_in = inter_cp['id_unico_cp'].unique() if not inter_cp.empty else []
-                    cp_out = gdf_cp[~gdf_cp['id_unico_cp'].isin(cp_in)].copy()
-                    
-                    if not cp_out.empty:
-                        cp_out['geometry'] = cp_out.geometry.centroid
-                        rescate_cp = gpd.sjoin_nearest(cp_out, gdf_cue_limpio, how='inner')
-                        if not rescate_cp.empty:
-                            rescate_cp = rescate_cp.drop_duplicates(subset=['id_unico_cp'])
-                            inter_cp = pd.concat([inter_cp, rescate_cp[['mun_norm', 'id_unico_cp', 'subc_lbl']]], ignore_index=True)
-                    
-                    cp_en_cuenca = inter_cp # Renombrar para que el V6 original lo lea
-
-                    # --- C. ÁREAS RURALES DISPERSAS (Resto del Municipio) ---
-                    gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
-                    inter_r = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
-                    
-                    if not inter_r.empty:
-                        inter_r['area_inter'] = inter_r.geometry.area
-                        inter_r = inter_r[inter_r['area_inter'] > 10000].copy() 
-                        suma_areas_r = inter_r.groupby('mun_norm')['area_inter'].transform('sum')
-                        inter_r['pct_area_rur'] = inter_r['area_inter'] / suma_areas_r
-                    else:
-                        inter_r = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_rur'])
+                        gdf_barrios = cargar_y_proyectar(URL_BARRIOS_MED)
+                        gdf_cab = cargar_y_proyectar(URL_CABECERAS)
+                        gdf_cp = cargar_y_proyectar(URL_CENTROS_POBLADOS)
                         
-                    # 🧲 RESCATE RURAL HUÉRFANOS
-                    mpios_r_in = inter_r['mun_norm'].unique() if not inter_r.empty else []
-                    mpios_r_out = gdf_mun[~gdf_mun['mun_norm'].isin(mpios_r_in)].copy()
-                    
-                    if not mpios_r_out.empty:
-                        mpios_r_out['geometry'] = mpios_r_out.geometry.centroid
-                        rescate_r = gpd.sjoin_nearest(mpios_r_out, gdf_cue_limpio, how='inner')
-                        if not rescate_r.empty:
-                            rescate_r = rescate_r.drop_duplicates(subset=['mun_norm'])
-                            rescate_r['pct_area_rur'] = 1.0 
-                            inter_r = pd.concat([inter_r, rescate_r[['mun_norm', 'subc_lbl', 'pct_area_rur']]], ignore_index=True)
+                        gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry")
+                        col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
+                        if col_dpto in gdf_mun.columns: gdf_mun = gdf_mun[gdf_mun[col_dpto] == '05'].copy()
+                        gdf_mun = gdf_mun.to_crs(epsg=3116)
+
+                        def clean_v6(t):
+                            if not t or pd.isna(t): return ""
+                            t = str(t).lower().strip()
+                            t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                            return re.sub(r'[^a-z0-9]', '', t)
+
+                        col_cab = 'MPIO_NOMBR' if 'MPIO_NOMBR' in gdf_cab.columns else 'mpio_nombr'
+                        gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v6)
+                        
+                        col_cp = 'NOMBRE_MPI' if 'NOMBRE_MPI' in gdf_cp.columns else 'nombre_mpi'
+                        gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v6)
+                        
+                        col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
+                        gdf_mun['mun_norm'] = gdf_mun[col_mun].apply(clean_v6)
+                        
+                        # MEDELLÍN
+                        gdf_barrios['Pob_Total'] = pd.to_numeric(gdf_barrios['Pob_Total'], errors='coerce').fillna(0)
+                        gdf_barrios['geometry'] = gdf_barrios.geometry.buffer(0)
+                        gdf_cue_limpio = gdf_cue.copy()
+                        gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
+                        
+                        inter_b = gpd.overlay(gdf_barrios, gdf_cue_limpio, how='intersection')
+                        if not inter_b.empty:
+                            inter_b['area_inter'] = inter_b.geometry.area
+                            inter_b = inter_b[inter_b['area_inter'] > 100].copy()
+                            suma_areas_b = inter_b.groupby('Cod_Barrio')['area_inter'].transform('sum')
+                            inter_b['pct_area'] = inter_b['area_inter'] / suma_areas_b
+                            inter_b['pob_frag'] = inter_b['Pob_Total'] * inter_b['pct_area']
+                        else:
+                            inter_b = pd.DataFrame(columns=['Cod_Barrio', 'subc_lbl', 'pob_frag'])
                             
-                    inter_dispersa = inter_r 
-
-                    # 🔥 VACUNA 2A: Mapa Global para distribuir el 'Total' con precisión matemática
-                    inter_t = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
-                    if not inter_t.empty:
-                        inter_t['area_inter'] = inter_t.geometry.area
-                        inter_t = inter_t[inter_t['area_inter'] > 1000].copy()
-                        suma_areas_t = inter_t.groupby('mun_norm')['area_inter'].transform('sum')
-                        inter_t['pct_area_tot'] = inter_t['area_inter'] / suma_areas_t
-                    else:
-                        inter_t = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_tot'])
-
-                    # 🧲 RESCATE TOTAL HUÉRFANOS (Cierra la fuga del AMVA)
-                    mpios_t_in = inter_t['mun_norm'].unique() if not inter_t.empty else []
-                    mpios_t_out = gdf_mun[~gdf_mun['mun_norm'].isin(mpios_t_in)].copy()
-                    
-                    if not mpios_t_out.empty:
-                        mpios_t_out['geometry'] = mpios_t_out.geometry.centroid
-                        rescate_t = gpd.sjoin_nearest(mpios_t_out, gdf_cue_limpio, how='inner')
-                        if not rescate_t.empty:
-                            rescate_t = rescate_t.drop_duplicates(subset=['mun_norm'])
-                            rescate_t['pct_area_tot'] = 1.0
-                            inter_t = pd.concat([inter_t, rescate_t[['mun_norm', 'subc_lbl', 'pct_area_tot']]], ignore_index=True)
-
-                    # 4. MOTOR DE DISTRIBUCIÓN V6 (ESTRUCTURAL Y LIMPIO)
-                    df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
-                    df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
-                    
-                    agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
-                    df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma))]
-                    
-                    mpios_mapa = set(gdf_mun['mun_norm'].tolist())
-                    df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
-                        lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
-                    )
-                    
-                    # 🔥 FIX FORENSE: Usamos SUM en lugar de MAX y lo hacemos AL FINAL. 
-                    # Esto garantiza que no se pierda ni un solo habitante (Sella la fuga de 388k).
-                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index()
-
-                    nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
-                    nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
-
-                    df_final_cuencas = []
-                    
-                    # 🛡️ ESCUDO UNIVERSAL EXTENDIDO: Protegemos a todo el Valle de Aburrá de los huecos espaciales
-                    mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
-                    
-                    for mpio in df_area_v6['mun_norm_dane'].unique():
-                        pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
-                        fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
+                        barrios_in = inter_b['Cod_Barrio'].unique() if not inter_b.empty else []
+                        barrios_out = gdf_barrios[~gdf_barrios['Cod_Barrio'].isin(barrios_in)].copy()
                         
-                        # 1. CAPTURA DIRECTA DEL AMVA
-                        if mpio in mpios_amva_rescate:
-                            if mpio == 'medellin' and pesos_med_pct:
-                                for subc, peso in pesos_med_pct.items():
+                        if not barrios_out.empty:
+                            barrios_out['temp_id'] = barrios_out.index
+                            barrios_out['geometry'] = barrios_out.geometry.centroid
+                            rescate_b = gpd.sjoin_nearest(barrios_out, gdf_cue_limpio, how='inner')
+                            if not rescate_b.empty:
+                                rescate_b = rescate_b.drop_duplicates(subset=['Cod_Barrio']) 
+                                rescate_b['pob_frag'] = rescate_b['Pob_Total'] 
+                                inter_b = pd.concat([inter_b, rescate_b[['Cod_Barrio', 'subc_lbl', 'pob_frag']]], ignore_index=True)
+
+                        pesos_med_pct = {}
+                        if not inter_b.empty:
+                            pesos_med = inter_b.groupby('subc_lbl')['pob_frag'].sum()
+                            pesos_med_pct = pesos_med / pesos_med.sum() if pesos_med.sum() > 0 else {}
+
+                        # URBANO (Cabeceras)
+                        gdf_cab['geometry'] = gdf_cab.geometry.buffer(0)
+                        inter_u = gpd.overlay(gdf_cab, gdf_cue_limpio, how='intersection')
+                        if not inter_u.empty:
+                            inter_u['area_inter'] = inter_u.geometry.area
+                            inter_u = inter_u[inter_u['area_inter'] > 1000].copy()
+                            suma_areas_u = inter_u.groupby('mun_norm')['area_inter'].transform('sum')
+                            inter_u['pct_area_urb'] = inter_u['area_inter'] / suma_areas_u
+                        else:
+                            inter_u = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_urb'])
+                            
+                        mpios_u_in = inter_u['mun_norm'].unique() if not inter_u.empty else []
+                        mpios_u_out = gdf_cab[~gdf_cab['mun_norm'].isin(mpios_u_in)].copy()
+                        if not mpios_u_out.empty:
+                            mpios_u_out['geometry'] = mpios_u_out.geometry.centroid
+                            rescate_u = gpd.sjoin_nearest(mpios_u_out, gdf_cue_limpio, how='inner')
+                            if not rescate_u.empty:
+                                rescate_u = rescate_u.drop_duplicates(subset=['mun_norm'])
+                                rescate_u['pct_area_urb'] = 1.0 
+                                inter_u = pd.concat([inter_u, rescate_u[['mun_norm', 'subc_lbl', 'pct_area_urb']]], ignore_index=True)
+                        inter_urbana = inter_u 
+
+                        # RURAL (Centros Poblados + Disperso)
+                        gdf_cp['geometry'] = gdf_cp.geometry.buffer(0)
+                        gdf_cp['id_unico_cp'] = gdf_cp.index.astype(str)
+                        inter_cp = gpd.overlay(gdf_cp, gdf_cue_limpio, how='intersection')
+                        if not inter_cp.empty:
+                            inter_cp['area_inter'] = inter_cp.geometry.area
+                            inter_cp = inter_cp[inter_cp['area_inter'] > 500].copy()
+                            inter_cp = inter_cp.sort_values('area_inter', ascending=False).drop_duplicates(subset=['id_unico_cp'])
+                        else:
+                            inter_cp = pd.DataFrame(columns=['mun_norm', 'id_unico_cp', 'subc_lbl'])
+
+                        cp_in = inter_cp['id_unico_cp'].unique() if not inter_cp.empty else []
+                        cp_out = gdf_cp[~gdf_cp['id_unico_cp'].isin(cp_in)].copy()
+                        if not cp_out.empty:
+                            cp_out['geometry'] = cp_out.geometry.centroid
+                            rescate_cp = gpd.sjoin_nearest(cp_out, gdf_cue_limpio, how='inner')
+                            if not rescate_cp.empty:
+                                rescate_cp = rescate_cp.drop_duplicates(subset=['id_unico_cp'])
+                                inter_cp = pd.concat([inter_cp, rescate_cp[['mun_norm', 'id_unico_cp', 'subc_lbl']]], ignore_index=True)
+                        cp_en_cuenca = inter_cp 
+
+                        gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
+                        inter_r = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
+                        if not inter_r.empty:
+                            inter_r['area_inter'] = inter_r.geometry.area
+                            inter_r = inter_r[inter_r['area_inter'] > 10000].copy() 
+                            suma_areas_r = inter_r.groupby('mun_norm')['area_inter'].transform('sum')
+                            inter_r['pct_area_rur'] = inter_r['area_inter'] / suma_areas_r
+                        else:
+                            inter_r = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_rur'])
+                            
+                        mpios_r_in = inter_r['mun_norm'].unique() if not inter_r.empty else []
+                        mpios_r_out = gdf_mun[~gdf_mun['mun_norm'].isin(mpios_r_in)].copy()
+                        if not mpios_r_out.empty:
+                            mpios_r_out['geometry'] = mpios_r_out.geometry.centroid
+                            rescate_r = gpd.sjoin_nearest(mpios_r_out, gdf_cue_limpio, how='inner')
+                            if not rescate_r.empty:
+                                rescate_r = rescate_r.drop_duplicates(subset=['mun_norm'])
+                                rescate_r['pct_area_rur'] = 1.0 
+                                inter_r = pd.concat([inter_r, rescate_r[['mun_norm', 'subc_lbl', 'pct_area_rur']]], ignore_index=True)
+                        inter_dispersa = inter_r 
+
+                        df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
+                        df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
+                        
+                        agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
+                        df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma))]
+                        
+                        mpios_mapa = set(gdf_mun['mun_norm'].tolist())
+                        df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
+                            lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
+                        )
+                        
+                        df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index()
+
+                        nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
+                        nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
+
+                        df_final_cuencas = []
+                        mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
+                        
+                        for mpio in df_area_v6['mun_norm_dane'].unique():
+                            pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
+                            fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
+                            
+                            if mpio in mpios_amva_rescate:
+                                if mpio == 'medellin' and pesos_med_pct:
+                                    for subc, peso in pesos_med_pct.items():
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = df_temp['Total'] * peso
+                                        df_temp['subc_lbl'] = subc
+                                        df_final_cuencas.append(df_temp)
+                                else:
                                     df_temp = pob_mpio.copy()
-                                    df_temp['Total_frag'] = df_temp['Total'] * peso
-                                    df_temp['subc_lbl'] = subc
+                                    df_temp['Total_frag'] = df_temp['Total']
+                                    df_temp['subc_lbl'] = nombre_real_aburra
                                     df_final_cuencas.append(df_temp)
                             else:
-                                df_temp = pob_mpio.copy()
-                                df_temp['Total_frag'] = df_temp['Total']
-                                df_temp['subc_lbl'] = nombre_real_aburra
-                                df_final_cuencas.append(df_temp)
-                        
-                        # 2. RESTO DE ANTIOQUIA (Cruce Topológico con LEY DE CONSERVACIÓN DE MASAS)
-                        else:
-                            if tipo_area == 'Urbana':
-                                cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio].copy()
-                                if not cuencas_urb.empty:
-                                    sum_u = cuencas_urb['pct_area_urb'].sum()
-                                    if sum_u > 0: cuencas_urb['pct_area_urb'] = cuencas_urb['pct_area_urb'] / sum_u # Normalización Estricta 1.0
+                                if tipo_area == 'Urbana':
+                                    cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio].copy()
+                                    if not cuencas_urb.empty:
+                                        sum_u = cuencas_urb['pct_area_urb'].sum()
+                                        if sum_u > 0: cuencas_urb['pct_area_urb'] = cuencas_urb['pct_area_urb'] / sum_u 
+                                        for _, u_row in cuencas_urb.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
+                                            df_temp['subc_lbl'] = u_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                    else:
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = df_temp['Total']
+                                        df_temp['subc_lbl'] = fallback_basin
+                                        df_final_cuencas.append(df_temp)
+                                        
+                                elif tipo_area == 'Rural':
+                                    cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio].copy()
+                                    cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio].copy()
                                     
-                                    for _, u_row in cuencas_urb.iterrows():
+                                    if not cuencas_cp.empty and not cuencas_area.empty:
+                                        for _, cp_row in cuencas_cp.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = (df_temp['Total'] * 0.30) / len(cuencas_cp)
+                                            df_temp['subc_lbl'] = cp_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                            
+                                        sum_r = cuencas_area['pct_area_rur'].sum()
+                                        if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r 
+                                        for _, a_row in cuencas_area.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = df_temp['Total'] * 0.70 * a_row['pct_area_rur']
+                                            df_temp['subc_lbl'] = a_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                            
+                                    elif not cuencas_cp.empty:
+                                        for _, cp_row in cuencas_cp.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = df_temp['Total'] / len(cuencas_cp)
+                                            df_temp['subc_lbl'] = cp_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                            
+                                    elif not cuencas_area.empty:
+                                        sum_r = cuencas_area['pct_area_rur'].sum()
+                                        if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r 
+                                        for _, a_row in cuencas_area.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = df_temp['Total'] * a_row['pct_area_rur']
+                                            df_temp['subc_lbl'] = a_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                    else:
                                         df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
-                                        df_temp['subc_lbl'] = u_row['subc_lbl']
+                                        df_temp['Total_frag'] = df_temp['Total']
+                                        df_temp['subc_lbl'] = fallback_basin
                                         df_final_cuencas.append(df_temp)
-                                else:
-                                    df_temp = pob_mpio.copy()
-                                    df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = fallback_basin
-                                    df_final_cuencas.append(df_temp)
-                                    
-                            elif tipo_area == 'Rural':
-                                cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio].copy()
-                                cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio].copy()
-                                
-                                if not cuencas_cp.empty and not cuencas_area.empty:
-                                    # 30% Centros Poblados, 70% Área Dispersa
-                                    for _, cp_row in cuencas_cp.iterrows():
-                                        df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = (df_temp['Total'] * 0.30) / len(cuencas_cp)
-                                        df_temp['subc_lbl'] = cp_row['subc_lbl']
-                                        df_final_cuencas.append(df_temp)
-                                        
-                                    sum_r = cuencas_area['pct_area_rur'].sum()
-                                    if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r # Normalización Estricta
-                                    for _, a_row in cuencas_area.iterrows():
-                                        df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total'] * 0.70 * a_row['pct_area_rur']
-                                        df_temp['subc_lbl'] = a_row['subc_lbl']
-                                        df_final_cuencas.append(df_temp)
-                                        
-                                elif not cuencas_cp.empty:
-                                    # 100% Centros Poblados
-                                    for _, cp_row in cuencas_cp.iterrows():
-                                        df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total'] / len(cuencas_cp)
-                                        df_temp['subc_lbl'] = cp_row['subc_lbl']
-                                        df_final_cuencas.append(df_temp)
-                                        
-                                elif not cuencas_area.empty:
-                                    # 100% Área Dispersa
-                                    sum_r = cuencas_area['pct_area_rur'].sum()
-                                    if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r # Normalización Estricta
-                                    for _, a_row in cuencas_area.iterrows():
-                                        df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total'] * a_row['pct_area_rur']
-                                        df_temp['subc_lbl'] = a_row['subc_lbl']
-                                        df_final_cuencas.append(df_temp)
-                                else:
-                                    df_temp = pob_mpio.copy()
-                                    df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = fallback_basin
-                                    df_final_cuencas.append(df_temp)
 
-                            elif tipo_area == 'Total':
-                                cuencas_tot = inter_t[inter_t['mun_norm'] == mpio].copy()
-                                if not cuencas_tot.empty:
-                                    sum_t = cuencas_tot['pct_area_tot'].sum()
-                                    if sum_t > 0: cuencas_tot['pct_area_tot'] = cuencas_tot['pct_area_tot'] / sum_t # Normalización Estricta
-                                    for _, t_row in cuencas_tot.iterrows():
-                                        df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total'] * t_row['pct_area_tot']
-                                        df_temp['subc_lbl'] = t_row['subc_lbl']
-                                        df_final_cuencas.append(df_temp)
-                                else:
-                                    df_temp = pob_mpio.copy()
-                                    df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = fallback_basin
-                                    df_final_cuencas.append(df_temp)
-                                    
-                    # 5. ENTRENAMIENTO DE CUENCAS
-                    if df_final_cuencas:
-                        df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
-                        
-                        # 🔥 FIX: Aseguramos que TODOS los municipios rescatados entren en la matriz
-                        cuencas_con_datos = df_cuencas_v6['subc_lbl'].unique().tolist()
-                        lista_entrenamiento = list(set(lista_todas_cuencas + cuencas_con_datos))
-                        
-                        for cuenca in lista_entrenamiento:
-                            df_t = df_cuencas_v6[df_cuencas_v6['subc_lbl'] == cuenca].sort_values(by=col_anio)
-                            if not df_t.empty and df_t['Total_frag'].sum() > 0:
-                                ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', tipo_area)
-
+                        # 5. RECOLECCIÓN DE FRAGMENTOS (Sin entrenar todavía)
+                        if df_final_cuencas:
+                            df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
+                            df_cuencas_v6['Categoria_Area'] = tipo_area
+                            historico_cuencas.append(df_cuencas_v6)
+                            
                 except Exception as e:
                     st.error(f"❌ Error en Motor V6: {e}")
+
+            # =====================================================================
+            # 🔥 ENTRENAMIENTO PERFECTO DE CUENCAS (LEY DE BALANCE DE MASAS)
+            # =====================================================================
+            if historico_cuencas:
+                texto_progreso.markdown("⚖️ **Ensamblando balance de masas estricto para Cuencas...**")
+                df_hist_ur = pd.concat(historico_cuencas)
+                
+                # 1. Calculamos el Total como suma EXACTA de Urbana + Rural
+                df_hist_totales = df_hist_ur.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
+                df_hist_totales['Categoria_Area'] = 'Total'
+                
+                # 2. Unimos todo para el entrenamiento
+                df_hist_final = pd.concat([df_hist_ur, df_hist_totales], ignore_index=True)
+                
+                # 3. Entrenamos los 3 modelos por cuenca
+                for area_c in ['Total', 'Urbana', 'Rural']:
+                    df_area_c = df_hist_final[df_hist_final['Categoria_Area'] == area_c]
+                    
+                    cuencas_con_datos = df_area_c['subc_lbl'].unique().tolist()
+                    lista_entrenamiento = list(set(lista_todas_cuencas + cuencas_con_datos))
+                    
+                    for cuenca in lista_entrenamiento:
+                        df_t = df_area_c[df_area_c['subc_lbl'] == cuenca].sort_values(by=col_anio)
+                        if not df_t.empty and df_t['Total_frag'].sum() > 0:
+                            ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', area_c)
+                            ops_completadas += 1
 
             # =====================================================================
             # 6. FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
@@ -2794,7 +2723,7 @@ with tab_descargas:
 # ==============================================================================
 # 💾 EXPORTACIÓN AUTOMÁTICA A SQL Y DESCARGA (PRODUCCIÓN)
 # ==============================================================================
-# Este bloque debe estar FUERA del if st.button("Entrenar...")
+
 if 'df_matriz_demografica' in st.session_state:
     st.markdown("---")
     st.subheader("💾 Exportar Cerebro Demográfico (Para Producción)")
@@ -2808,7 +2737,7 @@ if 'df_matriz_demografica' in st.session_state:
     with col_btn1:
         # 🔒 MURO DE SEGURIDAD PARA INYECCIÓN DB
         with st.expander("🔐 Administración: Inyectar a SQL"):
-            st.warning("⚠️ Acción destructiva: Reemplazará la matriz maestra en Supabase.")
+            st.warning("⚠️ Acción segura: Actualizará los registros manteniendo intactos los permisos (RLS) de la tabla en Supabase.")
             pwd = st.text_input("Clave de Administrador:", type="password", key="pwd_sql_demo")
             
             if st.button("🚀 Confirmar Inyección", type="primary", use_container_width=True):
@@ -2817,17 +2746,23 @@ if 'df_matriz_demografica' in st.session_state:
                     with st.spinner("Conectando con PostgreSQL (Supabase)..."):
                         try:
                             from modules.db_manager import get_engine
+                            from sqlalchemy import text
                             engine_sql = get_engine()
-                            df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='replace', index=False)
                             
-                            # 🔥 FIX: LA CURA DE LA AMNESIA
+                            # 🔥 FIX DEFINITIVO: Borrar filas, no la tabla. Mantiene permisos RLS.
+                            with engine_sql.begin() as conn:
+                                conn.execute(text("DELETE FROM matriz_maestra_demografica;"))
+                                
+                            df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='append', index=False)
+                            
+                            # 🔥 LA CURA DE LA AMNESIA
                             # Obligamos a Streamlit a olvidar los datos viejos para que descargue esta nueva matriz
                             st.cache_data.clear() 
                             
                             st.success(f"✅ ¡Inyección Exitosa! {len(df_matriz_demo)} registros actualizados en PostgreSQL.")
                             st.info("🔄 La caché ha sido limpiada. Los nuevos datos se cargarán al recargar la página.")
                         except Exception as e:
-                            st.error(f"Error SQL: {e}")
+                            st.error(f"🚨 Error SQL: {e}")
                 else:
                     st.error("❌ Credencial incorrecta. Acceso denegado.")
                     
