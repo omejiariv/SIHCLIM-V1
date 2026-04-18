@@ -1262,8 +1262,19 @@ with tab_modelos:
     
     st.subheader(f"Estructura Poblacional Sintética - {titulo_seguro}")
     
-    # Selector de comparación en la interfaz principal
-    zona_comparacion = st.radio("Selecciona el área para comparar con la Estructura Total:", ["Urbano", "Rural"], horizontal=True)
+    # 🧠 LÓGICA DE UN SOLO AMO (Sincronización total con el Sidebar)
+    area_principal = locals().get('area_global', 'Total').capitalize()
+    
+    # Hacemos que el selector de comparación sea inteligente (evita comparar Rural vs Rural)
+    opciones_comparacion = ["Total", "Urbano", "Rural"]
+    if area_principal in opciones_comparacion:
+        opciones_comparacion.remove(area_principal)
+        
+    zona_comparacion = st.radio(
+        f"Selecciona el área para comparar con tu selección global (**{area_principal}**):", 
+        opciones_comparacion, 
+        horizontal=True
+    )
 
     # Creamos dos columnas maestras para poner las pirámides lado a lado
     col_p1, col_p2 = st.columns(2)
@@ -1290,10 +1301,9 @@ with tab_modelos:
             ph_m_muj_2 = st.empty()
             ph_m_ind_2 = st.empty()
 
-    # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES (Totalmente aislado del diseño) ---
+    # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES (Aislado y Optimizado) ---
     df_piramide_final = pd.DataFrame()
 
-    # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES ---
     def generar_figura_piramide(año_obj, zona_str):
         try:
             pob_modelo_total = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
@@ -2066,16 +2076,23 @@ with tab_matriz:
                 
             df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
             
-            # 🔥 LA CURA A ABEJORRAL (Y LOS MUNICIPIOS EN CERO):
-            # El DANE no incluye fila 'Total' para municipios. ¡La creamos matemáticamente!
-            df_urb_rur = df_mun_memoria[df_mun_memoria['Categoria_Area'].isin(['Urbana', 'Rural'])]
-            cols_suma = [c for c in df_mun_memoria.columns if c not in ['municipio', 'depto_nom', col_anio, 'Categoria_Area', 'area_geografica', 'Macroregion']]
-            df_totales_calc = df_urb_rur.groupby(['depto_nom', 'municipio', col_anio])[cols_suma].sum().reset_index()
-            df_totales_calc['Categoria_Area'] = 'Total'
-            df_totales_calc['area_geografica'] = 'total'
+            # 🔥 LA CURA A ABEJORRAL INTELIGENTE (Sella la fuga de los 272k):
+            # Solo creamos el 'Total' matemáticamente para los municipios que de verdad no lo reportaron en el DANE.
+            mpios_con_total = df_mun_memoria[df_mun_memoria['Categoria_Area'] == 'Total']['municipio'].unique()
+            mpios_sin_total = df_mun_memoria[~df_mun_memoria['municipio'].isin(mpios_con_total)]['municipio'].unique()
             
-            # Reemplazamos para asegurar que todos los 125 municipios existan (Cerrando la duplicación)
-            df_mun_memoria = pd.concat([df_mun_memoria[df_mun_memoria['Categoria_Area'] != 'Total'], df_totales_calc], ignore_index=True)
+            if len(mpios_sin_total) > 0:
+                df_faltantes = df_mun_memoria[df_mun_memoria['municipio'].isin(mpios_sin_total)]
+                df_urb_rur_faltantes = df_faltantes[df_faltantes['Categoria_Area'].isin(['Urbana', 'Rural'])]
+                
+                if not df_urb_rur_faltantes.empty:
+                    cols_suma = [c for c in df_mun_memoria.columns if c not in ['municipio', 'depto_nom', col_anio, 'Categoria_Area', 'area_geografica', 'Macroregion']]
+                    df_totales_calc = df_urb_rur_faltantes.groupby(['depto_nom', 'municipio', col_anio])[cols_suma].sum().reset_index()
+                    df_totales_calc['Categoria_Area'] = 'Total'
+                    df_totales_calc['area_geografica'] = 'total'
+                    
+                    # Añadimos los rescatados SIN destruir los originales
+                    df_mun_memoria = pd.concat([df_mun_memoria, df_totales_calc], ignore_index=True)
 
             # --- 🕵️‍♂️ RECOLECCIÓN MASIVA DE CUENCAS DE LA BASE DE DATOS ---
             q_todas = text("SELECT DISTINCT nom_nss3 FROM cuencas WHERE nom_nss3 IS NOT NULL")
