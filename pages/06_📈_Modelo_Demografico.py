@@ -504,65 +504,85 @@ elif escala_sel == "🏛️ Departamental (Colombia)":
 elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambientales (CARs)"]:
     col_agrupadora = 'subregion' if "Subregiones" in escala_sel else 'car'
     
-    # Filtramos el maestro solo para Antioquia
-    maestro_ant = df_maestro[df_maestro['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
+    # --- 🧽 TRADUCTOR UNIVERSAL (Limpieza Absoluta) ---
+    def limpiar_nombres(s):
+        if pd.isna(s): return ""
+        s = str(s).upper().strip() # Todo a mayúscula, sin espacios a los lados
+        import unicodedata
+        # Quitamos todas las tildes (á -> A)
+        s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+        return s
+
+    # 1. Limpiamos el Maestro Territorial
+    maestro_ant = df_maestro.copy()
+    if 'depto_nom' in maestro_ant.columns:
+        maestro_ant['depto_nom_cln'] = maestro_ant['depto_nom'].apply(limpiar_nombres)
+        maestro_ant = maestro_ant[maestro_ant['depto_nom_cln'] == 'ANTIOQUIA']
     
-    # Estandarizamos los nombres de las CAR para evitar errores de tipeo en el maestro
-    if col_agrupadora == 'car':
-        maestro_ant['car'] = maestro_ant['car'].astype(str).str.upper().str.strip()
-        
-    opciones = sorted(maestro_ant[col_agrupadora].dropna().unique())
+    if col_agrupadora in maestro_ant.columns:
+        maestro_ant[col_agrupadora] = maestro_ant[col_agrupadora].apply(limpiar_nombres)
+        opciones = sorted(maestro_ant[col_agrupadora].dropna().unique())
+    else:
+        opciones = []
     
     sel_territorio = st.sidebar.selectbox(f"Seleccione {col_agrupadora.title()}:", opciones)
     
-    # Mapeamos los municipios base
-    mpios_en_zona = maestro_ant[maestro_ant[col_agrupadora] == sel_territorio]['municipio_norm'].tolist()
+    # Mapeamos los municipios base (Garantizando el formato)
+    if 'municipio' in maestro_ant.columns:
+        maestro_ant['mun_norm_local'] = maestro_ant['municipio'].apply(limpiar_nombres)
+        mpios_en_zona = maestro_ant[maestro_ant[col_agrupadora] == sel_territorio]['mun_norm_local'].tolist()
+    else:
+        mpios_en_zona = []
     
-    df_mun_ant = df_mun[df_mun['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
-    df_mun_ant['mun_norm'] = df_mun_ant['municipio'].astype(str).apply(normalizar_texto)
+    # 2. Limpiamos el DANE (df_mun) para que hablen el mismo idioma
+    df_mun_ant = df_mun.copy()
+    if 'depto_nom' in df_mun_ant.columns:
+        df_mun_ant['depto_nom_cln'] = df_mun_ant['depto_nom'].apply(limpiar_nombres)
+        df_mun_ant = df_mun_ant[df_mun_ant['depto_nom_cln'] == 'ANTIOQUIA']
+    
+    if 'municipio' in df_mun_ant.columns:
+        df_mun_ant['mun_norm_local'] = df_mun_ant['municipio'].apply(limpiar_nombres)
+    else:
+        df_mun_ant['mun_norm_local'] = ""
     
     # ---------------------------------------------------------
     # ⚖️ RESOLUCIÓN DE JURISDICCIÓN COMPARTIDA (AMVA vs CORANTIOQUIA)
     # ---------------------------------------------------------
     if escala_sel == "🦅 Autoridades Ambientales (CARs)":
-        mpios_amva = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
+        # Nombres limpios, en mayúscula y con espacios correctos
+        mpios_amva = ['MEDELLIN', 'BELLO', 'ITAGUI', 'ENVIGADO', 'SABANETA', 'COPACABANA', 'LA ESTRELLA', 'GIRARDOTA', 'CALDAS', 'BARBOSA']
         
         if sel_territorio == 'AMVA':
-            # AMVA = Solo lo urbano. Duplicamos la fila como 'total' para que los filtros de la app sigan funcionando
-            df_amva_urb = df_mun_ant[(df_mun_ant['mun_norm'].isin(mpios_amva)) & (df_mun_ant['area_geografica'] == 'urbano')].copy()
+            df_amva_urb = df_mun_ant[(df_mun_ant['mun_norm_local'].isin(mpios_amva)) & (df_mun_ant['area_geografica'].str.lower() == 'urbano')].copy()
             df_amva_tot = df_amva_urb.copy()
             df_amva_tot['area_geografica'] = 'total'
             
-            df_base = pd.concat([df_amva_urb, df_amva_tot])
+            df_base = pd.concat([df_amva_urb, df_amva_tot]) if not df_amva_urb.empty else pd.DataFrame()
             st.sidebar.info("🏢 **Jurisdicción Urbana:** El AMVA rige únicamente sobre las cabeceras municipales del Valle de Aburrá.")
             
         elif sel_territorio == 'CORANTIOQUIA':
-            # Corantioquia = Municipios propios + Rural del AMVA
             mpios_propios = [m for m in mpios_en_zona if m not in mpios_amva]
-            df_propios = df_mun_ant[df_mun_ant['mun_norm'].isin(mpios_propios)].copy()
+            df_propios = df_mun_ant[df_mun_ant['mun_norm_local'].isin(mpios_propios)].copy()
             
-            # Extraemos lo rural del AMVA y lo marcamos también como 'total' para que el filtro global lo sume
-            df_amva_rur = df_mun_ant[(df_mun_ant['mun_norm'].isin(mpios_amva)) & (df_mun_ant['area_geografica'] == 'rural')].copy()
+            df_amva_rur = df_mun_ant[(df_mun_ant['mun_norm_local'].isin(mpios_amva)) & (df_mun_ant['area_geografica'].str.lower() == 'rural')].copy()
             df_amva_rur_tot = df_amva_rur.copy()
             df_amva_rur_tot['area_geografica'] = 'total'
             
-            df_base = pd.concat([df_propios, df_amva_rur, df_amva_rur_tot])
+            df_base = pd.concat([df_propios, df_amva_rur, df_amva_rur_tot]) if not df_propios.empty or not df_amva_rur.empty else pd.DataFrame()
             st.sidebar.info("🌿 **Jurisdicción Mixta:** Incluye sus municipios propios y exclusivamente las áreas rurales del Valle de Aburrá.")
             
         else:
-            # Cornare, Corpouraba, etc. (Comportamiento normal)
-            df_base = df_mun_ant[df_mun_ant['mun_norm'].isin(mpios_en_zona)]
+            df_base = df_mun_ant[df_mun_ant['mun_norm_local'].isin(mpios_en_zona)]
     else:
-        # Subregiones normales
-        df_base = df_mun_ant[df_mun_ant['mun_norm'].isin(mpios_en_zona)]
+        df_base = df_mun_ant[df_mun_ant['mun_norm_local'].isin(mpios_en_zona)]
     # ---------------------------------------------------------
     
-    filtro_zona = sel_territorio
-    titulo_terr = f"{col_agrupadora.upper()}: {sel_territorio}"
+    filtro_zona = sel_territorio.title()
+    titulo_terr = f"{col_agrupadora.upper()}: {filtro_zona}"
     
     # Matemáticas para gráficos
     if not df_base.empty:
-        df_hist = df_base[df_base['area_geografica'] == area_global.lower()].groupby('año')['Total'].sum().reset_index()
+        df_hist = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby('año')['Total'].sum().reset_index()
         años_hist = df_hist['año'].values
         pob_hist = df_hist['Total'].values
     else:
