@@ -529,7 +529,13 @@ elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambient
     
     if col_agrupadora in maestro_ant.columns:
         maestro_ant[col_agrupadora] = maestro_ant[col_agrupadora].apply(limpiar_nombres)
-        opciones = sorted(maestro_ant[col_agrupadora].dropna().unique())
+        opciones = maestro_ant[col_agrupadora].dropna().unique().tolist()
+        
+        # 🔥 INYECCIÓN MANUAL DEL AMVA: Lo forzamos en la lista aunque el Excel diga Corantioquia
+        if escala_sel == "🦅 Autoridades Ambientales (CARs)" and "AMVA" not in opciones:
+            opciones.append("AMVA")
+            
+        opciones = sorted(opciones)
     else:
         opciones = []
     
