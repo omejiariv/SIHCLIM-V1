@@ -1596,71 +1596,87 @@ with tab_opt:
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR ZERO-CONFIG)
 # ==========================================
 with tab_mapas:
+    # 🛡️ ESCUDO 1: Título dinámico seguro
     titulo_seguro_mapa = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_seguro_mapa} ({año_sel})")
     
-    # --- ESCUDO INFRANQUEABLE PARA ESCALA GLOBAL ---
+    # 🛡️ ESCUDO 2: Protección para Escala Global
     if escala_sel == "🌍 Global y Suramérica":
         st.info("🌍 A escala Global/Suramérica la visualización espacial se encuentra desactivada. Los datos consolidados están disponibles en el panel de tendencias.")
         
-    # --- LÓGICA ESPACIAL PARA EL RESTO DE ESCALAS ---
     else:
         # Mini-menú integrado y estético
         col_m1, col_m2, col_m3 = st.columns([1, 1, 3])
         with col_m1:
-            if escala_sel != "🌿 Veredal (Antioquia)":
-                area_mapa = st.radio("Filtro Poblacional:", ["Total", "Urbano", "Rural"], key="filtro_pob_mapa")
-            else:
+            # Sincronizamos con el filtro global definido arriba para evitar confusiones
+            if escala_sel == "🌿 Veredal (Antioquia)":
                 area_mapa = "Rural"
                 st.info("ℹ️ Escala veredal: Población rural.")
+            elif escala_sel == "🏙️ Escala Urbana (Cabeceras Antioquia)":
+                area_mapa = "Urbano"
+                st.info("ℹ️ Escala de Cabeceras: Población urbana.")
+            else:
+                # El usuario puede cambiar el filtro localmente en el mapa
+                area_mapa = st.radio("Filtro Poblacional (Mapa):", ["Total", "Urbano", "Rural"], 
+                                     index=["Total", "Urbano", "Rural"].index(area_global), # Sincroniza con el sidebar
+                                     key="filtro_pob_mapa")
         with col_m2:
-            # 🔥 NUEVO CONTROL: Activar capa secundaria de cuencas SIEMPRE visible
-            st.markdown("<br>", unsafe_allow_html=True) # Espaciador para alinear con el radio button
+            st.markdown("<br>", unsafe_allow_html=True) # Espaciador
             mostrar_capa_cuencas = st.toggle("🌊 Superponer Cuencas", value=False)
                 
         with col_m3:
-            st.success("🤖 **Motor Topológico Automático:** Conectando capas (GeoJSON) con matrices.")
+            st.success("🤖 **Motor Topológico Automático:** Conectando capas con precisión administrativa.")
 
-        if 'año' in df_mapa_base.columns:
-            df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(max(df_mapa_base['año']), año_sel)].copy()
-        else:
+        # 🛡️ ESCUDO 3: LA CURA AL ValueError (max() arg is an empty sequence)
+        # Solo calculamos el año si la tabla no está vacía
+        if 'año' in df_mapa_base.columns and not df_mapa_base.empty:
+            año_maximo = max(df_mapa_base['año'])
+            df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(año_maximo, año_sel)].copy()
+        elif not df_mapa_base.empty:
             df_mapa_año = df_mapa_base.copy()
+        else:
+            # Si el territorio no tiene datos para esa CAR o área, queda vacío pero no crashea
+            df_mapa_año = pd.DataFrame()
 
-        # 🔥 ESCUDO ANTI-NAME ERROR: Inicializamos la tabla por defecto
+        # 🔥 MOTOR DE FILTRADO Y AGRUPACIÓN (Anti-Duplicados)
         df_mapa_plot = pd.DataFrame()
 
         if not df_mapa_año.empty:
-            # 1. FILTRO RIGUROSO ANTI-TRIPLICACIÓN (Solo lo hacemos una vez)
+            # 1. Filtro riguroso por área (Urbano/Rural/Total)
             if 'area_geografica' in df_mapa_año.columns:
-                # Filtramos exactamente el área que pide el usuario (Total, Urbano o Rural)
                 df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'].str.lower() == area_mapa.lower()].copy()
             else:
                 df_mapa_plot = df_mapa_año.copy()
+            
+            if not df_mapa_plot.empty:
+                # 2. Agrupación por Territorio para evitar duplicar por sub-registros
+                cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_plot.columns]
+                if cols_agrupar:
+                    df_mapa_plot = df_mapa_plot.groupby(cols_agrupar)['Total'].sum().reset_index()
                 
-            # 2. AGRUPACIÓN LIMPIA (Garantiza que no haya duplicados)
-            cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_plot.columns]
-            if cols_agrupar:
-                # Sumamos la población respetando los ID únicos
-                df_mapa_plot = df_mapa_plot.groupby(cols_agrupar)['Total'].sum().reset_index()
-                
-            # 3. LIMPIEZA DE BASURA ESPACIAL Y CABECERAS
-            if 'Territorio' in df_mapa_plot.columns:
-                df_mapa_plot = df_mapa_plot[df_mapa_plot['Territorio'].astype(str).str.upper() != 'TOTAL']
-                if escala_sel == "💧 Cuencas Hidrográficas" and not df_mapa_plot.empty:
-                    df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].astype(str).str.contains('CABECERA', case=False, na=False)]
+                # 3. Limpieza de filas basura "TOTAL" o "CABECERA" que ensucian el mapa
+                if 'Territorio' in df_mapa_plot.columns:
+                    df_mapa_plot['Territorio'] = df_mapa_plot['Territorio'].astype(str)
+                    df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL', 'ANTIOQUIA', 'AMVA'])]
+                    
+                    if escala_sel == "💧 Cuencas Hidrográficas":
+                        df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.contains('CABECERA', case=False, na=False)]
 
+        # 4. ESTANDARIZACIÓN FINAL DE COLUMNAS PARA EL GEOVISOR
         if not df_mapa_plot.empty:
             if 'Territorio' not in df_mapa_plot.columns:
                 col_t = next((c for c in df_mapa_plot.columns if c.lower() in ['municipio', 'cuenca', 'vereda', 'nombre', 'subzona', 'nom_nss3']), df_mapa_plot.columns[0])
                 df_mapa_plot = df_mapa_plot.rename(columns={col_t: 'Territorio'})
+            
             if 'Padre' not in df_mapa_plot.columns:
-                col_p = next((c for c in df_mapa_plot.columns if c.lower() in ['padre', 'depto_nom', 'departamento', 'macroregion', 'zona']), None)
+                col_p = next((c for c in df_mapa_plot.columns if c.lower() in ['padre', 'depto_nom', 'departamento', 'macroregion', 'zona', 'subregion']), None)
                 if col_p: df_mapa_plot = df_mapa_plot.rename(columns={col_p: 'Padre'})
                 else: df_mapa_plot['Padre'] = ""
+            
             if 'Total' not in df_mapa_plot.columns:
                 col_tot = next((c for c in df_mapa_plot.columns if c.lower() in ['total', 'poblacion', 'pob', 'habitantes', 'valor']), df_mapa_plot.columns[-1])
                 df_mapa_plot = df_mapa_plot.rename(columns={col_tot: 'Total'})
-
+                
             try:
                 import json
                 import copy
