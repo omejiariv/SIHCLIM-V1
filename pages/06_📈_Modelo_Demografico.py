@@ -244,14 +244,13 @@ def cargar_datos_limpios():
         # 1. Convertimos todo a minúsculas y quitamos espacios a los lados para evitar fallos
         df_master['area_geografica'] = df_master['area_geografica'].astype(str).str.lower().str.strip()
         
-        # 2. Diccionario a prueba de balas
-        reemplazos_area = {
-            'cabecera': 'urbano',
-            'cabecera municipal': 'urbano',
-            'centros poblados y rural disperso': 'rural',
-            'centro poblado y rural disperso': 'rural'
-        }
-        df_master['area_geografica'] = df_master['area_geografica'].replace(reemplazos_area)
+        # 2. Escáner inteligente a prueba de balas (Sella la fuga rural del 100%)
+        def clasificar_dane(x):
+            if 'cabecera' in x or 'urban' in x: return 'urbano'
+            if 'rural' in x or 'centros' in x or 'resto' in x: return 'rural'
+            return 'total'
+            
+        df_master['area_geografica'] = df_master['area_geografica'].apply(clasificar_dane)
 
         # --- SEPARACIÓN DE HOMBRES Y MUJERES (CON ESCUDO NUMÉRICO) ---
         cols_hombres = [c for c in df_master.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
@@ -493,19 +492,21 @@ elif escala_sel == "🇨🇴 Nacional (Colombia)":
 # --- NUEVO MOTOR: DEPARTAMENTAL ---
 elif escala_sel == "🏛️ Departamental (Colombia)":
     depto_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
-    df_base = df_mun[(df_mun['depto_nom'] == depto_sel) & (df_mun['area_geografica'] == 'total')]
+    # 🔥 FIX: Quitamos el candado 'total' para que fluyan las 3 áreas
+    df_base = df_mun[df_mun['depto_nom'] == depto_sel]
     
     filtro_zona = depto_sel
     titulo_terr = depto_sel
     
     col_anio = 'año' if 'año' in df_base.columns else 'Año'
-    df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
+    # Aplicamos el filtro del sidebar dinámicamente
+    df_hist = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby(col_anio)['Total'].sum().reset_index()
     df_hist = df_hist.sort_values(by=col_anio)
     
     años_hist = df_hist[col_anio].values
     pob_hist = df_hist['Total'].values
     
-    df_mapa_base = df_base.groupby(['municipio', col_anio])['Total'].sum().reset_index()
+    df_mapa_base = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby(['municipio', col_anio])['Total'].sum().reset_index()
     df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
     df_mapa_base['Padre'] = depto_sel
 
@@ -846,12 +847,12 @@ elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)
     titulo_terr = f"{municipio_sel} ({agrupador_sel})"
     
     col_anio = 'año' if 'año' in df_base.columns else 'Año'
-    df_hist = df_base[df_base['area_geografica'] == 'total'].groupby(col_anio)['Total'].sum().reset_index()
+    # 🔥 FIX: Respetamos la selección (Total/Urbano/Rural)
+    df_hist = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby(col_anio)['Total'].sum().reset_index()
     años_hist = df_hist[col_anio].values
     pob_hist = df_hist['Total'].values
     
-    # 🔥 FIX: Usamos 'mpios_filtrados' para mandar todo el polígono al mapa
-    df_mapa_base = df_base.copy()
+    df_mapa_base = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].copy()
     df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
 # =====================================================================
@@ -2356,15 +2357,15 @@ with tab_matriz:
                     
                     agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
                     df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma))]
-                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].max().reset_index()
                     
                     mpios_mapa = set(gdf_mun['mun_norm'].tolist())
                     df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
                         lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
                     )
                     
-                    # 🔥 FIX FORENSE: ELIMINAMOS LA LÍNEA QUE BORRABA MUNICIPIOS
-                    # Ya no borramos los que no coinciden perfectamente. Todos pasan al balance de masas.
+                    # 🔥 FIX FORENSE: Usamos SUM en lugar de MAX y lo hacemos AL FINAL. 
+                    # Esto garantiza que no se pierda ni un solo habitante (Sella la fuga de 388k).
+                    df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index()
 
                     nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
                     nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
@@ -2376,6 +2377,7 @@ with tab_matriz:
                     
                     for mpio in df_area_v6['mun_norm_dane'].unique():
                         pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
+                        fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
                         
                         # 1. CAPTURA DIRECTA DEL AMVA
                         if mpio in mpios_amva_rescate:
@@ -2391,13 +2393,14 @@ with tab_matriz:
                                 df_temp['subc_lbl'] = nombre_real_aburra
                                 df_final_cuencas.append(df_temp)
                         
-                        # 2. RESTO DE ANTIOQUIA (Cruce Topológico)
+                        # 2. RESTO DE ANTIOQUIA (Cruce Topológico con LEY DE CONSERVACIÓN DE MASAS)
                         else:
-                            fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
-
                             if tipo_area == 'Urbana':
-                                cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio]
+                                cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio].copy()
                                 if not cuencas_urb.empty:
+                                    sum_u = cuencas_urb['pct_area_urb'].sum()
+                                    if sum_u > 0: cuencas_urb['pct_area_urb'] = cuencas_urb['pct_area_urb'] / sum_u # Normalización Estricta 1.0
+                                    
                                     for _, u_row in cuencas_urb.iterrows():
                                         df_temp = pob_mpio.copy()
                                         df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
@@ -2410,33 +2413,53 @@ with tab_matriz:
                                     df_final_cuencas.append(df_temp)
                                     
                             elif tipo_area == 'Rural':
-                                cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio]
-                                cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio]
-                                factor_area = 1.0 if cuencas_cp.empty else 0.70
+                                cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio].copy()
+                                cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio].copy()
                                 
-                                if not cuencas_cp.empty:
+                                if not cuencas_cp.empty and not cuencas_area.empty:
+                                    # 30% Centros Poblados, 70% Área Dispersa
                                     for _, cp_row in cuencas_cp.iterrows():
                                         df_temp = pob_mpio.copy()
                                         df_temp['Total_frag'] = (df_temp['Total'] * 0.30) / len(cuencas_cp)
                                         df_temp['subc_lbl'] = cp_row['subc_lbl']
                                         df_final_cuencas.append(df_temp)
                                         
-                                if not cuencas_area.empty:
+                                    sum_r = cuencas_area['pct_area_rur'].sum()
+                                    if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r # Normalización Estricta
                                     for _, a_row in cuencas_area.iterrows():
                                         df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total'] * factor_area * a_row['pct_area_rur']
+                                        df_temp['Total_frag'] = df_temp['Total'] * 0.70 * a_row['pct_area_rur']
                                         df_temp['subc_lbl'] = a_row['subc_lbl']
                                         df_final_cuencas.append(df_temp)
                                         
-                                if cuencas_cp.empty and cuencas_area.empty:
+                                elif not cuencas_cp.empty:
+                                    # 100% Centros Poblados
+                                    for _, cp_row in cuencas_cp.iterrows():
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = df_temp['Total'] / len(cuencas_cp)
+                                        df_temp['subc_lbl'] = cp_row['subc_lbl']
+                                        df_final_cuencas.append(df_temp)
+                                        
+                                elif not cuencas_area.empty:
+                                    # 100% Área Dispersa
+                                    sum_r = cuencas_area['pct_area_rur'].sum()
+                                    if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r # Normalización Estricta
+                                    for _, a_row in cuencas_area.iterrows():
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = df_temp['Total'] * a_row['pct_area_rur']
+                                        df_temp['subc_lbl'] = a_row['subc_lbl']
+                                        df_final_cuencas.append(df_temp)
+                                else:
                                     df_temp = pob_mpio.copy()
                                     df_temp['Total_frag'] = df_temp['Total']
                                     df_temp['subc_lbl'] = fallback_basin
                                     df_final_cuencas.append(df_temp)
 
                             elif tipo_area == 'Total':
-                                cuencas_tot = inter_t[inter_t['mun_norm'] == mpio]
+                                cuencas_tot = inter_t[inter_t['mun_norm'] == mpio].copy()
                                 if not cuencas_tot.empty:
+                                    sum_t = cuencas_tot['pct_area_tot'].sum()
+                                    if sum_t > 0: cuencas_tot['pct_area_tot'] = cuencas_tot['pct_area_tot'] / sum_t # Normalización Estricta
                                     for _, t_row in cuencas_tot.iterrows():
                                         df_temp = pob_mpio.copy()
                                         df_temp['Total_frag'] = df_temp['Total'] * t_row['pct_area_tot']
