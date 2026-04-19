@@ -262,11 +262,12 @@ if gdf_zona is None or gdf_zona.empty:
     st.stop() 
 
 # ==============================================================================
-# 🧠 2. NÚCLEO DE METABOLISMO UNIFICADO (Doble Sniper: Humanos + Animales)
+# 🧠 2. NÚCLEO DE METABOLISMO UNIFICADO (Sniper Autosuficiente)
 # ==============================================================================
 import re
 import unicodedata
 import difflib
+import time
 
 anio_analisis = 2025 
 pob_urb_base, pob_rur_base, pob_total = 0, 0, 0
@@ -282,14 +283,13 @@ def limpiar_identificador(t):
 
 nombre_norm = limpiar_identificador(nombre_seleccion)
 
-# 🌍 EL DETECTOR GEOMÉTRICO UNIVERSAL (Inmune a colisiones de texto)
+# 🌍 EL DETECTOR GEOMÉTRICO UNIVERSAL
 es_macro = True
 if gdf_zona is not None and not gdf_zona.empty:
     try:
-        # Medimos el área del polígono en kilómetros cuadrados
         area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
         if area_km2 < 1200: 
-            es_macro = False # Cualquier cosa menor a 1200 km2 es Micro/Municipal
+            es_macro = False
     except: pass
 
 aleph_lugar = st.session_state.get('aleph_lugar', '')
@@ -312,7 +312,6 @@ try:
             filas = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
             
             if not filas.empty:
-                # Usamos la verdad geométrica absoluta
                 filas = filas.sort_values(by='Pob_Base', ascending=not es_macro)
                 niv_gan = filas.iloc[0]['Nivel']
                 f_fin = filas[filas['Nivel'] == niv_gan]
@@ -343,11 +342,22 @@ try:
             df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
             filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
             
-            # Fuzzy match para atrapar al Magdalena Cauca
             if filas_p.empty:
                 opciones_pec = df_pec['MATCH_ID'].unique().tolist()
                 matches_pec = difflib.get_close_matches(nombre_norm, opciones_pec, n=1, cutoff=0.7)
-                if matches_pec: filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
+                if matches_pec: 
+                    filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
+                else:
+                    palabras = nombre_norm.replace("rio", "").replace("nss", "").replace("car", "").split()
+                    if palabras:
+                        p_larga = max(palabras, key=len)
+                        if len(p_larga) > 4:
+                            # Filtro estricto para que Aburrá no se robe Antioquia ni otras áreas macro
+                            mask = df_pec['MATCH_ID'].str.contains(p_larga)
+                            filas_temp = df_pec[mask]
+                            if not ("antioquia" in nombre_norm):
+                                filas_temp = filas_temp[filas_temp['Nivel'].str.lower() != 'departamental']
+                            filas_p = filas_temp.copy()
             
             if not filas_p.empty:
                 filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
@@ -362,20 +372,50 @@ try:
                 if not f_por.empty: total_porcinos = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
                 if not f_ave.empty: total_aves = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
                 
-                metodo_animal = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
-                animales_encontrados = True
+                if (total_bovinos + total_porcinos + total_aves) > 0:
+                    metodo_animal = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
+                    animales_encontrados = True
                 
-        if not animales_encontrados: raise ValueError("Fallback")
+        if not animales_encontrados: 
+            raise ValueError("Fallback Pecuario")
 
     except Exception:
-        # FALLBACK HISTÓRICO DIRECTO
-        total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
-        suma = total_bovinos + total_porcinos + total_aves
-        metodo_animal = "Censo Histórico" if suma > 0 else "Sin Datos Pecuarios"
+        # 🔥 EL RESCATE AUTOSUFICIENTE (No depende de la función del fondo)
+        try:
+            url_sup = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Historico_Cuencas.csv?t={int(time.time())}"
+            df_censo = pd.read_csv(url_sup)
+            
+            if 'Anio' in df_censo.columns:
+                anio_f = min(anio_analisis, df_censo['Anio'].max())
+                df_censo = df_censo[df_censo['Anio'] == anio_f]
+            
+            # Recolectamos todas las microcuencas que conforman el polígono seleccionado
+            piezas = [nombre_seleccion]
+            if gdf_zona is not None and not gdf_zona.empty:
+                for col in ['nom_szh', 'nomzh', 'nom_nss3', 'nom_nss2']:
+                    if col in gdf_zona.columns:
+                        piezas.extend(gdf_zona[col].dropna().unique().tolist())
+            
+            piezas_norm = [limpiar_identificador(p) for p in set(piezas) if str(p).strip() != '']
+            
+            if 'Subcuenca' in df_censo.columns:
+                df_censo['Sub_Norm'] = df_censo['Subcuenca'].apply(limpiar_identificador)
+                df_filtrado = df_censo[df_censo['Sub_Norm'].isin(piezas_norm)]
+                
+                if not df_filtrado.empty:
+                    total_bovinos = int(df_filtrado['Bovinos'].sum())
+                    total_porcinos = int(df_filtrado['Porcinos'].sum())
+                    total_aves = int(df_filtrado['Aves'].sum())
+            
+            suma = total_bovinos + total_porcinos + total_aves
+            metodo_animal = "Suma Espacial (Fallback)" if suma > 0 else "Sin Datos Pecuarios"
+            
+        except Exception as e_fallback:
+            metodo_animal = "Error Total Pecuario"
 
 except Exception as main_e:
     st.error(f"Error Núcleo: {main_e}")
-
+    
 # ==============================================================================
 # 🎨 3. INTERFAZ DE SÍNTESIS Y CALIBRACIÓN DE CAMPO
 # ==============================================================================
