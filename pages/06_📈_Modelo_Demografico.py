@@ -851,12 +851,16 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                             for a_str in ['total', 'urbano', 'rural']:
                                 mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': a_str})
 
-                # --- 🔍 DEPURADOR FORENSE ---
+                # --- 🔍 ESCÁNER FORENSE (MODO PROTEGIDO) ---
                 if log_cruces:
-                    df_log = pd.DataFrame(log_cruces)
-                    huecos = len(df_log[df_log['Estado'] == '🌿 0 hab (Hueco Topológico)'])
-                    if huecos > 0:
-                        st.sidebar.info(f"ℹ️ El mapa tiene {huecos} zonas sin polígonos. Su población ya fue salvada matemáticamente en la curva superior.")
+                    with st.sidebar.expander("🔍 Detalle del Escáner Forense"):
+                        st.write("Estado de sincronización matriz-mapa:")
+                        df_log = pd.DataFrame(log_cruces)
+                        st.dataframe(df_log, use_container_width=True)
+                        
+                        huecos = len(df_log[df_log['Estado'] == '🌿 0 hab (Hueco Topológico)'])
+                        if huecos > 0:
+                            st.info(f"ℹ️ {huecos} huecos topológicos detectados y salvados matemáticamente.")
 
                 df_mapa_base = pd.DataFrame(mapa_data)
             else:
@@ -2596,109 +2600,94 @@ with tab_matriz:
             renderizar_panel(area_2, "g2")
             
 # ==========================================
-# ==========================================
-# PESTAÑA 5: RANKINGS Y DINÁMICA HISTÓRICA (Top 15 y 2005-2035)
+# PESTAÑA 5: RANKINGS Y DINÁMICA HISTÓRICA (Versión Universal V2)
 # ==========================================
 with tab_rankings:
-    # Extraemos la zona actual (Total, Urbano o Rural)
     zona_actual = "Total"
     if not df_mapa_base.empty and 'area_geografica' in df_mapa_base.columns:
         zona_actual = df_mapa_base['area_geografica'].iloc[0].title()
         
     st.subheader(f"📊 Análisis Comparativo y Trayectorias Poblacionales ({zona_actual})")
-    
     zona_q = zona_actual.lower()
     
-    # --- CONSTRUCCIÓN DEL RANKING CON COLUMNA 'PADRE' PARA TOOLTIPS ---
     df_rank = pd.DataFrame()
     titulo_ranking = ""
     
+    # --- 🧠 TRADUCTOR DE ESCALAS INTELIGENTE ---
     if "Global" in escala_sel or "Nacional" in escala_sel:
+        # En escala Nacional/Global comparamos Departamentos
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
         df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
         df_rank['Padre'] = 'Colombia'
-        titulo_ranking = "Departamentos"
+        titulo_ranking = "Departamentos de Colombia"
         
     elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
-        # 🔥 FIX: Atrapa depto_sel si existe, sino usa agrupador_sel
         padre_seguro = locals().get('depto_sel', locals().get('agrupador_sel', "ANTIOQUIA"))
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
         df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
         df_rank['Padre'] = padre_seguro
         titulo_ranking = f"Municipios de {padre_seguro}"
         
-    elif any(x in escala_sel for x in ["Regiones", "Regional", "Subregiones", "Autoridades", "CARs"]):
-        padre_seguro = locals().get('agrupador_sel', "Región Seleccionada")
-        col_agrup = 'Macroregion'
+    elif any(x in escala_sel for x in ["Subregiones", "CAR", "Autoridades", "Regional", "Macroregiones"]):
+        # 🔥 RECUPERACIÓN DE ESCALAS PERDIDAS
+        padre_seguro = locals().get('agrupador_sel', "Selección")
+        col_agrup = 'Macroregion' # Por defecto
         if "Subregion" in escala_sel: col_agrup = 'Subregion'
         elif "CAR" in escala_sel or "Autoridad" in escala_sel: col_agrup = 'CAR'
             
         if col_agrup in df_mun.columns:
             df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun[col_agrup] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
-        else:
-            df_rank = pd.DataFrame(columns=['municipio', 'Total'])
-        df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
-        df_rank['Padre'] = padre_seguro
-        titulo_ranking = f"Municipios de {padre_seguro}"
-        
-    elif "Escala Intra-Urbana" in escala_sel:
-        if 'df_mapa_base' in locals() and not df_mapa_base.empty:
-            df_rank = df_mapa_base[['Territorio', 'Total', 'Padre']].copy() if 'Padre' in df_mapa_base.columns else df_mapa_base[['Territorio', 'Total']].copy()
-            if 'Padre' not in df_rank.columns: df_rank['Padre'] = 'Medellín'
-        else:
-            df_rank = pd.DataFrame(columns=['Territorio', 'Total', 'Padre'])
+            df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
+            df_rank['Padre'] = padre_seguro
+            titulo_ranking = f"Municipios de {padre_seguro}"
+            
+    elif "Cuencas" in escala_sel:
+        # 🔥 FORZAR COMPARACIÓN NSS1
+        if 'df_hier' in locals() and not df_hier.empty:
+            df_nss1 = df_hier[['subc_lbl', 'nom_nss1']].drop_duplicates()
+            # Unimos los datos actuales del mapa con sus padres NSS1
+            df_rank = df_mapa_base.merge(df_nss1, left_on='Territorio', right_on='subc_lbl', how='left')
+            df_rank = df_rank.groupby('nom_nss1')['Total'].sum().reset_index()
+            df_rank.rename(columns={'nom_nss1': 'Territorio'}, inplace=True)
+            df_rank['Padre'] = locals().get('sel_ah', 'Área Hidrográfica')
+            titulo_ranking = "Macrocuencas (NSS1)"
+            
+    elif "Intra-Urbana" in escala_sel:
+        df_rank = df_mapa_base[['Territorio', 'Total', 'Padre']].copy() if 'Padre' in df_mapa_base.columns else df_mapa_base[['Territorio', 'Total']].copy()
+        if 'Padre' not in df_rank.columns: df_rank['Padre'] = 'Medellín'
         titulo_ranking = locals().get('nivel_medellin', 'Comunas / Barrios')
-        
-    else:
-        # Veredas o Cuencas
-        if 'df_mapa_base' in locals() and not df_mapa_base.empty and 'Territorio' in df_mapa_base.columns:
-            cols_group = ['Territorio', 'Padre'] if 'Padre' in df_mapa_base.columns else ['Territorio']
-            df_rank = df_mapa_base.groupby(cols_group)['Total'].sum().reset_index()
-            if 'Padre' not in df_rank.columns: df_rank['Padre'] = 'Territorio Superior'
-        else:
-            df_rank = pd.DataFrame(columns=['Territorio', 'Total', 'Padre'])
-        titulo_ranking = "Territorios Seleccionados"
-        
-    # Escudo Numérico
-    if not df_rank.empty and 'Total' in df_rank.columns:
+
+    # Limpieza numérica
+    if not df_rank.empty:
         df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
         df_rank = df_rank[df_rank['Total'] > 0]
-        
-    # Procedemos solo si hay datos
+
     if not df_rank.empty and len(df_rank) > 1:
-        
-        # -------------------------------------------------------------------
-        # SECCIÓN 1: RANKINGS LADO A LADO (Con Tooltips Inteligentes)
-        # -------------------------------------------------------------------
         st.markdown(f"### 🏆 Extremos Poblacionales ({año_sel}) - {titulo_ranking}")
-        
         col_rank_izq, col_rank_der = st.columns(2)
         
         with col_rank_izq:
             df_plot_top = df_rank.nlargest(15, 'Total')
-            # 🔥 FIX: Inyectamos el 'Padre' al hover_data para cumplir tu solicitud
+            # 🔥 TOOLTIP ENRIQUECIDO (Vereda - Municipio, etc)
             fig_top = px.bar(df_plot_top, x='Total', y='Territorio', orientation='h', 
                              color='Total', color_continuous_scale='Viridis',
                              hover_data={'Padre': True, 'Territorio': True, 'Total': ':.0f'},
                              title="📈 Top 15: Mayor Población")
-            fig_top.update_layout(yaxis={'categoryorder':'total ascending'}, height=450, margin=dict(t=40, b=0, l=0, r=0))
+            fig_top.update_layout(yaxis={'categoryorder':'total ascending'}, height=450)
             st.plotly_chart(fig_top, use_container_width=True, key=f"rank_top_{año_sel}_{zona_actual}")
 
         with col_rank_der:
-            if len(df_rank) > 5:
-                df_plot_bot = df_rank.nsmallest(15, 'Total')
-                fig_bot = px.bar(df_plot_bot, x='Total', y='Territorio', orientation='h', 
-                                 color='Total', color_continuous_scale='Plasma',
-                                 hover_data={'Padre': True, 'Territorio': True, 'Total': ':.0f'},
-                                 title="📉 Bottom 15: Menor Población")
-                fig_bot.update_layout(yaxis={'categoryorder':'total descending'}, height=450, margin=dict(t=40, b=0, l=0, r=0))
-                st.plotly_chart(fig_bot, use_container_width=True, key=f"rank_bot_{año_sel}_{zona_actual}")
+            df_plot_bot = df_rank.nsmallest(15, 'Total')
+            fig_bot = px.bar(df_plot_bot, x='Total', y='Territorio', orientation='h', 
+                             color='Total', color_continuous_scale='Plasma',
+                             hover_data={'Padre': True, 'Territorio': True, 'Total': ':.0f'},
+                             title="📉 Bottom 15: Menor Población")
+            fig_bot.update_layout(yaxis={'categoryorder':'total descending'}, height=450)
+            st.plotly_chart(fig_bot, use_container_width=True, key=f"rank_bot_{año_sel}_{zona_actual}")
 
-        # -------------------------------------------------------------------
-        # SECCIÓN 2: CURVAS HISTÓRICAS (Motor Universal A, B y C)
-        # -------------------------------------------------------------------
+        # --- SECCIÓN CURVAS (MOTOR UNIVERSAL) ---
         st.markdown("---")
-        st.markdown(f"### 📈 Dinámica Poblacional (Evolución y Proyección - Top 10)")
+        st.markdown(f"### 📈 Dinámica Poblacional (Trayectorias, Evolución y Proyección - Top 10)")
         
         top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
         df_line = pd.DataFrame()
