@@ -2684,59 +2684,122 @@ with tab_rankings:
                 st.plotly_chart(fig_bot, use_container_width=True, key=f"rank_bot_{año_sel}_{zona_actual}")
 
         # -------------------------------------------------------------------
-        # SECCIÓN 2: CURVAS HISTÓRICAS (Totalmente Funcionales)
+        # SECCIÓN 2: CURVAS HISTÓRICAS Y PROYECTIVAS (UNIVERSALES)
         # -------------------------------------------------------------------
         st.markdown("---")
-        st.markdown("### 📈 Dinámica Poblacional (2005 - 2035)")
+        st.markdown(f"### 📈 Dinámica Poblacional (Evolución y Proyección - Top 10)")
         
-        if "Veredal" in escala_sel or "Cuencas" in escala_sel or "Intra-Urbana" in escala_sel:
-            st.info("ℹ️ A escala Veredal, Cuencas o Intra-Urbana, la plataforma utiliza cortes poblacionales fijos. Las curvas comparativas dinámicas se activan desde la escala Municipal.")
-        else:
-            # Obtenemos los 10 líderes del ranking independiente que acabamos de crear
-            top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
-            
-            df_base_historica = df_mun[df_mun['area_geografica'] == zona_q].copy()
-            df_line = pd.DataFrame()
-            
-            if "Nacional" in escala_sel:
-                df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
-                df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
-                
-            elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
-                # Usamos el escudo también aquí para evitar NameError
-                padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "ANTIOQUIA"))
-                df_base_historica = df_base_historica[df_base_historica['depto_nom'] == padre_seguro]
-                df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
-                df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+        # Obtenemos los 10 líderes del ranking actual para el seguimiento
+        top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
+        df_line = pd.DataFrame()
+        
+        # Definimos qué escalas son espaciales complejas (requieren los modelos matemáticos)
+        escalas_espaciales = ["Veredal", "Cuencas", "Intra-Urbana"]
+        es_escala_espacial = any(e in escala_sel for e in escalas_espaciales)
 
-            elif "Regional" in escala_sel or "Municipal (Regiones)" in escala_sel:
-                padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "Oriente"))
-                if 'Macroregion' in df_base_historica.columns:
-                    df_base_historica = df_base_historica[df_base_historica['Macroregion'] == padre_seguro]
+        if not es_escala_espacial:
+            # =================================================================
+            # MOTOR A: ESCALAS ADMINISTRATIVAS (Usamos datos puros DANE)
+            # =================================================================
+            df_base_historica = df_mun[df_mun['area_geografica'] == zona_q].copy() if 'df_mun' in locals() else pd.DataFrame()
+            
+            if not df_base_historica.empty:
+                if "Global" in escala_sel or "Nacional" in escala_sel:
+                    df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
+                    df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
+                    
+                elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
+                    padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "ANTIOQUIA"))
+                    if 'depto_nom' in df_base_historica.columns:
+                        df_temp = df_base_historica[df_base_historica['depto_nom'] == padre_seguro]
+                        df_line = df_temp.groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                        df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+
+                elif any(x in escala_sel for x in ["Subregiones", "Autoridades", "CARs", "Regional", "Macroregiones", "Regiones"]):
+                    padre_seguro = locals().get('agrupador_sel', globals().get('agrupador_sel', "Oriente"))
+                    
+                    # Detectamos inteligentemente la columna de la base de datos
+                    col_agrup = 'Macroregion'
+                    if "Subregion" in escala_sel and 'Subregion' in df_base_historica.columns: col_agrup = 'Subregion'
+                    elif ("CAR" in escala_sel or "Autoridades" in escala_sel) and 'CAR' in df_base_historica.columns: col_agrup = 'CAR'
+                    
+                    if col_agrup in df_base_historica.columns:
+                        df_temp = df_base_historica[df_base_historica[col_agrup] == padre_seguro]
+                        df_line = df_temp.groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                        df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+                        
+                elif "Urbana" in escala_sel or "Cabeceras" in escala_sel:
                     df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                     df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
-            
+                else:
+                    # Fallback de seguridad
+                    df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                    df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+
+            # Suavizador para la gráfica DANE (Interpola los vacíos inter-censales)
             if not df_line.empty:
-                # Filtramos las curvas para que solo muestren a los del Top 10
                 df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
-                
-                # Suavizador para la gráfica
                 def conciliacion_censal(group):
                     group['año'] = pd.to_numeric(group['año'], errors='coerce')
                     group = group.sort_values('año')
                     mask = (group['año'] >= 2006) & (group['año'] <= 2019)
                     group.loc[mask, 'Total'] = np.nan
-                    # Usamos solo interpolate de Pandas sobre la columna
                     group['Total'] = group['Total'].interpolate(method='linear').ffill().bfill()
                     return group
-                    
                 df_line = df_line.groupby('Territorio', group_keys=False).apply(conciliacion_censal)
+
+        else:
+            # =================================================================
+            # MOTOR B: ESCALAS ESPACIALES COMPLEJAS (Usa Curvas de la Matriz)
+            # =================================================================
+            if 'df_matriz_demografica' in st.session_state:
+                df_mat = st.session_state['df_matriz_demografica']
                 
-                fig_line = px.line(df_line, x='año', y='Total', color='Territorio', markers=True,
-                                   title="Evolución de los 10 Territorios más Poblados",
-                                   labels={'año': 'Año', 'Total': 'Habitantes'})
+                # Normalizamos el área para que coincida con la matriz (Ej: 'Urbano' -> 'Urbana')
+                area_matriz = 'Urbana' if zona_actual.lower() in ['urbano', 'urbana'] else zona_actual.capitalize()
                 
-                st.plotly_chart(fig_line, use_container_width=True, key=f"line_hist_{zona_actual}")
+                # Filtramos la matriz buscando a los 10 líderes actuales
+                filas_top = df_mat[(df_mat['Territorio'].isin(top_10_nombres)) & (df_mat['Area'] == area_matriz)]
+                
+                if not filas_top.empty:
+                    records = []
+                    años_plot = np.arange(1985, 2041) # Proyectamos de 1985 hasta 2040
+                    for _, row in filas_top.iterrows():
+                        terr = row['Territorio']
+                        x_offset = row['Año_Base']
+                        x_norm = años_plot - x_offset
+                        modelo = str(row.get('Modelo_Recomendado', 'Desconocido'))
+                        
+                        y_vals = np.zeros_like(años_plot, dtype=float)
+                        if 'Logistico' in modelo:
+                            y_vals = row.get('Log_K', 0) / (1 + row.get('Log_a', 0) * np.exp(-row.get('Log_r', 0) * x_norm))
+                        elif 'Exponencial' in modelo:
+                            y_vals = row.get('Exp_a', 0) * np.exp(row.get('Exp_b', 0) * x_norm)
+                        elif 'Polinomial' in modelo:
+                            y_vals = row.get('Poly_A', 0)*(x_norm**3) + row.get('Poly_B', 0)*(x_norm**2) + row.get('Poly_C', 0)*x_norm + row.get('Poly_D', 0)
+                        else:
+                            y_vals = np.full_like(años_plot, row.get('Pob_Base', 0))
+                            
+                        for a, y in zip(años_plot, y_vals):
+                            records.append({'año': a, 'Territorio': terr, 'Total': y})
+                    
+                    df_line = pd.DataFrame(records)
+                else:
+                    st.warning(f"⚠️ Las curvas para '{escala_sel}' requieren que la Matriz sea entrenada previamente en la Pestaña 4.")
+            else:
+                st.info(f"💡 Para visualizar las curvas espaciales complejas, primero debes entrenar e inyectar la Matriz Maestra.")
+
+        # =================================================================
+        # RENDERIZADO FINAL DE LA GRÁFICA DE DINÁMICA POBLACIONAL
+        # =================================================================
+        if not df_line.empty:
+            fig_line = px.line(df_line, x='año', y='Total', color='Territorio', markers=True,
+                               title=f"Trayectorias Demográficas: Top 10 Territorios ({zona_actual})",
+                               labels={'año': 'Año', 'Total': 'Habitantes'})
+            fig_line.update_layout(hovermode="x unified", height=500, margin=dict(t=40, b=0, l=0, r=0))
+            st.plotly_chart(fig_line, use_container_width=True, key=f"line_hist_univ_{zona_actual}")
+        elif not es_escala_espacial:
+             st.warning("⚠️ No se encontraron datos históricos para dibujar las trayectorias de esta escala.")
 
     else:
         st.info("💡 Selecciona una escala territorial con múltiples divisiones para ver el ranking y las curvas comparativas.")
