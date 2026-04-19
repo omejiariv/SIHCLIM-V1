@@ -147,22 +147,63 @@ if gdf_zona is not None and not gdf_zona.empty:
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
         
     # ==============================================================================
-    # 🧠 NÚCLEO DEMOGRÁFICO ESTRICTO (Conexión Directa a Matriz Maestra)
+    # 🧠 NÚCLEO DEMOGRÁFICO ESTRICTO (Puente Inteligente Aleph + SQL)
     # ==============================================================================
-    # Consultamos la unidad territorial exacta a la función metabólica, sin parches ni aproximaciones.
+    pob_total = 0
+    
+    # 1. Intentamos leer la memoria viva (Si el usuario viene de la Pestaña Demográfica)
+    aleph_lugar = st.session_state.get('aleph_lugar', '')
+    aleph_anio = st.session_state.get('aleph_anio', 0)
+    
+    if aleph_lugar == nombre_zona and aleph_anio == anio_actual:
+        pob_total = st.session_state.get('aleph_pob_total', 0)
+        
+    # 2. Si la memoria está vacía o el usuario cambió el año/lugar, calculamos desde la Matriz SQL
+    if pob_total == 0:
+        try:
+            from sqlalchemy import text
+            import numpy as np
+            q_rescue = text("""
+                SELECT "Año_Base", "Pob_Base", "Modelo_Recomendado", "Log_K", "Log_a", "Log_r", "Exp_a", "Exp_b", "Poly_A", "Poly_B", "Poly_C", "Poly_D"
+                FROM matriz_maestra_demografica 
+                WHERE LOWER(trim("Territorio")) = LOWER(trim(:t)) AND "Area" IN ('Total', 'total', 'TOTAL')
+                LIMIT 1
+            """)
+            df_res = pd.read_sql(q_rescue, engine, params={'t': str(nombre_zona)})
+            
+            if not df_res.empty:
+                row = df_res.iloc[0]
+                mod = str(row.get('Modelo_Recomendado', ''))
+                # Calculamos el tiempo (t) transcurrido desde el Año Base (1985)
+                t_val = float(anio_actual - row.get('Año_Base', 1985))
+                
+                # Ejecutamos el modelo matemático ganador al vuelo
+                if 'Logistico' in mod: 
+                    pob_total = row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t_val))
+                elif 'Exponencial' in mod: 
+                    pob_total = row['Exp_a'] * np.exp(row['Exp_b'] * t_val)
+                elif 'Polinomial' in mod: 
+                    pob_total = row['Poly_A']*(t_val**3) + row['Poly_B']*(t_val**2) + row['Poly_C']*t_val + row['Poly_D']
+                else: 
+                    pob_total = row['Pob_Base']
+        except Exception as e:
+            pass # Si falla SQL, pasamos al Plan C
+
+    # 3. Datos Agropecuarios y Plan C (Mantenemos tu función existente)
     datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
 
     if datos_metabolismo:
-        pob_total = datos_metabolismo.get('pob_total', 0)
+        if pob_total == 0: # Plan C: Si SQL falló, intentamos rescatar de tu función
+            pob_total = datos_metabolismo.get('pob_total', 0)
         bovinos = datos_metabolismo.get('bovinos', 0)
         porcinos = datos_metabolismo.get('porcinos', 0)
         aves = datos_metabolismo.get('aves', 0)
     else:
-        # Salvaguarda metodológica: Si no hay datos en la BD para este polígono, 
-        # asignamos cero estricto e informamos, en lugar de falsear la realidad territorial.
-        pob_total = 0
         bovinos = 0; porcinos = 0; aves = 0
-        st.warning(f"⚠️ **Aviso Metodológico:** La unidad territorial '{nombre_zona}' no arrojó resultados poblacionales directos en la Matriz Demográfica.")
+        
+    if pob_total == 0:
+        # Salvaguarda metodológica
+        st.warning(f"⚠️ **Aviso Metodológico:** La unidad territorial '{nombre_zona}' no arrojó resultados poblacionales en la Matriz Demográfica ni en el caché.")
 
     # Cálculo volumétrico estricto
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
@@ -246,7 +287,7 @@ if gdf_zona is not None and not gdf_zona.empty:
 
     estres_hidrico_porcentaje = (wei_ratio) * 100
     st.session_state['estres_hidrico_global'] = estres_hidrico_porcentaje
-
+    
     # ==============================================================================
     # 🎛️ PANEL EJECUTIVO: SALUD TERRITORIAL (TOP DASHBOARD)
     # ==============================================================================
