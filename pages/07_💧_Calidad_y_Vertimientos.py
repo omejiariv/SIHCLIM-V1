@@ -263,7 +263,7 @@ if gdf_zona is None or gdf_zona.empty:
     st.stop() 
 
 # ==============================================================================
-# 🧠 2. NÚCLEO DEMOGRÁFICO "SNIPER" (Versión Inmortal - Fuzzy & PolyCheck)
+# 🧠 2. NÚCLEO DEMOGRÁFICO "SNIPER" (Versión Inmortal - AreaCheck & Fuzzy)
 # ==============================================================================
 anio_analisis = 2025 
 
@@ -284,8 +284,6 @@ if aleph_lugar == nombre_seleccion and aleph_anio == anio_analisis:
 if pob_total == 0:
     try:
         from modules.db_manager import get_engine
-        import difflib
-        
         engine = get_engine()
         
         # Cargamos matriz a la sesión para velocidad extrema
@@ -296,36 +294,48 @@ if pob_total == 0:
             st.session_state['df_matriz_demografica'] = df_mat
             
         if not df_mat.empty:
-            # 1. Normalización local blindada
+            # 1. Normalización Destructora de Guiones (Cura al Magdalena-Cauca)
             def norm_local(t):
                 import unicodedata
                 if pd.isna(t): return ""
-                return unicodedata.normalize('NFKD', str(t).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+                t = unicodedata.normalize('NFKD', str(t).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+                return t.replace("-", " ").replace("  ", " ") # Adiós guiones y dobles espacios
             
             df_mat['MATCH_ID'] = df_mat['Territorio'].apply(norm_local)
             nombre_norm = norm_local(nombre_seleccion)
             
-            # 2. 🎯 Búsqueda Difusa (Cura el "Magdalena Cauca" y "Aburrá - NSS")
-            opciones = df_mat['MATCH_ID'].unique().tolist()
-            matches = difflib.get_close_matches(nombre_norm, opciones, n=1, cutoff=0.7)
+            # 2. 🎯 Búsqueda Inteligente
+            filas_terr = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
             
-            if matches:
-                nombre_ganador = matches[0]
-                filas_terr = df_mat[df_mat['MATCH_ID'] == nombre_ganador].copy()
-                
-                # 3. 🧠 EL DESAMBIGUADOR MAESTRO (Cura los 22k del Porce)
+            if filas_terr.empty:
+                # Plan C: Búsqueda difusa (Ignorar "rio" o "nss" para rescatar al Aburrá)
+                palabra_limpia = nombre_norm.replace("rio", "").replace("nss", "").replace("car:", "").strip()
+                if palabra_limpia:
+                    filas_terr = df_mat[df_mat['MATCH_ID'].str.contains(palabra_limpia)].copy()
+            
+            if not filas_terr.empty:
+                # 3. 🧠 EL DESAMBIGUADOR GEOMÉTRICO MAESTRO (Cura al Nechí y Porce)
                 es_macro = True
-                if gdf_zona is not None and not gdf_zona.empty:
-                    # Si el mapa tiene más de 1 microcuenca diferente adentro, es un contenedor MACRO
-                    if 'nom_nss3' in gdf_zona.columns:
-                        num_microcuencas = len(gdf_zona['nom_nss3'].dropna().unique())
-                        if num_microcuencas <= 1:
-                            es_macro = False # Tiene 1 o 0, es una microcuenca individual
+                if len(filas_terr['Nivel'].unique()) > 1:
+                    # ¡Hay colisión! Tenemos dos territorios con el mismo nombre.
+                    if gdf_zona is not None and not gdf_zona.empty:
+                        try:
+                            # Calculamos el área física del polígono que el usuario seleccionó en pantalla
+                            area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
+                            # Una Macrocuenca (ZH/SZH) mide miles de km2. Una Microcuenca rara vez pasa de 400 km2.
+                            if area_km2 < 800:
+                                es_macro = False
+                        except: pass
                 
-                # 4. Ordenar para resolver la colisión (Gigante vs Pequeño)
+                # Ordenamos la tabla para que el Gigante quede arriba (si es macro) o abajo (si es micro)
                 filas_terr = filas_terr.sort_values(by='Pob_Base', ascending=not es_macro)
                 
-                # 5. Ecuación Matemática
+                # 🛡️ BLOQUEO DE NIVEL: Aseguramos que las filas de Urbana y Rural pertenezcan al mismo Nivel del ganador
+                nivel_ganador = filas_terr.iloc[0]['Nivel']
+                terr_ganador = filas_terr.iloc[0]['Territorio']
+                filas_finales = filas_terr[(filas_terr['Territorio'] == terr_ganador) & (filas_terr['Nivel'] == nivel_ganador)]
+                
+                # 4. Ecuación Matemática
                 def resolver_ecuacion(row, anio):
                     t = float(anio - row.get('Año_Base', 1985))
                     mod = str(row.get('Modelo_Recomendado', ''))
@@ -334,10 +344,10 @@ if pob_total == 0:
                     elif 'Polinomial' in mod: return row['Poly_A']*(t**3) + row['Poly_B']*(t**2) + row['Poly_C']*t + row['Poly_D']
                     else: return row['Pob_Base']
                 
-                # 6. Extracción de los 3 vectores
-                f_tot = filas_terr[filas_terr['Area'].str.lower().isin(['total', 't'])]
-                f_urb = filas_terr[filas_terr['Area'].str.lower().str.startswith('urb')]
-                f_rur = filas_terr[filas_terr['Area'].str.lower() == 'rural']
+                # 5. Extracción de los 3 vectores de la escala ganadora
+                f_tot = filas_finales[filas_finales['Area'].str.lower().isin(['total', 't'])]
+                f_urb = filas_finales[filas_finales['Area'].str.lower().str.startswith('urb')]
+                f_rur = filas_finales[filas_finales['Area'].str.lower() == 'rural']
                 
                 if not f_tot.empty: pob_total = resolver_ecuacion(f_tot.iloc[0], anio_analisis)
                 
