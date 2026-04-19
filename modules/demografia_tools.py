@@ -10,54 +10,60 @@ from modules.db_manager import get_engine
 # 🔥 Importamos la única Aplanadora Maestra desde utils
 from modules.utils import normalizar_texto_maestro
 
-def obtener_poblacion_matriz(nombre_zona, anio_objetivo):
+def obtener_poblacion_matriz(nombre_zona, anio_objetivo, gdf_contexto=None):
     """
-    Función Universal: Busca en la Matriz Maestra SQL, limpia el nombre y 
-    calcula la población usando la ecuación matemática ganadora al vuelo.
+    Buscador Francotirador de Matriz Demográfica.
+    Usa gdf_contexto para desambiguar colisiones de nombres entre Macro y Micro cuencas.
     """
-    engine = get_engine()
-    pob_final = 0
+    from modules.db_manager import get_engine
+    from sqlalchemy import text
+    import pandas as pd
+    import numpy as np
     
+    engine = get_engine()
     try:
-        # 1. Traemos la matriz de coeficientes (Solo Totales)
+        from modules.utils import normalizar_texto_maestro
+        nombre_norm = normalizar_texto_maestro(nombre_zona)
+        
         q = text('SELECT * FROM matriz_maestra_demografica WHERE "Area" IN (\'Total\', \'total\', \'TOTAL\')')
         df_mat = pd.read_sql(q, engine)
         
         if not df_mat.empty:
-            # 2. Crear diccionario normalizado agresivo de la base de datos
-            territorios_db = df_mat['Territorio'].dropna().unique().tolist()
-            nombres_norm = {normalizar_texto_maestro(t): t for t in territorios_db}
+            df_mat['MATCH_ID'] = df_mat['Territorio'].astype(str).apply(normalizar_texto_maestro)
+            fila_ganadora = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
             
-            # 3. Normalizar lo que el usuario seleccionó en la UI 
-            # (normalizar_texto_maestro ya se encarga internamente de quitar los "- NSS", tildes y abreviaturas)
-            zona_norm = normalizar_texto_maestro(nombre_zona)
-            match_name = None
-            
-            # 4. Emparejamiento (Fuzzy Match ajustado al 65% para atrapar variaciones difíciles)
-            match_name = nombres_norm.get(zona_norm)
-            if not match_name:
-                matches = difflib.get_close_matches(zona_norm, nombres_norm.keys(), n=1, cutoff=0.65)
-                if matches: match_name = nombres_norm[matches[0]]
-            
-            # 5. Cálculo Matemático Estricto
-            if match_name:
-                row = df_mat[df_mat['Territorio'] == match_name].iloc[0]
-                mod = str(row.get('Modelo_Recomendado', ''))
-                t_val = float(anio_objetivo - row.get('Año_Base', 1985))
-                
-                if 'Logistico' in mod: 
-                    pob_final = row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t_val))
-                elif 'Exponencial' in mod: 
-                    pob_final = row['Exp_a'] * np.exp(row['Exp_b'] * t_val)
-                elif 'Polinomial' in mod: 
-                    pob_final = row['Poly_A']*(t_val**3) + row['Poly_B']*(t_val**2) + row['Poly_C']*t_val + row['Poly_D']
-                else: 
-                    pob_final = row['Pob_Base']
+            if not fila_ganadora.empty:
+                # 🔥 RESOLUCIÓN INTELIGENTE DE COLISIONES (El Desambiguador)
+                if len(fila_ganadora) > 1:
+                    es_macro = True # Por defecto asumimos que es la macrocuenca
                     
-    except Exception as e:
-        pass # Silencioso, el frontend maneja el Cero como advertencia
-        
-    return round(pob_final, 0)
+                    # Si tenemos el mapa, leemos sus columnas para saber qué escala seleccionó el usuario
+                    if gdf_contexto is not None and not gdf_contexto.empty:
+                        # Si el nombre coincide con las columnas de micro-escala, sabemos que busca la pequeña
+                        if 'nom_nss3' in gdf_contexto.columns and nombre_zona in gdf_contexto['nom_nss3'].values:
+                            es_macro = False
+                        elif 'nom_nss2' in gdf_contexto.columns and nombre_zona in gdf_contexto['nom_nss2'].values:
+                            es_macro = False
+
+                    if es_macro:
+                        # Toma el gigante (Ej: ZH Nechí -> 4 Millones)
+                        fila_ganadora = fila_ganadora.sort_values(by='Pob_Base', ascending=False) 
+                    else:
+                        # Toma el pequeño (Ej: NSS3 Nechí -> 29 Mil)
+                        fila_ganadora = fila_ganadora.sort_values(by='Pob_Base', ascending=True) 
+
+                row = fila_ganadora.iloc[0]
+                
+                t_val = float(anio_objetivo - row.get('Año_Base', 1985))
+                mod = str(row.get('Modelo_Recomendado', ''))
+                
+                if 'Logistico' in mod: return row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t_val))
+                elif 'Exponencial' in mod: return row['Exp_a'] * np.exp(row['Exp_b'] * t_val)
+                elif 'Polinomial' in mod: return row['Poly_A']*(t_val**3) + row['Poly_B']*(t_val**2) + row['Poly_C']*t_val + row['Poly_D']
+                else: return row['Pob_Base']
+    except Exception:
+        pass
+    return 0
 
 def render_motor_demografico(lugar_defecto="Antioquia"):
     """Mini-panel actualizado para usar la verdad de la Matriz SQL."""
