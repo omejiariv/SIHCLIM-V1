@@ -263,12 +263,16 @@ if gdf_zona is None or gdf_zona.empty:
     st.stop() 
 
 # ==============================================================================
-# 🧠 2. NÚCLEO DEMOGRÁFICO "SNIPER" (Versión Inmortal - AreaCheck & Fuzzy)
+# 🧠 NÚCLEO DE METABOLISMO UNIFICADO (Doble Sniper: Humanos + Animales)
 # ==============================================================================
-anio_analisis = 2025 
+anio_analisis = 2025 # Reloj base para Calidad
 
+# ---------------------------------------------------------
+# 1. MOTOR HUMANO (Sniper Demográfico)
+# ---------------------------------------------------------
 pob_urb_base, pob_rur_base, pob_total = 0, 0, 0
-origen_dato = ""
+metodo_humano = "Sin Datos"
+es_macro = True # Variable clave para desambiguar escalas
 
 # PLAN A: El Aleph (Memoria viva de la sesión)
 aleph_lugar = st.session_state.get('aleph_lugar', '')
@@ -276,93 +280,97 @@ aleph_anio = st.session_state.get('aleph_anio', 0)
 
 if aleph_lugar == nombre_seleccion and aleph_anio == anio_analisis:
     pob_total = st.session_state.get('aleph_pob_total', 0)
-    origen_dato = "Memoria Viva (Aleph)"
+    metodo_humano = "Memoria Viva (Aleph)"
     pob_urb_base = pob_total * 0.85
     pob_rur_base = pob_total * 0.15
 
 # PLAN B: Búsqueda en Matriz Maestra SQL
 if pob_total == 0:
     try:
+        from modules.demografia_tools import obtener_poblacion_matriz
+        from modules.utils import normalizar_texto_maestro
         from modules.db_manager import get_engine
-        engine = get_engine()
         
-        # Cargamos matriz a la sesión para velocidad extrema
-        if 'df_matriz_demografica' in st.session_state:
-            df_mat = st.session_state['df_matriz_demografica']
-        else:
-            df_mat = pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine)
-            st.session_state['df_matriz_demografica'] = df_mat
-            
+        pob_total = obtener_poblacion_matriz(nombre_seleccion, anio_analisis, gdf_contexto=gdf_zona)
+        engine = get_engine()
+        nombre_norm = normalizar_texto_maestro(nombre_seleccion)
+        
+        df_mat = st.session_state.get('df_matriz_demografica', pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine))
+        st.session_state['df_matriz_demografica'] = df_mat
+        
         if not df_mat.empty:
-            # 1. Normalización Destructora de Guiones (Cura al Magdalena-Cauca)
-            def norm_local(t):
-                import unicodedata
-                if pd.isna(t): return ""
-                t = unicodedata.normalize('NFKD', str(t).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
-                return t.replace("-", " ").replace("  ", " ") # Adiós guiones y dobles espacios
+            df_mat['MATCH_ID'] = df_mat['Territorio'].astype(str).apply(normalizar_texto_maestro)
             
-            df_mat['MATCH_ID'] = df_mat['Territorio'].apply(norm_local)
-            nombre_norm = norm_local(nombre_seleccion)
-            
-            # 2. 🎯 Búsqueda Inteligente
-            filas_terr = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
-            
-            if filas_terr.empty:
-                # Plan C: Búsqueda difusa (Ignorar "rio" o "nss" para rescatar al Aburrá)
-                palabra_limpia = nombre_norm.replace("rio", "").replace("nss", "").replace("car:", "").strip()
-                if palabra_limpia:
-                    filas_terr = df_mat[df_mat['MATCH_ID'].str.contains(palabra_limpia)].copy()
+            # Desambiguador de Escala
+            if gdf_zona is not None and not gdf_zona.empty:
+                if 'nom_nss3' in gdf_zona.columns and nombre_seleccion in gdf_zona['nom_nss3'].values: es_macro = False
+                elif 'nom_nss2' in gdf_zona.columns and nombre_seleccion in gdf_zona['nom_nss2'].values: es_macro = False
+
+            filas_terr = df_mat[df_mat['MATCH_ID'] == nombre_norm]
             
             if not filas_terr.empty:
-                # 3. 🧠 EL DESAMBIGUADOR GEOMÉTRICO MAESTRO (Cura al Nechí y Porce)
-                es_macro = True
-                if len(filas_terr['Nivel'].unique()) > 1:
-                    # ¡Hay colisión! Tenemos dos territorios con el mismo nombre.
-                    if gdf_zona is not None and not gdf_zona.empty:
-                        try:
-                            # Calculamos el área física del polígono que el usuario seleccionó en pantalla
-                            area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
-                            # Una Macrocuenca (ZH/SZH) mide miles de km2. Una Microcuenca rara vez pasa de 400 km2.
-                            if area_km2 < 800:
-                                es_macro = False
-                        except: pass
-                
-                # Ordenamos la tabla para que el Gigante quede arriba (si es macro) o abajo (si es micro)
                 filas_terr = filas_terr.sort_values(by='Pob_Base', ascending=not es_macro)
                 
-                # 🛡️ BLOQUEO DE NIVEL: Aseguramos que las filas de Urbana y Rural pertenezcan al mismo Nivel del ganador
-                nivel_ganador = filas_terr.iloc[0]['Nivel']
-                terr_ganador = filas_terr.iloc[0]['Territorio']
-                filas_finales = filas_terr[(filas_terr['Territorio'] == terr_ganador) & (filas_terr['Nivel'] == nivel_ganador)]
-                
-                # 4. Ecuación Matemática
+                # Función Resolutora Matemática
                 def resolver_ecuacion(row, anio):
                     t = float(anio - row.get('Año_Base', 1985))
                     mod = str(row.get('Modelo_Recomendado', ''))
                     if 'Logistico' in mod: return row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t))
                     elif 'Exponencial' in mod: return row['Exp_a'] * np.exp(row['Exp_b'] * t)
-                    elif 'Polinomial' in mod: return row['Poly_A']*(t**3) + row['Poly_B']*(t**2) + row['Poly_C']*t + row['Poly_D']
-                    else: return row['Pob_Base']
+                    return row['Poly_A']*t**3 + row['Poly_B']*t**2 + row['Poly_C']*t + row.get('Poly_D', 0)
+
+                f_urb = filas_terr[filas_terr['Area'].str.lower().str.startswith('urb')]
+                f_rur = filas_terr[filas_terr['Area'].str.lower() == 'rural']
                 
-                # 5. Extracción de los 3 vectores de la escala ganadora
-                f_tot = filas_finales[filas_finales['Area'].str.lower().isin(['total', 't'])]
-                f_urb = filas_finales[filas_finales['Area'].str.lower().str.startswith('urb')]
-                f_rur = filas_finales[filas_finales['Area'].str.lower() == 'rural']
-                
-                if not f_tot.empty: pob_total = resolver_ecuacion(f_tot.iloc[0], anio_analisis)
-                
-                if not f_urb.empty: pob_urb_base = resolver_ecuacion(f_urb.iloc[0], anio_analisis)
-                else: pob_urb_base = pob_total * 0.85
-                    
-                if not f_rur.empty: pob_rur_base = resolver_ecuacion(f_rur.iloc[0], anio_analisis)
-                else: pob_rur_base = pob_total * 0.15
-                    
-                origen_dato = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
-            else:
-                origen_dato = "Sin coincidencia en Matriz"
+                pob_urb_base = resolver_ecuacion(f_urb.iloc[0], anio_analisis) if not f_urb.empty else pob_total * 0.85
+                pob_rur_base = resolver_ecuacion(f_rur.iloc[0], anio_analisis) if not f_rur.empty else pob_total * 0.15
+
+        metodo_humano = f"Matriz Demográfica ({'Macro' if es_macro else 'Micro'})"
     except Exception as e:
-        st.error(f"Error en el Núcleo Demográfico: {e}")
-        origen_dato = "Fallo de consulta"
+        metodo_humano = f"Error: {e}"
+
+# ---------------------------------------------------------
+# 2. MOTOR ANIMAL (Sniper Pecuario)
+# ---------------------------------------------------------
+total_bovinos, total_porcinos, total_aves = 0, 0, 0
+metodo_animal = "Sin Datos"
+
+try:
+    from modules.db_manager import get_engine
+    engine = get_engine()
+    
+    # Leemos la matriz pecuaria (la misma lógica exitosa que con humanos)
+    df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
+    st.session_state['df_matriz_pecuaria'] = df_pec
+    
+    if not df_pec.empty:
+        df_pec['MATCH_ID'] = df_pec['Territorio'].astype(str).apply(normalizar_texto_maestro)
+        filas_pec = df_pec[df_pec['MATCH_ID'] == nombre_norm]
+        
+        if not filas_pec.empty:
+            # Usamos el mismo desambiguador 'es_macro' que funcionó arriba
+            filas_pec = filas_pec.sort_values(by='Pob_Base', ascending=not es_macro)
+            nivel_ganador_pec = filas_pec.iloc[0]['Nivel']
+            terr_ganador_pec = filas_pec.iloc[0]['Territorio']
+            
+            # Bloqueamos el nivel para no mezclar macro con micro
+            filas_finales_pec = filas_pec[(filas_pec['Territorio'] == terr_ganador_pec) & (filas_pec['Nivel'] == nivel_ganador_pec)]
+            
+            f_bov = filas_finales_pec[filas_finales_pec['Especie'].str.lower() == 'bovinos']
+            f_por = filas_finales_pec[filas_finales_pec['Especie'].str.lower() == 'porcinos']
+            f_ave = filas_finales_pec[filas_finales_pec['Especie'].str.lower() == 'aves']
+            
+            if not f_bov.empty: total_bovinos = resolver_ecuacion(f_bov.iloc[0], anio_analisis)
+            if not f_por.empty: total_porcinos = resolver_ecuacion(f_por.iloc[0], anio_analisis)
+            if not f_ave.empty: total_aves = resolver_ecuacion(f_ave.iloc[0], anio_analisis)
+            
+            metodo_animal = f"Matriz Pecuaria SQL ({'Macro' if es_macro else 'Micro'})"
+        else:
+            # Plan de Emergencia: Si no está en la matriz, intentar leer el histórico viejo
+            total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
+            metodo_animal = "Censo Histórico (Fallback)" if total_bovinos > 0 else "Sin coincidencia"
+except Exception as e:
+    st.error(f"Error consultando el Motor Pecuario: {e}")
 
 # ==============================================================================
 # 🎨 3. INTERFAZ DE SÍNTESIS Y CALIBRACIÓN DE CAMPO
