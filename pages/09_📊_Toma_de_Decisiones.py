@@ -5,9 +5,14 @@
 import os
 import sys
 
+# --- 🔥 FIX: INYECCIÓN DE PATH ESTRATÉGICA ---
+# Garantiza que Python encuentre la carpeta 'modules' ANTES de importar
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+import plotly.express as px
 import plotly.graph_objects as go
 import folium
 from streamlit_folium import st_folium
@@ -20,17 +25,19 @@ import streamlit as st
 # --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
 st.set_page_config(page_title="Sihcli-Poter: Toma de Decisiones", page_icon="🎯", layout="wide")
 
-# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS INTERNOS ---
 try:
     from modules import selectors
     from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
-    from modules.demografia_tools import render_motor_demografico
+    # 🔥 FIX: Añadimos obtener_poblacion_matriz al import
+    from modules.demografia_tools import render_motor_demografico, obtener_poblacion_matriz
     from modules.biodiversidad_tools import render_motor_ripario
     from modules.geomorfologia_tools import render_motor_hidrologico
     from modules.impacto_serv_ecosist import render_sigacal_analysis
     from modules.db_manager import get_engine
-except ImportError:
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+except ImportError as e:
+    st.error(f"🚨 Error crítico cargando los módulos internos: {e}")
+    st.stop() # Detiene la ejecución para evitar pantallas en blanco o errores en cascada
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
