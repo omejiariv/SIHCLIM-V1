@@ -173,13 +173,13 @@ if gdf_zona is not None and not gdf_zona.empty:
         pob_total = st.session_state.get('aleph_pob_total', 0)
         metodo_dato = "Memoria Viva (Aleph)"
 
-    # PLAN B: Búsqueda en Matriz Pre-computada (La solución a los 4M de Nechí)
+    # PLAN B: Búsqueda en Matriz Pre-computada (La solución a las colisiones de nombres)
     if pob_total == 0:
         try:
             from modules.demografia_tools import obtener_poblacion_matriz
-            # Esta función ahora es un francotirador que busca el nombre exacto 
-            # en la matriz donde ya sumamos los barrios de Medellín.
-            pob_total = obtener_poblacion_matriz(nombre_zona, anio_actual)
+            # 🔥 FIX COLISIONES: Pasamos gdf_zona como 'gdf_contexto' para que el francotirador 
+            # sepa diferenciar entre el Nechí gigante y el Nechí pequeño.
+            pob_total = obtener_poblacion_matriz(nombre_zona, anio_actual, gdf_contexto=gdf_zona)
             metodo_dato = "Matriz Pre-computada (SQL)"
         except Exception as e:
             st.error(f"Error consultando el Cerebro Demográfico: {e}")
