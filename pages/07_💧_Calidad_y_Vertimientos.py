@@ -23,15 +23,13 @@ warnings.filterwarnings("ignore")
 try:
     from modules import selectors
     from modules.config import Config
-    from modules.utils import normalizar_texto, leer_csv_robusto, encender_gemelo_digital, obtener_metabolismo_exacto
-    from modules.demografia_tools import render_motor_demografico
+    from modules.utils import encender_gemelo_digital
 except ImportError:
     # Fallback de rutas por si hay problemas de lectura entre carpetas
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors
     from modules.config import Config
-    from modules.utils import normalizar_texto, leer_csv_robusto, encender_gemelo_digital, obtener_metabolismo_exacto
-    from modules.demografia_tools import render_motor_demografico
+    from modules.utils import encender_gemelo_digital
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
