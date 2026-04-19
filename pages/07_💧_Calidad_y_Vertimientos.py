@@ -384,12 +384,27 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
     es_todo_antioquia = ("antioquia" in nombre_seleccion.lower() or nivel_sel_interno == "Departamental")
 
     if not es_todo_antioquia:
-        poligono_zona = gdf_zona.to_crs(epsg=3116).unary_union.simplify(50)
+        # 🔥 FIX GEOSException: Reparar geometrías inválidas (topología rota) antes de unirlas
+        gdf_limpio = gdf_zona.to_crs(epsg=3116).copy()
+        
+        # El truco maestro de GIS: buffer(0) cura el 99% de las geometrías cruzadas
+        gdf_limpio['geometry'] = gdf_limpio.geometry.buffer(0) 
+        
+        try:
+            poligono_zona = gdf_limpio.unary_union.simplify(50)
+        except Exception:
+            # Fallback extremo de emergencia usando shapely si el buffer(0) no fue suficiente
+            import shapely
+            gdf_limpio['geometry'] = gdf_limpio.geometry.apply(
+                lambda geom: shapely.validation.make_valid(geom) if not geom.is_valid else geom
+            )
+            poligono_zona = gdf_limpio.unary_union.simplify(50)
+            
         poligono_preparado = prep(poligono_zona)
         minx, miny, maxx, maxy = poligono_zona.bounds
     else:
         minx, miny, maxx, maxy = 0, 0, 2000000, 2000000 # Límites absurdos para dejar pasar todo
-
+        
     # ---------------------------------------------------------
     # 1. VERTIMIENTOS
     # ---------------------------------------------------------
