@@ -177,12 +177,30 @@ def complete_series(df):
     return df
 
 def leer_csv_robusto(ruta):
+    """
+    Lee archivos CSV forzando la codificación UTF-8 para proteger 
+    las tildes y eñes (Ej: Abriaquí, Acacías).
+    """
     try:
-        df = pd.read_csv(ruta, sep=';', low_memory=False)
-        if len(df.columns) < 5: df = pd.read_csv(ruta, sep=',', low_memory=False)
+        # 1. Intentamos forzar UTF-8 (Corrige los caracteres extraños)
+        df = pd.read_csv(ruta, sep=';', low_memory=False, encoding='utf-8')
+        if len(df.columns) < 5: 
+            df = pd.read_csv(ruta, sep=',', low_memory=False, encoding='utf-8')
+    except UnicodeDecodeError:
+        # 2. Si el archivo es muy antiguo, aplicamos el Fallback a Latin-1
+        try:
+            df = pd.read_csv(ruta, sep=';', low_memory=False, encoding='latin1')
+            if len(df.columns) < 5: 
+                df = pd.read_csv(ruta, sep=',', low_memory=False, encoding='latin1')
+        except Exception: 
+            return pd.DataFrame()
+    except Exception: 
+        return pd.DataFrame()
+    
+    if not df.empty:
+        # Limpiamos caracteres fantasma (BOM) que Excel suele dejar
         df.columns = df.columns.str.replace('\ufeff', '').str.strip()
-        return df
-    except Exception: return pd.DataFrame()
+    return df
 
 # =====================================================================
 # CARGADORES CENTRALIZADOS DEL ICA (EL ALEPH DE DATOS)
