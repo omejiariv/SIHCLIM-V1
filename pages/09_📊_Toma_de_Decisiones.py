@@ -158,57 +158,14 @@ if gdf_zona is not None and not gdf_zona.empty:
     if aleph_lugar == nombre_zona and aleph_anio == anio_actual:
         pob_total = st.session_state.get('aleph_pob_total', 0)
         
-    # 2. Si la memoria está vacía, buscamos en SQL usando Inteligencia de Nombres
+    # 2. Si la memoria está vacía, buscamos en SQL usando el Cerebro Centralizado
     if pob_total == 0:
         try:
-            from sqlalchemy import text
-            import numpy as np
-            import difflib
-            import unicodedata
-            import re
-            
-            # Traemos la matriz a la memoria viva de la página para buscar con inteligencia
-            q_rescue = text("""
-                SELECT "Territorio", "Año_Base", "Pob_Base", "Modelo_Recomendado", "Log_K", "Log_a", "Log_r", "Exp_a", "Exp_b", "Poly_A", "Poly_B", "Poly_C", "Poly_D"
-                FROM matriz_maestra_demografica 
-                WHERE "Area" IN ('Total', 'total', 'TOTAL')
-            """)
-            df_res = pd.read_sql(q_rescue, engine)
-            
-            if not df_res.empty:
-                def normalizar(texto):
-                    if not texto or pd.isna(texto): return ""
-                    t = str(texto).lower().strip()
-                    return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-
-                # 🔥 FIX ANTI-CERO: Limpiamos los sufijos que la UI le pone a los nombres (Ej: "Rio Aburrá - NSS" -> "Rio Aburrá")
-                nombre_limpio = re.sub(r'\s*-\s*NSS.*|\s*-\s*SZH.*|\s*-\s*ZH.*|\s*-\s*AH.*', '', nombre_zona, flags=re.IGNORECASE).strip()
-                
-                territorios_db = df_res['Territorio'].unique().tolist()
-                nombres_norm = {normalizar(t): t for t in territorios_db}
-                
-                zona_norm = normalizar(nombre_limpio)
-                match_name = None
-                
-                # Búsqueda exacta primero, luego búsqueda difusa (Fuzzy Match)
-                if zona_norm in nombres_norm:
-                    match_name = nombres_norm[zona_norm]
-                else:
-                    matches = difflib.get_close_matches(zona_norm, nombres_norm.keys(), n=1, cutoff=0.7)
-                    if matches: match_name = nombres_norm[matches[0]]
-                        
-                if match_name:
-                    row = df_res[df_res['Territorio'] == match_name].iloc[0]
-                    mod = str(row.get('Modelo_Recomendado', ''))
-                    t_val = float(anio_actual - row.get('Año_Base', 1985))
-                    
-                    if 'Logistico' in mod: pob_total = row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t_val))
-                    elif 'Exponencial' in mod: pob_total = row['Exp_a'] * np.exp(row['Exp_b'] * t_val)
-                    elif 'Polinomial' in mod: pob_total = row['Poly_A']*(t_val**3) + row['Poly_B']*(t_val**2) + row['Poly_C']*t_val + row['Poly_D']
-                    else: pob_total = row['Pob_Base']
-                    
+            from modules.demografia_tools import obtener_poblacion_matriz
+            # Esta función centralizada limpia los nombres (quita "- NSS") y busca la fórmula matemática
+            pob_total = obtener_poblacion_matriz(nombre_zona, anio_actual)
         except Exception as e:
-            pass # Si falla SQL, pasamos al Plan C
+            pass # Si falla, pasamos al Plan C silenciosamente
 
     # 3. Datos Agropecuarios y Plan C
     datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
@@ -243,6 +200,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     @st.cache_data(ttl=3600)
     def obtener_física_matriz(territorio_nombre):
         try:
+            from sqlalchemy import text
             q = text("SELECT * FROM matriz_hidrologica_maestra WHERE LOWER(trim(\"Territorio\")) = LOWER(trim(:t)) LIMIT 1")
             df_m = pd.read_sql(q, engine, params={'t': str(territorio_nombre)})
             if not df_m.empty: return df_m.iloc[0].to_dict()
