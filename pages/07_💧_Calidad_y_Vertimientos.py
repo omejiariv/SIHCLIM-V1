@@ -818,13 +818,16 @@ with tab_fuentes:
     if not mpios_activos: mpios_activos = [lugar_n]
 
     # ==============================================================================
-    # EXTRACCIÓN DE BASES DE DATOS ICA (Inyección desde la Turbina Central)
+    # 🐄 EXTRACCIÓN DE BASES DE DATOS ICA (Censo Pecuario)
     # ==============================================================================
-    # Usamos directamente los datos espaciales de altísima precisión
-    total_bovinos = datos_metabolismo.get('bovinos', 0.0)
-    total_porcinos = datos_metabolismo.get('porcinos', 0.0)
-    total_aves = datos_metabolismo.get('aves', 0.0)
-    origen_pecuario = datos_metabolismo.get('origen_pecuario', 'Estimación')
+    try:
+        # Usamos la función nativa que busca directamente en la base histórica del ICA
+        total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
+        origen_pecuario = "Sincronizada (ICA Base)" if total_bovinos > 0 else "Estimación (Sin datos en Base)"
+    except Exception as e:
+        total_bovinos, total_porcinos, total_aves = 0, 0, 0
+        origen_pecuario = "Error de Consulta"
+        st.error(f"Error consultando el Censo Pecuario: {e}")
 
     if "Sincronizada" in origen_pecuario:
         st.success(f"🧠 **Conexión ICA:** Datos pecuarios sincronizados para **{nombre_seleccion}**.")
