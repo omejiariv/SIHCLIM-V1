@@ -52,14 +52,26 @@ def cargar_mapa_municipios():
     return gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
 
 def render_selector_espacial():
-    engine = db_manager.get_engine()
+    # =========================================================================
+    # 🔥 ESCUDO ANTI-UNBOUND LOCAL ERROR: 
+    # Inicializamos las variables de retorno en la línea 1 de la función.
+    # Así, pase lo que pase abajo (incluso si se cae el servidor), 
+    # la función siempre tendrá algo válido que retornar.
+    # =========================================================================
+    ids_estaciones = []
+    nombre_zona = "Antioquia"
+    altitud_ref = 1500.0
+    gdf_zona = None
+    
+    # Ahora sí, procedemos con el resto del código...
+    try:
+        engine = db_manager.get_engine()
+    except Exception as e:
+        st.error(f"Error conectando a BD: {e}")
+        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona # Retorno de emergencia
     
     with st.sidebar.expander("📍 Filtros Geográficos Principales", expanded=True):
         modo = st.radio("Nivel de Agregación:", ["Por Cuenca", "Por Municipio", "Por Región", "Departamento (Antioquia)"], index=0)
-        
-        gdf_zona = None
-        nombre_zona = "Antioquia"
-        altitud_ref = 1500
         
         try:
             # ==========================================
