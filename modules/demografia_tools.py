@@ -8,39 +8,56 @@ import re
 from sqlalchemy import text
 from modules.db_manager import get_engine
 
+def normalizar_texto_robusto(t):
+    """Aplanadora de texto para garantizar el Match entre Mapas y DANE/Matriz"""
+    if not t or pd.isna(t): return ""
+    t = str(t).lower().strip()
+    # 1. Quitar tildes
+    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+    # 2. Homologar prefijos de agua (Mapas vs Matriz)
+    t = re.sub(r'\brio\b', 'r', t)
+    t = re.sub(r'\bquebrada\b', 'q', t)
+    t = re.sub(r'\bcano\b', 'cn', t)
+    # 3. Quitar puntos (ej. "r." -> "r")
+    t = t.replace(".", "")
+    # 4. Convertir toda la puntuación (guiones, comas) en espacios
+    t = re.sub(r'[^a-z0-9\s]', ' ', t) 
+    # 5. Quitar espacios dobles
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t
+
 def obtener_poblacion_matriz(nombre_zona, anio_objetivo):
     """
     Función Universal: Busca en la Matriz Maestra SQL, limpia el nombre y 
-    calcula la población usando la ecuación matemática ganadora.
+    calcula la población usando la ecuación matemática ganadora al vuelo.
     """
     engine = get_engine()
     pob_final = 0
     
     try:
         # 1. Traemos la matriz de coeficientes (Solo Totales)
-        q = text('SELECT * FROM matriz_maestra_demografica WHERE "Area" IN (\'Total\', \'total\')')
+        q = text('SELECT * FROM matriz_maestra_demografica WHERE "Area" IN (\'Total\', \'total\', \'TOTAL\')')
         df_mat = pd.read_sql(q, engine)
         
         if not df_mat.empty:
-            # 2. Traductor Inteligente de Nombres (Limpia - NSS, - SZH, etc.)
-            def normalizar(t):
-                if not t or pd.isna(t): return ""
-                t = str(t).lower().strip()
-                return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-
+            # 2. Quitar el sufijo técnico del selector UI (" - NSS", " - SZH", etc.)
             nombre_limpio = re.sub(r'\s*-\s*NSS.*|\s*-\s*SZH.*|\s*-\s*ZH.*|\s*-\s*AH.*', '', str(nombre_zona), flags=re.IGNORECASE).strip()
             
-            # 3. Búsqueda Difusa (Fuzzy Match)
-            territorios_db = df_mat['Territorio'].unique().tolist()
-            nombres_norm = {normalizar(t): t for t in territorios_db}
-            zona_norm = normalizar(nombre_limpio)
+            # 3. Crear diccionario normalizado agresivo de la base de datos
+            territorios_db = df_mat['Territorio'].dropna().unique().tolist()
+            nombres_norm = {normalizar_texto_robusto(t): t for t in territorios_db}
             
+            # 4. Normalizar lo que el usuario seleccionó en la UI
+            zona_norm = normalizar_texto_robusto(nombre_limpio)
+            match_name = None
+            
+            # 5. Emparejamiento (Fuzzy Match ajustado al 65% para atrapar variaciones difíciles)
             match_name = nombres_norm.get(zona_norm)
             if not match_name:
-                matches = difflib.get_close_matches(zona_norm, nombres_norm.keys(), n=1, cutoff=0.7)
+                matches = difflib.get_close_matches(zona_norm, nombres_norm.keys(), n=1, cutoff=0.65)
                 if matches: match_name = nombres_norm[matches[0]]
             
-            # 4. Cálculo Matemático Estricto
+            # 6. Cálculo Matemático Estricto
             if match_name:
                 row = df_mat[df_mat['Territorio'] == match_name].iloc[0]
                 mod = str(row.get('Modelo_Recomendado', ''))
@@ -56,7 +73,7 @@ def obtener_poblacion_matriz(nombre_zona, anio_objetivo):
                     pob_final = row['Pob_Base']
                     
     except Exception as e:
-        st.error(f"Error en Cerebro Demográfico: {e}")
+        pass # Silencioso, el frontend maneja el Cero como advertencia
         
     return round(pob_final, 0)
 
