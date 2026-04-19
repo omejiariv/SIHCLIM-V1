@@ -268,38 +268,42 @@ import re
 import unicodedata
 import difflib
 
-# 1. INICIALIZACIÓN GLOBAL (Evita el NameError)
 anio_analisis = 2025 
 pob_urb_base, pob_rur_base, pob_total = 0, 0, 0
 total_bovinos, total_porcinos, total_aves = 0, 0, 0
 origen_dato = "No Identificado"
 metodo_animal = "Sin Datos"
 
-# --- Función de Limpieza Extrema (Regex) ---
 def limpiar_identificador(t):
     if pd.isna(t): return ""
-    # Normaliza (quita tildes), pasa a minúsculas y quita símbolos/guiones
     t = unicodedata.normalize('NFKD', str(t).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
     t = re.sub(r'[^a-z0-9]', ' ', t) 
-    return " ".join(t.split()) # Colapsa espacios múltiples
+    return " ".join(t.split())
 
-# 2. IDENTIFICACIÓN DEL TERRITORIO
 nombre_norm = limpiar_identificador(nombre_seleccion)
 
-# PLAN A: El Aleph (Memoria viva de la sesión)
+# 🌍 EL DETECTOR GEOMÉTRICO UNIVERSAL (Inmune a colisiones de texto)
+es_macro = True
+if gdf_zona is not None and not gdf_zona.empty:
+    try:
+        # Medimos el área del polígono en kilómetros cuadrados
+        area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
+        if area_km2 < 1200: 
+            es_macro = False # Cualquier cosa menor a 1200 km2 es Micro/Municipal
+    except: pass
+
 aleph_lugar = st.session_state.get('aleph_lugar', '')
 if aleph_lugar == nombre_seleccion:
     pob_total = st.session_state.get('aleph_pob_total', 0)
     origen_dato = "Memoria Viva (Aleph)"
     pob_urb_base, pob_rur_base = pob_total * 0.85, pob_total * 0.15
 
-# PLAN B: Búsqueda en Matriz Maestra SQL
-if pob_total == 0:
-    try: # <--- AQUÍ INICIA EL TRY PRINCIPAL
-        from modules.db_manager import get_engine
-        engine = get_engine()
-        
-        # --- 2.1 MOTOR HUMANO ---
+try:
+    from modules.db_manager import get_engine
+    engine = get_engine()
+    
+    # --- 2.1 MOTOR HUMANO ---
+    if pob_total == 0:
         df_mat = st.session_state.get('df_matriz_demografica', pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine))
         st.session_state['df_matriz_demografica'] = df_mat
         
@@ -308,11 +312,7 @@ if pob_total == 0:
             filas = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
             
             if not filas.empty:
-                es_macro = True
-                if len(filas['Nivel'].unique()) > 1 and gdf_zona is not None:
-                    area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
-                    if area_km2 < 800: es_macro = False
-                
+                # Usamos la verdad geométrica absoluta
                 filas = filas.sort_values(by='Pob_Base', ascending=not es_macro)
                 niv_gan = filas.iloc[0]['Nivel']
                 f_fin = filas[filas['Nivel'] == niv_gan]
@@ -333,92 +333,48 @@ if pob_total == 0:
                 pob_rur_base = resolver(f_r.iloc[0], anio_analisis) if not f_r.empty else pob_total * 0.15
                 origen_dato = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
 
-        # --- 2.2 MOTOR PECUARIO ---
-# --- 2.2 MOTOR PECUARIO (Matriz + Suma Espacial Dinámica) ---
-        try:
-            df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
-            st.session_state['df_matriz_pecuaria'] = df_pec
-            animales_encontrados = False
+    # --- 2.2 MOTOR PECUARIO ---
+    try:
+        df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
+        st.session_state['df_matriz_pecuaria'] = df_pec
+        animales_encontrados = False
+        
+        if not df_pec.empty:
+            df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
+            filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
             
-            if not df_pec.empty:
-                df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
-                filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
+            # Fuzzy match para atrapar al Magdalena Cauca
+            if filas_p.empty:
+                opciones_pec = df_pec['MATCH_ID'].unique().tolist()
+                matches_pec = difflib.get_close_matches(nombre_norm, opciones_pec, n=1, cutoff=0.7)
+                if matches_pec: filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
+            
+            if not filas_p.empty:
+                filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
+                niv_p = filas_p.iloc[0]['Nivel']
+                f_p_fin = filas_p[filas_p['Nivel'] == niv_p]
                 
-                # Búsqueda Difusa Pecuaria
-                if filas_p.empty:
-                    import difflib
-                    opciones_pec = df_pec['MATCH_ID'].unique().tolist()
-                    matches_pec = difflib.get_close_matches(nombre_norm, opciones_pec, n=1, cutoff=0.6)
-                    if matches_pec:
-                        filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
-                    else:
-                        palabras = nombre_norm.replace("rio", "").replace("nss", "").split()
-                        if palabras:
-                            p_larga = max(palabras, key=len)
-                            if len(p_larga) > 4:
-                                filas_p = df_pec[df_pec['MATCH_ID'].str.contains(p_larga)].copy()
+                f_bov = f_p_fin[f_p_fin['Especie'].str.lower() == 'bovinos']
+                f_por = f_p_fin[f_p_fin['Especie'].str.lower() == 'porcinos']
+                f_ave = f_p_fin[f_p_fin['Especie'].str.lower() == 'aves']
                 
-                if not filas_p.empty:
-                    filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
-                    niv_p = filas_p.iloc[0]['Nivel']
-                    f_p_fin = filas_p[filas_p['Nivel'] == niv_p]
-                    
-                    f_bov = f_p_fin[f_p_fin['Especie'].str.lower() == 'bovinos']
-                    f_por = f_p_fin[f_p_fin['Especie'].str.lower() == 'porcinos']
-                    f_ave = f_p_fin[f_p_fin['Especie'].str.lower() == 'aves']
-                    
-                    if not f_bov.empty: total_bovinos = resolver(f_bov.iloc[0], anio_analisis, 'Poblacion_Base')
-                    if not f_por.empty: total_porcinos = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
-                    if not f_ave.empty: total_aves = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
-                    
-                    metodo_animal = f"Matriz Pecuaria SQL ({'Macro' if es_macro else 'Micro'})"
-                    animales_encontrados = True
-                    
-            if not animales_encontrados:
-                raise ValueError("Ir a Fallback Histórico")
+                if not f_bov.empty: total_bovinos = resolver(f_bov.iloc[0], anio_analisis, 'Poblacion_Base')
+                if not f_por.empty: total_porcinos = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
+                if not f_ave.empty: total_aves = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
+                
+                metodo_animal = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
+                animales_encontrados = True
+                
+        if not animales_encontrados: raise ValueError("Fallback")
 
-        except Exception:
-            # 🔥 PLAN C: AGRUPACIÓN ESPACIAL DINÁMICA (El Reemplazo seguro del GeoJSON)
-            try:
-                # 1. Intento clásico directo
-                total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, "Cuenca Hidrográfica", anio_analisis)
-                
-                # 2. Si da cero (Caso Magdalena Cauca), reconstruimos el rompecabezas
-                if total_bovinos == 0 and gdf_zona is not None and not gdf_zona.empty:
-                    import time
-                    url_sup = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Historico_Cuencas.csv?t={int(time.time())}"
-                    df_censo = pd.read_csv(url_sup)
-                    
-                    if 'Anio' in df_censo.columns:
-                        anio_f = min(anio_analisis, df_censo['Anio'].max())
-                        df_censo = df_censo[df_censo['Anio'] == anio_f]
-                    
-                    # Extraemos los nombres de TODAS las subcuencas que conforman este mapa gigante
-                    piezas = []
-                    for col in ['nom_szh', 'nomzh', 'nom_nss3']:
-                        if col in gdf_zona.columns:
-                            piezas.extend(gdf_zona[col].dropna().unique().tolist())
-                    
-                    piezas_norm = [limpiar_identificador(p) for p in set(piezas)]
-                    
-                    if 'Subcuenca' in df_censo.columns:
-                        df_censo['Sub_Norm'] = df_censo['Subcuenca'].apply(limpiar_identificador)
-                        df_filtrado = df_censo[df_censo['Sub_Norm'].isin(piezas_norm)]
-                        
-                        if not df_filtrado.empty:
-                            total_bovinos = int(df_filtrado['Bovinos'].sum())
-                            total_porcinos = int(df_filtrado['Porcinos'].sum())
-                            total_aves = int(df_filtrado['Aves'].sum())
-                
-                suma_animales = total_bovinos + total_porcinos + total_aves
-                metodo_animal = "Censo Histórico (Suma de Piezas)" if suma_animales > 0 else "Sin Datos Pecuarios"
-                
-            except Exception as e_fallback:
-                metodo_animal = "Error Total Pecuario"
+    except Exception:
+        # FALLBACK HISTÓRICO DIRECTO
+        total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
+        suma = total_bovinos + total_porcinos + total_aves
+        metodo_animal = "Censo Histórico" if suma > 0 else "Sin Datos Pecuarios"
 
-    except Exception as main_e: # <--- ESTE ES EL EXCEPT QUE FALTABA
-        st.error(f"Error en el Núcleo Demográfico: {main_e}")
-        origen_dato = "Error de Sistema"
+except Exception as main_e:
+    st.error(f"Error Núcleo: {main_e}")
 
 # ==============================================================================
 # 🎨 3. INTERFAZ DE SÍNTESIS Y CALIBRACIÓN DE CAMPO
