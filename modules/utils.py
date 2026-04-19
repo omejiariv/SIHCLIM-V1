@@ -59,11 +59,8 @@ def inicializar_torrente_sanguineo():
 
 
 # ==============================================================================
-# 🧽 FUNCIONES MAESTRAS DE LIMPIEZA (CENTRALIZADAS)
+# 🧽 FUNCIONES MAESTRAS DE LIMPIEZA (CENTRALIZADAS Y BLINDADAS V2)
 # ==============================================================================
-
-import pandas as pd
-import streamlit as st
 
 @st.cache_data(ttl=3600)
 def cargar_diccionario_veredas():
@@ -74,69 +71,86 @@ def cargar_diccionario_veredas():
     except:
         return pd.DataFrame()
 
-# ⚠️ Fíjate que agregamos municipio_padre="" aquí en los paréntesis
-def normalizar_texto(t, municipio_padre=""):
+def normalizar_texto_maestro(t, municipio_padre=""):
+    """
+    La aplanadora de texto definitiva para el SIHCLI-POTER.
+    Maneja el 99% de las inconsistencias geográficas y ortográficas.
+    """
     if not t or pd.isna(t): return ""
-    import unicodedata
-    import re
     
-    t = str(t).upper().strip()
+    # 1. Base minúscula y limpieza de bordes
+    t = str(t).lower().strip()
 
     # -------------------------------------------------------------
-    # 💉 NUEVA VACUNA: LECTURA DEL DICCIONARIO EXTERNO DE VEREDAS (NUBE)
+    # 💉 VACUNA VEREDAL: LECTURA DEL DICCIONARIO EXTERNO (NUBE)
     # -------------------------------------------------------------
-    # Si estamos evaluando una vereda y tenemos su municipio, creamos el ID
     if municipio_padre:
-        id_busqueda = t + "_" + municipio_padre.upper().strip()
-        id_busqueda = re.sub(r'[^A-Z0-9_]', '', id_busqueda) # Limpiamos caracteres raros
+        id_busqueda = t.upper() + "_" + str(municipio_padre).upper().strip()
+        id_busqueda = re.sub(r'[^A-Z0-9_]', '', id_busqueda)
         
-        # Leemos el archivo directamente desde Supabase usando la función que está arriba
         df_homologacion = cargar_diccionario_veredas()
-        
         if not df_homologacion.empty and 'ID_TABLA' in df_homologacion.columns:
             match = df_homologacion[df_homologacion['ID_TABLA'] == id_busqueda]
             if not match.empty:
-                # Retorna solo el nombre de la vereda curado (antes del guion bajo)
                 id_curado = str(match.iloc[0]['ID_MAPA'])
-                return id_curado.split("_")[0] 
+                return id_curado.split("_")[0].lower()
     # ------------------------------------------------------------- 
-    
-    # Eliminamos el hack del guion ("-" in t) porque el Fuzzy Matching de cuencas ya se encarga de eso.
-    
+
+    # 2. Quitar sufijos técnicos de la UI si vienen pegados (NSS, SZH, etc.)
+    t = re.sub(r'\s*-\s*nss.*|\s*-\s*szh.*|\s*-\s*zh.*|\s*-\s*ah.*', '', t)
+
+    # 3. Quitar tildes y caracteres especiales
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    
-    t = re.sub(r'\bQ\.\s*', 'QUEBRADA ', t)
-    t = re.sub(r'\bR\.\s*', 'RIO ', t)
-    t = re.sub(r'\bCGA\.\s*', 'CIENAGA ', t)
-    
-    stop_words = [r'\bVEREDA\b', r'\bVDA\.?\b', r'\bSECTOR\b', r'\bCASERIO\b', r'\bCENTRO POBLADO\b', r'\bCP\b', r'\bCORREGIMIENTO\b', r'\bCORREG\b', r'\bCGE\b']
-    for word in stop_words: t = re.sub(word, '', t)
-        
+
+    # 4. DICCIONARIO GENÉRICO HIDROLÓGICO Y ESPACIAL
+    reemplazos_hidro = {
+        r'\brio\b': 'r', r'\br\.\s*': 'r ',
+        r'\bquebrada\b': 'q', r'\bqda\.?\s*': 'q ', r'\bq\.\s*': 'q ',
+        r'\bcano\b': 'cn', r'\bc\.\s*': 'cn ',
+        r'\barroyo\b': 'a', r'\ba\.\s*': 'a ',
+        r'\bcienaga\b': 'cga', r'\bcga\.\s*': 'cga '
+    }
+    for patron, reemplazo in reemplazos_hidro.items():
+        t = re.sub(patron, reemplazo, t)
+
+    # 5. Stop words (Veredas, sectores)
+    stop_words = [r'\bvereda\b', r'\bvda\.?\b', r'\bsector\b', r'\bcaserio\b', r'\bcentro poblado\b', r'\bcp\b', r'\bcorregimiento\b', r'\bcorreg\b', r'\bcge\b']
+    for word in stop_words: 
+        t = re.sub(word, '', t)
+
+    # 6. Rebeldes Municipales (Antioquia)
     rebeldes_mpio = {
-        r'\bEL CARMEN DE VIBORAL\b': 'CARMEN DE VIBORAL',
-        r'\bSAN VICENTE FERRER\b': 'SAN VICENTE',
-        r'\bSAN JOSE DE LA MONTANA\b': 'SAN JOSE DE LA MONTANA',
-        r'\bDONMATIAS\b': 'DON MATIAS',
-        r'\bSANTAFE DE ANTIOQUIA\b': 'SANTA FE DE ANTIOQUIA',
-        r'\bEL SANTUARIO\b': 'SANTUARIO',
-        r'\bEL PENOL\b': 'PENOL'
+        r'\bel carmen de viboral\b': 'carmen de viboral',
+        r'\bsan vicente ferrer\b': 'san vicente',
+        r'\bsan jose de la montana\b': 'san jose de la montana',
+        r'\bdonmatias\b': 'don matias',
+        r'\bsantafe de antioquia\b': 'santa fe de antioquia',
+        r'\bel santuario\b': 'santuario',
+        r'\bel penol\b': 'penol'
     }
-    for regex, reemplazo in rebeldes_mpio.items(): t = re.sub(regex, reemplazo, t)
-        
-    t = re.sub(r'[^A-Z0-9]', '', t) 
-    
+    for regex, reemplazo in rebeldes_mpio.items(): 
+        t = re.sub(regex, reemplazo, t)
+
+    # 7. Destruir puntuación restante y colapsar espacios
+    t = re.sub(r'[^a-z0-9\s]', ' ', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+
+    # 8. Diccionario final estricto
     diccionario_final = {
-        "BOGOTADC": "BOGOTA", 
-        "SANJOSEDECUCUTA": "CUCUTA", 
-        "LAGUAJIRA": "GUAJIRA", 
-        "VALLE": "VALLEDELCAUCA",
-        "RIOAURES": "AURES",   # <--- FIX: Río Aures (Abejorral)
-        "RIOBUEY": "BUEY"      # <--- FIX: Río Buey (Abejorral)
+        "bogotadc": "bogota", "sanjosedecucuta": "cucuta", 
+        "laguajira": "guajira", "valle": "valledelcauca",
+        "r aures": "aures", "r buey": "buey"
     }
-    if t in diccionario_final: return diccionario_final[t]
     
+    t_sin_espacios = t.replace(" ", "")
+    if t_sin_espacios in diccionario_final: 
+        return diccionario_final[t_sin_espacios]
+
     return t
-    
+
+# 🔥 ALIAS DE ORO: Evita que se rompan las otras páginas que importan 'normalizar_texto'
+normalizar_texto = normalizar_texto_maestro
+
 @st.cache_data
 def standardize_numeric_column(series):
     """Convierte series a números manejando separadores de miles y decimales latinos."""
@@ -178,7 +192,7 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
 
     if not engine: return res
     
-    # Normalización para búsqueda en SQL
+    # 🔥 NORMALIZACIÓN AGRESIVA
     nombre_q = normalizar_texto(nombre_seleccion)
 
     def proyectar_valor(fila, anio):
@@ -192,17 +206,28 @@ def obtener_metabolismo_exacto(nombre_seleccion, anio_destino=None):
         except: return 0.0
 
     try:
-        # 1. Consulta Demográfica (Búsqueda por MATCH_ID normalizado)
+        # 1. Consulta Demográfica (Búsqueda por MATCH_ID normalizado agresivamente)
         with engine.connect() as conn:
-            # Usamos REGEXP o REPLACE en SQL para asegurar el cruce
             q_demo = text('SELECT * FROM matriz_maestra_demografica')
             df_all = pd.read_sql(q_demo, conn)
+            # Aplicamos la aplanadora a toda la base de datos en memoria para garantizar el cruce
             df_all['MATCH'] = df_all['Territorio'].apply(normalizar_texto)
+            
+            # Buscamos coincidencias exactas primero
             df_res = df_all[df_all['MATCH'] == nombre_q]
+            
+            # Si no hay coincidencia exacta, aplicamos Fuzzy Matching como salvavidas
+            if df_res.empty:
+                import difflib
+                territorios_db = df_all['MATCH'].unique().tolist()
+                matches = difflib.get_close_matches(nombre_q, territorios_db, n=1, cutoff=0.7)
+                if matches:
+                    df_res = df_all[df_all['MATCH'] == matches[0]]
             
             if not df_res.empty:
                 for area in ['Urbana', 'Rural', 'Total']:
-                    row = df_res[df_res['Area'] == area]
+                    # Hacemos case-insensitive el match del Área
+                    row = df_res[df_res['Area'].str.capitalize() == area]
                     if not row.empty:
                         val = proyectar_valor(row.iloc[0], anio_destino)
                         if area == 'Urbana': res['pob_urbana'] = val
