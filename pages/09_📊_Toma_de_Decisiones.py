@@ -158,42 +158,63 @@ if gdf_zona is not None and not gdf_zona.empty:
     if aleph_lugar == nombre_zona and aleph_anio == anio_actual:
         pob_total = st.session_state.get('aleph_pob_total', 0)
         
-    # 2. Si la memoria está vacía o el usuario cambió el año/lugar, calculamos desde la Matriz SQL
+    # 2. Si la memoria está vacía, buscamos en SQL usando Inteligencia de Nombres
     if pob_total == 0:
         try:
             from sqlalchemy import text
             import numpy as np
+            import difflib
+            import unicodedata
+            import re
+            
+            # Traemos la matriz a la memoria viva de la página para buscar con inteligencia
             q_rescue = text("""
-                SELECT "Año_Base", "Pob_Base", "Modelo_Recomendado", "Log_K", "Log_a", "Log_r", "Exp_a", "Exp_b", "Poly_A", "Poly_B", "Poly_C", "Poly_D"
+                SELECT "Territorio", "Año_Base", "Pob_Base", "Modelo_Recomendado", "Log_K", "Log_a", "Log_r", "Exp_a", "Exp_b", "Poly_A", "Poly_B", "Poly_C", "Poly_D"
                 FROM matriz_maestra_demografica 
-                WHERE LOWER(trim("Territorio")) = LOWER(trim(:t)) AND "Area" IN ('Total', 'total', 'TOTAL')
-                LIMIT 1
+                WHERE "Area" IN ('Total', 'total', 'TOTAL')
             """)
-            df_res = pd.read_sql(q_rescue, engine, params={'t': str(nombre_zona)})
+            df_res = pd.read_sql(q_rescue, engine)
             
             if not df_res.empty:
-                row = df_res.iloc[0]
-                mod = str(row.get('Modelo_Recomendado', ''))
-                # Calculamos el tiempo (t) transcurrido desde el Año Base (1985)
-                t_val = float(anio_actual - row.get('Año_Base', 1985))
+                def normalizar(texto):
+                    if not texto or pd.isna(texto): return ""
+                    t = str(texto).lower().strip()
+                    return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+
+                # 🔥 FIX ANTI-CERO: Limpiamos los sufijos que la UI le pone a los nombres (Ej: "Rio Aburrá - NSS" -> "Rio Aburrá")
+                nombre_limpio = re.sub(r'\s*-\s*NSS.*|\s*-\s*SZH.*|\s*-\s*ZH.*|\s*-\s*AH.*', '', nombre_zona, flags=re.IGNORECASE).strip()
                 
-                # Ejecutamos el modelo matemático ganador al vuelo
-                if 'Logistico' in mod: 
-                    pob_total = row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t_val))
-                elif 'Exponencial' in mod: 
-                    pob_total = row['Exp_a'] * np.exp(row['Exp_b'] * t_val)
-                elif 'Polinomial' in mod: 
-                    pob_total = row['Poly_A']*(t_val**3) + row['Poly_B']*(t_val**2) + row['Poly_C']*t_val + row['Poly_D']
-                else: 
-                    pob_total = row['Pob_Base']
+                territorios_db = df_res['Territorio'].unique().tolist()
+                nombres_norm = {normalizar(t): t for t in territorios_db}
+                
+                zona_norm = normalizar(nombre_limpio)
+                match_name = None
+                
+                # Búsqueda exacta primero, luego búsqueda difusa (Fuzzy Match)
+                if zona_norm in nombres_norm:
+                    match_name = nombres_norm[zona_norm]
+                else:
+                    matches = difflib.get_close_matches(zona_norm, nombres_norm.keys(), n=1, cutoff=0.7)
+                    if matches: match_name = nombres_norm[matches[0]]
+                        
+                if match_name:
+                    row = df_res[df_res['Territorio'] == match_name].iloc[0]
+                    mod = str(row.get('Modelo_Recomendado', ''))
+                    t_val = float(anio_actual - row.get('Año_Base', 1985))
+                    
+                    if 'Logistico' in mod: pob_total = row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t_val))
+                    elif 'Exponencial' in mod: pob_total = row['Exp_a'] * np.exp(row['Exp_b'] * t_val)
+                    elif 'Polinomial' in mod: pob_total = row['Poly_A']*(t_val**3) + row['Poly_B']*(t_val**2) + row['Poly_C']*t_val + row['Poly_D']
+                    else: pob_total = row['Pob_Base']
+                    
         except Exception as e:
             pass # Si falla SQL, pasamos al Plan C
 
-    # 3. Datos Agropecuarios y Plan C (Mantenemos tu función existente)
+    # 3. Datos Agropecuarios y Plan C
     datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
 
     if datos_metabolismo:
-        if pob_total == 0: # Plan C: Si SQL falló, intentamos rescatar de tu función
+        if pob_total == 0: # Plan C: Si SQL falló, intentamos rescatar de tu función original
             pob_total = datos_metabolismo.get('pob_total', 0)
         bovinos = datos_metabolismo.get('bovinos', 0)
         porcinos = datos_metabolismo.get('porcinos', 0)
@@ -203,7 +224,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         
     if pob_total == 0:
         # Salvaguarda metodológica
-        st.warning(f"⚠️ **Aviso Metodológico:** La unidad territorial '{nombre_zona}' no arrojó resultados poblacionales en la Matriz Demográfica ni en el caché.")
+        st.warning(f"⚠️ **Aviso Metodológico:** La unidad territorial '{nombre_zona}' no pudo ser emparejada con la Matriz Demográfica.")
 
     # Cálculo volumétrico estricto
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
