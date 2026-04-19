@@ -335,33 +335,64 @@ try:
                 pob_rur_base = resolver(f_r.iloc[0], anio_analisis) if not f_r.empty else pob_total * 0.15
                 origen_dato = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
 
-    # --- 2.2 MOTOR PECUARIO (Resolución del 'Pob_Base' Error) ---
-    df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
-    st.session_state['df_matriz_pecuaria'] = df_pec
-    
-    if not df_pec.empty:
-        df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
-        filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
+    # --- 2.2 MOTOR PECUARIO (Aspiradora de Texto + Fallback Inmortal) ---
+    try:
+        # Intentamos conectar primero con la nueva y veloz Matriz Pecuaria
+        df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
+        st.session_state['df_matriz_pecuaria'] = df_pec
         
-        if not filas_p.empty:
-            # Reutilizamos el desambiguador 'es_macro' de arriba
-            filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
-            niv_p = filas_p.iloc[0]['Nivel']
-            f_p_fin = filas_p[filas_p['Nivel'] == niv_p]
+        animales_encontrados = False
+        
+        if not df_pec.empty:
+            df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
+            filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
             
-            # 🔥 Aquí está el cambio clave: usamos 'Poblacion_Base' para los animales
-            f_bov = f_p_fin[f_p_fin['Especie'].str.lower() == 'bovinos']
-            f_por = f_p_fin[f_p_fin['Especie'].str.lower() == 'porcinos']
-            f_ave = f_p_fin[f_p_fin['Especie'].str.lower() == 'aves']
+            # 🔥 BÚSQUEDA DIFUSA ANIMAL (El superpoder que le faltaba a las vacas)
+            if filas_p.empty:
+                import difflib
+                opciones_pec = df_pec['MATCH_ID'].unique().tolist()
+                matches_pec = difflib.get_close_matches(nombre_norm, opciones_pec, n=1, cutoff=0.6)
+                if matches_pec:
+                    filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
+                else:
+                    # Rescate extremo por palabra clave (ej: "magdalena")
+                    palabras = nombre_norm.replace("rio", "").replace("nss", "").split()
+                    if palabras:
+                        p_larga = max(palabras, key=len)
+                        if len(p_larga) > 4:
+                            filas_p = df_pec[df_pec['MATCH_ID'].str.contains(p_larga)].copy()
             
-            if not f_bov.empty: total_bovinos = resolver(f_bov.iloc[0], anio_analisis, 'Poblacion_Base')
-            if not f_por.empty: total_porcinos = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
-            if not f_ave.empty: total_aves = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
-            metodo_animal = f"Matriz Pecuaria SQL ({'Macro' if es_macro else 'Micro'})"
+            if not filas_p.empty:
+                # Reutilizamos el desambiguador 'es_macro' de la sección humana
+                filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
+                niv_p = filas_p.iloc[0]['Nivel']
+                f_p_fin = filas_p[filas_p['Nivel'] == niv_p]
+                
+                # 🔥 Utilizamos la columna 'Poblacion_Base' que es la correcta en la matriz animal
+                f_bov = f_p_fin[f_p_fin['Especie'].str.lower() == 'bovinos']
+                f_por = f_p_fin[f_p_fin['Especie'].str.lower() == 'porcinos']
+                f_ave = f_p_fin[f_p_fin['Especie'].str.lower() == 'aves']
+                
+                if not f_bov.empty: total_bovinos = resolver(f_bov.iloc[0], anio_analisis, 'Poblacion_Base')
+                if not f_por.empty: total_porcinos = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
+                if not f_ave.empty: total_aves = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
+                
+                metodo_animal = f"Matriz Pecuaria SQL ({'Macro' if es_macro else 'Micro'})"
+                animales_encontrados = True
+                
+        # Si la matriz falló o el territorio no existe allí, forzamos el error para ir al Plan C
+        if not animales_encontrados:
+            raise ValueError("Territorio no hallado en la Matriz Pecuaria.")
 
-except Exception as e:
-    st.error(f"Error en Metabolismo Unificado: {e}")
-    origen_dato = "Error de Sistema"
+    except Exception as e:
+        # 🔥 PLAN C: RED DE SEGURIDAD HISTÓRICA (El Bypass)
+        try:
+            # Si el Motor SQL no sabe de animales, llamamos al viejo y confiable CSV
+            total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, "Cuenca Hidrográfica", anio_analisis)
+            suma_animales = total_bovinos + total_porcinos + total_aves
+            metodo_animal = "Censo Histórico (Fallback)" if suma_animales > 0 else "Sin Datos Pecuarios"
+        except Exception as e_fallback:
+            metodo_animal = "Error Total"
 
 # ==============================================================================
 # 🎨 3. INTERFAZ DE SÍNTESIS Y CALIBRACIÓN DE CAMPO
@@ -370,26 +401,29 @@ st.markdown("---")
 with st.expander(f"📍 Contexto Demográfico Base ({anio_analisis}): {nombre_seleccion}", expanded=False):
     
     if "SQL" in origen_dato:
-        st.success(f"🧠 **Sincronización Perfecta:** Datos extraídos de la Matriz Maestra. Escala detectada: **{origen_dato.split('(')[1].replace(')','')}**.")
+        st.success(f"🧠 **Humanos:** Datos extraídos de la Matriz Maestra. Escala: **{origen_dato.split('(')[1].replace(')','')}**.")
     elif "Aleph" in origen_dato:
-        st.info(f"🌐 **Memoria Viva:** Datos inyectados desde la sesión actual.")
+        st.info(f"🌐 **Humanos:** Datos inyectados desde la sesión actual.")
     else:
-        st.warning(f"⚠️ **Atención:** No se halló modelo matemático para '{nombre_seleccion}'.")
+        st.warning(f"⚠️ **Atención:** No se halló modelo matemático humano.")
+        
+    st.info(f"🐄 **Animales:** {metodo_animal}")
     
     st.markdown("⚙️ **Ajuste Manual de Población (Calibración)**")
     col_p1, col_p2 = st.columns(2)
     with col_p1: 
         pob_urbana = st.number_input("Pob. Urbana (Conectada a Alcantarillado):", min_value=0.0, value=float(pob_urb_base), step=1.0)
+        st.caption(f"Bovinos base: {total_bovinos:,.0f}")
     with col_p2: 
         pob_rural = st.number_input("Pob. Rural (Sistemas Individuales/Sépticos):", min_value=0.0, value=float(pob_rur_base), step=1.0)
+        st.caption(f"Porcinos base: {total_porcinos:,.0f} | Aves base: {total_aves:,.0f}")
     
     pob_total = pob_urbana + pob_rural
 
-st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 👥 Población de Simulación: **{pob_total:,.0f} Hab.**")
+st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 👥 Humanos: **{pob_total:,.0f}** | 🐄 Animales: **{(total_bovinos + total_porcinos + total_aves):,.0f}**")
 
 # --- 🌉 ALIAS DE COMPATIBILIDAD ---
 lugar_sel = nombre_seleccion
-# Si el origen es SQL, el sistema hereda el nivel administrativo correcto
 nivel_sel_interno = "Municipal" if "DANE" in origen_dato else "Cuenca Hidrográfica"
 nivel_sel_visual = nivel_sel_interno
 
@@ -405,16 +439,13 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
     es_todo_antioquia = ("antioquia" in nombre_seleccion.lower() or nivel_sel_interno == "Departamental")
 
     if not es_todo_antioquia:
-        # 🔥 FIX GEOSException: Reparar geometrías inválidas (topología rota) antes de unirlas
+        # 🔥 FIX GEOSException: Reparar geometrías inválidas antes de unirlas
         gdf_limpio = gdf_zona.to_crs(epsg=3116).copy()
-        
-        # El truco maestro de GIS: buffer(0) cura el 99% de las geometrías cruzadas
         gdf_limpio['geometry'] = gdf_limpio.geometry.buffer(0) 
         
         try:
             poligono_zona = gdf_limpio.unary_union.simplify(50)
         except Exception:
-            # Fallback extremo de emergencia usando shapely si el buffer(0) no fue suficiente
             import shapely
             gdf_limpio['geometry'] = gdf_limpio.geometry.apply(
                 lambda geom: shapely.validation.make_valid(geom) if not geom.is_valid else geom
@@ -424,7 +455,7 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         poligono_preparado = prep(poligono_zona)
         minx, miny, maxx, maxy = poligono_zona.bounds
     else:
-        minx, miny, maxx, maxy = 0, 0, 2000000, 2000000 # Límites absurdos para dejar pasar todo
+        minx, miny, maxx, maxy = 0, 0, 2000000, 2000000 
         
     # ---------------------------------------------------------
     # 1. VERTIMIENTOS
@@ -455,7 +486,6 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
     # 2. CONCESIONES
     # ---------------------------------------------------------
     if not df_concesiones.empty:
-        # ⚠️ CORRECCIÓN: Nombres exactos mapeados en la función cargar_concesiones
         cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado']]
         df_c_light = df_concesiones[cols_c].copy()
 
@@ -525,10 +555,10 @@ def cargar_maestros_pecuarios():
             dfs[key] = pd.DataFrame()
     return dfs
 
-@st.cache_data(show_spinner=False, ttl=60) # ttl=60 limpia la memoria cada minuto
+@st.cache_data(show_spinner=False, ttl=60)
 def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=None):
     """
-    Motor Pecuario Inmortal: Conecta a Supabase forzando la actualización en vivo,
+    Motor Pecuario Inmortal de Respaldo: Conecta a Supabase forzando la actualización en vivo,
     y utiliza un radar global si la escala de búsqueda falla.
     """
     try:
@@ -540,11 +570,14 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         url_supabase = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Historico_Cuencas.csv?t={int(time.time())}"
         df_censo = pd.read_csv(url_supabase)
         
-        # 🔥 FILTRO TEMPORAL CLAVE: Para no sumar todos los años históricos juntos
+        # 🔥 FILTRO TEMPORAL CLAVE: Relajamos el filtro para evitar DataFrames vacíos si el año no coincide exacto
         if anio_analisis is not None and 'Anio' in df_censo.columns:
-            # Si el usuario pide 2035 pero la historia llega a 2025, usamos 2025 como base estática
             anio_max = df_censo['Anio'].max()
             anio_filtro = min(anio_analisis, anio_max)
+            # Buscamos el año más cercano disponible
+            anios_disponibles = df_censo['Anio'].unique()
+            if anio_filtro not in anios_disponibles:
+                anio_filtro = max([a for a in anios_disponibles if a <= anio_filtro] or [min(anios_disponibles)])
             df_censo = df_censo[df_censo['Anio'] == anio_filtro]
         
         # 🛡️ ESCUDO 2: Traductor Universal de Escalas
@@ -564,25 +597,28 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         def normalizar(texto):
             if pd.isna(texto): return ""
             t = str(texto).lower().strip()
-            return unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('utf-8')
+            import re
+            t = unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('utf-8')
+            t = re.sub(r'[^a-z0-9]', ' ', t)
+            return " ".join(t.split())
         
         busqueda = normalizar(nombre_seleccion)
         df_filtrado = pd.DataFrame()
         
-        # Intento 1: Búsqueda exacta e Inteligente en la columna seleccionada
+        # Intento 1: Búsqueda Inteligente en la columna seleccionada
         if columna_escala in df_censo.columns:
             nombres_csv = df_censo[columna_escala].apply(normalizar)
             df_filtrado = df_censo[nombres_csv == busqueda]
             
             if df_filtrado.empty:
-                palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
+                palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q", "").replace("r", "").strip()
                 if palabra_clave:
                     mask = nombres_csv.str.contains(palabra_clave, na=False)
                     df_filtrado = df_censo[mask]
                     
         # 🛡️ ESCUDO 3: RADAR GLOBAL. Si falló todo, buscamos en TODO el mapa.
         if df_filtrado.empty:
-            palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q.", "").replace("r.", "").strip()
+            palabra_clave = busqueda.replace("rio", "").replace("quebrada", "").replace("q", "").replace("r", "").strip()
             for col in ['Subcuenca', 'Sistema', 'Zona_Hidrografica', 'Municipio_Norm']:
                 if col in df_censo.columns:
                     nombres_csv = df_censo[col].apply(normalizar)
@@ -601,8 +637,6 @@ def obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis=No
         return int(bov), int(por), int(ave)
         
     except Exception as e:
-        import streamlit as st
-        st.error(f"Error de conexión con la Nube: {e}")
         return 0, 0, 0
         
 # Arrays para gráficas de tendencias a futuro (DBO)
