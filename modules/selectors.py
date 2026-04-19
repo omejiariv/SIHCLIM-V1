@@ -86,53 +86,66 @@ def render_selector_espacial():
                     
                     gdf_filtrado_base = None # Variable para guardar el resultado del embudo
                     
-                    # --- RUTA 1: HIDROLÓGICA ---
+                    # --- RUTA 1: HIDROLÓGICA (Filtro Progresivo) ---
                     if ruta_busqueda == "💧 Jerarquía Hidrológica":
                         if 'nomah' in gdf_cuencas.columns:
                             ah_disp = sorted(gdf_cuencas['nomah'].dropna().unique())
                             ah_sel = st.selectbox("🌊 1. Área Hidrográfica (AH):", ["-- Seleccione --"] + ah_disp)
                             
                             if ah_sel != "-- Seleccione --":
-                                gdf_ah = gdf_cuencas[gdf_cuencas['nomah'] == ah_sel]
-                                zh_disp = sorted(gdf_ah['nomzh'].dropna().unique())
-                                zh_sel = st.selectbox("💧 2. Zona Hidrológica (ZH):", ["-- Seleccione --"] + zh_disp)
+                                # Asignamos la base al Nivel 1
+                                gdf_filtrado_base = gdf_cuencas[gdf_cuencas['nomah'] == ah_sel]
                                 
-                                if zh_sel != "-- Seleccione --":
-                                    gdf_zh = gdf_ah[gdf_ah['nomzh'] == zh_sel]
-                                    szh_disp = sorted(gdf_zh['nom_szh'].dropna().unique())
-                                    szh_sel = st.selectbox("💦 3. Subzona Hidrográfica (SZH):", ["-- Seleccione --"] + szh_disp)
+                                zh_disp = sorted(gdf_filtrado_base['nomzh'].dropna().unique())
+                                zh_sel = st.selectbox("💧 2. Zona Hidrológica (ZH):", ["-- TODAS --"] + zh_disp)
+                                
+                                if zh_sel != "-- TODAS --":
+                                    # Filtramos al Nivel 2
+                                    gdf_filtrado_base = gdf_filtrado_base[gdf_filtrado_base['nomzh'] == zh_sel]
                                     
-                                    if szh_sel != "-- Seleccione --":
-                                        gdf_filtrado_base = gdf_zh[gdf_zh['nom_szh'] == szh_sel]
+                                    szh_disp = sorted(gdf_filtrado_base['nom_szh'].dropna().unique())
+                                    szh_sel = st.selectbox("💦 3. Subzona Hidrográfica (SZH):", ["-- TODAS --"] + szh_disp)
+                                    
+                                    if szh_sel != "-- TODAS --":
+                                        # Filtramos al Nivel 3
+                                        gdf_filtrado_base = gdf_filtrado_base[gdf_filtrado_base['nom_szh'] == szh_sel]
                         else:
                             st.warning("Faltan las columnas de Área Hidrográfica (nomah) en la base de datos.")
 
                     # --- RUTA 2: REGIONAL ---
                     elif ruta_busqueda == "🗺️ División Regional":
-                        if 'depto_regi' in gdf_cuencas.columns:
-                            reg_disp = sorted(gdf_cuencas['depto_regi'].dropna().unique())
-                            reg_sel = st.selectbox("📍 1. Región (Depto-Región):", ["-- Seleccione --"] + reg_disp)
+                        # Buscamos nombres de columna probables dinámicamente
+                        col_reg = next((c for c in gdf_cuencas.columns if c.lower() in ['depto_regi', 'region', 'macroregion', 'subregion']), None)
+                        
+                        if col_reg:
+                            reg_disp = sorted(gdf_cuencas[col_reg].dropna().unique())
+                            reg_sel = st.selectbox("📍 1. Región:", ["-- Seleccione --"] + reg_disp)
                             
                             if reg_sel != "-- Seleccione --":
-                                gdf_reg = gdf_cuencas[gdf_cuencas['depto_regi'] == reg_sel]
-                                zona_disp = sorted(gdf_reg['zona'].dropna().unique())
-                                zona_sel = st.selectbox("🌍 2. Subregión (Zona):", ["-- Seleccione --"] + zona_disp)
+                                gdf_filtrado_base = gdf_cuencas[gdf_cuencas[col_reg] == reg_sel]
                                 
-                                if zona_sel != "-- Seleccione --":
-                                    gdf_filtrado_base = gdf_reg[gdf_reg['zona'] == zona_sel]
+                                col_zona = next((c for c in gdf_cuencas.columns if c.lower() in ['zona', 'subzona']), None)
+                                if col_zona:
+                                    zona_disp = sorted(gdf_filtrado_base[col_zona].dropna().unique())
+                                    zona_sel = st.selectbox("🌍 2. Subregión:", ["-- TODAS --"] + zona_disp)
+                                    if zona_sel != "-- TODAS --":
+                                        gdf_filtrado_base = gdf_filtrado_base[gdf_filtrado_base[col_zona] == zona_sel]
                         else:
-                            st.warning("Faltan las columnas regionales (depto_regi) en la base de datos.")
+                            st.warning("⚠️ Las Cuencas son fronteras naturales. El mapa de cuencas en la BD no tiene clasificaciones políticas (Regiones).")
 
                     # --- RUTA 3: AUTORIDAD AMBIENTAL ---
                     elif ruta_busqueda == "🏢 Autoridad Ambiental (CAR)":
-                        if 'corpoamb' in gdf_cuencas.columns:
-                            car_disp = sorted(gdf_cuencas['corpoamb'].dropna().unique())
+                        col_car = next((c for c in gdf_cuencas.columns if c.lower() in ['corpoamb', 'car', 'autoridad']), None)
+                        
+                        if col_car:
+                            car_disp = sorted(gdf_cuencas[col_car].dropna().unique())
                             car_sel = st.selectbox("🏛️ 1. Autoridad Ambiental:", ["-- Seleccione --"] + car_disp)
                             
                             if car_sel != "-- Seleccione --":
-                                gdf_filtrado_base = gdf_cuencas[gdf_cuencas['corpoamb'] == car_sel]
+                                gdf_filtrado_base = gdf_cuencas[gdf_cuencas[col_car] == car_sel]
+                                st.info("💡 **Nota:** La cuenca se recorta a los límites de la jurisdicción elegida. (Ej: Río Aburrá en Corantioquia excluye las áreas urbanas del AMVA).")
                         else:
-                            st.warning("Falta la columna 'corpoamb' en la base de datos.")
+                            st.warning("Falta la columna de Autoridad Ambiental ('corpoamb') en la base de datos.")
 
                     # ==========================================
                     # --- NODO COMÚN: SELECCIÓN DEL NIVEL NSS ---
@@ -140,29 +153,39 @@ def render_selector_espacial():
                     if gdf_filtrado_base is not None and not gdf_filtrado_base.empty:
                         st.markdown("---")
                         nivel_nss = st.radio(
-                            "🔎 Resolución de la Cuenca:",
-                            ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Microcuenca)"],
+                            "🔎 Resolución de visualización en el Mapa:",
+                            ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"],
                             horizontal=True
                         )
                         
                         mapa_cols_nss = {
                             "NSS1 (Macro)": "nom_nss1",
                             "NSS2 (Intermedia)": "nom_nss2",
-                            "NSS3 (Microcuenca)": "nom_nss3"
+                            "NSS3 (Micro)": "nom_nss3"
                         }
                         col_objetivo = mapa_cols_nss[nivel_nss]
                         
                         if col_objetivo in gdf_filtrado_base.columns:
                             territorios_disp = sorted(gdf_filtrado_base[col_objetivo].dropna().unique())
-                            sel_final = st.selectbox(f"🎯 Seleccione el Territorio ({nivel_nss}):", territorios_disp)
+                            # Añadimos la opción de graficar TODO el bloque seleccionado
+                            sel_final = st.selectbox(f"🎯 Seleccione el Territorio ({nivel_nss}):", ["-- GRAFICAR TODO EL BLOQUE --"] + territorios_disp)
                             
-                            if sel_final:
+                            if sel_final != "-- GRAFICAR TODO EL BLOQUE --":
                                 nombre_zona = sel_final
                                 gdf_zona = gdf_filtrado_base[gdf_filtrado_base[col_objetivo] == sel_final]
+                            else:
+                                # Si elige graficar todo, tomamos el nombre del filtro anterior
+                                if ruta_busqueda == "💧 Jerarquía Hidrológica":
+                                    nombre_zona = szh_sel if szh_sel != "-- TODAS --" else (zh_sel if zh_sel != "-- TODAS --" else ah_sel)
+                                elif ruta_busqueda == "🏢 Autoridad Ambiental (CAR)":
+                                    nombre_zona = car_sel
+                                else:
+                                    nombre_zona = "Bloque Regional"
+                                gdf_zona = gdf_filtrado_base
                                 
-                                # Consolidar geometrías fragmentadas en un solo polígono maestro
-                                if len(gdf_zona) > 1:
-                                    gdf_zona = gpd.GeoDataFrame({'geometry': [gdf_zona.unary_union]}, crs=gdf_zona.crs)
+                            # Consolidar geometrías fragmentadas en un solo polígono maestro
+                            if len(gdf_zona) > 1:
+                                gdf_zona = gpd.GeoDataFrame({'geometry': [gdf_zona.unary_union]}, crs=gdf_zona.crs)
                         else:
                             st.warning(f"La columna {col_objetivo} no existe en la base de datos.")
 
