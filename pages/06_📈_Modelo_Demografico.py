@@ -2444,31 +2444,75 @@ with tab_matriz:
                     st.error(f"❌ Error en Motor V6: {e}")
 
             # =====================================================================
-            # 🔥 ENTRENAMIENTO PERFECTO DE CUENCAS (LEY DE BALANCE DE MASAS)
+# =====================================================================
+            # 🔥 ENTRENAMIENTO MULTIESCALA DE CUENCAS (AH -> NSS3)
             # =====================================================================
             if historico_cuencas:
-                texto_progreso.markdown("⚖️ **Ensamblando balance de masas estricto para Cuencas...**")
+                texto_progreso.markdown("⚖️ **Ensamblando balance de masas jerárquico para Cuencas...**")
                 df_hist_ur = pd.concat(historico_cuencas)
                 
-                # 1. Calculamos el Total como suma EXACTA de Urbana + Rural
+                # 1. Calculamos el Total como suma EXACTA de Urbana + Rural a nivel micro
                 df_hist_totales = df_hist_ur.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                 df_hist_totales['Categoria_Area'] = 'Total'
                 
-                # 2. Unimos todo para el entrenamiento
-                df_hist_final = pd.concat([df_hist_ur, df_hist_totales], ignore_index=True)
+                # Unimos Urbana, Rural y Total a nivel micro
+                df_hist_micro = pd.concat([df_hist_ur, df_hist_totales], ignore_index=True)
                 
-                # 3. Entrenamos los 3 modelos por cuenca
-                for area_c in ['Total', 'Urbana', 'Rural']:
-                    df_area_c = df_hist_final[df_hist_final['Categoria_Area'] == area_c]
-                    
-                    cuencas_con_datos = df_area_c['subc_lbl'].unique().tolist()
-                    lista_entrenamiento = list(set(lista_todas_cuencas + cuencas_con_datos))
-                    
-                    for cuenca in lista_entrenamiento:
-                        df_t = df_area_c[df_area_c['subc_lbl'] == cuenca].sort_values(by=col_anio)
-                        if not df_t.empty and df_t['Total_frag'].sum() > 0:
-                            ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, 'Antioquia', area_c)
-                            ops_completadas += 1
+                # 2. Descargamos el árbol genealógico (Jerarquía completa) de la BD
+                try:
+                    q_jerarquia = text("""
+                        SELECT DISTINCT 
+                            nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
+                            COALESCE(
+                                NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), 
+                                NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre'
+                            ) AS subc_lbl
+                        FROM cuencas
+                    """)
+                    df_arbol = pd.read_sql(q_jerarquia, engine_sql)
+                except Exception as e:
+                    st.error(f"Error cargando jerarquía espacial: {e}")
+                    df_arbol = pd.DataFrame(columns=['subc_lbl', 'nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3'])
+                
+                # 3. Unimos los datos demográficos con su árbol genealógico
+                df_hist_completo = pd.merge(df_hist_micro, df_arbol, on='subc_lbl', how='left')
+                
+                # 4. Definimos los niveles a iterar (De Macro a Micro)
+                niveles_hidrologicos = {
+                    'nomah': 'Área Hidrográfica',
+                    'nomzh': 'Zona Hidrológica',
+                    'nom_szh': 'Subzona Hidrográfica',
+                    'nom_nss1': 'NSS1',
+                    'nom_nss2': 'NSS2',
+                    'nom_nss3': 'NSS3',
+                    'subc_lbl': 'Microcuenca Base' # Salvavidas para geometrías sueltas
+                }
+                
+                # 5. Entrenamos TODOS los niveles
+                # Escudo anti-duplicados por si un NSS2 se llama igual que un NSS3
+                entrenados_log = set() 
+                
+                for col_nivel, etiqueta_nivel in niveles_hidrologicos.items():
+                    if col_nivel in df_hist_completo.columns:
+                        
+                        # 🎯 Agrupamos la población sumando todas las sub-piezas del nivel
+                        df_nivel = df_hist_completo.dropna(subset=[col_nivel]).groupby([col_nivel, 'Categoria_Area', col_anio])['Total_frag'].sum().reset_index()
+                        territorios_nivel = df_nivel[col_nivel].unique()
+                        
+                        for area_c in ['Total', 'Urbana', 'Rural']:
+                            df_area_c = df_nivel[df_nivel['Categoria_Area'] == area_c]
+                            
+                            for cuenca in territorios_nivel:
+                                id_unico = f"{cuenca}_{area_c}"
+                                
+                                if id_unico not in entrenados_log:
+                                    df_t = df_area_c[df_area_c[col_nivel] == cuenca].sort_values(by=col_anio)
+                                    
+                                    if not df_t.empty and df_t['Total_frag'].sum() > 0:
+                                        # Inyectamos 'etiqueta_nivel' en la columna 'Padre' para auditoría
+                                        ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, etiqueta_nivel, area_c)
+                                        ops_completadas += 1
+                                        entrenados_log.add(id_unico)
 
             # =====================================================================
             # 6. FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
