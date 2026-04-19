@@ -294,13 +294,13 @@ if aleph_lugar == nombre_seleccion:
     origen_dato = "Memoria Viva (Aleph)"
     pob_urb_base, pob_rur_base = pob_total * 0.85, pob_total * 0.15
 
-# PLAN B: Búsqueda en Matrices SQL (Sniper)
-try:
-    from modules.db_manager import get_engine
-    engine = get_engine()
-    
-    # --- 2.1 MOTOR HUMANO ---
-    if pob_total == 0:
+# PLAN B: Búsqueda en Matriz Maestra SQL
+if pob_total == 0:
+    try: # <--- AQUÍ INICIA EL TRY PRINCIPAL
+        from modules.db_manager import get_engine
+        engine = get_engine()
+        
+        # --- 2.1 MOTOR HUMANO ---
         df_mat = st.session_state.get('df_matriz_demografica', pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine))
         st.session_state['df_matriz_demografica'] = df_mat
         
@@ -309,7 +309,6 @@ try:
             filas = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
             
             if not filas.empty:
-                # Desambiguador Geográfico (Nechí/Porce)
                 es_macro = True
                 if len(filas['Nivel'].unique()) > 1 and gdf_zona is not None:
                     area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
@@ -335,64 +334,61 @@ try:
                 pob_rur_base = resolver(f_r.iloc[0], anio_analisis) if not f_r.empty else pob_total * 0.15
                 origen_dato = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
 
-    # --- 2.2 MOTOR PECUARIO (Aspiradora de Texto + Fallback Inmortal) ---
-    try:
-        # Intentamos conectar primero con la nueva y veloz Matriz Pecuaria
-        df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
-        st.session_state['df_matriz_pecuaria'] = df_pec
-        
-        animales_encontrados = False
-        
-        if not df_pec.empty:
-            df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
-            filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
+        # --- 2.2 MOTOR PECUARIO ---
+        try: # <--- TRY INTERNO PARA ANIMALES
+            df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
+            st.session_state['df_matriz_pecuaria'] = df_pec
+            animales_encontrados = False
             
-            # 🔥 BÚSQUEDA DIFUSA ANIMAL (El superpoder que le faltaba a las vacas)
-            if filas_p.empty:
-                import difflib
-                opciones_pec = df_pec['MATCH_ID'].unique().tolist()
-                matches_pec = difflib.get_close_matches(nombre_norm, opciones_pec, n=1, cutoff=0.6)
-                if matches_pec:
-                    filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
-                else:
-                    # Rescate extremo por palabra clave (ej: "magdalena")
-                    palabras = nombre_norm.replace("rio", "").replace("nss", "").split()
-                    if palabras:
-                        p_larga = max(palabras, key=len)
-                        if len(p_larga) > 4:
-                            filas_p = df_pec[df_pec['MATCH_ID'].str.contains(p_larga)].copy()
-            
-            if not filas_p.empty:
-                # Reutilizamos el desambiguador 'es_macro' de la sección humana
-                filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
-                niv_p = filas_p.iloc[0]['Nivel']
-                f_p_fin = filas_p[filas_p['Nivel'] == niv_p]
+            if not df_pec.empty:
+                df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
+                filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
                 
-                # 🔥 Utilizamos la columna 'Poblacion_Base' que es la correcta en la matriz animal
-                f_bov = f_p_fin[f_p_fin['Especie'].str.lower() == 'bovinos']
-                f_por = f_p_fin[f_p_fin['Especie'].str.lower() == 'porcinos']
-                f_ave = f_p_fin[f_p_fin['Especie'].str.lower() == 'aves']
+                # Búsqueda Difusa Pecuaria
+                if filas_p.empty:
+                    import difflib
+                    opciones_pec = df_pec['MATCH_ID'].unique().tolist()
+                    matches_pec = difflib.get_close_matches(nombre_norm, opciones_pec, n=1, cutoff=0.6)
+                    if matches_pec:
+                        filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
+                    else:
+                        palabras = nombre_norm.replace("rio", "").replace("nss", "").split()
+                        if palabras:
+                            p_larga = max(palabras, key=len)
+                            if len(p_larga) > 4:
+                                filas_p = df_pec[df_pec['MATCH_ID'].str.contains(p_larga)].copy()
                 
-                if not f_bov.empty: total_bovinos = resolver(f_bov.iloc[0], anio_analisis, 'Poblacion_Base')
-                if not f_por.empty: total_porcinos = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
-                if not f_ave.empty: total_aves = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
-                
-                metodo_animal = f"Matriz Pecuaria SQL ({'Macro' if es_macro else 'Micro'})"
-                animales_encontrados = True
-                
-        # Si la matriz falló o el territorio no existe allí, forzamos el error para ir al Plan C
-        if not animales_encontrados:
-            raise ValueError("Territorio no hallado en la Matriz Pecuaria.")
+                if not filas_p.empty:
+                    filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
+                    niv_p = filas_p.iloc[0]['Nivel']
+                    f_p_fin = filas_p[filas_p['Nivel'] == niv_p]
+                    
+                    f_bov = f_p_fin[f_p_fin['Especie'].str.lower() == 'bovinos']
+                    f_por = f_p_fin[f_p_fin['Especie'].str.lower() == 'porcinos']
+                    f_ave = f_p_fin[f_p_fin['Especie'].str.lower() == 'aves']
+                    
+                    if not f_bov.empty: total_bovinos = resolver(f_bov.iloc[0], anio_analisis, 'Poblacion_Base')
+                    if not f_por.empty: total_porcinos = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
+                    if not f_ave.empty: total_aves = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
+                    
+                    metodo_animal = f"Matriz Pecuaria SQL ({'Macro' if es_macro else 'Micro'})"
+                    animales_encontrados = True
+                    
+            if not animales_encontrados:
+                raise ValueError("Ir a Fallback Histórico")
 
-    except Exception as e:
-        # 🔥 PLAN C: RED DE SEGURIDAD HISTÓRICA (El Bypass)
-        try:
-            # Si el Motor SQL no sabe de animales, llamamos al viejo y confiable CSV
-            total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, "Cuenca Hidrográfica", anio_analisis)
-            suma_animales = total_bovinos + total_porcinos + total_aves
-            metodo_animal = "Censo Histórico (Fallback)" if suma_animales > 0 else "Sin Datos Pecuarios"
-        except Exception as e_fallback:
-            metodo_animal = "Error Total"
+        except Exception:
+            # RED DE SEGURIDAD HISTÓRICA
+            try:
+                total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, "Cuenca Hidrográfica", anio_analisis)
+                suma_animales = total_bovinos + total_porcinos + total_aves
+                metodo_animal = "Censo Histórico (Fallback)" if suma_animales > 0 else "Sin Datos Pecuarios"
+            except Exception:
+                metodo_animal = "Error Total"
+
+    except Exception as main_e: # <--- ESTE ES EL EXCEPT QUE FALTABA
+        st.error(f"Error en el Núcleo Demográfico: {main_e}")
+        origen_dato = "Error de Sistema"
 
 # ==============================================================================
 # 🎨 3. INTERFAZ DE SÍNTESIS Y CALIBRACIÓN DE CAMPO
