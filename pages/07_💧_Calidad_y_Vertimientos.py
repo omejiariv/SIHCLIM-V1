@@ -895,23 +895,6 @@ with tab_fuentes:
         elif nivel_sel_interno == "Municipal": mpios_activos = [lugar_n]
     if not mpios_activos: mpios_activos = [lugar_n]
 
-    # ==============================================================================
-    # 🐄 EXTRACCIÓN DE BASES DE DATOS ICA (Censo Pecuario)
-    # ==============================================================================
-    try:
-        # Usamos la función nativa que busca directamente en la base histórica del ICA
-        total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
-        origen_pecuario = "Sincronizada (ICA Base)" if total_bovinos > 0 else "Estimación (Sin datos en Base)"
-    except Exception as e:
-        total_bovinos, total_porcinos, total_aves = 0, 0, 0
-        origen_pecuario = "Error de Consulta"
-        st.error(f"Error consultando el Censo Pecuario: {e}")
-
-    if "Sincronizada" in origen_pecuario:
-        st.success(f"🧠 **Conexión ICA:** Datos pecuarios sincronizados para **{nombre_seleccion}**.")
-    else:
-        st.info("⚠️ Usando estimación estadística para datos pecuarios (Censo no disponible).")
-
     default_trat_porc = 20 # Eficiencia por defecto si no se ajusta manualmente
 
     col_pec1, col_pec2, col_pec3 = st.columns(3)
