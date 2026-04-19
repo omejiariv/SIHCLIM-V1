@@ -2444,21 +2444,25 @@ with tab_matriz:
                     st.error(f"❌ Error en Motor V6: {e}")
 
             # =====================================================================
-# =====================================================================
-            # 🔥 ENTRENAMIENTO MULTIESCALA DE CUENCAS (AH -> NSS3)
+            # 🔥 ENTRENAMIENTO MULTIESCALA DE CUENCAS (AH -> NSS3) - BLINDADO V2
             # =====================================================================
             if historico_cuencas:
                 texto_progreso.markdown("⚖️ **Ensamblando balance de masas jerárquico para Cuencas...**")
-                df_hist_ur = pd.concat(historico_cuencas)
                 
-                # 1. Calculamos el Total como suma EXACTA de Urbana + Rural a nivel micro
-                df_hist_totales = df_hist_ur.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
+                # 1. Recuperamos los fragmentos base (Veredas, Barrios, Centros Poblados)
+                df_hist_base = pd.concat(historico_cuencas)
+                
+                # Limpiar cualquier valor nulo o infinito que corrompa la suma (La cura para Q. Salazar)
+                df_hist_base['Total_frag'] = df_hist_base['Total_frag'].replace([np.inf, -np.inf], np.nan).fillna(0)
+                
+                # 2. Sumamos Urbana + Rural para obtener el Total a nivel de fragmento base
+                df_hist_totales = df_hist_base.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                 df_hist_totales['Categoria_Area'] = 'Total'
                 
-                # Unimos Urbana, Rural y Total a nivel micro
-                df_hist_micro = pd.concat([df_hist_ur, df_hist_totales], ignore_index=True)
+                # Consolidamos el lienzo más detallado (Urbano, Rural, Total)
+                df_hist_micro = pd.concat([df_hist_base, df_hist_totales], ignore_index=True)
                 
-                # 2. Descargamos el árbol genealógico (Jerarquía completa) de la BD
+                # 3. Descargamos el árbol genealógico completo (AH -> NSS3)
                 try:
                     q_jerarquia = text("""
                         SELECT DISTINCT 
@@ -2470,14 +2474,22 @@ with tab_matriz:
                         FROM cuencas
                     """)
                     df_arbol = pd.read_sql(q_jerarquia, engine_sql)
+                    
+                    # Limpiamos los nombres del árbol para evitar fallos en el cruce
+                    cols_arbol = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3', 'subc_lbl']
+                    for c in cols_arbol:
+                        df_arbol[c] = df_arbol[c].str.strip()
+                        
                 except Exception as e:
                     st.error(f"Error cargando jerarquía espacial: {e}")
                     df_arbol = pd.DataFrame(columns=['subc_lbl', 'nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3'])
                 
-                # 3. Unimos los datos demográficos con su árbol genealógico
-                df_hist_completo = pd.merge(df_hist_micro, df_arbol, on='subc_lbl', how='left')
+                # 4. 🧬 FUSIÓN MAESTRA: Unimos la población detallada con su linaje completo
+                # Esto asegura que si una persona vive en "Q. La Peinada" (subc_lbl),
+                # también se le asigne la etiqueta de "Río Nechí" (nomzh).
+                df_hist_completo = pd.merge(df_hist_micro, df_arbol, on='subc_lbl', how='inner')
                 
-                # 4. Definimos los niveles a iterar (De Macro a Micro)
+                # 5. Definimos los niveles de agrupación
                 niveles_hidrologicos = {
                     'nomah': 'Área Hidrográfica',
                     'nomzh': 'Zona Hidrológica',
@@ -2485,17 +2497,16 @@ with tab_matriz:
                     'nom_nss1': 'NSS1',
                     'nom_nss2': 'NSS2',
                     'nom_nss3': 'NSS3',
-                    'subc_lbl': 'Microcuenca Base' # Salvavidas para geometrías sueltas
+                    'subc_lbl': 'Microcuenca Base' 
                 }
                 
-                # 5. Entrenamos TODOS los niveles
-                # Escudo anti-duplicados por si un NSS2 se llama igual que un NSS3
-                entrenados_log = set() 
+                # 6. Entrenamos agrupando desde arriba hacia abajo
+                entrenados_log = set() # Evitar doble entrenamiento si un NSS2 se llama igual que un SZH
                 
                 for col_nivel, etiqueta_nivel in niveles_hidrologicos.items():
                     if col_nivel in df_hist_completo.columns:
                         
-                        # 🎯 Agrupamos la población sumando todas las sub-piezas del nivel
+                        # 🎯 LA SUMATORIA: Agrupamos todas las personas que pertenecen a ese gran polígono
                         df_nivel = df_hist_completo.dropna(subset=[col_nivel]).groupby([col_nivel, 'Categoria_Area', col_anio])['Total_frag'].sum().reset_index()
                         territorios_nivel = df_nivel[col_nivel].unique()
                         
@@ -2508,12 +2519,16 @@ with tab_matriz:
                                 if id_unico not in entrenados_log:
                                     df_t = df_area_c[df_area_c[col_nivel] == cuenca].sort_values(by=col_anio)
                                     
-                                    if not df_t.empty and df_t['Total_frag'].sum() > 0:
-                                        # Inyectamos 'etiqueta_nivel' en la columna 'Padre' para auditoría
-                                        ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, etiqueta_nivel, area_c)
-                                        ops_completadas += 1
-                                        entrenados_log.add(id_unico)
-
+                                    # Entrenamos solo si la población de la cuenca es mayor a 0 y no es la fila corrupta
+                                    if not df_t.empty and df_t['Total_frag'].sum() > 0 and str(cuenca).strip() != "":
+                                        try:
+                                            ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, etiqueta_nivel, area_c)
+                                            entrenados_log.add(id_unico)
+                                            ops_completadas += 1
+                                        except Exception as math_e:
+                                            # Este Try atrapa el error de la Q. Salazar y evita que la fila corrupta se guarde
+                                            st.sidebar.warning(f"Aviso: La cuenca {cuenca} ({area_c}) no pudo ser modelada matemáticamente.")
+                                            
             # =====================================================================
             # 6. FINALIZACIÓN Y CARGA DE LA MATRIZ MAESTRA
             # 🔥 VACUNA 3: Guardado Global FUERA del bucle. Abejorral y todos estarán a salvo.
