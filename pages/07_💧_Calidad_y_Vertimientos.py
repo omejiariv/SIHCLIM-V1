@@ -45,7 +45,6 @@ st.markdown("""
 Modelo integral del ciclo hidrosocial: Simulación de demanda, cargas contaminantes, 
 capacidad de asimilación, formalización y visor espacial de calor (Concesiones y Vertimientos).
 """)
-st.divider()
 
 # ==============================================================================
 # 🧽 FUNCIÓN NORMALIZADORA (MATA-TILDES Y ESPACIOS)
