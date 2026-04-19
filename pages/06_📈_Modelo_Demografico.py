@@ -647,35 +647,19 @@ elif escala_sel == "🧩 Regional (Macroregiones)":
     df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
-    # 🔥 FIX FORENSE 1: Eliminamos la trampa de st.session_state. 
-    # Ahora lee directamente la df_matriz fresca y global que descargamos al inicio de la app.
     if not df_matriz.empty and 'Nivel' in df_matriz.columns:
-        df_cuencas_solo = df_matriz[df_matriz['Nivel'] == 'Cuenca']
+        df_cuencas_solo = df_matriz[df_matriz['Nivel'] == 'Cuenca'].copy()
         
         if not df_cuencas_solo.empty:
-            # --- MOTOR EN CASCADA PARA CUENCAS ---
-            
-            # 🔥 FIX FORENSE 2: Cacheamos la topología para que la barra lateral no se congele 
-            # haciendo consultas SQL cada vez que seleccionas un filtro.
-            @st.cache_data(ttl=3600) # Se actualiza cada hora
+            # --- 1. MOTOR DE FILTROS EN CASCADA ---
+            @st.cache_data(ttl=3600)
             def cargar_jerarquia_cuencas():
                 try:
                     from modules.db_manager import get_engine
                     from sqlalchemy import text
-                    q_hier = text("""
-                        SELECT DISTINCT 
-                            nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
-                            COALESCE(
-                                NULLIF(TRIM(nom_nss3), ''), 
-                                NULLIF(TRIM(nom_nss2), ''), 
-                                NULLIF(TRIM(nom_nss1), ''), 
-                                NULLIF(TRIM(nom_szh), '')
-                            ) AS subc_lbl
-                        FROM cuencas
-                    """)
+                    q_hier = text("SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3 FROM cuencas")
                     return pd.read_sql(q_hier, get_engine())
-                except:
-                    return pd.DataFrame()
+                except: return pd.DataFrame()
             
             df_hier = cargar_jerarquia_cuencas()
             
@@ -702,180 +686,96 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
             cuenca_sel = st.sidebar.multiselect("🎯 Seleccione cuencas específicas (Opcional):", cuencas_disp, default=None)
             
-            # --- PROTECCIÓN ANTI-NAME ERROR ---
-            cuencas_a_graficar = cuenca_sel if cuenca_sel else cuencas_disp
-            
-            if cuencas_a_graficar:
-                if cuenca_sel:
-                    filtro_zona = " + ".join(cuenca_sel[:2]) + ("..." if len(cuenca_sel)>2 else "")
-                    titulo_terr = f"Cuencas Seleccionadas: {filtro_zona}"
-                else:
-                    if not df_hier.empty:
-                        if sel_szh != "-- Seleccione --": titulo_terr = f"SZH: {sel_szh}"
-                        elif sel_zh != "-- Seleccione --": titulo_terr = f"ZH: {sel_zh}"
-                        elif sel_ah != "-- Seleccione --": titulo_terr = f"AH: {sel_ah}"
-                        else: titulo_terr = "Todas las Cuencas"
-                    else:
-                        titulo_terr = "Todas las Cuencas"
-                    filtro_zona = titulo_terr
-
-                años_hist = np.arange(1985, 2043)
-                pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
-                mapa_data = []
-                
-                # =======================================================
-                # 🚀 SELLO DE BALANCE MAESTRO (CON ESCÁNER DE SELECCIÓN)
-                # =======================================================
-                df_cuencas_solo = df_cuencas_solo.copy()
-                if 'MATCH_ID' not in df_cuencas_solo.columns:
-                    df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
-
-                ids_matriz = df_cuencas_solo['MATCH_ID'].dropna().unique().tolist()
-                import difflib
-
-                # 1. ESCÁNER DE SELECCIÓN (Detectamos qué cuencas eligió el usuario)
-                ids_permitidos = set()
-                
-                for c in cuencas_a_graficar:
-                    if col_res in df_hier.columns:
-                        if 'subc_lbl' not in df_hier.columns:
-                            cols_lbl = [col for col in ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh'] if col in df_hier.columns]
-                            df_hier['subc_lbl'] = df_hier[cols_lbl].bfill(axis=1).iloc[:, 0]
-                            
-                        c_norm = normalizar_texto(c)
-                        hijos = df_hier[(df_hier[col_res] == c) | (df_hier[col_res].astype(str).apply(normalizar_texto) == c_norm)]['subc_lbl'].dropna().unique()
-                        micro_cuencas = hijos if len(hijos) > 0 else [c]
-                    else:
-                        micro_cuencas = [c]
-
-                    for micro in micro_cuencas:
-                        micro_norm = normalizar_texto(micro)
-                        micro_norm_clean = micro_norm.replace("QUEBRADA", "Q").replace("CN", "CANO").replace("RIO", "R")
-                        
-                        if micro_norm_clean in ids_matriz: ids_permitidos.add(micro_norm_clean)
-                        elif micro_norm in ids_matriz: ids_permitidos.add(micro_norm)
-                        else:
-                            matches = difflib.get_close_matches(micro_norm_clean, ids_matriz, n=1, cutoff=0.80)
-                            if not matches: matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.80)
-                            if matches: ids_permitidos.add(matches[0])
-
-                # Si seleccionó "Todas", anulamos el filtro para sumar el 100% de la matriz
-                # 🔥 FIX 35 MILLONES: Si son "Todas", solo sumamos el nivel más alto (Áreas Hidrográficas)
-                # para evitar sumar las subcuencas dos veces.
-                if titulo_terr == "Todas las Cuencas":
-                    if not df_hier.empty and 'nomah' in df_hier.columns:
-                        ah_nombres = df_hier['nomah'].dropna().unique()
-                        ids_permitidos = set([normalizar_texto(ah) for ah in ah_nombres])
-                    else:
-                        ids_permitidos = set() # Evitar desastres si no hay jerarquía
-
-                # 2. CURVA MATEMÁTICA PURA (Respeta el filtro y rescata a Medellín)
-                pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
-                
-                # 🔥 FIX ANTI 1.9M: Aseguramos que atrape 'urbano', 'urbana', 'Total' o 'total' sin importar género
-                area_buscada = area_global.lower()
-                if area_buscada == 'urbano':
-                    df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower().isin(['urbano', 'urbana'])]
-                else:
-                    df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower() == area_buscada]
-
-                # 🔥 FIX ANTI 6.4M CONGELADOS: Filtramos usando los IDs que seleccionó el usuario
-                df_matriz_pura = df_matriz_pura[df_matriz_pura['MATCH_ID'].isin(ids_permitidos)]
-
-                df_matriz_unica = df_matriz_pura.drop_duplicates(subset=['MATCH_ID'])
-                
-                for _, fila_tot in df_matriz_unica.iterrows():
-                    modelo_ganador = str(fila_tot.get('Modelo_Recomendado', 'Desconocido'))
-                    pob_temp = np.zeros_like(años_hist, dtype=float)
-
-                    if 'Logistico' in modelo_ganador:
-                        pob_temp = fila_tot.get('Log_K', 0) / (1 + fila_tot.get('Log_a', 0) * np.exp(-fila_tot.get('Log_r', 0) * (años_hist - 1985)))
-                    elif 'Exponencial' in modelo_ganador:
-                        pob_temp = fila_tot.get('Exp_a', 0) * np.exp(fila_tot.get('Exp_b', 0) * (años_hist - 1985))
-                    elif 'Polinomial' in modelo_ganador:
-                        x_norm = años_hist - 1985
-                        pob_temp = fila_tot.get('Poly_A', 0)*(x_norm**3) + fila_tot.get('Poly_B', 0)*(x_norm**2) + fila_tot.get('Poly_C', 0)*x_norm + fila_tot.get('Poly_D', 0)
-                    
-                    pob_hist_acumulada += pob_temp
-                
-                pob_hist = pob_hist_acumulada
-
-                # 3. MOTOR VISUAL PARA EL MAPA (Geometría Estricta)
-                mapa_data = []
-                log_cruces = []
-                
-                for c in cuencas_a_graficar:
-                    if col_res in df_hier.columns:
-                        if 'subc_lbl' not in df_hier.columns:
-                            cols_lbl = [col for col in ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh'] if col in df_hier.columns]
-                            df_hier['subc_lbl'] = df_hier[cols_lbl].bfill(axis=1).iloc[:, 0]
-                            
-                        c_norm = normalizar_texto(c)
-                        hijos = df_hier[(df_hier[col_res] == c) | (df_hier[col_res].astype(str).apply(normalizar_texto) == c_norm)]['subc_lbl'].dropna().unique()
-                        micro_cuencas = hijos if len(hijos) > 0 else [c]
-                    else:
-                        micro_cuencas = [c]
-
-                    for micro in micro_cuencas:
-                        micro_norm = normalizar_texto(micro)
-                        micro_norm_clean = micro_norm.replace("QUEBRADA", "Q").replace("CN", "CANO").replace("RIO", "R")
-                        es_cuerpo_agua = any(palabra in micro_norm_clean for palabra in ["EMBALSE", "CIENAGA", "REPRESA", "LAGO"])
-                        match_val = None
-
-                        if es_cuerpo_agua: match_val = "CERO_NATURAL"
-                        elif micro_norm_clean in ids_matriz: match_val = micro_norm_clean
-                        elif micro_norm in ids_matriz: match_val = micro_norm
-                        else:
-                            matches = difflib.get_close_matches(micro_norm_clean, ids_matriz, n=1, cutoff=0.80)
-                            if not matches: matches = difflib.get_close_matches(micro_norm, ids_matriz, n=1, cutoff=0.80)
-                            if matches: match_val = matches[0]
-
-                        if match_val == "CERO_NATURAL":
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "Cuerpo de Agua", "Estado": "💧 0 hab (Natural)"})
-                            for a_str in ['total', 'urbano', 'rural']:
-                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': a_str})
-                            
-                        elif match_val:
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": match_val, "Estado": "✅ Encontrada"})
-                            cuenca_data = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == match_val]
-                            
-                            if not cuenca_data.empty:
-                                c_total = cuenca_data[cuenca_data['Area'].str.title() == 'Total']
-                                v_t = float(c_total.iloc[0].get('Pob_Base', 0)) if not c_total.empty else 0
-                                
-                                c_urb = cuenca_data[cuenca_data['Area'].str.lower().isin(['urbano', 'urbana'])]
-                                v_u = float(c_urb.iloc[0].get('Pob_Base', 0)) if not c_urb.empty else 0
-                                
-                                c_rur = cuenca_data[cuenca_data['Area'].str.title() == 'Rural']
-                                v_r = float(c_rur.iloc[0].get('Pob_Base', 0)) if not c_rur.empty else 0
-
-                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_t, 'area_geografica': 'total'})
-                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_u, 'area_geografica': 'urbano'})
-                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': v_r, 'area_geografica': 'rural'})
-                        else:
-                            log_cruces.append({"Micro-cuenca en Mapa": micro, "ID Matriz": "No Habitado", "Estado": "🌿 0 hab (Hueco Topológico)"})
-                            for a_str in ['total', 'urbano', 'rural']:
-                                mapa_data.append({'Territorio': micro, 'Padre': c, 'Total': 0, 'area_geografica': a_str})
-
-                # --- 🔍 ESCÁNER FORENSE (MODO PROTEGIDO) ---
-                if log_cruces:
-                    with st.sidebar.expander("🔍 Detalle del Escáner Forense"):
-                        st.write("Estado de sincronización matriz-mapa:")
-                        df_log = pd.DataFrame(log_cruces)
-                        st.dataframe(df_log, use_container_width=True)
-                        
-                        huecos = len(df_log[df_log['Estado'] == '🌿 0 hab (Hueco Topológico)'])
-                        if huecos > 0:
-                            st.info(f"ℹ️ {huecos} huecos topológicos detectados y salvados matemáticamente.")
-
-                df_mapa_base = pd.DataFrame(mapa_data)
+            # --- 2. 🎯 DETERMINAR QUÉ LEER DE LA MATRIZ ---
+            # REGLA DE ORO: No calcular piezas sueltas. Leer el dato maestro directamente.
+            if cuenca_sel:
+                filtro_zona = " + ".join(cuenca_sel[:2]) + ("..." if len(cuenca_sel)>2 else "")
+                titulo_terr = f"Cuencas Seleccionadas: {filtro_zona}"
+                territorios_a_buscar = cuenca_sel
+                territorios_para_mapa = cuenca_sel
             else:
-                filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Ninguna", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
+                if not df_hier.empty:
+                    if sel_szh != "-- Seleccione --": 
+                        titulo_terr = f"SZH: {sel_szh}"
+                        territorios_a_buscar = [sel_szh]
+                        territorios_para_mapa = cuencas_disp # Dibujar las sub-piezas en el mapa
+                    elif sel_zh != "-- Seleccione --": 
+                        titulo_terr = f"ZH: {sel_zh}"
+                        territorios_a_buscar = [sel_zh]
+                        territorios_para_mapa = cuencas_disp
+                    elif sel_ah != "-- Seleccione --": 
+                        titulo_terr = f"AH: {sel_ah}"
+                        territorios_a_buscar = [sel_ah]
+                        territorios_para_mapa = cuencas_disp
+                    else: 
+                        titulo_terr = "Todas las Cuencas"
+                        # 🔥 FIX 35M: Si son todas, sumamos SOLO las 3 Áreas Hidrográficas Mayores (No a los hijos)
+                        territorios_a_buscar = df_hier['nomah'].dropna().unique().tolist()
+                        territorios_para_mapa = df_hier['nomzh'].dropna().unique().tolist() # Dibujar ZHs en el mapa
+                else:
+                    titulo_terr = "Todas las Cuencas"
+                    territorios_a_buscar = df_cuencas_solo['Territorio'].unique().tolist()
+                    territorios_para_mapa = territorios_a_buscar
+                filtro_zona = titulo_terr
+
+            # --- 3. ⚡ LECTURA MATEMÁTICA DIRECTA (La cura de los 154k) ---
+            años_hist = np.arange(1985, 2043)
+            pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
+            
+            # Aplanamos los nombres de la matriz para búsquedas infalibles
+            df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
+            area_buscada = area_global.lower()
+            if area_buscada == 'urbano': df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower().isin(['urbano', 'urbana'])]
+            else: df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower() == area_buscada]
+
+            # Evaluador matemático encapsulado
+            def evaluar_curva(fila, anios):
+                mod = str(fila.get('Modelo_Recomendado', 'Desconocido'))
+                if 'Logistico' in mod: return fila.get('Log_K', 0) / (1 + fila.get('Log_a', 0) * np.exp(-fila.get('Log_r', 0) * (anios - 1985)))
+                if 'Exponencial' in mod: return fila.get('Exp_a', 0) * np.exp(fila.get('Exp_b', 0) * (anios - 1985))
+                if 'Polinomial' in mod:
+                    x = anios - 1985
+                    return fila.get('Poly_A', 0)*(x**3) + fila.get('Poly_B', 0)*(x**2) + fila.get('Poly_C', 0)*x + fila.get('Poly_D', 0)
+                return np.full_like(anios, fila.get('Pob_Base', 0))
+
+            import difflib
+            for t_crudo in territorios_a_buscar:
+                t_norm = normalizar_texto(t_crudo)
+                fila = df_matriz_pura[df_matriz_pura['MATCH_ID'] == t_norm]
+                
+                if not fila.empty:
+                    pob_hist_acumulada += evaluar_curva(fila.iloc[0], años_hist)
+                else:
+                    # Búsqueda difusa de rescate por si hay guiones o espacios raros
+                    matches = difflib.get_close_matches(t_norm, df_matriz_pura['MATCH_ID'].tolist(), n=1, cutoff=0.8)
+                    if matches:
+                        fila = df_matriz_pura[df_matriz_pura['MATCH_ID'] == matches[0]]
+                        pob_hist_acumulada += evaluar_curva(fila.iloc[0], años_hist)
+
+            pob_hist = pob_hist_acumulada
+
+            # --- 4. 🗺️ DATOS PARA EL MAPA ---
+            mapa_data = []
+            for t_mapa in territorios_para_mapa:
+                t_norm = normalizar_texto(t_mapa)
+                fila = df_matriz_pura[df_matriz_pura['MATCH_ID'] == t_norm]
+                val_tot = 0
+                if not fila.empty:
+                    val_tot = evaluar_curva(fila.iloc[0], np.array([2024]))[0] # Pob actual para el color
+                else:
+                    matches = difflib.get_close_matches(t_norm, df_matriz_pura['MATCH_ID'].tolist(), n=1, cutoff=0.8)
+                    if matches:
+                        fila = df_matriz_pura[df_matriz_pura['MATCH_ID'] == matches[0]]
+                        val_tot = evaluar_curva(fila.iloc[0], np.array([2024]))[0]
+                        
+                mapa_data.append({'Territorio': t_mapa, 'Total': val_tot, 'area_geografica': area_global.lower(), 'Padre': titulo_terr})
+            
+            df_mapa_base = pd.DataFrame(mapa_data)
+
         else:
-            st.sidebar.warning("⚠️ Entrena la matriz de cuencas en la pestaña 4.")
-            filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
+            filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Ninguna", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
     else:
-        st.sidebar.error("🚨 Matriz Maestra no encontrada. Asegúrate de que existe en la base de datos.")
+        st.sidebar.warning("⚠️ Entrena la matriz de cuencas en la pestaña 4.")
         filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
         
 elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)"]:
