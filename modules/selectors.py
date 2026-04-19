@@ -219,29 +219,6 @@ def render_selector_espacial():
                     gdf_zona = gpd.GeoDataFrame({'nombre': ['Antioquia']}, geometry=[box(-77.5, 5.0, -73.5, 9.0)], crs="EPSG:4326")
 
             # =========================================================================
-            # 🔥 RECOLECCIÓN DE HIJOS (MAGIA PARA SUMAR POBLACIONES EN NECHÍ / CARs)
-            # =========================================================================
-            nombres_hijos = []
-            if gdf_zona is not None and not gdf_zona.empty:
-                if modo == "Por Cuenca":
-                    # Si eliges "Nechí", guardamos todas las NSS3, NSS2, etc. que están adentro
-                    cols_jerarquia = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah']
-                    for col in cols_jerarquia:
-                        if col in gdf_zona.columns:
-                            nombres_hijos.extend(gdf_zona[col].dropna().astype(str).tolist())
-                else:
-                    # En regiones o municipios, guardamos los nombres de los municipios
-                    col_m = next((c for c in gdf_zona.columns if c.lower() in ['nombre_municipio', 'mpio_nombr', 'mpio_cnmbr', 'nombre_mpio', 'municipio']), None)
-                    if col_m: nombres_hijos.extend(gdf_zona[col_m].apply(decodificar_tildes).dropna().astype(str).tolist())
-                
-                # Consolidamos geometrías (Si no lo hicimos arriba)
-                if len(gdf_zona) > 1 and modo == "Por Cuenca":
-                    gdf_zona = gpd.GeoDataFrame({'geometry': [gdf_zona.unary_union]}, crs=gdf_zona.crs)
-                    
-            # Inyectamos los hijos en la memoria para que demografia_tools los sume
-            st.session_state['nombres_territorios_hijos'] = list(set(nombres_hijos))
-                    
-            # =========================================================================
             # --- 2. FILTRAR ESTACIONES ---
             # =========================================================================
             ids_estaciones = []
