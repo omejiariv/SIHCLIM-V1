@@ -124,10 +124,15 @@ def load_context_layers(gdf_zona_bounds):
         except: pass
     return layers
 
-# --- 4. LÓGICA PRINCIPAL ---
+# ==============================================================================
+# --- 4. LÓGICA PRINCIPAL (VERSIÓN DOMINICAL BLINDADA) ---
+# ==============================================================================
 render_metodologia()
+
+# 1. Selector Espacial Maestro
 ids_sel, nombre_zona, alt_ref, gdf_zona = selectors.render_selector_espacial()
 
+# 2. Configuración de Pesos AHP en Sidebar
 with st.sidebar:
     st.header("⚖️ Pesos AHP (Multicriterio)")
     st.caption("Define la importancia de cada vector. El sistema los normalizará al 100%.")
@@ -147,34 +152,54 @@ with st.sidebar:
     v_drain = st.checkbox("Red de Drenaje", True)
     v_geo = st.checkbox("Geomorfología", False)
 
+# 3. Lógica de Cálculo de Impactos
 if gdf_zona is not None and not gdf_zona.empty:
     engine = get_engine()
-
-    lugar_actual = nombre_zona
+    
+    # --- Control Temporal ---
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
-        
+    
     # ==============================================================================
-    # 🧠 NÚCLEO DEMOGRÁFICO ESTRICTO (Puente Inteligente Aleph + SQL)
+    # 🧠 NÚCLEO DEMOGRÁFICO "SNIPER" (Búsqueda Directa en Matriz Multiescala)
     # ==============================================================================
     pob_total = 0
-    
-    # 1. Intentamos leer la memoria viva (Si el usuario viene de la Pestaña Demográfica)
+    metodo_dato = ""
+
+    # PLAN A: El Aleph (Memoria viva de la Pág 06 si el usuario viene de allá)
     aleph_lugar = st.session_state.get('aleph_lugar', '')
     aleph_anio = st.session_state.get('aleph_anio', 0)
     
     if aleph_lugar == nombre_zona and aleph_anio == anio_actual:
         pob_total = st.session_state.get('aleph_pob_total', 0)
-        
-    # 2. Si la memoria está vacía, buscamos en SQL usando el Cerebro Centralizado
+        metodo_dato = "Memoria Viva (Aleph)"
+
+    # PLAN B: Búsqueda en Matriz Pre-computada (La solución a los 4M de Nechí)
     if pob_total == 0:
         try:
             from modules.demografia_tools import obtener_poblacion_matriz
-            # Esta función centralizada limpia los nombres (quita "- NSS") y busca la fórmula matemática
+            # Esta función ahora es un francotirador que busca el nombre exacto 
+            # en la matriz donde ya sumamos los barrios de Medellín.
             pob_total = obtener_poblacion_matriz(nombre_zona, anio_actual)
+            metodo_dato = "Matriz Pre-computada (SQL)"
         except Exception as e:
-            pass # Si falla, pasamos al Plan C silenciosamente
+            st.error(f"Error consultando el Cerebro Demográfico: {e}")
 
-    # 3. Datos Agropecuarios y Plan C
+    # --- Validación y Guardado en Estado ---
+    if pob_total > 0:
+        st.session_state['pob_hum_calc_met'] = pob_total
+        st.success(f"👥 **Población Detectada:** {pob_total:,.0f} habitantes ({metodo_dato})")
+    else:
+        st.warning(f"⚠️ No se encontró población pre-calculada para '{nombre_zona}'. Por favor, verifica en la Página 06.")
+        st.session_state['pob_hum_calc_met'] = 0
+
+    # ==============================================================================
+    # 🐄 NÚCLEO PECUARIO Y DEMANDA HÍDRICA (Metabolismo)
+    # ==============================================================================
+    # 1. Demanda Humana (Litros/segundo)
+    # Asumimos dotación neta de 150 L/hab/día por defecto
+    q_humano_lps = (pob_total * 150) / 86400 
+    
+    # 2. Carga Pecuaria (Plan C: Si no hay cruce espacial detallado, usamos el promedio regional)
     datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
 
     if datos_metabolismo:
