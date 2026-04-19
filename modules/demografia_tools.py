@@ -1,30 +1,14 @@
 # modules/demografia_tools.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import difflib
-import unicodedata
-import re
 from sqlalchemy import text
 from modules.db_manager import get_engine
 
-def normalizar_texto_robusto(t):
-    """Aplanadora de texto para garantizar el Match entre Mapas y DANE/Matriz"""
-    if not t or pd.isna(t): return ""
-    t = str(t).lower().strip()
-    # 1. Quitar tildes
-    t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    # 2. Homologar prefijos de agua (Mapas vs Matriz)
-    t = re.sub(r'\brio\b', 'r', t)
-    t = re.sub(r'\bquebrada\b', 'q', t)
-    t = re.sub(r'\bcano\b', 'cn', t)
-    # 3. Quitar puntos (ej. "r." -> "r")
-    t = t.replace(".", "")
-    # 4. Convertir toda la puntuación (guiones, comas) en espacios
-    t = re.sub(r'[^a-z0-9\s]', ' ', t) 
-    # 5. Quitar espacios dobles
-    t = re.sub(r'\s+', ' ', t).strip()
-    return t
+# 🔥 Importamos la única Aplanadora Maestra desde utils
+from modules.utils import normalizar_texto_maestro
 
 def obtener_poblacion_matriz(nombre_zona, anio_objetivo):
     """
@@ -40,24 +24,22 @@ def obtener_poblacion_matriz(nombre_zona, anio_objetivo):
         df_mat = pd.read_sql(q, engine)
         
         if not df_mat.empty:
-            # 2. Quitar el sufijo técnico del selector UI (" - NSS", " - SZH", etc.)
-            nombre_limpio = re.sub(r'\s*-\s*NSS.*|\s*-\s*SZH.*|\s*-\s*ZH.*|\s*-\s*AH.*', '', str(nombre_zona), flags=re.IGNORECASE).strip()
-            
-            # 3. Crear diccionario normalizado agresivo de la base de datos
+            # 2. Crear diccionario normalizado agresivo de la base de datos
             territorios_db = df_mat['Territorio'].dropna().unique().tolist()
-            nombres_norm = {normalizar_texto_robusto(t): t for t in territorios_db}
+            nombres_norm = {normalizar_texto_maestro(t): t for t in territorios_db}
             
-            # 4. Normalizar lo que el usuario seleccionó en la UI
-            zona_norm = normalizar_texto_robusto(nombre_limpio)
+            # 3. Normalizar lo que el usuario seleccionó en la UI 
+            # (normalizar_texto_maestro ya se encarga internamente de quitar los "- NSS", tildes y abreviaturas)
+            zona_norm = normalizar_texto_maestro(nombre_zona)
             match_name = None
             
-            # 5. Emparejamiento (Fuzzy Match ajustado al 65% para atrapar variaciones difíciles)
+            # 4. Emparejamiento (Fuzzy Match ajustado al 65% para atrapar variaciones difíciles)
             match_name = nombres_norm.get(zona_norm)
             if not match_name:
                 matches = difflib.get_close_matches(zona_norm, nombres_norm.keys(), n=1, cutoff=0.65)
                 if matches: match_name = nombres_norm[matches[0]]
             
-            # 6. Cálculo Matemático Estricto
+            # 5. Cálculo Matemático Estricto
             if match_name:
                 row = df_mat[df_mat['Territorio'] == match_name].iloc[0]
                 mod = str(row.get('Modelo_Recomendado', ''))
