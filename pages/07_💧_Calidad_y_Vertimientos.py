@@ -334,7 +334,8 @@ if pob_total == 0:
                 origen_dato = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
 
         # --- 2.2 MOTOR PECUARIO ---
-        try: # <--- TRY INTERNO PARA ANIMALES
+# --- 2.2 MOTOR PECUARIO (Matriz + Suma Espacial Dinámica) ---
+        try:
             df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
             st.session_state['df_matriz_pecuaria'] = df_pec
             animales_encontrados = False
@@ -377,13 +378,43 @@ if pob_total == 0:
                 raise ValueError("Ir a Fallback Histórico")
 
         except Exception:
-            # RED DE SEGURIDAD HISTÓRICA
+            # 🔥 PLAN C: AGRUPACIÓN ESPACIAL DINÁMICA (El Reemplazo seguro del GeoJSON)
             try:
+                # 1. Intento clásico directo
                 total_bovinos, total_porcinos, total_aves = obtener_censo_pecuario(nombre_seleccion, "Cuenca Hidrográfica", anio_analisis)
+                
+                # 2. Si da cero (Caso Magdalena Cauca), reconstruimos el rompecabezas
+                if total_bovinos == 0 and gdf_zona is not None and not gdf_zona.empty:
+                    import time
+                    url_sup = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Historico_Cuencas.csv?t={int(time.time())}"
+                    df_censo = pd.read_csv(url_sup)
+                    
+                    if 'Anio' in df_censo.columns:
+                        anio_f = min(anio_analisis, df_censo['Anio'].max())
+                        df_censo = df_censo[df_censo['Anio'] == anio_f]
+                    
+                    # Extraemos los nombres de TODAS las subcuencas que conforman este mapa gigante
+                    piezas = []
+                    for col in ['nom_szh', 'nomzh', 'nom_nss3']:
+                        if col in gdf_zona.columns:
+                            piezas.extend(gdf_zona[col].dropna().unique().tolist())
+                    
+                    piezas_norm = [limpiar_identificador(p) for p in set(piezas)]
+                    
+                    if 'Subcuenca' in df_censo.columns:
+                        df_censo['Sub_Norm'] = df_censo['Subcuenca'].apply(limpiar_identificador)
+                        df_filtrado = df_censo[df_censo['Sub_Norm'].isin(piezas_norm)]
+                        
+                        if not df_filtrado.empty:
+                            total_bovinos = int(df_filtrado['Bovinos'].sum())
+                            total_porcinos = int(df_filtrado['Porcinos'].sum())
+                            total_aves = int(df_filtrado['Aves'].sum())
+                
                 suma_animales = total_bovinos + total_porcinos + total_aves
-                metodo_animal = "Censo Histórico (Fallback)" if suma_animales > 0 else "Sin Datos Pecuarios"
-            except Exception:
-                metodo_animal = "Error Total"
+                metodo_animal = "Censo Histórico (Suma de Piezas)" if suma_animales > 0 else "Sin Datos Pecuarios"
+                
+            except Exception as e_fallback:
+                metodo_animal = "Error Total Pecuario"
 
     except Exception as main_e: # <--- ESTE ES EL EXCEPT QUE FALTABA
         st.error(f"Error en el Núcleo Demográfico: {main_e}")
