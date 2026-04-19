@@ -11,6 +11,9 @@ from sqlalchemy import create_engine, text
 import streamlit as st
 from modules.config import Config
 
+# 🔥 IMPORTAMOS LA APLANADORA MAESTRA (EL CEREBRO LINGÜÍSTICO)
+from modules.utils import normalizar_texto_maestro
+
 # Función auxiliar robusta para fechas en español (ene-70 -> datetime)
 def parse_spanish_date_robust(x):
     if isinstance(x, pd.Timestamp):
@@ -173,11 +176,6 @@ def complete_series(df):
     df[Config.PRECIPITATION_COL] = df[Config.PRECIPITATION_COL].interpolate(method="linear", limit_direction="both")
     return df
 
-def normalizar_texto(texto):
-    if pd.isna(texto): return ""
-    texto_str = str(texto).lower().strip()
-    return unicodedata.normalize('NFKD', texto_str).encode('ascii', 'ignore').decode('utf-8')
-
 def leer_csv_robusto(ruta):
     try:
         df = pd.read_csv(ruta, sep=';', low_memory=False)
@@ -211,7 +209,8 @@ def cargar_censo_ica(tipo):
     if not df.empty:
         df.columns = df.columns.str.upper().str.replace(' ', '_').str.strip()
         if 'MUNICIPIO' in df.columns:
-            df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto)
+            # 🔥 USAMOS EL CEREBRO LINGÜÍSTICO AQUÍ
+            df['MUNICIPIO_NORM'] = df['MUNICIPIO'].astype(str).apply(normalizar_texto_maestro)
     return df
 
 @st.cache_data
@@ -245,11 +244,13 @@ def cargar_territorio_maestro():
         df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
         
         if 'municipio' in df.columns:
-            df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto)
+            # 🔥 USAMOS EL CEREBRO LINGÜÍSTICO AQUÍ
+            df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto_maestro)
         if 'car' in df.columns:
             df['car'] = df['car'].astype(str).str.upper()
         if 'region' in df.columns:
             df['region'] = df['region'].astype(str).str.title()
-            df['region_norm'] = df['region'].astype(str).apply(normalizar_texto)
+            # 🔥 USAMOS EL CEREBRO LINGÜÍSTICO AQUÍ
+            df['region_norm'] = df['region'].astype(str).apply(normalizar_texto_maestro)
             
     return df
