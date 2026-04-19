@@ -760,8 +760,14 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                             if matches: ids_permitidos.add(matches[0])
 
                 # Si seleccionó "Todas", anulamos el filtro para sumar el 100% de la matriz
+                # 🔥 FIX 35 MILLONES: Si son "Todas", solo sumamos el nivel más alto (Áreas Hidrográficas)
+                # para evitar sumar las subcuencas dos veces.
                 if titulo_terr == "Todas las Cuencas":
-                    ids_permitidos = set(ids_matriz)
+                    if not df_hier.empty and 'nomah' in df_hier.columns:
+                        ah_nombres = df_hier['nomah'].dropna().unique()
+                        ids_permitidos = set([normalizar_texto(ah) for ah in ah_nombres])
+                    else:
+                        ids_permitidos = set() # Evitar desastres si no hay jerarquía
 
                 # 2. CURVA MATEMÁTICA PURA (Respeta el filtro y rescata a Medellín)
                 pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
@@ -2484,10 +2490,37 @@ with tab_matriz:
                     st.error(f"Error cargando jerarquía espacial: {e}")
                     df_arbol = pd.DataFrame(columns=['subc_lbl', 'nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3'])
                 
-                # 4. 🧬 FUSIÓN MAESTRA: Unimos la población detallada con su linaje completo
-                # Esto asegura que si una persona vive en "Q. La Peinada" (subc_lbl),
-                # también se le asigne la etiqueta de "Río Nechí" (nomzh).
-                df_hist_completo = pd.merge(df_hist_micro, df_arbol, on='subc_lbl', how='inner')
+                # 4. 🧬 FUSIÓN MAESTRA (Fuzzy Merge y Rescate de Población Urbana)
+                from modules.utils import normalizar_texto_maestro
+                import difflib
+                
+                # Aplanamos los nombres para asegurar coincidencias
+                df_hist_micro['MATCH_ID'] = df_hist_micro['subc_lbl'].astype(str).apply(normalizar_texto_maestro)
+                df_arbol['MATCH_ID'] = df_arbol['subc_lbl'].astype(str).apply(normalizar_texto_maestro)
+                
+                df_arbol_unico = df_arbol.drop_duplicates(subset=['MATCH_ID']).copy()
+                ids_arbol = set(df_arbol_unico['MATCH_ID'])
+                
+                # 🔥 FIX 154k (RESCATE DE MEDELLÍN): Forzador inteligente
+                def forzar_match(val):
+                    if val in ids_arbol: return val
+                    # Si el algoritmo de barrios arrojó 'Rio Aburra', lo forzamos al nombre oficial de la BD
+                    if 'aburra' in val: return normalizar_texto_maestro('Río Aburrá - NSS')
+                    if 'leon' in val: return normalizar_texto_maestro('Río León - NSS')
+                    
+                    matches = difflib.get_close_matches(val, ids_arbol, n=1, cutoff=0.7)
+                    return matches[0] if matches else val
+                    
+                df_hist_micro['MATCH_ID'] = df_hist_micro['MATCH_ID'].apply(forzar_match)
+                
+                # Usamos LEFT join para que ningún habitante (ni urbano ni rural) se elimine jamás
+                df_hist_completo = pd.merge(df_hist_micro, df_arbol_unico, on='MATCH_ID', how='left')
+                
+                # Relleno de emergencia: Si un barrio quedó huérfano, le prestamos su propio nombre 
+                # a los niveles superiores para que no sume cero.
+                cols_jerarquia = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']
+                for c in cols_jerarquia:
+                    df_hist_completo[c] = df_hist_completo[c].fillna(df_hist_completo['subc_lbl_x'])
                 
                 # 5. Definimos los niveles de agrupación
                 niveles_hidrologicos = {
