@@ -263,83 +263,93 @@ if gdf_zona is None or gdf_zona.empty:
     st.stop() 
 
 # ==============================================================================
-# 🧠 2. NÚCLEO DEMOGRÁFICO "SNIPER" (Búsqueda Directa en Matriz Multiescala)
+# 🧠 2. NÚCLEO DEMOGRÁFICO "SNIPER" (Versión Inmortal - Fuzzy & PolyCheck)
 # ==============================================================================
-# El año de análisis se sincroniza con el reloj de calidad
 anio_analisis = 2025 
 
-pob_urb_base = 0
-pob_rur_base = 0
-pob_total = 0
+pob_urb_base, pob_rur_base, pob_total = 0, 0, 0
 origen_dato = ""
 
-# PLAN A: El Aleph (Memoria viva de la sesión si el usuario viene de la Pág 06)
+# PLAN A: El Aleph (Memoria viva de la sesión)
 aleph_lugar = st.session_state.get('aleph_lugar', '')
 aleph_anio = st.session_state.get('aleph_anio', 0)
 
 if aleph_lugar == nombre_seleccion and aleph_anio == anio_analisis:
     pob_total = st.session_state.get('aleph_pob_total', 0)
     origen_dato = "Memoria Viva (Aleph)"
-    # Reparto proporcional de seguridad si no hay detalle en memoria
     pob_urb_base = pob_total * 0.85
     pob_rur_base = pob_total * 0.15
 
-# PLAN B: Búsqueda en Matriz Maestra SQL (El Francotirador Inmune a Colisiones)
+# PLAN B: Búsqueda en Matriz Maestra SQL
 if pob_total == 0:
     try:
-        from modules.demografia_tools import obtener_poblacion_matriz
-        from modules.utils import normalizar_texto_maestro
         from modules.db_manager import get_engine
+        import difflib
         
-        # 1. Obtenemos la Población Total usando el desambiguador de escala (gdf_zona)
-        pob_total = obtener_poblacion_matriz(nombre_seleccion, anio_analisis, gdf_contexto=gdf_zona)
-        
-        # 2. Extraemos los componentes (Urbana/Rural) para el balance de cargas
         engine = get_engine()
-        nombre_norm = normalizar_texto_maestro(nombre_seleccion)
         
-        # Cargamos matriz de caché o DB
-        df_mat = st.session_state.get('df_matriz_demografica', pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine))
-        st.session_state['df_matriz_demografica'] = df_mat
-        
+        # Cargamos matriz a la sesión para velocidad extrema
+        if 'df_matriz_demografica' in st.session_state:
+            df_mat = st.session_state['df_matriz_demografica']
+        else:
+            df_mat = pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine)
+            st.session_state['df_matriz_demografica'] = df_mat
+            
         if not df_mat.empty:
-            df_mat['MATCH_ID'] = df_mat['Territorio'].astype(str).apply(normalizar_texto_maestro)
+            # 1. Normalización local blindada
+            def norm_local(t):
+                import unicodedata
+                if pd.isna(t): return ""
+                return unicodedata.normalize('NFKD', str(t).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
             
-            # Detectamos si estamos en escala Macro o Micro para no traer el dato equivocado
-            es_macro = True
-            if gdf_zona is not None and not gdf_zona.empty:
-                # Si el nombre seleccionado está en la columna de microcuencas, pedimos el dato pequeño
-                if 'nom_nss3' in gdf_zona.columns and nombre_seleccion in gdf_zona['nom_nss3'].values:
-                    es_macro = False
-                elif 'nom_nss2' in gdf_zona.columns and nombre_seleccion in gdf_zona['nom_nss2'].values:
-                    es_macro = False
-
-            # Filtramos las filas del territorio
-            filas_terr = df_mat[df_mat['MATCH_ID'] == nombre_norm]
+            df_mat['MATCH_ID'] = df_mat['Territorio'].apply(norm_local)
+            nombre_norm = norm_local(nombre_seleccion)
             
-            if not filas_terr.empty:
-                # Ordenamos para elegir el "Gigante" o el "Pequeño" según la escala
+            # 2. 🎯 Búsqueda Difusa (Cura el "Magdalena Cauca" y "Aburrá - NSS")
+            opciones = df_mat['MATCH_ID'].unique().tolist()
+            matches = difflib.get_close_matches(nombre_norm, opciones, n=1, cutoff=0.7)
+            
+            if matches:
+                nombre_ganador = matches[0]
+                filas_terr = df_mat[df_mat['MATCH_ID'] == nombre_ganador].copy()
+                
+                # 3. 🧠 EL DESAMBIGUADOR MAESTRO (Cura los 22k del Porce)
+                es_macro = True
+                if gdf_zona is not None and not gdf_zona.empty:
+                    # Si el mapa tiene más de 1 microcuenca diferente adentro, es un contenedor MACRO
+                    if 'nom_nss3' in gdf_zona.columns:
+                        num_microcuencas = len(gdf_zona['nom_nss3'].dropna().unique())
+                        if num_microcuencas <= 1:
+                            es_macro = False # Tiene 1 o 0, es una microcuenca individual
+                
+                # 4. Ordenar para resolver la colisión (Gigante vs Pequeño)
                 filas_terr = filas_terr.sort_values(by='Pob_Base', ascending=not es_macro)
                 
-                # Función interna para resolver la matemática del modelo ganador
+                # 5. Ecuación Matemática
                 def resolver_ecuacion(row, anio):
                     t = float(anio - row.get('Año_Base', 1985))
                     mod = str(row.get('Modelo_Recomendado', ''))
-                    if 'Logistico' in mod: 
-                        return row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t))
-                    elif 'Exponencial' in mod: 
-                        return row['Exp_a'] * np.exp(row['Exp_b'] * t)
-                    return row['Poly_A']*t**3 + row['Poly_B']*t**2 + row['Poly_C']*t + row['Poly_D']
-
-                # Extraer Urbana
-                f_urb = filas_terr[filas_terr['Area'].str.lower().str.startswith('urb')]
-                pob_urb_base = resolver_ecuacion(f_urb.iloc[0], anio_analisis) if not f_urb.empty else pob_total * 0.85
+                    if 'Logistico' in mod: return row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t))
+                    elif 'Exponencial' in mod: return row['Exp_a'] * np.exp(row['Exp_b'] * t)
+                    elif 'Polinomial' in mod: return row['Poly_A']*(t**3) + row['Poly_B']*(t**2) + row['Poly_C']*t + row['Poly_D']
+                    else: return row['Pob_Base']
                 
-                # Extraer Rural
+                # 6. Extracción de los 3 vectores
+                f_tot = filas_terr[filas_terr['Area'].str.lower().isin(['total', 't'])]
+                f_urb = filas_terr[filas_terr['Area'].str.lower().str.startswith('urb')]
                 f_rur = filas_terr[filas_terr['Area'].str.lower() == 'rural']
-                pob_rur_base = resolver_ecuacion(f_rur.iloc[0], anio_analisis) if not f_rur.empty else pob_total * 0.15
-
-        origen_dato = "Matriz Pre-computada (SQL)"
+                
+                if not f_tot.empty: pob_total = resolver_ecuacion(f_tot.iloc[0], anio_analisis)
+                
+                if not f_urb.empty: pob_urb_base = resolver_ecuacion(f_urb.iloc[0], anio_analisis)
+                else: pob_urb_base = pob_total * 0.85
+                    
+                if not f_rur.empty: pob_rur_base = resolver_ecuacion(f_rur.iloc[0], anio_analisis)
+                else: pob_rur_base = pob_total * 0.15
+                    
+                origen_dato = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
+            else:
+                origen_dato = "Sin coincidencia en Matriz"
     except Exception as e:
         st.error(f"Error en el Núcleo Demográfico: {e}")
         origen_dato = "Fallo de consulta"
@@ -351,20 +361,19 @@ st.markdown("---")
 with st.expander(f"📍 Contexto Demográfico Base ({anio_analisis}): {nombre_seleccion}", expanded=False):
     
     if "SQL" in origen_dato:
-        st.success(f"🧠 **Sincronización Perfecta:** Datos extraídos de la Matriz Maestra. Escala: **{'Macro' if es_macro else 'Micro'}**.")
+        st.success(f"🧠 **Sincronización Perfecta:** Datos extraídos de la Matriz Maestra. Escala detectada: **{origen_dato.split('(')[1].replace(')','')}**.")
     elif "Aleph" in origen_dato:
         st.info(f"🌐 **Memoria Viva:** Datos inyectados desde la sesión actual.")
     else:
-        st.warning(f"⚠️ **Atención:** No se halló modelo matemático. Los cálculos de carga iniciarán en cero.")
+        st.warning(f"⚠️ **Atención:** No se halló modelo matemático para '{nombre_seleccion}'.")
     
     st.markdown("⚙️ **Ajuste Manual de Población (Calibración)**")
     col_p1, col_p2 = st.columns(2)
     with col_p1: 
-        pob_urbana = st.number_input("Pob. Urbana (Conectada a Alcantarillado):", min_value=0.0, value=float(pob_urb_base), step=1.0, help="Población en cabeceras o centros nucleados.")
+        pob_urbana = st.number_input("Pob. Urbana (Conectada a Alcantarillado):", min_value=0.0, value=float(pob_urb_base), step=1.0)
     with col_p2: 
-        pob_rural = st.number_input("Pob. Rural (Sistemas Individuales/Sépticos):", min_value=0.0, value=float(pob_rur_base), step=1.0, help="Población dispersa.")
+        pob_rural = st.number_input("Pob. Rural (Sistemas Individuales/Sépticos):", min_value=0.0, value=float(pob_rur_base), step=1.0)
     
-    # El total final es la suma de los inputs (por si el usuario decide calibrar los datos)
     pob_total = pob_urbana + pob_rural
 
 st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 👥 Población de Simulación: **{pob_total:,.0f} Hab.**")
