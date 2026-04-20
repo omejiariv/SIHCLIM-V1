@@ -3,12 +3,15 @@
 import os
 import sys
 import warnings
+import re
+import unicodedata
 
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from shapely.geometry import shape
+from scipy.optimize import curve_fit # 🔥 Agregado para que los modelos matemáticos funcionen
 
 import streamlit as st
 
@@ -31,6 +34,16 @@ except ImportError:
 # ==========================================
 # Llama al menú expandible y resalta la página actual (Corregido)
 selectors.renderizar_menu_navegacion("Modelo Pecuario")
+
+# ====================================================================
+# 🧽 MOTOR DE ESTANDARIZACIÓN UNIVERSAL (Sincronía con Pág 07)
+# ====================================================================
+def limpiar_texto_maestro(texto):
+    """Limpia tildes, pasa a minúsculas, elimina guiones y colapsa espacios."""
+    if pd.isna(texto): return ""
+    t = unicodedata.normalize('NFKD', str(texto).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+    t = re.sub(r'[^a-z0-9]', ' ', t) # Todo lo que no sea letra o número se vuelve espacio
+    return " ".join(t.split()) # Colapsa múltiples espacios
 
 # ====================================================================
 # 💉 ENCENDIDO DEL SISTEMA INMUNOLÓGICO Y VARIABLES GLOBALES
@@ -303,12 +316,29 @@ if 'df_matriz_pecuaria' in st.session_state:
     
     with col_btn1:
         if st.button("🚀 Inyectar a Base de Datos (SQL)", type="primary", use_container_width=True):
-            with st.spinner("Conectando con PostgreSQL (Supabase)..."):
+            with st.spinner("Forjando Cerebro Pecuario y conectando con PostgreSQL..."):
                 try:
                     from modules.db_manager import get_engine
                     engine_sql = get_engine()
-                    df_matriz_pec.to_sql('matriz_maestra_pecuaria', engine_sql, if_exists='replace', index=False)
-                    st.success(f"✅ ¡Inyección Exitosa! {len(df_matriz_pec)} registros actualizados en PostgreSQL.")
+                    
+                    # 1. Copia de seguridad
+                    df_export = df_matriz_pec.copy()
+                    
+                    # 2. Seguro de nombres: Si se llamara 'Pob_Base' en lugar de 'Poblacion_Base', lo corregimos
+                    if 'Pob_Base' in df_export.columns and 'Poblacion_Base' not in df_export.columns:
+                        df_export.rename(columns={'Pob_Base': 'Poblacion_Base'}, inplace=True)
+                        
+                    # 3. 🧽 APLICAMOS LA ASPIRADORA DE TEXTO AL NACER
+                    if 'Territorio' in df_export.columns:
+                        df_export['MATCH_ID'] = df_export['Territorio'].apply(limpiar_texto_maestro)
+                    
+                    # 4. Inyección SQL
+                    df_export.to_sql('matriz_maestra_pecuaria', engine_sql, if_exists='replace', index=False)
+                    st.success(f"✅ ¡Inyección Exitosa! {len(df_export)} registros blindados (con MATCH_ID) actualizados en PostgreSQL.")
+                    
+                    # Actualizamos la memoria viva por si acaso
+                    st.session_state['df_matriz_pecuaria'] = df_export
+                    
                 except Exception as e:
                     st.error(f"Error SQL: {e}")
                     
