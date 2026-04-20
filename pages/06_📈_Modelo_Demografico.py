@@ -2668,9 +2668,10 @@ with tab_matriz:
             renderizar_panel(area_2, "g2")
             
 # ==========================================
-# PESTAÑA 5: RANKINGS Y DINÁMICA HISTÓRICA (Versión Universal V2)
+# PESTAÑA 5: RANKINGS Y DINÁMICA HISTÓRICA (VERSIÓN ROBUSTA FINAL)
 # ==========================================
 with tab_rankings:
+    # 1. Identificamos el área actual (Total/Urbano/Rural)
     zona_actual = "Total"
     if not df_mapa_base.empty and 'area_geografica' in df_mapa_base.columns:
         zona_actual = df_mapa_base['area_geografica'].iloc[0].title()
@@ -2680,50 +2681,48 @@ with tab_rankings:
     
     df_rank = pd.DataFrame()
     titulo_ranking = ""
-    
-    # --- 🧠 TRADUCTOR DE ESCALAS INTELIGENTE (100% A PRUEBA DE FALLOS) ---
     escala_str = escala_sel.lower()
+
+    # --- 🧠 MOTOR DE RANKING UNIVERSAL POR FUENTE DE DATOS ---
     
-    # 1. ESCALAS DE AGRUPACIÓN SUPERIOR (Nacional y Cuencas)
+    # CASO A: ESCALAS NACIONALES (DANE PURO)
     if "global" in escala_str or "nacional" in escala_str:
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
         df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
         df_rank['Padre'] = 'Colombia'
         titulo_ranking = "Departamentos de Colombia"
-        
-    elif "cuencas" in escala_str and 'df_hier' in locals() and not df_hier.empty and not df_mapa_base.empty:
-        df_nss1 = df_hier[['subc_lbl', 'nom_nss1']].drop_duplicates()
-        df_rank = df_mapa_base.merge(df_nss1, left_on='Territorio', right_on='subc_lbl', how='left')
-        df_rank = df_rank.groupby('nom_nss1')['Total'].sum().reset_index()
-        df_rank.rename(columns={'nom_nss1': 'Territorio'}, inplace=True)
-        df_rank['Padre'] = locals().get('sel_ah', 'Área Hidrográfica')
-        titulo_ranking = "Macrocuencas (NSS1)"
-        
-    # 2. RESTO DE ESCALAS (Usa el mapa como fuente de verdad absoluta)
+
+    # CASO B: TODAS LAS DEMÁS ESCALAS (USA EL MAPA COMO FUENTE DE VERDAD)
     else:
         if not df_mapa_base.empty:
             df_rk_base = df_mapa_base.copy()
             
-            # Filtramos por el año seleccionado si tiene columna de tiempo
-            col_a = 'año' if 'año' in df_rk_base.columns else ('Año' if 'Año' in df_rk_base.columns else None)
-            if col_a:
-                df_rk_base = df_rk_base[df_rk_base[col_a] == año_sel]
-                
+            # Filtro de seguridad por año si la columna existe
+            col_t = 'año' if 'año' in df_rk_base.columns else ('Año' if 'Año' in df_rk_base.columns else None)
+            if col_t:
+                df_rk_base = df_rk_base[df_rk_base[col_t] == año_sel]
+            
             if not df_rk_base.empty:
-                # Agrupamos por Territorio (y Padre si existe)
-                cols_group = ['Territorio', 'Padre'] if 'Padre' in df_rk_base.columns else ['Territorio']
-                df_rank = df_rk_base.groupby(cols_group)['Total'].sum().reset_index()
+                # Agrupación dinámica por Territorio y su Padre
+                columnas_agrupar = ['Territorio', 'Padre'] if 'Padre' in df_rk_base.columns else ['Territorio']
+                df_rank = df_rk_base.groupby(columnas_agrupar)['Total'].sum().reset_index()
                 
-                if 'Padre' not in df_rank.columns:
-                    df_rank['Padre'] = 'Zona Analizada'
-                    
-                # Títulos dinámicos
-                if "veredal" in escala_str: titulo_ranking = "Veredas"
-                elif "urbana" in escala_str: titulo_ranking = "Cabeceras Municipales"
-                elif "intra-urbana" in escala_str: titulo_ranking = "Comunas / Barrios"
-                else: titulo_ranking = f"Municipios de {df_rank['Padre'].iloc[0]}"
+                # Definición de títulos dinámicos según la escala
+                if "cuencas" in escala_str:
+                    titulo_ranking = "Cuencas / Microcuencas"
+                elif "municipal" in escala_str:
+                    padre_nombre = df_rank['Padre'].iloc[0] if 'Padre' in df_rank.columns else "Región"
+                    titulo_ranking = f"Municipios de {padre_nombre}"
+                elif "urbana" in escala_str:
+                    titulo_ranking = "Cabeceras Municipales (Antioquia)"
+                elif "intra-urbana" in escala_str:
+                    titulo_ranking = "Comunas / Barrios de Medellín"
+                elif "veredal" in escala_str:
+                    titulo_ranking = "Veredas"
+                else:
+                    titulo_ranking = "Divisiones Territoriales"
 
-    # Limpieza numérica
+    # 2. LIMPIEZA Y RENDERIZADO DE GRÁFICOS
     if not df_rank.empty:
         df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
         df_rank = df_rank[df_rank['Total'] > 0]
@@ -2734,30 +2733,33 @@ with tab_rankings:
         
         with col_rank_izq:
             df_plot_top = df_rank.nlargest(15, 'Total')
-            # 🔥 TOOLTIP ENRIQUECIDO (Vereda - Municipio, etc)
             fig_top = px.bar(df_plot_top, x='Total', y='Territorio', orientation='h', 
                              color='Total', color_continuous_scale='Viridis',
-                             hover_data={'Padre': True, 'Territorio': True, 'Total': ':.0f'},
+                             hover_data={'Padre': True} if 'Padre' in df_plot_top.columns else None,
                              title="📈 Top 15: Mayor Población")
             fig_top.update_layout(yaxis={'categoryorder':'total ascending'}, height=450)
-            st.plotly_chart(fig_top, use_container_width=True, key=f"rank_top_{año_sel}_{zona_actual}")
+            st.plotly_chart(fig_top, use_container_width=True)
 
         with col_rank_der:
             df_plot_bot = df_rank.nsmallest(15, 'Total')
             fig_bot = px.bar(df_plot_bot, x='Total', y='Territorio', orientation='h', 
                              color='Total', color_continuous_scale='Plasma',
-                             hover_data={'Padre': True, 'Territorio': True, 'Total': ':.0f'},
+                             hover_data={'Padre': True} if 'Padre' in df_plot_bot.columns else None,
                              title="📉 Bottom 15: Menor Población")
             fig_bot.update_layout(yaxis={'categoryorder':'total descending'}, height=450)
-            st.plotly_chart(fig_bot, use_container_width=True, key=f"rank_bot_{año_sel}_{zona_actual}")
+            st.plotly_chart(fig_bot, use_container_width=True)
 
-        # --- SECCIÓN CURVAS (MOTOR UNIVERSAL) ---
+        # --- 📈 SECCIÓN DE CURVAS HISTÓRICAS (TOP 10) ---
         st.markdown("---")
-        st.markdown(f"### 📈 Dinámica Poblacional (Trayectorias, Evolución y Proyección - Top 10)")
+        st.markdown(f"### 📈 Dinámica Poblacional -Trayectorias, Evolución y Proyección - Top 10 ({zona_actual})")
         
+        # Obtenemos los nombres de los 10 más grandes para la curva
         top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
-        df_line = pd.DataFrame()
         
+        df_line = pd.DataFrame()
+        # asegurando que 'padre_seguro' se capture correctamente:
+        padre_seguro = locals().get('agrupador_sel', locals().get('sel_territorio', locals().get('reg_sel', "Selección")))
+
         es_escala_medellin = "Intra-Urbana" in escala_sel
         es_escala_espacial = any(e in escala_sel for e in ["Veredal", "Cuencas"])
 
