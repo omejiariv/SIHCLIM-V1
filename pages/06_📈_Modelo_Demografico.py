@@ -734,17 +734,14 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                     territorios_para_mapa = territorios_a_buscar
                 filtro_zona = titulo_terr
 
-            # --- 3. ⚡ LECTURA MATEMÁTICA DIRECTA (La cura de los 154k) ---
+            # --- 3. ⚡ LECTURA MATEMÁTICA DIRECTA (Bypass Anti-Amnesia Rural) ---
             años_hist = np.arange(1985, 2043)
             pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
             
-            # Aplanamos los nombres de la matriz para búsquedas infalibles
+            # Aplanamos los nombres para búsquedas infalibles
             df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
-            area_buscada = area_global.lower()
-            if area_buscada == 'urbano': df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower().isin(['urbano', 'urbana'])]
-            else: df_matriz_pura = df_cuencas_solo[df_cuencas_solo['Area'].str.lower() == area_buscada]
+            area_buscada = str(area_global).strip().lower()
 
-            # Evaluador matemático encapsulado
             def evaluar_curva(fila, anios):
                 mod = str(fila.get('Modelo_Recomendado', 'Desconocido'))
                 if 'Logistico' in mod: return fila.get('Log_K', 0) / (1 + fila.get('Log_a', 0) * np.exp(-fila.get('Log_r', 0) * (anios - 1985)))
@@ -757,16 +754,42 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
             import difflib
             for t_crudo in territorios_a_buscar:
                 t_norm = normalizar_texto(t_crudo)
-                fila = df_matriz_pura[df_matriz_pura['MATCH_ID'] == t_norm]
+                filas_terr = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == t_norm]
                 
-                if not fila.empty:
-                    pob_hist_acumulada += evaluar_curva(fila.iloc[0], años_hist)
-                else:
-                    # Búsqueda difusa de rescate por si hay guiones o espacios raros
-                    matches = difflib.get_close_matches(t_norm, df_matriz_pura['MATCH_ID'].tolist(), n=1, cutoff=0.8)
-                    if matches:
-                        fila = df_matriz_pura[df_matriz_pura['MATCH_ID'] == matches[0]]
-                        pob_hist_acumulada += evaluar_curva(fila.iloc[0], años_hist)
+                # Búsqueda difusa de rescate
+                if filas_terr.empty:
+                    matches = difflib.get_close_matches(t_norm, df_cuencas_solo['MATCH_ID'].tolist(), n=1, cutoff=0.8)
+                    if matches: filas_terr = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == matches[0]]
+                
+                if not filas_terr.empty:
+                    if area_buscada == 'total':
+                        # 🔥 EL BYPASS RURAL: Forzamos la suma de las partes para ignorar el 'Total' corrupto de SQL
+                        fila_u = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
+                        fila_r = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
+                        
+                        pob_temp = np.zeros_like(años_hist, dtype=float)
+                        sumo_partes = False
+                        
+                        if not fila_u.empty: 
+                            pob_temp += evaluar_curva(fila_u.iloc[0], años_hist)
+                            sumo_partes = True
+                        if not fila_r.empty: 
+                            pob_temp += evaluar_curva(fila_r.iloc[0], años_hist)
+                            sumo_partes = True
+                            
+                        # Si por alguna rareza extrema no hay ni urbano ni rural, usamos el total crudo
+                        if not sumo_partes:
+                            fila_t = filas_terr[filas_terr['Area'].str.lower() == 'total']
+                            if not fila_t.empty: pob_temp += evaluar_curva(fila_t.iloc[0], años_hist)
+                            
+                        pob_hist_acumulada += pob_temp
+                        
+                    else:
+                        # Si el usuario pidió específicamente solo Urbano o solo Rural
+                        if 'urb' in area_buscada: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
+                        else: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
+                        
+                        if not fila_esp.empty: pob_hist_acumulada += evaluar_curva(fila_esp.iloc[0], años_hist)
 
             pob_hist = pob_hist_acumulada
 
@@ -1201,15 +1224,16 @@ with tab_modelos:
         # --- FIX: ESCUDO SUPREMO ANTI-NAME ERROR ---
         titulo_seguro = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
         
-        st.subheader(f"📈 Curvas de Crecimiento Poblacional - {titulo_seguro}")
-        fig_curvas = go.Figure()
-        fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Logístico'], mode='lines', name='Mod. Logístico', line=dict(color='#10b981', dash='dash')))
-        fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Exponencial'], mode='lines', name='Mod. Exponencial', line=dict(color='#f59e0b', dash='dot')))
-        fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Lineal'], mode='lines', name='Mod. Lineal', line=dict(color='#6366f1', dash='dot')))
-        fig_curvas.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Reales (Censo)', marker=dict(color='#ef4444', size=8, symbol='diamond')))
-        fig_curvas.update_layout(hovermode="x unified", xaxis_title="Año", yaxis_title="Habitantes", template="plotly_white")
-        st.plotly_chart(fig_curvas, use_container_width=True)
-
+        # 🔥 Aplicamos el Expander envolviendo la gráfica
+        with st.expander(f"📈 Curvas de Crecimiento Poblacional - {titulo_seguro}", expanded=True):
+            fig_curvas = go.Figure()
+            fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Logístico'], mode='lines', name='Mod. Logístico', line=dict(color='#10b981', dash='dash')))
+            fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Exponencial'], mode='lines', name='Mod. Exponencial', line=dict(color='#f59e0b', dash='dot')))
+            fig_curvas.add_trace(go.Scatter(x=df_proj['Año'], y=df_proj['Lineal'], mode='lines', name='Mod. Lineal', line=dict(color='#6366f1', dash='dot')))
+            fig_curvas.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Datos Reales (Censo)', marker=dict(color='#ef4444', size=8, symbol='diamond')))
+            fig_curvas.update_layout(hovermode="x unified", xaxis_title="Año", yaxis_title="Habitantes", template="plotly_white")
+            st.plotly_chart(fig_curvas, use_container_width=True)
+            
     with col_param:
         st.subheader("🧮 Ecuaciones")
         st.latex(r"Log: P(t) = \frac{K}{1 + e^{-r(t - t_0)}}")
