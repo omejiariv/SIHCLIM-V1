@@ -246,11 +246,16 @@ def cargar_datos_limpios():
         
         # 2. Escáner inteligente a prueba de balas (Sella la fuga rural del 100%)
         def clasificar_dane(x):
+            # 🔥 CORRECCIÓN CRÍTICA: Aquí es donde normalizamos para que la UI no se rompa
             if 'cabecera' in x or 'urban' in x: return 'urbano'
             if 'rural' in x or 'centros' in x or 'resto' in x: return 'rural'
             return 'total'
             
         df_master['area_geografica'] = df_master['area_geografica'].apply(clasificar_dane)
+        
+        # 🔥 FIX DEFINITIVO PARA LA INTERFAZ (Pirámides):
+        # Aseguramos que la primera letra sea mayúscula para que la interfaz se vea elegante
+        df_master['area_geografica'] = df_master['area_geografica'].str.title()
 
         # --- SEPARACIÓN DE HOMBRES Y MUJERES (CON ESCUDO NUMÉRICO) ---
         cols_hombres = [c for c in df_master.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
@@ -274,8 +279,11 @@ def cargar_datos_limpios():
             if normalizar_texto(fila['municipio']) in [normalizar_texto(m) for m in uraba_caribe]:
                 return 'Caribe'
             depto = fila['depto_nom']
-            for region, deptos in REGIONES_COL.items():
-                if depto in deptos: return region
+            # NOTA: Asegúrate de tener REGIONES_COL y normalizar_texto definidos antes de llamar esta función
+            try:
+                for region, deptos in REGIONES_COL.items():
+                    if depto in deptos: return region
+            except: pass
             return "Sin Región"
             
         df_mun['Macroregion'] = df_mun.apply(asignar_region, axis=1)
@@ -283,7 +291,7 @@ def cargar_datos_limpios():
         # -------------------------------------------------------
         # B. Crear df_nac (Nacional) -> AHORA INCLUYE TODAS LAS EDADES
         # -------------------------------------------------------
-        df_nac_temp = df_mun[df_mun['area_geografica'] == 'total']
+        df_nac_temp = df_mun[df_mun['area_geografica'].str.lower() == 'total']
         cols_agrupar_nac = ['Total', 'Hombres', 'Mujeres'] + cols_poblacion
         df_nac = df_mun.groupby(['año', 'area_geografica'])[cols_agrupar_nac].sum().reset_index()
 
@@ -314,10 +322,9 @@ def cargar_datos_limpios():
                 df_global_csv = df_global_csv.rename(columns={'año': 'Año'})
                 
             # --- ESCUDO EXCLUSIVO PARA LA ESCALA MUNDIAL ---
-            # Si Pandas ya la leyó como número (ej. 8000000.0), quitar el punto la multiplicaría por 10.
             for col in df_global_csv.columns:
                 if col != 'Año':
-                    if df_global_csv[col].dtype == 'O': # 'O' significa Object (Texto)
+                    if df_global_csv[col].dtype == 'O': 
                         df_global_csv[col] = pd.to_numeric(
                             df_global_csv[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '', regex=False),
                             errors='coerce'
@@ -344,11 +351,11 @@ def cargar_datos_limpios():
             df_ver = pd.DataFrame() # Escudo anti-errores
             df_matriz = pd.DataFrame() # Si no hay conexión, queda vacía
             
-            # --- SINCRONIZACIÓN DE NOMBRES VEREDAS ---
-            if 'Municipio' in df_ver.columns:
-                df_ver['Municipio'] = df_ver['Municipio'].astype(str).str.title()
-            if 'Poblacion_hab' in df_ver.columns:
-                df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
+        # --- SINCRONIZACIÓN DE NOMBRES VEREDAS ---
+        if 'Municipio' in df_ver.columns:
+            df_ver['Municipio'] = df_ver['Municipio'].astype(str).str.title()
+        if 'Poblacion_hab' in df_ver.columns:
+            df_ver['Poblacion_hab'] = pd.to_numeric(df_ver['Poblacion_hab'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
 
         # =======================================================
         # 3. 🗺️ CARGA DEL MAESTRO TERRITORIAL (Sincronizado con Supabase)
@@ -359,7 +366,6 @@ def cargar_datos_limpios():
         
         try:
             # Leemos directamente de la nube sin pasar por el disco local
-            # Nota: Asegúrate de tener 'openpyxl' instalado en tu entorno o requirements.txt
             df_maestro = pd.read_excel(url_maestro_xlsx, engine='openpyxl')
         except Exception as e:
             st.error(f"🚨 Error al descargar el Maestro Territorial desde Supabase: {e}")
@@ -370,7 +376,9 @@ def cargar_datos_limpios():
             df_maestro = pd.DataFrame(columns=['depto_nom', 'municipio', 'subregion', 'car', 'municipio_norm'])
         else:
             # Normalización automática: El paso más importante para que las Subregiones y CARs funcionen
-            df_maestro['municipio_norm'] = df_maestro['municipio'].astype(str).apply(normalizar_texto)
+            try:
+                df_maestro['municipio_norm'] = df_maestro['municipio'].astype(str).apply(normalizar_texto)
+            except: pass
 
         # Devolvemos el maestro como el 5to elemento de la tupla
         return df_nac, df_mun, df_ver, df_global, df_maestro, df_matriz
