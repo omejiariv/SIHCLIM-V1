@@ -1221,16 +1221,20 @@ with tab_modelos:
     iniciar_animacion = st.sidebar.button("▶️ Reproducir Evolución", type="primary", use_container_width=True)
 
     # ==========================================================================
-# ==========================================================================
-    # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (AGREGADOR DEMOGRÁFICO UNIVERSAL)
+    # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (LA LÓGICA DEL FARAÓN)
     # ==========================================================================
-    # 1. Recuperamos el contexto territorial de forma blindada
+    import uuid
+    import re
+    import plotly.graph_objects as go
+    import pandas as pd
+
+    # 1. Recuperamos el contexto
     titulo_seguro = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
     
     st.markdown("---")
     st.subheader(f"📊 Estructura Poblacional Sintética - {titulo_seguro}")
 
-    # 2. Traductor Universal para la Interfaz
+    # 2. Traductor Universal (Para saber qué dibujar a izquierda y derecha)
     area_g = globals().get('area_global', locals().get('area_global', 'Total'))
     ap_raw = str(area_g).strip().title()
     
@@ -1238,11 +1242,9 @@ with tab_modelos:
     elif 'Rur' in ap_raw or 'Rest' in ap_raw: area_principal = 'Rural'
     else: area_principal = 'Total'
     
-    # 3. Selector de Comparación Inteligente
     opciones_basicas = ["Total", "Urbano", "Rural"]
     opciones_filtradas = [opt for opt in opciones_basicas if opt != area_principal]
     
-    import uuid
     key_radio = f"comp_{titulo_seguro}_{area_principal}_{uuid.uuid4().hex[:4]}"
     
     st.info(f"💡 La pirámide izquierda muestra la selección global: **{area_principal}**.")
@@ -1253,7 +1255,6 @@ with tab_modelos:
         key=key_radio
     )
 
-    # 4. Contenedores de Visualización
     col_p1, col_p2 = st.columns(2)
     with col_p1:
         ph_tit_1, ph_graf_1 = st.empty(), st.empty()
@@ -1265,63 +1266,69 @@ with tab_modelos:
         m_c3, m_c4 = st.columns(2)
         ph_m_pob_2, ph_m_hom_2, ph_m_muj_2, ph_m_ind_2 = m_c3.empty(), m_c3.empty(), m_c4.empty(), m_c4.empty()
 
-    # --- EL MOTOR MATEMÁTICO: AGREGADOR POR ESCALA ---
+    # 🔥 Reconectamos el cable para la descarga de Excel
+    df_piramide_final = pd.DataFrame()
+
     def generar_figura_piramide(año_obj, zona_str):
         try:
             año_num = int(año_obj)
             
-            # A. Obtener Proyección del Modelo
+            # --- A. PROYECCIÓN DEL MODELO ---
             df_p = globals().get('df_proj', locals().get('df_proj', pd.DataFrame()))
             col_m = globals().get('columna_modelo', locals().get('columna_modelo', ''))
             
             if df_p.empty or col_m not in df_p.columns:
-                return None, 0, 0, 0, 0, "Modelo base no configurado.", pd.DataFrame()
+                return None, 0, 0, 0, 0, "Falta ejecutar el modelo matemático arriba.", pd.DataFrame()
                 
             val_pob = df_p[df_p['Año'].astype(int) == año_num][col_m].values
             if len(val_pob) == 0: return None, 0, 0, 0, 0, f"Sin proyección para {año_num}.", pd.DataFrame()
             pob_modelo = float(val_pob[0])
 
-            # B. Cargar Base Municipal para la Estructura (Caché)
+            # --- B. LA LÓGICA DEL FARAÓN (Tus filtros exactos del Sidebar) ---
             _, df_mun_puro, _, _, _, _ = cargar_datos_limpios()
             df_base = df_mun_puro[df_mun_puro['año'].astype(int) == año_num].copy()
             
-            from modules.utils import normalizar_texto
-            tit_norm = normalizar_texto(titulo_seguro)
-
-            # C. LÓGICA DE AGREGACIÓN POR ESCALA
-            if "cabecera" in tit_norm and "antioquia" in tit_norm:
-                # Escala Urbana Antioquia: Filtramos todo el depto
-                df_base = df_base[df_base['depto_nom'].str.lower() == 'antioquia']
+            # Capturamos qué seleccionaste en el menú
+            nivel_actual = str(globals().get('nivel_analisis', locals().get('nivel_analisis', '')))
+            macro_actual = str(globals().get('macro_sel', locals().get('macro_sel', '')))
+            
+            if 'Macroregiones' in nivel_actual:
+                # 1. Exactamente como lo pediste: Solo usamos el filtro Macroregión
+                df_base = df_base[df_base['Macroregion'] == macro_actual]
+                if df_base.empty:
+                    # Si falla, ya no se queda en blanco, te avisa claramente
+                    return None, 0, 0, 0, 0, f"Aviso: No se encontraron municipios con la etiqueta '{macro_actual}' en la columna Macroregion.", pd.DataFrame()
+                    
+            elif 'Urbana' in nivel_actual and 'Antioquia' in nivel_actual:
+                # 2. Exactamente como lo pediste: Todo Antioquia (luego filtramos lo urbano)
+                df_base = df_base[df_base['depto_nom'] == 'Antioquia']
+                if df_base.empty:
+                    return None, 0, 0, 0, 0, "No se encontraron datos para Antioquia.", pd.DataFrame()
             else:
-                # Macroregiones: Buscamos por nombre de región
-                df_base['macro_n'] = df_base['Macroregion'].apply(normalizar_texto)
-                mask_reg = df_base['macro_n'].str.contains(tit_norm.replace("region ", ""), na=False)
-                if mask_reg.any():
-                    df_base = df_base[mask_reg]
-                else:
-                    # Fallback a Municipio o Departamento
-                    df_base['mpio_n'] = df_base['municipio'].apply(normalizar_texto)
-                    df_base['depto_n'] = df_base['depto_nom'].apply(normalizar_texto)
-                    mask_mpio = df_base['mpio_n'] == tit_norm
-                    mask_dep = df_base['depto_n'] == tit_norm
-                    if mask_mpio.any(): df_base = df_base[mask_mpio]
-                    elif mask_dep.any(): df_base = df_base[mask_dep]
+                # 3. Fallback para municipios normales
+                from modules.utils import normalizar_texto
+                tit_norm = normalizar_texto(titulo_seguro)
+                df_base['mpio_n'] = df_base['municipio'].apply(normalizar_texto)
+                df_base = df_base[df_base['mpio_n'] == tit_norm]
 
-            # D. Filtrar por Área (Urbano/Rural/Total)
+            # --- C. FILTRO POBLACIONAL (Área) ---
             z_lim = 'urbano' if 'urb' in zona_str.lower() else 'rural' if 'rur' in zona_str.lower() else 'total'
             df_f = df_base[df_base['area_geografica'].str.lower() == z_lim]
             
-            # Escudo: Si no hay fila 'total', la creamos sumando
-            if df_f.empty and z_lim == 'total': df_f = pd.DataFrame(df_base.sum(numeric_only=True)).T
-            if df_f.empty: return None, 0, 0, 0, 0, f"Sin datos para {zona_str}.", pd.DataFrame()
+            if df_f.empty and z_lim == 'total': 
+                df_f = pd.DataFrame(df_base.sum(numeric_only=True)).T
+                
+            if df_f.empty: 
+                return None, 0, 0, 0, 0, f"No hay población catalogada como '{zona_str}' en esta zona.", pd.DataFrame()
 
-            # E. Procesamiento de Edades
+            # --- D. MATEMÁTICAS Y DIBUJO ---
             df_agg = pd.DataFrame(df_f.sum(numeric_only=True)).T
-            import re
             cols_h = [c for c in df_agg.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
             cols_m = [c for c in df_agg.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
             
-            def get_e(t): return int(re.findall(r'\d+', t)[0]) if re.findall(r'\d+', t) else 0
+            def get_e(t): 
+                nums = re.findall(r'\d+', t)
+                return int(nums[0]) if nums else 0
 
             datos = []
             for ch in cols_h:
@@ -1342,35 +1349,26 @@ with tab_modelos:
                 'Mujeres': df_edades['M'] * factor
             }).groupby('Rango', observed=True).sum().reset_index()
 
-            # F. Gráfica Plotly
-            import plotly.graph_objects as go
             fig = go.Figure()
             fig.add_trace(go.Bar(y=df_pyr['Rango'], x=df_pyr['Hombres'], name='Hombres', orientation='h', marker_color='#3498db'))
-            fig_pyr = fig.add_trace(go.Bar(y=df_pyr['Rango'], x=df_pyr['Mujeres'], name='Mujeres', orientation='h', marker_color='#e74c3c'))
+            fig.add_trace(go.Bar(y=df_pyr['Rango'], x=df_pyr['Mujeres'], name='Mujeres', orientation='h', marker_color='#e74c3c'))
             
             r_max = max(abs(df_pyr['Hombres'].min()), df_pyr['Mujeres'].max()) if not df_pyr.empty else 100
             fig.update_layout(barmode='relative', xaxis=dict(range=[-r_max*1.1, r_max*1.1]), height=400, margin=dict(l=0,r=0,t=20,b=0))
             
             t_h, t_m = df_edades['H'].sum()*factor, df_edades['M'].sum()*factor
             return fig, (t_h + t_m), t_h, t_m, (t_h/t_m*100 if t_m > 0 else 0), None, df_pyr
-        except Exception as e: return None, 0, 0, 0, 0, f"Error: {e}", pd.DataFrame()
+        except Exception as e: return None, 0, 0, 0, 0, f"Error interno: {e}", pd.DataFrame()
 
-    # --- PINTADO DE INTERFAZ ---
     def safe_fmt(val): return f"{int(float(val)):,}".replace(",", ".")
 
-    # 🔥 EL CABLE RECONECTADO: Declaramos la variable para que el Excel la encuentre
-    df_piramide_final = pd.DataFrame() 
-
     def refrescar_piramides(anio):
-        global df_piramide_final # Le decimos a Python que use la variable global
+        global df_piramide_final
         
-        # Guardamos el séptimo elemento que retorna la función (df_export)
-        f1, tot1, h1, m1, ind1, err1, df_export = generar_figura_piramide(anio, area_principal)
+        f1, tot1, h1, m1, ind1, err1, df_ex1 = generar_figura_piramide(anio, area_principal)
         if err1: ph_graf_1.warning(err1)
         else:
-            # 🔥 GUARDAMOS LOS DATOS EN LA VARIABLE GLOBAL PARA LA DESCARGA
-            df_piramide_final = df_export.copy() 
-            
+            df_piramide_final = df_ex1.copy()
             ph_tit_1.markdown(f"#### 🔵 Estructura {area_principal} ({anio})")
             ph_graf_1.plotly_chart(f1, use_container_width=True, key=f"p1_{uuid.uuid4().hex[:4]}")
             ph_m_pob_1.metric("Población", safe_fmt(tot1))
