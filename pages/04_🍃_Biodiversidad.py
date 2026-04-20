@@ -110,8 +110,8 @@ try:
                 return r['Poly_A']*t**3 + r['Poly_B']*t**2 + r['Poly_C']*t + r.get('Poly_D', r[col_base])
 
             f_t = f_fin[f_fin['Area'].str.lower().str.contains('tot')]
-            f_u = f_fin[f_fin['Area'].str.lower().str.startswith('urb')]
-            f_r = f_fin[f_fin['Area'].str.lower() == 'rural']
+            f_u = f_fin[f_fin['Area'].str.lower().str.contains('urb|cab')] # Atrapa 'Urbano' o 'Cabecera'
+            f_r = f_fin[f_fin['Area'].str.lower().str.contains('rur|resto')] # Atrapa 'Rural' o 'Resto'
             
             if not f_t.empty: pob_total_base = resolver(f_t.iloc[0], anio_analisis)
             pob_urbana_calc = resolver(f_u.iloc[0], anio_analisis) if not f_u.empty else pob_total_base * 0.85
@@ -784,20 +784,20 @@ with tab_afolu:
                 if "Población Rural" in fuentes_activas:
                     humanos_rurales = st.number_input("Humanos Rurales (Censo):", value=int(pob_rural_calc), step=10)
 
-        with st.expander("🏙️ 3. Actividades Urbanas (Ciudades y Movilidad)", expanded=False):
+        with st.expander(f"🏙️ 3. Actividades Urbanas (Simulación Año {anio_analisis})", expanded=False):
             col_u1, col_u2, col_u3 = st.columns(3)
             with col_u1:
-                st.markdown("##### 👥 Demografía y Agua")
-                humanos_urbanos = st.number_input("Población Urbana:", value=int(pob_urbana_calc), step=100)
+                st.markdown(f"##### 👥 Demografía y Agua ({anio_analisis})")
+                humanos_urbanos = st.number_input("Población Urbana (Cabecera):", value=int(pob_urbana_calc), step=100)
                 vertimientos_m3 = (humanos_urbanos * 150) / 1000
                 st.metric("Agua Residual Generada", f"{vertimientos_m3:,.1f} m³/día")
             with col_u2:
-                st.markdown("##### 🗑️ Residuos Sólidos")
+                st.markdown(f"##### 🗑️ Residuos Sólidos ({anio_analisis})")
                 tasa_basura = st.slider("Generación (kg/hab-día):", min_value=0.0, max_value=1.5, value=0.7, step=0.1)
                 basura_anual_ton = (humanos_urbanos * tasa_basura * 365) / 1000
                 st.metric("Basura al Relleno", f"{basura_anual_ton:,.0f} ton/año")
             with col_u3:
-                st.markdown("##### 🚗 Parque Automotor")
+                st.markdown(f"##### 🚗 Parque Automotor ({anio_analisis})")
                 tasa_motorizacion = st.slider("Densidad (Vehículos/1000 hab):", min_value=10, max_value=1500, value=333, step=10)
                 vehiculos = int((humanos_urbanos * tasa_motorizacion) / 1000)
                 st.metric("Vehículos Estimados", f"{vehiculos:,.0f} unds")
