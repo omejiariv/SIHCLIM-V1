@@ -1358,10 +1358,19 @@ with tab_modelos:
     # --- PINTADO DE INTERFAZ ---
     def safe_fmt(val): return f"{int(float(val)):,}".replace(",", ".")
 
+    # 🔥 EL CABLE RECONECTADO: Declaramos la variable para que el Excel la encuentre
+    df_piramide_final = pd.DataFrame() 
+
     def refrescar_piramides(anio):
-        f1, tot1, h1, m1, ind1, err1, _ = generar_figura_piramide(anio, area_principal)
+        global df_piramide_final # Le decimos a Python que use la variable global
+        
+        # Guardamos el séptimo elemento que retorna la función (df_export)
+        f1, tot1, h1, m1, ind1, err1, df_export = generar_figura_piramide(anio, area_principal)
         if err1: ph_graf_1.warning(err1)
         else:
+            # 🔥 GUARDAMOS LOS DATOS EN LA VARIABLE GLOBAL PARA LA DESCARGA
+            df_piramide_final = df_export.copy() 
+            
             ph_tit_1.markdown(f"#### 🔵 Estructura {area_principal} ({anio})")
             ph_graf_1.plotly_chart(f1, use_container_width=True, key=f"p1_{uuid.uuid4().hex[:4]}")
             ph_m_pob_1.metric("Población", safe_fmt(tot1))
