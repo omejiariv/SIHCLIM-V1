@@ -1220,13 +1220,21 @@ with tab_modelos:
     velocidad_animacion = st.sidebar.slider("Velocidad (Segundos por cuadro)", 0.1, 2.0, 0.5)
     iniciar_animacion = st.sidebar.button("▶️ Reproducir Evolución", type="primary", use_container_width=True)
 
-    # ==========================================================================
-    # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (LA LÓGICA DEL FARAÓN)
+# ==========================================================================
+    # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (LA LÓGICA DEL FARAÓN BLINDADA)
     # ==========================================================================
     import uuid
     import re
+    import unicodedata
     import plotly.graph_objects as go
     import pandas as pd
+
+    # Función limpiadora extrema (ignora tildes, mayúsculas, emojis y símbolos)
+    def clean_text(s):
+        if pd.isna(s): return ""
+        t = unicodedata.normalize('NFKD', str(s)).encode('ASCII', 'ignore').decode('utf-8').lower()
+        t = re.sub(r'[^a-z0-9]', ' ', t)
+        return " ".join(t.split())
 
     # 1. Recuperamos el contexto
     titulo_seguro = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
@@ -1234,18 +1242,18 @@ with tab_modelos:
     st.markdown("---")
     st.subheader(f"📊 Estructura Poblacional Sintética - {titulo_seguro}")
 
-    # 2. Traductor Universal (Para saber qué dibujar a izquierda y derecha)
+    # 2. Traductor Universal
     area_g = globals().get('area_global', locals().get('area_global', 'Total'))
-    ap_raw = str(area_g).strip().title()
+    ap_raw = clean_text(area_g)
     
-    if 'Cab' in ap_raw or 'Urb' in ap_raw: area_principal = 'Urbano'
-    elif 'Rur' in ap_raw or 'Rest' in ap_raw: area_principal = 'Rural'
+    if 'cab' in ap_raw or 'urb' in ap_raw: area_principal = 'Urbano'
+    elif 'rur' in ap_raw or 'rest' in ap_raw: area_principal = 'Rural'
     else: area_principal = 'Total'
     
     opciones_basicas = ["Total", "Urbano", "Rural"]
     opciones_filtradas = [opt for opt in opciones_basicas if opt != area_principal]
     
-    key_radio = f"comp_{titulo_seguro}_{area_principal}_{uuid.uuid4().hex[:4]}"
+    key_radio = f"comp_{uuid.uuid4().hex[:6]}"
     
     st.info(f"💡 La pirámide izquierda muestra la selección global: **{area_principal}**.")
     zona_comparacion = st.radio(
@@ -1266,7 +1274,7 @@ with tab_modelos:
         m_c3, m_c4 = st.columns(2)
         ph_m_pob_2, ph_m_hom_2, ph_m_muj_2, ph_m_ind_2 = m_c3.empty(), m_c3.empty(), m_c4.empty(), m_c4.empty()
 
-    # 🔥 Reconectamos el cable para la descarga de Excel
+    # Cable reconectado para la descarga de Excel
     df_piramide_final = pd.DataFrame()
 
     def generar_figura_piramide(año_obj, zona_str):
@@ -1284,36 +1292,63 @@ with tab_modelos:
             if len(val_pob) == 0: return None, 0, 0, 0, 0, f"Sin proyección para {año_num}.", pd.DataFrame()
             pob_modelo = float(val_pob[0])
 
-            # --- B. LA LÓGICA DEL FARAÓN (Tus filtros exactos del Sidebar) ---
+            # --- B. LA LÓGICA DEL FARAÓN (Limpieza Extrema) ---
             _, df_mun_puro, _, _, _, _ = cargar_datos_limpios()
-            df_base = df_mun_puro[df_mun_puro['año'].astype(int) == año_num].copy()
+            col_anio = 'año' if 'año' in df_mun_puro.columns else 'Año'
+            df_base = df_mun_puro[df_mun_puro[col_anio].astype(int) == año_num].copy()
             
-            # Capturamos qué seleccionaste en el menú
-            nivel_actual = str(globals().get('nivel_analisis', locals().get('nivel_analisis', '')))
-            macro_actual = str(globals().get('macro_sel', locals().get('macro_sel', '')))
+            # Rescatamos variables del sidebar y las limpiamos
+            nivel_bruto = globals().get('nivel_analisis', locals().get('nivel_analisis', ''))
+            nivel_cln = clean_text(nivel_bruto)
             
-            if 'Macroregiones' in nivel_actual:
-                # 1. Exactamente como lo pediste: Solo usamos el filtro Macroregión
-                df_base = df_base[df_base['Macroregion'] == macro_actual]
+            macro_bruto = globals().get('macro_sel', locals().get('macro_sel', ''))
+            macro_cln = clean_text(macro_bruto)
+            
+            # Limpiamos el título (ej: "Albania (Amazonía)" -> "albania")
+            tit_core = str(titulo_seguro).split('(')[0].strip()
+            tit_cln = clean_text(tit_core)
+            
+            # === RUTEO BLINDADO POR ESCALAS ===
+            if 'nacional' in nivel_cln:
+                pass # Toda Colombia, no filtramos df_base
+                
+            elif 'macroregiones' in nivel_cln:
+                df_base['macro_n'] = df_base['Macroregion'].apply(clean_text)
+                df_base = df_base[df_base['macro_n'] == macro_cln]
+                # Fallback si hay variaciones de texto
+                if df_base.empty and macro_cln:
+                    df_base = df_mun_puro[df_mun_puro[col_anio].astype(int) == año_num].copy()
+                    df_base['macro_n'] = df_base['Macroregion'].apply(clean_text)
+                    df_base = df_base[df_base['macro_n'].str.contains(macro_cln.replace("region", "").strip(), na=False)]
                 if df_base.empty:
-                    # Si falla, ya no se queda en blanco, te avisa claramente
-                    return None, 0, 0, 0, 0, f"Aviso: No se encontraron municipios con la etiqueta '{macro_actual}' en la columna Macroregion.", pd.DataFrame()
+                    return None, 0, 0, 0, 0, f"Aviso: La Macroregión '{macro_bruto}' no hace match en la base de datos.", pd.DataFrame()
                     
-            elif 'Urbana' in nivel_actual and 'Antioquia' in nivel_actual:
-                # 2. Exactamente como lo pediste: Todo Antioquia (luego filtramos lo urbano)
-                df_base = df_base[df_base['depto_nom'] == 'Antioquia']
-                if df_base.empty:
-                    return None, 0, 0, 0, 0, "No se encontraron datos para Antioquia.", pd.DataFrame()
+            elif 'urbana' in nivel_cln and 'antioquia' in nivel_cln:
+                df_base['dep_n'] = df_base['depto_nom'].apply(clean_text)
+                df_base = df_base[df_base['dep_n'] == 'antioquia']
+                if df_base.empty: return None, 0, 0, 0, 0, "No se encontraron datos para Antioquia.", pd.DataFrame()
+                
+            elif 'departamental' in nivel_cln:
+                df_base['dep_n'] = df_base['depto_nom'].apply(clean_text)
+                df_base = df_base[df_base['dep_n'] == tit_cln]
+                
+            elif 'municipal' in nivel_cln:
+                # Usamos el titulo limpio ("albania") para buscar el municipio
+                df_base['mpio_n'] = df_base['municipio'].apply(clean_text)
+                df_base = df_base[df_base['mpio_n'] == tit_cln]
+                
             else:
-                # 3. Fallback para municipios normales
-                from modules.utils import normalizar_texto
-                tit_norm = normalizar_texto(titulo_seguro)
-                df_base['mpio_n'] = df_base['municipio'].apply(normalizar_texto)
-                df_base = df_base[df_base['mpio_n'] == tit_norm]
+                # Fallback total de seguridad
+                df_base['mpio_n'] = df_base['municipio'].apply(clean_text)
+                df_base = df_base[df_base['mpio_n'] == tit_cln]
+
+            if df_base.empty:
+                return None, 0, 0, 0, 0, f"Aviso: El territorio '{tit_core}' no se encontró en la base nacional.", pd.DataFrame()
 
             # --- C. FILTRO POBLACIONAL (Área) ---
             z_lim = 'urbano' if 'urb' in zona_str.lower() else 'rural' if 'rur' in zona_str.lower() else 'total'
-            df_f = df_base[df_base['area_geografica'].str.lower() == z_lim]
+            df_base['area_n'] = df_base['area_geografica'].apply(clean_text)
+            df_f = df_base[df_base['area_n'] == z_lim]
             
             if df_f.empty and z_lim == 'total': 
                 df_f = pd.DataFrame(df_base.sum(numeric_only=True)).T
@@ -1370,7 +1405,7 @@ with tab_modelos:
         else:
             df_piramide_final = df_ex1.copy()
             ph_tit_1.markdown(f"#### 🔵 Estructura {area_principal} ({anio})")
-            ph_graf_1.plotly_chart(f1, use_container_width=True, key=f"p1_{uuid.uuid4().hex[:4]}")
+            ph_graf_1.plotly_chart(f1, use_container_width=True, key=f"p1_{uuid.uuid4().hex[:6]}")
             ph_m_pob_1.metric("Población", safe_fmt(tot1))
             ph_m_hom_1.metric("Hombres", safe_fmt(h1), f"{(h1/tot1*100):.1f}%" if tot1>0 else "0%")
             ph_m_muj_1.metric("Mujeres", safe_fmt(m1), f"{(m1/tot1*100):.1f}%" if tot1>0 else "0%")
@@ -1380,10 +1415,10 @@ with tab_modelos:
         if err2: ph_graf_2.warning(err2)
         else:
             ph_tit_2.markdown(f"#### 🟢 Perfil {zona_comparacion} ({anio})")
-            ph_graf_2.plotly_chart(f2, use_container_width=True, key=f"p2_{uuid.uuid4().hex[:4]}")
+            ph_graf_2.plotly_chart(f2, use_container_width=True, key=f"p2_{uuid.uuid4().hex[:6]}")
             ph_m_pob_2.metric("Población", safe_fmt(tot2))
-            ph_m_hom_2.metric("Hombres", safe_fmt(h2))
-            ph_m_muj_2.metric("Mujeres", safe_fmt(m2))
+            ph_m_hom_2.metric("Hombres", safe_fmt(h2), f"{(h2/tot2*100):.1f}%" if tot2>0 else "0%")
+            ph_m_muj_2.metric("Mujeres", safe_fmt(m2), f"{(m2/tot2*100):.1f}%" if tot2>0 else "0%")
             ph_m_ind_2.metric("Índ. Masc.", f"{ind2:.1f}")
 
     # --- EJECUCIÓN ---
