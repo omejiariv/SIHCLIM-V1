@@ -2681,49 +2681,47 @@ with tab_rankings:
     df_rank = pd.DataFrame()
     titulo_ranking = ""
     
-    # --- 🧠 TRADUCTOR DE ESCALAS INTELIGENTE ---
-    if "Global" in escala_sel or "Nacional" in escala_sel:
-        # En escala Nacional/Global comparamos Departamentos
+    # --- 🧠 TRADUCTOR DE ESCALAS INTELIGENTE (100% A PRUEBA DE FALLOS) ---
+    escala_str = escala_sel.lower()
+    
+    # 1. ESCALAS DE AGRUPACIÓN SUPERIOR (Nacional y Cuencas)
+    if "global" in escala_str or "nacional" in escala_str:
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
         df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
         df_rank['Padre'] = 'Colombia'
         titulo_ranking = "Departamentos de Colombia"
         
-    elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
-        padre_seguro = locals().get('depto_sel', locals().get('agrupador_sel', "ANTIOQUIA"))
-        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
-        df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
-        df_rank['Padre'] = padre_seguro
-        titulo_ranking = f"Municipios de {padre_seguro}"
+    elif "cuencas" in escala_str and 'df_hier' in locals() and not df_hier.empty and not df_mapa_base.empty:
+        df_nss1 = df_hier[['subc_lbl', 'nom_nss1']].drop_duplicates()
+        df_rank = df_mapa_base.merge(df_nss1, left_on='Territorio', right_on='subc_lbl', how='left')
+        df_rank = df_rank.groupby('nom_nss1')['Total'].sum().reset_index()
+        df_rank.rename(columns={'nom_nss1': 'Territorio'}, inplace=True)
+        df_rank['Padre'] = locals().get('sel_ah', 'Área Hidrográfica')
+        titulo_ranking = "Macrocuencas (NSS1)"
         
-    elif any(x in escala_sel for x in ["Subregiones", "CAR", "Autoridades", "Regional", "Macroregiones"]):
-        # 🔥 RECUPERACIÓN DE ESCALAS PERDIDAS
-        padre_seguro = locals().get('agrupador_sel', "Selección")
-        col_agrup = 'Macroregion' # Por defecto
-        if "Subregion" in escala_sel: col_agrup = 'Subregion'
-        elif "CAR" in escala_sel or "Autoridad" in escala_sel: col_agrup = 'CAR'
+    # 2. RESTO DE ESCALAS (Usa el mapa como fuente de verdad absoluta)
+    else:
+        if not df_mapa_base.empty:
+            df_rk_base = df_mapa_base.copy()
             
-        if col_agrup in df_mun.columns:
-            df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun[col_agrup] == padre_seguro)].groupby('municipio')['Total'].sum().reset_index()
-            df_rank.rename(columns={'municipio': 'Territorio'}, inplace=True)
-            df_rank['Padre'] = padre_seguro
-            titulo_ranking = f"Municipios de {padre_seguro}"
-            
-    elif "Cuencas" in escala_sel:
-        # 🔥 FORZAR COMPARACIÓN NSS1
-        if 'df_hier' in locals() and not df_hier.empty:
-            df_nss1 = df_hier[['subc_lbl', 'nom_nss1']].drop_duplicates()
-            # Unimos los datos actuales del mapa con sus padres NSS1
-            df_rank = df_mapa_base.merge(df_nss1, left_on='Territorio', right_on='subc_lbl', how='left')
-            df_rank = df_rank.groupby('nom_nss1')['Total'].sum().reset_index()
-            df_rank.rename(columns={'nom_nss1': 'Territorio'}, inplace=True)
-            df_rank['Padre'] = locals().get('sel_ah', 'Área Hidrográfica')
-            titulo_ranking = "Macrocuencas (NSS1)"
-            
-    elif "Intra-Urbana" in escala_sel:
-        df_rank = df_mapa_base[['Territorio', 'Total', 'Padre']].copy() if 'Padre' in df_mapa_base.columns else df_mapa_base[['Territorio', 'Total']].copy()
-        if 'Padre' not in df_rank.columns: df_rank['Padre'] = 'Medellín'
-        titulo_ranking = locals().get('nivel_medellin', 'Comunas / Barrios')
+            # Filtramos por el año seleccionado si tiene columna de tiempo
+            col_a = 'año' if 'año' in df_rk_base.columns else ('Año' if 'Año' in df_rk_base.columns else None)
+            if col_a:
+                df_rk_base = df_rk_base[df_rk_base[col_a] == año_sel]
+                
+            if not df_rk_base.empty:
+                # Agrupamos por Territorio (y Padre si existe)
+                cols_group = ['Territorio', 'Padre'] if 'Padre' in df_rk_base.columns else ['Territorio']
+                df_rank = df_rk_base.groupby(cols_group)['Total'].sum().reset_index()
+                
+                if 'Padre' not in df_rank.columns:
+                    df_rank['Padre'] = 'Zona Analizada'
+                    
+                # Títulos dinámicos
+                if "veredal" in escala_str: titulo_ranking = "Veredas"
+                elif "urbana" in escala_str: titulo_ranking = "Cabeceras Municipales"
+                elif "intra-urbana" in escala_str: titulo_ranking = "Comunas / Barrios"
+                else: titulo_ranking = f"Municipios de {df_rank['Padre'].iloc[0]}"
 
     # Limpieza numérica
     if not df_rank.empty:
