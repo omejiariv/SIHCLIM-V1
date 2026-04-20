@@ -1229,15 +1229,19 @@ with tab_modelos:
     st.markdown("---")
     st.subheader(f"📊 Estructura Poblacional Sintética - {titulo_seguro}")
 
-    # 2. Lógica del "Amo Único" (Sidebar determina la Pirámide 1)
-    area_principal = str(area_global).strip().title()
+    # 2. Lógica del "Amo Único" (El Traductor Universal para la UI)
+    ap_raw = str(area_global).strip().title()
+    if 'Cab' in ap_raw or 'Urb' in ap_raw:
+        area_principal = 'Urbano'
+    elif 'Rur' in ap_raw or 'Rest' in ap_raw:
+        area_principal = 'Rural'
+    else:
+        area_principal = 'Total'
     
     # 3. Selector de Comparación Inteligente
-    # Evitamos que el usuario compare un área consigo misma
     opciones_basicas = ["Total", "Urbano", "Rural"]
     opciones_filtradas = [opt for opt in opciones_basicas if opt != area_principal]
     
-    # Llave dinámica para forzar refresco de UI
     key_radio = f"comp_{titulo_seguro}_{area_principal}".replace(" ", "_")
     
     st.info(f"💡 La pirámide izquierda muestra la selección global: **{area_principal}**.")
@@ -1269,19 +1273,30 @@ with tab_modelos:
     df_piramide_final = pd.DataFrame()
     
     def generar_figura_piramide(año_obj, zona_str):
+        # 🔥 FIX 1: Forzamos el año a entero para evitar fallos de Texto vs Número
+        año_num = int(año_obj)
+        
         try:
-            pob_modelo_total = df_proj[df_proj['Año'] == año_obj][columna_modelo].values[0]
+            pob_modelo_total = df_proj[df_proj['Año'].astype(int) == año_num][columna_modelo].values[0]
         except:
-            return None, 0, 0, 0, 0, f"No hay proyección para el año {año_obj}.", pd.DataFrame()
+            return None, 0, 0, 0, 0, f"No hay proyección para el año {año_num}.", pd.DataFrame()
 
-        # 🔥 FIX MAESTRO: Invocamos a la caché directamente para obtener el DataFrame puro.
-        # Esto soluciona la desaparición en "Escala Urbana" y "Regional" donde la variable df_nac fue sobreescrita.
+        # Invocamos la caché directamente para evitar sobreescritura de variables
         df_nac_puro = cargar_datos_limpios()[0]
         col_anio_pyr2 = 'año' if 'año' in df_nac_puro.columns else 'Año'
         
-        zona_limpia = str(zona_str).strip().lower()
-        df_fnac_zona = df_nac_puro[(df_nac_puro[col_anio_pyr2] == año_obj) & (df_nac_puro['area_geografica'].str.lower() == zona_limpia)].copy()
-        df_fnac_total = df_nac_puro[(df_nac_puro[col_anio_pyr2] == año_obj) & (df_nac_puro['area_geografica'].str.lower() == 'total')].copy()
+        # 🔥 FIX 2: Traductor Universal interno para las consultas a la base
+        zl_raw = str(zona_str).strip().lower()
+        if 'cab' in zl_raw or 'urb' in zl_raw:
+            zona_limpia = 'urbano'
+        elif 'rur' in zl_raw or 'rest' in zl_raw:
+            zona_limpia = 'rural'
+        else:
+            zona_limpia = 'total'
+
+        # Filtramos asegurando que el año de la base también se lea como entero
+        df_fnac_zona = df_nac_puro[(df_nac_puro[col_anio_pyr2].astype(int) == año_num) & (df_nac_puro['area_geografica'].str.lower() == zona_limpia)].copy()
+        df_fnac_total = df_nac_puro[(df_nac_puro[col_anio_pyr2].astype(int) == año_num) & (df_nac_puro['area_geografica'].str.lower() == 'total')].copy()
         
         if df_fnac_zona.empty or df_fnac_total.empty:
             return None, 0, 0, 0, 0, f"No hay datos base de la pirámide para '{zona_str}' en este año.", pd.DataFrame()
