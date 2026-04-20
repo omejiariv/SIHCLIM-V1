@@ -324,8 +324,8 @@ try:
                     return r['Poly_A']*t**3 + r['Poly_B']*t**2 + r['Poly_C']*t + r.get('Poly_D', r[col_base])
 
                 f_t = f_fin[f_fin['Area'].str.lower().str.contains('tot')]
-                f_u = f_fin[f_fin['Area'].str.lower().str.startswith('urb')]
-                f_r = f_fin[f_fin['Area'].str.lower() == 'rural']
+                f_u = f_fin[f_fin['Area'].str.lower().str.contains('urb|cab')]
+                f_r = f_fin[f_fin['Area'].str.lower().str.contains('rur|resto')]
                 
                 if not f_t.empty: pob_total = resolver(f_t.iloc[0], anio_analisis)
                 pob_urb_base = resolver(f_u.iloc[0], anio_analisis) if not f_u.empty else pob_total * 0.85
