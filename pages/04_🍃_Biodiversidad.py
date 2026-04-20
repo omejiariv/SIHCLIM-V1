@@ -24,6 +24,7 @@ try:
     # 🚀 INYECCIÓN CLOUD NATIVE (SMART CACHE)
     from modules.hydro_physics import download_raster_secure
     from modules.config import Config
+    from modules.utils import encender_gemelo_digital
 except Exception as e:
     st.error(f"Error crítico de importación: {e}")
     st.stop()
@@ -38,7 +39,6 @@ st.set_page_config(page_title="Monitor de Biodiversidad", page_icon="🍃", layo
 selectors.renderizar_menu_navegacion("Biodiversidad y Servicios Ecosistémicos")
 
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
-from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 encender_gemelo_digital()
 
 st.title("🍃 Biodiversidad y Servicios de la Naturaleza")
@@ -55,6 +55,150 @@ except Exception as e:
     st.error(f"Error en selector: {e}")
     st.stop()
 
+# ==============================================================================
+# 🧠 NÚCLEO DE METABOLISMO UNIFICADO (Sniper Autosuficiente)
+# ==============================================================================
+import re
+import unicodedata
+import difflib
+import time
+
+anio_analisis = 2025 
+pob_urbana_calc, pob_rural_calc, pob_total_base = 0, 0, 0
+bovinos_reales, porcinos_reales, aves_reales = 0, 0, 0
+origen_humano = "No Identificado"
+origen_animal = "Sin Datos"
+
+def limpiar_identificador(t):
+    if pd.isna(t): return ""
+    t = unicodedata.normalize('NFKD', str(t).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
+    t = re.sub(r'[^a-z0-9]', ' ', t) 
+    return " ".join(t.split())
+
+nombre_norm = limpiar_identificador(nombre_seleccion)
+
+# 🌍 EL DETECTOR GEOMÉTRICO UNIVERSAL
+es_macro = True
+if gdf_zona is not None and not gdf_zona.empty:
+    try:
+        area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
+        if area_km2 < 1200: es_macro = False
+    except: pass
+
+try:
+    from modules.db_manager import get_engine
+    engine = get_engine()
+    
+    # --- MOTOR HUMANO ---
+    df_mat = st.session_state.get('df_matriz_demografica', pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine))
+    st.session_state['df_matriz_demografica'] = df_mat
+    
+    if not df_mat.empty:
+        df_mat['MATCH_ID'] = df_mat['Territorio'].apply(limpiar_identificador)
+        filas = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
+        
+        if not filas.empty:
+            filas = filas.sort_values(by='Pob_Base', ascending=not es_macro)
+            niv_gan = filas.iloc[0]['Nivel']
+            f_fin = filas[filas['Nivel'] == niv_gan]
+            
+            def resolver(r, anio, col_base='Pob_Base'):
+                t = float(anio - r.get('Año_Base', 1985))
+                m = str(r.get('Modelo_Recomendado', ''))
+                if 'Logistico' in m: return r['Log_K'] / (1 + r['Log_a'] * np.exp(-r['Log_r'] * t))
+                if 'Exponencial' in m: return r['Exp_a'] * np.exp(r['Exp_b'] * t)
+                return r['Poly_A']*t**3 + r['Poly_B']*t**2 + r['Poly_C']*t + r.get('Poly_D', r[col_base])
+
+            f_t = f_fin[f_fin['Area'].str.lower().str.contains('tot')]
+            f_u = f_fin[f_fin['Area'].str.lower().str.startswith('urb')]
+            f_r = f_fin[f_fin['Area'].str.lower() == 'rural']
+            
+            if not f_t.empty: pob_total_base = resolver(f_t.iloc[0], anio_analisis)
+            pob_urbana_calc = resolver(f_u.iloc[0], anio_analisis) if not f_u.empty else pob_total_base * 0.85
+            pob_rural_calc = resolver(f_r.iloc[0], anio_analisis) if not f_r.empty else pob_total_base * 0.15
+            origen_humano = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
+
+    # --- MOTOR PECUARIO ---
+    try:
+        df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
+        st.session_state['df_matriz_pecuaria'] = df_pec
+        animales_encontrados = False
+        
+        if not df_pec.empty:
+            df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
+            filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
+            
+            if filas_p.empty:
+                opciones_pec = df_pec['MATCH_ID'].unique().tolist()
+                matches_pec = difflib.get_close_matches(nombre_norm, opciones_pec, n=1, cutoff=0.7)
+                if matches_pec: 
+                    filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
+                else:
+                    palabras = nombre_norm.replace("rio", "").replace("nss", "").replace("car", "").split()
+                    if palabras:
+                        p_larga = max(palabras, key=len)
+                        if len(p_larga) > 4:
+                            mask = df_pec['MATCH_ID'].str.contains(p_larga)
+                            filas_temp = df_pec[mask]
+                            if not ("antioquia" in nombre_norm):
+                                filas_temp = filas_temp[filas_temp['Nivel'].str.lower() != 'departamental']
+                            filas_p = filas_temp.copy()
+            
+            if not filas_p.empty:
+                filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
+                niv_p = filas_p.iloc[0]['Nivel']
+                f_p_fin = filas_p[filas_p['Nivel'] == niv_p]
+                
+                f_bov = f_p_fin[f_p_fin['Especie'].str.lower() == 'bovinos']
+                f_por = f_p_fin[f_p_fin['Especie'].str.lower() == 'porcinos']
+                f_ave = f_p_fin[f_p_fin['Especie'].str.lower() == 'aves']
+                
+                if not f_bov.empty: bovinos_reales = resolver(f_bov.iloc[0], anio_analisis, 'Poblacion_Base')
+                if not f_por.empty: porcinos_reales = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
+                if not f_ave.empty: aves_reales = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
+                
+                if (bovinos_reales + porcinos_reales + aves_reales) > 0:
+                    origen_animal = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
+                    animales_encontrados = True
+                
+        if not animales_encontrados: 
+            raise ValueError("Fallback Pecuario")
+
+    except Exception:
+        # Fallback Espacial Dinámico
+        try:
+            url_sup = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Historico_Cuencas.csv?t={int(time.time())}"
+            df_censo = pd.read_csv(url_sup)
+            
+            if 'Anio' in df_censo.columns:
+                anio_f = min(anio_analisis, df_censo['Anio'].max())
+                df_censo = df_censo[df_censo['Anio'] == anio_f]
+            
+            piezas = [nombre_seleccion]
+            if gdf_zona is not None and not gdf_zona.empty:
+                for col in ['nom_szh', 'nomzh', 'nom_nss3', 'nom_nss2']:
+                    if col in gdf_zona.columns:
+                        piezas.extend(gdf_zona[col].dropna().unique().tolist())
+            
+            piezas_norm = [limpiar_identificador(p) for p in set(piezas) if str(p).strip() != '']
+            
+            if 'Subcuenca' in df_censo.columns:
+                df_censo['Sub_Norm'] = df_censo['Subcuenca'].apply(limpiar_identificador)
+                df_filtrado = df_censo[df_censo['Sub_Norm'].isin(piezas_norm)]
+                
+                if not df_filtrado.empty:
+                    bovinos_reales = int(df_filtrado['Bovinos'].sum())
+                    porcinos_reales = int(df_filtrado['Porcinos'].sum())
+                    aves_reales = int(df_filtrado['Aves'].sum())
+            
+            suma = bovinos_reales + porcinos_reales + aves_reales
+            origen_animal = "Suma Espacial (Fallback)" if suma > 0 else "Sin Datos Pecuarios"
+            
+        except Exception: pass
+
+except Exception as main_e:
+    pass
+
 def save_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
@@ -69,39 +213,16 @@ with st.expander("🎓 Fundamentación Científica: El Ecosistema como Infraestr
 
     ### 2. Dinámica del Carbono (MDL y Modelos Alométricos)
     La mitigación del cambio climático requiere estimaciones robustas de biomasa. 
-    * **Ecuación de Crecimiento:** Utilizamos el modelo clásico de **Von Bertalanffy** ajustado para especies tropicales, el cual describe una curva sigmoidea de crecimiento biológico que se estabiliza al llegar a la senectud del bosque:
-      $$B_t = A \cdot (1 - e^{-k \cdot t})^{\\frac{1}{1-m}}$$
-      *(Donde $B_t$ es la biomasa en el tiempo $t$, $A$ es la asíntota máxima, y $k$ la tasa de crecimiento).*
-    * **Inventarios Ex-post:** Para mediciones reales en campo, integramos las ecuaciones alométricas pan-tropicales de **Álvarez et al. (2012)** y **Chave et al. (2014)**, utilizando el Diámetro a la Altura del Pecho (DAP) y la altura total, ajustadas por la Zona de Vida de Holdridge.
+    * **Ecuación de Crecimiento:** Utilizamos el modelo clásico de **Von Bertalanffy** ajustado para especies tropicales.
+    * **Inventarios Ex-post:** Para mediciones reales en campo, integramos las ecuaciones alométricas pan-tropicales de **Álvarez et al. (2012)** y **Chave et al. (2014)**.
 
     ### 3. Ecohidrología y Retención del Dosel (Efecto Esponja)
     La atenuación de crecientes súbitas comienza en las hojas. El bosque intercepta la precipitación bruta ($P$) antes de que golpee el suelo, reduciendo la escorrentía superficial.
     * **Modelo Asintótico (Aston, 1979 / Gash, 1979):** El agua interceptada ($I$) depende de la Capacidad Máxima del Dosel ($S_{max}$) que a su vez es una función del Índice de Área Foliar (LAI).
-      $$I = S_{max} \cdot (1 - e^{-P / S_{max}})$$
-    * **Geometría Fractal:** Las copas de los árboles optimizan su superficie de captura siguiendo patrones de autosemejanza (*Sistemas de Lindenmayer*), permitiendo que un solo individuo despliegue miles de metros cuadrados de área foliar real sobre una huella de suelo reducida.
-
-    ### 4. Mecánica del Impacto y Transporte de Sedimentos (Manning & MMF)
-    La porción de lluvia que atraviesa el dosel (*throughfall*) impacta el suelo con una energía cinética ($KE$) devastadora.
-    * **Splash Detachment:** Basado en el modelo *Morgan-Morgan-Finney (MMF)*, la disgregación de partículas es proporcional a la energía de la tormenta y a la erodabilidad del suelo (Factor K).
-    * **Fricción Hidráulica:** El lodo es transportado por la ladera según la Ecuación de **Manning**. El sotobosque y las raíces incrementan drásticamente el coeficiente de rugosidad ($n$), reduciendo la velocidad del flujo ($V$) y forzando la decantación de los sedimentos antes de que alcancen el río.
-      $$V = \\frac{1}{n} R^{2/3} S^{1/2}$$
-
-    ### 5. Limnología y Eutrofización en Embalses
-    El sedimento exportado (Lodo + Fósforo) viaja hasta los embalses alterando su batimetría y química.
-    * **Abrasión y Colmatación:** Las arenas gruesas rellenan el *Volumen Muerto*, acortando la vida útil de la presa, mientras las arcillas en suspensión pasan por las turbinas causando abrasión mecánica.
-    * **Impacto Sanitario (PTAP):** El exceso de materia orgánica y fósforo detona eventos de eutrofización. Esto dispara exponencialmente el consumo de coagulantes (Sulfato de Aluminio) y desinfectantes (Cloro) en las Plantas de Tratamiento de Agua Potable, demostrando que **la conservación de la cuenca alta es, de hecho, el primer y más barato paso de la potabilización.**
-
-    ---
-    **Fuentes Bibliográficas Clave:**
-    1. *Costanza, R., et al. (1997).* The value of the world's ecosystem services and natural capital. **Nature**.
-    2. *Álvarez, E., et al. (2012).* Tree above-ground biomass allometries for carbon pools in Colombia. **Forest Ecology and Management**.
-    3. *Aston, A. R. (1979).* Rainfall interception by eight small trees. **Journal of Hydrology**.
-    4. *Morgan, R. P. C., et al. (1984).* A predictive model for the assessment of soil erosion risk. **Journal of Agricultural Engineering Research**.
     """)
 
 # ==============================================================================
 # ☁️ DESCARGA GLOBAL DE RASTERS (SMART CACHE)
-# Todos los mapas se descargan al disco 1 sola vez para alimentar todas las pestañas
 # ==============================================================================
 path_dem, path_ppt, path_cov = None, None, None
 
@@ -134,18 +255,10 @@ def load_layer_cached(layer_name):
 # --- FUNCIÓN analizar_coberturas_por_zona_vida ---
 @st.cache_data(show_spinner=False)
 def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, path_dem, path_ppt, path_cov):
-    """
-    Estrategia Cloud-Native: Lee directamente del caché local en disco.
-    """
     try:
-        if not path_dem or not path_ppt or not path_cov:
-            return None
+        if not path_dem or not path_ppt or not path_cov: return None
 
-        # ---------------------------------------------------------
-        # PASO 1: PROCESAR EL DEM 
-        # ---------------------------------------------------------
         dem_arr, out_meta, out_crs = None, None, None
-        
         with rasterio.open(path_dem) as src_dem:
             crs_working = src_dem.crs if src_dem.crs else rasterio.crs.CRS.from_string("EPSG:3116")
             gdf_valid = _gdf_zona.copy()
@@ -157,18 +270,13 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, path_dem, path_ppt, p
                 dem_arr = out_image[0]
                 out_shape = dem_arr.shape
                 out_crs = crs_working
-            except ValueError:
-                return None
+            except ValueError: return None
 
             dem_arr = np.where(dem_arr == src_dem.nodata, np.nan, dem_arr)
             dem_arr = np.where(dem_arr < -100, np.nan, dem_arr) 
 
-        if dem_arr is None or np.isnan(dem_arr).all():
-            return None
+        if dem_arr is None or np.isnan(dem_arr).all(): return None
 
-        # ---------------------------------------------------------
-        # PASO 2: ALINEAR OTROS MAPAS
-        # ---------------------------------------------------------
         def alinear_desde_disco(path_raster, shape_dst, transform_dst, crs_dst, es_cat=False):
             with rasterio.open(path_raster) as src:
                 crs_src = src.crs if src.crs else "EPSG:3116"
@@ -187,24 +295,16 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, path_dem, path_ppt, p
         ppt_arr = alinear_desde_disco(path_ppt, out_shape, out_transform, out_crs)
         cov_arr = alinear_desde_disco(path_cov, out_shape, out_transform, out_crs, es_cat=True)
 
-        # ---------------------------------------------------------
-        # PASO 3: CÁLCULOS
-        # ---------------------------------------------------------
         v_classify = np.vectorize(lz.classify_life_zone_alt_ppt)
         dem_safe = np.nan_to_num(dem_arr, nan=-9999)
         ppt_safe = np.nan_to_num(ppt_arr, nan=0)
         zv_arr = v_classify(dem_safe, ppt_safe)
         
         valid_mask = ~np.isnan(dem_arr) & (dem_arr > -100) & (cov_arr > 0)
-        
         res_x = out_transform[0]
         pixel_area_ha = ((abs(res_x) * 111132.0) ** 2 / 10000.0) if out_crs.is_geographic else ((abs(res_x) ** 2) / 10000.0)
 
-        df = pd.DataFrame({
-            'ZV_ID': zv_arr[valid_mask].flatten(),
-            'COV_ID': cov_arr[valid_mask].flatten()
-        })
-        
+        df = pd.DataFrame({'ZV_ID': zv_arr[valid_mask].flatten(), 'COV_ID': cov_arr[valid_mask].flatten()})
         if df.empty: return None
 
         resumen = df.groupby(['ZV_ID', 'COV_ID']).size().reset_index(name='Pixeles')
@@ -214,18 +314,13 @@ def analizar_coberturas_por_zona_vida(_gdf_zona, zone_key, path_dem, path_ppt, p
         
         return resumen
 
-    except Exception as e:
-        return None
+    except Exception as e: return None
 
 # --- FUNCIÓN HELPER ---
 @st.cache_data(show_spinner=False)
 def generar_mapa_coberturas_vectorial(_gdf_zona, path_cov):
-    """
-    Convierte Raster a Polígonos usando el archivo en caché.
-    """
     try:
         if not path_cov: return None
-        
         with rasterio.open(path_cov) as src:
             src_crs = src.crs if src.crs else ("EPSG:3116" if src.transform[2] > 1000 else "EPSG:4326")
             gdf_valid = _gdf_zona.copy()
@@ -235,12 +330,10 @@ def generar_mapa_coberturas_vectorial(_gdf_zona, path_cov):
             try:
                 out_image, out_transform = mask(src, gdf_proj.geometry, crop=True)
                 data = out_image[0]
-            except ValueError:
-                return None 
+            except ValueError: return None 
                 
             mask_val = (data != src.nodata) & (data > 0)
-            geoms = ({'properties': {'val': v}, 'geometry': s} 
-                     for i, (s, v) in enumerate(shapes(data, mask=mask_val, transform=out_transform)))
+            geoms = ({'properties': {'val': v}, 'geometry': s} for i, (s, v) in enumerate(shapes(data, mask=mask_val, transform=out_transform)))
             
             gdf_vector = gpd.GeoDataFrame.from_features(list(geoms), crs=src_crs)
             if gdf_vector.empty: return None
@@ -250,9 +343,7 @@ def generar_mapa_coberturas_vectorial(_gdf_zona, path_cov):
             gdf_vector['Color'] = gdf_vector['val'].map(lambda x: lc.LAND_COVER_COLORS.get(int(x), "#CCCCCC"))
             
             return gdf_vector
-            
-    except Exception as e:
-        return None
+    except Exception as e: return None
 
 # =========================================================================
 # 🗂️ SISTEMA DE PESTAÑAS (NAVEGACIÓN)
@@ -263,10 +354,10 @@ tab_factura, tab_mapa, tab_taxonomia, tab_forestal, tab_afolu, tab_comparador, t
     "🧬 Taxonomía",
     "🌲 Bosque e Inventarios",
     "⚖️ Metabolismo (AFOLU)",
-    "⚖️ Comparativa de Escenarios de Carbono",
+    "⚖️ Comparativa de Carbono",
     "🌿 Ecología del Paisaje", 
-    "🌳 Retención Hídrica del Dosel",
-    "🔬 Ecohidrología: Del Bosque a la PTAP"
+    "🌳 Retención del Dosel",
+    "🔬 Ecohidrología: Bosque a PTAP"
 ])
 
 # ==============================================================================
@@ -285,12 +376,8 @@ with tab_factura:
         st.video(url_video_supabase, format="video/mp4")
         st.caption("Aprende cómo la naturaleza actúa como la mayor planta de tratamiento y bombeo del planeta.")
 
-    try:
-        anio_actual = st.session_state.get('aleph_anio', 2025)
-        datos_metabolismo = obtener_metabolismo_exacto(nombre_seleccion, anio_actual)
-        pob_total_base = datos_metabolismo.get('pob_total', 5000)
-    except Exception:
-        pob_total_base = 5000 
+    # 🔥 APLICAMOS EL VALOR DEL FRANCOTIRADOR DIRECTAMENTE
+    val_pob_inicial = int(pob_total_base) if pob_total_base >= 1000 else 5000
 
     col_ctrl, col_dash = st.columns([1, 2.2], gap="large")
 
@@ -298,8 +385,7 @@ with tab_factura:
         st.markdown("### 🎛️ Parámetros Locales")
         st.info("Ajusta las variables para recalcular la factura en tiempo real.")
         
-        val_pob = int(pob_total_base) if pob_total_base >= 1000 else 1000
-        poblacion = st.number_input("👥 Población a abastecer:", min_value=1000, value=val_pob, step=5000)
+        poblacion = st.number_input("👥 Población a abastecer:", min_value=1000, value=val_pob_inicial, step=5000)
         dotacion = st.slider("🚰 Dotación (Litros/hab/día):", min_value=50, max_value=300, value=150, step=5)
         altura_m = st.number_input("⛰️ Altitud promedio (m.s.n.m):", min_value=0, value=1500, step=50)
         distancia_km = st.number_input("🌬️ Distancia al mar (km):", min_value=0, value=400, step=10)
@@ -327,28 +413,20 @@ with tab_factura:
         kpi2.metric("💸 Aporte de la Naturaleza", f"${costo_total_naturaleza / 1e6:,.1f} M USD", "Subsidio Natural")
         kpi3.metric("🏷️ Costo Real Oculto", f"${costo_medio_m3:,.2f} USD / m³")
         
-        import plotly.graph_objects as go
-        
         fig_waterfall = go.Figure(go.Waterfall(
-            name = "Factura Natural",
-            orientation = "v",
+            name = "Factura Natural", orientation = "v",
             measure = ["relative", "relative", "relative", "relative", "total"],
             x = ["Desalinización<br>(Evaporación)", "Bombeo<br>(Ascenso Térmico)", "Transporte<br>(Vientos)", "Tratamiento<br>(Suelo/Bosques)", "<b>VALOR TOTAL</b>"],
             textposition = "outside",
             text = [f"${costo_desalinizacion/1e6:.1f}M", f"${costo_bombeo/1e6:.1f}M", f"${costo_transporte/1e6:.1f}M", f"${costo_tratamiento/1e6:.1f}M", f"<b>${costo_total_naturaleza/1e6:.1f}M</b>"],
             y = [costo_desalinizacion, costo_bombeo, costo_transporte, costo_tratamiento, costo_total_naturaleza],
             connector = {"line":{"color":"rgb(63, 63, 63)"}},
-            decreasing = {"marker":{"color":"#e74c3c"}},
-            increasing = {"marker":{"color":"#2ecc71"}},
-            totals = {"marker":{"color":"#3498db"}}
+            decreasing = {"marker":{"color":"#e74c3c"}}, increasing = {"marker":{"color":"#2ecc71"}}, totals = {"marker":{"color":"#3498db"}}
         ))
         
         fig_waterfall.update_layout(
             title = "Construcción del Costo de los Servicios Hídricos (Millones USD)",
-            showlegend = False,
-            plot_bgcolor="rgba(0,0,0,0)",
-            yaxis_title="Millones de Dólares (USD)",
-            margin=dict(l=20, r=20, t=40, b=20)
+            showlegend = False, plot_bgcolor="rgba(0,0,0,0)", yaxis_title="Millones de Dólares (USD)", margin=dict(l=20, r=20, t=40, b=20)
         )
         
         st.plotly_chart(fig_waterfall, use_container_width=True)
@@ -356,7 +434,7 @@ with tab_factura:
     st.success(f"🌱 **El Mensaje para los Tomadores de Decisiones:** Proteger las cuencas y los bosques que abastecen a estos **{poblacion:,.0f} habitantes** le ahorra al Estado y a la sociedad **${costo_total_naturaleza / 1e6:,.1f} millones de dólares anuales** en infraestructura artificial. La conservación es la inversión más rentable.")
 
 # ==============================================================================
-# 🌍 MOTOR DE BIODIVERSIDAD GLOBAL (Prepara datos para Tab 2 y 3)
+# 🌍 MOTOR DE BIODIVERSIDAD GLOBAL (GBIF)
 # ==============================================================================
 gdf_bio = pd.DataFrame()
 threatened = pd.DataFrame()
@@ -370,8 +448,7 @@ try:
         if not gdf_bio.empty and 'Amenaza IUCN' in gdf_bio.columns:
             threatened = gdf_bio[~gdf_bio['Amenaza IUCN'].isin(['NE', 'LC', 'NT', 'DD', 'nan'])]
             n_threat = threatened['Nombre Científico'].nunique()
-except NameError:
-    pass
+except NameError: pass
 
 # ==============================================================================
 # 🗺️ TAB 2: MAPA Y MÉTRICAS
@@ -417,36 +494,18 @@ with tab_mapa:
                                 x, y = poly.exterior.xy
                                 show_leg = True if idx == 0 and i == 0 else False
                                 visible_opt = 'legendonly' if lyr_name == "Predios" else True
-                                fig.add_trace(go.Scattermapbox(
-                                    lon=list(x), lat=list(y), mode='lines', 
-                                    line=dict(width=width, color=color), 
-                                    name=lyr_name, legendgroup=lyr_name, 
-                                    showlegend=show_leg, hoverinfo='skip', visible=visible_opt
-                                ))
+                                fig.add_trace(go.Scattermapbox(lon=list(x), lat=list(y), mode='lines', line=dict(width=width, color=color), name=lyr_name, legendgroup=lyr_name, showlegend=show_leg, hoverinfo='skip', visible=visible_opt))
 
         if not gdf_bio.empty:
-            if 'Nombre Común' in gdf_bio.columns: hover_text = gdf_bio['Nombre Común']
-            elif 'Nombre Científico' in gdf_bio.columns: hover_text = gdf_bio['Nombre Científico']
-            else: hover_text = "Registro Biológico"
+            hover_text = gdf_bio['Nombre Común'] if 'Nombre Común' in gdf_bio.columns else gdf_bio['Nombre Científico'] if 'Nombre Científico' in gdf_bio.columns else "Registro Biológico"
+            fig.add_trace(go.Scattermapbox(lon=gdf_bio['lon'], lat=gdf_bio['lat'], mode='markers', marker=dict(size=7, color='rgb(0, 200, 100)'), text=hover_text, name='Biodiversidad'))
 
-            fig.add_trace(go.Scattermapbox(
-                lon=gdf_bio['lon'], lat=gdf_bio['lat'],
-                mode='markers', marker=dict(size=7, color='rgb(0, 200, 100)'),
-                text=hover_text, name='Biodiversidad'
-            ))
-
-        fig.update_layout(
-            mapbox_style="carto-positron", 
-            mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=10), 
-            margin={"r":0,"t":0,"l":0,"b":0}, height=600,
-            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.8)")
-        )
+        fig.update_layout(mapbox_style="carto-positron", mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=10), margin={"r":0,"t":0,"l":0,"b":0}, height=600, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.8)"))
         st.plotly_chart(fig, use_container_width=True)
         
         if not gdf_bio.empty:
             st.download_button("💾 Descargar Datos (CSV)", save_to_csv(gdf_bio.drop(columns='geometry', errors='ignore')), f"biodiv_{nombre_seleccion}.csv", "text/csv")
-    else:
-        st.info("👈 Seleccione una zona en el menú lateral para visualizar el mapa.")
+    else: st.info("👈 Seleccione una zona en el menú lateral para visualizar el mapa.")
 
 # ==============================================================================
 # TAB 3: TAXONOMÍA
@@ -460,8 +519,7 @@ with tab_taxonomia:
                 df_chart = gdf_bio.fillna("Sin Dato")
                 fig_sun = px.sunburst(df_chart, path=['Reino', 'Clase', 'Orden', 'Familia'], height=600)
                 st.plotly_chart(fig_sun, use_container_width=True)
-            else:
-                st.warning("Datos taxonómicos insuficientes.")
+            else: st.warning("Datos taxonómicos insuficientes.")
         with c2:
             st.markdown("##### Especies Amenazadas")
             if not threatened.empty:
@@ -469,15 +527,13 @@ with tab_taxonomia:
                 cols_mostrar = ['Nombre Científico', 'Amenaza IUCN']
                 if 'Nombre Común' in threatened.columns: cols_mostrar.insert(1, 'Nombre Común') 
                 st.dataframe(threatened[cols_mostrar].astype(str).drop_duplicates(), width="stretch", hide_index=True)
-            else:
-                st.success("✅ No se detectaron especies en categorías críticas (CR, EN, VU) en esta zona.")
+            else: st.success("✅ No se detectaron especies en categorías críticas (CR, EN, VU) en esta zona.")
         
         st.markdown("---")
         st.markdown("##### Detalle de Registros")
         df_mostrar = gdf_bio.drop(columns=['geometry'], errors='ignore').astype(str)
         st.dataframe(df_mostrar, width="stretch", hide_index=True)
-    else:
-        st.info("No hay datos de biodiversidad para mostrar estadísticas.")
+    else: st.info("No hay datos de biodiversidad para mostrar estadísticas.")
 
 # ==============================================================================
 # TAB 4: CALCULADORA DE CARBONO (INTEGRADA & DOCUMENTADA)
@@ -491,17 +547,8 @@ with tab_forestal:
         
         **1. Ecuaciones Utilizadas:**
         * **Crecimiento:** Modelo *Von Bertalanffy* para biomasa aérea.
-            $$B_t = A \cdot (1 - e^{-k \cdot t})^{\frac{1}{1-m}}$$
-        * **Suelo:** Factor de acumulación lineal de Carbono Orgánico del Suelo (COS) durante los primeros 20 años ($0.705 \, tC/ha/año$).
-        
-        **2. Fuentes de Datos:**
-        * **Coeficientes Alométricos:** *Álvarez et al. (2012)* para bosques naturales de Colombia.
-        * **Parámetros de Crecimiento:** Calibrados para *Bosque Húmedo Tropical* y *Bosque Seco Tropical* en la región andina.
-        
-        **3. Alcance y Utilidad:**
-        Permite estimar el potencial de mitigación (bonos de carbono) ex-ante para proyectos de **Restauración Activa** (siembra) y **Pasiva** (regeneración natural).
+        * **Suelo:** Factor de acumulación lineal de Carbono Orgánico del Suelo (COS).
         """)
-        st.info("⚠️ **Nota:** Las estimaciones son aproximadas y deben validarse con mediciones directas en campo.")
 
     st.divider()
     if gdf_zona is None:
@@ -512,17 +559,11 @@ with tab_forestal:
     if path_dem and path_ppt and path_cov:
         with st.spinner("🔄 Cruzando mapas de Clima (Holdridge) y Cobertura..."):
             df_diagnostico = analizar_coberturas_por_zona_vida(gdf_zona, nombre_seleccion, path_dem, path_ppt, path_cov)
-    else:
-        st.error("❌ No se pudieron leer los mapas base desde el caché.")
+    else: st.error("❌ No se pudieron leer los mapas base desde el caché.")
 
     if df_diagnostico is not None and not df_diagnostico.empty:
         st.markdown("##### 📊 Distribución de Coberturas por Zona de Vida")
-        fig_diag = px.bar(
-            df_diagnostico, 
-            x='Hectareas', y='Zona_Vida', color='Cobertura', 
-            orientation='h', title="Hectáreas por Cobertura y Clima",
-            color_discrete_sequence=px.colors.qualitative.Prism, height=400
-        )
+        fig_diag = px.bar(df_diagnostico, x='Hectareas', y='Zona_Vida', color='Cobertura', orientation='h', title="Hectáreas por Cobertura y Clima", color_discrete_sequence=px.colors.qualitative.Prism, height=400)
         st.plotly_chart(fig_diag, use_container_width=True)
         
         with st.expander("Ver Tabla de Datos Detallada (Hectáreas)"):
@@ -548,8 +589,7 @@ with tab_forestal:
             st.session_state['area_total_cuenca_val'] = sum(distribucion_real.values())
             
             st.success(f"📡 **Datos Geoespaciales Sincronizados:** El Sankey de la Pág 08 ahora usa las {st.session_state['area_total_cuenca_val']:,.1f} ha reales de {nombre_seleccion}.")
-        except Exception as e:
-            st.error(f"Error en puente de datos: {e}")
+        except Exception as e: st.error(f"Error en puente de datos: {e}")
 
         st.divider()
         target_ids = [7, 3, 11] 
@@ -559,8 +599,7 @@ with tab_forestal:
         k1, k2 = st.columns(2)
         k1.metric("Área Total Zona", f"{(gdf_zona.to_crs('+proj=cea').area.sum()/10000):,.0f} ha")
         k2.metric("Potencial Restauración", f"{total_potencial:,.0f} ha", help="Pastos + Áreas Degradadas disponibles")
-    else:
-        total_potencial = 0
+    else: total_potencial = 0
 
     st.divider()
     st.markdown("##### 🗺️ Mapa de Usos del Suelo y Predios")
@@ -596,8 +635,7 @@ with tab_forestal:
                                     x, y = poly.exterior.xy
                                     lons.extend(list(x) + [None])
                                     lats.extend(list(y) + [None])
-                            if lons:
-                                fig_map.add_trace(go.Scattermapbox(lon=lons, lat=lats, mode='lines', fill='toself', fillcolor=color_hex, line=dict(width=0), opacity=0.6, name=cob_type, legendgroup="Coberturas", visible='legendonly', hoverinfo="name", hovertext=cob_type))
+                            if lons: fig_map.add_trace(go.Scattermapbox(lon=lons, lat=lats, mode='lines', fill='toself', fillcolor=color_hex, line=dict(width=0), opacity=0.6, name=cob_type, legendgroup="Coberturas", visible='legendonly', hoverinfo="name", hovertext=cob_type))
 
                 gdf_predios = load_layer_cached("Predios")
                 if gdf_predios is not None and not gdf_predios.empty:
@@ -608,8 +646,7 @@ with tab_forestal:
                         gdf_zona_valid['geometry'] = gdf_zona_valid.geometry.buffer(0)
                         intersected = gpd.sjoin(gdf_pred_wgs, gdf_zona_valid, how='inner', predicate='intersects')
                         gdf_pred_clip = gdf_pred_wgs.loc[intersected.index].drop_duplicates()
-                    except:
-                        gdf_pred_clip = gpd.GeoDataFrame() 
+                    except: gdf_pred_clip = gpd.GeoDataFrame() 
 
                     if not gdf_pred_clip.empty:
                         lons_p, lats_p = [], []
@@ -621,18 +658,11 @@ with tab_forestal:
                                 x, y = poly.exterior.xy
                                 lons_p.extend(list(x) + [None])
                                 lats_p.extend(list(y) + [None])
-                        if lons_p:
-                            fig_map.add_trace(go.Scattermapbox(lon=lons_p, lat=lats_p, mode='lines', line=dict(color='#FF6D00', width=2), name="Predios Ejecutados", legendgroup="Predios", visible='legendonly', hoverinfo="name", hovertext="Predio"))
+                        if lons_p: fig_map.add_trace(go.Scattermapbox(lon=lons_p, lat=lats_p, mode='lines', line=dict(color='#FF6D00', width=2), name="Predios Ejecutados", legendgroup="Predios", visible='legendonly', hoverinfo="name", hovertext="Predio"))
 
-            fig_map.update_layout(
-                mapbox_style="carto-positron", 
-                mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=12),
-                margin={"r":0,"t":0,"l":0,"b":0}, height=500,
-                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.8)")
-            )
+            fig_map.update_layout(mapbox_style="carto-positron", mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=12), margin={"r":0,"t":0,"l":0,"b":0}, height=500, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.8)"))
             st.plotly_chart(fig_map, use_container_width=True)
-        except Exception as e:
-            st.error(f"Error renderizando el mapa: {e}")
+        except Exception as e: st.error(f"Error renderizando el mapa: {e}")
             
     st.divider()
     st.subheader("⚙️ Configuración del Análisis")
@@ -694,10 +724,8 @@ with tab_forestal:
                         st.dataframe(df_res_inv.head())
                         csv_inv = df_res_inv.to_csv(index=False).encode('utf-8')
                         st.download_button("📥 Descargar Reporte CSV", csv_inv, "reporte_inventario.csv", "text/csv")
-                    else:
-                        st.error(msg)
-                except Exception as e:
-                    st.error(f"Error procesando archivo: Revise que las columnas se llamen DAP y Altura. ({e})")
+                    else: st.error(msg)
+                except Exception as e: st.error(f"Error procesando archivo: Revise que las columnas se llamen DAP y Altura. ({e})")
 
 # ==============================================================================
 # TAB 5: METABOLISMO TERRITORIAL (AFOLU COMPLETO)
@@ -712,16 +740,7 @@ with tab_afolu:
             area_bosque_real = df_diagnostico[df_diagnostico['COV_ID'] == 9]['Hectareas'].sum()
     except: pass
 
-    anio_analisis = st.session_state.get('aleph_anio', 2025)
-    datos_metabolismo = obtener_metabolismo_exacto(nombre_seleccion, anio_analisis)
-
-    poblacion_urbana_calculada = datos_metabolismo['pob_urbana']
-    poblacion_rural_calculada = datos_metabolismo['pob_rural']
-    bovinos_reales = datos_metabolismo['bovinos']
-    porcinos_reales = datos_metabolismo['porcinos']
-    aves_reales = datos_metabolismo['aves']
-    origen_datos = datos_metabolismo.get('origen_humano', 'Estimación Geoespacial')
-
+    # 🔥 APLICAMOS LAS VARIABLES DEL FRANCOTIRADOR DIRECTAMENTE
     aleph_pastos = float(st.session_state.get('aleph_ha_pastos', 50.0))
 
     col_a1, col_a2 = st.columns([1, 2.5])
@@ -736,10 +755,10 @@ with tab_afolu:
                 horizonte_af = st.slider("Horizonte de Análisis (Años):", 5, 50, 20, key="slider_afolu")
 
         with st.expander("🌾 2. Actividades Agropecuarias y Humanas (Rural)", expanded=False):
-            if origen_datos == "Matriz Maestra":
-                st.success(f"🧠 **Conexión Aleph Sincronizada:** Las cargas rurales se calcularon usando censos reales para **{nombre_seleccion}**.")
+            if "SQL" in origen_humano and "SQL" in origen_animal:
+                st.success(f"🧠 **Sniper Sincronizado:** Las cargas rurales se calcularon usando matrices SQL para **{nombre_seleccion}**.")
             else:
-                st.info(f"📍 **Conexión Aleph Local:** Datos aproximados para **{nombre_seleccion}** (Fuente: {origen_datos}).")
+                st.info(f"📍 **Fallback Activo:** Datos calculados por aproximación espacial para **{nombre_seleccion}**.")
             opciones_fuentes = ["Todas", "Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"]
             fuentes_sel = st.multiselect("Selecciona cargas rurales a modelar:", opciones_fuentes, default=["Todas"])
             fuentes_activas = ["Pasturas", "Bovinos", "Porcinos", "Avicultura", "Población Rural"] if "Todas" in fuentes_sel else fuentes_sel
@@ -763,13 +782,13 @@ with tab_afolu:
                 if "Avicultura" in fuentes_activas:
                     aves = st.number_input("Aves Galpones (ICA):", value=int(aves_reales), step=500)
                 if "Población Rural" in fuentes_activas:
-                    humanos_rurales = st.number_input("Humanos Rurales (Censo):", value=int(poblacion_rural_calculada), step=10)
+                    humanos_rurales = st.number_input("Humanos Rurales (Censo):", value=int(pob_rural_calc), step=10)
 
         with st.expander("🏙️ 3. Actividades Urbanas (Ciudades y Movilidad)", expanded=False):
             col_u1, col_u2, col_u3 = st.columns(3)
             with col_u1:
                 st.markdown("##### 👥 Demografía y Agua")
-                humanos_urbanos = st.number_input("Población Urbana:", value=int(poblacion_urbana_calculada), step=100)
+                humanos_urbanos = st.number_input("Población Urbana:", value=int(pob_urbana_calc), step=100)
                 vertimientos_m3 = (humanos_urbanos * 150) / 1000
                 st.metric("Agua Residual Generada", f"{vertimientos_m3:,.1f} m³/día")
             with col_u2:
@@ -803,8 +822,7 @@ with tab_afolu:
             area_evento = st.number_input("Hectáreas Afectadas:", min_value=0.1, value=5.0, step=1.0)
             anio_evento = st.slider("¿En qué año ocurre?", 1, int(horizonte_af), 5)
             estado_ev = st.selectbox("Tipo de Cobertura:", list(carbon_calculator.STOCKS_SUCESION.keys()), index=4)
-            if "Pérdida" in tipo_evento:
-                causa_ev = st.selectbox("Causa:", list(carbon_calculator.CAUSAS_PERDIDA.keys()))
+            if "Pérdida" in tipo_evento: causa_ev = st.selectbox("Causa:", list(carbon_calculator.CAUSAS_PERDIDA.keys()))
                 
     with col_a2:
         h_anios = int(horizonte_af)
@@ -830,8 +848,7 @@ with tab_afolu:
 
         df_bal = carbon_calculator.calcular_balance_territorial(df_bosque_af, df_pastos_af, df_fuentes_af, df_evento_af)
         
-        def v_seguro(df, col):
-            return df[col].iloc[-1] if col in df.columns else 0
+        def v_seguro(df, col): return df[col].iloc[-1] if col in df.columns else 0
 
         neto_final = v_seguro(df_bal, 'Balance_Neto_tCO2e')
         usd_total = neto_final * 5.0
@@ -854,8 +871,7 @@ with tab_afolu:
         
         fig = go.Figure()
         def agregar_curva(fig, df, col, nombre, color):
-            if col in df.columns:
-                fig.add_trace(go.Scatter(x=df['Año'], y=df[col], mode='lines', fill='tozeroy', name=nombre, line=dict(color=color)))
+            if col in df.columns: fig.add_trace(go.Scatter(x=df['Año'], y=df[col], mode='lines', fill='tozeroy', name=nombre, line=dict(color=color)))
 
         agregar_curva(fig, df_bal, 'Captura_Bosque', 'Bosque Base', '#2ecc71')
         color_pasto = '#f1c40f' if val_pastos >= 0 else '#e67e22'
@@ -917,23 +933,16 @@ with tab_comparador:
                 })
             
             fig_comp = px.line(
-                df_consolidado, 
-                x='Año', y='Proyecto_tCO2e_Acumulado', color='Escenario',
+                df_consolidado, x='Año', y='Proyecto_tCO2e_Acumulado', color='Escenario',
                 title=f"Proyección Comparativa ({area_comp} ha)",
-                labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'},
-                line_shape='spline'
+                labels={'Proyecto_tCO2e_Acumulado': 'Acumulado (tCO2e)'}, line_shape='spline'
             )
             st.plotly_chart(fig_comp, use_container_width=True)
             
             st.subheader("Resumen Financiero y Ambiental")
             df_resumen = pd.DataFrame(resumen_final).set_index("Escenario")
-            st.dataframe(
-                df_resumen.style.format({"Total CO2e": "{:,.0f}", "Valor (USD)": "${:,.0f}"})
-                .background_gradient(cmap="Greens", subset=["Total CO2e"]),
-                use_container_width=True
-            )
-        else:
-            st.warning("Selecciona al menos un modelo para comparar.")
+            st.dataframe(df_resumen.style.format({"Total CO2e": "{:,.0f}", "Valor (USD)": "${:,.0f}"}).background_gradient(cmap="Greens", subset=["Total CO2e"]), use_container_width=True)
+        else: st.warning("Selecciona al menos un modelo para comparar.")
 
 # =========================================================================
 # TAB 7: ECOLOGÍA DEL PAISAJE (CONECTIVIDAD RIPARIA)
@@ -1006,9 +1015,7 @@ with tab_ecologia:
             
             rios_4326 = gdf_rios_actual.to_crs(epsg=4326).copy()
             rios_4326['ID_Tramo'] = ["Segmento Hídrico " + str(i+1) for i in range(len(rios_4326))]
-            
-            if 'longitud_km' in rios_4326.columns:
-                rios_4326['longitud_km'] = rios_4326['longitud_km'].round(2)
+            if 'longitud_km' in rios_4326.columns: rios_4326['longitud_km'] = rios_4326['longitud_km'].round(2)
             
             try: c_lat, c_lon = rios_4326.geometry.iloc[0].centroid.y, rios_4326.geometry.iloc[0].centroid.x
             except: c_lat, c_lon = 6.2, -75.5
@@ -1021,17 +1028,14 @@ with tab_ecologia:
             capas_mapa.append(pdk.Layer(
                 "GeoJsonLayer", data=rios_4326, opacity=0.6, stroked=True,
                 get_line_color=[39, 174, 96, 255], get_line_width=buffer_m * 2,
-                lineWidthUnits='"meters"', lineWidthMinPixels=2,
-                pickable=True, autoHighlight=True 
+                lineWidthUnits='"meters"', lineWidthMinPixels=2, pickable=True, autoHighlight=True 
             ))
             
             capas_mapa.append(pdk.Layer("GeoJsonLayer", data=rios_4326, opacity=1, get_line_color=[52, 152, 219, 255], get_line_width=1, lineWidthUnits='"pixels"'))
             
             view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=11)
             tooltip = {"html": "<b>{ID_Tramo}</b><br/>Orden de Strahler: <b>{Orden_Strahler}</b><br/>Longitud: {longitud_km} km", "style": {"backgroundColor": "steelblue", "color": "white"}}
-            
             st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
-
     else:
         st.info("⚠️ La red hidrográfica no está en la memoria. Puedes calcularla en Geomorfología o generarla directamente aquí.")
         from modules.geomorfologia_tools import render_motor_hidrologico
@@ -1130,38 +1134,6 @@ with tab_ret_dosel:
             else: st.write("❌ **Fallo Test 3:** Violación de la ley de conservación de masa.")
             
             st.markdown("</div>", unsafe_allow_html=True)
-            
-    st.markdown("---")
-    with st.expander("📚 Marco Conceptual, Metodologías y Fuentes Científicas", expanded=False):
-        st.markdown("""
-        ### 🔬 La Ciencia: Ecuación de Aston Modificada
-        El agua que una tormenta deja caer no llega toda al suelo. El bosque actúa como un paraguas y una esponja. Para modelar esto, usaremos la relación empírica basada en el Índice de Área Foliar (LAI) y la Capacidad de Almacenamiento Específico ($S_l$) de las hojas.
-        
-        La capacidad máxima de retención del dosel ($S_{max}$, en milímetros) se define como:
-        $$S_{max}=S_l \times LAI$$
-        
-        Cuando ocurre un evento de precipitación bruta ($P$), el agua interceptada ($I$) sigue una curva asintótica (porque una vez que las hojas se llenan, el resto escurre o gotea). Usaremos la forma exponencial clásica:
-        $$I=S_{max} \cdot (1 - e^{-P/S_{max}})$$
-        
-        El agua que efectivamente golpea el suelo y genera riesgo de avalancha (Precipitación Efectiva, $P_{eff}$) es simplemente $P - I$.
-
-        ### 🌿 La Matemática de la Naturaleza: Geometría Fractal
-        Los árboles no son cilindros ni conos perfectos; son estructuras **fractales**. Para maximizar la captura de luz y la retención de agua (es decir, para maximizar el LAI en un espacio tridimensional reducido), la naturaleza utiliza patrones de autosemejanza.
-        * **Sistemas de Lindenmayer (L-Systems):** Modelan el crecimiento vegetal mediante reglas recursivas. Cada rama se divide en sub-ramas más pequeñas siguiendo un factor de escala y un ángulo específico.
-        * **Optimización Ecohidrológica:** Esta ramificación infinita crea una "esponja aérea" con un área superficial gigantesca. Un roble maduro puede tener miles de metros cuadrados de superficie foliar desplegados a partir de un solo tronco, interceptando eficientemente la energía cinética de las gotas de lluvia.
-        
-        ### 🎯 Utilidad e Interpretación Territorial
-        * **Amortiguación de Crecientes Súbitas:** Permite cuantificar el volumen de agua que el bosque evita que llegue instantáneamente al cauce, reduciendo picos de caudal hidrográfico.
-        * **Control de Erosión Hídrica:** El follaje disipa la energía cinética de la lluvia. Si el ecosistema está degradado, la $P_{eff}$ golpea el suelo erosionándolo y arrastrando sedimentos hacia los embalses.
-        * **Valoración del Capital Natural:** Traducir hectáreas de bosque a metros cúbicos de agua retenida es el eslabón fundamental para justificar financieramente los proyectos de infraestructura verde.
-
-        ### 📖 Fuentes de Consulta de Primer Nivel
-        * **Aston, A. R. (1979).** *Rainfall interception by eight small trees.* Journal of Hydrology, 42(3-4), 383-396. (Ecuación base del modelo asintótico).
-        * **Merriam, R. A. (1960).** *A note on the interception loss equation.* Journal of Geophysical Research. (Fundamentos de la exponencial de pérdida).
-        * **Gash, J. H. C. (1979).** *An analytical model of rainfall interception by forests.* Q.J.R. Meteorol. Soc.
-        * **Lindenmayer, A. (1968).** *Mathematical models for cellular interactions in development.* Journal of Theoretical Biology. (Bases matemáticas de los fractales vegetales).
-        * **Mandelbrot, B. B. (1982).** *The Fractal Geometry of Nature.* W. H. Freeman and Co.
-        """)
 
 # =========================================================================
 # PESTAÑA 9: ECOHIDROLOGÍA (EFECTO CASCADA)
@@ -1317,20 +1289,10 @@ with tab_micro:
         c_b2.metric("Gota Filtrada", f"{vel_goteo_h:.1f} m/s", f"{ek_g_uj:.1f} μJ")
         if red_ek > 0: c_b3.metric("Protección", f"-{red_ek:.1f}%", "Energía disipada", delta_color="normal")
         else: c_b3.metric("Riesgo", f"+{abs(red_ek):.1f}%", "Impacto aumentado", delta_color="inverse")
-        if st.toggle("📚 Mostrar El Milagro de la Hoja: Física y Ecuaciones"):
-            st.markdown("""
-            **La Arquitectura Fractal:** El área foliar crece exponencialmente con el diámetro.
-            **La Balística:** El árbol reduce la energía de la lluvia a cero, y el agua vuelve a caer ganando nueva velocidad.
-            """)
 
-    # --- 4. EROSIVIDAD ---
     with st.expander("🟤 4. Erosividad y Desprendimiento de Suelo (Splash Detachment)", expanded=False):
-        st.markdown("""<style>.tooltip-mod4 { position: relative; display: inline-block; color: #e67e22; font-weight: bold; cursor: help; border-bottom: 2px dotted #e67e22; } .tooltip-mod4 .tooltiptext { visibility: hidden; width: 320px; background-color: #2c3e50; color: #fff; text-align: left; border-radius: 6px; padding: 15px; position: absolute; z-index: 50; top: 120%; left: 50%; margin-left: -160px; opacity: 0; transition: opacity 0.3s; font-size: 0.85em; font-weight: normal;} .tooltip-mod4:hover .tooltiptext { visibility: visible; opacity: 1; }</style>""", unsafe_allow_html=True)
-        st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px;'>Escala el impacto balístico. Esta tierra es el primer paso del <span class='tooltip-mod4'>Efecto Cascada Territorial<span class='tooltiptext'>🧠 <b>Conexión Gemelo Digital:</b> Los kilogramos arrancados viajarán a la <b>Página 08</b> asfixiando el embalse.</span></span>.</div>", unsafe_allow_html=True)
-        
         st.markdown("##### ⛈️ Tormenta de Diseño (Nexo Estadístico)")
         
-        # 🤝 EL APRETÓN DE MANOS: Recuperamos el Gumbel calculado en la Pág 01 o 05
         ppt_100a_memoria = float(st.session_state.get('aleph_ppt_100a', 120.0))
         if 'aleph_ppt_100a' in st.session_state:
             st.success(f"🧠 **Gumbel Sincronizado:** Extremo Tr=100 años es de **{ppt_100a_memoria:.1f} mm**.")
@@ -1345,13 +1307,10 @@ with tab_micro:
             tipo_s = st.selectbox("Erodabilidad (Factor K):", ["Arena Fina (Alta - K=0.06)", "Franco-Limoso (Media - K=0.03)", "Arcilloso (Baja - K=0.01)"], index=1)
             k_f = 0.06 if "Alta" in tipo_s else 0.03 if "Media" in tipo_s else 0.01
 
-        # --- MAGIA ECOHIDROLÓGICA: INTENSIDAD REALISTA (CURVA IDF SINTÉTICA) ---
         int_mm_h = (vol_t_mm / 24.0) * ((24.0 / dur_h) ** 0.65) if dur_h > 0 else 0
-        
         v_g_n = (4/3) * math.pi * ((diametro_lluvia / 2)**3)
         v_g_a = (4/3) * math.pi * ((diametro_goteo / 2)**3)
         
-        # El número de gotas se escala con el volumen total
         n_g_n = (vol_t_mm * 1_000_000) / v_g_n if v_g_n > 0 else 0
         n_g_a = (vol_t_mm * 1_000_000) / v_g_a if v_g_a > 0 else 0
         
@@ -1368,12 +1327,6 @@ with tab_micro:
             fig_s = go.Figure(data=[go.Bar(name='Cielo Abierto', x=['Kg/m²'], y=[suelo_p_n_kg], marker_color='#e67e22', text=[f"{suelo_p_n_kg:.1f} Kg"], textposition='auto'), go.Bar(name='Bajo Dosel', x=['Kg/m²'], y=[suelo_p_a_kg], marker_color='#27ae60', text=[f"{suelo_p_a_kg:.1f} Kg"], textposition='auto')])
             fig_s.update_layout(barmode='group', height=300, margin=dict(t=30, b=0, l=10, r=10), plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.2))
             st.plotly_chart(fig_s, use_container_width=True)
-
-        if st.toggle("📚 Mostrar El Aleph del Suelo: MMF"):
-            st.markdown("""
-            **Mecánica del Impacto (Splash Detachment):** Cuando la Energía Cinética de la lluvia supera la cohesión del suelo, las partículas finas explotan taponando los poros.
-            **El Modelo MMF:** $D_s = K \cdot KE_{total}$.
-            """)
             
     with st.expander("🌊 5. El Viaje del Lodo: Transporte de Sedimentos", expanded=False):
         st.info("La tierra arrancada por el impacto de la gota necesita un vehículo para llegar al río: La Escorrentía. Usa la física hidráulica de Manning para calcular cuánto sedimento es retenido por el sotobosque.")
@@ -1419,26 +1372,10 @@ with tab_micro:
             ))
             fig_viaje.update_layout(title="Balance de Transporte", height=320, margin=dict(l=20, r=20, t=40, b=30), plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_viaje, use_container_width=True)
-            
-        if st.toggle("📚 Revelar El Aleph de la Hidráulica: Rugosidad y Gravedad"):
-            st.markdown("""
-            ### 🌊 La Ecuación de Manning y la Ley de la Gravedad
-            Una vez que la tierra ha sido pulverizada por la lluvia, comienza su descenso hacia los ríos. El ingeniero Robert Manning (1889) dedujo cómo calcular la velocidad de este flujo superficial:
-            $$V = \\frac{1}{n} R^{2/3} S^{1/2}$$
-            Donde $S$ es la fuerza de la gravedad (pendiente) y $n$ es la salvación de la cuenca: **La Rugosidad**.
-            
-            **La Inteligencia del Sotobosque:** Al añadir hojarasca, helechos y raíces superficiales, el coeficiente de fricción ($n$) aumenta. Esto reduce la velocidad del agua por debajo de la *velocidad crítica de arrastre*, obligando al lodo a decantar. **El agua llega al río, pero la montaña se queda en su sitio.**
-            """)
 
     with st.expander(f"🛑 6. Limnología Integral: Uniformismo y Catastrofismo en {nombre_seleccion}", expanded=False):
-        st.markdown("""<style>.limno-tooltip { position: relative; display: inline-block; color: #2980b9; font-weight: 600; cursor: help; border-bottom: 1px dashed #2980b9; } .limno-tooltip .tooltiptext { visibility: hidden; width: 320px; background-color: #fdfaf2; color: #2c3e50; text-align: left; border: 1px solid #d3c0a3; border-radius: 5px; padding: 15px; position: absolute; z-index: 50; bottom: 125%; left: 50%; margin-left: -160px; opacity: 0; transition: opacity 0.4s; font-size: 0.9em; font-family: 'Georgia', serif; box-shadow: 4px 4px 12px rgba(0,0,0,0.3); line-height: 1.4; } .limno-tooltip:hover .tooltiptext { visibility: visible; opacity: 1; } .tit-limno { font-weight: bold; font-size: 1.1em; color: #8e44ad; border-bottom: 1px solid #d3c0a3; padding-bottom: 5px; margin-bottom: 8px;}</style>""", unsafe_allow_html=True)
-        st.markdown("<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid #3498db; margin-bottom: 15px;'>Modelo dinámico. Integra el <b>Uniformismo</b> (rutina) y el <b>Catastrofismo</b> (avenidas torrenciales) para calcular el colapso del <span class='limno-tooltip'>Volumen Muerto<span class='tooltiptext'><div class='tit-limno'>Fecha de Caducidad</div>Espacio en el fondo diseñado para sedimentos.</span></span>.</div>", unsafe_allow_html=True)
-
         col_lim1, col_lim2 = st.columns([1, 1.5])
         with col_lim1:
-            if st.toggle("📍 Ver Contexto: Cuenca Espíritu Santo"):
-                st.write("Área total de captación: **173 km²**. Afluente vital para La Fe.")
-            
             tipo_tormenta = st.select_slider("Severidad de la Tormenta de HOY:", options=["Ordinaria (Tr < 1 año)", "Fuerte (Tr 5 años)", "Severa (Tr 20 años)", "Extrema (Tr 50 años)", "Catastrófica (Tr 100 años)"])
             f_tor = {"Ord": 1.0, "Fue": 2.5, "Sev": 4.5, "Ext": 6.5, "Cat": 9.0}[tipo_tormenta[:3]]
             area_km2 = st.number_input("Área afectada por la tormenta (km²):", 1.0, 173.0, 5.0)
@@ -1459,15 +1396,12 @@ with tab_micro:
             vol_muerto_hm3 = c_v2.number_input("Vol. Muerto (Mm³):", value=3.0)
             caudal_ingreso = st.number_input("Ingreso Total (m³/s):", value=6.5)
 
-            st.markdown("**Destino Físico de Sedimentos (Realismo de Ingeniería):**")
+            st.markdown("**Destino Físico de Sedimentos:**")
             c_part1, c_part2, c_part3 = st.columns(3)
-            p_colas = c_part1.slider("% Colas (Delta)", 0, 100, 40, help="Material grueso que se queda en la entrada del río.")
-            p_fondo = c_part2.slider("% Fondo (Muerto)", 0, 100, 45, help="Material fino que decanta en la presa.")
-            p_susp = c_part3.slider("% Suspendido", 0, 100, 15, help="Material abrasivo que viaja a las turbinas/túneles.")
+            p_colas = c_part1.slider("% Colas (Delta)", 0, 100, 40)
+            p_fondo = c_part2.slider("% Fondo (Muerto)", 0, 100, 45)
+            p_susp = c_part3.slider("% Suspendido", 0, 100, 15)
             
-            if (p_colas + p_fondo + p_susp) != 100:
-                st.warning(f"⚠️ La suma debe ser 100%. Actual: {p_colas+p_fondo+p_susp}%")
-
         p_fos = (f_bos * 0.0001) + (f_agr * 0.0015) + (f_deg * 0.0005) + (f_urb * 0.0025)
         f_ero = (f_bos * 0.05) + (f_agr * 1.0) + (f_deg * 2.5) + (f_urb * 3.5)
         
@@ -1480,7 +1414,6 @@ with tab_micro:
         
         lodo_anual_base = (sed_al_rio * 5.0 * 1e6 * f_ero * 1.0) / 120.0
         
-        anos_robados = lodo_fondo_m3 / lodo_anual_base if lodo_anual_base > 0 else 0
         vol_muerto_restante = (vol_muerto_hm3 * 1e6) - lodo_fondo_m3
         vida_util_restante = vol_muerto_restante / lodo_anual_base if lodo_anual_base > 0 else 99
         
@@ -1499,7 +1432,6 @@ with tab_micro:
             st.markdown("##### ⏳ Proyección Integral (Impacto en la Infraestructura)")
             c_p1, c_p2 = st.columns(2)
             c_p1.metric("Tasa Colmatación Base", f"{lodo_anual_base:,.0f} m³/año", "Desgaste rutinario")
-            
             estado_vida = "inverse" if vida_util_restante < 15 else "normal"
             c_p2.metric("Vida Útil Restante", f"{max(0.0, vida_util_restante):.1f} Años", "Post-sedimentación", delta_color=estado_vida)
 
@@ -1510,27 +1442,11 @@ with tab_micro:
             c_h2.metric("Tiempo de Residencia", f"{dias_residencia:.0f} Días", "Edad del agua")
 
             st.info(f"**Impacto Químico:** {fosforo_hoy:,.1f} Kg de Fósforo inyectados hoy.")
-            if fosforo_hoy > 500: st.error("🚨 **ALERTA ROJA:** Inminente Eutrofización y Anoxia.")
-            elif fosforo_hoy > 100: st.warning("⚠️ **Riesgo Medio:** Alteración de transparencia y altos costos PTAP.")
-            else: st.success("🌿 **Protección:** El paisaje amortiguó eficazmente la carga.")
-            
-        if st.toggle("📚 Revelar El Aleph de los Lagos: Colmatación y Fósforo"):
-            st.markdown("""
-            ### ⏳ Colmatación: El Reloj de Arena de la Ingeniería
-            Los embalses son trampas de sedimentos. No todo el lodo llega al fondo; los granos gruesos se depositan en las **Colas del Embalse**, reduciendo la capacidad útil. Los sedimentos más finos quedan **suspendidos**, viajando por los túneles y desgastando álabes de turbinas por abrasión mecánica (cuarzos y circones).
-            
-            ### 🧪 La Venganza de la Tierra: Eutrofización
-            La carga de fósforo detona el crecimiento de macrófitas. El embalse se vuelve anóxico en el fondo, aniquilando la fauna acuática y encareciendo la potabilización.
-            """)
             
     with st.expander("🚰 7. Economía de la Calidad: El Costo en la Planta", expanded=False):
-        st.info("Traduce el daño ecológico a dólares. Calcula el sobrecosto en químicos que la empresa de acueducto debe asumir para potabilizar el agua generada por la tormenta.")
-        
         col_pot1, col_pot2 = st.columns([1, 1.5])
         with col_pot1:
-            st.markdown("**Parámetros de Potabilización (Planta La Ayurá):**")
             q_ptap = st.number_input("Caudal Tratado (m³/s):", value=5.0, step=0.5)
-            st.markdown("**Costo de Insumos (USD/Ton):**")
             c_alum = st.number_input("Sulfato Alum.:", value=450.0, step=10.0)
             c_cloro = st.number_input("Cloro Líquido:", value=1200.0, step=50.0)
 
@@ -1547,7 +1463,6 @@ with tab_micro:
         extra_alum = (vol_dia_l * 15.0 * (min(f_turb, 8.0) - 1)) / 1e9
         extra_cloro = (vol_dia_l * 2.0 * (min(f_eut, 4.0) - 1)) / 1e9
         s_total = (extra_alum * c_alum) + (extra_cloro * c_cloro)
-        
         ha_equiv = s_total / 2500.0
 
         with col_pot2:
@@ -1557,37 +1472,20 @@ with tab_micro:
             c_f2.metric("Sobrecosto HOY", f"${s_total:,.0f} USD", delta_color="inverse")
             c_f3.metric("Insumo Extra", f"+{extra_alum:,.1f} Ton Alum.", delta_color="inverse")
             
-            if s_total > 5000:
-                st.error(f"⚠️ **Penalidad Financiera:** El sobrecosto de hoy equivale a lo que costaría reforestar **{ha_equiv:,.1f} hectáreas** en la cuenca alta.")
-            else:
-                st.success("💧 **Agua de Alta Calidad:** El bosque amortiguó la tormenta.")
-        
-        if st.toggle("📚 Revelar El Aleph Financiero"):
-            st.markdown("""
-            **La miopía gris frente a la infraestructura verde:** Históricamente, se invierte en ampliar plantas de tratamiento para lidiar con el agua sucia, ignorando el ecosistema que la produce.
-            * **El Lodo:** Alta turbiedad exige dosis masivas de coagulantes y genera lodos químicos costosos de disponer.
-            * **El Fósforo:** Detona algas que tapan filtros y reaccionan con el cloro formando subproductos cancerígenos (THMs).
-            
-            **Conclusión:** Conservar el bosque no es filantropía; es la estrategia de reducción de costos operativos (OPEX) más inteligente para un acueducto.
-            """)
+            if s_total > 5000: st.error(f"⚠️ **Penalidad Financiera:** El sobrecosto de hoy equivale a reforestar **{ha_equiv:,.1f} hectáreas** en la cuenca alta.")
+            else: st.success("💧 **Agua de Alta Calidad:** El bosque amortiguó la tormenta.")
 
     with st.expander("🕳️ 8. El Mundo Oculto: Aguas Subterráneas y el 'Embalse Invisible'", expanded=False):
-        st.info("El caudal de los ríos en verano depende de la recarga anual acumulada. Modela cómo el bosque construye el Flujo Base que nos salva durante El Niño.")
-
         col_sub1, col_sub2 = st.columns([1, 1.5])
         with col_sub1:
-            st.markdown("**1. Escala Territorial (Régimen Anual):**")
             c_a1, c_a2 = st.columns(2)
             area_acuifero_km2 = c_a1.slider("Área Recarga (km²):", 1.0, 173.0, 173.0)
             precip_anual_mm = c_a2.slider("Lluvia (mm/año):", 1000, 4000, 2200)
-            
-            st.markdown("**2. Hidrogeología (Porosidad):**")
             geologia = st.selectbox("Formación Geológica:", ["Rocas Ígneas (Batolito)", "Depósitos Aluviales (Arenas)", "Arcillas Compactas"])
             
             inf_max = 0.40 if "Aluviales" in geologia else 0.15 if "Arcillas" in geologia else 0.25
             sy = 0.20 if "Aluviales" in geologia else 0.05 if "Arcillas" in geologia else 0.12
 
-            st.markdown("**3. Demanda en Estiaje:**")
             c_e1, c_e2 = st.columns(2)
             dias_sequia = c_e1.number_input("Días Sequía (El Niño):", value=90)
             costo_emb_usd = c_e2.number_input("Costo m³ Embalse:", value=2.5)
@@ -1616,46 +1514,24 @@ with tab_micro:
             c_s5.metric("Población Soportada", f"{personas_salvadas:,.0f} Hab", "Con 150 L/día")
             c_s6.metric("Valor Infraestructura", f"${valor_acuifero_usd/1e6:,.1f} M USD", "Ahorro en represas")
             
-            if caudal_base_ls < 50.0:
-                st.error("🚨 **Riesgo de Colapso:** Caudal insuficiente para la vida ribereña.")
-            elif coef_inf_real >= (inf_max * 0.8):
-                st.success("🌿 **El 'Embalse Invisible' Actúa:** El bosque ahorró millones en concreto.")
-
-        if st.toggle("📚 Revelar El Aleph Subterráneo"):
-            st.markdown("""
-            **La Ingeniería de las Raíces:** El bosque actúa como un taladro natural que crea macroporos para recargar los acuíferos. El asfalto anula esta infiltración.
-            
-            ### 🔬 Porosidad vs Rendimiento Específico ($S_y$)
-            * **Retención:** Agua que queda atrapada en el suelo por capilaridad.
-            * **Rendimiento:** Agua liberable que alimenta manantiales.
-            
-            **Economía de la Porosidad:** La cuenca nos ofrece almacenamiento geológico a costo cero. Solo debemos mantener el bosque para que el agua pueda entrar.
-            """)
-
     st.markdown("---")
     st.markdown("#### 🌐 9. Conexión al Gemelo Digital (Cross-Pollination)")
     st.info("Exporta la retención del dosel, la partición física, química y el riesgo de infraestructura hacia los simuladores de Toma de Decisiones y Sistemas Hídricos.")
 
     if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08 y 09)", type="primary", use_container_width=True):
-        # Datos Lodos / Química
         st.session_state['eco_lodo_total_m3'] = float(lodo_total_m3)
         st.session_state['eco_lodo_colas_m3'] = float(lodo_colas_m3)
         st.session_state['eco_lodo_fondo_m3'] = float(lodo_fondo_m3)
         st.session_state['eco_lodo_abrasivo_m3'] = float(lodo_turbinas_m3)
         st.session_state['eco_fosforo_kg'] = float(fosforo_hoy)
         st.session_state['eco_sobrecosto_usd'] = float(s_total)
-        
-        # 🌿 NUEVO: Datos de Retención Hídrica del Dosel para el Sankey de la Pág 09
-        # Estas variables ya existen en tu código arriba en la pestaña 'tab_ret_dosel'
         st.session_state['bio_eficiencia_retencion_pct'] = float(eficiencia_retencion_pct)
         st.session_state['bio_s_max_mm'] = float(s_max_mm)
         
         st.success(f"""
             🧠 **Sincronización de Ingeniería Exitosa:**
             Los datos han cruzado el Aleph con éxito para **{nombre_seleccion}**:
-            * **Eficiencia Retención Dosel:** {eficiencia_retencion_pct:.1f}% (Enviado al Sankey Pág 09)
+            * **Eficiencia Retención Dosel:** {eficiencia_retencion_pct:.1f}% 
             * **Lodo en Fondo (Vol. Muerto):** {lodo_fondo_m3:,.0f} m³
             * **Lodo Suspendido (Abrasión):** {lodo_turbinas_m3:,.0f} m³
-            
-            Ve a las **Páginas 08 (Sistemas Hídricos) y 09 (Toma de Decisiones)** para visualizar la integración total.
         """)
