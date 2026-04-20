@@ -1022,13 +1022,25 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
                 df_mapa_base['Padre'] = "Antioquia"
             
             lista_mpios = sorted(df_mapa_base['Padre'].dropna().astype(str).unique())
-            mpio_sel = st.sidebar.selectbox("Municipio:", ["TODOS (Ver Mapa Completo)"] + lista_mpios)
+            mpio_sel = st.sidebar.selectbox("📍 Municipio Padre:", ["TODOS (Ver Mapa Completo)"] + lista_mpios)
             
             if mpio_sel != "TODOS (Ver Mapa Completo)":
+                # Filtramos la base temporalmente para dejar solo las veredas de este municipio
                 df_mapa_base = df_mapa_base[df_mapa_base['Padre'] == mpio_sel]
-                titulo_terr = f"Veredas de {mpio_sel}"
+                
+                # --- 🔥 EL SUB-FILTRO VEREDAL RECUPERADO ---
+                lista_veredas = sorted(df_mapa_base['Territorio'].dropna().astype(str).unique())
+                vereda_sel = st.sidebar.selectbox("🌾 Vereda:", ["TODAS (Ver Municipio)"] + lista_veredas)
+                
+                if vereda_sel != "TODAS (Ver Municipio)":
+                    # Si elige una vereda específica, filtramos al nivel más profundo
+                    df_mapa_base = df_mapa_base[df_mapa_base['Territorio'] == vereda_sel]
+                    titulo_terr = f"{vereda_sel} ({mpio_sel})"
+                else:
+                    titulo_terr = f"Veredas de {mpio_sel}"
             else:
                 titulo_terr = "Todas las Veredas (Antioquia)"
+                
         else:
             df_mapa_base = pd.DataFrame()
             
