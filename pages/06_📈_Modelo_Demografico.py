@@ -752,61 +752,51 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 return np.full_like(anios, fila.get('Pob_Base', 0))
 
             import difflib
-            for t_crudo in territorios_a_buscar:
-                t_norm = normalizar_texto(t_crudo)
+            
+            # 🔥 FUNCIÓN MAESTRA: Aplica el Bypass Rural tanto a gráficas como al mapa
+            def calcular_poblacion_bypass(t_norm, anios_array):
                 filas_terr = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == t_norm]
-                
-                # Búsqueda difusa de rescate
                 if filas_terr.empty:
                     matches = difflib.get_close_matches(t_norm, df_cuencas_solo['MATCH_ID'].tolist(), n=1, cutoff=0.8)
                     if matches: filas_terr = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == matches[0]]
                 
+                pob_calculada = np.zeros_like(anios_array, dtype=float)
                 if not filas_terr.empty:
                     if area_buscada == 'total':
-                        # 🔥 EL BYPASS RURAL: Forzamos la suma de las partes para ignorar el 'Total' corrupto de SQL
+                        # Sumamos Urbano + Rural para evitar datos faltantes en SQL
                         fila_u = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
                         fila_r = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
-                        
-                        pob_temp = np.zeros_like(años_hist, dtype=float)
                         sumo_partes = False
                         
                         if not fila_u.empty: 
-                            pob_temp += evaluar_curva(fila_u.iloc[0], años_hist)
+                            pob_calculada += evaluar_curva(fila_u.iloc[0], anios_array)
                             sumo_partes = True
                         if not fila_r.empty: 
-                            pob_temp += evaluar_curva(fila_r.iloc[0], años_hist)
+                            pob_calculada += evaluar_curva(fila_r.iloc[0], anios_array)
                             sumo_partes = True
                             
-                        # Si por alguna rareza extrema no hay ni urbano ni rural, usamos el total crudo
+                        # Fallback si no existen las partes, usa el Total crudo
                         if not sumo_partes:
                             fila_t = filas_terr[filas_terr['Area'].str.lower() == 'total']
-                            if not fila_t.empty: pob_temp += evaluar_curva(fila_t.iloc[0], años_hist)
-                            
-                        pob_hist_acumulada += pob_temp
-                        
+                            if not fila_t.empty: pob_calculada += evaluar_curva(fila_t.iloc[0], anios_array)
                     else:
-                        # Si el usuario pidió específicamente solo Urbano o solo Rural
+                        # Filtrado directo si elige específicamente Urbano o Rural
                         if 'urb' in area_buscada: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
                         else: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
-                        
-                        if not fila_esp.empty: pob_hist_acumulada += evaluar_curva(fila_esp.iloc[0], años_hist)
+                        if not fila_esp.empty: pob_calculada += evaluar_curva(fila_esp.iloc[0], anios_array)
+                return pob_calculada
+
+            # Aplicamos a las curvas históricas
+            for t_crudo in territorios_a_buscar:
+                pob_hist_acumulada += calcular_poblacion_bypass(normalizar_texto(t_crudo), años_hist)
 
             pob_hist = pob_hist_acumulada
 
             # --- 4. 🗺️ DATOS PARA EL MAPA ---
             mapa_data = []
             for t_mapa in territorios_para_mapa:
-                t_norm = normalizar_texto(t_mapa)
-                fila = df_matriz_pura[df_matriz_pura['MATCH_ID'] == t_norm]
-                val_tot = 0
-                if not fila.empty:
-                    val_tot = evaluar_curva(fila.iloc[0], np.array([2024]))[0] # Pob actual para el color
-                else:
-                    matches = difflib.get_close_matches(t_norm, df_matriz_pura['MATCH_ID'].tolist(), n=1, cutoff=0.8)
-                    if matches:
-                        fila = df_matriz_pura[df_matriz_pura['MATCH_ID'] == matches[0]]
-                        val_tot = evaluar_curva(fila.iloc[0], np.array([2024]))[0]
-                        
+                val_tot_arr = calcular_poblacion_bypass(normalizar_texto(t_mapa), np.array([2024]))
+                val_tot = val_tot_arr[0] if len(val_tot_arr) > 0 else 0
                 mapa_data.append({'Territorio': t_mapa, 'Total': val_tot, 'area_geografica': area_global.lower(), 'Padre': titulo_terr})
             
             df_mapa_base = pd.DataFrame(mapa_data)
