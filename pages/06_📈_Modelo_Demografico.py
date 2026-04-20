@@ -1220,7 +1220,38 @@ with tab_modelos:
     velocidad_animacion = st.sidebar.slider("Velocidad (Segundos por cuadro)", 0.1, 2.0, 0.5)
     iniciar_animacion = st.sidebar.button("▶️ Reproducir Evolución", type="primary", use_container_width=True)
 
-# ==========================================================================
+    # ==========================================================================
+    # 🕵️‍♂️ ZONA DE DIAGNÓSTICO QUIRÚRGICO (BORRAR CUANDO FUNCIONE)
+    # ==========================================================================
+    st.markdown("---")
+    st.error("### 🕵️‍♂️ ESCÁNER DE DATOS ACTIVADO")
+    
+    # 1. ¿Qué variables están llegando vivas hasta aquí abajo?
+    n_analisis = globals().get('nivel_analisis', locals().get('nivel_analisis', 'NO LLEGÓ'))
+    m_sel = globals().get('macro_sel', locals().get('macro_sel', 'NO LLEGÓ'))
+    t_terr = globals().get('titulo_terr', locals().get('titulo_terr', 'NO LLEGÓ'))
+    
+    st.write(f"**Nivel de Análisis actual:** `{n_analisis}`")
+    st.write(f"**Macroregión seleccionada:** `{m_sel}`")
+    st.write(f"**Título del territorio:** `{t_terr}`")
+
+    # 2. ¿Qué hay realmente en la base de datos?
+    try:
+        _, df_mun_puro, _, _, _, _ = cargar_datos_limpios()
+        
+        st.write("**Muestra de las columnas de la Base Municipal:**", df_mun_puro.columns.tolist()[:10])
+        
+        if 'Macroregion' in df_mun_puro.columns:
+            st.write("**Valores ÚNICOS exactos en la columna 'Macroregion' de la BD:**")
+            st.write(df_mun_puro['Macroregion'].dropna().unique())
+        else:
+            st.warning("La columna 'Macroregion' NO EXISTE en df_mun.")
+            
+    except Exception as e:
+        st.error(f"Fallo al leer la base de datos en el escáner: {e}")
+    st.markdown("---")
+    
+    # ==========================================================================
     # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (AGREGADOR DINÁMICO)
     # ==========================================================================
     # 1. Definimos el territorio de forma segura
