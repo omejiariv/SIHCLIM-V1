@@ -788,6 +788,7 @@ with tab_afolu:
             col_u1, col_u2, col_u3 = st.columns(3)
             with col_u1:
                 st.markdown(f"##### 👥 Demografía y Agua ({anio_analisis})")
+                st.caption(f"Fuente: {origen_humano}")
                 humanos_urbanos = st.number_input("Población Urbana (Cabecera):", value=int(pob_urbana_calc), step=100)
                 vertimientos_m3 = (humanos_urbanos * 150) / 1000
                 st.metric("Agua Residual Generada", f"{vertimientos_m3:,.1f} m³/día")
