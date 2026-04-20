@@ -1220,7 +1220,7 @@ with tab_modelos:
     velocidad_animacion = st.sidebar.slider("Velocidad (Segundos por cuadro)", 0.1, 2.0, 0.5)
     iniciar_animacion = st.sidebar.button("▶️ Reproducir Evolución", type="primary", use_container_width=True)
 
-# ==========================================================================
+    # ==========================================================================
     # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (SINCRONIZACIÓN MAESTRA)
     # ==========================================================================
     # 1. Definimos el territorio de forma segura
@@ -1230,8 +1230,8 @@ with tab_modelos:
     st.subheader(f"📊 Estructura Poblacional Sintética - {titulo_seguro}")
 
     # 2. Lógica del "Amo Único" (Sidebar determina la Pirámide 1)
-    # Usamos capitalize() para que 'urbano' pase a 'Urbano' y coincida con las etiquetas
-    area_principal = area_global.capitalize()
+    # Usamos title() para asegurar que la primera letra sea mayúscula (ej: 'Urbano')
+    area_principal = str(area_global).strip().title()
     
     # 3. Selector de Comparación Inteligente
     # Evitamos que el usuario compare un área consigo misma (ej: Urbano vs Urbano)
@@ -1258,7 +1258,8 @@ with tab_modelos:
         ph_graf_1 = st.empty()
         m_c1, m_c2 = st.columns(2)
         ph_m_pob_1, ph_m_hom_1 = m_c1.empty(), m_c1.empty()
-        ph_m_muj_1, ph_m_ind_1 = m_c2.empty(), c_m2.empty() if 'c_m2' in locals() else m_c2.empty()
+        # Escudo de seguridad para c_m2 / m_c2
+        ph_m_muj_1, ph_m_ind_1 = m_c2.empty(), m_c2.empty()
             
     with col_p2:
         # Contenedores para Pirámide 2 (Comparación Local)
@@ -1279,11 +1280,15 @@ with tab_modelos:
             return None, 0, 0, 0, 0, f"No hay proyección para el año {año_obj}.", pd.DataFrame()
 
         col_anio_pyr2 = 'año' if 'año' in df_nac.columns else 'Año'
-        df_fnac_zona = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'] == zona_str.lower())].copy()
-        df_fnac_total = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'] == 'total')].copy()
+        
+        # 🔥 FIX CRÍTICO: Normalizamos ambos lados a minúsculas (.str.lower()) para que hagan MATCH perfecto,
+        # sin importar si vienen como 'Urbano', 'URBANO' o 'urbano'.
+        zona_limpia = str(zona_str).strip().lower()
+        df_fnac_zona = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'].str.lower() == zona_limpia)].copy()
+        df_fnac_total = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'].str.lower() == 'total')].copy()
         
         if df_fnac_zona.empty or df_fnac_total.empty:
-            return None, 0, 0, 0, 0, "No hay datos base nacionales para este año/zona.", pd.DataFrame()
+            return None, 0, 0, 0, 0, f"No hay datos base de la pirámide para '{zona_str}' en este año.", pd.DataFrame()
 
         import re
         cols_h = [c for c in df_fnac_zona.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
@@ -1317,6 +1322,7 @@ with tab_modelos:
         df_pir['Rango'] = pd.cut(df_pir['Edad'], bins=cortes, labels=etiquetas, right=False)
         df_pir_agrupado = df_pir.groupby('Rango', observed=True)[['Hombres', 'Mujeres']].sum().reset_index()
 
+        import plotly.graph_objects as go
         fig_pir = go.Figure()
         fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Hombres'], name='Hombres', orientation='h', marker_color='#3498db'))
         fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Mujeres'], name='Mujeres', orientation='h', marker_color='#e74c3c'))
@@ -1341,26 +1347,27 @@ with tab_modelos:
     def actualizar_ui_piramides(año):
         global df_piramide_final
         
-        fig1, t1, h1, m1, ind1, err1, df_export = generar_figura_piramide(año, "Total")
+        # 🔥 FIX: La pirámide 1 ahora dibuja la 'area_principal' que elegiste en el sidebar, no siempre el 'Total'
+        fig1, t1, h1, m1, ind1, err1, df_export = generar_figura_piramide(año, area_principal)
+        
         if err1:
             ph_graf_1.warning(err1)
         else:
             df_piramide_final = df_export.copy()
-            ph_tit_1.markdown(f"#### 🔵 Estructura Total ({año})")
-            # SOLUCIÓN ID: Le damos un "key" único basado en el año
+            ph_tit_1.markdown(f"#### 🔵 Estructura {area_principal} ({año})")
             ph_graf_1.plotly_chart(fig1, use_container_width=True, key=f"pir_1_{año}")
-            ph_m_pob_1.metric("Pob. Total", f"{int(t1):,}".replace(",", "."))
+            ph_m_pob_1.metric(f"Pob. {area_principal}", f"{int(t1):,}".replace(",", "."))
             if t1 > 0:
                 ph_m_hom_1.metric("Hombres", f"{int(h1):,}".replace(",", "."), f"{(h1/t1)*100:.1f}%")
                 ph_m_muj_1.metric("Mujeres", f"{int(m1):,}".replace(",", "."), f"{(m1/t1)*100:.1f}%")
             ph_m_ind_1.metric("Índ. Masc.", f"{ind1:.1f}")
 
         fig2, t2, h2, m2, ind2, err2, _ = generar_figura_piramide(año, zona_comparacion)
+        
         if err2:
             ph_graf_2.warning(err2)
         else:
             ph_tit_2.markdown(f"#### 🟢 Perfil {zona_comparacion} ({año})")
-            # SOLUCIÓN ID: Le damos un "key" único a la segunda gráfica también
             ph_graf_2.plotly_chart(fig2, use_container_width=True, key=f"pir_2_{año}_{zona_comparacion}")
             ph_m_pob_2.metric(f"Pob. {zona_comparacion}", f"{int(t2):,}".replace(",", "."))
             if t2 > 0:
@@ -1369,13 +1376,14 @@ with tab_modelos:
             ph_m_ind_2.metric("Índ. Masc.", f"{ind2:.1f}")
             
     # === EJECUCIÓN ===
-    if iniciar_animacion:
+    import time
+    if 'iniciar_animacion' in locals() and iniciar_animacion:
         for a in años_disp:
             if a >= 1985:
                 actualizar_ui_piramides(a)
-                time.sleep(velocidad_animacion)
+                time.sleep(velocidad_animacion if 'velocidad_animacion' in locals() else 0.5)
     else:
-        actualizar_ui_piramides(año_sel)
+        actualizar_ui_piramides(año_sel if 'año_sel' in locals() else 2025)
         
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
