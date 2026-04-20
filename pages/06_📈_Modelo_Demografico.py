@@ -2671,7 +2671,6 @@ with tab_matriz:
 # PESTAÑA 5: RANKINGS Y DINÁMICA HISTÓRICA (VERSIÓN ROBUSTA FINAL)
 # ==========================================
 with tab_rankings:
-    # 1. Identificamos el área actual (Total/Urbano/Rural)
     zona_actual = "Total"
     if not df_mapa_base.empty and 'area_geografica' in df_mapa_base.columns:
         zona_actual = df_mapa_base['area_geografica'].iloc[0].title()
@@ -2683,95 +2682,97 @@ with tab_rankings:
     titulo_ranking = ""
     escala_str = escala_sel.lower()
 
-    # --- 🧠 MOTOR DE RANKING UNIVERSAL POR FUENTE DE DATOS ---
-    
-    # CASO A: ESCALAS NACIONALES (DANE PURO)
+    # --- 🧠 MOTOR DE RANKING INFALIBLE (Bypass de Hermanos Territoriales) ---
     if "global" in escala_str or "nacional" in escala_str:
         df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q)].groupby('depto_nom')['Total'].sum().reset_index()
         df_rank.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
         df_rank['Padre'] = 'Colombia'
         titulo_ranking = "Departamentos de Colombia"
-
-    # CASO B: TODAS LAS DEMÁS ESCALAS (USA EL MAPA COMO FUENTE DE VERDAD)
+        
+    elif "municipal" in escala_str:
+        # 🔥 EL RESCATE MUNICIPAL: Buscamos a los "hermanos" en la base DANE
+        padre_dep = locals().get('depto_sel', locals().get('agrupador_sel', "ANTIOQUIA"))
+        if "regiones" in escala_str:
+            df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['Macroregion'] == padre_dep)].copy()
+            titulo_ranking = f"Municipios de la Región {padre_dep}"
+        else:
+            df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == zona_q) & (df_mun['depto_nom'] == padre_dep)].copy()
+            titulo_ranking = f"Municipios de {padre_dep}"
+            
+        df_rank = df_rank.groupby('municipio')['Total'].sum().reset_index().rename(columns={'municipio': 'Territorio'})
+        df_rank['Padre'] = padre_dep
+        
+    elif "urbana" in escala_str:
+        # 🔥 EL RESCATE URBANO: Forzamos a rankear todas las cabeceras de Antioquia
+        df_rank = df_mun[(df_mun['año'] == año_sel) & (df_mun['area_geografica'] == 'urbano') & (df_mun['depto_nom'] == 'Antioquia')].copy()
+        df_rank = df_rank.groupby('municipio')['Total'].sum().reset_index().rename(columns={'municipio': 'Territorio'})
+        df_rank['Padre'] = 'Antioquia'
+        titulo_ranking = "Cabeceras Municipales (Antioquia)"
+        
     else:
+        # Para Cuencas, Veredas, Medellín y Regiones, el mapa sí trae datos múltiples
         if not df_mapa_base.empty:
             df_rk_base = df_mapa_base.copy()
-            
-            # Filtro de seguridad por año si la columna existe
             col_t = 'año' if 'año' in df_rk_base.columns else ('Año' if 'Año' in df_rk_base.columns else None)
-            if col_t:
-                df_rk_base = df_rk_base[df_rk_base[col_t] == año_sel]
+            if col_t: df_rk_base = df_rk_base[df_rk_base[col_t] == año_sel]
             
             if not df_rk_base.empty:
-                # Agrupación dinámica por Territorio y su Padre
-                columnas_agrupar = ['Territorio', 'Padre'] if 'Padre' in df_rk_base.columns else ['Territorio']
-                df_rank = df_rk_base.groupby(columnas_agrupar)['Total'].sum().reset_index()
+                cols_group = ['Territorio', 'Padre'] if 'Padre' in df_rk_base.columns else ['Territorio']
+                df_rank = df_rk_base.groupby(cols_group)['Total'].sum().reset_index()
                 
-                # Definición de títulos dinámicos según la escala
-                if "cuencas" in escala_str:
-                    titulo_ranking = "Cuencas / Microcuencas"
-                elif "municipal" in escala_str:
-                    padre_nombre = df_rank['Padre'].iloc[0] if 'Padre' in df_rank.columns else "Región"
-                    titulo_ranking = f"Municipios de {padre_nombre}"
-                elif "urbana" in escala_str:
-                    titulo_ranking = "Cabeceras Municipales (Antioquia)"
-                elif "intra-urbana" in escala_str:
-                    titulo_ranking = "Comunas / Barrios de Medellín"
-                elif "veredal" in escala_str:
-                    titulo_ranking = "Veredas"
-                else:
-                    titulo_ranking = "Divisiones Territoriales"
+                if 'Padre' not in df_rank.columns: df_rank['Padre'] = 'Zona Analizada'
+                
+                if "cuencas" in escala_str: titulo_ranking = "Cuencas / Microcuencas"
+                elif "intra-urbana" in escala_str: titulo_ranking = "Comunas / Barrios de Medellín"
+                elif "veredal" in escala_str: titulo_ranking = "Veredas"
+                else: titulo_ranking = f"División Territorial de {df_rank['Padre'].iloc[0]}"
 
-    # 2. LIMPIEZA Y RENDERIZADO DE GRÁFICOS
+    # Limpieza numérica vital
     if not df_rank.empty:
         df_rank['Total'] = pd.to_numeric(df_rank['Total'], errors='coerce').fillna(0)
         df_rank = df_rank[df_rank['Total'] > 0]
 
+    # DIBUJO DE LOS GRÁFICOS TOP/BOTTOM
     if not df_rank.empty and len(df_rank) > 1:
         st.markdown(f"### 🏆 Extremos Poblacionales ({año_sel}) - {titulo_ranking}")
         col_rank_izq, col_rank_der = st.columns(2)
         
         with col_rank_izq:
             df_plot_top = df_rank.nlargest(15, 'Total')
-            fig_top = px.bar(df_plot_top, x='Total', y='Territorio', orientation='h', 
-                             color='Total', color_continuous_scale='Viridis',
-                             hover_data={'Padre': True} if 'Padre' in df_plot_top.columns else None,
-                             title="📈 Top 15: Mayor Población")
+            fig_top = px.bar(df_plot_top, x='Total', y='Territorio', orientation='h', color='Total', color_continuous_scale='Viridis', hover_data={'Padre': True} if 'Padre' in df_plot_top.columns else None, title="📈 Top 15: Mayor Población")
             fig_top.update_layout(yaxis={'categoryorder':'total ascending'}, height=450)
             st.plotly_chart(fig_top, use_container_width=True)
 
         with col_rank_der:
             df_plot_bot = df_rank.nsmallest(15, 'Total')
-            fig_bot = px.bar(df_plot_bot, x='Total', y='Territorio', orientation='h', 
-                             color='Total', color_continuous_scale='Plasma',
-                             hover_data={'Padre': True} if 'Padre' in df_plot_bot.columns else None,
-                             title="📉 Bottom 15: Menor Población")
+            fig_bot = px.bar(df_plot_bot, x='Total', y='Territorio', orientation='h', color='Total', color_continuous_scale='Plasma', hover_data={'Padre': True} if 'Padre' in df_plot_bot.columns else None, title="📉 Bottom 15: Menor Población")
             fig_bot.update_layout(yaxis={'categoryorder':'total descending'}, height=450)
             st.plotly_chart(fig_bot, use_container_width=True)
-
+            
+        # ==========================================================
         # --- 📈 SECCIÓN DE CURVAS HISTÓRICAS (TOP 10) ---
+        # ==========================================================
         st.markdown("---")
-        st.markdown(f"### 📈 Dinámica Poblacional -Trayectorias, Evolución y Proyección - Top 10 ({zona_actual})")
+        st.markdown(f"### 📈 Dinámica Poblacional - Trayectorias, Evolución y Proyección - Top 10 ({zona_actual})")
         
         # Obtenemos los nombres de los 10 más grandes para la curva
         top_10_nombres = df_rank.nlargest(10, 'Total')['Territorio'].tolist()
-        
         df_line = pd.DataFrame()
-        # asegurando que 'padre_seguro' se capture correctamente:
+        
+        # Tu bloque de código revisado y asegurado:
         padre_seguro = locals().get('agrupador_sel', locals().get('sel_territorio', locals().get('reg_sel', "Selección")))
 
         es_escala_medellin = "Intra-Urbana" in escala_sel
         es_escala_espacial = any(e in escala_sel for e in ["Veredal", "Cuencas"])
 
         if es_escala_medellin:
-            # 🔥 MOTOR C: Medellín (Lógica Proporcional Pura - Elimina el error de la Matriz)
+            # 🔥 MOTOR C: Medellín (Lógica Proporcional Pura)
             if 'df_global' in locals() and not df_global.empty and 'Pob_Medellin' in df_global.columns:
                 col_anio_glob = 'Año' if 'Año' in df_global.columns else 'año'
                 df_med_hist = df_global.dropna(subset=[col_anio_glob, 'Pob_Medellin']).sort_values(by=col_anio_glob)
                 años_plot = df_med_hist[col_anio_glob].values.astype(float)
                 pob_med_macro = df_med_hist['Pob_Medellin'].values.astype(float)
                 
-                # Calculamos el total del mapa en el año base para sacar la proporción
                 pob_total_shape = df_mapa_base['Total'].sum() if 'df_mapa_base' in locals() else df_rank['Total'].sum()
                 
                 records = []
@@ -2784,36 +2785,40 @@ with tab_rankings:
                 df_line = pd.DataFrame(records)
 
         elif not es_escala_espacial:
-            # 🔥 MOTOR A: Escaleras Administrativas (DANE Puro)
+            # 🔥 MOTOR A: Escaleras Administrativas (DANE Puro - Revisado y Blindado)
             df_base_historica = df_mun[df_mun['area_geografica'] == zona_q].copy() if 'df_mun' in locals() else pd.DataFrame()
             
             if not df_base_historica.empty:
-                if "Global" in escala_sel or "Nacional" in escala_sel:
+                if "global" in escala_str or "nacional" in escala_str:
                     df_line = df_base_historica.groupby(['año', 'depto_nom'])['Total'].sum().reset_index()
                     df_line.rename(columns={'depto_nom': 'Territorio'}, inplace=True)
                     
-                elif "Departamental" in escala_sel or "Municipal (Departamentos)" in escala_sel:
-                    padre_seguro = locals().get('depto_sel', locals().get('agrupador_sel', "ANTIOQUIA"))
-                    if 'depto_nom' in df_base_historica.columns:
-                        df_line = df_base_historica[df_base_historica['depto_nom'] == padre_seguro].groupby(['año', 'municipio'])['Total'].sum().reset_index()
-                        df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+                elif "departamental" in escala_str or "municipal (departamentos)" in escala_str:
+                    padre_dep = locals().get('depto_sel', locals().get('agrupador_sel', "Antioquia"))
+                    df_line = df_base_historica[df_base_historica['depto_nom'] == padre_dep].groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                    df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
 
-                elif any(x in escala_sel for x in ["Regiones", "Regional", "Subregiones", "Autoridades", "CARs"]):
-                    padre_seguro = locals().get('agrupador_sel', "Oriente")
+                elif "regiones" in escala_str or "macroregiones" in escala_str or "autoridades" in escala_str or "subregiones" in escala_str:
                     col_agrup = 'Macroregion'
-                    if "Subregion" in escala_sel: col_agrup = 'Subregion'
-                    elif "CAR" in escala_sel or "Autoridad" in escala_sel: col_agrup = 'CAR'
+                    if "subregion" in escala_str: col_agrup = 'subregion'
+                    elif "autoridad" in escala_str or "car" in escala_str: col_agrup = 'car'
                     
                     if col_agrup in df_base_historica.columns:
                         df_line = df_base_historica[df_base_historica[col_agrup] == padre_seguro].groupby(['año', 'municipio'])['Total'].sum().reset_index()
                         df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
                         
+                elif "urbana" in escala_str:
+                    df_line = df_base_historica[df_base_historica['depto_nom'] == 'Antioquia'].groupby(['año', 'municipio'])['Total'].sum().reset_index()
+                    df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
+                
                 else:
                     df_line = df_base_historica.groupby(['año', 'municipio'])['Total'].sum().reset_index()
                     df_line.rename(columns={'municipio': 'Territorio'}, inplace=True)
 
             if not df_line.empty:
                 df_line = df_line[df_line['Territorio'].isin(top_10_nombres)]
+                
+                # Interpolación para limpiar baches del DANE (Años 2006-2019)
                 def conciliacion_censal(group):
                     group['año'] = pd.to_numeric(group['año'], errors='coerce')
                     group = group.sort_values('año')
@@ -2824,7 +2829,7 @@ with tab_rankings:
                 df_line = df_line.groupby('Territorio', group_keys=False).apply(conciliacion_censal)
 
         else:
-            # 🔥 MOTOR B: Cuencas y Veredas (Usa la Matriz Entrenada)
+            # 🔥 MOTOR B: Cuencas y Veredas (Matriz Top-Down)
             if 'df_matriz_demografica' in st.session_state:
                 df_mat = st.session_state['df_matriz_demografica']
                 area_matriz = 'Urbana' if zona_actual.lower() in ['urbano', 'urbana'] else zona_actual.capitalize()
@@ -2848,21 +2853,17 @@ with tab_rankings:
                         for a, y in zip(años_plot, y_vals):
                             records.append({'año': a, 'Territorio': terr, 'Total': y})
                     df_line = pd.DataFrame(records)
-                else:
-                    st.warning(f"⚠️ No hay curvas entrenadas para estas {escala_sel}. Ve a la Pestaña 4 para generar la matriz.")
-            else:
-                st.info(f"💡 Entrena la Matriz Maestra en la pestaña 4 para ver la proyección espacial.")
 
-        # RENDERIZADO FINAL DE LAS CURVAS
+        # RENDERIZADO FINAL DE LAS CURVAS (Motor Universal)
         if not df_line.empty:
             fig_line = px.line(df_line, x='año', y='Total', color='Territorio', markers=True,
                                title=f"Trayectorias Demográficas: Top 10 Territorios ({zona_actual})",
                                labels={'año': 'Año', 'Total': 'Habitantes'})
             fig_line.update_layout(hovermode="x unified", height=500, margin=dict(t=40, b=0, l=0, r=0))
-            st.plotly_chart(fig_line, use_container_width=True, key=f"line_hist_univ_{zona_actual}")
-
+            st.plotly_chart(fig_line, use_container_width=True)
+            
     else:
-        st.info("💡 Selecciona una escala territorial con múltiples divisiones para ver el ranking y las curvas comparativas.")
+        st.info("💡 Por favor, selecciona un nivel de análisis superior (ej. Departamento completo) para ver comparativas.")
         
 # ==========================================
 # PESTAÑA 6: DESCARGAS Y EXPORTACIÓN
