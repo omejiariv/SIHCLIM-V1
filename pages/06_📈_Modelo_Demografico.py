@@ -1231,8 +1231,6 @@ with tab_modelos:
         st.latex(r"Exp: P(t) = P_0 \cdot e^{r(t - t_0)}")
         st.latex(r"Lin: P(t) = m \cdot t + b")
 
-    st.divider()
-
     st.sidebar.header("🎯 2. Viaje en el Tiempo")
     modelo_sel = st.sidebar.radio("Base de cálculo para la pirámide:", ["Logístico", "Exponencial", "Lineal", "Dato Real (Si existe)"])
     columna_modelo = "Real" if modelo_sel == "Dato Real (Si existe)" else modelo_sel
