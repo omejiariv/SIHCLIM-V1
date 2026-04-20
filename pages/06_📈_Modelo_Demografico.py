@@ -1225,11 +1225,11 @@ with tab_modelos:
             st.plotly_chart(fig_curvas, use_container_width=True)
             
     with col_param:
-        st.subheader("🧮 Ecuaciones")
-        st.latex(r"Log: P(t) = \frac{K}{1 + e^{-r(t - t_0)}}")
-        if param_K != "N/A": st.success(f"**K:** {param_K:,.0f} hab.")
-        st.latex(r"Exp: P(t) = P_0 \cdot e^{r(t - t_0)}")
-        st.latex(r"Lin: P(t) = m \cdot t + b")
+        with st.expander("🧮 Ecuaciones", expanded=True):
+            st.latex(r"Log: P(t) = \frac{K}{1 + e^{-r(t - t_0)}}")
+            if param_K != "N/A": st.success(f"**K:** {param_K:,.0f} hab.")
+            st.latex(r"Exp: P(t) = P_0 \cdot e^{r(t - t_0)}")
+            st.latex(r"Lin: P(t) = m \cdot t + b")
 
     st.sidebar.header("🎯 2. Viaje en el Tiempo")
     modelo_sel = st.sidebar.radio("Base de cálculo para la pirámide:", ["Logístico", "Exponencial", "Lineal", "Dato Real (Si existe)"])
