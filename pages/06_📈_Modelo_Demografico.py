@@ -1269,7 +1269,7 @@ with tab_modelos:
         ph_m_pob_2, ph_m_hom_2 = m_c3.empty(), m_c3.empty()
         ph_m_muj_2, ph_m_ind_2 = m_c4.empty(), m_c4.empty()
 
-    # --- EL MOTOR MATEMÁTICO: AGREGADOR DINÁMICO (TU IDEA) ---
+    # --- EL MOTOR MATEMÁTICO: AGREGADOR DINÁMICO ---
     df_piramide_final = pd.DataFrame()
     
     def generar_figura_piramide(año_obj, zona_str):
@@ -1290,7 +1290,7 @@ with tab_modelos:
             pob_modelo_total = float(val_proyeccion[0])
             if pd.isna(pob_modelo_total): pob_modelo_total = 0.0
 
-            # 🔥 APLICAMOS TU LÓGICA: Usamos la base municipal real
+            # 🔥 APLICAMOS TU LÓGICA: Usamos la base municipal real en vez de la nacional
             _, df_mun, _, _, _, _ = cargar_datos_limpios()
             
             # Limpiamos el texto de zona
@@ -1302,24 +1302,23 @@ with tab_modelos:
             # 1. Filtramos solo el año necesario
             df_base = df_mun[df_mun['año'].astype(int) == año_num].copy()
             
-            # 2. RUTEO DE ESCALAS (Respondemos a tus preguntas 1 y 2)
+            # 2. RUTEO DE ESCALAS (Filtros Espaciales Dinámicos)
             tit_lower = titulo_seguro.lower()
             
             if "cabeceras" in tit_lower and "antioquia" in tit_lower:
-                # Tu Pregunta 2: Es un subconjunto de Antioquia
+                # Escala Urbana Antioquia: Todo Antioquia
                 df_base = df_base[df_base['depto_nom'].str.lower() == 'antioquia']
             else:
-                # Tu Pregunta 1: Macroregiones
+                # Macroregiones
                 macro_regiones = ["amazon", "caribe", "pacífic", "andin", "orinoqu"]
                 es_macro = False
                 for macro in macro_regiones:
                     if macro in tit_lower:
-                        # Si es Macroregión, filtramos esa región
                         df_base = df_base[df_base['Macroregion'].str.lower().str.contains(macro, na=False)]
                         es_macro = True
                         break
                 
-                # Si no es ninguna de esas, intentamos un match directo (para cuando vuelvas a otras escalas)
+                # Municipios / Departamentos estándar
                 if not es_macro:
                     match_m = df_base['municipio'].str.lower() == tit_lower
                     match_d = df_base['depto_nom'].str.lower() == tit_lower
@@ -1330,19 +1329,20 @@ with tab_modelos:
             df_fnac_zona = df_base[df_base['area_geografica'].str.lower() == zona_limpia]
             df_fnac_total = df_base[df_base['area_geografica'].str.lower() == 'total']
             
-            # Si en la base de datos no hay una fila explícita 'total', la calculamos sumando urbano+rural
+            # Si el DANE no reporta 'total' explícito, lo calculamos sumando urbano + rural
             if df_fnac_total.empty and not df_base.empty:
                 df_fnac_total = pd.DataFrame(df_base.sum(numeric_only=True)).T
             if df_fnac_zona.empty and not df_base.empty and zona_limpia == 'total':
                 df_fnac_zona = df_fnac_total.copy()
 
             if df_fnac_zona.empty or df_fnac_total.empty:
-                return None, 0, 0, 0, 0, f"Datos demográficos no encontrados para estructurar: '{zona_str}'.", pd.DataFrame()
+                return None, 0, 0, 0, 0, f"Datos demográficos insuficientes para estructurar: '{zona_str}'.", pd.DataFrame()
 
-            # Agrupamos sumando para tener una sola fila maestra con toda la estructura de la región
+            # 4. AGRUPACIÓN MAESTRA: Sumamos todas las filas que pasaron el filtro en 1 sola fila
             df_fnac_zona = pd.DataFrame(df_fnac_zona.sum(numeric_only=True)).T
             df_fnac_total = pd.DataFrame(df_fnac_total.sum(numeric_only=True)).T
 
+            # 5. Extracción de Edades
             import re
             cols_h = [c for c in df_fnac_zona.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
             cols_m = [c for c in df_fnac_zona.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
@@ -1399,7 +1399,7 @@ with tab_modelos:
             
             return fig_pir, total_zona, total_hom, total_muj, ind_masculinidad, None, df_pir
         except Exception as e:
-            return None, 0, 0, 0, 0, f"Error en matemáticas: {e}", pd.DataFrame()
+            return None, 0, 0, 0, 0, f"Error en procesamiento de datos: {e}", pd.DataFrame()
 
     # --- EL PINTOR DE LA INTERFAZ ---
     def safe_int_str(val):
