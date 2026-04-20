@@ -1230,15 +1230,14 @@ with tab_modelos:
     st.subheader(f"📊 Estructura Poblacional Sintética - {titulo_seguro}")
 
     # 2. Lógica del "Amo Único" (Sidebar determina la Pirámide 1)
-    # Usamos title() para asegurar que la primera letra sea mayúscula (ej: 'Urbano')
     area_principal = str(area_global).strip().title()
     
     # 3. Selector de Comparación Inteligente
-    # Evitamos que el usuario compare un área consigo misma (ej: Urbano vs Urbano)
+    # Evitamos que el usuario compare un área consigo misma
     opciones_basicas = ["Total", "Urbano", "Rural"]
     opciones_filtradas = [opt for opt in opciones_basicas if opt != area_principal]
     
-    # Usamos una llave (key) dinámica basada en el lugar y el área para forzar el refresco
+    # Llave dinámica para forzar refresco de UI
     key_radio = f"comp_{titulo_seguro}_{area_principal}".replace(" ", "_")
     
     st.info(f"💡 La pirámide izquierda muestra la selección global: **{area_principal}**.")
@@ -1253,16 +1252,13 @@ with tab_modelos:
     col_p1, col_p2 = st.columns(2)
     
     with col_p1:
-        # Contenedores para Pirámide 1 (Selección Sidebar)
         ph_tit_1 = st.empty()
         ph_graf_1 = st.empty()
         m_c1, m_c2 = st.columns(2)
         ph_m_pob_1, ph_m_hom_1 = m_c1.empty(), m_c1.empty()
-        # Escudo de seguridad para c_m2 / m_c2
         ph_m_muj_1, ph_m_ind_1 = m_c2.empty(), m_c2.empty()
             
     with col_p2:
-        # Contenedores para Pirámide 2 (Comparación Local)
         ph_tit_2 = st.empty()
         ph_graf_2 = st.empty()
         m_c3, m_c4 = st.columns(2)
@@ -1270,7 +1266,6 @@ with tab_modelos:
         ph_m_muj_2, ph_m_ind_2 = m_c4.empty(), m_c4.empty()
 
     # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES (Garantía de Balance) ---
-    # Nota: Este motor debe beber de la misma df_matriz_demo que ya fue balanceada
     df_piramide_final = pd.DataFrame()
     
     def generar_figura_piramide(año_obj, zona_str):
@@ -1279,13 +1274,14 @@ with tab_modelos:
         except:
             return None, 0, 0, 0, 0, f"No hay proyección para el año {año_obj}.", pd.DataFrame()
 
-        col_anio_pyr2 = 'año' if 'año' in df_nac.columns else 'Año'
+        # 🔥 FIX MAESTRO: Invocamos a la caché directamente para obtener el DataFrame puro.
+        # Esto soluciona la desaparición en "Escala Urbana" y "Regional" donde la variable df_nac fue sobreescrita.
+        df_nac_puro = cargar_datos_limpios()[0]
+        col_anio_pyr2 = 'año' if 'año' in df_nac_puro.columns else 'Año'
         
-        # 🔥 FIX CRÍTICO: Normalizamos ambos lados a minúsculas (.str.lower()) para que hagan MATCH perfecto,
-        # sin importar si vienen como 'Urbano', 'URBANO' o 'urbano'.
         zona_limpia = str(zona_str).strip().lower()
-        df_fnac_zona = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'].str.lower() == zona_limpia)].copy()
-        df_fnac_total = df_nac[(df_nac[col_anio_pyr2] == año_obj) & (df_nac['area_geografica'].str.lower() == 'total')].copy()
+        df_fnac_zona = df_nac_puro[(df_nac_puro[col_anio_pyr2] == año_obj) & (df_nac_puro['area_geografica'].str.lower() == zona_limpia)].copy()
+        df_fnac_total = df_nac_puro[(df_nac_puro[col_anio_pyr2] == año_obj) & (df_nac_puro['area_geografica'].str.lower() == 'total')].copy()
         
         if df_fnac_zona.empty or df_fnac_total.empty:
             return None, 0, 0, 0, 0, f"No hay datos base de la pirámide para '{zona_str}' en este año.", pd.DataFrame()
@@ -1340,14 +1336,12 @@ with tab_modelos:
         total_zona = total_hom + total_muj
         ind_masculinidad = (total_hom / total_muj * 100) if total_muj > 0 else 0
         
-        # Agregamos la tabla df_pir al final del return
         return fig_pir, total_zona, total_hom, total_muj, ind_masculinidad, None, df_pir
 
     # --- EL PINTOR DE LA INTERFAZ ---
     def actualizar_ui_piramides(año):
         global df_piramide_final
         
-        # 🔥 FIX: La pirámide 1 ahora dibuja la 'area_principal' que elegiste en el sidebar, no siempre el 'Total'
         fig1, t1, h1, m1, ind1, err1, df_export = generar_figura_piramide(año, area_principal)
         
         if err1:
