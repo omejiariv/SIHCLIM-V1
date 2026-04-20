@@ -1221,185 +1221,215 @@ with tab_modelos:
     iniciar_animacion = st.sidebar.button("▶️ Reproducir Evolución", type="primary", use_container_width=True)
 
     # ==========================================================================
-    # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (SINCRONIZACIÓN MAESTRA)
+# ==========================================================================
+    # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (CAZADOR DE ERRORES)
     # ==========================================================================
-    # 1. Definimos el territorio de forma segura
-    titulo_seguro = titulo_terr if 'titulo_terr' in locals() else "Territorio Seleccionado"
-    
-    st.markdown("---")
-    st.subheader(f"📊 Estructura Poblacional Sintética - {titulo_seguro}")
+    import traceback
+    import uuid
 
-    # 2. Lógica del "Amo Único" (Traductor Universal)
-    ap_raw = str(area_global).strip().title() if 'area_global' in locals() else 'Total'
-    
-    if 'Cab' in ap_raw or 'Urb' in ap_raw: area_principal = 'Urbano'
-    elif 'Rur' in ap_raw or 'Rest' in ap_raw: area_principal = 'Rural'
-    else: area_principal = 'Total'
-    
-    # 3. Selector de Comparación Inteligente
-    opciones_basicas = ["Total", "Urbano", "Rural"]
-    opciones_filtradas = [opt for opt in opciones_basicas if opt != area_principal]
-    
-    key_radio = f"comp_{titulo_seguro}_{area_principal}".replace(" ", "_")
-    
-    st.info(f"💡 La pirámide izquierda muestra la selección global: **{area_principal}**.")
-    zona_comparacion = st.radio(
-        f"Selecciona el área para la pirámide de comparación (Derecha):",
-        opciones_filtradas,
-        horizontal=True,
-        key=key_radio
-    )
+    try:
+        # 1. Extracción Segura de Variables (Anti-Choques)
+        try: titulo_seguro = str(titulo_terr)
+        except NameError: titulo_seguro = "Territorio Seleccionado"
 
-    # 4. Construcción de Contenedores Visuales
-    col_p1, col_p2 = st.columns(2)
-    
-    with col_p1:
-        ph_tit_1 = st.empty()
-        ph_graf_1 = st.empty()
-        m_c1, m_c2 = st.columns(2)
-        ph_m_pob_1, ph_m_hom_1 = m_c1.empty(), m_c1.empty()
-        ph_m_muj_1, ph_m_ind_1 = m_c2.empty(), m_c2.empty()
-            
-    with col_p2:
-        ph_tit_2 = st.empty()
-        ph_graf_2 = st.empty()
-        m_c3, m_c4 = st.columns(2)
-        ph_m_pob_2, ph_m_hom_2 = m_c3.empty(), m_c3.empty()
-        ph_m_muj_2, ph_m_ind_2 = m_c4.empty(), m_c4.empty()
-
-    # --- EL MOTOR MATEMÁTICO DE LAS PIRÁMIDES (Garantía de Balance) ---
-    df_piramide_final = pd.DataFrame()
-    
-    def generar_figura_piramide(año_obj, zona_str):
-        try:
-            año_num = int(año_obj)
-            
-            # Usamos las variables del entorno directamente (Cierre léxico natural)
-            val_proyeccion = df_proj[df_proj['Año'].astype(int) == año_num][columna_modelo].values
-            if len(val_proyeccion) == 0:
-                return None, 0, 0, 0, 0, f"No hay proyección para el año {año_num}.", pd.DataFrame()
-                
-            pob_modelo_total = float(val_proyeccion[0])
-            if pd.isna(pob_modelo_total): pob_modelo_total = 0.0
-
-            # 🔥 BYPASS DIRECTO A LA CACHÉ
-            df_nac_puro = cargar_datos_limpios()[0]
-            col_anio_pyr2 = 'año' if 'año' in df_nac_puro.columns else 'Año'
-            
-            # TRADUCTOR INTERNO DE ZONAS
-            zl_raw = str(zona_str).strip().lower()
-            if 'cab' in zl_raw or 'urb' in zl_raw: zona_limpia = 'urbano'
-            elif 'rur' in zl_raw or 'rest' in zl_raw: zona_limpia = 'rural'
-            else: zona_limpia = 'total'
-
-            df_fnac_zona = df_nac_puro[(df_nac_puro[col_anio_pyr2].astype(int) == año_num) & (df_nac_puro['area_geografica'].str.lower() == zona_limpia)].copy()
-            df_fnac_total = df_nac_puro[(df_nac_puro[col_anio_pyr2].astype(int) == año_num) & (df_nac_puro['area_geografica'].str.lower() == 'total')].copy()
-            
-            if df_fnac_zona.empty or df_fnac_total.empty:
-                return None, 0, 0, 0, 0, f"No hay datos base nacionales para '{zona_str}'.", pd.DataFrame()
-
-            import re
-            cols_h = [c for c in df_fnac_zona.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
-            cols_m = [c for c in df_fnac_zona.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
-            
-            def extraer_edad(texto):
-                nums = re.findall(r'\d+', texto)
-                return int(nums[0]) if nums else 0
-
-            datos_edades = []
-            for col in cols_h:
-                edad = extraer_edad(col)
-                val_h = float(df_fnac_zona[col].values[0])
-                col_mujer = next((c for c in cols_m if extraer_edad(c) == edad), None)
-                val_m = float(df_fnac_zona[col_mujer].values[0]) if col_mujer else 0.0
-                datos_edades.append({'Edad': edad, 'Hombres': val_h, 'Mujeres': val_m})
-                
-            df_edades = pd.DataFrame(datos_edades)
-            
-            pob_nac_total_real = float(df_fnac_total['Total'].values[0])
-            factor_escala = (pob_modelo_total / pob_nac_total_real) if pob_nac_total_real > 0 else 0.0
-            if pd.isna(factor_escala): factor_escala = 0.0
-                
-            df_edades['Hom_Terr'] = df_edades['Hombres'] * factor_escala
-            df_edades['Muj_Terr'] = df_edades['Mujeres'] * factor_escala
-            
-            df_pir = pd.DataFrame({'Edad': df_edades['Edad'], 'Hombres': df_edades['Hom_Terr'] * -1, 'Mujeres': df_edades['Muj_Terr']})
-            
-            cortes = list(range(0, 105, 5)) + [200]
-            etiquetas = [f"{i}-{i+4}" for i in range(0, 100, 5)] + ["100+"]
-            df_pir['Rango'] = pd.cut(df_pir['Edad'], bins=cortes, labels=etiquetas, right=False)
-            df_pir_agrupado = df_pir.groupby('Rango', observed=True)[['Hombres', 'Mujeres']].sum().reset_index()
-
-            import plotly.graph_objects as go
-            fig_pir = go.Figure()
-            fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Hombres'], name='Hombres', orientation='h', marker_color='#3498db'))
-            fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Mujeres'], name='Mujeres', orientation='h', marker_color='#e74c3c'))
-            
-            max_h = abs(df_pir_agrupado['Hombres'].min())
-            max_m = df_pir_agrupado['Mujeres'].max()
-            rango_max = max(max_h, max_m) if not df_pir_agrupado.empty else 100.0
-            if pd.isna(rango_max) or rango_max == 0: rango_max = 100.0
-            
-            fig_pir.update_layout(
-                barmode='relative', yaxis_title='Rango de Edad', xaxis_title='Población',
-                xaxis=dict(range=[-rango_max*1.1, rango_max*1.1], tickvals=[-rango_max, 0, rango_max], ticktext=[f"{int(rango_max):,}", "0", f"{int(rango_max):,}"]),
-                margin=dict(l=0, r=0, t=30, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            
-            total_hom = df_edades['Hom_Terr'].sum()
-            total_muj = df_edades['Muj_Terr'].sum()
-            total_zona = total_hom + total_muj
-            ind_masculinidad = (total_hom / total_muj * 100) if total_muj > 0 else 0.0
-            
-            return fig_pir, total_zona, total_hom, total_muj, ind_masculinidad, None, df_pir
-        except Exception as e:
-            # Si hay un error, ya no será silencioso. Aparecerá en la pantalla.
-            return None, 0, 0, 0, 0, f"Error en el motor de pirámides: {e}", pd.DataFrame()
-
-    # --- EL PINTOR DE LA INTERFAZ ---
-    def safe_int_str(val):
-        try: return f"{int(float(val)):,}".replace(",", ".")
-        except: return "0"
-
-    def actualizar_ui_piramides(año):
-        global df_piramide_final
+        try: ap_raw = str(area_global).strip().title()
+        except NameError: ap_raw = 'Total'
         
-        fig1, t1, h1, m1, ind1, err1, df_export = generar_figura_piramide(año, area_principal)
+        # Traductor Universal
+        if 'Cab' in ap_raw or 'Urb' in ap_raw: area_principal = 'Urbano'
+        elif 'Rur' in ap_raw or 'Rest' in ap_raw: area_principal = 'Rural'
+        else: area_principal = 'Total'
         
-        if err1:
-            ph_graf_1.warning(err1)
+        # 2. Selector de Comparación Inteligente
+        opciones_basicas = ["Total", "Urbano", "Rural"]
+        opciones_filtradas = [opt for opt in opciones_basicas if opt != area_principal]
+        
+        # Llave dinámica ÚNICA para evitar el error "Duplicate Widget ID" de Streamlit
+        key_radio = f"comp_{titulo_seguro}_{area_principal}_{uuid.uuid4().hex[:6]}"
+        
+        st.markdown("---")
+        st.subheader(f"📊 Estructura Poblacional Sintética - {titulo_seguro}")
+        st.info(f"💡 La pirámide izquierda muestra la selección global: **{area_principal}**.")
+        
+        zona_comparacion = st.radio(
+            "Selecciona el área para la pirámide de comparación (Derecha):",
+            opciones_filtradas,
+            horizontal=True,
+            key=key_radio
+        )
+
+        # 3. Construcción de Contenedores Visuales
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            ph_tit_1 = st.empty()
+            ph_graf_1 = st.empty()
+            m_c1, m_c2 = st.columns(2)
+            ph_m_pob_1, ph_m_hom_1 = m_c1.empty(), m_c1.empty()
+            ph_m_muj_1, ph_m_ind_1 = m_c2.empty(), m_c2.empty()
+                
+        with col_p2:
+            ph_tit_2 = st.empty()
+            ph_graf_2 = st.empty()
+            m_c3, m_c4 = st.columns(2)
+            ph_m_pob_2, ph_m_hom_2 = m_c3.empty(), m_c3.empty()
+            ph_m_muj_2, ph_m_ind_2 = m_c4.empty(), m_c4.empty()
+
+        # --- EL MOTOR MATEMÁTICO ---
+        df_piramide_final = pd.DataFrame()
+        
+        def generar_figura_piramide(año_obj, zona_str):
+            try:
+                año_num = int(año_obj)
+                
+                # Verificación Estricta del DataFrame de Proyección
+                try: df_local_proj = df_proj.copy()
+                except NameError: return None, 0, 0, 0, 0, "Error: La variable 'df_proj' no está definida en esta pestaña.", pd.DataFrame()
+                
+                try: col_local_mod = columna_modelo
+                except NameError: return None, 0, 0, 0, 0, "Error: La variable 'columna_modelo' no está definida en esta pestaña.", pd.DataFrame()
+
+                if col_local_mod not in df_local_proj.columns:
+                    return None, 0, 0, 0, 0, f"Error: La columna '{col_local_mod}' no existe en df_proj.", pd.DataFrame()
+
+                val_proyeccion = df_local_proj[df_local_proj['Año'].astype(int) == año_num][col_local_mod].values
+                if len(val_proyeccion) == 0:
+                    return None, 0, 0, 0, 0, f"No hay proyección calculada para el año {año_num}.", pd.DataFrame()
+                    
+                pob_modelo_total = float(val_proyeccion[0])
+                if pd.isna(pob_modelo_total): pob_modelo_total = 0.0
+
+                # Bypass a la Caché
+                df_nac_puro = cargar_datos_limpios()[0]
+                if df_nac_puro.empty:
+                    return None, 0, 0, 0, 0, "Error: La base de datos nacional maestra está vacía.", pd.DataFrame()
+
+                col_anio_pyr2 = 'año' if 'año' in df_nac_puro.columns else 'Año'
+                
+                # Traductor Interno
+                zl_raw = str(zona_str).strip().lower()
+                if 'cab' in zl_raw or 'urb' in zl_raw: zona_limpia = 'urbano'
+                elif 'rur' in zl_raw or 'rest' in zl_raw: zona_limpia = 'rural'
+                else: zona_limpia = 'total'
+
+                df_fnac_zona = df_nac_puro[(df_nac_puro[col_anio_pyr2].astype(int) == año_num) & (df_nac_puro['area_geografica'].str.lower() == zona_limpia)].copy()
+                df_fnac_total = df_nac_puro[(df_nac_puro[col_anio_pyr2].astype(int) == año_num) & (df_nac_puro['area_geografica'].str.lower() == 'total')].copy()
+                
+                if df_fnac_zona.empty or df_fnac_total.empty:
+                    return None, 0, 0, 0, 0, f"No hay estructura base nacional para el área '{zona_str}' en {año_num}.", pd.DataFrame()
+
+                import re
+                cols_h = [c for c in df_fnac_zona.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
+                cols_m = [c for c in df_fnac_zona.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
+                
+                def extraer_edad(texto):
+                    nums = re.findall(r'\d+', texto)
+                    return int(nums[0]) if nums else 0
+
+                datos_edades = []
+                for col in cols_h:
+                    edad = extraer_edad(col)
+                    val_h = float(df_fnac_zona[col].values[0])
+                    col_mujer = next((c for c in cols_m if extraer_edad(c) == edad), None)
+                    val_m = float(df_fnac_zona[col_mujer].values[0]) if col_mujer else 0.0
+                    datos_edades.append({'Edad': edad, 'Hombres': val_h, 'Mujeres': val_m})
+                    
+                df_edades = pd.DataFrame(datos_edades)
+                
+                pob_nac_total_real = float(df_fnac_total['Total'].values[0])
+                factor_escala = (pob_modelo_total / pob_nac_total_real) if pob_nac_total_real > 0 else 0.0
+                if pd.isna(factor_escala): factor_escala = 0.0
+                    
+                df_edades['Hom_Terr'] = df_edades['Hombres'] * factor_escala
+                df_edades['Muj_Terr'] = df_edades['Mujeres'] * factor_escala
+                
+                df_pir = pd.DataFrame({'Edad': df_edades['Edad'], 'Hombres': df_edades['Hom_Terr'] * -1, 'Mujeres': df_edades['Muj_Terr']})
+                
+                cortes = list(range(0, 105, 5)) + [200]
+                etiquetas = [f"{i}-{i+4}" for i in range(0, 100, 5)] + ["100+"]
+                df_pir['Rango'] = pd.cut(df_pir['Edad'], bins=cortes, labels=etiquetas, right=False)
+                df_pir_agrupado = df_pir.groupby('Rango', observed=True)[['Hombres', 'Mujeres']].sum().reset_index()
+
+                import plotly.graph_objects as go
+                fig_pir = go.Figure()
+                fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Hombres'], name='Hombres', orientation='h', marker_color='#3498db'))
+                fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Mujeres'], name='Mujeres', orientation='h', marker_color='#e74c3c'))
+                
+                max_h = abs(df_pir_agrupado['Hombres'].min())
+                max_m = df_pir_agrupado['Mujeres'].max()
+                rango_max = max(max_h, max_m) if not df_pir_agrupado.empty else 100.0
+                if pd.isna(rango_max) or rango_max == 0: rango_max = 100.0
+                
+                fig_pir.update_layout(
+                    barmode='relative', yaxis_title='Rango de Edad', xaxis_title='Población',
+                    xaxis=dict(range=[-rango_max*1.1, rango_max*1.1], tickvals=[-rango_max, 0, rango_max], ticktext=[f"{int(rango_max):,}", "0", f"{int(rango_max):,}"]),
+                    margin=dict(l=0, r=0, t=30, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                
+                total_hom = df_edades['Hom_Terr'].sum()
+                total_muj = df_edades['Muj_Terr'].sum()
+                total_zona = total_hom + total_muj
+                ind_masculinidad = (total_hom / total_muj * 100) if total_muj > 0 else 0.0
+                
+                return fig_pir, total_zona, total_hom, total_muj, ind_masculinidad, None, df_pir
+            except Exception as e:
+                return None, 0, 0, 0, 0, f"Fallo interno en matemáticas: {e}", pd.DataFrame()
+
+        # --- EL PINTOR DE LA INTERFAZ ---
+        def safe_int_str(val):
+            try: return f"{int(float(val)):,}".replace(",", ".")
+            except: return "0"
+
+        def actualizar_ui_piramides(año):
+            global df_piramide_final
+            
+            fig1, t1, h1, m1, ind1, err1, df_export = generar_figura_piramide(año, area_principal)
+            if err1:
+                ph_graf_1.warning(f"⚠️ Pirámide Izquierda: {err1}")
+            else:
+                df_piramide_final = df_export.copy()
+                ph_tit_1.markdown(f"#### 🔵 Estructura {area_principal} ({año})")
+                ph_graf_1.plotly_chart(fig1, use_container_width=True, key=f"p1_{uuid.uuid4().hex[:6]}")
+                ph_m_pob_1.metric(f"Pob. {area_principal}", safe_int_str(t1))
+                if t1 > 0:
+                    ph_m_hom_1.metric("Hombres", safe_int_str(h1), f"{(h1/t1)*100:.1f}%")
+                    ph_m_muj_1.metric("Mujeres", safe_int_str(m1), f"{(m1/t1)*100:.1f}%")
+                ph_m_ind_1.metric("Índ. Masc.", f"{ind1:.1f}")
+
+            fig2, t2, h2, m2, ind2, err2, _ = generar_figura_piramide(año, zona_comparacion)
+            if err2:
+                ph_graf_2.warning(f"⚠️ Pirámide Derecha: {err2}")
+            else:
+                ph_tit_2.markdown(f"#### 🟢 Perfil {zona_comparacion} ({año})")
+                ph_graf_2.plotly_chart(fig2, use_container_width=True, key=f"p2_{uuid.uuid4().hex[:6]}")
+                ph_m_pob_2.metric(f"Pob. {zona_comparacion}", safe_int_str(t2))
+                if t2 > 0:
+                    ph_m_hom_2.metric("Hombres", safe_int_str(h2), f"{(h2/t2)*100:.1f}%")
+                    ph_m_muj_2.metric("Mujeres", safe_int_str(m2), f"{(m2/t2)*100:.1f}%")
+                ph_m_ind_2.metric("Índ. Masc.", f"{ind2:.1f}")
+                
+        # === EJECUCIÓN (Extracción de Año Seguro) ===
+        import time
+        try: a_sel = int(año_sel)
+        except NameError: a_sel = 2025
+        
+        try: anim_activa = bool(iniciar_animacion)
+        except NameError: anim_activa = False
+
+        if anim_activa:
+            try: array_años = años_disp
+            except NameError: array_años = [2025]
+            
+            for a in array_años:
+                if a >= 1985:
+                    actualizar_ui_piramides(a)
+                    try: time.sleep(velocidad_animacion)
+                    except NameError: time.sleep(0.5)
         else:
-            df_piramide_final = df_export.copy()
-            ph_tit_1.markdown(f"#### 🔵 Estructura {area_principal} ({año})")
-            ph_graf_1.plotly_chart(fig1, use_container_width=True, key=f"pir_1_{año}")
-            ph_m_pob_1.metric(f"Pob. {area_principal}", safe_int_str(t1))
-            if t1 > 0:
-                ph_m_hom_1.metric("Hombres", safe_int_str(h1), f"{(h1/t1)*100:.1f}%")
-                ph_m_muj_1.metric("Mujeres", safe_int_str(m1), f"{(m1/t1)*100:.1f}%")
-            ph_m_ind_1.metric("Índ. Masc.", f"{ind1:.1f}")
+            actualizar_ui_piramides(a_sel)
 
-        fig2, t2, h2, m2, ind2, err2, _ = generar_figura_piramide(año, zona_comparacion)
-        
-        if err2:
-            ph_graf_2.warning(err2)
-        else:
-            ph_tit_2.markdown(f"#### 🟢 Perfil {zona_comparacion} ({año})")
-            ph_graf_2.plotly_chart(fig2, use_container_width=True, key=f"pir_2_{año}_{zona_comparacion}")
-            ph_m_pob_2.metric(f"Pob. {zona_comparacion}", safe_int_str(t2))
-            if t2 > 0:
-                ph_m_hom_2.metric("Hombres", safe_int_str(h2), f"{(h2/t2)*100:.1f}%")
-                ph_m_muj_2.metric("Mujeres", safe_int_str(m2), f"{(m2/t2)*100:.1f}%")
-            ph_m_ind_2.metric("Índ. Masc.", f"{ind2:.1f}")
-            
-    # === EJECUCIÓN ===
-    import time
-    if 'iniciar_animacion' in locals() and iniciar_animacion:
-        for a in años_disp:
-            if a >= 1985:
-                actualizar_ui_piramides(a)
-                time.sleep(velocidad_animacion if 'velocidad_animacion' in locals() else 0.5)
-    else:
-        actualizar_ui_piramides(año_sel if 'año_sel' in locals() else 2025)
+    except Exception as fatal_e:
+        st.error(f"🚨 **COLAPSO EN LA PESTAÑA:** Algo rompió el motor antes de poder dibujar. Detalles del error:")
+        st.code(traceback.format_exc())
         
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
