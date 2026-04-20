@@ -1290,7 +1290,7 @@ with tab_modelos:
             pob_modelo_total = float(val_proyeccion[0])
             if pd.isna(pob_modelo_total): pob_modelo_total = 0.0
 
-            # 🔥 APLICAMOS TU LÓGICA: Usamos la base municipal real en vez de la nacional
+            # 🔥 APLICAMOS TU LÓGICA: Usamos la base municipal real
             _, df_mun, _, _, _, _ = cargar_datos_limpios()
             
             # Limpiamos el texto de zona
@@ -1302,23 +1302,24 @@ with tab_modelos:
             # 1. Filtramos solo el año necesario
             df_base = df_mun[df_mun['año'].astype(int) == año_num].copy()
             
-            # 2. RUTEO DE ESCALAS (Filtros Espaciales Dinámicos)
+            # 2. RUTEO DE ESCALAS (Respondemos a tus preguntas 1 y 2)
             tit_lower = titulo_seguro.lower()
             
             if "cabeceras" in tit_lower and "antioquia" in tit_lower:
-                # Escala Urbana Antioquia: Todo Antioquia
+                # Tu Pregunta 2: Es un subconjunto de Antioquia
                 df_base = df_base[df_base['depto_nom'].str.lower() == 'antioquia']
             else:
-                # Macroregiones
+                # Tu Pregunta 1: Macroregiones
                 macro_regiones = ["amazon", "caribe", "pacífic", "andin", "orinoqu"]
                 es_macro = False
                 for macro in macro_regiones:
                     if macro in tit_lower:
+                        # Si es Macroregión, filtramos esa región
                         df_base = df_base[df_base['Macroregion'].str.lower().str.contains(macro, na=False)]
                         es_macro = True
                         break
                 
-                # Municipios / Departamentos estándar
+                # Si no es ninguna de esas, intentamos un match directo (para cuando vuelvas a otras escalas)
                 if not es_macro:
                     match_m = df_base['municipio'].str.lower() == tit_lower
                     match_d = df_base['depto_nom'].str.lower() == tit_lower
@@ -1329,7 +1330,7 @@ with tab_modelos:
             df_fnac_zona = df_base[df_base['area_geografica'].str.lower() == zona_limpia]
             df_fnac_total = df_base[df_base['area_geografica'].str.lower() == 'total']
             
-            # Si el DANE no reporta 'total' explícito, lo calculamos sumando urbano + rural
+            # Si en la base de datos no hay una fila explícita 'total', la calculamos sumando urbano+rural
             if df_fnac_total.empty and not df_base.empty:
                 df_fnac_total = pd.DataFrame(df_base.sum(numeric_only=True)).T
             if df_fnac_zona.empty and not df_base.empty and zona_limpia == 'total':
@@ -1338,11 +1339,10 @@ with tab_modelos:
             if df_fnac_zona.empty or df_fnac_total.empty:
                 return None, 0, 0, 0, 0, f"Datos demográficos insuficientes para estructurar: '{zona_str}'.", pd.DataFrame()
 
-            # 4. AGRUPACIÓN MAESTRA: Sumamos todas las filas que pasaron el filtro en 1 sola fila
+            # Agrupamos sumando para tener una sola fila maestra con toda la estructura de la región
             df_fnac_zona = pd.DataFrame(df_fnac_zona.sum(numeric_only=True)).T
             df_fnac_total = pd.DataFrame(df_fnac_total.sum(numeric_only=True)).T
 
-            # 5. Extracción de Edades
             import re
             cols_h = [c for c in df_fnac_zona.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
             cols_m = [c for c in df_fnac_zona.columns if 'Mujer' in str(c) and any(char.isdigit() for char in str(c))]
@@ -1399,7 +1399,7 @@ with tab_modelos:
             
             return fig_pir, total_zona, total_hom, total_muj, ind_masculinidad, None, df_pir
         except Exception as e:
-            return None, 0, 0, 0, 0, f"Error en procesamiento de datos: {e}", pd.DataFrame()
+            return None, 0, 0, 0, 0, f"Error en matemáticas: {e}", pd.DataFrame()
 
     # --- EL PINTOR DE LA INTERFAZ ---
     def safe_int_str(val):
