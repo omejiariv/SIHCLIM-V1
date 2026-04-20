@@ -1224,14 +1224,13 @@ with tab_modelos:
     # 🏛️ SECCIÓN: PIRÁMIDES POBLACIONALES (SINCRONIZACIÓN MAESTRA)
     # ==========================================================================
     # 1. Definimos el territorio de forma segura
-    titulo_seguro = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
+    titulo_seguro = titulo_terr if 'titulo_terr' in locals() else "Territorio Seleccionado"
     
     st.markdown("---")
     st.subheader(f"📊 Estructura Poblacional Sintética - {titulo_seguro}")
 
     # 2. Lógica del "Amo Único" (Traductor Universal)
-    area_g = globals().get('area_global', locals().get('area_global', 'Total'))
-    ap_raw = str(area_g).strip().title()
+    ap_raw = str(area_global).strip().title() if 'area_global' in locals() else 'Total'
     
     if 'Cab' in ap_raw or 'Urb' in ap_raw: area_principal = 'Urbano'
     elif 'Rur' in ap_raw or 'Rest' in ap_raw: area_principal = 'Rural'
@@ -1275,16 +1274,10 @@ with tab_modelos:
         try:
             año_num = int(año_obj)
             
-            # 🔥 EXTRACCIÓN SEGURA DE PROYECCIONES
-            df_p = globals().get('df_proj', locals().get('df_proj', pd.DataFrame()))
-            col_m = globals().get('columna_modelo', locals().get('columna_modelo', ''))
-            
-            if df_p.empty or col_m not in df_p.columns:
-                return None, 0, 0, 0, 0, f"Modelo base ({col_m}) no encontrado en esta escala.", pd.DataFrame()
-                
-            val_proyeccion = df_p[df_p['Año'].astype(int) == año_num][col_m].values
+            # Usamos las variables del entorno directamente (Cierre léxico natural)
+            val_proyeccion = df_proj[df_proj['Año'].astype(int) == año_num][columna_modelo].values
             if len(val_proyeccion) == 0:
-                return None, 0, 0, 0, 0, f"No hay proyección calculada para el año {año_num}.", pd.DataFrame()
+                return None, 0, 0, 0, 0, f"No hay proyección para el año {año_num}.", pd.DataFrame()
                 
             pob_modelo_total = float(val_proyeccion[0])
             if pd.isna(pob_modelo_total): pob_modelo_total = 0.0
@@ -1293,6 +1286,7 @@ with tab_modelos:
             df_nac_puro = cargar_datos_limpios()[0]
             col_anio_pyr2 = 'año' if 'año' in df_nac_puro.columns else 'Año'
             
+            # TRADUCTOR INTERNO DE ZONAS
             zl_raw = str(zona_str).strip().lower()
             if 'cab' in zl_raw or 'urb' in zl_raw: zona_limpia = 'urbano'
             elif 'rur' in zl_raw or 'rest' in zl_raw: zona_limpia = 'rural'
@@ -1302,7 +1296,7 @@ with tab_modelos:
             df_fnac_total = df_nac_puro[(df_nac_puro[col_anio_pyr2].astype(int) == año_num) & (df_nac_puro['area_geografica'].str.lower() == 'total')].copy()
             
             if df_fnac_zona.empty or df_fnac_total.empty:
-                return None, 0, 0, 0, 0, f"No hay datos base nacionales para escalar '{zona_str}' en {año_num}.", pd.DataFrame()
+                return None, 0, 0, 0, 0, f"No hay datos base nacionales para '{zona_str}'.", pd.DataFrame()
 
             import re
             cols_h = [c for c in df_fnac_zona.columns if 'Hombre' in str(c) and any(char.isdigit() for char in str(c))]
@@ -1341,7 +1335,6 @@ with tab_modelos:
             fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Hombres'], name='Hombres', orientation='h', marker_color='#3498db'))
             fig_pir.add_trace(go.Bar(y=df_pir_agrupado['Rango'], x=df_pir_agrupado['Mujeres'], name='Mujeres', orientation='h', marker_color='#e74c3c'))
             
-            # Sanitización del rango máximo para Plotly
             max_h = abs(df_pir_agrupado['Hombres'].min())
             max_m = df_pir_agrupado['Mujeres'].max()
             rango_max = max(max_h, max_m) if not df_pir_agrupado.empty else 100.0
@@ -1360,11 +1353,11 @@ with tab_modelos:
             
             return fig_pir, total_zona, total_hom, total_muj, ind_masculinidad, None, df_pir
         except Exception as e:
-            return None, 0, 0, 0, 0, f"Error generando pirámide: {e}", pd.DataFrame()
+            # Si hay un error, ya no será silencioso. Aparecerá en la pantalla.
+            return None, 0, 0, 0, 0, f"Error en el motor de pirámides: {e}", pd.DataFrame()
 
     # --- EL PINTOR DE LA INTERFAZ ---
     def safe_int_str(val):
-        """Convierte a texto formateado evitando que un NaN destruya la métrica"""
         try: return f"{int(float(val)):,}".replace(",", ".")
         except: return "0"
 
@@ -1400,17 +1393,13 @@ with tab_modelos:
             
     # === EJECUCIÓN ===
     import time
-    iniciar_anim = globals().get('iniciar_animacion', locals().get('iniciar_animacion', False))
-    a_disp = globals().get('años_disp', locals().get('años_disp', [2025]))
-    a_sel = globals().get('año_sel', locals().get('año_sel', 2025))
-
-    if iniciar_anim:
-        for a in a_disp:
+    if 'iniciar_animacion' in locals() and iniciar_animacion:
+        for a in años_disp:
             if a >= 1985:
                 actualizar_ui_piramides(a)
-                time.sleep(globals().get('velocidad_animacion', locals().get('velocidad_animacion', 0.5)))
+                time.sleep(velocidad_animacion if 'velocidad_animacion' in locals() else 0.5)
     else:
-        actualizar_ui_piramides(a_sel)
+        actualizar_ui_piramides(año_sel if 'año_sel' in locals() else 2025)
         
 # --- 7. MARCO METODOLÓGICO Y CONCEPTUAL ---
 with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=False):
