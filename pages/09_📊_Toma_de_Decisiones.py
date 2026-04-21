@@ -285,6 +285,17 @@ if gdf_zona is not None and not gdf_zona.empty:
     caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000
     concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
 
+    with st.expander("🎛️ Simulación Rápida (Impacto en Tiempo Real)", expanded=False):
+        c_sim1, c_sim2 = st.columns(2)
+        # Impacto Climático
+        impacto_cc = c_sim1.slider("Impacto Cambio Climático / ENSO (% de reducción de oferta):", 0, 50, 0, step=5)
+        # Restauración y Saneamiento
+        mitigacion_dbo = c_sim2.slider("Mitigación de Cargas (Saneamiento + SbN) %:", 0, 100, 0, step=5)
+
+    # --- RECALCULAMOS ANTES DE LOS KPIs ---
+    oferta_anual_m3 = oferta_anual_m3 * (1 - (impacto_cc / 100))
+    carga_final_rio_ton = carga_total_ton * (1 - (mitigacion_dbo / 100))
+    
     # 🎯 Cálculo de los 4 KPIs
     wei_ratio = consumo_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
     ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
@@ -293,7 +304,9 @@ if gdf_zona is not None and not gdf_zona.empty:
     factor_supervivencia = min(1.0, recarga_anual_m3 / consumo_anual_m3) if consumo_anual_m3 > 0 else 1.0
     ind_resiliencia = max(0.0, min(100.0, (bfi_ratio / 0.70) * 100 * factor_supervivencia))
     
-    ind_calidad = max(0.0, min(100.0, 100.0 - ((concentracion_dbo_mg_l / 10.0) * 100)))
+    import math
+    # El factor -0.08 hace que una DBO de 10 mg/L de un índice de ~45% (Vulnerable), y una DBO > 30 mg/L tienda a 0% (Crítico).
+    ind_calidad = max(0.0, min(100.0, 100 * math.exp(-0.08 * concentracion_dbo_mg_l)))
     ind_neutralidad = 0.0 
 
     estres_hidrico_porcentaje = (wei_ratio) * 100
