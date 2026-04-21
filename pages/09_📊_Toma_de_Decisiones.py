@@ -278,13 +278,8 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     # Supuestos de Calidad para Línea Base
     carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', 500.0))
-    sist_saneamiento_base = 50 
-    carga_removida_ton = sist_saneamiento_base * 2.5
-    carga_final_rio_ton = max(0.0, carga_total_ton - carga_removida_ton)
-    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
-    caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000
-    concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
-
+    
+    # 👇 AQUÍ INICIA EL NUEVO BLOQUE (Indentado al mismo nivel que las variables de arriba)
     with st.expander("🎛️ Simulación Rápida (Impacto en Tiempo Real)", expanded=False):
         c_sim1, c_sim2 = st.columns(2)
         # Impacto Climático
@@ -292,10 +287,17 @@ if gdf_zona is not None and not gdf_zona.empty:
         # Restauración y Saneamiento
         mitigacion_dbo = c_sim2.slider("Mitigación de Cargas (Saneamiento + SbN) %:", 0, 100, 0, step=5)
 
-    # --- RECALCULAMOS ANTES DE LOS KPIs ---
+    # --- RECALCULAMOS LAS VARIABLES ORIGINALES ---
     oferta_anual_m3 = oferta_anual_m3 * (1 - (impacto_cc / 100))
+    
+    # OJO: Aquí calculamos la carga final usando la carga total y aplicándole el descuento de la simulación
     carga_final_rio_ton = carga_total_ton * (1 - (mitigacion_dbo / 100))
     
+    # 👇 CONTINÚA EL CÓDIGO ORIGINAL (Indentado normal)
+    carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
+    caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000
+    concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
+
     # 🎯 Cálculo de los 4 KPIs
     wei_ratio = consumo_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
     ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
