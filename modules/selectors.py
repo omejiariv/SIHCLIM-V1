@@ -82,36 +82,27 @@ def get_supabase_client():
     except Exception as e:
         return str(e)
 
+# ====================================================================
+# 💾 GESTOR DE SNAPSHOTS (GUARDAR, CARGAR Y ELIMINAR ESCENARIOS)
+# ====================================================================
 def renderizar_gestor_escenarios(nombre_zona_actual):
     st.sidebar.markdown("---")
     with st.sidebar.expander("💾 Gestor de Escenarios (Snapshots)", expanded=False):
         supabase = get_supabase_client()
         
-        # --- MANEJO DE ERRORES DE SUPABASE EXPLÍCITO ---
-        if supabase == "NO_SECRETS":
-            st.error("No se encontraron credenciales de Supabase en secrets.toml")
-            return
-        elif supabase == "NO_LIBRARY":
-            st.error("Falta la librería 'supabase'. Agrégala a requirements.txt")
-            return
-        elif isinstance(supabase, str):
-            st.error(f"Error de conexión: {supabase}")
-            return
-        elif not supabase:
-            st.error("Error desconocido conectando a Supabase.")
+        if supabase == "NO_SECRETS" or supabase == "NO_LIBRARY" or isinstance(supabase, str) or not supabase:
+            st.error("Error de conexión a Supabase. Revisa tus credenciales.")
             return
 
-        tab_guardar, tab_cargar = st.tabs(["Guardar", "Cargar"])
+        tab_guardar, tab_cargar = st.tabs(["Guardar", "Cargar / Eliminar"])
         
+        # --- TAB GUARDAR ---
         with tab_guardar:
             nombre_escenario = st.text_input("Nombre del Proyecto/Escenario:", placeholder="Ej: Río Buey - Plan 2030")
-            if st.button("💾 Guardar Sesión Actual", use_container_width=True):
+            if st.button("💾 Guardar Sesión", use_container_width=True):
                 if nombre_escenario:
                     with st.spinner("Empaquetando sesión en JSON..."):
-                        estado_limpio = {}
-                        for k, v in st.session_state.items():
-                            if isinstance(v, (int, float, str, bool, list, dict)) and not k.startswith('FormSubmitter'):
-                                estado_limpio[k] = v
+                        estado_limpio = {k: v for k, v in st.session_state.items() if isinstance(v, (int, float, str, bool, list, dict)) and not k.startswith('FormSubmitter')}
                         try:
                             supabase.table("escenarios_guardados").insert({
                                 "nombre_escenario": nombre_escenario,
@@ -126,23 +117,38 @@ def renderizar_gestor_escenarios(nombre_zona_actual):
                 else:
                     st.warning("⚠️ Debes darle un nombre al escenario.")
 
+        # --- TAB CARGAR / ELIMINAR ---
         with tab_cargar:
             try:
                 res = supabase.table("escenarios_guardados").select("id, nombre_escenario, territorio, fecha_creacion").order("fecha_creacion", desc=True).execute()
                 escenarios = res.data
                 if escenarios:
                     opciones = {f"{e['nombre_escenario']} ({e['territorio']})": e['id'] for e in escenarios}
-                    seleccion = st.selectbox("Abrir un proyecto previo:", list(opciones.keys()))
-                    if st.button("📂 Cargar Escenario", type="primary", use_container_width=True):
-                        id_sel = opciones[seleccion]
-                        res_json = supabase.table("escenarios_guardados").select("estado_json").eq("id", id_sel).execute()
-                        estado_recuperado = res_json.data[0]['estado_json']
-                        with st.spinner("Inyectando variables de memoria..."):
-                            for k, v in estado_recuperado.items():
-                                st.session_state[k] = v
-                            st.success("✅ ¡Proyecto cargado! Restaurando interfaz...")
-                            time.sleep(1)
-                            st.rerun()
+                    seleccion = st.selectbox("Selecciona un proyecto:", list(opciones.keys()))
+                    
+                    # 🔥 NUEVO: Dos botones paralelos para Cargar o Borrar
+                    col_c, col_d = st.columns(2)
+                    
+                    with col_c:
+                        if st.button("📂 Cargar", type="primary", use_container_width=True):
+                            id_sel = opciones[seleccion]
+                            res_json = supabase.table("escenarios_guardados").select("estado_json").eq("id", id_sel).execute()
+                            estado_recuperado = res_json.data[0]['estado_json']
+                            with st.spinner("Inyectando variables..."):
+                                for k, v in estado_recuperado.items():
+                                    st.session_state[k] = v
+                                st.success("✅ Interfaz restaurada.")
+                                time.sleep(1)
+                                st.rerun()
+                                
+                    with col_d:
+                        if st.button("🗑️ Borrar", type="secondary", use_container_width=True):
+                            id_del = opciones[seleccion]
+                            with st.spinner("Eliminando de la nube..."):
+                                supabase.table("escenarios_guardados").delete().eq("id", id_del).execute()
+                                st.warning("🗑️ Proyecto eliminado.")
+                                time.sleep(1)
+                                st.rerun()
                 else:
                     st.info("No hay escenarios guardados aún.")
             except Exception as e:
