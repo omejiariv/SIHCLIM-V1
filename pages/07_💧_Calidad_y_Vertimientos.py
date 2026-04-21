@@ -698,7 +698,18 @@ with tab_demanda:
     dotacion_def = st.session_state.get('td_dotacion', 120.0)
     perd_dom_def = st.session_state.get('td_perd_dom', 25.0)
     
-    bov_dem, por_dem, ave_dem = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
+    # --- 🔥 CONEXIÓN CON EL CEREBRO PECUARIO (Sincronización Pág 06) ---
+    bov_proj = st.session_state.get('ica_bovinos_calc_met')
+    por_proj = st.session_state.get('ica_porcinos_calc_met')
+    ave_proj = st.session_state.get('ica_aves_calc_met')
+
+    if bov_proj is not None and por_proj is not None and ave_proj is not None:
+        bov_dem, por_dem, ave_dem = bov_proj, por_proj, ave_proj
+        st.info("🧬 **Sincronización Activa:** Usando proyecciones del Modelo Pecuario.")
+    else:
+        # Fallback: Si no hay proyecciones en memoria, consulta el histórico de la BD
+        bov_dem, por_dem, ave_dem = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
+    
     consumo_animales_lpd = (bov_dem * 40) + (por_dem * 15) + (ave_dem * 0.3)
     q_animales_ls = consumo_animales_lpd / 86400
     
@@ -707,7 +718,7 @@ with tab_demanda:
     
     q_ind_def = st.session_state.get('td_q_ind', 20.0)
     perd_ind_def = st.session_state.get('td_perd_ind', 10.0)
-
+    
     # ⚙️ 2. PANEL DE CALIBRACIÓN (EXPANDER PRINCIPAL)
     with st.expander("⚙️ Calibración de Demandas Sectoriales y Eficiencia", expanded=True):
         col_c1, col_c2, col_c3 = st.columns(3)
@@ -881,36 +892,37 @@ with tab_fuentes:
     st.markdown("---")
     st.markdown(f"### 🐄🚜 Censo Pecuario (Calibrado a {anio_analisis}) para: **{nombre_seleccion}**")
     
-    # MOTOR DE CRUCE TERRITORIAL
-    mpios_activos = []
-    lugar_n = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
-    if not df_territorio.empty:
-        if nivel_sel_interno == "Jurisdicción Ambiental (CAR)": mpios_activos = df_territorio[df_territorio['car'].str.upper() == nombre_seleccion.replace("CAR: ", "").upper()]['municipio_norm'].tolist()
-        elif nivel_sel_interno == "Departamental": mpios_activos = df_territorio[df_territorio['depto_nom'].apply(normalizar_texto) == lugar_n]['municipio_norm'].tolist()
-        elif nivel_sel_interno == "Regional": mpios_activos = df_territorio[df_territorio['region'].apply(normalizar_texto) == lugar_n]['municipio_norm'].tolist()
-        elif nivel_sel_interno == "Municipal": mpios_activos = [lugar_n]
-    if not mpios_activos: mpios_activos = [lugar_n]
+    # --- 🔥 CONEXIÓN CON EL CEREBRO PECUARIO (Sincronización Pág 06) ---
+    bov_proj = st.session_state.get('ica_bovinos_calc_met')
+    por_proj = st.session_state.get('ica_porcinos_calc_met')
+    ave_proj = st.session_state.get('ica_aves_calc_met')
 
-    default_trat_porc = 20 # Eficiencia por defecto si no se ajusta manualmente
-
+    if bov_proj is not None:
+        # Priorizamos el dato proyectado del modelo matemático
+        bov_base, por_base, ave_base = bov_proj, por_proj, ave_proj
+        st.info("🧬 **Sincronización Activa:** Usando proyecciones del Modelo Pecuario.")
+    else:
+        # Fallback: Usamos el histórico cargado por el núcleo de metabolismo
+        bov_base, por_base, ave_base = total_bovinos, total_porcinos, total_aves
+    
     col_pec1, col_pec2, col_pec3 = st.columns(3)
     with col_pec1:
         st.subheader("Sector Bovino")
-        cabezas_bovinos = st.number_input("Bovinos (Cabezas):", min_value=0, value=int(total_bovinos), step=100)
+        cabezas_bovinos = st.number_input("Bovinos (Cabezas):", min_value=0, value=int(bov_base), step=100)
         sistema_bovino = st.radio("Sistema Bovino:", ["Extensivo", "Estabulado"])
         factor_dbo_bov = 0.8 if "Estabulado" in sistema_bovino else 0.15 
         
     with col_pec2:
         st.subheader("Sector Porcícola")
-        cabezas_porcinos = st.number_input("Porcinos (Cabezas):", min_value=0, value=int(total_porcinos), step=100)
-        tratamiento_porc = st.slider("Eficiencia Biodigestor %:", 0, 100, default_trat_porc)
+        cabezas_porcinos = st.number_input("Porcinos (Cabezas):", min_value=0, value=int(por_base), step=100)
+        tratamiento_porc = st.slider("Eficiencia Biodigestor %:", 0, 100, 20)
         factor_dbo_porc = 0.150 * (1 - (tratamiento_porc/100))
         
     with col_pec3:
         st.subheader("Sector Avícola")
-        cabezas_aves = st.number_input("Aves (Galpones/Cabezas):", min_value=0, value=int(total_aves), step=1000)
+        cabezas_aves = st.number_input("Aves (Galpones/Cabezas):", min_value=0, value=int(ave_base), step=1000)
         tratamiento_aves = st.slider("Manejo Gallinaza %:", 0, 100, 75)
-        factor_dbo_aves = 0.015 * (1 - (tratamiento_aves/100)) # Factor aprox 15g DBO/ave
+        factor_dbo_aves = 0.015 * (1 - (tratamiento_aves/100)) 
 
     # --- CÁLCULOS DE CARGA ORGÁNICA (DBO5) ---
     dbo_urbana = pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100)) 
@@ -924,13 +936,13 @@ with tab_fuentes:
     carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
     
     # 🤝 EL APRETÓN DE MANOS HACIA LA PÁGINA 09 (WRI)
-    # Convertimos de kg/día a Toneladas/año y lo inyectamos al Aleph
+    # Se inyecta la carga total simulada en toneladas/año para el tablero gerencial
     st.session_state['carga_dbo_total_ton'] = float((carga_total_dbo * 365) / 1000.0)
     
     coef_retorno = 0.85
     q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400) + ((cabezas_porcinos * 40)/86400)
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
-
+    
     # =====================================================================
     # 🔮 SIMULADOR DINÁMICO DE METABOLISMO (Conectado a Memoria Global)
     # =====================================================================
