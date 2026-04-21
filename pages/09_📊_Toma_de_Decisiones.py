@@ -272,28 +272,23 @@ if gdf_zona is not None and not gdf_zona.empty:
     # ==============================================================================
     # 🧠 NÚCLEO MATEMÁTICO BASE (CENTRO DE COMANDO EJECUTIVO)
     # ==============================================================================
+    import math # Aseguramos que math esté disponible
+    
     oferta_anual_m3 = oferta_nominal * 31536000
     recarga_anual_m3 = float(st.session_state.get('aleph_recarga_mm', 350.0)) * float(st.session_state.get('aleph_area_km2', 10.0)) * 1000
     consumo_anual_m3 = demanda_m3s * 31536000
     
-    # Supuestos de Calidad para Línea Base
-    carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', 500.0))
+    # --- ☢️ EXTRACCIÓN DE LA CARGA CONTAMINANTE (CONECTADO A PÁG 07) ---
+    # Si la Pág 07 no se ha ejecutado, asumimos una carga mínima de advertencia (1500 Tons = 4000 kg/día aprox)
+    carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', 1500.0))
+    origen_carga = "Incluye Pecuario (Aleph)" if 'carga_dbo_total_ton' in st.session_state else "Dato Teórico Base"
     
-    # 👇 AQUÍ INICIA EL NUEVO BLOQUE (Indentado al mismo nivel que las variables de arriba)
-    with st.expander("🎛️ Simulación Rápida (Impacto en Tiempo Real)", expanded=False):
-        c_sim1, c_sim2 = st.columns(2)
-        # Impacto Climático
-        impacto_cc = c_sim1.slider("Impacto Cambio Climático / ENSO (% de reducción de oferta):", 0, 50, 0, step=5)
-        # Restauración y Saneamiento
-        mitigacion_dbo = c_sim2.slider("Mitigación de Cargas (Saneamiento + SbN) %:", 0, 100, 0, step=5)
-
-    # --- RECALCULAMOS LAS VARIABLES ORIGINALES ---
-    oferta_anual_m3 = oferta_anual_m3 * (1 - (impacto_cc / 100))
+    # 🛑 FIX: Eliminamos el "saneamiento fantasma" hardcodeado de 50. 
+    # Leemos del sidebar si el usuario quiere aplicar saneamiento base.
+    sist_saneamiento_base = st.sidebar.number_input("Sistemas de Tratamiento Actuales (STAM/PTAR):", min_value=0, value=0, step=5)
+    carga_removida_ton = sist_saneamiento_base * 2.5
+    carga_final_rio_ton = max(0.0, carga_total_ton - carga_removida_ton)
     
-    # OJO: Aquí calculamos la carga final usando la carga total y aplicándole el descuento de la simulación
-    carga_final_rio_ton = carga_total_ton * (1 - (mitigacion_dbo / 100))
-    
-    # 👇 CONTINÚA EL CÓDIGO ORIGINAL (Indentado normal)
     carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
     caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000
     concentracion_dbo_mg_l = carga_mg_s / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
@@ -306,8 +301,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     factor_supervivencia = min(1.0, recarga_anual_m3 / consumo_anual_m3) if consumo_anual_m3 > 0 else 1.0
     ind_resiliencia = max(0.0, min(100.0, (bfi_ratio / 0.70) * 100 * factor_supervivencia))
     
-    import math
-    # El factor -0.08 hace que una DBO de 10 mg/L de un índice de ~45% (Vulnerable), y una DBO > 30 mg/L tienda a 0% (Crítico).
+    # 🛑 FIX: FÓRMULA EXPONENCIAL (Sensible a la actividad Pecuaria)
     ind_calidad = max(0.0, min(100.0, 100 * math.exp(-0.08 * concentracion_dbo_mg_l)))
     ind_neutralidad = 0.0 
 
@@ -321,10 +315,11 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("👥 Población Servida", f"{int(poblacion_mostrar):,.0f} hab")
-    col2.metric("💧 Demanda Continua", f"{demanda_m3s:,.2f} m³/s")
+    # 🛑 FIX: Mostramos la DBO para que sea evidente el impacto pecuario/humano
+    col2.metric("☣️ Carga Orgánica (DBO5)", f"{carga_total_ton:,.1f} Ton/año", origen_carga, delta_color="inverse")
     col3.metric("🌍 Fase ENSO Actual", fase_enso)
-    col4.metric("⚠️ Estrés Hídrico Neto", f"{estres_hidrico_porcentaje:,.1f} %", "Crítico" if estres_hidrico_porcentaje > 40 else "Estable", delta_color="inverse")
-    
+    col4.metric("⚠️ Estrés Hídrico Neto", f"{estres_hidrico_porcentaje:,.1f} %", "Crítico" if estres_hidrico_porcentaje > 40 else "Estable", delta_color="inverse")    
+
     st.markdown("<br>", unsafe_allow_html=True)
     
     # --- FUNCIONES DE RENDERIZADO VISUAL ---
@@ -720,7 +715,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         # 🚨 MOSTRAR SIEMPRE EL DIAGNÓSTICO
         st.info(f"🕵️ **Diagnóstico del Motor:** {info_debug}")
         
-        # --- Conexión Riparia (Nexo Físico) ---
+        # --- Conexión Riparia (Nexo Físico Integrado con Biodiversidad) ---
         ha_riparias_potenciales = 0.0
         sumar_riparias = False
         df_str = st.session_state.get('geomorfo_strahler_df')
@@ -728,28 +723,38 @@ if gdf_zona is not None and not gdf_zona.empty:
         if df_str is not None and not df_str.empty:
             st.markdown("<br>", unsafe_allow_html=True)
             with st.container(border=True):
-                st.markdown("🌿 **Infraestructura Verde: Potencial de Reforestación Riparia**")
+                st.markdown("🌿 **Infraestructura Verde: Potencial Ripario (Conectado a Biodiversidad)**")
+                
+                # 🧠 LEEMOS LA MEMORIA DE BIODIVERSIDAD_TOOLS.PY
+                anillos = st.session_state.get('multi_rings', [10, 20, 30])
+                escenario_nombres = [
+                    f"🔴 Escenario Mínimo Normativo ({anillos[0]}m)", 
+                    f"🟡 Escenario Ideal Recomendado ({anillos[1]}m)", 
+                    f"🟢 Escenario Óptimo Ecológico ({anillos[2]}m)"
+                ]
                 
                 if 'aleph_twi_umbral' in st.session_state:
                     st.success("🧠 **Nexo Físico Activo:** Integrando zona de amenaza de inundación/avalancha como área de restauración prioritaria.")
-                    q_max = st.session_state.get('aleph_q_max_m3s', 50.0)
-                    buffer_defecto = max(30.0, float(np.log10(q_max + 1) * 35.0))
-                else:
-                    buffer_defecto = 30.0
 
                 cr1, cr2, cr3 = st.columns(3)
-                val_memoria = st.session_state.get('buffer_m_ripario', buffer_defecto)
-                ancho_buffer = cr1.number_input("Ancho de Aislamiento (m/lado):", min_value=5.0, value=float(val_memoria), step=5.0, key="td_buffer_rip")
+                
+                # REEMPLAZAMOS EL NUMBER_INPUT POR UN SELECTOR INTELIGENTE
+                escenario_sel = cr1.selectbox("Selecciona Escenario a Financiar en WRI:", escenario_nombres, index=1, key="td_sel_rip")
+                
+                # Mapeamos la selección al valor numérico
+                idx_sel = escenario_nombres.index(escenario_sel)
+                ancho_buffer = anillos[idx_sel]
                 
                 longitud_total_km = df_str['Longitud_Km'].sum()
                 cr2.metric("Longitud de Cauces", f"{longitud_total_km:,.2f} km")
                 
+                # Cálculo de hectáreas usando el anillo seleccionado
                 ha_riparias_potenciales = (longitud_total_km * 1000 * (ancho_buffer * 2)) / 10000.0
                 cr3.metric("Potencial Ripario (SbN)", f"{ha_riparias_potenciales:,.1f} ha")
                 
-                sumar_riparias = st.checkbox("📥 Incorporar hectáreas riparias a la simulación WRI", value=True, key="td_sumar_rip")
+                sumar_riparias = st.checkbox("📥 Incorporar estas hectáreas riparias a la simulación financiera WRI", value=True, key="td_sumar_rip")
         else:
-            st.info("💡 **Tip:** Usa el motor de Geomorfología para detectar la red de drenaje y calcular corredores riparios automáticamente.")
+            st.info("💡 **Tip:** Usa el motor de Geomorfología para detectar la red de drenaje y luego la página de Biodiversidad para definir los anillos de protección.")
         
         # --- Inputs del Simulador ---
         st.markdown("<br>", unsafe_allow_html=True)
