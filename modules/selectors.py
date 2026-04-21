@@ -207,7 +207,6 @@ def render_selector_espacial():
                                     szh_sel = st.selectbox("💦 3. Subzona Hidrográfica (SZH):", ["-- TODAS --"] + szh_disp)
                                     if szh_sel != "-- TODAS --":
                                         gdf_filtrado_base = gdf_filtrado_base[gdf_filtrado_base['nom_szh'] == szh_sel]
-                            else: st.warning("Faltan las columnas de Área Hidrográfica (nomah) en la base de datos.")
 
                     elif ruta_busqueda == "🗺️ División Regional":
                         col_reg = next((c for c in gdf_cuencas.columns if c.lower() in ['depto_regi', 'region', 'macroregion', 'subregion']), None)
