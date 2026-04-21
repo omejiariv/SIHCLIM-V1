@@ -677,6 +677,28 @@ tab_demanda, tab_fuentes, tab_dilucion, tab_mitigacion, tab_mapa, tab_sirena, ta
     "🥛 9. Economía Circular" 
 ])
 
+# =====================================================================
+# 🧠 EXTRACCIÓN UNIFICADA DEL CEREBRO PECUARIO (Cero Duplicados)
+# =====================================================================
+# Consultamos la memoria viva una sola vez para toda la página
+bov_proj = st.session_state.get('ica_bovinos_calc_met')
+por_proj = st.session_state.get('ica_porcinos_calc_met')
+ave_proj = st.session_state.get('ica_aves_calc_met')
+
+if bov_proj is not None and por_proj is not None and ave_proj is not None:
+    bov_base, por_base, ave_base = bov_proj, por_proj, ave_proj
+    mensaje_pecuario = "🧬 **Sincronización Activa:** Usando proyecciones del Modelo Pecuario (Pág 06)."
+else:
+    # Fallback: Si no hay proyecciones, consultamos la BD una sola vez
+    bov_base, por_base, ave_base = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
+    mensaje_pecuario = "📊 **Fallback de Datos:** Usando histórico de la base de datos oficial."
+
+# 🛡️ ESCUDO ANTI-NONE DEFINITIVO (Aplica para todas las pestañas)
+bov_base = 0 if bov_base is None else bov_base
+por_base = 0 if por_base is None else por_base
+ave_base = 0 if ave_base is None else ave_base
+
+
 # ------------------------------------------------------------------------------
 # TAB 1: DEMANDA HÍDRICA Y EFICIENCIA
 # ------------------------------------------------------------------------------
@@ -692,25 +714,15 @@ with tab_demanda:
         pob_total = st.session_state['poblacion_total']
         st.info(f"👥 Población base inyectada desde el Modelo Demográfico: **{pob_total:,.0f} habitantes**.")
     
+    st.info(mensaje_pecuario)
     st.divider()
 
     # 1. RECUPERACIÓN DE VALORES POR DEFECTO PARA LOS INPUTS
     dotacion_def = st.session_state.get('td_dotacion', 120.0)
     perd_dom_def = st.session_state.get('td_perd_dom', 25.0)
     
-    # --- 🔥 CONEXIÓN CON EL CEREBRO PECUARIO (Sincronización Pág 06) ---
-    bov_proj = st.session_state.get('ica_bovinos_calc_met')
-    por_proj = st.session_state.get('ica_porcinos_calc_met')
-    ave_proj = st.session_state.get('ica_aves_calc_met')
-
-    if bov_proj is not None and por_proj is not None and ave_proj is not None:
-        bov_dem, por_dem, ave_dem = bov_proj, por_proj, ave_proj
-        st.info("🧬 **Sincronización Activa:** Usando proyecciones del Modelo Pecuario.")
-    else:
-        # Fallback: Si no hay proyecciones en memoria, consulta el histórico de la BD
-        bov_dem, por_dem, ave_dem = obtener_censo_pecuario(nombre_seleccion, nivel_sel_interno, anio_analisis)
-    
-    consumo_animales_lpd = (bov_dem * 40) + (por_dem * 15) + (ave_dem * 0.3)
+    # Consumo calculado con las variables unificadas y blindadas
+    consumo_animales_lpd = (bov_base * 40) + (por_base * 15) + (ave_base * 0.3)
     q_animales_ls = consumo_animales_lpd / 86400
     
     q_agr_def = st.session_state.get('td_q_agr', float(q_animales_ls + 45.0))
@@ -865,12 +877,11 @@ with tab_fuentes:
         origen_aleph = normalizar_texto(st.session_state['aleph_territorio_origen'])
         destino_actual = normalizar_texto(nombre_seleccion)
         
-        # Si el usuario está analizando el mismo municipio en ambas páginas
         if origen_aleph == destino_actual:
             aleph_activo = True
 
     if aleph_activo:
-        st.success(f"🌐 **Conexión Aleph:** Las áreas agrícolas y de pastos para **{nombre_seleccion}** han sido extraídas automáticamente del modelo satelital de la página de Biodiversidad.")
+        st.success(f"🌐 **Conexión Aleph:** Las áreas agrícolas y de pastos para **{nombre_seleccion}** han sido extraídas automáticamente del modelo satelital.")
     
     # Extraer valores del satélite, o usar manuales por defecto
     val_def_papa = float(st.session_state.get('aleph_ha_agricola', 50.0)) if aleph_activo else 50.0
@@ -892,18 +903,7 @@ with tab_fuentes:
     st.markdown("---")
     st.markdown(f"### 🐄🚜 Censo Pecuario (Calibrado a {anio_analisis}) para: **{nombre_seleccion}**")
     
-    # --- 🔥 CONEXIÓN CON EL CEREBRO PECUARIO (Sincronización Pág 06) ---
-    bov_proj = st.session_state.get('ica_bovinos_calc_met')
-    por_proj = st.session_state.get('ica_porcinos_calc_met')
-    ave_proj = st.session_state.get('ica_aves_calc_met')
-
-    if bov_proj is not None:
-        # Priorizamos el dato proyectado del modelo matemático
-        bov_base, por_base, ave_base = bov_proj, por_proj, ave_proj
-        st.info("🧬 **Sincronización Activa:** Usando proyecciones del Modelo Pecuario.")
-    else:
-        # Fallback: Usamos el histórico cargado por el núcleo de metabolismo
-        bov_base, por_base, ave_base = total_bovinos, total_porcinos, total_aves
+    # SE ELIMINÓ EL DUPLICADO DE CÓDIGO AQUÍ. AHORA USAMOS DIRECTAMENTE LAS VARIABLES LIMPIAS DEL TOP
     
     col_pec1, col_pec2, col_pec3 = st.columns(3)
     with col_pec1:
@@ -920,6 +920,7 @@ with tab_fuentes:
         
     with col_pec3:
         st.subheader("Sector Avícola")
+        # ¡ESTA ES LA LÍNEA QUE CAUSABA EL ERROR TypeError! Ahora int(ave_base) SIEMPRE será un número.
         cabezas_aves = st.number_input("Aves (Galpones/Cabezas):", min_value=0, value=int(ave_base), step=1000)
         tratamiento_aves = st.slider("Manejo Gallinaza %:", 0, 100, 75)
         factor_dbo_aves = 0.015 * (1 - (tratamiento_aves/100)) 
