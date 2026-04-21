@@ -54,12 +54,29 @@ def renderizar_menu_navegacion(pagina_actual):
 def get_supabase_client():
     try:
         from supabase import create_client
-        url_sb = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("url")
-        key_sb = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("key")
+        
+        # 1. Buscamos primero si están sueltas (sin corchetes)
+        url_sb = st.secrets.get("SUPABASE_URL")
+        key_sb = st.secrets.get("SUPABASE_KEY")
+        
+        # 2. Si no están sueltas, buscamos dentro de [supabase] con mayúsculas
+        if not url_sb:
+            url_sb = st.secrets.get("supabase", {}).get("SUPABASE_URL")
+        if not key_sb:
+            key_sb = st.secrets.get("supabase", {}).get("SUPABASE_KEY")
+            
+        # 3. Por si acaso, buscamos dentro de [supabase] con minúsculas (url / key)
+        if not url_sb:
+            url_sb = st.secrets.get("supabase", {}).get("url")
+        if not key_sb:
+            key_sb = st.secrets.get("supabase", {}).get("key")
+
+        # Intentamos conectar si encontramos ambas
         if url_sb and key_sb:
             return create_client(url_sb, key_sb)
         else:
             return "NO_SECRETS"
+            
     except ImportError:
         return "NO_LIBRARY"
     except Exception as e:
