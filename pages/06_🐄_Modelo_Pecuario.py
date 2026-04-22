@@ -330,8 +330,11 @@ if 'df_matriz_pecuaria' in st.session_state:
                     if 'Pob_Base' in df_export.columns and 'Poblacion_Base' not in df_export.columns:
                         df_export.rename(columns={'Pob_Base': 'Poblacion_Base'}, inplace=True)
                     
-                    # 🔥 FIX DEFINITIVO: BORRADO SEGURO (Anti-Amnesia y preservación de permisos RLS)
+                    # 🔥 FIX DEFINITIVO: AUTO-MANTENIMIENTO Y BORRADO SEGURO
                     with engine_sql.begin() as conn:
+                        # 1. Creamos la columna en la tabla pecuaria si no existe
+                        conn.execute(text('ALTER TABLE matriz_maestra_pecuaria ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
+                        # 2. Borramos los datos viejos
                         conn.execute(text("DELETE FROM matriz_maestra_pecuaria;"))
                         
                     df_export.to_sql('matriz_maestra_pecuaria', engine_sql, if_exists='append', index=False)
