@@ -161,70 +161,106 @@ if gdf_zona is not None and not gdf_zona.empty:
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
     
     # ==============================================================================
-    # 🧠 NÚCLEO DEMOGRÁFICO "SNIPER" (Búsqueda Directa en Matriz Multiescala)
+    # 🧠 Y 🐄 CONEXIÓN AL TORRENTE SANGUÍNEO (POSTGRESQL) - FASE 1
     # ==============================================================================
-    pob_total = 0
-    metodo_dato = ""
-
-    # PLAN A: El Aleph (Memoria viva de la Pág 06 si el usuario viene de allá)
-    aleph_lugar = st.session_state.get('aleph_lugar', '')
-    aleph_anio = st.session_state.get('aleph_anio', 0)
     
-    if aleph_lugar == nombre_zona and aleph_anio == anio_actual:
-        pob_total = st.session_state.get('aleph_pob_total', 0)
-        metodo_dato = "Memoria Viva (Aleph)"
-
-    # PLAN B: Búsqueda en Matriz Pre-computada (La solución a las colisiones de nombres)
-    if pob_total == 0:
+    @st.cache_data(ttl=3600)
+    def consultar_cerebro_demografico(territorio, anio_obj):
         try:
-            from modules.demografia_tools import obtener_poblacion_matriz
-            # 🔥 FIX COLISIONES: Pasamos gdf_zona como 'gdf_contexto' para que el francotirador 
-            # sepa diferenciar entre el Nechí gigante y el Nechí pequeño.
-            pob_total = obtener_poblacion_matriz(nombre_zona, anio_actual, gdf_contexto=gdf_zona)
-            metodo_dato = "Matriz Pre-computada (SQL)"
-        except Exception as e:
-            st.error(f"Error consultando el Cerebro Demográfico: {e}")
+            from sqlalchemy import text
+            from modules.db_manager import get_engine
+            import numpy as np
+            import pandas as pd
+            engine_sql = get_engine()
+            # Búsqueda exacta y a prueba de mayúsculas/espacios
+            q = text('SELECT * FROM matriz_maestra_demografica WHERE LOWER(trim("Territorio")) = LOWER(trim(:t)) LIMIT 1')
+            df = pd.read_sql(q, engine_sql, params={'t': str(territorio)})
+            if df.empty: return 0.0
+            
+            f = df.iloc[0]
+            x_norm = anio_obj - f.get('Año_Base', 2018)
+            mod = str(f.get('Modelo_Recomendado', 'Logístico'))
+            
+            # El motor matemático que conoce todos los modelos (incluyendo el Lineal)
+            if 'Logistico' in mod or 'Logístico' in mod: return f.get('Log_K',0) / (1 + f.get('Log_a',0) * np.exp(-f.get('Log_r',0) * x_norm))
+            elif 'Exponencial' in mod: return f.get('Exp_a',0) * np.exp(f.get('Exp_b',0) * x_norm)
+            elif 'Lineal' in mod: return f.get('Lin_m',0) * x_norm + f.get('Lin_b',0)
+            else: return f.get('Poly_A',0)*(x_norm**3) + f.get('Poly_B',0)*(x_norm**2) + f.get('Poly_C',0)*x_norm + f.get('Poly_D',0)
+        except Exception: return 0.0
 
-    # --- Validación y Guardado en Estado ---
+    @st.cache_data(ttl=3600)
+    def consultar_cerebro_pecuario(territorio, anio_obj):
+        res = {'Bovinos': 0.0, 'Porcinos': 0.0, 'Aves': 0.0}
+        try:
+            from sqlalchemy import text
+            from modules.db_manager import get_engine
+            import numpy as np
+            import pandas as pd
+            engine_sql = get_engine()
+            q = text('SELECT * FROM matriz_maestra_pecuaria WHERE LOWER(trim("Territorio")) = LOWER(trim(:t))')
+            df = pd.read_sql(q, engine_sql, params={'t': str(territorio)})
+            if df.empty: return res
+            
+            for _, f in df.iterrows():
+                esp = f['Especie']
+                x_norm = anio_obj - f.get('Año_Base', 2018)
+                mod = str(f.get('Modelo_Recomendado', 'Logístico'))
+                
+                val = 0.0
+                if 'Logistico' in mod or 'Logístico' in mod: val = f.get('Log_K',0) / (1 + f.get('Log_a',0) * np.exp(-f.get('Log_r',0) * x_norm))
+                elif 'Exponencial' in mod: val = f.get('Exp_a',0) * np.exp(f.get('Exp_b',0) * x_norm)
+                elif 'Lineal' in mod: val = f.get('Lin_m',0) * x_norm + f.get('Lin_b',0)
+                else: val = f.get('Poly_A',0)*(x_norm**3) + f.get('Poly_B',0)*(x_norm**2) + f.get('Poly_C',0)*x_norm + f.get('Poly_D',0)
+                
+                res[esp] = max(0.0, val) # Sin animales negativos
+            return res
+        except Exception: return res
+
+    # ---------------------------------------------------------
+    # 1. EXTRACCIÓN DE DATOS: DEMOGRAFÍA
+    # ---------------------------------------------------------
+    pob_total = consultar_cerebro_demografico(nombre_zona, anio_actual)
+    
     if pob_total > 0:
         st.session_state['pob_hum_calc_met'] = pob_total
-        st.success(f"👥 **Población Detectada:** {pob_total:,.0f} habitantes ({metodo_dato})")
+        st.session_state['aleph_pob_total'] = pob_total
+        st.success(f"👥 **Cerebro Demográfico Enlazado:** {pob_total:,.0f} habitantes proyectados a {anio_actual}.")
     else:
-        st.warning(f"⚠️ No se encontró población pre-calculada para '{nombre_zona}'. Por favor, verifica en la Página 06.")
-        st.session_state['pob_hum_calc_met'] = 0
+        # Salvaguarda para que el tablero no colapse con divisiones por cero
+        pob_total = 1000 
+        st.warning(f"⚠️ La unidad '{nombre_zona}' no está en la Matriz Demográfica. Usando valor de emergencia (1,000 hab).")
 
-    # ==============================================================================
-    # 🐄 NÚCLEO PECUARIO Y DEMANDA HÍDRICA (Metabolismo)
-    # ==============================================================================
-    # 1. Demanda Humana (Litros/segundo)
-    # Asumimos dotación neta de 150 L/hab/día por defecto
-    q_humano_lps = (pob_total * 150) / 86400 
+    # ---------------------------------------------------------
+    # 2. EXTRACCIÓN DE DATOS: PECUARIO
+    # ---------------------------------------------------------
+    inventario_pec = consultar_cerebro_pecuario(nombre_zona, anio_actual)
+    bovinos = inventario_pec['Bovinos']
+    porcinos = inventario_pec['Porcinos']
+    aves = inventario_pec['Aves']
     
-    # 2. Carga Pecuaria (Plan C: Si no hay cruce espacial detallado, usamos el promedio regional)
-    datos_metabolismo = obtener_metabolismo_exacto(nombre_zona, anio_actual)
-
-    if datos_metabolismo:
-        if pob_total == 0: # Plan C: Si SQL falló, intentamos rescatar de tu función original
-            pob_total = datos_metabolismo.get('pob_total', 0)
-        bovinos = datos_metabolismo.get('bovinos', 0)
-        porcinos = datos_metabolismo.get('porcinos', 0)
-        aves = datos_metabolismo.get('aves', 0)
+    if (bovinos + porcinos + aves) > 0:
+        st.success(f"🐄 **Cerebro Pecuario Enlazado:** {bovinos:,.0f} Bovinos, {porcinos:,.0f} Porcinos, {aves:,.0f} Aves.")
+        st.session_state['ica_bovinos_calc_met'] = bovinos
+        st.session_state['ica_porcinos_calc_met'] = porcinos
+        st.session_state['ica_aves_calc_met'] = aves
     else:
-        bovinos = 0; porcinos = 0; aves = 0
-        
-    if pob_total == 0:
-        # Salvaguarda metodológica
-        st.warning(f"⚠️ **Aviso Metodológico:** La unidad territorial '{nombre_zona}' no pudo ser emparejada con la Matriz Demográfica.")
+        st.warning(f"⚠️ La unidad '{nombre_zona}' no está en la Matriz Pecuaria. ¡Ve al modelo a forjarla!")
+        st.session_state['ica_bovinos_calc_met'] = 0.0
+        st.session_state['ica_porcinos_calc_met'] = 0.0
+        st.session_state['ica_aves_calc_met'] = 0.0
 
-    # Cálculo volumétrico estricto
+    # ---------------------------------------------------------
+    # 3. CÁLCULO DE DEMANDA Y METABOLISMO (SÍNTESIS VOLUMÉTRICA)
+    # ---------------------------------------------------------
+    # Demanda diaria (Litros/día). Asumimos: 150L Humano, 40L Vaca, 15L Cerdo, 0.3L Ave.
     demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
     demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
 
-    # 1. ACTUALIZAR LA MEMORIA GLOBAL con el cálculo fresco de la zona seleccionada
+    # Inyección al Torrente Sanguíneo Global
     st.session_state['demanda_total_m3s'] = demanda_dinamica_m3s
     st.session_state['poblacion_servida'] = pob_total
+    st.session_state['zona_activa_global'] = nombre_zona # Marcador oficial de territorio
 
-    # 2. ASIGNAR LAS VARIABLES para mostrar en este tablero
     demanda_m3s = float(demanda_dinamica_m3s)
     poblacion_mostrar = float(pob_total)
     
