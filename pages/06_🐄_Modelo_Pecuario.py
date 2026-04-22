@@ -226,27 +226,16 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
                 'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
             })
 
-        # A. ENTRENAMIENTO ADMINISTRATIVO DIRECTO (Departamento y Municipio)
+# =================================================================
+        # B. ENTRENAMIENTO DE CUENCAS (Dasimetría Multiespecie + Cascada Hídrica)
+        # =================================================================
+        texto_progreso.info("🧮 Fase 2/2: Aplicando Pesos de Hábitat y Escalando Cuencas...")
+        fragmentos_pecuarios = []
         df_censo = df_pecuario.copy()
         col_censo_mun = 'Municipio_Norm' if 'Municipio_Norm' in df_censo.columns else 'Municipio'
         df_censo['mun_norm'] = df_censo[col_censo_mun].astype(str).str.upper().str.strip()
 
-        df_depto = df_censo.groupby('Anio')[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-        for esp in ['Bovinos', 'Porcinos', 'Aves']:
-            ajustar_modelos(df_depto['Anio'].values, df_depto[esp].values, 'DEPARTAMENTO', 'Antioquia', esp)
-
-        df_mpios = df_censo.groupby(['Anio', 'mun_norm'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-        for mpio in df_mpios['mun_norm'].unique():
-            df_temp = df_mpios[df_mpios['mun_norm'] == mpio].sort_values(by='Anio')
-            for esp in ['Bovinos', 'Porcinos', 'Aves']:
-                ajustar_modelos(df_temp['Anio'].values, df_temp[esp].values, 'MUNICIPIO', mpio, esp)
-
-        barra_progreso.progress(0.7)
-
-        # B. ENTRENAMIENTO DE CUENCAS (Dasimetría Multiespecie Aplicada)
-        texto_progreso.info("🧮 Fase 2/2: Aplicando Pesos de Hábitat a Cuencas...")
-        fragmentos_pecuarios = []
-        
+        # 1. Repartición Dasimétrica Base (Nivel Fragmento)
         for mpio in inter_mc['mun_norm'].unique():
             df_animales_mpio = df_censo[df_censo['mun_norm'] == mpio].copy()
             if df_animales_mpio.empty: continue
@@ -254,28 +243,91 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
             pedazos = inter_mc[inter_mc['mun_norm'] == mpio]
             for _, pedazo in pedazos.iterrows():
                 df_frag = df_animales_mpio.copy()
-                
                 # 🧬 Repartición dasimétrica multiespecie
-                # Las vacas van a los pastos
                 df_frag['Bovinos'] = df_frag['Bovinos'] * pedazo['peso_bovinos']
-                # Los cerdos y aves van a las zonas industriales/cultivos
                 df_frag['Porcinos'] = df_frag['Porcinos'] * pedazo['peso_granjas']
                 df_frag['Aves'] = df_frag['Aves'] * pedazo['peso_granjas']
-                
                 df_frag['subc_lbl'] = pedazo['subc_lbl']
                 fragmentos_pecuarios.append(df_frag)
 
         if fragmentos_pecuarios:
             df_hist_pecuario = pd.concat(fragmentos_pecuarios)
-            df_cuencas_pec = df_hist_pecuario.groupby(['subc_lbl', 'Anio'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+            df_hist_pecuario['subc_lbl'] = df_hist_pecuario['subc_lbl'].astype(str).str.strip()
             
-            for sub in df_cuencas_pec['subc_lbl'].unique():
-                if sub == "Cuenca Sin Nombre": continue
-                df_temp = df_cuencas_pec[df_cuencas_pec['subc_lbl'] == sub].sort_values(by='Anio')
-                for esp in ['Bovinos', 'Porcinos', 'Aves']:
-                    ajustar_modelos(df_temp['Anio'].values, df_temp[esp].values, 'NSS3', sub, esp)
+            # 2. Descargamos la genealogía hídrica de la base de datos
+            q_jerarquia = text("""
+                SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
+                COALESCE(NULLIF(TRIM(nom_nss3), ''), 'Cuenca Sin Nombre') AS subc_lbl FROM cuencas
+            """)
+            df_arbol = pd.read_sql(q_jerarquia, engine_geo)
+            for c in df_arbol.columns: df_arbol[c] = df_arbol[c].astype(str).str.strip()
+            
+            # 3. Fusión Hídrica (Pegamos los padres a los fragmentos base)
+            df_hidro_completo = pd.merge(df_hist_pecuario, df_arbol.drop_duplicates(subset=['subc_lbl']), on='subc_lbl', how='left')
+            
+            # 4. Entrenamiento Top-Down (Cascada Hidrológica: AH -> NSS3)
+            niveles_hidro = {
+                'nomah': 'AH', 'nomzh': 'ZH', 'nom_szh': 'SZH', 
+                'nom_nss1': 'NSS1', 'nom_nss2': 'NSS2', 'subc_lbl': 'NSS3'
+            }
+            
+            for col_nivel, etiqueta in niveles_hidro.items():
+                if col_nivel in df_hidro_completo.columns:
+                    df_nivel = df_hidro_completo.dropna(subset=[col_nivel]).groupby([col_nivel, 'Anio'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+                    for terr in df_nivel[col_nivel].unique():
+                        if terr in ["", "None", "nan", "Cuenca Sin Nombre"]: continue
+                        df_t = df_nivel[df_nivel[col_nivel] == terr].sort_values('Anio')
+                        for esp in ['Bovinos', 'Porcinos', 'Aves']:
+                            ajustar_modelos(df_t['Anio'].values, df_t[esp].values, etiqueta, terr, esp)
 
-        # C. CARGA A LA MEMORIA VIVA
+        barra_progreso.progress(0.7)
+
+        # =================================================================
+        # C. ENTRENAMIENTO ADMINISTRATIVO (Mpio, Depto, Región, Macroregión)
+        # =================================================================
+        texto_progreso.info("🏢 Fase 2/2: Entrenando Escalas Administrativas Superiores...")
+        
+        # 1. Recuperamos metadata de los municipios desde PostGIS para saber sus regiones
+        try:
+            df_meta_mun = gpd.read_postgis("SELECT mpio_cnmbr, subregion, macroregion FROM municipios", engine_geo)
+            df_meta_mun['mun_norm'] = df_meta_mun['mpio_cnmbr'].astype(str).str.upper().str.strip()
+            df_censo = pd.merge(df_censo, df_meta_mun[['mun_norm', 'subregion', 'macroregion']].drop_duplicates(), on='mun_norm', how='left')
+        except Exception:
+            pass # Si falla la conexión, igual entrenará Municipios y Depto
+
+        # Municipios
+        df_mpios = df_censo.groupby(['Anio', 'mun_norm'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+        for mpio in df_mpios['mun_norm'].unique():
+            df_t = df_mpios[df_mpios['mun_norm'] == mpio].sort_values('Anio')
+            for esp in ['Bovinos', 'Porcinos', 'Aves']:
+                ajustar_modelos(df_t['Anio'].values, df_t[esp].values, 'MUNICIPIO', mpio, esp)
+
+        # Subregiones
+        if 'subregion' in df_censo.columns:
+            df_reg = df_censo.groupby(['Anio', 'subregion'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+            for reg in df_reg['subregion'].dropna().unique():
+                if reg in ["", "None", "nan"]: continue
+                df_t = df_reg[df_reg['subregion'] == reg].sort_values('Anio')
+                for esp in ['Bovinos', 'Porcinos', 'Aves']:
+                    ajustar_modelos(df_t['Anio'].values, df_t[esp].values, 'REGION', reg, esp)
+                    
+        # Macroregiones
+        if 'macroregion' in df_censo.columns:
+            df_mac = df_censo.groupby(['Anio', 'macroregion'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+            for mac in df_mac['macroregion'].dropna().unique():
+                if mac in ["", "None", "nan"]: continue
+                df_t = df_mac[df_mac['macroregion'] == mac].sort_values('Anio')
+                for esp in ['Bovinos', 'Porcinos', 'Aves']:
+                    ajustar_modelos(df_t['Anio'].values, df_t[esp].values, 'MACROREGION', mac, esp)
+
+        # Departamento
+        df_depto = df_censo.groupby('Anio')[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+        for esp in ['Bovinos', 'Porcinos', 'Aves']:
+            ajustar_modelos(df_depto['Anio'].values, df_depto[esp].values, 'DEPARTAMENTO', 'Antioquia', esp)
+
+        # =================================================================
+        # D. CARGA A LA MEMORIA VIVA
+        # =================================================================
         df_matriz_pec = pd.DataFrame(matriz_resultados)
         st.session_state['df_matriz_pecuaria'] = df_matriz_pec 
         
@@ -305,6 +357,78 @@ if 'df_matriz_pecuaria' in st.session_state:
         terr_val = st.selectbox("2. Territorio Hídrico / Administrativo:", territorios_disp, index=idx_terr)
     with c_nav3:
         anio_futuro = st.slider("3. Proyectar hasta el año:", min_value=2025, max_value=2050, value=2035, step=1)
+
+    st.markdown("---")
+    
+    # Filtramos los datos exactos del territorio que el usuario eligió
+    df_filtrado = df_mat[(df_mat['Nivel'] == nivel_val) & (df_mat['Territorio'] == terr_val)]
+    
+    if df_filtrado.empty:
+        st.warning(f"No hay datos proyectados para {terr_val} en el nivel {nivel_val}.")
+    else:
+        import plotly.graph_objects as go
+        import numpy as np
+        
+        # Organizamos las gráficas en 3 pestañas limpias
+        tabs = st.tabs(["🐄 Bovinos", "🐖 Porcinos", "🐔 Aves"])
+        especies = ["Bovinos", "Porcinos", "Aves"]
+        
+        for tab, especie in zip(tabs, especies):
+            with tab:
+                fila_esp = df_filtrado[df_filtrado['Especie'] == especie]
+                if fila_esp.empty:
+                    st.info(f"No se detectó vocación de {especie} en esta zona según el mapa de hábitats.")
+                    continue
+                    
+                fila_terr = fila_esp.iloc[0]
+                mejor_modelo = fila_terr.get('Modelo_Recomendado', 'Logístico')
+                
+                x_offset = fila_terr.get('Año_Base', 2018)
+                x_pred = np.arange(x_offset, anio_futuro + 1)
+                x_norm_pred = x_pred - x_offset
+                
+                fig = go.Figure()
+                
+                def config_linea(nombre_mod, color):
+                    es_ganador = mejor_modelo == nombre_mod
+                    return dict(color=color, width=4 if es_ganador else 2, dash='solid' if es_ganador else 'dash'), 1.0 if es_ganador else 0.4
+
+                # 1. Logístico
+                if 'Log_K' in fila_terr and not pd.isna(fila_terr['Log_K']) and fila_terr['Log_K'] > 0:
+                    y_log = fila_terr['Log_K'] / (1 + fila_terr['Log_a'] * np.exp(-fila_terr['Log_r'] * x_norm_pred))
+                    line_log, op_log = config_linea('Logístico', '#2980b9')
+                    fig.add_trace(go.Scatter(x=x_pred, y=y_log, mode='lines', name=f"Logístico (R²: {fila_terr.get('Log_R2',0):.4f})", line=line_log, opacity=op_log))
+                    
+                # 2. Exponencial
+                if 'Exp_a' in fila_terr and not pd.isna(fila_terr['Exp_a']):
+                    y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
+                    line_exp, op_exp = config_linea('Exponencial', '#e67e22')
+                    fig.add_trace(go.Scatter(x=x_pred, y=y_exp, mode='lines', name=f"Exponencial (R²: {fila_terr.get('Exp_R2',0):.4f})", line=line_exp, opacity=op_exp))
+                    
+                # 3. Polinomial (Grado 3)
+                if 'Poly_A' in fila_terr and not pd.isna(fila_terr['Poly_A']):
+                    y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
+                    line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
+                    fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial (R²: {fila_terr.get('Poly_R2',0):.4f})", line=line_poly, opacity=op_poly))
+
+                # 🚀 4. LINEAL (El nuevo modelo estable)
+                if 'Lin_m' in fila_terr and not pd.isna(fila_terr['Lin_m']):
+                    y_lin = fila_terr['Lin_m'] * x_norm_pred + fila_terr['Lin_b']
+                    line_lin, op_lin = config_linea('Lineal', '#8e44ad') # Color Morado
+                    fig.add_trace(go.Scatter(x=x_pred, y=y_lin, mode='lines', name=f"Lineal (R²: {fila_terr.get('Lin_R2',0):.4f})", line=line_lin, opacity=op_lin))
+
+                fig.update_layout(
+                    title=f"Proyección de {especie} - {terr_val}", 
+                    xaxis_title="Año", yaxis_title="Inventario (Cabezas/Aves)", hovermode="x unified",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # 🔑 Mostramos la llave para auditoría
+                llave = fila_terr.get('LLAVE_UNIVERSAL', 'NO_GENERADA')
+                st.caption(f"🔑 **Llave Universal:** `{llave}` | 🏆 Modelo Recomendado: **{mejor_modelo}**")
+
+        st.success(f"🔗 Carga pecuaria de **{terr_val}** para el año **{anio_futuro}** lista en memoria RAM.")
         
     # ==============================================================================
     # 🧠 TRANSMISIÓN AL CEREBRO GLOBAL (EL ALEPH)
@@ -315,11 +439,14 @@ if 'df_matriz_pecuaria' in st.session_state:
         f = df_f.iloc[0]
         x_norm = anio_obj - f['Año_Base']
         mod = f['Modelo_Recomendado']
+        
+        # Evaluador Matemático Universal
         if mod == 'Logístico': return f['Log_K'] / (1 + f['Log_a'] * np.exp(-f['Log_r'] * x_norm))
         elif mod == 'Exponencial': return f['Exp_a'] * np.exp(f['Exp_b'] * x_norm)
+        elif mod == 'Lineal': return f.get('Lin_m', 0) * x_norm + f.get('Lin_b', 0)
         else: return f['Poly_A']*(x_norm**3) + f['Poly_B']*(x_norm**2) + f['Poly_C']*x_norm + f['Poly_D']
 
-    # Extraer valores exactos para inyección
+    # Extraer valores exactos para inyección a la memoria viva de la app
     res_bov = calcular_proyeccion_especie(df_mat, nivel_val, terr_val, 'Bovinos', anio_futuro)
     res_por = calcular_proyeccion_especie(df_mat, nivel_val, terr_val, 'Porcinos', anio_futuro)
     res_ave = calcular_proyeccion_especie(df_mat, nivel_val, terr_val, 'Aves', anio_futuro)
@@ -332,7 +459,7 @@ if 'df_matriz_pecuaria' in st.session_state:
     st.success(f"🔗 Carga pecuaria de **{terr_val}** para el año **{anio_futuro}** lista en memoria RAM.")
     st.markdown("---")
     
-    # --- RENDERIZADO VISUAL ---
+    # --- RENDERIZADO VISUAL A DOBLE PANEL ---
     def renderizar_panel_pecuario(especie_sel, key_suffix):
         df_filtrado = df_mat[(df_mat['Nivel'] == nivel_val) & (df_mat['Territorio'] == terr_val) & (df_mat['Especie'] == especie_sel)]
         if df_filtrado.empty:
@@ -342,52 +469,63 @@ if 'df_matriz_pecuaria' in st.session_state:
         fila_terr = df_filtrado.iloc[0]
         mejor_modelo = fila_terr['Modelo_Recomendado']
         
-        # Reconstruir Histórico (Adaptado a los nuevos nombres)
+        # Reconstruir Histórico
         if nivel_val == 'DEPARTAMENTO': df_hist = df_pecuario.groupby('Anio')[especie_sel].sum().reset_index()
         elif nivel_val == 'MUNICIPIO': df_hist = df_pecuario[df_pecuario['Municipio_Norm'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
         elif nivel_val == 'NSS3': df_hist = df_pecuario[df_pecuario['Subcuenca'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
-        else: df_hist = df_pecuario[df_pecuario['Sistema'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
+        elif nivel_val == 'REGION': df_hist = df_pecuario[df_pecuario['subregion'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index() if 'subregion' in df_pecuario.columns else pd.DataFrame()
+        elif nivel_val == 'MACROREGION': df_hist = df_pecuario[df_pecuario['macroregion'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index() if 'macroregion' in df_pecuario.columns else pd.DataFrame()
+        else: df_hist = df_pecuario[df_pecuario['Sistema'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index() if 'Sistema' in df_pecuario.columns else pd.DataFrame()
             
-        df_hist = df_hist.sort_values(by='Anio')
-        x_hist = df_hist['Anio'].values
-        y_hist = df_hist[especie_sel].values
+        if not df_hist.empty:
+            df_hist = df_hist.sort_values(by='Anio')
+            x_hist = df_hist['Anio'].values
+            y_hist = df_hist[especie_sel].values
+        else:
+            x_hist, y_hist = [], []
         
         x_offset = fila_terr['Año_Base']
         x_pred = np.arange(x_offset, anio_futuro + 1)
         x_norm_pred = x_pred - x_offset
         
-        y_log = fila_terr['Log_K'] / (1 + fila_terr['Log_a'] * np.exp(-fila_terr['Log_r'] * x_norm_pred))
-        y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
-        y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
-        
         fig = go.Figure()
-        
         color_data = {'Bovinos': 'brown', 'Porcinos': 'deeppink', 'Aves': 'goldenrod'}
         icono = {'Bovinos': '🐄', 'Porcinos': '🐖', 'Aves': '🐔'}
         
-        fig.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Censo ICA', marker=dict(color=color_data[especie_sel], size=10, symbol='diamond')))
+        if len(x_hist) > 0:
+            fig.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Censo ICA', marker=dict(color=color_data[especie_sel], size=10, symbol='diamond')))
         
         def config_linea(nombre_mod, color_mod):
             es_ganador = mejor_modelo == nombre_mod
             return dict(color=color_mod, width=4 if es_ganador else 2, dash='solid' if es_ganador else 'dash'), 1.0 if es_ganador else 0.4
             
-        line_log, op_log = config_linea('Logístico', '#2980b9')
-        fig.add_trace(go.Scatter(x=x_pred, y=y_log, mode='lines', name=f"Logístico (R²: {fila_terr['Log_R2']})", line=line_log, opacity=op_log))
-        
-        line_exp, op_exp = config_linea('Exponencial', '#e67e22')
-        fig.add_trace(go.Scatter(x=x_pred, y=y_exp, mode='lines', name=f"Exponencial (R²: {fila_terr['Exp_R2']})", line=line_exp, opacity=op_exp))
-        
-        line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
-        fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial 3 (R²: {fila_terr['Poly_R2']})", line=line_poly, opacity=op_poly))
-        
-        # 🚀 Trazado del Modelo Lineal
+        # 1. Logístico
+        if 'Log_K' in fila_terr and not pd.isna(fila_terr['Log_K']) and fila_terr['Log_K'] > 0:
+            y_log = fila_terr['Log_K'] / (1 + fila_terr['Log_a'] * np.exp(-fila_terr['Log_r'] * x_norm_pred))
+            line_log, op_log = config_linea('Logístico', '#2980b9')
+            fig.add_trace(go.Scatter(x=x_pred, y=y_log, mode='lines', name=f"Logístico (R²: {fila_terr.get('Log_R2', 0):.4f})", line=line_log, opacity=op_log))
+            
+        # 2. Exponencial
+        if 'Exp_a' in fila_terr and not pd.isna(fila_terr['Exp_a']):
+            y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
+            line_exp, op_exp = config_linea('Exponencial', '#e67e22')
+            fig.add_trace(go.Scatter(x=x_pred, y=y_exp, mode='lines', name=f"Exponencial (R²: {fila_terr.get('Exp_R2', 0):.4f})", line=line_exp, opacity=op_exp))
+            
+        # 3. Polinomial
+        if 'Poly_A' in fila_terr and not pd.isna(fila_terr['Poly_A']):
+            y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
+            line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
+            fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial 3 (R²: {fila_terr.get('Poly_R2', 0):.4f})", line=line_poly, opacity=op_poly))
+            
+        # 🚀 4. Lineal
         if 'Lin_m' in fila_terr and not pd.isna(fila_terr['Lin_m']):
             y_lin = fila_terr['Lin_m'] * x_norm_pred + fila_terr['Lin_b']
-            line_lin, op_lin = config_linea('Lineal', '#8e44ad') # Color Morado
-            fig.add_trace(go.Scatter(x=x_pred, y=y_lin, mode='lines', name=f"Lineal (R²: {fila_terr.get('Lin_R2', 0)})", line=line_lin, opacity=op_lin))
+            line_lin, op_lin = config_linea('Lineal', '#8e44ad')
+            fig.add_trace(go.Scatter(x=x_pred, y=y_lin, mode='lines', name=f"Lineal (R²: {fila_terr.get('Lin_R2', 0):.4f})", line=line_lin, opacity=op_lin))
         
+        llave_u = fila_terr.get('LLAVE_UNIVERSAL', 'Generando...')
         fig.update_layout(
-            title=f"Proyección de {icono[especie_sel]} {especie_sel} (Ganador: {mejor_modelo})", 
+            title=f"Proyección de {icono[especie_sel]} {especie_sel} (Ganador: {mejor_modelo})<br><sup>🔑 Llave: {llave_u}</sup>", 
             xaxis_title="Año", yaxis_title="Número de Animales", hovermode="x unified", 
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
@@ -397,12 +535,12 @@ if 'df_matriz_pecuaria' in st.session_state:
         lado = "Panel Izquierdo" if key_suffix == "g1" else "Panel Derecho"
         with st.expander(f"📐 Parámetros del Modelo de {especie_sel} ({lado})", expanded=False):
             df_coefs = pd.DataFrame([
-                {"Modelo": "Logístico", "R²": f"{fila_terr['Log_R2']:.4f}", "Parámetros": f"K={fila_terr['Log_K']:.0f}, a={fila_terr['Log_a']:.4f}, r={fila_terr['Log_r']:.4f}"},
-                {"Modelo": "Exponencial", "R²": f"{fila_terr['Exp_R2']:.4f}", "Parámetros": f"a={fila_terr['Exp_a']:.0f}, b={fila_terr['Exp_b']:.4f}"},
-                {"Modelo": "Polinomial 3", "R²": f"{fila_terr['Poly_R2']:.4f}", "Parámetros": f"A={fila_terr['Poly_A']:.4e}, B={fila_terr['Poly_B']:.4e}, C={fila_terr['Poly_C']:.4f}, D={fila_terr['Poly_D']:.0f}"},
+                {"Modelo": "Logístico", "R²": f"{fila_terr.get('Log_R2', 0):.4f}", "Parámetros": f"K={fila_terr.get('Log_K', 0):.0f}, a={fila_terr.get('Log_a', 0):.4f}, r={fila_terr.get('Log_r', 0):.4f}"},
+                {"Modelo": "Exponencial", "R²": f"{fila_terr.get('Exp_R2', 0):.4f}", "Parámetros": f"a={fila_terr.get('Exp_a', 0):.0f}, b={fila_terr.get('Exp_b', 0):.4f}"},
+                {"Modelo": "Polinomial 3", "R²": f"{fila_terr.get('Poly_R2', 0):.4f}", "Parámetros": f"A={fila_terr.get('Poly_A', 0):.4e}, B={fila_terr.get('Poly_B', 0):.4e}, C={fila_terr.get('Poly_C', 0):.4f}, D={fila_terr.get('Poly_D', 0):.0f}"},
                 {"Modelo": "Lineal", "R²": f"{fila_terr.get('Lin_R2', 0):.4f}", "Parámetros": f"m={fila_terr.get('Lin_m', 0):.4f}, b={fila_terr.get('Lin_b', 0):.0f}"}
             ])
-            def highlight_winner(row): return ['background-color: #d4edda' if row['Modelo'] == mejor_modelo else '' for _ in row]
+            def highlight_winner(row): return ['background-color: #d4edda' if row['Modelo'].startswith(mejor_modelo[:4]) else '' for _ in row]
             st.dataframe(df_coefs.style.apply(highlight_winner, axis=1), use_container_width=True)
 
     col_graf_1, col_graf_2 = st.columns(2)
@@ -429,22 +567,17 @@ if 'df_matriz_pecuaria' in st.session_state:
             with st.spinner("Forjando Cerebro Pecuario y conectando con PostgreSQL..."):
                 try:
                     from modules.db_manager import get_engine
-                    from sqlalchemy import text # Importación requerida para el execute
+                    from sqlalchemy import text 
                     engine_sql = get_engine()
                     
                     df_export = df_matriz_pec.copy()
                     
-                    # Seguro de nombres
                     if 'Pob_Base' in df_export.columns and 'Poblacion_Base' not in df_export.columns:
                         df_export.rename(columns={'Pob_Base': 'Poblacion_Base'}, inplace=True)
                     
-                    # 🔥 FIX DEFINITIVO: AUTO-MANTENIMIENTO Y BORRADO SEGURO
                     with engine_sql.begin() as conn:
-                        # 1. Creamos las columnas si no existen (Llave y las nuevas Lineales)
                         conn.execute(text('ALTER TABLE matriz_maestra_pecuaria ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
                         conn.execute(text('ALTER TABLE matriz_maestra_pecuaria ADD COLUMN IF NOT EXISTS "Lin_m" FLOAT, ADD COLUMN IF NOT EXISTS "Lin_b" FLOAT, ADD COLUMN IF NOT EXISTS "Lin_R2" FLOAT;'))
-                        
-                        # 2. Borramos los datos viejos
                         conn.execute(text("DELETE FROM matriz_maestra_pecuaria;"))
                         
                     df_export.to_sql('matriz_maestra_pecuaria', engine_sql, if_exists='append', index=False)
