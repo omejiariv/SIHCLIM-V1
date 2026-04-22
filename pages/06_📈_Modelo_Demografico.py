@@ -2004,7 +2004,7 @@ with tab_matriz:
     pwd_admin = st.text_input("🔑 Contraseña de Administrador:", type="password", key="pwd_forja")
     
     if st.button("⚡ Iniciar Forja Multiescala (Recálculo Global)", type="primary", use_container_width=True):
-        if pwd_admin == "CuencaVerde2024":
+        if pwd_admin == "AdminPoter":
             try:
                 from modules.db_manager import get_engine
                 from sqlalchemy import text
