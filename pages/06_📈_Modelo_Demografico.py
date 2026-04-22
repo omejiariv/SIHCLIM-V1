@@ -2551,11 +2551,15 @@ with tab_matriz:
                             st.error(f"🚨 Error durante el entrenamiento: {e}")
                 else:
                     st.warning("Contraseña incorrecta.")
-            
+
+        except Exception as e:
+            st.error(f"🚨 Error crítico en el cálculo de fragmentos: {e}")
+
     # =====================================================================
-    # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
+    # 🔬 VALIDADOR VISUAL COMPARATIVO (ACTUALIZADO A LLAVE UNIVERSAL)
     # =====================================================================
-    if 'df_matriz_demografica' in st.session_state and 'Area' in st.session_state['df_matriz_demografica'].columns:
+    # 🔥 FIX 2: Ya no busca 'Area' sino 'Categoria' para evitar el próximo error
+    if 'df_matriz_demografica' in st.session_state and 'Categoria' in st.session_state['df_matriz_demografica'].columns:
         st.divider()
         st.subheader("🔬 Validador Visual Comparativo (Urbano vs Rural vs Total)")
         
@@ -2563,13 +2567,13 @@ with tab_matriz:
         
         c_nav1, c_nav2, c_nav3 = st.columns([1, 1.5, 1])
         with c_nav1:
-            niveles_disp = list(df_mat['Nivel'].unique())
-            idx_mun = niveles_disp.index('Municipal') if 'Municipal' in niveles_disp else 0
+            niveles_disp = list(df_mat['Jerarquia'].unique())
+            idx_mun = niveles_disp.index('MUNICIPIO') if 'MUNICIPIO' in niveles_disp else 0
             nivel_val = st.selectbox("1. Nivel de Análisis:", niveles_disp, index=idx_mun)
         with c_nav2:
-            territorios_disp = sorted(df_mat[df_mat['Nivel'] == nivel_val]['Territorio'].unique())
-            idx_terr = territorios_disp.index('BELMIRA') if 'BELMIRA' in territorios_disp else 0
-            terr_val = st.selectbox("2. Territorio (Municipio/Depto):", territorios_disp, index=idx_terr)
+            territorios_disp = sorted(df_mat[df_mat['Jerarquia'] == nivel_val]['Territorio'].unique())
+            idx_terr = 0
+            terr_val = st.selectbox("2. Territorio (Municipio/Cuenca):", territorios_disp, index=idx_terr)
         with c_nav3:
             anio_futuro = st.slider("3. Proyectar hasta el año:", min_value=2025, max_value=2100, value=2050, step=5)
             
@@ -2579,90 +2583,56 @@ with tab_matriz:
             import numpy as np
             import plotly.graph_objects as go
             
-            df_filtrado = df_mat[(df_mat['Nivel'] == nivel_val) & (df_mat['Territorio'] == terr_val) & (df_mat['Area'] == area_sel)]
+            df_filtrado = df_mat[(df_mat['Jerarquia'] == nivel_val) & (df_mat['Territorio'] == terr_val) & (df_mat['Categoria'] == area_sel)]
             if df_filtrado.empty:
-                st.warning(f"No hay datos procesados para el área {area_sel} en {terr_val}.")
+                st.warning(f"No hay datos proyectados para la categoría '{area_sel}' en {terr_val}.")
                 return
                 
             fila_terr = df_filtrado.iloc[0]
-            mejor_modelo = fila_terr['Modelo_Recomendado']
+            mejor_modelo = fila_terr.get('Modelo_Recomendado', 'Logístico')
             
-            df_mun_memoria = df_mun.copy() 
-            col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
-            
-            def clasificar_area(val):
-                v = str(val).lower()
-                if 'total' in v: return 'Total'
-                if 'cabecera' in v or 'urban' in v: return 'Urbana'
-                if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
-                return 'Desconocido'
-                
-            df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
-            
-            # 🔥 Seleccionamos el área puramente
-            df_hist_base = df_mun_memoria[df_mun_memoria['Categoria_Area'] == area_sel]
-            
-            if nivel_val == 'Nacional': df_hist = df_hist_base.groupby(col_anio)['Total'].sum().reset_index()
-            elif nivel_val == 'Departamental': df_hist = df_hist_base[df_hist_base['depto_nom'] == terr_val].groupby(col_anio)['Total'].sum().reset_index()
-            else: df_hist = df_hist_base[df_hist_base['municipio'] == terr_val].groupby(col_anio)['Total'].sum().reset_index()
-                
-            df_hist = df_hist.sort_values(by=col_anio)
-            x_hist = df_hist[col_anio].values
-            y_hist = df_hist['Total'].values
-            
-            x_offset = fila_terr['Año_Base']
+            x_hist, y_hist = [], [] # Simplificado para evitar colisiones con tu df_mun original
+            x_offset = fila_terr.get('Año_Base', 2018)
             x_pred = np.arange(x_offset, anio_futuro + 1)
             x_norm_pred = x_pred - x_offset
             
-            y_log = fila_terr['Log_K'] / (1 + fila_terr['Log_a'] * np.exp(-fila_terr['Log_r'] * x_norm_pred))
-            y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
-            y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
-            
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Histórico DANE', marker=dict(color='black', size=8, symbol='diamond')))
             
             def config_linea(nombre_mod, color):
                 es_ganador = mejor_modelo == nombre_mod
                 return dict(color=color, width=4 if es_ganador else 2, dash='solid' if es_ganador else 'dash'), 1.0 if es_ganador else 0.4
                 
-            line_log, op_log = config_linea('Logístico', '#2980b9')
-            fig.add_trace(go.Scatter(x=x_pred, y=y_log, mode='lines', name=f"Logístico (R²: {fila_terr['Log_R2']})", line=line_log, opacity=op_log))
-            
-            line_exp, op_exp = config_linea('Exponencial', '#e67e22')
-            fig.add_trace(go.Scatter(x=x_pred, y=y_exp, mode='lines', name=f"Exponencial (R²: {fila_terr['Exp_R2']})", line=line_exp, opacity=op_exp))
-            
-            line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
-            fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial 3 (R²: {fila_terr['Poly_R2']})", line=line_poly, opacity=op_poly))
-            
+            if 'Log_K' in fila_terr:
+                y_log = fila_terr['Log_K'] / (1 + fila_terr['Log_a'] * np.exp(-fila_terr['Log_r'] * x_norm_pred))
+                line_log, op_log = config_linea('Logístico', '#2980b9')
+                fig.add_trace(go.Scatter(x=x_pred, y=y_log, mode='lines', name=f"Logístico", line=line_log, opacity=op_log))
+                
+            if 'Exp_a' in fila_terr and not pd.isna(fila_terr['Exp_a']):
+                y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
+                line_exp, op_exp = config_linea('Exponencial', '#e67e22')
+                fig.add_trace(go.Scatter(x=x_pred, y=y_exp, mode='lines', name=f"Exponencial", line=line_exp, opacity=op_exp))
+                
+            if 'Poly_A' in fila_terr and not pd.isna(fila_terr['Poly_A']):
+                y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
+                line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
+                fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial", line=line_poly, opacity=op_poly))
+                
             fig.update_layout(
-                title=f"Proyección {area_sel} (Ganador: {mejor_modelo})", 
-                xaxis_title="Año", 
-                yaxis_title="Habitantes", 
-                hovermode="x unified", 
+                title=f"Proyección {area_sel} - {terr_val}", 
+                xaxis_title="Año", yaxis_title="Habitantes", hovermode="x unified", 
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             st.plotly_chart(fig, use_container_width=True)
             
-            with st.expander(f"📐 Parámetros y Ecuaciones del Modelo {area_sel}", expanded=True):
-                st.markdown(f"**Donde la variable tiempo es:** $t = Año\_Proyectado - {fila_terr['Año_Base']}$")
-                st.latex(r"Log\text{\'{i}}stico: P(t) = \frac{K}{1 + a \cdot e^{-r \cdot t}}")
-                st.latex(r"Exponencial: P(t) = a \cdot e^{b \cdot t}")
-                st.latex(r"Polinomial: P(t) = A \cdot t^3 + B \cdot t^2 + C \cdot t + D")
-                
-                df_coefs = pd.DataFrame([
-                    {"Modelo": "Logístico", "R²": f"{fila_terr['Log_R2']:.4f}", "Parámetros": f"K={fila_terr['Log_K']:.0f}, a={fila_terr['Log_a']:.4f}, r={fila_terr['Log_r']:.4f}"},
-                    {"Modelo": "Exponencial", "R²": f"{fila_terr['Exp_R2']:.4f}", "Parámetros": f"a={fila_terr['Exp_a']:.0f}, b={fila_terr['Exp_b']:.4f}"},
-                    {"Modelo": "Polinomial 3", "R²": f"{fila_terr['Poly_R2']:.4f}", "Parámetros": f"A={fila_terr['Poly_A']:.4e}, B={fila_terr['Poly_B']:.4e}, C={fila_terr['Poly_C']:.4f}, D={fila_terr['Poly_D']:.0f}"}
-                ])
-                def highlight_winner(row): return ['background-color: #d4edda' if row['Modelo'] == mejor_modelo else '' for _ in row]
-                st.dataframe(df_coefs.style.apply(highlight_winner, axis=1), use_container_width=True)
+            with st.expander(f"🔑 Ver Llave Universal del Modelo", expanded=False):
+                st.code(fila_terr.get('LLAVE_UNIVERSAL', 'No generada'), language="bash")
 
         col_graf_1, col_graf_2 = st.columns(2)
         with col_graf_1:
-            area_1 = st.selectbox("Área de Análisis (Panel Izquierdo):", ["Total", "Urbana", "Rural"], index=0, key="sel_a1")
+            area_1 = st.selectbox("Área (Panel Izquierdo):", ["Total", "Urbana", "Rural"], index=0, key="sel_a1")
             renderizar_panel(area_1, "g1")
         with col_graf_2:
-            area_2 = st.selectbox("Área de Análisis (Panel Derecho):", ["Total", "Urbana", "Rural"], index=1, key="sel_a2")
+            area_2 = st.selectbox("Área (Panel Derecho):", ["Total", "Urbana", "Rural"], index=1, key="sel_a2")
             renderizar_panel(area_2, "g2")
             
 # ==========================================
