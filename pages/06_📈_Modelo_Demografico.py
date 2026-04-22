@@ -1993,116 +1993,569 @@ with tab_mapas:
         else:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
 
-# ==============================================================================
-# ⚙️ PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA MULTIESCALA (TOTAL, URBANO, RURAL)
-# ==============================================================================
+# =====================================================================
+# PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
+# =====================================================================
 with tab_matriz:
-    st.subheader("🚀 Motor de Forja Demográfica Universal")
-    st.markdown("Generación masiva de modelos para todos los niveles con **Llave Universal**.")
-
-    # 🔑 CONTRASEÑA DE SEGURIDAD
-    pwd_admin = st.text_input("🔑 Contraseña de Administrador:", type="password", key="pwd_forja")
+    st.subheader("🧠 Motor Generador de Matriz Maestra Demográfica (Total, Urbano y Rural)")
+    st.markdown("""
+    Este motor entrena simultáneamente tres modelos matemáticos predictivos y recomienda el de mejor ajuste:
+    * **Logístico:** Ideal para poblaciones que alcanzan un techo por límites físicos o recursos.
+    * **Exponencial:** Ideal para poblaciones en crecimiento o decrecimiento libre constante.
+    * **Polinomial (Grado 3):** Ideal para poblaciones con fluctuaciones o declives no lineales.
+    """)
     
-    if st.button("⚡ Iniciar Forja Multiescala (Recálculo Global)", type="primary", use_container_width=True):
-        if pwd_admin == "AdminPoter":
-            try:
-                from modules.db_manager import get_engine
-                from sqlalchemy import text
-                engine_sql = get_engine()
+    # 🚀 NUEVO BOTÓN CON BARRA DE PROGRESO INTELIGENTE
+    if st.button("⚙️ Iniciar Entrenamiento Masivo de Matriz (Automático)", type="primary", use_container_width=True):
+        st.info("🧠 Iniciando motor de Machine Learning. Por favor, no recargues ni cierres la página.")
+        barra_progreso = st.progress(0)
+        texto_progreso = st.empty()
+        
+        try:
+            import time
+            import numpy as np
+            import pandas as pd
+            from scipy.optimize import curve_fit
+            from modules.db_manager import get_engine
+            from sqlalchemy import text
+            import unicodedata
+            import difflib
+            import re
+            
+            engine_sql = get_engine()
+            start_time = time.time()
+            
+            def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
+            def f_exp(t, a, b): return a * np.exp(b * t)
+            def calcular_r2(y_real, y_pred):
+                ss_res = np.sum((y_real - y_pred) ** 2)
+                ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
+                return 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            
+            matriz_resultados = []
+            
+            def ajustar_modelos(x, y, nivel, territorio, padre, area):
+                if len(x) < 4: return 
+                x_offset = x[0]
+                x_norm = x - x_offset
+                p0_val = max(1, y[0])
+                max_y = max(y)
+                es_creciente = y[-1] >= p0_val
                 
-                # 1. Definición de Funciones y Niveles
-                def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
-                
-                niveles = {
-                    'DEPARTAMENTO': 'DEPARTAMENTO', 'REGION': 'REGION', 
-                    'MUNICIPIO': 'mpio_cnmbr', 'NSS3': 'nom_nss3'
-                }
-                # Añadimos las 3 categorías para no perder funcionalidad
-                categorias = ['Total', 'Urbana', 'Rural']
+                # 1. LOGÍSTICO
+                log_k, log_a, log_r, log_r2 = 0, 0, 0, 0
+                try:
+                    # 🔥 FIX: Límite estricto de crecimiento (Corsé) para evitar explosiones
+                    k_max = max_y * 1.5 if es_creciente else max_y * 1.05
+                    k_guess = max_y * 1.1 if es_creciente else max(1, y[-1] * 0.95)
+                    
+                    a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
+                    a_guess = max(-0.999, a_guess) 
+                    r_guess = 0.02 
+                    
+                    k_min = max_y * 0.8 if es_creciente else y[-1] * 0.5
+                    
+                    limites = ([k_min, -0.999, 0.0001], [k_max, np.inf, 0.3])
+                    
+                    popt_log, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=10000)
+                    log_k, log_a, log_r = popt_log
+                    log_r2 = calcular_r2(y, f_log(x_norm, *popt_log))
+                except Exception: pass
 
-                # 2. Cargar Cartografía y Datos
-                with st.spinner("Preparando motor jerárquico..."):
-                    gdf_all = gpd.read_postgis("SELECT * FROM cuencas", engine_sql, geom_col="geometry")
-                    gdf_all['DEPARTAMENTO'] = 'Antioquia'
-                    
-                    # 🔥 FIX 1: Búsqueda robusta de Región
-                    col_region = next((c for c in gdf_all.columns if c.lower() in ['depto_regi', 'region', 'subregion', 'zona']), None)
-                    if col_region:
-                        gdf_all['REGION'] = gdf_all[col_region].astype(str).str.replace('Antioquia - ', 'Región ', regex=False)
-                    else:
-                        gdf_all['REGION'] = 'Región No Definida'
-                    
-                    # 🔥 FIX 2: Búsqueda robusta de Municipio (Evita el KeyError: 'mpio_cnmbr')
-                    # Buscamos variaciones comunes como MPIO_CNMBR, municipio, nombre_mpi, etc.
-                    col_mpio_detectada = next((c for c in gdf_all.columns if c.lower() in ['mpio_cnmbr', 'municipio', 'nombre_mpi', 'nomb_mpio', 'nom_mpio']), None)
-                    
-                    if not col_mpio_detectada:
-                        st.error("❌ No se encontró la columna de Municipios en la tabla 'cuencas'. Por favor verifica si se llama diferente.")
-                        st.stop()
+                # 2. EXPONENCIAL
+                exp_a, exp_b, exp_r2 = 0, 0, 0
+                try:
+                    r_exp_guess = 0.01 if es_creciente else -0.01 # Pista al solver de que la curva baja
+                    popt_exp, _ = curve_fit(f_exp, x_norm, y, p0=[p0_val, r_exp_guess], maxfev=10000)
+                    exp_a, exp_b = popt_exp
+                    exp_r2 = calcular_r2(y, f_exp(x_norm, *popt_exp))
+                except Exception: pass
 
-                    # 🧠 NIVELES DE ANÁLISIS (Usando la columna detectada)
-                    niveles = {
-                        'DEPARTAMENTO': 'DEPARTAMENTO',
-                        'REGION': 'REGION',
-                        'MUNICIPIO': col_mpio_detectada, # <--- Usamos el nombre real de tu BD
-                        'NSS3': 'nom_nss3', 'NSS2': 'nom_nss2', 'NSS1': 'nom_nss1'
-                    }
-                    
-                    df_dane = st.session_state.get('df_poblacion_long')
-                res_maestro = []
-                barra = st.progress(0)
+                # 3. POLINOMIAL (Grado 3)
+                poly_A, poly_B, poly_C, poly_D, poly_r2 = 0, 0, 0, 0, 0
+                try:
+                    coefs = np.polyfit(x_norm, y, 3)
+                    poly_A, poly_B, poly_C, poly_D = coefs
+                    poly_r2 = calcular_r2(y, np.polyval(coefs, x_norm))
+                except Exception: pass
+
+                dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2}
+                mejor_modelo = max(dic_modelos, key=dic_modelos.get)
+                mejor_r2 = dic_modelos[mejor_modelo]
+
+                matriz_resultados.append({
+                    'Area': area, 'Nivel': nivel, 'Territorio': territorio, 'Padre': padre,
+                    'Año_Base': int(x_offset), 'Pob_Base': round(p0_val, 0),
+                    'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
+                    'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
+                    'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
+                    'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
+                })
+
+            df_mun_memoria = df_mun.copy() 
+            col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
+            
+            def clasificar_area(val):
+                v = str(val).lower()
+                if 'total' in v: return 'Total'
+                if 'cabecera' in v or 'urban' in v: return 'Urbana'
+                if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
+                return 'Desconocido'
                 
-                # 3. EL GRAN BUCLE MULTIESCALA Y MULTICATEGORÍA
-                for idx, (jerarquia, col_bd) in enumerate(niveles.items()):
-                    territorios = gdf_all[col_bd].dropna().unique()
+            df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
+            
+            # 🔥 LA CURA A ABEJORRAL INTELIGENTE (Sella la fuga de los 272k):
+            mpios_con_total = df_mun_memoria[df_mun_memoria['Categoria_Area'] == 'Total']['municipio'].unique()
+            mpios_necesitan_total = df_mun_memoria[~df_mun_memoria['municipio'].isin(mpios_con_total)]['municipio'].unique()
+            
+            if len(mpios_necesitan_total) > 0:
+                df_faltantes = df_mun_memoria[df_mun_memoria['municipio'].isin(mpios_necesitan_total)]
+                df_urb_rur = df_faltantes[df_faltantes['Categoria_Area'].isin(['Urbana', 'Rural'])]
+                
+                if not df_urb_rur.empty:
+                    cols_suma = [c for c in df_mun_memoria.columns if c not in ['municipio', 'depto_nom', col_anio, 'Categoria_Area', 'area_geografica', 'Macroregion']]
+                    df_totales_calc = df_urb_rur.groupby(['depto_nom', 'municipio', col_anio])[cols_suma].sum().reset_index()
+                    df_totales_calc['Categoria_Area'] = 'Total'
+                    df_totales_calc['area_geografica'] = 'total'
+                    df_mun_memoria = pd.concat([df_mun_memoria, df_totales_calc], ignore_index=True)
                     
-                    for t_nom in territorios:
-                        # Filtramos municipios contenidos en este territorio
-                        mpios_en_t = gdf_all[gdf_all[col_bd]==t_nom]['mpio_cnmbr'].unique()
+            # --- 🕵️‍♂️ RECOLECCIÓN MASIVA DE CUENCAS DE LA BASE DE DATOS ---
+            q_todas = text("SELECT DISTINCT nom_nss3 FROM cuencas WHERE nom_nss3 IS NOT NULL")
+            lista_todas_cuencas = pd.read_sql(q_todas, engine_sql)['nom_nss3'].tolist()
+            
+            # --- ⚙️ MOTOR DE PROGRESO UI ---
+            mpios = df_mun_memoria['municipio'].dropna().unique()
+            deptos = df_mun_memoria['depto_nom'].dropna().unique()
+            areas_a_procesar = ['Total', 'Urbana', 'Rural']
+            
+            total_ops = len(areas_a_procesar) * (1 + len(deptos) + len(mpios) + len(lista_todas_cuencas))
+            ops_completadas = 0
+            historico_cuencas = [] # 🔥 NUEVO: Recolector maestro de fragmentos para balancear cuencas
+
+            for tipo_area in areas_a_procesar:
+                df_area_actual = df_mun_memoria[df_mun_memoria['Categoria_Area'] == tipo_area].copy()
+                
+                # 🚨 SELLO DE BALANCE MAESTRO: Si un área está vacía, bloqueamos el motor
+                # Esto evita el "Fantasma de la Inflación" de 9.1M
+                if df_area_actual.empty: 
+                    st.error(f"🚨 Error Crítico: No se encontró población en el DANE para la categoría '{tipo_area}'. Revisa la normalización.")
+                    st.stop()
+                
+                # 1. Nacional
+                df_nac_temp = df_area_actual.groupby(col_anio)['Total'].sum().reset_index().sort_values(by=col_anio)
+                ajustar_modelos(df_nac_temp[col_anio].values, df_nac_temp['Total'].values, 'Nacional', 'Colombia', 'Mundo', tipo_area)
+                ops_completadas += 1
+
+                # 2. Departamental
+                df_deptos = df_area_actual.groupby(['depto_nom', col_anio])['Total'].sum().reset_index()
+                for depto in deptos:
+                    df_temp = df_deptos[df_deptos['depto_nom'] == depto].sort_values(by=col_anio)
+                    if not df_temp.empty: ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Departamental', depto, 'Colombia', tipo_area)
+                    ops_completadas += 1
+
+                # 3. Municipal
+                df_mpios = df_area_actual.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
+                for mpio in mpios:
+                    df_temp = df_mpios[df_mpios['municipio'] == mpio].sort_values(by=col_anio)
+                    if not df_temp.empty: ajustar_modelos(df_temp[col_anio].values, df_temp['Total'].values, 'Municipal', mpio, df_temp['depto_nom'].iloc[0], tipo_area)
+                    ops_completadas += 1
+                    
+                    if ops_completadas % 10 == 0:
+                        porcentaje = min(ops_completadas / total_ops, 1.0)
+                        barra_progreso.progress(porcentaje)
+                        elapsed = time.time() - start_time
+                        eta = max((elapsed / ops_completadas) * total_ops - elapsed, 0)
+                        mins, secs = divmod(int(eta), 60)
+                        texto_progreso.markdown(f"**Procesando Base Administrativa:** {mpio} ({tipo_area})... | **ETA:** {mins}m {secs}s")
+
+                # ================================================================
+                # 🧠 BISTURÍ ESPACIAL V6: Hiper-Resolución (Barrios + Gravedad)
+                # ================================================================
+                try:
+                    # 🔥 FIX: Solo procesamos espacialmente Urbana y Rural. El Total se deducirá matemáticamente.
+                    if tipo_area in ['Urbana', 'Rural']:
+                        import geopandas as gpd
+                        from sqlalchemy import text
+                        import unicodedata
+                        import difflib
+                        import re
+                        from modules.db_manager import get_engine
                         
-                        for cat in categorias:
-                            df_h = df_dane[(df_dane['Municipio'].isin(mpios_en_t)) & (df_dane['Tipo'] == cat)]
-                            serie = df_h.groupby('Año')['Poblacion'].sum().reset_index()
-                            
-                            if len(serie) < 3: continue
-                            
-                            t = serie['Año'].values - serie['Año'].min()
-                            y = serie['Poblacion'].values
-                            
-                            try:
-                                # Ajuste de modelo y cálculo de R2
-                                p_log, _ = curve_fit(f_log, t, y, p0=[y.max()*1.1, 10, 0.02], maxfev=5000)
-                                
-                                # 🔥 LA LLAVE UNIVERSAL: Une Jerarquía, Territorio y Categoría
-                                llave_u = f"{jerarquia}_{t_nom}_{cat}".upper().replace(" ", "_")
-                                
-                                res_maestro.append({
-                                    "Jerarquia": jerarquia, "Territorio": t_nom, "Categoria": cat,
-                                    "LLAVE_UNIVERSAL": llave_u, "Pob_Base": int(y[-1]),
-                                    "Log_K": p_log[0], "Log_a": p_log[1], "Log_r": p_log[2]
-                                })
-                            except: continue
-                    barra.progress((idx + 1) / len(niveles))
+                        engine_geo = get_engine()
+                        
+                        # 1. CARGA DE ACTIVOS CLOUD
+                        URL_CABECERAS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CabeceraMunicipal_GisAnt_PT.geojson"
+                        URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
+                        URL_BARRIOS_MED = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
+                        
+                        q_cue = text("""
+                            SELECT COALESCE(
+                                NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), 
+                                NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre'
+                            ) AS subc_lbl, geometry 
+                            FROM cuencas
+                        """)
+                        gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
+                        gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
+                        
+                        def cargar_y_proyectar(url):
+                            temp_gdf = gpd.read_file(url)
+                            if temp_gdf.crs is None: temp_gdf = temp_gdf.set_crs(epsg=4326)
+                            return temp_gdf.to_crs(epsg=3116)
 
-                # 4. Inyección Final Limpia
-                if res_maestro:
-                    df_final = pd.DataFrame(res_maestro)
-                    with engine_sql.begin() as conn:
-                        conn.execute(text("DELETE FROM matriz_maestra_demografica;"))
-                    df_final.to_sql('matriz_maestra_demografica', engine_sql, if_exists='append', index=False)
-                    
-                    # 🔥 FIX 1: Guardamos en memoria RAM para que el validador visual "despierte" de inmediato
-                    st.session_state['df_matriz_demografica'] = df_final 
-                    st.success(f"✅ ¡Forja Completada! {len(df_final)} registros blindados.")
-            except Exception as e:
-                st.error(f"🚨 Error: {e}")
-        else: st.warning("Contraseña incorrecta.")
+                        gdf_barrios = cargar_y_proyectar(URL_BARRIOS_MED)
+                        gdf_cab = cargar_y_proyectar(URL_CABECERAS)
+                        gdf_cp = cargar_y_proyectar(URL_CENTROS_POBLADOS)
+                        
+                        gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry")
+                        col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
+                        if col_dpto in gdf_mun.columns: gdf_mun = gdf_mun[gdf_mun[col_dpto] == '05'].copy()
+                        gdf_mun = gdf_mun.to_crs(epsg=3116)
 
+                        def clean_v6(t):
+                            if not t or pd.isna(t): return ""
+                            t = str(t).lower().strip()
+                            t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                            return re.sub(r'[^a-z0-9]', '', t)
+
+                        col_cab = 'MPIO_NOMBR' if 'MPIO_NOMBR' in gdf_cab.columns else 'mpio_nombr'
+                        gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v6)
+                        
+                        col_cp = 'NOMBRE_MPI' if 'NOMBRE_MPI' in gdf_cp.columns else 'nombre_mpi'
+                        gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v6)
+                        
+                        col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
+                        gdf_mun['mun_norm'] = gdf_mun[col_mun].apply(clean_v6)
+                        
+                        # MEDELLÍN
+                        gdf_barrios['Pob_Total'] = pd.to_numeric(gdf_barrios['Pob_Total'], errors='coerce').fillna(0)
+                        gdf_barrios['geometry'] = gdf_barrios.geometry.buffer(0)
+                        gdf_cue_limpio = gdf_cue.copy()
+                        gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
+                        
+                        inter_b = gpd.overlay(gdf_barrios, gdf_cue_limpio, how='intersection')
+                        if not inter_b.empty:
+                            inter_b['area_inter'] = inter_b.geometry.area
+                            inter_b = inter_b[inter_b['area_inter'] > 100].copy()
+                            suma_areas_b = inter_b.groupby('Cod_Barrio')['area_inter'].transform('sum')
+                            inter_b['pct_area'] = inter_b['area_inter'] / suma_areas_b
+                            inter_b['pob_frag'] = inter_b['Pob_Total'] * inter_b['pct_area']
+                        else:
+                            inter_b = pd.DataFrame(columns=['Cod_Barrio', 'subc_lbl', 'pob_frag'])
+                            
+                        barrios_in = inter_b['Cod_Barrio'].unique() if not inter_b.empty else []
+                        barrios_out = gdf_barrios[~gdf_barrios['Cod_Barrio'].isin(barrios_in)].copy()
+                        
+                        if not barrios_out.empty:
+                            barrios_out['temp_id'] = barrios_out.index
+                            barrios_out['geometry'] = barrios_out.geometry.centroid
+                            rescate_b = gpd.sjoin_nearest(barrios_out, gdf_cue_limpio, how='inner')
+                            if not rescate_b.empty:
+                                rescate_b = rescate_b.drop_duplicates(subset=['Cod_Barrio']) 
+                                rescate_b['pob_frag'] = rescate_b['Pob_Total'] 
+                                inter_b = pd.concat([inter_b, rescate_b[['Cod_Barrio', 'subc_lbl', 'pob_frag']]], ignore_index=True)
+
+                        pesos_med_pct = {}
+                        if not inter_b.empty:
+                            pesos_med = inter_b.groupby('subc_lbl')['pob_frag'].sum()
+                            pesos_med_pct = pesos_med / pesos_med.sum() if pesos_med.sum() > 0 else {}
+
+                        # URBANO (Cabeceras)
+                        gdf_cab['geometry'] = gdf_cab.geometry.buffer(0)
+                        inter_u = gpd.overlay(gdf_cab, gdf_cue_limpio, how='intersection')
+                        if not inter_u.empty:
+                            inter_u['area_inter'] = inter_u.geometry.area
+                            inter_u = inter_u[inter_u['area_inter'] > 1000].copy()
+                            suma_areas_u = inter_u.groupby('mun_norm')['area_inter'].transform('sum')
+                            inter_u['pct_area_urb'] = inter_u['area_inter'] / suma_areas_u
+                        else:
+                            inter_u = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_urb'])
+                            
+                        mpios_u_in = inter_u['mun_norm'].unique() if not inter_u.empty else []
+                        mpios_u_out = gdf_cab[~gdf_cab['mun_norm'].isin(mpios_u_in)].copy()
+                        if not mpios_u_out.empty:
+                            mpios_u_out['geometry'] = mpios_u_out.geometry.centroid
+                            rescate_u = gpd.sjoin_nearest(mpios_u_out, gdf_cue_limpio, how='inner')
+                            if not rescate_u.empty:
+                                rescate_u = rescate_u.drop_duplicates(subset=['mun_norm'])
+                                rescate_u['pct_area_urb'] = 1.0 
+                                inter_u = pd.concat([inter_u, rescate_u[['mun_norm', 'subc_lbl', 'pct_area_urb']]], ignore_index=True)
+                        inter_urbana = inter_u 
+
+                        # RURAL (Centros Poblados + Disperso)
+                        gdf_cp['geometry'] = gdf_cp.geometry.buffer(0)
+                        gdf_cp['id_unico_cp'] = gdf_cp.index.astype(str)
+                        inter_cp = gpd.overlay(gdf_cp, gdf_cue_limpio, how='intersection')
+                        if not inter_cp.empty:
+                            inter_cp['area_inter'] = inter_cp.geometry.area
+                            inter_cp = inter_cp[inter_cp['area_inter'] > 500].copy()
+                            inter_cp = inter_cp.sort_values('area_inter', ascending=False).drop_duplicates(subset=['id_unico_cp'])
+                        else:
+                            inter_cp = pd.DataFrame(columns=['mun_norm', 'id_unico_cp', 'subc_lbl'])
+
+                        cp_in = inter_cp['id_unico_cp'].unique() if not inter_cp.empty else []
+                        cp_out = gdf_cp[~gdf_cp['id_unico_cp'].isin(cp_in)].copy()
+                        if not cp_out.empty:
+                            cp_out['geometry'] = cp_out.geometry.centroid
+                            rescate_cp = gpd.sjoin_nearest(cp_out, gdf_cue_limpio, how='inner')
+                            if not rescate_cp.empty:
+                                rescate_cp = rescate_cp.drop_duplicates(subset=['id_unico_cp'])
+                                inter_cp = pd.concat([inter_cp, rescate_cp[['mun_norm', 'id_unico_cp', 'subc_lbl']]], ignore_index=True)
+                        cp_en_cuenca = inter_cp 
+
+                        gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
+                        inter_r = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
+                        if not inter_r.empty:
+                            inter_r['area_inter'] = inter_r.geometry.area
+                            inter_r = inter_r[inter_r['area_inter'] > 10000].copy() 
+                            suma_areas_r = inter_r.groupby('mun_norm')['area_inter'].transform('sum')
+                            inter_r['pct_area_rur'] = inter_r['area_inter'] / suma_areas_r
+                        else:
+                            inter_r = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_rur'])
+                            
+                        mpios_r_in = inter_r['mun_norm'].unique() if not inter_r.empty else []
+                        mpios_r_out = gdf_mun[~gdf_mun['mun_norm'].isin(mpios_r_in)].copy()
+                        if not mpios_r_out.empty:
+                            mpios_r_out['geometry'] = mpios_r_out.geometry.centroid
+                            rescate_r = gpd.sjoin_nearest(mpios_r_out, gdf_cue_limpio, how='inner')
+                            if not rescate_r.empty:
+                                rescate_r = rescate_r.drop_duplicates(subset=['mun_norm'])
+                                rescate_r['pct_area_rur'] = 1.0 
+                                inter_r = pd.concat([inter_r, rescate_r[['mun_norm', 'subc_lbl', 'pct_area_rur']]], ignore_index=True)
+                        inter_dispersa = inter_r 
+
+                        df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
+                        df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
+                        
+                        agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
+                        df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma))]
+                        
+                        mpios_mapa = set(gdf_mun['mun_norm'].tolist())
+                        df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
+                            lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
+                        )
+                        
+                        df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index()
+
+                        nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
+                        nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
+
+                        df_final_cuencas = []
+                        mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
+                        
+                        for mpio in df_area_v6['mun_norm_dane'].unique():
+                            pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
+                            fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
+                            
+                            if mpio in mpios_amva_rescate:
+                                if mpio == 'medellin' and pesos_med_pct:
+                                    for subc, peso in pesos_med_pct.items():
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = df_temp['Total'] * peso
+                                        df_temp['subc_lbl'] = subc
+                                        df_final_cuencas.append(df_temp)
+                                else:
+                                    df_temp = pob_mpio.copy()
+                                    df_temp['Total_frag'] = df_temp['Total']
+                                    df_temp['subc_lbl'] = nombre_real_aburra
+                                    df_final_cuencas.append(df_temp)
+                            else:
+                                if tipo_area == 'Urbana':
+                                    cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio].copy()
+                                    if not cuencas_urb.empty:
+                                        sum_u = cuencas_urb['pct_area_urb'].sum()
+                                        if sum_u > 0: cuencas_urb['pct_area_urb'] = cuencas_urb['pct_area_urb'] / sum_u 
+                                        for _, u_row in cuencas_urb.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = df_temp['Total'] * u_row['pct_area_urb']
+                                            df_temp['subc_lbl'] = u_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                    else:
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = df_temp['Total']
+                                        df_temp['subc_lbl'] = fallback_basin
+                                        df_final_cuencas.append(df_temp)
+                                        
+                                elif tipo_area == 'Rural':
+                                    cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio].copy()
+                                    cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio].copy()
+                                    
+                                    if not cuencas_cp.empty and not cuencas_area.empty:
+                                        for _, cp_row in cuencas_cp.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = (df_temp['Total'] * 0.30) / len(cuencas_cp)
+                                            df_temp['subc_lbl'] = cp_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                            
+                                        sum_r = cuencas_area['pct_area_rur'].sum()
+                                        if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r 
+                                        for _, a_row in cuencas_area.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = df_temp['Total'] * 0.70 * a_row['pct_area_rur']
+                                            df_temp['subc_lbl'] = a_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                            
+                                    elif not cuencas_cp.empty:
+                                        for _, cp_row in cuencas_cp.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = df_temp['Total'] / len(cuencas_cp)
+                                            df_temp['subc_lbl'] = cp_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                            
+                                    elif not cuencas_area.empty:
+                                        sum_r = cuencas_area['pct_area_rur'].sum()
+                                        if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r 
+                                        for _, a_row in cuencas_area.iterrows():
+                                            df_temp = pob_mpio.copy()
+                                            df_temp['Total_frag'] = df_temp['Total'] * a_row['pct_area_rur']
+                                            df_temp['subc_lbl'] = a_row['subc_lbl']
+                                            df_final_cuencas.append(df_temp)
+                                    else:
+                                        df_temp = pob_mpio.copy()
+                                        df_temp['Total_frag'] = df_temp['Total']
+                                        df_temp['subc_lbl'] = fallback_basin
+                                        df_final_cuencas.append(df_temp)
+
+                        # 5. RECOLECCIÓN DE FRAGMENTOS (Sin entrenar todavía)
+                        if df_final_cuencas:
+                            df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
+                            df_cuencas_v6['Categoria_Area'] = tipo_area
+                            historico_cuencas.append(df_cuencas_v6)
+                            
+                except Exception as e:
+                    st.error(f"❌ Error en Motor V6: {e}")
+
+            # =====================================================================
+            # 🔥 ENTRENAMIENTO MULTIESCALA UNIVERSAL (ADMIN + CUENCAS) CON LLAVES
+            # =====================================================================
+            st.divider()
+            st.subheader("🚀 Motor de Entrenamiento Final y Forja de Llaves Universales")
+            st.markdown("Toma los fragmentos poblacionales calculados y entrena los modelos matemáticos, blindándolos con la **Llave Universal**.")
+
+            # 🔑 CONTRASEÑA DE SEGURIDAD
+            pwd_admin = st.text_input("🔑 Contraseña de Administrador:", type="password", key="pwd_forja")
+
+            if st.button("⚡ Entrenar Modelos e Inyectar a Base de Datos", type="primary", use_container_width=True):
+                if pwd_admin == "CuencaVerde2024":
+                    with st.spinner("Entrenando modelos matemáticos multiescala..."):
+                        try:
+                            from modules.db_manager import get_engine
+                            from sqlalchemy import text
+                            from scipy.optimize import curve_fit
+                            import numpy as np
+                            engine_sql = get_engine()
+
+                            def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
+                            def calcular_r2(y_real, y_pred):
+                                ss_res = np.sum((y_real - y_pred) ** 2)
+                                ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
+                                return 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+                            res_maestro = []
+                            barra = st.progress(0)
+
+                            # --- 1. ENTRENAMIENTO ADMINISTRATIVO (MUNICIPIOS Y DEPARTAMENTO) ---
+                            # Usamos tu 'df_mun' original que ya tiene la población DANE estructurada
+                            if 'df_mun' in locals() or 'df_mun' in globals():
+                                df_admin = df_mun.copy()
+                                col_anio = 'año' if 'año' in df_admin.columns else 'Año'
+
+                                def clasificar_area(val):
+                                    v = str(val).lower()
+                                    if 'total' in v: return 'Total'
+                                    if 'cabecera' in v or 'urban' in v: return 'Urbana'
+                                    if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
+                                    return 'Total'
+
+                                df_admin['Categoria'] = df_admin['area_geografica'].apply(clasificar_area)
+
+                                # A. MUNICIPIOS
+                                for mpio in df_admin['municipio'].dropna().unique():
+                                    for cat in ['Total', 'Urbana', 'Rural']:
+                                        df_f = df_admin[(df_admin['municipio'] == mpio) & (df_admin['Categoria'] == cat)].sort_values(by=col_anio)
+                                        if len(df_f) < 3: continue
+                                        t = df_f[col_anio].values - df_f[col_anio].min()
+                                        y = df_f['Total'].values
+                                        try:
+                                            p_log, _ = curve_fit(f_log, t, y, p0=[y.max()*1.1, 10, 0.02], maxfev=5000)
+                                            r2 = calcular_r2(y, f_log(t, *p_log))
+                                            # 🔥 LA LLAVE UNIVERSAL
+                                            llave_u = f"MUNICIPIO_{mpio}_{cat}".upper().replace(" ", "_")
+                                            res_maestro.append({
+                                                "Jerarquia": "MUNICIPIO", "Territorio": mpio, "Categoria": cat,
+                                                "LLAVE_UNIVERSAL": llave_u, "Poblacion_Base": int(y[-1]), "Año_Base": int(df_f[col_anio].min()),
+                                                "Modelo_Recomendado": "Logístico",
+                                                "Log_K": p_log[0], "Log_a": p_log[1], "Log_r": p_log[2], "Log_R2": r2
+                                            })
+                                        except: pass
+
+                                # B. DEPARTAMENTO (ANTIOQUIA TOTAL)
+                                for cat in ['Total', 'Urbana', 'Rural']:
+                                    df_f = df_admin[df_admin['Categoria'] == cat].groupby(col_anio)['Total'].sum().reset_index().sort_values(by=col_anio)
+                                    if len(df_f) < 3: continue
+                                    t = df_f[col_anio].values - df_f[col_anio].min()
+                                    y = df_f['Total'].values
+                                    try:
+                                        p_log, _ = curve_fit(f_log, t, y, p0=[y.max()*1.1, 10, 0.02], maxfev=5000)
+                                        r2 = calcular_r2(y, f_log(t, *p_log))
+                                        llave_u = f"DEPARTAMENTO_Antioquia_{cat}".upper().replace(" ", "_")
+                                        res_maestro.append({
+                                            "Jerarquia": "DEPARTAMENTO", "Territorio": "Antioquia", "Categoria": cat,
+                                            "LLAVE_UNIVERSAL": llave_u, "Poblacion_Base": int(y[-1]), "Año_Base": int(df_f[col_anio].min()),
+                                            "Modelo_Recomendado": "Logístico",
+                                            "Log_K": p_log[0], "Log_a": p_log[1], "Log_r": p_log[2], "Log_R2": r2
+                                        })
+                                    except: pass
+                            barra.progress(0.5)
+
+                            # --- 2. ENTRENAMIENTO CUENCAS (NSS3) ---
+                            # Usamos tu variable 'historico_cuencas' calculada en la fase de fragmentos
+                            if 'historico_cuencas' in locals() or 'historico_cuencas' in globals():
+                                if len(historico_cuencas) > 0:
+                                    df_c = pd.concat(historico_cuencas)
+                                    col_anio_c = 'año' if 'año' in df_c.columns else 'Año'
+
+                                    for cat in df_c['Categoria_Area'].unique():
+                                        df_c_cat = df_c[df_c['Categoria_Area'] == cat]
+                                        for nss3 in df_c_cat['subc_lbl'].dropna().unique():
+                                            df_f = df_c_cat[df_c_cat['subc_lbl'] == nss3].sort_values(by=col_anio_c)
+                                            if len(df_f) < 3: continue
+                                            t = df_f[col_anio_c].values - df_f[col_anio_c].min()
+                                            y = df_f['Total_frag'].values
+                                            try:
+                                                p_log, _ = curve_fit(f_log, t, y, p0=[y.max()*1.1, 10, 0.02], maxfev=5000)
+                                                r2 = calcular_r2(y, f_log(t, *p_log))
+                                                llave_u = f"NSS3_{nss3}_{cat}".upper().replace(" ", "_")
+                                                res_maestro.append({
+                                                    "Jerarquia": "NSS3", "Territorio": nss3, "Categoria": cat,
+                                                    "LLAVE_UNIVERSAL": llave_u, "Poblacion_Base": int(y[-1]), "Año_Base": int(df_f[col_anio_c].min()),
+                                                    "Modelo_Recomendado": "Logístico",
+                                                    "Log_K": p_log[0], "Log_a": p_log[1], "Log_r": p_log[2], "Log_R2": r2
+                                                })
+                                            except: pass
+                            barra.progress(0.9)
+
+                            # --- 3. INYECCIÓN SQL SEGURA ---
+                            if res_maestro:
+                                df_final = pd.DataFrame(res_maestro)
+                                with engine_sql.begin() as conn:
+                                    conn.execute(text("DELETE FROM matriz_maestra_demografica;"))
+                                df_final.to_sql('matriz_maestra_demografica', engine_sql, if_exists='append', index=False)
+
+                                st.session_state['df_matriz_demografica'] = df_final
+                                st.success(f"✅ ¡Entrenamiento y Forja Completados! {len(df_final)} modelos blindados con Llave Universal.")
+                            else:
+                                st.warning("⚠️ No se generaron modelos. Verifica que los fragmentos históricos estén calculados arriba.")
+                            barra.progress(1.0)
+                        except Exception as e:
+                            st.error(f"🚨 Error durante el entrenamiento: {e}")
+                else:
+                    st.warning("Contraseña incorrecta.")
+            
     # =====================================================================
-    # 🔬 VALIDADOR VISUAL COMPARATIVO (ACTUALIZADO A LLAVE UNIVERSAL)
+    # 🔬 VALIDADOR VISUAL COMPARATIVO (DOBLE VENTANA)
     # =====================================================================
-    # 🔥 FIX 2: Ahora buscamos 'Categoria' en lugar de 'Area'
-    if 'df_matriz_demografica' in st.session_state and 'Categoria' in st.session_state['df_matriz_demografica'].columns:
+    if 'df_matriz_demografica' in st.session_state and 'Area' in st.session_state['df_matriz_demografica'].columns:
         st.divider()
         st.subheader("🔬 Validador Visual Comparativo (Urbano vs Rural vs Total)")
         
@@ -2110,14 +2563,13 @@ with tab_matriz:
         
         c_nav1, c_nav2, c_nav3 = st.columns([1, 1.5, 1])
         with c_nav1:
-            # 🔥 FIX 3: Ahora usamos 'Jerarquia'
-            niveles_disp = list(df_mat['Jerarquia'].unique())
-            idx_mun = niveles_disp.index('MUNICIPIO') if 'MUNICIPIO' in niveles_disp else 0
+            niveles_disp = list(df_mat['Nivel'].unique())
+            idx_mun = niveles_disp.index('Municipal') if 'Municipal' in niveles_disp else 0
             nivel_val = st.selectbox("1. Nivel de Análisis:", niveles_disp, index=idx_mun)
         with c_nav2:
-            territorios_disp = sorted(df_mat[df_mat['Jerarquia'] == nivel_val]['Territorio'].unique())
-            idx_terr = 0
-            terr_val = st.selectbox("2. Territorio (Municipio/Cuenca):", territorios_disp, index=idx_terr)
+            territorios_disp = sorted(df_mat[df_mat['Nivel'] == nivel_val]['Territorio'].unique())
+            idx_terr = territorios_disp.index('BELMIRA') if 'BELMIRA' in territorios_disp else 0
+            terr_val = st.selectbox("2. Territorio (Municipio/Depto):", territorios_disp, index=idx_terr)
         with c_nav3:
             anio_futuro = st.slider("3. Proyectar hasta el año:", min_value=2025, max_value=2100, value=2050, step=5)
             
@@ -2127,86 +2579,90 @@ with tab_matriz:
             import numpy as np
             import plotly.graph_objects as go
             
-            # Buscamos usando la nueva tríada: Jerarquía + Territorio + Categoría
-            df_filtrado = df_mat[(df_mat['Jerarquia'] == nivel_val) & (df_mat['Territorio'] == terr_val) & (df_mat['Categoria'] == area_sel)]
+            df_filtrado = df_mat[(df_mat['Nivel'] == nivel_val) & (df_mat['Territorio'] == terr_val) & (df_mat['Area'] == area_sel)]
             if df_filtrado.empty:
-                st.warning(f"No hay datos proyectados para la categoría '{area_sel}' en {terr_val}.")
+                st.warning(f"No hay datos procesados para el área {area_sel} en {terr_val}.")
                 return
                 
             fila_terr = df_filtrado.iloc[0]
-            mejor_modelo = fila_terr.get('Modelo_Recomendado', 'Logístico')
+            mejor_modelo = fila_terr['Modelo_Recomendado']
             
-            # --- RECONSTRUCCIÓN HISTÓRICA EXACTA ---
-            # En lugar de usar un df_mun estático, leemos el mapa para saber qué municipios forman este territorio
-            df_dane = st.session_state.get('df_poblacion_long')
-            if df_dane is not None:
-                try:
-                    from modules.db_manager import get_engine
-                    import geopandas as gpd
-                    engine_sql = get_engine()
-                    gdf_all = gpd.read_postgis("SELECT * FROM cuencas", engine_sql, geom_col="geometry")
-                    gdf_all['DEPARTAMENTO'] = 'Antioquia'
-                    gdf_all['REGION'] = gdf_all['depto_regi'].astype(str).str.replace('Antioquia - ', 'Región ', regex=False)
-                    
-                    col_bd = {'DEPARTAMENTO': 'DEPARTAMENTO', 'REGION': 'REGION', 'MUNICIPIO': 'mpio_cnmbr', 'NSS3': 'nom_nss3'}.get(nivel_val, 'mpio_cnmbr')
-                    mpios_en_t = gdf_all[gdf_all[col_bd]==terr_val]['mpio_cnmbr'].unique()
-                    
-                    df_h = df_dane[(df_dane['Municipio'].isin(mpios_en_t)) & (df_dane['Tipo'] == area_sel)]
-                    df_hist = df_h.groupby('Año')['Poblacion'].sum().reset_index()
-                    df_hist = df_hist.sort_values(by='Año')
-                    
-                    x_hist = df_hist['Año'].values
-                    y_hist = df_hist['Poblacion'].values
-                except Exception:
-                    x_hist, y_hist = [], []
-            else:
-                x_hist, y_hist = [], []
+            df_mun_memoria = df_mun.copy() 
+            col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
             
-            x_offset = fila_terr.get('Anio_Base', 2018)
+            def clasificar_area(val):
+                v = str(val).lower()
+                if 'total' in v: return 'Total'
+                if 'cabecera' in v or 'urban' in v: return 'Urbana'
+                if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
+                return 'Desconocido'
+                
+            df_mun_memoria['Categoria_Area'] = df_mun_memoria['area_geografica'].apply(clasificar_area)
+            
+            # 🔥 Seleccionamos el área puramente
+            df_hist_base = df_mun_memoria[df_mun_memoria['Categoria_Area'] == area_sel]
+            
+            if nivel_val == 'Nacional': df_hist = df_hist_base.groupby(col_anio)['Total'].sum().reset_index()
+            elif nivel_val == 'Departamental': df_hist = df_hist_base[df_hist_base['depto_nom'] == terr_val].groupby(col_anio)['Total'].sum().reset_index()
+            else: df_hist = df_hist_base[df_hist_base['municipio'] == terr_val].groupby(col_anio)['Total'].sum().reset_index()
+                
+            df_hist = df_hist.sort_values(by=col_anio)
+            x_hist = df_hist[col_anio].values
+            y_hist = df_hist['Total'].values
+            
+            x_offset = fila_terr['Año_Base']
             x_pred = np.arange(x_offset, anio_futuro + 1)
             x_norm_pred = x_pred - x_offset
             
+            y_log = fila_terr['Log_K'] / (1 + fila_terr['Log_a'] * np.exp(-fila_terr['Log_r'] * x_norm_pred))
+            y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
+            y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
+            
             fig = go.Figure()
-            if len(x_hist) > 0:
-                fig.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Histórico DANE', marker=dict(color='black', size=8, symbol='diamond')))
+            fig.add_trace(go.Scatter(x=x_hist, y=y_hist, mode='markers', name='Histórico DANE', marker=dict(color='black', size=8, symbol='diamond')))
             
             def config_linea(nombre_mod, color):
                 es_ganador = mejor_modelo == nombre_mod
                 return dict(color=color, width=4 if es_ganador else 2, dash='solid' if es_ganador else 'dash'), 1.0 if es_ganador else 0.4
                 
-            # 🛡️ FIX 4: Blindaje .get() para evitar errores si la Forja solo guardó el modelo Logístico
-            if 'Log_K' in fila_terr:
-                y_log = fila_terr['Log_K'] / (1 + fila_terr['Log_a'] * np.exp(-fila_terr['Log_r'] * x_norm_pred))
-                line_log, op_log = config_linea('Logístico', '#2980b9')
-                r2_log = fila_terr.get('Log_R2', 0.0)
-                fig.add_trace(go.Scatter(x=x_pred, y=y_log, mode='lines', name=f"Logístico", line=line_log, opacity=op_log))
-                
-            if 'Exp_a' in fila_terr:
-                y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
-                line_exp, op_exp = config_linea('Exponencial', '#e67e22')
-                fig.add_trace(go.Scatter(x=x_pred, y=y_exp, mode='lines', name=f"Exponencial", line=line_exp, opacity=op_exp))
-                
-            if 'Poly_A' in fila_terr:
-                y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
-                line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
-                fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial", line=line_poly, opacity=op_poly))
-                
+            line_log, op_log = config_linea('Logístico', '#2980b9')
+            fig.add_trace(go.Scatter(x=x_pred, y=y_log, mode='lines', name=f"Logístico (R²: {fila_terr['Log_R2']})", line=line_log, opacity=op_log))
+            
+            line_exp, op_exp = config_linea('Exponencial', '#e67e22')
+            fig.add_trace(go.Scatter(x=x_pred, y=y_exp, mode='lines', name=f"Exponencial (R²: {fila_terr['Exp_R2']})", line=line_exp, opacity=op_exp))
+            
+            line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
+            fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial 3 (R²: {fila_terr['Poly_R2']})", line=line_poly, opacity=op_poly))
+            
             fig.update_layout(
-                title=f"Proyección {area_sel} - {terr_val}", 
-                xaxis_title="Año", yaxis_title="Habitantes", hovermode="x unified", 
+                title=f"Proyección {area_sel} (Ganador: {mejor_modelo})", 
+                xaxis_title="Año", 
+                yaxis_title="Habitantes", 
+                hovermode="x unified", 
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             st.plotly_chart(fig, use_container_width=True)
             
-            with st.expander(f"🔑 Ver Llave Universal del Modelo", expanded=False):
-                st.code(fila_terr.get('LLAVE_UNIVERSAL', 'No generada'), language="bash")
+            with st.expander(f"📐 Parámetros y Ecuaciones del Modelo {area_sel}", expanded=True):
+                st.markdown(f"**Donde la variable tiempo es:** $t = Año\_Proyectado - {fila_terr['Año_Base']}$")
+                st.latex(r"Log\text{\'{i}}stico: P(t) = \frac{K}{1 + a \cdot e^{-r \cdot t}}")
+                st.latex(r"Exponencial: P(t) = a \cdot e^{b \cdot t}")
+                st.latex(r"Polinomial: P(t) = A \cdot t^3 + B \cdot t^2 + C \cdot t + D")
+                
+                df_coefs = pd.DataFrame([
+                    {"Modelo": "Logístico", "R²": f"{fila_terr['Log_R2']:.4f}", "Parámetros": f"K={fila_terr['Log_K']:.0f}, a={fila_terr['Log_a']:.4f}, r={fila_terr['Log_r']:.4f}"},
+                    {"Modelo": "Exponencial", "R²": f"{fila_terr['Exp_R2']:.4f}", "Parámetros": f"a={fila_terr['Exp_a']:.0f}, b={fila_terr['Exp_b']:.4f}"},
+                    {"Modelo": "Polinomial 3", "R²": f"{fila_terr['Poly_R2']:.4f}", "Parámetros": f"A={fila_terr['Poly_A']:.4e}, B={fila_terr['Poly_B']:.4e}, C={fila_terr['Poly_C']:.4f}, D={fila_terr['Poly_D']:.0f}"}
+                ])
+                def highlight_winner(row): return ['background-color: #d4edda' if row['Modelo'] == mejor_modelo else '' for _ in row]
+                st.dataframe(df_coefs.style.apply(highlight_winner, axis=1), use_container_width=True)
 
         col_graf_1, col_graf_2 = st.columns(2)
         with col_graf_1:
-            area_1 = st.selectbox("Área (Panel Izquierdo):", ["Total", "Urbana", "Rural"], index=0, key="sel_a1")
+            area_1 = st.selectbox("Área de Análisis (Panel Izquierdo):", ["Total", "Urbana", "Rural"], index=0, key="sel_a1")
             renderizar_panel(area_1, "g1")
         with col_graf_2:
-            area_2 = st.selectbox("Área (Panel Derecho):", ["Total", "Urbana", "Rural"], index=1, key="sel_a2")
+            area_2 = st.selectbox("Área de Análisis (Panel Derecho):", ["Total", "Urbana", "Rural"], index=1, key="sel_a2")
             renderizar_panel(area_2, "g2")
             
 # ==========================================
