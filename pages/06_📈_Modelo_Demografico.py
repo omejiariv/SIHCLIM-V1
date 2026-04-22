@@ -2370,7 +2370,8 @@ with tab_matriz:
                                 df_final_cuencas.append(df_temp)
                             
                             if mpio in mpios_amva_rescate:
-                                if mpio == 'medellin' and pesos_med_pct and len(pesos_med_pct) > 0:
+                                # 🔥 EL FIX DEFINITIVO: Usamos solo len() para evitar la ambigüedad de la Serie
+                                if mpio == 'medellin' and len(pesos_med_pct) > 0:
                                     for subc, peso in pesos_med_pct.items():
                                         agregar_fragmento(pob_mpio, subc, float(peso))
                                 else:
