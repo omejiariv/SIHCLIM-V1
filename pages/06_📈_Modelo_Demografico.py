@@ -2508,6 +2508,52 @@ with tab_matriz:
                                         except Exception: pass
 
             # =====================================================================
+            # 🏢 FASE 4: ENTRENAMIENTO ADMINISTRATIVO Y MACROREGIONAL
+            # =====================================================================
+            texto_progreso.markdown("🏢 **Fase 4: Entrenando Modelos Administrativos (Municipios, Regiones, Macroregiones)...**")
+            
+            if 'df_mun' in locals() or 'df_mun' in globals():
+                df_admin = df_mun.copy()
+                # Asegurar columna Categoria_Area
+                if 'Categoria_Area' not in df_admin.columns and 'area_geografica' in df_admin.columns:
+                    df_admin['Categoria_Area'] = df_admin['area_geografica'].apply(clasificar_area)
+                
+                # A. MUNICIPIOS
+                for mpio in df_admin['municipio'].dropna().unique():
+                    for cat in ['Total', 'Urbana', 'Rural']:
+                        df_f = df_admin[(df_admin['municipio'] == mpio) & (df_admin['Categoria_Area'] == cat)].sort_values(by=col_anio)
+                        if len(df_f) >= 3 and df_f['Total'].sum() > 0:
+                            ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'Municipal', mpio, df_f['depto_nom'].iloc[0] if not df_f.empty else 'Antioquia', cat)
+                
+                # B. DEPARTAMENTO
+                for cat in ['Total', 'Urbana', 'Rural']:
+                    df_f = df_admin[df_admin['Categoria_Area'] == cat].groupby(col_anio)['Total'].sum().reset_index()
+                    if len(df_f) >= 3 and df_f['Total'].sum() > 0:
+                        ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'Departamental', 'Antioquia', 'Colombia', cat)
+                        
+                # C. MACROREGIONES (Pacífica, Amazonía, etc.)
+                if 'Macroregion' in df_admin.columns:
+                    for macro in df_admin['Macroregion'].dropna().unique():
+                        for cat in ['Total', 'Urbana', 'Rural']:
+                            df_f = df_admin[(df_admin['Macroregion'] == macro) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
+                            if len(df_f) >= 3 and df_f['Total'].sum() > 0:
+                                ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'MACROREGION', macro, 'Colombia', cat)
+
+                # D. SUBREGIONES DE ANTIOQUIA (Oriente, Bajo Cauca, etc.)
+                col_reg = 'subregion' if 'subregion' in df_admin.columns else ('Region' if 'Region' in df_admin.columns else None)
+                if col_reg:
+                    for reg in df_admin[col_reg].dropna().unique():
+                        for cat in ['Total', 'Urbana', 'Rural']:
+                            df_f = df_admin[(df_admin[col_reg] == reg) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
+                            if len(df_f) >= 3 and df_f['Total'].sum() > 0:
+                                ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'REGION', reg, 'Antioquia', cat)
+                                
+                # E. ESCALA URBANA (Todas las Cabeceras)
+                df_f = df_admin[df_admin['Categoria_Area'] == 'Urbana'].groupby(col_anio)['Total'].sum().reset_index()
+                if len(df_f) >= 3 and df_f['Total'].sum() > 0:
+                    ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'ESCALA_URBANA', 'Todas las Cabeceras', 'Antioquia', 'Urbana')            
+
+            # =====================================================================
             # 🔥 6. FORJA DE LLAVES UNIVERSALES Y CARGA A MEMORIA
             # =====================================================================
             if matriz_resultados:
