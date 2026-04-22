@@ -14,6 +14,7 @@ import pandas as pd
 import geopandas as gpd
 import plotly.express as px
 import plotly.graph_objects as go
+import math
 import folium
 from streamlit_folium import st_folium
 from folium import plugins
@@ -270,37 +271,41 @@ if gdf_zona is not None and not gdf_zona.empty:
     elif "Niña" in fase_enso: oferta_nominal *= 1.20
 
     # ==============================================================================
-    # 🧠 NÚCLEO MATEMÁTICO BASE (CENTRO DE COMANDO EJECUTIVO)
+    # 🧠 NÚCLEO MATEMÁTICO BASE (Sincronizado con la Matriz Multiescala)
     # ==============================================================================
-    import math 
+    # 1. Recuperación de la Memoria del Orquestador (Matriz Hidro)
+    oferta_nominal = float(st.session_state.get('aleph_oferta_m3s', 1.5))
+    area_cuenca_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
+    recarga_base_mm = float(st.session_state.get('aleph_recarga_mm', 350.0))
     
-    oferta_anual_m3 = oferta_nominal * 31536000
-    recarga_anual_m3 = float(st.session_state.get('aleph_recarga_mm', 350.0)) * float(st.session_state.get('aleph_area_km2', 10.0)) * 1000
+    # 2. Recuperación de la Memoria Pecuaria/Poblacional (Orquestador)
+    pob_total = float(st.session_state.get('aleph_pob_total', 1000.0))
+    bovinos = float(st.session_state.get('ica_bovinos_calc_met', 0.0))
+    porcinos = float(st.session_state.get('ica_porcinos_calc_met', 0.0))
+    aves = float(st.session_state.get('ica_aves_calc_met', 0.0))
+    
+    # 3. Sliders de Simulación (Variables de Decisión)
+    with st.expander("🎛️ Simulación de Escenarios (Variables de Decisión)", expanded=False):
+        c_sim1, c_sim2 = st.columns(2)
+        impacto_cc = c_sim1.slider("📉 Reducción Oferta por Cambio Climático (%):", 0, 80, 0, step=5)
+        mitigacion_dbo = c_sim2.slider("🌿 Mitigación de Cargas (SbN + PTAR) %:", 0, 100, 0, step=5)
+
+    # 4. Cálculos de Oferta y Demanda
+    oferta_anual_m3 = (oferta_nominal * 31536000) * (1 - (impacto_cc / 100))
+    recarga_anual_m3 = recarga_base_mm * area_cuenca_km2 * 1000
+    demanda_m3s = float(st.session_state.get('demanda_total_m3s', 0.15))
     consumo_anual_m3 = demanda_m3s * 31536000
     
-    # --- ☢️ DISECCIÓN DE LA CARGA CONTAMINANTE (DBO5) ---
-    # Traemos el total de la Pág 07. Si no existe, usamos un proxy poblacional/pecuario.
-    carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', ((pob_total*0.050) + (bovinos*0.4) + (porcinos*0.15))*365/1000 ))
+    # 5. Modelación de Calidad (DBO5) - Sincronizado con Pág 07
+    carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', 1500.0))
+    carga_final_rio_ton = carga_total_ton * (1 - (mitigacion_dbo / 100))
     
-    # Intentamos desglosar para mostrar la evidencia al usuario
-    if 'ica_bovinos_calc_met' in st.session_state:
-        origen_carga = "Modelación Pág 07 (Exacta)"
-    else:
-        origen_carga = "Estimación Directa (Aproximada)"
-        
-    sist_saneamiento_base = st.sidebar.number_input("Sistemas de Tratamiento Actuales (STAM/PTAR):", min_value=0, value=0, step=5)
-    carga_removida_ton = sist_saneamiento_base * 2.5
-    carga_final_rio_ton = max(0.0, carga_total_ton - carga_removida_ton)
-    
+    # Física de Concentración en Caudal Crítico (Q95 = 25% del medio)
+    caudal_critico_L_s = (oferta_anual_m3 / 31536000) * 1000 * 0.25
     carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
-    caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000
-    
-    # 🛑 PREVENCIÓN DE DILUCIÓN FANTASMA: 
-    # El caudal mínimo ecológico (Q95) es el que define la calidad crítica, no el caudal medio anual.
-    caudal_critico_L_s = caudal_oferta_L_s * 0.25 
-    concentracion_dbo_mg_l = carga_mg_s / caudal_critico_L_s if caudal_critico_L_s > 0 else 99.0
+    concentracion_dbo_mg_l = carga_mg_s / caudal_critico_L_s if caudal_critico_L_s > 0.1 else 999.0
 
-    # 🎯 Cálculo de KPIs Base
+    # 🎯 Cálculo de KPIs (Velocímetros)
     wei_ratio = consumo_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
     ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
     
@@ -308,9 +313,9 @@ if gdf_zona is not None and not gdf_zona.empty:
     factor_supervivencia = min(1.0, recarga_anual_m3 / consumo_anual_m3) if consumo_anual_m3 > 0 else 1.0
     ind_resiliencia = max(0.0, min(100.0, (bfi_ratio / 0.70) * 100 * factor_supervivencia))
     
-    # 🛑 NUEVA FÓRMULA EXPONENCIAL DE CALIDAD (Más estricta y realista)
-    ind_calidad = max(0.0, min(100.0, 100 * math.exp(-0.06 * concentracion_dbo_mg_l)))
-    ind_neutralidad = 0.0 
+    # FÓRMULA EXPONENCIAL: Calidad Sanitaria
+    ind_calidad = max(0.0, min(100.0, 100 * math.exp(-0.07 * concentracion_dbo_mg_l)))
+    ind_neutralidad = 0.0 # Placeholder para futuro módulo de compensación
 
     estres_hidrico_porcentaje = (wei_ratio) * 100
     st.session_state['estres_hidrico_global'] = estres_hidrico_porcentaje
@@ -697,48 +702,38 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.table(df_analisis)
             
         # ==========================================
-        # 7. ☠️ MATRIZ DE RIESGO AGROQUÍMICO (NUEVO)
+        # 7. ☠️ RIESGO AGROQUÍMICO (FUENTES DIFUSAS)
         # ==========================================
         st.markdown("---")
-        st.markdown("### ☠️ Impacto Agroquímico y Eutrofización (Fuentes Difusas)")
-        st.info("Cálculo dinámico basado en las coberturas detectadas por la IA Satelital (Dynamic World). Crucial para la salud pública y el tratamiento de agua de EPM.")
+        st.markdown("### ☠️ Impacto Agroquímico y Eutrofización")
         
-        # 1. Extraer Hectáreas
-        ha_cultivos, ha_pastos = 0.0, 0.0
-        for item in areas_data:
-            if "Cultivos" in item["Cobertura"]: ha_cultivos = item["Área (Ha)"]
-            if "Pastos" in item["Cobertura"]: ha_pastos = item["Área (Ha)"]
-            
-        area_total_ha = sum([x["Área (Ha)"] for x in areas_data]) if areas_data else 1.0
+        # 1. Extraer Hectáreas del Diccionario Satelital
+        ha_cultivos = next((x["Área (Ha)"] for x in areas_data if "Cultivos" in x["Cobertura"]), 0.0)
+        ha_pastos = next((x["Área (Ha)"] for x in areas_data if "Pastos" in x["Cobertura"]), 0.0)
+        area_total_ha = sum([x["Área (Ha)"] for x in areas_data]) if areas_data else area_cuenca_km2 * 100
 
-        # 2. Factores de Exportación Anual (kg / ha / año) 
-        # Adaptados para la zona Andina (Aguacate/Cítricos/Papa/Pastos)
-        N_CULTIVO_HA = 25.5  # Nitrógeno
-        P_CULTIVO_HA = 5.2   # Fósforo
-        N_PASTO_HA = 8.5
-        P_PASTO_HA = 1.8
+        # 2. Factores de Exportación (N y P) adaptados para Antioquia
+        # (Aguacate, Cítricos y Ganadería intensa)
+        carga_N_kg = (ha_cultivos * 28.5) + (ha_pastos * 9.2)
+        carga_P_kg = (ha_cultivos * 5.8) + (ha_pastos * 1.5)
         
-        carga_N_kg = (ha_cultivos * N_CULTIVO_HA) + (ha_pastos * N_PASTO_HA)
-        carga_P_kg = (ha_cultivos * P_CULTIVO_HA) + (ha_pastos * P_PASTO_HA)
-        
-        # 3. Índice de Riesgo Tóxico (Pesticidas/Herbicidas)
-        # Basado en la proporción de frontera agrícola vs área total
-        pct_agricola = ((ha_cultivos + ha_pastos) / area_total_ha) * 100
-        ind_toxicidad = 100.0 - min(100.0, (pct_agricola / 50.0) * 100) # Si más del 50% es agro, riesgo es Crítico (0%)
+        # 3. Índice de Riesgo Tóxico (Pesticidas)
+        # Castiga la salud agroquímica según la densidad de la frontera agrícola
+        pct_agricola = ((ha_cultivos + ha_pastos) / area_total_ha) * 100 if area_total_ha > 0 else 0
+        ind_toxicidad = 100.0 - min(100.0, (pct_agricola / 45.0) * 100) 
 
-        # 4. Renderizado
         c_agro1, c_agro2, c_agro3 = st.columns([1, 1, 1.5])
         with c_agro1:
-            st.metric("🌾 Aporte de Nitrógeno (Eutrofización)", f"{carga_N_kg:,.0f} kg/año", "Genera floraciones algales", delta_color="inverse")
-            st.metric("🥑 Aporte de Fósforo", f"{carga_P_kg:,.0f} kg/año")
+            st.metric("🌾 Nitrógeno (Eutrofización)", f"{carga_N_kg:,.0f} kg/año", "Potencial de Algas", delta_color="inverse")
+            st.metric("🥑 Fósforo Total", f"{carga_P_kg:,.0f} kg/año")
         with c_agro2:
-            st.metric("🚜 Frontera Agrícola / Pecuaria", f"{pct_agricola:.1f}%", "Del territorio total detectado", delta_color="inverse")
+            st.metric("🚜 Densidad Frontera Agro", f"{pct_agricola:.1f}%", "Carga Crítica > 45%", delta_color="inverse")
+            st.caption(f"Área Detectada: {ha_cultivos:,.1f} ha de Cultivos")
         
         with c_agro3:
             est_tox, col_tox = evaluar_indice(ind_toxicidad, 40, 75)
-            st.plotly_chart(crear_velocimetro(ind_toxicidad, "Salud Agroquímica (Libre de Tóxicos)", "#f39c12", 40, 75), width="stretch")
+            st.plotly_chart(crear_velocimetro(ind_toxicidad, "Salud Agroquímica (Tóxicos)", "#f39c12", 40, 75), use_container_width=True)
             st.markdown(f"<h4 style='text-align: center; color: {col_tox}; margin-top:-20px;'>{est_tox}</h4>", unsafe_allow_html=True)
-            st.caption("<div style='text-align: center;'>Un indicador de 0% implica riesgo alto de trazas de pesticidas en bocatomas.</div>", unsafe_allow_html=True)
     
     # =========================================================================
     # BLOQUE 2: SIMULADOR DE INVERSIONES Y PORTAFOLIOS (WRI) + SANKEY
