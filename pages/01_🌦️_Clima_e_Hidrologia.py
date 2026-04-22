@@ -890,10 +890,20 @@ if __name__ == "__main__":
                     gdf_all['geometry'] = gdf_all.geometry.make_valid()
                     gdf_all = gdf_all[gdf_all.geometry.notnull()]
                     
-                    # 🧠 NIVELES DE ANÁLISIS A PROCESAR (Según tu tabla)
-                    # Excluimos nivel_disp y fuente como solicitaste. 
-                    # Usamos los nombres exactos de las columnas de tu Excel/BD.
+                    # 🔥 FIX PARA MATCH PERFECTO DE DEPARTAMENTO Y REGIÓN
+                    # 1. Creamos el nivel "Departamento" englobando todo
+                    gdf_all['departamento_calc'] = 'Antioquia'
+                    
+                    # 2. Ajustamos los nombres de región (Ej: "Antioquia - Bajo Cauca" -> "Región Bajo Cauca")
+                    if 'depto_regi' in gdf_all.columns:
+                        gdf_all['region_calc'] = gdf_all['depto_regi'].astype(str).str.replace('Antioquia - ', 'Región ', regex=False)
+                    else:
+                        gdf_all['region_calc'] = 'Desconocido'
+                    
+                    # 🧠 NIVELES DE ANÁLISIS A PROCESAR (Actualizado con Match Perfecto)
                     niveles_analisis = {
+                        'DEPARTAMENTO': 'departamento_calc', # Nuevo nivel que agrupa todo el mapa
+                        'REGION': 'region_calc',             # Nivel regional ajustado al menú
                         'MUNICIPIO': 'mpio_cnmbr',
                         'NSS3': 'nom_nss3',
                         'NSS2': 'nom_nss2',
@@ -902,7 +912,6 @@ if __name__ == "__main__":
                         'ZH': 'nomzh',
                         'AH': 'nomah',
                         'ZONA': 'zona',
-                        'REGION': 'depto_regi',
                         'CAR': 'corpoamb'
                     }
 
