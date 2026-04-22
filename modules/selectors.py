@@ -168,215 +168,102 @@ def cargar_mapa_municipios():
     return gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
 
 def render_selector_espacial():
-    # Inicialización blindada (Código Original)
     ids_estaciones = []
     nombre_zona = "Antioquia"
     altitud_ref = 1500.0
     gdf_zona = None
+    nivel_jerarquico = "DEPARTAMENTO" # 🔥 FIX 1: Nueva variable para la Llave Universal
     
-    try:
-        engine = db_manager.get_engine()
+    try: engine = db_manager.get_engine()
     except Exception as e:
         st.error(f"Error conectando a BD: {e}")
-        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona 
+        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
     
     with st.sidebar.expander("📍 Filtros Geográficos Principales", expanded=True):
-        modo = st.radio("Nivel de Agregación:", ["Por Cuenca", "Por Municipio", "Por Región", "Departamento (Antioquia)"], index=0)
+        modo = st.radio("Nivel de Agregación:", ["Por Cuenca", "Por Municipio", "Por Región", "Departamento"], index=0)
         
-        try:
-            # --- A. POR CUENCA ---
-            if modo == "Por Cuenca":
-                try:
-                    gdf_cuencas = cargar_mapa_cuencas()
-                    ruta_busqueda = st.selectbox("🛤️ Seleccione la Ruta de Búsqueda:", ["💧 Jerarquía Hidrológica", "🗺️ División Regional", "🏢 Autoridad Ambiental (CAR)"], index=0)
-                    gdf_filtrado_base = None
+        # --- A. POR CUENCA ---
+        if modo == "Por Cuenca":
+            gdf_c = cargar_mapa_cuencas()
+            ruta = st.selectbox("Ruta de Búsqueda:", ["Hidrología", "CAR"], index=0)
+            if ruta == "Hidrología":
+                ah = st.selectbox("AH:", ["-- Seleccione --"] + sorted(gdf_c['nomah'].dropna().unique()))
+                if ah != "-- Seleccione --":
+                    zh = st.selectbox("ZH:", ["-- TODAS --"] + sorted(gdf_c[gdf_c['nomah']==ah]['nomzh'].dropna().unique()))
+                    df_f = gdf_c[gdf_c['nomah']==ah] if zh=="-- TODAS --" else gdf_c[gdf_c['nomzh']==zh]
+                    szh = st.selectbox("SZH:", ["-- TODAS --"] + sorted(df_f['nom_szh'].dropna().unique()))
+                    gdf_filtrado_base = df_f if szh=="-- TODAS --" else df_f[df_f['nom_szh']==szh]
                     
-                    ah_sel = zh_sel = szh_sel = "-- TODAS --"
+                    nivel = st.radio("Resolución:", ["NSS1", "NSS2", "NSS3"], horizontal=True)
+                    col_obj = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
+                    sel_fin = st.selectbox("🎯 Territorio:", ["-- BLOQUE --"] + sorted(gdf_filtrado_base[col_obj].dropna().unique()))
                     
-                    if ruta_busqueda == "💧 Jerarquía Hidrológica":
-                        if 'nomah' in gdf_cuencas.columns:
-                            ah_disp = sorted(gdf_cuencas['nomah'].dropna().unique())
-                            ah_sel = st.selectbox("🌊 1. Área Hidrográfica (AH):", ["-- Seleccione --"] + ah_disp)
-                            if ah_sel != "-- Seleccione --":
-                                gdf_filtrado_base = gdf_cuencas[gdf_cuencas['nomah'] == ah_sel]
-                                zh_disp = sorted(gdf_filtrado_base['nomzh'].dropna().unique())
-                                zh_sel = st.selectbox("💧 2. Zona Hidrológica (ZH):", ["-- TODAS --"] + zh_disp)
-                                if zh_sel != "-- TODAS --":
-                                    gdf_filtrado_base = gdf_filtrado_base[gdf_filtrado_base['nomzh'] == zh_sel]
-                                    szh_disp = sorted(gdf_filtrado_base['nom_szh'].dropna().unique())
-                                    szh_sel = st.selectbox("💦 3. Subzona Hidrográfica (SZH):", ["-- TODAS --"] + szh_disp)
-                                    if szh_sel != "-- TODAS --":
-                                        gdf_filtrado_base = gdf_filtrado_base[gdf_filtrado_base['nom_szh'] == szh_sel]
-
-                    elif ruta_busqueda == "🗺️ División Regional":
-                        col_reg = next((c for c in gdf_cuencas.columns if c.lower() in ['depto_regi', 'region', 'macroregion', 'subregion']), None)
-                        if col_reg:
-                            reg_disp = sorted(gdf_cuencas[col_reg].dropna().unique())
-                            reg_sel = st.selectbox("📍 1. Región:", ["-- Seleccione --"] + reg_disp)
-                            if reg_sel != "-- Seleccione --":
-                                gdf_filtrado_base = gdf_cuencas[gdf_cuencas[col_reg] == reg_sel]
-                                col_zona = next((c for c in gdf_cuencas.columns if c.lower() in ['zona', 'subzona']), None)
-                                if col_zona:
-                                    zona_disp = sorted(gdf_filtrado_base[col_zona].dropna().unique())
-                                    zona_sel = st.selectbox("🌍 2. Subregión:", ["-- TODAS --"] + zona_disp)
-                                    if zona_sel != "-- TODAS --": gdf_filtrado_base = gdf_filtrado_base[gdf_filtrado_base[col_zona] == zona_sel]
-                            else: st.warning("⚠️ El mapa de cuencas en la BD no tiene clasificaciones políticas (Regiones).")
-
-                    elif ruta_busqueda == "🏢 Autoridad Ambiental (CAR)":
-                        col_car = next((c for c in gdf_cuencas.columns if c.lower() in ['corpoamb', 'car', 'autoridad']), None)
-                        if col_car:
-                            car_disp = sorted(gdf_cuencas[col_car].dropna().unique())
-                            car_sel = st.selectbox("🏛️ 1. Autoridad Ambiental:", ["-- Seleccione --"] + car_disp)
-                            if car_sel != "-- Seleccione --":
-                                gdf_filtrado_base = gdf_cuencas[gdf_cuencas[col_car] == car_sel]
-                            else: st.warning("Falta la columna de Autoridad Ambiental ('corpoamb') en la base de datos.")
-
-                    if gdf_filtrado_base is not None and not gdf_filtrado_base.empty:
-                        st.markdown("---")
-                        nivel_nss = st.radio("🔎 Resolución de visualización en el Mapa:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"], horizontal=True)
-                        mapa_cols_nss = {"NSS1 (Macro)": "nom_nss1", "NSS2 (Intermedia)": "nom_nss2", "NSS3 (Micro)": "nom_nss3"}
-                        col_objetivo = mapa_cols_nss[nivel_nss]
-                        
-                        if col_objetivo in gdf_filtrado_base.columns:
-                            territorios_disp = sorted(gdf_filtrado_base[col_objetivo].dropna().unique())
-                            sel_final = st.selectbox(f"🎯 Seleccione el Territorio ({nivel_nss}):", ["-- GRAFICAR TODO EL BLOQUE --"] + territorios_disp)
-                            
-                            if sel_final != "-- GRAFICAR TODO EL BLOQUE --":
-                                nombre_zona = sel_final
-                                gdf_zona = gdf_filtrado_base[gdf_filtrado_base[col_objetivo] == sel_final]
-                            else:
-                                if ruta_busqueda == "💧 Jerarquía Hidrológica": nombre_zona = szh_sel if szh_sel != "-- TODAS --" else (zh_sel if zh_sel != "-- TODAS --" else ah_sel)
-                                elif ruta_busqueda == "🏢 Autoridad Ambiental (CAR)": nombre_zona = car_sel
-                                else: nombre_zona = "Bloque Regional"
-                                gdf_zona = gdf_filtrado_base
-                        else: st.warning(f"La columna {col_objetivo} no existe en la base de datos.")
-                except Exception as e: st.warning(f"Error cargando cuencas: {e}")
-
-            # --- B. POR REGIÓN ---
-            elif modo == "Por Región":
-                try:
-                    url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-                    df_maestro = pd.read_excel(url_maestro)
-                    df_maestro.columns = [c.lower() for c in df_maestro.columns]
-                    
-                    if 'region' in df_maestro.columns and 'dp_mp' in df_maestro.columns:
-                        lista_reg = sorted([str(r).title() for r in df_maestro['region'].dropna().unique() if str(r).strip() != ""])
-                        sel_reg = st.selectbox("📍 Seleccione Región:", ["-- Seleccione --"] + lista_reg)
-                        
-                        if sel_reg != "-- Seleccione --":
-                            nombre_zona = f"Región {sel_reg}"
-                            df_region_filt = df_maestro[df_maestro['region'].str.lower() == sel_reg.lower()]
-                            mpios_codigos = df_region_filt['dp_mp'].astype(str).str.zfill(5).tolist()
-                            
-                            def limpiar_t(t):
-                                if pd.isna(t): return ""
-                                return ''.join(c for c in unicodedata.normalize('NFD', str(t).upper().strip()) if unicodedata.category(c) != 'Mn')
-                            
-                            mpios_nombres = [limpiar_t(m) for m in df_region_filt['municipio'].tolist()]
-                            gdf_mun = cargar_mapa_municipios()
-                            
-                            col_cod = next((c for c in gdf_mun.columns if c.lower() in ['cod_mpio', 'mpio_ccdgo', 'dp_mp', 'id']), None)
-                            col_nom = next((c for c in gdf_mun.columns if c.lower() in ['nombre_municipio', 'mpio_nombr', 'mpio_cnmbr', 'nombre_mpio', 'municipio']), None)
-                            
-                            if col_cod or col_nom:
-                                mask_cod = pd.Series([False] * len(gdf_mun), index=gdf_mun.index)
-                                mask_nom = pd.Series([False] * len(gdf_mun), index=gdf_mun.index)
-                                if col_cod:
-                                    cod_limpio = gdf_mun[col_cod].astype(str).str.zfill(5)
-                                    cod_sin_depto = gdf_mun[col_cod].astype(str).str.zfill(3) 
-                                    mask_cod = cod_limpio.isin(mpios_codigos) | ("05" + cod_sin_depto).isin(mpios_codigos)
-                                if col_nom:
-                                    nom_limpio = gdf_mun[col_nom].apply(limpiar_t)
-                                    mask_nom = nom_limpio.isin(mpios_nombres)
-                                    
-                                gdf_reg_filt = gdf_mun[mask_cod | mask_nom]
-                                if not gdf_reg_filt.empty:
-                                    gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[gdf_reg_filt.unary_union], crs=gdf_mun.crs)
-                    else: st.warning("El archivo maestro no tiene las columnas requeridas.")
-                except Exception as e: st.warning(f"Error procesando la región: {e}")
-
-            # --- C. POR MUNICIPIO ---
-            elif modo == "Por Municipio":
-                gdf_mun = cargar_mapa_municipios() 
-                col_mpio = next((c for c in gdf_mun.columns if c.lower() in ['nombre_municipio', 'mpio_nombr', 'mpio_cnmbr', 'nombre_mpio', 'municipio']), None)
-                col_depto = next((c for c in gdf_mun.columns if c.lower() in ['dpto_cnmbr', 'dpto_nombr', 'nombre_dpto', 'departamento']), None)
-                
-                if col_mpio:
-                    gdf_mun[col_mpio] = gdf_mun[col_mpio].apply(decodificar_tildes).astype(str).str.title()
-                    if col_depto:
-                        gdf_mun[col_depto] = gdf_mun[col_depto].apply(decodificar_tildes).astype(str).str.title()
-                        gdf_mun['display_name'] = gdf_mun[col_mpio] + " - " + gdf_mun[col_depto]
+                    if sel_fin != "-- BLOQUE --":
+                        nombre_zona, gdf_zona = sel_fin, gdf_filtrado_base[gdf_filtrado_base[col_obj]==sel_fin]
+                        nivel_jerarquico = nivel # 🔥 FIX 2: Capturamos NSS1, NSS2 o NSS3
                     else:
-                        gdf_mun['display_name'] = gdf_mun[col_mpio]
-                        
-                    lista = sorted(gdf_mun['display_name'].dropna().unique().tolist())
-                    sel = st.selectbox("🏢 Seleccione Municipio:", lista)
-                    
-                    if sel:
-                        nombre_zona = sel.split(" - ")[0] 
-                        gdf_zona = gdf_mun[gdf_mun['display_name'] == sel].copy()
-                        gdf_zona['nombre'] = nombre_zona 
-                else: st.warning("⚠️ No se encontró la columna de municipio en la base de datos.")
-                    
-            # --- D. DEPARTAMENTO ---
-            else:
-                nombre_zona = "Antioquia"
-                try:
+                        nombre_zona, gdf_zona = "Bloque Hidro", gdf_filtrado_base
+                        nivel_jerarquico = "BLOQUE"
+
+        # --- B. POR REGIÓN ---
+        elif modo == "Por Región":
+            try:
+                df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx")
+                df_m.columns = [c.lower() for c in df_m.columns]
+                lista_reg = sorted([str(r).title() for r in df_m['region'].dropna().unique()])
+                sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
+                if sel_reg != "-- Seleccione --":
+                    nombre_zona = f"Región {sel_reg}"
+                    nivel_jerarquico = "REGION" # 🔥 FIX 3: Capturamos Jerarquía Región
+                    cods = df_m[df_m['region'].str.lower()==sel_reg.lower()]['dp_mp'].astype(str).str.zfill(5).tolist()
                     gdf_mun = cargar_mapa_municipios()
-                    if gdf_mun.crs is None or gdf_mun.crs.to_string() != "EPSG:4326": gdf_mun = gdf_mun.to_crs("EPSG:4326")
-                    gdf_zona = gpd.GeoDataFrame({'nombre': ['Antioquia']}, geometry=[gdf_mun.unary_union], crs="EPSG:4326")
-                except:
-                    gdf_zona = gpd.GeoDataFrame({'nombre': ['Antioquia']}, geometry=[box(-77.5, 5.0, -73.5, 9.0)], crs="EPSG:4326")
+                    gdf_zona = gdf_mun[gdf_mun['mpio_ccdgo'].astype(str).str.zfill(5).isin(cods)]
+            except: pass
 
-            # --- FILTRAR ESTACIONES (Original) ---
-            if gdf_zona is not None and not gdf_zona.empty:
-                if gdf_zona.crs and gdf_zona.crs.to_string() != "EPSG:4326": gdf_zona = gdf_zona.to_crs("EPSG:4326")
-                buff_km = st.slider("Radio Buffer (Área de Influencia en km):", min_value=0.0, max_value=50.0, value=15.0, step=1.0, key="buffer_global_km")
-                buff_deg = buff_km / 111.0 
-                minx, miny, maxx, maxy = gdf_zona.total_bounds
-                
-                q_est = text(f"SELECT id_estacion, nombre, latitud, longitud, altitud FROM estaciones WHERE longitud BETWEEN {minx - buff_deg} AND {maxx + buff_deg} AND latitud BETWEEN {miny - buff_deg} AND {maxy + buff_deg}")
-                df_est = pd.read_sql(q_est, engine)
-                
-                if not df_est.empty:
-                    gdf_ptos = gpd.GeoDataFrame(df_est, geometry=gpd.points_from_xy(df_est.longitud, df_est.latitud), crs="EPSG:4326")
-                    zona_buffered = gdf_zona.copy()
-                    if buff_deg > 0: zona_buffered['geometry'] = zona_buffered.geometry.buffer(buff_deg)
-                    est_in = gpd.sjoin(gdf_ptos, zona_buffered, how="inner", predicate="intersects").drop_duplicates(subset=['id_estacion'])
-                    
-                    if not est_in.empty:
-                        ids_estaciones = est_in['id_estacion'].astype(str).str.strip().tolist()
-                        altitud_ref = est_in['altitud'].mean()
-                        st.success(f"📍 Estaciones encontradas: {len(ids_estaciones)}")
-                    else: st.warning("0 estaciones en el área exacta.")
-                else: st.warning("0 estaciones en el cuadrante.")
+        # --- C. POR MUNICIPIO ---
+        elif modo == "Por Municipio":
+            gdf_mun = cargar_mapa_municipios()
+            gdf_mun['display'] = gdf_mun['mpio_cnmbr'].apply(decodificar_tildes).str.title()
+            sel_mpio = st.selectbox("🏢 Municipio:", sorted(gdf_mun['display'].unique()))
+            nombre_zona, gdf_zona = sel_mpio, gdf_mun[gdf_mun['display']==sel_mpio]
+            nivel_jerarquico = "MUNICIPIO" # 🔥 FIX 4: Capturamos Jerarquía Municipio
 
-        except Exception as e:
-            st.error(f"Error crítico en selector: {e}")
-            
+        # --- D. DEPARTAMENTO ---
+        else:
+            gdf_mun = cargar_mapa_municipios()
+            nombre_zona, gdf_zona = "Antioquia", gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_mun.unary_union], crs=gdf_mun.crs)
+            nivel_jerarquico = "DEPARTAMENTO" # 🔥 FIX 5
+
+        # --- FILTRO DE ESTACIONES ---
+        if gdf_zona is not None and not gdf_zona.empty:
+            buff = st.slider("Buffer (km):", 0.0, 50.0, 15.0)
+            minx, miny, maxx, maxy = gdf_zona.to_crs(4326).total_bounds
+            q = text(f"SELECT id_estacion, altitud FROM estaciones WHERE longitud BETWEEN {minx-0.2} AND {maxx+0.2} AND latitud BETWEEN {miny-0.2} AND {maxy+0.2}")
+            df_est = pd.read_sql(q, engine)
+            ids_estaciones = df_est['id_estacion'].astype(str).tolist()
+            altitud_ref = df_est['altitud'].mean()
+
     # ====================================================================
-    # 🧠 ORQUESTADOR SILENCIOSO (Sincronización Transversal y Multiescala)
+    # 🧠 ORQUESTADOR SILENCIOSO (Equipado con Llave Universal)
     # ====================================================================
-    # Evitamos que busque demografía/hidrología para zonas abstractas o nulas
     zonas_ignoradas = ["Antioquia", "Bloque Regional", "-- TODAS --", "-- Seleccione --", ""]
     
     zona_activa = st.session_state.get('zona_activa_global')
     
     if nombre_zona not in zonas_ignoradas and "Región" not in nombre_zona and nombre_zona != zona_activa:
         st.session_state['zona_activa_global'] = nombre_zona
+        st.session_state['nivel_activo_global'] = nivel_jerarquico # 🔥 FIX 6: Guardamos el nivel en memoria
         
-        # 1. Purgamos la memoria residual vieja (evita cruce de datos)
         claves_a_borrar = [
             'pob_hum_calc_met', 'ica_bovinos_calc_met', 'ica_porcinos_calc_met', 'ica_aves_calc_met', 
             'demanda_total_m3s', 'carga_dbo_total_ton',
-            'aleph_oferta_m3s', 'aleph_lluvia_mm', 'aleph_area_km2', 'aleph_recarga_mm' # Limpiamos la hidro vieja
+            'aleph_oferta_m3s', 'aleph_lluvia_mm', 'aleph_area_km2', 'aleph_recarga_mm'
         ]
-        for k in claves_a_borrar:
-            st.session_state.pop(k, None)
+        for k in claves_a_borrar: st.session_state.pop(k, None)
             
-        # 2. 👥 PRECARGA DEL METABOLISMO DEMOGRÁFICO/PECUARIO
         try:
             from modules.utils import obtener_metabolismo_exacto
+            # En la Fase 2, actualizaremos esta función para que reciba 'nivel_jerarquico'
             datos_precargados = obtener_metabolismo_exacto(nombre_zona, 2025)
             if datos_precargados:
                 st.session_state['aleph_pob_total'] = datos_precargados.get('pob_total', 0)
@@ -384,31 +271,22 @@ def render_selector_espacial():
                 st.session_state['ica_porcinos_calc_met'] = datos_precargados.get('porcinos', 0)
                 st.session_state['ica_aves_calc_met'] = datos_precargados.get('aves', 0)
                 st.session_state['aleph_lugar'] = nombre_zona
-        except Exception:
-            pass 
+        except: pass 
             
-        # 3. 💧 NUEVO: PRECARGA INSTANTÁNEA DE LA MATRIZ HIDROLÓGICA MULTIESCALA
         try:
-            engine = db_manager.get_engine()
-            # Consultamos la fila exacta de esta cuenca/municipio
-            q_hidro = text("SELECT * FROM matriz_hidrologica_maestra WHERE \"Territorio\" = :zona LIMIT 1")
-            df_hidro = pd.read_sql(q_hidro, engine, params={"zona": nombre_zona})
+            # 🔥 FIX 7: BÚSQUEDA EXACTA CON LLAVE UNIVERSAL (Jerarquía + Territorio)
+            q_hidro = text("SELECT * FROM matriz_hidrologica_maestra WHERE \"Jerarquia\" = :nivel AND \"Territorio\" = :zona LIMIT 1")
+            df_hidro = pd.read_sql(q_hidro, engine, params={"nivel": nivel_jerarquico, "zona": nombre_zona})
             
             if not df_hidro.empty:
                 row_h = df_hidro.iloc[0]
-                # Inyectamos las variables vitales directamente al torrente sanguíneo
                 st.session_state['aleph_oferta_m3s'] = float(row_h['Caudal_Medio_m3s'])
                 st.session_state['aleph_lluvia_mm'] = float(row_h['Lluvia_mm'])
                 st.session_state['aleph_area_km2'] = float(row_h['Area_km2'])
                 st.session_state['aleph_recarga_mm'] = float(row_h['Recarga_mm'])
                 st.session_state['aleph_altitud_m'] = float(row_h['Altitud_m'])
         except Exception as e:
-            # Silencioso: Si la cuenca no está en la matriz, simplemente no inyecta nada
             pass
 
-    # ====================================================================
-    # 💾 RENDERIZAR EL GESTOR DE ESCENARIOS
-    # ====================================================================
     renderizar_gestor_escenarios(nombre_zona)
-            
     return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
