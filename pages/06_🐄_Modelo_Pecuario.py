@@ -67,8 +67,9 @@ df_pecuario = cargar_historico_pecuario()
 # =====================================================================
 st.title("🐄 Motor Demográfico Pecuario (Bovinos, Porcinos, Aves)")
 st.markdown("""
-Este motor lee la historia de los censos del ICA (2018-2025) distribuida en las cuencas y entrena 
-tres modelos matemáticos predictivos para proyectar la carga contaminante animal hacia el futuro.
+Este motor lee la historia de los censos del ICA (2018-2025) y entrena 
+modelos predictivos para proyectar la carga animal hacia el futuro, blindando 
+los datos con la **Llave Universal** para evitar colisiones territoriales.
 """)
 
 if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"):
@@ -87,7 +88,6 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
         
         # --- FUNCIÓN ENTRENADORA ---
         def ajustar_modelos(x, y, nivel, territorio, especie):
-            # Filtro de seguridad: Si no hay animales en toda la historia, saltamos
             if len(x) < 4 or max(y) <= 0: return 
             
             x_offset = x[0]
@@ -100,12 +100,10 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
             log_k, log_a, log_r, log_r2 = 0, 0, 0, 0
             try:
                 k_max = max_y * 3.0 if es_creciente else max_y * 1.1
-                # Si el hato decrece, apuntamos la proyección hacia abajo
                 k_guess = max_y * 1.2 if es_creciente else (y[-1] * 0.9 if y[-1] > 0 else max_y)
                 a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
                 r_guess = 0.02 if es_creciente else -0.02
                     
-                # 🛡️ EL BISTURÍ: Permitir que la capacidad de carga baje hasta un 10% si hay reducción ganadera
                 k_min = max_y * 0.8 if es_creciente else max_y * 0.1
                 limites = ([k_min, 0, -0.2], [k_max, np.inf, 0.3])
                     
@@ -135,9 +133,13 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
             mejor_modelo = max(dic_modelos, key=dic_modelos.get)
             mejor_r2 = dic_modelos[mejor_modelo]
 
+            # 🔥 FIX: CREACIÓN DE LA LLAVE UNIVERSAL
+            llave_u = f"{nivel}_{territorio}".upper().replace(" ", "_")
+
             matriz_resultados.append({
                 'Especie': especie, 
                 'Nivel': nivel, 'Territorio': territorio,
+                'LLAVE_UNIVERSAL': llave_u, # <-- Inyección de la llave
                 'Año_Base': int(x_offset), 'Poblacion_Base': round(p0_val, 0),
                 'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
                 'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
@@ -145,36 +147,39 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
                 'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
             })
 
-        # --- PREPARACIÓN DE DATOS Y AGRUPACIONES ---
-        # 1. Nivel Departamental (Antioquia Completo)
+        # --- PREPARACIÓN DE DATOS Y AGRUPACIONES (Nombres de Nivel Estandarizados) ---
+        # 1. Nivel Departamental -> DEPARTAMENTO
         df_depto = df_pecuario.groupby('Anio')[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
         for especie in ['Bovinos', 'Porcinos', 'Aves']:
-            ajustar_modelos(df_depto['Anio'].values, df_depto[especie].values, 'Departamental', 'Antioquia', especie)
+            ajustar_modelos(df_depto['Anio'].values, df_depto[especie].values, 'DEPARTAMENTO', 'Antioquia', especie)
 
-        # 2. Nivel Municipal
-        df_mpios = df_pecuario.groupby(['Anio', 'Municipio_Norm'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-        for mpio in df_mpios['Municipio_Norm'].unique():
-            df_temp = df_mpios[df_mpios['Municipio_Norm'] == mpio].sort_values(by='Anio')
-            for especie in ['Bovinos', 'Porcinos', 'Aves']:
-                ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'Municipal', mpio, especie)
+        # 2. Nivel Municipal -> MUNICIPIO
+        if 'Municipio_Norm' in df_pecuario.columns:
+            df_mpios = df_pecuario.groupby(['Anio', 'Municipio_Norm'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+            for mpio in df_mpios['Municipio_Norm'].unique():
+                df_temp = df_mpios[df_mpios['Municipio_Norm'] == mpio].sort_values(by='Anio')
+                for especie in ['Bovinos', 'Porcinos', 'Aves']:
+                    ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'MUNICIPIO', mpio, especie)
 
-        # 3. Nivel Subcuenca
-        df_subcuencas = df_pecuario.groupby(['Anio', 'Subcuenca'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-        for sub in df_subcuencas['Subcuenca'].unique():
-            if sub == "No Definido": continue
-            df_temp = df_subcuencas[df_subcuencas['Subcuenca'] == sub].sort_values(by='Anio')
-            for especie in ['Bovinos', 'Porcinos', 'Aves']:
-                ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'Subcuenca', sub, especie)
+        # 3. Nivel Subcuenca -> NSS3 (Para match con Orquestador Hidrológico)
+        if 'Subcuenca' in df_pecuario.columns:
+            df_subcuencas = df_pecuario.groupby(['Anio', 'Subcuenca'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+            for sub in df_subcuencas['Subcuenca'].unique():
+                if sub == "No Definido": continue
+                df_temp = df_subcuencas[df_subcuencas['Subcuenca'] == sub].sort_values(by='Anio')
+                for especie in ['Bovinos', 'Porcinos', 'Aves']:
+                    ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'NSS3', sub, especie)
                 
-        # 4. Nivel Sistema Hídrico
-        df_sistemas = df_pecuario.groupby(['Anio', 'Sistema'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-        for sis in df_sistemas['Sistema'].unique():
-            if sis == "No Definido": continue
-            df_temp = df_sistemas[df_sistemas['Sistema'] == sis].sort_values(by='Anio')
-            for especie in ['Bovinos', 'Porcinos', 'Aves']:
-                ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'Sistema Hidrico', sis, especie)
+        # 4. Nivel Sistema Hídrico -> SISTEMA_HIDRICO
+        if 'Sistema' in df_pecuario.columns:
+            df_sistemas = df_pecuario.groupby(['Anio', 'Sistema'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+            for sis in df_sistemas['Sistema'].unique():
+                if sis == "No Definido": continue
+                df_temp = df_sistemas[df_sistemas['Sistema'] == sis].sort_values(by='Anio')
+                for especie in ['Bovinos', 'Porcinos', 'Aves']:
+                    ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'SISTEMA_HIDRICO', sis, especie)
 
-        # Guardamos en la memoria volátil para poder validar y exportar después
+        # Guardamos en la memoria volátil
         df_matriz_pec = pd.DataFrame(matriz_resultados)
         st.session_state['df_matriz_pecuaria'] = df_matriz_pec 
         st.success(f"✅ ¡Entrenamiento exitoso! {len(df_matriz_pec)} modelos matemáticos creados. Desplázate hacia abajo para validarlos y exportarlos.")
@@ -191,11 +196,11 @@ if 'df_matriz_pecuaria' in st.session_state:
     c_nav1, c_nav2, c_nav3 = st.columns([1, 1.5, 1])
     with c_nav1:
         niveles_disp = list(df_mat['Nivel'].unique())
-        idx_mun = niveles_disp.index('Subcuenca') if 'Subcuenca' in niveles_disp else 0
+        idx_mun = niveles_disp.index('NSS3') if 'NSS3' in niveles_disp else 0
         nivel_val = st.selectbox("1. Escala Espacial:", niveles_disp, index=idx_mun)
     with c_nav2:
         territorios_disp = sorted(df_mat[df_mat['Nivel'] == nivel_val]['Territorio'].unique())
-        idx_terr = territorios_disp.index('R. Chico') if 'R. Chico' in territorios_disp else 0
+        idx_terr = 0
         terr_val = st.selectbox("2. Territorio Hídrico / Administrativo:", territorios_disp, index=idx_terr)
     with c_nav3:
         anio_futuro = st.slider("3. Proyectar hasta el año:", min_value=2025, max_value=2050, value=2035, step=1)
@@ -218,13 +223,12 @@ if 'df_matriz_pecuaria' in st.session_state:
     res_por = calcular_proyeccion_especie(df_mat, nivel_val, terr_val, 'Porcinos', anio_futuro)
     res_ave = calcular_proyeccion_especie(df_mat, nivel_val, terr_val, 'Aves', anio_futuro)
 
-    # 💾 INYECCIÓN AL TORRENTE SANGUÍNEO (Evitando valores negativos matemáticos)
     st.session_state['ica_bovinos_calc_met'] = float(max(0, res_bov))
     st.session_state['ica_porcinos_calc_met'] = float(max(0, res_por))
     st.session_state['ica_aves_calc_met'] = float(max(0, res_ave))
     st.session_state['aleph_lugar_pecuario'] = terr_val
     
-    st.success(f"🔗 Carga pecuaria de **{terr_val}** para el año **{anio_futuro}** sincronizada con Módulo de Calidad e Hídrico.")
+    st.success(f"🔗 Carga pecuaria de **{terr_val}** para el año **{anio_futuro}** lista en memoria RAM.")
     st.markdown("---")
     
     # --- RENDERIZADO VISUAL ---
@@ -237,10 +241,10 @@ if 'df_matriz_pecuaria' in st.session_state:
         fila_terr = df_filtrado.iloc[0]
         mejor_modelo = fila_terr['Modelo_Recomendado']
         
-        # Reconstruir Histórico
-        if nivel_val == 'Departamental': df_hist = df_pecuario.groupby('Anio')[especie_sel].sum().reset_index()
-        elif nivel_val == 'Municipal': df_hist = df_pecuario[df_pecuario['Municipio_Norm'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
-        elif nivel_val == 'Subcuenca': df_hist = df_pecuario[df_pecuario['Subcuenca'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
+        # Reconstruir Histórico (Adaptado a los nuevos nombres)
+        if nivel_val == 'DEPARTAMENTO': df_hist = df_pecuario.groupby('Anio')[especie_sel].sum().reset_index()
+        elif nivel_val == 'MUNICIPIO': df_hist = df_pecuario[df_pecuario['Municipio_Norm'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
+        elif nivel_val == 'NSS3': df_hist = df_pecuario[df_pecuario['Subcuenca'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
         else: df_hist = df_pecuario[df_pecuario['Sistema'] == terr_val].groupby('Anio')[especie_sel].sum().reset_index()
             
         df_hist = df_hist.sort_values(by='Anio')
@@ -251,7 +255,6 @@ if 'df_matriz_pecuaria' in st.session_state:
         x_pred = np.arange(x_offset, anio_futuro + 1)
         x_norm_pred = x_pred - x_offset
         
-        # Ecuaciones
         y_log = fila_terr['Log_K'] / (1 + fila_terr['Log_a'] * np.exp(-fila_terr['Log_r'] * x_norm_pred))
         y_exp = fila_terr['Exp_a'] * np.exp(fila_terr['Exp_b'] * x_norm_pred)
         y_poly = fila_terr['Poly_A']*(x_norm_pred**3) + fila_terr['Poly_B']*(x_norm_pred**2) + fila_terr['Poly_C']*x_norm_pred + fila_terr['Poly_D']
@@ -308,7 +311,6 @@ if 'df_matriz_pecuaria' in st.session_state:
 if 'df_matriz_pecuaria' in st.session_state:
     st.markdown("---")
     st.subheader("💾 Exportar Cerebro Pecuario (Para Producción)")
-    st.info("💡 Tu matriz ya está en memoria. Puedes inyectarla directamente a la base de datos o descargarla como archivo de respaldo.")
     
     df_matriz_pec = st.session_state['df_matriz_pecuaria']
     
@@ -319,24 +321,22 @@ if 'df_matriz_pecuaria' in st.session_state:
             with st.spinner("Forjando Cerebro Pecuario y conectando con PostgreSQL..."):
                 try:
                     from modules.db_manager import get_engine
+                    from sqlalchemy import text # Importación requerida para el execute
                     engine_sql = get_engine()
                     
-                    # 1. Copia de seguridad
                     df_export = df_matriz_pec.copy()
                     
-                    # 2. Seguro de nombres: Si se llamara 'Pob_Base' en lugar de 'Poblacion_Base', lo corregimos
+                    # Seguro de nombres
                     if 'Pob_Base' in df_export.columns and 'Poblacion_Base' not in df_export.columns:
                         df_export.rename(columns={'Pob_Base': 'Poblacion_Base'}, inplace=True)
+                    
+                    # 🔥 FIX DEFINITIVO: BORRADO SEGURO (Anti-Amnesia y preservación de permisos RLS)
+                    with engine_sql.begin() as conn:
+                        conn.execute(text("DELETE FROM matriz_maestra_pecuaria;"))
                         
-                    # 3. 🧽 APLICAMOS LA ASPIRADORA DE TEXTO AL NACER
-                    if 'Territorio' in df_export.columns:
-                        df_export['MATCH_ID'] = df_export['Territorio'].apply(limpiar_texto_maestro)
+                    df_export.to_sql('matriz_maestra_pecuaria', engine_sql, if_exists='append', index=False)
                     
-                    # 4. Inyección SQL
-                    df_export.to_sql('matriz_maestra_pecuaria', engine_sql, if_exists='replace', index=False)
-                    st.success(f"✅ ¡Inyección Exitosa! {len(df_export)} registros blindados (con MATCH_ID) actualizados en PostgreSQL.")
-                    
-                    # Actualizamos la memoria viva por si acaso
+                    st.success(f"✅ ¡Inyección Exitosa! {len(df_export)} registros blindados con LLAVE_UNIVERSAL actualizados en PostgreSQL.")
                     st.session_state['df_matriz_pecuaria'] = df_export
                     
                 except Exception as e:
