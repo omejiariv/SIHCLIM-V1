@@ -1997,7 +1997,7 @@ with tab_mapas:
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
 # =====================================================================
 with tab_matriz:
-    st.subheader("🧠 Motor Generador de Matriz Maestra Demográfica (Total, Urbano y Rural)")
+    st.subheader("🧠 FASE 1: Cálculo Espacial de Cuencas (Dasimetría) (Total, Urbano y Rural)")
     st.markdown("""
     Este motor entrena simultáneamente tres modelos matemáticos predictivos y recomienda el de mejor ajuste:
     * **Logístico:** Ideal para poblaciones que alcanzan un techo por límites físicos o recursos.
@@ -2172,18 +2172,19 @@ with tab_matriz:
                 # 🧠 BISTURÍ ESPACIAL V6: Hiper-Resolución (Barrios + Gravedad)
                 # ================================================================
                 try:
-                    # 🔥 FIX: Solo procesamos espacialmente Urbana y Rural. El Total se deducirá matemáticamente.
                     if tipo_area in ['Urbana', 'Rural']:
+                        texto_progreso.markdown(f"🗺️ **Fase {tipo_area}:** Descargando mapas y preparando geoprocesamiento (Paciencia, proceso pesado...)")
+                        
                         import geopandas as gpd
                         from sqlalchemy import text
                         import unicodedata
                         import difflib
                         import re
                         from modules.db_manager import get_engine
+                        import gc # Recolector de basura para liberar RAM
                         
                         engine_geo = get_engine()
                         
-                        # 1. CARGA DE ACTIVOS CLOUD
                         URL_CABECERAS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CabeceraMunicipal_GisAnt_PT.geojson"
                         URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
                         URL_BARRIOS_MED = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
@@ -2196,21 +2197,15 @@ with tab_matriz:
                             FROM cuencas
                         """)
                         gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
-                        gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
+                        
+                        # 🔥 OPTIMIZACIÓN RAM 1: Dejamos solo lo esencial de las cuencas
+                        gdf_cue_limpio = gdf_cue[['subc_lbl', 'geometry']].copy()
+                        gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
                         
                         def cargar_y_proyectar(url):
                             temp_gdf = gpd.read_file(url)
                             if temp_gdf.crs is None: temp_gdf = temp_gdf.set_crs(epsg=4326)
                             return temp_gdf.to_crs(epsg=3116)
-
-                        gdf_barrios = cargar_y_proyectar(URL_BARRIOS_MED)
-                        gdf_cab = cargar_y_proyectar(URL_CABECERAS)
-                        gdf_cp = cargar_y_proyectar(URL_CENTROS_POBLADOS)
-                        
-                        gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry")
-                        col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
-                        if col_dpto in gdf_mun.columns: gdf_mun = gdf_mun[gdf_mun[col_dpto] == '05'].copy()
-                        gdf_mun = gdf_mun.to_crs(epsg=3116)
 
                         def clean_v6(t):
                             if not t or pd.isna(t): return ""
@@ -2218,20 +2213,12 @@ with tab_matriz:
                             t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
                             return re.sub(r'[^a-z0-9]', '', t)
 
-                        col_cab = 'MPIO_NOMBR' if 'MPIO_NOMBR' in gdf_cab.columns else 'mpio_nombr'
-                        gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v6)
-                        
-                        col_cp = 'NOMBRE_MPI' if 'NOMBRE_MPI' in gdf_cp.columns else 'nombre_mpi'
-                        gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v6)
-                        
-                        col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
-                        gdf_mun['mun_norm'] = gdf_mun[col_mun].apply(clean_v6)
-                        
-                        # MEDELLÍN
+                        # --- 1. MEDELLÍN (Se cruza en ambas fases) ---
+                        texto_progreso.markdown(f"🗺️ **Fase {tipo_area}:** Cruzando Barrios de Medellín con Cuencas...")
+                        gdf_barrios = cargar_y_proyectar(URL_BARRIOS_MED)
                         gdf_barrios['Pob_Total'] = pd.to_numeric(gdf_barrios['Pob_Total'], errors='coerce').fillna(0)
                         gdf_barrios['geometry'] = gdf_barrios.geometry.buffer(0)
-                        gdf_cue_limpio = gdf_cue.copy()
-                        gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
+                        gdf_barrios = gdf_barrios[['Cod_Barrio', 'Pob_Total', 'geometry']] # Saver RAM
                         
                         inter_b = gpd.overlay(gdf_barrios, gdf_cue_limpio, how='intersection')
                         if not inter_b.empty:
@@ -2245,9 +2232,7 @@ with tab_matriz:
                             
                         barrios_in = inter_b['Cod_Barrio'].unique() if not inter_b.empty else []
                         barrios_out = gdf_barrios[~gdf_barrios['Cod_Barrio'].isin(barrios_in)].copy()
-                        
                         if not barrios_out.empty:
-                            barrios_out['temp_id'] = barrios_out.index
                             barrios_out['geometry'] = barrios_out.geometry.centroid
                             rescate_b = gpd.sjoin_nearest(barrios_out, gdf_cue_limpio, how='inner')
                             if not rescate_b.empty:
@@ -2260,80 +2245,119 @@ with tab_matriz:
                             pesos_med = inter_b.groupby('subc_lbl')['pob_frag'].sum()
                             pesos_med_pct = pesos_med / pesos_med.sum() if pesos_med.sum() > 0 else {}
 
-                        # URBANO (Cabeceras)
-                        gdf_cab['geometry'] = gdf_cab.geometry.buffer(0)
-                        inter_u = gpd.overlay(gdf_cab, gdf_cue_limpio, how='intersection')
-                        if not inter_u.empty:
-                            inter_u['area_inter'] = inter_u.geometry.area
-                            inter_u = inter_u[inter_u['area_inter'] > 1000].copy()
-                            suma_areas_u = inter_u.groupby('mun_norm')['area_inter'].transform('sum')
-                            inter_u['pct_area_urb'] = inter_u['area_inter'] / suma_areas_u
-                        else:
-                            inter_u = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_urb'])
+                        # Limpieza
+                        del gdf_barrios; gc.collect()
+
+                        # --- 2. URBANO Y RURAL SELECTIVO (La cura contra la asfixia de memoria) ---
+                        inter_urbana = pd.DataFrame()
+                        cp_en_cuenca = pd.DataFrame()
+                        inter_dispersa = pd.DataFrame()
+
+                        if tipo_area == 'Urbana':
+                            texto_progreso.markdown(f"🗺️ **Fase Urbana:** Cruzando Cabeceras Municipales con Cuencas...")
+                            gdf_cab = cargar_y_proyectar(URL_CABECERAS)
+                            col_cab = 'MPIO_NOMBR' if 'MPIO_NOMBR' in gdf_cab.columns else 'mpio_nombr'
+                            gdf_cab['mun_norm'] = gdf_cab[col_cab].apply(clean_v6)
+                            gdf_cab['geometry'] = gdf_cab.geometry.buffer(0)
+                            gdf_cab = gdf_cab[['mun_norm', 'geometry']] # Saver RAM
                             
-                        mpios_u_in = inter_u['mun_norm'].unique() if not inter_u.empty else []
-                        mpios_u_out = gdf_cab[~gdf_cab['mun_norm'].isin(mpios_u_in)].copy()
-                        if not mpios_u_out.empty:
-                            mpios_u_out['geometry'] = mpios_u_out.geometry.centroid
-                            rescate_u = gpd.sjoin_nearest(mpios_u_out, gdf_cue_limpio, how='inner')
-                            if not rescate_u.empty:
-                                rescate_u = rescate_u.drop_duplicates(subset=['mun_norm'])
-                                rescate_u['pct_area_urb'] = 1.0 
-                                inter_u = pd.concat([inter_u, rescate_u[['mun_norm', 'subc_lbl', 'pct_area_urb']]], ignore_index=True)
-                        inter_urbana = inter_u 
+                            inter_u = gpd.overlay(gdf_cab, gdf_cue_limpio, how='intersection')
+                            if not inter_u.empty:
+                                inter_u['area_inter'] = inter_u.geometry.area
+                                inter_u = inter_u[inter_u['area_inter'] > 1000].copy()
+                                suma_areas_u = inter_u.groupby('mun_norm')['area_inter'].transform('sum')
+                                inter_u['pct_area_urb'] = inter_u['area_inter'] / suma_areas_u
+                            else:
+                                inter_u = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_urb'])
+                                
+                            mpios_u_in = inter_u['mun_norm'].unique() if not inter_u.empty else []
+                            mpios_u_out = gdf_cab[~gdf_cab['mun_norm'].isin(mpios_u_in)].copy()
+                            if not mpios_u_out.empty:
+                                mpios_u_out['geometry'] = mpios_u_out.geometry.centroid
+                                rescate_u = gpd.sjoin_nearest(mpios_u_out, gdf_cue_limpio, how='inner')
+                                if not rescate_u.empty:
+                                    rescate_u = rescate_u.drop_duplicates(subset=['mun_norm'])
+                                    rescate_u['pct_area_urb'] = 1.0 
+                                    inter_u = pd.concat([inter_u, rescate_u[['mun_norm', 'subc_lbl', 'pct_area_urb']]], ignore_index=True)
+                            inter_urbana = inter_u 
+                            del gdf_cab; gc.collect()
 
-                        # RURAL (Centros Poblados + Disperso)
-                        gdf_cp['geometry'] = gdf_cp.geometry.buffer(0)
-                        gdf_cp['id_unico_cp'] = gdf_cp.index.astype(str)
-                        inter_cp = gpd.overlay(gdf_cp, gdf_cue_limpio, how='intersection')
-                        if not inter_cp.empty:
-                            inter_cp['area_inter'] = inter_cp.geometry.area
-                            inter_cp = inter_cp[inter_cp['area_inter'] > 500].copy()
-                            inter_cp = inter_cp.sort_values('area_inter', ascending=False).drop_duplicates(subset=['id_unico_cp'])
-                        else:
-                            inter_cp = pd.DataFrame(columns=['mun_norm', 'id_unico_cp', 'subc_lbl'])
-
-                        cp_in = inter_cp['id_unico_cp'].unique() if not inter_cp.empty else []
-                        cp_out = gdf_cp[~gdf_cp['id_unico_cp'].isin(cp_in)].copy()
-                        if not cp_out.empty:
-                            cp_out['geometry'] = cp_out.geometry.centroid
-                            rescate_cp = gpd.sjoin_nearest(cp_out, gdf_cue_limpio, how='inner')
-                            if not rescate_cp.empty:
-                                rescate_cp = rescate_cp.drop_duplicates(subset=['id_unico_cp'])
-                                inter_cp = pd.concat([inter_cp, rescate_cp[['mun_norm', 'id_unico_cp', 'subc_lbl']]], ignore_index=True)
-                        cp_en_cuenca = inter_cp 
-
-                        gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
-                        inter_r = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
-                        if not inter_r.empty:
-                            inter_r['area_inter'] = inter_r.geometry.area
-                            inter_r = inter_r[inter_r['area_inter'] > 10000].copy() 
-                            suma_areas_r = inter_r.groupby('mun_norm')['area_inter'].transform('sum')
-                            inter_r['pct_area_rur'] = inter_r['area_inter'] / suma_areas_r
-                        else:
-                            inter_r = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_rur'])
+                        if tipo_area == 'Rural':
+                            texto_progreso.markdown(f"🗺️ **Fase Rural 1/2:** Cruzando Centros Poblados...")
+                            gdf_cp = cargar_y_proyectar(URL_CENTROS_POBLADOS)
+                            col_cp = 'NOMBRE_MPI' if 'NOMBRE_MPI' in gdf_cp.columns else 'nombre_mpi'
+                            gdf_cp['mun_norm'] = gdf_cp[col_cp].apply(clean_v6)
+                            gdf_cp['geometry'] = gdf_cp.geometry.buffer(0)
+                            gdf_cp['id_unico_cp'] = gdf_cp.index.astype(str)
+                            gdf_cp = gdf_cp[['mun_norm', 'id_unico_cp', 'geometry']] # Saver RAM
                             
-                        mpios_r_in = inter_r['mun_norm'].unique() if not inter_r.empty else []
-                        mpios_r_out = gdf_mun[~gdf_mun['mun_norm'].isin(mpios_r_in)].copy()
-                        if not mpios_r_out.empty:
-                            mpios_r_out['geometry'] = mpios_r_out.geometry.centroid
-                            rescate_r = gpd.sjoin_nearest(mpios_r_out, gdf_cue_limpio, how='inner')
-                            if not rescate_r.empty:
-                                rescate_r = rescate_r.drop_duplicates(subset=['mun_norm'])
-                                rescate_r['pct_area_rur'] = 1.0 
-                                inter_r = pd.concat([inter_r, rescate_r[['mun_norm', 'subc_lbl', 'pct_area_rur']]], ignore_index=True)
-                        inter_dispersa = inter_r 
+                            inter_cp = gpd.overlay(gdf_cp, gdf_cue_limpio, how='intersection')
+                            if not inter_cp.empty:
+                                inter_cp['area_inter'] = inter_cp.geometry.area
+                                inter_cp = inter_cp[inter_cp['area_inter'] > 500].copy()
+                                inter_cp = inter_cp.sort_values('area_inter', ascending=False).drop_duplicates(subset=['id_unico_cp'])
+                            else:
+                                inter_cp = pd.DataFrame(columns=['mun_norm', 'id_unico_cp', 'subc_lbl'])
 
+                            cp_in = inter_cp['id_unico_cp'].unique() if not inter_cp.empty else []
+                            cp_out = gdf_cp[~gdf_cp['id_unico_cp'].isin(cp_in)].copy()
+                            if not cp_out.empty:
+                                cp_out['geometry'] = cp_out.geometry.centroid
+                                rescate_cp = gpd.sjoin_nearest(cp_out, gdf_cue_limpio, how='inner')
+                                if not rescate_cp.empty:
+                                    rescate_cp = rescate_cp.drop_duplicates(subset=['id_unico_cp'])
+                                    inter_cp = pd.concat([inter_cp, rescate_cp[['mun_norm', 'id_unico_cp', 'subc_lbl']]], ignore_index=True)
+                            cp_en_cuenca = inter_cp 
+                            del gdf_cp; gc.collect()
+
+                            texto_progreso.markdown(f"🗺️ **Fase Rural 2/2:** Intersección Masiva de Polígonos Municipales (La operación más pesada ⚠️)...")
+                            gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry")
+                            col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
+                            if col_dpto in gdf_mun.columns: gdf_mun = gdf_mun[gdf_mun[col_dpto] == '05'].copy()
+                            gdf_mun = gdf_mun.to_crs(epsg=3116)
+                            col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
+                            gdf_mun['mun_norm'] = gdf_mun[col_mun].apply(clean_v6)
+                            gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
+                            gdf_mun = gdf_mun[['mun_norm', 'geometry']] # Saver RAM Absoluto
+                            
+                            inter_r = gpd.overlay(gdf_mun, gdf_cue_limpio, how='intersection')
+                            if not inter_r.empty:
+                                inter_r['area_inter'] = inter_r.geometry.area
+                                inter_r = inter_r[inter_r['area_inter'] > 10000].copy() 
+                                suma_areas_r = inter_r.groupby('mun_norm')['area_inter'].transform('sum')
+                                inter_r['pct_area_rur'] = inter_r['area_inter'] / suma_areas_r
+                            else:
+                                inter_r = pd.DataFrame(columns=['mun_norm', 'subc_lbl', 'pct_area_rur'])
+                                
+                            mpios_r_in = inter_r['mun_norm'].unique() if not inter_r.empty else []
+                            mpios_r_out = gdf_mun[~gdf_mun['mun_norm'].isin(mpios_r_in)].copy()
+                            if not mpios_r_out.empty:
+                                mpios_r_out['geometry'] = mpios_r_out.geometry.centroid
+                                rescate_r = gpd.sjoin_nearest(mpios_r_out, gdf_cue_limpio, how='inner')
+                                if not rescate_r.empty:
+                                    rescate_r = rescate_r.drop_duplicates(subset=['mun_norm'])
+                                    rescate_r['pct_area_rur'] = 1.0 
+                                    inter_r = pd.concat([inter_r, rescate_r[['mun_norm', 'subc_lbl', 'pct_area_rur']]], ignore_index=True)
+                            inter_dispersa = inter_r 
+                            del gdf_mun; gc.collect()
+
+                        # --- 3. DEDUCCIÓN DE FRAGMENTOS MATEMÁTICA ---
+                        texto_progreso.markdown(f"🧮 **Fase {tipo_area}:** Extrayendo fracciones poblacionales...")
                         df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
                         df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
                         
                         agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
                         df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma))]
                         
-                        mpios_mapa = set(gdf_mun['mun_norm'].tolist())
-                        df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
-                            lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
-                        )
+                        mpios_mapa_lista = []
+                        if tipo_area == 'Urbana' and not inter_urbana.empty: mpios_mapa_lista = inter_urbana['mun_norm'].tolist()
+                        elif tipo_area == 'Rural' and not cp_en_cuenca.empty: mpios_mapa_lista = cp_en_cuenca['mun_norm'].tolist() 
+                            
+                        if mpios_mapa_lista:
+                            mpios_mapa = set(mpios_mapa_lista)
+                            df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(
+                                lambda x: difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8)[0] if difflib.get_close_matches(x, mpios_mapa, n=1, cutoff=0.8) else x
+                            )
                         
                         df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index()
 
@@ -2429,7 +2453,7 @@ with tab_matriz:
             # 🔥 ENTRENAMIENTO MULTIESCALA UNIVERSAL (ADMIN + CUENCAS) CON LLAVES
             # =====================================================================
             st.divider()
-            st.subheader("🚀 Motor de Entrenamiento Final y Forja de Llaves Universales")
+            st.subheader("🚀 FASE 2: Entrenamiento Matemático e Inyección SQL Forja de Llaves Universales")
             st.markdown("Toma los fragmentos poblacionales calculados y entrena los modelos matemáticos, blindándolos con la **Llave Universal**.")
 
             # 🔑 CONTRASEÑA DE SEGURIDAD
