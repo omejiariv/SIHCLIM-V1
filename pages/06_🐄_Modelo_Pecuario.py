@@ -87,7 +87,7 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
         engine_geo = get_engine()
 
         # =================================================================
-        # 📍 FASE 1: DASIMETRÍA ESPACIAL (EL BISTURÍ DE PASTOS)
+        # 📍 FASE 1: DASIMETRÍA ESPACIAL (EL BISTURÍ MULTI-HÁBITAT)
         # =================================================================
         texto_progreso.info("📍 Fase 1/2: Descargando Raster de Usos del Suelo (2022)...")
         URL_RASTER = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob25m_WGS84.tif"
@@ -112,18 +112,36 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
         
         del gdf_mun, gdf_cue; gc.collect()
 
-        texto_progreso.info("🌱 Fase 1/2: Escaneando píxeles de pastos (Raster Stats)...")
-        VALOR_CLASE_PASTOS = 2 # Ajusta esto si tu clase de pastos en el TIF es otro número
+        # 4. ESCÁNER MULTI-HÁBITAT (Raster Stats)
+        texto_progreso.info("🌱 Fase 1/2: Escaneando usos del suelo para hábitats específicos...")
         stats = zonal_stats(inter_mc, raster_path, categorical=True, nodata=-9999)
-        inter_mc['pixeles_pasto'] = [stat.get(VALOR_CLASE_PASTOS, 0) for stat in stats]
+        
+        # 🎯 Clasificación de Hábitats según Leyenda Oficial (land_cover.py)
+        CLASES_BOVINOS = [7] # Pastos
+        CLASES_GRANJAS = [2, 3, 4, 5, 6, 8] # Porcinos y Aves (Zonas degradadas, artificiales, industriales y cultivos)
+        
+        # Sumamos los píxeles correspondientes a cada especie en cada pedazo de cuenca
+        inter_mc['pixeles_bovinos'] = [sum(stat.get(c, 0) for c in CLASES_BOVINOS) for stat in stats]
+        inter_mc['pixeles_granjas'] = [sum(stat.get(c, 0) for c in CLASES_GRANJAS) for stat in stats]
 
-        pastos_municipio = inter_mc.groupby('mun_norm')['pixeles_pasto'].transform('sum')
+        # 5. CÁLCULO DE PESOS DASIMÉTRICOS (Con Fallback Independiente)
+        texto_progreso.info("⚖️ Fase 1/2: Calculando pesos dasimétricos por especie...")
+        
+        bovinos_municipio = inter_mc.groupby('mun_norm')['pixeles_bovinos'].transform('sum')
+        granjas_municipio = inter_mc.groupby('mun_norm')['pixeles_granjas'].transform('sum')
         area_geo_municipio = inter_mc.groupby('mun_norm')['area_geo_frag'].transform('sum')
 
-        # Fallback: Si no hay pastos en el raster (o da cero), usa el tamaño del terreno
-        inter_mc['peso_pecuario'] = np.where(
-            pastos_municipio > 0,
-            inter_mc['pixeles_pasto'] / pastos_municipio,
+        # Peso para Vacas (Busca pastos [7], si no hay, usa área geográfica)
+        inter_mc['peso_bovinos'] = np.where(
+            bovinos_municipio > 0,
+            inter_mc['pixeles_bovinos'] / bovinos_municipio,
+            inter_mc['area_geo_frag'] / area_geo_municipio
+        )
+        
+        # Peso para Cerdos y Aves (Busca galpones/cultivos [2,3,4,5,6,8], si no hay, usa área geográfica)
+        inter_mc['peso_granjas'] = np.where(
+            granjas_municipio > 0,
+            inter_mc['pixeles_granjas'] / granjas_municipio,
             inter_mc['area_geo_frag'] / area_geo_municipio
         )
 
@@ -225,8 +243,8 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
 
         barra_progreso.progress(0.7)
 
-        # B. ENTRENAMIENTO DE CUENCAS (Dasimetría Aplicada)
-        texto_progreso.info("🧮 Fase 2/2: Aplicando Pesos de Pastos a Cuencas...")
+        # B. ENTRENAMIENTO DE CUENCAS (Dasimetría Multiespecie Aplicada)
+        texto_progreso.info("🧮 Fase 2/2: Aplicando Pesos de Hábitat a Cuencas...")
         fragmentos_pecuarios = []
         
         for mpio in inter_mc['mun_norm'].unique():
@@ -236,10 +254,14 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
             pedazos = inter_mc[inter_mc['mun_norm'] == mpio]
             for _, pedazo in pedazos.iterrows():
                 df_frag = df_animales_mpio.copy()
-                # Repartición dasimétrica
-                df_frag['Bovinos'] = df_frag['Bovinos'] * pedazo['peso_pecuario']
-                df_frag['Porcinos'] = df_frag['Porcinos'] * pedazo['peso_pecuario']
-                df_frag['Aves'] = df_frag['Aves'] * pedazo['peso_pecuario']
+                
+                # 🧬 Repartición dasimétrica multiespecie
+                # Las vacas van a los pastos
+                df_frag['Bovinos'] = df_frag['Bovinos'] * pedazo['peso_bovinos']
+                # Los cerdos y aves van a las zonas industriales/cultivos
+                df_frag['Porcinos'] = df_frag['Porcinos'] * pedazo['peso_granjas']
+                df_frag['Aves'] = df_frag['Aves'] * pedazo['peso_granjas']
+                
                 df_frag['subc_lbl'] = pedazo['subc_lbl']
                 fragmentos_pecuarios.append(df_frag)
 
