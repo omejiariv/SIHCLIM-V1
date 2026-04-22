@@ -1,3 +1,5 @@
+# pages/14_🛰️_Satelite_En_Vivo.py
+
 import os
 import sys
 import json
@@ -118,9 +120,15 @@ if iniciar_conexion_gee():
                     7: "Nieve", 8: "Nubes"
                 }
                 
-                # 4. Procesar resultados
+                # 4. Procesar resultados y capturar TODAS las coberturas
                 resultados = []
-                ha_bosque_satelite = 0.0
+                
+                # Inicializamos contadores en 0.0 para evitar errores si una clase no existe en la foto
+                ha_coberturas = {
+                    'Agua': 0.0, 'Bosques': 0.0, 'Pastos': 0.0, 
+                    'Cultivos': 0.0, 'Matorrales': 0.0, 
+                    'Suelo Desnudo': 0.0, 'Urbano': 0.0
+                }
                 
                 for item in estadisticas:
                     clase_id = int(item['clase'])
@@ -128,10 +136,23 @@ if iniciar_conexion_gee():
                     nombre = nombres_clases.get(clase_id, "Desconocido")
                     resultados.append({"Cobertura": nombre, "Área (ha)": area_ha})
                     
-                    if clase_id == 1: # Guardamos el Bosque para el Simulador WRI
-                        ha_bosque_satelite = area_ha
-                
-                st.session_state['satelite_ha_bosque'] = ha_bosque_satelite
+                    # 🧲 Atrapamos el valor exacto para cada clase
+                    if clase_id == 0: ha_coberturas['Agua'] = area_ha
+                    elif clase_id == 1: ha_coberturas['Bosques'] = area_ha
+                    elif clase_id == 2: ha_coberturas['Pastos'] = area_ha
+                    elif clase_id == 3: ha_coberturas['Cultivos'] = area_ha
+                    elif clase_id == 4: ha_coberturas['Matorrales'] = area_ha
+                    elif clase_id == 5: ha_coberturas['Suelo Desnudo'] = area_ha
+                    elif clase_id == 6: ha_coberturas['Urbano'] = area_ha
+                    
+                # 💾 INYECCIÓN AL TORRENTE SANGUÍNEO (SESSION STATE)
+                st.session_state['satelite_ha_agua'] = ha_coberturas['Agua']
+                st.session_state['satelite_ha_bosque'] = ha_coberturas['Bosques']
+                st.session_state['satelite_ha_pastos'] = ha_coberturas['Pastos']
+                st.session_state['satelite_ha_cultivos'] = ha_coberturas['Cultivos']
+                st.session_state['satelite_ha_matorrales'] = ha_coberturas['Matorrales']
+                st.session_state['satelite_ha_suelo_desnudo'] = ha_coberturas['Suelo Desnudo']
+                st.session_state['satelite_ha_urbano'] = ha_coberturas['Urbano']
                 
                 # 5. Renderizar Gráfico y Tabla en Streamlit
                 if resultados:
