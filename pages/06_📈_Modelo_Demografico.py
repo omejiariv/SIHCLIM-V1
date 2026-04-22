@@ -2321,8 +2321,8 @@ with tab_matriz:
                             inter_dispersa = inter_r 
                             del gdf_mun; gc.collect()
 
-                        # --- 3. DEDUCCIÓN DE FRAGMENTOS MATEMÁTICA ---
-                        texto_progreso.markdown(f"🧮 **Fase {tipo_area}:** Extrayendo fracciones poblacionales...")
+                        # --- 3. DEDUCCIÓN DE FRAGMENTOS MATEMÁTICA (Bypass RAM 2.0) ---
+                        texto_progreso.markdown(f"🧮 **Fase {tipo_area}:** Extrayendo fracciones poblacionales (Optimizando Memoria)...")
                         df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
                         df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
                         
@@ -2336,13 +2336,16 @@ with tab_matriz:
                         if mpios_mapa_lista:
                             mpios_mapa = set(mpios_mapa_lista)
                             
-                            # 🔥 FIX AMBIGUOUS SERIES: Evitamos difflib si el dataframe está vacío o el match no es 1 a 1
-                            def encontrar_match_seguro(nombre):
-                                if nombre in mpios_mapa: return nombre
-                                matches = difflib.get_close_matches(nombre, mpios_mapa, n=1, cutoff=0.8)
-                                return matches[0] if len(matches) > 0 else nombre
-                                
-                            df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].apply(encontrar_match_seguro)
+                            # 🔥 FIX RAM 1: Difflib a velocidad luz. (Calcula 125 veces en lugar de 7000)
+                            unicos_dane = df_area_v6['mun_norm_dane'].unique()
+                            map_nombres = {}
+                            for m in unicos_dane:
+                                if m in mpios_mapa: map_nombres[m] = m
+                                else:
+                                    matches = difflib.get_close_matches(m, mpios_mapa, n=1, cutoff=0.8)
+                                    map_nombres[m] = matches[0] if matches else m
+                                    
+                            df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].map(map_nombres)
                         
                         df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index()
 
@@ -2353,90 +2356,73 @@ with tab_matriz:
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
                         
                         for mpio in df_area_v6['mun_norm_dane'].unique():
-                            pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio]
+                            # 🔥 FIX RAM 2: Copiamos SOLO Año y Total. Reducción del 95% del peso.
+                            pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio][[col_anio, 'Total']].copy()
                             
-                            # 🔥 FIX 2: Blindaje contra DataFrames vacíos en el fallback
                             if pob_mpio.empty: continue
-                            
                             fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
                             
+                            # Mini-función inyectora ligera
+                            def agregar_fragmento(df_pob, cuenca_lbl, factor):
+                                df_temp = df_pob.copy()
+                                df_temp['Total_frag'] = df_temp['Total'] * factor
+                                df_temp['subc_lbl'] = cuenca_lbl
+                                df_final_cuencas.append(df_temp)
+                            
                             if mpio in mpios_amva_rescate:
-                                # 🔥 FIX PANDAS: Usamos len() > 0 para evitar la ambigüedad de la Serie
-                                if mpio == 'medellin' and len(pesos_med_pct) > 0:
+                                if mpio == 'medellin' and pesos_med_pct and len(pesos_med_pct) > 0:
                                     for subc, peso in pesos_med_pct.items():
-                                        df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total'] * float(peso)
-                                        df_temp['subc_lbl'] = subc
-                                        df_final_cuencas.append(df_temp)
+                                        agregar_fragmento(pob_mpio, subc, float(peso))
                                 else:
-                                    df_temp = pob_mpio.copy()
-                                    df_temp['Total_frag'] = df_temp['Total']
-                                    df_temp['subc_lbl'] = nombre_real_aburra
-                                    df_final_cuencas.append(df_temp)
+                                    agregar_fragmento(pob_mpio, nombre_real_aburra, 1.0)
                             else:
                                 if tipo_area == 'Urbana':
-                                    cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio].copy() if not inter_urbana.empty else pd.DataFrame()
+                                    cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio] if not inter_urbana.empty else pd.DataFrame()
                                     if not cuencas_urb.empty:
-                                        sum_u = float(cuencas_urb['pct_area_urb'].sum()) # Forzamos float para evitar series
-                                        if sum_u > 0: cuencas_urb['pct_area_urb'] = cuencas_urb['pct_area_urb'] / sum_u 
-                                        for _, u_row in cuencas_urb.iterrows():
-                                            df_temp = pob_mpio.copy()
-                                            df_temp['Total_frag'] = df_temp['Total'] * float(u_row['pct_area_urb'])
-                                            df_temp['subc_lbl'] = u_row['subc_lbl']
-                                            df_final_cuencas.append(df_temp)
+                                        sum_u = float(cuencas_urb['pct_area_urb'].sum())
+                                        if sum_u > 0:
+                                            for _, u_row in cuencas_urb.iterrows():
+                                                agregar_fragmento(pob_mpio, u_row['subc_lbl'], float(u_row['pct_area_urb']) / sum_u)
+                                        else:
+                                            agregar_fragmento(pob_mpio, fallback_basin, 1.0)
                                     else:
-                                        df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total']
-                                        df_temp['subc_lbl'] = fallback_basin
-                                        df_final_cuencas.append(df_temp)
+                                        agregar_fragmento(pob_mpio, fallback_basin, 1.0)
                                         
                                 elif tipo_area == 'Rural':
-                                    cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio].copy() if not cp_en_cuenca.empty else pd.DataFrame()
-                                    cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio].copy() if not inter_dispersa.empty else pd.DataFrame()
+                                    cuencas_cp = cp_en_cuenca[cp_en_cuenca['mun_norm'] == mpio] if not cp_en_cuenca.empty else pd.DataFrame()
+                                    cuencas_area = inter_dispersa[inter_dispersa['mun_norm'] == mpio] if not inter_dispersa.empty else pd.DataFrame()
                                     
                                     if not cuencas_cp.empty and not cuencas_area.empty:
                                         len_cp = len(cuencas_cp)
                                         for _, cp_row in cuencas_cp.iterrows():
-                                            df_temp = pob_mpio.copy()
-                                            df_temp['Total_frag'] = (df_temp['Total'] * 0.30) / len_cp
-                                            df_temp['subc_lbl'] = cp_row['subc_lbl']
-                                            df_final_cuencas.append(df_temp)
+                                            agregar_fragmento(pob_mpio, cp_row['subc_lbl'], 0.30 / len_cp)
                                             
                                         sum_r = float(cuencas_area['pct_area_rur'].sum())
-                                        if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r 
                                         for _, a_row in cuencas_area.iterrows():
-                                            df_temp = pob_mpio.copy()
-                                            df_temp['Total_frag'] = df_temp['Total'] * 0.70 * float(a_row['pct_area_rur'])
-                                            df_temp['subc_lbl'] = a_row['subc_lbl']
-                                            df_final_cuencas.append(df_temp)
+                                            factor = 0.70 * (float(a_row['pct_area_rur']) / sum_r) if sum_r > 0 else 0.70
+                                            agregar_fragmento(pob_mpio, a_row['subc_lbl'], factor)
                                             
                                     elif not cuencas_cp.empty:
                                         len_cp = len(cuencas_cp)
                                         for _, cp_row in cuencas_cp.iterrows():
-                                            df_temp = pob_mpio.copy()
-                                            df_temp['Total_frag'] = df_temp['Total'] / len_cp
-                                            df_temp['subc_lbl'] = cp_row['subc_lbl']
-                                            df_final_cuencas.append(df_temp)
+                                            agregar_fragmento(pob_mpio, cp_row['subc_lbl'], 1.0 / len_cp)
                                             
                                     elif not cuencas_area.empty:
                                         sum_r = float(cuencas_area['pct_area_rur'].sum())
-                                        if sum_r > 0: cuencas_area['pct_area_rur'] = cuencas_area['pct_area_rur'] / sum_r 
                                         for _, a_row in cuencas_area.iterrows():
-                                            df_temp = pob_mpio.copy()
-                                            df_temp['Total_frag'] = df_temp['Total'] * float(a_row['pct_area_rur'])
-                                            df_temp['subc_lbl'] = a_row['subc_lbl']
-                                            df_final_cuencas.append(df_temp)
+                                            factor = (float(a_row['pct_area_rur']) / sum_r) if sum_r > 0 else 1.0
+                                            agregar_fragmento(pob_mpio, a_row['subc_lbl'], factor)
                                     else:
-                                        df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total']
-                                        df_temp['subc_lbl'] = fallback_basin
-                                        df_final_cuencas.append(df_temp)
+                                        agregar_fragmento(pob_mpio, fallback_basin, 1.0)
 
                         # 5. RECOLECCIÓN DE FRAGMENTOS (Sin entrenar todavía)
                         if df_final_cuencas:
                             df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                             df_cuencas_v6['Categoria_Area'] = tipo_area
                             historico_cuencas.append(df_cuencas_v6)
+                            
+                            # 🔥 FIX RAM 3: Purgamos la lista gigante de memoria manualmente
+                            del df_final_cuencas; import gc; gc.collect()
                             
                 except Exception as e:
                     st.error(f"❌ Error en Motor V6: {e}")
