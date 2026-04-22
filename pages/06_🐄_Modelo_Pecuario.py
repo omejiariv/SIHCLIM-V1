@@ -358,6 +358,12 @@ if 'df_matriz_pecuaria' in st.session_state:
         line_poly, op_poly = config_linea('Polinomial_3', '#27ae60')
         fig.add_trace(go.Scatter(x=x_pred, y=y_poly, mode='lines', name=f"Polinomial 3 (R²: {fila_terr['Poly_R2']})", line=line_poly, opacity=op_poly))
         
+        # 🚀 Trazado del Modelo Lineal
+        if 'Lin_m' in fila_terr and not pd.isna(fila_terr['Lin_m']):
+            y_lin = fila_terr['Lin_m'] * x_norm_pred + fila_terr['Lin_b']
+            line_lin, op_lin = config_linea('Lineal', '#8e44ad') # Color Morado
+            fig.add_trace(go.Scatter(x=x_pred, y=y_lin, mode='lines', name=f"Lineal (R²: {fila_terr.get('Lin_R2', 0)})", line=line_lin, opacity=op_lin))
+        
         fig.update_layout(
             title=f"Proyección de {icono[especie_sel]} {especie_sel} (Ganador: {mejor_modelo})", 
             xaxis_title="Año", yaxis_title="Número de Animales", hovermode="x unified", 
@@ -371,7 +377,8 @@ if 'df_matriz_pecuaria' in st.session_state:
             df_coefs = pd.DataFrame([
                 {"Modelo": "Logístico", "R²": f"{fila_terr['Log_R2']:.4f}", "Parámetros": f"K={fila_terr['Log_K']:.0f}, a={fila_terr['Log_a']:.4f}, r={fila_terr['Log_r']:.4f}"},
                 {"Modelo": "Exponencial", "R²": f"{fila_terr['Exp_R2']:.4f}", "Parámetros": f"a={fila_terr['Exp_a']:.0f}, b={fila_terr['Exp_b']:.4f}"},
-                {"Modelo": "Polinomial 3", "R²": f"{fila_terr['Poly_R2']:.4f}", "Parámetros": f"A={fila_terr['Poly_A']:.4e}, B={fila_terr['Poly_B']:.4e}, C={fila_terr['Poly_C']:.4f}, D={fila_terr['Poly_D']:.0f}"}
+                {"Modelo": "Polinomial 3", "R²": f"{fila_terr['Poly_R2']:.4f}", "Parámetros": f"A={fila_terr['Poly_A']:.4e}, B={fila_terr['Poly_B']:.4e}, C={fila_terr['Poly_C']:.4f}, D={fila_terr['Poly_D']:.0f}"},
+                {"Modelo": "Lineal", "R²": f"{fila_terr.get('Lin_R2', 0):.4f}", "Parámetros": f"m={fila_terr.get('Lin_m', 0):.4f}, b={fila_terr.get('Lin_b', 0):.0f}"}
             ])
             def highlight_winner(row): return ['background-color: #d4edda' if row['Modelo'] == mejor_modelo else '' for _ in row]
             st.dataframe(df_coefs.style.apply(highlight_winner, axis=1), use_container_width=True)
@@ -411,8 +418,10 @@ if 'df_matriz_pecuaria' in st.session_state:
                     
                     # 🔥 FIX DEFINITIVO: AUTO-MANTENIMIENTO Y BORRADO SEGURO
                     with engine_sql.begin() as conn:
-                        # 1. Creamos la columna en la tabla pecuaria si no existe
+                        # 1. Creamos las columnas si no existen (Llave y las nuevas Lineales)
                         conn.execute(text('ALTER TABLE matriz_maestra_pecuaria ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
+                        conn.execute(text('ALTER TABLE matriz_maestra_pecuaria ADD COLUMN IF NOT EXISTS "Lin_m" FLOAT, ADD COLUMN IF NOT EXISTS "Lin_b" FLOAT, ADD COLUMN IF NOT EXISTS "Lin_R2" FLOAT;'))
+                        
                         # 2. Borramos los datos viejos
                         conn.execute(text("DELETE FROM matriz_maestra_pecuaria;"))
                         
