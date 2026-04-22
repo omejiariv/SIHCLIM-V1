@@ -2873,10 +2873,14 @@ if 'df_matriz_demografica' in st.session_state:
                             from sqlalchemy import text
                             engine_sql = get_engine()
                             
-                            # 🔥 FIX DEFINITIVO: PROTOCOLO ANTI-AMNESIA - Borrar filas, no la tabla. Mantiene permisos RLS.
+                            # 🔥 FIX DEFINITIVO: PROTOCOLO ANTI-AMNESIA Y AUTO-MANTENIMIENTO
                             with engine_sql.begin() as conn:
+                                # 1. Le decimos a Supabase que cree la nueva columna si no existe
+                                conn.execute(text('ALTER TABLE matriz_maestra_demografica ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
+                                # 2. Borramos las filas viejas manteniendo los permisos RLS intactos
                                 conn.execute(text("DELETE FROM matriz_maestra_demografica;"))
                                 
+                            # 3. Inyectamos la nueva matriz
                             df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='append', index=False)
                             st.cache_data.clear()
                             
