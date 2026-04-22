@@ -67,18 +67,77 @@ df_pecuario = cargar_historico_pecuario()
 # =====================================================================
 st.title("🐄 Motor Demográfico Pecuario (Bovinos, Porcinos, Aves)")
 st.markdown("""
-Este motor lee la historia de los censos del ICA (2018-2025) y entrena 
-modelos predictivos para proyectar la carga animal hacia el futuro, blindando 
-los datos con la **Llave Universal** para evitar colisiones territoriales.
+Este motor lee los censos del ICA (2018-2025) y ejecuta un análisis de **Dasimetría Espacial** utilizando el mapa de usos del suelo (Pastos). Luego entrena modelos predictivos, blindándolos 
+con la **Llave Universal**.
 """)
 
-if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"):
-    with st.spinner("Entrenando modelos para Bovinos, Porcinos y Aves en todas las escalas... Esto tomará unos segundos."):
+if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", type="primary"):
+    texto_progreso = st.empty()
+    barra_progreso = st.progress(0)
+    
+    try:
+        # --- IMPORTACIONES EXTRAS ---
+        import geopandas as gpd
+        from sqlalchemy import text
+        from rasterstats import zonal_stats
+        import tempfile
+        import urllib.request
+        import gc
+        from modules.db_manager import get_engine
+        engine_geo = get_engine()
+
+        # =================================================================
+        # 📍 FASE 1: DASIMETRÍA ESPACIAL (EL BISTURÍ DE PASTOS)
+        # =================================================================
+        texto_progreso.info("📍 Fase 1/2: Descargando Raster de Usos del Suelo (2022)...")
+        URL_RASTER = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob25m_WGS84.tif"
+        tmp_raster = tempfile.NamedTemporaryFile(delete=False, suffix=".tif")
+        urllib.request.urlretrieve(URL_RASTER, tmp_raster.name)
+        raster_path = tmp_raster.name
+
+        texto_progreso.info("🗺️ Fase 1/2: Cruzando cartografía (Municipios y Cuencas)...")
+        gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine_geo, geom_col="geometry").to_crs(epsg=4326)
+        q_cue = text("SELECT COALESCE(NULLIF(TRIM(nom_nss3), ''), 'Cuenca Sin Nombre') AS subc_lbl, geometry FROM cuencas")
+        gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=4326)
+
+        col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
+        gdf_mun['mun_norm'] = gdf_mun[col_mun].astype(str).str.upper().str.strip()
         
-        # --- FUNCIONES MATEMÁTICAS ---
+        gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
+        gdf_cue['geometry'] = gdf_cue.geometry.buffer(0)
+        
+        inter_mc = gpd.overlay(gdf_mun[['mun_norm', 'geometry']], gdf_cue[['subc_lbl', 'geometry']], how='intersection')
+        inter_mc = inter_mc[inter_mc.geometry.area > 0.000001].copy()
+        inter_mc['area_geo_frag'] = inter_mc.geometry.area
+        
+        del gdf_mun, gdf_cue; gc.collect()
+
+        texto_progreso.info("🌱 Fase 1/2: Escaneando píxeles de pastos (Raster Stats)...")
+        VALOR_CLASE_PASTOS = 2 # Ajusta esto si tu clase de pastos en el TIF es otro número
+        stats = zonal_stats(inter_mc, raster_path, categorical=True, nodata=-9999)
+        inter_mc['pixeles_pasto'] = [stat.get(VALOR_CLASE_PASTOS, 0) for stat in stats]
+
+        pastos_municipio = inter_mc.groupby('mun_norm')['pixeles_pasto'].transform('sum')
+        area_geo_municipio = inter_mc.groupby('mun_norm')['area_geo_frag'].transform('sum')
+
+        # Fallback: Si no hay pastos en el raster (o da cero), usa el tamaño del terreno
+        inter_mc['peso_pecuario'] = np.where(
+            pastos_municipio > 0,
+            inter_mc['pixeles_pasto'] / pastos_municipio,
+            inter_mc['area_geo_frag'] / area_geo_municipio
+        )
+
+        import os
+        os.remove(raster_path) # Limpieza del servidor
+        barra_progreso.progress(0.4)
+
+        # =================================================================
+        # 🧠 FASE 2: ENTRENAMIENTO MATEMÁTICO MULTIESCALA
+        # =================================================================
+        texto_progreso.info("🧠 Fase 2/2: Entrenando modelos matemáticos multiescala...")
+        
         def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
         def f_exp(t, a, b): return a * np.exp(b * t)
-        
         def calcular_r2(y_real, y_pred):
             ss_res = np.sum((y_real - y_pred) ** 2)
             ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
@@ -86,9 +145,8 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
         
         matriz_resultados = []
         
-        # --- FUNCIÓN ENTRENADORA ---
         def ajustar_modelos(x, y, nivel, territorio, especie):
-            if len(x) < 4 or max(y) <= 0: return 
+            if len(x) < 3 or max(y) <= 0: return 
             
             x_offset = x[0]
             x_norm = x - x_offset
@@ -96,23 +154,19 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
             max_y = max(y)
             es_creciente = y[-1] >= p0_val
             
-            # 1. LOGÍSTICO
             log_k, log_a, log_r, log_r2 = 0, 0, 0, 0
             try:
                 k_max = max_y * 3.0 if es_creciente else max_y * 1.1
                 k_guess = max_y * 1.2 if es_creciente else (y[-1] * 0.9 if y[-1] > 0 else max_y)
                 a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
                 r_guess = 0.02 if es_creciente else -0.02
-                    
                 k_min = max_y * 0.8 if es_creciente else max_y * 0.1
                 limites = ([k_min, 0, -0.2], [k_max, np.inf, 0.3])
-                    
                 popt_log, _ = curve_fit(f_log, x_norm, y, p0=[k_guess, a_guess, r_guess], bounds=limites, maxfev=50000)
                 log_k, log_a, log_r = popt_log
                 log_r2 = calcular_r2(y, f_log(x_norm, *popt_log))
             except Exception: pass
 
-            # 2. EXPONENCIAL
             exp_a, exp_b, exp_r2 = 0, 0, 0
             try:
                 popt_exp, _ = curve_fit(f_exp, x_norm, y, p0=[p0_val, 0.01], maxfev=50000)
@@ -120,7 +174,6 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
                 exp_r2 = calcular_r2(y, f_exp(x_norm, *popt_exp))
             except Exception: pass
 
-            # 3. POLINOMIAL (Grado 3)
             poly_A, poly_B, poly_C, poly_D, poly_r2 = 0, 0, 0, 0, 0
             try:
                 coefs = np.polyfit(x_norm, y, 3)
@@ -128,61 +181,76 @@ if st.button("⚙️ Iniciar Entrenamiento Multimodelo Pecuario", type="primary"
                 poly_r2 = calcular_r2(y, np.polyval(coefs, x_norm))
             except Exception: pass
 
-            # JUEZ: MEJOR MODELO
             dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2}
             mejor_modelo = max(dic_modelos, key=dic_modelos.get)
             mejor_r2 = dic_modelos[mejor_modelo]
 
-            # 🔥 FIX: CREACIÓN DE LA LLAVE UNIVERSAL
-            llave_u = f"{nivel}_{territorio}".upper().replace(" ", "_")
+            # 🔥 LLAVE UNIVERSAL: Aseguramos que termine en "_TOTAL" como los demás filtros
+            llave_u = f"{nivel}_{territorio}_TOTAL".upper().replace(" ", "_")
 
             matriz_resultados.append({
-                'Especie': especie, 
-                'Nivel': nivel, 'Territorio': territorio,
-                'LLAVE_UNIVERSAL': llave_u, # <-- Inyección de la llave
-                'Año_Base': int(x_offset), 'Poblacion_Base': round(p0_val, 0),
+                'Especie': especie, 'Nivel': nivel, 'Territorio': territorio,
+                'LLAVE_UNIVERSAL': llave_u, 'Año_Base': int(x_offset), 'Poblacion_Base': round(p0_val, 0),
                 'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
                 'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
                 'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
                 'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
             })
 
-        # --- PREPARACIÓN DE DATOS Y AGRUPACIONES (Nombres de Nivel Estandarizados) ---
-        # 1. Nivel Departamental -> DEPARTAMENTO
-        df_depto = df_pecuario.groupby('Anio')[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-        for especie in ['Bovinos', 'Porcinos', 'Aves']:
-            ajustar_modelos(df_depto['Anio'].values, df_depto[especie].values, 'DEPARTAMENTO', 'Antioquia', especie)
+        # A. ENTRENAMIENTO ADMINISTRATIVO DIRECTO (Departamento y Municipio)
+        df_censo = df_pecuario.copy()
+        col_censo_mun = 'Municipio_Norm' if 'Municipio_Norm' in df_censo.columns else 'Municipio'
+        df_censo['mun_norm'] = df_censo[col_censo_mun].astype(str).str.upper().str.strip()
 
-        # 2. Nivel Municipal -> MUNICIPIO
-        if 'Municipio_Norm' in df_pecuario.columns:
-            df_mpios = df_pecuario.groupby(['Anio', 'Municipio_Norm'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-            for mpio in df_mpios['Municipio_Norm'].unique():
-                df_temp = df_mpios[df_mpios['Municipio_Norm'] == mpio].sort_values(by='Anio')
-                for especie in ['Bovinos', 'Porcinos', 'Aves']:
-                    ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'MUNICIPIO', mpio, especie)
+        df_depto = df_censo.groupby('Anio')[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+        for esp in ['Bovinos', 'Porcinos', 'Aves']:
+            ajustar_modelos(df_depto['Anio'].values, df_depto[esp].values, 'DEPARTAMENTO', 'Antioquia', esp)
 
-        # 3. Nivel Subcuenca -> NSS3 (Para match con Orquestador Hidrológico)
-        if 'Subcuenca' in df_pecuario.columns:
-            df_subcuencas = df_pecuario.groupby(['Anio', 'Subcuenca'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-            for sub in df_subcuencas['Subcuenca'].unique():
-                if sub == "No Definido": continue
-                df_temp = df_subcuencas[df_subcuencas['Subcuenca'] == sub].sort_values(by='Anio')
-                for especie in ['Bovinos', 'Porcinos', 'Aves']:
-                    ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'NSS3', sub, especie)
-                
-        # 4. Nivel Sistema Hídrico -> SISTEMA_HIDRICO
-        if 'Sistema' in df_pecuario.columns:
-            df_sistemas = df_pecuario.groupby(['Anio', 'Sistema'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-            for sis in df_sistemas['Sistema'].unique():
-                if sis == "No Definido": continue
-                df_temp = df_sistemas[df_sistemas['Sistema'] == sis].sort_values(by='Anio')
-                for especie in ['Bovinos', 'Porcinos', 'Aves']:
-                    ajustar_modelos(df_temp['Anio'].values, df_temp[especie].values, 'SISTEMA_HIDRICO', sis, especie)
+        df_mpios = df_censo.groupby(['Anio', 'mun_norm'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+        for mpio in df_mpios['mun_norm'].unique():
+            df_temp = df_mpios[df_mpios['mun_norm'] == mpio].sort_values(by='Anio')
+            for esp in ['Bovinos', 'Porcinos', 'Aves']:
+                ajustar_modelos(df_temp['Anio'].values, df_temp[esp].values, 'MUNICIPIO', mpio, esp)
 
-        # Guardamos en la memoria volátil
+        barra_progreso.progress(0.7)
+
+        # B. ENTRENAMIENTO DE CUENCAS (Dasimetría Aplicada)
+        texto_progreso.info("🧮 Fase 2/2: Aplicando Pesos de Pastos a Cuencas...")
+        fragmentos_pecuarios = []
+        
+        for mpio in inter_mc['mun_norm'].unique():
+            df_animales_mpio = df_censo[df_censo['mun_norm'] == mpio].copy()
+            if df_animales_mpio.empty: continue
+            
+            pedazos = inter_mc[inter_mc['mun_norm'] == mpio]
+            for _, pedazo in pedazos.iterrows():
+                df_frag = df_animales_mpio.copy()
+                # Repartición dasimétrica
+                df_frag['Bovinos'] = df_frag['Bovinos'] * pedazo['peso_pecuario']
+                df_frag['Porcinos'] = df_frag['Porcinos'] * pedazo['peso_pecuario']
+                df_frag['Aves'] = df_frag['Aves'] * pedazo['peso_pecuario']
+                df_frag['subc_lbl'] = pedazo['subc_lbl']
+                fragmentos_pecuarios.append(df_frag)
+
+        if fragmentos_pecuarios:
+            df_hist_pecuario = pd.concat(fragmentos_pecuarios)
+            df_cuencas_pec = df_hist_pecuario.groupby(['subc_lbl', 'Anio'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+            
+            for sub in df_cuencas_pec['subc_lbl'].unique():
+                if sub == "Cuenca Sin Nombre": continue
+                df_temp = df_cuencas_pec[df_cuencas_pec['subc_lbl'] == sub].sort_values(by='Anio')
+                for esp in ['Bovinos', 'Porcinos', 'Aves']:
+                    ajustar_modelos(df_temp['Anio'].values, df_temp[esp].values, 'NSS3', sub, esp)
+
+        # C. CARGA A LA MEMORIA VIVA
         df_matriz_pec = pd.DataFrame(matriz_resultados)
         st.session_state['df_matriz_pecuaria'] = df_matriz_pec 
-        st.success(f"✅ ¡Entrenamiento exitoso! {len(df_matriz_pec)} modelos matemáticos creados. Desplázate hacia abajo para validarlos y exportarlos.")
+        
+        barra_progreso.progress(1.0)
+        texto_progreso.success(f"✅ ¡Forja Pecuaria Integral Exitosa! {len(df_matriz_pec)} modelos blindados.")
+
+    except Exception as e:
+        st.error(f"🚨 Error en el Motor Pecuario: {e}")
         
 # =====================================================================
 # 🔬 VALIDADOR VISUAL COMPARATIVO Y SINCRONIZADOR
