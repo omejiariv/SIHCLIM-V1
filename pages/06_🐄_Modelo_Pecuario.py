@@ -174,6 +174,7 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
                 exp_r2 = calcular_r2(y, f_exp(x_norm, *popt_exp))
             except Exception: pass
 
+            # 3. POLINOMIAL (Grado 3)
             poly_A, poly_B, poly_C, poly_D, poly_r2 = 0, 0, 0, 0, 0
             try:
                 coefs = np.polyfit(x_norm, y, 3)
@@ -181,11 +182,20 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
                 poly_r2 = calcular_r2(y, np.polyval(coefs, x_norm))
             except Exception: pass
 
-            dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2}
+            # 🚀 NUEVO: 4. LINEAL (Grado 1)
+            lin_m, lin_b, lin_r2 = 0, 0, 0
+            try:
+                coefs_lin = np.polyfit(x_norm, y, 1)
+                lin_m, lin_b = coefs_lin
+                lin_r2 = calcular_r2(y, np.polyval(coefs_lin, x_norm))
+            except Exception: pass
+
+            # ⚖️ JUEZ ACTUALIZADO: MEJOR MODELO
+            dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2, 'Lineal': lin_r2}
             mejor_modelo = max(dic_modelos, key=dic_modelos.get)
             mejor_r2 = dic_modelos[mejor_modelo]
 
-            # 🔥 LLAVE UNIVERSAL: Aseguramos que termine en "_TOTAL" como los demás filtros
+            # 🔥 LLAVE UNIVERSAL
             llave_u = f"{nivel}_{territorio}_TOTAL".upper().replace(" ", "_")
 
             matriz_resultados.append({
@@ -194,6 +204,7 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
                 'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
                 'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
                 'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
+                'Lin_m': lin_m, 'Lin_b': lin_b, 'Lin_R2': round(lin_r2, 4), # <-- INYECCIÓN LINEAL
                 'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
             })
 
