@@ -899,6 +899,11 @@ if __name__ == "__main__":
                     # 1. Cargar Geometrías de Cuencas
                     gdf_all = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
                     
+                    # --- 🛠️ FIX DE TOPOLOGÍA ---
+                    # Reparamos las geometrías detalladas para evitar TopologyException antes de la fusión
+                    gdf_all['geometry'] = gdf_all.geometry.make_valid()
+                    gdf_all = gdf_all[gdf_all.geometry.notnull()]
+                    
                     # 🧠 BISTURÍ 1: Identificar columnas de jerarquía disponibles
                     col_map = {c.upper(): c for c in gdf_all.columns}
                     cols_jerarquia_deseadas = ['AH', 'ZH', 'SZH', 'ZONA', 'N_NSS1', 'SUBC_LBL', 'N_NSS3']
