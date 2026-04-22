@@ -2361,10 +2361,11 @@ with tab_matriz:
                             fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
                             
                             if mpio in mpios_amva_rescate:
-                                if mpio == 'medellin' and pesos_med_pct:
+                                # 🔥 FIX PANDAS: Usamos len() > 0 para evitar la ambigüedad de la Serie
+                                if mpio == 'medellin' and len(pesos_med_pct) > 0:
                                     for subc, peso in pesos_med_pct.items():
                                         df_temp = pob_mpio.copy()
-                                        df_temp['Total_frag'] = df_temp['Total'] * peso
+                                        df_temp['Total_frag'] = df_temp['Total'] * float(peso)
                                         df_temp['subc_lbl'] = subc
                                         df_final_cuencas.append(df_temp)
                                 else:
