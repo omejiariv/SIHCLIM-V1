@@ -1978,7 +1978,6 @@ with tab_mapas:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
 
 # =====================================================================
-# =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
 # =====================================================================
 with tab_matriz:
@@ -2429,134 +2428,115 @@ with tab_matriz:
                     st.error(f"❌ Error en Motor V6: {e}")
 
             # =====================================================================
-            # 🔥 ENTRENAMIENTO MULTIESCALA UNIVERSAL (ADMIN + CUENCAS) CON LLAVES
+            # 🔥 FASE 2 AUTOMÁTICA: ENTRENAMIENTO MULTIESCALA DE CUENCAS
             # =====================================================================
-            st.divider()
-            st.subheader("🚀 FASE 2: Entrenamiento Matemático e Inyección SQL Forja de Llaves Universales")
-            st.markdown("Toma los fragmentos poblacionales calculados y entrena los modelos matemáticos, blindándolos con la **Llave Universal**.")
-
-            # 🔑 CONTRASEÑA DE SEGURIDAD
-            pwd_admin = st.text_input("🔑 Contraseña de Administrador:", type="password", key="pwd_forja")
-
-            if st.button("⚡ Entrenar Modelos e Inyectar a Base de Datos", type="primary", use_container_width=True):
-                if pwd_admin == "CuencaVerde2024":
-                    with st.spinner("Entrenando modelos matemáticos multiescala..."):
-                        try:
-                            from modules.db_manager import get_engine
-                            from sqlalchemy import text
-                            from scipy.optimize import curve_fit
-                            import numpy as np
-                            engine_sql = get_engine()
-
-                            def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
-                            def calcular_r2(y_real, y_pred):
-                                ss_res = np.sum((y_real - y_pred) ** 2)
-                                ss_tot = np.sum((y_real - np.mean(y_real)) ** 2)
-                                return 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
-
-                            res_maestro = []
-                            barra = st.progress(0)
-
-                            # --- 1. ENTRENAMIENTO ADMINISTRATIVO (MUNICIPIOS Y DEPARTAMENTO) ---
-                            # Usamos tu 'df_mun' original que ya tiene la población DANE estructurada
-                            if 'df_mun' in locals() or 'df_mun' in globals():
-                                df_admin = df_mun.copy()
-                                col_anio = 'año' if 'año' in df_admin.columns else 'Año'
-
-                                def clasificar_area(val):
-                                    v = str(val).lower()
-                                    if 'total' in v: return 'Total'
-                                    if 'cabecera' in v or 'urban' in v: return 'Urbana'
-                                    if 'rural' in v or 'centros' in v or 'resto' in v: return 'Rural'
-                                    return 'Total'
-
-                                df_admin['Categoria'] = df_admin['area_geografica'].apply(clasificar_area)
-
-                                # A. MUNICIPIOS
-                                for mpio in df_admin['municipio'].dropna().unique():
-                                    for cat in ['Total', 'Urbana', 'Rural']:
-                                        df_f = df_admin[(df_admin['municipio'] == mpio) & (df_admin['Categoria'] == cat)].sort_values(by=col_anio)
-                                        if len(df_f) < 3: continue
-                                        t = df_f[col_anio].values - df_f[col_anio].min()
-                                        y = df_f['Total'].values
+            if historico_cuencas:
+                texto_progreso.markdown("⚖️ **Fase 2: Ensamblando balance de masas jerárquico para Cuencas...**")
+                
+                # 1. Recuperamos los fragmentos base
+                df_hist_base = pd.concat(historico_cuencas)
+                df_hist_base['Total_frag'] = df_hist_base['Total_frag'].replace([np.inf, -np.inf], np.nan).fillna(0)
+                
+                df_hist_totales = df_hist_base.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
+                df_hist_totales['Categoria_Area'] = 'Total'
+                df_hist_micro = pd.concat([df_hist_base, df_hist_totales], ignore_index=True)
+                
+                # 2. Descargamos el árbol genealógico completo
+                try:
+                    q_jerarquia = text("""
+                        SELECT DISTINCT 
+                            nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
+                            COALESCE(
+                                NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), 
+                                NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre'
+                            ) AS subc_lbl
+                        FROM cuencas
+                    """)
+                    df_arbol = pd.read_sql(q_jerarquia, engine_sql)
+                    for c in ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3', 'subc_lbl']:
+                        df_arbol[c] = df_arbol[c].str.strip()
+                except Exception as e:
+                    df_arbol = pd.DataFrame(columns=['subc_lbl', 'nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3'])
+                
+                # 3. FUSIÓN MAESTRA (Match Inteligente)
+                from modules.utils import normalizar_texto_maestro
+                import difflib
+                
+                df_hist_micro['MATCH_ID'] = df_hist_micro['subc_lbl'].astype(str).apply(normalizar_texto_maestro)
+                df_arbol['MATCH_ID'] = df_arbol['subc_lbl'].astype(str).apply(normalizar_texto_maestro)
+                
+                df_arbol_unico = df_arbol.drop_duplicates(subset=['MATCH_ID']).copy()
+                ids_arbol = set(df_arbol_unico['MATCH_ID'])
+                
+                def forzar_match(val):
+                    if val in ids_arbol: return val
+                    if 'aburra' in val: return normalizar_texto_maestro('Río Aburrá - NSS')
+                    if 'leon' in val: return normalizar_texto_maestro('Río León - NSS')
+                    matches = difflib.get_close_matches(val, ids_arbol, n=1, cutoff=0.7)
+                    return matches[0] if matches else val
+                    
+                df_hist_micro['MATCH_ID'] = df_hist_micro['MATCH_ID'].apply(forzar_match)
+                df_hist_completo = pd.merge(df_hist_micro, df_arbol_unico, on='MATCH_ID', how='left')
+                
+                for c in ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']:
+                    df_hist_completo[c] = df_hist_completo[c].fillna(df_hist_completo['subc_lbl_x'])
+                
+                # 4. Entrenamiento de modelos
+                niveles_hidrologicos = {
+                    'nomah': 'Área Hidrográfica', 'nomzh': 'Zona Hidrológica', 'nom_szh': 'Subzona Hidrográfica',
+                    'nom_nss1': 'NSS1', 'nom_nss2': 'NSS2', 'nom_nss3': 'NSS3', 'subc_lbl': 'Microcuenca Base' 
+                }
+                
+                entrenados_log = set() 
+                texto_progreso.markdown("🧠 **Fase 3: Entrenando Modelos Matemáticos para Cuencas...**")
+                
+                for col_nivel, etiqueta_nivel in niveles_hidrologicos.items():
+                    if col_nivel in df_hist_completo.columns:
+                        df_nivel = df_hist_completo.dropna(subset=[col_nivel]).groupby([col_nivel, 'Categoria_Area', col_anio])['Total_frag'].sum().reset_index()
+                        territorios_nivel = df_nivel[col_nivel].unique()
+                        
+                        for area_c in ['Total', 'Urbana', 'Rural']:
+                            df_area_c = df_nivel[df_nivel['Categoria_Area'] == area_c]
+                            for cuenca in territorios_nivel:
+                                id_unico = f"{cuenca}_{area_c}"
+                                if id_unico not in entrenados_log:
+                                    df_t = df_area_c[df_area_c[col_nivel] == cuenca].sort_values(by=col_anio)
+                                    if not df_t.empty and df_t['Total_frag'].sum() > 0 and str(cuenca).strip() != "":
                                         try:
-                                            p_log, _ = curve_fit(f_log, t, y, p0=[y.max()*1.1, 10, 0.02], maxfev=5000)
-                                            r2 = calcular_r2(y, f_log(t, *p_log))
-                                            # 🔥 LA LLAVE UNIVERSAL
-                                            llave_u = f"MUNICIPIO_{mpio}_{cat}".upper().replace(" ", "_")
-                                            res_maestro.append({
-                                                "Jerarquia": "MUNICIPIO", "Territorio": mpio, "Categoria": cat,
-                                                "LLAVE_UNIVERSAL": llave_u, "Poblacion_Base": int(y[-1]), "Año_Base": int(df_f[col_anio].min()),
-                                                "Modelo_Recomendado": "Logístico",
-                                                "Log_K": p_log[0], "Log_a": p_log[1], "Log_r": p_log[2], "Log_R2": r2
-                                            })
-                                        except: pass
+                                            ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, etiqueta_nivel, area_c)
+                                            entrenados_log.add(id_unico)
+                                        except Exception: pass
 
-                                # B. DEPARTAMENTO (ANTIOQUIA TOTAL)
-                                for cat in ['Total', 'Urbana', 'Rural']:
-                                    df_f = df_admin[df_admin['Categoria'] == cat].groupby(col_anio)['Total'].sum().reset_index().sort_values(by=col_anio)
-                                    if len(df_f) < 3: continue
-                                    t = df_f[col_anio].values - df_f[col_anio].min()
-                                    y = df_f['Total'].values
-                                    try:
-                                        p_log, _ = curve_fit(f_log, t, y, p0=[y.max()*1.1, 10, 0.02], maxfev=5000)
-                                        r2 = calcular_r2(y, f_log(t, *p_log))
-                                        llave_u = f"DEPARTAMENTO_Antioquia_{cat}".upper().replace(" ", "_")
-                                        res_maestro.append({
-                                            "Jerarquia": "DEPARTAMENTO", "Territorio": "Antioquia", "Categoria": cat,
-                                            "LLAVE_UNIVERSAL": llave_u, "Poblacion_Base": int(y[-1]), "Año_Base": int(df_f[col_anio].min()),
-                                            "Modelo_Recomendado": "Logístico",
-                                            "Log_K": p_log[0], "Log_a": p_log[1], "Log_r": p_log[2], "Log_R2": r2
-                                        })
-                                    except: pass
-                            barra.progress(0.5)
+            # =====================================================================
+            # 🔥 6. FORJA DE LLAVES UNIVERSALES Y CARGA A MEMORIA
+            # =====================================================================
+            if matriz_resultados:
+                df_masivo = pd.DataFrame(matriz_resultados)
+                
+                # 🔑 LA MAGIA: Aplicamos la Llave Universal a todo el DataFrame
+                def forjar_llave(row):
+                    jerarquia = str(row.get('Nivel', '')).upper()
+                    if jerarquia == "MUNICIPAL": jerarquia = "MUNICIPIO"
+                    elif jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
+                    elif jerarquia == "CUENCA": jerarquia = "NSS3" 
+                    terr = str(row.get('Territorio', '')).replace(" ", "_").upper()
+                    cat = str(row.get('Area', '')).upper()
+                    return f"{jerarquia}_{terr}_{cat}"
+                    
+                df_masivo['LLAVE_UNIVERSAL'] = df_masivo.apply(forjar_llave, axis=1)
+                
+                barra_progreso.progress(1.0)
+                texto_progreso.success(f"✅ ¡Entrenamiento Completado! {len(df_masivo)} modelos forjados con Llaves Universales.")
+                
+                # Guardamos en RAM para que el Validador Visual y la Pestaña de Descargas lo detecten
+                st.session_state['df_matriz_demografica'] = df_masivo
+                st.info("💡 Ve al panel inferior 'Exportar Cerebro Demográfico' para Inyectar estos resultados a PostgreSQL de forma permanente.")
+            else:
+                texto_progreso.warning("⚠️ No se generaron resultados para procesar.")
 
-                            # --- 2. ENTRENAMIENTO CUENCAS (NSS3) ---
-                            # Usamos tu variable 'historico_cuencas' calculada en la fase de fragmentos
-                            if 'historico_cuencas' in locals() or 'historico_cuencas' in globals():
-                                if len(historico_cuencas) > 0:
-                                    df_c = pd.concat(historico_cuencas)
-                                    col_anio_c = 'año' if 'año' in df_c.columns else 'Año'
-
-                                    for cat in df_c['Categoria_Area'].unique():
-                                        df_c_cat = df_c[df_c['Categoria_Area'] == cat]
-                                        for nss3 in df_c_cat['subc_lbl'].dropna().unique():
-                                            df_f = df_c_cat[df_c_cat['subc_lbl'] == nss3].sort_values(by=col_anio_c)
-                                            if len(df_f) < 3: continue
-                                            t = df_f[col_anio_c].values - df_f[col_anio_c].min()
-                                            y = df_f['Total_frag'].values
-                                            try:
-                                                p_log, _ = curve_fit(f_log, t, y, p0=[y.max()*1.1, 10, 0.02], maxfev=5000)
-                                                r2 = calcular_r2(y, f_log(t, *p_log))
-                                                llave_u = f"NSS3_{nss3}_{cat}".upper().replace(" ", "_")
-                                                res_maestro.append({
-                                                    "Jerarquia": "NSS3", "Territorio": nss3, "Categoria": cat,
-                                                    "LLAVE_UNIVERSAL": llave_u, "Poblacion_Base": int(y[-1]), "Año_Base": int(df_f[col_anio_c].min()),
-                                                    "Modelo_Recomendado": "Logístico",
-                                                    "Log_K": p_log[0], "Log_a": p_log[1], "Log_r": p_log[2], "Log_R2": r2
-                                                })
-                                            except: pass
-                            barra.progress(0.9)
-
-                            # --- 3. INYECCIÓN SQL SEGURA ---
-                            if res_maestro:
-                                df_final = pd.DataFrame(res_maestro)
-                                with engine_sql.begin() as conn:
-                                    conn.execute(text("DELETE FROM matriz_maestra_demografica;"))
-                                df_final.to_sql('matriz_maestra_demografica', engine_sql, if_exists='append', index=False)
-
-                                st.session_state['df_matriz_demografica'] = df_final
-                                st.success(f"✅ ¡Entrenamiento y Forja Completados! {len(df_final)} modelos blindados con Llave Universal.")
-                            else:
-                                st.warning("⚠️ No se generaron modelos. Verifica que los fragmentos históricos estén calculados arriba.")
-                            barra.progress(1.0)
-                        except Exception as e:
-                            st.error(f"🚨 Error durante el entrenamiento: {e}")
-                else:
-                    st.warning("Contraseña incorrecta.")
-
+        # 🛑 SALVAVIDAS DE PYTHON: Cierra el 'try' principal del botón
         except Exception as e:
-            st.error(f"🚨 Error crítico en el cálculo de fragmentos: {e}")
+            st.error(f"❌ Error crítico durante el entrenamiento masivo: {e}")
 
     # =====================================================================
     # 🔬 VALIDADOR VISUAL COMPARATIVO (ACTUALIZADO A LLAVE UNIVERSAL)
