@@ -2025,17 +2025,30 @@ with tab_matriz:
                     gdf_all = gpd.read_postgis("SELECT * FROM cuencas", engine_sql, geom_col="geometry")
                     gdf_all['DEPARTAMENTO'] = 'Antioquia'
                     
-                    # 🔥 FIX: Búsqueda segura de la columna de región (Evita el KeyError)
-                    # Busca variaciones del nombre sin importar mayúsculas
+                    # 🔥 FIX 1: Búsqueda robusta de Región
                     col_region = next((c for c in gdf_all.columns if c.lower() in ['depto_regi', 'region', 'subregion', 'zona']), None)
-                    
                     if col_region:
                         gdf_all['REGION'] = gdf_all[col_region].astype(str).str.replace('Antioquia - ', 'Región ', regex=False)
                     else:
                         gdf_all['REGION'] = 'Región No Definida'
-                        
-                    df_dane = st.session_state.get('df_poblacion_long') # Viene de Pestaña 1
+                    
+                    # 🔥 FIX 2: Búsqueda robusta de Municipio (Evita el KeyError: 'mpio_cnmbr')
+                    # Buscamos variaciones comunes como MPIO_CNMBR, municipio, nombre_mpi, etc.
+                    col_mpio_detectada = next((c for c in gdf_all.columns if c.lower() in ['mpio_cnmbr', 'municipio', 'nombre_mpi', 'nomb_mpio', 'nom_mpio']), None)
+                    
+                    if not col_mpio_detectada:
+                        st.error("❌ No se encontró la columna de Municipios en la tabla 'cuencas'. Por favor verifica si se llama diferente.")
+                        st.stop()
 
+                    # 🧠 NIVELES DE ANÁLISIS (Usando la columna detectada)
+                    niveles = {
+                        'DEPARTAMENTO': 'DEPARTAMENTO',
+                        'REGION': 'REGION',
+                        'MUNICIPIO': col_mpio_detectada, # <--- Usamos el nombre real de tu BD
+                        'NSS3': 'nom_nss3', 'NSS2': 'nom_nss2', 'NSS1': 'nom_nss1'
+                    }
+                    
+                    df_dane = st.session_state.get('df_poblacion_long')
                 res_maestro = []
                 barra = st.progress(0)
                 
