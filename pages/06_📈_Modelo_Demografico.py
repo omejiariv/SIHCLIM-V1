@@ -400,6 +400,7 @@ if df_nac.empty or df_mun.empty:
 def modelo_lineal(x, m, b): return m * x + b
 def modelo_exponencial(x, p0, r): return p0 * np.exp(r * (x - 2005))
 def modelo_logistico(x, K, r, x0): return K / (1 + np.exp(-r * (x - x0)))
+def modelo_polinomial(x, A, B, C, D): return A*(x**3) + B*(x**2) + C*x + D    
 
 # --- 3. CONFIGURACIÓN Y FILTROS LATERALES ---
 st.sidebar.header("⚙️ 1. Selección Territorial")
@@ -727,11 +728,17 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
             def evaluar_curva(fila, anios):
                 mod = str(fila.get('Modelo_Recomendado', 'Desconocido'))
-                if 'Logistico' in mod: return fila.get('Log_K', 0) / (1 + fila.get('Log_a', 0) * np.exp(-fila.get('Log_r', 0) * (anios - 1985)))
-                if 'Exponencial' in mod: return fila.get('Exp_a', 0) * np.exp(fila.get('Exp_b', 0) * (anios - 1985))
+                x = anios - 1985 # Offset base para alinear los años
+                
+                if 'Logistico' in mod or 'Logístico' in mod: 
+                    return fila.get('Log_K', 0) / (1 + fila.get('Log_a', 0) * np.exp(-fila.get('Log_r', 0) * x))
+                if 'Exponencial' in mod: 
+                    return fila.get('Exp_a', 0) * np.exp(fila.get('Exp_b', 0) * x)
                 if 'Polinomial' in mod:
-                    x = anios - 1985
                     return fila.get('Poly_A', 0)*(x**3) + fila.get('Poly_B', 0)*(x**2) + fila.get('Poly_C', 0)*x + fila.get('Poly_D', 0)
+                if 'Lineal' in mod:
+                    return fila.get('Lin_m', 0) * x + fila.get('Lin_b', 0)
+                    
                 return np.full_like(anios, fila.get('Pob_Base', 0))
 
             import difflib
@@ -1209,15 +1216,16 @@ with tab_modelos:
             
     with col_param:
         with st.expander("🧮 Ecuaciones", expanded=True):
-            st.latex(r"Log: P(t) = \frac{K}{1 + e^{-r(t - t_0)}}")
+            st.latex(r"Log: P(t) = \frac{K}{1 + a \cdot e^{-r \cdot t}}")
             if param_K != "N/A": st.success(f"**K:** {param_K:,.0f} hab.")
-            st.latex(r"Exp: P(t) = P_0 \cdot e^{r(t - t_0)}")
+            st.latex(r"Exp: P(t) = a \cdot e^{b \cdot t}")
+            st.latex(r"Poly_3: P(t) = At^3 + Bt^2 + Ct + D")
             st.latex(r"Lin: P(t) = m \cdot t + b")
 
     st.sidebar.header("🎯 2. Viaje en el Tiempo")
-    modelo_sel = st.sidebar.radio("Base de cálculo para la pirámide:", ["Logístico", "Exponencial", "Lineal", "Dato Real (Si existe)"])
+    # 🔥 FIX: Agregamos "Polinomial" a la lista de opciones para la pirámide
+    modelo_sel = st.sidebar.radio("Base de cálculo para la pirámide:", ["Logístico", "Exponencial", "Polinomial", "Lineal", "Dato Real (Si existe)"])
     columna_modelo = "Real" if modelo_sel == "Dato Real (Si existe)" else modelo_sel
-
     col_anio_pyr = 'año' if 'año' in df_nac.columns else 'Año'
     años_disp = sorted(df_nac[col_anio_pyr].unique())
     año_sel = st.sidebar.select_slider("Selecciona un Año Estático:", options=años_disp, value=2024)
@@ -1509,9 +1517,10 @@ with tab_opt:
                 
             t_max = st.slider("Años a proyectar (Horizonte):", 10, 100, 30, key='slider_opt')
             st.markdown("---")
+            # 🚀 FIX: AÑADIMOS EL MODELO LINEAL A LA LISTA
             modelos_sel = st.multiselect("Curvas a evaluar:", 
-                                         ["Exponencial", "Logístico", "Geométrico", "Polinómico (Grado 2)", "Polinómico (Grado 3)"], 
-                                         default=["Logístico", "Polinómico (Grado 2)"])
+                                         ["Exponencial", "Logístico", "Geométrico", "Polinómico (Grado 2)", "Polinómico (Grado 3)", "Lineal"], 
+                                         default=["Logístico", "Polinómico (Grado 3)", "Lineal"])
             opt_auto = st.button("✨ Optimizar Parámetros", type="primary", use_container_width=True)
 
             st.caption("Ajuste Manual:")
@@ -1525,6 +1534,8 @@ with tab_opt:
             def f_geom(t, p0, r): return p0 * (1 + r)**t
             def f_poly2(t, a, b, c): return a*t**2 + b*t + c
             def f_poly3(t, a, b, c, d): return a*t**3 + b*t**2 + c*t + d
+            # 🚀 FIX: AÑADIMOS LA FÓRMULA LINEAL
+            def f_lin(t, m, b): return m*t + b
 
             # Calculadora Universal de R2
             def calcular_r2(y_real, y_prediccion):
@@ -1610,6 +1621,21 @@ with tab_opt:
                             r2_val = calcular_r2(p_data, f_poly3(t_data, 1, 10, p0_val, 0))
                             resultados_modelos[mod] = {"popt": [1, 10, p0_val, 0], "r2": r2_val, "latex": r"P(t) = a \cdot t^3 + b \cdot t^2 + c \cdot t + d", "vars": ["a", "b", "c", "d"]}
 
+                    # 🚀 FIX: AÑADIMOS EL CÁLCULO LINEAL
+                    elif mod == "Lineal":
+                        if opt_auto: 
+                            popt, _ = curve_fit(f_lin, t_data, p_data)
+                            y_pred = f_lin(t_total, *popt)
+                            r2_val = calcular_r2(p_data, f_lin(t_data, *popt))
+                            resultados_modelos[mod] = {"popt": popt, "r2": r2_val, "latex": r"P(t) = m \cdot t + b", "vars": ["m", "b"]}
+                        else:
+                            # Para modo manual: calcula una pendiente simple (m) entre el primer y último año
+                            m_man = (p_data[-1] - p_data[0]) / (t_data[-1] - t_data[0]) if t_data[-1] != t_data[0] else 0
+                            b_man = p0_val
+                            y_pred = f_lin(t_total, m_man, b_man)
+                            r2_val = calcular_r2(p_data, f_lin(t_data, m_man, b_man))
+                            resultados_modelos[mod] = {"popt": [m_man, b_man], "r2": r2_val, "latex": r"P(t) = m \cdot t + b", "vars": ["m", "b"]}
+
                     fig2.add_trace(go.Scatter(x=anios_totales, y=y_pred, mode='lines', name=mod, line=dict(width=3, dash='dot' if opt_auto else 'solid')))
                 except Exception as e: 
                     pass # Si un modelo matemático falla, simplemente no lo dibuja
@@ -1652,7 +1678,7 @@ with tab_opt:
                 idx_col += 1
         else:
             st.caption("Presiona 'Optimizar Parámetros' o ajusta manualmente para visualizar las ecuaciones.")
-                
+            
 # ==========================================
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR ZERO-CONFIG)
 # ==========================================
@@ -2058,7 +2084,16 @@ with tab_matriz:
                     poly_r2 = calcular_r2(y, np.polyval(coefs, x_norm))
                 except Exception: pass
 
-                dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2}
+                # 🚀 NUEVO: 4. LINEAL (Grado 1)
+                lin_m, lin_b, lin_r2 = 0, 0, 0
+                try:
+                    coefs_lin = np.polyfit(x_norm, y, 1)
+                    lin_m, lin_b = coefs_lin
+                    lin_r2 = calcular_r2(y, np.polyval(coefs_lin, x_norm))
+                except Exception: pass
+
+                # ⚖️ JUEZ ACTUALIZADO: MEJOR MODELO (Incluye al Lineal)
+                dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2, 'Lineal': lin_r2}
                 mejor_modelo = max(dic_modelos, key=dic_modelos.get)
                 mejor_r2 = dic_modelos[mejor_modelo]
 
@@ -2068,9 +2103,10 @@ with tab_matriz:
                     'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
                     'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
                     'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
+                    'Lin_m': lin_m, 'Lin_b': lin_b, 'Lin_R2': round(lin_r2, 4), # <-- INYECCIÓN DE LOS PARÁMETROS LINEALES
                     'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
                 })
-
+                
             df_mun_memoria = df_mun.copy() 
             col_anio = 'año' if 'año' in df_mun_memoria.columns else 'Año'
             
@@ -2919,14 +2955,20 @@ if 'df_matriz_demografica' in st.session_state:
                             from sqlalchemy import text
                             engine_sql = get_engine()
                             
-                            # 🔥 FIX DEFINITIVO: PROTOCOLO ANTI-AMNESIA Y AUTO-MANTENIMIENTO
+                            # 🔥 FIX DEFINITIVO: PROTOCOLO DE AUTO-MANTENIMIENTO AMPLIADO (LINEAL)
                             with engine_sql.begin() as conn:
-                                # 1. Le decimos a Supabase que cree la nueva columna si no existe
-                                conn.execute(text('ALTER TABLE matriz_maestra_demografica ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
+                                # 1. Creamos las columnas necesarias si no existen (Llave y parámetros de la recta)
+                                conn.execute(text('''
+                                    ALTER TABLE matriz_maestra_demografica 
+                                    ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT,
+                                    ADD COLUMN IF NOT EXISTS "Lin_m" FLOAT,
+                                    ADD COLUMN IF NOT EXISTS "Lin_b" FLOAT,
+                                    ADD COLUMN IF NOT EXISTS "Lin_R2" FLOAT;
+                                '''))
                                 # 2. Borramos las filas viejas manteniendo los permisos RLS intactos
                                 conn.execute(text("DELETE FROM matriz_maestra_demografica;"))
                                 
-                            # 3. Inyectamos la nueva matriz
+                            # 3. Inyectamos la nueva matriz (que ahora incluye Lin_m, Lin_b y Lin_R2)
                             df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='append', index=False)
                             st.cache_data.clear()
                             
