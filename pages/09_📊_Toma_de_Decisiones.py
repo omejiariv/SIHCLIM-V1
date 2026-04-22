@@ -1021,11 +1021,16 @@ if gdf_zona is not None and not gdf_zona.empty:
         
         area_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
         
+        # 🔥 FIX 1: Definimos el caudal de oferta en L/s antes de usarlo (Evita el NameError)
+        caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000 
+        
         carga_removida_sim = sist_saneamiento * 2.5
         carga_final_rio_sim = max(0.0, carga_total_ton - carga_removida_sim)
         carga_mg_s_sim = (carga_final_rio_sim * 1_000_000_000) / 31536000
         conc_dbo_sim = carga_mg_s_sim / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
-        ind_calidad_sim = max(0.0, min(100.0, 100.0 - ((conc_dbo_sim / 10.0) * 100)))
+        
+        # 🔥 FIX 2: Usamos la Fórmula Exponencial para que coincida con la física del velocímetro base
+        ind_calidad_sim = max(0.0, min(100.0, 100 * math.exp(-0.07 * conc_dbo_sim)))
         
         ind_neutralidad_sim = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
         
@@ -1044,7 +1049,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         with cg3: st.plotly_chart(crear_velocimetro(estres_gauge_sim_val, "Estrés (Proyectado)", "#e74c3c", 20, 40, invertido=True), width="stretch")
         with cg4: st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), width="stretch")
             
-# =========================================================================
+    # =========================================================================
     # BLOQUE 3: PROYECCIÓN CLIMÁTICA, RANKING AHP Y PREPARACIÓN PREDIAL
     # =========================================================================
     
