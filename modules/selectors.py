@@ -355,21 +355,26 @@ def render_selector_espacial():
             st.error(f"Error crítico en selector: {e}")
             
     # ====================================================================
-    # 🧠 ORQUESTADOR SILENCIOSO (BLINDADO)
+    # 🧠 ORQUESTADOR SILENCIOSO (Sincronización Transversal y Multiescala)
     # ====================================================================
-    # Evitamos que busque demografía para zonas abstractas o nulas
+    # Evitamos que busque demografía/hidrología para zonas abstractas o nulas
     zonas_ignoradas = ["Antioquia", "Bloque Regional", "-- TODAS --", "-- Seleccione --", ""]
     
     zona_activa = st.session_state.get('zona_activa_global')
     
-    # 🛑 FIX: Solo ejecutamos si es un Municipio, Subcuenca o Región válida
     if nombre_zona not in zonas_ignoradas and "Región" not in nombre_zona and nombre_zona != zona_activa:
         st.session_state['zona_activa_global'] = nombre_zona
         
-        claves_a_borrar = ['pob_hum_calc_met', 'ica_bovinos_calc_met', 'ica_porcinos_calc_met', 'ica_aves_calc_met', 'demanda_total_m3s', 'carga_dbo_total_ton']
+        # 1. Purgamos la memoria residual vieja (evita cruce de datos)
+        claves_a_borrar = [
+            'pob_hum_calc_met', 'ica_bovinos_calc_met', 'ica_porcinos_calc_met', 'ica_aves_calc_met', 
+            'demanda_total_m3s', 'carga_dbo_total_ton',
+            'aleph_oferta_m3s', 'aleph_lluvia_mm', 'aleph_area_km2', 'aleph_recarga_mm' # Limpiamos la hidro vieja
+        ]
         for k in claves_a_borrar:
             st.session_state.pop(k, None)
             
+        # 2. 👥 PRECARGA DEL METABOLISMO DEMOGRÁFICO/PECUARIO
         try:
             from modules.utils import obtener_metabolismo_exacto
             datos_precargados = obtener_metabolismo_exacto(nombre_zona, 2025)
@@ -382,6 +387,25 @@ def render_selector_espacial():
         except Exception:
             pass 
             
+        # 3. 💧 NUEVO: PRECARGA INSTANTÁNEA DE LA MATRIZ HIDROLÓGICA MULTIESCALA
+        try:
+            engine = db_manager.get_engine()
+            # Consultamos la fila exacta de esta cuenca/municipio
+            q_hidro = text("SELECT * FROM matriz_hidrologica_maestra WHERE \"Territorio\" = :zona LIMIT 1")
+            df_hidro = pd.read_sql(q_hidro, engine, params={"zona": nombre_zona})
+            
+            if not df_hidro.empty:
+                row_h = df_hidro.iloc[0]
+                # Inyectamos las variables vitales directamente al torrente sanguíneo
+                st.session_state['aleph_oferta_m3s'] = float(row_h['Caudal_Medio_m3s'])
+                st.session_state['aleph_lluvia_mm'] = float(row_h['Lluvia_mm'])
+                st.session_state['aleph_area_km2'] = float(row_h['Area_km2'])
+                st.session_state['aleph_recarga_mm'] = float(row_h['Recarga_mm'])
+                st.session_state['aleph_altitud_m'] = float(row_h['Altitud_m'])
+        except Exception as e:
+            # Silencioso: Si la cuenca no está en la matriz, simplemente no inyecta nada
+            pass
+
     # ====================================================================
     # 💾 RENDERIZAR EL GESTOR DE ESCENARIOS
     # ====================================================================
