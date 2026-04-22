@@ -894,6 +894,7 @@ if __name__ == "__main__":
                     # Excluimos nivel_disp y fuente como solicitaste. 
                     # Usamos los nombres exactos de las columnas de tu Excel/BD.
                     niveles_analisis = {
+                        'MUNICIPIO': 'mpio_cnmbr',
                         'NSS3': 'nom_nss3',
                         'NSS2': 'nom_nss2',
                         'NSS1': 'nom_nss1',
