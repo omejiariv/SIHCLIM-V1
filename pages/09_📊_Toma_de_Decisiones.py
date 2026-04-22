@@ -280,9 +280,12 @@ if gdf_zona is not None and not gdf_zona.empty:
     falta_pecu = 'ica_bovinos_calc_met' not in st.session_state
     falta_cargas = 'carga_dbo_total_ton' not in st.session_state
 
+    # 🔥 FIX: Recuperamos el nombre de la zona de forma 100% segura desde la memoria
+    zona_actual = st.session_state.get('zona_activa_global', 'el territorio seleccionado')
+
     # Solo mostramos alerta si falta alguna de las 3 matrices estructurales
     if falta_hidro or falta_demo or falta_pecu:
-        st.error(f"⚠️ **Faltan datos en la Memoria Global para '{nombre_seleccion}'.** Los resultados mostrados están usando valores aproximados de emergencia.")
+        st.error(f"⚠️ **Faltan datos en la Memoria Global para '{zona_actual}'.** Los resultados mostrados están usando valores aproximados de emergencia.")
         
         faltantes = []
         if falta_hidro: faltantes.append("💧 **Hidrología:** Ve a 'Clima e Hidrología' y forja la Matriz Maestra.")
@@ -294,7 +297,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             
         origen_carga = "Datos por Defecto"
     else:
-        st.success("✅ **Sincronización Perfecta:** Las 3 matrices maestras están alimentando el tablero en tiempo real.")
+        st.success(f"✅ **Sincronización Perfecta:** Las 3 matrices maestras están alimentando a '{zona_actual}' en tiempo real.")
         origen_carga = "Modelación Exacta"
 
     # 1. Recuperación de la Memoria del Orquestador (Matriz Hidro)
