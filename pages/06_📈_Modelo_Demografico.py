@@ -2024,7 +2024,16 @@ with tab_matriz:
                 with st.spinner("Preparando motor jerárquico..."):
                     gdf_all = gpd.read_postgis("SELECT * FROM cuencas", engine_sql, geom_col="geometry")
                     gdf_all['DEPARTAMENTO'] = 'Antioquia'
-                    gdf_all['REGION'] = gdf_all['depto_regi'].astype(str).str.replace('Antioquia - ', 'Región ', regex=False)
+                    
+                    # 🔥 FIX: Búsqueda segura de la columna de región (Evita el KeyError)
+                    # Busca variaciones del nombre sin importar mayúsculas
+                    col_region = next((c for c in gdf_all.columns if c.lower() in ['depto_regi', 'region', 'subregion', 'zona']), None)
+                    
+                    if col_region:
+                        gdf_all['REGION'] = gdf_all[col_region].astype(str).str.replace('Antioquia - ', 'Región ', regex=False)
+                    else:
+                        gdf_all['REGION'] = 'Región No Definida'
+                        
                     df_dane = st.session_state.get('df_poblacion_long') # Viene de Pestaña 1
 
                 res_maestro = []
