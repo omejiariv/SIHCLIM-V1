@@ -1434,9 +1434,10 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
 
     ### 3. Modelos Matemáticos de Ajuste Histórico
     Para viajar en el tiempo (1950-2100), la serie histórica se somete a regresiones no lineales (`scipy.optimize`):
-    * **Logístico:** Modela ecosistemas limitados. La población crece hasta encontrar resistencia ambiental, estabilizándose en una *Capacidad de Carga* ($K$). Es el modelo más robusto para planeación a largo plazo.
-    * **Exponencial:** Asume recursos infinitos. Útil para modelar cortos períodos de "explosión demográfica" en centros urbanos nuevos.
-    * **Lineal:** Representa tendencias promedio sin aceleración.
+    * **Logístico:** Ideal para poblaciones que alcanzan un techo por límites físicos o recursos. La población crece hasta encontrar resistencia ambiental, estabilizándose en una *Capacidad de Carga* ($K$). Es el modelo más robusto para planeación a largo plazo.
+    * **Exponencial:** Asume recursos infinitos. Útil para modelar cortos períodos de "explosión demográfica" en centros urbanos nuevos. Ideal para poblaciones en crecimiento o decrecimiento libre constante.
+    * **Polinomial (Grado 3):** Ideal para poblaciones con fluctuaciones o declives no lineales.
+    * **Lineal:** Representa tendencias promedio sin aceleración. crecimiento constante.
 
     ### 4. Fuentes de Información
     * **Capa 1 (Estructura Nacional):** Proyecciones y retroproyecciones oficiales DANE (1950-2070).
@@ -1977,11 +1978,12 @@ with tab_mapas:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
 
 # =====================================================================
+# =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
 # =====================================================================
 with tab_matriz:
-    st.subheader("🧠 FASE 1: Cálculo Espacial de Cuencas (Dasimetría) (Total, Urbano y Rural)")
-    st.info("Calculando distribución poblacional territorial. Este proceso puede tomar varios minutos.")
+    st.subheader("📍 FASE 1: Cálculo Espacial de Cuencas (Dasimetría)")
+    st.info("Calculando distribución poblacional territorial top-down. Este proceso puede tomar varios minutos.")
     
     # 🚀 NUEVO BOTÓN CON BARRA DE PROGRESO INTELIGENTE
     if st.button("⚙️ Iniciar Entrenamiento Masivo de Matriz (Automático)", type="primary", use_container_width=True):
