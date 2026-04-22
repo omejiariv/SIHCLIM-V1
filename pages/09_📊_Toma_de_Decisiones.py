@@ -273,6 +273,30 @@ if gdf_zona is not None and not gdf_zona.empty:
     # ==============================================================================
     # 🧠 NÚCLEO MATEMÁTICO BASE (Sincronizado con la Matriz Multiescala)
     # ==============================================================================
+    
+    # --- 🚨 AUDITORÍA DE DATOS (El Guardián de la Verdad) ---
+    falta_hidro = 'aleph_oferta_m3s' not in st.session_state
+    falta_demo = 'aleph_pob_total' not in st.session_state
+    falta_pecu = 'ica_bovinos_calc_met' not in st.session_state
+    falta_cargas = 'carga_dbo_total_ton' not in st.session_state
+
+    # Solo mostramos alerta si falta alguna de las 3 matrices estructurales
+    if falta_hidro or falta_demo or falta_pecu:
+        st.error(f"⚠️ **Faltan datos en la Memoria Global para '{nombre_seleccion}'.** Los resultados mostrados están usando valores aproximados de emergencia.")
+        
+        faltantes = []
+        if falta_hidro: faltantes.append("💧 **Hidrología:** Ve a 'Clima e Hidrología' y forja la Matriz Maestra.")
+        if falta_demo: faltantes.append("👥 **Demografía:** Ve al 'Modelo Demográfico' y entrena la cuenca.")
+        if falta_pecu: faltantes.append("🐄 **Pecuario:** Ve al 'Modelo Pecuario' y entrena la cuenca.")
+        
+        for f in faltantes:
+            st.warning(f)
+            
+        origen_carga = "Datos por Defecto"
+    else:
+        st.success("✅ **Sincronización Perfecta:** Las 3 matrices maestras están alimentando el tablero en tiempo real.")
+        origen_carga = "Modelación Exacta"
+
     # 1. Recuperación de la Memoria del Orquestador (Matriz Hidro)
     oferta_nominal = float(st.session_state.get('aleph_oferta_m3s', 1.5))
     area_cuenca_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
@@ -297,7 +321,10 @@ if gdf_zona is not None and not gdf_zona.empty:
     consumo_anual_m3 = demanda_m3s * 31536000
     
     # 5. Modelación de Calidad (DBO5) - Sincronizado con Pág 07
-    carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', 1500.0))
+    # Fallback inteligente: Si no has ido a la Pág 07, calculamos un aproximado basado en la población y vacas en memoria
+    proxy_carga = ((pob_total * 0.050) + (bovinos * 0.4) + (porcinos * 0.15)) * 365 / 1000
+    carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', proxy_carga if proxy_carga > 0 else 1500.0))
+    
     carga_final_rio_ton = carga_total_ton * (1 - (mitigacion_dbo / 100))
     
     # Física de Concentración en Caudal Crítico (Q95 = 25% del medio)
@@ -315,7 +342,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     # FÓRMULA EXPONENCIAL: Calidad Sanitaria
     ind_calidad = max(0.0, min(100.0, 100 * math.exp(-0.07 * concentracion_dbo_mg_l)))
-    ind_neutralidad = 0.0 # Placeholder para futuro módulo de compensación
+    ind_neutralidad = 0.0 
 
     estres_hidrico_porcentaje = (wei_ratio) * 100
     st.session_state['estres_hidrico_global'] = estres_hidrico_porcentaje
