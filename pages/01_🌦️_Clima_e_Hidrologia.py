@@ -1008,6 +1008,9 @@ if __name__ == "__main__":
                     resumen = df_matriz['Jerarquia'].value_counts().reset_index()
                     resumen.columns = ['Nivel', 'Cantidad de Territorios']
                     st.dataframe(resumen, hide_index=True)
+
+                    csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Descargar Gran Matriz (CSV)", csv_matriz, "Matriz_Hidro_Multiescala.csv", "text/csv")           
                     
             except Exception as e:
                 st.error(f"Error crítico en la forja de la matriz: {e}")
