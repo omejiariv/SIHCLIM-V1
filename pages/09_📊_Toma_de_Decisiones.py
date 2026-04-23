@@ -514,15 +514,24 @@ if gdf_zona is not None and not gdf_zona.empty:
                 map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
                 folium.raster_layers.TileLayer(
                     tiles=map_id_dict['tile_fetcher'].url_format, attr='Google Earth Engine',
-                    name=name, overlay=True, control=True, show=show # <--- Ahora es dinámico
+                    name=name, overlay=True, control=True, show=show 
                 ).add_to(self)
             folium.Map.add_ee_layer = add_ee_layer
             
-            # Configurar ROI y calcular la capa
-            # 🔥 FIX: Simplificamos la geometría levemente para evitar colapsos de RAM en Regiones
-            geom_simplificada = gdf_zona.geometry.simplify(0.005).make_valid()
-            geom_unificada = geom_simplificada.unary_union            
+            # 🔥 ESCUDO ANTI-COLAPSO DE MEMORIA RAM (Para Regiones y Cuencas Complejas)
+            with st.spinner("Optimizando geometría para el satélite..."):
+                try:
+                    # Intentamos simplificar drásticamente para no ahogar el procesador
+                    geom_simplificada = gdf_zona.geometry.simplify(0.01).make_valid()
+                    geom_unificada = geom_simplificada.unary_union
+                except Exception:
+                    # Si aún así falla, usamos la "Caja Delimitadora" (Bounding Box) como salvavidas extremo
+                    from shapely.geometry import box
+                    minx, miny, maxx, maxy = gdf_zona.total_bounds
+                    geom_unificada = box(minx, miny, maxx, maxy)
+
             roi_ee = ee.Geometry(geom_unificada.__geo_interface__)
+            
             dw_coleccion = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(roi_ee).filterDate('2023-01-01', '2024-01-01')
             dw_imagen = dw_coleccion.select('label').mode().clip(roi_ee)
             dw_vis = {'min': 0, 'max': 8, 'palette': ['#419BDF', '#397D49', '#88B053', '#7A87C6', '#E49635', '#DFC35A', '#C4281B', '#A59B8F', '#B39FE1']}
@@ -531,7 +540,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             m.add_ee_layer(dw_imagen, dw_vis, '🛰️ Uso de Suelo (Satélite IA)')
 
             # ==========================================
-            # 👇 NUEVO BLOQUE DEM (Pegar esto aquí)
+            # 👇 NUEVO BLOQUE DEM
             # ==========================================
             # Cargar el DEM (NASADEM 30m) y recortarlo a la zona
             dem = ee.Image("NASA/NASADEM_HGT/001").select('elevation').clip(roi_ee)
