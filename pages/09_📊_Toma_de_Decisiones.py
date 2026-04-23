@@ -160,135 +160,103 @@ if gdf_zona is not None and not gdf_zona.empty:
     # --- Control Temporal ---
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
     
-    # ==============================================================================
-    # 🧠 Y 🐄 CONEXIÓN AL TORRENTE SANGUÍNEO (POSTGRESQL) - FASE 1
+# ==============================================================================
+    # 🧠 NÚCLEO DE CONEXIÓN ELÁSTICA (TORRENTE SANGUÍNEO SQL) - FASE 1
     # ==============================================================================
     
     @st.cache_data(ttl=3600)
-    def consultar_cerebro_demografico(territorio, anio_obj):
+    def buscar_en_cerebro(tabla, territorio):
         try:
             from sqlalchemy import text
             from modules.db_manager import get_engine
-            import numpy as np
             import pandas as pd
             engine_sql = get_engine()
-            # Búsqueda exacta y a prueba de mayúsculas/espacios
-            q = text('SELECT * FROM matriz_maestra_demografica WHERE LOWER(trim("Territorio")) = LOWER(trim(:t)) LIMIT 1')
-            df = pd.read_sql(q, engine_sql, params={'t': str(territorio)})
-            if df.empty: return 0.0
             
-            f = df.iloc[0]
-            x_norm = anio_obj - f.get('Año_Base', 2018)
-            mod = str(f.get('Modelo_Recomendado', 'Logístico'))
+            # 🔥 BÚSQUEDA ELÁSTICA: Ignora mayúsculas y tolera nombres cortados
+            q = text(f'''
+                SELECT * FROM {tabla} 
+                WHERE "Territorio" ILIKE :t_exact 
+                   OR "Territorio" ILIKE :t_partial LIMIT 10
+            ''')
+            t_clean = str(territorio).strip()
+            # Toma los primeros 8 caracteres para asegurar match si el selector lo truncó
+            t_part = f"{t_clean[:8]}%" if len(t_clean) >= 8 else f"{t_clean}%" 
             
-            # El motor matemático que conoce todos los modelos (incluyendo el Lineal)
+            return pd.read_sql(q, engine_sql, params={'t_exact': t_clean, 't_partial': t_part})
+        except Exception: return pd.DataFrame()
+
+    def proyectar_modelo(f, anio_obj):
+        import numpy as np
+        x_norm = anio_obj - f.get('Año_Base', 2018)
+        mod = str(f.get('Modelo_Recomendado', 'Logístico'))
+        try:
             if 'Logistico' in mod or 'Logístico' in mod: return f.get('Log_K',0) / (1 + f.get('Log_a',0) * np.exp(-f.get('Log_r',0) * x_norm))
             elif 'Exponencial' in mod: return f.get('Exp_a',0) * np.exp(f.get('Exp_b',0) * x_norm)
             elif 'Lineal' in mod: return f.get('Lin_m',0) * x_norm + f.get('Lin_b',0)
             else: return f.get('Poly_A',0)*(x_norm**3) + f.get('Poly_B',0)*(x_norm**2) + f.get('Poly_C',0)*x_norm + f.get('Poly_D',0)
-        except Exception: return 0.0
-
-    @st.cache_data(ttl=3600)
-    def consultar_cerebro_pecuario(territorio, anio_obj):
-        res = {'Bovinos': 0.0, 'Porcinos': 0.0, 'Aves': 0.0}
-        try:
-            from sqlalchemy import text
-            from modules.db_manager import get_engine
-            import numpy as np
-            import pandas as pd
-            engine_sql = get_engine()
-            q = text('SELECT * FROM matriz_maestra_pecuaria WHERE LOWER(trim("Territorio")) = LOWER(trim(:t))')
-            df = pd.read_sql(q, engine_sql, params={'t': str(territorio)})
-            if df.empty: return res
-            
-            for _, f in df.iterrows():
-                esp = f['Especie']
-                x_norm = anio_obj - f.get('Año_Base', 2018)
-                mod = str(f.get('Modelo_Recomendado', 'Logístico'))
-                
-                val = 0.0
-                if 'Logistico' in mod or 'Logístico' in mod: val = f.get('Log_K',0) / (1 + f.get('Log_a',0) * np.exp(-f.get('Log_r',0) * x_norm))
-                elif 'Exponencial' in mod: val = f.get('Exp_a',0) * np.exp(f.get('Exp_b',0) * x_norm)
-                elif 'Lineal' in mod: val = f.get('Lin_m',0) * x_norm + f.get('Lin_b',0)
-                else: val = f.get('Poly_A',0)*(x_norm**3) + f.get('Poly_B',0)*(x_norm**2) + f.get('Poly_C',0)*x_norm + f.get('Poly_D',0)
-                
-                res[esp] = max(0.0, val) # Sin animales negativos
-            return res
-        except Exception: return res
+        except: return 0.0
 
     # ---------------------------------------------------------
-    # 1. EXTRACCIÓN DE DATOS: DEMOGRAFÍA
+    # 1. CONEXIÓN DEMOGRÁFICA
     # ---------------------------------------------------------
-    pob_total = consultar_cerebro_demografico(nombre_zona, anio_actual)
-    
-    if pob_total > 0:
-        st.session_state['pob_hum_calc_met'] = pob_total
-        st.session_state['aleph_pob_total'] = pob_total
-        st.success(f"👥 **Cerebro Demográfico Enlazado:** {pob_total:,.0f} habitantes proyectados a {anio_actual}.")
+    df_demo = buscar_en_cerebro("matriz_maestra_demografica", nombre_zona)
+    if not df_demo.empty:
+        pob_total = max(0.0, proyectar_modelo(df_demo.iloc[0], anio_actual))
+        st.success(f"👥 **Cerebro Demográfico Enlazado:** {pob_total:,.0f} habitantes detectados en SQL.")
+        origen_demo = True
     else:
-        # Salvaguarda para que el tablero no colapse con divisiones por cero
-        pob_total = 1000 
-        st.warning(f"⚠️ La unidad '{nombre_zona}' no está en la Matriz Demográfica. Usando valor de emergencia (1,000 hab).")
+        pob_total = 1000.0 # Salvavidas matemático
+        st.warning(f"⚠️ '{nombre_zona}' no está en la Matriz Demográfica. Usando {pob_total:,.0f} hab. (Falta entrenar cascada hidrológica).")
+        origen_demo = False
+    
+    st.session_state['aleph_pob_total'] = pob_total
+    st.session_state['pob_hum_calc_met'] = pob_total
 
     # ---------------------------------------------------------
-    # 2. EXTRACCIÓN DE DATOS: PECUARIO
+    # 2. CONEXIÓN PECUARIA
     # ---------------------------------------------------------
-    inventario_pec = consultar_cerebro_pecuario(nombre_zona, anio_actual)
-    bovinos = inventario_pec['Bovinos']
-    porcinos = inventario_pec['Porcinos']
-    aves = inventario_pec['Aves']
+    df_pec = buscar_en_cerebro("matriz_maestra_pecuaria", nombre_zona)
+    bovinos, porcinos, aves = 0.0, 0.0, 0.0
     
-    if (bovinos + porcinos + aves) > 0:
-        st.success(f"🐄 **Cerebro Pecuario Enlazado:** {bovinos:,.0f} Bovinos, {porcinos:,.0f} Porcinos, {aves:,.0f} Aves.")
-        st.session_state['ica_bovinos_calc_met'] = bovinos
-        st.session_state['ica_porcinos_calc_met'] = porcinos
-        st.session_state['ica_aves_calc_met'] = aves
+    if not df_pec.empty:
+        for _, f in df_pec.iterrows():
+            if f['Especie'] == 'Bovinos': bovinos = max(0.0, proyectar_modelo(f, anio_actual))
+            if f['Especie'] == 'Porcinos': porcinos = max(0.0, proyectar_modelo(f, anio_actual))
+            if f['Especie'] == 'Aves': aves = max(0.0, proyectar_modelo(f, anio_actual))
+        st.success(f"🐄 **Cerebro Pecuario Enlazado:** {bovinos:,.0f} Bov, {porcinos:,.0f} Por, {aves:,.0f} Aves.")
+        origen_pecu = True
     else:
-        st.warning(f"⚠️ La unidad '{nombre_zona}' no está en la Matriz Pecuaria. ¡Ve al modelo a forjarla!")
-        st.session_state['ica_bovinos_calc_met'] = 0.0
-        st.session_state['ica_porcinos_calc_met'] = 0.0
-        st.session_state['ica_aves_calc_met'] = 0.0
+        bovinos, porcinos, aves = 100.0, 50.0, 200.0 # Salvavidas matemático
+        st.warning(f"⚠️ '{nombre_zona}' no está en la Matriz Pecuaria. Usando carga de emergencia.")
+        origen_pecu = False
+
+    st.session_state['ica_bovinos_calc_met'] = bovinos
+    st.session_state['ica_porcinos_calc_met'] = porcinos
+    st.session_state['ica_aves_calc_met'] = aves
 
     # ---------------------------------------------------------
-    # 3. CÁLCULO DE DEMANDA Y METABOLISMO (SÍNTESIS VOLUMÉTRICA)
+    # 3. CONEXIÓN HIDROLÓGICA Y OFERTA BASE
     # ---------------------------------------------------------
-    # Demanda diaria (Litros/día). Asumimos: 150L Humano, 40L Vaca, 15L Cerdo, 0.3L Ave.
-    demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
-    demanda_dinamica_m3s = (demanda_L_dia / 1000) / 86400
-
-    # Inyección al Torrente Sanguíneo Global
-    st.session_state['demanda_total_m3s'] = demanda_dinamica_m3s
-    st.session_state['poblacion_servida'] = pob_total
-    st.session_state['zona_activa_global'] = nombre_zona # Marcador oficial de territorio
-
-    demanda_m3s = float(demanda_dinamica_m3s)
-    poblacion_mostrar = float(pob_total)
+    df_hidro = buscar_en_cerebro("matriz_hidrologica_maestra", nombre_zona)
     
-    fase_enso = st.session_state.get('enso_fase', 'Neutro')
-    
-    @st.cache_data(ttl=3600)
-    def obtener_física_matriz(territorio_nombre):
-        try:
-            from sqlalchemy import text
-            q = text("SELECT * FROM matriz_hidrologica_maestra WHERE LOWER(trim(\"Territorio\")) = LOWER(trim(:t)) LIMIT 1")
-            df_m = pd.read_sql(q, engine, params={'t': str(territorio_nombre)})
-            if not df_m.empty: return df_m.iloc[0].to_dict()
-        except: pass
-        return None
-
-    datos_matriz = obtener_física_matriz(nombre_zona)
-
-    if datos_matriz:
+    if not df_hidro.empty:
+        datos_matriz = df_hidro.iloc[0]
         q_medio_real = datos_matriz.get('Caudal_Medio_m3s', 0.0)
-        q_min_real = (datos_matriz.get('Recarga_mm', 0.0) * datos_matriz.get('Area_km2', 10.0) * 1000) / 31536000
-        st.session_state['aleph_area_km2'] = datos_matriz.get('Area_km2', 10.0)
-        st.session_state['aleph_recarga_mm'] = datos_matriz.get('Recarga_mm', 0.0)
+        area_cuenca_km2 = datos_matriz.get('Area_km2', 10.0)
+        recarga_base_mm = datos_matriz.get('Recarga_mm', 0.0)
+        q_min_real = (recarga_base_mm * area_cuenca_km2 * 1000) / 31536000
+        st.success(f"💧 **Cerebro Hidrológico Enlazado:** Área {area_cuenca_km2:,.1f} km², Caudal Medio {q_medio_real:,.2f} m³/s.")
+        origen_hidro = True
     else:
-        area_emergencia = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0 if gdf_zona is not None else 10.0
-        q_medio_real = (350.0 * area_emergencia * 1000) / 31536000 
+        area_cuenca_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0 if gdf_zona is not None and not gdf_zona.empty else 10.0
+        q_medio_real = (350.0 * area_cuenca_km2 * 1000) / 31536000 
         q_min_real = q_medio_real * 0.25 
-        st.session_state['aleph_area_km2'] = area_emergencia
-        st.session_state['aleph_recarga_mm'] = 350.0
+        recarga_base_mm = 350.0
+        st.warning(f"⚠️ '{nombre_zona}' no está en la Matriz Hidrológica. Usando estimación geo-espacial base.")
+        origen_hidro = False
+
+    st.session_state['aleph_area_km2'] = area_cuenca_km2
+    st.session_state['aleph_recarga_mm'] = recarga_base_mm
 
     tipo_oferta = st.radio("Escenario Hidrológico de Simulación:", 
                            ["🌊 Caudal Medio (Condiciones Normales)", "🏜️ Caudal Mínimo / Estiaje (Q95)"], horizontal=True)
@@ -302,76 +270,52 @@ if gdf_zona is not None and not gdf_zona.empty:
     if int(anio_actual) > anio_base_cc:
         oferta_nominal *= (1 - ((int(anio_actual) - anio_base_cc) * 0.005))
 
+    fase_enso = st.session_state.get('enso_fase', 'Neutro')
     if "Niño Severo" in fase_enso: oferta_nominal *= 0.55
     elif "Niño Moderado" in fase_enso: oferta_nominal *= 0.75
     elif "Niña" in fase_enso: oferta_nominal *= 1.20
-
-    # ==============================================================================
-    # 🧠 NÚCLEO MATEMÁTICO BASE (Sincronizado con la Matriz Multiescala)
-    # ==============================================================================
     
-    # --- 🚨 AUDITORÍA DE DATOS (El Guardián de la Verdad) ---
-    falta_hidro = 'aleph_oferta_m3s' not in st.session_state
-    falta_demo = 'aleph_pob_total' not in st.session_state
-    falta_pecu = 'ica_bovinos_calc_met' not in st.session_state
-    falta_cargas = 'carga_dbo_total_ton' not in st.session_state
+    st.session_state['aleph_oferta_m3s'] = oferta_nominal
 
-    # 🔥 FIX: Recuperamos el nombre de la zona de forma 100% segura desde la memoria
-    zona_actual = st.session_state.get('zona_activa_global', 'el territorio seleccionado')
-
-    # Solo mostramos alerta si falta alguna de las 3 matrices estructurales
-    if falta_hidro or falta_demo or falta_pecu:
-        st.error(f"⚠️ **Faltan datos en la Memoria Global para '{zona_actual}'.** Los resultados mostrados están usando valores aproximados de emergencia.")
-        
-        faltantes = []
-        if falta_hidro: faltantes.append("💧 **Hidrología:** Ve a 'Clima e Hidrología' y forja la Matriz Maestra.")
-        if falta_demo: faltantes.append("👥 **Demografía:** Ve al 'Modelo Demográfico' y entrena la cuenca.")
-        if falta_pecu: faltantes.append("🐄 **Pecuario:** Ve al 'Modelo Pecuario' y entrena la cuenca.")
-        
-        for f in faltantes:
-            st.warning(f)
-            
-        origen_carga = "Datos por Defecto"
+    # ---------------------------------------------------------
+    # 4. METABOLISMO Y DEMANDA (SÍNTESIS FINAL)
+    # ---------------------------------------------------------
+    demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
+    demanda_m3s = (demanda_L_dia / 1000) / 86400
+    
+    st.session_state['demanda_total_m3s'] = demanda_m3s
+    st.session_state['poblacion_servida'] = pob_total
+    st.session_state['zona_activa_global'] = nombre_zona 
+    
+    # Evaluar si tenemos sincronización perfecta
+    if origen_demo and origen_pecu and origen_hidro:
+        st.success(f"✅ **Sincronización Perfecta:** Las 3 matrices maestras están alimentando a '{nombre_zona}' en tiempo real.")
+        origen_carga = "Modelación SQL Exacta"
     else:
-        st.success(f"✅ **Sincronización Perfecta:** Las 3 matrices maestras están alimentando a '{zona_actual}' en tiempo real.")
-        origen_carga = "Modelación Exacta"
+        st.error(f"⚠️ **Faltan datos en la Memoria Global para '{nombre_zona}'.** Los resultados están usando valores de emergencia.")
+        origen_carga = "Datos de Emergencia"
 
-    # 1. Recuperación de la Memoria del Orquestador (Matriz Hidro)
-    oferta_nominal = float(st.session_state.get('aleph_oferta_m3s', 1.5))
-    area_cuenca_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
-    recarga_base_mm = float(st.session_state.get('aleph_recarga_mm', 350.0))
-    
-    # 2. Recuperación de la Memoria Pecuaria/Poblacional (Orquestador)
-    pob_total = float(st.session_state.get('aleph_pob_total', 1000.0))
-    bovinos = float(st.session_state.get('ica_bovinos_calc_met', 0.0))
-    porcinos = float(st.session_state.get('ica_porcinos_calc_met', 0.0))
-    aves = float(st.session_state.get('ica_aves_calc_met', 0.0))
-    
-    # 3. Sliders de Simulación (Variables de Decisión)
     with st.expander("🎛️ Simulación de Escenarios (Variables de Decisión)", expanded=False):
         c_sim1, c_sim2 = st.columns(2)
         impacto_cc = c_sim1.slider("📉 Reducción Oferta por Cambio Climático (%):", 0, 80, 0, step=5)
         mitigacion_dbo = c_sim2.slider("🌿 Mitigación de Cargas (SbN + PTAR) %:", 0, 100, 0, step=5)
 
-    # 4. Cálculos de Oferta y Demanda
+    # Cálculos de Oferta y Demanda Finales
     oferta_anual_m3 = (oferta_nominal * 31536000) * (1 - (impacto_cc / 100))
     recarga_anual_m3 = recarga_base_mm * area_cuenca_km2 * 1000
-    demanda_m3s = float(st.session_state.get('demanda_total_m3s', 0.15))
     consumo_anual_m3 = demanda_m3s * 31536000
     
-    # 5. Modelación de Calidad (DBO5) - Sincronizado con Pág 07
-    # Fallback inteligente: Si no has ido a la Pág 07, calculamos un aproximado basado en la población y vacas en memoria
+    # Modelación de Calidad (DBO5)
     proxy_carga = ((pob_total * 0.050) + (bovinos * 0.4) + (porcinos * 0.15)) * 365 / 1000
     carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', proxy_carga if proxy_carga > 0 else 1500.0))
-    
     carga_final_rio_ton = carga_total_ton * (1 - (mitigacion_dbo / 100))
     
-    # Física de Concentración en Caudal Crítico (Q95 = 25% del medio)
+    # Física de Concentración
     caudal_critico_L_s = (oferta_anual_m3 / 31536000) * 1000 * 0.25
     carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
     concentracion_dbo_mg_l = carga_mg_s / caudal_critico_L_s if caudal_critico_L_s > 0.1 else 999.0
 
-    # 🎯 Cálculo de KPIs (Velocímetros)
+    # 🎯 KPIs (Velocímetros)
     wei_ratio = consumo_anual_m3 / oferta_anual_m3 if oferta_anual_m3 > 0 else 1.0
     ind_estres = max(0.0, min(100.0, 100.0 - (wei_ratio / 0.40) * 60))
     
@@ -379,7 +323,6 @@ if gdf_zona is not None and not gdf_zona.empty:
     factor_supervivencia = min(1.0, recarga_anual_m3 / consumo_anual_m3) if consumo_anual_m3 > 0 else 1.0
     ind_resiliencia = max(0.0, min(100.0, (bfi_ratio / 0.70) * 100 * factor_supervivencia))
     
-    # FÓRMULA EXPONENCIAL: Calidad Sanitaria
     ind_calidad = max(0.0, min(100.0, 100 * math.exp(-0.07 * concentracion_dbo_mg_l)))
     ind_neutralidad = 0.0 
 
