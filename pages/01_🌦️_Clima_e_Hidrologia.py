@@ -879,131 +879,128 @@ if __name__ == "__main__":
         from modules.db_manager import get_engine
         engine = get_engine()
 
-        if st.button("⚡ Forjar Matriz Multiescala", key="btn_gen_rep_multi", type="primary"):
+        if st.button("⚡ Forjar Matriz Multiescala Definitiva", key="btn_gen_rep_multi", type="primary"):
             try:
                 import numpy as np
                 import geopandas as gpd
                 from sqlalchemy import text
+                import pandas as pd
                 
-                with st.spinner("1. Cargando y reparando topología de Cuencas..."):
-                    gdf_all = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
-                    gdf_all['geometry'] = gdf_all.geometry.make_valid()
-                    gdf_all = gdf_all[gdf_all.geometry.notnull()]
-                    
-                    # 🔥 FIX PARA MATCH PERFECTO DE DEPARTAMENTO Y REGIÓN
-                    # 1. Creamos el nivel "Departamento" englobando todo
-                    gdf_all['departamento_calc'] = 'Antioquia'
-                    
-                    # 2. Ajustamos los nombres de región (Ej: "Antioquia - Bajo Cauca" -> "Región Bajo Cauca")
-                    if 'depto_regi' in gdf_all.columns:
-                        gdf_all['region_calc'] = gdf_all['depto_regi'].astype(str).str.replace('Antioquia - ', 'Región ', regex=False)
-                    else:
-                        gdf_all['region_calc'] = 'Desconocido'
-                    
-                    # 🧠 NIVELES DE ANÁLISIS A PROCESAR (Actualizado con Match Perfecto)
-                    niveles_analisis = {
-                        'DEPARTAMENTO': 'departamento_calc', # Nuevo nivel que agrupa todo el mapa
-                        'REGION': 'region_calc',             # Nivel regional ajustado al menú
-                        'MUNICIPIO': 'mpio_cnmbr',
-                        'NSS3': 'nom_nss3',
-                        'NSS2': 'nom_nss2',
-                        'NSS1': 'nom_nss1',
-                        'SZH': 'nom_szh',
-                        'ZH': 'nomzh',
-                        'AH': 'nomah',
-                        'ZONA': 'zona',
-                        'CAR': 'corpoamb'
-                    }
+                prog_nivel = st.progress(0, text="Iniciando motores espaciales...")
 
-                with st.spinner("2. Cargando red de Estaciones Climáticas..."):
+                # 1. Cargamos el clima global (Estaciones y Lluvia)
+                with st.spinner("📡 Cargando red de Estaciones Climáticas..."):
                     q_est = text("SELECT id_estacion, altitud, ST_SetSRID(ST_MakePoint(CAST(longitud AS FLOAT), CAST(latitud AS FLOAT)), 4326) as geometry FROM estaciones WHERE latitud IS NOT NULL")
                     gdf_est = gpd.read_postgis(q_est, engine, geom_col="geometry").to_crs("EPSG:3116")
                     gdf_est['id_estacion'] = gdf_est['id_estacion'].astype(str)
                     
                     df_rain = pd.read_sql("SELECT id_estacion, AVG(valor)*12 as ppt FROM precipitacion GROUP BY id_estacion", engine)
                     df_rain['id_estacion'] = df_rain['id_estacion'].astype(str)
-                    
-                res_multiescala = []
-                prog_nivel = st.progress(0, text="Iniciando cálculos multiescala...")
-                
-                # 🌍 EL GRAN BUCLE MULTIESCALA
-                total_niveles = len(niveles_analisis)
-                for idx, (nombre_nivel, col_bd) in enumerate(niveles_analisis.items()):
-                    if col_bd not in gdf_all.columns:
-                        continue # Si la columna no existe, pasamos al siguiente nivel
-                        
-                    prog_nivel.progress((idx) / total_niveles, text=f"Procesando Nivel: {nombre_nivel} ({col_bd})")
-                    
-                    # 1. Fusionamos (Dissolve) el mapa para este nivel específico
-                    # Conservamos las columnas descriptivas relevantes
-                    cols_conservar = [c for c in gdf_all.columns if c not in ['geometry', col_bd, 'shape_leng', 'shape_area', 'objectid', 'id_cuenca']]
-                    agg_dict = {c: 'first' for c in cols_conservar}
-                    
-                    gdf_nivel = gdf_all.dissolve(by=col_bd, aggfunc=agg_dict).reset_index()
-                    
-                    # 2. Iteramos sobre cada territorio dentro del nivel
-                    for i, row in gdf_nivel.iterrows():
-                        nom_territorio = str(row.get(col_bd, "Desconocido"))
-                        if nom_territorio.strip() == "" or nom_territorio.lower() == "none": continue
-                        
-                        area_km2 = row.geometry.area / 1e6
-                        if area_km2 <= 0: area_km2 = 1.0
-                        
-                        # Cruce Climático (Buffer 20km)
-                        buf = row.geometry.buffer(20000)
-                        est_in = gdf_est[gdf_est.geometry.within(buf)]
-                        
-                        ppt_media, altitud_media = 2500.0, 1500.0
-                        if not est_in.empty:
-                            ids = est_in['id_estacion'].tolist()
-                            vals_ppt = df_rain[df_rain['id_estacion'].isin(ids)]['ppt']
-                            if not vals_ppt.empty: ppt_media = vals_ppt.mean()
-                            vals_alt = est_in['altitud'].dropna()
-                            if not vals_alt.empty: altitud_media = vals_alt.mean()
-                            
-                        # Modelación Física
-                        temp_calc = max(5.0, 28.0 - (0.006 * altitud_media))
-                        L = 300 + 25*temp_calc + 0.05*(temp_calc**3)
-                        etr = ppt_media / np.sqrt(0.9 + (ppt_media/L)**2) if L > 0 else 0
-                        escorrentia_total = ppt_media - etr
-                        
-                        # Partición del Agua
-                        recarga_mm = escorrentia_total * 0.15
-                        escorrentia_superficial = escorrentia_total * 0.85
-                        q_medio = (escorrentia_superficial * area_km2 * 1000) / 31536000
-                        q_base = (recarga_mm * area_km2 * 1000) / 31536000
-                        q_total = q_medio + q_base
 
-                        # 3. Guardar el registro tipificado por Jerarquía
-                        res_multiescala.append({
-                            "Jerarquia": nombre_nivel,
-                            "Territorio": nom_territorio,
-                            "Area_km2": round(area_km2, 2), 
-                            "Altitud_m": round(altitud_media, 0),
-                            "Temp_C": round(temp_calc, 1),
-                            "Lluvia_mm": round(ppt_media, 0), 
-                            "ETR_mm": round(etr, 0),
-                            "Recarga_mm": round(recarga_mm, 0),
-                            "Escorrentia_mm": round(escorrentia_superficial, 0),
-                            "Caudal_Medio_m3s": round(q_total, 3)
-                        })
+                res_multiescala = []
+
+                # 🧠 EL NÚCLEO FÍSICO: Función maestra que procesa CUALQUIER mapa que le pasemos
+                def procesar_capa_espacial(gdf_base, dicc_niveles, offset_progreso, total_pasos):
+                    gdf_base['geometry'] = gdf_base.geometry.make_valid()
+                    gdf_base = gdf_base[gdf_base.geometry.notnull()]
+                    
+                    paso_actual = offset_progreso
+                    for nombre_nivel, col_bd in dicc_niveles.items():
+                        if col_bd not in gdf_base.columns: continue
+                        
+                        prog_nivel.progress(paso_actual / total_pasos, text=f"Calculando Hidrología para: {nombre_nivel}")
+                        paso_actual += 1
+                        
+                        # Magia Espacial: Agrupamos y fusionamos los polígonos
+                        gdf_nivel = gdf_base.dissolve(by=col_bd).reset_index()
+                        
+                        for i, row in gdf_nivel.iterrows():
+                            nom_territorio = str(row.get(col_bd, "Desconocido")).strip()
+                            if nom_territorio in ["", "None", "nan", "Cuenca Sin Nombre"]: continue
+                            
+                            area_km2 = row.geometry.area / 1e6
+                            if area_km2 <= 0: area_km2 = 1.0
+                            
+                            # Cruce Climático (Qué estaciones caen cerca de este territorio)
+                            buf = row.geometry.buffer(20000) # 20km de búsqueda
+                            est_in = gdf_est[gdf_est.geometry.within(buf)]
+                            
+                            ppt_media, altitud_media = 2500.0, 1500.0
+                            if not est_in.empty:
+                                ids = est_in['id_estacion'].tolist()
+                                vals_ppt = df_rain[df_rain['id_estacion'].isin(ids)]['ppt']
+                                if not vals_ppt.empty: ppt_media = vals_ppt.mean()
+                                vals_alt = est_in['altitud'].dropna()
+                                if not vals_alt.empty: altitud_media = vals_alt.mean()
+                                
+                            # 🔬 MODELACIÓN FÍSICA Y TERMODINÁMICA
+                            temp_calc = max(5.0, 28.0 - (0.006 * altitud_media))
+                            L = 300 + 25*temp_calc + 0.05*(temp_calc**3)
+                            etr = ppt_media / np.sqrt(0.9 + (ppt_media/L)**2) if L > 0 else 0
+                            escorrentia_total = ppt_media - etr
+                            
+                            # Partición del Flujo
+                            recarga_mm = escorrentia_total * 0.15
+                            escorrentia_superficial = escorrentia_total * 0.85
+                            q_medio = (escorrentia_superficial * area_km2 * 1000) / 31536000
+                            q_base = (recarga_mm * area_km2 * 1000) / 31536000
+                            
+                            res_multiescala.append({
+                                "Jerarquia": nombre_nivel,
+                                "Territorio": nom_territorio,
+                                "Area_km2": round(area_km2, 2), 
+                                "Altitud_m": round(altitud_media, 0),
+                                "Temp_C": round(temp_calc, 1),
+                                "Lluvia_mm": round(ppt_media, 0), 
+                                "ETR_mm": round(etr, 0),
+                                "Recarga_mm": round(recarga_mm, 0),
+                                "Escorrentia_mm": round(escorrentia_superficial, 0),
+                                "Caudal_Medio_m3s": round(q_medio + q_base, 3)
+                            })
+                    return paso_actual
+
+                # --- 🗺️ FASE 1: PROCESAR EL MAPA DE CUENCAS ---
+                with st.spinner("💧 Calculando red hidrográfica completa..."):
+                    gdf_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
+                    niveles_cuencas = {'NSS3': 'nom_nss3', 'NSS2': 'nom_nss2', 'NSS1': 'nom_nss1', 'SZH': 'nom_szh', 'ZH': 'nomzh', 'AH': 'nomah'}
+                    pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos que vienen
+                    paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
+
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (La pieza que faltaba) ---
+                with st.spinner("🏛️ Calculando áreas y caudales para Municipios, Regiones y Departamento..."):
+                    try:
+                        gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
+                        gdf_mun['DEPARTAMENTO'] = 'Antioquia' # Nivel maestro
+                        
+                        # Detectar los nombres exactos de las columnas en tu base de datos
+                        col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
+                        col_reg = 'subregion' if 'subregion' in gdf_mun.columns else 'Region'
+                        col_mac = 'macroregion' if 'macroregion' in gdf_mun.columns else 'Macroregion'
+                        
+                        niveles_admin = {
+                            'MUNICIPIO': col_mun,
+                            'REGION': col_reg,
+                            'MACROREGION': col_mac,
+                            'DEPARTAMENTO': 'DEPARTAMENTO'
+                        }
+                        # Pasamos el mapa de municipios al mismo motor físico de arriba
+                        procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
+                    except Exception as e:
+                        st.warning(f"No se pudo completar la fase administrativa. Error en la tabla 'municipios': {e}")
+
+                prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                 
-                prog_nivel.progress(1.0, text="¡Cálculos finalizados!")
-                
-                with st.spinner("Guardando Gran Matriz Universal en Base de Datos..."):
+                # --- 💾 GUARDADO MAESTRO ---
+                with st.spinner("Guardando Cerebro Hidrológico Universal en Supabase..."):
                     df_matriz = pd.DataFrame(res_multiescala)
                     df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='replace', index=False)
                     
-                    st.success(f"✅ Matriz Maestra Multiescala forjada. {len(df_matriz)} unidades territoriales procesadas.")
+                    st.success(f"✅ EL ALEPH ESTÁ COMPLETO. Matriz Hidrológica forjada con {len(df_matriz)} territorios (Cuencas + Municipios + Regiones).")
                     
-                    # Mostrar resumen por nivel
-                    st.write("📊 **Resumen de Unidades por Nivel Jerárquico:**")
+                    st.write("📊 **Resumen de Unidades Integradas:**")
                     resumen = df_matriz['Jerarquia'].value_counts().reset_index()
                     resumen.columns = ['Nivel', 'Cantidad de Territorios']
                     st.dataframe(resumen, hide_index=True)
-                    
-                    csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Descargar Gran Matriz (CSV)", csv_matriz, "Matriz_Hidro_Multiescala.csv", "text/csv")
                     
             except Exception as e:
                 st.error(f"Error crítico en la forja de la matriz: {e}")
