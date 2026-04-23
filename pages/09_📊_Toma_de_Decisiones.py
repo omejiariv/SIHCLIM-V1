@@ -336,10 +336,28 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.markdown("### 🎛️ Centro de Comando: Seguridad Hídrica")
     
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("👥 Población Servida", f"{int(pob_total):,.0f} hab")
-    col2.metric("☣️ Carga Orgánica (DBO5)", f"{carga_total_ton:,.1f} Ton/año", origen_carga, delta_color="inverse")
-    col3.metric("🐄 Presión Pecuaria", f"{(bovinos + porcinos + aves):,.0f} Cabezas")
-    col4.metric("⚠️ Estrés Hídrico Neto", f"{estres_hidrico_porcentaje:,.1f} %", "Crítico" if estres_hidrico_porcentaje > 40 else "Estable", delta_color="inverse")    
+    
+    with col1:
+        st.metric("👥 Población Servida", f"{int(pob_total):,.0f} hab")
+        
+    with col2:
+        st.metric("☣️ Carga Orgánica (DBO5)", f"{carga_total_ton:,.1f} Ton/año", origen_carga, delta_color="inverse")
+    
+    with col3:
+        # 🔥 FIX: Separación de especies (No más "cabezas de gallina" sumadas con vacas)
+        st.markdown(f"""
+        <div style="background-color: white; padding: 10px; border-radius: 5px; border: 1px solid #eee; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);">
+            <div style="font-size: 0.85rem; color: #555; margin-bottom: 5px;">🐄 Presión Pecuaria</div>
+            <div style="font-size: 1rem; font-weight: bold; color: #2c3e50;">
+                🐮 {bovinos:,.0f} Bov <br>
+                🐷 {porcinos:,.0f} Por <br>
+                🐔 {aves:,.0f} Ave
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with col4:
+        st.metric("⚠️ Estrés Hídrico Neto", f"{estres_hidrico_porcentaje:,.1f} %", "Crítico" if estres_hidrico_porcentaje > 40 else "Estable", delta_color="inverse")
 
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -501,15 +519,13 @@ if gdf_zona is not None and not gdf_zona.empty:
         # ==========================================
         # 4. NUEVA CAPA: SATÉLITE EN VIVO + CÁLCULO DE ÁREAS
         # ==========================================
-        areas_data = [] # Lista para almacenar el cálculo de coberturas
+        areas_data = [] 
         try:
             import ee
-            # Inicializar Earth Engine usando la función que ya tenemos en memoria (o los secrets)
             credenciales_dict = dict(st.secrets["gcp_service_account"])
             credentials = ee.ServiceAccountCredentials(email=credenciales_dict["client_email"], key_data=credenciales_dict["private_key"])
             ee.Initialize(credentials)
             
-            # Función puente para Folium
             def add_ee_layer(self, ee_image_object, vis_params, name, show=True):
                 map_id_dict = ee.Image(ee_image_object).getMapId(vis_params)
                 folium.raster_layers.TileLayer(
@@ -518,55 +534,38 @@ if gdf_zona is not None and not gdf_zona.empty:
                 ).add_to(self)
             folium.Map.add_ee_layer = add_ee_layer
             
-            # 🔥 ESCUDO ANTI-COLAPSO DE MEMORIA RAM (Para Regiones y Cuencas Complejas)
-            with st.spinner("Optimizando geometría para el satélite..."):
-                try:
-                    # Intentamos simplificar drásticamente para no ahogar el procesador
-                    geom_simplificada = gdf_zona.geometry.simplify(0.01).make_valid()
-                    geom_unificada = geom_simplificada.unary_union
-                except Exception:
-                    # Si aún así falla, usamos la "Caja Delimitadora" (Bounding Box) como salvavidas extremo
-                    from shapely.geometry import box
-                    minx, miny, maxx, maxy = gdf_zona.total_bounds
-                    geom_unificada = box(minx, miny, maxx, maxy)
-
-            roi_ee = ee.Geometry(geom_unificada.__geo_interface__)
+            # 🔥 ESCUDO ANTI-PANTALLA BLANCA (Bounding Box)
+            with st.spinner("Optimizando memoria visual para Regiones..."):
+                from shapely.geometry import box
+                # Creamos un rectángulo simple que envuelve la región en lugar de usar todos sus bordes
+                minx, miny, maxx, maxy = gdf_zona.total_bounds
+                geom_bbox = box(minx, miny, maxx, maxy)
+                roi_ee = ee.Geometry(geom_bbox.__geo_interface__)
             
             dw_coleccion = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(roi_ee).filterDate('2023-01-01', '2024-01-01')
             dw_imagen = dw_coleccion.select('label').mode().clip(roi_ee)
             dw_vis = {'min': 0, 'max': 8, 'palette': ['#419BDF', '#397D49', '#88B053', '#7A87C6', '#E49635', '#DFC35A', '#C4281B', '#A59B8F', '#B39FE1']}
             
-            # Inyectar al mapa
             m.add_ee_layer(dw_imagen, dw_vis, '🛰️ Uso de Suelo (Satélite IA)')
-
-            # ==========================================
-            # 👇 NUEVO BLOQUE DEM
-            # ==========================================
-            # Cargar el DEM (NASADEM 30m) y recortarlo a la zona
-            dem = ee.Image("NASA/NASADEM_HGT/001").select('elevation').clip(roi_ee)
             
-            # Calcular Pendiente y Hillshade
+            # DEM y Hillshade (También usan la caja ligera)
+            dem = ee.Image("NASA/NASADEM_HGT/001").select('elevation').clip(roi_ee)
             slope = ee.Terrain.slope(dem)
             hillshade = ee.Terrain.hillshade(dem, azimuth=315, elevation=45)
-            
-            # Parámetros visuales
             dem_vis = {'min': 1000, 'max': 3000, 'palette': ['#006600', '#002200', '#fff700', '#ab7634', '#c4d0ff', '#ffffff']}
             
-            # Añadir al mapa (arrancan apagadas)
             m.add_ee_layer(hillshade, {'min': 0, 'max': 255}, '⛰️ Relieve (Hillshade)', show=False)
             m.add_ee_layer(dem, dem_vis, '🆙 Elevación (Hipsometría)', show=False)
             m.add_ee_layer(slope, {'min': 0, 'max': 45, 'palette': ['white', 'red']}, '⚠️ Mapa de Pendientes', show=False)
-            # ==========================================
 
             # --- CÁLCULO DE ÁREAS ---
-            with st.spinner("Calculando superficies de uso de suelo..."):
-                # Multiplicar el área del pixel por las bandas de clases
+            with st.spinner("Calculando superficies satelitales..."):
                 area_image = ee.Image.pixelArea().addBands(dw_imagen)
+                # Volvemos a usar la geometría real aquí solo para el cálculo matemático, no para el dibujo
+                roi_math = ee.Geometry(gdf_zona.geometry.simplify(0.01).unary_union.__geo_interface__)
                 areas_ee = area_image.reduceRegion(
                     reducer=ee.Reducer.sum().group(groupField=1, groupName='clase'),
-                    geometry=roi_ee,
-                    scale=10, # Dynamic World está a 10m de resolución
-                    maxPixels=1e10
+                    geometry=roi_math, scale=50, maxPixels=1e10 # Resolución aligerada para Regiones
                 ).getInfo()
 
                 # Diccionario de clases actualizado (según catálogo de Dynamic World)
