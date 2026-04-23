@@ -640,18 +640,25 @@ def main():
                         st.markdown(f"### 📊 Diagnóstico Hidrológico Integral: {nombre_zona}")
                         
                         try:
+                            # 🔥 FIX ANTI-COLAPSO (TOPOLOGY EXCEPTION)
+                            # Reparamos cualquier "nudo" o cruce inválido en el polígono antes de medirlo
+                            gdf_zona_valida = gdf_zona.copy()
+                            gdf_zona_valida['geometry'] = gdf_zona_valida.geometry.make_valid()
+
                             # --- 1. CÁLCULOS GEOMÉTRICOS ---
-                            gdf_zona_proj = gdf_zona.to_crs(epsg=3116) # Proyectar a metros (Magna Sirgas)
+                            gdf_zona_proj = gdf_zona_valida.to_crs(epsg=3116) # Proyectar a metros (Magna Sirgas)
                             area_km2 = gdf_zona_proj.area.sum() / 1e6
                             perim_km = gdf_zona_proj.length.sum() / 1e3
                             
                             # Índice de Forma (Compacidad de Gravelius): Kc = 0.28 * P / sqrt(A)
-                            # Kc = 1.0 (Círculo perfecto), > 1.0 (Alargada)
                             ind_gravelius = (0.282 * perim_km) / (np.sqrt(area_km2)) if area_km2 > 0 else 0
 
                             # --- 2. EXTRACCIÓN DE VARIABLES DEL MODELO ---
                             from shapely.vectorized import contains
-                            mask_exact = contains(gdf_zona.unary_union, grid_x, grid_y)
+                            
+                            # Usamos la geometría ya reparada y simplificada levemente si es muy compleja
+                            geom_unificada = gdf_zona_valida.geometry.simplify(0.001).unary_union
+                            mask_exact = contains(geom_unificada, grid_x, grid_y)
                             
                             def get_avg(keyword): 
                                 """Busca la capa en matrices_finales y calcula el promedio zonal."""
