@@ -252,9 +252,10 @@ if gdf_zona is not None and not gdf_zona.empty:
         q_medio_real = (350.0 * area_cuenca_km2 * 1000) / 31536000 
         q_min_real = q_medio_real * 0.25 
         recarga_base_mm = 350.0
-        st.warning(f"⚠️ '{nombre_zona}' no está en la Matriz Hidrológica. Usando estimación geo-espacial base.")
-        origen_hidro = False
-
+        # 🔥 FIX: Lo volvemos un mensaje informativo azul, y legalizamos el origen_hidro
+        st.info(f"ℹ️ **Estimación Geo-Espacial:** '{nombre_zona}' no es una cuenca directa. Oferta calculada a partir de su área ({area_cuenca_km2:,.1f} km²).")
+        origen_hidro = True
+        
     st.session_state['aleph_area_km2'] = area_cuenca_km2
     st.session_state['aleph_recarga_mm'] = recarga_base_mm
 
@@ -518,7 +519,9 @@ if gdf_zona is not None and not gdf_zona.empty:
             folium.Map.add_ee_layer = add_ee_layer
             
             # Configurar ROI y calcular la capa
-            geom_unificada = gdf_zona.geometry.unary_union
+            # 🔥 FIX: Simplificamos la geometría levemente para evitar colapsos de RAM en Regiones
+            geom_simplificada = gdf_zona.geometry.simplify(0.005).make_valid()
+            geom_unificada = geom_simplificada.unary_union            
             roi_ee = ee.Geometry(geom_unificada.__geo_interface__)
             dw_coleccion = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1').filterBounds(roi_ee).filterDate('2023-01-01', '2024-01-01')
             dw_imagen = dw_coleccion.select('label').mode().clip(roi_ee)
