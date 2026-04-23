@@ -48,7 +48,7 @@ def normalizar_texto(texto):
     t = str(texto).upper()
     t = re.sub(r'\(.*?\)', '', t)
     
-    # --- NUEVO: DESTRUCTOR DE PREFIJOS VEREDALES ---
+    # --- DESTRUCTOR DE PREFIJOS VEREDALES ---
     t = t.replace("VDA.", "").replace("VDA ", "").replace("VEREDA ", "").replace("SECTOR ", "").replace("CGE.", "")
     
     # 1. HOTFIX: Reparador de Caracteres Mutantes del DANE (UTF-8 a Latin-1)
@@ -66,12 +66,10 @@ def normalizar_texto(texto):
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
     t = re.sub(r'[^A-Z0-9]', '', t)
     
-    # 3. Traductor DANE-IGAC Actualizado (Con los 9 nombres pomposos)
+    # 3. Traductor DANE-IGAC Actualizado (Con los 9 nombres pomposos y los rebeldes de las CARs)
     diccionario_rebeldes = {
         "BOGOTADC": "BOGOTA", "SANJOSEDECUCUTA": "CUCUTA", "LAGUAJIRA": "GUAJIRA", 
         "VALLE": "VALLEDELCAUCA", "VILLADESANDIEGODEUBATE": "UBATE", "SANTIAGODETOLU": "TOLU",
-        "ELPENOL": "PENOL", "ELRETIRO": "RETIRO", "ELSANTUARIO": "SANTUARIO",
-        "ELCARMENDEVIBORAL": "CARMENDEVIBORAL", "SANVICENTEFERRER": "SANVICENTE",
         "PUEBLORRICO": "PUEBLORICO", "SANANDRESDECUERQUIA": "SANANDRES",
         "SANPEDRODELOSMILAGROS": "SANPEDRO", "BRICENO": "BRICEN0",
         "PIZARRO": "BAJOBAUDO", "DOCORDO": "ELLITORALDELSANJUAN", "LITORALDELSANJUAN": "ELLITORALDELSANJUAN",
@@ -90,7 +88,7 @@ def normalizar_texto(texto):
         "ARBOLEDA": "ARBOLEDABERRUECOS", "ENCINO": "ELENCINO", "MACARAVITA": "MARACAVITA",
         "TUNUNGUA": "TUNUNGA", "LAMONTANITA": "MONTANITA", "ELPAUJIL": "PAUJIL", "VILLARICA": "VILLARRICA",
         "GUADALAJARADEBUGA": "BUGA",
-        # --- LOS 9 NUEVOS REBELDES (Nombres pomposos del nuevo mapa) ---
+        # --- NOMBRES POMPOSOS ---
         "CARTAGENA": "CARTAGENADEINDIAS",
         "PIENDAMO": "PIENDAMOTUNIA",
         "MARIQUITA": "SANSEBASTIANDEMARIQUITA",
@@ -101,7 +99,24 @@ def normalizar_texto(texto):
         "PAPUNAUACD": "PAPUNAHUA",
         "PAPUNAUA": "PAPUNAHUA",
         "CHIBOLO": "CHIVOLO", 
-        "MANAUREBALCONDELCESAR": "MANAURE"
+        "MANAUREBALCONDELCESAR": "MANAURE",
+        # --- 🔥 FIX: HOMOLOGACIÓN CARs (CORNAR Y CORANTIOQUIA) ---
+        "ELPENOL": "PENOL", # O si el DANE dice PENOL y el mapa dice ELPENOL, usa "PENOL": "ELPENOL"
+        "PENOL": "ELPENOL", # (Cubrimos ambas direcciones por seguridad)
+        "ELRETIRO": "RETIRO", 
+        "RETIRO": "ELRETIRO",
+        "ELSANTUARIO": "SANTUARIO",
+        "SANTUARIO": "ELSANTUARIO",
+        "ELCARMENDEVIBORAL": "CARMENDEVIBORAL",
+        "CARMENDEVIBORAL": "ELCARMENDEVIBORAL",
+        "SANVICENTEFERRER": "SANVICENTE", 
+        "SANVICENTE": "SANVICENTEFERRER", # Cubrimos ambas direcciones
+        "LACEJA": "LACEJADELTAMBO",
+        "LACEJADELTAMBO": "LACEJA",
+        "CAROLINA": "CAROLINADELPRINCIPE",
+        "CAROLINADELPRINCIPE": "CAROLINA",
+        "SANTAFEDEANTIOQUIA": "SANTAFE",
+        "SANTAFE": "SANTAFEDEANTIOQUIA"
     }
     
     if t in diccionario_rebeldes: 
@@ -169,8 +184,7 @@ def normalizar_texto(texto):
         "LAROMPIDANO.1": "LAROMPIDANO1",    # YONDO
         "LAROMPIDANO.2": "LAROMPIDANO2",    # YONDO
         "ZONAURBANAVEREDAELDIQUE": "ZONAURBANAELDIQUE"    # YONDO
-
-}
+    }
     
     if t in diccionario_veredas:
         t = diccionario_veredas[t]
