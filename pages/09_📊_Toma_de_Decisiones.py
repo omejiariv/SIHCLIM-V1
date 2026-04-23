@@ -133,6 +133,14 @@ render_metodologia()
 # 1. Selector Espacial Maestro
 ids_sel, nombre_zona, alt_ref, gdf_zona = selectors.render_selector_espacial()
 
+# ==============================================================================
+# 🔥 ESCUDO ANTI-FANTASMAS (Bloquea placeholders del menú)
+# ==============================================================================
+textos_invalidos = ["", "-- Seleccione --", "-- BLOQUE --", "Bloque Hidro", "Seleccione", "None"]
+if str(nombre_zona).strip() in textos_invalidos:
+    st.info("👈 Por favor, seleccione un territorio válido en el menú lateral para cargar el Centro de Comando.")
+    st.stop() # Detiene la ejecución aquí para que no salgan letreros amarillos
+    
 # 2. Configuración de Pesos AHP en Sidebar
 with st.sidebar:
     st.header("⚖️ Pesos AHP (Multicriterio)")
