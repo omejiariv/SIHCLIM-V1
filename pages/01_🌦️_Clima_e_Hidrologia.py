@@ -997,20 +997,54 @@ if __name__ == "__main__":
 
                 prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                 
-                # --- 💾 GUARDADO MAESTRO ---
-                with st.spinner("Guardando Cerebro Hidrológico Universal en Supabase..."):
+                # --- 💾 GUARDADO MAESTRO (VERSIÓN BLINDADA CON LLAVE UNIVERSAL) ---
+                with st.spinner("Forjando Llaves Universales y Guardando Cerebro Hidrológico en Supabase..."):
+                    from modules.utils import normalizar_texto
+                    from sqlalchemy import text
+                    
                     df_matriz = pd.DataFrame(res_multiescala)
-                    df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='replace', index=False)
                     
-                    st.success(f"✅ EL ALEPH ESTÁ COMPLETO. Matriz Hidrológica forjada con {len(df_matriz)} territorios (Cuencas + Municipios + Regiones).")
+                    # 1. Filtro Anti-Duplicados (Higiene de base de datos)
+                    df_matriz = df_matriz.drop_duplicates(subset=['Jerarquia', 'Territorio'], keep='first')
                     
-                    st.write("📊 **Resumen de Unidades Integradas:**")
-                    resumen = df_matriz['Jerarquia'].value_counts().reset_index()
-                    resumen.columns = ['Nivel', 'Cantidad de Territorios']
-                    st.dataframe(resumen, hide_index=True)
+                    # 2. LA MAGIA: Forja de la Llave Universal idéntica a Demografía y Pecuario
+                    def forjar_llave_hidro(row):
+                        jerarquia = str(row.get('Jerarquia', '')).upper()
+                        
+                        # Sincronización de etiquetas administrativas con el estándar global
+                        if jerarquia == "MUNICIPAL": jerarquia = "MUNICIPAL"
+                        elif jerarquia == "REGIONAL": jerarquia = "REGION"
+                        elif jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
+                        
+                        # Las cuencas conservan su jerarquía (AH, ZH, SZH, NSS1, etc.)
+                        
+                        terr_limpio = normalizar_texto(row.get('Territorio', ''))
+                        terr = str(terr_limpio).replace(" ", "_").upper()
+                        
+                        return f"{jerarquia}_{terr}_TOTAL"
 
-                    csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Descargar Gran Matriz (CSV)", csv_matriz, "Matriz_Hidro_Multiescala.csv", "text/csv")           
+                    df_matriz['LLAVE_UNIVERSAL'] = df_matriz.apply(forjar_llave_hidro, axis=1)
                     
-            except Exception as e:
-                st.error(f"Error crítico en la forja de la matriz: {e}")
+                    # 3. Inyección Segura a PostgreSQL (Preservando estructura y RLS)
+                    try:
+                        with engine.begin() as conn:
+                            # Aseguramos que la columna exista
+                            conn.execute(text('ALTER TABLE matriz_hidrologica_maestra ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
+                            # Limpiamos los datos viejos en lugar de destruir la tabla completa
+                            conn.execute(text("DELETE FROM matriz_hidrologica_maestra;"))
+                            
+                        # Inyectamos los nuevos datos forjados
+                        df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='append', index=False)
+                        st.cache_data.clear() # Limpiamos memoria para que el resto de la app lea lo nuevo
+                        
+                        st.success(f"✅ EL ALEPH ESTÁ COMPLETO. Matriz Hidrológica forjada con {len(df_matriz)} territorios únicos y blindados.")
+                        
+                        st.write("📊 **Resumen de Unidades Integradas:**")
+                        resumen = df_matriz['Jerarquia'].value_counts().reset_index()
+                        resumen.columns = ['Nivel', 'Cantidad de Territorios']
+                        st.dataframe(resumen, hide_index=True)
+
+                        csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Descargar Gran Matriz (CSV)", csv_matriz, "Matriz_Hidro_Multiescala.csv", "text/csv")           
+                    except Exception as e:
+                        st.error(f"🚨 Error inyectando a SQL: {e}")
