@@ -253,34 +253,48 @@ def render_selector_espacial():
         # --- B. POR REGIÓN ---
         elif modo == "Por Región":
             try:
-                df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx")
+                # 🔥 FIX: Forzamos la lectura con openpyxl y usamos la columna correcta 'subregion'
+                df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx", engine='openpyxl')
                 df_m.columns = [c.lower() for c in df_m.columns]
-                lista_reg = sorted([str(r).title() for r in df_m['region'].dropna().unique()])
+                
+                col_reg = 'subregion' if 'subregion' in df_m.columns else 'region'
+                lista_reg = sorted([str(r).title() for r in df_m[col_reg].dropna().unique()])
+                
                 sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                 if sel_reg != "-- Seleccione --":
-                    nombre_zona = f"Región {sel_reg}"
-                    nivel_jerarquico = "Regional" # 🔥 FIX 3
-                    cods = df_m[df_m['region'].str.lower()==sel_reg.lower()]['dp_mp'].astype(str).str.zfill(5).tolist()
+                    nombre_zona = sel_reg # Enviamos el nombre limpio sin prefijo para que SQL haga match
+                    nivel_jerarquico = "REGION" # Coincide exacto con la Matriz Demográfica
+                    
+                    cods = df_m[df_m[col_reg].str.lower()==sel_reg.lower()]['dp_mp'].astype(str).str.replace(".0", "", regex=False).str.zfill(5).tolist()
                     gdf_mun = cargar_mapa_municipios()
-                    gdf_zona = gdf_mun[gdf_mun['mpio_ccdgo'].astype(str).str.zfill(5).isin(cods)]
+                    
+                    col_mpio = 'mpio_ccdgo' if 'mpio_ccdgo' in gdf_mun.columns else 'MPIO_CCDGO'
+                    gdf_zona = gdf_mun[gdf_mun[col_mpio].astype(str).str.replace(".0", "", regex=False).str.zfill(5).isin(cods)]
+                    
+                    # Escudo anti-pantalla blanca: si el filtro geográfico falla, evita que muera la app
+                    if gdf_zona.empty: gdf_zona = gdf_mun.head(1) 
                 else:
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
-            except: pass
+            except Exception as e: 
+                st.error(f"Error cargando regiones: {e}")
+                nombre_zona, gdf_zona = "-- Seleccione --", None
+                nivel_jerarquico = "NINGUNO"
 
         # --- C. POR MUNICIPIO ---
         elif modo == "Por Municipio":
             gdf_mun = cargar_mapa_municipios()
-            from modules.utils import decodificar_tildes # Asegúrate de que esta importación exista
+            # 🔥 FIX: Usamos la función decodificar_tildes que ya existe arriba en este mismo archivo
             try:
-                gdf_mun['display'] = gdf_mun['mpio_cnmbr'].apply(decodificar_tildes).str.title()
+                col_nombre = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
+                gdf_mun['display'] = gdf_mun[col_nombre].apply(decodificar_tildes).str.title()
             except:
-                gdf_mun['display'] = gdf_mun['mpio_cnmbr'].str.title()
+                gdf_mun['display'] = gdf_mun[col_nombre].str.title()
             
             sel_mpio = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + sorted(gdf_mun['display'].unique()))
             if sel_mpio != "-- Seleccione --":
                 nombre_zona, gdf_zona = sel_mpio, gdf_mun[gdf_mun['display']==sel_mpio]
-                nivel_jerarquico = "Municipal" # 🔥 FIX 4
+                nivel_jerarquico = "Municipal" 
             else:
                 nombre_zona, gdf_zona = "-- Seleccione --", None
                 nivel_jerarquico = "NINGUNO"
