@@ -1016,8 +1016,6 @@ if __name__ == "__main__":
                         elif jerarquia == "REGIONAL": jerarquia = "REGION"
                         elif jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
                         
-                        # Las cuencas conservan su jerarquía (AH, ZH, SZH, NSS1, etc.)
-                        
                         terr_limpio = normalizar_texto(row.get('Territorio', ''))
                         terr = str(terr_limpio).replace(" ", "_").upper()
                         
@@ -1048,3 +1046,7 @@ if __name__ == "__main__":
                         st.download_button("📥 Descargar Gran Matriz (CSV)", csv_matriz, "Matriz_Hidro_Multiescala.csv", "text/csv")           
                     except Exception as e:
                         st.error(f"🚨 Error inyectando a SQL: {e}")
+
+        # 🛑 SALVAVIDAS PRINCIPAL: Este es el que faltaba para cerrar el proceso de la página
+        except Exception as e:
+            st.error(f"❌ Error crítico procesando la información espacial: {e}")
