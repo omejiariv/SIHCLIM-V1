@@ -169,7 +169,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
     
     # ==============================================================================
-    # 🧠 NÚCLEO DE CONEXIÓN ESTRICTA (SQL MULTI-MATRIZ CON LLAVE DOBLE)
+    # 🧠 NÚCLEO DE CONEXIÓN TOLERANTE (SQL MULTI-MATRIZ CON TRADUCTOR)
     # ==============================================================================
     
     # Recuperamos el nivel exacto que el usuario seleccionó en el menú lateral
@@ -182,17 +182,28 @@ if gdf_zona is not None and not gdf_zona.empty:
             from modules.db_manager import get_engine
             import pandas as pd
             engine_sql = get_engine()
-            
-            # 🔥 BÚSQUEDA ESTRICTA: Exigimos Coincidencia Exacta de Nombre Y Nivel Jerárquico
+
+            # 🔥 TRADUCTOR DE EMERGENCIA: Por si llega algún nivel viejo en la caché
+            mapa_niveles = {
+                "MUNICIPIO": "Municipal",
+                "DEPARTAMENTO": "Departamental",
+                "REGION": "Regional"
+            }
+            n_clean = mapa_niveles.get(str(nivel).strip().upper(), str(nivel).strip())
+            t_clean = str(territorio).strip()
+
+            # 🔥 BÚSQUEDA TOLERANTE (Ignora mayúsculas/minúsculas y espacios extra)
             q = text(f'''
                 SELECT * FROM {tabla} 
-                WHERE "Territorio" = :t_exact AND "{col_nivel}" = :n_exact LIMIT 10
+                WHERE TRIM(UPPER("Territorio")) = UPPER(:t_exact) 
+                AND "{col_nivel}" = :n_exact 
+                LIMIT 10
             ''')
-            t_clean = str(territorio).strip()
-            n_clean = str(nivel).strip()
-            
+
             return pd.read_sql(q, engine_sql, params={'t_exact': t_clean, 'n_exact': n_clean})
-        except Exception: 
+        except Exception as e: 
+            import streamlit as st
+            st.error(f"Error consultando DB: {e}")
             return pd.DataFrame()
             
     def proyectar_modelo(f, anio_obj):
