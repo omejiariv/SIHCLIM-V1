@@ -10,59 +10,52 @@ from modules.db_manager import get_engine
 # 🔥 Importamos la única Aplanadora Maestra desde utils
 from modules.utils import normalizar_texto_maestro
 
-def obtener_poblacion_matriz(nombre_zona, anio_objetivo, gdf_contexto=None):
+def obtener_poblacion_matriz(nombre_zona, anio_objetivo, area_deseada="Total"):
     """
-    Buscador Francotirador de Matriz Demográfica.
-    Usa gdf_contexto para desambiguar colisiones de nombres entre Macro y Micro cuencas.
+    Buscador de precisión quirúrgica basado en Llave Universal.
     """
     from modules.db_manager import get_engine
-    from sqlalchemy import text
+    from modules.utils import normalizar_texto
     import pandas as pd
     import numpy as np
     
     engine = get_engine()
     try:
-        from modules.utils import normalizar_texto_maestro
-        nombre_norm = normalizar_texto_maestro(nombre_zona)
+        # 1. Construimos la búsqueda normalizada
+        terr_norm = normalizar_texto(nombre_zona).upper()
+        area_norm = area_deseada.upper()
         
-        q = text('SELECT * FROM matriz_maestra_demografica WHERE "Area" IN (\'Total\', \'total\', \'TOTAL\')')
-        df_mat = pd.read_sql(q, engine)
+        # 2. Consultamos por LIKE en la Llave Universal (es lo más rápido y seguro)
+        q = text(f"""
+            SELECT * FROM matriz_maestra_demografica 
+            WHERE "LLAVE_UNIVERSAL" LIKE :pattern 
+            AND "Area" = :area
+        """)
         
-        if not df_mat.empty:
-            df_mat['MATCH_ID'] = df_mat['Territorio'].astype(str).apply(normalizar_texto_maestro)
-            fila_ganadora = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
+        # El patrón busca cualquier nivel que contenga el territorio y el área
+        df_res = pd.read_sql(q, engine, params={
+            "pattern": f"%_{terr_norm}_%",
+            "area": area_deseada
+        })
+        
+        if not df_res.empty:
+            # Si hay varios (ej. un municipio y una cuenca con mismo nombre), 
+            # priorizamos por el nivel activo en el session_state
+            nivel_activo = st.session_state.get('nivel_activo_global', 'Municipal')
+            fila = df_res[df_res['Nivel'] == nivel_activo]
+            if fila.empty: fila = df_res.head(1)
             
-            if not fila_ganadora.empty:
-                # 🔥 RESOLUCIÓN INTELIGENTE DE COLISIONES (El Desambiguador)
-                if len(fila_ganadora) > 1:
-                    es_macro = True # Por defecto asumimos que es la macrocuenca
-                    
-                    # Si tenemos el mapa, leemos sus columnas para saber qué escala seleccionó el usuario
-                    if gdf_contexto is not None and not gdf_contexto.empty:
-                        # Si el nombre coincide con las columnas de micro-escala, sabemos que busca la pequeña
-                        if 'nom_nss3' in gdf_contexto.columns and nombre_zona in gdf_contexto['nom_nss3'].values:
-                            es_macro = False
-                        elif 'nom_nss2' in gdf_contexto.columns and nombre_zona in gdf_contexto['nom_nss2'].values:
-                            es_macro = False
-
-                    if es_macro:
-                        # Toma el gigante (Ej: ZH Nechí -> 4 Millones)
-                        fila_ganadora = fila_ganadora.sort_values(by='Pob_Base', ascending=False) 
-                    else:
-                        # Toma el pequeño (Ej: NSS3 Nechí -> 29 Mil)
-                        fila_ganadora = fila_ganadora.sort_values(by='Pob_Base', ascending=True) 
-
-                row = fila_ganadora.iloc[0]
-                
-                t_val = float(anio_objetivo - row.get('Año_Base', 1985))
-                mod = str(row.get('Modelo_Recomendado', ''))
-                
-                if 'Logistico' in mod: return row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t_val))
-                elif 'Exponencial' in mod: return row['Exp_a'] * np.exp(row['Exp_b'] * t_val)
-                elif 'Polinomial' in mod: return row['Poly_A']*(t_val**3) + row['Poly_B']*(t_val**2) + row['Poly_C']*t_val + row['Poly_D']
-                else: return row['Pob_Base']
-    except Exception:
-        pass
+            row = fila.iloc[0]
+            t_val = anio_objetivo - row['Año_Base']
+            mod = row['Modelo_Recomendado']
+            
+            # Cálculo matemático según modelo...
+            if mod == 'Logístico': return row['Log_K'] / (1 + row['Log_a'] * np.exp(-row['Log_r'] * t_val))
+            elif mod == 'Exponencial': return row['Exp_a'] * np.exp(row['Exp_b'] * t_val)
+            elif mod == 'Lineal': return row['Lin_m'] * t_val + row['Lin_b']
+            else: return row['Poly_A']*(t_val**3) + row['Poly_B']*(t_val**2) + row['Poly_C']*t_val + row['Poly_D']
+            
+    except Exception: pass
     return 0
 
 def render_motor_demografico(lugar_defecto="Antioquia"):
