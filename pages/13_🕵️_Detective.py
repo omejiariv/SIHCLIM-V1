@@ -30,6 +30,23 @@ except ImportError:
         # Último recurso si falla la base de datos
         def get_engine(): return create_engine(st.secrets["DATABASE_URL"])
 
+st.subheader("🕵️ Radiografía de Matrices (Borrar después de usar)")
+
+try:
+    engine_sql = get_engine()
+    
+    q = text("""
+        SELECT table_name, column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name IN ('matriz_maestra_demografica', 'matriz_maestra_pecuaria', 'matriz_hidrologica_maestra')
+    """)
+    
+    df_esquema = pd.read_sql(q, engine_sql)
+    st.dataframe(df_esquema, use_container_width=True)
+    
+except Exception as e:
+    st.error(f"Error conectando a la BD: {e}")
+
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
