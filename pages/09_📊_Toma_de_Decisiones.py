@@ -183,16 +183,27 @@ if gdf_zona is not None and not gdf_zona.empty:
             import pandas as pd
             engine_sql = get_engine()
 
-            # 🔥 TRADUCTOR DE EMERGENCIA: Por si llega algún nivel viejo en la caché
+            # 🔥 DICCIONARIO DE TRADUCCIÓN UNIVERSAL
             mapa_niveles = {
                 "MUNICIPIO": "Municipal",
+                "MUNICIPAL": "Municipal",
                 "DEPARTAMENTO": "Departamental",
-                "REGION": "Regional"
+                "DEPARTAMENTAL": "Departamental",
+                "REGION": "REGION",
+                "REGIONAL": "REGION",
+                "AH": "AH",
+                "ZH": "ZH",
+                "SZH": "SZH",
+                "CUENCA": "Cuenca"
             }
             n_clean = mapa_niveles.get(str(nivel).strip().upper(), str(nivel).strip())
+            
+            # 🔥 LIMPIADOR DE PREFIJOS DE TERRITORIO
             t_clean = str(territorio).strip()
+            if t_clean.lower().startswith("región "): t_clean = t_clean[7:]
+            if t_clean.lower().startswith("region "): t_clean = t_clean[7:]
 
-            # 🔥 BÚSQUEDA TOLERANTE (Ignora mayúsculas/minúsculas y espacios extra)
+            # 🔥 BÚSQUEDA TOLERANTE ESTRICTA
             q = text(f'''
                 SELECT * FROM {tabla} 
                 WHERE TRIM(UPPER("Territorio")) = UPPER(:t_exact) 
@@ -217,39 +228,42 @@ if gdf_zona is not None and not gdf_zona.empty:
             else: return f.get('Poly_A',0)*(x_norm**3) + f.get('Poly_B',0)*(x_norm**2) + f.get('Poly_C',0)*x_norm + f.get('Poly_D',0)
         except: return 0.0
 
+    # 🔥 ENRUTADOR MAESTRO: La Demografía/Pecuaria agrupa todo lo hidro como 'Cuenca'
+    nivel_demo = "Cuenca" if nivel_req in ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"] else nivel_req
+
     # ---------------------------------------------------------
     # 1. CONEXIÓN DEMOGRÁFICA (SQL Estricto)
     # ---------------------------------------------------------
-    df_demo = consultar_matriz_sql("matriz_maestra_demografica", nombre_zona, nivel_req, "Nivel")
+    df_demo = consultar_matriz_sql("matriz_maestra_demografica", nombre_zona, nivel_demo, "Nivel")
     if not df_demo.empty:
         pob_total = max(0.0, proyectar_modelo(df_demo.iloc[0], anio_actual))
-        st.success(f"👥 **Cerebro Demográfico Enlazado:** {pob_total:,.0f} habitantes detectados en SQL (Nivel: {nivel_req}).")
+        st.success(f" 👥  **Cerebro Demográfico Enlazado:** {pob_total:,.0f} habitantes detectados en SQL (Nivel: {nivel_demo}).")
         origen_demo = True
     else:
         pob_total = 0.0
-        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Demográfica para el nivel {nivel_req}.")
+        st.error(f" ❌  '{nombre_zona}' no existe en la Matriz Demográfica para el nivel {nivel_demo}.")
         origen_demo = False
-    
+
     st.session_state['aleph_pob_total'] = pob_total
     st.session_state['pob_hum_calc_met'] = pob_total
 
     # ---------------------------------------------------------
     # 2. CONEXIÓN PECUARIA (SQL Estricto)
     # ---------------------------------------------------------
-    df_pec = consultar_matriz_sql("matriz_maestra_pecuaria", nombre_zona, nivel_req, "Nivel")
+    df_pec = consultar_matriz_sql("matriz_maestra_pecuaria", nombre_zona, nivel_demo, "Nivel")
     bovinos, porcinos, aves = 0.0, 0.0, 0.0
-    
+
     if not df_pec.empty:
         for _, f in df_pec.iterrows():
             if f['Especie'] == 'Bovinos': bovinos = max(0.0, proyectar_modelo(f, anio_actual))
             if f['Especie'] == 'Porcinos': porcinos = max(0.0, proyectar_modelo(f, anio_actual))
             if f['Especie'] == 'Aves': aves = max(0.0, proyectar_modelo(f, anio_actual))
-        st.success(f"🐄 **Cerebro Pecuario Enlazado:** {bovinos:,.0f} Bov, {porcinos:,.0f} Por, {aves:,.0f} Aves (Nivel: {nivel_req}).")
+        st.success(f" 🐄  **Cerebro Pecuario Enlazado:** {bovinos:,.0f} Bov, {porcinos:,.0f} Por, {aves:,.0f} Aves (Nivel: {nivel_demo}).")
         origen_pecu = True
     else:
-        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Pecuaria para el nivel {nivel_req}.")
+        st.error(f" ❌  '{nombre_zona}' no existe en la Matriz Pecuaria para el nivel {nivel_demo}.")
         origen_pecu = False
-
+        
     st.session_state['ica_bovinos_calc_met'] = bovinos
     st.session_state['ica_porcinos_calc_met'] = porcinos
     st.session_state['ica_aves_calc_met'] = aves
@@ -257,9 +271,9 @@ if gdf_zona is not None and not gdf_zona.empty:
     # ---------------------------------------------------------
     # 3. CONEXIÓN HIDROLÓGICA Y OFERTA BASE (SQL Estricto)
     # ---------------------------------------------------------
-    # Nota: En Hidrología, la columna que define el nivel se llama 'Jerarquia'
+    # Hidrología sí respeta AH, ZH, etc.
     df_hidro = consultar_matriz_sql("matriz_hidrologica_maestra", nombre_zona, nivel_req, "Jerarquia")
-    
+
     if not df_hidro.empty:
         datos_matriz = df_hidro.iloc[0]
         q_medio_real = datos_matriz.get('Caudal_Medio_m3s', 0.0)
