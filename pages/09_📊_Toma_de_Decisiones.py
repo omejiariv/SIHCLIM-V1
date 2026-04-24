@@ -892,14 +892,20 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.markdown("Integración de la termodinámica del bosque: Intercepción del dosel foliar, regulación de Evapotranspiración (ETP) y recarga del flujo base.")
             
             # 1. Parámetros Base
-            area_km2 = float(st.session_state.get('aleph_area_km2', 10.0)) # ⬅️ ESTA ES LA LÍNEA QUE FALTABA
-            area_cuenca_ha = area_km2 * 100
-            pct_bosque = min(1.0, ha_total / area_cuenca_ha) if area_cuenca_ha > 0 else 0.0
-            
-            ppt_mm_estimada = (oferta_anual_m3 / (area_km2 * 1000)) * 2.5 
-            vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000
-            
-            # 2. CONEXIÓN CON BIODIVERSIDAD: Retención del Dosel (Intercepción)
+            area_cuenca_ha = area_km2 * 100                            
+            pct_bosque = min(1.0, ha_total / area_cuenca_ha) if area_cuenca_ha > 0 else 0
+                                                                       
+            # --- 🌊 BALANCE HÍDRICO DE EMERGENCIA ---
+            # 🔥 FIX 3: Protección contra división por cero si el área es 0
+            if area_km2 > 0:
+                ppt_mm_estimada = (oferta_anual_m3 / (area_km2 * 1000)) * 2.5
+                vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000
+            else:
+                # Valores por defecto si no hay matriz hidrológica cargada para este nivel
+                ppt_mm_estimada = 0.0
+                vol_lluvia_total = 0.0     
+                                                                       
+             # 2. CONEXIÓN CON BIODIVERSIDAD: Retención del Dosel (Intercepción)
             # Se conecta a la Pág 04, si no hay dato, asume 25% óptimo
             eficiencia_dosel_max = st.session_state.get('bio_eficiencia_retencion_pct', 25.0) / 100.0
             # Suelo degradado retiene 5%. El bosque escala hasta el máximo.
