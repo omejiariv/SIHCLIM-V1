@@ -973,13 +973,12 @@ if __name__ == "__main__":
                     pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos que vienen
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (La pieza que faltaba) ---
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO ---
                 with st.spinner("🏛️ Calculando áreas y caudales para Municipios, Regiones y Departamento..."):
                     try:
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
                         gdf_mun['DEPARTAMENTO'] = 'Antioquia' # Nivel maestro
                         
-                        # Detectar los nombres exactos de las columnas en tu base de datos
                         col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
                         col_reg = 'subregion' if 'subregion' in gdf_mun.columns else 'Region'
                         col_mac = 'macroregion' if 'macroregion' in gdf_mun.columns else 'Macroregion'
@@ -990,7 +989,6 @@ if __name__ == "__main__":
                             'MACROREGION': col_mac,
                             'DEPARTAMENTO': 'DEPARTAMENTO'
                         }
-                        # Pasamos el mapa de municipios al mismo motor físico de arriba
                         procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
                     except Exception as e:
                         st.warning(f"No se pudo completar la fase administrativa. Error en la tabla 'municipios': {e}")
@@ -1004,49 +1002,41 @@ if __name__ == "__main__":
                     
                     df_matriz = pd.DataFrame(res_multiescala)
                     
-                    # 1. Filtro Anti-Duplicados (Higiene de base de datos)
+                    # 1. Filtro Anti-Duplicados
                     df_matriz = df_matriz.drop_duplicates(subset=['Jerarquia', 'Territorio'], keep='first')
                     
-                    # 2. LA MAGIA: Forja de la Llave Universal idéntica a Demografía y Pecuario
+                    # 2. Forja de Llave
                     def forjar_llave_hidro(row):
                         jerarquia = str(row.get('Jerarquia', '')).upper()
-                        
-                        # Sincronización de etiquetas administrativas con el estándar global
                         if jerarquia == "MUNICIPAL": jerarquia = "MUNICIPAL"
                         elif jerarquia == "REGIONAL": jerarquia = "REGION"
                         elif jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
                         
                         terr_limpio = normalizar_texto(row.get('Territorio', ''))
                         terr = str(terr_limpio).replace(" ", "_").upper()
-                        
                         return f"{jerarquia}_{terr}_TOTAL"
 
                     df_matriz['LLAVE_UNIVERSAL'] = df_matriz.apply(forjar_llave_hidro, axis=1)
                     
-                    # 3. Inyección Segura a PostgreSQL (Preservando estructura y RLS)
+                    # 3. Inyección Segura a PostgreSQL
                     try:
                         with engine.begin() as conn:
-                            # Aseguramos que la columna exista
                             conn.execute(text('ALTER TABLE matriz_hidrologica_maestra ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
-                            # Limpiamos los datos viejos en lugar de destruir la tabla completa
                             conn.execute(text("DELETE FROM matriz_hidrologica_maestra;"))
                             
-                        # Inyectamos los nuevos datos forjados
                         df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='append', index=False)
-                        st.cache_data.clear() # Limpiamos memoria para que el resto de la app lea lo nuevo
+                        st.cache_data.clear()
                         
-                        st.success(f"✅ EL ALEPH ESTÁ COMPLETO. Matriz Hidrológica forjada con {len(df_matriz)} territorios únicos y blindados.")
+                        st.success(f"✅ EL ALEPH ESTÁ COMPLETO. Matriz Hidrológica forjada con {len(df_matriz)} territorios.")
                         
-                        st.write("📊 **Resumen de Unidades Integradas:**")
                         resumen = df_matriz['Jerarquia'].value_counts().reset_index()
                         resumen.columns = ['Nivel', 'Cantidad de Territorios']
                         st.dataframe(resumen, hide_index=True)
 
                         csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Descargar Gran Matriz (CSV)", csv_matriz, "Matriz_Hidro_Multiescala.csv", "text/csv")           
+                        st.download_button("📥 Descargar Gran Matriz (CSV)", csv_matriz, "Matriz_Hidro_Multiescala.csv", "text/csv")            
                     except Exception as e:
                         st.error(f"🚨 Error inyectando a SQL: {e}")
 
-        # 🛑 SALVAVIDAS PRINCIPAL: Este es el que faltaba para cerrar el proceso de la página
-        except Exception as e:
-            st.error(f"❌ Error crítico procesando la información espacial: {e}")
+            except Exception as e:
+                st.error(f"❌ Error crítico procesando la información espacial: {e}")
