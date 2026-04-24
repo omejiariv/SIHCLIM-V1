@@ -184,65 +184,33 @@ if gdf_zona is not None and not gdf_zona.empty:
             from modules.utils import normalizar_texto 
             
             engine_sql = get_engine()
-            t_clean = str(territorio).strip()
             
-            # 🔥 1. MAPA DE TRADUCCIÓN FORZADA (Cubre los casos más conflictivos)
-            mapa_niveles = {
-                "MUNICIPIO": "Municipal", "MUNICIPAL": "Municipal",
-                "DEPARTAMENTO": "Departamental", "DEPARTAMENTAL": "Departamental", "DEPARTAMENTO": "Departamental",
-                "REGION": "Regional", "REGIONAL": "Regional", "REGIÓN": "Regional",
-                "AH": "AH", "ZH": "ZH", "SZH": "SZH",
-                "NSS1": "NSS1", "NSS2": "NSS2", "NSS3": "NSS3",
-                "CUENCA": "Cuenca"
+            # 1. Generamos la Llave Universal igual que en las Forjas
+            t_norm = normalizar_texto(territorio)
+            
+            # Traductor de niveles para la llave
+            mapa_llave = {
+                "Municipal": "MUNICIPAL", "Regional": "REGION", 
+                "Departamental": "DEPARTAMENTO", "AH": "AH", "ZH": "ZH"
             }
-            n_clean = mapa_niveles.get(str(nivel).strip().upper(), str(nivel).strip())
-            
-            # Limpiamos prefijos molestos que a veces llegan del selector
-            if t_clean.lower().startswith("región "): t_clean = t_clean[7:]
-            if t_clean.lower().startswith("region "): t_clean = t_clean[7:]
+            n_llave = mapa_llave.get(nivel, nivel).upper()
+            llave_u = f"{n_llave}_{t_norm}_TOTAL".upper().replace(" ", "_")
 
-            # 🔥 2. CONSULTA TOLERANTE: Compara mayúsculas, quita espacios y usa LIKE
-            # Esto soluciona el problema si la BD tiene "Región Bajo Cauca" y buscamos "Bajo Cauca"
-            q = text(f'''
-                SELECT * FROM {tabla} 
-                WHERE (
-                    TRIM(UPPER("Territorio")) = UPPER(:t_exact) 
-                    OR UPPER("Territorio") LIKE UPPER(:t_like)
-                )
-                AND (
-                    UPPER("{col_nivel}") = UPPER(:n_exact)
-                    OR UPPER("{col_nivel}") LIKE UPPER(:n_like)
-                )
-                LIMIT 10
-            ''')
-            
-            df_res = pd.read_sql(q, engine_sql, params={
-                't_exact': t_clean, 
-                't_like': f"%{t_clean}%", 
-                'n_exact': n_clean,
-                'n_like': f"%{n_clean[:4]}%" # Ej: Si es "Regional", busca "%REGI%"
-            })
+            # 🔥 2. BÚSQUEDA POR LLAVE (La más segura)
+            q = text(f'SELECT * FROM {tabla} WHERE UPPER("LLAVE_UNIVERSAL") = :llave LIMIT 10')
+            df_res = pd.read_sql(q, engine_sql, params={'llave': llave_u})
 
-            # 🔥 3. SALVAVIDAS FINAL: Si la consulta estricta/parcial falla, usa la aplanadora
+            # 3. SALVAVIDAS: Si no hay llave, buscamos por nombre (tolerante)
             if df_res.empty:
-                q_all = text(f'SELECT * FROM {tabla}') # Traemos todo a memoria (es rápido en pandas)
-                df_all = pd.read_sql(q_all, engine_sql)
-                
-                if not df_all.empty:
-                    terr_norm = normalizar_texto(t_clean)
-                    df_all['MATCH'] = df_all['Territorio'].apply(normalizar_texto)
-                    
-                    # Filtramos por el territorio limpio
-                    df_res = df_all[df_all['MATCH'] == terr_norm]
-                    
-                    # Y nos aseguramos de que el nivel también coincida al menos en sus primeras letras
-                    if not df_res.empty:
-                        df_res = df_res[df_res[col_nivel].str.upper().str.contains(n_clean[:4].upper(), na=False)]
+                q_fallback = text(f'''
+                    SELECT * FROM {tabla} 
+                    WHERE TRIM(UPPER("Territorio")) = UPPER(:t) 
+                    AND UPPER("{col_nivel}") LIKE UPPER(:n)
+                ''')
+                df_res = pd.read_sql(q_fallback, engine_sql, params={'t': territorio, 'n': f"%{nivel[:3]}%"})
 
             return df_res
-        except Exception as e: 
-            import streamlit as st
-            st.error(f"Error consultando SQL: {e}")
+        except Exception: 
             return pd.DataFrame()
             
     def proyectar_modelo(f, anio_obj):
