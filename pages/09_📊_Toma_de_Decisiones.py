@@ -176,33 +176,29 @@ if gdf_zona is not None and not gdf_zona.empty:
     nivel_req = st.session_state.get('nivel_activo_global', 'NINGUNO')
 
     @st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)
     def consultar_matriz_sql(tabla, territorio, nivel, col_nivel="Nivel"):
         try:
             from sqlalchemy import text
             from modules.db_manager import get_engine
             import pandas as pd
-            import streamlit as st
-            
-            # 🔥 Importamos tu aplanadora maestra
             from modules.utils import normalizar_texto 
             
             engine_sql = get_engine()
 
-            # 🔥 DICCIONARIO DE TRADUCCIÓN
+            # 🔥 DICCIONARIO DE TRADUCCIÓN ROBUSTO (Cubre todas las variantes)
             mapa_niveles = {
                 "MUNICIPIO": "Municipal", "MUNICIPAL": "Municipal",
                 "DEPARTAMENTO": "Departamental", "DEPARTAMENTAL": "Departamental",
-                "REGION": "Regional", "REGIONAL": "Regional",
+                "REGION": "Regional", "REGIONAL": "Regional", "REGION": "depto_regi",
                 "AH": "AH", "ZH": "ZH", "SZH": "SZH",
+                "NSS1": "NSS1", "NSS2": "NSS2", "NSS3": "NSS3",
                 "CUENCA": "Cuenca"
             }
             n_clean = mapa_niveles.get(str(nivel).strip().upper(), str(nivel).strip())
-            
-            # Limpieza básica
             t_clean = str(territorio).strip()
-            if t_clean.lower().startswith("región "): t_clean = t_clean[7:]
 
-            # --- 1. INTENTO PRIMARIO: Búsqueda Tolerante Rápida ---
+            # Búsqueda Tolerante
             q = text(f'''
                 SELECT * FROM {tabla} 
                 WHERE TRIM(UPPER("Territorio")) = UPPER(:t_exact) 
@@ -211,18 +207,17 @@ if gdf_zona is not None and not gdf_zona.empty:
             ''')
             df_res = pd.read_sql(q, engine_sql, params={'t_exact': t_clean, 'n_exact': n_clean})
 
-            # --- 2. INTENTO SECUNDARIO: La Aplanadora (Salvavidas Fuzzy) ---
+            # Salvavidas con Aplanadora (Si la búsqueda exacta falla)
             if df_res.empty:
                 q_all = text(f'SELECT * FROM {tabla} WHERE "{col_nivel}" = :n_exact')
                 df_all = pd.read_sql(q_all, engine_sql, params={'n_exact': n_clean})
-                
                 if not df_all.empty:
                     terr_norm = normalizar_texto(t_clean)
                     df_all['MATCH'] = df_all['Territorio'].apply(normalizar_texto)
                     df_res = df_all[df_all['MATCH'] == terr_norm]
 
             return df_res
-        except Exception as e: 
+        except Exception: 
             return pd.DataFrame()
             
     def proyectar_modelo(f, anio_obj):
@@ -305,12 +300,16 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.session_state['aleph_recarga_mm'] = recarga_base_mm
 
     # ---------------------------------------------------------
-    # 🛑 GUARDIA DE SEGURIDAD (Hard Stop)
-    # ---------------------------------------------------------
+    # 🛑 GUARDIA DE SEGURIDAD (Hard Stop) - ESCUDO INTELIGENTE (Informa pero NO detiene)
+    # ===================================================================
     if not (origen_demo and origen_pecu and origen_hidro):
-        st.warning(f"🛑 Faltan datos estructurales en SQL para **{nombre_zona}** en el nivel exacto **{nivel_req}**. El tablero se detendrá aquí. Debes ir a los modelos correspondientes y ejecutar la Forja para este nivel territorial.")
-        st.stop() # Bloquea la carga del resto de la página, sin mostrar el dashboard en 0
-
+        with st.expander("⚠️ Estado de Sincronización de Matrices", expanded=True):
+            if not origen_demo: st.error(f"❌ Datos Demográficos no encontrados para {nombre_zona} ({nivel_req}).")
+            if not origen_pecu: st.warning(f"⚠️ Datos Pecuarios no encontrados. Se asume carga cero.")
+            if not origen_hidro: st.error(f"❌ Datos Hidrológicos no encontrados para {nombre_zona} ({nivel_req}).")
+            
+            st.info("💡 Puedes continuar explorando el tablero con los datos disponibles.")
+    
     # (A partir de aquí, el código sabe que las 3 matrices existen y son perfectas)
     tipo_oferta = st.radio("Escenario Hidrológico de Simulación:", 
                            ["🌊 Caudal Medio (Condiciones Normales)", "🏜️ Caudal Mínimo / Estiaje (Q95)"], horizontal=True)
