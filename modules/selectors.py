@@ -182,36 +182,49 @@ def render_selector_espacial():
     with st.sidebar.expander("📍 Filtros Geográficos Principales", expanded=True):
         modo = st.radio("Nivel de Agregación:", ["Por Cuenca", "Por Municipio", "Por Región", "Departamento"], index=0)
         
-        # --- A. POR CUENCA ---
+        # --- A. POR CUENCA (DISEÑO INTUITIVO) ---
         if modo == "Por Cuenca":
             gdf_c = cargar_mapa_cuencas()
             ruta = st.selectbox("Ruta de Búsqueda:", ["Hidrología", "CAR"], index=0)
+            
             if ruta == "Hidrología":
-                # Modificamos los menús superiores para que sean Filtros Opcionales
-                ah = st.selectbox("Filtro AH (Opcional):", ["-- TODAS --"] + sorted(gdf_c['nomah'].dropna().unique()))
-                df_f = gdf_c if ah == "-- TODAS --" else gdf_c[gdf_c['nomah']==ah]
-                
-                zh = st.selectbox("Filtro ZH (Opcional):", ["-- TODAS --"] + sorted(df_f['nomzh'].dropna().unique()))
-                df_f = df_f if zh == "-- TODAS --" else df_f[df_f['nomzh']==zh]
-                
-                szh = st.selectbox("Filtro SZH (Opcional):", ["-- TODAS --"] + sorted(df_f['nom_szh'].dropna().unique()))
-                gdf_filtrado_base = df_f if szh == "-- TODAS --" else df_f[df_f['nom_szh']==szh]
-                
-                # 🔥 FIX ESTRUCTURAL: Liberamos todos los niveles hidro-jerárquicos
-                nivel = st.selectbox("Resolución a Evaluar:", ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"], index=5)
+                # 1. Primero define QUÉ nivel quiere evaluar
+                nivel = st.selectbox("1. Nivel a Evaluar:", ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"], index=5)
                 col_obj = {"AH": "nomah", "ZH": "nomzh", "SZH": "nom_szh", "NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
                 
-                # El menú final ahora se adapta al nivel que elegiste
-                sel_fin = st.selectbox(f"🎯 Territorio ({nivel}):", ["-- Seleccione --"] + sorted(gdf_filtrado_base[col_obj].dropna().unique()))
+                st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+                st.markdown("<span style='font-size:0.85em; color:gray;'>Filtros Opcionales de Búsqueda:</span>", unsafe_allow_html=True)
+                
+                df_f = gdf_c
+                # Solo mostramos los filtros superiores al nivel elegido
+                if nivel in ["ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
+                    ah = st.selectbox("Filtro AH:", ["-- TODAS --"] + sorted(df_f['nomah'].dropna().unique()))
+                    if ah != "-- TODAS --": df_f = df_f[df_f['nomah']==ah]
+                    
+                if nivel in ["SZH", "NSS1", "NSS2", "NSS3"]:
+                    zh = st.selectbox("Filtro ZH:", ["-- TODAS --"] + sorted(df_f['nomzh'].dropna().unique()))
+                    if zh != "-- TODAS --": df_f = df_f[df_f['nomzh']==zh]
+                    
+                if nivel in ["NSS1", "NSS2", "NSS3"]:
+                    szh = st.selectbox("Filtro SZH:", ["-- TODAS --"] + sorted(df_f['nom_szh'].dropna().unique()))
+                    if szh != "-- TODAS --": df_f = df_f[df_f['nom_szh']==szh]
+                    
+                st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+                
+                # 2. Selección FINAL obligatoria
+                sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f[col_obj].dropna().unique()))
                 
                 if sel_fin != "-- Seleccione --":
                     nombre_zona = sel_fin
-                    # Capturamos todos los polígonos que pertenecen a ese territorio
-                    gdf_zona = gdf_filtrado_base[gdf_filtrado_base[col_obj]==sel_fin]
+                    gdf_zona = df_f[df_f[col_obj]==sel_fin]
                     nivel_jerarquico = nivel 
                 else:
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
+            
+            elif ruta == "CAR":
+                nombre_zona, gdf_zona = "-- Seleccione --", None
+                nivel_jerarquico = "NINGUNO"
 
         # --- B. POR REGIÓN ---
         elif modo == "Por Región":
@@ -222,19 +235,31 @@ def render_selector_espacial():
                 sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                 if sel_reg != "-- Seleccione --":
                     nombre_zona = f"Región {sel_reg}"
-                    nivel_jerarquico = "REGION" # 🔥 FIX 3: Capturamos Jerarquía Región
+                    nivel_jerarquico = "REGION" # 🔥 FIX 3
                     cods = df_m[df_m['region'].str.lower()==sel_reg.lower()]['dp_mp'].astype(str).str.zfill(5).tolist()
                     gdf_mun = cargar_mapa_municipios()
                     gdf_zona = gdf_mun[gdf_mun['mpio_ccdgo'].astype(str).str.zfill(5).isin(cods)]
+                else:
+                    nombre_zona, gdf_zona = "-- Seleccione --", None
+                    nivel_jerarquico = "NINGUNO"
             except: pass
 
         # --- C. POR MUNICIPIO ---
         elif modo == "Por Municipio":
             gdf_mun = cargar_mapa_municipios()
-            gdf_mun['display'] = gdf_mun['mpio_cnmbr'].apply(decodificar_tildes).str.title()
-            sel_mpio = st.selectbox("🏢 Municipio:", sorted(gdf_mun['display'].unique()))
-            nombre_zona, gdf_zona = sel_mpio, gdf_mun[gdf_mun['display']==sel_mpio]
-            nivel_jerarquico = "MUNICIPIO" # 🔥 FIX 4: Capturamos Jerarquía Municipio
+            from modules.utils import decodificar_tildes # Asegúrate de que esta importación exista
+            try:
+                gdf_mun['display'] = gdf_mun['mpio_cnmbr'].apply(decodificar_tildes).str.title()
+            except:
+                gdf_mun['display'] = gdf_mun['mpio_cnmbr'].str.title()
+            
+            sel_mpio = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + sorted(gdf_mun['display'].unique()))
+            if sel_mpio != "-- Seleccione --":
+                nombre_zona, gdf_zona = sel_mpio, gdf_mun[gdf_mun['display']==sel_mpio]
+                nivel_jerarquico = "MUNICIPIO" # 🔥 FIX 4
+            else:
+                nombre_zona, gdf_zona = "-- Seleccione --", None
+                nivel_jerarquico = "NINGUNO"
 
         # --- D. DEPARTAMENTO ---
         else:
@@ -254,14 +279,13 @@ def render_selector_espacial():
     # ====================================================================
     # 🧠 ORQUESTADOR SILENCIOSO (Equipado con Llave Universal)
     # ====================================================================
-    # 🔥 FIX: Agregamos "NINGUNO" a las zonas ignoradas para evitar consultas vacías
     zonas_ignoradas = ["Antioquia", "Bloque Regional", "-- TODAS --", "-- Seleccione --", "", "NINGUNO"]
     
     zona_activa = st.session_state.get('zona_activa_global')
     
     if nombre_zona not in zonas_ignoradas and "Región" not in nombre_zona and nombre_zona != zona_activa:
         st.session_state['zona_activa_global'] = nombre_zona
-        st.session_state['nivel_activo_global'] = nivel_jerarquico # 🔥 FIX 6: Guardamos el nivel en memoria
+        st.session_state['nivel_activo_global'] = nivel_jerarquico # 🔥 FIX 6
         
         claves_a_borrar = [
             'pob_hum_calc_met', 'ica_bovinos_calc_met', 'ica_porcinos_calc_met', 'ica_aves_calc_met', 
@@ -272,7 +296,6 @@ def render_selector_espacial():
             
         try:
             from modules.utils import obtener_metabolismo_exacto
-            # En la Fase 2, actualizaremos esta función para que reciba 'nivel_jerarquico'
             datos_precargados = obtener_metabolismo_exacto(nombre_zona, 2025)
             if datos_precargados:
                 st.session_state['aleph_pob_total'] = datos_precargados.get('pob_total', 0)
@@ -283,7 +306,7 @@ def render_selector_espacial():
         except: pass 
             
         try:
-            # 🔥 FIX 7: BÚSQUEDA EXACTA CON LLAVE UNIVERSAL (Jerarquía + Territorio)
+            # 🔥 FIX 7: BÚSQUEDA EXACTA CON LLAVE UNIVERSAL
             q_hidro = text("SELECT * FROM matriz_hidrologica_maestra WHERE \"Jerarquia\" = :nivel AND \"Territorio\" = :zona LIMIT 1")
             df_hidro = pd.read_sql(q_hidro, engine, params={"nivel": nivel_jerarquico, "zona": nombre_zona})
             
