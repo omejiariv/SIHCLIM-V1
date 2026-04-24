@@ -169,28 +169,29 @@ if gdf_zona is not None and not gdf_zona.empty:
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
     
     # ==============================================================================
-    # 🧠 NÚCLEO DE CONEXIÓN ELÁSTICA (TORRENTE SANGUÍNEO SQL) - FASE 1
+    # 🧠 NÚCLEO DE CONEXIÓN ESTRICTA (SQL MULTI-MATRIZ CON LLAVE DOBLE)
     # ==============================================================================
     
+    # Recuperamos el nivel exacto que el usuario seleccionó en el menú lateral
+    nivel_req = st.session_state.get('nivel_activo_global', 'NINGUNO')
+
     @st.cache_data(ttl=3600)
-    def buscar_en_cerebro(tabla, territorio):
+    def consultar_matriz_sql(tabla, territorio, nivel, col_nivel="Nivel"):
         try:
             from sqlalchemy import text
             from modules.db_manager import get_engine
             import pandas as pd
             engine_sql = get_engine()
             
-            # 🔥 BÚSQUEDA ELÁSTICA: Ignora mayúsculas y tolera nombres cortados
+            # 🔥 BÚSQUEDA ESTRICTA: Exigimos Coincidencia Exacta de Nombre Y Nivel Jerárquico
             q = text(f'''
                 SELECT * FROM {tabla} 
-                WHERE "Territorio" ILIKE :t_exact 
-                   OR "Territorio" ILIKE :t_partial LIMIT 10
+                WHERE "Territorio" = :t_exact AND "{col_nivel}" = :n_exact LIMIT 10
             ''')
             t_clean = str(territorio).strip()
-            # Toma los primeros 8 caracteres para asegurar match si el selector lo truncó
-            t_part = f"{t_clean[:8]}%" if len(t_clean) >= 8 else f"{t_clean}%" 
+            n_clean = str(nivel).strip()
             
-            return pd.read_sql(q, engine_sql, params={'t_exact': t_clean, 't_partial': t_part})
+            return pd.read_sql(q, engine_sql, params={'t_exact': t_clean, 'n_exact': n_clean})
         except Exception: return pd.DataFrame()
 
     def proyectar_modelo(f, anio_obj):
@@ -207,14 +208,14 @@ if gdf_zona is not None and not gdf_zona.empty:
     # ---------------------------------------------------------
     # 1. CONEXIÓN DEMOGRÁFICA (SQL Estricto)
     # ---------------------------------------------------------
-    df_demo = buscar_en_cerebro("matriz_maestra_demografica", nombre_zona)
+    df_demo = consultar_matriz_sql("matriz_maestra_demografica", nombre_zona, nivel_req, "Nivel")
     if not df_demo.empty:
         pob_total = max(0.0, proyectar_modelo(df_demo.iloc[0], anio_actual))
-        st.success(f"👥 **Cerebro Demográfico Enlazado:** {pob_total:,.0f} habitantes detectados en SQL.")
+        st.success(f"👥 **Cerebro Demográfico Enlazado:** {pob_total:,.0f} habitantes detectados en SQL (Nivel: {nivel_req}).")
         origen_demo = True
     else:
         pob_total = 0.0
-        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Demográfica.")
+        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Demográfica para el nivel {nivel_req}.")
         origen_demo = False
     
     st.session_state['aleph_pob_total'] = pob_total
@@ -223,7 +224,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     # ---------------------------------------------------------
     # 2. CONEXIÓN PECUARIA (SQL Estricto)
     # ---------------------------------------------------------
-    df_pec = buscar_en_cerebro("matriz_maestra_pecuaria", nombre_zona)
+    df_pec = consultar_matriz_sql("matriz_maestra_pecuaria", nombre_zona, nivel_req, "Nivel")
     bovinos, porcinos, aves = 0.0, 0.0, 0.0
     
     if not df_pec.empty:
@@ -231,10 +232,10 @@ if gdf_zona is not None and not gdf_zona.empty:
             if f['Especie'] == 'Bovinos': bovinos = max(0.0, proyectar_modelo(f, anio_actual))
             if f['Especie'] == 'Porcinos': porcinos = max(0.0, proyectar_modelo(f, anio_actual))
             if f['Especie'] == 'Aves': aves = max(0.0, proyectar_modelo(f, anio_actual))
-        st.success(f"🐄 **Cerebro Pecuario Enlazado:** {bovinos:,.0f} Bov, {porcinos:,.0f} Por, {aves:,.0f} Aves.")
+        st.success(f"🐄 **Cerebro Pecuario Enlazado:** {bovinos:,.0f} Bov, {porcinos:,.0f} Por, {aves:,.0f} Aves (Nivel: {nivel_req}).")
         origen_pecu = True
     else:
-        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Pecuaria.")
+        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Pecuaria para el nivel {nivel_req}.")
         origen_pecu = False
 
     st.session_state['ica_bovinos_calc_met'] = bovinos
@@ -244,7 +245,8 @@ if gdf_zona is not None and not gdf_zona.empty:
     # ---------------------------------------------------------
     # 3. CONEXIÓN HIDROLÓGICA Y OFERTA BASE (SQL Estricto)
     # ---------------------------------------------------------
-    df_hidro = buscar_en_cerebro("matriz_hidrologica_maestra", nombre_zona)
+    # Nota: En Hidrología, la columna que define el nivel se llama 'Jerarquia'
+    df_hidro = consultar_matriz_sql("matriz_hidrologica_maestra", nombre_zona, nivel_req, "Jerarquia")
     
     if not df_hidro.empty:
         datos_matriz = df_hidro.iloc[0]
@@ -252,11 +254,11 @@ if gdf_zona is not None and not gdf_zona.empty:
         area_cuenca_km2 = datos_matriz.get('Area_km2', 10.0)
         recarga_base_mm = datos_matriz.get('Recarga_mm', 0.0)
         q_min_real = (recarga_base_mm * area_cuenca_km2 * 1000) / 31536000
-        st.success(f"💧 **Cerebro Hidrológico Enlazado:** Área {area_cuenca_km2:,.1f} km², Caudal Medio {q_medio_real:,.2f} m³/s.")
+        st.success(f"💧 **Cerebro Hidrológico Enlazado:** Área {area_cuenca_km2:,.1f} km², Caudal Medio {q_medio_real:,.2f} m³/s (Nivel: {nivel_req}).")
         origen_hidro = True
     else:
         area_cuenca_km2, q_medio_real, q_min_real, recarga_base_mm = 0.0, 0.0, 0.0, 0.0
-        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Hidrológica.")
+        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Hidrológica para el nivel {nivel_req}.")
         origen_hidro = False
 
     st.session_state['aleph_area_km2'] = area_cuenca_km2
@@ -266,7 +268,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     # 🛑 GUARDIA DE SEGURIDAD (Hard Stop)
     # ---------------------------------------------------------
     if not (origen_demo and origen_pecu and origen_hidro):
-        st.warning(f"🛑 Faltan datos estructurales en SQL para **{nombre_zona}**. El tablero se detendrá aquí. Debes ir a los modelos correspondientes y ejecutar la Forja para este nivel territorial.")
+        st.warning(f"🛑 Faltan datos estructurales en SQL para **{nombre_zona}** en el nivel exacto **{nivel_req}**. El tablero se detendrá aquí. Debes ir a los modelos correspondientes y ejecutar la Forja para este nivel territorial.")
         st.stop() # Bloquea la carga del resto de la página, sin mostrar el dashboard en 0
 
     # (A partir de aquí, el código sabe que las 3 matrices existen y son perfectas)
