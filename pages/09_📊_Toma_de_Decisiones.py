@@ -271,24 +271,34 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.session_state['ica_aves_calc_met'] = aves
 
     # ---------------------------------------------------------
-    # 3. CONEXIÓN HIDROLÓGICA Y OFERTA BASE (SQL Estricto)
+    # 3. CONEXIÓN HIDROLÓGICA Y OFERTA BASE
     # ---------------------------------------------------------
-    # Hidrología sí respeta AH, ZH, etc.
+    # 🔥 FIX: Inicializamos TODAS las variables de emergencia ANTES de buscar. 
+    # Así, si el lugar no existe, el código usará estos ceros y no se romperá.
+    area_km2 = 0.0
+    oferta_anual_m3 = 0.0
+    caudal_base_m3s = 0.0
+    lluvia_base_mm = 0.0
+    recarga_base_mm = 0.0
+    altitud_m = 1500.0
+
     df_hidro = consultar_matriz_sql("matriz_hidrologica_maestra", nombre_zona, nivel_req, "Jerarquia")
 
     if not df_hidro.empty:
-        datos_matriz = df_hidro.iloc[0]
-        q_medio_real = datos_matriz.get('Caudal_Medio_m3s', 0.0)
-        area_cuenca_km2 = datos_matriz.get('Area_km2', 10.0)
-        recarga_base_mm = datos_matriz.get('Recarga_mm', 0.0)
-        q_min_real = (recarga_base_mm * area_cuenca_km2 * 1000) / 31536000
-        st.success(f"💧 **Cerebro Hidrológico Enlazado:** Área {area_cuenca_km2:,.1f} km², Caudal Medio {q_medio_real:,.2f} m³/s (Nivel: {nivel_req}).")
+        row_h = df_hidro.iloc[0]
+        area_km2 = float(row_h.get('Area_km2', 0))
+        caudal_base_m3s = float(row_h.get('Caudal_Medio_m3s', 0))
+        oferta_anual_m3 = caudal_base_m3s * 31536000
+        lluvia_base_mm = float(row_h.get('Lluvia_mm', 0))
+        recarga_base_mm = float(row_h.get('Recarga_mm', 0))
+        altitud_m = float(row_h.get('Altitud_m', 1500))
+        
+        st.success(f" 💧  **Cerebro Hidrológico Enlazado:** Área {area_km2:,.1f} km², Caudal Medio {caudal_base_m3s:,.2f} m³/s.")
         origen_hidro = True
     else:
-        area_cuenca_km2, q_medio_real, q_min_real, recarga_base_mm = 0.0, 0.0, 0.0, 0.0
-        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Hidrológica para el nivel {nivel_req}.")
+        st.error(f" ❌  '{nombre_zona}' no existe en la Matriz Hidrológica para el nivel {nivel_req}.")
         origen_hidro = False
-
+        
     st.session_state['aleph_area_km2'] = area_cuenca_km2
     st.session_state['aleph_recarga_mm'] = recarga_base_mm
 
