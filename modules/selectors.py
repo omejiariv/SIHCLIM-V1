@@ -317,17 +317,17 @@ def render_selector_espacial():
     # ====================================================================
     # 🧠 ORQUESTADOR SILENCIOSO (Equipado con Llave Universal)
     # ====================================================================
-    # 🔥 FIX: Quitamos "Antioquia" de las ignoradas para que se sincronice el nivel
+    # 🔥 FIX 1: Eliminamos "Antioquia" de la lista de ignorados
     zonas_ignoradas = ["Bloque Regional", "-- TODAS --", "-- Seleccione --", "", "NINGUNO"]
     
     zona_activa = st.session_state.get('zona_activa_global')
     
-    # Permitimos que Antioquia pase el filtro
+    # 🔥 FIX 2: Permitimos que el nivel se actualice para Antioquia y Regiones
     if nombre_zona not in zonas_ignoradas and nombre_zona != zona_activa:
         st.session_state['zona_activa_global'] = nombre_zona
         st.session_state['nivel_activo_global'] = nivel_jerarquico 
-        # ... resto del código
         
+        # Limpieza de estados para nueva carga
         claves_a_borrar = [
             'pob_hum_calc_met', 'ica_bovinos_calc_met', 'ica_porcinos_calc_met', 'ica_aves_calc_met', 
             'demanda_total_m3s', 'carga_dbo_total_ton',
