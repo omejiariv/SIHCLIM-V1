@@ -155,7 +155,7 @@ def renderizar_gestor_escenarios(nombre_zona_actual):
                 st.error(f"Error consultando base: {e}")
 
 # ====================================================================
-# 🌍 SELECTOR ESPACIAL MAESTRO (RESTAURO 100% ORIGINAL)
+# 🌍 SELECTOR ESPACIAL MAESTRO (SQL ESTRICTO - SIN FANTASMAS)
 # ====================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_mapa_cuencas():
@@ -196,14 +196,16 @@ def render_selector_espacial():
                     
                     nivel = st.radio("Resolución:", ["NSS1", "NSS2", "NSS3"], horizontal=True)
                     col_obj = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
-                    sel_fin = st.selectbox("🎯 Territorio:", ["-- BLOQUE --"] + sorted(gdf_filtrado_base[col_obj].dropna().unique()))
                     
-                    if sel_fin != "-- BLOQUE --":
+                    # 🔥 FIX: Eliminado el "-- BLOQUE --". Ahora exige seleccionar un territorio real.
+                    sel_fin = st.selectbox("🎯 Territorio:", ["-- Seleccione --"] + sorted(gdf_filtrado_base[col_obj].dropna().unique()))
+                    
+                    if sel_fin != "-- Seleccione --":
                         nombre_zona, gdf_zona = sel_fin, gdf_filtrado_base[gdf_filtrado_base[col_obj]==sel_fin]
                         nivel_jerarquico = nivel # 🔥 FIX 2: Capturamos NSS1, NSS2 o NSS3
                     else:
-                        nombre_zona, gdf_zona = "Bloque Hidro", gdf_filtrado_base
-                        nivel_jerarquico = "BLOQUE"
+                        nombre_zona, gdf_zona = "-- Seleccione --", None
+                        nivel_jerarquico = "NINGUNO"
 
         # --- B. POR REGIÓN ---
         elif modo == "Por Región":
@@ -246,7 +248,8 @@ def render_selector_espacial():
     # ====================================================================
     # 🧠 ORQUESTADOR SILENCIOSO (Equipado con Llave Universal)
     # ====================================================================
-    zonas_ignoradas = ["Antioquia", "Bloque Regional", "-- TODAS --", "-- Seleccione --", ""]
+    # 🔥 FIX: Agregamos "NINGUNO" a las zonas ignoradas para evitar consultas vacías
+    zonas_ignoradas = ["Antioquia", "Bloque Regional", "-- TODAS --", "-- Seleccione --", "", "NINGUNO"]
     
     zona_activa = st.session_state.get('zona_activa_global')
     
