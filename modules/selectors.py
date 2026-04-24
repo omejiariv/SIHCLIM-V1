@@ -187,25 +187,31 @@ def render_selector_espacial():
             gdf_c = cargar_mapa_cuencas()
             ruta = st.selectbox("Ruta de Búsqueda:", ["Hidrología", "CAR"], index=0)
             if ruta == "Hidrología":
-                ah = st.selectbox("AH:", ["-- Seleccione --"] + sorted(gdf_c['nomah'].dropna().unique()))
-                if ah != "-- Seleccione --":
-                    zh = st.selectbox("ZH:", ["-- TODAS --"] + sorted(gdf_c[gdf_c['nomah']==ah]['nomzh'].dropna().unique()))
-                    df_f = gdf_c[gdf_c['nomah']==ah] if zh=="-- TODAS --" else gdf_c[gdf_c['nomzh']==zh]
-                    szh = st.selectbox("SZH:", ["-- TODAS --"] + sorted(df_f['nom_szh'].dropna().unique()))
-                    gdf_filtrado_base = df_f if szh=="-- TODAS --" else df_f[df_f['nom_szh']==szh]
-                    
-                    nivel = st.radio("Resolución:", ["NSS1", "NSS2", "NSS3"], horizontal=True)
-                    col_obj = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
-                    
-                    # 🔥 FIX: Eliminado el "-- BLOQUE --". Ahora exige seleccionar un territorio real.
-                    sel_fin = st.selectbox("🎯 Territorio:", ["-- Seleccione --"] + sorted(gdf_filtrado_base[col_obj].dropna().unique()))
-                    
-                    if sel_fin != "-- Seleccione --":
-                        nombre_zona, gdf_zona = sel_fin, gdf_filtrado_base[gdf_filtrado_base[col_obj]==sel_fin]
-                        nivel_jerarquico = nivel # 🔥 FIX 2: Capturamos NSS1, NSS2 o NSS3
-                    else:
-                        nombre_zona, gdf_zona = "-- Seleccione --", None
-                        nivel_jerarquico = "NINGUNO"
+                # Modificamos los menús superiores para que sean Filtros Opcionales
+                ah = st.selectbox("Filtro AH (Opcional):", ["-- TODAS --"] + sorted(gdf_c['nomah'].dropna().unique()))
+                df_f = gdf_c if ah == "-- TODAS --" else gdf_c[gdf_c['nomah']==ah]
+                
+                zh = st.selectbox("Filtro ZH (Opcional):", ["-- TODAS --"] + sorted(df_f['nomzh'].dropna().unique()))
+                df_f = df_f if zh == "-- TODAS --" else df_f[df_f['nomzh']==zh]
+                
+                szh = st.selectbox("Filtro SZH (Opcional):", ["-- TODAS --"] + sorted(df_f['nom_szh'].dropna().unique()))
+                gdf_filtrado_base = df_f if szh == "-- TODAS --" else df_f[df_f['nom_szh']==szh]
+                
+                # 🔥 FIX ESTRUCTURAL: Liberamos todos los niveles hidro-jerárquicos
+                nivel = st.selectbox("Resolución a Evaluar:", ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"], index=5)
+                col_obj = {"AH": "nomah", "ZH": "nomzh", "SZH": "nom_szh", "NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
+                
+                # El menú final ahora se adapta al nivel que elegiste
+                sel_fin = st.selectbox(f"🎯 Territorio ({nivel}):", ["-- Seleccione --"] + sorted(gdf_filtrado_base[col_obj].dropna().unique()))
+                
+                if sel_fin != "-- Seleccione --":
+                    nombre_zona = sel_fin
+                    # Capturamos todos los polígonos que pertenecen a ese territorio
+                    gdf_zona = gdf_filtrado_base[gdf_filtrado_base[col_obj]==sel_fin]
+                    nivel_jerarquico = nivel 
+                else:
+                    nombre_zona, gdf_zona = "-- Seleccione --", None
+                    nivel_jerarquico = "NINGUNO"
 
         # --- B. POR REGIÓN ---
         elif modo == "Por Región":
