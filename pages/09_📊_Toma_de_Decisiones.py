@@ -192,8 +192,9 @@ if gdf_zona is not None and not gdf_zona.empty:
             n_clean = str(nivel).strip()
             
             return pd.read_sql(q, engine_sql, params={'t_exact': t_clean, 'n_exact': n_clean})
-        except Exception: return pd.DataFrame()
-
+        except Exception: 
+            return pd.DataFrame()
+            
     def proyectar_modelo(f, anio_obj):
         import numpy as np
         x_norm = anio_obj - f.get('Año_Base', 2018)
