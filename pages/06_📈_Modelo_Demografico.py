@@ -2478,20 +2478,21 @@ with tab_matriz:
                     st.error(f"❌ Error en Motor V6: {e}")
 
             # =====================================================================
-            # 🔥 FASE 2 AUTOMÁTICA: ENTRENAMIENTO MULTIESCALA DE CUENCAS
+            # 🔥 FASE 2 AUTOMÁTICA: ENTRENAMIENTO MULTIESCALA DE CUENCAS (HIDRO)
             # =====================================================================
             if historico_cuencas:
                 texto_progreso.markdown("⚖️ **Fase 2: Ensamblando balance de masas jerárquico para Cuencas...**")
                 
-                # 1. Recuperamos los fragmentos base
+                # 1. Recuperamos y limpiamos fragmentos base
                 df_hist_base = pd.concat(historico_cuencas)
                 df_hist_base['Total_frag'] = df_hist_base['Total_frag'].replace([np.inf, -np.inf], np.nan).fillna(0)
                 
+                # 2. Generamos totales 'Total' para las Microcuencas Base (NSS3)
                 df_hist_totales = df_hist_base.groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                 df_hist_totales['Categoria_Area'] = 'Total'
                 df_hist_micro = pd.concat([df_hist_base, df_hist_totales], ignore_index=True)
                 
-                # 2. Descargamos el árbol genealógico completo
+                # 3. Descargamos el árbol genealógico completo de la DB
                 try:
                     q_jerarquia = text("""
                         SELECT DISTINCT 
@@ -2503,63 +2504,64 @@ with tab_matriz:
                         FROM cuencas
                     """)
                     df_arbol = pd.read_sql(q_jerarquia, engine_sql)
-                    for c in ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3', 'subc_lbl']:
-                        df_arbol[c] = df_arbol[c].str.strip()
+                    for c in df_arbol.columns:
+                        df_arbol[c] = df_arbol[c].astype(str).str.strip()
                 except Exception as e:
+                    st.error(f"Error cargando árbol hídrico: {e}")
                     df_arbol = pd.DataFrame(columns=['subc_lbl', 'nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3'])
                 
-                # 3. FUSIÓN MAESTRA (Match Inteligente)
-                from modules.utils import normalizar_texto_maestro
-                import difflib
-                
-                df_hist_micro['MATCH_ID'] = df_hist_micro['subc_lbl'].astype(str).apply(normalizar_texto_maestro)
-                df_arbol['MATCH_ID'] = df_arbol['subc_lbl'].astype(str).apply(normalizar_texto_maestro)
+                # 4. FUSIÓN MAESTRA (Match con Aplanadora de Texto)
+                # Sincronizamos nombres para que 'Río Aburrá' (mapa) coincida con 'Rio Aburra' (censo)
+                df_hist_micro['MATCH_ID'] = df_hist_micro['subc_lbl'].apply(normalizar_texto)
+                df_arbol['MATCH_ID'] = df_arbol['subc_lbl'].apply(normalizar_texto)
                 
                 df_arbol_unico = df_arbol.drop_duplicates(subset=['MATCH_ID']).copy()
-                ids_arbol = set(df_arbol_unico['MATCH_ID'])
-                
-                def forzar_match(val):
-                    if val in ids_arbol: return val
-                    if 'aburra' in val: return normalizar_texto_maestro('Río Aburrá - NSS')
-                    if 'leon' in val: return normalizar_texto_maestro('Río León - NSS')
-                    matches = difflib.get_close_matches(val, ids_arbol, n=1, cutoff=0.7)
-                    return matches[0] if matches else val
-                    
-                df_hist_micro['MATCH_ID'] = df_hist_micro['MATCH_ID'].apply(forzar_match)
                 df_hist_completo = pd.merge(df_hist_micro, df_arbol_unico, on='MATCH_ID', how='left')
                 
-                for c in ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']:
-                    df_hist_completo[c] = df_hist_completo[c].fillna(df_hist_completo['subc_lbl_x'])
-                
-                # 4. Entrenamiento de modelos
+                # 5. Entrenamiento de modelos Top-Down (Cascada Hidrológica)
                 niveles_hidrologicos = {
-                    'nomah': 'Área Hidrográfica', 'nomzh': 'Zona Hidrológica', 'nom_szh': 'Subzona Hidrográfica',
-                    'nom_nss1': 'NSS1', 'nom_nss2': 'NSS2', 'nom_nss3': 'NSS3', 'subc_lbl': 'Microcuenca Base' 
+                    'nomah': 'AH', 'nomzh': 'ZH', 'nom_szh': 'SZH',
+                    'nom_nss1': 'NSS1', 'nom_nss2': 'NSS2', 'nom_nss3': 'NSS3', 'subc_lbl_x': 'Microcuenca'
                 }
                 
-                entrenados_log = set() 
                 texto_progreso.markdown("🧠 **Fase 3: Entrenando Modelos Matemáticos para Cuencas...**")
+                entrenados_log = set()
                 
-                for col_nivel, etiqueta_nivel in niveles_hidrologicos.items():
+                for col_nivel, etiqueta_padre in niveles_hidrologicos.items():
                     if col_nivel in df_hist_completo.columns:
+                        # Agrupamos población por el nivel hídrico específico, área y año
                         df_nivel = df_hist_completo.dropna(subset=[col_nivel]).groupby([col_nivel, 'Categoria_Area', col_anio])['Total_frag'].sum().reset_index()
-                        territorios_nivel = df_nivel[col_nivel].unique()
                         
                         for area_c in ['Total', 'Urbana', 'Rural']:
                             df_area_c = df_nivel[df_nivel['Categoria_Area'] == area_c]
-                            for cuenca in territorios_nivel:
-                                id_unico = f"{cuenca}_{area_c}"
-                                if id_unico not in entrenados_log:
-                                    df_t = df_area_c[df_area_c[col_nivel] == cuenca].sort_values(by=col_anio)
-                                    if not df_t.empty and df_t['Total_frag'].sum() > 0 and str(cuenca).strip() != "":
-                                        try:
-                                            ajustar_modelos(df_t[col_anio].values, df_t['Total_frag'].values, 'Cuenca', cuenca, etiqueta_nivel, area_c)
-                                            entrenados_log.add(id_unico)
-                                        except Exception: pass
+                            for cuenca in df_area_c[col_nivel].unique():
+                                # Filtro de seguridad para nombres nulos
+                                if not cuenca or str(cuenca).lower() in ['nan', 'none', 'cuenca sin nombre']: continue
 
-            # =====================================================================
+                                # 🔥 ESTRATEGIA DE SINCRONIZACIÓN:
+                                # El 'Nivel' en la matriz SQL será siempre 'Cuenca' para facilitar el match global
+                                # El 'Padre' conservará la jerarquía técnica (ej. AH, ZH, NSS1)
+                                id_control = f"Cuenca_{cuenca}_{area_c}".upper()
+                                
+                                if id_control not in entrenados_log:
+                                    df_t = df_area_c[df_area_c[col_nivel] == cuenca].sort_values(by=col_anio)
+                                    if not df_t.empty and df_t['Total_frag'].sum() > 0:
+                                        try:
+                                            # ajustar_modelos(x, y, nivel, territorio, padre, area)
+                                            ajustar_modelos(
+                                                df_t[col_anio].values, 
+                                                df_t['Total_frag'].values, 
+                                                'Cuenca',       # Nivel para búsqueda en Toma de Decisiones
+                                                cuenca,         # Nombre del territorio
+                                                etiqueta_padre, # Jerarquía original como metadato
+                                                area_c          # Segmento (Total/Urbano/Rural)
+                                            )
+                                            entrenados_log.add(id_control)
+                                        except Exception: pass
+                                            
+            ===========================================================
             # 🏢 FASE 4: ENTRENAMIENTO ADMINISTRATIVO Y MACROREGIONAL
-            # =====================================================================
+            # =========================================================
             texto_progreso.markdown("🏢 **Fase 4: Entrenando Modelos Administrativos (Municipios, Regiones, Macroregiones)...**")
             
             if 'df_mun' in locals() or 'df_mun' in globals():
