@@ -213,24 +213,24 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
             except Exception: pass
 
             # ⚖️ JUEZ ACTUALIZADO: MEJOR MODELO
-                dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2, 'Lineal': lin_r2}
-                mejor_modelo = max(dic_modelos, key=dic_modelos.get)
-                mejor_r2 = dic_modelos[mejor_modelo]
+            dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2, 'Lineal': lin_r2}
+            mejor_modelo = max(dic_modelos, key=dic_modelos.get)
+            mejor_r2 = dic_modelos[mejor_modelo]
 
-                # 🔥 INTERVENCIÓN FORENSE: Limpieza higiénica y llave universal estricta
-                terr_visual = " ".join(str(territorio).split()) # Quita dobles espacios invisibles
-                terr_norm = normalizar_texto(territorio) # Quita tildes, sufijos y estandariza (ej. río -> r)
-                llave_u = f"{nivel}_{terr_norm}_TOTAL".upper().replace(" ", "_")
+            # 🔥 INTERVENCIÓN FORENSE: Limpieza higiénica y llave universal estricta
+            terr_visual = " ".join(str(territorio).split()) # Quita dobles espacios invisibles
+            terr_norm = normalizar_texto(territorio) # Quita tildes, sufijos y estandariza (ej. río -> r)
+            llave_u = f"{nivel}_{terr_norm}_TOTAL".upper().replace(" ", "_")
 
-                matriz_resultados.append({
-                    'Especie': especie, 'Nivel': nivel, 'Territorio': terr_visual, # <-- Se guarda limpio
-                    'LLAVE_UNIVERSAL': llave_u, 'Año_Base': int(x_offset), 'Poblacion_Base': round(p0_val, 0),
-                    'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
-                    'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
-                    'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
-                    'Lin_m': lin_m, 'Lin_b': lin_b, 'Lin_R2': round(lin_r2, 4), 
-                    'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
-               })
+            matriz_resultados.append({
+                'Especie': especie, 'Nivel': nivel, 'Territorio': terr_visual, # <-- Se guarda limpio
+                'LLAVE_UNIVERSAL': llave_u, 'Año_Base': int(x_offset), 'Poblacion_Base': round(p0_val, 0),
+                'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
+                'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
+                'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
+                'Lin_m': lin_m, 'Lin_b': lin_b, 'Lin_R2': round(lin_r2, 4), 
+                'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
+            })
 
         # =================================================================
         # B. ENTRENAMIENTO DE CUENCAS (Dasimetría Multiespecie + Cascada Hídrica)
