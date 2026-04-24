@@ -259,7 +259,7 @@ def render_selector_espacial():
                 sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                 if sel_reg != "-- Seleccione --":
                     nombre_zona = f"Región {sel_reg}"
-                    nivel_jerarquico = "REGION" # 🔥 FIX 3
+                    nivel_jerarquico = "Regional" # 🔥 FIX 3
                     cods = df_m[df_m['region'].str.lower()==sel_reg.lower()]['dp_mp'].astype(str).str.zfill(5).tolist()
                     gdf_mun = cargar_mapa_municipios()
                     gdf_zona = gdf_mun[gdf_mun['mpio_ccdgo'].astype(str).str.zfill(5).isin(cods)]
@@ -280,7 +280,7 @@ def render_selector_espacial():
             sel_mpio = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + sorted(gdf_mun['display'].unique()))
             if sel_mpio != "-- Seleccione --":
                 nombre_zona, gdf_zona = sel_mpio, gdf_mun[gdf_mun['display']==sel_mpio]
-                nivel_jerarquico = "MUNICIPIO" # 🔥 FIX 4
+                nivel_jerarquico = "Municipal" # 🔥 FIX 4
             else:
                 nombre_zona, gdf_zona = "-- Seleccione --", None
                 nivel_jerarquico = "NINGUNO"
@@ -289,7 +289,7 @@ def render_selector_espacial():
         else:
             gdf_mun = cargar_mapa_municipios()
             nombre_zona, gdf_zona = "Antioquia", gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_mun.unary_union], crs=gdf_mun.crs)
-            nivel_jerarquico = "DEPARTAMENTO" # 🔥 FIX 5
+            nivel_jerarquico = "Departamental" # 🔥 FIX 5
 
         # --- FILTRO DE ESTACIONES ---
         if gdf_zona is not None and not gdf_zona.empty:
