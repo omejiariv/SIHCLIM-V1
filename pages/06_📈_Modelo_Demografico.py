@@ -1468,43 +1468,43 @@ with st.expander("📚 Marco Conceptual, Metodológico y Matemático", expanded=
     """)
 
 # ==============================================================================
-# 🧠 TRANSMISIÓN AL CEREBRO GLOBAL (EL ALEPH)
+#  🧠  TRANSMISIÓN AL CEREBRO GLOBAL (EL ALEPH)
 # ==============================================================================
 if 'año_sel' in locals() and 'escala_sel' in locals():
     # --- ACTUALIZACIÓN DE SINCRONIZACIÓN Y BALANCE DE MASAS ---
-
-    # 1. Definimos un nombre legible y 100% seguro contra variables no definidas
+    # 1. Definimos un nombre legible y 100% seguro 
     if 'titulo_terr' in locals() and titulo_terr:
-        nombre_contexto = str(titulo_terr).replace("Cuencas Seleccionadas: ", "")
+        import re
+        # Limpiamos prefijos para que el Aleph tenga el nombre puro
+        nombre_contexto = re.sub(r'^(Cabecera Urbana de |Veredas de |Región |SZH: |ZH: |AH: |Cuencas Seleccionadas: )', '', str(titulo_terr)).strip()
     elif 'cuenca_sel' in locals() and cuenca_sel:
-        nombre_contexto = ", ".join(cuenca_sel)
+        nombre_contexto = cuenca_sel[0] # Tomamos la primera si hay varias
     else:
-        nombre_contexto = "Territorio Seleccionado"
+        nombre_contexto = "Antioquia" # Fallback seguro
 
     # 2. Inyectamos los datos en el Session State para persistencia
     st.session_state['aleph_lugar'] = nombre_contexto
     st.session_state['aleph_escala'] = escala_sel
     st.session_state['aleph_anio'] = año_sel
-    
+
     # Aseguramos que la población inyectada sea el valor final calculado
     st.session_state['aleph_pob_total'] = float(pob_hist[-1]) if 'pob_hist' in locals() and len(pob_hist) > 0 else 0.0
-
-    # 💉 INYECCIÓN AL TORRENTE SANGUÍNEO (Sincronización con modelos Pág 07 y 08)
+    
+    #  💉  INYECCIÓN AL TORRENTE SANGUÍNEO (Sincronización con modelos Pág 07, 08 y 09)
     poblacion_referencia = 0.0
     if 'pob_hist' in locals() and 'años_hist' in locals() and len(años_hist) > 0:
         try:
             import numpy as np
-            # Buscamos matemáticamente el año exacto en la curva
             idx = np.abs(np.array(años_hist) - año_sel).argmin()
             poblacion_referencia = float(pob_hist[idx])
         except Exception:
             poblacion_referencia = 0.0
-
+            
     st.session_state['pob_hum_calc_met'] = poblacion_referencia
-    st.session_state[f'pob_asig_{nombre_contexto}_met'] = poblacion_referencia
-
+    st.session_state[f'pob_asig_met'] = poblacion_referencia # Quitamos el nombre dinámico para facilitar la lectura global
+    
     # 3. Mensaje de éxito limpio en el Sidebar
-    st.sidebar.success(f"🔗 Contexto demográfico de **{nombre_contexto}** sincronizado con éxito.")
+    st.sidebar.success(f" 🔗  Contexto demográfico de **{nombre_contexto}** sincronizado con éxito.")
     
 # ==============================================================================
 # TAB 2: MODELOS Y OPTIMIZACIÓN MATEMÁTICA (SOLVER)
