@@ -168,7 +168,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     # --- Control Temporal ---
     anio_actual = st.slider("📅 Año de Proyección (Simulación Futura):", min_value=2024, max_value=2050, value=2025, step=1)
     
-# ==============================================================================
+    # ==============================================================================
     # 🧠 NÚCLEO DE CONEXIÓN ELÁSTICA (TORRENTE SANGUÍNEO SQL) - FASE 1
     # ==============================================================================
     
@@ -205,7 +205,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         except: return 0.0
 
     # ---------------------------------------------------------
-    # 1. CONEXIÓN DEMOGRÁFICA
+    # 1. CONEXIÓN DEMOGRÁFICA (SQL Estricto)
     # ---------------------------------------------------------
     df_demo = buscar_en_cerebro("matriz_maestra_demografica", nombre_zona)
     if not df_demo.empty:
@@ -213,15 +213,15 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.success(f"👥 **Cerebro Demográfico Enlazado:** {pob_total:,.0f} habitantes detectados en SQL.")
         origen_demo = True
     else:
-        pob_total = 1000.0 # Salvavidas matemático
-        st.warning(f"⚠️ '{nombre_zona}' no está en la Matriz Demográfica. Usando {pob_total:,.0f} hab. (Falta entrenar cascada hidrológica).")
+        pob_total = 0.0
+        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Demográfica.")
         origen_demo = False
     
     st.session_state['aleph_pob_total'] = pob_total
     st.session_state['pob_hum_calc_met'] = pob_total
 
     # ---------------------------------------------------------
-    # 2. CONEXIÓN PECUARIA
+    # 2. CONEXIÓN PECUARIA (SQL Estricto)
     # ---------------------------------------------------------
     df_pec = buscar_en_cerebro("matriz_maestra_pecuaria", nombre_zona)
     bovinos, porcinos, aves = 0.0, 0.0, 0.0
@@ -234,8 +234,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.success(f"🐄 **Cerebro Pecuario Enlazado:** {bovinos:,.0f} Bov, {porcinos:,.0f} Por, {aves:,.0f} Aves.")
         origen_pecu = True
     else:
-        bovinos, porcinos, aves = 100.0, 50.0, 200.0 # Salvavidas matemático
-        st.warning(f"⚠️ '{nombre_zona}' no está en la Matriz Pecuaria. Usando carga de emergencia.")
+        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Pecuaria.")
         origen_pecu = False
 
     st.session_state['ica_bovinos_calc_met'] = bovinos
@@ -243,7 +242,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.session_state['ica_aves_calc_met'] = aves
 
     # ---------------------------------------------------------
-    # 3. CONEXIÓN HIDROLÓGICA Y OFERTA BASE
+    # 3. CONEXIÓN HIDROLÓGICA Y OFERTA BASE (SQL Estricto)
     # ---------------------------------------------------------
     df_hidro = buscar_en_cerebro("matriz_hidrologica_maestra", nombre_zona)
     
@@ -256,17 +255,21 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.success(f"💧 **Cerebro Hidrológico Enlazado:** Área {area_cuenca_km2:,.1f} km², Caudal Medio {q_medio_real:,.2f} m³/s.")
         origen_hidro = True
     else:
-        area_cuenca_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0 if gdf_zona is not None and not gdf_zona.empty else 10.0
-        q_medio_real = (350.0 * area_cuenca_km2 * 1000) / 31536000 
-        q_min_real = q_medio_real * 0.25 
-        recarga_base_mm = 350.0
-        # 🔥 FIX: Lo volvemos un mensaje informativo azul, y legalizamos el origen_hidro
-        st.info(f"ℹ️ **Estimación Geo-Espacial:** '{nombre_zona}' no es una cuenca directa. Oferta calculada a partir de su área ({area_cuenca_km2:,.1f} km²).")
-        origen_hidro = True
-        
+        area_cuenca_km2, q_medio_real, q_min_real, recarga_base_mm = 0.0, 0.0, 0.0, 0.0
+        st.error(f"❌ '{nombre_zona}' no existe en la Matriz Hidrológica.")
+        origen_hidro = False
+
     st.session_state['aleph_area_km2'] = area_cuenca_km2
     st.session_state['aleph_recarga_mm'] = recarga_base_mm
 
+    # ---------------------------------------------------------
+    # 🛑 GUARDIA DE SEGURIDAD (Hard Stop)
+    # ---------------------------------------------------------
+    if not (origen_demo and origen_pecu and origen_hidro):
+        st.warning(f"🛑 Faltan datos estructurales en SQL para **{nombre_zona}**. El tablero se detendrá aquí. Debes ir a los modelos correspondientes y ejecutar la Forja para este nivel territorial.")
+        st.stop() # Bloquea la carga del resto de la página, sin mostrar el dashboard en 0
+
+    # (A partir de aquí, el código sabe que las 3 matrices existen y son perfectas)
     tipo_oferta = st.radio("Escenario Hidrológico de Simulación:", 
                            ["🌊 Caudal Medio (Condiciones Normales)", "🏜️ Caudal Mínimo / Estiaje (Q95)"], horizontal=True)
     oferta_dinamica = q_min_real if "Mínimo" in tipo_oferta else q_medio_real
@@ -285,7 +288,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     elif "Niña" in fase_enso: oferta_nominal *= 1.20
     
     st.session_state['aleph_oferta_m3s'] = oferta_nominal
-
+    
     # ---------------------------------------------------------
     # 4. METABOLISMO Y DEMANDA (SÍNTESIS FINAL)
     # ---------------------------------------------------------
