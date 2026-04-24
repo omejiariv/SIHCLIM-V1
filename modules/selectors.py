@@ -223,9 +223,33 @@ def render_selector_espacial():
                     nivel_jerarquico = "NINGUNO"
             
             elif ruta == "CAR":
-                nombre_zona, gdf_zona = "-- Seleccione --", None
-                nivel_jerarquico = "NINGUNO"
-
+                car_sel = st.selectbox("Autoridad Ambiental (CAR):", ["-- Seleccione --"] + sorted(gdf_c['corpoamb'].dropna().unique()))
+                
+                if car_sel != "-- Seleccione --":
+                    df_f = gdf_c[gdf_c['corpoamb']==car_sel]
+                    
+                    # Permite evaluar toda la jurisdicción de la CAR o bajar a sus microcuencas
+                    nivel = st.selectbox("1. Resolución a Evaluar:", ["CAR", "NSS1", "NSS2", "NSS3"], index=0)
+                    
+                    if nivel == "CAR":
+                        nombre_zona = car_sel
+                        gdf_zona = df_f
+                        nivel_jerarquico = "CAR"
+                    else:
+                        col_obj = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
+                        sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f[col_obj].dropna().unique()))
+                        
+                        if sel_fin != "-- Seleccione --":
+                            nombre_zona = sel_fin
+                            gdf_zona = df_f[df_f[col_obj]==sel_fin]
+                            nivel_jerarquico = nivel 
+                        else:
+                            nombre_zona, gdf_zona = "-- Seleccione --", None
+                            nivel_jerarquico = "NINGUNO"
+                else:
+                    nombre_zona, gdf_zona = "-- Seleccione --", None
+                    nivel_jerarquico = "NINGUNO"
+                    
         # --- B. POR REGIÓN ---
         elif modo == "Por Región":
             try:
