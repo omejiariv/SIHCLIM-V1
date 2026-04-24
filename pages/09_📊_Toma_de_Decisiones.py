@@ -184,39 +184,65 @@ if gdf_zona is not None and not gdf_zona.empty:
             from modules.utils import normalizar_texto 
             
             engine_sql = get_engine()
-
-            # 🔥 DICCIONARIO DE TRADUCCIÓN ROBUSTO (Cubre todas las variantes)
+            t_clean = str(territorio).strip()
+            
+            # 🔥 1. MAPA DE TRADUCCIÓN FORZADA (Cubre los casos más conflictivos)
             mapa_niveles = {
                 "MUNICIPIO": "Municipal", "MUNICIPAL": "Municipal",
-                "DEPARTAMENTO": "Departamental", "DEPARTAMENTAL": "Departamental",
-                "REGION": "Regional", "REGIONAL": "Regional", "REGION": "depto_regi",
+                "DEPARTAMENTO": "Departamental", "DEPARTAMENTAL": "Departamental", "DEPARTAMENTO": "Departamental",
+                "REGION": "Regional", "REGIONAL": "Regional", "REGIÓN": "Regional",
                 "AH": "AH", "ZH": "ZH", "SZH": "SZH",
                 "NSS1": "NSS1", "NSS2": "NSS2", "NSS3": "NSS3",
                 "CUENCA": "Cuenca"
             }
             n_clean = mapa_niveles.get(str(nivel).strip().upper(), str(nivel).strip())
-            t_clean = str(territorio).strip()
+            
+            # Limpiamos prefijos molestos que a veces llegan del selector
+            if t_clean.lower().startswith("región "): t_clean = t_clean[7:]
+            if t_clean.lower().startswith("region "): t_clean = t_clean[7:]
 
-            # Búsqueda Tolerante
+            # 🔥 2. CONSULTA TOLERANTE: Compara mayúsculas, quita espacios y usa LIKE
+            # Esto soluciona el problema si la BD tiene "Región Bajo Cauca" y buscamos "Bajo Cauca"
             q = text(f'''
                 SELECT * FROM {tabla} 
-                WHERE TRIM(UPPER("Territorio")) = UPPER(:t_exact) 
-                AND "{col_nivel}" = :n_exact 
+                WHERE (
+                    TRIM(UPPER("Territorio")) = UPPER(:t_exact) 
+                    OR UPPER("Territorio") LIKE UPPER(:t_like)
+                )
+                AND (
+                    UPPER("{col_nivel}") = UPPER(:n_exact)
+                    OR UPPER("{col_nivel}") LIKE UPPER(:n_like)
+                )
                 LIMIT 10
             ''')
-            df_res = pd.read_sql(q, engine_sql, params={'t_exact': t_clean, 'n_exact': n_clean})
+            
+            df_res = pd.read_sql(q, engine_sql, params={
+                't_exact': t_clean, 
+                't_like': f"%{t_clean}%", 
+                'n_exact': n_clean,
+                'n_like': f"%{n_clean[:4]}%" # Ej: Si es "Regional", busca "%REGI%"
+            })
 
-            # Salvavidas con Aplanadora (Si la búsqueda exacta falla)
+            # 🔥 3. SALVAVIDAS FINAL: Si la consulta estricta/parcial falla, usa la aplanadora
             if df_res.empty:
-                q_all = text(f'SELECT * FROM {tabla} WHERE "{col_nivel}" = :n_exact')
-                df_all = pd.read_sql(q_all, engine_sql, params={'n_exact': n_clean})
+                q_all = text(f'SELECT * FROM {tabla}') # Traemos todo a memoria (es rápido en pandas)
+                df_all = pd.read_sql(q_all, engine_sql)
+                
                 if not df_all.empty:
                     terr_norm = normalizar_texto(t_clean)
                     df_all['MATCH'] = df_all['Territorio'].apply(normalizar_texto)
+                    
+                    # Filtramos por el territorio limpio
                     df_res = df_all[df_all['MATCH'] == terr_norm]
+                    
+                    # Y nos aseguramos de que el nivel también coincida al menos en sus primeras letras
+                    if not df_res.empty:
+                        df_res = df_res[df_res[col_nivel].str.upper().str.contains(n_clean[:4].upper(), na=False)]
 
             return df_res
-        except Exception: 
+        except Exception as e: 
+            import streamlit as st
+            st.error(f"Error consultando SQL: {e}")
             return pd.DataFrame()
             
     def proyectar_modelo(f, anio_obj):
