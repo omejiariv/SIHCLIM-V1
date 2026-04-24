@@ -973,25 +973,38 @@ if __name__ == "__main__":
                     pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos que vienen
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO ---
-                with st.spinner("🏛️ Calculando áreas y caudales para Municipios, Regiones y Departamento..."):
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CON DICCIONARIO MAESTRO) ---
+                with st.spinner("🏛️ Sincronizando con Territorio Maestro y calculando escalas superiores..."):
                     try:
+                        # 1. Cargamos el mapa base de municipios
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
-                        gdf_mun['DEPARTAMENTO'] = 'Antioquia' # Nivel maestro
                         
-                        col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
-                        col_reg = 'subregion' if 'subregion' in gdf_mun.columns else 'Region'
-                        col_mac = 'macroregion' if 'macroregion' in gdf_mun.columns else 'Macroregion'
+                        # 2. CARGAMOS EL DICCIONARIO MAESTRO (La Verdad Universal)
+                        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.csv"
+                        df_maestro = pd.read_csv(url_maestro)
                         
+                        from modules.utils import normalizar_texto
+                        
+                        # Normalizamos nombres para el cruce exacto
+                        df_maestro['match_id'] = df_maestro['municipio'].apply(normalizar_texto)
+                        
+                        col_mun_mapa = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
+                        gdf_mun['match_id'] = gdf_mun[col_mun_mapa].apply(normalizar_texto)
+                        
+                        # 3. MERGE: Unimos el mapa con el Excel para heredar las jerarquías oficiales
+                        gdf_mun = gdf_mun.merge(df_maestro[['match_id', 'municipio', 'subregion', 'region', 'depto_nom']], on='match_id', how='left')
+                        
+                        # 4. DEFINIMOS NIVELES USANDO LAS COLUMNAS DEL EXCEL LIMPIO
                         niveles_admin = {
-                            'MUNICIPIO': col_mun,
-                            'REGION': col_reg,
-                            'MACROREGION': col_mac,
-                            'DEPARTAMENTO': 'DEPARTAMENTO'
+                            'MUNICIPAL': 'municipio',      # Nombre oficial limpio del excel
+                            'REGION': 'subregion',         # Bajo Cauca, Oriente, etc.
+                            'MACROREGION': 'region',       # Andina, Caribe, etc.
+                            'DEPARTAMENTO': 'depto_nom'    # Antioquia
                         }
+                        
                         procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
                     except Exception as e:
-                        st.warning(f"No se pudo completar la fase administrativa. Error en la tabla 'municipios': {e}")
+                        st.warning(f"⚠️ Error en Sincronización Maestra Administrativa: {e}")
 
                 prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                 
@@ -1002,10 +1015,7 @@ if __name__ == "__main__":
                     
                     df_matriz = pd.DataFrame(res_multiescala)
                     
-                    # 1. Filtro Anti-Duplicados
-                    df_matriz = df_matriz.drop_duplicates(subset=['Jerarquia', 'Territorio'], keep='first')
-                    
-                    # 2. Forja de Llave
+                    # 1. Función Forjadora de Llave
                     def forjar_llave_hidro(row):
                         jerarquia = str(row.get('Jerarquia', '')).upper()
                         if jerarquia == "MUNICIPAL": jerarquia = "MUNICIPAL"
@@ -1016,9 +1026,14 @@ if __name__ == "__main__":
                         terr = str(terr_limpio).replace(" ", "_").upper()
                         return f"{jerarquia}_{terr}_TOTAL"
 
+                    # 2. PRIMERO aplicamos la llave a todos los datos para igualarlos
                     df_matriz['LLAVE_UNIVERSAL'] = df_matriz.apply(forjar_llave_hidro, axis=1)
                     
-                    # 3. Inyección Segura a PostgreSQL
+                    # 3. LUEGO aplicamos el Filtro Anti-Duplicados usando la LLAVE
+                    # Esto colapsa las variaciones de mapa (ej. "CHIMA" y "CHIMÃ") en una sola fila.
+                    df_matriz = df_matriz.drop_duplicates(subset=['LLAVE_UNIVERSAL'], keep='first')
+                    
+                    # 4. Inyección Segura a PostgreSQL
                     try:
                         with engine.begin() as conn:
                             conn.execute(text('ALTER TABLE matriz_hidrologica_maestra ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
@@ -1027,7 +1042,7 @@ if __name__ == "__main__":
                         df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='append', index=False)
                         st.cache_data.clear()
                         
-                        st.success(f"✅ EL ALEPH ESTÁ COMPLETO. Matriz Hidrológica forjada con {len(df_matriz)} territorios.")
+                        st.success(f"✅ EL ALEPH ESTÁ COMPLETO. Matriz Hidrológica forjada con {len(df_matriz)} territorios únicos.")
                         
                         resumen = df_matriz['Jerarquia'].value_counts().reset_index()
                         resumen.columns = ['Nivel', 'Cantidad de Territorios']
