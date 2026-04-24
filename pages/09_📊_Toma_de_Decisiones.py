@@ -176,7 +176,6 @@ if gdf_zona is not None and not gdf_zona.empty:
     nivel_req = st.session_state.get('nivel_activo_global', 'NINGUNO')
 
     @st.cache_data(ttl=3600)
-@st.cache_data(ttl=3600)
     def consultar_matriz_sql(tabla, territorio, nivel, col_nivel="Nivel"):
         try:
             from sqlalchemy import text
