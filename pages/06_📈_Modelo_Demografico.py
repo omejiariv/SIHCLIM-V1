@@ -2559,7 +2559,7 @@ with tab_matriz:
                                             entrenados_log.add(id_control)
                                         except Exception: pass
                                             
-            ===========================================================
+            # =========================================================
             # 🏢 FASE 4: ENTRENAMIENTO ADMINISTRATIVO Y MACROREGIONAL
             # =========================================================
             texto_progreso.markdown("🏢 **Fase 4: Entrenando Modelos Administrativos (Municipios, Regiones, Macroregiones)...**")
