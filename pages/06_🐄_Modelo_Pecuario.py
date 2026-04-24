@@ -22,18 +22,22 @@ warnings.filterwarnings('ignore')
 # --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
 try:
     from modules import selectors
-    from modules.utils import encender_gemelo_digital
+    from modules.utils import encender_gemelo_digital, normalizar_texto
 except ImportError:
     # Fallback de rutas por si hay problemas de lectura entre carpetas
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors
-    from modules.utils import encender_gemelo_digital
+    from modules.utils import encender_gemelo_digital, normalizar_texto
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
 # Llama al menú expandible y resalta la página actual (Corregido)
 selectors.renderizar_menu_navegacion("Modelo Pecuario")
+
+# ====================================================================
+# 💉 ENCENDIDO DEL SISTEMA INMUNOLÓGICO Y VARIABLES GLOBALES
+# ====================================================================
 
 # ====================================================================
 # 🧽 MOTOR DE ESTANDARIZACIÓN UNIVERSAL (Sincronía con Pág 07)
@@ -209,24 +213,26 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
             except Exception: pass
 
             # ⚖️ JUEZ ACTUALIZADO: MEJOR MODELO
-            dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2, 'Lineal': lin_r2}
-            mejor_modelo = max(dic_modelos, key=dic_modelos.get)
-            mejor_r2 = dic_modelos[mejor_modelo]
+                dic_modelos = {'Logístico': log_r2, 'Exponencial': exp_r2, 'Polinomial_3': poly_r2, 'Lineal': lin_r2}
+                mejor_modelo = max(dic_modelos, key=dic_modelos.get)
+                mejor_r2 = dic_modelos[mejor_modelo]
 
-            # 🔥 LLAVE UNIVERSAL
-            llave_u = f"{nivel}_{territorio}_TOTAL".upper().replace(" ", "_")
+                # 🔥 INTERVENCIÓN FORENSE: Limpieza higiénica y llave universal estricta
+                terr_visual = " ".join(str(territorio).split()) # Quita dobles espacios invisibles
+                terr_norm = normalizar_texto(territorio) # Quita tildes, sufijos y estandariza (ej. río -> r)
+                llave_u = f"{nivel}_{terr_norm}_TOTAL".upper().replace(" ", "_")
 
-            matriz_resultados.append({
-                'Especie': especie, 'Nivel': nivel, 'Territorio': territorio,
-                'LLAVE_UNIVERSAL': llave_u, 'Año_Base': int(x_offset), 'Poblacion_Base': round(p0_val, 0),
-                'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
-                'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
-                'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
-                'Lin_m': lin_m, 'Lin_b': lin_b, 'Lin_R2': round(lin_r2, 4), # <-- INYECCIÓN LINEAL
-                'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
-            })
+                matriz_resultados.append({
+                    'Especie': especie, 'Nivel': nivel, 'Territorio': terr_visual, # <-- Se guarda limpio
+                    'LLAVE_UNIVERSAL': llave_u, 'Año_Base': int(x_offset), 'Poblacion_Base': round(p0_val, 0),
+                    'Log_K': log_k, 'Log_a': log_a, 'Log_r': log_r, 'Log_R2': round(log_r2, 4),
+                    'Exp_a': exp_a, 'Exp_b': exp_b, 'Exp_R2': round(exp_r2, 4),
+                    'Poly_A': poly_A, 'Poly_B': poly_B, 'Poly_C': poly_C, 'Poly_D': poly_D, 'Poly_R2': round(poly_r2, 4),
+                    'Lin_m': lin_m, 'Lin_b': lin_b, 'Lin_R2': round(lin_r2, 4), 
+                    'Modelo_Recomendado': mejor_modelo, 'Mejor_R2': round(mejor_r2, 4)
+               })
 
-# =================================================================
+        # =================================================================
         # B. ENTRENAMIENTO DE CUENCAS (Dasimetría Multiespecie + Cascada Hídrica)
         # =================================================================
         texto_progreso.info("🧮 Fase 2/2: Aplicando Pesos de Hábitat y Escalando Cuencas...")
