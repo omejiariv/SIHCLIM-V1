@@ -263,7 +263,7 @@ def render_selector_espacial():
                 sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                 if sel_reg != "-- Seleccione --":
                     nombre_zona = sel_reg # Enviamos el nombre limpio sin prefijo para que SQL haga match
-                    nivel_jerarquico = "REGION" # Coincide exacto con la Matriz Demográfica
+                    nivel_jerarquico = "Regional" # Coincide exacto con la Matriz Demográfica
                     
                     cods = df_m[df_m[col_reg].str.lower()==sel_reg.lower()]['dp_mp'].astype(str).str.replace(".0", "", regex=False).str.zfill(5).tolist()
                     gdf_mun = cargar_mapa_municipios()
