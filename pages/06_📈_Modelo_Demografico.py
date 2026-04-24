@@ -2566,6 +2566,18 @@ with tab_matriz:
             
             if 'df_mun' in locals() or 'df_mun' in globals():
                 df_admin = df_mun.copy()
+                
+                # 🧹 LIMPIEZA ANTI-DUPLICADOS (PRE-AGREGACIÓN)
+                # Si df_mun arrastra duplicados de algún cruce previo, esto evita que la población se multiplique.
+                if 'Total' in df_admin.columns:
+                    cols_subset = ['municipio', 'depto_nom', col_anio, 'Total']
+                    if 'area_geografica' in df_admin.columns: cols_subset.append('area_geografica')
+                    if 'Macroregion' in df_admin.columns: cols_subset.append('Macroregion')
+                    col_reg = 'subregion' if 'subregion' in df_admin.columns else ('Region' if 'Region' in df_admin.columns else None)
+                    if col_reg: cols_subset.append(col_reg)
+                    
+                    df_admin = df_admin.drop_duplicates(subset=[c for c in cols_subset if c in df_admin.columns])
+
                 # Asegurar columna Categoria_Area
                 if 'Categoria_Area' not in df_admin.columns and 'area_geografica' in df_admin.columns:
                     df_admin['Categoria_Area'] = df_admin['area_geografica'].apply(clasificar_area)
@@ -2573,9 +2585,11 @@ with tab_matriz:
                 # A. MUNICIPIOS
                 for mpio in df_admin['municipio'].dropna().unique():
                     for cat in ['Total', 'Urbana', 'Rural']:
-                        df_f = df_admin[(df_admin['municipio'] == mpio) & (df_admin['Categoria_Area'] == cat)].sort_values(by=col_anio)
+                        # 🔥 FIX: Agrupamos por año para consolidar y evitar que lleguen años repetidos a curve_fit
+                        df_f = df_admin[(df_admin['municipio'] == mpio) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
                         if len(df_f) >= 3 and df_f['Total'].sum() > 0:
-                            ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'Municipal', mpio, df_f['depto_nom'].iloc[0] if not df_f.empty else 'Antioquia', cat)
+                            depto_padre = df_admin[df_admin['municipio'] == mpio]['depto_nom'].dropna().iloc[0] if not df_admin[df_admin['municipio'] == mpio].empty else 'Antioquia'
+                            ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'Municipal', mpio, depto_padre, cat)
                 
                 # B. DEPARTAMENTO
                 for cat in ['Total', 'Urbana', 'Rural']:
@@ -2592,18 +2606,19 @@ with tab_matriz:
                                 ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'MACROREGION', macro, 'Colombia', cat)
 
                 # D. SUBREGIONES DE ANTIOQUIA (Oriente, Bajo Cauca, etc.)
-                col_reg = 'subregion' if 'subregion' in df_admin.columns else ('Region' if 'Region' in df_admin.columns else None)
                 if col_reg:
                     for reg in df_admin[col_reg].dropna().unique():
                         for cat in ['Total', 'Urbana', 'Rural']:
                             df_f = df_admin[(df_admin[col_reg] == reg) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
                             if len(df_f) >= 3 and df_f['Total'].sum() > 0:
-                                ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'REGION', reg, 'Antioquia', cat)
+                                # 🔥 FIX CRÍTICO: Se cambia 'REGION' por 'Regional' para Sincronía con Toma de Decisiones
+                                ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'Regional', reg, 'Antioquia', cat)
                                 
                 # E. ESCALA URBANA (Todas las Cabeceras)
                 df_f = df_admin[df_admin['Categoria_Area'] == 'Urbana'].groupby(col_anio)['Total'].sum().reset_index()
                 if len(df_f) >= 3 and df_f['Total'].sum() > 0:
                     ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'ESCALA_URBANA', 'Todas las Cabeceras', 'Antioquia', 'Urbana')            
+
 
             # =====================================================================
             # 🔥 6. FORJA DE LLAVES UNIVERSALES Y CARGA A MEMORIA
@@ -2611,20 +2626,30 @@ with tab_matriz:
             if matriz_resultados:
                 df_masivo = pd.DataFrame(matriz_resultados)
                 
+                # 🔥 DOBLE BLINDAJE ANTI-DUPLICADOS (El guardián de la base de datos)
+                # Esto asegura que si Abejorral llegó 3 veces, solo pase 1 a la base de datos.
+                df_masivo = df_masivo.drop_duplicates(subset=['Nivel', 'Territorio', 'Area'], keep='first')
+                
+                from modules.utils import normalizar_texto
+                
                 # 🔑 LA MAGIA: Aplicamos la Llave Universal a todo el DataFrame
                 def forjar_llave(row):
+                    # 1. Respetamos el nivel estandarizado ('Municipal', 'Regional', 'Cuenca', etc.) en mayúscula
                     jerarquia = str(row.get('Nivel', '')).upper()
-                    if jerarquia == "MUNICIPAL": jerarquia = "MUNICIPIO"
-                    elif jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
-                    elif jerarquia == "CUENCA": jerarquia = "NSS3" 
-                    terr = str(row.get('Territorio', '')).replace(" ", "_").upper()
+                    
+                    # 2. Normalizamos el territorio (Quita tildes, ñ, caracteres raros y estandariza nombres)
+                    terr_limpio = normalizar_texto(row.get('Territorio', ''))
+                    terr = str(terr_limpio).replace(" ", "_").upper()
+                    
+                    # 3. Área (Total, Urbana, Rural)
                     cat = str(row.get('Area', '')).upper()
+                    
                     return f"{jerarquia}_{terr}_{cat}"
                     
                 df_masivo['LLAVE_UNIVERSAL'] = df_masivo.apply(forjar_llave, axis=1)
                 
                 barra_progreso.progress(1.0)
-                texto_progreso.success(f"✅ ¡Entrenamiento Completado! {len(df_masivo)} modelos forjados con Llaves Universales.")
+                texto_progreso.success(f"✅ ¡Entrenamiento Completado! {len(df_masivo)} modelos únicos forjados con Llaves Universales.")
                 
                 # Guardamos en RAM para que el Validador Visual y la Pestaña de Descargas lo detecten
                 st.session_state['df_matriz_demografica'] = df_masivo
