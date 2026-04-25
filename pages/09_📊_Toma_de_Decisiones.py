@@ -273,14 +273,17 @@ if gdf_zona is not None and not gdf_zona.empty:
     # ---------------------------------------------------------
     # 3. CONEXIÓN HIDROLÓGICA Y OFERTA BASE
     # ---------------------------------------------------------
-    # 🔥 FIX: Inicializamos TODAS las variables de emergencia ANTES de buscar. 
-    # Así, si el lugar no existe, el código usará estos ceros y no se romperá.
+    # 🔥 FIX: Inicializamos TODAS las variables para la simulación
     area_km2 = 0.0
     oferta_anual_m3 = 0.0
     caudal_base_m3s = 0.0
     lluvia_base_mm = 0.0
     recarga_base_mm = 0.0
     altitud_m = 1500.0
+    
+    # Variables críticas para la selección de escenario
+    q_medio_real = 0.0
+    q_min_real = 0.0
 
     df_hidro = consultar_matriz_sql("matriz_hidrologica_maestra", nombre_zona, nivel_req, "Jerarquia")
 
@@ -293,12 +296,17 @@ if gdf_zona is not None and not gdf_zona.empty:
         recarga_base_mm = float(row_h.get('Recarga_mm', 0))
         altitud_m = float(row_h.get('Altitud_m', 1500))
         
+        # Asignación real de los caudales
+        q_medio_real = caudal_base_m3s
+        # Si tienes una columna para el caudal mínimo (ej. Q95), úsala. Si no, estimamos un 20% del medio para estiaje.
+        q_min_real = float(row_h.get('Caudal_Minimo_m3s', caudal_base_m3s * 0.2))
+        
         st.success(f" 💧  **Cerebro Hidrológico Enlazado:** Área {area_km2:,.1f} km², Caudal Medio {caudal_base_m3s:,.2f} m³/s.")
         origen_hidro = True
     else:
         st.error(f" ❌  '{nombre_zona}' no existe en la Matriz Hidrológica para el nivel {nivel_req}.")
         origen_hidro = False
-        
+
     st.session_state['aleph_area_km2'] = area_km2
     st.session_state['aleph_recarga_mm'] = recarga_base_mm
 
