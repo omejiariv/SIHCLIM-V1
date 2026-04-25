@@ -299,7 +299,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.error(f" ❌  '{nombre_zona}' no existe en la Matriz Hidrológica para el nivel {nivel_req}.")
         origen_hidro = False
         
-    st.session_state['aleph_area_km2'] = area_cuenca_km2
+    st.session_state['aleph_area_km2'] = area_km2
     st.session_state['aleph_recarga_mm'] = recarga_base_mm
 
     # ---------------------------------------------------------
