@@ -996,62 +996,63 @@ if __name__ == "__main__":
                     pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos de la Fase 2
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CONEXIÓN POR CÓDIGO DANE) ---
-                with st.spinner("🏛️ Sincronizando mediante Código DANE (dp_mp) para evitar pérdida de datos..."):
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (SINCRONÍA DANE + EXCEL) ---
+                with st.spinner("🏛️ Sincronizando Niveles Administrativos mediante Código DANE..."):
                     try:
                         import io
                         import requests
+                        from modules.utils import normalizar_texto
                         
-                        # 1. CARGA DEL DICCIONARIO MAESTRO
+                        # 1. CARGA DEL DICCIONARIO MAESTRO (100% Nube)
                         url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
                         respuesta = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
                         
                         if respuesta.status_code == 200:
                             df_maestro = pd.read_excel(io.BytesIO(respuesta.content))
                         else:
-                            raise ValueError(f"Error HTTP {respuesta.status_code} al conectar con Supabase.")
+                            raise ValueError(f"Error HTTP {respuesta.status_code} en Supabase.")
 
-                        # 🛠️ NORMALIZACIÓN DE CÓDIGOS DANE (Garantizamos 5 dígitos: 05001)
+                        # Estandarizamos el Código DANE (dp_mp) a 5 dígitos
                         df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.zfill(5)
                         
-                        # 2. CARGA DEL MAPA Y DETECCIÓN DEL CÓDIGO DANE EN POSTGIS
+                        # 2. CARGA DEL MAPA Y CRUCE GEOGRÁFICO
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
                         
-                        # Buscamos la columna que contiene el código DANE en tu mapa (MPIO_CDP, mpio_ccdgo, etc.)
-                        posibles_cols_dane = ['mpio_cdp', 'mpio_ccdgo', 'MPIO_CCDGO', 'MPIO_CDP', 'codigo_mun', 'dp_mp']
-                        col_id_mapa = next((c for c in posibles_cols_dane if c in gdf_mun.columns), None)
+                        # Detectamos la columna DANE en tu tabla PostGIS
+                        posibles_cols = ['mpio_cdp', 'mpio_ccdgo', 'MPIO_CCDGO', 'MPIO_CDP', 'dp_mp']
+                        col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                         
                         if not col_id_mapa:
-                            st.error("🚨 No se encontró la columna de Código DANE en la tabla 'municipios'. Revisa los nombres de las columnas.")
+                            st.error("🚨 No se encontró columna DANE en PostGIS. Verifica la tabla 'municipios'.")
                             st.stop()
                             
-                        # Normalizamos el código en el mapa
                         gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.zfill(5)
                         
-                        # 3. EL CRUCE MAESTRO (INNER JOIN POR ID)
-                        # Traemos los nombres oficiales y jerarquías desde el Excel
+                        # Cruzamos para traer los nombres limpios y las jerarquías
                         gdf_mun = gdf_mun.merge(
                             df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom']], 
                             on='dp_mp', 
                             how='left'
                         )
                         
-                        # 4. SALVAVIDAS: Si el merge falló por ID, usamos el nombre como fallback
-                        from modules.utils import normalizar_texto
+                        # Fallback por si el merge falla en algún municipio por ID
                         col_nom_mapa = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'municipio'
-                        gdf_mun['municipio_final'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
-                        
+                        gdf_mun['municipio_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
+
+                        # 3. CONFIGURACIÓN DE NIVELES (La pieza que faltaba)
+                        # Estos nombres de llaves (MUNICIPAL, REGION, etc.) deben ser idénticos en HIDRO y DEMO.
                         niveles_admin = {
-                            'MUNICIPAL': 'municipio_final', 
-                            'REGION': 'subregion',         
-                            'MACROREGION': 'region',       
-                            'DEPARTAMENTO': 'depto_nom'    
+                            'MUNICIPAL': 'municipio_clean', # Escala Local
+                            'REGION': 'subregion',          # Escala Subregional (ej. Bajo Cauca)
+                            'MACROREGION': 'region',        # Escala Macro (ej. Andina)
+                            'DEPARTAMENTO': 'depto_nom'     # Escala Departamental (Antioquia)
                         }
                         
-                        procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
+                        # Enviamos al motor físico para disolver polígonos y calcular balance hídrico
+                        paso_actual = procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
                         
                     except Exception as e:
-                        st.warning(f"⚠️ Error en Sincronización Maestra por DANE: {e}")
+                        st.warning(f"⚠️ Error en Sincronización Maestra Administrativa: {e}")
 
                 prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                 
