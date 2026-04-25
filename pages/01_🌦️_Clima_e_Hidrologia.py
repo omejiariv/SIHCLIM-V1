@@ -973,26 +973,28 @@ if __name__ == "__main__":
                     pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos que vienen
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (VERSIÓN BLINDADA) ---
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (VERSIÓN CLIENTE SUPABASE) ---
                 with st.spinner("🏛️ Sincronizando con Territorio Maestro y calculando escalas superiores..."):
                     try:
-                        import urllib.request
-                        import ssl
                         import io
-                        
-                        # 1. CARGA SEGURA DEL DICCIONARIO MAESTRO (Evitando el Error 400)
-                        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.csv"
-                        
-                        ctx = ssl.create_default_context()
-                        ctx.check_hostname = False
-                        ctx.verify_mode = ssl.CERT_NONE
-                        req = urllib.request.Request(url_maestro, headers={'User-Agent': 'Mozilla/5.0'})
-                        
-                        with urllib.request.urlopen(req, context=ctx) as response:
-                            csv_data = response.read()
-                        
-                        df_maestro = pd.read_csv(io.BytesIO(csv_data))
                         from modules.utils import normalizar_texto
+                        from modules.admin_utils import init_supabase
+                        
+                        # 1. CARGA SEGURA DEL DICCIONARIO MAESTRO (Usando el cliente oficial)
+                        supabase_client = init_supabase()
+                        if not supabase_client:
+                            raise Exception("No se pudo iniciar el cliente de Supabase para descargar el maestro.")
+                            
+                        # Descargamos el archivo directamente del bucket
+                        bucket_name = "sihcli_maestros"
+                        file_path = "territorio_maestro.csv"
+                        
+                        response = supabase_client.storage.from_(bucket_name).download(file_path)
+                        
+                        if not response:
+                            raise Exception("El archivo CSV vino vacío desde Supabase.")
+                            
+                        df_maestro = pd.read_csv(io.BytesIO(response))
                         df_maestro['match_id'] = df_maestro['municipio'].apply(normalizar_texto)
 
                         # 2. CARGA Y CRUCE CON EL MAPA
