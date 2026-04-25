@@ -1057,31 +1057,28 @@ if __name__ == "__main__":
                 prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                 
                 # --- 💾 GUARDADO MAESTRO (VERSIÓN BLINDADA CON LLAVE UNIVERSAL) ---
-                with st.spinner("Forjando Llaves Universales y Guardando Cerebro Hidrológico en Supabase..."):
+                with st.spinner("Forjando Llaves Universales e inyectando a PostgreSQL..."):
                     from modules.utils import normalizar_texto
-                    from sqlalchemy import text
                     
                     df_matriz = pd.DataFrame(res_multiescala)
                     
-                    # 1. Función Forjadora de Llave
+                    # Filtro de seguridad
+                    df_matriz = df_matriz.drop_duplicates(subset=['Jerarquia', 'Territorio'], keep='first')
+                    
                     def forjar_llave_hidro(row):
                         jerarquia = str(row.get('Jerarquia', '')).upper()
-                        if jerarquia == "MUNICIPAL": jerarquia = "MUNICIPAL"
+                        
+                        # Estandarizamos etiquetas para que coincidan con Demografía
+                        if jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
                         elif jerarquia == "REGIONAL": jerarquia = "REGION"
-                        elif jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
                         
                         terr_limpio = normalizar_texto(row.get('Territorio', ''))
                         terr = str(terr_limpio).replace(" ", "_").upper()
+                        
                         return f"{jerarquia}_{terr}_TOTAL"
 
-                    # 2. PRIMERO aplicamos la llave a todos los datos para igualarlos
                     df_matriz['LLAVE_UNIVERSAL'] = df_matriz.apply(forjar_llave_hidro, axis=1)
                     
-                    # 3. LUEGO aplicamos el Filtro Anti-Duplicados usando la LLAVE
-                    # Esto colapsa las variaciones de mapa (ej. "CHIMA" y "CHIMÃ") en una sola fila.
-                    df_matriz = df_matriz.drop_duplicates(subset=['LLAVE_UNIVERSAL'], keep='first')
-                    
-                    # 4. Inyección Segura a PostgreSQL
                     try:
                         with engine.begin() as conn:
                             conn.execute(text('ALTER TABLE matriz_hidrologica_maestra ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
@@ -1090,14 +1087,11 @@ if __name__ == "__main__":
                         df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='append', index=False)
                         st.cache_data.clear()
                         
-                        st.success(f"✅ EL ALEPH ESTÁ COMPLETO. Matriz Hidrológica forjada con {len(df_matriz)} territorios únicos.")
+                        st.success(f"✅ MATRIZ HIDROLÓGICA SINCRONIZADA. {len(df_matriz)} territorios (Cuencas + Admin).")
                         
-                        resumen = df_matriz['Jerarquia'].value_counts().reset_index()
-                        resumen.columns = ['Nivel', 'Cantidad de Territorios']
-                        st.dataframe(resumen, hide_index=True)
+                        # Visualizamos el éxito de la integración
+                        st.dataframe(df_matriz['Jerarquia'].value_counts(), use_container_width=True)
 
-                        csv_matriz = df_matriz.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Descargar Gran Matriz (CSV)", csv_matriz, "Matriz_Hidro_Multiescala.csv", "text/csv")            
                     except Exception as e:
                         st.error(f"🚨 Error inyectando a SQL: {e}")
 
