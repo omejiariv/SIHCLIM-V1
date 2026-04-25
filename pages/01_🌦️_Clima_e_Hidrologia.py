@@ -973,46 +973,45 @@ if __name__ == "__main__":
                     pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos que vienen
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (VERSIÓN CLIENTE SUPABASE) ---
-                with st.spinner("🏛️ Sincronizando con Territorio Maestro y calculando escalas superiores..."):
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (100% EN SUPABASE) ---
+                with st.spinner("🏛️ Sincronizando con Territorio Maestro desde Supabase..."):
                     try:
                         import io
+                        import requests
                         from modules.utils import normalizar_texto
-                        from modules.admin_utils import init_supabase
                         
-                        # 1. CARGA SEGURA DEL DICCIONARIO MAESTRO (Usando el cliente oficial)
-                        supabase_client = init_supabase()
-                        if not supabase_client:
-                            raise Exception("No se pudo iniciar el cliente de Supabase para descargar el maestro.")
-                            
-                        # Descargamos el archivo directamente del bucket
-                        bucket_name = "sihcli_maestros"
-                        file_path = "territorio_maestro.csv"
+                        # 1. CONEXIÓN EXCLUSIVA A LA NUBE (Archivo .xlsx)
+                        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
                         
-                        response = supabase_client.storage.from_(bucket_name).download(file_path)
+                        # Descarga robusta simulando un navegador (Evita el Error 400)
+                        respuesta = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
                         
-                        if not response:
-                            raise Exception("El archivo CSV vino vacío desde Supabase.")
-                            
-                        df_maestro = pd.read_csv(io.BytesIO(response))
-                        df_maestro['match_id'] = df_maestro['municipio'].apply(normalizar_texto)
+                        if respuesta.status_code == 200:
+                            # Al ser .xlsx, leemos el contenido binario (content) en lugar de texto
+                            df_maestro = pd.read_excel(io.BytesIO(respuesta.content))
+                        else:
+                            raise ValueError(f"El servidor de Supabase rechazó la conexión. Código HTTP: {respuesta.status_code}")
 
-                        # 2. CARGA Y CRUCE CON EL MAPA
+                        # Normalizamos nombres para el cruce exacto
+                        df_maestro['match_id'] = df_maestro['municipio'].apply(normalizar_texto)
+                        
+                        # 2. CARGAMOS EL MAPA GEOGRÁFICO Y HACEMOS EL CRUCE
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
+                        
                         col_mun_mapa = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
                         gdf_mun['match_id'] = gdf_mun[col_mun_mapa].apply(normalizar_texto)
                         
                         # Unimos el mapa con el Excel para heredar las jerarquías oficiales
                         gdf_mun = gdf_mun.merge(df_maestro[['match_id', 'municipio', 'subregion', 'region', 'depto_nom']], on='match_id', how='left')
                         
+                        # 3. DEFINIMOS NIVELES USANDO LAS COLUMNAS DEL EXCEL LIMPIO
                         niveles_admin = {
-                            'MUNICIPAL': 'municipio',
-                            'REGION': 'subregion',
-                            'MACROREGION': 'region',
-                            'DEPARTAMENTO': 'depto_nom'
+                            'MUNICIPAL': 'municipio',      
+                            'REGION': 'subregion',         
+                            'MACROREGION': 'region',       
+                            'DEPARTAMENTO': 'depto_nom'    
                         }
                         
-                        # Pasamos el mapa enriquecido al motor físico
                         procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
                         
                     except Exception as e:
