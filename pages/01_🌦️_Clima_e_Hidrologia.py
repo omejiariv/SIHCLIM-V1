@@ -973,36 +973,46 @@ if __name__ == "__main__":
                     pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos que vienen
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CON DICCIONARIO MAESTRO) ---
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (VERSIÓN BLINDADA) ---
                 with st.spinner("🏛️ Sincronizando con Territorio Maestro y calculando escalas superiores..."):
                     try:
-                        # 1. Cargamos el mapa base de municipios
-                        gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
+                        import urllib.request
+                        import ssl
+                        import io
                         
-                        # 2. CARGAMOS EL DICCIONARIO MAESTRO (La Verdad Universal)
+                        # 1. CARGA SEGURA DEL DICCIONARIO MAESTRO (Evitando el Error 400)
                         url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.csv"
-                        df_maestro = pd.read_csv(url_maestro)
                         
+                        ctx = ssl.create_default_context()
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
+                        req = urllib.request.Request(url_maestro, headers={'User-Agent': 'Mozilla/5.0'})
+                        
+                        with urllib.request.urlopen(req, context=ctx) as response:
+                            csv_data = response.read()
+                        
+                        df_maestro = pd.read_csv(io.BytesIO(csv_data))
                         from modules.utils import normalizar_texto
-                        
-                        # Normalizamos nombres para el cruce exacto
                         df_maestro['match_id'] = df_maestro['municipio'].apply(normalizar_texto)
-                        
+
+                        # 2. CARGA Y CRUCE CON EL MAPA
+                        gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
                         col_mun_mapa = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
                         gdf_mun['match_id'] = gdf_mun[col_mun_mapa].apply(normalizar_texto)
                         
-                        # 3. MERGE: Unimos el mapa con el Excel para heredar las jerarquías oficiales
+                        # Unimos el mapa con el Excel para heredar las jerarquías oficiales
                         gdf_mun = gdf_mun.merge(df_maestro[['match_id', 'municipio', 'subregion', 'region', 'depto_nom']], on='match_id', how='left')
                         
-                        # 4. DEFINIMOS NIVELES USANDO LAS COLUMNAS DEL EXCEL LIMPIO
                         niveles_admin = {
-                            'MUNICIPAL': 'municipio',      # Nombre oficial limpio del excel
-                            'REGION': 'subregion',         # Bajo Cauca, Oriente, etc.
-                            'MACROREGION': 'region',       # Andina, Caribe, etc.
-                            'DEPARTAMENTO': 'depto_nom'    # Antioquia
+                            'MUNICIPAL': 'municipio',
+                            'REGION': 'subregion',
+                            'MACROREGION': 'region',
+                            'DEPARTAMENTO': 'depto_nom'
                         }
                         
+                        # Pasamos el mapa enriquecido al motor físico
                         procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
+                        
                     except Exception as e:
                         st.warning(f"⚠️ Error en Sincronización Maestra Administrativa: {e}")
 
