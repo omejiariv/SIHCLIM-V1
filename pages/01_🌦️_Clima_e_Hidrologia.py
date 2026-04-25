@@ -966,11 +966,34 @@ if __name__ == "__main__":
                             })
                     return paso_actual
 
-                # --- 🗺️ FASE 1: PROCESAR EL MAPA DE CUENCAS ---
-                with st.spinner("💧 Calculando red hidrográfica completa..."):
+                # --- 🗺️ FASE 1: PROCESAR EL MAPA DE CUENCAS Y CARs ---
+                with st.spinner("💧 Calculando red hidrográfica y Corporaciones Autónomas..."):
                     gdf_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
-                    niveles_cuencas = {'NSS3': 'nom_nss3', 'NSS2': 'nom_nss2', 'NSS1': 'nom_nss1', 'SZH': 'nom_szh', 'ZH': 'nomzh', 'AH': 'nomah'}
-                    pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos que vienen
+                    
+                    # 🔥 REGLA DE ORO: JURISDICCIÓN AMVA
+                    # Verificamos que las columnas existan antes de aplicar la regla
+                    if 'CorpoAmb' in gdf_cuencas.columns and 'depto_regi' in gdf_cuencas.columns:
+                        # 1. Limpiamos espacios en blanco
+                        gdf_cuencas['CorpoAmb'] = gdf_cuencas['CorpoAmb'].str.strip()
+                        gdf_cuencas['depto_regi'] = gdf_cuencas['depto_regi'].str.strip()
+                        
+                        # 2. Si la región es el Valle de Aburrá, le asignamos la jurisdicción al AMVA
+                        mask_aburra = gdf_cuencas['depto_regi'].str.contains('Aburr', case=False, na=False)
+                        gdf_cuencas.loc[mask_aburra, 'CorpoAmb'] = 'AMVA'
+
+                    # Agregamos tus dos nuevos campos al motor de disolución espacial
+                    niveles_cuencas = {
+                        'NSS3': 'nom_nss3', 
+                        'NSS2': 'nom_nss2', 
+                        'NSS1': 'nom_nss1', 
+                        'SZH': 'nom_szh', 
+                        'ZH': 'nomzh', 
+                        'AH': 'nomah',
+                        'CORPOAMB': 'CorpoAmb',          # ✨ NUEVO NIVEL: Autoridad Ambiental
+                        'REGION_CUENCA': 'depto_regi'    # ✨ NUEVO NIVEL: Subregión desde la capa física
+                    }
+                    
+                    pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos de la Fase 2
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
                 # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (100% EN SUPABASE) ---
