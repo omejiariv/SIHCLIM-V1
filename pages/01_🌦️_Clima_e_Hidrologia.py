@@ -996,40 +996,53 @@ if __name__ == "__main__":
                     pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos de la Fase 2
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (100% EN SUPABASE) ---
-                with st.spinner("🏛️ Sincronizando con Territorio Maestro desde Supabase..."):
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CONEXIÓN POR CÓDIGO DANE) ---
+                with st.spinner("🏛️ Sincronizando mediante Código DANE (dp_mp) para evitar pérdida de datos..."):
                     try:
                         import io
                         import requests
-                        from modules.utils import normalizar_texto
                         
-                        # 1. CONEXIÓN EXCLUSIVA A LA NUBE (Archivo .xlsx)
+                        # 1. CARGA DEL DICCIONARIO MAESTRO
                         url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-                        
-                        # Descarga robusta simulando un navegador (Evita el Error 400)
                         respuesta = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
                         
                         if respuesta.status_code == 200:
-                            # Al ser .xlsx, leemos el contenido binario (content) en lugar de texto
                             df_maestro = pd.read_excel(io.BytesIO(respuesta.content))
                         else:
-                            raise ValueError(f"El servidor de Supabase rechazó la conexión. Código HTTP: {respuesta.status_code}")
+                            raise ValueError(f"Error HTTP {respuesta.status_code} al conectar con Supabase.")
 
-                        # Normalizamos nombres para el cruce exacto
-                        df_maestro['match_id'] = df_maestro['municipio'].apply(normalizar_texto)
+                        # 🛠️ NORMALIZACIÓN DE CÓDIGOS DANE (Garantizamos 5 dígitos: 05001)
+                        df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.zfill(5)
                         
-                        # 2. CARGAMOS EL MAPA GEOGRÁFICO Y HACEMOS EL CRUCE
+                        # 2. CARGA DEL MAPA Y DETECCIÓN DEL CÓDIGO DANE EN POSTGIS
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
                         
-                        col_mun_mapa = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
-                        gdf_mun['match_id'] = gdf_mun[col_mun_mapa].apply(normalizar_texto)
+                        # Buscamos la columna que contiene el código DANE en tu mapa (MPIO_CDP, mpio_ccdgo, etc.)
+                        posibles_cols_dane = ['mpio_cdp', 'mpio_ccdgo', 'MPIO_CCDGO', 'MPIO_CDP', 'codigo_mun', 'dp_mp']
+                        col_id_mapa = next((c for c in posibles_cols_dane if c in gdf_mun.columns), None)
                         
-                        # Unimos el mapa con el Excel para heredar las jerarquías oficiales
-                        gdf_mun = gdf_mun.merge(df_maestro[['match_id', 'municipio', 'subregion', 'region', 'depto_nom']], on='match_id', how='left')
+                        if not col_id_mapa:
+                            st.error("🚨 No se encontró la columna de Código DANE en la tabla 'municipios'. Revisa los nombres de las columnas.")
+                            st.stop()
+                            
+                        # Normalizamos el código en el mapa
+                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.zfill(5)
                         
-                        # 3. DEFINIMOS NIVELES USANDO LAS COLUMNAS DEL EXCEL LIMPIO
+                        # 3. EL CRUCE MAESTRO (INNER JOIN POR ID)
+                        # Traemos los nombres oficiales y jerarquías desde el Excel
+                        gdf_mun = gdf_mun.merge(
+                            df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom']], 
+                            on='dp_mp', 
+                            how='left'
+                        )
+                        
+                        # 4. SALVAVIDAS: Si el merge falló por ID, usamos el nombre como fallback
+                        from modules.utils import normalizar_texto
+                        col_nom_mapa = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'municipio'
+                        gdf_mun['municipio_final'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
+                        
                         niveles_admin = {
-                            'MUNICIPAL': 'municipio',      
+                            'MUNICIPAL': 'municipio_final', 
                             'REGION': 'subregion',         
                             'MACROREGION': 'region',       
                             'DEPARTAMENTO': 'depto_nom'    
@@ -1038,7 +1051,7 @@ if __name__ == "__main__":
                         procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
                         
                     except Exception as e:
-                        st.warning(f"⚠️ Error en Sincronización Maestra Administrativa: {e}")
+                        st.warning(f"⚠️ Error en Sincronización Maestra por DANE: {e}")
 
                 prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                 
