@@ -1012,21 +1012,22 @@ if __name__ == "__main__":
                         else:
                             raise ValueError(f"Error HTTP {respuesta.status_code} en Supabase.")
 
-                        # Estandarizamos el Código DANE (dp_mp) a 5 dígitos
-                        df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.zfill(5)
+                        # 🔥 EL FIX SECRETO: Limpiamos los decimales fantasmas (.0) antes de rellenar con ceros
+                        df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.split('.').str[0].str.zfill(5)
                         
                         # 2. CARGA DEL MAPA Y CRUCE GEOGRÁFICO
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
                         
                         # Detectamos la columna DANE en tu tabla PostGIS
-                        posibles_cols = ['mpio_cdp', 'mpio_ccdgo', 'MPIO_CCDGO', 'MPIO_CDP', 'dp_mp']
+                        posibles_cols = ['mpio_cdp', 'mpio_ccdgo', 'MPIO_CCDGO', 'MPIO_CDP', 'dp_mp', 'codigo_mun']
                         col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                         
                         if not col_id_mapa:
                             st.error("🚨 No se encontró columna DANE en PostGIS. Verifica la tabla 'municipios'.")
                             st.stop()
                             
-                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.zfill(5)
+                        # 🔥 Aplicamos la misma limpieza de decimales fantasmas al mapa
+                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.split('.').str[0].str.zfill(5)
                         
                         # Cruzamos para traer los nombres limpios y las jerarquías
                         gdf_mun = gdf_mun.merge(
@@ -1039,8 +1040,7 @@ if __name__ == "__main__":
                         col_nom_mapa = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'municipio'
                         gdf_mun['municipio_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
 
-                        # 3. CONFIGURACIÓN DE NIVELES (La pieza que faltaba)
-                        # Estos nombres de llaves (MUNICIPAL, REGION, etc.) deben ser idénticos en HIDRO y DEMO.
+                        # 3. CONFIGURACIÓN DE NIVELES
                         niveles_admin = {
                             'MUNICIPAL': 'municipio_clean', # Escala Local
                             'REGION': 'subregion',          # Escala Subregional (ej. Bajo Cauca)
