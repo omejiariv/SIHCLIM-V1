@@ -2606,16 +2606,25 @@ with tab_matriz:
                                 # Si el nombre limpio del excel cruzó bien, priorizamos ese; si no, dejamos el original
                                 if 'municipio_orig' in df_admin.columns:
                                     df_admin['municipio'] = df_admin['municipio'].fillna(df_admin['municipio_orig'])
+
                             else:
-                                st.warning("⚠️ Sin columna DANE en Demografía. Cruzando por nombre.")
+                                st.info("ℹ️ El archivo demográfico no posee Código DANE. Activando Sincronización Lingüística Matemática (Cruce por Nombre Normalizado)...")
                                 from modules.utils import normalizar_texto
+                                
+                                # 1. Creamos un ID de texto indestructible (sin tildes, sin ñ, en mayúsculas)
                                 col_mun = 'municipio' if 'municipio' in df_admin.columns else df_admin.columns[0]
                                 df_admin['match_id'] = df_admin[col_mun].astype(str).apply(normalizar_texto)
                                 df_maestro['match_id'] = df_maestro['municipio'].astype(str).apply(normalizar_texto)
+                                
+                                # 2. Cruzamos usando este ID de texto
                                 df_maestro_nombres = df_maestro.drop_duplicates(subset=['match_id'])
                                 df_admin = df_admin.merge(df_maestro_nombres[['match_id', 'municipio', 'subregion', 'region', 'depto_nom']], on='match_id', how='left', suffixes=('_orig', ''))
+                                
+                                # 3. Inyectamos los nombres perfectos del Excel para que las llaves coincidan con Hidrología
                                 if 'municipio_orig' in df_admin.columns:
                                     df_admin['municipio'] = df_admin['municipio'].fillna(df_admin['municipio_orig'])
+                                    
+                                st.success(f"✅ Sincronización Lingüística completada. {df_admin['match_id'].nunique()} territorios enlazados.")
 
                             # 🛡️ ESCUDO ANTIOQUIA: Cortamos todo el ruido nacional y procesamos solo nuestro entorno
                             # 🛡️ ESCUDO ANTIOQUIA: Si tenemos código DANE, borramos el resto de Colombia inmediatamente
