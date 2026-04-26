@@ -996,104 +996,82 @@ if __name__ == "__main__":
                     pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos de la Fase 2
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (SINCRONÍA DANE + EXCEL) ---
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CRUCE POR DANE ID) ---
                 with st.spinner("🏛️ Sincronizando Niveles Administrativos mediante Código DANE..."):
                     try:
                         import io
                         import requests
                         from modules.utils import normalizar_texto
                         
-                        # 1. CARGA DEL DICCIONARIO MAESTRO (100% Nube)
+                        # 1. Carga del Excel Maestro (URL de Supabase)
                         url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-                        respuesta = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+                        headers = {'User-Agent': 'Mozilla/5.0'}
+                        res_m = requests.get(url_maestro, headers=headers, timeout=20)
+                        df_maestro = pd.read_excel(io.BytesIO(res_m.content))
                         
-                        if respuesta.status_code == 200:
-                            df_maestro = pd.read_excel(io.BytesIO(respuesta.content))
-                        else:
-                            raise ValueError(f"Error HTTP {respuesta.status_code} en Supabase.")
-
-                        # 🔥 EL FIX SECRETO: Limpiamos los decimales fantasmas (.0) antes de rellenar con ceros
+                        # Limpieza crítica de IDs (Evita el error del .0)
                         df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.split('.').str[0].str.zfill(5)
-                        
-                        # 2. CARGA DEL MAPA Y CRUCE GEOGRÁFICO
+
+                        # 2. Carga del Mapa y Cruce
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
-                        
-                        # Detectamos la columna DANE en tu tabla PostGIS
                         posibles_cols = ['mpio_cdp', 'mpio_ccdgo', 'MPIO_CCDGO', 'MPIO_CDP', 'dp_mp', 'codigo_mun']
                         col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                         
-                        if not col_id_mapa:
-                            st.error("🚨 No se encontró columna DANE en PostGIS. Verifica la tabla 'municipios'.")
-                            st.stop()
-                            
-                        # 🔥 Aplicamos la misma limpieza de decimales fantasmas al mapa
                         gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.split('.').str[0].str.zfill(5)
                         
-                        # Cruzamos para traer los nombres limpios y las jerarquías
-                        gdf_mun = gdf_mun.merge(
-                            df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom']], 
-                            on='dp_mp', 
-                            how='left'
-                        )
+                        # Unimos con el Maestro para heredar las jerarquías oficiales
+                        gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
                         
-                        # Fallback por si el merge falla en algún municipio por ID
+                        # Fallback de nombre
                         col_nom_mapa = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'municipio'
-                        gdf_mun['municipio_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
+                        gdf_mun['mun_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
 
-                        # 3. CONFIGURACIÓN DE NIVELES
+                        # 3. CONFIGURACIÓN DE NIVELES (Ahora sí incluimos todos)
                         niveles_admin = {
-                            'MUNICIPAL': 'municipio_clean', # Escala Local
-                            'REGION': 'subregion',          # Escala Subregional (ej. Bajo Cauca)
-                            'MACROREGION': 'region',        # Escala Macro (ej. Andina)
-                            'DEPARTAMENTO': 'depto_nom'     # Escala Departamental (Antioquia)
+                            'MUNICIPAL': 'mun_clean',
+                            'REGION': 'subregion',       # Escala Subregional (Bajo Cauca, etc.)
+                            'MACROREGION': 'region',     # Escala Macro (Andina, etc.)
+                            'DEPARTAMENTO': 'depto_nom', # Escala Departamental
+                            'CORPOAMB': 'car'            # Autoridades Ambientales
                         }
                         
-                        # Enviamos al motor físico para disolver polígonos y calcular balance hídrico
                         paso_actual = procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
                         
                     except Exception as e:
-                        st.warning(f"⚠️ Error en Sincronización Maestra Administrativa: {e}")
+                        st.warning(f"⚠️ Error en Sincronización Maestra: {e}")
 
                 prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                 
-                # --- 💾 GUARDADO MAESTRO (VERSIÓN BLINDADA CON LLAVE UNIVERSAL) ---
-                with st.spinner("Forjando Llaves Universales e inyectando a PostgreSQL..."):
+                # --- 💾 GUARDADO MAESTRO Y DESCARGA INMEDIATA ---
+                with st.spinner("Forjando Llaves Universales e Inyectando a PostgreSQL..."):
                     from modules.utils import normalizar_texto
-                    
                     df_matriz = pd.DataFrame(res_multiescala)
                     
-                    # Filtro de seguridad
-                    df_matriz = df_matriz.drop_duplicates(subset=['Jerarquia', 'Territorio'], keep='first')
-                    
+                    # Forja de Llave Universal
                     def forjar_llave_hidro(row):
                         jerarquia = str(row.get('Jerarquia', '')).upper()
-                        
-                        # Estandarizamos etiquetas para que coincidan con Demografía
                         if jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
                         elif jerarquia == "REGIONAL": jerarquia = "REGION"
-                        
-                        terr_limpio = normalizar_texto(row.get('Territorio', ''))
-                        terr = str(terr_limpio).replace(" ", "_").upper()
-                        
+                        terr = str(normalizar_texto(row.get('Territorio', ''))).replace(" ", "_").upper()
                         return f"{jerarquia}_{terr}_TOTAL"
 
                     df_matriz['LLAVE_UNIVERSAL'] = df_matriz.apply(forjar_llave_hidro, axis=1)
+                    df_matriz = df_matriz.drop_duplicates(subset=['LLAVE_UNIVERSAL'], keep='first')
                     
                     try:
                         with engine.begin() as conn:
-                            conn.execute(text('ALTER TABLE matriz_hidrologica_maestra ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
                             conn.execute(text("DELETE FROM matriz_hidrologica_maestra;"))
-                            
                         df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='append', index=False)
                         st.cache_data.clear()
                         
-                        st.success(f"✅ MATRIZ HIDROLÓGICA SINCRONIZADA. {len(df_matriz)} territorios (Cuencas + Admin).")
+                        st.success(f"✅ EL ALEPH ESTÁ COMPLETO. {len(df_matriz)} territorios sincronizados.")
                         
-                        # Visualizamos el éxito de la integración
-                        st.dataframe(df_matriz['Jerarquia'].value_counts(), use_container_width=True)
-
+                        # 📥 BOTÓN DE DESCARGA INMEDIATA
+                        csv_data = df_matriz.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Descargar Matriz Recién Forjada (CSV)", csv_data, "Matriz_Hidro_Multiescala.csv", "text/csv", key="btn_dl_instant")
+                        
                     except Exception as e:
                         st.error(f"🚨 Error inyectando a SQL: {e}")
-
+            
             except Exception as e:
-                st.error(f"❌ Error crítico procesando la información espacial: {e}")
+                st.error(f"❌ Error crítico: {e}")
