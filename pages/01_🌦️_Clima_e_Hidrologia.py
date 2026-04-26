@@ -1004,60 +1004,69 @@ if __name__ == "__main__":
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
                 # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CRUCE POR DANE ID) ---
-                with st.spinner("🏛️ Sincronizando Niveles Administrativos mediante Código DANE..."):
+# --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CON SONDA FORENSE) ---
+                with st.spinner("🏛️ Sincronizando Niveles Administrativos..."):
                     try:
                         import io
                         import requests
+                        import traceback  # 🔬 LIBRERÍA FORENSE (Rastrea errores exactos)
                         from modules.utils import normalizar_texto
                         
-                        # 1. Carga del Excel Maestro (URL de Supabase)
+                        # 1. Carga Maestro
                         url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-                        headers = {'User-Agent': 'Mozilla/5.0'}
-                        res_m = requests.get(url_maestro, headers=headers, timeout=20)
+                        res_m = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
                         df_maestro = pd.read_excel(io.BytesIO(res_m.content))
-                        
-                        # Limpieza crítica de IDs (Evita el error del .0)
                         df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
-                        df_maestro = df_maestro.drop_duplicates(subset=['dp_mp'], keep='first')
-
-                        # 2. Carga del Mapa y Cruce
+                        
+                        # 2. Carga Mapa desde PostGIS
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
-                        # Priorizamos columnas de 5 dígitos (CCNCT, CDP) sobre las de 3 (CCDGO)
-                        posibles_cols = ['MPIO_CCNCT', 'mpio_ccnct', 'MPIO_CDP', 'mpio_cdp', 'dp_mp', 'MPIO_CCDGO']
+                        
+                        # 👁️ SONDA 1: Mostrar en pantalla las columnas que REALMENTE trae la base de datos
+                        with st.expander("🔍 DATOS FORENSES: Columnas en PostGIS", expanded=True):
+                            st.write(gdf_mun.columns.tolist())
+                        
+                        posibles_cols = ['MPIO_CCNCT', 'mpio_ccnct', 'MPIO_CDP', 'mpio_cdp', 'dp_mp', 'MPIO_CCDGO', 'mpio_ccdgo']
                         col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                         
-                        # Si el código detectado es de 3 dígitos (CCDGO), le anteponemos '05' (Antioquia) para que cruce con el Excel
-                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.split('.').str[0].str.zfill(3 if col_id_mapa.upper().endswith('CCDGO') else 5)
-                        if col_id_mapa.upper().endswith('CCDGO'): gdf_mun['dp_mp'] = '05' + gdf_mun['dp_mp']
+                        if not col_id_mapa:
+                            raise ValueError(f"CRÍTICO: Ninguna columna de ID DANE fue encontrada. Columnas disponibles: {gdf_mun.columns.tolist()}")
+                            
+                        # 3. Limpieza de ID Blindada
+                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0]
+                        # REGLA ESTRICTA: Si PostGIS manda 3 dígitos (ej. 001), le inyectamos el '05' de Antioquia por la fuerza. Si no, 5 dígitos.
+                        gdf_mun['dp_mp'] = gdf_mun['dp_mp'].apply(lambda x: f"05{x.zfill(3)}" if len(x) <= 3 else x.zfill(5))
                         
-                        # Unimos con el Maestro para heredar las jerarquías oficiales
-                        # Aseguramos que el cruce traiga las columnas exactas que necesitamos
+                        # 4. Cruce Maestro
                         gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
-                        # Limpiamos posibles nulos en jerarquías para que el motor no los ignore
-                        gdf_mun['subregion'] = gdf_mun['subregion'].fillna('Sin Region')
-                        gdf_mun['region'] = gdf_mun['region'].fillna('Sin Macroregion')
-                        gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Antioquia')
+                        
+                        # Reglas y Fallbacks seguros
                         mask_aburra = gdf_mun['subregion'].str.contains('Aburr', case=False, na=False)
                         gdf_mun.loc[mask_aburra, 'car'] = 'AMVA'
                         
-                        # Fallback de nombre
                         col_nom_mapa = next((c for c in ['mpio_cnmbr', 'MPIO_CNMBR', 'municipio'] if c in gdf_mun.columns), 'municipio')
-                        gdf_mun['mun_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
-
-                        # 3. CONFIGURACIÓN DE NIVELES (Ahora sí incluimos todos)
+                        gdf_mun['municipio_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
+                        
+                        # Limpieza de nulos antes de mandar al motor físico
+                        gdf_mun['subregion'] = gdf_mun['subregion'].fillna('Sin Region')
+                        gdf_mun['region'] = gdf_mun['region'].fillna('Sin Macroregion')
+                        gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Sin Departamento')
+                        
                         niveles_admin = {
-                            'MUNICIPAL': 'mun_clean',
-                            'REGION': 'subregion',       # Escala Subregional (Bajo Cauca, etc.)
-                            'MACROREGION': 'region',     # Escala Macro (Andina, etc.)
-                            'DEPARTAMENTO': 'depto_nom', # Escala Departamental
-                            'CORPOAMB': 'car'            # Autoridades Ambientales
+                            'MUNICIPAL': 'municipio_clean',
+                            'REGION': 'subregion',
+                            'MACROREGION': 'region',
+                            'DEPARTAMENTO': 'depto_nom',
+                            'CORPOAMB': 'car'
                         }
                         
                         paso_actual = procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
                         
                     except Exception as e:
-                        st.warning(f"⚠️ Error en Sincronización Maestra: {e}")
-
+                        # 🚨 LA AUTOPSIA: Si algo falla, mostrará el rastro completo sin ocultar nada
+                        st.error("🚨 ERROR CRÍTICO EN FASE 2. PROTOCOLO FORENSE ACTIVADO:")
+                        st.code(traceback.format_exc(), language="python")
+                        st.stop()  # Detenemos todo para no generar datos corruptos
+                        
                 prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                 
                 # --- 💾 GUARDADO MAESTRO Y DESCARGA INMEDIATA ---
