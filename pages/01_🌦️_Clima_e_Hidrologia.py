@@ -1025,16 +1025,14 @@ if __name__ == "__main__":
                         with st.expander("🔍 DATOS FORENSES: Columnas en PostGIS", expanded=True):
                             st.write(gdf_mun.columns.tolist())
                         
-                        posibles_cols = ['MPIO_CCNCT', 'mpio_ccnct', 'MPIO_CDP', 'mpio_cdp', 'dp_mp', 'MPIO_CCDGO', 'mpio_ccdgo']
+                        posibles_cols = ['mpio_cdpmp', 'MPIO_CDPMP', 'dp_mp', 'mpio_cdp', 'MPIO_CDP']
                         col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                         
                         if not col_id_mapa:
                             raise ValueError(f"CRÍTICO: Ninguna columna de ID DANE fue encontrada. Columnas disponibles: {gdf_mun.columns.tolist()}")
                             
                         # 3. Limpieza de ID Blindada
-                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0]
-                        # REGLA ESTRICTA: Si PostGIS manda 3 dígitos (ej. 001), le inyectamos el '05' de Antioquia por la fuerza. Si no, 5 dígitos.
-                        gdf_mun['dp_mp'] = gdf_mun['dp_mp'].apply(lambda x: f"05{x.zfill(3)}" if len(x) <= 3 else x.zfill(5))
+                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
                         
                         # 4. Cruce Maestro
                         gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
@@ -1049,7 +1047,10 @@ if __name__ == "__main__":
                         # Limpieza de nulos antes de mandar al motor físico
                         gdf_mun['subregion'] = gdf_mun['subregion'].fillna('Sin Region')
                         gdf_mun['region'] = gdf_mun['region'].fillna('Sin Macroregion')
-                        gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Sin Departamento')
+                        gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Antioquia')
+                        
+                        # 🛡️ FILTRO ESTRICTO ANTIOQUIA: Eliminamos del mapa todo lo que no empiece con el código '05'
+                        gdf_mun = gdf_mun[gdf_mun['dp_mp'].str.startswith('05')].copy()
                         
                         niveles_admin = {
                             'MUNICIPAL': 'municipio_clean',
