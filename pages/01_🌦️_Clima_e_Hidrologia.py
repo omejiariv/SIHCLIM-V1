@@ -996,7 +996,7 @@ if __name__ == "__main__":
                         'SZH': 'nom_szh', 
                         'ZH': 'nomzh', 
                         'AH': 'nomah',
-                        'CORPOAMB': 'CorpoAmb',          # ✨ NUEVO NIVEL: Autoridad Ambiental
+                        'CAR': 'CorpoAmb',               # ✨ NUEVO NIVEL: Autoridad Ambiental
                         'REGION_CUENCA': 'depto_regi'    # ✨ NUEVO NIVEL: Subregión desde la capa física
                     }
                     
@@ -1057,7 +1057,7 @@ if __name__ == "__main__":
                             'REGION': 'subregion',
                             'MACROREGION': 'region',
                             'DEPARTAMENTO': 'depto_nom',
-                            'CORPOAMB': 'car'
+                            'CAR': 'car'
                         }
                         
                         paso_actual = procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
