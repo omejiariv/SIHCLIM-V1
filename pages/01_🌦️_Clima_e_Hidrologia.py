@@ -479,9 +479,12 @@ def main():
 
             # 1. CONFIGURACIÓN GRID Y SINCRONIZACIÓN ESPACIAL
             # 🤝 LECTURA MAESTRA: El lienzo toma el tamaño exacto que el Sidebar le dicte
-            buffer_km = float(st.session_state.get("buffer_global_km", 15.0))
             
-            st.info(f"📏 Modelando con un área de influencia de **{buffer_km} km** (Configurado en el panel lateral).")
+            # Buscamos el valor en las posibles variables del sidebar (por si cambió de nombre)
+            buffer_km = float(st.session_state.get("buffer_global_km", st.session_state.get("buffer_km", 15.0)))
+            
+            # Forzamos la actualización visual para que refleje el número exacto
+            st.info(f"📏 Modelando con un área de influencia de **{buffer_km} km** (Sincronizado con el panel lateral).")
             
             # Dejamos solo el slider de resolución para no saturar la interfaz
             grid_res = st.slider("Resolución del Grid (Celdas)", min_value=50, max_value=400, value=150, help="Mayor resolución = más detalle pero más tiempo de cálculo.")
@@ -929,7 +932,9 @@ if __name__ == "__main__":
                             if area_km2 <= 0: area_km2 = 1.0
                             
                             # Cruce Climático (Qué estaciones caen cerca de este territorio)
-                            buf = row.geometry.buffer(20000) # 20km de búsqueda
+                            # Convertimos km a metros para el buffer geoespacial
+                            dist_m = distancia_buffer * 1000 if 'distancia_buffer' in locals() else 15000
+                            buf = row.geometry.buffer(buffer_km * 1000)
                             est_in = gdf_est[gdf_est.geometry.within(buf)]
                             
                             ppt_media, altitud_media = 2500.0, 1500.0
@@ -1021,8 +1026,12 @@ if __name__ == "__main__":
                         gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
                         
                         # Unimos con el Maestro para heredar las jerarquías oficiales
+                        # Aseguramos que el cruce traiga las columnas exactas que necesitamos
                         gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
-
+                        # Limpiamos posibles nulos en jerarquías para que el motor no los ignore
+                        gdf_mun['subregion'] = gdf_mun['subregion'].fillna('Sin Region')
+                        gdf_mun['region'] = gdf_mun['region'].fillna('Sin Macroregion')
+                        gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Antioquia')
                         mask_aburra = gdf_mun['subregion'].str.contains('Aburr', case=False, na=False)
                         gdf_mun.loc[mask_aburra, 'car'] = 'AMVA'
                         
