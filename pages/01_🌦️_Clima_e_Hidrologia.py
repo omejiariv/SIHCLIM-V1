@@ -1075,3 +1075,36 @@ if __name__ == "__main__":
             
             except Exception as e:
                 st.error(f"❌ Error crítico: {e}")
+
+# ==============================================================================
+# 📥 PANEL DE EXPORTACIÓN PERMANENTE (FUERA DEL BUCLE DE FORJA)
+# ==============================================================================
+st.markdown("---")
+with st.expander("📥 Panel de Descarga de Matriz Hidrológica (Desde Base de Datos)", expanded=False):
+    st.info("Utiliza este panel para descargar la última versión guardada en PostgreSQL sin necesidad de ejecutar el recálculo global.")
+    
+    if st.button("🔍 Preparar Descarga desde SQL"):
+        try:
+            # Consultamos la tabla maestra directamente
+            df_export = pd.read_sql("SELECT * FROM matriz_hidrologica_maestra", engine)
+            
+            if not df_export.empty:
+                st.write(f"✅ Se encontraron {len(df_export)} territorios listos para exportar.")
+                
+                # Resumen rápido para tranquilidad del usuario
+                resumen = df_export['Jerarquia'].value_counts().reset_index()
+                resumen.columns = ['Nivel', 'Cantidad']
+                st.dataframe(resumen, hide_index=True)
+                
+                csv_export = df_export.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="💾 Descargar Matriz Maestra (CSV)",
+                    data=csv_export,
+                    file_name="Matriz_Hidro_Maestra_SQL.csv",
+                    mime="text/csv",
+                    key="btn_dl_sql_permanent"
+                )
+            else:
+                st.warning("La base de datos parece estar vacía. Por favor, ejecuta la forja primero.")
+        except Exception as e:
+            st.error(f"Error al conectar con la base de datos: {e}")
