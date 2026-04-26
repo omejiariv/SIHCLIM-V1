@@ -2583,11 +2583,20 @@ with tab_matriz:
                             df_maestro = df_maestro.drop_duplicates(subset=['dp_mp'], keep='first')
                             
                             # 🔬 SONDA FORENSE: Buscar la columna DANE poblacional
+                            # 🔬 DETECTIVE FORENSE: Obligamos al sistema a mostrarnos la estructura real
+                            with st.expander("🔍 DETECTIVE FORENSE: Columnas en Archivo de Población", expanded=True):
+                                st.write("El sistema detectó estas columnas en los datos del DANE:")
+                                st.write(df_admin.columns.tolist())
+
+                            # Ampliamos la lista de sospechosos basándonos en estándares del DANE
+                            posibles_cols = ['MPIO', 'mpio', 'DPMP', 'dpmp', 'Código DANE', 'codigo_dane', 'dp_mp', 'MPIO_CDPMP', 'mpio_cdpmp', 'Código Municipio', 'cod_mpio']
                             posibles_cols = ['MPIO', 'mpio', 'DPMP', 'dpmp', 'Código DANE', 'codigo_dane', 'dp_mp', 'MPIO_CDPMP', 'mpio_cdpmp']
                             col_id_demo = next((c for c in posibles_cols if c in df_admin.columns), None)
                             
                             if col_id_demo:
+                                # Limpieza absoluta: quitamos decimales, espacios y rellenamos a 5 dígitos
                                 df_admin['dp_mp'] = df_admin[col_id_demo].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
+                                st.success(f"🎯 ¡Detección Exitosa! Usando columna **'{col_id_demo}'** como identidad DANE.")
                                 # Guardamos el nombre original de la columna municipio por si hay fallos
                                 col_nom_orig = 'municipio' if 'municipio' in df_admin.columns else df_admin.columns[0]
                                 
@@ -2609,8 +2618,10 @@ with tab_matriz:
                                     df_admin['municipio'] = df_admin['municipio'].fillna(df_admin['municipio_orig'])
 
                             # 🛡️ ESCUDO ANTIOQUIA: Cortamos todo el ruido nacional y procesamos solo nuestro entorno
+                            # 🛡️ ESCUDO ANTIOQUIA: Si tenemos código DANE, borramos el resto de Colombia inmediatamente
                             if 'dp_mp' in df_admin.columns:
                                 df_admin = df_admin[df_admin['dp_mp'].str.startswith('05')].copy()
+                                st.write(f"✅ Escudo Activado: Procesando únicamente los {df_admin['municipio'].nunique()} municipios de Antioquia.")
                             elif 'depto_nom' in df_admin.columns:
                                 df_admin = df_admin[df_admin['depto_nom'].str.contains('Antioquia', case=False, na=False)].copy()
 
