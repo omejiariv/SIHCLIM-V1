@@ -993,7 +993,7 @@ if __name__ == "__main__":
                         'REGION_CUENCA': 'depto_regi'    # ✨ NUEVO NIVEL: Subregión desde la capa física
                     }
                     
-                    pasos_totales = len(niveles_cuencas) + 4 # Sumamos los 4 niveles administrativos de la Fase 2
+                    pasos_totales = len(niveles_cuencas) + 5 # Sumamos los 5 niveles (ahora incluye CORPOAMB)
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
                 # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CRUCE POR DANE ID) ---
@@ -1010,20 +1010,24 @@ if __name__ == "__main__":
                         df_maestro = pd.read_excel(io.BytesIO(res_m.content))
                         
                         # Limpieza crítica de IDs (Evita el error del .0)
-                        df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.split('.').str[0].str.zfill(5)
+                        df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
+                        df_maestro = df_maestro.drop_duplicates(subset=['dp_mp'], keep='first')
 
                         # 2. Carga del Mapa y Cruce
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
-                        posibles_cols = ['mpio_cdp', 'mpio_ccdgo', 'MPIO_CCDGO', 'MPIO_CDP', 'dp_mp', 'codigo_mun']
+                        posibles_cols = ['MPIO_CDP', 'mpio_cdp', 'dp_mp', 'MPIO_CCDGO', 'mpio_ccdgo']
                         col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                         
-                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.split('.').str[0].str.zfill(5)
+                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
                         
                         # Unimos con el Maestro para heredar las jerarquías oficiales
                         gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
+
+                        mask_aburra = gdf_mun['subregion'].str.contains('Aburr', case=False, na=False)
+                        gdf_mun.loc[mask_aburra, 'car'] = 'AMVA'
                         
                         # Fallback de nombre
-                        col_nom_mapa = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'municipio'
+                        col_nom_mapa = next((c for c in ['mpio_cnmbr', 'MPIO_CNMBR', 'municipio'] if c in gdf_mun.columns), 'municipio')
                         gdf_mun['mun_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
 
                         # 3. CONFIGURACIÓN DE NIVELES (Ahora sí incluimos todos)
@@ -1060,6 +1064,7 @@ if __name__ == "__main__":
                     
                     try:
                         with engine.begin() as conn:
+                            conn.execute(text('ALTER TABLE matriz_hidrologica_maestra ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
                             conn.execute(text("DELETE FROM matriz_hidrologica_maestra;"))
                         df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='append', index=False)
                         st.cache_data.clear()
