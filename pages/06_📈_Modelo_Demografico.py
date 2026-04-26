@@ -2616,9 +2616,9 @@ with tab_matriz:
                                 df_admin['match_id'] = df_admin[col_mun].astype(str).apply(normalizar_texto)
                                 df_maestro['match_id'] = df_maestro['municipio'].astype(str).apply(normalizar_texto)
                                 
-                                # 2. Cruzamos usando este ID de texto
+                                # 2. Cruzamos usando este ID de texto (Añadimos la columna 'car')
                                 df_maestro_nombres = df_maestro.drop_duplicates(subset=['match_id'])
-                                df_admin = df_admin.merge(df_maestro_nombres[['match_id', 'municipio', 'subregion', 'region', 'depto_nom']], on='match_id', how='left', suffixes=('_orig', ''))
+                                df_admin = df_admin.merge(df_maestro_nombres[['match_id', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='match_id', how='left', suffixes=('_orig', ''))
                                 
                                 # 3. Inyectamos los nombres perfectos del Excel para que las llaves coincidan con Hidrología
                                 if 'municipio_orig' in df_admin.columns:
@@ -2692,7 +2692,15 @@ with tab_matriz:
                 # E. ESCALA URBANA (Todas las Cabeceras)
                 df_f = df_admin[df_admin['Categoria_Area'] == 'Urbana'].groupby(col_anio)['Total'].sum().reset_index()
                 if len(df_f) >= 3 and df_f['Total'].sum() > 0:
-                    ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'ESCALA_URBANA', 'Todas las Cabeceras', 'Antioquia', 'Urbana')            
+                    ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'ESCALA_URBANA', 'Todas las Cabeceras', 'Antioquia', 'Urbana')
+
+                # F. CORPORACIONES AUTÓNOMAS REGIONALES (CAR)
+                if 'car' in df_admin.columns:
+                    for autoridad in df_admin['car'].dropna().unique():
+                        for cat in ['Total', 'Urbana', 'Rural']:
+                            df_f = df_admin[(df_admin['car'] == autoridad) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
+                            if len(df_f) >= 3 and df_f['Total'].sum() > 0:
+                                ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'CAR', autoridad, 'Antioquia', cat)
 
 
             # =====================================================================
