@@ -934,7 +934,9 @@ if __name__ == "__main__":
                             # Cruce Climático (Qué estaciones caen cerca de este territorio)
                             # Convertimos km a metros para el buffer geoespacial
                             dist_m = distancia_buffer * 1000 if 'distancia_buffer' in locals() else 15000
-                            buf = row.geometry.buffer(buffer_km * 1000)
+                            # Extraemos el buffer directamente de la sesión para evitar pérdida de variables
+                            buffer_seguro = float(st.session_state.get("buffer_global_km", 15.0))
+                            buf = row.geometry.buffer(buffer_seguro * 1000)
                             est_in = gdf_est[gdf_est.geometry.within(buf)]
                             
                             ppt_media, altitud_media = 2500.0, 1500.0
