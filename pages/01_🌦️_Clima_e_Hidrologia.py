@@ -481,7 +481,7 @@ def main():
             # 🤝 LECTURA MAESTRA: El lienzo toma el tamaño exacto que el Sidebar le dicte
             
             # Buscamos el valor en las posibles variables del sidebar (por si cambió de nombre)
-            buffer_km = float(st.session_state.get("buffer_global_km", st.session_state.get("buffer_km", 15.0)))
+            buffer_km = float(st.session_state.get("buffer_km", st.session_state.get("buffer_global_km", 25.0)))
             
             # Forzamos la actualización visual para que refleje el número exacto
             st.info(f"📏 Modelando con un área de influencia de **{buffer_km} km** (Sincronizado con el panel lateral).")
@@ -1022,10 +1022,13 @@ if __name__ == "__main__":
 
                         # 2. Carga del Mapa y Cruce
                         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
-                        posibles_cols = ['MPIO_CDP', 'mpio_cdp', 'dp_mp', 'MPIO_CCDGO', 'mpio_ccdgo']
+                        # Priorizamos columnas de 5 dígitos (CCNCT, CDP) sobre las de 3 (CCDGO)
+                        posibles_cols = ['MPIO_CCNCT', 'mpio_ccnct', 'MPIO_CDP', 'mpio_cdp', 'dp_mp', 'MPIO_CCDGO']
                         col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                         
-                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
+                        # Si el código detectado es de 3 dígitos (CCDGO), le anteponemos '05' (Antioquia) para que cruce con el Excel
+                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.split('.').str[0].str.zfill(3 if col_id_mapa.upper().endswith('CCDGO') else 5)
+                        if col_id_mapa.upper().endswith('CCDGO'): gdf_mun['dp_mp'] = '05' + gdf_mun['dp_mp']
                         
                         # Unimos con el Maestro para heredar las jerarquías oficiales
                         # Aseguramos que el cruce traiga las columnas exactas que necesitamos
@@ -1067,6 +1070,7 @@ if __name__ == "__main__":
                         jerarquia = str(row.get('Jerarquia', '')).upper()
                         if jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
                         elif jerarquia == "REGIONAL": jerarquia = "REGION"
+                        if row.get('Territorio') is None or str(row.get('Territorio')) == 'nan': return None
                         terr = str(normalizar_texto(row.get('Territorio', ''))).replace(" ", "_").upper()
                         return f"{jerarquia}_{terr}_TOTAL"
 
