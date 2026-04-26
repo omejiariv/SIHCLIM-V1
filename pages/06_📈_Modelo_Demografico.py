@@ -2567,6 +2567,61 @@ with tab_matriz:
             if 'df_mun' in locals() or 'df_mun' in globals():
                 df_admin = df_mun.copy()
                 
+                # --- 🔗 1. CONEXIÓN FORENSE AL DICCIONARIO MAESTRO (CRUCE POR CÓDIGO DANE) ---
+                with st.spinner("Descargando Territorio Maestro (Sincronía Matemática y Filtro Antioquia)..."):
+                    try:
+                        import io
+                        import requests
+                        
+                        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
+                        respuesta = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+                        
+                        if respuesta.status_code == 200:
+                            df_maestro = pd.read_excel(io.BytesIO(respuesta.content))
+                            # Limpieza de ID idéntica a la Hidrología
+                            df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
+                            df_maestro = df_maestro.drop_duplicates(subset=['dp_mp'], keep='first')
+                            
+                            # 🔬 SONDA FORENSE: Buscar la columna DANE poblacional
+                            posibles_cols = ['MPIO', 'mpio', 'DPMP', 'dpmp', 'Código DANE', 'codigo_dane', 'dp_mp', 'MPIO_CDPMP', 'mpio_cdpmp']
+                            col_id_demo = next((c for c in posibles_cols if c in df_admin.columns), None)
+                            
+                            if col_id_demo:
+                                df_admin['dp_mp'] = df_admin[col_id_demo].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
+                                # Guardamos el nombre original de la columna municipio por si hay fallos
+                                col_nom_orig = 'municipio' if 'municipio' in df_admin.columns else df_admin.columns[0]
+                                
+                                # Cruce matemático
+                                df_admin = df_admin.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom']], on='dp_mp', how='left', suffixes=('_orig', ''))
+                                
+                                # Si el nombre limpio del excel cruzó bien, priorizamos ese; si no, dejamos el original
+                                if 'municipio_orig' in df_admin.columns:
+                                    df_admin['municipio'] = df_admin['municipio'].fillna(df_admin['municipio_orig'])
+                            else:
+                                st.warning("⚠️ Sin columna DANE en Demografía. Cruzando por nombre.")
+                                from modules.utils import normalizar_texto
+                                col_mun = 'municipio' if 'municipio' in df_admin.columns else df_admin.columns[0]
+                                df_admin['match_id'] = df_admin[col_mun].astype(str).apply(normalizar_texto)
+                                df_maestro['match_id'] = df_maestro['municipio'].astype(str).apply(normalizar_texto)
+                                df_maestro_nombres = df_maestro.drop_duplicates(subset=['match_id'])
+                                df_admin = df_admin.merge(df_maestro_nombres[['match_id', 'municipio', 'subregion', 'region', 'depto_nom']], on='match_id', how='left', suffixes=('_orig', ''))
+                                if 'municipio_orig' in df_admin.columns:
+                                    df_admin['municipio'] = df_admin['municipio'].fillna(df_admin['municipio_orig'])
+
+                            # 🛡️ ESCUDO ANTIOQUIA: Cortamos todo el ruido nacional y procesamos solo nuestro entorno
+                            if 'dp_mp' in df_admin.columns:
+                                df_admin = df_admin[df_admin['dp_mp'].str.startswith('05')].copy()
+                            elif 'depto_nom' in df_admin.columns:
+                                df_admin = df_admin[df_admin['depto_nom'].str.contains('Antioquia', case=False, na=False)].copy()
+
+                            # Limpieza de vacíos para no romper la suma demográfica
+                            df_admin['subregion'] = df_admin['subregion'].fillna('Sin Region')
+                            df_admin['region'] = df_admin['region'].fillna('Sin Macroregion')
+                            df_admin['depto_nom'] = df_admin['depto_nom'].fillna('Antioquia')
+                            
+                    except Exception as e:
+                        st.warning(f"⚠️ Error en Sincronización Demográfica: {e}")
+                
                 # 🧹 LIMPIEZA ANTI-DUPLICADOS (PRE-AGREGACIÓN)
                 # Si df_mun arrastra duplicados de algún cruce previo, esto evita que la población se multiplique.
                 if 'Total' in df_admin.columns:
