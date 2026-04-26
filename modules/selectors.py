@@ -307,7 +307,7 @@ def render_selector_espacial():
 
         # --- FILTRO DE ESTACIONES ---
         if gdf_zona is not None and not gdf_zona.empty:
-            buff = st.slider("Buffer (km):", 0.0, 50.0, 15.0)
+            buff = st.slider("Buffer (km):", 0.0, 50.0, 25.0)
             minx, miny, maxx, maxy = gdf_zona.to_crs(4326).total_bounds
             q = text(f"SELECT id_estacion, altitud FROM estaciones WHERE longitud BETWEEN {minx-0.2} AND {maxx+0.2} AND latitud BETWEEN {miny-0.2} AND {maxy+0.2}")
             df_est = pd.read_sql(q, engine)
