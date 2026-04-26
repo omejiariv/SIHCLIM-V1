@@ -487,7 +487,7 @@ def main():
             st.info(f"📏 Modelando con un área de influencia de **{buffer_km} km** (Sincronizado con el panel lateral).")
             
             # Dejamos solo el slider de resolución para no saturar la interfaz
-            grid_res = st.slider("Resolución del Grid (Celdas)", min_value=50, max_value=400, value=150, help="Mayor resolución = más detalle pero más tiempo de cálculo.")
+            grid_res = st.slider("Resolución del Grid (Celdas)", min_value=50, max_value=500, value=100, help="Mayor resolución = más detalle pero más tiempo de cálculo.")
             
             # 2. GEOMETRÍA
             if gdf_zona is None: gdf_zona = gdf_filtered
