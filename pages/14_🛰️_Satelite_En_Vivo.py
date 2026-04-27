@@ -236,3 +236,60 @@ if iniciar_conexion_gee():
             """)
     else:
         st.info("👈 Por favor, selecciona un territorio en el panel lateral para iniciar el escaneo satelital.")
+
+# ==============================================================================
+# 🛠️ PANEL DE ADMINISTRADOR: EXTRACCIÓN SATELITAL (GEE -> GOOGLE DRIVE)
+# ==============================================================================
+st.markdown("---")
+with st.expander("🛠️ Panel de Administrador: Extracción Satelital Avanzada (Alta Resolución)", expanded=False):
+    st.info("""
+    **¿Qué hace esto?** Le ordena a la supercomputadora de Google Earth Engine que recorte el mapa global de Usos del Suelo de la ESA (10 metros de resolución) usando el perímetro exacto de Antioquia. 
+    Para no colapsar la memoria de la aplicación, el archivo `.tif` resultante se exportará directamente a tu Google Drive en segundo plano.
+    """)
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        if st.button("🚀 Iniciar Exportación a Google Drive", type="primary"):
+            with st.spinner("Programando tarea en los servidores de Google..."):
+                try:
+                    import ee
+                    
+                    # 1. Definir el polígono de Antioquia (Nivel departamental de FAO)
+                    antioquia = ee.FeatureCollection("FAO/GAUL/2015/level1").filter(ee.Filter.eq('ADM1_NAME', 'Antioquia'))
+                    region_geo = antioquia.geometry()
+
+                    # 2. Cargar el Dataset de la Agencia Espacial Europea (ESA WorldCover v200 - 2021)
+                    dataset = ee.ImageCollection("ESA/WorldCover/v200").first()
+                    landcover = dataset.select('Map').clip(region_geo)
+
+                    # 3. Crear y configurar la Tarea de Exportación
+                    # Guarda el archivo en el Drive de la cuenta autenticada en Earth Engine
+                    task = ee.batch.Export.image.toDrive(
+                        image=landcover,
+                        description='Usos_Suelo_Antioquia_ESA_10m',
+                        folder='SIHCLIM_Rasters',  # Creará esta carpeta en tu Drive si no existe
+                        fileNamePrefix='Cob10m_Antioquia_ESA_2021',
+                        region=region_geo.getInfo()['coordinates'],
+                        scale=10, # Resolución original máxima (10 metros)
+                        maxPixels=1e13, # Límite expandido para mapas gigantes
+                        crs='EPSG:4326'
+                    )
+
+                    # 4. Disparar la tarea
+                    task.start()
+                    
+                    st.success("✅ ¡Orden enviada con éxito a Google Earth Engine!")
+                    st.code(f"ID de Tarea: {task.id}", language="text")
+                    
+                except Exception as e:
+                    st.error(f"🚨 Error de conexión con Google Earth Engine: {e}")
+                    
+    with col2:
+        st.markdown("""
+        **Pasos a seguir después de iniciar:**
+        1. Puedes cerrar esta ventana y seguir usando la aplicación. El proceso ocurrirá en los servidores de Google.
+        2. Abre tu **Google Drive** (con la cuenta asociada a Earth Engine).
+        3. Busca la carpeta `SIHCLIM_Rasters`.
+        4. En unos minutos (o un par de horas), aparecerá el archivo `Cob10m_Antioquia_ESA_2021.tif`.
+        5. Descárgalo y súbelo a Supabase para reemplazar el mapa estático actual.
+        """)
