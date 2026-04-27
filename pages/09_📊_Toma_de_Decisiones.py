@@ -188,13 +188,18 @@ if gdf_zona is not None and not gdf_zona.empty:
             # 1. Generamos la Llave Universal igual que en las Forjas
             t_norm = normalizar_texto(territorio)
             
-            # Traductor de niveles para la llave
+            # Traductor de niveles para la llave (Ahora incluye a las CAR)
             mapa_llave = {
                 "Municipal": "MUNICIPAL", "Regional": "REGION", 
-                "Departamental": "DEPARTAMENTO", "AH": "AH", "ZH": "ZH"
+                "Departamental": "DEPARTAMENTO", "AH": "AH", "ZH": "ZH",
+                "CAR": "CAR", "CORPOAMB": "CAR" # Ambos apuntan a CAR
             }
             n_llave = mapa_llave.get(nivel, nivel).upper()
             llave_u = f"{n_llave}_{t_norm}_TOTAL".upper().replace(" ", "_")
+            
+            # 🕵️ DETECTOR FORENSE EN PANTALLA
+            with st.expander(f"🕵️ Debug SQL: Buscando '{territorio}' en '{tabla}'", expanded=False):
+                st.code(f"Nivel Req: {nivel_req}\nLlave Forjada: {llave_u}")
 
             # 🔥 2. BÚSQUEDA POR LLAVE (La más segura)
             q = text(f'SELECT * FROM {tabla} WHERE UPPER("LLAVE_UNIVERSAL") = :llave LIMIT 10')
@@ -224,8 +229,14 @@ if gdf_zona is not None and not gdf_zona.empty:
             else: return f.get('Poly_A',0)*(x_norm**3) + f.get('Poly_B',0)*(x_norm**2) + f.get('Poly_C',0)*x_norm + f.get('Poly_D',0)
         except: return 0.0
 
-    # 🔥 ENRUTADOR MAESTRO: La Demografía/Pecuaria agrupa todo lo hidro como 'Cuenca'
-    nivel_demo = "Cuenca" if nivel_req in ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"] else nivel_req
+    # 🔥 ENRUTADOR MAESTRO: Traduce los nombres del menú a los nombres de las matrices
+    if nivel_req in ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
+        nivel_demo = "Cuenca"
+    elif "CORPOAMB" in nivel_req.upper() or "CAR" in nivel_req.upper():
+        nivel_demo = "CAR"
+        nivel_req = "CAR" # Forzamos que la hidrología también lo busque como CAR
+    else:
+        nivel_demo = nivel_req
 
     # ---------------------------------------------------------
     # 1. CONEXIÓN DEMOGRÁFICA (SQL Estricto)
