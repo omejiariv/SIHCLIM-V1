@@ -1361,13 +1361,16 @@ fig_sag.add_trace(go.Scatter(
     textposition="bottom center"
 ))
 
+# 🚀 FIX: Usamos el valor máximo de saturación calculado por el nuevo motor
+max_od_sat = df_sag['OD_Saturacion'].max() if not df_sag.empty else 10.0
+
 fig_sag.update_layout(
-    title=f"Curva de Oxígeno Disuelto - Río Receptor ({t_agua}°C)",
+    title=f"Perfil Topográfico de Oxígeno Disuelto en Cascada (Streeter-Phelps)",
     xaxis_title="Distancia Aguas Abajo (km)",
     yaxis_title="Concentración (mg/L)",
     hovermode="x unified",
     height=450,
-    yaxis=dict(range=[0, od_sat + 1])
+    yaxis=dict(range=[0, max_od_sat + 1])
 )
 
 # Mostrar métricas y gráfica
