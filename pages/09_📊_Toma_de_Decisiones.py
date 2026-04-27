@@ -269,9 +269,13 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.success(f" 🐄  **Cerebro Pecuario Enlazado:** {bovinos:,.0f} Bov, {porcinos:,.0f} Por, {aves:,.0f} Aves.")
         origen_pecu = True
     else:
-        st.warning(f" ⚠️  '{nombre_zona}' no detectado en Matriz Pecuaria. Asumiendo 0 animales para no detener el sistema.")
-        # 🔥 EL BYPASS: Mentimos piadosamente al escudo para que deje cargar el resto del tablero
-        origen_pecu = True 
+        # 🔥 EL BYPASS DEL AMVA: Le decimos al sistema que este 0 es un éxito físico
+        if nombre_zona == "AMVA":
+            st.success(" 🐄  **Cerebro Pecuario Enlazado:** 0 animales (Ganado gestionado por Corantioquia en zona rural).")
+            origen_pecu = True  # Es un éxito, así que lo marcamos como True
+        else:
+            st.warning(f" ⚠️  '{nombre_zona}' no detectado en Matriz Pecuaria. Asumiendo 0 animales para no detener el sistema.")
+            origen_pecu = False # Es una falla real, lo marcamos como False
         
     st.session_state['ica_bovinos_calc_met'] = bovinos
     st.session_state['ica_porcinos_calc_met'] = porcinos
@@ -365,7 +369,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.success(f"✅ **Sincronización Perfecta:** Las 3 matrices maestras están alimentando a '{nombre_zona}' en tiempo real.")
         origen_carga = "Modelación SQL Exacta"
     else:
-        st.error(f"⚠️ **Faltan datos en la Memoria Global para '{nombre_zona}'.** Los resultados están usando valores de emergencia.")
+        st.warning(f"⚠️ **Sincronización Parcial:** Faltan datos en uno de los motores para '{nombre_zona}'. Se han activado valores refugio (0).")
         origen_carga = "Datos de Emergencia"
 
     with st.expander("🎛️ Simulación de Escenarios (Variables de Decisión)", expanded=False):
