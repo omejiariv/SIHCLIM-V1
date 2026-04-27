@@ -9,6 +9,9 @@ import plotly.graph_objects as go
 import plotly.express as px
 import geopandas as gpd
 
+from modules.db_manager import get_engine  # 🚀 Conexión al motor SQL
+from modules.utils import normalizar_texto  
+
 import streamlit as st
 
 # =========================================================================
@@ -28,10 +31,35 @@ except ImportError:
     from modules.demografia_tools import render_motor_demografico
     from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 
+# --- 🚀 FUNCIÓN DE CONEXIÓN A MATRICES MAESTRAS ---
+@st.cache_data(ttl=3600)
+def consultar_matriz_sql_sistemas(tabla, territorio, nivel, col_nivel="Nivel"):
+    try:
+        from sqlalchemy import text
+        engine_sql = get_engine()
+        q = text(f'''
+            SELECT * FROM {tabla} 
+            WHERE TRIM(UPPER("Territorio")) = UPPER(:t) 
+            AND TRIM(UPPER("{col_nivel}")) = UPPER(:n)
+        ''')
+        df_res = pd.read_sql(q, engine_sql, params={'t': str(territorio).strip(), 'n': str(nivel).strip()})
+        
+        # Rescate por aproximación si falla la exacta
+        if df_res.empty:
+            q_fall = text(f'''
+                SELECT * FROM {tabla} 
+                WHERE UPPER("Territorio") LIKE UPPER(:t) 
+                AND UPPER("{col_nivel}") LIKE UPPER(:n)
+            ''')
+            df_res = pd.read_sql(q_fall, engine_sql, params={'t': f"%{str(territorio).strip()}%", 'n': f"%{str(nivel)[:3]}%"})
+            
+        return df_res
+    except Exception:
+        return pd.DataFrame()
+
 # ==========================================
-# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
+# 📂 MENÚ DE NAVEGACIÓN
 # ==========================================
-# Llama al menú expandible y resalta la página actual
 selectors.renderizar_menu_navegacion("Sistemas Hídricos")
 
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
@@ -42,7 +70,6 @@ sistemas_embalses = {
     "La Fe": {
         "capacidad_util_Mm3": 11.5, 
         "afluentes_naturales": {"Quebrada Espíritu Santo": 1.2},
-        "trasvases": {"Pantanillo": 1.5, "Río Buey": 3.0, "Piedras": 0.8},
         "demanda_acueducto_m3s": 5.0, 
         "generacion_energia_m3s": 0.0,
         "evaporacion_m3s": 0.1,
@@ -54,7 +81,6 @@ sistemas_embalses = {
     "Río Grande II": {
         "capacidad_util_Mm3": 220.0, 
         "afluentes_naturales": {"Río Grande": 10.0, "Río Chico": 3.0, "Quebrada Las Ánimas": 2.0},
-        "trasvases": {}, 
         "demanda_acueducto_m3s": 6.5, 
         "generacion_energia_m3s": 12.0, 
         "evaporacion_m3s": 0.5,
@@ -66,7 +92,6 @@ sistemas_embalses = {
     "El Peñol (Guatapé)": {
         "capacidad_util_Mm3": 1070.0, 
         "afluentes_naturales": {"Río Nare": 35.0},
-        "trasvases": {}, 
         "demanda_acueducto_m3s": 0.0, 
         "generacion_energia_m3s": 30.0, 
         "evaporacion_m3s": 1.5,
@@ -78,7 +103,6 @@ sistemas_embalses = {
     "Punchiná (San Carlos)": {
         "capacidad_util_Mm3": 68.0, 
         "afluentes_naturales": {"Río Guatapé": 40.0, "Río San Carlos": 15.0},
-        "trasvases": {}, 
         "demanda_acueducto_m3s": 0.0, 
         "generacion_energia_m3s": 45.0, 
         "evaporacion_m3s": 0.3,
@@ -90,7 +114,6 @@ sistemas_embalses = {
     "Hidroituango": {
         "capacidad_util_Mm3": 2720.0, 
         "afluentes_naturales": {"Río Cauca": 1100.0},
-        "trasvases": {}, 
         "demanda_acueducto_m3s": 0.0, 
         "generacion_energia_m3s": 900.0, 
         "evaporacion_m3s": 5.0,
@@ -102,7 +125,7 @@ sistemas_embalses = {
 }
 
 # ==============================================================================
-# 2. 🧠 EL ALEPH HÍDRICO (Decide ANTES de pintar el menú)
+# 2. 🧠 EL ALEPH HÍDRICO (Sincronización Demográfica)
 # ==============================================================================
 import unicodedata
 
@@ -110,34 +133,28 @@ conectado_aleph = False
 pob_amva_aleph = None
 pob_local_aleph = None
 
-# Verificamos si el usuario trae un lugar seleccionado desde el dashboard principal
 if 'aleph_lugar' in st.session_state:
     aleph_lugar = st.session_state['aleph_lugar']
-    aleph_anio = st.session_state.get('aleph_anio', 2025) # Asume 2025 por defecto
+    aleph_anio = st.session_state.get('aleph_anio', 2025)
     
-    # 🚀 LA MAGIA: Calculamos la población en vivo con el motor espacial
+    # Extraemos población real desde la memoria
     datos_metabolismo = obtener_metabolismo_exacto(aleph_lugar, aleph_anio)
     aleph_pob = datos_metabolismo['pob_total']
     
     if aleph_pob > 0:
         conectado_aleph = True
-        
-        # Limpieza de texto para el enrutador de cuencas
         lugar_limpio = unicodedata.normalize('NFKD', str(aleph_lugar).lower()).encode('ascii', 'ignore').decode('utf-8')
         
         claves_rg2 = ["belmira", "donmatias", "san pedro", "entrerrios", "santa rosa", "chico", "grande", "animas"]
         claves_lafe = ["retiro", "ceja", "rionegro", "negro", "espiritu santo", "pantanillo", "buey", "piedras", "arma"]
         claves_amva = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "estrella", "girardota", "caldas", "barbosa", "aburra", "amva", "total"]
         
-        if any(x in lugar_limpio for x in claves_amva):
-            st.session_state['nodo_sugerido'] = "La Fe" 
-        elif any(x in lugar_limpio for x in claves_rg2):
-            st.session_state['nodo_sugerido'] = "Río Grande II"
-        elif any(x in lugar_limpio for x in claves_lafe):
-            st.session_state['nodo_sugerido'] = "La Fe"
+        if any(x in lugar_limpio for x in claves_amva): st.session_state['nodo_sugerido'] = "La Fe" 
+        elif any(x in lugar_limpio for x in claves_rg2): st.session_state['nodo_sugerido'] = "Río Grande II"
+        elif any(x in lugar_limpio for x in claves_lafe): st.session_state['nodo_sugerido'] = "La Fe"
 
 # =========================================================================
-# 3. 🎛️ SIDEBAR (Sabe qué embalse sugerir)
+# 3. 🎛️ SIDEBAR Y MOTOR DE CONCESIONES (Cornare / Corantioquia)
 # =========================================================================
 st.sidebar.markdown("### 🎛️ Centro de Operaciones")
 
@@ -149,35 +166,58 @@ if 'nodo_sugerido' in st.session_state and st.session_state['nodo_sugerido'] in 
 nodo_seleccionado = st.sidebar.selectbox("Seleccione el Nodo Principal:", nodos_lista, index=idx_defecto)
 datos_nodo = sistemas_embalses[nodo_seleccionado]
 
+# 📜 Lógica Legal de Captación y Trasvase
+st.sidebar.markdown("---")
+st.sidebar.markdown("#### ⚖️ Marco Legal (Trasvases)")
+
+concesiones_maestras = {
+    "La Fe": {
+        "Río Pantanillo (Cornare)": 1.5, 
+        "Río Buey (Cornare)": 3.0, 
+        "Río Piedras (Corantioquia)": 1.2
+    },
+    "Río Grande II": {
+        "Río Grande (Corantioquia)": 10.0, 
+        "Río Chico (Corantioquia)": 2.5
+    },
+    "Piedras Blancas": {
+        "Qb. Piedras Blancas (Cornare)": 1.0
+    },
+    "El Peñol (Guatapé)": {
+        "Río Nare (Cornare)": 40.0, 
+        "Río Guatapé (Cornare)": 15.0
+    }
+}
+
+caudal_total_trasvase = 0.0
+fuentes_activas = []
+
+if nodo_seleccionado in concesiones_maestras:
+    concesiones_sistema = concesiones_maestras[nodo_seleccionado]
+    for fuente, q_max in concesiones_sistema.items():
+        # Deslizador para simular porcentaje de uso de la concesión otorgada
+        pct_uso = st.sidebar.slider(f"{fuente} (Max: {q_max})", 0.0, float(q_max), float(q_max), step=0.1)
+        caudal_total_trasvase += pct_uso
+        fuentes_activas.append(fuente.split(" ")[1]) # Para los labels del Sankey
+    st.sidebar.success(f"💧 **Caudal Transferido:** {caudal_total_trasvase:.2f} m³/s")
+else:
+    caudal_total_trasvase = st.sidebar.number_input("Caudal de Trasvase (m³/s):", 0.0, 100.0, 0.0)
+
 # =========================================================================
 # 4. 🏷️ TÍTULOS Y UI PRINCIPAL
 # =========================================================================
 st.title(f"🔗 Metabolismo Territorial Complejo: Nodos y Trasvases ({nodo_seleccionado})")
 st.markdown("""
 Modelo de topología de redes para el **Sistema de Abastecimiento de Agua del Valle de Aburrá y Generación Eléctrica**. 
-Evalúa cómo los embalses integran las cuencas propias con los trasvases requeridos para sostener la demanda, con flujos naturales de los ecosistemas externos aportantes.
+Evalúa cómo los embalses integran las cuencas propias con los trasvases legales (Cornare/Corantioquia) requeridos para sostener la demanda.
 """)
 
-# 🪄 SOLUCIÓN AL ESPACIO EN BLANCO: El contenedor del Sankey se ancla directamente aquí
 contenedor_sankey = st.empty()
 
-# 🎨 ESTILOS PREMIUM (HOMOLOGACIÓN VISUAL DE EXPANSORES)
 st.markdown("""
 <style>
-/* Tipografía elegante para los títulos de todos los expansores */
-div[data-testid="stExpander"] details summary p {
-    font-family: 'Georgia', serif !important;
-    font-size: 1.15em !important;
-    color: #2c3e50 !important;
-    font-weight: 600 !important;
-}
-/* Bordes, sombras sutiles y fondo para las cajas */
-div[data-testid="stExpander"] {
-    border: 1px solid #d3c0a3 !important;
-    border-radius: 6px !important;
-    box-shadow: 2px 2px 8px rgba(0,0,0,0.04) !important;
-    background-color: #ffffff;
-}
+div[data-testid="stExpander"] details summary p { font-family: 'Georgia', serif !important; font-size: 1.15em !important; color: #2c3e50 !important; font-weight: 600 !important; }
+div[data-testid="stExpander"] { border: 1px solid #d3c0a3 !important; border-radius: 6px !important; box-shadow: 2px 2px 8px rgba(0,0,0,0.04) !important; background-color: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -226,15 +266,11 @@ if conectado_aleph:
 # 5. CARGA DE CARTOGRAFÍA (Desde Supabase en la Nube)
 # =========================================================================
 url_supabase = None
-if "SUPABASE_URL" in st.secrets:
-    url_supabase = st.secrets["SUPABASE_URL"]
-elif "supabase" in st.secrets:
-    url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
-elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
-    url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+if "SUPABASE_URL" in st.secrets: url_supabase = st.secrets["SUPABASE_URL"]
+elif "supabase" in st.secrets: url_supabase = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
+elif "connections" in st.secrets and "supabase" in st.secrets["connections"]: url_supabase = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
 
 gdf_embalses = None 
-
 if url_supabase:
     nombre_bucket = "sihcli_maestros"
     nombre_archivo = "embalses_CV_9377.geojson"
@@ -242,11 +278,9 @@ if url_supabase:
     
     try:
         gdf_embalses = gpd.read_file(ruta_embalses_nube)
-        st.sidebar.success(f"✅ Embalses conectados desde la Nube ({len(gdf_embalses)} registros)")
     except Exception as e:
-        st.sidebar.warning(f"⚠️ No se pudo cargar la capa desde la nube. Detalle: {e}")
+        pass # Fallback silencioso para no interrumpir UI
 
-# Inyección de datos espaciales al modelo matemático
 if gdf_embalses is not None and not gdf_embalses.empty:
     col_nombre = next((c for c in gdf_embalses.columns if 'nom' in c.lower() or 'proyect' in c.lower() or 'embalse' in c.lower()), None)
     col_vol = next((c for c in gdf_embalses.columns if 'vol' in c.lower() or 'cap' in c.lower()), None)
@@ -351,13 +385,7 @@ with st.expander(f"💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}", ex
             st.success("🧠 Oferta Hídrica sincronizada con el modelo distribuido.")
         
         st.caption("Bombas y Túneles (Trasvases Externos):")
-        if datos_nodo["trasvases"]:
-            for nombre, caudal in datos_nodo["trasvases"].items():
-                max_val = float(caudal * 2) if caudal > 0 else 5.0
-                val_defecto = min(float(caudal), max_val)
-                trasvases_inputs[nombre] = st.slider(f"Bombeo {nombre} [m³/s]:", 0.0, max_val, val_defecto, 0.1, key=f"tr_{nombre}")
-        else:
-            st.write("*(Sistema impulsado 100% por gravedad)*")
+        st.info(f"⚖️ Conectado a marco legal: **{caudal_total_trasvase:.2f} m³/s** inyectados desde cuencas cedentes.")
 
     # --- SALIDAS DINÁMICAS ---
     with col_out:
@@ -390,13 +418,13 @@ with st.expander(f"💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}", ex
         val_ecologico = st.number_input("Caudal Ecológico / Vertimiento [m³/s]:", min_value=0.0, value=float(datos_nodo["caudal_ecologico_m3s"]), step=1.0)
 
     # CÁLCULO DE BALANCE Y ENERGÍA
-    sum_entradas = sum(afluentes_inputs.values()) + sum(trasvases_inputs.values())
-    sum_salidas = val_acueducto + val_turbinado + val_ecologico + datos_nodo["evaporacion_m3s"]
+    sum_entradas = sum(afluentes_inputs.values()) + caudal_total_trasvase
+    sum_salidas = val_acueducto + val_turbinado + val_ecologico + evaporacion_dinamica # Sensible al ENSO
     balance = sum_entradas - sum_salidas
 
     # --- HUELLA ENERGÉTICA ---
     m3_hora_turbinados = val_turbinado * 3600
-    m3_hora_bombeados = sum(trasvases_inputs.values()) * 3600
+    m3_hora_bombeados = caudal_total_trasvase * 3600
     potencia_generada_kw = m3_hora_turbinados * datos_nodo["factor_energia_kwh_m3"]
     potencia_consumida_kw = m3_hora_bombeados * datos_nodo["costo_bombeo_kwh_m3"]
     balance_energetico_MW = (potencia_generada_kw - potencia_consumida_kw) / 1000
@@ -534,7 +562,7 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     
     # Caudal de dilución (Natural + Trasvases para dilución real en embalse)
     q_natural_local = sum(datos_nodo["afluentes_naturales"].values())
-    q_trasvases_local = sum(trasvases_inputs.values())
+    q_trasvases_local = caudal_total_trasvase
     caudal_L_s_final = ((q_natural_local + q_trasvases_local) if (q_natural_local + q_trasvases_local) > 0 else 0.1) * 1000
     
     concentracion_dbo_final = carga_mg_s_final / caudal_L_s_final
@@ -1442,3 +1470,48 @@ with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
     st.markdown("La variación de almacenamiento en el tiempo se rige por la ecuación de continuidad:")
     st.markdown("$$\\frac{\\Delta S}{\\Delta t} = I_{nat} + \\sum I_{trasvases} - O_{urb} - O_{eco} - O_{energia} - E_{vap}$$")
     st.markdown("Si $\\frac{\\Delta S}{\\Delta t}$ es negativo de forma sostenida (ej. durante un fenómeno de El Niño donde $I_{nat} \\approx 0$), el volumen útil del embalse se agota, generando racionamiento en la metrópolis externa.")
+
+# =========================================================================
+# 🔄 METABOLISMO HÍDRICO REGIONAL (DIAGRAMA SANKEY EN CONTENEDOR)
+# =========================================================================
+with contenedor_sankey.container():
+    st.markdown("### 📊 Flujo Regional: Estrés y Economía Circular")
+    
+    # 1. Población conectada al Aleph o genérica
+    pob_aburra = st.session_state.get('pob_total', 4200000)
+    
+    # 2. Biosólidos (~50g por habitante/día convertidos a Ton/día)
+    carga_biosolidos_ton_dia = (pob_aburra * 0.050) / 1000 
+    
+    nodos_sankey = ["Cuencas Cedentes (Cornare/Corantioquia)", f"Embalse {nodo_seleccionado}", "Consumo (Valle de Aburrá)", "Aguas Residuales", "PTAR (Aguas Claras/San Fernando)", "Suelos Ganaderos (Norte/Oriente)"]
+    
+    source = [0, 1, 2, 3, 4]
+    target = [1, 2, 3, 4, 5]
+    
+    # El flujo representa cómo se va mermando el agua y convirtiéndose en lodo
+    val_consumo = val_acueducto if 'val_acueducto' in locals() else 5.0
+    
+    value = [
+        caudal_total_trasvase,          # De Cedentes a Embalse
+        val_consumo,                    # De Embalse a Ciudad
+        val_consumo * 0.80,             # Retorno como Agua Residual
+        val_consumo * 0.75,             # Agua que alcanza la PTAR
+        carga_biosolidos_ton_dia        # Lodo que vuelve a la montaña
+    ] 
+
+    fig_sankey = go.Figure(data=[go.Sankey(
+        node = dict(
+            pad=15, thickness=20, 
+            line=dict(color="black", width=0.5), 
+            label=nodos_sankey, 
+            color=["#2E86C1", "#1F618D", "#D35400", "#7B7D7D", "#5D6D7E", "#27AE60"]
+        ),
+        link = dict(
+            source=source, target=target, value=value, 
+            color="rgba(169, 204, 227, 0.4)",
+            hovertemplate='%{value:.2f} m³/s / Ton<extra></extra>'
+        )
+    )])
+    
+    fig_sankey.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10), font_family="Georgia")
+    st.plotly_chart(fig_sankey, use_container_width=True)
