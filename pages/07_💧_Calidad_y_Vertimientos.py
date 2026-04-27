@@ -395,7 +395,7 @@ with st.expander(f"📍 Contexto Demográfico Base ({anio_analisis}): {nombre_se
     
     pob_total = pob_urbana + pob_rural
 
-st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 👥 Humanos: **{pob_total:,.0f}** | 🐄 Animales: **{(total_bovinos + total_porcinos + total_aves):,.0f}**")
+st.success(f"📌 **SÍNTESIS ACTIVA |** 📍 Territorio: **{nombre_seleccion}** | 👥 Humanos: **{pob_total:,.0f}** | 🐄 Bov: **{total_bovinos:,.0f}** | 🐖 Porc: **{total_porcinos:,.0f}** | 🐔 Aves: **{total_aves:,.0f}**")
 
 # --- 🌉 ALIAS DE COMPATIBILIDAD ---
 lugar_sel = nombre_seleccion
