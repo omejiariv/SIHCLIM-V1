@@ -790,7 +790,7 @@ with tab_demanda:
                     df_view_usos = df_usos_detalle.head(1000).astype(str)
                 else:
                     df_view_usos = df_usos_detalle.astype(str)
-                st.dataframe(df_view_usos, use_container_width=True")
+                st.dataframe(df_view_usos, use_container_width=True)
             with c2:
                 csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Descargar Desglose Completo (CSV)", data=csv, file_name=f'Usos_{nombre_seleccion}.csv', mime='text/csv')
