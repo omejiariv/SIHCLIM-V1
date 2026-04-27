@@ -1092,17 +1092,30 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
     
     with cr1:
         st.markdown("##### 📍 Posición y Clima del Vertimiento")
-        
-        # Mostrar métricas topográficas
         st.caption(f"**Topografía ({nombre_c}):** Mín: {h_min_cuenca:.0f} m | Med: {h_med_cuenca:.0f} m | Máx: {h_max_cuenca:.0f} m")
         
-        # Selector Hipsométrico
+        # 🚀 DETECCIÓN AUTOMÁTICA DEL VERTIMIENTO DE CABECERA
+        h_real_vert = None
+        if nivel_sel_interno == "Municipal" and not df_vertimientos.empty:
+            v_cabecera = df_vertimientos[
+                (df_vertimientos['municipio_norm'] == normalizar_texto(nombre_seleccion)) & 
+                (df_vertimientos['tipo_vertimiento'].str.contains('Domestico|Municipal', case=False, na=False))
+            ].sort_values(by='caudal_vert_lps', ascending=False)
+
+            if not v_cabecera.empty:
+                # Extraemos la altitud del vertimiento más grande (si existe en la BD)
+                h_real_vert = float(v_cabecera.iloc[0].get('Altitud_m', h_med_cuenca))
+                caudal_real_lps = float(v_cabecera.iloc[0].get('caudal_vert_lps', 0))
+                st.success(f"📍 **Vertimiento Principal Detectado:** {caudal_real_lps:.1f} L/s a **{h_real_vert:.0f} msnm**.")
+
+        h_defecto = h_real_vert if h_real_vert else h_med_cuenca
+        
         h_descarga = st.number_input(
             "Altitud de Descarga (H):", 
-            min_value=h_min_cuenca, 
-            max_value=h_max_cuenca, 
-            value=h_med_cuenca, 
-            step=10.0, 
+            min_value=float(h_min_cuenca), 
+            max_value=float(h_max_cuenca), 
+            value=float(h_defecto), 
+            step=10.0
             help="A mayor altitud, menor área aportante (menos caudal) y menor temperatura del agua."
         )
         
@@ -1244,30 +1257,44 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
     cd3.metric("Impacto en Río (Fondo)", f"{dbo_rio_arriba_fondo:.1f} mg/L DBO", "Concentración base antes del vertimiento puntual", delta_color="off")
     
     st.markdown("---")
-    st.markdown(f"##### 🧪 2. Simulador de Vertimiento Hipotético (Puntual en {nombre_seleccion})")
-    st.caption("Modela el impacto de una nueva industria, un tubo roto o una nueva PTAR.")
+    st.markdown(f"##### 🧪 2. Portafolio de Vertimientos Puntuales en {nombre_seleccion}")
+    st.caption("Añade, edita o elimina descargas para simular su efecto combinado en la mezcla.")
     
-    cv1, cv2, cv3 = st.columns(3)
-    with cv1:
-        q_vertimiento = st.number_input(
-            "Caudal del Vertimiento (m³/s):", 
-            min_value=0.000, max_value=50.0, value=0.150, step=0.05, format="%.3f"
-        )
-    with cv2:
-        t_vert_defecto = min(35.0, t_sugerida + 3.0) if 't_sugerida' in locals() else 25.0
-        t_vertimiento = st.slider(
-            "Temperatura del Efluente (°C):", 
-            min_value=10.0, max_value=60.0, value=float(t_vert_defecto), step=0.5
-        )
-    with cv3:
-        # Aquí el usuario decide qué tan sucia viene el agua (Ej: Agua cruda = 300 mg/L, PTAR = 40 mg/L)
-        dbo_vert_mgL = st.number_input(
-            "Concentración DBO (mg/L):",
-            min_value=0.0, max_value=5000.0, value=250.0, step=10.0,
-            help="Agua residual doméstica cruda ~250 mg/L. Agua tratada (PTAR) ~40 mg/L. Suero lácteo ~35,000 mg/L."
-        )
+    # Pre-cargamos el vertimiento real si lo encontramos, si no, uno por defecto
+    q_ini = caudal_real_lps / 1000 if 'caudal_real_lps' in locals() else 0.150
+    
+    df_descargas_base = pd.DataFrame([
+        {"Activo": True, "Fuente": "PTAR / Alcantarillado Principal", "Caudal (m3/s)": q_ini, "DBO (mg/L)": 250.0, "Temp (°C)": 24.0},
+        {"Activo": False, "Fuente": "Industria Textil Hipotética", "Caudal (m3/s)": 0.050, "DBO (mg/L)": 600.0, "Temp (°C)": 30.0}
+    ])
+    
+    # 🎛️ TABLA EDITABLE INTERACTIVA
+    df_portafolio = st.data_editor(
+        df_descargas_base, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        column_config={
+            "Activo": st.column_config.CheckboxColumn("Activo", default=True),
+            "Fuente": st.column_config.TextColumn("Nombre de la Fuente"),
+            "Caudal (m3/s)": st.column_config.NumberColumn("Caudal (m³/s)", min_value=0.0, format="%.3f"),
+            "DBO (mg/L)": st.column_config.NumberColumn("DBO (mg/L)", min_value=0.0),
+            "Temp (°C)": st.column_config.NumberColumn("Temp (°C)", min_value=0.0)
+        }
+    )
+    
+    # Consolidación Matemática del Portafolio
+    df_activas = df_portafolio[df_portafolio["Activo"] == True]
+    
+    if not df_activas.empty:
+        q_vertimiento = df_activas["Caudal (m3/s)"].sum()
+        # Promedio ponderado por caudal para la Temperatura y la DBO
+        t_vertimiento = (df_activas["Caudal (m3/s)"] * df_activas["Temp (°C)"]).sum() / q_vertimiento
+        dbo_vert_mgL = (df_activas["Caudal (m3/s)"] * df_activas["DBO (mg/L)"]).sum() / q_vertimiento
         carga_puntual_kg = (dbo_vert_mgL * q_vertimiento * 86400) / 1000
-        st.caption(f"Carga Inyectada: **{carga_puntual_kg:,.1f} kg/día**")
+    else:
+        q_vertimiento, t_vertimiento, dbo_vert_mgL, carga_puntual_kg = 0.0, 20.0, 0.0, 0.0
+        
+    st.info(f"⚖️ **Consolidado de Inyección:** Caudal Total: **{q_vertimiento:.3f} m³/s** | Carga Combinada: **{carga_puntual_kg:,.1f} kg DBO/día**")
 
 # =========================================================================
 # 3. Termodinámica y Balance de Masas (Mezcla)
