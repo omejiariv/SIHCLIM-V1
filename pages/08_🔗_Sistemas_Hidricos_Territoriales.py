@@ -1457,7 +1457,7 @@ with contenedor_sankey.container():
         fig_sankey = go.Figure(data=[go.Sankey(
             arrangement="snap", # 🚀 Ayuda a organizar los nodos sin solaparse
             valueformat=".2f", valuesuffix=" m³/s",
-            node=dict(pad=30, thickness=15, line=dict(color="none"), label=labels, color="#2C3E50"),
+            node=dict(pad=30, thickness=15, line=dict(color="rgba(0,0,0,0)", width=0), label=labels, color="#2C3E50"),
             link=dict(
                 source=source, target=target, value=value, color=color,
                 customdata=link_tooltips,
@@ -1538,7 +1538,7 @@ with contenedor_sankey.container():
 
     fig_sankey_circ = go.Figure(data=[go.Sankey(
         arrangement="snap",
-        node = dict(pad=30, thickness=15, line=dict(color="none"), label=nodos_circulares, color=colores_nodos),
+        node = dict(pad=30, thickness=15, line=dict(color="rgba(0,0,0,0)", width=0), label=nodos_circulares, color=colores_nodos),
         link = dict(
             source=source, target=target, value=value, color=color, customdata=hover,
             hovertemplate='<b>%{source.label}</b> ➔ <b>%{target.label}</b><br>Flujo: %{customdata}<extra></extra>'
