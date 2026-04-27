@@ -262,12 +262,9 @@ if gdf_zona is None or gdf_zona.empty:
     st.stop() 
 
 # ==============================================================================
-# 🧠 2. NÚCLEO DE METABOLISMO UNIFICADO (Sniper Autosuficiente)
+# 🧠 2. NÚCLEO DE METABOLISMO UNIFICADO (Sincronía con Llave Universal)
 # ==============================================================================
-import re
-import unicodedata
-import difflib
-import time
+import numpy as np
 
 anio_analisis = 2025 
 pob_urb_base, pob_rur_base, pob_total = 0, 0, 0
@@ -275,147 +272,96 @@ total_bovinos, total_porcinos, total_aves = 0, 0, 0
 origen_dato = "No Identificado"
 metodo_animal = "Sin Datos"
 
-def limpiar_identificador(t):
-    if pd.isna(t): return ""
-    t = unicodedata.normalize('NFKD', str(t).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
-    t = re.sub(r'[^a-z0-9]', ' ', t) 
-    return " ".join(t.split())
+# 1. ENRUTADOR MAESTRO (Sincronizado con Módulo 09)
+nivel_req = st.session_state.get('nivel_activo_global', 'NINGUNO')
 
-nombre_norm = limpiar_identificador(nombre_seleccion)
-
-# 🌍 EL DETECTOR GEOMÉTRICO UNIVERSAL
-es_macro = True
-if gdf_zona is not None and not gdf_zona.empty:
-    try:
-        area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
-        if area_km2 < 1200: 
-            es_macro = False
-    except: pass
-
-aleph_lugar = st.session_state.get('aleph_lugar', '')
-if aleph_lugar == nombre_seleccion:
-    pob_total = st.session_state.get('aleph_pob_total', 0)
-    origen_dato = "Memoria Viva (Aleph)"
-    pob_urb_base, pob_rur_base = pob_total * 0.85, pob_total * 0.15
-
-try:
-    from modules.db_manager import get_engine
-    engine = get_engine()
+if nivel_req in ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
+    nivel_demo = "Cuenca"
+elif "CORPOAMB" in nivel_req.upper() or "CAR" in nivel_req.upper():
+    nivel_demo = "CAR"
+    nivel_req = "CAR"
+else:
+    nivel_demo = nivel_req
     
-    # --- 2.1 MOTOR HUMANO ---
-    if pob_total == 0:
-        df_mat = st.session_state.get('df_matriz_demografica', pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine))
-        st.session_state['df_matriz_demografica'] = df_mat
-        
-        if not df_mat.empty:
-            df_mat['MATCH_ID'] = df_mat['Territorio'].apply(limpiar_identificador)
-            filas = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
-            
-            if not filas.empty:
-                filas = filas.sort_values(by='Pob_Base', ascending=not es_macro)
-                niv_gan = filas.iloc[0]['Nivel']
-                f_fin = filas[filas['Nivel'] == niv_gan]
-                
-                def resolver(r, anio, col_base='Pob_Base'):
-                    t = float(anio - r.get('Año_Base', 1985))
-                    m = str(r.get('Modelo_Recomendado', ''))
-                    if 'Logistico' in m: return r['Log_K'] / (1 + r['Log_a'] * np.exp(-r['Log_r'] * t))
-                    if 'Exponencial' in m: return r['Exp_a'] * np.exp(r['Exp_b'] * t)
-                    return r['Poly_A']*t**3 + r['Poly_B']*t**2 + r['Poly_C']*t + r.get('Poly_D', r[col_base])
+nivel_sel_interno = nivel_demo # Alias compatibilidad visor
+nivel_sel_visual = nivel_demo
 
-                f_t = f_fin[f_fin['Area'].str.lower().str.contains('tot')]
-                f_u = f_fin[f_fin['Area'].str.lower().str.contains('urb|cab')]
-                f_r = f_fin[f_fin['Area'].str.lower().str.contains('rur|resto')]
-                
-                if not f_t.empty: pob_total = resolver(f_t.iloc[0], anio_analisis)
-                pob_urb_base = resolver(f_u.iloc[0], anio_analisis) if not f_u.empty else pob_total * 0.85
-                pob_rur_base = resolver(f_r.iloc[0], anio_analisis) if not f_r.empty else pob_total * 0.15
-                origen_dato = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
-
-    # --- 2.2 MOTOR PECUARIO ---
+@st.cache_data(ttl=3600)
+def consultar_matriz_sql_calidad(tabla, territorio, nivel, col_nivel="Nivel"):
     try:
-        df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
-        st.session_state['df_matriz_pecuaria'] = df_pec
-        animales_encontrados = False
+        from sqlalchemy import text
+        from modules.db_manager import get_engine
+        import pandas as pd
+        from modules.utils import normalizar_texto 
         
-        if not df_pec.empty:
-            df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
-            filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
-            
-            if filas_p.empty:
-                opciones_pec = df_pec['MATCH_ID'].unique().tolist()
-                matches_pec = difflib.get_close_matches(nombre_norm, opciones_pec, n=1, cutoff=0.7)
-                if matches_pec: 
-                    filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
-                else:
-                    palabras = nombre_norm.replace("rio", "").replace("nss", "").replace("car", "").split()
-                    if palabras:
-                        p_larga = max(palabras, key=len)
-                        if len(p_larga) > 4:
-                            # Filtro estricto para que Aburrá no se robe Antioquia ni otras áreas macro
-                            mask = df_pec['MATCH_ID'].str.contains(p_larga)
-                            filas_temp = df_pec[mask]
-                            if not ("antioquia" in nombre_norm):
-                                filas_temp = filas_temp[filas_temp['Nivel'].str.lower() != 'departamental']
-                            filas_p = filas_temp.copy()
-            
-            if not filas_p.empty:
-                filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
-                niv_p = filas_p.iloc[0]['Nivel']
-                f_p_fin = filas_p[filas_p['Nivel'] == niv_p]
-                
-                f_bov = f_p_fin[f_p_fin['Especie'].str.lower() == 'bovinos']
-                f_por = f_p_fin[f_p_fin['Especie'].str.lower() == 'porcinos']
-                f_ave = f_p_fin[f_p_fin['Especie'].str.lower() == 'aves']
-                
-                if not f_bov.empty: total_bovinos = resolver(f_bov.iloc[0], anio_analisis, 'Poblacion_Base')
-                if not f_por.empty: total_porcinos = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
-                if not f_ave.empty: total_aves = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
-                
-                if (total_bovinos + total_porcinos + total_aves) > 0:
-                    metodo_animal = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
-                    animales_encontrados = True
-                
-        if not animales_encontrados: 
-            raise ValueError("Fallback Pecuario")
+        engine_sql = get_engine()
+        t_norm = normalizar_texto(territorio)
+        
+        mapa_llave = {
+            "Municipal": "MUNICIPAL", "Regional": "REGION", 
+            "Departamental": "DEPARTAMENTO", "AH": "AH", "ZH": "ZH",
+            "CAR": "CAR", "CORPOAMB": "CAR", "Cuenca": "CUENCA"
+        }
+        n_llave = mapa_llave.get(nivel, nivel).upper()
+        llave_u = f"{n_llave}_{t_norm}_TOTAL".upper().replace(" ", "_")
 
-    except Exception:
-        # 🔥 EL RESCATE AUTOSUFICIENTE (No depende de la función del fondo)
-        try:
-            url_sup = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Historico_Cuencas.csv?t={int(time.time())}"
-            df_censo = pd.read_csv(url_sup)
-            
-            if 'Anio' in df_censo.columns:
-                anio_f = min(anio_analisis, df_censo['Anio'].max())
-                df_censo = df_censo[df_censo['Anio'] == anio_f]
-            
-            # Recolectamos todas las microcuencas que conforman el polígono seleccionado
-            piezas = [nombre_seleccion]
-            if gdf_zona is not None and not gdf_zona.empty:
-                for col in ['nom_szh', 'nomzh', 'nom_nss3', 'nom_nss2']:
-                    if col in gdf_zona.columns:
-                        piezas.extend(gdf_zona[col].dropna().unique().tolist())
-            
-            piezas_norm = [limpiar_identificador(p) for p in set(piezas) if str(p).strip() != '']
-            
-            if 'Subcuenca' in df_censo.columns:
-                df_censo['Sub_Norm'] = df_censo['Subcuenca'].apply(limpiar_identificador)
-                df_filtrado = df_censo[df_censo['Sub_Norm'].isin(piezas_norm)]
-                
-                if not df_filtrado.empty:
-                    total_bovinos = int(df_filtrado['Bovinos'].sum())
-                    total_porcinos = int(df_filtrado['Porcinos'].sum())
-                    total_aves = int(df_filtrado['Aves'].sum())
-            
-            suma = total_bovinos + total_porcinos + total_aves
-            metodo_animal = "Suma Espacial (Fallback)" if suma > 0 else "Sin Datos Pecuarios"
-            
-        except Exception as e_fallback:
-            metodo_animal = "Error Total Pecuario"
+        q = text(f'SELECT * FROM {tabla} WHERE UPPER("LLAVE_UNIVERSAL") = :llave LIMIT 10')
+        df_res = pd.read_sql(q, engine_sql, params={'llave': llave_u})
 
-except Exception as main_e:
-    st.error(f"Error Núcleo: {main_e}")
+        if df_res.empty:
+            q_fallback = text(f'SELECT * FROM {tabla} WHERE TRIM(UPPER("Territorio")) = UPPER(:t) AND UPPER("{col_nivel}") LIKE UPPER(:n)')
+            df_res = pd.read_sql(q_fallback, engine_sql, params={'t': territorio, 'n': f"%{nivel[:3]}%"})
+        return df_res
+    except: 
+        return pd.DataFrame()
+
+def proyectar_modelo_calidad(f, anio_obj):
+    x_norm = anio_obj - f.get('Año_Base', 2018)
+    mod = str(f.get('Modelo_Recomendado', 'Logístico'))
+    try:
+        if 'Logistico' in mod or 'Logístico' in mod: return f.get('Log_K',0) / (1 + f.get('Log_a',0) * np.exp(-f.get('Log_r',0) * x_norm))
+        elif 'Exponencial' in mod: return f.get('Exp_a',0) * np.exp(f.get('Exp_b',0) * x_norm)
+        elif 'Lineal' in mod: return f.get('Lin_m',0) * x_norm + f.get('Lin_b',0)
+        else: return f.get('Poly_A',0)*(x_norm**3) + f.get('Poly_B',0)*(x_norm**2) + f.get('Poly_C',0)*x_norm + f.get('Poly_D',0)
+    except: return 0.0
+
+# --- 2. CONEXIÓN AL MOTOR HUMANO ---
+df_demo = consultar_matriz_sql_calidad("matriz_maestra_demografica", nombre_seleccion, nivel_demo, "Nivel")
+
+if not df_demo.empty:
+    f_t = df_demo[df_demo['Area'].str.lower().str.contains('tot')]
+    f_u = df_demo[df_demo['Area'].str.lower().str.contains('urb|cab')]
+    f_r = df_demo[df_demo['Area'].str.lower().str.contains('rur|resto')]
     
+    if not f_t.empty: pob_total = max(0.0, proyectar_modelo_calidad(f_t.iloc[0], anio_analisis))
+    pob_urb_base = max(0.0, proyectar_modelo_calidad(f_u.iloc[0], anio_analisis)) if not f_u.empty else pob_total * 0.85
+    pob_rur_base = max(0.0, proyectar_modelo_calidad(f_r.iloc[0], anio_analisis)) if not f_r.empty else pob_total * 0.15
+    origen_dato = f"Matriz SQL Exacta ({nivel_demo})"
+    if pob_total == 0: pob_total = pob_urb_base + pob_rur_base
+else:
+    origen_dato = "Error SQL (Sin Datos)"
+
+# --- 3. CONEXIÓN AL MOTOR PECUARIO (Con Bypass AMVA) ---
+df_pec = consultar_matriz_sql_calidad("matriz_maestra_pecuaria", nombre_seleccion, nivel_demo, "Nivel")
+
+if not df_pec.empty:
+    for _, f in df_pec.iterrows():
+        if f['Especie'] == 'Bovinos': total_bovinos = max(0.0, proyectar_modelo_calidad(f, anio_analisis))
+        if f['Especie'] == 'Porcinos': total_porcinos = max(0.0, proyectar_modelo_calidad(f, anio_analisis))
+        if f['Especie'] == 'Aves': total_aves = max(0.0, proyectar_modelo_calidad(f, anio_analisis))
+    metodo_animal = f"Matriz SQL Exacta ({nivel_demo})"
+else:
+    if nombre_seleccion == "AMVA":
+        metodo_animal = "Bypass Jurisdicción (Corantioquia asume Rural)"
+    else:
+        metodo_animal = "Error SQL (Sin Datos)"
+        
+st.session_state['ica_bovinos_calc_met'] = total_bovinos
+st.session_state['ica_porcinos_calc_met'] = total_porcinos
+st.session_state['ica_aves_calc_met'] = total_aves
+st.session_state['df_matriz_demografica'] = df_demo
+st.session_state['df_matriz_pecuaria'] = df_pec
+
 # ==============================================================================
 # 🎨 3. INTERFAZ DE SÍNTESIS Y CALIBRACIÓN DE CAMPO
 # ==============================================================================
@@ -945,43 +891,48 @@ with tab_fuentes:
     conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
     
     # =====================================================================
+# =====================================================================
     # 🔮 SIMULADOR DINÁMICO DE METABOLISMO (Conectado a Memoria Global)
     # =====================================================================
     st.markdown("---")
     st.subheader("📈 Evolución de la Presión Ambiental (Gemelo Digital)")
     
-    # 1. Verificar si existen los modelos en memoria
     if 'df_matriz_demografica' in st.session_state and 'df_matriz_pecuaria' in st.session_state:
         df_demo = st.session_state['df_matriz_demografica']
         df_pecu = st.session_state['df_matriz_pecuaria']
         
-        # 2. Funciones Lectoras de Modelos
-        def calcular_curva(fila, anios):
+        def calcular_curva_v2(fila, anios):
             x_norm = anios - fila['Año_Base']
-            modelo = fila['Modelo_Recomendado']
-            if modelo == 'Logístico': return fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm))
-            elif modelo == 'Exponencial': return fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm)
-            else: return fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila['Poly_D']
+            modelo = str(fila.get('Modelo_Recomendado', 'Logístico'))
+            if 'Logistico' in modelo or 'Logístico' in modelo: return fila['Log_K'] / (1 + fila['Log_a'] * np.exp(-fila['Log_r'] * x_norm))
+            elif 'Exponencial' in modelo: return fila['Exp_a'] * np.exp(fila['Exp_b'] * x_norm)
+            elif 'Lineal' in modelo: return fila.get('Lin_m',0) * x_norm + fila.get('Lin_b',0)
+            else: return fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila.get('Poly_D',0)
 
-        def obtener_vector(df, nivel, territorio, categoria, col_categoria, anios, valor_estatico_fallback):
-            filtro = df[(df['Nivel'] == nivel) & (df['Territorio'] == territorio) & (df[col_categoria] == categoria)]
-            if filtro.empty: 
-                # Si el modelo falló o no existe para este municipio, usamos el valor estático como línea plana
-                return np.full(len(anios), valor_estatico_fallback)
-            return np.maximum(0, calcular_curva(filtro.iloc[0], anios))
+        def obtener_vector_v2(df, llave_base, categoria, col_cat, anios, val_fallback):
+            # El filtro busca la fila con la llave general o evalúa combinada si es necesario
+            mask = (df['LLAVE_UNIVERSAL'].str.contains(llave_base.replace("_TOTAL", ""), na=False)) & (df[col_cat].str.lower() == categoria.lower())
+            filtro = df[mask]
+            if filtro.empty: return np.full(len(anios), val_fallback)
+            return np.maximum(0, calcular_curva_v2(filtro.iloc[0], anios))
             
-        # 3. Construcción del Vector de Tiempo
         anio_limite = st.slider("⏳ Horizonte de Simulación:", min_value=2025, max_value=2050, value=2035, step=1)
         anios_vector = np.arange(anio_analisis, anio_limite + 1)
         
-        # 4. Generación de Vectores Poblacionales
-        # Usamos nivel_sel_visual para buscar en la matriz (generalmente "Municipal" o "Subcuenca")
-        # Si el usuario seleccionó "Departamental", el fallback estático nos salvará
-        v_pob_urbana = obtener_vector(df_demo, nivel_sel_visual, nombre_seleccion, 'Urbana', 'Area', anios_vector, pob_urbana)
-        v_pob_rural = obtener_vector(df_demo, nivel_sel_visual, nombre_seleccion, 'Rural', 'Area', anios_vector, pob_rural)
-        v_bovinos = obtener_vector(df_pecu, nivel_sel_visual, nombre_seleccion, 'Bovinos', 'Especie', anios_vector, cabezas_bovinos)
-        v_porcinos = obtener_vector(df_pecu, nivel_sel_visual, nombre_seleccion, 'Porcinos', 'Especie', anios_vector, cabezas_porcinos)
-        v_aves = obtener_vector(df_pecu, nivel_sel_visual, nombre_seleccion, 'Aves', 'Especie', anios_vector, cabezas_aves)
+        # Armamos la base de la llave maestra para este territorio
+        from modules.utils import normalizar_texto
+        mapa_llave_v = {"Municipal": "MUNICIPAL", "Regional": "REGION", "Departamental": "DEPARTAMENTO", "AH": "AH", "ZH": "ZH", "CAR": "CAR", "Cuenca": "CUENCA"}
+        n_llave_v = mapa_llave_v.get(nivel_demo, nivel_demo).upper()
+        t_norm_v = normalizar_texto(nombre_seleccion).upper().replace(" ", "_")
+        llave_busqueda = f"{n_llave_v}_{t_norm_v}_TOTAL"
+        
+        # Extraemos los vectores evolutivos para el DBO
+        v_pob_urbana = obtener_vector_v2(df_demo, llave_busqueda, 'urbana', 'Area', anios_vector, pob_urbana)
+        v_pob_rural = obtener_vector_v2(df_demo, llave_busqueda, 'rural', 'Area', anios_vector, pob_rural)
+        
+        v_bovinos = obtener_vector_v2(df_pecu, llave_busqueda, 'bovinos', 'Especie', anios_vector, cabezas_bovinos)
+        v_porcinos = obtener_vector_v2(df_pecu, llave_busqueda, 'porcinos', 'Especie', anios_vector, cabezas_porcinos)
+        v_aves = obtener_vector_v2(df_pecu, llave_busqueda, 'aves', 'Especie', anios_vector, cabezas_aves)
 
         # 5. Motor Bioquímico Vectorial (Multiplicamos población futura por eficiencia actual de los sliders)
         v_dbo_urbana = v_pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))
