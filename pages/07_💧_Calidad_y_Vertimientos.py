@@ -1115,7 +1115,7 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
             min_value=float(h_min_cuenca), 
             max_value=float(h_max_cuenca), 
             value=float(h_defecto), 
-            step=10.0
+            step=10.0,
             help="A mayor altitud, menor área aportante (menos caudal) y menor temperatura del agua."
         )
         
