@@ -185,6 +185,7 @@ def render_selector_espacial():
         # --- A. POR CUENCA (DISEÑO INTUITIVO) ---
         if modo == "Por Cuenca":
             gdf_c = cargar_mapa_cuencas()
+            st.error(f"🔍 COLUMNAS REALES EN LA BD: {list(gdf_c.columns)}")
             ruta = st.selectbox("Ruta de Búsqueda:", ["Hidrología", "CAR"], index=0)
             
             if ruta == "Hidrología":
