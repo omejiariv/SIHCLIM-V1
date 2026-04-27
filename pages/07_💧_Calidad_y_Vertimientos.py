@@ -1269,16 +1269,30 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
     )
     
     # Consolidación Matemática del Portafolio
-    df_activas = df_portafolio[df_portafolio["Activo"] == True]
+    # 🧠 PRE-PROCESAMIENTO ESPACIAL PARA STREETER-PHELPS
+    # Filtramos las activas y las ordenamos desde la montaña hacia el valle (Mayor a Menor Altitud)
+    df_activas = df_portafolio[df_portafolio["Activo"] == True].copy()
     
-    if not df_activas.empty:
-        q_vertimiento = df_activas["Caudal (m3/s)"].sum()
-        # Promedio ponderado por caudal para la Temperatura y la DBO
-        t_vertimiento = (df_activas["Caudal (m3/s)"] * df_activas["Temp (°C)"]).sum() / q_vertimiento
-        dbo_vert_mgL = (df_activas["Caudal (m3/s)"] * df_activas["DBO (mg/L)"]).sum() / q_vertimiento
-        carga_puntual_kg = (dbo_vert_mgL * q_vertimiento * 86400) / 1000
+    # FORZAMOS VALORES NUMÉRICOS (Seguro de vida contra NaNs)
+    df_activas["Altitud (m)"] = pd.to_numeric(df_activas["Altitud (m)"], errors='coerce').fillna(h_med_cuenca)
+    df_activas["Caudal (m3/s)"] = pd.to_numeric(df_activas["Caudal (m3/s)"], errors='coerce').fillna(0)
+    df_activas["DBO (mg/L)"] = pd.to_numeric(df_activas["DBO (mg/L)"], errors='coerce').fillna(0)
+    df_activas["Temp (°C)"] = pd.to_numeric(df_activas["Temp (°C)"], errors='coerce').fillna(20)
+    
+    df_activas = df_activas.sort_values(by="Altitud (m)", ascending=False)
+    
+    if not df_activas.empty and df_activas["Caudal (m3/s)"].sum() > 0:
+        q_vert_total = df_activas["Caudal (m3/s)"].sum()
+        carga_puntual_kg = (df_activas["Caudal (m3/s)"] * df_activas["DBO (mg/L)"]).sum() * 86.4
+        st.info(f"🏔️ **Cascada Topográfica:** {len(df_activas)} descargas ordenadas | Caudal Total: **{q_vert_total:.3f} m³/s** | Carga: **{carga_puntual_kg:,.1f} kg DBO/día**")
+        
+        # Variables legado (mezcla ponderada inicial para compatibilidad)
+        q_vertimiento = q_vert_total
+        t_vertimiento = (df_activas["Caudal (m3/s)"] * df_activas["Temp (°C)"]).sum() / q_vert_total
+        dbo_vert_mgL = (df_activas["Caudal (m3/s)"] * df_activas["DBO (mg/L)"]).sum() / q_vert_total
     else:
         q_vertimiento, t_vertimiento, dbo_vert_mgL, carga_puntual_kg = 0.0, 20.0, 0.0, 0.0
+        st.warning("No hay descargas activas o caudales válidos en el portafolio.")
         
     st.info(f"⚖️ **Consolidado de Inyección:** Caudal Total: **{q_vertimiento:.3f} m³/s** | Carga Combinada: **{carga_puntual_kg:,.1f} kg DBO/día**")
 
