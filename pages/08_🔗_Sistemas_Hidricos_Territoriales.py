@@ -1453,18 +1453,22 @@ with contenedor_sankey.container():
             else:
                 link_tooltips.append("Flujo")
 
-        # 5. RENDER FINAL
+        # 5. RENDER FINAL (Tipografía Limpia)
         fig_sankey = go.Figure(data=[go.Sankey(
+            arrangement="snap", # 🚀 Ayuda a organizar los nodos sin solaparse
             valueformat=".2f", valuesuffix=" m³/s",
-            textfont=dict(size=12, color="black", family="Georgia, serif"),
-            node=dict(pad=18, thickness=22, line=dict(color="black", width=0.5), label=labels, color="#2C3E50"),
+            node=dict(pad=30, thickness=15, line=dict(color="none"), label=labels, color="#2C3E50"),
             link=dict(
                 source=source, target=target, value=value, color=color,
                 customdata=link_tooltips,
                 hovertemplate='<b>De:</b> %{source.label}<br><b>A:</b> %{target.label}<br><b>Caudal:</b> %{value}%{valuesuffix}<br>%{customdata}<extra></extra>'
             )
         )])
-        fig_sankey.update_layout(height=600, margin=dict(l=10, r=10, t=10, b=10), font_family="Georgia")
+        fig_sankey.update_layout(
+            height=600, margin=dict(l=20, r=20, t=20, b=20),
+            font=dict(size=12, family="Arial, sans-serif", color="#1f2937"), # 🚀 Letra más legible y moderna
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"
+        )
         st.plotly_chart(fig_sankey, use_container_width=True)
         
 # =========================================================================
@@ -1476,46 +1480,75 @@ with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
     st.markdown("Si $\\frac{\\Delta S}{\\Delta t}$ es negativo de forma sostenida (ej. durante un fenómeno de El Niño donde $I_{nat} \\approx 0$), el volumen útil del embalse se agota, generando racionamiento en la metrópolis externa.")
 
 # =========================================================================
-# 🔄 METABOLISMO HÍDRICO REGIONAL (DIAGRAMA SANKEY EN CONTENEDOR)
+# 🔄 ECONOMÍA CIRCULAR Y RUTA METABÓLICA (Valle de Aburrá -> Porce)
 # =========================================================================
 with contenedor_sankey.container():
-    st.markdown("### 📊 Flujo Regional: Estrés y Economía Circular")
+    st.markdown("---")
+    st.markdown("### ♻️ Metabolismo Regional: Ruta del Agua y Economía Circular")
+    st.caption("Ruta física del agua desde la captación, su vertimiento tratado al Río Aburrá/Porce y el retorno de biosólidos como abono a las regiones productivas.")
     
     # 1. Población conectada al Censo Local Sincronizado
     pob_aburra = pob_total_agua if 'pob_total_agua' in locals() else 4200000
     
-    # 2. Biosólidos (~50g por habitante/día convertidos a Ton/día)
+    # 2. Biosólidos (Ton/día)
     carga_biosolidos_ton_dia = (pob_aburra * 0.050) / 1000 
     
-    nodos_sankey = ["Cuencas Cedentes (Cornare/Corantioquia)", f"Embalse {nodo_seleccionado}", "Consumo (Valle de Aburrá)", "Aguas Residuales", "PTAR (Aguas Claras/San Fernando)", "Suelos Ganaderos (Norte/Oriente)"]
-    
-    source = [0, 1, 2, 3, 4]
-    target = [1, 2, 3, 4, 5]
-    
-    # El flujo representa cómo se va mermando el agua y convirtiéndose en lodo
+    # Factor visual para que la línea de biosólidos se vea en la escala de m³/s del gráfico
     val_consumo = val_acueducto if 'val_acueducto' in locals() else 5.0
+    visual_lodo = max(0.2, val_consumo * 0.08) 
     
-    value = [
-        caudal_total_trasvase,          # De Cedentes a Embalse
-        val_consumo,                    # De Embalse a Ciudad
-        val_consumo * 0.80,             # Retorno como Agua Residual
-        val_consumo * 0.75,             # Agua que alcanza la PTAR
-        carga_biosolidos_ton_dia        # Lodo que vuelve a la montaña
-    ] 
+    # 3. Etiquetas de los Nodos (Estructuradas para legibilidad)
+    nodos_circulares = [
+        "1. Cuencas Cedentes", 
+        f"2. {nodo_seleccionado}", 
+        "3. Consumo (AMVA)", 
+        "4. Red Alcantarillado", 
+        "5. PTARs (S. Fernando / Aguas Claras)", 
+        "6. Río Aburrá", 
+        "7. Río Porce", 
+        "8. Sist. Porce II, III, IV", 
+        "🌱 Suelos Norte (R. Grande/Chico)", 
+        "🌱 Suelos Oriente (Nare/Piedras)"
+    ]
+    
+    # 4. Enlaces: (Origen, Destino, Valor Gráfico, Hover Text Real, Color)
+    enlaces = [
+        (0, 1, caudal_total_trasvase, f"{caudal_total_trasvase:.1f} m³/s", "rgba(52, 152, 219, 0.4)"),
+        (1, 2, val_consumo, f"{val_consumo:.1f} m³/s", "rgba(41, 128, 185, 0.4)"),
+        (2, 3, val_consumo * 0.80, f"{val_consumo * 0.80:.1f} m³/s (Agua Residual)", "rgba(149, 165, 166, 0.4)"),
+        (3, 4, val_consumo * 0.75, f"{val_consumo * 0.75:.1f} m³/s (Afluente PTAR)", "rgba(127, 140, 141, 0.4)"),
+        
+        # Bifurcación PTAR -> RÍO ABURRÁ -> PORCE -> EMBALSES
+        (4, 5, val_consumo * 0.75, f"{val_consumo * 0.75:.1f} m³/s (Agua Tratada)", "rgba(52, 152, 219, 0.5)"),
+        (5, 6, val_consumo * 0.75, f"{val_consumo * 0.75:.1f} m³/s (Transición Cuenca)", "rgba(41, 128, 185, 0.6)"),
+        (6, 7, val_consumo * 0.75, f"{val_consumo * 0.75:.1f} m³/s (Generación Eléctrica)", "rgba(241, 196, 15, 0.5)"),
+        
+        # Bifurcación PTAR -> BIOSÓLIDOS -> NORTE Y ORIENTE
+        (4, 8, visual_lodo * 0.4, f"{carga_biosolidos_ton_dia * 0.4:.1f} Ton/día (Abono Orgánico)", "rgba(39, 174, 96, 0.6)"),
+        (4, 9, visual_lodo * 0.6, f"{carga_biosolidos_ton_dia * 0.6:.1f} Ton/día (Abono Orgánico)", "rgba(39, 174, 96, 0.6)"),
+    ]
+    
+    source = [e[0] for e in enlaces]
+    target = [e[1] for e in enlaces]
+    value = [e[2] for e in enlaces]
+    hover = [e[3] for e in enlaces]
+    color = [e[4] for e in enlaces]
+    
+    colores_nodos = ["#2E86C1", "#1F618D", "#D35400", "#7B7D7D", "#5D6D7E", "#3498DB", "#2980B9", "#F39C12", "#27AE60", "#229954"]
 
-    fig_sankey = go.Figure(data=[go.Sankey(
-        node = dict(
-            pad=15, thickness=20, 
-            line=dict(color="black", width=0.5), 
-            label=nodos_sankey, 
-            color=["#2E86C1", "#1F618D", "#D35400", "#7B7D7D", "#5D6D7E", "#27AE60"]
-        ),
+    fig_sankey_circ = go.Figure(data=[go.Sankey(
+        arrangement="snap",
+        node = dict(pad=30, thickness=15, line=dict(color="none"), label=nodos_circulares, color=colores_nodos),
         link = dict(
-            source=source, target=target, value=value, 
-            color="rgba(169, 204, 227, 0.4)",
-            hovertemplate='%{value:.2f} m³/s / Ton<extra></extra>'
+            source=source, target=target, value=value, color=color, customdata=hover,
+            hovertemplate='<b>%{source.label}</b> ➔ <b>%{target.label}</b><br>Flujo: %{customdata}<extra></extra>'
         )
     )])
     
-    fig_sankey.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10), font_family="Georgia")
-    st.plotly_chart(fig_sankey, use_container_width=True)
+    fig_sankey_circ.update_layout(
+        height=550, margin=dict(l=20, r=20, t=30, b=20),
+        font=dict(size=12, family="Arial, sans-serif", color="#1f2937"),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"
+    )
+    
+    st.plotly_chart(fig_sankey_circ, use_container_width=True)
