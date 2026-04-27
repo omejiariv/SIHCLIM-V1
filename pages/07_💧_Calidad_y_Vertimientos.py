@@ -790,7 +790,7 @@ with tab_demanda:
                     df_view_usos = df_usos_detalle.head(1000).astype(str)
                 else:
                     df_view_usos = df_usos_detalle.astype(str)
-                st.dataframe(df_view_usos, width="stretch")
+                st.dataframe(df_view_usos, use_container_width=True")
             with c2:
                 csv = df_usos_detalle.to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Descargar Desglose Completo (CSV)", data=csv, file_name=f'Usos_{nombre_seleccion}.csv', mime='text/csv')
@@ -1373,14 +1373,18 @@ fig_sag.update_layout(
     yaxis=dict(range=[0, max_od_sat + 1])
 )
 
-# Mostrar métricas y gráfica
+# Mostrar métricas y gráfica de la Cascada
 m_r1, m_r2, m_r3 = st.columns(3)
-m_r1.metric("DBO Total Mezcla (L0)", f"{L0_mezcla:.1f} mg/L")
-estado_rio = "⚠️ Anoxia / Riesgo Ecológico" if od_minimo < 4.0 else "✅ Saludable"
-m_r2.metric("OD Mínimo Crítico", f"{od_minimo:.1f} mg/L", delta=estado_rio, delta_color="normal" if od_minimo >= 4.0 else "inverse")
-m_r3.metric("Ubicación del Impacto Crítico", f"Km {km_critico:.1f}")
 
-st.plotly_chart(fig_sag, width="stretch")
+# 🚀 FIX: Buscamos el pico máximo de contaminación en toda la simulación
+max_dbo = df_sag['DBO_Remanente_mgL'].max() if not df_sag.empty else 0.0
+
+m_r1.metric("Pico Máx. Contaminación (DBO)", f"{max_dbo:.1f} mg/L")
+estado_rio = "⚠️ Riesgo Ecológico" if od_minimo < 4.0 else "✅ Saludable"
+m_r2.metric("OD Mínimo Crítico", f"{od_minimo:.1f} mg/L", delta=estado_rio, delta_color="inverse" if od_minimo < 4.0 else "normal")
+m_r3.metric("Ubicación del Impacto", f"Km {km_critico:.1f}")
+
+st.plotly_chart(fig_sag, use_container_width=True")
 
 # ------------------------------------------------------------------------------
 # TAB 4: ESCENARIOS DE MITIGACIÓN (HOLÍSTICOS)
@@ -1622,7 +1626,7 @@ with tab_sirena:
             else:
                 df_view_exp = df_exp.astype(str)
                 
-            st.dataframe(df_view_exp, width="stretch")
+            st.dataframe(df_view_exp, use_container_width=True")
             
         with c_exp2:
             if not df_exp.empty and df_exp['caudal_lps'].sum() > 0:
