@@ -385,7 +385,7 @@ with st.expander(f"💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}", ex
             st.success("🧠 Oferta Hídrica sincronizada con el modelo distribuido.")
         
         st.caption("Bombas y Túneles (Trasvases Externos):")
-        st.info(f"⚖️ Conectado a marco legal: **{caudal_total_trasvase:.2f} m³/s** inyectados desde cuencas cedentes.")
+        st.info(f"⚖️ Conectado a marco legal: **{caudal_total_trasvase:.2f} m³/s** inyectados desde cuencas cedentes.")
 
     # --- SALIDAS DINÁMICAS ---
     with col_out:
