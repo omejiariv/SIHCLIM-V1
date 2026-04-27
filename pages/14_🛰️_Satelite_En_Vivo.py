@@ -108,7 +108,8 @@ if iniciar_conexion_gee():
                     reducer=ee.Reducer.sum().group(groupField=1, groupName='clase'),
                     geometry=roi_ee,
                     scale=10, # Resolución de 10x10 metros
-                    maxPixels=1e9
+                    maxPixels=1e13, # 🔥 Límite expandido a 10 billones de píxeles
+                    bestEffort=True # 🔥 Si es muy pesado, Google ajustará la escala automáticamente para no fallar
                 ).get('groups')
                 
                 # 2. Traer los datos desde los servidores de Google a Python
@@ -270,7 +271,7 @@ with st.expander("🛠️ Panel de Administrador: Extracción Satelital Avanzada
                         description='Usos_Suelo_Antioquia_ESA_10m',
                         folder='SIHCLIM_Rasters',  # Creará esta carpeta en tu Drive si no existe
                         fileNamePrefix='Cob10m_Antioquia_ESA_2021',
-                        region=region_geo.getInfo()['coordinates'],
+                        region=region_geo,
                         scale=10, # Resolución original máxima (10 metros)
                         maxPixels=1e13, # Límite expandido para mapas gigantes
                         crs='EPSG:4326'
