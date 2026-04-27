@@ -91,8 +91,8 @@ def ejecutar_pronostico_prophet(df_hist, meses_futuros, altitud, ki, ruido=0.0, 
 
         if ruido > 0:
             noise = np.random.normal(0, 0.05 * ruido, len(df_final))
-            df_final['p_final'] = df_final['p_final'] * (1 + noise)
-
+            # 🚀 BLINDAJE: Evita lluvias negativas físicamente imposibles
+            df_final['p_final'] = (df_final['p_final'] * (1 + noise)).clip(lower=0)
         temp_df = pd.DataFrame({'fecha': df_final['ds'], 'valor': df_final['p_final']})
         
         # LLAMADA AL BALANCE
