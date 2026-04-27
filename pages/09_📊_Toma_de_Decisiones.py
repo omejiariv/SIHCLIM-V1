@@ -197,10 +197,6 @@ if gdf_zona is not None and not gdf_zona.empty:
             n_llave = mapa_llave.get(nivel, nivel).upper()
             llave_u = f"{n_llave}_{t_norm}_TOTAL".upper().replace(" ", "_")
             
-            # 🕵️ DETECTOR FORENSE EN PANTALLA
-            with st.expander(f"🕵️ Debug SQL: Buscando '{territorio}' en '{tabla}'", expanded=False):
-                st.code(f"Nivel Req: {nivel_req}\nLlave Forjada: {llave_u}")
-
             # 🔥 2. BÚSQUEDA POR LLAVE (La más segura)
             q = text(f'SELECT * FROM {tabla} WHERE UPPER("LLAVE_UNIVERSAL") = :llave LIMIT 10')
             df_res = pd.read_sql(q, engine_sql, params={'llave': llave_u})
