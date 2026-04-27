@@ -1294,8 +1294,6 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
         q_vertimiento, t_vertimiento, dbo_vert_mgL, carga_puntual_kg = 0.0, 20.0, 0.0, 0.0
         st.warning("No hay descargas activas o caudales válidos en el portafolio.")
         
-    st.info(f"⚖️ **Consolidado de Inyección:** Caudal Total: **{q_vertimiento:.3f} m³/s** | Carga Combinada: **{carga_puntual_kg:,.1f} kg DBO/día**")
-
 # =========================================================================
 # 3. Termodinámica y Balance de Masas (Mezcla)
 # =========================================================================
