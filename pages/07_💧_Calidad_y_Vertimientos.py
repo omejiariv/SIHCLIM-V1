@@ -1106,15 +1106,23 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
             help="A mayor altitud, menor área aportante (menos caudal) y menor temperatura del agua."
         )
         
-        # 🌊 MOTOR HIPSOMÉTRICO Y CONEXIÓN ALEPH
-        # Leemos los caudales físicos reales inyectados por la Página 01 (Clima e Hidrología)
-        aleph_q_medio = st.session_state.get('aleph_q_rio_m3s', 0.0)
-        aleph_q_min = st.session_state.get('aleph_q_min_m3s', 0.0)
+        # 🌊 MOTOR HÍDRICO e HIPSOMETRICO (CONEXIÓN A MATRIZ MAESTRA Y ALEPH)
+        # 🚀 FIX: Consultamos primero la Matriz Maestra Hidrológica en SQL
+        df_hidro = consultar_matriz_sql_calidad("matriz_hidrologica_maestra", nombre_seleccion, nivel_req, "Jerarquia")
+        
+        q_medio_matriz, q_min_matriz = 0.0, 0.0
+        if not df_hidro.empty:
+            q_medio_matriz = float(df_hidro.iloc[0].get('Caudal_Medio_m3s', 0.0))
+            q_min_matriz = float(df_hidro.iloc[0].get('Caudal_Minimo_m3s', 0.0))
+            
+        # Si la matriz tiene datos, los prioriza. Si no, busca en la memoria viva (Aleph)
+        aleph_q_medio = q_medio_matriz if q_medio_matriz > 0 else st.session_state.get('aleph_q_rio_m3s', 0.0)
+        aleph_q_min = q_min_matriz if q_min_matriz > 0 else st.session_state.get('aleph_q_min_m3s', 0.0)
         
         # Interfaz para que el usuario decida qué escenario de dilución simular
         st.markdown("---")
         tipo_escenario = st.radio(
-            "🌊 Escenario Hidrológico para Dilución (Conexión Aleph):", 
+            "🌊 Escenario Hidrológico para Dilución (Conexión Maestra):", 
             ["🏜️ Peor Escenario: Caudal de Estiaje / Mínimo (Recomendado MADS)", "🌊 Escenario Promedio: Caudal Medio"], 
             horizontal=True
         )
@@ -1125,9 +1133,12 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
         else:
             q_base_cuenca = float(aleph_q_medio) if aleph_q_medio > 0 else 5.0 # Fallback teórico medio
             
-        if aleph_q_medio <= 0:
-            st.warning("⚠️ **Alerta de Contexto:** No se detectó un modelo hidrológico en memoria. Se están usando caudales genéricos de respaldo. Ve a 'Clima e Hidrología' y ejecuta el Aleph para usar caudales reales.")
-
+        if aleph_q_medio > 0:
+            fuente_q = "Matriz SQL Exacta" if q_medio_matriz > 0 else "Memoria Viva (Aleph)"
+            st.success(f"💧 **Cerebro Hidrológico Enlazado:** Caudales extraídos desde {fuente_q}.")
+        else:
+            st.warning("⚠️ **Alerta de Contexto:** No se detectó un modelo hidrológico en memoria ni en SQL. Se usan caudales genéricos. Ve a 'Clima e Hidrología' y ejecuta el Aleph para obtener caudales reales.")
+            
         frac_area, fuente_hipso, eq_hipso = calcular_area_inversa(h_descarga, res_hipso_actual)
         q_rio = max(0.01, q_base_cuenca * frac_area)
         
@@ -1460,17 +1471,28 @@ with tab_mapa:
         st.caption("Mapa de calor jerárquico (Treemap) basado en cálculos poblacionales.")
         df_agg = pd.DataFrame()
         
-        if nivel_sel_interno == "Nacional (Colombia)": df_m = df_mpios[df_mpios['año'] == anio_base].copy()
+        # 🚀 FIX KEYERROR: Detector dinámico de la columna de año (o fallback si no existe)
+        col_anio = next((c for c in ['año', 'Año', 'anio', 'Anio', 'year', 'Year'] if c in df_mpios.columns), None)
+        anio_mapa = anio_analisis if 'anio_analisis' in locals() else 2025
+        
+        if col_anio:
+            if anio_mapa not in df_mpios[col_anio].unique():
+                anio_mapa = df_mpios[col_anio].max() # Si no existe 2025, usa el más reciente
+            df_filtro_anio = df_mpios[df_mpios[col_anio] == anio_mapa]
+        else:
+            df_filtro_anio = df_mpios # Si el dataset ya está aplanado y no tiene año, lo usamos todo
+            
+        if nivel_sel_interno == "Nacional (Colombia)": df_m = df_filtro_anio.copy()
         elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)":
             car_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
             mpios_car = set()
             if not df_concesiones.empty: mpios_car.update(df_concesiones[df_concesiones['car_norm'] == car_norm]['municipio_norm'].unique())
             if not df_vertimientos.empty: mpios_car.update(df_vertimientos[df_vertimientos['car_norm'] == car_norm]['municipio_norm'].unique())
-            df_m = df_mpios[(df_mpios['municipio_norm'].isin(mpios_car)) & (df_mpios['año'] == anio_base)].copy()
-        elif nivel_sel_interno == "Departamental": df_m = df_mpios[(df_mpios['depto_nom'] == nombre_seleccion) & (df_mpios['año'] == anio_base)].copy()
-        elif nivel_sel_interno == "Regional": df_m = df_mpios[(df_mpios['region'] == nombre_seleccion) & (df_mpios['año'] == anio_base)].copy()
-        elif nivel_sel_interno == "Municipal": df_m = df_mpios[(df_mpios['municipio_norm'] == normalizar_texto(nombre_seleccion)) & (df_mpios['año'] == anio_base)].copy()
-        else: df_m = df_mpios[df_mpios['año'] == anio_base].copy() 
+            df_m = df_filtro_anio[df_filtro_anio['municipio_norm'].isin(mpios_car)].copy()
+        elif nivel_sel_interno == "Departamental": df_m = df_filtro_anio[df_filtro_anio['depto_nom'] == nombre_seleccion].copy()
+        elif nivel_sel_interno == "Regional": df_m = df_filtro_anio[df_filtro_anio['region'] == nombre_seleccion].copy()
+        elif nivel_sel_interno == "Municipal": df_m = df_filtro_anio[df_filtro_anio['municipio_norm'] == normalizar_texto(nombre_seleccion)].copy()
+        else: df_m = df_filtro_anio.copy()
             
         if not df_m.empty:
             df_agg = df_m.groupby('municipio')['Poblacion'].sum().reset_index()
