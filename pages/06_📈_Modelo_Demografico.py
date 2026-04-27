@@ -2636,6 +2636,7 @@ with tab_matriz:
 
                             # Limpieza de vacíos para no romper la suma demográfica
                             df_admin['subregion'] = df_admin['subregion'].fillna('Sin Region')
+                            
                             # 🧩 LÓGICA DE JURISDICCIÓN AMVA vs CORANTIOQUIA
                             # Identificamos el Valle de Aburrá
                             mask_aburra = df_admin['subregion'].str.contains('Aburr', case=False, na=False)
@@ -2644,8 +2645,12 @@ with tab_matriz:
                             # 1. Urbano del Aburrá -> AMVA
                             df_admin.loc[mask_aburra & (df_admin['area_geografica'].str.lower() == 'urbano'), 'car'] = 'AMVA'
                             
-                            # 2. Rural del Aburrá -> Corantioquia (Aseguramos que lo rural se quede en la CAR)
-                            df_admin.loc[mask_aburra & (df_admin['area_geografica'].str.lower() == 'rural'), 'car'] = 'Corantioquia'
+                            # 2. Rural del Aburrá -> CORANTIOQUIA
+                            df_admin.loc[mask_aburra & (df_admin['area_geografica'].str.lower() == 'rural'), 'car'] = 'CORANTIOQUIA'
+                            
+                            # 🔥 FIX: NORMALIZACIÓN ABSOLUTA DE CARs PARA EVITAR FRAGMENTACIÓN
+                            # Asegura que los 70 municipios y las veredas del Aburrá se agrupen en la misma bolsa
+                            df_admin['car'] = df_admin['car'].astype(str).str.strip().str.upper()
                             
                             df_admin['region'] = df_admin['region'].fillna('Sin Macroregion')
                             df_admin['depto_nom'] = df_admin['depto_nom'].fillna('Antioquia')
@@ -2654,7 +2659,6 @@ with tab_matriz:
                         st.warning(f"⚠️ Error en Sincronización Demográfica: {e}")
                 
                 # 🧹 LIMPIEZA ANTI-DUPLICADOS (PRE-AGREGACIÓN)
-                # Si df_mun arrastra duplicados de algún cruce previo, esto evita que la población se multiplique.
                 if 'Total' in df_admin.columns:
                     cols_subset = ['municipio', 'depto_nom', col_anio, 'Total']
                     if 'area_geografica' in df_admin.columns: cols_subset.append('area_geografica')
@@ -2671,7 +2675,6 @@ with tab_matriz:
                 # A. MUNICIPIOS
                 for mpio in df_admin['municipio'].dropna().unique():
                     for cat in ['Total', 'Urbana', 'Rural']:
-                        # 🔥 FIX: Agrupamos por año para consolidar y evitar que lleguen años repetidos a curve_fit
                         df_f = df_admin[(df_admin['municipio'] == mpio) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
                         if len(df_f) >= 3 and df_f['Total'].sum() > 0:
                             depto_padre = df_admin[df_admin['municipio'] == mpio]['depto_nom'].dropna().iloc[0] if not df_admin[df_admin['municipio'] == mpio].empty else 'Antioquia'
@@ -2683,7 +2686,7 @@ with tab_matriz:
                     if len(df_f) >= 3 and df_f['Total'].sum() > 0:
                         ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'Departamental', 'Antioquia', 'Colombia', cat)
                         
-                # C. MACROREGIONES (Pacífica, Amazonía, etc.)
+                # C. MACROREGIONES
                 if 'Macroregion' in df_admin.columns:
                     for macro in df_admin['Macroregion'].dropna().unique():
                         for cat in ['Total', 'Urbana', 'Rural']:
@@ -2691,16 +2694,15 @@ with tab_matriz:
                             if len(df_f) >= 3 and df_f['Total'].sum() > 0:
                                 ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'MACROREGION', macro, 'Colombia', cat)
 
-                # D. SUBREGIONES DE ANTIOQUIA (Oriente, Bajo Cauca, etc.)
+                # D. SUBREGIONES DE ANTIOQUIA
                 if col_reg:
                     for reg in df_admin[col_reg].dropna().unique():
                         for cat in ['Total', 'Urbana', 'Rural']:
                             df_f = df_admin[(df_admin[col_reg] == reg) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
                             if len(df_f) >= 3 and df_f['Total'].sum() > 0:
-                                # 🔥 FIX CRÍTICO: Se cambia 'REGION' por 'Regional' para Sincronía con Toma de Decisiones
                                 ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'Regional', reg, 'Antioquia', cat)
                                 
-                # E. ESCALA URBANA (Todas las Cabeceras)
+                # E. ESCALA URBANA
                 df_f = df_admin[df_admin['Categoria_Area'] == 'Urbana'].groupby(col_anio)['Total'].sum().reset_index()
                 if len(df_f) >= 3 and df_f['Total'].sum() > 0:
                     ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'ESCALA_URBANA', 'Todas las Cabeceras', 'Antioquia', 'Urbana')
@@ -2711,23 +2713,23 @@ with tab_matriz:
                         aut_limpia = str(autoridad).strip().upper()
                         if aut_limpia in ["", "NAN", "NONE"]: continue
                         
-                        # 🚀 FIX: Calculamos Urbana y Rural explícitamente desde las partes purificadas
+                        # 🚀 FIX ELIMINADOR DE FANTASMAS: Calculamos Urbana y Rural explícitamente desde las partes purificadas
                         df_urb = df_admin[(df_admin['car'] == autoridad) & (df_admin['Categoria_Area'] == 'Urbana')].groupby(col_anio)['Total'].sum().reset_index()
                         df_rur = df_admin[(df_admin['car'] == autoridad) & (df_admin['Categoria_Area'] == 'Rural')].groupby(col_anio)['Total'].sum().reset_index()
                         
                         if len(df_urb) >= 3 and df_urb['Total'].sum() > 0:
-                            ajustar_modelos(df_urb[col_anio].values, df_urb['Total'].values, 'CAR', autoridad, 'Antioquia', 'Urbana')
+                            ajustar_modelos(df_urb[col_anio].values, df_urb['Total'].values, 'CAR', aut_limpia, 'Antioquia', 'Urbana')
                             
                         if len(df_rur) >= 3 and df_rur['Total'].sum() > 0:
-                            ajustar_modelos(df_rur[col_anio].values, df_rur['Total'].values, 'CAR', autoridad, 'Antioquia', 'Rural')
+                            ajustar_modelos(df_rur[col_anio].values, df_rur['Total'].values, 'CAR', aut_limpia, 'Antioquia', 'Rural')
 
-                        # 🔥 ELIMINAMOS EL FANTASMA: El 'Total' de la CAR será la suma estricta de sus partes reales
+                        # 🔥 El 'Total' de la CAR será la suma estricta de sus partes reales, eliminando la fila DANE original
                         df_tot = pd.merge(df_urb, df_rur, on=col_anio, how='outer', suffixes=('_u', '_r')).fillna(0)
                         if not df_tot.empty:
                             df_tot['Total'] = df_tot['Total_u'] + df_tot['Total_r']
                             if len(df_tot) >= 3 and df_tot['Total'].sum() > 0:
-                                ajustar_modelos(df_tot[col_anio].values, df_tot['Total'].values, 'CAR', autoridad, 'Antioquia', 'Total')
-
+                                ajustar_modelos(df_tot[col_anio].values, df_tot['Total'].values, 'CAR', aut_limpia, 'Antioquia', 'Total')
+                                
             # =====================================================================
             # 🔥 6. FORJA DE LLAVES UNIVERSALES Y CARGA A MEMORIA
             # =====================================================================
