@@ -2636,6 +2636,17 @@ with tab_matriz:
 
                             # Limpieza de vacíos para no romper la suma demográfica
                             df_admin['subregion'] = df_admin['subregion'].fillna('Sin Region')
+                            # 🧩 LÓGICA DE JURISDICCIÓN AMVA vs CORANTIOQUIA
+                            # Identificamos el Valle de Aburrá
+                            mask_aburra = df_admin['subregion'].str.contains('Aburr', case=False, na=False)
+                            
+                            # Regla Quirúrgica: 
+                            # 1. Urbano del Aburrá -> AMVA
+                            df_admin.loc[mask_aburra & (df_admin['area_geografica'].str.lower() == 'urbano'), 'car'] = 'AMVA'
+                            
+                            # 2. Rural del Aburrá -> Corantioquia (Aseguramos que lo rural se quede en la CAR)
+                            df_admin.loc[mask_aburra & (df_admin['area_geografica'].str.lower() == 'rural'), 'car'] = 'Corantioquia'
+                            
                             df_admin['region'] = df_admin['region'].fillna('Sin Macroregion')
                             df_admin['depto_nom'] = df_admin['depto_nom'].fillna('Antioquia')
                             
@@ -2696,7 +2707,16 @@ with tab_matriz:
 
                 # F. CORPORACIONES AUTÓNOMAS REGIONALES (CAR)
                 if 'car' in df_admin.columns:
+                    # Obtenemos las CARs únicas (ahora incluirá 'AMVA' y 'Corantioquia' ya filtrados)
                     for autoridad in df_admin['car'].dropna().unique():
+                        aut_limpia = str(autoridad).strip().upper()
+                        if aut_limpia in ["", "NAN", "NONE"]: continue
+                        
+                        for cat in ['Total', 'Urbana', 'Rural']:
+                            df_f = df_admin[(df_admin['car'] == autoridad) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
+                            if len(df_f) >= 3 and df_f['Total'].sum() > 0:
+                                # Forjamos el modelo para la CAR
+                                ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'CAR', autoridad, 'Antioquia', cat)
                         for cat in ['Total', 'Urbana', 'Rural']:
                             df_f = df_admin[(df_admin['car'] == autoridad) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
                             if len(df_f) >= 3 and df_f['Total'].sum() > 0:
