@@ -155,8 +155,8 @@ def calcular_streeter_phelps_multipunto(q_rio, t_rio, dbo_rio, od_rio,
         'Distancia_km': distancias_km,
         'Oxigeno_Disuelto_mgL': resultados_od,
         'DBO_Remanente_mgL': resultados_dbo,
-        'OD_Saturacion': resultados_od_sat, # 🚀 FIX: Lo empaquetamos y exportamos
-        'Limite_Normativo': np.full_like(distancias_km, 4.0)
+        'OD_Saturacion': resultados_od_sat, 
+        'Limite_Critico': np.full_like(distancias_km, 4.0) # 🚀 FIX: Renombrado para que la gráfica lo encuentre
     })
     
     return df_resultados
