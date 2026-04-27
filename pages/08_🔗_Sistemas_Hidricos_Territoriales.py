@@ -1397,10 +1397,14 @@ with contenedor_sankey.container():
             if l_susp_s > 0:
                 labels.append("Sedimento Abrasivo"); source.append(idx); target.append(0); value.append(l_susp_s); color.append("rgba(205, 133, 63, 0.8)"); idx += 1
 
-        # C. TRASVASES
-        for nombre, q in trasvases_inputs.items():
-            if q > 0:
-                labels.append(f"Bombeo {nombre}"); source.append(idx); target.append(0); value.append(q); color.append("rgba(231, 76, 60, 0.4)"); idx += 1
+        # C. TRASVASES LEGALES (Conectado a la Barra Lateral)
+        if caudal_total_trasvase > 0:
+            labels.append("Trasvases (Cornare/Corantioquia)")
+            source.append(idx)
+            target.append(0)
+            value.append(caudal_total_trasvase)
+            color.append("rgba(231, 76, 60, 0.4)")
+            idx += 1
 
         # 4. SALIDAS Y VENA MARRÓN
         destinos = [
@@ -1477,8 +1481,8 @@ with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
 with contenedor_sankey.container():
     st.markdown("### 📊 Flujo Regional: Estrés y Economía Circular")
     
-    # 1. Población conectada al Aleph o genérica
-    pob_aburra = st.session_state.get('pob_total', 4200000)
+    # 1. Población conectada al Censo Local Sincronizado
+    pob_aburra = pob_total_agua if 'pob_total_agua' in locals() else 4200000
     
     # 2. Biosólidos (~50g por habitante/día convertidos a Ton/día)
     carga_biosolidos_ton_dia = (pob_aburra * 0.050) / 1000 
