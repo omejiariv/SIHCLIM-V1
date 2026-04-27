@@ -1011,7 +1011,7 @@ st.markdown("---")
 with st.expander(f"🌊 4. Capacidad de Asimilación del Río Receptor: {nombre_seleccion}", expanded=True):
     st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígeno Disuelto (OD) aguas abajo del vertimiento principal de la zona seleccionada.")
 
-from modules.water_quality import calcular_streeter_phelps
+from modules.water_quality import calcular_streeter_phelps_multipunto
 
 # -------------------------------------------------------------------------
 # 🏔️ MOTOR HIPSOMÉTRICO DINÁMICO (Función Inversa A(H) y Límites Auto)
@@ -1288,47 +1288,39 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
         st.warning("No hay descargas activas o caudales válidos en el portafolio.")
         
 # =========================================================================
-# 3. Termodinámica y Balance de Masas (Mezcla)
+# 3. Ejecución del Motor Streeter-Phelps en Cascada (Multipunto)
 # =========================================================================
-q_mezcla = q_rio + q_vertimiento
+dbo_fondo_rio = 2.0  # DBO natural del río limpio aguas arriba
+paso_simulacion = 0.5  # Resolución de la gráfica en km
 
-# Evitar división por cero si el usuario apaga todo
-if q_mezcla > 0:
-    t_mezcla = ((q_rio * t_agua) + (q_vertimiento * t_vertimiento)) / q_mezcla
-    L0_mezcla = ((q_rio * dbo_rio_arriba_fondo) + (q_vertimiento * dbo_vert_mgL)) / q_mezcla
-    od_mezcla = ((q_rio * od_rio_arriba) + (q_vertimiento * 0.0)) / q_mezcla
-else:
-    t_mezcla, L0_mezcla, od_mezcla = t_agua, dbo_rio_arriba_fondo, od_rio_arriba
-
-od_sat = 14.652 - 0.41022 * t_mezcla + 0.007991 * (t_mezcla ** 2) - 0.000077774 * (t_mezcla ** 3)
-D0_mezcla = max(0, od_sat - od_mezcla)
-
-# Métrica de la Mezcla
-if q_vertimiento > 0:
-    st.info(f"🧬 **Física de la Mezcla:** Al inyectar el vertimiento, la DBO del río salta de {dbo_rio_arriba_fondo:.1f} a **{L0_mezcla:.1f} mg/L**, y la temperatura se ajusta a **{t_mezcla:.1f}°C**.")
-
-# 4. Motor Streeter-Phelps
-# Mantenemos tu llamada original asegurando que use las variables de mezcla
-df_sag = calcular_streeter_phelps(
-    L0=L0_mezcla, 
-    D0=D0_mezcla, 
-    T_agua=t_mezcla,  # Usamos la temperatura ya mezclada
+# El nuevo motor realiza los balances de masa automáticamente en cada tramo
+df_sag = calcular_streeter_phelps_multipunto(
+    q_rio=q_rio, 
+    t_rio=t_agua, 
+    dbo_rio=dbo_fondo_rio, 
+    od_rio=od_rio_arriba, 
     v_ms=v_rio, 
     H_m=h_rio, 
     dist_max_km=dist_sim, 
-    paso_km=0.5
+    paso_km=paso_simulacion, 
+    df_descargas=df_activas, 
+    eq_hipso_res=res_hipso_actual
 )
 
-# 4. Encontrar el Punto Crítico (Seguro contra NaN)
+# 4. Encontrar el Punto Crítico Global (Seguro contra NaN)
 if not df_sag.empty and not df_sag['Oxigeno_Disuelto_mgL'].isna().all():
     idx_min = df_sag['Oxigeno_Disuelto_mgL'].idxmin()
     punto_critico = df_sag.loc[idx_min]
     od_minimo = punto_critico['Oxigeno_Disuelto_mgL']
     km_critico = punto_critico['Distancia_km']
+    
+    if q_vertimiento > 0:
+        st.info(f"🧬 **Física de la Cascada:** El simulador procesó la caída topográfica inyectando {len(df_activas)} vertimientos. El punto más crítico de oxígeno (**{od_minimo:.1f} mg/L**) ocurre en el **Km {km_critico:.1f}**.")
 else:
     # Fallback si el modelo matemático colapsa temporalmente
     od_minimo = od_rio_arriba
     km_critico = 0.0
+    st.warning("No se pudo calcular la curva de oxígeno. Verifique los datos de la tabla de vertimientos.")
 
 # 5. Dibujar la Curva de Oxígeno
 import plotly.graph_objects as go
