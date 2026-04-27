@@ -62,64 +62,112 @@ def calcular_cargas_organicas(pob_urb, pob_rur, ptar_cob, vol_suero_ldia, cerdos
     
     return df_cargas
 
-def calcular_streeter_phelps(L0, D0, T_agua, v_ms, H_m, dist_max_km=50, paso_km=0.5):
+def calcular_streeter_phelps_multipunto(q_rio, t_rio, dbo_rio, od_rio, 
+                                        v_ms, H_m, dist_max_km, paso_km,
+                                        df_descargas, eq_hipso_res=None):
     """
-    Simula la Curva de Caída de Oxígeno (Sag Curve) mediante el modelo Streeter-Phelps.
-    
-    Parámetros:
-    - L0: DBO última de la mezcla en el punto de vertimiento (mg/L)
-    - D0: Déficit inicial de oxígeno de la mezcla (mg/L)
-    - T_agua: Temperatura del agua (°C)
-    - v_ms: Velocidad media del río (m/s)
-    - H_m: Profundidad media del río (m)
-    - dist_max_km: Distancia aguas abajo a simular (km)
-    
-    Retorna:
-    - DataFrame con la simulación espacial del Oxígeno Disuelto.
+    Simulación Avanzada Streeter-Phelps por Tramos (Piecewise).
+    Calcula la caída de oxígeno asumiendo múltiples vertimientos a diferentes altitudes.
     """
-    # 1. Constantes y Corrección por Temperatura
-    # k1 (Tasa de Desoxigenación): Típicamente 0.23 d^-1 a 20°C para vertimientos mixtos
-    k1_20 = 0.23 
-    k1_T = k1_20 * (1.047 ** (T_agua - 20))
+    # Si no hay descargas, simulamos el río natural
+    if df_descargas is None or df_descargas.empty:
+        df_descargas = pd.DataFrame([{
+            'Altitud (m)': 0, 'Caudal (m3/s)': 0, 'DBO (mg/L)': 0, 'Temp (°C)': t_rio
+        }])
+
+    # 1. Parámetros Cinéticos Base
+    k1_20 = 0.35
+    k2_20 = (3.9 * (v_ms ** 0.5)) / (H_m ** 1.5) if H_m > 0 else 0.1
     
-    # k2 (Tasa de Reaireación): Fórmula empírica de O'Connor-Dobbins
-    # k2_20 = 3.93 * v^0.5 / H^1.5 (en base e, días^-1)
-    k2_20 = (3.93 * (v_ms ** 0.5)) / (H_m ** 1.5) if H_m > 0 else 0.1
-    k2_T = k2_20 * (1.024 ** (T_agua - 20))
-    
-    # Evitar singularidad matemática si k1 == k2
-    if abs(k1_T - k2_T) < 0.001: 
-        k2_T += 0.001
-        
-    # 2. Oxígeno Disuelto de Saturación (Fórmula empírica a nivel del mar)
-    OD_sat = 14.652 - 0.41022 * T_agua + 0.007991 * (T_agua ** 2) - 0.000077774 * (T_agua ** 3)
-    
-    # 3. Vectorización Espacial y Temporal
+    # 2. Vectorización Espacial
     distancias_km = np.arange(0, dist_max_km + paso_km, paso_km)
     
-    # Tiempo de viaje en días = (Distancia en metros) / (Metros recorridos por día)
-    tiempos_dias = (distancias_km * 1000) / (v_ms * 86400) if v_ms > 0 else distancias_km * 0
+    # Variables de estado que irán cambiando a lo largo del río
+    q_actual = q_rio
+    t_actual = t_rio
+    od_actual = od_rio
+    dbo_remanente_actual = dbo_rio
     
-    # 4. Ecuación Maestra de Streeter-Phelps
-    # D(t) = (k1*L0 / (k2-k1)) * (e^(-k1*t) - e^(-k2*t)) + D0 * e^(-k2*t)
-    term1 = (k1_T * L0) / (k2_T - k1_T)
-    term2 = np.exp(-k1_T * tiempos_dias) - np.exp(-k2_T * tiempos_dias)
-    term3 = D0 * np.exp(-k2_T * tiempos_dias)
+    resultados_od = []
+    resultados_dbo = []
     
-    deficit_t = term1 * term2 + term3
-    od_t = OD_sat - deficit_t
+    # Asumimos que la descarga a mayor altitud es el Km 0
+    altitud_km0 = df_descargas.iloc[0]['Altitud (m)']
     
-    # Blindaje ecológico: El oxígeno no puede ser negativo
-    od_t = np.maximum(od_t, 0)
-    
-    # Ensamblar tabla de salida
-    df_sag = pd.DataFrame({
+    # Pre-procesar en qué Kilómetro ocurre cada descarga
+    # Relación simple: 100 metros de desnivel = X km de distancia (Aproximación lineal)
+    # Por ahora, distribuimos las descargas cada 5 km si hay varias, o usamos altitud
+    km_descargas = {}
+    km_actual_asignado = 0
+    for idx, row in df_descargas.iterrows():
+        km_descargas[km_actual_asignado] = row
+        km_actual_asignado += max(paso_km, 5) # Separación mínima
+        
+    for dist in distancias_km:
+        # Verificar si hay una descarga en este kilómetro
+        # Usamos una tolerancia para encontrar la descarga más cercana a este punto
+        descarga_activa = None
+        for km_vert, datos in km_descargas.items():
+            if abs(dist - km_vert) < paso_km/2:
+                descarga_activa = datos
+                break
+                
+        # Si hay vertimiento, RE-CALCULAMOS LA MEZCLA INICIAL para el nuevo tramo
+        if descarga_activa is not None:
+            q_vert = descarga_activa['Caudal (m3/s)']
+            t_vert = descarga_activa['Temp (°C)']
+            dbo_vert = descarga_activa['DBO (mg/L)']
+            od_vert = 0.0 # Asumimos agua residual anóxica
+            
+            q_mezcla = q_actual + q_vert
+            if q_mezcla > 0:
+                t_mezcla = ((q_actual * t_actual) + (q_vert * t_vert)) / q_mezcla
+                # Sumamos la DBO remanente del tramo anterior a la nueva carga
+                dbo_mezcla = ((q_actual * dbo_remanente_actual) + (q_vert * dbo_vert)) / q_mezcla
+                od_mezcla = ((q_actual * od_actual) + (q_vert * od_vert)) / q_mezcla
+            else:
+                t_mezcla, dbo_mezcla, od_mezcla = t_actual, dbo_remanente_actual, od_actual
+                
+            # Actualizamos el estado para iniciar este nuevo sub-tramo
+            q_actual = q_mezcla
+            t_actual = t_mezcla
+            od_actual = od_mezcla
+            L0 = dbo_mezcla # Carga orgánica inicial del nuevo tramo
+            D0 = (14.652 - 0.41022 * t_actual + 0.007991 * (t_actual ** 2) - 0.000077774 * (t_actual ** 3)) - od_actual
+            
+            # Ajuste térmico de las constantes
+            k1_T = k1_20 * (1.047 ** (t_actual - 20))
+            k2_T = k2_20 * (1.024 ** (t_actual - 20))
+            if abs(k1_T - k2_T) < 0.001: k2_T += 0.001
+            
+            # Reiniciamos el "tiempo de viaje" relativo a esta descarga
+            tiempo_base = (dist * 1000) / (v_ms * 86400) if v_ms > 0 else 0
+        
+        # Calcular el oxígeno en este punto específico
+        t_dias = (dist * 1000) / (v_ms * 86400) if v_ms > 0 else 0
+        t_relativo = t_dias - tiempo_base # Tiempo desde la última descarga
+        
+        # Ecuación de Streeter-Phelps
+        D_t = (k1_T * L0 / (k2_T - k1_T)) * (np.exp(-k1_T * t_relativo) - np.exp(-k2_T * t_relativo)) + D0 * np.exp(-k2_T * t_relativo)
+        
+        # L_t = DBO remanente
+        L_t = L0 * np.exp(-k1_T * t_relativo)
+        
+        OD_sat_local = 14.652 - 0.41022 * t_actual + 0.007991 * (t_actual ** 2) - 0.000077774 * (t_actual ** 3)
+        OD_t = max(0, OD_sat_local - D_t)
+        
+        resultados_od.append(OD_t)
+        resultados_dbo.append(L_t)
+        
+        # Guardamos la DBO y OD de este punto para que sea la condición de mezcla del siguiente vertimiento
+        dbo_remanente_actual = L_t
+        od_actual_simulado = OD_t
+        
+    df_resultados = pd.DataFrame({
         'Distancia_km': distancias_km,
-        'Tiempo_dias': tiempos_dias,
-        'Oxigeno_Disuelto_mgL': od_t,
-        'Deficit_OD_mgL': deficit_t,
-        'Limite_Critico': 4.0,  # 4 mg/L es el umbral para conservación de fauna acuática
-        'OD_Saturacion': OD_sat
+        'Oxigeno_Disuelto_mgL': resultados_od,
+        'DBO_Remanente_mgL': resultados_dbo,
+        'Limite_Normativo': np.full_like(distancias_km, 4.0)
     })
     
-    return df_sag
+    return df_resultados
