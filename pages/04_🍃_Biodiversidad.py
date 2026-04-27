@@ -1466,7 +1466,19 @@ with tab_micro:
     st.markdown("#### 🌐 9. Conexión al Gemelo Digital (Cross-Pollination)")
     st.info("Exporta la retención del dosel, la partición física, química y el riesgo de infraestructura hacia los simuladores de Toma de Decisiones y Sistemas Hídricos.")
 
+    # 📦 UX MEJORADA: Dashboard de previsualización antes de enviar
+    st.markdown("##### 📦 Paquete de Datos a Exportar:")
+    c_exp1, c_exp2, c_exp3, c_exp4 = st.columns(4)
+    c_exp1.metric("Lodo Tormenta", f"{lodo_total_m3:,.0f} m³")
+    c_exp2.metric("Sobrecosto PTAP", f"${s_total:,.0f} USD")
+    c_exp3.metric("Fósforo Reactivo", f"{fosforo_hoy:,.1f} Kg")
+    c_exp4.metric("Eficiencia Retención", f"{eficiencia_retencion_pct:.1f}%")
+
+    if lodo_total_m3 <= 0 or s_total <= 0:
+        st.warning("⚠️ **Atención:** Algunos valores están en CERO. Asegúrate de configurar la severidad de la Tormenta (Módulo 6) y los costos de la Planta PTAP (Módulo 7) arriba antes de sincronizar.")
+
     if st.button("🔌 Sincronizar Impacto con el Sistema Territorial (Pág 08 y 09)", type="primary", use_container_width=True):
+    
         st.session_state['eco_lodo_total_m3'] = float(lodo_total_m3)
         st.session_state['eco_lodo_colas_m3'] = float(lodo_colas_m3)
         st.session_state['eco_lodo_fondo_m3'] = float(lodo_fondo_m3)
