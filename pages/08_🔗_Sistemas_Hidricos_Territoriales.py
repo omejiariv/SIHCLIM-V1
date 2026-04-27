@@ -1306,12 +1306,15 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
         c_m4.metric(f"⚠️ Estrés ({estado_estres})", f"{estres_local:.1f}%", delta_color=alerta_color)
 
 # ==============================================================================
-# 🕸️ MAPA CONCEPTUAL: TOPOLOGÍA DEL METABOLISMO HÍDRICO
+# 🕸️ MAPA CONCEPTUAL Y METABOLISMO REGIONAL (SANKEYS EN CONTENEDOR UNIFICADO)
 # ==============================================================================
 with contenedor_sankey.container():
+    
+    # ---------------------------------------------------------
+    # 🌍 DIAGRAMA 1: TOPOLOGÍA HIDROLÓGICA (Usos del suelo)
+    # ---------------------------------------------------------
     with st.expander("🕸️ Mapa Conceptual: Topología del Metabolismo Hídrico", expanded=False):
-        
-        # 🔍 1. CAPTURA DE COBERTURAS REALES (Desde el motor de Pág 04 - Supabase)
+        # 🔍 1. CAPTURA DE COBERTURAS REALES
         area_ref = datos_nodo.get("ha_conservadas_base", 3460.0)
         ha_bosque = st.session_state.get('aleph_ha_bosque', area_ref) 
         ha_agricola = st.session_state.get('aleph_ha_agricola', area_ref * 2.5)
@@ -1319,12 +1322,10 @@ with contenedor_sankey.container():
         ha_urbana = st.session_state.get('aleph_area_urbana', area_ref * 0.75)
         
         area_total_cuenca = ha_bosque + ha_agricola + ha_pastos + ha_urbana
-        
-        # 🚨 HANDSHAKE DE ÁREA: Convertimos hectáreas a km2 para que la Pág 09 lo lea perfecto
         st.session_state['area_total_cuenca_val'] = area_total_cuenca
         st.session_state['aleph_area_km2'] = area_total_cuenca / 100.0
 
-        # 🌪️ CAPTURA DEL IMPACTO FÍSICO (Sincronización con Módulo 6 de Pág 04)
+        # 🌪️ CAPTURA DEL IMPACTO FÍSICO
         memoria_lodo_total = st.session_state.get('eco_lodo_total_m3', 0.0)
         lodo_colas = st.session_state.get('eco_lodo_colas_m3', 0.0)
         lodo_fondo = st.session_state.get('eco_lodo_fondo_m3', 0.0)
@@ -1339,7 +1340,6 @@ with contenedor_sankey.container():
             </div>
             """, unsafe_allow_html=True)
             
-            # 🚨 MEJORA: KEY ÚNICA en el toggle para evitar colisiones si cambias rápido de embalse
             activar_tormenta = st.toggle(
                 "⛈️ Inyectar Trifurcación de Lodos en el Sistema", 
                 value=st.session_state.get('activar_tormenta_sankey', False),
@@ -1350,20 +1350,16 @@ with contenedor_sankey.container():
             if activar_tormenta:
                 col_i1, col_i2, col_i3 = st.columns(3)
                 col_i1.metric("En Colas (Cota Alta)", f"{lodo_colas:,.0f} m³", "Depósito Periférico")
-                
-                # Cálculo de años robados basado en el lodo de fondo que colmata la torre
                 anos_robados_hoy = lodo_fondo / 400000.0 if lodo_fondo > 0 else 0
                 col_i2.metric("En Fondo (Torre)", f"{lodo_fondo:,.0f} m³", f"{anos_robados_hoy:+.2f} Años Vida Útil", delta_color="inverse")
-                
                 col_i3.metric("Suspendido (Abrasión)", f"{lodo_suspension:,.0f} m³", "Riesgo Máquinas", delta_color="inverse")
             st.markdown("---")
 
-        # --- 2. LÓGICA DINÁMICA DEL DIAGRAMA ---
+        # --- 2. LÓGICA DINÁMICA DEL DIAGRAMA 1 ---
         labels = [f"Embalse {nodo_seleccionado}"] # Nodo 0
         source, target, value, color = [], [], [], []
         idx = 1
 
-        # A. NODOS DE ORIGEN (USOS DEL SUELO)
         usos_nodos = [
             ("🌲 Bosques (Infiltración)", ha_bosque, "rgba(39, 174, 96, 0.6)"),
             ("🚜 Agrícola (Escorrentía)", ha_agricola, "rgba(241, 196, 15, 0.6)"),
@@ -1375,8 +1371,6 @@ with contenedor_sankey.container():
         for nom, area, col in usos_nodos:
             labels.append(nom); indices_usos[nom] = idx; idx += 1
 
-        # B. CONEXIÓN SUELO -> RÍOS -> EMBALSE
-        # Asume que afluentes_inputs y area_total_cuenca ya están calculados arriba
         for nombre_rio, q_rio in afluentes_inputs.items():
             labels.append(nombre_rio); current_rio_idx = idx
             for nom_u, area, col_u in usos_nodos:
@@ -1386,7 +1380,6 @@ with contenedor_sankey.container():
             source.append(current_rio_idx); target.append(0); value.append(q_rio); color.append("rgba(52, 152, 219, 0.5)")
             idx += 1
 
-        # 🌪️ 3. TRIFURCACIÓN DE LODO (Si el toggle está activo)
         l_susp_s = 0.0
         if st.session_state.get('activar_tormenta_sankey', False) and memoria_lodo_total > 0:
             l_colas_s = lodo_colas / (12 * 3600)
@@ -1397,8 +1390,7 @@ with contenedor_sankey.container():
             if l_susp_s > 0:
                 labels.append("Sedimento Abrasivo"); source.append(idx); target.append(0); value.append(l_susp_s); color.append("rgba(205, 133, 63, 0.8)"); idx += 1
 
-        # C. TRASVASES LEGALES (Conectado a la Barra Lateral)
-        if caudal_total_trasvase > 0:
+        if 'caudal_total_trasvase' in locals() and caudal_total_trasvase > 0:
             labels.append("Trasvases (Cornare/Corantioquia)")
             source.append(idx)
             target.append(0)
@@ -1406,7 +1398,6 @@ with contenedor_sankey.container():
             color.append("rgba(231, 76, 60, 0.4)")
             idx += 1
 
-        # 4. SALIDAS Y VENA MARRÓN
         destinos = [
             ("Acueducto (Consumo)", val_acueducto, "rgba(52, 152, 219, 0.6)"),
             ("Generación Eléctrica", val_turbinado, "rgba(241, 196, 15, 0.7)"),
@@ -1423,28 +1414,19 @@ with contenedor_sankey.container():
                     source.append(0); target.append(target_node); value.append(reparto_lodo); color.append("rgba(205, 133, 63, 0.5)")
                 idx += 1
 
-        # =====================================================================
-        # 🧪 INYECCIÓN DE CALIDAD MULTIVARIABLE (DBO, P, N)
-        # =====================================================================
         calidad_usos = {
             "🌲 Bosques (Infiltración)": {"dbo": 0.5, "p": 0.01, "n": 0.2, "sed": 0.5},
             "🚜 Agrícola (Escorrentía)": {"dbo": 12.0, "p": 0.85, "n": 4.5, "sed": 450.0},
             "🐄 Pastos (Compactación)": {"dbo": 25.0, "p": 1.20, "n": 6.8, "sed": 180.0},
             "🏙️ Urbano (Impermeable)": {"dbo": 180.0, "p": 4.50, "n": 15.0, "sed": 85.0}
         }
-
         link_tooltips = []
         for i in range(len(source)):
-            # Blindaje adicional: Aseguramos no salirnos del índice
             if source[i] < len(labels):
                 nombre_origen = labels[source[i]]
                 if nombre_origen in calidad_usos:
                     c = calidad_usos[nombre_origen]
-                    txt = (f"<b>Calidad del Aporte:</b><br>"
-                           f"• DBO: {c['dbo']} mg/L<br>"
-                           f"• Fósforo: {c['p']} mg/L<br>"
-                           f"• Nitrógeno: {c['n']} mg/L<br>"
-                           f"• Sedimentos: {c['sed']} mg/L")
+                    txt = (f"<b>Calidad del Aporte:</b><br>• DBO: {c['dbo']} mg/L<br>• Fósforo: {c['p']} mg/L<br>• Nitrógeno: {c['n']} mg/L<br>• Sedimentos: {c['sed']} mg/L")
                     link_tooltips.append(txt)
                 elif "Lodo" in nombre_origen or "Sedimento" in nombre_origen:
                     link_tooltips.append("<b>Carga Sólida Extrema</b><br>Evento Torrencial")
@@ -1453,11 +1435,10 @@ with contenedor_sankey.container():
             else:
                 link_tooltips.append("Flujo")
 
-        # 5. RENDER FINAL (Tipografía Limpia y Fuerte)
-        fig_sankey = go.Figure(data=[go.Sankey(
-            arrangement="snap", 
+        fig_sankey1 = go.Figure(data=[go.Sankey(
+            arrangement="snap",
             valueformat=".2f", valuesuffix=" m³/s",
-            textfont=dict(size=13, color="black", family="Arial, sans-serif"), # 🚀 INYECCIÓN CLAVE
+            textfont=dict(size=13, color="black", family="Arial, sans-serif"),
             node=dict(pad=30, thickness=15, line=dict(color="rgba(0,0,0,0)", width=0), label=labels, color="#2C3E50"),
             link=dict(
                 source=source, target=target, value=value, color=color,
@@ -1465,84 +1446,101 @@ with contenedor_sankey.container():
                 hovertemplate='<b>De:</b> %{source.label}<br><b>A:</b> %{target.label}<br><b>Caudal:</b> %{value}%{valuesuffix}<br>%{customdata}<extra></extra>'
             )
         )])
-        fig_sankey.update_layout(
+        fig_sankey1.update_layout(
             height=600, margin=dict(l=20, r=20, t=20, b=20),
-            font=dict(size=12, family="Arial, sans-serif", color="#1f2937"), # 🚀 Letra más legible y moderna
+            font=dict(size=12, family="Arial, sans-serif", color="#1f2937"), 
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"
         )
-        st.plotly_chart(fig_sankey, use_container_width=True)
-        
-# =========================================================================
-# 8. MATEMÁTICA Y CIENCIA
-# =========================================================================
-with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
-    st.markdown("La variación de almacenamiento en el tiempo se rige por la ecuación de continuidad:")
-    st.markdown("$$\\frac{\\Delta S}{\\Delta t} = I_{nat} + \\sum I_{trasvases} - O_{urb} - O_{eco} - O_{energia} - E_{vap}$$")
-    st.markdown("Si $\\frac{\\Delta S}{\\Delta t}$ es negativo de forma sostenida (ej. durante un fenómeno de El Niño donde $I_{nat} \\approx 0$), el volumen útil del embalse se agota, generando racionamiento en la metrópolis externa.")
+        st.plotly_chart(fig_sankey1, use_container_width=True)
 
-# =========================================================================
-# 🔄 ECONOMÍA CIRCULAR Y RUTA METABÓLICA (Valle de Aburrá -> Porce)
-# =========================================================================
-with contenedor_sankey.container():
+    # ---------------------------------------------------------
+    # ♻️ DIAGRAMA 2: RUTA DEL AGUA Y ECONOMÍA CIRCULAR (CON BUCLE)
+    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### ♻️ Metabolismo Regional: Ruta del Agua y Economía Circular")
-    st.caption("Ruta física del agua desde la captación, su vertimiento tratado al Río Aburrá/Porce y el retorno de biosólidos como abono a las regiones productivas.")
+    st.caption("Ruta física del agua, afluentes naturales intermedios, su vertimiento tratado y el retorno de biosólidos a las cuencas aportantes formando un ciclo cerrado.")
     
-    # 1. Población conectada al Censo Local Sincronizado
     pob_aburra = pob_total_agua if 'pob_total_agua' in locals() else 4200000
-    
-    # 2. Biosólidos (Ton/día)
     carga_biosolidos_ton_dia = (pob_aburra * 0.050) / 1000 
     
-    # Factor visual para que la línea de biosólidos se vea en la escala de m³/s del gráfico
     val_consumo = val_acueducto if 'val_acueducto' in locals() else 5.0
     visual_lodo = max(0.2, val_consumo * 0.08) 
     
-    # 3. Etiquetas de los Nodos (Estructuradas para legibilidad)
-    nodos_circulares = [
-        "1. Cuencas Cedentes", 
-        f"2. {nodo_seleccionado}", 
-        "3. Consumo (AMVA)", 
-        "4. Red Alcantarillado", 
-        "5. PTARs (S. Fernando / Aguas Claras)", 
-        "6. Río Aburrá", 
-        "7. Río Porce", 
-        "8. Sist. Porce II, III, IV", 
-        "🌱 Suelos Norte (R. Grande/Chico)", 
-        "🌱 Suelos Oriente (Nare/Piedras)"
-    ]
+    # --- CONSTRUCCIÓN DINÁMICA DE NODOS (Afluentes + Ciclo Urbano) ---
+    nodos_circulares = ["1. Cuencas Cedentes / Aportantes"] # NODO 0
+    colores_nodos = ["#85C1E9"]
+    enlaces_circ = []
     
-    # 4. Enlaces: (Origen, Destino, Valor Gráfico, Hover Text Real, Color)
-    enlaces = [
-        (0, 1, caudal_total_trasvase, f"{caudal_total_trasvase:.1f} m³/s", "rgba(52, 152, 219, 0.4)"),
-        (1, 2, val_consumo, f"{val_consumo:.1f} m³/s", "rgba(41, 128, 185, 0.4)"),
-        (2, 3, val_consumo * 0.80, f"{val_consumo * 0.80:.1f} m³/s (Agua Residual)", "rgba(149, 165, 166, 0.4)"),
-        (3, 4, val_consumo * 0.75, f"{val_consumo * 0.75:.1f} m³/s (Afluente PTAR)", "rgba(127, 140, 141, 0.4)"),
+    idx_actual = 1
+    nodos_intermedios = []
+    
+    # A. Afluentes Naturales (Ej: Río Grande, Chico, Ánimas)
+    for rio, q in datos_nodo.get("afluentes_naturales", {}).items():
+        nodos_circulares.append(f"🌊 {rio}")
+        colores_nodos.append("#3498DB")
+        enlaces_circ.append((0, idx_actual, q, f"Aporte Natural: {q:.1f} m³/s", "rgba(52, 152, 219, 0.4)"))
+        nodos_intermedios.append((idx_actual, q))
+        idx_actual += 1
         
-        # Bifurcación PTAR -> RÍO ABURRÁ -> PORCE -> EMBALSES
-        (4, 5, val_consumo * 0.75, f"{val_consumo * 0.75:.1f} m³/s (Agua Tratada)", "rgba(52, 152, 219, 0.5)"),
-        (5, 6, val_consumo * 0.75, f"{val_consumo * 0.75:.1f} m³/s (Transición Cuenca)", "rgba(41, 128, 185, 0.6)"),
-        (6, 7, val_consumo * 0.75, f"{val_consumo * 0.75:.1f} m³/s (Generación Eléctrica)", "rgba(241, 196, 15, 0.5)"),
-        
-        # Bifurcación PTAR -> BIOSÓLIDOS -> NORTE Y ORIENTE
-        (4, 8, visual_lodo * 0.4, f"{carga_biosolidos_ton_dia * 0.4:.1f} Ton/día (Abono Orgánico)", "rgba(39, 174, 96, 0.6)"),
-        (4, 9, visual_lodo * 0.6, f"{carga_biosolidos_ton_dia * 0.6:.1f} Ton/día (Abono Orgánico)", "rgba(39, 174, 96, 0.6)"),
-    ]
+    # B. Trasvases Legales Activos
+    if 'fuentes_activas' in locals() and len(fuentes_activas) > 0 and caudal_total_trasvase > 0:
+        q_tras = caudal_total_trasvase / len(fuentes_activas)
+        for fuente in fuentes_activas:
+            nodos_circulares.append(f"🔄 Trasvase {fuente}")
+            colores_nodos.append("#E74C3C")
+            enlaces_circ.append((0, idx_actual, q_tras, f"Bombeo: {q_tras:.1f} m³/s", "rgba(231, 76, 60, 0.4)"))
+            nodos_intermedios.append((idx_actual, q_tras))
+            idx_actual += 1
+    elif caudal_total_trasvase > 0:
+        nodos_circulares.append(f"🔄 Trasvases Externos")
+        colores_nodos.append("#E74C3C")
+        enlaces_circ.append((0, idx_actual, caudal_total_trasvase, f"Bombeo: {caudal_total_trasvase:.1f} m³/s", "rgba(231, 76, 60, 0.4)"))
+        nodos_intermedios.append((idx_actual, caudal_total_trasvase))
+        idx_actual += 1
+
+    # C. Nodo del Embalse Principal
+    idx_embalse = idx_actual
+    nodos_circulares.append(f"2. Embalse {nodo_seleccionado}")
+    colores_nodos.append("#1F618D")
+    idx_actual += 1
     
-    source = [e[0] for e in enlaces]
-    target = [e[1] for e in enlaces]
-    value = [e[2] for e in enlaces]
-    hover = [e[3] for e in enlaces]
-    color = [e[4] for e in enlaces]
+    for n_idx, q in nodos_intermedios:
+        enlaces_circ.append((n_idx, idx_embalse, q, f"Ingreso a embalse: {q:.1f} m³/s", "rgba(41, 128, 185, 0.4)"))
+
+    # D. Ciclo Urbano
+    idx_consumo = idx_actual; nodos_circulares.append("3. Consumo (AMVA)"); colores_nodos.append("#D35400"); idx_actual += 1
+    idx_alcan = idx_actual; nodos_circulares.append("4. Red Alcantarillado"); colores_nodos.append("#7B7D7D"); idx_actual += 1
+    idx_ptar = idx_actual; nodos_circulares.append("5. PTARs (S. Fernando / Aguas Claras)"); colores_nodos.append("#5D6D7E"); idx_actual += 1
+    idx_aburra = idx_actual; nodos_circulares.append("6. Río Aburrá"); colores_nodos.append("#3498DB"); idx_actual += 1
+    idx_porce = idx_actual; nodos_circulares.append("7. Río Porce"); colores_nodos.append("#2980B9"); idx_actual += 1
+    idx_sist = idx_actual; nodos_circulares.append("8. Sist. Porce II, III, IV"); colores_nodos.append("#F39C12"); idx_actual += 1
     
-    colores_nodos = ["#2E86C1", "#1F618D", "#D35400", "#7B7D7D", "#5D6D7E", "#3498DB", "#2980B9", "#F39C12", "#27AE60", "#229954"]
+    # Enlaces Urbanos
+    enlaces_circ.append((idx_embalse, idx_consumo, val_consumo, f"Extracción: {val_consumo:.1f} m³/s", "rgba(41, 128, 185, 0.4)"))
+    enlaces_circ.append((idx_consumo, idx_alcan, val_consumo * 0.80, f"Agua Residual: {val_consumo * 0.80:.1f} m³/s", "rgba(149, 165, 166, 0.4)"))
+    enlaces_circ.append((idx_alcan, idx_ptar, val_consumo * 0.75, f"Afluente PTAR: {val_consumo * 0.75:.1f} m³/s", "rgba(127, 140, 141, 0.4)"))
+    
+    enlaces_circ.append((idx_ptar, idx_aburra, val_consumo * 0.75, f"Agua Tratada: {val_consumo * 0.75:.1f} m³/s", "rgba(52, 152, 219, 0.5)"))
+    enlaces_circ.append((idx_aburra, idx_porce, val_consumo * 0.75, f"Transición Cuenca: {val_consumo * 0.75:.1f} m³/s", "rgba(41, 128, 185, 0.6)"))
+    enlaces_circ.append((idx_porce, idx_sist, val_consumo * 0.75, f"Generación: {val_consumo * 0.75:.1f} m³/s", "rgba(241, 196, 15, 0.5)"))
+    
+    # E. ♻️ EL GRAN BUCLE: Retorno de Biosólidos al Nodo 0
+    # Plotly dibujará automáticamente la curva hacia atrás por debajo del diagrama
+    enlaces_circ.append((idx_ptar, 0, visual_lodo, f"Retorno Abono: {carga_biosolidos_ton_dia:.1f} Ton/día a Suelos", "rgba(39, 174, 96, 0.7)"))
+
+    # 4. Render Final
+    source_c = [e[0] for e in enlaces_circ]
+    target_c = [e[1] for e in enlaces_circ]
+    value_c = [e[2] for e in enlaces_circ]
+    hover_c = [e[3] for e in enlaces_circ]
+    color_c = [e[4] for e in enlaces_circ]
 
     fig_sankey_circ = go.Figure(data=[go.Sankey(
         arrangement="snap",
-        textfont=dict(size=14, color="black", family="Arial, sans-serif"), # 🚀 INYECCIÓN CLAVE
+        textfont=dict(size=14, color="black", family="Arial, sans-serif"),
         node = dict(pad=35, thickness=20, line=dict(color="rgba(0,0,0,0)", width=0), label=nodos_circulares, color=colores_nodos),
         link = dict(
-            source=source, target=target, value=value, color=color, customdata=hover,
+            source=source_c, target=target_c, value=value_c, color=color_c, customdata=hover_c,
             hovertemplate='<b>%{source.label}</b> ➔ <b>%{target.label}</b><br>Flujo: %{customdata}<extra></extra>'
         )
     )])
@@ -1554,3 +1552,11 @@ with contenedor_sankey.container():
     )
     
     st.plotly_chart(fig_sankey_circ, use_container_width=True)
+        
+# =========================================================================
+# 8. MATEMÁTICA Y CIENCIA
+# =========================================================================
+with st.expander("🔬 Ecuaciones de Dinámica de Sistemas (Embalses)"):
+    st.markdown("La variación de almacenamiento en el tiempo se rige por la ecuación de continuidad:")
+    st.markdown("$$\\frac{\\Delta S}{\\Delta t} = I_{nat} + \\sum I_{trasvases} - O_{urb} - O_{eco} - O_{energia} - E_{vap}$$")
+    st.markdown("Si $\\frac{\\Delta S}{\\Delta t}$ es negativo de forma sostenida (ej. durante un fenómeno de El Niño donde $I_{nat} \\approx 0$), el volumen útil del embalse se agota, generando racionamiento en la metrópolis externa.")
