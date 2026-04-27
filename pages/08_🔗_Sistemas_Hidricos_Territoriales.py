@@ -1458,7 +1458,7 @@ with contenedor_sankey.container():
     # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### ♻️ Metabolismo Regional: Ruta del Agua y Economía Circular")
-    st.caption("Ruta física del agua, afluentes naturales intermedios, su vertimiento tratado y el retorno de biosólidos a las cuencas aportantes formando un ciclo cerrado.")
+    st.caption("Balance hídrico completo: Desde la precipitación y escorrentía, pasando por la potabilización, hasta el vertimiento tratado y el retorno de biosólidos a los suelos.")
     
     pob_aburra = pob_total_agua if 'pob_total_agua' in locals() else 4200000
     carga_biosolidos_ton_dia = (pob_aburra * 0.050) / 1000 
@@ -1466,19 +1466,42 @@ with contenedor_sankey.container():
     val_consumo = val_acueducto if 'val_acueducto' in locals() else 5.0
     visual_lodo = max(0.2, val_consumo * 0.08) 
     
-    # --- CONSTRUCCIÓN DINÁMICA DE NODOS (Afluentes + Ciclo Urbano) ---
-    nodos_circulares = ["1. Cuencas Cedentes / Aportantes"] # NODO 0
-    colores_nodos = ["#85C1E9"]
+    # --- CÁLCULO CONCEPTUAL DE FLUJOS NATURALES ---
+    # Asumimos que los ríos representan ~35% de la lluvia total (Rendimiento Hídrico)
+    q_total_rios = sum(datos_nodo.get("afluentes_naturales", {}).values()) + caudal_total_trasvase
+    q_precipitacion = q_total_rios / 0.35 
+    q_etr = q_precipitacion * 0.50          # Evapotranspiración
+    q_recarga = q_precipitacion * 0.10      # Infiltración profunda
+    q_demanda_interna = q_precipitacion * 0.05 # Consumo agropecuario/local en la cuenca alta
+    
+    # --- CONSTRUCCIÓN DINÁMICA DE NODOS ---
+    nodos_circulares = ["☁️ Precipitación (Lluvia)", "1. Cuencas Cedentes / Aportantes"] 
+    colores_nodos = ["#AED6F6", "#85C1E9"]
     enlaces_circ = []
     
-    idx_actual = 1
+    idx_lluvia = 0
+    idx_cuencas = 1
+    idx_actual = 2
+    
+    # Enlace Lluvia -> Cuencas
+    enlaces_circ.append((idx_lluvia, idx_cuencas, q_precipitacion, f"Precipitación Total: {q_precipitacion:.1f} m³/s", "rgba(174, 214, 246, 0.4)"))
+    
+    # Nodos de Salida Natural desde la Cuenca
+    idx_etr = idx_actual; nodos_circulares.append("☀️ Evapotranspiración (ETR)"); colores_nodos.append("#FAD7A1"); idx_actual += 1
+    idx_recarga = idx_actual; nodos_circulares.append("💧 Recarga Acuíferos"); colores_nodos.append("#A2D9CE"); idx_actual += 1
+    idx_dem_int = idx_actual; nodos_circulares.append("🏡 Demandas Internas Cuenca"); colores_nodos.append("#E59866"); idx_actual += 1
+    
+    enlaces_circ.append((idx_cuencas, idx_etr, q_etr, f"Evapotranspiración: {q_etr:.1f} m³/s", "rgba(250, 215, 161, 0.4)"))
+    enlaces_circ.append((idx_cuencas, idx_recarga, q_recarga, f"Infiltración/Recarga: {q_recarga:.1f} m³/s", "rgba(162, 217, 206, 0.4)"))
+    enlaces_circ.append((idx_cuencas, idx_dem_int, q_demanda_interna, f"Consumo Local: {q_demanda_interna:.1f} m³/s", "rgba(229, 152, 102, 0.4)"))
+
     nodos_intermedios = []
     
-    # A. Afluentes Naturales (Ej: Río Grande, Chico, Ánimas)
+    # A. Afluentes Naturales (Escorrentía)
     for rio, q in datos_nodo.get("afluentes_naturales", {}).items():
         nodos_circulares.append(f"🌊 {rio}")
         colores_nodos.append("#3498DB")
-        enlaces_circ.append((0, idx_actual, q, f"Aporte Natural: {q:.1f} m³/s", "rgba(52, 152, 219, 0.4)"))
+        enlaces_circ.append((idx_cuencas, idx_actual, q, f"Escorrentía Superficial: {q:.1f} m³/s", "rgba(52, 152, 219, 0.4)"))
         nodos_intermedios.append((idx_actual, q))
         idx_actual += 1
         
@@ -1488,13 +1511,13 @@ with contenedor_sankey.container():
         for fuente in fuentes_activas:
             nodos_circulares.append(f"🔄 Trasvase {fuente}")
             colores_nodos.append("#E74C3C")
-            enlaces_circ.append((0, idx_actual, q_tras, f"Bombeo: {q_tras:.1f} m³/s", "rgba(231, 76, 60, 0.4)"))
+            enlaces_circ.append((idx_cuencas, idx_actual, q_tras, f"Bombeo Trasvase: {q_tras:.1f} m³/s", "rgba(231, 76, 60, 0.4)"))
             nodos_intermedios.append((idx_actual, q_tras))
             idx_actual += 1
     elif caudal_total_trasvase > 0:
         nodos_circulares.append(f"🔄 Trasvases Externos")
         colores_nodos.append("#E74C3C")
-        enlaces_circ.append((0, idx_actual, caudal_total_trasvase, f"Bombeo: {caudal_total_trasvase:.1f} m³/s", "rgba(231, 76, 60, 0.4)"))
+        enlaces_circ.append((idx_cuencas, idx_actual, caudal_total_trasvase, f"Bombeo: {caudal_total_trasvase:.1f} m³/s", "rgba(231, 76, 60, 0.4)"))
         nodos_intermedios.append((idx_actual, caudal_total_trasvase))
         idx_actual += 1
 
@@ -1507,7 +1530,16 @@ with contenedor_sankey.container():
     for n_idx, q in nodos_intermedios:
         enlaces_circ.append((n_idx, idx_embalse, q, f"Ingreso a embalse: {q:.1f} m³/s", "rgba(41, 128, 185, 0.4)"))
 
-    # D. Ciclo Urbano
+    # C2. Caudal Ecológico (Sale del embalse hacia abajo, no va a la ciudad)
+    q_eco = datos_nodo.get("caudal_ecologico_m3s", 0.5)
+    if q_eco > 0:
+        idx_eco = idx_actual; nodos_circulares.append("🌿 Caudal Ecológico"); colores_nodos.append("#73C6B6"); idx_actual += 1
+        enlaces_circ.append((idx_embalse, idx_eco, q_eco, f"Liberación Ecológica: {q_eco:.1f} m³/s", "rgba(115, 198, 182, 0.4)"))
+
+    # D. Ciclo Urbano y PTAP Dinámica
+    nombre_ptap = "PTAP Manantiales" if "Grande" in nodo_seleccionado else "PTAP Ayurá" if "Fe" in nodo_seleccionado else "Planta Potabilizadora"
+    
+    idx_ptap = idx_actual; nodos_circulares.append(f"🏭 {nombre_ptap}"); colores_nodos.append("#9B59B6"); idx_actual += 1
     idx_consumo = idx_actual; nodos_circulares.append("3. Consumo (AMVA)"); colores_nodos.append("#D35400"); idx_actual += 1
     idx_alcan = idx_actual; nodos_circulares.append("4. Red Alcantarillado"); colores_nodos.append("#7B7D7D"); idx_actual += 1
     idx_ptar = idx_actual; nodos_circulares.append("5. PTARs (S. Fernando / Aguas Claras)"); colores_nodos.append("#5D6D7E"); idx_actual += 1
@@ -1516,17 +1548,17 @@ with contenedor_sankey.container():
     idx_sist = idx_actual; nodos_circulares.append("8. Sist. Porce II, III, IV"); colores_nodos.append("#F39C12"); idx_actual += 1
     
     # Enlaces Urbanos
-    enlaces_circ.append((idx_embalse, idx_consumo, val_consumo, f"Extracción: {val_consumo:.1f} m³/s", "rgba(41, 128, 185, 0.4)"))
+    enlaces_circ.append((idx_embalse, idx_ptap, val_consumo, f"Captación a Planta: {val_consumo:.1f} m³/s", "rgba(155, 89, 182, 0.4)"))
+    enlaces_circ.append((idx_ptap, idx_consumo, val_consumo, f"Agua Potable Entregada: {val_consumo:.1f} m³/s", "rgba(211, 84, 0, 0.4)"))
     enlaces_circ.append((idx_consumo, idx_alcan, val_consumo * 0.80, f"Agua Residual: {val_consumo * 0.80:.1f} m³/s", "rgba(149, 165, 166, 0.4)"))
     enlaces_circ.append((idx_alcan, idx_ptar, val_consumo * 0.75, f"Afluente PTAR: {val_consumo * 0.75:.1f} m³/s", "rgba(127, 140, 141, 0.4)"))
     
-    enlaces_circ.append((idx_ptar, idx_aburra, val_consumo * 0.75, f"Agua Tratada: {val_consumo * 0.75:.1f} m³/s", "rgba(52, 152, 219, 0.5)"))
+    enlaces_circ.append((idx_ptar, idx_aburra, val_consumo * 0.75, f"Vertimiento Tratado: {val_consumo * 0.75:.1f} m³/s", "rgba(52, 152, 219, 0.5)"))
     enlaces_circ.append((idx_aburra, idx_porce, val_consumo * 0.75, f"Transición Cuenca: {val_consumo * 0.75:.1f} m³/s", "rgba(41, 128, 185, 0.6)"))
-    enlaces_circ.append((idx_porce, idx_sist, val_consumo * 0.75, f"Generación: {val_consumo * 0.75:.1f} m³/s", "rgba(241, 196, 15, 0.5)"))
+    enlaces_circ.append((idx_porce, idx_sist, val_consumo * 0.75, f"Generación Hidroeléctrica: {val_consumo * 0.75:.1f} m³/s", "rgba(241, 196, 15, 0.5)"))
     
-    # E. ♻️ EL GRAN BUCLE: Retorno de Biosólidos al Nodo 0
-    # Plotly dibujará automáticamente la curva hacia atrás por debajo del diagrama
-    enlaces_circ.append((idx_ptar, 0, visual_lodo, f"Retorno Abono: {carga_biosolidos_ton_dia:.1f} Ton/día a Suelos", "rgba(39, 174, 96, 0.7)"))
+    # E. ♻️ EL GRAN BUCLE: Retorno de Biosólidos a las Cuencas Aportantes (Nodo 1)
+    enlaces_circ.append((idx_ptar, idx_cuencas, visual_lodo, f"Retorno Abono: {carga_biosolidos_ton_dia:.1f} Ton/día a Suelos", "rgba(39, 174, 96, 0.7)"))
 
     # 4. Render Final
     source_c = [e[0] for e in enlaces_circ]
@@ -1546,7 +1578,7 @@ with contenedor_sankey.container():
     )])
     
     fig_sankey_circ.update_layout(
-        height=550, margin=dict(l=20, r=20, t=30, b=20),
+        height=650, margin=dict(l=20, r=20, t=30, b=20), # Aumenté un poco la altura para dar espacio a los nuevos flujos
         font=dict(size=12, family="Arial, sans-serif", color="#1f2937"),
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"
     )
