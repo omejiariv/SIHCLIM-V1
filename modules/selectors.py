@@ -185,7 +185,6 @@ def render_selector_espacial():
         # --- A. POR CUENCA (DISEÑO INTUITIVO) ---
         if modo == "Por Cuenca":
             gdf_c = cargar_mapa_cuencas()
-            st.error(f"🔍 COLUMNAS REALES EN LA BD: {list(gdf_c.columns)}")
             ruta = st.selectbox("Ruta de Búsqueda:", ["Hidrología", "CAR"], index=0)
             
             if ruta == "Hidrología":
@@ -238,11 +237,15 @@ def render_selector_espacial():
                 if car_sel != "-- Seleccione --":
                     # Mapeamos las geometrías de las CAR (Asegurando que el AMVA tenga geometría)
                     if car_sel == "AMVA":
-                        # Filtramos los municipios del Valle de Aburrá
-                        mask_amva = gdf_c['nom_mun'].str.contains('Medell|Bello|Itag|Envig|Sabaneta|Estrella|Caldas|Copacabana|Girardota|Barbosa', case=False, na=False)
-                        df_f = gdf_c[mask_amva] if 'nom_mun' in gdf_c.columns else gdf_c
+                        mask_car = gdf_c['corpoamb'].str.contains('AMVA|ABURR|METROPOLITANA', case=False, na=False)
                     else:
-                        df_f = gdf_c[gdf_c['corpoamb'].str.contains(car_sel[:4], case=False, na=False)] if 'corpoamb' in gdf_c.columns else gdf_c
+                        mask_car = gdf_c['corpoamb'].str.contains(car_sel[:4], case=False, na=False)
+                    
+                    df_f = gdf_c[mask_car]
+                    
+                    # Salvavidas de diseño: Si la CAR no está dibujada en el mapa físico, devolvemos el mapa completo para no romper la app
+                    if df_f.empty: 
+                        df_f = gdf_c
                     
                     # Permite evaluar toda la jurisdicción de la CAR o bajar a sus microcuencas
                     nivel = st.selectbox("1. Resolución a Evaluar:", ["CAR", "NSS1", "NSS2", "NSS3"], index=0)
