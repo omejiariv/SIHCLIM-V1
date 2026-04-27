@@ -852,10 +852,20 @@ with st.expander("🎯 2. Optimización de Cargas Contaminantes (Saneamiento DBO
 with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraestructura Verde)", expanded=False):
     st.markdown("Convierte la ecología en finanzas estratégicas. Evalúa el retorno de inversión (ROI) sumando ahorros en químicos, protección de vida útil (evitación de dragado) y valor de venta del agua garantizada.")
     
-    # Leemos el impacto base sincronizado desde la Pág 04
-    lodo_tormenta_m3 = st.session_state.get('eco_lodo_total_m3', 41256.0) 
-    lodo_fondo_m3 = st.session_state.get('eco_lodo_fondo_m3', 18565.0) # Solo el de fondo afecta vida útil
-    sobrecosto_tormenta_usd = st.session_state.get('eco_sobrecosto_usd', 15141.0)
+    # Leemos el impacto base sincronizado desde la Pág 04 (CON BLINDAJE ANTI-CEROS)
+    lodo_tormenta_m3 = st.session_state.get('eco_lodo_total_m3', 0.0)
+    if lodo_tormenta_m3 <= 0: lodo_tormenta_m3 = 41256.0 
+    
+    lodo_fondo_m3 = st.session_state.get('eco_lodo_fondo_m3', 0.0)
+    if lodo_fondo_m3 <= 0: lodo_fondo_m3 = 18565.0
+    
+    sobrecosto_tormenta_usd = st.session_state.get('eco_sobrecosto_usd', 0.0)
+    if sobrecosto_tormenta_usd <= 0: sobrecosto_tormenta_usd = 15141.0
+    
+    # Extraemos también el lodo abrasivo para evitar fallos más abajo
+    lodo_susp_m3 = st.session_state.get('eco_lodo_abrasivo_m3', 0.0)
+    if lodo_susp_m3 <= 0: lodo_susp_m3 = 6188.0
+    st.session_state['eco_lodo_abrasivo_m3'] = lodo_susp_m3
     
     c_roi1, c_roi2 = st.columns([1, 2.5])
     
@@ -1242,12 +1252,21 @@ with st.expander(f"👥 Huella Hídrica Territorial y Presión Demográfica ({no
         elif "Fe" in nodo_seleccionado: mpios_cuenca = ["EL RETIRO", "LA CEJA", "RIONEGRO"]
 
         if mpios_cuenca:
+            # 🚀 NUEVO MOTOR DE LECTURA DIRECTA SQL
             for mpio in mpios_cuenca:
-                datos_mpio = obtener_metabolismo_exacto(mpio, anio_censo)
-                bovinos_tot += datos_mpio.get('bovinos', 0.0)
-                porcinos_tot += datos_mpio.get('porcinos', 0.0)
-                aves_tot += datos_mpio.get('aves', 0.0)
-                
+                df_pec_sql = consultar_matriz_sql_sistemas("matriz_maestra_pecuaria", mpio, "Municipal")
+                if not df_pec_sql.empty:
+                    delta_a = anio_censo - 2018 # Año base de la matriz
+                    for _, row in df_pec_sql.iterrows():
+                        # Usamos la constante Log_K o el valor 2018 como base
+                        val_base = float(row.get('2018', row.get('Log_K', 1000))) 
+                        val_proyectado = val_base * (1.015 ** delta_a) # Crecimiento 1.5% anual
+                        
+                        esp = str(row.get('Especie', '')).lower()
+                        if 'bovin' in esp: bovinos_tot += val_proyectado
+                        elif 'porcin' in esp: porcinos_tot += val_proyectado
+                        elif 'ave' in esp: aves_tot += val_proyectado
+                        
             if bovinos_tot > 0: origen_datos_pec = "Matriz Maestra (Proyectada)"
             
         if origen_datos_pec == "Valores Estáticos (Fallback)":
