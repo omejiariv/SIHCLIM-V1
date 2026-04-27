@@ -292,27 +292,27 @@ def consultar_matriz_sql_calidad(tabla, territorio, nivel, col_nivel="Nivel"):
         from sqlalchemy import text
         from modules.db_manager import get_engine
         import pandas as pd
-        from modules.utils import normalizar_texto 
         
         engine_sql = get_engine()
-        t_norm = normalizar_texto(territorio)
         
-        mapa_llave = {
-            "Municipal": "MUNICIPAL", "Regional": "REGION", 
-            "Departamental": "DEPARTAMENTO", "AH": "AH", "ZH": "ZH",
-            "CAR": "CAR", "CORPOAMB": "CAR", "Cuenca": "CUENCA"
-        }
-        n_llave = mapa_llave.get(nivel, nivel).upper()
-        llave_u = f"{n_llave}_{t_norm}_TOTAL".upper().replace(" ", "_")
-
-        q = text(f'SELECT * FROM {tabla} WHERE UPPER("LLAVE_UNIVERSAL") = :llave LIMIT 10')
-        df_res = pd.read_sql(q, engine_sql, params={'llave': llave_u})
+        # 🚀 BÚSQUEDA BLINDADA: Busca directamente en las columnas
+        q = text(f'''
+            SELECT * FROM {tabla} 
+            WHERE TRIM(UPPER("Territorio")) = UPPER(:t) 
+            AND TRIM(UPPER("{col_nivel}")) = UPPER(:n)
+        ''')
+        df_res = pd.read_sql(q, engine_sql, params={'t': str(territorio).strip(), 'n': str(nivel).strip()})
 
         if df_res.empty:
-            q_fallback = text(f'SELECT * FROM {tabla} WHERE TRIM(UPPER("Territorio")) = UPPER(:t) AND UPPER("{col_nivel}") LIKE UPPER(:n)')
-            df_res = pd.read_sql(q_fallback, engine_sql, params={'t': territorio, 'n': f"%{nivel[:3]}%"})
+            q_fallback = text(f'''
+                SELECT * FROM {tabla} 
+                WHERE UPPER("Territorio") LIKE UPPER(:t) 
+                AND UPPER("{col_nivel}") LIKE UPPER(:n)
+            ''')
+            df_res = pd.read_sql(q_fallback, engine_sql, params={'t': f"%{str(territorio).strip()}%", 'n': f"%{str(nivel)[:3]}%"})
+            
         return df_res
-    except: 
+    except Exception as e: 
         return pd.DataFrame()
 
 def proyectar_modelo_calidad(f, anio_obj):
@@ -342,25 +342,32 @@ else:
     origen_dato = "Error SQL (Sin Datos)"
 
 # --- 3. CONEXIÓN AL MOTOR PECUARIO (Con Bypass AMVA) ---
-df_pec = consultar_matriz_sql_calidad("matriz_maestra_pecuaria", nombre_seleccion, nivel_demo, "Nivel")
+# 🚀 FIX: Usamos nivel_req (AH, ZH, SZH) para coincidir con la nueva Matriz Pecuaria
+df_pec = consultar_matriz_sql_calidad("matriz_maestra_pecuaria", nombre_seleccion, nivel_req, "Nivel")
+
+# 🚑 RESCATE: Si no encuentra como AH/ZH, intenta con el nivel genérico "Cuenca"
+if df_pec.empty and nivel_demo == "Cuenca":
+    df_pec = consultar_matriz_sql_calidad("matriz_maestra_pecuaria", nombre_seleccion, "Cuenca", "Nivel")
 
 if not df_pec.empty:
     for _, f in df_pec.iterrows():
         if f['Especie'] == 'Bovinos': total_bovinos = max(0.0, proyectar_modelo_calidad(f, anio_analisis))
         if f['Especie'] == 'Porcinos': total_porcinos = max(0.0, proyectar_modelo_calidad(f, anio_analisis))
         if f['Especie'] == 'Aves': total_aves = max(0.0, proyectar_modelo_calidad(f, anio_analisis))
-    metodo_animal = f"Matriz SQL Exacta ({nivel_demo})"
+    metodo_animal = f"Matriz SQL Exacta ({nivel_req})"
 else:
+    # 🛡️ BYPASS JURISDICCIONAL AMVA
     if nombre_seleccion == "AMVA":
+        total_bovinos, total_porcinos, total_aves = 0, 0, 0
         metodo_animal = "Bypass Jurisdicción (Corantioquia asume Rural)"
     else:
+        total_bovinos, total_porcinos, total_aves = 0, 0, 0
         metodo_animal = "Error SQL (Sin Datos)"
-        
+
+# 🧠 Sincronización con la Memoria Global para gráficas y simulación
 st.session_state['ica_bovinos_calc_met'] = total_bovinos
 st.session_state['ica_porcinos_calc_met'] = total_porcinos
 st.session_state['ica_aves_calc_met'] = total_aves
-st.session_state['df_matriz_demografica'] = df_demo
-st.session_state['df_matriz_pecuaria'] = df_pec
 
 # ==============================================================================
 # 🎨 3. INTERFAZ DE SÍNTESIS Y CALIBRACIÓN DE CAMPO
@@ -909,30 +916,31 @@ with tab_fuentes:
             elif 'Lineal' in modelo: return fila.get('Lin_m',0) * x_norm + fila.get('Lin_b',0)
             else: return fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila.get('Poly_D',0)
 
-        def obtener_vector_v2(df, llave_base, categoria, col_cat, anios, val_fallback):
-            # El filtro busca la fila con la llave general o evalúa combinada si es necesario
-            mask = (df['LLAVE_UNIVERSAL'].str.contains(llave_base.replace("_TOTAL", ""), na=False)) & (df[col_cat].str.lower() == categoria.lower())
-            filtro = df[mask]
+        def obtener_vector_v2(df, territorio, nivel_exacto, categoria, col_cat, anios, val_fallback):
+            # Filtro directo por nombres de columna, inmune a llaves rotas
+            mask = (df['Territorio'].str.strip().str.upper() == str(territorio).strip().upper()) & \
+                   (df[col_cat].str.strip().str.lower() == str(categoria).lower())
+                   
+            # Relajamos el nivel si es necesario
+            mask_nivel = df['Nivel'].str.strip().str.upper() == str(nivel_exacto).strip().upper()
+            if not mask_nivel.any() and nivel_exacto in ["AH", "ZH", "SZH"]:
+                mask_nivel = df['Nivel'].str.strip().str.upper() == "CUENCA"
+                
+            filtro = df[mask & mask_nivel]
+            
             if filtro.empty: return np.full(len(anios), val_fallback)
             return np.maximum(0, calcular_curva_v2(filtro.iloc[0], anios))
             
         anio_limite = st.slider("⏳ Horizonte de Simulación:", min_value=2025, max_value=2050, value=2035, step=1)
         anios_vector = np.arange(anio_analisis, anio_limite + 1)
         
-        # Armamos la base de la llave maestra para este territorio
-        from modules.utils import normalizar_texto
-        mapa_llave_v = {"Municipal": "MUNICIPAL", "Regional": "REGION", "Departamental": "DEPARTAMENTO", "AH": "AH", "ZH": "ZH", "CAR": "CAR", "Cuenca": "CUENCA"}
-        n_llave_v = mapa_llave_v.get(nivel_demo, nivel_demo).upper()
-        t_norm_v = normalizar_texto(nombre_seleccion).upper().replace(" ", "_")
-        llave_busqueda = f"{n_llave_v}_{t_norm_v}_TOTAL"
+        # Extraemos los vectores evolutivos usando los nombres reales
+        v_pob_urbana = obtener_vector_v2(df_demo, nombre_seleccion, nivel_demo, 'urbana', 'Area', anios_vector, pob_urbana)
+        v_pob_rural = obtener_vector_v2(df_demo, nombre_seleccion, nivel_demo, 'rural', 'Area', anios_vector, pob_rural)
         
-        # Extraemos los vectores evolutivos para el DBO
-        v_pob_urbana = obtener_vector_v2(df_demo, llave_busqueda, 'urbana', 'Area', anios_vector, pob_urbana)
-        v_pob_rural = obtener_vector_v2(df_demo, llave_busqueda, 'rural', 'Area', anios_vector, pob_rural)
-        
-        v_bovinos = obtener_vector_v2(df_pecu, llave_busqueda, 'bovinos', 'Especie', anios_vector, cabezas_bovinos)
-        v_porcinos = obtener_vector_v2(df_pecu, llave_busqueda, 'porcinos', 'Especie', anios_vector, cabezas_porcinos)
-        v_aves = obtener_vector_v2(df_pecu, llave_busqueda, 'aves', 'Especie', anios_vector, cabezas_aves)
+        v_bovinos = obtener_vector_v2(df_pecu, nombre_seleccion, nivel_req, 'bovinos', 'Especie', anios_vector, cabezas_bovinos)
+        v_porcinos = obtener_vector_v2(df_pecu, nombre_seleccion, nivel_req, 'porcinos', 'Especie', anios_vector, cabezas_porcinos)
+        v_aves = obtener_vector_v2(df_pecu, nombre_seleccion, nivel_req, 'aves', 'Especie', anios_vector, cabezas_aves)
 
         # 5. Motor Bioquímico Vectorial (Multiplicamos población futura por eficiencia actual de los sliders)
         v_dbo_urbana = v_pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))
