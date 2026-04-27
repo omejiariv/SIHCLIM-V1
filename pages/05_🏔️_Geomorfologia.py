@@ -1,3 +1,5 @@
+# modules/05_🏔️_Geomorfologia.py
+
 import os
 import sys
 import numpy as np
@@ -378,6 +380,57 @@ if gdf_zona_seleccionada is not None:
                     y_real = x_pct[idx]
                     r2 = 1 - (np.sum((y_real - y_pred) ** 2) / np.sum((y_real - np.mean(y_real)) ** 2))
                     st.metric("Precisión del Ajuste ($R^2$)", f"{r2:.4f}")
+
+                # =================================================================
+                # 🚀 INYECCIÓN A LA MATRIZ MAESTRA HIPSOMÉTRICA (GEMELO DIGITAL)
+                # =================================================================
+                st.markdown("---")
+                st.markdown("#### 💾 Forja de Ecuaciones (Matriz Maestra)")
+                st.info("Guarda esta ecuación polinómica en SQL. El módulo de **Calidad y Vertimientos** usará estos coeficientes para calcular el caudal exacto del río en cualquier altitud.")
+                
+                if st.button("🚀 Inyectar Ecuación a Base de Datos", type="primary"):
+                    try:
+                        from sqlalchemy import text
+                        from modules.utils import normalizar_texto
+                        
+                        # Crear llave universal (Mismo formato del Módulo 09)
+                        nivel_llave = "MUNICIPAL" if "Municipio" in nombre_zona else "CUENCA" # Ajustar según tu selector
+                        t_norm = normalizar_texto(nombre_zona).upper().replace(" ", "_")
+                        llave_u = f"{nivel_llave}_{t_norm}_TOTAL"
+                        
+                        # Estructurar los datos
+                        df_hipso_db = pd.DataFrame([{
+                            "LLAVE_UNIVERSAL": llave_u,
+                            "Territorio": nombre_zona,
+                            "Nivel": nivel_llave,
+                            "Coef_C3": float(z_poly[0]),
+                            "Coef_C2": float(z_poly[1]),
+                            "Coef_C1": float(z_poly[2]),
+                            "Coef_C0": float(z_poly[3]),
+                            "R2_Ajuste": float(r2),
+                            "H_Minima": float(h_min),
+                            "H_Maxima": float(h_max)
+                        }])
+                        
+                        # Asegurar que la tabla existe y guardar
+                        engine_sql = get_engine()
+                        with engine_sql.connect() as conn:
+                            conn.execute(text('''
+                                CREATE TABLE IF NOT EXISTS matriz_maestra_hipsometrica (
+                                    "LLAVE_UNIVERSAL" TEXT PRIMARY KEY,
+                                    "Territorio" TEXT, "Nivel" TEXT,
+                                    "Coef_C3" FLOAT, "Coef_C2" FLOAT, "Coef_C1" FLOAT, "Coef_C0" FLOAT,
+                                    "R2_Ajuste" FLOAT, "H_Minima" FLOAT, "H_Maxima" FLOAT
+                                );
+                            '''))
+                            # Upsert: Borrar si existe y volver a insertar
+                            conn.execute(text(f"DELETE FROM matriz_maestra_hipsometrica WHERE \"LLAVE_UNIVERSAL\" = '{llave_u}'"))
+                            
+                        df_hipso_db.to_sql('matriz_maestra_hipsometrica', engine_sql, if_exists='append', index=False)
+                        st.success(f"✅ ¡Ecuación A(h) para **{nombre_zona}** guardada exitosamente en el Gemelo Digital!")
+                        
+                    except Exception as e:
+                        st.error(f"🚨 Error inyectando a SQL: {e}")
                     
             # --- TAB 4: HIDROLOGÍA ---
             with tab4:
@@ -889,3 +942,148 @@ if gdf_zona_seleccionada is not None:
 
 else:
     st.info("👈 Selecciona una zona.")
+
+# ==============================================================================
+# 🚀 ⚙️ FORJA MASIVA: MATRIZ HIDRO-GEOMORFOLÓGICA MAESTRA
+# ==============================================================================
+st.markdown("---")
+with st.expander("⚙️ PANEL DE ADMINISTRADOR: Forja Masiva de Matriz Hidro-Geomorfológica", expanded=False):
+    st.warning("⚠️ **Atención:** Este proceso iterará sobre TODAS las cuencas de la base de datos, recortará el Modelo Digital de Elevación (DEM), calculará las curvas hipsométricas y forjará las ecuaciones de caudal por altitud. Puede tardar varios minutos.")
+    
+    if st.button("⚡ Iniciar Forja Masiva Global", type="primary", use_container_width=True):
+        import time
+        from sqlalchemy import text
+        from modules.utils import normalizar_texto
+        from modules.db_manager import get_engine
+        
+        engine_sql = get_engine()
+        
+        # 1. Extraer todas las cuencas desde la base de datos oficial
+        try:
+            gdf_todas_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine_sql, geom_col="geometry")
+        except Exception as e:
+            st.error(f"Error cargando mapa de cuencas: {e}")
+            st.stop()
+            
+        if gdf_todas_cuencas.empty:
+            st.error("No se encontraron cuencas en la base de datos.")
+            st.stop()
+            
+        # Determinar columnas de nombres (Ajusta si tus columnas se llaman distinto en la tabla 'cuencas')
+        columnas_niveles = {
+            "AH": "nomah",
+            "ZH": "nomzh",
+            "SZH": "nom_szh",
+            "NSS1": "nom_nss1",
+            "NSS2": "nom_nss2",
+            "NSS3": "nom_nss3"
+        }
+        
+        barra_progreso = st.progress(0)
+        texto_progreso = st.empty()
+        
+        resultados_forja = []
+        total_entidades = 0
+        
+        # Pre-contar entidades válidas para la barra de progreso
+        entidades_a_procesar = []
+        for nivel, col in columnas_niveles.items():
+            if col in gdf_todas_cuencas.columns:
+                nombres_unicos = gdf_todas_cuencas[col].dropna().unique()
+                for nombre in nombres_unicos:
+                    entidades_a_procesar.append((nivel, col, nombre))
+                    
+        total_entidades = len(entidades_a_procesar)
+        st.info(f"🔍 Detectadas {total_entidades} entidades hidrográficas para modelar.")
+
+        # 2. Bucle Maestro de Forja
+        for i, (nivel, col, nombre) in enumerate(entidades_a_procesar):
+            try:
+                texto_progreso.text(f"Forjando [{i+1}/{total_entidades}]: {nivel} - {nombre}...")
+                
+                # Extraer polígono
+                gdf_poligono = gdf_todas_cuencas[gdf_todas_cuencas[col] == nombre].copy()
+                if gdf_poligono.empty: continue
+                
+                # Unir si hay múltiples fragmentos
+                if len(gdf_poligono) > 1:
+                    gdf_poligono = gpd.GeoDataFrame({'geometry': [gdf_poligono.unary_union]}, crs=gdf_todas_cuencas.crs)
+                    
+                # Recortar DEM
+                arr_dem, meta_dem, _ = cargar_y_cortar_dem(DEM_PATH, gdf_poligono, nombre)
+                
+                if arr_dem is not None and not np.isnan(arr_dem).all():
+                    elevs_valid = arr_dem[~np.isnan(arr_dem)].flatten()
+                    if len(elevs_valid) < 10: continue # Ignorar si es muy pequeño
+                    
+                    elevs_sorted = np.sort(elevs_valid)[::-1]
+                    total_pixels = len(elevs_sorted)
+                    x_pct = np.linspace(0, 100, total_pixels)
+                    
+                    # Reducir muestra para el polinomio y mejorar velocidad
+                    idx = np.linspace(0, total_pixels-1, min(500, total_pixels), dtype=int)
+                    
+                    # Forjar Polinomio de Grado 3 (A(h))
+                    z_poly = np.polyfit(elevs_sorted[idx], x_pct[idx], 3)
+                    p_func = np.poly1d(z_poly)
+                    
+                    # Calcular R2
+                    y_pred = p_func(elevs_sorted[idx])
+                    y_real = x_pct[idx]
+                    r2 = 1 - (np.sum((y_real - y_pred) ** 2) / (np.sum((y_real - np.mean(y_real)) ** 2) + 1e-9))
+                    
+                    # Generar Llave Universal
+                    t_norm = normalizar_texto(nombre).upper().replace(" ", "_")
+                    llave_u = f"{nivel.upper()}_{t_norm}_TOTAL"
+                    
+                    resultados_forja.append({
+                        "LLAVE_UNIVERSAL": llave_u,
+                        "Territorio": nombre,
+                        "Nivel": nivel,
+                        "Coef_C3": float(z_poly[0]),
+                        "Coef_C2": float(z_poly[1]),
+                        "Coef_C1": float(z_poly[2]),
+                        "Coef_C0": float(z_poly[3]),
+                        "R2_Ajuste": float(r2),
+                        "H_Minima": float(np.min(elevs_valid)),
+                        "H_Maxima": float(np.max(elevs_valid)),
+                        "H_Media": float(np.mean(elevs_valid))
+                    })
+                    
+            except Exception as e:
+                # Si una cuenca falla (fuera del DEM, error topológico), la saltamos silenciosamente
+                pass
+                
+            barra_progreso.progress((i + 1) / total_entidades)
+
+        texto_progreso.text("🚀 Empaquetando Matriz Maestra y enviando a SQL...")
+        
+        # 3. Inyección a SQL
+        if resultados_forja:
+            df_matriz_geomorfo = pd.DataFrame(resultados_forja)
+            
+            try:
+                with engine_sql.connect() as conn:
+                    conn.execute(text('''
+                        CREATE TABLE IF NOT EXISTS matriz_hidrogeomorfologica_maestra (
+                            "LLAVE_UNIVERSAL" TEXT PRIMARY KEY,
+                            "Territorio" TEXT, "Nivel" TEXT,
+                            "Coef_C3" FLOAT, "Coef_C2" FLOAT, "Coef_C1" FLOAT, "Coef_C0" FLOAT,
+                            "R2_Ajuste" FLOAT, "H_Minima" FLOAT, "H_Maxima" FLOAT, "H_Media" FLOAT
+                        );
+                    '''))
+                    # Limpiamos tabla vieja para un reemplazo limpio
+                    conn.execute(text("DELETE FROM matriz_hidrogeomorfologica_maestra;"))
+                    
+                df_matriz_geomorfo.to_sql('matriz_hidrogeomorfologica_maestra', engine_sql, if_exists='append', index=False)
+                
+                barra_progreso.progress(1.0)
+                st.success(f"✅ **¡FORJA MASIVA COMPLETADA!** Se han inyectado {len(df_matriz_geomorfo)} ecuaciones hipsométricas a la Matriz Hidro-Geomorfológica Maestra.")
+                
+                with st.expander("Ver Muestra de la Matriz Generada"):
+                    st.dataframe(df_matriz_geomorfo.head(20))
+                    
+            except Exception as e:
+                st.error(f"🚨 Error inyectando la matriz maestra a SQL: {e}")
+        else:
+            st.warning("No se generó ningún resultado válido durante la forja.")
