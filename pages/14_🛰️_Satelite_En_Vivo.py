@@ -85,7 +85,8 @@ if iniciar_conexion_gee():
             minx, miny, maxx, maxy = gdf_zona.total_bounds
             
             # Extraemos la geometría exacta (con todas sus curvas) para recortar el mapa
-            geom_unificada = gdf_zona.geometry.unary_union
+            # 🔥 CURACIÓN TOPOLÓGICA: Hacemos válidas las geometrías y aplicamos un buffer 0 para eliminar nudos antes de unir
+            geom_unificada = gdf_zona.geometry.make_valid().buffer(0).unary_union
             # Convertimos esa figura maestra al lenguaje que entiende el satélite
             roi_ee = ee.Geometry(geom_unificada.__geo_interface__)
             
