@@ -289,44 +289,79 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
         barra_progreso.progress(0.7)
 
         # =================================================================
-        # C. ENTRENAMIENTO ADMINISTRATIVO (Mpio, Depto, Región, Macroregión)
+        # C. ENTRENAMIENTO ADMINISTRATIVO (Sincronía Maestra Multiescala)
         # =================================================================
-        texto_progreso.info("🏢 Fase 2/2: Entrenando Escalas Administrativas Superiores...")
+        texto_progreso.info("🏢 Fase 2/2: Entrenando Escalas con Sincronía Maestra Lingüística...")
         
-        # 1. Recuperamos metadata de los municipios desde PostGIS para saber sus regiones
+        # 1. CONEXIÓN FORENSE AL DICCIONARIO MAESTRO (Igual que Demografía)
         try:
-            df_meta_mun = gpd.read_postgis("SELECT mpio_cnmbr, subregion, macroregion FROM municipios", engine_geo)
-            df_meta_mun['mun_norm'] = df_meta_mun['mpio_cnmbr'].astype(str).str.upper().str.strip()
-            df_censo = pd.merge(df_censo, df_meta_mun[['mun_norm', 'subregion', 'macroregion']].drop_duplicates(), on='mun_norm', how='left')
-        except Exception:
-            pass # Si falla la conexión, igual entrenará Municipios y Depto
+            import io
+            import requests
+            from modules.utils import normalizar_texto
+            
+            url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
+            res_m = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+            df_maestro = pd.read_excel(io.BytesIO(res_m.content))
+            
+            # Normalizamos nombres para cruce matemático indestructible
+            df_censo['match_id'] = df_censo['mun_norm'].astype(str).apply(normalizar_texto)
+            df_maestro['match_id'] = df_maestro['municipio'].astype(str).apply(normalizar_texto)
+            
+            df_maestro_nombres = df_maestro.drop_duplicates(subset=['match_id'])
+            df_censo = df_censo.merge(df_maestro_nombres[['match_id', 'subregion', 'region', 'depto_nom', 'car']], on='match_id', how='left')
+            
+            # 🛡️ ESCUDO ANTIOQUIA
+            df_censo = df_censo[df_censo['depto_nom'].str.contains('Antioquia', case=False, na=False)].copy()
+            
+            # Limpieza de nulos
+            df_censo['subregion'] = df_censo['subregion'].fillna('Sin Region')
+            df_censo['region'] = df_censo['region'].fillna('Sin Macroregion')
+            df_censo['depto_nom'] = df_censo['depto_nom'].fillna('Antioquia')
+            
+            # 🧩 LÓGICA DE JURISDICCIÓN AMVA vs CORANTIOQUIA (Adaptación Pecuaria)
+            # Todo el ganado censado en el Valle de Aburrá pasa a la jurisdicción del AMVA.
+            mask_aburra = df_censo['subregion'].str.contains('Aburr', case=False, na=False)
+            df_censo.loc[mask_aburra, 'car'] = 'AMVA'
+            
+        except Exception as e:
+            st.warning(f"⚠️ Error en Sincronización Maestra Pecuaria: {e}")
 
-        # Municipios
+        # --- A. Municipios ---
         df_mpios = df_censo.groupby(['Anio', 'mun_norm'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
         for mpio in df_mpios['mun_norm'].unique():
             df_t = df_mpios[df_mpios['mun_norm'] == mpio].sort_values('Anio')
             for esp in ['Bovinos', 'Porcinos', 'Aves']:
-                ajustar_modelos(df_t['Anio'].values, df_t[esp].values, 'MUNICIPIO', mpio, esp)
+                ajustar_modelos(df_t['Anio'].values, df_t[esp].values, 'MUNICIPAL', mpio, esp) # 🔑 Estandarizado a MUNICIPAL
 
-        # Subregiones
+        # --- B. Subregiones ---
         if 'subregion' in df_censo.columns:
             df_reg = df_censo.groupby(['Anio', 'subregion'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
             for reg in df_reg['subregion'].dropna().unique():
-                if reg in ["", "None", "nan"]: continue
+                if reg in ["", "None", "nan", "Sin Region"]: continue
                 df_t = df_reg[df_reg['subregion'] == reg].sort_values('Anio')
                 for esp in ['Bovinos', 'Porcinos', 'Aves']:
                     ajustar_modelos(df_t['Anio'].values, df_t[esp].values, 'REGION', reg, esp)
                     
-        # Macroregiones
-        if 'macroregion' in df_censo.columns:
-            df_mac = df_censo.groupby(['Anio', 'macroregion'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
-            for mac in df_mac['macroregion'].dropna().unique():
-                if mac in ["", "None", "nan"]: continue
-                df_t = df_mac[df_mac['macroregion'] == mac].sort_values('Anio')
+        # --- C. Macroregiones ---
+        if 'region' in df_censo.columns:
+            df_mac = df_censo.groupby(['Anio', 'region'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+            for mac in df_mac['region'].dropna().unique():
+                if mac in ["", "None", "nan", "Sin Macroregion"]: continue
+                df_t = df_mac[df_mac['region'] == mac].sort_values('Anio')
                 for esp in ['Bovinos', 'Porcinos', 'Aves']:
                     ajustar_modelos(df_t['Anio'].values, df_t[esp].values, 'MACROREGION', mac, esp)
 
-        # Departamento
+        # --- D. Corporaciones Autónomas Regionales (CAR) ---
+        if 'car' in df_censo.columns:
+            df_car = df_censo.groupby(['Anio', 'car'])[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
+            for autoridad in df_car['car'].dropna().unique():
+                aut_limpia = str(autoridad).strip().upper()
+                if aut_limpia in ["", "NAN", "NONE"]: continue
+                df_t = df_car[df_car['car'] == autoridad].sort_values('Anio')
+                for esp in ['Bovinos', 'Porcinos', 'Aves']:
+                    ajustar_modelos(df_t['Anio'].values, df_t[esp].values, 'CAR', autoridad, esp)
+
+        # --- E. Departamento ---
         df_depto = df_censo.groupby('Anio')[['Bovinos', 'Porcinos', 'Aves']].sum().reset_index()
         for esp in ['Bovinos', 'Porcinos', 'Aves']:
             ajustar_modelos(df_depto['Anio'].values, df_depto[esp].values, 'DEPARTAMENTO', 'Antioquia', esp)
