@@ -931,9 +931,10 @@ if gdf_zona is not None:
                     cols_to_drop = [c for c in cols_to_drop if c in concesiones_locales.columns]
                     df_descarga = pd.DataFrame(concesiones_locales.drop(columns=cols_to_drop, errors='ignore'))
                     
+                    # 🚀 BLINDAJE ESPACIAL: Extrae coordenadas solo si el punto existe y es válido
                     centroides = concesiones_locales.geometry.centroid
-                    df_descarga['Longitud_X'] = centroides.x.fillna(0)
-                    df_descarga['Latitud_Y'] = centroides.y.fillna(0)
+                    df_descarga['Longitud_X'] = centroides.apply(lambda p: p.x if p and not p.is_empty else 0.0)
+                    df_descarga['Latitud_Y'] = centroides.apply(lambda p: p.y if p and not p.is_empty else 0.0)
                     
                     csv_data = df_descarga.to_csv(index=False, sep=';').encode('utf-8')
                     
