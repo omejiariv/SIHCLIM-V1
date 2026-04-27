@@ -243,11 +243,12 @@ if gdf_zona is not None and not gdf_zona.empty:
     # ---------------------------------------------------------
     # 2. CONEXIÓN PECUARIA (Con Rescate y Bypass)
     # ---------------------------------------------------------
-    df_pec = consultar_matriz_sql("matriz_maestra_pecuaria", nombre_zona, nivel_demo, "Nivel")
+    # 🚀 FIX: Buscar primero por el nivel real (AH, ZH) que usa la nueva matriz
+    df_pec = consultar_matriz_sql("matriz_maestra_pecuaria", nombre_zona, nivel_req, "Nivel")
     
-    # Intento de rescate: Por si la matriz pecuaria usó AH/ZH en lugar de "Cuenca"
+    # Intento de rescate: Por si una matriz vieja usó "Cuenca"
     if df_pec.empty and nivel_demo == "Cuenca":
-        df_pec = consultar_matriz_sql("matriz_maestra_pecuaria", nombre_zona, nivel_req, "Nivel")
+        df_pec = consultar_matriz_sql("matriz_maestra_pecuaria", nombre_zona, "Cuenca", "Nivel")
 
     bovinos, porcinos, aves = 0.0, 0.0, 0.0
 
