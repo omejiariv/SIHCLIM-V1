@@ -223,17 +223,32 @@ def render_selector_espacial():
                     nivel_jerarquico = "NINGUNO"
             
             elif ruta == "CAR":
-                car_sel = st.selectbox("Autoridad Ambiental (CAR):", ["-- Seleccione --"] + sorted(gdf_c['corpoamb'].dropna().unique()))
+                # 🔥 FIX AMVA: Leemos las CARs directamente de la Matriz de Toma de Decisiones, 
+                # así garantizamos que "AMVA" siempre aparezca en el menú.
+                try:
+                    q_cars = text("SELECT DISTINCT territorio FROM matriz_maestra_hidrologia WHERE UPPER(nivel) = 'CAR' ORDER BY territorio")
+                    df_cars = pd.read_sql(q_cars, db_manager.get_engine())
+                    opciones_car = df_cars['territorio'].tolist() if not df_cars.empty else ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
+                except:
+                    opciones_car = ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
+
+                car_sel = st.selectbox("Autoridad Ambiental (CAR):", ["-- Seleccione --"] + sorted(opciones_car))
                 
                 if car_sel != "-- Seleccione --":
-                    df_f = gdf_c[gdf_c['corpoamb']==car_sel]
+                    # Mapeamos las geometrías de las CAR (Asegurando que el AMVA tenga geometría)
+                    if car_sel == "AMVA":
+                        # Filtramos los municipios del Valle de Aburrá
+                        mask_amva = gdf_c['nom_mun'].str.contains('Medell|Bello|Itag|Envig|Sabaneta|Estrella|Caldas|Copacabana|Girardota|Barbosa', case=False, na=False)
+                        df_f = gdf_c[mask_amva] if 'nom_mun' in gdf_c.columns else gdf_c
+                    else:
+                        df_f = gdf_c[gdf_c['corpoamb'].str.contains(car_sel[:4], case=False, na=False)] if 'corpoamb' in gdf_c.columns else gdf_c
                     
                     # Permite evaluar toda la jurisdicción de la CAR o bajar a sus microcuencas
                     nivel = st.selectbox("1. Resolución a Evaluar:", ["CAR", "NSS1", "NSS2", "NSS3"], index=0)
                     
                     if nivel == "CAR":
                         nombre_zona = car_sel
-                        gdf_zona = df_f
+                        gdf_zona = df_f if not df_f.empty else None
                         nivel_jerarquico = "CAR"
                     else:
                         col_obj = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
