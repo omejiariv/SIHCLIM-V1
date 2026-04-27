@@ -1314,10 +1314,16 @@ df_sag = calcular_streeter_phelps(
     paso_km=0.5
 )
 
-# 4. Encontrar el Punto Crítico (Donde el oxígeno es mínimo)
-punto_critico = df_sag.loc[df_sag['Oxigeno_Disuelto_mgL'].idxmin()]
-od_minimo = punto_critico['Oxigeno_Disuelto_mgL']
-km_critico = punto_critico['Distancia_km']
+# 4. Encontrar el Punto Crítico (Seguro contra NaN)
+if not df_sag.empty and not df_sag['Oxigeno_Disuelto_mgL'].isna().all():
+    idx_min = df_sag['Oxigeno_Disuelto_mgL'].idxmin()
+    punto_critico = df_sag.loc[idx_min]
+    od_minimo = punto_critico['Oxigeno_Disuelto_mgL']
+    km_critico = punto_critico['Distancia_km']
+else:
+    # Fallback si el modelo matemático colapsa temporalmente
+    od_minimo = od_rio_arriba
+    km_critico = 0.0
 
 # 5. Dibujar la Curva de Oxígeno
 import plotly.graph_objects as go
