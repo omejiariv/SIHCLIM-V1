@@ -318,10 +318,11 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
             df_censo['region'] = df_censo['region'].fillna('Sin Macroregion')
             df_censo['depto_nom'] = df_censo['depto_nom'].fillna('Antioquia')
             
-            # 🧩 LÓGICA DE JURISDICCIÓN AMVA vs CORANTIOQUIA (Adaptación Pecuaria)
-            # Todo el ganado censado en el Valle de Aburrá pasa a la jurisdicción del AMVA.
+            # 🧩 LÓGICA DE JURISDICCIÓN AMVA vs CORANTIOQUIA (Realidad Física)
+            # El ganado físico está en los corregimientos y áreas rurales del Valle de Aburrá.
+            # Por lo tanto, su gestión ambiental le corresponde a Corantioquia, no al AMVA.
             mask_aburra = df_censo['subregion'].str.contains('Aburr', case=False, na=False)
-            df_censo.loc[mask_aburra, 'car'] = 'AMVA'
+            df_censo.loc[mask_aburra, 'car'] = 'Corantioquia'
             
         except Exception as e:
             st.warning(f"⚠️ Error en Sincronización Maestra Pecuaria: {e}")
