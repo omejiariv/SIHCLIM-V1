@@ -1082,6 +1082,23 @@ with st.expander("⚙️ PANEL DE ADMINISTRADOR: Forja Masiva de Matriz Hidro-Ge
                 
                 with st.expander("Ver Muestra de la Matriz Generada"):
                     st.dataframe(df_matriz_geomorfo.head(20))
+
+            # 📥 OPCIÓN DE DESCARGA MAESTRA
+                st.markdown("---")
+                col_d1, col_d2 = st.columns([2, 1])
+                with col_d1:
+                    st.info("💡 **Recomendación:** Descarga esta matriz como respaldo físico. Contiene los coeficientes polinómicos ($C_3, C_2, C_1, C_0$) necesarios para el cálculo de caudales por altitud.")
+                
+                with col_d2:
+                    csv_geomorfo = df_matriz_geomorfo.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Descargar Matriz Completa (CSV)",
+                        data=csv_geomorfo,
+                        file_name="Matriz_HidroGeomorfologica_Maestra.csv",
+                        mime='text/csv',
+                        use_container_width=True,
+                        type="primary"
+                    )
                     
             except Exception as e:
                 st.error(f"🚨 Error inyectando la matriz maestra a SQL: {e}")
