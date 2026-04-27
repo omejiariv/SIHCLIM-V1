@@ -1086,16 +1086,38 @@ if res_hipso_actual and res_hipso_actual.get("source") == "DEM Real":
         h_max_cuenca = float(np.max(elevs_reales))
         h_med_cuenca = float(np.mean(elevs_reales))
 
-# 1.2 Renderizar la interfaz con los valores exactos
+# 1.2 Renderizar la interfaz con los valores exactos (Conexión Geomorfológica)
 with st.expander("⚙️ Características Físicas y Climáticas del Río", expanded=True):
+    # ==============================================================================
+    # 🚀 LECTURA TOPOGRÁFICA DESDE LA MATRIZ GEOMORFOLÓGICA
+    # ==============================================================================
+    df_geomorfo = consultar_matriz_sql_calidad("matriz_hidrogeomorfologica_maestra", nombre_seleccion, nivel_req, "Nivel")
+    
+    if not df_geomorfo.empty:
+        # Extraemos los límites reales generados por el DEM
+        h_min_cuenca = float(df_geomorfo.iloc[0].get('H_Minima', 1000))
+        h_max_cuenca = float(df_geomorfo.iloc[0].get('H_Maxima', 3000))
+        h_med_cuenca = float(df_geomorfo.iloc[0].get('H_Media', 2000))
+        # Capturamos los coeficientes para el cálculo de área/caudal
+        res_hipso_actual = {
+            'c3': float(df_geomorfo.iloc[0].get('Coef_C3', 0)),
+            'c2': float(df_geomorfo.iloc[0].get('Coef_C2', 0)),
+            'c1': float(df_geomorfo.iloc[0].get('Coef_C1', 0)),
+            'c0': float(df_geomorfo.iloc[0].get('Coef_C0', 0))
+        }
+    else:
+        h_min_cuenca, h_max_cuenca, h_med_cuenca = 1000.0, 3000.0, 2000.0
+        res_hipso_actual = None
+
     cr1, cr2, cr3 = st.columns(3)
     
     with cr1:
         st.markdown("##### 📍 Posición y Clima del Vertimiento")
-        st.caption(f"**Topografía ({nombre_c}):** Mín: {h_min_cuenca:.0f} m | Med: {h_med_cuenca:.0f} m | Máx: {h_max_cuenca:.0f} m")
+        st.caption(f"**Topografía Real ({nombre_seleccion}):** Mín: {h_min_cuenca:.0f} m | Med: {h_med_cuenca:.0f} m | Máx: {h_max_cuenca:.0f} m")
         
         # 🚀 DETECCIÓN AUTOMÁTICA DEL VERTIMIENTO DE CABECERA
         h_real_vert = None
+        caudal_real_lps = 0
         if nivel_sel_interno == "Municipal" and not df_vertimientos.empty:
             v_cabecera = df_vertimientos[
                 (df_vertimientos['municipio_norm'] == normalizar_texto(nombre_seleccion)) & 
@@ -1103,113 +1125,77 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
             ].sort_values(by='caudal_vert_lps', ascending=False)
 
             if not v_cabecera.empty:
-                # Extraemos la altitud del vertimiento más grande (si existe en la BD)
                 h_real_vert = float(v_cabecera.iloc[0].get('Altitud_m', h_med_cuenca))
                 caudal_real_lps = float(v_cabecera.iloc[0].get('caudal_vert_lps', 0))
-                st.success(f"📍 **Vertimiento Principal Detectado:** {caudal_real_lps:.1f} L/s a **{h_real_vert:.0f} msnm**.")
+                st.success(f"📍 **Tubo de Descarga Detectado:** {caudal_real_lps:.1f} L/s a **{h_real_vert:.0f} msnm**.")
 
         h_defecto = h_real_vert if h_real_vert else h_med_cuenca
         
+        # El slider ahora está blindado por los límites reales de la montaña
         h_descarga = st.number_input(
             "Altitud de Descarga (H):", 
             min_value=float(h_min_cuenca), 
             max_value=float(h_max_cuenca), 
             value=float(h_defecto), 
             step=10.0,
-            help="A mayor altitud, menor área aportante (menos caudal) y menor temperatura del agua."
+            help="Sincronizado con la matriz geomorfológica maestra."
         )
         
-        # 🌊 MOTOR HÍDRICO e HIPSOMETRICO (CONEXIÓN A MATRIZ MAESTRA Y ALEPH)
-        # 🚀 FIX: Consultamos primero la Matriz Maestra Hidrológica en SQL
+        # 🌊 MOTOR HÍDRICO (CONEXIÓN A MATRIZ HIDROLÓGICA)
         df_hidro = consultar_matriz_sql_calidad("matriz_hidrologica_maestra", nombre_seleccion, nivel_req, "Jerarquia")
-        
         q_medio_matriz, q_min_matriz = 0.0, 0.0
         if not df_hidro.empty:
             q_medio_matriz = float(df_hidro.iloc[0].get('Caudal_Medio_m3s', 0.0))
             q_min_matriz = float(df_hidro.iloc[0].get('Caudal_Minimo_m3s', 0.0))
             
-        # Si la matriz tiene datos, los prioriza. Si no, busca en la memoria viva (Aleph)
         aleph_q_medio = q_medio_matriz if q_medio_matriz > 0 else st.session_state.get('aleph_q_rio_m3s', 0.0)
         aleph_q_min = q_min_matriz if q_min_matriz > 0 else st.session_state.get('aleph_q_min_m3s', 0.0)
         
-        # Interfaz para que el usuario decida qué escenario de dilución simular
         st.markdown("---")
         tipo_escenario = st.radio(
-            "🌊 Escenario Hidrológico para Dilución (Conexión Maestra):", 
-            ["🏜️ Peor Escenario: Caudal de Estiaje / Mínimo (Recomendado MADS)", "🌊 Escenario Promedio: Caudal Medio"], 
+            "🌊 Escenario Hidrológico para Dilución:", 
+            ["🏜️ Peor Escenario: Caudal de Estiaje / Mínimo", "🌊 Escenario Promedio: Caudal Medio"], 
             horizontal=True
         )
         
-        # Lógica de asignación y Fallback
-        if "Estiaje" in tipo_escenario:
-            q_base_cuenca = float(aleph_q_min) if aleph_q_min > 0 else 1.25 # Fallback teórico de estiaje
-        else:
-            q_base_cuenca = float(aleph_q_medio) if aleph_q_medio > 0 else 5.0 # Fallback teórico medio
+        q_base_cuenca = float(aleph_q_min) if "Estiaje" in tipo_escenario else float(aleph_q_medio)
+        if q_base_cuenca <= 0: q_base_cuenca = 1.25 # Fallback
             
-        if aleph_q_medio > 0:
-            fuente_q = "Matriz SQL Exacta" if q_medio_matriz > 0 else "Memoria Viva (Aleph)"
-            st.success(f"💧 **Cerebro Hidrológico Enlazado:** Caudales extraídos desde {fuente_q}.")
-        else:
-            st.warning("⚠️ **Alerta de Contexto:** No se detectó un modelo hidrológico en memoria ni en SQL. Se usan caudales genéricos. Ve a 'Clima e Hidrología' y ejecuta el Aleph para obtener caudales reales.")
-            
+        # 🧮 CÁLCULO DE CAUDAL POR ALTITUD (MATEMÁTICA HIPSOMÉTRICA)
+        # Usamos los coeficientes reales de la matriz para hallar la fracción de área a esa altura
         frac_area, fuente_hipso, eq_hipso = calcular_area_inversa(h_descarga, res_hipso_actual)
         q_rio = max(0.01, q_base_cuenca * frac_area)
         
-        # 🌡️ MOTOR TÉRMICO (IDEAM)
+        # 🌡️ MOTOR TÉRMICO (GRADIENTE)
         t_sugerida = 28.0 - (0.006 * h_descarga)
+        piso_termico = "Cálido" if h_descarga < 1000 else "Templado" if h_descarga < 2000 else "Frío" if h_descarga < 3000 else "Páramo"
         
-        if h_descarga < 1000: piso_termico = "Piso: Cálido"
-        elif h_descarga < 2000: piso_termico = "Piso: Templado"
-        elif h_descarga < 3000: piso_termico = "Piso: Frío"
-        elif h_descarga < 4000: piso_termico = "Piso: Páramo"
-        else: piso_termico = "Piso: Nival"
-        
-        # Ajuste dinámico de los límites del slider de temperatura (+/- 2 grados para permitir simulaciones extremas)
-        t_min_posible = max(0.0, 28.0 - (0.006 * h_max_cuenca)) - 2.0
-        t_max_posible = min(35.0, 28.0 - (0.006 * h_min_cuenca)) + 2.0
-        
-        # --- EXHIBICIÓN DE LA CIENCIA EN DOS COLUMNAS ---
+        # --- EXHIBICIÓN DE LA CIENCIA ---
         c_m1, c_m2 = st.columns(2)
         with c_m1:
-            st.caption(fuente_hipso)
+            st.caption(f"📉 {fuente_hipso}")
             st.latex(eq_hipso)
-            reduccion = 100 - (frac_area * 100)
-            st.metric(
-                "Caudal Local (Q)", 
-                f"{q_rio:.2f} m³/s", 
-                f"-{reduccion:.1f}% vs Salida", 
-                delta_color="normal"
-            )
+            st.metric("Caudal Local (Q)", f"{q_rio:.2f} m³/s", f"-{100-(frac_area*100):.1f}% vs Salida")
             
         with c_m2:
             st.caption("🌡️ Gradiente Térmico")
             st.latex(r"T = 28 - 0.006 \cdot H")
-            st.metric(
-                "Temp. Natural", 
-                f"{t_sugerida:.1f} °C", 
-                piso_termico, 
-                delta_color="off"
-            )
+            st.metric("Temp. Natural", f"{t_sugerida:.1f} °C", f"Piso: {piso_termico}", delta_color="off")
             
-        # El slider obedece a la montaña
-        t_agua = st.slider(
-            "Temperatura del Agua (°C):", 
-            min_value=float(np.floor(t_min_posible)), 
-            max_value=float(np.ceil(t_max_posible)), 
-            value=float(t_sugerida), 
-            step=0.5, 
-            help="Sugerida por la altitud. Puedes ajustarla para simular el efecto de una isla de calor urbano o descargas térmicas industriales."
-        )
+        t_agua = st.slider("Temperatura del Agua (°C):", 
+                          value=float(t_sugerida), 
+                          min_value=float(t_sugerida-5), 
+                          max_value=float(t_sugerida+5), step=0.5)
         
     with cr2:
         st.markdown("##### 🌊 Hidráulica")
-        v_rio = st.slider("Velocidad del Flujo (m/s):", min_value=0.1, max_value=3.0, value=0.5, step=0.1)
-        h_rio = st.slider("Profundidad Media (m):", min_value=0.2, max_value=5.0, value=1.0, step=0.2)
+        v_rio = st.slider("Velocidad del Flujo (m/s):", 0.1, 3.0, 0.5, 0.1)
+        h_rio = st.slider("Profundidad Media (m):", 0.2, 5.0, 1.0, 0.2)
         
     with cr3:
         st.markdown("##### 🧪 Condición Inicial")
-        od_rio_arriba = st.slider("OD Aguas Arriba (mg/L):", min_value=0.0, max_value=12.0, value=7.5, step=0.5)
-        dist_sim = st.slider("Distancia a Simular (km):", min_value=5, max_value=150, value=50, step=5)
+        od_rio_arriba = st.slider("OD Aguas Arriba (mg/L):", 0.0, 12.0, 7.5, 0.5)
+        dist_sim = st.slider("Distancia a Simular (km):", 5, 150, 50, 5)
         
 # =========================================================================
 # 2. Balance de Masas (Mezcla Río + Vertimiento) Parámetros del Vertimiento Y VERTIMIENTO HIPOTÉTICO
