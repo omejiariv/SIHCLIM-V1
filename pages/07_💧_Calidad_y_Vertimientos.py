@@ -1384,7 +1384,7 @@ estado_rio = "⚠️ Riesgo Ecológico" if od_minimo < 4.0 else "✅ Saludable"
 m_r2.metric("OD Mínimo Crítico", f"{od_minimo:.1f} mg/L", delta=estado_rio, delta_color="inverse" if od_minimo < 4.0 else "normal")
 m_r3.metric("Ubicación del Impacto", f"Km {km_critico:.1f}")
 
-st.plotly_chart(fig_sag, use_container_width=True")
+st.plotly_chart(fig_sag, st.plotly_chart(fig_sag, use_container_width=True)
 
 # ------------------------------------------------------------------------------
 # TAB 4: ESCENARIOS DE MITIGACIÓN (HOLÍSTICOS)
@@ -1626,7 +1626,7 @@ with tab_sirena:
             else:
                 df_view_exp = df_exp.astype(str)
                 
-            st.dataframe(df_view_exp, use_container_width=True")
+            st.dataframe(df_view_exp, use_container_width=True)
             
         with c_exp2:
             if not df_exp.empty and df_exp['caudal_lps'].sum() > 0:
