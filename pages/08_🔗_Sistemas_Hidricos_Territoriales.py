@@ -1032,8 +1032,8 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
             remocion_f = (40 + (sist_saneamiento if activar_sig else 0)) * 2.2 
             carga_final_ton_f = max(0.5, carga_neta_f - remocion_f)
             
-            # Dilución proyectada
-            q_mezcla_f = (sum(datos_nodo["afluentes_naturales"].values()) * f_cli_total) + (sum(trasvases_inputs.values()) * 0.4)
+            # Dilución proyectada (Conectado a Concesiones Legales)
+            q_mezcla_f = (sum(datos_nodo["afluentes_naturales"].values()) * f_cli_total) + (caudal_total_trasvase * 0.4)
             caudal_L_s_f = (q_mezcla_f if q_mezcla_f > 0 else 1.0) * 1000
             
             # 🚨 SINCRONIZACIÓN: Usamos umbral_dbo_colapso y factor_zona_critica de los sliders
@@ -1100,9 +1100,9 @@ with st.expander(f"📈 Proyección Dinámica de Seguridad Hídrica {nodo_selecc
                     wei_sim = c_m3 / o_m3 if o_m3 > 0 else 1.0
                     val = max(0.0, min(100.0, 100.0 - (wei_sim / 0.40) * 60))
                 else: 
-                    # Calidad Proyectada Escenario
+                    # Calidad Proyectada Escenario (Conectado a Concesiones Legales)
                     q_n_esc = sum(datos_nodo["afluentes_naturales"].values()) * f_cli_total
-                    q_m_esc = q_n_esc + (sum(trasvases_inputs.values()) * 0.4)
+                    q_m_esc = q_n_esc + (caudal_total_trasvase * 0.4)
                     caudal_L_s_esc = (q_m_esc if q_m_esc > 0 else 1.0) * 1000
                     carga_f_esc = carga_mg_s_final * f_dem
                     val = max(0.0, min(100.0, 100.0 - ((carga_f_esc / caudal_L_s_esc) / 15.0 * 100)))
