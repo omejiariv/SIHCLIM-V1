@@ -56,12 +56,9 @@ except Exception as e:
     st.stop()
 
 # ==============================================================================
-# 🧠 NÚCLEO DE METABOLISMO UNIFICADO (Sniper Autosuficiente)
+# 🧠 NÚCLEO DE METABOLISMO UNIFICADO (Sincronía con Llave Universal)
 # ==============================================================================
-import re
-import unicodedata
-import difflib
-import time
+import numpy as np
 
 anio_analisis = 2025 
 pob_urbana_calc, pob_rural_calc, pob_total_base = 0, 0, 0
@@ -69,135 +66,85 @@ bovinos_reales, porcinos_reales, aves_reales = 0, 0, 0
 origen_humano = "No Identificado"
 origen_animal = "Sin Datos"
 
-def limpiar_identificador(t):
-    if pd.isna(t): return ""
-    t = unicodedata.normalize('NFKD', str(t).lower().strip()).encode('ascii', 'ignore').decode('utf-8')
-    t = re.sub(r'[^a-z0-9]', ' ', t) 
-    return " ".join(t.split())
+# 1. ENRUTADOR MAESTRO (Misma lógica que el Dashboard 09)
+nivel_req = st.session_state.get('nivel_activo_global', 'NINGUNO')
 
-nombre_norm = limpiar_identificador(nombre_seleccion)
+if nivel_req in ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
+    nivel_demo = "Cuenca"
+elif "CORPOAMB" in nivel_req.upper() or "CAR" in nivel_req.upper():
+    nivel_demo = "CAR"
+    nivel_req = "CAR"
+else:
+    nivel_demo = nivel_req
 
-# 🌍 EL DETECTOR GEOMÉTRICO UNIVERSAL
-es_macro = True
-if gdf_zona is not None and not gdf_zona.empty:
+@st.cache_data(ttl=3600)
+def consultar_matriz_sql_bio(tabla, territorio, nivel, col_nivel="Nivel"):
     try:
-        area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
-        if area_km2 < 1200: es_macro = False
-    except: pass
-
-try:
-    from modules.db_manager import get_engine
-    engine = get_engine()
-    
-    # --- MOTOR HUMANO ---
-    df_mat = st.session_state.get('df_matriz_demografica', pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine))
-    st.session_state['df_matriz_demografica'] = df_mat
-    
-    if not df_mat.empty:
-        df_mat['MATCH_ID'] = df_mat['Territorio'].apply(limpiar_identificador)
-        filas = df_mat[df_mat['MATCH_ID'] == nombre_norm].copy()
+        from sqlalchemy import text
+        from modules.db_manager import get_engine
+        import pandas as pd
+        from modules.utils import normalizar_texto 
         
-        if not filas.empty:
-            filas = filas.sort_values(by='Pob_Base', ascending=not es_macro)
-            niv_gan = filas.iloc[0]['Nivel']
-            f_fin = filas[filas['Nivel'] == niv_gan]
-            
-            def resolver(r, anio, col_base='Pob_Base'):
-                t = float(anio - r.get('Año_Base', 1985))
-                m = str(r.get('Modelo_Recomendado', ''))
-                if 'Logistico' in m: return r['Log_K'] / (1 + r['Log_a'] * np.exp(-r['Log_r'] * t))
-                if 'Exponencial' in m: return r['Exp_a'] * np.exp(r['Exp_b'] * t)
-                return r['Poly_A']*t**3 + r['Poly_B']*t**2 + r['Poly_C']*t + r.get('Poly_D', r[col_base])
+        engine_sql = get_engine()
+        t_norm = normalizar_texto(territorio)
+        
+        mapa_llave = {
+            "Municipal": "MUNICIPAL", "Regional": "REGION", 
+            "Departamental": "DEPARTAMENTO", "AH": "AH", "ZH": "ZH",
+            "CAR": "CAR", "CORPOAMB": "CAR"
+        }
+        n_llave = mapa_llave.get(nivel, nivel).upper()
+        llave_u = f"{n_llave}_{t_norm}_TOTAL".upper().replace(" ", "_")
 
-            f_t = f_fin[f_fin['Area'].str.lower().str.contains('tot')]
-            f_u = f_fin[f_fin['Area'].str.lower().str.contains('urb|cab')] # Atrapa 'Urbano' o 'Cabecera'
-            f_r = f_fin[f_fin['Area'].str.lower().str.contains('rur|resto')] # Atrapa 'Rural' o 'Resto'
-            
-            if not f_t.empty: pob_total_base = resolver(f_t.iloc[0], anio_analisis)
-            pob_urbana_calc = resolver(f_u.iloc[0], anio_analisis) if not f_u.empty else pob_total_base * 0.85
-            pob_rural_calc = resolver(f_r.iloc[0], anio_analisis) if not f_r.empty else pob_total_base * 0.15
-            origen_humano = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
+        q = text(f'SELECT * FROM {tabla} WHERE UPPER("LLAVE_UNIVERSAL") = :llave LIMIT 10')
+        df_res = pd.read_sql(q, engine_sql, params={'llave': llave_u})
 
-    # --- MOTOR PECUARIO ---
+        if df_res.empty:
+            q_fallback = text(f'SELECT * FROM {tabla} WHERE TRIM(UPPER("Territorio")) = UPPER(:t) AND UPPER("{col_nivel}") LIKE UPPER(:n)')
+            df_res = pd.read_sql(q_fallback, engine_sql, params={'t': territorio, 'n': f"%{nivel[:3]}%"})
+        return df_res
+    except: 
+        return pd.DataFrame()
+
+def proyectar_modelo_bio(f, anio_obj):
+    x_norm = anio_obj - f.get('Año_Base', 2018)
+    mod = str(f.get('Modelo_Recomendado', 'Logístico'))
     try:
-        df_pec = st.session_state.get('df_matriz_pecuaria', pd.read_sql("SELECT * FROM matriz_maestra_pecuaria", engine))
-        st.session_state['df_matriz_pecuaria'] = df_pec
-        animales_encontrados = False
-        
-        if not df_pec.empty:
-            df_pec['MATCH_ID'] = df_pec['Territorio'].apply(limpiar_identificador)
-            filas_p = df_pec[df_pec['MATCH_ID'] == nombre_norm].copy()
-            
-            if filas_p.empty:
-                opciones_pec = df_pec['MATCH_ID'].unique().tolist()
-                matches_pec = difflib.get_close_matches(nombre_norm, opciones_pec, n=1, cutoff=0.7)
-                if matches_pec: 
-                    filas_p = df_pec[df_pec['MATCH_ID'] == matches_pec[0]].copy()
-                else:
-                    palabras = nombre_norm.replace("rio", "").replace("nss", "").replace("car", "").split()
-                    if palabras:
-                        p_larga = max(palabras, key=len)
-                        if len(p_larga) > 4:
-                            mask = df_pec['MATCH_ID'].str.contains(p_larga)
-                            filas_temp = df_pec[mask]
-                            if not ("antioquia" in nombre_norm):
-                                filas_temp = filas_temp[filas_temp['Nivel'].str.lower() != 'departamental']
-                            filas_p = filas_temp.copy()
-            
-            if not filas_p.empty:
-                filas_p = filas_p.sort_values(by='Poblacion_Base', ascending=not es_macro)
-                niv_p = filas_p.iloc[0]['Nivel']
-                f_p_fin = filas_p[filas_p['Nivel'] == niv_p]
-                
-                f_bov = f_p_fin[f_p_fin['Especie'].str.lower() == 'bovinos']
-                f_por = f_p_fin[f_p_fin['Especie'].str.lower() == 'porcinos']
-                f_ave = f_p_fin[f_p_fin['Especie'].str.lower() == 'aves']
-                
-                if not f_bov.empty: bovinos_reales = resolver(f_bov.iloc[0], anio_analisis, 'Poblacion_Base')
-                if not f_por.empty: porcinos_reales = resolver(f_por.iloc[0], anio_analisis, 'Poblacion_Base')
-                if not f_ave.empty: aves_reales = resolver(f_ave.iloc[0], anio_analisis, 'Poblacion_Base')
-                
-                if (bovinos_reales + porcinos_reales + aves_reales) > 0:
-                    origen_animal = f"Matriz SQL ({'Macro' if es_macro else 'Micro'})"
-                    animales_encontrados = True
-                
-        if not animales_encontrados: 
-            raise ValueError("Fallback Pecuario")
+        if 'Logistico' in mod or 'Logístico' in mod: return f.get('Log_K',0) / (1 + f.get('Log_a',0) * np.exp(-f.get('Log_r',0) * x_norm))
+        elif 'Exponencial' in mod: return f.get('Exp_a',0) * np.exp(f.get('Exp_b',0) * x_norm)
+        elif 'Lineal' in mod: return f.get('Lin_m',0) * x_norm + f.get('Lin_b',0)
+        else: return f.get('Poly_A',0)*(x_norm**3) + f.get('Poly_B',0)*(x_norm**2) + f.get('Poly_C',0)*x_norm + f.get('Poly_D',0)
+    except: return 0.0
 
-    except Exception:
-        # Fallback Espacial Dinámico
-        try:
-            url_sup = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Censo_Pecuario_Historico_Cuencas.csv?t={int(time.time())}"
-            df_censo = pd.read_csv(url_sup)
-            
-            if 'Anio' in df_censo.columns:
-                anio_f = min(anio_analisis, df_censo['Anio'].max())
-                df_censo = df_censo[df_censo['Anio'] == anio_f]
-            
-            piezas = [nombre_seleccion]
-            if gdf_zona is not None and not gdf_zona.empty:
-                for col in ['nom_szh', 'nomzh', 'nom_nss3', 'nom_nss2']:
-                    if col in gdf_zona.columns:
-                        piezas.extend(gdf_zona[col].dropna().unique().tolist())
-            
-            piezas_norm = [limpiar_identificador(p) for p in set(piezas) if str(p).strip() != '']
-            
-            if 'Subcuenca' in df_censo.columns:
-                df_censo['Sub_Norm'] = df_censo['Subcuenca'].apply(limpiar_identificador)
-                df_filtrado = df_censo[df_censo['Sub_Norm'].isin(piezas_norm)]
-                
-                if not df_filtrado.empty:
-                    bovinos_reales = int(df_filtrado['Bovinos'].sum())
-                    porcinos_reales = int(df_filtrado['Porcinos'].sum())
-                    aves_reales = int(df_filtrado['Aves'].sum())
-            
-            suma = bovinos_reales + porcinos_reales + aves_reales
-            origen_animal = "Suma Espacial (Fallback)" if suma > 0 else "Sin Datos Pecuarios"
-            
-        except Exception: pass
+# --- 2. CONEXIÓN AL MOTOR HUMANO ---
+df_demo = consultar_matriz_sql_bio("matriz_maestra_demografica", nombre_seleccion, nivel_demo, "Nivel")
 
-except Exception as main_e:
-    pass
+if not df_demo.empty:
+    f_t = df_demo[df_demo['Area'].str.lower().str.contains('tot')]
+    f_u = df_demo[df_demo['Area'].str.lower().str.contains('urb|cab')]
+    f_r = df_demo[df_demo['Area'].str.lower().str.contains('rur|resto')]
+    
+    if not f_t.empty: pob_total_base = max(0.0, proyectar_modelo_bio(f_t.iloc[0], anio_analisis))
+    pob_urbana_calc = max(0.0, proyectar_modelo_bio(f_u.iloc[0], anio_analisis)) if not f_u.empty else pob_total_base * 0.85
+    pob_rural_calc = max(0.0, proyectar_modelo_bio(f_r.iloc[0], anio_analisis)) if not f_r.empty else pob_total_base * 0.15
+    origen_humano = f"Matriz SQL Exacta ({nivel_demo})"
+else:
+    origen_humano = "Error SQL (Sin Datos)"
+
+# --- 3. CONEXIÓN AL MOTOR PECUARIO (Con Bypass AMVA) ---
+df_pec = consultar_matriz_sql_bio("matriz_maestra_pecuaria", nombre_seleccion, nivel_demo, "Nivel")
+
+if not df_pec.empty:
+    for _, f in df_pec.iterrows():
+        if f['Especie'] == 'Bovinos': bovinos_reales = max(0.0, proyectar_modelo_bio(f, anio_analisis))
+        if f['Especie'] == 'Porcinos': porcinos_reales = max(0.0, proyectar_modelo_bio(f, anio_analisis))
+        if f['Especie'] == 'Aves': aves_reales = max(0.0, proyectar_modelo_bio(f, anio_analisis))
+    origen_animal = f"Matriz SQL Exacta ({nivel_demo})"
+else:
+    if nombre_seleccion == "AMVA":
+        origen_animal = "Bypass Jurisdicción (Corantioquia asume Rural)"
+    else:
+        origen_animal = "Error SQL (Sin Datos)"
 
 def save_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
