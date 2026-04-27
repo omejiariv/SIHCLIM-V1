@@ -1453,10 +1453,11 @@ with contenedor_sankey.container():
             else:
                 link_tooltips.append("Flujo")
 
-        # 5. RENDER FINAL (Tipografía Limpia)
+        # 5. RENDER FINAL (Tipografía Limpia y Fuerte)
         fig_sankey = go.Figure(data=[go.Sankey(
-            arrangement="snap", # 🚀 Ayuda a organizar los nodos sin solaparse
+            arrangement="snap", 
             valueformat=".2f", valuesuffix=" m³/s",
+            textfont=dict(size=13, color="black", family="Arial, sans-serif"), # 🚀 INYECCIÓN CLAVE
             node=dict(pad=30, thickness=15, line=dict(color="rgba(0,0,0,0)", width=0), label=labels, color="#2C3E50"),
             link=dict(
                 source=source, target=target, value=value, color=color,
@@ -1538,7 +1539,8 @@ with contenedor_sankey.container():
 
     fig_sankey_circ = go.Figure(data=[go.Sankey(
         arrangement="snap",
-        node = dict(pad=30, thickness=15, line=dict(color="rgba(0,0,0,0)", width=0), label=nodos_circulares, color=colores_nodos),
+        textfont=dict(size=14, color="black", family="Arial, sans-serif"), # 🚀 INYECCIÓN CLAVE
+        node = dict(pad=35, thickness=20, line=dict(color="rgba(0,0,0,0)", width=0), label=nodos_circulares, color=colores_nodos),
         link = dict(
             source=source, target=target, value=value, color=color, customdata=hover,
             hovertemplate='<b>%{source.label}</b> ➔ <b>%{target.label}</b><br>Flujo: %{customdata}<extra></extra>'
