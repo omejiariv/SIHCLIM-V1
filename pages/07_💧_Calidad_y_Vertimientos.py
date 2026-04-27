@@ -1233,28 +1233,20 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
     dbo_rio_arriba_fondo = max(1.0, ((carga_difusa_total_kg * factor_escorrentia) * 1000) / (q_rio * 86400))
 
     cd1, cd2, cd3 = st.columns(3)
-    st.markdown(f"##### 🐄🐖🐔 1. Carga Difusa Base (Cuenca Aguas Arriba de {nombre_seleccion})")
-    cd1, cd2, cd3 = st.columns(3)
-    cd1.metric("Población Humana", f"{pob_u + pob_r:,.0f} hab", f"{dbo_hab:,.0f} kg DBO/d", delta_color="inverse")
-    
-    total_animales = bov + por + ave
-    cd2.metric("Censo Pecuario Total", f"{total_animales:,.0f} animales", f"{dbo_gan:,.0f} kg DBO/d", delta_color="inverse")
-    
-    cd3.metric("Impacto en Río (Fondo)", f"{dbo_rio_arriba_fondo:.1f} mg/L DBO", "Concentración base antes del vertimiento puntual", delta_color="off")
-    
     st.markdown("---")
-    st.markdown(f"##### 🧪 2. Portafolio de Vertimientos Puntuales en {nombre_seleccion}")
-    st.caption("Añade, edita o elimina descargas para simular su efecto combinado en la mezcla.")
+    st.markdown(f"##### 🧪 2. Portafolio Espacial de Vertimientos en {nombre_seleccion}")
+    st.caption("Añade descargas a diferentes altitudes. El simulador modelará la cascada de impactos a lo largo del perfil del río.")
     
-    # Pre-cargamos el vertimiento real si lo encontramos, si no, uno por defecto
-    q_ini = caudal_real_lps / 1000 if 'caudal_real_lps' in locals() else 0.150
+    q_ini = caudal_real_lps / 1000 if 'caudal_real_lps' in locals() and caudal_real_lps > 0 else 0.150
+    h_defecto = h_real_vert if 'h_real_vert' in locals() and h_real_vert else h_med_cuenca
     
+    # 🚀 FIX: Aseguramos que la columna 'Altitud (m)' exista desde el nacimiento de la tabla
     df_descargas_base = pd.DataFrame([
-        {"Activo": True, "Fuente": "PTAR / Alcantarillado Principal", "Caudal (m3/s)": q_ini, "DBO (mg/L)": 250.0, "Temp (°C)": 24.0},
-        {"Activo": False, "Fuente": "Industria Textil Hipotética", "Caudal (m3/s)": 0.050, "DBO (mg/L)": 600.0, "Temp (°C)": 30.0}
+        {"Activo": True, "Fuente": "PTAR Principal", "Altitud (m)": float(h_defecto), "Caudal (m3/s)": q_ini, "DBO (mg/L)": 250.0, "Temp (°C)": 24.0},
+        {"Activo": False, "Fuente": "Industria Textil Hipotética", "Altitud (m)": float(max(h_min_cuenca, h_defecto - 50)), "Caudal (m3/s)": 0.050, "DBO (mg/L)": 600.0, "Temp (°C)": 30.0}
     ])
     
-    # 🎛️ TABLA EDITABLE INTERACTIVA
+    # 🎛️ TABLA EDITABLE CON DIMENSIÓN ALTITUDINAL
     df_portafolio = st.data_editor(
         df_descargas_base, 
         num_rows="dynamic", 
@@ -1262,34 +1254,35 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
         column_config={
             "Activo": st.column_config.CheckboxColumn("Activo", default=True),
             "Fuente": st.column_config.TextColumn("Nombre de la Fuente"),
+            "Altitud (m)": st.column_config.NumberColumn("Altitud (m)", min_value=float(h_min_cuenca), max_value=float(h_max_cuenca), format="%.0f"),
             "Caudal (m3/s)": st.column_config.NumberColumn("Caudal (m³/s)", min_value=0.0, format="%.3f"),
             "DBO (mg/L)": st.column_config.NumberColumn("DBO (mg/L)", min_value=0.0),
             "Temp (°C)": st.column_config.NumberColumn("Temp (°C)", min_value=0.0)
         }
     )
     
-    # Consolidación Matemática del Portafolio
     # 🧠 PRE-PROCESAMIENTO ESPACIAL PARA STREETER-PHELPS
-    # Filtramos las activas y las ordenamos desde la montaña hacia el valle (Mayor a Menor Altitud)
     df_activas = df_portafolio[df_portafolio["Activo"] == True].copy()
     
     # FORZAMOS VALORES NUMÉRICOS (Seguro de vida contra NaNs)
-    df_activas["Altitud (m)"] = pd.to_numeric(df_activas["Altitud (m)"], errors='coerce').fillna(h_med_cuenca)
-    df_activas["Caudal (m3/s)"] = pd.to_numeric(df_activas["Caudal (m3/s)"], errors='coerce').fillna(0)
-    df_activas["DBO (mg/L)"] = pd.to_numeric(df_activas["DBO (mg/L)"], errors='coerce').fillna(0)
-    df_activas["Temp (°C)"] = pd.to_numeric(df_activas["Temp (°C)"], errors='coerce').fillna(20)
-    
-    df_activas = df_activas.sort_values(by="Altitud (m)", ascending=False)
-    
-    if not df_activas.empty and df_activas["Caudal (m3/s)"].sum() > 0:
+    if not df_activas.empty:
+        df_activas["Altitud (m)"] = pd.to_numeric(df_activas["Altitud (m)"], errors='coerce').fillna(h_med_cuenca)
+        df_activas["Caudal (m3/s)"] = pd.to_numeric(df_activas["Caudal (m3/s)"], errors='coerce').fillna(0)
+        df_activas["DBO (mg/L)"] = pd.to_numeric(df_activas["DBO (mg/L)"], errors='coerce').fillna(0)
+        df_activas["Temp (°C)"] = pd.to_numeric(df_activas["Temp (°C)"], errors='coerce').fillna(20)
+        
+        # Ordenamos las descargas desde la montaña hacia el valle (Mayor a Menor Altitud)
+        df_activas = df_activas.sort_values(by="Altitud (m)", ascending=False)
+        
         q_vert_total = df_activas["Caudal (m3/s)"].sum()
         carga_puntual_kg = (df_activas["Caudal (m3/s)"] * df_activas["DBO (mg/L)"]).sum() * 86.4
+        
         st.info(f"🏔️ **Cascada Topográfica:** {len(df_activas)} descargas ordenadas | Caudal Total: **{q_vert_total:.3f} m³/s** | Carga: **{carga_puntual_kg:,.1f} kg DBO/día**")
         
-        # Variables legado (mezcla ponderada inicial para compatibilidad)
+        # Variables legado (mezcla ponderada inicial por si alguna gráfica antigua las llama)
         q_vertimiento = q_vert_total
-        t_vertimiento = (df_activas["Caudal (m3/s)"] * df_activas["Temp (°C)"]).sum() / q_vert_total
-        dbo_vert_mgL = (df_activas["Caudal (m3/s)"] * df_activas["DBO (mg/L)"]).sum() / q_vert_total
+        t_vertimiento = (df_activas["Caudal (m3/s)"] * df_activas["Temp (°C)"]).sum() / q_vert_total if q_vert_total > 0 else 20
+        dbo_vert_mgL = (df_activas["Caudal (m3/s)"] * df_activas["DBO (mg/L)"]).sum() / q_vert_total if q_vert_total > 0 else 0
     else:
         q_vertimiento, t_vertimiento, dbo_vert_mgL, carga_puntual_kg = 0.0, 20.0, 0.0, 0.0
         st.warning("No hay descargas activas o caudales válidos en el portafolio.")
