@@ -2707,21 +2707,26 @@ with tab_matriz:
 
                 # F. CORPORACIONES AUTÓNOMAS REGIONALES (CAR)
                 if 'car' in df_admin.columns:
-                    # Obtenemos las CARs únicas (ahora incluirá 'AMVA' y 'Corantioquia' ya filtrados)
                     for autoridad in df_admin['car'].dropna().unique():
                         aut_limpia = str(autoridad).strip().upper()
                         if aut_limpia in ["", "NAN", "NONE"]: continue
                         
-                        for cat in ['Total', 'Urbana', 'Rural']:
-                            df_f = df_admin[(df_admin['car'] == autoridad) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
-                            if len(df_f) >= 3 and df_f['Total'].sum() > 0:
-                                # Forjamos el modelo para la CAR
-                                ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'CAR', autoridad, 'Antioquia', cat)
-                        for cat in ['Total', 'Urbana', 'Rural']:
-                            df_f = df_admin[(df_admin['car'] == autoridad) & (df_admin['Categoria_Area'] == cat)].groupby(col_anio)['Total'].sum().reset_index()
-                            if len(df_f) >= 3 and df_f['Total'].sum() > 0:
-                                ajustar_modelos(df_f[col_anio].values, df_f['Total'].values, 'CAR', autoridad, 'Antioquia', cat)
+                        # 🚀 FIX: Calculamos Urbana y Rural explícitamente desde las partes purificadas
+                        df_urb = df_admin[(df_admin['car'] == autoridad) & (df_admin['Categoria_Area'] == 'Urbana')].groupby(col_anio)['Total'].sum().reset_index()
+                        df_rur = df_admin[(df_admin['car'] == autoridad) & (df_admin['Categoria_Area'] == 'Rural')].groupby(col_anio)['Total'].sum().reset_index()
+                        
+                        if len(df_urb) >= 3 and df_urb['Total'].sum() > 0:
+                            ajustar_modelos(df_urb[col_anio].values, df_urb['Total'].values, 'CAR', autoridad, 'Antioquia', 'Urbana')
+                            
+                        if len(df_rur) >= 3 and df_rur['Total'].sum() > 0:
+                            ajustar_modelos(df_rur[col_anio].values, df_rur['Total'].values, 'CAR', autoridad, 'Antioquia', 'Rural')
 
+                        # 🔥 ELIMINAMOS EL FANTASMA: El 'Total' de la CAR será la suma estricta de sus partes reales
+                        df_tot = pd.merge(df_urb, df_rur, on=col_anio, how='outer', suffixes=('_u', '_r')).fillna(0)
+                        if not df_tot.empty:
+                            df_tot['Total'] = df_tot['Total_u'] + df_tot['Total_r']
+                            if len(df_tot) >= 3 and df_tot['Total'].sum() > 0:
+                                ajustar_modelos(df_tot[col_anio].values, df_tot['Total'].values, 'CAR', autoridad, 'Antioquia', 'Total')
 
             # =====================================================================
             # 🔥 6. FORJA DE LLAVES UNIVERSALES Y CARGA A MEMORIA
