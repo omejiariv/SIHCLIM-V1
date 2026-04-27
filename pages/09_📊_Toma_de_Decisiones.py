@@ -181,37 +181,27 @@ if gdf_zona is not None and not gdf_zona.empty:
             from sqlalchemy import text
             from modules.db_manager import get_engine
             import pandas as pd
-            from modules.utils import normalizar_texto 
-            
-            engine_sql = get_engine()
-            
-            # 1. Generamos la Llave Universal igual que en las Forjas
-            t_norm = normalizar_texto(territorio)
-            
-            # Traductor de niveles para la llave (Ahora incluye a las CAR)
-            mapa_llave = {
-                "Municipal": "MUNICIPAL", "Regional": "REGION", 
-                "Departamental": "DEPARTAMENTO", "AH": "AH", "ZH": "ZH",
-                "CAR": "CAR", "CORPOAMB": "CAR" # Ambos apuntan a CAR
-            }
-            n_llave = mapa_llave.get(nivel, nivel).upper()
-            llave_u = f"{n_llave}_{t_norm}_TOTAL".upper().replace(" ", "_")
-            
-            # 🔥 2. BÚSQUEDA POR LLAVE (La más segura)
-            q = text(f'SELECT * FROM {tabla} WHERE UPPER("LLAVE_UNIVERSAL") = :llave LIMIT 10')
-            df_res = pd.read_sql(q, engine_sql, params={'llave': llave_u})
+        
+            engine = get_engine()
+        
+            # 🚀 BÚSQUEDA BLINDADA: Busca directamente en las columnas, ignorando la Llave Universal
+            q = text(f'''
+                SELECT * FROM {tabla} 
+                WHERE TRIM(UPPER("Territorio")) = UPPER(:t) 
+                AND TRIM(UPPER("{col_nivel}")) = UPPER(:n)
+            ''')
+            df_res = pd.read_sql(q, engine, params={'t': str(territorio).strip(), 'n': str(nivel).strip()})
 
-            # 3. SALVAVIDAS: Si no hay llave, buscamos por nombre (tolerante)
             if df_res.empty:
-                q_fallback = text(f'''
+                q_fall = text(f'''
                     SELECT * FROM {tabla} 
-                    WHERE TRIM(UPPER("Territorio")) = UPPER(:t) 
+                    WHERE UPPER("Territorio") LIKE UPPER(:t) 
                     AND UPPER("{col_nivel}") LIKE UPPER(:n)
                 ''')
-                df_res = pd.read_sql(q_fallback, engine_sql, params={'t': territorio, 'n': f"%{nivel[:3]}%"})
-
+                df_res = pd.read_sql(q_fall, engine, params={'t': f"%{str(territorio).strip()}%", 'n': f"%{str(nivel)[:3]}%"})
+            
             return df_res
-        except Exception: 
+        except:
             return pd.DataFrame()
             
     def proyectar_modelo(f, anio_obj):
