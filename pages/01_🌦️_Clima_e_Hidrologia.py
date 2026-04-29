@@ -66,6 +66,22 @@ if 'enso_fase' not in st.session_state:
         st.session_state['enso_fase'] = "Neutro ⚖️"
         st.toast("⚠️ No se pudo conectar con el servidor IRI. Usando clima Neutro.", icon="🔌")
 
+        # ------------------------------------------------------------------
+        # 🔌 CONEXIÓN AL ALEPH CLIMÁTICO (Transmisor de Telemetría Global)
+        # ------------------------------------------------------------------
+        # Inyectamos los datos vivos del IRI al torrente sanguíneo de Sihcli-Poter
+        st.session_state['aleph_iri_nino'] = int(prob_nino)
+        st.session_state['aleph_iri_neutro'] = int(prob_neutro)
+        st.session_state['aleph_iri_nina'] = int(prob_nina)
+        
+        st.session_state['aleph_iri_trimestre'] = str(trimestre_sel)
+        
+        # Usamos el mensaje generado automáticamente arriba como tendencia
+        if total_prob == 100:
+            st.session_state['aleph_iri_tendencia'] = msg_iri
+        else:
+            st.session_state['aleph_iri_tendencia'] = "Ajustando probabilidades..."
+
 # --- 2. IMPORTACIONES ROBUSTAS ---
 try:
     # Módulos Base (Tus archivos subidos)
