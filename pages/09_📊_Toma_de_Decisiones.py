@@ -342,8 +342,10 @@ if gdf_zona is not None and not gdf_zona.empty:
     if "Niño Severo" in fase_enso: oferta_nominal *= 0.55
     elif "Niño Moderado" in fase_enso: oferta_nominal *= 0.75
     elif "Niña" in fase_enso: oferta_nominal *= 1.20
-    
+
     st.session_state['aleph_oferta_m3s'] = oferta_nominal
+
+
     
     # ---------------------------------------------------------
     # 4. METABOLISMO Y DEMANDA (SÍNTESIS FINAL)
