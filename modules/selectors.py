@@ -24,8 +24,6 @@ def decodificar_tildes(texto):
     except: pass
     return texto
 
-import streamlit as st
-
 def renderizar_telemetria_aleph():
     """
     Panel de control universal que monitorea las variables de estado en tiempo real.
@@ -82,12 +80,15 @@ def renderizar_menu_navegacion(pagina_actual):
         st.page_link("pages/06_📈_Modelo_Demografico.py", label="Modelo Demográfico", icon="👥")
         st.page_link("pages/07_💧_Calidad_y_Vertimientos.py", label="Calidad y Vertimientos", icon="🧪")
         st.page_link("pages/08_🔗_Sistemas_Hidricos_Territoriales.py", label="Sistemas Hídricos", icon="🌊")
-        st.page_link("pages/09_📊_Toma_de_Decisiones.py", label="Toma de Decisiones", icon="⚖️")
+        st.page_link("pages/09_🧠_Toma_de_Decisiones.py", label="Toma de Decisiones", icon="🧠") # <-- Actualizado el icono y nombre
         st.page_link("pages/10_👑_Panel_Administracion.py", label="Panel Administración", icon="⚙️")
         st.page_link("pages/11_⚙️_Generador.py", label="Generador", icon="✨")
         st.page_link("pages/12_📚_Ayuda_y_Docs.py", label="Ayuda y Docs", icon="📚")
         st.page_link("pages/13_🕵️_Detective.py", label="Detective", icon="🕵️")
         st.page_link("pages/14_🛰️_Satelite_En_Vivo.py", label="Satélite en Vivo", icon="🛰️")
+    
+    # 🚀 AQUÍ OCURRE LA MAGIA: Llamamos a la telemetría para que se dibuje
+    renderizar_telemetria_aleph()
 
 # ====================================================================
 # ☁️ CONEXIÓN A SUPABASE (Para guardar los JSON)
