@@ -60,49 +60,44 @@ def renderizar_telemetria_aleph():
         # ==========================================================
         st.markdown("---")
         
-        # 📡 AUTO-FETCH BLINDADO: 
+        # 📡 AUTO-FETCH SIN DATOS QUEMADOS
         if 'aleph_iri_nino' not in st.session_state:
             try:
-                # 1. Aseguramos la ruta para que no falle la importación
-                import sys, os
-                sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+                # Importación dinámica (Idéntica a la que usas en Página 01)
                 from modules.forecasting import get_iri_enso_forecast
-                
                 df_enso, _ = get_iri_enso_forecast()
                 
                 if df_enso is not None and not df_enso.empty:
-                    row = df_enso.iloc[0]
+                    # Extracción exacta a como lo hace tu página 01
+                    prob_nina = float(df_enso.iloc[0]['Niña'])
+                    prob_nino = float(df_enso.iloc[0]['Niño'])
+                    prob_neutro = 100.0 - prob_nina - prob_nino
                     
-                    # 2. Extracción segura (Si no encuentra la palabra exacta, calcula el resto)
-                    p_nina = int(row.get('Niña', row.get('Nina', 0)))
-                    p_nino = int(row.get('Niño', row.get('Nino', 0)))
-                    p_neutro = int(row.get('Neutro', row.get('Neutral', 100 - p_nina - p_nino)))
-                    
-                    if p_nina > 50: estado = "Niña 🌧️"
-                    elif p_nino > 50: estado = "Niño ☀️"
+                    if prob_nina > 50: estado = "Niña 🌧️"
+                    elif prob_nino > 50: estado = "Niño ☀️"
                     else: estado = "Neutro ⚖️"
                     
                     st.session_state['enso_fase'] = estado
-                    st.session_state['aleph_iri_nino'] = p_nino
-                    st.session_state['aleph_iri_neutro'] = p_neutro
-                    st.session_state['aleph_iri_nina'] = p_nina
+                    st.session_state['aleph_iri_nino'] = int(prob_nino)
+                    st.session_state['aleph_iri_neutro'] = int(prob_neutro)
+                    st.session_state['aleph_iri_nina'] = int(prob_nina)
                     st.session_state['aleph_iri_trimestre'] = str(df_enso.index[0])
                     st.session_state['aleph_iri_tendencia'] = "Sincronizado vía IRI en tiempo real 📡"
                 else:
-                    raise ValueError("El servidor IRI respondió vacío.")
+                    raise ValueError("El DataFrame del IRI llegó vacío.")
                     
             except Exception as e:
-                # 🛡️ ESCUDO DE RESCATE: Si la API de Columbia se cae o falla el formato, cargamos la matriz base
-                st.session_state['enso_fase'] = "Niño ☀️"
-                st.session_state['aleph_iri_nino'] = 80
-                st.session_state['aleph_iri_neutro'] = 20
+                # 🛡️ CERO DATOS QUEMADOS. Mostramos el error real para depurar.
+                st.session_state['enso_fase'] = "Desconocido ⚠️"
+                st.session_state['aleph_iri_nino'] = 0
+                st.session_state['aleph_iri_neutro'] = 0
                 st.session_state['aleph_iri_nina'] = 0
-                st.session_state['aleph_iri_trimestre'] = "AMJ (Modo Respaldo)"
-                st.session_state['aleph_iri_tendencia'] = "Caché de seguridad activada."
+                st.session_state['aleph_iri_trimestre'] = "Sin datos"
+                st.session_state['aleph_iri_tendencia'] = f"Fallo en servidor: {str(e)}"
 
         # --- RENDERIZADO DINÁMICO EN EL PANEL ---
-        enso_global = st.session_state.get('enso_fase', 'Neutro ⚖️')
-        color_enso = "#3498db" if "Niña" in enso_global else "#e74c3c" if "Niño" in enso_global else "#2ecc71"
+        enso_global = st.session_state.get('enso_fase', 'Desconocido ⚠️')
+        color_enso = "#3498db" if "Niña" in enso_global else "#e74c3c" if "Niño" in enso_global else "#f39c12" if "Desconocido" in enso_global else "#2ecc71"
         st.markdown(f"🌍 **Clima ENSO:** <span style='color:{color_enso}'><b>{enso_global}</b></span>", unsafe_allow_html=True)
         
         st.caption("📡 **Pronóstico IRI (Memoria Activa)**")
@@ -110,19 +105,18 @@ def renderizar_telemetria_aleph():
         p_nino = st.session_state.get('aleph_iri_nino', 0)
         p_neutro = st.session_state.get('aleph_iri_neutro', 0)
         p_nina = st.session_state.get('aleph_iri_nina', 0)
-        trim = st.session_state.get('aleph_iri_trimestre', 'Actual')
+        trim = st.session_state.get('aleph_iri_trimestre', 'Sin datos')
         tendencia = st.session_state.get('aleph_iri_tendencia', '')
         
+        # Solo dibujamos las barras de progreso si hay datos reales
         if (p_nino + p_neutro + p_nina) > 0:
             st.caption(f"Probabilidad ({trim}):")
             st.progress(p_nino, text=f"☀️ El Niño ({p_nino}%)")
             st.progress(p_neutro, text=f"⚖️ Neutro ({p_neutro}%)")
             st.progress(p_nina, text=f"🌧️ La Niña ({p_nina}%)")
-            
-            if tendencia:
-                st.caption(f"📈 **Tendencia:** {tendencia}")
-        else:
-            st.warning("⚠️ Error de conexión con el Aleph Climático.")
+        
+        if tendencia:
+            st.caption(f"📈 **Estado:** {tendencia}")
 
         st.markdown("---")
         if st.button("🧹 Purgar Memoria", use_container_width=True):
