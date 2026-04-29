@@ -326,39 +326,51 @@ def main():
         viz.display_climate_forecast_tab(**display_args)
         
         # =========================================================================
-        # 2. NUEVA SECCIÓN: EMISOR CLIMÁTICO (ENSO) HACIA EL METABOLISMO
+        # 2. NUEVA SECCIÓN: EMISOR CLIMÁTICO (MULTIVERSO ENSO) HACIA EL METABOLISMO
         # =========================================================================
         st.markdown("---")
-        st.subheader("📡 Emisor Climático: Conexión con el Metabolismo Territorial")
-        st.info("Integra el pronóstico atmosférico con la realidad terrestre. Exporta un escenario de anomalía climática a la Memoria Global para evaluar su impacto en la seguridad hídrica (WRI) y los embalses.")
+        st.subheader("📡 Emisor Climático: Multiverso Probabilístico (IRI)")
+        st.info("Integra el pronóstico atmosférico en vivo con la realidad terrestre. Exporta el paquete de probabilidades completo a la Memoria Global para evaluar el Riesgo Esperado en el metabolismo territorial y la toma de decisiones.")
+        
+        # Leemos las probabilidades vivas del Aleph (o asignamos 100% neutro si apenas está cargando)
+        p_nino = st.session_state.get('aleph_iri_nino', 0)
+        p_neutro = st.session_state.get('aleph_iri_neutro', 100) 
+        p_nina = st.session_state.get('aleph_iri_nina', 0)
+        
+        # Definimos los impactos físicos (anomalías) para cada universo (Ajustables según tu criterio)
+        impacto_nino = 0.65   # -35% de Oferta Hídrica (Sequía)
+        impacto_neutro = 1.00 # 100% de Oferta Hídrica (Normal)
+        impacto_nina = 1.35   # +35% de Oferta Hídrica (Exceso/Inundación)
+        
+        # Cálculo de la Esperanza Matemática: Factor de Anomalía Esperado Ponderado
+        factor_esperado = ((p_nino * impacto_nino) + (p_neutro * impacto_neutro) + (p_nina * impacto_nina)) / 100.0
         
         col_enso1, col_enso2 = st.columns([1.5, 1])
         with col_enso1:
-            escenario_enso = st.selectbox("🌊 Seleccione el Escenario Climático a Simular:", 
-                                         ["Condiciones Neutras (Histórico Promedio)", 
-                                          "🟡 El Niño Moderado (-15% Lluvia / Oferta)", 
-                                          "🔴 El Niño Severo (-35% Lluvia / Oferta)", 
-                                          "🟢 La Niña Moderada (+15% Lluvia / Oferta)", 
-                                          "🔵 La Niña Fuerte (+35% Lluvia / Oferta)"])
-            
-            # Asignación del multiplicador matemático (factor_clima_enso)
-            factor_clima = 1.0
-            if "Niño Moderado" in escenario_enso: factor_clima = 0.85
-            elif "Niño Severo" in escenario_enso: factor_clima = 0.65
-            elif "Niña Moderada" in escenario_enso: factor_clima = 1.15
-            elif "Niña Fuerte" in escenario_enso: factor_clima = 1.35
+            st.markdown("##### 🌌 Universos Paralelos Integrados:")
+            st.markdown(f"- ☀️ **Universo Niño ({p_nino}% prob):** Oferta al 65% (Déficit)")
+            st.markdown(f"- ⚖️ **Universo Neutro ({p_neutro}% prob):** Oferta al 100% (Histórico)")
+            st.markdown(f"- 🌧️ **Universo Niña ({p_nina}% prob):** Oferta al 135% (Exceso)")
             
         with col_enso2:
-            st.metric("Factor de Anomalía de Oferta Natural", f"{factor_clima}x", 
-                      f"{(factor_clima-1)*100:+.0f}% respecto a la base", 
-                      delta_color="normal" if factor_clima >= 1 else "inverse")
+            st.metric("Factor de Oferta Esperado (Riesgo Ponderado)", f"{factor_esperado:.2f}x", 
+                      f"{(factor_esperado-1)*100:+.1f}% impacto real proyectado", 
+                      delta_color="normal" if factor_esperado >= 1 else "inverse")
             st.markdown("<br>", unsafe_allow_html=True)
             
-            if st.button("🚀 Enviar Escenario al Modelo WRI", use_container_width=True):
-                # Guardamos las variables en el cerebro del sistema (st.session_state)
-                st.session_state['factor_clima_enso'] = factor_clima
-                st.session_state['nombre_escenario_enso'] = escenario_enso
-                st.success(f"✅ ¡Escenario guardado! Ve a la página de 'Sistemas Hídricos Territoriales' para ver cómo este clima afecta el metabolismo.")
+            if st.button("🚀 Enviar Multiverso al Aleph", use_container_width=True):
+                # 1. Enviamos el paquete completo para el Optimizador de la Pág 09
+                st.session_state['aleph_clima_multiverso'] = {
+                    "Niño": impacto_nino,
+                    "Neutro": impacto_neutro,
+                    "Niña": impacto_nina
+                }
+                
+                # 2. Compatibilidad hacia atrás: enviamos el factor esperado para la Pág 08 (Sistemas Hídricos)
+                st.session_state['factor_clima_enso'] = factor_esperado
+                st.session_state['nombre_escenario_enso'] = f"Multiverso IRI ({factor_esperado:.2f}x)"
+                
+                st.success("✅ ¡Multiverso inyectado! Ve a Toma de Decisiones o Sistemas Hídricos para ver el impacto probabilístico.")
                 
     elif selected_module == "📉 Tendencias": viz.display_trends_and_forecast_tab(**display_args)
     elif selected_module == "⚠️ Anomalías": viz.display_anomalies_tab(**display_args)
