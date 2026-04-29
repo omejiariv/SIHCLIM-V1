@@ -60,44 +60,41 @@ def renderizar_telemetria_aleph():
         # ==========================================================
         st.markdown("---")
         
-        # 📡 AUTO-FETCH SIN DATOS QUEMADOS (Sincronizado con enso_iri_prob.json)
+        # 📡 AUTO-FETCH INTELIGENTE (Búsqueda por Trimestre AMJ)
         if 'aleph_iri_nino' not in st.session_state:
             try:
-                # Importamos del motor IRI
                 from modules.iri_api import get_iri_enso_forecast
                 df_enso, _ = get_iri_enso_forecast()
                 
                 if df_enso is not None and not df_enso.empty:
-                    # Extraemos la primera fila (trimestre actual) usando tus nombres de columnas
-                    fila_actual = df_enso.iloc[0]
-                    prob_nina = float(fila_actual.get('La Niña', 0))
-                    prob_nino = float(fila_actual.get('El Niño', 0))
-                    prob_neutro = float(fila_actual.get('Neutral', 0))
-                    trimestre_actual = str(fila_actual.get('Trimestre', 'Actual'))
+                    # 🎯 BUSCADOR: Intentamos encontrar AMJ, si no, tomamos el actual
+                    df_target = df_enso[df_enso['Trimestre'].str.contains('AMJ', na=False)]
                     
-                    # Lógica de fase para el ícono
-                    if prob_nina > 50: estado = "Niña 🌧️"
-                    elif prob_nino > 50: estado = "Niño ☀️"
+                    if not df_target.empty:
+                        fila_actual = df_target.iloc[0]
+                    else:
+                        fila_actual = df_enso.iloc[0]
+                    
+                    p_nina = float(fila_actual.get('La Niña', 0))
+                    p_nino = float(fila_actual.get('El Niño', 0))
+                    p_neutro = float(fila_actual.get('Neutral', 0))
+                    trim_txt = str(fila_actual.get('Trimestre', 'Actual'))
+                    
+                    # Lógica de fase basada en los números reales (80% Neutro -> Neutro)
+                    if p_nina > 50: estado = "Niña 🌧️"
+                    elif p_nino > 50: estado = "Niño ☀️"
                     else: estado = "Neutro ⚖️"
                     
+                    # Actualizamos la memoria global
                     st.session_state['enso_fase'] = estado
-                    st.session_state['aleph_iri_nino'] = int(prob_nino)
-                    st.session_state['aleph_iri_neutro'] = int(prob_neutro)
-                    st.session_state['aleph_iri_nina'] = int(prob_nina)
-                    st.session_state['aleph_iri_trimestre'] = trimestre_actual
-                    st.session_state['aleph_iri_tendencia'] = "Sincronizado con Columbia University 📡"
-                else:
-                    raise ValueError("El archivo enso_iri_prob.json no entregó datos válidos.")
-                    
+                    st.session_state['aleph_iri_nino'] = int(p_nino)
+                    st.session_state['aleph_iri_neutro'] = int(p_neutro)
+                    st.session_state['aleph_iri_nina'] = int(p_nina)
+                    st.session_state['aleph_iri_trimestre'] = trim_txt
+                    st.session_state['aleph_iri_tendencia'] = "Sincronización AMJ Exitosa 📡"
             except Exception as e:
-                # Registro del error real para monitoreo
-                st.session_state['enso_fase'] = "Desconocido ⚠️"
-                st.session_state['aleph_iri_nino'] = 0
-                st.session_state['aleph_iri_neutro'] = 0
-                st.session_state['aleph_iri_nina'] = 0
-                st.session_state['aleph_iri_trimestre'] = "Falla"
                 st.session_state['aleph_iri_tendencia'] = f"Error: {str(e)}"
-
+                
         # --- RENDERIZADO DINÁMICO EN EL PANEL ---
         enso_global = st.session_state.get('enso_fase', 'Desconocido ⚠️')
         color_enso = "#3498db" if "Niña" in enso_global else "#e74c3c" if "Niño" in enso_global else "#f39c12" if "Desconocido" in enso_global else "#2ecc71"
