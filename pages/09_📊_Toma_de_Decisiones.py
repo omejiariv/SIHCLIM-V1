@@ -480,6 +480,44 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.plotly_chart(crear_velocimetro(ind_calidad, "Calidad Sanitaria (DBO)", "#9b59b6", 40, 70), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_cal}; margin-top:-20px;'>{est_cal}</h4>", unsafe_allow_html=True)
         
+    # ==============================================================================
+    # 🧠 CAPTURA DEL ALEPH (Impactos Físicos desde Pág 04) Y MATRIZ ISHI
+    # ==============================================================================
+    st.divider()
+    
+    # 1. Leemos el desastre físico si hubo tormenta en Biodiversidad
+    lodo_total_m3 = st.session_state.get('eco_lodo_total_m3', 0.0)
+    sobrecosto_ptap = st.session_state.get('eco_sobrecosto_usd', 0.0)
+    
+    st.markdown("### ⚖️ Matriz Multi-Criterio: Índice de Seguridad Hídrica (ISHI)")
+    
+    col_mat1, col_mat2 = st.columns([1, 2])
+    
+    with col_mat1:
+        st.info("El ISHI consolida los 4 indicadores superiores en un único perfil de salud territorial.")
+        
+        # Penalizamos la resiliencia estructural si hay una avalancha de lodo activa en la memoria
+        penalidad_lodo = (lodo_total_m3 / 100000.0) * 100
+        resiliencia_real = max(0.0, ind_resiliencia - penalidad_lodo)
+        
+        ishi_final = (ind_estres + ind_calidad + resiliencia_real + ind_neutralidad) / 4
+        
+        st.metric("🎯 ISHI Global", f"{ishi_final:.1f}%", "Estado de Seguridad Hídrica")
+        
+        if lodo_total_m3 > 0:
+            st.warning(f"⚠️ **Riesgo Físico Activo:** La tormenta modelada inyectó **{lodo_total_m3:,.0f} m³** de sedimentos. Sobrecosto proyectado en PTAP: **${sobrecosto_ptap:,.0f} USD**.")
+
+    with col_mat2:
+        import plotly.graph_objects as go
+        fig_radar = go.Figure()
+        fig_radar.add_trace(go.Scatterpolar(
+            r=[ind_estres, ind_calidad, resiliencia_real, ind_neutralidad, ind_estres],
+            theta=['Abastecimiento (Estrés)', 'Calidad (DBO)', 'Resiliencia (Física)', 'Neutralidad (Huella)', 'Abastecimiento (Estrés)'],
+            fill='toself', fillcolor='rgba(46, 204, 113, 0.4)', line=dict(color='#27ae60', width=2)
+        ))
+        fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=False, height=350, margin=dict(t=30, b=30, l=40, r=40))
+        st.plotly_chart(fig_radar, use_container_width=True)
+
     st.divider()
     # --- PRE-PROCESAMIENTO DE CAPAS ---
     capas = {}
