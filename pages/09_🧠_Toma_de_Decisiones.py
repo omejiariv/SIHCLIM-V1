@@ -551,15 +551,19 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("#### 💰 Capital Disponible")
         presupuesto_usd = st.number_input("Presupuesto de Inversión (Millones USD):", min_value=0.5, value=5.0, step=0.5) * 1_000_000
 
-        # LÓGICA DE OPTIMIZACIÓN: Calculamos las brechas (déficits) actuales del sistema
+        # LÓGICA DE OPTIMIZACIÓN Calculamos las brechas (déficits) actuales del sistema. CALIBRADA (Curvas de Saturación)
         brecha_calidad = max(0.1, 100 - ind_calidad)
         brecha_resiliencia = max(0.1, 100 - resiliencia_real)
         brecha_estres = max(0.1, 100 - estres_gauge_val)
-        brecha_total = brecha_calidad + brecha_resiliencia + brecha_estres
+        
+        # 1. Ponderación Suavizada: Evita que el 100% del dinero se vaya a un solo lado
+        # Usamos la raíz cuadrada de la brecha para distribuir mejor el presupuesto
+        peso_gris = (brecha_calidad ** 0.5) 
+        peso_verde = (brecha_resiliencia ** 0.5) + (brecha_estres ** 0.5)
+        peso_total = peso_gris + peso_verde
 
-        # Ponderación dinámica: Invertimos más dinero donde el sistema está más débil
-        w_gris = brecha_calidad / brecha_total
-        w_verde = (brecha_resiliencia + brecha_estres) / brecha_total
+        w_gris = peso_gris / peso_total
+        w_verde = peso_verde / peso_total
 
         # Asignación de Capital
         inv_gris = presupuesto_usd * w_gris
@@ -569,19 +573,28 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.metric("🟢 Infraestructura Verde (SbN)", f"${inv_verde/1e6:,.2f} M", "Conservación & Restauración")
         st.metric("🏢 Infraestructura Gris (PTAR)", f"${inv_gris/1e6:,.2f} M", "Saneamiento & Reducción DBO")
 
-        # Rendimiento Físico de la Inversión (Tasas de Conversión Regionales)
-        # - Verde: 1 M USD restaura ~400 ha -> Mejora resiliencia (+12%) y reduce estrés (+4%)
-        # - Gris: 1 M USD sanea ~6000 Ton DBO -> Mejora calidad (+18%)
-        mejora_resiliencia = (inv_verde / 1_000_000) * 12.0
-        mejora_estres = (inv_verde / 1_000_000) * 4.0
-        mejora_neutralidad = (inv_verde / 1_000_000) * 10.0
-        mejora_calidad = (inv_gris / 1_000_000) * 18.0
+        # 2. Rendimiento Físico mediante Ecuación Asintótica (Evita pasar del 100%)
+        # k_verde y k_gris son las constantes de "costo-eficiencia" de CuencaVerde
+        import math
+        k_verde = 0.08  # Eficiencia del capital en restauración
+        k_gris = 0.12   # Eficiencia del capital en concreto/PTARs
+        
+        inv_verde_M = inv_verde / 1_000_000
+        inv_gris_M = inv_gris / 1_000_000
+
+        # Recuperación asintótica: Nunca supera la brecha faltante
+        recuperacion_resiliencia = brecha_resiliencia * (1 - math.exp(-k_verde * inv_verde_M))
+        recuperacion_estres = brecha_estres * (1 - math.exp(-k_verde * inv_verde_M * 0.5)) # El agua se recupera más lento que la barrera física
+        recuperacion_calidad = brecha_calidad * (1 - math.exp(-k_gris * inv_gris_M))
 
         # Proyección de los nuevos indicadores
-        new_resiliencia = min(100.0, resiliencia_real + mejora_resiliencia)
-        new_estres = min(100.0, estres_gauge_val + mejora_estres) 
-        new_calidad = min(100.0, ind_calidad + mejora_calidad)
-        new_neutralidad = min(100.0, ind_neutralidad + mejora_neutralidad) 
+        new_resiliencia = resiliencia_real + recuperacion_resiliencia
+        new_estres = estres_gauge_val + recuperacion_estres 
+        new_calidad = ind_calidad + recuperacion_calidad
+        
+        # Para neutralidad, asumimos una mejora leve colateral
+        brecha_neut = max(0.1, 100 - ind_neutralidad)
+        new_neutralidad = ind_neutralidad + (brecha_neut * 0.1) 
         
         # Recálculo del ISHI Proyectado
         new_ishi = (new_estres + new_calidad + new_resiliencia + new_neutralidad) / 4
