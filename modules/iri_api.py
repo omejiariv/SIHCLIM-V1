@@ -124,17 +124,16 @@ def get_iri_enso_forecast():
     """
     Wrapper centralizado para obtener las probabilidades ENSO.
     """
-    filename = "enso_iri_prob.json"
+    # 🚀 CAMBIO VITAL: Usamos el pronóstico de Consenso (CPC/IRI) en lugar del Objetivo
+    filename = "enso_cpc_prob.json"
     data_json = fetch_iri_data(filename)
     
     if data_json is None:
-        raise ValueError("La descarga fue bloqueada o falló. Revisa los mensajes de error en pantalla.")
+        raise ValueError("La descarga fue bloqueada o falló. Revisa los mensajes de error.")
         
     df_probs = process_iri_probabilities(data_json)
     
-    # Si la descarga funcionó pero el procesador falló, es porque el IRI cambió el formato del JSON
     if df_probs is None or df_probs.empty:
-        llaves_encontradas = list(data_json.keys())[:5]
-        raise ValueError(f"JSON descargado con éxito, pero la estructura es irreconocible. Llaves raíz: {llaves_encontradas}")
+        raise ValueError("JSON descargado, pero estructura irreconocible.")
     
     return df_probs, data_json
