@@ -119,8 +119,10 @@ def renderizar_telemetria_aleph():
             st.caption(f"📈 **Estado:** {tendencia}")
 
         st.markdown("---")
-        if st.button("🧹 Purgar Memoria", use_container_width=True):
+        # 🚀 MEJORA: El botón ahora destruye tanto el Session State como el Data Cache
+        if st.button("🧹 Purgar Memoria y Caché", use_container_width=True):
             st.session_state.clear()
+            st.cache_data.clear() # <- Esta es la línea mágica que rompe el congelamiento
             st.rerun()
             
 # ====================================================================
