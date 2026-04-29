@@ -403,33 +403,35 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.session_state['estres_hidrico_global'] = estres_hidrico_porcentaje
     
     # ==============================================================================
-    # 🎛️ PANEL EJECUTIVO: SALUD TERRITORIAL (TOP DASHBOARD)
+    # 📑 ARQUITECTURA DE PESTAÑAS: DASHBOARD VS MANIFIESTO
     # ==============================================================================
-    st.markdown("### 🎛️ Centro de Comando: Seguridad Hídrica")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("👥 Población Servida", f"{int(pob_total):,.0f} hab")
+    tab_dashboard, tab_reporte = st.tabs(["🎛️ Centro de Comando", "📑 Manifiesto Estratégico 2026-2030"])
+
+    with tab_dashboard:
+        st.markdown("### 🎛️ Centro de Comando: Seguridad Hídrica")
         
-    with col2:
-        st.metric("☣️ Carga Orgánica (DBO5)", f"{carga_total_ton:,.1f} Ton/año", origen_carga, delta_color="inverse")
-    
-    with col3:
-        # 🔥 FIX: Separación de especies (No más "cabezas de gallina" sumadas con vacas)
-        st.markdown(f"""
-        <div style="background-color: white; padding: 10px; border-radius: 5px; border: 1px solid #eee; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);">
-            <div style="font-size: 0.85rem; color: #555; margin-bottom: 5px;">🐄 Presión Pecuaria</div>
-            <div style="font-size: 1rem; font-weight: bold; color: #2c3e50;">
-                🐮 {bovinos:,.0f} Bov <br>
-                🐷 {porcinos:,.0f} Por <br>
-                🐔 {aves:,.0f} Ave
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("👥 Población Servida", f"{int(pob_total):,.0f} hab")
+            
+        with col2:
+            st.metric("☣️ Carga Orgánica (DBO5)", f"{carga_total_ton:,.1f} Ton/año", origen_carga, delta_color="inverse")
+        
+        with col3:
+            st.markdown(f"""
+            <div style="background-color: white; padding: 10px; border-radius: 5px; border: 1px solid #eee; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);">
+                <div style="font-size: 0.85rem; color: #555; margin-bottom: 5px;">🐄 Presión Pecuaria</div>
+                <div style="font-size: 1rem; font-weight: bold; color: #2c3e50;">
+                    🐮 {bovinos:,.0f} Bov <br>
+                    🐷 {porcinos:,.0f} Por <br>
+                    🐔 {aves:,.0f} Ave
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with col4:
-        st.metric("⚠️ Estrés Hídrico Neto", f"{estres_hidrico_porcentaje:,.1f} %", "Crítico" if estres_hidrico_porcentaje > 40 else "Estable", delta_color="inverse")
+            """, unsafe_allow_html=True)
+            
+        with col4:
+            st.metric("⚠️ Estrés Hídrico Neto", f"{estres_hidrico_porcentaje:,.1f} %", "Crítico" if estres_hidrico_porcentaje > 40 else "Estable", delta_color="inverse")
 
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -482,6 +484,8 @@ if gdf_zona is not None and not gdf_zona.empty:
     with col_g4:
         st.plotly_chart(crear_velocimetro(ind_calidad, "Calidad Sanitaria (DBO)", "#9b59b6", 40, 70), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_cal}; margin-top:-20px;'>{est_cal}</h4>", unsafe_allow_html=True)
+
+    
         
     # ==============================================================================
     # 🧠 CAPTURA DEL ALEPH (Impactos Físicos desde Pág 04) Y MATRIZ ISHI
@@ -1685,3 +1689,34 @@ if gdf_zona is not None and not gdf_zona.empty:
         else:
             st.warning("⚠️ El cruce predial y el mapa táctico están en pausa porque aún no se han calculado los ríos.")
             st.info("👆 Por favor, utiliza el botón del motor hidrológico de arriba para iluminar este tablero.")
+
+# ==============================================================================
+# 📑 SECCIÓN: GENERADOR DEL MANIFIESTO ESTRATÉGICO
+# ==============================================================================
+with tab_reporte:
+    st.markdown("## 📑 Generador del Plan Estratégico 2026-2030")
+    st.info("Este motor consolida la telemetría del Aleph en un documento de alta gerencia (20-25 páginas) con rigor técnico y narrativa institucional.")
+        
+    c_rep1, c_rep2 = st.columns([2, 1])
+        
+    with c_rep2:
+        st.markdown("### ⚙️ Configuración del Documento")
+        titulo_plan = st.text_input("Título del Manifiesto:", f"Plan de Seguridad Hídrica - {nombre_zona}")
+        director = st.text_input("Firma Autorizada:", "Dirección Técnica - CuencaVerde")
+            
+        # El botón que activará la inteligencia de redacción
+        if st.button("🚀 Generar Manifiesto en Google Docs", use_container_width=True):
+            st.write("🔄 Redactando capítulos basados en el Aleph...")
+            # Aquí conectaremos la función de creación de documentos en el siguiente paso
+            st.success("¡El Aleph está procesando la narrativa! Pronto verás el enlace aquí.")
+
+    with c_rep1:
+        st.markdown("### 🧐 Vista Previa de la Estructura")
+        with st.expander("Ver Índice Estratégico Proyectado", expanded=True):
+            st.markdown(f"""
+            1. **Veredicto Territorial:** Análisis del ISHI ({ishi_final:.1f}%).
+            2. **Diagnóstico del Metabolismo:** Carga de {carga_total_ton:.1f} Ton/año y población de {pob_total:,.0f} hab.
+            3. **Multiverso Climático:** Impacto esperado del escenario {st.session_state.get('enso_fase', 'Neutro')}.
+            4. **Portafolio de Inversión:** ROI proyectado con inyección de ${presupuesto_usd/1e6:,.1f}M USD.
+            5. **Hoja de Ruta:** Estrategia 2026-2030.
+            """)
