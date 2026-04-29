@@ -14,42 +14,49 @@ LOCAL_DATA_PATH = "iri"
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_iri_data(filename):
     """
-    Descarga datos del IRI usando autenticación básica desde el servidor HTTPS.
-    Tiene fallback a archivos locales si la conexión falla.
+    Descarga datos del IRI y expone los errores HTTP reales a Streamlit.
     """
-    # 1. RECUPERAR CREDENCIALES DE SECRETS
     try:
         user = st.secrets["iri"]["username"]
         pwd = st.secrets["iri"]["password"]
     except Exception:
-        st.error("❌ No se encontraron las credenciales 'iri' en secrets.toml")
-        return _fallback_local(filename)
+        st.error("❌ Aleph Climático: No se encontraron las credenciales 'iri' en secrets.toml")
+        return None
 
     url = f"{IRI_BASE_URL}{filename}"
     
-    # 2. INTENTO DE DESCARGA EN VIVO (HTTPS + AUTH)
     try:
-        # 🔥 EL DISFRAZ: Simular ser un navegador humano (Chrome en Windows)
+        # Disfraz de navegador
         headers_disfraz = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Connection': 'keep-alive'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
         }
         
-        # Usamos auth=(user, pwd) y le inyectamos los headers de disfraz
-        response = requests.get(url, auth=(user, pwd), headers=headers_disfraz, timeout=10)
+        response = requests.get(url, auth=(user, pwd), headers=headers_disfraz, timeout=15)
         
+        # Evaluamos la respuesta exacta del servidor
         if response.status_code == 200:
-            # st.toast(f"✅ Sincronizado: {filename} (Columbia Univ.)", icon="📡")
-            return response.json()
+            try:
+                return response.json()
+            except json.JSONDecodeError:
+                # El servidor respondió, pero entregó un HTML (ej. página de bloqueo) en lugar de un JSON
+                st.error(f"❌ Aleph Climático: Archivo corrupto o bloqueado. Respuesta del servidor: {response.text[:150]}")
+                return None
+        elif response.status_code in [401, 403]:
+            st.error(f"❌ Aleph Climático (Error {response.status_code}): Columbia University denegó el acceso. Verifica que el usuario y clave en secrets.toml sean exactos.")
+            return None
+        elif response.status_code == 404:
+            st.error(f"❌ Aleph Climático (Error 404): El archivo '{filename}' ya no existe en esa ruta de Columbia University.")
+            return None
         else:
-            # Si el código no es 200, algo falló en la autenticación o el archivo
-            print(f"Error {response.status_code} en IRI. Usando respaldo.")
+            st.error(f"❌ Aleph Climático (Error {response.status_code}): Fallo desconocido en el servidor IRI.")
+            return None
+            
+    except requests.exceptions.Timeout:
+        st.error("❌ Aleph Climático: El servidor de Columbia tardó demasiado en responder (Timeout).")
+        return None
     except Exception as e:
-        print(f"Falla de conexión IRI ({e}). Usando respaldo local.")
-
-    return _fallback_local(filename)
+        st.error(f"❌ Aleph Climático: Falla de red crítica: {str(e)}")
+        return None
 
 def _fallback_local(filename):
     """Lógica de rescate para leer archivos locales."""
@@ -110,19 +117,24 @@ def process_iri_probabilities(data_json):
     except: return None
 
 # ==============================================================================
-# 🔌 LLAVE MAESTRA: CONEXIÓN AL ALEPH CLIMÁTICO (CORREGIDA)
+# 🔌 LLAVE MAESTRA: CONEXIÓN AL ALEPH CLIMÁTICO
 # ==============================================================================
 @st.cache_data(show_spinner=False)
 def get_iri_enso_forecast():
     """
     Wrapper centralizado para obtener las probabilidades ENSO.
-    Alimenta tanto a la Página 01 como a la Telemetría Global.
     """
-    # 🚀 NOMBRE EXACTO SEGÚN EL SERVIDOR DE COLUMBIA
     filename = "enso_iri_prob.json"
     data_json = fetch_iri_data(filename)
     
-    # Procesamos usando tu propia función robusta
+    if data_json is None:
+        raise ValueError("La descarga fue bloqueada o falló. Revisa los mensajes de error en pantalla.")
+        
     df_probs = process_iri_probabilities(data_json)
+    
+    # Si la descarga funcionó pero el procesador falló, es porque el IRI cambió el formato del JSON
+    if df_probs is None or df_probs.empty:
+        llaves_encontradas = list(data_json.keys())[:5]
+        raise ValueError(f"JSON descargado con éxito, pero la estructura es irreconocible. Llaves raíz: {llaves_encontradas}")
     
     return df_probs, data_json
