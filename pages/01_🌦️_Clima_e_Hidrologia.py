@@ -1019,8 +1019,7 @@ if __name__ == "__main__":
                     pasos_totales = len(niveles_cuencas) + 5 # Sumamos los 5 niveles (ahora incluye CORPOAMB)
                     paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
 
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CRUCE POR DANE ID) ---
-# --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CON SONDA FORENSE) ---
+                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CON SONDA FORENSE) ---
                 with st.spinner("🏛️ Sincronizando Niveles Administrativos..."):
                     try:
                         import io
