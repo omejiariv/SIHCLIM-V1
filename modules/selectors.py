@@ -59,34 +59,51 @@ def renderizar_telemetria_aleph():
         # 🌍 4. MONITOREO CLIMÁTICO GLOBAL (ALEPH CLIMÁTICO)
         # ==========================================================
         st.markdown("---")
-        enso_global = st.session_state.get('enso_fase', 'Neutro')
+        
+        # 📡 AUTO-FETCH: Si la memoria está vacía, la telemetría busca el dato en la fuente
+        if 'aleph_iri_nino' not in st.session_state:
+            try:
+                from modules.forecasting import get_iri_enso_forecast
+                df_enso, _ = get_iri_enso_forecast()
+                
+                if df_enso is not None and not df_enso.empty:
+                    row = df_enso.iloc[0]
+                    p_nina, p_nino, p_neutro = int(row['Niña']), int(row['Niño']), int(row['Neutro'])
+                    
+                    # Determinamos fase para el ícono global
+                    if p_nina > 50: estado = "Niña 🌧️"
+                    elif p_nino > 50: estado = "Niño ☀️"
+                    else: estado = "Neutro ⚖️"
+                    
+                    # Inyectamos al torrente sanguíneo
+                    st.session_state['enso_fase'] = estado
+                    st.session_state['aleph_iri_nino'] = p_nino
+                    st.session_state['aleph_iri_neutro'] = p_neutro
+                    st.session_state['aleph_iri_nina'] = p_nina
+                    st.session_state['aleph_iri_trimestre'] = df_enso.index[0]
+                    st.session_state['aleph_iri_tendencia'] = "Sincronización Automática (Columbia Univ.)"
+            except:
+                st.session_state['enso_fase'] = "Neutro ⚖️"
+
+        # --- RENDERIZADO DINÁMICO ---
+        enso_global = st.session_state.get('enso_fase', 'Neutro ⚖️')
         color_enso = "#3498db" if "Niña" in enso_global else "#e74c3c" if "Niño" in enso_global else "#2ecc71"
         st.markdown(f"🌍 **Clima ENSO:** <span style='color:{color_enso}'><b>{enso_global}</b></span>", unsafe_allow_html=True)
         
         st.caption("📡 **Pronóstico IRI (Memoria Activa)**")
         
-        # 🧠 Leemos las variables dinámicas del Aleph Climático
         p_nino = st.session_state.get('aleph_iri_nino', 0)
         p_neutro = st.session_state.get('aleph_iri_neutro', 0)
         p_nina = st.session_state.get('aleph_iri_nina', 0)
-        trimestre = st.session_state.get('aleph_iri_trimestre', 'Actual')
-        tendencia = st.session_state.get('aleph_iri_tendencia', '')
+        trim = st.session_state.get('aleph_iri_trimestre', 'Actual')
         
-        # Solo dibujamos las barras si el Aleph tiene datos
         if (p_nino + p_neutro + p_nina) > 0:
-            st.caption(f"Probabilidad ({trimestre}):")
+            st.caption(f"Probabilidad ({trim}):")
             st.progress(p_nino, text=f"☀️ El Niño ({p_nino}%)")
             st.progress(p_neutro, text=f"⚖️ Neutro ({p_neutro}%)")
             st.progress(p_nina, text=f"🌧️ La Niña ({p_nina}%)")
-            if tendencia:
-                st.caption(f"📈 **Tendencia:** {tendencia}")
         else:
-            st.info("ℹ️ Visita 'Clima e Hidrología' para sincronizar el pronóstico IRI con el sistema.")
-            
-        st.markdown("---")
-        if st.button("🧹 Purgar Memoria", use_container_width=True):
-            st.session_state.clear()
-            st.rerun()
+            st.warning("⚠️ Error de conexión con el Aleph Climático.")
             
 # ====================================================================
 # 📂 NAVEGACIÓN GLOBAL
