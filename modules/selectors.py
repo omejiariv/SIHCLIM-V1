@@ -60,21 +60,22 @@ def renderizar_telemetria_aleph():
         # ==========================================================
         st.markdown("---")
         
-        # 📡 AUTO-FETCH
+        # 📡 AUTO-FETCH SIN DATOS QUEMADOS (Sincronizado con enso_iri_prob.json)
         if 'aleph_iri_nino' not in st.session_state:
             try:
-                # 🚀 CORRECCIÓN VITAL: Importamos del motor IRI, no de forecasting
+                # Importamos del motor IRI
                 from modules.iri_api import get_iri_enso_forecast
-                
                 df_enso, _ = get_iri_enso_forecast()
                 
                 if df_enso is not None and not df_enso.empty:
-                    # Extraemos usando las columnas exactas que genera tu iri_api.py
-                    prob_nina = float(df_enso.iloc[0].get('La Niña', 0))
-                    prob_nino = float(df_enso.iloc[0].get('El Niño', 0))
-                    prob_neutro = float(df_enso.iloc[0].get('Neutral', 100 - prob_nina - prob_nino))
-                    trimestre_actual = str(df_enso.iloc[0].get('Trimestre', 'Actual'))
+                    # Extraemos la primera fila (trimestre actual) usando tus nombres de columnas
+                    fila_actual = df_enso.iloc[0]
+                    prob_nina = float(fila_actual.get('La Niña', 0))
+                    prob_nino = float(fila_actual.get('El Niño', 0))
+                    prob_neutro = float(fila_actual.get('Neutral', 0))
+                    trimestre_actual = str(fila_actual.get('Trimestre', 'Actual'))
                     
+                    # Lógica de fase para el ícono
                     if prob_nina > 50: estado = "Niña 🌧️"
                     elif prob_nino > 50: estado = "Niño ☀️"
                     else: estado = "Neutro ⚖️"
@@ -84,18 +85,18 @@ def renderizar_telemetria_aleph():
                     st.session_state['aleph_iri_neutro'] = int(prob_neutro)
                     st.session_state['aleph_iri_nina'] = int(prob_nina)
                     st.session_state['aleph_iri_trimestre'] = trimestre_actual
-                    st.session_state['aleph_iri_tendencia'] = "Sincronizado vía IRI en tiempo real 📡"
+                    st.session_state['aleph_iri_tendencia'] = "Sincronizado con Columbia University 📡"
                 else:
-                    raise ValueError("El JSON del IRI no contiene datos o no se encontró el archivo.")
+                    raise ValueError("El archivo enso_iri_prob.json no entregó datos válidos.")
                     
             except Exception as e:
-                # 🛡️ CERO DATOS QUEMADOS. Mostramos el error real.
+                # Registro del error real para monitoreo
                 st.session_state['enso_fase'] = "Desconocido ⚠️"
                 st.session_state['aleph_iri_nino'] = 0
                 st.session_state['aleph_iri_neutro'] = 0
                 st.session_state['aleph_iri_nina'] = 0
-                st.session_state['aleph_iri_trimestre'] = "Sin datos"
-                st.session_state['aleph_iri_tendencia'] = f"Fallo en servidor: {str(e)}"
+                st.session_state['aleph_iri_trimestre'] = "Falla"
+                st.session_state['aleph_iri_tendencia'] = f"Error: {str(e)}"
 
         # --- RENDERIZADO DINÁMICO EN EL PANEL ---
         enso_global = st.session_state.get('enso_fase', 'Desconocido ⚠️')
