@@ -486,10 +486,20 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.divider()
     
     # 1. Leemos el desastre físico si hubo tormenta en Biodiversidad
-    lodo_total_m3 = st.session_state.get('eco_lodo_total_m3', 0.0)
-    sobrecosto_ptap = st.session_state.get('eco_sobrecosto_usd', 0.0)
+    lodo_memoria = st.session_state.get('eco_lodo_total_m3', 0.0)
+    sobrecosto_memoria = st.session_state.get('eco_sobrecosto_usd', 0.0)
     
     st.markdown("### ⚖️ Matriz Multi-Criterio: Índice de Seguridad Hídrica (ISHI)")
+    
+    # 🚀 NUEVO: Interruptor rápido de simulación de crisis (Prueba de Estrés)
+    activar_tormenta_local = st.toggle("⛈️ Simular Avenida Torrencial Súbita (Prueba de Estrés del Sistema)")
+    
+    if activar_tormenta_local:
+        lodo_total_m3 = 85000.0   # Impacto catastrófico simulado
+        sobrecosto_ptap = 35000.0 # Sobrecosto severo en PTAP
+    else:
+        lodo_total_m3 = lodo_memoria
+        sobrecosto_ptap = sobrecosto_memoria
     
     col_mat1, col_mat2 = st.columns([1, 2])
     
