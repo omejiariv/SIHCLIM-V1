@@ -494,16 +494,21 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     st.markdown("### ⚖️ Matriz Multi-Criterio: Índice de Seguridad Hídrica (ISHI)")
     
-    # 🚀 NUEVO: Interruptor rápido de simulación de crisis (Prueba de Estrés)
-    activar_tormenta_local = st.toggle("⛈️ Simular Avenida Torrencial Súbita (Prueba de Estrés del Sistema)")
+    # 🚀 NUEVO: Control Manual y Gradual de la Tormenta. Simulación de crisis (Prueba de Estrés)
+    st.markdown("#### ⛈️ Inyección de Estrés Físico")
+    activar_tormenta_local = st.toggle("Activar Control Manual de Avenida Torrencial")
     
     if activar_tormenta_local:
-        lodo_total_m3 = 85000.0
-        sobrecosto_ptap = 35000.0
-        st.session_state['eco_lodo_total_m3'] = 85000.0 # 🚀 Inyecta a la Telemetría Global
+        lodo_total_m3 = st.slider("Magnitud del Deslizamiento (m³ de Lodo):", min_value=0.0, max_value=250000.0, value=85000.0, step=5000.0)
+        # Calculamos un sobrecosto estimado en PTAP ($0.4 USD por m³ de lodo a remover)
+        sobrecosto_ptap = lodo_total_m3 * 0.4 
+        # Inyectamos al Aleph para que la barra lateral lo vea
+        st.session_state['eco_lodo_total_m3'] = lodo_total_m3
+        st.session_state['eco_sobrecosto_usd'] = sobrecosto_ptap
     else:
-        lodo_total_m3 = lodo_memoria
-        sobrecosto_ptap = sobrecosto_memoria
+        # Si está apagado, lee lo que venga de la Página 04 de Biodiversidad
+        lodo_total_m3 = st.session_state.get('eco_lodo_total_m3', 0.0)
+        sobrecosto_ptap = st.session_state.get('eco_sobrecosto_usd', 0.0)
     
     col_mat1, col_mat2 = st.columns([1, 2])
     
