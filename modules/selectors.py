@@ -24,6 +24,48 @@ def decodificar_tildes(texto):
     except: pass
     return texto
 
+import streamlit as st
+
+def renderizar_telemetria_aleph():
+    """
+    Panel de control universal que monitorea las variables de estado en tiempo real.
+    Se inyecta en la barra lateral de todas las páginas.
+    """
+    st.sidebar.markdown("---")
+    
+    # 🧠 EL ALEPH: Monitor de Memoria Activa
+    with st.sidebar.expander("🧠 Telemetría del Aleph", expanded=True):
+        
+        # 1. Monitoreo Demográfico
+        pob_viva = st.session_state.get('poblacion_servida', 0)
+        if pob_viva > 0:
+            st.markdown(f"👥 **Población:** <span style='color:#2ecc71'>Sincronizada ({pob_viva:,.0f} hab)</span>", unsafe_allow_html=True)
+        else:
+            st.markdown("👥 **Población:** <span style='color:#e74c3c'>Vacía (Default)</span>", unsafe_allow_html=True)
+            
+        # 2. Monitoreo de Amenazas Físicas (Lodos)
+        lodo_vivo = st.session_state.get('eco_lodo_total_m3', 0.0)
+        if lodo_vivo > 0:
+            st.markdown(f"⛈️ **Tormenta:** <span style='color:#e67e22'>Activa ({lodo_vivo:,.0f} m³ Lodo)</span>", unsafe_allow_html=True)
+        else:
+            st.markdown("⛈️ **Tormenta:** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
+            
+        # 3. Monitoreo Químico (Carga Orgánica)
+        dbo_viva = st.session_state.get('carga_dbo_total_ton', 0.0)
+        if dbo_viva > 0:
+            st.markdown(f"☣️ **Carga DBO:** <span style='color:#8e44ad'>Registrada ({dbo_viva:,.0f} Ton)</span>", unsafe_allow_html=True)
+        else:
+            st.markdown("☣️ **Carga DBO:** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
+            
+        # 4. Monitoreo Climático Global (ENSO)
+        enso_global = st.session_state.get('enso_fase', 'Neutro')
+        color_enso = "#3498db" if "Niña" in enso_global else "#e74c3c" if "Niño" in enso_global else "#2ecc71"
+        st.markdown(f"🌍 **Clima ENSO:** <span style='color:{color_enso}'>{enso_global}</span>", unsafe_allow_html=True)
+        
+        if st.button("🧹 Purgar Memoria", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
+
 # ====================================================================
 # 📂 NAVEGACIÓN GLOBAL
 # ====================================================================
@@ -382,3 +424,5 @@ def render_selector_espacial():
 
     renderizar_gestor_escenarios(nombre_zona)
     return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
+
+
