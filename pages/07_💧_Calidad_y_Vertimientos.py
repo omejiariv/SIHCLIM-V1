@@ -1386,6 +1386,25 @@ m_r3.metric("Ubicación del Impacto", f"Km {km_critico:.1f}")
 
 st.plotly_chart(fig_sag, use_container_width=True)
 
+# ==============================================================================
+# 🔌 CONEXIÓN AL ALEPH (Transmisor de Calidad Global)
+# ==============================================================================
+# 1. Calculamos el porcentaje de salud del río (Oxígeno Real vs Saturación)
+oxigeno_salud_pct = (od_minimo / max_od_sat) * 100 if max_od_sat > 0 else 0.0
+
+# 2. Inyectamos los datos al torrente sanguíneo de Sihcli-Poter
+st.session_state['carga_dbo_total_ton'] = float(carga_total_anual_ton) # Viene de la Sección 2
+st.session_state['calidad_oxigeno_pct'] = float(oxigeno_salud_pct)
+st.session_state['calidad_dbo_salida_mgL'] = float(max_dbo)
+st.session_state['demanda_total_m3s'] = float(demanda_m3s) # Viene de la Sección 1
+
+# 3. Sincronizamos también la contaminación de pozos (Acuíferos)
+if 'concentracion_acuifero' in locals():
+    st.session_state['calidad_acuifero_mgL'] = float(concentracion_acuifero)
+
+# Mensaje de confirmación silencioso para el usuario
+st.toast(f"🧪 Calidad Sincronizada: OD {oxigeno_salud_pct:.1f}% | DBO {max_dbo:.1f} mg/L", icon="🔄")
+
 # ------------------------------------------------------------------------------
 # TAB 4: ESCENARIOS DE MITIGACIÓN (HOLÍSTICOS)
 # ------------------------------------------------------------------------------
