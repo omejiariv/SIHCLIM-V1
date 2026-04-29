@@ -495,8 +495,9 @@ if gdf_zona is not None and not gdf_zona.empty:
     activar_tormenta_local = st.toggle("⛈️ Simular Avenida Torrencial Súbita (Prueba de Estrés del Sistema)")
     
     if activar_tormenta_local:
-        lodo_total_m3 = 85000.0   # Impacto catastrófico simulado
-        sobrecosto_ptap = 35000.0 # Sobrecosto severo en PTAP
+        lodo_total_m3 = 85000.0
+        sobrecosto_ptap = 35000.0
+        st.session_state['eco_lodo_total_m3'] = 85000.0 # 🚀 Inyecta a la Telemetría Global
     else:
         lodo_total_m3 = lodo_memoria
         sobrecosto_ptap = sobrecosto_memoria
