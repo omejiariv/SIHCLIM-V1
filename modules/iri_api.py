@@ -110,7 +110,7 @@ def process_iri_probabilities(data_json):
     except: return None
 
 # ==============================================================================
-# 🔌 LLAVE MAESTRA: CONEXIÓN AL ALEPH CLIMÁTICO
+# 🔌 LLAVE MAESTRA: CONEXIÓN AL ALEPH CLIMÁTICO (CORREGIDA)
 # ==============================================================================
 @st.cache_data(show_spinner=False)
 def get_iri_enso_forecast():
@@ -118,14 +118,11 @@ def get_iri_enso_forecast():
     Wrapper centralizado para obtener las probabilidades ENSO.
     Alimenta tanto a la Página 01 como a la Telemetría Global.
     """
-    # 1. Obtenemos el JSON (Ajusta "probabilities.json" si usas otro nombre de archivo en tu servidor)
-    data_json = fetch_iri_data("probabilities.json")
+    # 🚀 NOMBRE EXACTO SEGÚN EL SERVIDOR DE COLUMBIA
+    filename = "enso_iri_prob.json"
+    data_json = fetch_iri_data(filename)
     
-    # Fallback por si el archivo principal tiene otro nombre común
-    if not data_json:
-        data_json = fetch_iri_data("enso_data.json")
-        
-    # 2. Procesamos usando tu propia función robusta
+    # Procesamos usando tu propia función robusta
     df_probs = process_iri_probabilities(data_json)
     
     return df_probs, data_json
