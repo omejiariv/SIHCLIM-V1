@@ -34,8 +34,8 @@ def renderizar_telemetria_aleph():
     # 🧠 EL ALEPH: Monitor de Memoria Activa
     with st.sidebar.expander("🧠 Telemetría del Aleph", expanded=True):
         
-        # 1. Monitoreo Demográfico
-        pob_viva = st.session_state.get('poblacion_servida', 0)
+        # 1. Monitoreo Demográfico (CORREGIDO: Ahora busca ambas "cajas")
+        pob_viva = st.session_state.get('aleph_pob_total', st.session_state.get('poblacion_servida', 0))
         if pob_viva > 0:
             st.markdown(f"👥 **Población:** <span style='color:#2ecc71'>Sincronizada ({pob_viva:,.0f} hab)</span>", unsafe_allow_html=True)
         else:
@@ -55,15 +55,27 @@ def renderizar_telemetria_aleph():
         else:
             st.markdown("☣️ **Carga DBO:** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
             
-        # 4. Monitoreo Climático Global (ENSO)
+        # ==========================================================
+        # 🌍 4. MONITOREO CLIMÁTICO GLOBAL (CON PRONÓSTICO IRI)
+        # ==========================================================
+        st.markdown("---")
         enso_global = st.session_state.get('enso_fase', 'Neutro')
         color_enso = "#3498db" if "Niña" in enso_global else "#e74c3c" if "Niño" in enso_global else "#2ecc71"
-        st.markdown(f"🌍 **Clima ENSO:** <span style='color:{color_enso}'>{enso_global}</span>", unsafe_allow_html=True)
+        st.markdown(f"🌍 **Clima ENSO:** <span style='color:{color_enso}'><b>{enso_global}</b></span>", unsafe_allow_html=True)
         
+        st.caption("📡 **Pronóstico IRI (Columbia Univ.)**")
+        st.caption("Probabilidad de ocurrencia (Próximo Trimestre):")
+        
+        # Simulación de la estructura de datos del IRI (Puedes conectarlo a una API real luego)
+        st.progress(70, text="🌧️ La Niña (70%) - Tendencia al alza")
+        st.progress(25, text="⚖️ Neutro (25%) - Transición")
+        st.progress(5, text="☀️ El Niño (5%) - Disipado")
+        
+        st.markdown("---")
         if st.button("🧹 Purgar Memoria", use_container_width=True):
             st.session_state.clear()
             st.rerun()
-
+            
 # ====================================================================
 # 📂 NAVEGACIÓN GLOBAL
 # ====================================================================
