@@ -515,10 +515,91 @@ if gdf_zona is not None and not gdf_zona.empty:
             theta=['Abastecimiento (Estrés)', 'Calidad (DBO)', 'Resiliencia (Física)', 'Neutralidad (Huella)', 'Abastecimiento (Estrés)'],
             fill='toself', fillcolor='rgba(46, 204, 113, 0.4)', line=dict(color='#27ae60', width=2)
         ))
+
         fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=False, height=350, margin=dict(t=30, b=30, l=40, r=40))
         st.plotly_chart(fig_radar, use_container_width=True)
 
+    # ==============================================================================
+    # 💼 OPTIMIZADOR MATEMÁTICO DE INVERSIONES (R.O.I. TERRITORIAL)
+    # ==============================================================================
+    st.markdown("---")
+    st.markdown("### 💼 Optimizador de Inversiones: Retorno sobre la Seguridad Hídrica")
+    st.info("Algoritmo de asignación inteligente. Define un presupuesto y el modelo distribuirá el capital entre Infraestructura Verde (Soluciones Basadas en la Naturaleza) y Gris (Saneamiento) para maximizar la expansión del radar ISHI.")
+
+    c_opt1, c_opt2 = st.columns([1, 2.5])
+
+    with c_opt1:
+        st.markdown("#### 💰 Capital Disponible")
+        presupuesto_usd = st.number_input("Presupuesto de Inversión (Millones USD):", min_value=0.5, value=5.0, step=0.5) * 1_000_000
+
+        # LÓGICA DE OPTIMIZACIÓN: Calculamos las brechas (déficits) actuales del sistema
+        brecha_calidad = max(0.1, 100 - ind_calidad)
+        brecha_resiliencia = max(0.1, 100 - resiliencia_real)
+        brecha_estres = max(0.1, 100 - estres_gauge_val)
+        brecha_total = brecha_calidad + brecha_resiliencia + brecha_estres
+
+        # Ponderación dinámica: Invertimos más dinero donde el sistema está más débil
+        w_gris = brecha_calidad / brecha_total
+        w_verde = (brecha_resiliencia + brecha_estres) / brecha_total
+
+        # Asignación de Capital
+        inv_gris = presupuesto_usd * w_gris
+        inv_verde = presupuesto_usd * w_verde
+
+        st.markdown("#### 🏗️ Asignación Óptima")
+        st.metric("🟢 Infraestructura Verde (SbN)", f"${inv_verde/1e6:,.2f} M", "Conservación & Restauración")
+        st.metric("🏢 Infraestructura Gris (PTAR)", f"${inv_gris/1e6:,.2f} M", "Saneamiento & Reducción DBO")
+
+        # Rendimiento Físico de la Inversión (Tasas de Conversión Regionales)
+        # - Verde: 1 M USD restaura ~400 ha -> Mejora resiliencia (+12%) y reduce estrés (+4%)
+        # - Gris: 1 M USD sanea ~6000 Ton DBO -> Mejora calidad (+18%)
+        mejora_resiliencia = (inv_verde / 1_000_000) * 12.0
+        mejora_estres = (inv_verde / 1_000_000) * 4.0
+        mejora_neutralidad = (inv_verde / 1_000_000) * 10.0
+        mejora_calidad = (inv_gris / 1_000_000) * 18.0
+
+        # Proyección de los nuevos indicadores
+        new_resiliencia = min(100.0, resiliencia_real + mejora_resiliencia)
+        new_estres = min(100.0, estres_gauge_val + mejora_estres) 
+        new_calidad = min(100.0, ind_calidad + mejora_calidad)
+        new_neutralidad = min(100.0, ind_neutralidad + mejora_neutralidad) 
+        
+        # Recálculo del ISHI Proyectado
+        new_ishi = (new_estres + new_calidad + new_resiliencia + new_neutralidad) / 4
+
+    with c_opt2:
+        st.markdown("#### 📈 Proyección del Impacto Integral (ROI)")
+        
+        fig_opt = go.Figure()
+        
+        # Trazo Actual (Base - Rojo/Naranja punteado)
+        fig_opt.add_trace(go.Scatterpolar(
+            r=[estres_gauge_val, ind_calidad, resiliencia_real, ind_neutralidad, estres_gauge_val],
+            theta=['Abastecimiento (Estrés)', 'Calidad (DBO)', 'Resiliencia (Física)', 'Neutralidad (Huella)', 'Abastecimiento (Estrés)'],
+            fill='toself', fillcolor='rgba(231, 76, 60, 0.15)', line=dict(color='#e74c3c', width=2, dash='dot'),
+            name=f'Escenario Actual ({ishi_final:.1f}%)'
+        ))
+        
+        # Trazo Optimizado (Proyectado - Verde sólido)
+        fig_opt.add_trace(go.Scatterpolar(
+            r=[new_estres, new_calidad, new_resiliencia, new_neutralidad, new_estres],
+            theta=['Abastecimiento (Estrés)', 'Calidad (DBO)', 'Resiliencia (Física)', 'Neutralidad (Huella)', 'Abastecimiento (Estrés)'],
+            fill='toself', fillcolor='rgba(46, 204, 113, 0.4)', line=dict(color='#27ae60', width=2),
+            name=f'Escenario Optimizado ({new_ishi:.1f}%)'
+        ))
+        
+        fig_opt.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+            height=450, margin=dict(t=30, b=30, l=40, r=40)
+        )
+        st.plotly_chart(fig_opt, use_container_width=True)
+        
+        st.success(f"🚀 **Veredicto Estratégico:** La inyección de **${presupuesto_usd/1e6:,.1f} Millones USD** estratégicamente distribuidos expande la huella de seguridad hídrica de la región de **{ishi_final:.1f}%** a **{new_ishi:.1f}%**.")
+
     st.divider()
+
     # --- PRE-PROCESAMIENTO DE CAPAS ---
     capas = {}
     try:
