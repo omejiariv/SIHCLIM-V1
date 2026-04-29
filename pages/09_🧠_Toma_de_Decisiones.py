@@ -380,6 +380,9 @@ if gdf_zona is not None and not gdf_zona.empty:
     carga_total_ton = float(st.session_state.get('carga_dbo_total_ton', proxy_carga if proxy_carga > 0 else 1500.0))
     carga_final_rio_ton = carga_total_ton * (1 - (mitigacion_dbo / 100))
     
+    # 🚀 INYECCIÓN AL ALEPH: Guardamos el cálculo para que la Telemetría lo lea
+    st.session_state['carga_dbo_total_ton'] = carga_total_ton
+    
     # Física de Concentración
     caudal_critico_L_s = (oferta_anual_m3 / 31536000) * 1000 * 0.25
     carga_mg_s = (carga_final_rio_ton * 1_000_000_000) / 31536000
