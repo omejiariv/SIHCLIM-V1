@@ -181,7 +181,7 @@ with tab_dashboard:
     
     c9, c10, _ = st.columns(3)
     with c9:
-        st.page_link("pages/09_📊_Toma_de_Decisiones.py", label="**Toma de Decisiones**", icon="📊")
+        st.page_link("pages/09_🧠_Toma_de_Decisiones.py", label="**Toma de Decisiones**", icon="🧠")
         st.markdown("<small>Dashboard Maestro: Estrés hídrico, Portafolio WRI y análisis multicriterio (AHP).</small>", unsafe_allow_html=True)
     with c10:
         st.page_link("pages/10_👑_Panel_Administracion.py", label="**Panel de Administración**", icon="👑")
