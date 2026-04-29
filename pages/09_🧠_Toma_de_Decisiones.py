@@ -511,7 +511,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         import plotly.graph_objects as go
         fig_radar = go.Figure()
         fig_radar.add_trace(go.Scatterpolar(
-            r=[ind_estres, ind_calidad, resiliencia_real, ind_neutralidad, ind_estres],
+            r=[estres_gauge_val, ind_calidad, resiliencia_real, ind_neutralidad, estres_gauge_val],
             theta=['Abastecimiento (Estrés)', 'Calidad (DBO)', 'Resiliencia (Física)', 'Neutralidad (Huella)', 'Abastecimiento (Estrés)'],
             fill='toself', fillcolor='rgba(46, 204, 113, 0.4)', line=dict(color='#27ae60', width=2)
         ))
