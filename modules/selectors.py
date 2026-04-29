@@ -56,21 +56,33 @@ def renderizar_telemetria_aleph():
             st.markdown("☣️ **Carga DBO:** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
             
         # ==========================================================
-        # 🌍 4. MONITOREO CLIMÁTICO GLOBAL (CON PRONÓSTICO IRI)
+        # 🌍 4. MONITOREO CLIMÁTICO GLOBAL (ALEPH CLIMÁTICO)
         # ==========================================================
         st.markdown("---")
         enso_global = st.session_state.get('enso_fase', 'Neutro')
         color_enso = "#3498db" if "Niña" in enso_global else "#e74c3c" if "Niño" in enso_global else "#2ecc71"
         st.markdown(f"🌍 **Clima ENSO:** <span style='color:{color_enso}'><b>{enso_global}</b></span>", unsafe_allow_html=True)
         
-        st.caption("📡 **Pronóstico IRI (Columbia Univ.)**")
-        st.caption("Probabilidad de ocurrencia (Próximo Trimestre):")
+        st.caption("📡 **Pronóstico IRI (Memoria Activa)**")
         
-        # Simulación de la estructura de datos del IRI (Puedes conectarlo a una API real luego)
-        st.progress(70, text="🌧️ La Niña (70%) - Tendencia al alza")
-        st.progress(25, text="⚖️ Neutro (25%) - Transición")
-        st.progress(5, text="☀️ El Niño (5%) - Disipado")
+        # 🧠 Leemos las variables dinámicas del Aleph Climático
+        p_nino = st.session_state.get('aleph_iri_nino', 0)
+        p_neutro = st.session_state.get('aleph_iri_neutro', 0)
+        p_nina = st.session_state.get('aleph_iri_nina', 0)
+        trimestre = st.session_state.get('aleph_iri_trimestre', 'Actual')
+        tendencia = st.session_state.get('aleph_iri_tendencia', '')
         
+        # Solo dibujamos las barras si el Aleph tiene datos
+        if (p_nino + p_neutro + p_nina) > 0:
+            st.caption(f"Probabilidad ({trimestre}):")
+            st.progress(p_nino, text=f"☀️ El Niño ({p_nino}%)")
+            st.progress(p_neutro, text=f"⚖️ Neutro ({p_neutro}%)")
+            st.progress(p_nina, text=f"🌧️ La Niña ({p_nina}%)")
+            if tendencia:
+                st.caption(f"📈 **Tendencia:** {tendencia}")
+        else:
+            st.info("ℹ️ Visita 'Clima e Hidrología' para sincronizar el pronóstico IRI con el sistema.")
+            
         st.markdown("---")
         if st.button("🧹 Purgar Memoria", use_container_width=True):
             st.session_state.clear()
