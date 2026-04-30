@@ -1803,20 +1803,21 @@ with tab_reporte:
                     cap_rad.runs[0].italic = True
                 except: pass
 
-                # 🗺️ MAPA CENTRADO CON NORTE
+                # 🗺️ MAPA CENTRADO CON NORTE (VERSIÓN BLINDADA PARA WORD)
                 try:
                     import plotly.express as px
-                    if gdf_zona is not None and not gdf_zona.empty:
+                    if 'gdf_zona' in locals() and gdf_zona is not None and not gdf_zona.empty:
                         zona_wgs84 = gdf_zona.to_crs(epsg=4326)
                         
-                        fig_mapa_ctx = px.choropleth_mapbox(
+                        # Usamos 'choropleth' nativo (sin mapbox) para garantizar la exportación inmediata
+                        fig_mapa_ctx = px.choropleth(
                             zona_wgs84, geojson=zona_wgs84.geometry, locations=zona_wgs84.index,
-                            mapbox_style="carto-positron", opacity=0.4, color_discrete_sequence=["#3498db"]
+                            color_discrete_sequence=["#3498db"]
                         )
                         
-                        # Ajustar márgenes, centrar mapa (fitbounds) y agregar Norte/Escala
+                        # Ajuste de bordes, ocultar grilla global y anotaciones
+                        fig_mapa_ctx.update_geos(fitbounds="locations", visible=False)
                         fig_mapa_ctx.update_layout(
-                            mapbox=dict(fitbounds="locations"),
                             margin={"r":0,"t":0,"l":0,"b":0},
                             showlegend=False,
                             annotations=[
@@ -1833,7 +1834,9 @@ with tab_reporte:
                         cap_mapa1 = doc.add_paragraph("Figura 2: Contexto Geográfico del Territorio y Cuenca Hidrográfica.")
                         cap_mapa1.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         cap_mapa1.runs[0].italic = True
-                except Exception as e: pass
+                except Exception as e: 
+                    # Ahora si falla, nos imprimirá el error en el Word para saber qué pasó
+                    doc.add_paragraph(f"[Error capturando el mapa: {e}]")
 
                 # --- CAPÍTULO 2: CALIDAD ---
                 doc.add_heading('Capítulo 2: Diagnóstico de Calidad y Metabolismo', level=1)
