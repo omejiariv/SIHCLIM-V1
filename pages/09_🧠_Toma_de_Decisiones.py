@@ -1756,7 +1756,7 @@ with tab_reporte:
             # ==========================================================
             impacto_rio = "grave" if od_pct < 40 else "moderado" if od_pct < 70 else "bajo"
             
-            cap2_txt = f"El análisis de vertimientos para {nombre_zona} revela una carga de {carga_total_ton:,.1f} Ton/año de DBO5. Los modelos de asimilación proyectan una salud del río del {od_pct:.1f}%, lo que indica un impacto {impacto_rio} en la vida acuática (con concentraciones medias de {dbo_mgL_val:.1f} mg/L). Adicionalmente, el acuífero subyacente registra una vulnerabilidad con concentraciones potenciales de infiltración de {acuifero_mgL_val:.2f} mg/L, lo cual exige monitoreo preventivo."
+            cap2_txt = f"El análisis de vertimientos para {nombre_zona} revela una carga de {carga_total_ton:,.1f} Ton/año de DBO5. Los modelos de asimilación proyectan una salud del río del {od_pct:.1f}%, lo que indica un impacto {impacto_rio} en la vida acuática (con concentraciones medias de {dbo_mgL:.1f} mg/L). Adicionalmente, el acuífero subyacente registra una vulnerabilidad con concentraciones potenciales de infiltración de {acuifero_mgL:.2f} mg/L, lo cual exige monitoreo preventivo."
 
             cap3_txt = f"Basado en el monitoreo satelital del IRI (Columbia University), el trimestre {trimestre} presenta una probabilidad del {p_nino}% para el fenómeno de El Niño y {p_neutro}% para Neutralidad. Esta configuración climática actual exige calibrar los portafolios de inversión para priorizar la recarga hídrica en la cuenca alta."
 
