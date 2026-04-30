@@ -1713,76 +1713,87 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.warning("⚠️ El cruce predial y el mapa táctico están en pausa porque aún no se han calculado los ríos.")
             st.info("👆 Por favor, utiliza el botón del motor hidrológico de arriba para iluminar este tablero.")
 
-    # ==============================================================================
-    # 📑 SECCIÓN: GENERADOR DEL MANIFIESTO ESTRATÉGICO
-    # ==============================================================================
-    with tab_reporte:
-        st.markdown("## 📑 Generador del Plan Estratégico 2026-2030")
-        st.info("Este motor consolida la telemetría del Aleph en un documento de alta gerencia (20-25 páginas) con rigor técnico y narrativa institucional.")
+# ==============================================================================
+# 📑 PESTAÑA 2: SECCIÓN GENERADOR DEL MANIFIESTO ESTRATÉGICO
+# ==============================================================================
+with tab_reporte:
+    st.markdown("## 📑 Generador del Plan Estratégico 2026-2030")
+    st.info("Este motor consolida la telemetría del Aleph en un documento de alta gerencia (20-25 páginas) con rigor técnico y narrativa institucional.")
+    
+    # Configuración Superior
+    c_rep1, c_rep2 = st.columns([2, 1])
+    
+    with c_rep1:
+        st.markdown("### ⚙️ Configuración del Documento")
+        titulo_plan = st.text_input("Título del Manifiesto:", f"Plan de Seguridad Hídrica - {nombre_zona}")
+        director = st.text_input("Firma Autorizada:", "Dirección Técnica - CuencaVerde")
         
-        # Configuración Superior
-        c_rep1, c_rep2 = st.columns([2, 1])
-        
-        with c_rep1:
-            st.markdown("### ⚙️ Configuración del Documento")
-            titulo_plan = st.text_input("Título del Manifiesto:", f"Plan de Seguridad Hídrica - {nombre_zona}")
-            director = st.text_input("Firma Autorizada:", "Dirección Técnica - CuencaVerde")
+    with c_rep2:
+        st.markdown("### 🧐 Estructura Base")
+        st.info("El sistema compilará 5 capítulos estratégicos abarcando Diagnóstico, Clima, Inversión (ROI) y Hoja de Ruta.")
+
+    st.markdown("---")
+    st.markdown("### 🤖 Motor de Inteligencia Narrativa (Vista Previa)")
+    
+    # El botón que enciende el Cerebro Redactor
+    # 🚀 FIX: Aseguramos la perfecta indentación principal para que el botón sea visible
+    if st.button("👁️ Generar Borrador del Manifiesto (Vista Previa)", type="primary", use_container_width=True):
+        with st.spinner("Analizando telemetría y ensamblando narrativa institucional..."):
             
-        with c_rep2:
-            st.markdown("### 🧐 Estructura Base")
-            st.info("El sistema compilará 5 capítulos estratégicos abarcando Diagnóstico, Clima, Inversión (ROI) y Hoja de Ruta.")
+            # ==========================================================
+            # 1. LECTOR DE TELEMETRÍA (Interpretación de Datos)
+            # ==========================================================
+            # Interpretación cualitativa de los números para la redacción
+            # Usamos estres_gauge_val como salud_abastecimiento
+            salud_aba_rep = estres_gauge_val
+            estado_ishi = "crítico" if ishi_final < 40 else "vulnerable" if ishi_final < 70 else "óptimo"
+            estado_aba = "un escenario de alerta por escasez" if salud_aba_rep < 60 else "una estabilidad operativa moderada"
+            fase_clima = st.session_state.get('enso_fase', 'Neutro')
+            
+            # ==========================================================
+            # 2. ENSAMBLADOR DE PÁRRAFOS (Capítulo 1)
+            # ==========================================================
+            
+            # Párrafo 1: El Pulso del Territorio
+            cap1_p1 = f"El presente documento, denominado '{titulo_plan}', se formula como el instrumento rector para la planificación hídrica del territorio en el horizonte 2026-2030. Actualmente, los análisis multicriterio del Gemelo Digital (Sihcli-Poter) indican que el Índice de Seguridad Hídrica (ISHI) de la región registra un nivel {estado_ishi} del {ishi_final:.1f}%. Este indicador refleja una presión demográfica de {pob_total:,.0f} habitantes y {estado_aba}, soportando un estrés hídrico neto del {estres_hidrico_porcentaje:.1f}%."
 
-        st.markdown("---")
-        st.markdown("### 🤖 Motor de Inteligencia Narrativa (Vista Previa)")
-        
-        # El botón que enciende el Cerebro Redactor
-        if st.button("👁️ Generar Borrador del Manifiesto (Vista Previa)", type="primary", use_container_width=True):
-            with st.spinner("Analizando telemetría y ensamblando narrativa institucional..."):
-                
-                # ==========================================================
-                # 1. LECTOR DE TELEMETRÍA (Interpretación de Datos)
-                # ==========================================================
-                estado_ishi = "crítico" if ishi_final < 40 else "vulnerable" if ishi_final < 70 else "óptimo"
-                estado_estres = "un escenario de alerta por escasez" if estres_hidrico_porcentaje > 40 else "una estabilidad operativa moderada"
-                fase_clima = st.session_state.get('enso_fase', 'Neutro')
-                
-                # ==========================================================
-                # 2. ENSAMBLADOR DE PÁRRAFOS (Capítulo 1)
-                # ==========================================================
-                
-                # Párrafo 1: El Pulso del Territorio
-                cap1_p1 = f"El presente documento, denominado '{titulo_plan}', se formula como el instrumento rector para la planificación hídrica del territorio en el horizonte 2026-2030. Actualmente, los análisis multicriterio del Gemelo Digital (Sihcli-Poter) indican que el Índice de Seguridad Hídrica (ISHI) de la región registra un nivel {estado_ishi} del {ishi_final:.1f}%. Este indicador refleja una presión demográfica de {pob_total:,.0f} habitantes y {estado_estres}, soportando un estrés hídrico neto del {estres_hidrico_porcentaje:.1f}%."
+            # Párrafo 2: El Veredicto de Inversión
+            # Definimos new_ishi localmente por si el botón se presiona sin ejecutar el optimizador antes
+            new_ishi_rep = new_ishi if 'new_ishi' in locals() else ishi_final
+            verbo_inv = "expande" if new_ishi_rep >= ishi_final else "mantiene"
+            
+            cap1_p2 = f"Para mitigar esta vulnerabilidad sistémica y blindar el metabolismo hídrico regional, el modelo matemático de optimización exige una movilización estratégica de capital de ${presupuesto_usd/1e6:.1f} Millones USD. Basado en las curvas de costo-eficiencia, el algoritmo recomienda direccionar una inversión de ${inv_verde/1e6:.2f} Millones USD hacia Infraestructura Verde (Soluciones Basadas en la Naturaleza y Conservación), y ${inv_gris/1e6:.2f} Millones USD hacia Infraestructura Gris (Saneamiento y PTAR). Esta inyección de recursos {verbo_inv} estructuralmente la resiliencia del territorio, proyectando un salto en el ISHI hacia un {new_ishi_rep:.1f}%."
 
-                # Párrafo 2: El Veredicto de Inversión
-                verbo_inv = "expande" if new_ishi >= ishi_final else "mantiene"
-                cap1_p2 = f"Para mitigar esta vulnerabilidad sistémica y blindar el metabolismo hídrico regional, el modelo matemático de optimización exige una movilización estratégica de capital de ${presupuesto_usd/1e6:.1f} Millones USD. Basado en las curvas de costo-eficiencia, el algoritmo recomienda direccionar una inversión de ${inv_verde/1e6:.2f} Millones USD hacia Infraestructura Verde (Soluciones Basadas en la Naturaleza y Conservación), y ${inv_gris/1e6:.2f} Millones USD hacia Infraestructura Gris (Saneamiento y PTAR). Esta inyección de recursos {verbo_inv} estructuralmente la resiliencia del territorio, proyectando un salto en el ISHI hacia un {new_ishi:.1f}%."
+            # Párrafo 3: Contexto Climático (Dinámico)
+            if "Niño" in fase_clima:
+                cap1_p3 = "La urgencia de materializar estas inversiones adquiere un carácter crítico al contrastarse con la telemetría satelital climática (Columbia University - IRI), la cual advierte la consolidación del fenómeno de El Niño. La inminente contracción de la oferta hidrológica exige acelerar las obras de retención hídrica en la cuenca alta para evitar el colapso del abastecimiento."
+            elif "Niña" in fase_clima:
+                cap1_p3 = "El diseño de la infraestructura y las franjas de conservación debe considerar la actual fase climática de La Niña. Los excesos pluviométricos proyectados incrementan drásticamente el riesgo de avenidas torrenciales y pérdida de suelo, haciendo imperativa la restauración riparia para proteger la infraestructura de captación frente a la carga de sedimentos."
+            else:
+                cap1_p3 = "Actualmente, el territorio atraviesa una ventana de neutralidad climática (Condiciones ENSO promedio). Esta estabilidad transitoria representa una oportunidad estratégica invaluable para ejecutar las obras de infraestructura gris y los aislamientos ecológicos sin las graves disrupciones logísticas que ocasionan los extremos hidrometeorológicos."
 
-                # Párrafo 3: Contexto Climático (Dinámico)
-                if "Niño" in fase_clima:
-                    cap1_p3 = "La urgencia de materializar estas inversiones adquiere un carácter crítico al contrastarse con la telemetría satelital climática (Columbia University - IRI), la cual advierte la consolidación del fenómeno de El Niño. La inminente contracción de la oferta hidrológica exige acelerar las obras de retención hídrica en la cuenca alta para evitar el colapso del abastecimiento."
-                elif "Niña" in fase_clima:
-                    cap1_p3 = "El diseño de la infraestructura y las franjas de conservación debe considerar la actual fase climática de La Niña. Los excesos pluviométricos proyectados incrementan drásticamente el riesgo de avenidas torrenciales y pérdida de suelo, haciendo imperativa la restauración riparia para proteger la infraestructura de captación frente a la carga de sedimentos."
-                else:
-                    cap1_p3 = "Actualmente, el territorio atraviesa una ventana de neutralidad climática (Condiciones ENSO promedio). Esta estabilidad transitoria representa una oportunidad estratégica invaluable para ejecutar las obras de infraestructura gris y los aislamientos ecológicos sin las graves disrupciones logísticas que ocasionan los extremos hidrometeorológicos."
-
-                # Guardar en memoria por si el usuario decide exportar después
-                st.session_state['manifiesto_cap1'] = f"{cap1_p1}\n\n{cap1_p2}\n\n{cap1_p3}"
+            # Guardar en memoria por si el usuario decide exportar después
+            st.session_state['manifiesto_cap1'] = f"{cap1_p1}\n\n{cap1_p2}\n\n{cap1_p3}"
+            
+            # ==========================================================
+            # 3. RENDERIZADO VISUAL DEL DOCUMENTO
+            # ==========================================================
+            st.success("✅ Borrador ensamblado con éxito. Revisa la narrativa técnica:")
+            
+            # Usamos un contenedor con borde para simular una hoja impresa
+            with st.container(border=True):
+                st.markdown(f"<h2 style='text-align: center; color: #2c3e50; font-family: Georgia;'>{titulo_plan}</h2>", unsafe_allow_html=True)
+                st.markdown(f"<p style='text-align: center; color: #7f8c8d;'><strong>Firma Avalada:</strong> {director} | <strong>Fecha de Simulación:</strong> {anio_actual}</p>", unsafe_allow_html=True)
+                st.markdown("---")
                 
-                # ==========================================================
-                # 3. RENDERIZADO VISUAL DEL DOCUMENTO
-                # ==========================================================
-                st.success("✅ Borrador ensamblado con éxito. Revisa la narrativa técnica:")
+                st.markdown("<h3 style='color: #2980b9;'>Capítulo 1: Resumen Ejecutivo y Veredicto Territorial</h3>", unsafe_allow_html=True)
                 
-                with st.container(border=True):
-                    st.markdown(f"<h2 style='text-align: center; color: #2c3e50; font-family: Georgia;'>{titulo_plan}</h2>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='text-align: center; color: #7f8c8d;'><strong>Firma Avalada:</strong> {director} | <strong>Fecha de Simulación:</strong> {anio_actual}</p>", unsafe_allow_html=True)
-                    st.markdown("---")
-                    
-                    st.markdown("<h3 style='color: #2980b9;'>Capítulo 1: Resumen Ejecutivo y Veredicto Territorial</h3>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='text-align: justify; font-size: 1.1rem; line-height: 1.6; color: #34495e;'>{cap1_p1}</p>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='text-align: justify; font-size: 1.1rem; line-height: 1.6; color: #34495e;'>{cap1_p2}</p>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='text-align: justify; font-size: 1.1rem; line-height: 1.6; color: #34495e;'>{cap1_p3}</p>", unsafe_allow_html=True)
-                    
-                    st.markdown("<br><p style='text-align: center; color: #bdc3c7;'><em>... [El sistema compilará los Capítulos 2 al 5 en el documento final] ...</em></p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='text-align: justify; font-size: 1.1rem; line-height: 1.6; color: #34495e;'>{cap1_p1}</p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='text-align: justify; font-size: 1.1rem; line-height: 1.6; color: #34495e;'>{cap1_p2}</p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='text-align: justify; font-size: 1.1rem; line-height: 1.6; color: #34495e;'>{cap1_p3}</p>", unsafe_allow_html=True)
+                
+                st.markdown("<br><p style='text-align: center; color: #bdc3c7;'><em>... [El sistema compilará los Capítulos 2 al 5 en el documento final] ...</em></p>", unsafe_allow_html=True)
 
-                st.info("💡 Si la redacción institucional es precisa y los montos son correctos, el siguiente paso será instalar el exportador `.docx` para generar el archivo descargable oficial.")
+            st.info("💡 Si la redacción institucional es precisa y los montos son correctos, el siguiente paso será instalar el exportador `.docx` para generar el archivo descargable oficial.")
+
+# Fin del archivo
