@@ -1527,7 +1527,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.success(f"✅ Red Hídrica y Franja Riparia de {buffer_m}m listas para el cruce predial.")
             render_motor_ripario()
 
-# =========================================================================
+        # =========================================================================
         # BLOQUE 4: MOTOR DE CRUCE MULTI-ANILLO Y VISOR 3D (PYDECK)
         # =========================================================================
         
@@ -1736,12 +1736,12 @@ with tab_reporte:
         with st.spinner("Capturando mapas geográficos y ensamblando el reporte..."):
             
             # ==========================================================
-            # 1. RECOLECCIÓN DE DATOS INTELIGENTE (CON FALLBACKS)
+            # 1. RECOLECCIÓN DE DATOS DE OTRAS PÁGINAS (TELEMETRÍA EXTENDIDA)
             # ==========================================================
-            # Datos de Calidad (Si Pág 07 está vacía, usa los cálculos de esta misma página)
+            # Datos de Calidad (Fallback Inteligente para evitar ceros si no se abrió Pág 07)
             od_pct = st.session_state.get('calidad_oxigeno_pct', ind_calidad)
-            dbo_mgL_val = st.session_state.get('calidad_dbo_salida_mgL', concentracion_dbo_mg_l)
-            acuifero_mgL_val = st.session_state.get('calidad_acuifero_mgL', concentracion_dbo_mg_l * 0.12) # Asume 12% infiltración
+            dbo_mgL = st.session_state.get('calidad_dbo_salida_mgL', concentracion_dbo_mg_l)
+            acuifero_mgL = st.session_state.get('calidad_acuifero_mgL', concentracion_dbo_mg_l * 0.12) # Asume 12% de infiltración
             
             # Datos de Clima (Pág 01)
             p_nino = st.session_state.get('aleph_iri_nino', 20)
@@ -1814,8 +1814,18 @@ with tab_reporte:
                             mapbox_style="carto-positron", opacity=0.4, color_discrete_sequence=["#3498db"]
                         )
                         
-                        # FITBOUNDS centra y ajusta el zoom perfectamente. Annotations para Norte y Escala.
+                        # Ajustar márgenes, centrar mapa (fitbounds) y agregar Norte/Escala
                         fig_mapa_ctx.update_layout(
+                            mapbox=dict(fitbounds="locations"),
+                            margin={"r":0,"t":0,"l":0,"b":0},
+                            showlegend=False,
+                            annotations=[
+                                dict(x=0.95, y=0.95, text="<b>⬆ N</b>", showarrow=False, 
+                                     font=dict(size=22, color="black"), bgcolor="white", bordercolor="black", borderwidth=1),
+                                dict(x=0.05, y=0.05, text="Escala Aprox: 1:100.000", showarrow=False, 
+                                     font=dict(size=12, color="black"), bgcolor="white", bordercolor="black", borderwidth=1)
+                            ]
+                        )
                             mapbox=dict(fitbounds="locations"),
                             margin={"r":0,"t":0,"l":0,"b":0},
                             showlegend=False,
@@ -1881,6 +1891,26 @@ with tab_reporte:
                     p_glos.add_run(defi)
                     p_glos.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
+                # --- GLOSARIO DE TÉRMINOS ---
+                doc.add_page_break()
+                doc.add_heading('Glosario de Siglas y Conceptos', level=1)
+                
+                glosario = {
+                    "ISHI (Índice de Seguridad Hídrica)": "Métrica multicriterio que consolida el estrés de abastecimiento, resiliencia física, calidad del agua y neutralidad volumétrica.",
+                    "SbN (Soluciones Basadas en la Naturaleza)": "Intervenciones de conservación, restauración ecológica y bioingeniería para proteger el ciclo hidrológico.",
+                    "PTAR": "Planta de Tratamiento de Aguas Residuales. Infraestructura gris diseñada para remover la carga orgánica.",
+                    "DBO5 (Demanda Biológica de Oxígeno)": "Indicador de contaminación orgánica. Mide el oxígeno que las bacterias consumen para degradar la materia en el agua.",
+                    "VWBA (Volumetric Water Benefit Accounting)": "Metodología estándar global desarrollada por el WRI para calcular los beneficios de los proyectos corporativos de agua.",
+                    "ENSO (El Niño / La Niña)": "Fenómeno climático global que alterna entre fases de déficit hídrico extremo (El Niño) y excesos pluviométricos (La Niña).",
+                    "Streeter-Phelps": "Modelo matemático de simulación que predice la caída y posterior recuperación del oxígeno disuelto en un río tras un vertimiento."
+                }
+                
+                for term, defi in glosario.items():
+                    p_glos = doc.add_paragraph()
+                    p_glos.add_run(term + ": ").bold = True
+                    p_glos.add_run(defi)
+                    p_glos.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                
                 # DESCARGA
                 buf = io.BytesIO()
                 doc.save(buf)
