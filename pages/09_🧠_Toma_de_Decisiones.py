@@ -1810,6 +1810,49 @@ with tab_reporte:
                 except Exception as e: 
                     doc.add_paragraph(f"[Error capturando Radar ISHI: Asegúrate de que fig_radar esté definido. {e}]")
 
+                # =======================================================
+                # 🗺️ NUEVO: MAPA 1 - CONTEXTO GEOGRÁFICO Y ESTACIONES
+                # =======================================================
+                try:
+                    # Traemos los datos espaciales que ya tenemos en memoria
+                    import plotly.express as px
+                    
+                    if gdf_zona is not None and not gdf_zona.empty:
+                        zona_wgs84 = gdf_zona.to_crs(epsg=4326)
+                        centro_lat = zona_wgs84.geometry.centroid.y.iloc[0]
+                        centro_lon = zona_wgs84.geometry.centroid.x.iloc[0]
+                        
+                        # 1. Dibujamos la cuenca en un mapa estático de Plotly
+                        fig_mapa_ctx = px.choropleth_mapbox(
+                            zona_wgs84, geojson=zona_wgs84.geometry, locations=zona_wgs84.index,
+                            mapbox_style="carto-positron", zoom=10, 
+                            center={"lat": centro_lat, "lon": centro_lon},
+                            opacity=0.4, color_discrete_sequence=["#3498db"]
+                        )
+                        
+                        # 2. Rescatar Estaciones de la Memoria (Si existen en st.session_state)
+                        estaciones_gdf = st.session_state.get('gdf_estaciones_filtradas')
+                        if estaciones_gdf is not None and not estaciones_gdf.empty:
+                            est_wgs84 = estaciones_gdf.to_crs(epsg=4326)
+                            fig_mapa_ctx.add_trace(go.Scattermapbox(
+                                lat=est_wgs84.geometry.y, lon=est_wgs84.geometry.x,
+                                mode='markers', marker=go.scattermapbox.Marker(size=9, color='red'),
+                                name='Estaciones Hidrometeorológicas'
+                            ))
+                        
+                        # Ajustar márgenes para que se vea como una foto perfecta
+                        fig_mapa_ctx.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, showlegend=True, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01))
+                        
+                        # 3. Tomar la fotografía con Kaleido e insertarla en Word
+                        img_mapa_ctx = fig_mapa_ctx.to_image(format="png", width=800, height=450, scale=2)
+                        doc.add_picture(io.BytesIO(img_mapa_ctx), width=Inches(6.0))
+                        
+                        cap_mapa1 = doc.add_paragraph("Figura 2: Contexto Geográfico del Territorio y Red de Monitoreo Hidrometeorológico.")
+                        cap_mapa1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        cap_mapa1.runs[0].italic = True
+                except Exception as e:
+                    doc.add_paragraph(f"[Error renderizando Mapa de Contexto: {e}]")
+
                 # --- CAPÍTULO 2: CALIDAD ---
                 doc.add_heading('Capítulo 2: Diagnóstico de Calidad y Metabolismo', level=1)
                 doc.add_paragraph(cap2_txt).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
