@@ -1756,8 +1756,8 @@ with tab_reporte:
             # ==========================================================
             impacto_rio = "grave" if od_pct < 40 else "moderado" if od_pct < 70 else "bajo"
             
-            cap2_txt = f"El análisis de vertimientos para {nombre_zona} revela una carga de {carga_total_ton:,.1f} Ton/año de DBO5. Los modelos de asimilación proyectan una salud del río del {od_pct:.1f}%, lo que indica un impacto {impacto_rio} en la vida acuática (con concentraciones medias de {dbo_mgL:.1f} mg/L). Adicionalmente, el acuífero subyacente registra una vulnerabilidad con concentraciones potenciales de infiltración de {acuifero_mgL:.2f} mg/L, lo cual exige monitoreo preventivo."
-
+            cap2_txt = f"El análisis demográfico y sectorial para {nombre_zona} proyecta una población de {pob_total:,.0f} habitantes para el año {anio_actual}. Esta presión poblacional se complementa con una intensa actividad pecuaria estimada en {bovinos:,.0f} bovinos, {porcinos:,.0f} porcinos y {aves:,.0f} aves. La síntesis de estas dinámicas metabólicas genera una carga orgánica estimada de {carga_total_ton:,.1f} Ton/año de DBO5.\n\n" \
+                       f"Los modelos de asimilación proyectan una salud del río del {od_pct:.1f}%, indicando un impacto {impacto_rio} en los ecosistemas acuáticos receptores. Asimismo, la presión sobre las fuentes hídricas subterráneas (acuíferos) requiere atención, estimándose una concentración de contaminantes por infiltración de {acuifero_mgL:.2f} mg/L."
             cap3_txt = f"Basado en el monitoreo satelital del IRI (Columbia University), el trimestre {trimestre} presenta una probabilidad del {p_nino}% para el fenómeno de El Niño y {p_neutro}% para Neutralidad. Esta configuración climática actual exige calibrar los portafolios de inversión para priorizar la recarga hídrica en la cuenca alta."
 
             # ==========================================================
@@ -1803,21 +1803,32 @@ with tab_reporte:
                     cap_rad.runs[0].italic = True
                 except: pass
 
-                # 🗺️ MAPA CENTRADO CON NORTE (VERSIÓN BLINDADA PARA WORD)
+                # 🗺️ MAPA CONTEXTUAL (ALTA RESOLUCIÓN Y ESTACIONES)
                 try:
                     import plotly.express as px
+                    import time # Para forzar la carga en la nube
+                    
                     if 'gdf_zona' in locals() and gdf_zona is not None and not gdf_zona.empty:
                         zona_wgs84 = gdf_zona.to_crs(epsg=4326)
                         
-                        # Usamos 'choropleth' nativo (sin mapbox) para garantizar la exportación inmediata
-                        fig_mapa_ctx = px.choropleth(
+                        # Usamos mapbox con un estilo ligero que carga rápido
+                        fig_mapa_ctx = px.choropleth_mapbox(
                             zona_wgs84, geojson=zona_wgs84.geometry, locations=zona_wgs84.index,
-                            color_discrete_sequence=["#3498db"]
+                            mapbox_style="carto-positron", opacity=0.5, color_discrete_sequence=["#3498db"]
                         )
                         
-                        # Ajuste de bordes, ocultar grilla global y anotaciones
-                        fig_mapa_ctx.update_geos(fitbounds="locations", visible=False)
+                        # Rescatar Estaciones de la Memoria si existen
+                        estaciones_gdf = st.session_state.get('gdf_estaciones_filtradas')
+                        if estaciones_gdf is not None and not estaciones_gdf.empty:
+                            est_wgs84 = estaciones_gdf.to_crs(epsg=4326)
+                            fig_mapa_ctx.add_trace(go.Scattermapbox(
+                                lat=est_wgs84.geometry.y, lon=est_wgs84.geometry.x,
+                                mode='markers', marker=go.scattermapbox.Marker(size=10, color='red'),
+                                name='Estaciones Hidrometeorológicas'
+                            ))
+
                         fig_mapa_ctx.update_layout(
+                            mapbox=dict(fitbounds="locations"),
                             margin={"r":0,"t":0,"l":0,"b":0},
                             showlegend=False,
                             annotations=[
@@ -1828,16 +1839,18 @@ with tab_reporte:
                             ]
                         )
                         
+                        # Pausa de 1.5 segundos para asegurar la descarga de tiles en el servidor
+                        time.sleep(1.5) 
+                        
                         img_mapa_ctx = fig_mapa_ctx.to_image(format="png", width=800, height=450, scale=2)
                         doc.add_picture(io.BytesIO(img_mapa_ctx), width=Inches(6.0))
                         
-                        cap_mapa1 = doc.add_paragraph("Figura 2: Contexto Geográfico del Territorio y Cuenca Hidrográfica.")
+                        cap_mapa1 = doc.add_paragraph("Figura 2: Contexto Geográfico del Territorio, Cuenca y Red de Monitoreo.")
                         cap_mapa1.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         cap_mapa1.runs[0].italic = True
                 except Exception as e: 
-                    # Ahora si falla, nos imprimirá el error en el Word para saber qué pasó
-                    doc.add_paragraph(f"[Error capturando el mapa: {e}]")
-
+                    doc.add_paragraph(f"[Aviso: No se pudo renderizar el mapa geográfico. Verifica tu conexión o el estado de las capas. {e}]")
+                    
                 # --- CAPÍTULO 2: CALIDAD ---
                 doc.add_heading('Capítulo 2: Diagnóstico de Calidad y Metabolismo', level=1)
                 doc.add_paragraph(cap2_txt).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
