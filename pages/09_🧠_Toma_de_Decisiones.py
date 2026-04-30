@@ -575,8 +575,34 @@ if gdf_zona is not None and not gdf_zona.empty:
     c_opt1, c_opt2 = st.columns([1, 2.5])
 
     with c_opt1:
-        st.markdown("#### 💰 Capital Disponible")
-        presupuesto_usd = st.number_input("Presupuesto de Inversión (Millones USD):", min_value=0.5, value=5.0, step=0.5) * 1_000_000
+        st.markdown("#### 💰 Estrategia de Capital")
+        
+        # 🎛️ SELECTOR DUAL DE ESTRATEGIA
+        modo_plan = st.radio(
+            "Seleccione el Enfoque Financiero:",
+            ["📊 1. Asignar Presupuesto Disponible", "🎯 2. Definir Meta de Seguridad (ISHI)"],
+            horizontal=False
+        )
+        
+        if "1. Asignar" in modo_plan:
+            presupuesto_MUSD = st.number_input("Presupuesto de Inversión (Millones USD):", min_value=0.5, max_value=100.0, value=5.0, step=0.5)
+            presupuesto_usd = presupuesto_MUSD * 1_000_000
+        else:
+            # Cálculo inverso: Meta -> Presupuesto
+            ishi_minimo = float(int(ishi_final)) if ishi_final < 100 else 100.0
+            meta_ishi = st.slider("Definir Meta ISHI (%):", min_value=ishi_minimo, max_value=100.0, value=max(75.0, ishi_minimo + 5.0), step=1.0)
+            
+            # Aproximación de brecha ($0.35M USD por cada 1% de mejora)
+            brecha_ishi = max(0.0, meta_ishi - ishi_final)
+            presupuesto_MUSD = brecha_ishi * 0.35
+            presupuesto_usd = presupuesto_MUSD * 1_000_000
+            
+            if presupuesto_usd > 0:
+                st.info(f"🎯 Para alcanzar la meta del {meta_ishi}%, se requieren **${presupuesto_MUSD:,.1f} M USD**.")
+            else:
+                st.success("✅ La región ya cumple con esta meta.")
+
+        st.markdown("---")
 
         # LÓGICA DE OPTIMIZACIÓN Calculamos las brechas (déficits) actuales del sistema. CALIBRADA (Curvas de Saturación)
         brecha_calidad = max(0.1, 100 - ind_calidad)
