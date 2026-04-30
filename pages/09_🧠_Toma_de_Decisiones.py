@@ -1713,12 +1713,12 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.warning("⚠️ El cruce predial y el mapa táctico están en pausa porque aún no se han calculado los ríos.")
             st.info("👆 Por favor, utiliza el botón del motor hidrológico de arriba para iluminar este tablero.")
 
-# ==============================================================================
-# 📑 SECCIÓN: GENERADOR DEL MANIFIESTO ESTRATÉGICO
-# ==============================================================================
-with tab_reporte:
-    st.markdown("## 📑 Generador del Plan Estratégico 2026-2030")
-    st.info("Este motor consolida la telemetría del Aleph en un documento de alta gerencia (20-25 páginas) con rigor técnico y narrativa institucional.")
+    # ==============================================================================
+    # 📑 SECCIÓN: GENERADOR DEL MANIFIESTO ESTRATÉGICO
+    # ==============================================================================
+    with tab_reporte:
+        st.markdown("## 📑 Generador del Plan Estratégico 2026-2030")
+        st.info("Este motor consolida la telemetría del Aleph en un documento de alta gerencia (20-25 páginas) con rigor técnico y narrativa institucional.")
         
         # Configuración Superior
         c_rep1, c_rep2 = st.columns([2, 1])
