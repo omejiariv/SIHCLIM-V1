@@ -1861,26 +1861,6 @@ with tab_reporte:
                 table.add_row().cells[0].text, table.rows[1].cells[1].text = 'Infraestructura Verde (SbN)', f"${inv_verde:,.0f}"
                 table.add_row().cells[0].text, table.rows[2].cells[1].text = 'Infraestructura Gris (Saneamiento)', f"${inv_gris:,.0f}"
 
-                # --- GLOSARIO ---
-                doc.add_page_break()
-                doc.add_heading('Glosario de Siglas y Conceptos', level=1)
-                
-                glosario = {
-                    "ISHI (Índice de Seguridad Hídrica)": "Métrica multicriterio que consolida el estrés de abastecimiento, resiliencia física, calidad del agua y neutralidad volumétrica.",
-                    "SbN (Soluciones Basadas en la Naturaleza)": "Intervenciones de conservación, restauración ecológica y bioingeniería para proteger el ciclo hidrológico.",
-                    "PTAR": "Planta de Tratamiento de Aguas Residuales. Infraestructura gris diseñada para remover la carga orgánica.",
-                    "DBO5 (Demanda Biológica de Oxígeno)": "Indicador de contaminación orgánica. Mide el oxígeno que las bacterias consumen para degradar la materia en el agua.",
-                    "VWBA (Volumetric Water Benefit Accounting)": "Metodología estándar global desarrollada por el WRI para calcular los beneficios de los proyectos corporativos de agua.",
-                    "ENSO (El Niño / La Niña)": "Fenómeno climático global que alterna entre fases de déficit hídrico extremo (El Niño) y excesos pluviométricos (La Niña).",
-                    "Streeter-Phelps": "Modelo matemático de simulación que predice la caída y posterior recuperación del oxígeno disuelto en un río tras un vertimiento."
-                }
-                
-                for term, defi in glosario.items():
-                    p_glos = doc.add_paragraph()
-                    p_glos.add_run(term + ": ").bold = True
-                    p_glos.add_run(defi)
-                    p_glos.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-
                 # --- GLOSARIO DE TÉRMINOS ---
                 doc.add_page_break()
                 doc.add_heading('Glosario de Siglas y Conceptos', level=1)
@@ -1901,26 +1881,33 @@ with tab_reporte:
                     p_glos.add_run(defi)
                     p_glos.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 
-                # DESCARGA EN MEMORIA (Previene el bug de Streamlit)
+                # ==========================================================
+                # 4. GUARDADO EN MEMORIA Y PREPARACIÓN DE DESCARGA
+                # ==========================================================
                 buf = io.BytesIO()
                 doc.save(buf)
                 st.session_state['manifiesto_docx_buffer'] = buf.getvalue()
-                st.success("✅ ¡Documento estratégico ensamblado con éxito! Usa el botón verde de abajo para guardarlo en tu equipo.")
+                st.session_state['nombre_archivo_docx'] = f"Plan_Estrategico_{nombre_zona}.docx"
+                
+                st.success("✅ ¡Documento estratégico ensamblado con éxito! El sistema está listo para la descarga.")
 
             except Exception as e:
                 st.error(f"Falla crítica en exportación: {e}")
 
     # ==========================================================
-    # BOTÓN DE DESCARGA PERMANENTE (Afuera del ciclo de generación)
+    # BOTÓN DE DESCARGA PERMANENTE (SIEMPRE VISIBLE SI HAY DATOS)
     # ==========================================================
     if 'manifiesto_docx_buffer' in st.session_state:
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("### 📥 Tu documento está listo")
+        st.info("Haz clic en el botón azul de abajo para guardar el archivo Word en tu computadora.")
+        
         st.download_button(
-            label="📥 Guardar Plan Estratégico en mi PC (.docx)",
+            label="💾 DESCARGAR PLAN ESTRATÉGICO (.docx)",
             data=st.session_state['manifiesto_docx_buffer'],
-            file_name=f"Plan_Estrategico_{nombre_zona}.docx",
+            file_name=st.session_state.get('nombre_archivo_docx', 'Plan_Estrategico.docx'),
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            type="secondary",
+            type="primary",
             use_container_width=True
         )
 
