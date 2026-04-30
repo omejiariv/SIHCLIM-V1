@@ -649,8 +649,12 @@ if gdf_zona is not None and not gdf_zona.empty:
         brecha_neut = max(0.1, 100 - ind_neutralidad)
         new_neutralidad = ind_neutralidad + (brecha_neut * 0.1) 
         
-        # Recálculo del ISHI Proyectado
-        new_ishi = (new_estres + new_calidad + new_resiliencia + new_neutralidad) / 4
+        # ==========================================================
+        # 🐛 FIX MATEMÁTICO: ISHI PROYECTADO
+        # Respetamos el peso AHP base y solo sumamos la ganancia neta media
+        # ==========================================================
+        ganancia_media = (recuperacion_resiliencia + recuperacion_estres + recuperacion_calidad) / 3
+        new_ishi = min(100.0, ishi_final + ganancia_media)
 
     with c_opt2:
         st.markdown("#### 📈 Proyección del Impacto Integral (ROI)")
@@ -681,7 +685,62 @@ if gdf_zona is not None and not gdf_zona.empty:
         )
         st.plotly_chart(fig_opt, use_container_width=True)
         
-        st.success(f"🚀 **Veredicto Estratégico:** La inyección de **${presupuesto_usd/1e6:,.1f} Millones USD** estratégicamente distribuidos expande la huella de seguridad hídrica de la región de **{ishi_final:.1f}%** a **{new_ishi:.1f}%**.")
+        verbo_impacto = "expande" if new_ishi >= ishi_final else "mantiene"
+        st.success(f"🚀 **Veredicto Estratégico:** La inyección de **${presupuesto_usd/1e6:,.1f} Millones USD** estratégicamente distribuidos {verbo_impacto} la huella de seguridad hídrica de la región de **{ishi_final:.1f}%** a **{new_ishi:.1f}%**.")
+
+    # ==============================================================================
+    # 📊 NUEVO MÓDULO: ANÁLISIS DE SENSIBILIDAD Y SIGNIFICADO FÍSICO
+    # ==============================================================================
+    st.markdown("---")
+    st.markdown("### 📊 Análisis de Sensibilidad y Significado Físico")
+    
+    c_sens1, c_sens2 = st.columns([1.2, 2])
+    
+    with c_sens1:
+        st.markdown("#### 🧠 Síntesis del Escenario de Modelación")
+        st.info("**Variables rectoras:** El algoritmo distribuye el capital evaluando la presión demográfica (DBO5), anomalías climáticas (Fenómeno ENSO activo), y el déficit asintótico del caudal base.")
+        
+        st.markdown("#### 📖 ¿Qué significa esta mejora en el mundo real?")
+        st.write(f"Al pasar de **{ishi_final:.1f}% a {new_ishi:.1f}%**, el territorio supera la fase de racionamiento inminente. Físicamente significa que las SbN restauran la capacidad del acuífero para recargar los ríos en estiaje, mientras que la PTAR logra asimilar la carga orgánica sin colapsar el oxígeno disuelto.")
+        
+        st.markdown("#### 🎯 Hitos Financieros (Estimación Marginal)")
+        costo_10_pct = 10.0 * 0.35
+        costo_90_ishi = max(0.0, 90.0 - ishi_final) * 0.35
+        st.write(f"• **Mejorar la huella un +10%:** Requiere inyectar ~${costo_10_pct:.1f} Millones USD.")
+        st.write(f"• **Alcanzar un ISHI Óptimo (90%):** Requiere un fondo de ~${costo_90_ishi:.1f} Millones USD.")
+
+    with c_sens2:
+        st.markdown("#### 📈 Curva de Rendimiento Decreciente (Inversión vs. ISHI)")
+        import plotly.express as px
+        
+        # Generamos el universo de inversiones (de 0 a 50 Millones)
+        inv_x = list(range(0, 55, 5))
+        ishi_y = []
+        for inv in inv_x:
+            inv_g = inv * w_gris
+            inv_v = inv * w_verde
+            
+            # Recalculamos la misma ecuación asintótica para cada punto de la curva
+            r_res = brecha_resiliencia * (1 - math.exp(-k_verde * inv_v))
+            r_est = brecha_estres * (1 - math.exp(-k_verde * inv_v * 0.5))
+            r_cal = brecha_calidad * (1 - math.exp(-k_gris * inv_g))
+            
+            g_media = (r_res + r_est + r_cal) / 3
+            ishi_y.append(min(100.0, ishi_final + g_media))
+            
+        fig_curva = px.area(
+            x=inv_x, y=ishi_y, markers=True, 
+            labels={'x': 'Capital Invertido (Millones USD)', 'y': 'Proyección ISHI (%)'},
+            color_discrete_sequence=['#3498db']
+        )
+        
+        # Dibujamos una línea vertical roja donde está parado el usuario actualmente
+        presupuesto_M_actual = presupuesto_usd / 1e6
+        fig_curva.add_vline(x=presupuesto_M_actual, line_dash="dash", line_color="#e74c3c")
+        fig_curva.add_annotation(x=presupuesto_M_actual, y=min(100, new_ishi + 10), text="Inversión Simulada", showarrow=False, font=dict(color="#e74c3c"))
+        
+        fig_curva.update_layout(height=350, margin=dict(t=10, b=10, l=10, r=10), yaxis=dict(range=[0, 100]))
+        st.plotly_chart(fig_curva, use_container_width=True)
 
     st.divider()
 
