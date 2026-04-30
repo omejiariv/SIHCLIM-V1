@@ -1796,4 +1796,72 @@ with tab_reporte:
 
             st.info("💡 Si la redacción institucional es precisa y los montos son correctos, el siguiente paso será instalar el exportador `.docx` para generar el archivo descargable oficial.")
 
+            # ==========================================================
+            # 4. EXPORTADOR A MICROSOFT WORD (.DOCX)
+            # ==========================================================
+            st.markdown("---")
+            st.markdown("### 💾 Exportación Oficial")
+            
+            try:
+                from docx import Document
+                from docx.shared import Pt, Inches, RGBColor
+                from docx.enum.text import WD_ALIGN_PARAGRAPH
+                import io
+
+                # 1. Crear el lienzo en blanco
+                doc = Document()
+
+                # 2. Configurar el estilo global (Georgia)
+                style = doc.styles['Normal']
+                font = style.font
+                font.name = 'Georgia'
+                font.size = Pt(11)
+
+                # 3. Ensamblar la Portada / Título
+                titulo_doc = doc.add_heading(titulo_plan, level=0)
+                titulo_doc.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                subtitulo = doc.add_paragraph()
+                run_sub = subtitulo.add_run(f"Firma Avalada: {director} | Fecha de Simulación: {anio_actual}")
+                run_sub.font.color.rgb = RGBColor(127, 140, 141)
+                subtitulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    
+                doc.add_page_break()
+
+                # 4. Ensamblar el Capítulo 1
+                h1 = doc.add_heading('Capítulo 1: Resumen Ejecutivo y Veredicto Territorial', level=1)
+
+                p1 = doc.add_paragraph(cap1_p1)
+                p1.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                    
+                p2 = doc.add_paragraph(cap1_p2)
+                p2.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                    
+                p3 = doc.add_paragraph(cap1_p3)
+                p3.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+                p_nota = doc.add_paragraph("\n... [El sistema compilará los Capítulos 2 al 5 en el documento final] ...")
+                p_nota.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p_nota.runs[0].italic = True
+
+                # 5. Convertir a Bytes para la descarga web
+                buffer = io.BytesIO()
+                doc.save(buffer)
+                buffer.seek(0)
+
+                # 6. Botón de Descarga Gigante
+                st.download_button(
+                    label="📥 Descargar Manifiesto Estratégico (.docx)",
+                    data=buffer,
+                    file_name=f"Manifiesto_{nombre_zona.replace(' ', '_')}_{anio_actual}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    type="primary",
+                    use_container_width=True
+                )
+                    
+            except ImportError:
+                st.error("⚠️ Falta la librería `python-docx` para generar el archivo Word.")
+                st.code("pip install python-docx", language="bash")
+                st.info("Instala la librería en tu servidor o entorno local y recarga la página.")
+
 # Fin del archivo
