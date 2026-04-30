@@ -84,7 +84,30 @@ div[data-testid="stExpander"] summary p {
     font-size: 1.1rem !important;
     font-weight: 600 !important;
     color: #1e293b !important;
-    font-family: 'Georgia', serif !important; /* Asegura la fuente en los títulos */
+    font-family: 'Georgia', serif !important;
+}
+
+/* 🚀 3. NUEVO: ESTILO PARA QUE LAS PESTAÑAS PAREZCAN BOTONES GIGANTES */
+button[data-baseweb="tab"] {
+    font-size: 1.15rem !important;
+    background-color: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    border-bottom: none !important;
+    border-radius: 8px 8px 0 0 !important;
+    padding: 12px 24px !important;
+    margin-right: 5px !important;
+    color: #64748b !important;
+    transition: all 0.3s ease;
+}
+button[data-baseweb="tab"]:hover {
+    background-color: #e2e8f0 !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    background-color: #ffffff !important;
+    color: #1e293b !important;
+    border-top: 4px solid #e74c3c !important;
+    font-weight: bold !important;
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.05) !important;
 }
 </style>
 """, unsafe_allow_html=True)
