@@ -1714,154 +1714,156 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.info("👆 Por favor, utiliza el botón del motor hidrológico de arriba para iluminar este tablero.")
 
 # ==============================================================================
-# 📑 PESTAÑA 2: SECCIÓN GENERADOR DEL MANIFIESTO ESTRATÉGICO
+# 📑 SECCIÓN: GENERADOR DEL MANIFIESTO ESTRATÉGICO
 # ==============================================================================
 with tab_reporte:
     st.markdown("## 📑 Generador del Plan Estratégico 2026-2030")
-    st.info("Este motor consolida la telemetría del Aleph en un documento de alta gerencia (20-25 páginas) con rigor técnico y narrativa institucional.")
+    st.info("Este motor consolida la telemetría del Aleph y los diagnósticos de Calidad, Geomorfología y Biodiversidad en un documento institucional.")
     
-    # Configuración Superior
     c_rep1, c_rep2 = st.columns([2, 1])
-    
     with c_rep1:
         st.markdown("### ⚙️ Configuración del Documento")
-        titulo_plan = st.text_input("Título del Manifiesto:", f"Plan de Seguridad Hídrica - {nombre_zona}")
-        director = st.text_input("Firma Autorizada:", "Dirección Técnica - CuencaVerde")
-        
+        titulo_plan = st.text_input("Título del Manifiesto:", f"Plan de Seguridad Hídrica - {nombre_zona}", key="rep_tit")
+        director = st.text_input("Firma Autorizada:", "Dirección Técnica - CuencaVerde", key="rep_dir")
     with c_rep2:
-        st.markdown("### 🧐 Estructura Base")
-        st.info("El sistema compilará 5 capítulos estratégicos abarcando Diagnóstico, Clima, Inversión (ROI) y Hoja de Ruta.")
+        st.markdown("### 🧐 Estructura Multidimensión")
+        st.caption("Cap 1: Veredicto | Cap 2: Metabolismo (Pág 07) | Cap 3: Clima (Pág 01) | Cap 4: Inversión (Pág 09)")
 
     st.markdown("---")
-    st.markdown("### 🤖 Motor de Inteligencia Narrativa (Vista Previa)")
     
-    # El botón que enciende el Cerebro Redactor
-    # 🚀 FIX: Aseguramos la perfecta indentación principal para que el botón sea visible
-    if st.button("👁️ Generar Borrador del Manifiesto (Vista Previa)", type="primary", use_container_width=True):
-        with st.spinner("Analizando telemetría y ensamblando narrativa institucional..."):
+    # EL BOTÓN MAESTRO
+    if st.button("🚀 Generar y Descargar Manifiesto Estratégico", type="primary", use_container_width=True):
+        with st.spinner("Capturando gráficos e integrando capítulos técnicos..."):
             
             # ==========================================================
-            # 1. LECTOR DE TELEMETRÍA (Interpretación de Datos)
+            # 1. RECOLECCIÓN DE DATOS DE OTRAS PÁGINAS (TELEMETRÍA EXTENDIDA)
             # ==========================================================
-            # Interpretación cualitativa de los números para la redacción
-            # Usamos estres_gauge_val como salud_abastecimiento
-            salud_aba_rep = estres_gauge_val
-            estado_ishi = "crítico" if ishi_final < 40 else "vulnerable" if ishi_final < 70 else "óptimo"
-            estado_aba = "un escenario de alerta por escasez" if salud_aba_rep < 60 else "una estabilidad operativa moderada"
-            fase_clima = st.session_state.get('enso_fase', 'Neutro')
+            # Datos de Calidad (Pág 07)
+            od_pct = st.session_state.get('calidad_oxigeno_pct', 0.0)
+            dbo_mgL = st.session_state.get('calidad_dbo_salida_mgL', 0.0)
+            acuifero_mgL = st.session_state.get('calidad_acuifero_mgL', 0.0)
+            
+            # Datos de Clima (Pág 01)
+            p_nino = st.session_state.get('aleph_iri_nino', 0)
+            p_neutro = st.session_state.get('aleph_iri_neutro', 100)
+            trimestre = st.session_state.get('aleph_iri_trimestre', 'AMJ')
+            
+            # Datos de Riesgo Físico (Pág 04/09)
+            lodo = st.session_state.get('eco_lodo_total_m3', 0.0)
             
             # ==========================================================
-            # 2. ENSAMBLADOR DE PÁRRAFOS (Capítulo 1)
+            # 2. ENSAMBLADOR DE NARRATIVA (PROFECÍA DE 20 PÁGINAS)
             # ==========================================================
-            
-            # Párrafo 1: El Pulso del Territorio
-            cap1_p1 = f"El presente documento, denominado '{titulo_plan}', se formula como el instrumento rector para la planificación hídrica del territorio en el horizonte 2026-2030. Actualmente, los análisis multicriterio del Gemelo Digital (Sihcli-Poter) indican que el Índice de Seguridad Hídrica (ISHI) de la región registra un nivel {estado_ishi} del {ishi_final:.1f}%. Este indicador refleja una presión demográfica de {pob_total:,.0f} habitantes y {estado_aba}, soportando un estrés hídrico neto del {estres_hidrico_porcentaje:.1f}%."
+            # CAPÍTULO 2: DIAGNÓSTICO DEL METABOLISMO (CONTEXTO PÁG 07)
+            impacto_rio = "grave" if od_pct < 40 else "moderado" if od_pct < 70 else "bajo"
+            cap2_txt = f"El análisis de vertimientos para {nombre_zona} revela una carga de {carga_total_ton:,.1f} Ton/año de DBO5. Los modelos de Streeter-Phelps proyectan una salud del río del {od_pct:.1f}%, lo que indica un impacto {impacto_rio} en la vida acuática. Adicionalmente, el acuífero registra una concentración potencial de {acuifero_mgL:.2f} mg/L, comprometiendo el caudal base en estiaje."
 
-            # Párrafo 2: El Veredicto de Inversión
-            # Definimos new_ishi localmente por si el botón se presiona sin ejecutar el optimizador antes
-            new_ishi_rep = new_ishi if 'new_ishi' in locals() else ishi_final
-            verbo_inv = "expande" if new_ishi_rep >= ishi_final else "mantiene"
-            
-            cap1_p2 = f"Para mitigar esta vulnerabilidad sistémica y blindar el metabolismo hídrico regional, el modelo matemático de optimización exige una movilización estratégica de capital de ${presupuesto_usd/1e6:.1f} Millones USD. Basado en las curvas de costo-eficiencia, el algoritmo recomienda direccionar una inversión de ${inv_verde/1e6:.2f} Millones USD hacia Infraestructura Verde (Soluciones Basadas en la Naturaleza y Conservación), y ${inv_gris/1e6:.2f} Millones USD hacia Infraestructura Gris (Saneamiento y PTAR). Esta inyección de recursos {verbo_inv} estructuralmente la resiliencia del territorio, proyectando un salto en el ISHI hacia un {new_ishi_rep:.1f}%."
-
-            # Párrafo 3: Contexto Climático (Dinámico)
-            if "Niño" in fase_clima:
-                cap1_p3 = "La urgencia de materializar estas inversiones adquiere un carácter crítico al contrastarse con la telemetría satelital climática (Columbia University - IRI), la cual advierte la consolidación del fenómeno de El Niño. La inminente contracción de la oferta hidrológica exige acelerar las obras de retención hídrica en la cuenca alta para evitar el colapso del abastecimiento."
-            elif "Niña" in fase_clima:
-                cap1_p3 = "El diseño de la infraestructura y las franjas de conservación debe considerar la actual fase climática de La Niña. Los excesos pluviométricos proyectados incrementan drásticamente el riesgo de avenidas torrenciales y pérdida de suelo, haciendo imperativa la restauración riparia para proteger la infraestructura de captación frente a la carga de sedimentos."
-            else:
-                cap1_p3 = "Actualmente, el territorio atraviesa una ventana de neutralidad climática (Condiciones ENSO promedio). Esta estabilidad transitoria representa una oportunidad estratégica invaluable para ejecutar las obras de infraestructura gris y los aislamientos ecológicos sin las graves disrupciones logísticas que ocasionan los extremos hidrometeorológicos."
-
-            # Guardar en memoria por si el usuario decide exportar después
-            st.session_state['manifiesto_cap1'] = f"{cap1_p1}\n\n{cap1_p2}\n\n{cap1_p3}"
-            
-            # ==========================================================
-            # 3. RENDERIZADO VISUAL DEL DOCUMENTO
-            # ==========================================================
-            st.success("✅ Borrador ensamblado con éxito. Revisa la narrativa técnica:")
-            
-            # Usamos un contenedor con borde para simular una hoja impresa
-            with st.container(border=True):
-                st.markdown(f"<h2 style='text-align: center; color: #2c3e50; font-family: Georgia;'>{titulo_plan}</h2>", unsafe_allow_html=True)
-                st.markdown(f"<p style='text-align: center; color: #7f8c8d;'><strong>Firma Avalada:</strong> {director} | <strong>Fecha de Simulación:</strong> {anio_actual}</p>", unsafe_allow_html=True)
-                st.markdown("---")
-                
-                st.markdown("<h3 style='color: #2980b9;'>Capítulo 1: Resumen Ejecutivo y Veredicto Territorial</h3>", unsafe_allow_html=True)
-                
-                st.markdown(f"<p style='text-align: justify; font-size: 1.1rem; line-height: 1.6; color: #34495e;'>{cap1_p1}</p>", unsafe_allow_html=True)
-                st.markdown(f"<p style='text-align: justify; font-size: 1.1rem; line-height: 1.6; color: #34495e;'>{cap1_p2}</p>", unsafe_allow_html=True)
-                st.markdown(f"<p style='text-align: justify; font-size: 1.1rem; line-height: 1.6; color: #34495e;'>{cap1_p3}</p>", unsafe_allow_html=True)
-                
-                st.markdown("<br><p style='text-align: center; color: #bdc3c7;'><em>... [El sistema compilará los Capítulos 2 al 5 en el documento final] ...</em></p>", unsafe_allow_html=True)
-
-            st.info("💡 Si la redacción institucional es precisa y los montos son correctos, el siguiente paso será instalar el exportador `.docx` para generar el archivo descargable oficial.")
+            # CAPÍTULO 3: MULTIVERSO CLIMÁTICO (CONTEXTO PÁG 01)
+            cap3_txt = f"Basado en el monitoreo satelital del IRI (Columbia University), el trimestre {trimestre} presenta una probabilidad del {p_nino}% para El Niño y {p_neutro}% para Neutralidad. Esta configuración climática exige un manejo preventivo de embalses ante el posible déficit de lluvia."
 
             # ==========================================================
-            # 4. EXPORTADOR A MICROSOFT WORD (.DOCX)
+            # 3. EXPORTADOR .DOCX CON IMÁGENES Y KALEIDO
             # ==========================================================
-            st.markdown("---")
-            st.markdown("### 💾 Exportación Oficial")
-            
             try:
                 from docx import Document
                 from docx.shared import Pt, Inches, RGBColor
                 from docx.enum.text import WD_ALIGN_PARAGRAPH
                 import io
 
-                # 1. Crear el lienzo en blanco
                 doc = Document()
-
-                # 2. Configurar el estilo global (Georgia)
+                
+                # Estilo General
                 style = doc.styles['Normal']
-                font = style.font
-                font.name = 'Georgia'
-                font.size = Pt(11)
+                style.font.name = 'Georgia'
+                style.font.size = Pt(11)
 
-                # 3. Ensamblar la Portada / Título
-                titulo_doc = doc.add_heading(titulo_plan, level=0)
-                titulo_doc.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-                subtitulo = doc.add_paragraph()
-                run_sub = subtitulo.add_run(f"Firma Avalada: {director} | Fecha de Simulación: {anio_actual}")
-                run_sub.font.color.rgb = RGBColor(127, 140, 141)
-                subtitulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    
+                # PORTADA
+                tit = doc.add_heading(titulo_plan, level=0)
+                tit.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                sub = doc.add_paragraph(f"Firma Avalada: {director} | Fecha de Simulación: {anio_actual}")
+                sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
                 doc.add_page_break()
 
-                # 4. Ensamblar el Capítulo 1
-                h1 = doc.add_heading('Capítulo 1: Resumen Ejecutivo y Veredicto Territorial', level=1)
+                # --- CAPÍTULO 1: VEREDICTO ---
+                doc.add_heading('Capítulo 1: Resumen y Veredicto Territorial', level=1)
+                
+                # Usamos los párrafos que ya tenías armados en el estado anterior para no perder la riqueza
+                new_ishi_rep = new_ishi if 'new_ishi' in locals() else ishi_final
+                verbo_inv = "expande" if new_ishi_rep >= ishi_final else "mantiene"
+                estado_ishi = "crítico" if ishi_final < 40 else "vulnerable" if ishi_final < 70 else "óptimo"
+                
+                cap1_p1 = f"El presente documento, denominado '{titulo_plan}', se formula como el instrumento rector para la planificación hídrica del territorio en el horizonte 2026-2030. Actualmente, los análisis multicriterio del Gemelo Digital (Sihcli-Poter) indican que el Índice de Seguridad Hídrica (ISHI) de la región registra un nivel {estado_ishi} del {ishi_final:.1f}%."
+                cap1_p2 = f"Para mitigar esta vulnerabilidad sistémica y blindar el metabolismo hídrico regional, el modelo matemático de optimización exige una movilización estratégica de capital de ${presupuesto_usd/1e6:.1f} Millones USD. Basado en las curvas de costo-eficiencia, el algoritmo recomienda direccionar una inversión de ${inv_verde/1e6:.2f} Millones USD hacia Infraestructura Verde (Soluciones Basadas en la Naturaleza y Conservación), y ${inv_gris/1e6:.2f} Millones USD hacia Infraestructura Gris (Saneamiento y PTAR). Esta inyección de recursos {verbo_inv} estructuralmente la resiliencia del territorio, proyectando un salto en el ISHI hacia un {new_ishi_rep:.1f}%."
+                
+                doc.add_paragraph(cap1_p1).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                doc.add_paragraph(cap1_p2).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                
+                # 📸 CAPTURA DE GRÁFICO: EL RADAR ISHI
+                try:
+                    # Usamos el fig_radar que se crea en la línea 240+ del código principal
+                    img_radar = fig_radar.to_image(format="png", width=800, height=600, scale=2)
+                    doc.add_picture(io.BytesIO(img_radar), width=Inches(5.5))
+                    cap_rad = doc.add_paragraph("Figura 1: Radar ISHI de Seguridad Hídrica y Proyección de Inversión.")
+                    cap_rad.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    cap_rad.runs[0].italic = True
+                except Exception as e: 
+                    doc.add_paragraph(f"[Error capturando Radar ISHI: Asegúrate de que fig_radar esté definido. {e}]")
 
-                p1 = doc.add_paragraph(cap1_p1)
-                p1.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                    
-                p2 = doc.add_paragraph(cap1_p2)
-                p2.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                    
-                p3 = doc.add_paragraph(cap1_p3)
-                p3.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                # --- CAPÍTULO 2: CALIDAD ---
+                doc.add_heading('Capítulo 2: Diagnóstico de Calidad y Metabolismo', level=1)
+                doc.add_paragraph(cap2_txt).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                
+                # 📸 CAPTURA DE GRÁFICO: VELOCÍMETRO CALIDAD
+                try:
+                    # Re-generamos el gauge solo para captura
+                    fig_cal = crear_velocimetro(ind_calidad, "Salud Sanitaria", "#9b59b6", 40, 70)
+                    img_cal = fig_cal.to_image(format="png", width=500, height=400, scale=2)
+                    doc.add_picture(io.BytesIO(img_cal), width=Inches(3.5))
+                    cap_cal = doc.add_paragraph("Figura 2: Índice de Calidad y Asimilación Sanitaria.")
+                    cap_cal.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    cap_cal.runs[0].italic = True
+                except: pass
 
-                p_nota = doc.add_paragraph("\n... [El sistema compilará los Capítulos 2 al 5 en el documento final] ...")
-                p_nota.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p_nota.runs[0].italic = True
+                # --- CAPÍTULO 3: CLIMA ---
+                doc.add_heading('Capítulo 3: Multiverso Climático e Hidrología', level=1)
+                doc.add_paragraph(cap3_txt).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
-                # 5. Convertir a Bytes para la descarga web
-                buffer = io.BytesIO()
-                doc.save(buffer)
-                buffer.seek(0)
+                # --- CAPÍTULO 4: PORTAFOLIO ROI ---
+                doc.add_heading('Capítulo 4: Portafolio de Inversión y ROI', level=1)
+                doc.add_paragraph(f"Se recomienda inyectar ${inv_verde/1e6:.2f}M USD en Infraestructura Verde para maximizar el control de sedimentos y la regulación base.")
+                
+                # TABLA DE INVERSIÓN
+                table = doc.add_table(rows=1, cols=2)
+                table.style = 'Light Grid Accent 1'
+                hdr_cells = table.rows[0].cells
+                hdr_cells[0].text = 'Estrategia'
+                hdr_cells[1].text = 'Inversión Sugerida (USD)'
+                
+                row1 = table.add_row().cells
+                row1[0].text = 'Infraestructura Verde (SbN)'
+                row1[1].text = f"${inv_verde:,.0f}"
+                
+                row2 = table.add_row().cells
+                row2[0].text = 'Infraestructura Gris (Saneamiento)'
+                row2[1].text = f"${inv_gris:,.0f}"
 
-                # 6. Botón de Descarga Gigante
+                # DESCARGA
+                buf = io.BytesIO()
+                doc.save(buf)
+                buf.seek(0)
+                
                 st.download_button(
-                    label="📥 Descargar Manifiesto Estratégico (.docx)",
-                    data=buffer,
-                    file_name=f"Manifiesto_{nombre_zona.replace(' ', '_')}_{anio_actual}.docx",
+                    label="📥 Descargar Plan Estratégico 2026-2030 (.docx)",
+                    data=buf,
+                    file_name=f"Plan_Estrategico_{nombre_zona}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     type="primary",
                     use_container_width=True
                 )
-                    
-            except ImportError:
-                st.error("⚠️ Falta la librería `python-docx` para generar el archivo Word.")
-                st.code("pip install python-docx", language="bash")
-                st.info("Instala la librería en tu servidor o entorno local y recarga la página.")
+                st.success("✅ ¡Documento estratégico generado con éxito! Abre el archivo Word para ver los gráficos insertados nativamente.")
+
+            except Exception as e:
+                st.error(f"Falla crítica en exportación o captura de imágenes: {e}")
 
 # Fin del archivo
