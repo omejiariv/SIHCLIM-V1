@@ -1826,16 +1826,6 @@ with tab_reporte:
                                      font=dict(size=12, color="black"), bgcolor="white", bordercolor="black", borderwidth=1)
                             ]
                         )
-                            mapbox=dict(fitbounds="locations"),
-                            margin={"r":0,"t":0,"l":0,"b":0},
-                            showlegend=False,
-                            annotations=[
-                                dict(x=0.95, y=0.95, text="<b>⬆ N</b>", showarrow=False, 
-                                     font=dict(size=22, color="black"), bgcolor="white", bordercolor="black", borderwidth=1),
-                                dict(x=0.05, y=0.05, text="Escala Aprox: 1:100.000", showarrow=False, 
-                                     font=dict(size=12, color="black"), bgcolor="white", bordercolor="black", borderwidth=1)
-                            ]
-                        )
                         
                         img_mapa_ctx = fig_mapa_ctx.to_image(format="png", width=800, height=450, scale=2)
                         doc.add_picture(io.BytesIO(img_mapa_ctx), width=Inches(6.0))
