@@ -1901,20 +1901,27 @@ with tab_reporte:
                     p_glos.add_run(defi)
                     p_glos.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 
-                # DESCARGA
+                # DESCARGA EN MEMORIA (Previene el bug de Streamlit)
                 buf = io.BytesIO()
                 doc.save(buf)
-                buf.seek(0)
-                
-                st.download_button(
-                    label="📥 Descargar Plan Estratégico 2026-2030 (.docx)",
-                    data=buf, file_name=f"Plan_Estrategico_{nombre_zona}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    type="primary", use_container_width=True
-                )
-                st.success("✅ ¡Documento estratégico generado con éxito! El mapa centrado, los datos corregidos y el glosario están integrados.")
+                st.session_state['manifiesto_docx_buffer'] = buf.getvalue()
+                st.success("✅ ¡Documento estratégico ensamblado con éxito! Usa el botón verde de abajo para guardarlo en tu equipo.")
 
             except Exception as e:
                 st.error(f"Falla crítica en exportación: {e}")
+
+    # ==========================================================
+    # BOTÓN DE DESCARGA PERMANENTE (Afuera del ciclo de generación)
+    # ==========================================================
+    if 'manifiesto_docx_buffer' in st.session_state:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.download_button(
+            label="📥 Guardar Plan Estratégico en mi PC (.docx)",
+            data=st.session_state['manifiesto_docx_buffer'],
+            file_name=f"Plan_Estrategico_{nombre_zona}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            type="secondary",
+            use_container_width=True
+        )
 
 # Fin del archivo
