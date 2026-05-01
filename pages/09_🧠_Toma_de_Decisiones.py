@@ -701,7 +701,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.info("**Variables rectoras:** El algoritmo distribuye el capital evaluando la presión demográfica (DBO5), anomalías climáticas (Fenómeno ENSO activo), y el déficit asintótico del caudal base.")
         
         st.markdown("#### 📖 Significado Físico de la Optimización")
-        st.write(f"La transición de un **ISHI de {ishi_final:.1f}% a {new_ishi:.1f}%** representa alejar al territorio del racionamiento hídrico. Físicamente, la inyección en Soluciones Basadas en la Naturaleza (SbN) restaura la "esponja" del suelo para recargar acuíferos en épocas secas, mientras que la expansión de la PTAR asimila el pico orgánico sin colapsar el oxígeno disuelto del río receptor.")
+        st.write(f"La transición de un **ISHI de {ishi_final:.1f}% a {new_ishi:.1f}%** representa alejar al territorio del racionamiento hídrico. Físicamente, la inyección en Soluciones Basadas en la Naturaleza (SbN) restaura la 'esponja' del suelo para recargar acuíferos en épocas secas, mientras que la expansión de la PTAR asimila el pico orgánico sin colapsar el oxígeno disuelto del río receptor.")
         
         st.markdown("#### 🎯 Hitos Financieros (Costo sobre la Curva Real)")
         
