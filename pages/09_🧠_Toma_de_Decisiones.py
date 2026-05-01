@@ -700,14 +700,41 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.markdown("#### 🧠 Síntesis del Escenario de Modelación")
         st.info("**Variables rectoras:** El algoritmo distribuye el capital evaluando la presión demográfica (DBO5), anomalías climáticas (Fenómeno ENSO activo), y el déficit asintótico del caudal base.")
         
-        st.markdown("#### 📖 ¿Qué significa esta mejora en el mundo real?")
-        st.write(f"Al pasar de **{ishi_final:.1f}% a {new_ishi:.1f}%**, el territorio supera la fase de racionamiento inminente. Físicamente significa que las SbN restauran la capacidad del acuífero para recargar los ríos en estiaje, mientras que la PTAR logra asimilar la carga orgánica sin colapsar el oxígeno disuelto.")
+        st.markdown("#### 📖 Significado Físico de la Optimización")
+        st.write(f"La transición de un **ISHI de {ishi_final:.1f}% a {new_ishi:.1f}%** representa alejar al territorio del racionamiento hídrico. Físicamente, la inyección en Soluciones Basadas en la Naturaleza (SbN) restaura la "esponja" del suelo para recargar acuíferos en épocas secas, mientras que la expansión de la PTAR asimila el pico orgánico sin colapsar el oxígeno disuelto del río receptor.")
         
-        st.markdown("#### 🎯 Hitos Financieros (Estimación Marginal)")
-        costo_10_pct = 10.0 * 0.35
-        costo_90_ishi = max(0.0, 90.0 - ishi_final) * 0.35
-        st.write(f"• **Mejorar la huella un +10%:** Requiere inyectar ~${costo_10_pct:.1f} Millones USD.")
-        st.write(f"• **Alcanzar un ISHI Óptimo (90%):** Requiere un fondo de ~${costo_90_ishi:.1f} Millones USD.")
+        st.markdown("#### 🎯 Hitos Financieros (Costo sobre la Curva Real)")
+        
+        # Buscador numérico: Recorre la curva real de eficiencia para encontrar el costo exacto
+        def calcular_inversion_exacta(meta_objetivo):
+            if ishi_final >= meta_objetivo: return 0.0
+            inv_test = 0.0
+            while inv_test <= 100.0:
+                i_g, i_v = inv_test * w_gris, inv_test * w_verde
+                r_r = brecha_resiliencia * (1 - math.exp(-k_verde * i_v))
+                r_e = brecha_estres * (1 - math.exp(-k_verde * i_v * 0.5))
+                r_c = brecha_calidad * (1 - math.exp(-k_gris * i_g))
+                g_m = (r_r + r_e + r_c) / 3
+                if (ishi_final + g_m) >= meta_objetivo:
+                    return inv_test
+                inv_test += 0.1
+            return 100.0 # Más de 100M
+
+        # Hito 1: El primer esfuerzo (+10%)
+        meta_10 = min(100.0, ishi_final + 10.0)
+        costo_10_pct = calcular_inversion_exacta(meta_10)
+        st.write(f"• **Mejorar la huella un +10%:** Al estar en la fase inicial de alta eficiencia, pasar del **{ishi_final:.1f}% actual** al **{meta_10:.1f}%** requiere inyectar ~${costo_10_pct:.1f} Millones USD.")
+        
+        # Hito 2: Llegar al óptimo (90%)
+        if ishi_final < 90.0:
+            brecha_90 = 90.0 - ishi_final
+            costo_90_ishi = calcular_inversion_exacta(90.0)
+            if costo_90_ishi < 100.0:
+                st.write(f"• **Alcanzar el ISHI Óptimo (90%):** Cerrar la brecha del **{brecha_90:.1f}%** (desde el **{ishi_final:.1f}% actual**) exige un fondo de ~${costo_90_ishi:.1f} Millones USD. El costo es exponencialmente mayor por el rendimiento físico decreciente de las últimas fases de mitigación.")
+            else:
+                st.write(f"• **Alcanzar el ISHI Óptimo (90%):** Cerrar la brecha del **{brecha_90:.1f}%** desde el estado actual requiere una mega-inversión estructural superior a los **$100.0 M USD**.")
+        else:
+            st.write(f"• **Alcanzar un ISHI Óptimo (90%):** ✅ El territorio ya superó esta meta.")
 
     with c_sens2:
         st.markdown("#### 📈 Curva de Rendimiento Decreciente (Inversión vs. ISHI)")
