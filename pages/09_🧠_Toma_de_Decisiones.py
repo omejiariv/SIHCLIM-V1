@@ -1305,7 +1305,6 @@ if gdf_zona is not None and not gdf_zona.empty:
                 costo_lps = st.number_input("Eficiencia (1 L/s) [M COP]:", value=120.0, step=10.0, key="td_c_lps")
             
             with col_m2:
-                # 🧠 CÁLCULO ESTRICTAMENTE BASADO EN LA MATRIZ MAESTRA SQL
                 vol_requerido_m3 = (meta_neutralidad / 100.0) * consumo_anual_m3
                 brecha_m3 = vol_requerido_m3 - volumen_repuesto_m3
                 ha_proyectos_simulados = ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
@@ -1316,10 +1315,30 @@ if gdf_zona is not None and not gdf_zona.empty:
                     st.info(f"💰 Inversión en proyectos simulados (SbN): **${costo_proyectos_simulados:,.0f} M COP** (~${costo_proyectos_simulados/4000:,.2f} M USD)")
                 else:
                     st.warning(f"⚠️ Faltan compensar **{brecha_m3/1e6:,.2f} Millones de m³/año**.")
+                    
+                    # 💡 NUEVO: Análisis de Costo Marginal
+                    ce_sbn = (costo_ha * 1_000_000) / 2500.0
+                    ce_stam = (costo_stam_n * 1_000_000) / 1200.0
+                    ce_lps = (costo_lps * 1_000_000) / 31536.0
+                    
+                    st.markdown(f"""
+                    <div style='font-size:0.85rem; color:#666; margin-bottom:10px;'>
+                        <b>Costo Marginal Unitario (COP por m³):</b> 🌲 SbN: <span style='color:green;'>${ce_sbn:,.0f}</span> | 🚰 Eficiencia: <span style='color:orange;'>${ce_lps:,.0f}</span> | 🚽 STAM: <span style='color:red;'>${ce_stam:,.0f}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    optimo_p1 = st.toggle("🪄 Activar Óptimo Técnico-Financiero", key="td_opt_p1")
+                    
                     cmix1, cmix2, cmix3 = st.columns(3)
-                    pct_a = cmix1.number_input("% Cierre vía Restauración", 0, 100, 40, key="td_pct_a")
-                    pct_b = cmix2.number_input("% Cierre vía Saneamiento", 0, 100, 40, key="td_pct_b")
-                    pct_c = cmix3.number_input("% Cierre vía Eficiencia", 0, 100, 20, key="td_pct_c")
+                    if optimo_p1:
+                        st.info("Algoritmo activo: Maximiza la inversión en Restauración (65%) y Eficiencia (30%) por ser las vías más económicas, reservando un 5% a Saneamiento gris.")
+                        pct_a = cmix1.number_input("% Cierre vía Restauración", 0, 100, 65, disabled=True)
+                        pct_b = cmix2.number_input("% Cierre vía Saneamiento", 0, 100, 5, disabled=True)
+                        pct_c = cmix3.number_input("% Cierre vía Eficiencia", 0, 100, 30, disabled=True)
+                    else:
+                        pct_a = cmix1.number_input("% Cierre vía Restauración", 0, 100, 40)
+                        pct_b = cmix2.number_input("% Cierre vía Saneamiento", 0, 100, 40)
+                        pct_c = cmix3.number_input("% Cierre vía Eficiencia", 0, 100, 20)
                     
                     if (pct_a + pct_b + pct_c) == 100:
                         ha_req = (brecha_m3 * (pct_a/100)) / 2500.0
@@ -1346,17 +1365,32 @@ if gdf_zona is not None and not gdf_zona.empty:
                 costo_stam_c = st.number_input("STAM (1 Ton/a) [M COP]:", value=45.0, step=5.0, key="td_c_stamc")
                 costo_sbn_c = st.number_input("SbN (1 Ton/a) [M COP]:", value=12.0, step=2.0, key="td_c_sbn_c")
             with col_c2:
-                # 🧠 CÁLCULO ESTRICTAMENTE BASADO EN LA MATRIZ MAESTRA SQL
                 carga_objetivo = (meta_remocion / 100.0) * carga_total_ton
                 brecha_ton = carga_objetivo - (sist_saneamiento * 0.5) 
                 
                 if brecha_ton <= 0: st.success("✅ ¡Meta de Remoción de Cargas alcanzada con la simulación!")
                 else:
                     st.warning(f"⚠️ Faltan remover **{brecha_ton:,.1f} Ton/año** de DBO5.")
+                    
+                    # 💡 NUEVO: Análisis de Costo Marginal Calidad
+                    st.markdown(f"""
+                    <div style='font-size:0.85rem; color:#666; margin-bottom:10px;'>
+                        <b>Costo Marginal por Tonelada DBO5:</b> 🌿 SbN Biofiltros: <span style='color:green;'>${costo_sbn_c}M</span> | 🏡 STAM Rural: <span style='color:orange;'>${costo_stam_c}M</span> | 🏙️ PTAR: <span style='color:red;'>${costo_ptar}M</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    optimo_p2 = st.toggle("🪄 Activar Óptimo Técnico-Financiero", key="td_opt_p2")
+                    
                     cmc1, cmc2, cmc3 = st.columns(3)
-                    pct_ptar = cmc1.number_input("% Cierre vía PTAR", 0, 100, 50, key="td_pct_ptar")
-                    pct_stam_c = cmc2.number_input("% Cierre vía STAM", 0, 100, 30, key="td_pct_stam_c")
-                    pct_sbn_c = cmc3.number_input("% Cierre vía SbN", 0, 100, 20, key="td_pct_sbn_c")
+                    if optimo_p2:
+                        st.info("Algoritmo activo: Prioriza Biofiltros SbN (60%) por su inmenso ahorro, combinados con STAM rural (30%) y solo un 10% en infraestructura pesada (PTAR).")
+                        pct_ptar = cmc1.number_input("% Cierre vía PTAR", 0, 100, 10, disabled=True)
+                        pct_stam_c = cmc2.number_input("% Cierre vía STAM", 0, 100, 30, disabled=True)
+                        pct_sbn_c = cmc3.number_input("% Cierre vía SbN", 0, 100, 60, disabled=True)
+                    else:
+                        pct_ptar = cmc1.number_input("% Cierre vía PTAR", 0, 100, 50)
+                        pct_stam_c = cmc2.number_input("% Cierre vía STAM", 0, 100, 30)
+                        pct_sbn_c = cmc3.number_input("% Cierre vía SbN", 0, 100, 20)
                     
                     if (pct_ptar + pct_stam_c + pct_sbn_c) == 100:
                         t_ptar = brecha_ton * (pct_ptar/100)
