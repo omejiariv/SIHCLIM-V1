@@ -1305,14 +1305,15 @@ if gdf_zona is not None and not gdf_zona.empty:
                 costo_lps = st.number_input("Eficiencia (1 L/s) [M COP]:", value=120.0, step=10.0, key="td_c_lps")
             
             with col_m2:
+                # 🧠 CÁLCULO ESTRICTAMENTE BASADO EN LA MATRIZ MAESTRA SQL
                 vol_requerido_m3 = (meta_neutralidad / 100.0) * consumo_anual_m3
                 brecha_m3 = vol_requerido_m3 - volumen_repuesto_m3
                 ha_proyectos_simulados = ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
                 costo_proyectos_simulados = ha_proyectos_simulados * costo_ha
                 
                 if brecha_m3 <= 0: 
-                    st.success("✅ ¡Se cumple la meta de Neutralidad Volumétrica con los proyectos simulados!")
-                    st.info(f"💰 Inversión en proyectos simulados (SbN): **${costo_proyectos_simulados:,.0f} Millones COP**")
+                    st.success("✅ ¡Se cumple la meta de Neutralidad Volumétrica con la cobertura natural y/o proyectos simulados!")
+                    st.info(f"💰 Inversión en proyectos simulados (SbN): **${costo_proyectos_simulados:,.0f} M COP** (~${costo_proyectos_simulados/4000:,.2f} M USD)")
                 else:
                     st.warning(f"⚠️ Faltan compensar **{brecha_m3/1e6:,.2f} Millones de m³/año**.")
                     cmix1, cmix2, cmix3 = st.columns(3)
@@ -1332,7 +1333,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                         co1.metric("🌲 Restaurar Total", f"{(ha_req + ha_proyectos_simulados):,.1f} ha")
                         co2.metric("🚽 STAM", f"{stam_req:,.0f} unds")
                         co3.metric("🚰 Eficiencia", f"{lps_req:,.1f} L/s")
-                        co4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M")
+                        co4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M COP", f"~${inv_total/4000:,.2f} M USD", delta_color="off")
                     else: st.error("La suma de los porcentajes debe ser exactamente 100%.")
 
         # Portafolio 2: Calidad
@@ -1345,6 +1346,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 costo_stam_c = st.number_input("STAM (1 Ton/a) [M COP]:", value=45.0, step=5.0, key="td_c_stamc")
                 costo_sbn_c = st.number_input("SbN (1 Ton/a) [M COP]:", value=12.0, step=2.0, key="td_c_sbn_c")
             with col_c2:
+                # 🧠 CÁLCULO ESTRICTAMENTE BASADO EN LA MATRIZ MAESTRA SQL
                 carga_objetivo = (meta_remocion / 100.0) * carga_total_ton
                 brecha_ton = carga_objetivo - (sist_saneamiento * 0.5) 
                 
@@ -1366,7 +1368,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                         coc1.metric("🏙️ PTAR", f"{t_ptar:,.0f} Ton")
                         coc2.metric("🏡 STAM Rural", f"{t_stam:,.0f} Ton")
                         coc3.metric("🌿 SbN Biofiltros", f"{t_sbn:,.0f} Ton")
-                        coc4.metric("💰 INVERSIÓN CALIDAD", f"${inv_tot_c:,.0f} M")
+                        coc4.metric("💰 INVERSIÓN CALIDAD", f"${inv_tot_c:,.0f} M COP", f"~${inv_tot_c/4000:,.2f} M USD", delta_color="off")
                     else: st.error("La suma debe ser exactamente 100%.")
 
         # --- 3. IMPACTO PROYECTADO (NUEVOS INDICADORES) ---
