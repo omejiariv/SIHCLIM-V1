@@ -551,146 +551,344 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.plotly_chart(fig_radar, use_container_width=True)
 
     # ==============================================================================
-    # 💼 OPTIMIZADOR MATEMÁTICO DE INVERSIONES (R.O.I. TERRITORIAL)
+    # 📥 PRE-PROCESAMIENTO Y DESCARGA PREDIAL (PROCESO SILENCIOSO DE DATOS)
+    # ==============================================================================
+    capas = {}
+    try:
+        if gdf_zona is not None and not gdf_zona.empty:
+            capas = load_context_layers(tuple(gdf_zona.total_bounds))
+    except Exception as e:
+        st.warning(f"Aviso al cargar capas SIG: {e}")
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def obtener_predios_y_hectareas(_gdf_zona, nombre_zona_txt):
+        import requests, tempfile
+        import pandas as pd
+        import geopandas as gpd
+        ha_calc = 0.0
+        info_debug = "Descargando predios..."
+        gdf_predios_final = None 
+        try:
+            url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
+            res = requests.get(url_predios)
+            if res.status_code != 200: return 0.0, f"❌ Fallo descarga API", None
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp:
+                tmp.write(res.content)
+                tmp_path = tmp.name
+            gdf_p = gpd.read_file(tmp_path)
+            if gdf_p.empty: return 0.0, "❌ GeoJSON vacío", None
+            gdf_p.set_crs(epsg=4326, allow_override=True, inplace=True)
+            gdf_p_3116 = gdf_p.to_crs(epsg=3116)
+            gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
+            gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
+            gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(0)
+            recorte_exacto = gpd.clip(gdf_p_3116, gdf_z_3116)
+            if not recorte_exacto.empty:
+                ha_calc = recorte_exacto.area.sum() / 10000.0
+                info_debug = f"✅ CORTE EXACTO: {len(recorte_exacto)} fragmentos de predios operan físicamente dentro de la cuenca."
+                gdf_predios_final = recorte_exacto.to_crs(epsg=4326)
+            else:
+                info_debug = f"ℹ️ ZONA VIRGEN: Ningún predio cae dentro de {nombre_zona_txt}."
+        except Exception as e: 
+            info_debug = f"❌ ERROR GEOMÉTRICO: {e}"
+        return ha_calc, info_debug, gdf_predios_final
+
+    with st.spinner("Descargando inventario predial de la Nube (Supabase)..."):
+        ha_reales_sig, info_debug, gdf_predios_mapa = obtener_predios_y_hectareas(gdf_zona, nombre_zona)
+
+
+    # ==============================================================================
+    # 📍 PASO 3: INGENIERÍA DE SOLUCIONES (SIMULADOR FÍSICO WRI)
     # ==============================================================================
     st.markdown("---")
-    st.markdown("### 💼 Optimizador de Inversiones: Retorno sobre la Seguridad Hídrica")
-    st.info("Algoritmo de asignación inteligente. Define un presupuesto y el modelo distribuirá el capital entre Infraestructura Verde (Soluciones Basadas en la Naturaleza) y Gris (Saneamiento) para maximizar la expansión del radar ISHI.")
+    st.markdown("## 📍 PASO 3: Ingeniería de Soluciones (Física del Territorio)")
+    st.info("Transforma las métricas biofísicas en indicadores estandarizados de ingeniería, simula portafolios de intervención y visualiza el impacto volumétrico real antes de asignar presupuesto financiero.")
+    
+    st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
+    
+    ha_satelite_memoria = st.session_state.get('satelite_ha_bosque', 0.0)
+    if ha_satelite_memoria > 0:
+        activar_sig = st.toggle("🛰️ Usar Hectáreas de Bosque detectadas por Satélite (Dynamic World)", value=True, key="td_toggle_sat")
+        ha_base_calculo = float(ha_satelite_memoria) if activar_sig else float(ha_reales_sig)
+    else:
+        activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
+        ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
+    
+    st.info(f"🕵️ **Diagnóstico del Motor Predial:** {info_debug}")
+    
+    ha_riparias_potenciales = 0.0
+    sumar_riparias = False
+    df_str = st.session_state.get('geomorfo_strahler_df')
+    
+    if df_str is not None and not df_str.empty:
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("🌿 **Infraestructura Verde: Potencial Ripario (Conectado a Biodiversidad)**")
+            anillos = st.session_state.get('multi_rings', [10, 20, 30])
+            escenario_nombres = [f"🔴 Escenario Mínimo Normativo ({anillos[0]}m)", f"🟡 Escenario Ideal Recomendado ({anillos[1]}m)", f"🟢 Escenario Óptimo Ecológico ({anillos[2]}m)"]
+            if 'aleph_twi_umbral' in st.session_state:
+                st.success("🧠 **Nexo Físico Activo:** Integrando zona de amenaza de inundación/avalancha como área de restauración prioritaria.")
+            cr1, cr2, cr3 = st.columns(3)
+            escenario_sel = cr1.selectbox("Selecciona Escenario a Financiar en WRI:", escenario_nombres, index=1, key="td_sel_rip")
+            idx_sel = escenario_nombres.index(escenario_sel)
+            ancho_buffer = anillos[idx_sel]
+            longitud_total_km = df_str['Longitud_Km'].sum()
+            cr2.metric("Longitud de Cauces", f"{longitud_total_km:,.2f} km")
+            ha_riparias_potenciales = (longitud_total_km * 1000 * (ancho_buffer * 2)) / 10000.0
+            cr3.metric("Potencial Ripario (SbN)", f"{ha_riparias_potenciales:,.1f} ha")
+            sumar_riparias = st.checkbox("📥 Incorporar estas hectáreas riparias a la simulación financiera WRI", value=True, key="td_sumar_rip")
+    else:
+        st.info("💡 **Tip:** Usa el motor de Geomorfología para detectar la red de drenaje y luego la página de Biodiversidad para definir los anillos de protección.")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    c_inv1, c_inv2, c_inv3 = st.columns(3)
+    with c_inv1:
+        st.metric("✅ Área Conservada (Base SIG)", f"{ha_reales_sig:,.1f} ha")
+        ha_simuladas = st.number_input("➕ Adicionar Hectáreas Extra (Manual):", min_value=0.0, value=0.0, step=10.0, key="td_ha_sim")
+        ha_total = ha_base_calculo + ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
+        beneficio_restauracion_m3 = ha_total * 2500 
+    with c_inv2:
+        sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM/PTAR):", min_value=0, value=50, step=5, key="td_stam")
+        beneficio_calidad_m3 = sist_saneamiento * 1200
+    with c_inv3:
+        volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
+        st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Impacto total simulado")
+        
+    with st.container(border=True):
+        st.markdown("#### ⚖️ Dinámica de Regulación Eco-Hidrológica (Source-to-Tap)")
+        st.markdown("Integración de la termodinámica del bosque: Intercepción del dosel foliar, regulación de Evapotranspiración (ETP) y recarga del flujo base.")
+        
+        area_cuenca_ha = area_km2 * 100                            
+        pct_bosque = min(1.0, ha_total / area_cuenca_ha) if area_cuenca_ha > 0 else 0
+        if area_km2 > 0:
+            ppt_mm_estimada = (oferta_anual_m3 / (area_km2 * 1000)) * 2.5
+            vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000
+        else:
+            ppt_mm_estimada = 0.0
+            vol_lluvia_total = 0.0     
+            
+        eficiencia_dosel_max = st.session_state.get('bio_eficiencia_retencion_pct', 25.0) / 100.0
+        pct_intercepcion = 0.05 + ((eficiencia_dosel_max - 0.05) * pct_bosque)
+        vol_intercepcion = vol_lluvia_total * pct_intercepcion
+        pct_etp = 0.35 + (0.10 * pct_bosque)
+        vol_etp = vol_lluvia_total * pct_etp
+        vol_al_suelo = vol_lluvia_total - vol_intercepcion - vol_etp
+        pct_infiltracion = 0.20 + (0.50 * pct_bosque)
+        vol_infiltracion = vol_al_suelo * pct_infiltracion
+        vol_escorrentia = vol_al_suelo - vol_infiltracion
+        
+        labels = ["<b>Lluvia Total</b>", "<b>Retención del Dosel (Hojas)</b>", "<b>Evapotranspiración (ETP)</b>", "<b>Escorrentía Rápida (Riesgo)</b>", "<b>Infiltración (Acuífero)</b>", "<b>Flujo Base (Oferta Segura)</b>"]
+        source = [0, 0, 0, 0, 4]
+        target = [1, 2, 3, 4, 5]
+        value = [vol_intercepcion, vol_etp, vol_escorrentia, vol_infiltracion, vol_infiltracion]
+        color_links = ["rgba(46, 204, 113, 0.5)", "rgba(241, 196, 15, 0.4)", "rgba(231, 76, 60, 0.6)", "rgba(52, 152, 219, 0.4)", "rgba(41, 128, 185, 0.6)"]
+        
+        import plotly.graph_objects as go
+        fig_sankey = go.Figure(data=[go.Sankey(
+            valueformat=".0f", valuesuffix=" m³/año", textfont=dict(size=14, color="#000000", family="Georgia, serif"),
+            node=dict(pad=25, thickness=25, line=dict(color="black", width=0.5), label=labels, color=["#34495e", "#2ecc71", "#f39c12", "#e74c3c", "#3498db", "#2980b9"]),
+            link=dict(source=source, target=target, value=value, color=color_links)
+        )])
+        fig_sankey.update_layout(height=420, margin=dict(l=20, r=20, t=30, b=20), font_family="Georgia")
+        
+        c_sk1, c_sk2 = st.columns([1, 2.5])
+        with c_sk1:
+            st.metric("🌧️ Lluvia Total", f"{vol_lluvia_total/1e6:,.1f} Mm³")
+            st.metric("🍃 Agua Retenida en Dosel", f"{vol_intercepcion/1e6:,.1f} Mm³", "Regulación microclimática", delta_color="normal")
+            st.metric("💧 Oferta Regulada (Infiltrada)", f"{vol_infiltracion/1e6:,.1f} Mm³", "Trasladada al flujo base", delta_color="normal")
+            st.caption("A mayor inversión en área conservada (SbN), aumenta la intercepción foliar y la infiltración, reduciendo drásticamente la vena roja de escorrentía rápida.")
+        with c_sk2:
+            st.plotly_chart(fig_sankey, use_container_width=True)
+            
+    st.markdown("---")
+    st.markdown(f"#### 💼 2. Portafolios de Intervención Multi-Objetivo")
+
+    # Portafolio 1: Cantidad
+    with st.container(border=True):
+        st.markdown("🎯 **Portafolio 1: Neutralidad Volumétrica (Cantidad)**")
+        col_m1, col_m2 = st.columns([1, 2.5])
+        with col_m1:
+            meta_neutralidad = st.slider("Meta Neutralidad (%)", 10.0, 100.0, 100.0, 5.0, key="td_meta_n")
+            costo_ha = st.number_input("Restauración (1 ha) [M COP]:", value=8.5, step=0.5, key="td_c_ha")
+            costo_stam_n = st.number_input("Saneamiento (1 STAM) [M COP]:", value=15.0, step=1.0, key="td_c_stamn")
+            costo_lps = st.number_input("Eficiencia (1 L/s) [M COP]:", value=120.0, step=10.0, key="td_c_lps")
+        with col_m2:
+            vol_requerido_m3 = (meta_neutralidad / 100.0) * consumo_anual_m3
+            brecha_m3 = vol_requerido_m3 - volumen_repuesto_m3
+            ha_proyectos_simulados = ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
+            costo_proyectos_simulados = ha_proyectos_simulados * costo_ha
+            
+            if brecha_m3 <= 0: 
+                st.success("✅ ¡Se cumple la meta de Neutralidad Volumétrica con la cobertura natural y/o proyectos simulados!")
+                st.info(f"💰 Inversión en proyectos simulados (SbN): **${costo_proyectos_simulados:,.0f} M COP** (~${costo_proyectos_simulados/4000:,.2f} M USD)")
+            else:
+                st.warning(f"⚠️ Faltan compensar **{brecha_m3/1e6:,.2f} Millones de m³/año**.")
+                ce_sbn = (costo_ha * 1_000_000) / 2500.0
+                ce_stam = (costo_stam_n * 1_000_000) / 1200.0
+                ce_lps = (costo_lps * 1_000_000) / 31536.0
+                st.markdown(f"<div style='font-size:0.85rem; color:#666; margin-bottom:10px;'><b>Costo Marginal Unitario (COP por m³):</b> 🌲 SbN: <span style='color:green;'>${ce_sbn:,.0f}</span> | 🚰 Eficiencia: <span style='color:orange;'>${ce_lps:,.0f}</span> | 🚽 STAM: <span style='color:red;'>${ce_stam:,.0f}</span></div>", unsafe_allow_html=True)
+                optimo_p1 = st.toggle("🪄 Activar Óptimo Técnico-Financiero", key="td_opt_p1")
+                cmix1, cmix2, cmix3 = st.columns(3)
+                if optimo_p1:
+                    st.info("Algoritmo activo: Maximiza la inversión en Restauración (65%) y Eficiencia (30%) por ser las vías más económicas, reservando un 5% a Saneamiento gris.")
+                    pct_a = cmix1.number_input("% Cierre vía Restauración", 0, 100, 65, disabled=True)
+                    pct_b = cmix2.number_input("% Cierre vía Saneamiento", 0, 100, 5, disabled=True)
+                    pct_c = cmix3.number_input("% Cierre vía Eficiencia", 0, 100, 30, disabled=True)
+                else:
+                    pct_a = cmix1.number_input("% Cierre vía Restauración", 0, 100, 40)
+                    pct_b = cmix2.number_input("% Cierre vía Saneamiento", 0, 100, 40)
+                    pct_c = cmix3.number_input("% Cierre vía Eficiencia", 0, 100, 20)
+                if (pct_a + pct_b + pct_c) == 100:
+                    ha_req = (brecha_m3 * (pct_a/100)) / 2500.0
+                    stam_req = (brecha_m3 * (pct_b/100)) / 1200.0
+                    lps_req = ((brecha_m3 * (pct_c/100)) * 1000) / 31536000 
+                    inv_brecha = (ha_req * costo_ha) + (stam_req * costo_stam_n) + (lps_req * costo_lps)
+                    inv_total = inv_brecha + costo_proyectos_simulados
+                    co1, co2, co3, co4 = st.columns(4)
+                    co1.metric("🌲 Restaurar Total", f"{(ha_req + ha_proyectos_simulados):,.1f} ha")
+                    co2.metric("🚽 STAM", f"{stam_req:,.0f} unds")
+                    co3.metric("🚰 Eficiencia", f"{lps_req:,.1f} L/s")
+                    co4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M COP", f"~${inv_total/4000:,.2f} M USD", delta_color="off")
+                else: st.error("La suma de los porcentajes debe ser exactamente 100%.")
+
+    # Portafolio 2: Calidad
+    with st.container(border=True):
+        st.markdown("🎯 **Portafolio 2: Remoción de Cargas (Calidad DBO5)**")
+        col_c1, col_c2 = st.columns([1, 2.5])
+        with col_c1:
+            meta_remocion = st.slider("Meta Remoción DBO (%)", 10.0, 100.0, 85.0, 5.0, key="td_meta_c")
+            costo_ptar = st.number_input("PTAR (1 Ton/a) [M COP]:", value=150.0, step=10.0, key="td_c_ptar")
+            costo_stam_c = st.number_input("STAM (1 Ton/a) [M COP]:", value=45.0, step=5.0, key="td_c_stamc")
+            costo_sbn_c = st.number_input("SbN (1 Ton/a) [M COP]:", value=12.0, step=2.0, key="td_c_sbn_c")
+        with col_c2:
+            carga_objetivo = (meta_remocion / 100.0) * carga_total_ton
+            brecha_ton = carga_objetivo - (sist_saneamiento * 0.5) 
+            if brecha_ton <= 0: st.success("✅ ¡Meta de Remoción de Cargas alcanzada con la simulación!")
+            else:
+                st.warning(f"⚠️ Faltan remover **{brecha_ton:,.1f} Ton/año** de DBO5.")
+                st.markdown(f"<div style='font-size:0.85rem; color:#666; margin-bottom:10px;'><b>Costo Marginal por Tonelada DBO5:</b> 🌿 SbN Biofiltros: <span style='color:green;'>${costo_sbn_c}M</span> | 🏡 STAM Rural: <span style='color:orange;'>${costo_stam_c}M</span> | 🏙️ PTAR: <span style='color:red;'>${costo_ptar}M</span></div>", unsafe_allow_html=True)
+                optimo_p2 = st.toggle("🪄 Activar Óptimo Técnico-Financiero", key="td_opt_p2")
+                cmc1, cmc2, cmc3 = st.columns(3)
+                if optimo_p2:
+                    st.info("Algoritmo activo: Prioriza Biofiltros SbN (60%) por su inmenso ahorro, combinados con STAM rural (30%) y solo un 10% en infraestructura pesada (PTAR).")
+                    pct_ptar = cmc1.number_input("% Cierre vía PTAR", 0, 100, 10, disabled=True)
+                    pct_stam_c = cmc2.number_input("% Cierre vía STAM", 0, 100, 30, disabled=True)
+                    pct_sbn_c = cmc3.number_input("% Cierre vía SbN", 0, 100, 60, disabled=True)
+                else:
+                    pct_ptar = cmc1.number_input("% Cierre vía PTAR", 0, 100, 50)
+                    pct_stam_c = cmc2.number_input("% Cierre vía STAM", 0, 100, 30)
+                    pct_sbn_c = cmc3.number_input("% Cierre vía SbN", 0, 100, 20)
+                if (pct_ptar + pct_stam_c + pct_sbn_c) == 100:
+                    t_ptar = brecha_ton * (pct_ptar/100)
+                    t_stam = brecha_ton * (pct_stam_c/100)
+                    t_sbn = brecha_ton * (pct_sbn_c/100)
+                    inv_tot_c = (t_ptar * costo_ptar) + (t_stam * costo_stam_c) + (t_sbn * costo_sbn_c)
+                    coc1, coc2, coc3, coc4 = st.columns(4)
+                    coc1.metric("🏙️ PTAR", f"{t_ptar:,.0f} Ton")
+                    coc2.metric("🏡 STAM Rural", f"{t_stam:,.0f} Ton")
+                    coc3.metric("🌿 SbN Biofiltros", f"{t_sbn:,.0f} Ton")
+                    coc4.metric("💰 INVERSIÓN CALIDAD", f"${inv_tot_c:,.0f} M COP", f"~${inv_tot_c/4000:,.2f} M USD", delta_color="off")
+                else: st.error("La suma debe ser exactamente 100%.")
+
+    st.markdown("---")
+    st.markdown("#### 🚀 Impacto Físico Proyectado")
+    st.info("Estos son los nuevos niveles de salud territorial si se implementan las hectáreas y plantas de tratamiento modeladas arriba.")
+    
+    caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000 
+    carga_removida_sim = sist_saneamiento * 2.5
+    carga_final_rio_sim = max(0.0, carga_total_ton - carga_removida_sim)
+    carga_mg_s_sim = (carga_final_rio_sim * 1_000_000_000) / 31536000
+    conc_dbo_sim = carga_mg_s_sim / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
+    
+    ind_calidad_sim = max(0.0, min(100.0, 100 * math.exp(-0.07 * conc_dbo_sim)))
+    ind_neutralidad_sim = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
+    mejora_infiltracion = (ha_total / (area_km2 * 100)) * 0.10 if area_km2 > 0 else 0.0
+    bfi_ratio_sim = bfi_ratio * (1 + mejora_infiltracion)
+    ind_resiliencia_sim = max(0.0, min(100.0, (bfi_ratio_sim / 0.70) * 100 * factor_supervivencia))
+    oferta_efectiva_sim = oferta_anual_m3 + volumen_repuesto_m3
+    wei_ratio_sim = consumo_anual_m3 / oferta_efectiva_sim if oferta_efectiva_sim > 0 else 1.0
+    estres_sim_porcentaje = wei_ratio_sim * 100
+    estres_gauge_sim_val = min(100.0, estres_sim_porcentaje)
+
+    cg1, cg2, cg3, cg4 = st.columns(4)
+    with cg1: st.plotly_chart(crear_velocimetro(ind_neutralidad_sim, "Neutralidad (Proyectada)", "#2ecc71", 40, 80), width="stretch")
+    with cg2: st.plotly_chart(crear_velocimetro(ind_resiliencia_sim, "Resiliencia (Proyectada)", "#3498db", 30, 70), width="stretch")
+    with cg3: st.plotly_chart(crear_velocimetro(estres_gauge_sim_val, "Estrés (Proyectado)", "#e74c3c", 20, 40, invertido=True), width="stretch")
+    with cg4: st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), width="stretch")
+
+    # ==============================================================================
+    # 📍 PASO 4: LA VIABILIDAD FINANCIERA (OPTIMIZADOR ROI)
+    # ==============================================================================
+    st.markdown("---")
+    st.markdown("## 📍 PASO 4: Viabilidad Financiera e Inteligencia de Capital")
+    st.info("Algoritmo de asignación inteligente. Define un presupuesto financiero en USD y el modelo distribuirá el capital óptimamente para maximizar la expansión del radar ISHI.")
 
     c_opt1, c_opt2 = st.columns([1, 2.5])
-
     with c_opt1:
         st.markdown("#### 💰 Estrategia de Capital")
-        
-        # 🎛️ SELECTOR DUAL DE ESTRATEGIA
-        modo_plan = st.radio(
-            "Seleccione el Enfoque Financiero:",
-            ["📊 1. Asignar Presupuesto Disponible", "🎯 2. Definir Meta de Seguridad (ISHI)"],
-            horizontal=False
-        )
+        modo_plan = st.radio("Seleccione el Enfoque Financiero:", ["📊 1. Asignar Presupuesto Disponible", "🎯 2. Definir Meta de Seguridad (ISHI)"])
         
         if "1. Asignar" in modo_plan:
-            presupuesto_MUSD = st.number_input("Presupuesto de Inversión (Millones USD):", min_value=0.5, max_value=100.0, value=5.0, step=0.5)
+            presupuesto_MUSD = st.number_input("Presupuesto de Inversión (Millones USD):", 0.5, 100.0, 5.0, 0.5)
             presupuesto_usd = presupuesto_MUSD * 1_000_000
         else:
-            # Cálculo inverso: Meta -> Presupuesto
             ishi_minimo = float(int(ishi_final)) if ishi_final < 100 else 100.0
-            meta_ishi = st.slider("Definir Meta ISHI (%):", min_value=ishi_minimo, max_value=100.0, value=max(75.0, ishi_minimo + 5.0), step=1.0)
-            
-            # Aproximación de brecha ($0.35M USD por cada 1% de mejora)
+            meta_ishi = st.slider("Definir Meta ISHI (%):", ishi_minimo, 100.0, max(75.0, ishi_minimo + 5.0), 1.0)
             brecha_ishi = max(0.0, meta_ishi - ishi_final)
             presupuesto_MUSD = brecha_ishi * 0.35
             presupuesto_usd = presupuesto_MUSD * 1_000_000
-            
-            if presupuesto_usd > 0:
-                st.info(f"🎯 Para alcanzar la meta del {meta_ishi}%, se requieren **${presupuesto_MUSD:,.1f} M USD**.")
-            else:
-                st.success("✅ La región ya cumple con esta meta.")
+            if presupuesto_usd > 0: st.info(f"🎯 Para alcanzar {meta_ishi}%, se requieren **${presupuesto_MUSD:,.1f} M USD**.")
+            else: st.success("✅ La región ya cumple con esta meta.")
 
-        st.markdown("---")
-
-        # LÓGICA DE OPTIMIZACIÓN Calculamos las brechas (déficits) actuales del sistema. CALIBRADA (Curvas de Saturación)
         brecha_calidad = max(0.1, 100 - ind_calidad)
         brecha_resiliencia = max(0.1, 100 - resiliencia_real)
         brecha_estres = max(0.1, 100 - estres_gauge_val)
         
-        # 1. Ponderación Suavizada: Evita que el 100% del dinero se vaya a un solo lado
-        # Usamos la raíz cuadrada de la brecha para distribuir mejor el presupuesto
         peso_gris = (brecha_calidad ** 0.5) 
         peso_verde = (brecha_resiliencia ** 0.5) + (brecha_estres ** 0.5)
         peso_total = peso_gris + peso_verde
+        w_gris, w_verde = peso_gris / peso_total, peso_verde / peso_total
 
-        w_gris = peso_gris / peso_total
-        w_verde = peso_verde / peso_total
-
-        # Asignación de Capital
-        inv_gris = presupuesto_usd * w_gris
-        inv_verde = presupuesto_usd * w_verde
+        inv_gris, inv_verde = presupuesto_usd * w_gris, presupuesto_usd * w_verde
 
         st.markdown("#### 🏗️ Asignación Óptima")
         st.metric("🟢 Infraestructura Verde (SbN)", f"${inv_verde/1e6:,.2f} M", "Conservación & Restauración")
         st.metric("🏢 Infraestructura Gris (PTAR)", f"${inv_gris/1e6:,.2f} M", "Saneamiento & Reducción DBO")
 
-        # 2. Rendimiento Físico mediante Ecuación Asintótica (Evita pasar del 100%)
-        # k_verde y k_gris son las constantes de "costo-eficiencia" de CuencaVerde
         import math
-        k_verde = 0.08  # Eficiencia del capital en restauración
-        k_gris = 0.12   # Eficiencia del capital en concreto/PTARs
-        
-        inv_verde_M = inv_verde / 1_000_000
-        inv_gris_M = inv_gris / 1_000_000
+        k_verde, k_gris = 0.08, 0.12
+        inv_verde_M, inv_gris_M = inv_verde / 1e6, inv_gris / 1e6
 
-        # Recuperación asintótica: Nunca supera la brecha faltante
         recuperacion_resiliencia = brecha_resiliencia * (1 - math.exp(-k_verde * inv_verde_M))
-        recuperacion_estres = brecha_estres * (1 - math.exp(-k_verde * inv_verde_M * 0.5)) # El agua se recupera más lento que la barrera física
+        recuperacion_estres = brecha_estres * (1 - math.exp(-k_verde * inv_verde_M * 0.5)) 
         recuperacion_calidad = brecha_calidad * (1 - math.exp(-k_gris * inv_gris_M))
 
-        # Proyección de los nuevos indicadores
         new_resiliencia = resiliencia_real + recuperacion_resiliencia
         new_estres = estres_gauge_val + recuperacion_estres 
         new_calidad = ind_calidad + recuperacion_calidad
-        
-        # Para neutralidad, asumimos una mejora leve colateral
         brecha_neut = max(0.1, 100 - ind_neutralidad)
         new_neutralidad = ind_neutralidad + (brecha_neut * 0.1) 
         
-        # ==========================================================
-        # 🐛 FIX MATEMÁTICO: ISHI PROYECTADO
-        # Respetamos el peso AHP base y solo sumamos la ganancia neta media
-        # ==========================================================
         ganancia_media = (recuperacion_resiliencia + recuperacion_estres + recuperacion_calidad) / 3
         new_ishi = min(100.0, ishi_final + ganancia_media)
 
     with c_opt2:
-        st.markdown("#### 📈 Proyección del Impacto Integral (ROI)")
-        
+        st.markdown("#### 📈 Retorno de Seguridad Hídrica (Radar Base vs. Proyectado)")
+        import plotly.graph_objects as go
         fig_opt = go.Figure()
-        
-        # Trazo Actual (Base - Rojo/Naranja punteado)
-        fig_opt.add_trace(go.Scatterpolar(
-            r=[estres_gauge_val, ind_calidad, resiliencia_real, ind_neutralidad, estres_gauge_val],
-            theta=['Abastecimiento (Estrés)', 'Calidad (DBO)', 'Resiliencia (Física)', 'Neutralidad (Huella)', 'Abastecimiento (Estrés)'],
-            fill='toself', fillcolor='rgba(231, 76, 60, 0.15)', line=dict(color='#e74c3c', width=2, dash='dot'),
-            name=f'Escenario Actual ({ishi_final:.1f}%)'
-        ))
-        
-        # Trazo Optimizado (Proyectado - Verde sólido)
-        fig_opt.add_trace(go.Scatterpolar(
-            r=[new_estres, new_calidad, new_resiliencia, new_neutralidad, new_estres],
-            theta=['Abastecimiento (Estrés)', 'Calidad (DBO)', 'Resiliencia (Física)', 'Neutralidad (Huella)', 'Abastecimiento (Estrés)'],
-            fill='toself', fillcolor='rgba(46, 204, 113, 0.4)', line=dict(color='#27ae60', width=2),
-            name=f'Escenario Optimizado ({new_ishi:.1f}%)'
-        ))
-        
-        fig_opt.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
-            height=450, margin=dict(t=30, b=30, l=40, r=40)
-        )
+        fig_opt.add_trace(go.Scatterpolar(r=[estres_gauge_val, ind_calidad, resiliencia_real, ind_neutralidad, estres_gauge_val], theta=['Abastecimiento', 'Calidad (DBO)', 'Resiliencia', 'Neutralidad', 'Abastecimiento'], fill='toself', fillcolor='rgba(231, 76, 60, 0.15)', line=dict(color='#e74c3c', width=2, dash='dot'), name=f'Base ({ishi_final:.1f}%)'))
+        fig_opt.add_trace(go.Scatterpolar(r=[new_estres, new_calidad, new_resiliencia, new_neutralidad, new_estres], theta=['Abastecimiento', 'Calidad (DBO)', 'Resiliencia', 'Neutralidad', 'Abastecimiento'], fill='toself', fillcolor='rgba(46, 204, 113, 0.4)', line=dict(color='#27ae60', width=2), name=f'Optimizado ({new_ishi:.1f}%)'))
+        fig_opt.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=True, legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"), height=400, margin=dict(t=10, b=10, l=40, r=40))
         st.plotly_chart(fig_opt, use_container_width=True)
         
         verbo_impacto = "expande" if new_ishi >= ishi_final else "mantiene"
         st.success(f"🚀 **Veredicto Estratégico:** La inyección de **${presupuesto_usd/1e6:,.1f} Millones USD** estratégicamente distribuidos {verbo_impacto} la huella de seguridad hídrica de la región de **{ishi_final:.1f}%** a **{new_ishi:.1f}%**.")
 
-    # ==============================================================================
-    # 📊 NUEVO MÓDULO: ANÁLISIS DE SENSIBILIDAD Y SIGNIFICADO FÍSICO
-    # ==============================================================================
     st.markdown("---")
-    st.markdown("### 📊 Análisis de Sensibilidad y Significado Físico")
-    
     c_sens1, c_sens2 = st.columns([1.2, 2])
-    
     with c_sens1:
-        st.markdown("#### 🧠 Síntesis del Escenario de Modelación")
-        st.info("**Variables rectoras:** El algoritmo distribuye el capital evaluando la presión demográfica (DBO5), anomalías climáticas (Fenómeno ENSO activo), y el déficit asintótico del caudal base.")
-        
-        st.markdown("#### 📖 Significado Físico de la Optimización")
-        st.write(f"La transición de un **ISHI de {ishi_final:.1f}% a {new_ishi:.1f}%** representa alejar al territorio del racionamiento hídrico. Físicamente, la inyección en Soluciones Basadas en la Naturaleza (SbN) restaura la 'esponja' del suelo para recargar acuíferos en épocas secas, mientras que la expansión de la PTAR asimila el pico orgánico sin colapsar el oxígeno disuelto del río receptor.")
-        
-        st.markdown("#### 🎯 Hitos Financieros (Costo sobre la Curva Real)")
-        
-        # Buscador numérico: Recorre la curva real de eficiencia para encontrar el costo exacto
+        st.markdown("#### 📊 Análisis de Sensibilidad y Hitos Financieros")
+        st.write(f"La transición de un **ISHI de {ishi_final:.1f}% a {new_ishi:.1f}%** representa alejar al territorio del racionamiento hídrico. Físicamente, la inyección en SbN restaura la 'esponja' del suelo, mientras que la PTAR asimila el pico orgánico.")
         def calcular_inversion_exacta(meta_objetivo):
             if ishi_final >= meta_objetivo: return 0.0
             inv_test = 0.0
@@ -700,122 +898,30 @@ if gdf_zona is not None and not gdf_zona.empty:
                 r_e = brecha_estres * (1 - math.exp(-k_verde * i_v * 0.5))
                 r_c = brecha_calidad * (1 - math.exp(-k_gris * i_g))
                 g_m = (r_r + r_e + r_c) / 3
-                if (ishi_final + g_m) >= meta_objetivo:
-                    return inv_test
+                if (ishi_final + g_m) >= meta_objetivo: return inv_test
                 inv_test += 0.1
-            return 100.0 # Más de 100M
-
-        # Hito 1: El primer esfuerzo (+10%)
+            return 100.0
         meta_10 = min(100.0, ishi_final + 10.0)
-        costo_10_pct = calcular_inversion_exacta(meta_10)
-        st.write(f"• **Mejorar la huella un +10%:** Al estar en la fase inicial de alta eficiencia, pasar del **{ishi_final:.1f}% actual** al **{meta_10:.1f}%** requiere inyectar ~${costo_10_pct:.1f} Millones USD.")
-        
-        # Hito 2: Llegar al óptimo (90%)
+        st.write(f"• **Mejorar la huella un +10%:** Pasar del **{ishi_final:.1f}% actual** al **{meta_10:.1f}%** requiere inyectar ~${calcular_inversion_exacta(meta_10):.1f} Millones USD.")
         if ishi_final < 90.0:
             brecha_90 = 90.0 - ishi_final
-            costo_90_ishi = calcular_inversion_exacta(90.0)
-            if costo_90_ishi < 100.0:
-                st.write(f"• **Alcanzar el ISHI Óptimo (90%):** Cerrar la brecha del **{brecha_90:.1f}%** (desde el **{ishi_final:.1f}% actual**) exige un fondo de ~${costo_90_ishi:.1f} Millones USD. El costo es exponencialmente mayor por el rendimiento físico decreciente de las últimas fases de mitigación.")
-            else:
-                st.write(f"• **Alcanzar el ISHI Óptimo (90%):** Cerrar la brecha del **{brecha_90:.1f}%** desde el estado actual requiere una mega-inversión estructural superior a los **$100.0 M USD**.")
-        else:
-            st.write(f"• **Alcanzar un ISHI Óptimo (90%):** ✅ El territorio ya superó esta meta.")
+            costo_90 = calcular_inversion_exacta(90.0)
+            if costo_90 < 100.0: st.write(f"• **Alcanzar el ISHI Óptimo (90%):** Cerrar la brecha del **{brecha_90:.1f}%** exige un fondo de ~${costo_90:.1f} Millones USD. El costo es exponencialmente mayor por el rendimiento físico decreciente.")
+            else: st.write(f"• **Alcanzar el ISHI Óptimo (90%):** Requiere una mega-inversión estructural superior a los **$100.0 M USD**.")
 
     with c_sens2:
-        st.markdown("#### 📈 Curva de Rendimiento Decreciente (Inversión vs. ISHI)")
         import plotly.express as px
-        
-        # Generamos el universo de inversiones (de 0 a 50 Millones)
         inv_x = list(range(0, 55, 5))
-        ishi_y = []
-        for inv in inv_x:
-            inv_g = inv * w_gris
-            inv_v = inv * w_verde
-            
-            # Recalculamos la misma ecuación asintótica para cada punto de la curva
-            r_res = brecha_resiliencia * (1 - math.exp(-k_verde * inv_v))
-            r_est = brecha_estres * (1 - math.exp(-k_verde * inv_v * 0.5))
-            r_cal = brecha_calidad * (1 - math.exp(-k_gris * inv_g))
-            
-            g_media = (r_res + r_est + r_cal) / 3
-            ishi_y.append(min(100.0, ishi_final + g_media))
-            
-        fig_curva = px.area(
-            x=inv_x, y=ishi_y, markers=True, 
-            labels={'x': 'Capital Invertido (Millones USD)', 'y': 'Proyección ISHI (%)'},
-            color_discrete_sequence=['#3498db']
-        )
-        
-        # Dibujamos una línea vertical roja donde está parado el usuario actualmente
+        ishi_y = [min(100.0, ishi_final + ((brecha_resiliencia*(1-math.exp(-k_verde*(i*w_verde))) + brecha_estres*(1-math.exp(-k_verde*(i*w_verde)*0.5)) + brecha_calidad*(1-math.exp(-k_gris*(i*w_gris))))/3)) for i in inv_x]
+        fig_curva = px.area(x=inv_x, y=ishi_y, labels={'x': 'Capital Invertido (Millones USD)', 'y': 'Proyección ISHI (%)'}, color_discrete_sequence=['#3498db'])
         presupuesto_M_actual = presupuesto_usd / 1e6
         fig_curva.add_vline(x=presupuesto_M_actual, line_dash="dash", line_color="#e74c3c")
         fig_curva.add_annotation(x=presupuesto_M_actual, y=min(100, new_ishi + 10), text="Inversión Simulada", showarrow=False, font=dict(color="#e74c3c"))
-        
-        fig_curva.update_layout(height=350, margin=dict(t=10, b=10, l=10, r=10), yaxis=dict(range=[0, 100]))
+        fig_curva.update_layout(height=250, margin=dict(t=10, b=10, l=10, r=10), yaxis=dict(range=[0, 100]))
         st.plotly_chart(fig_curva, use_container_width=True)
 
-    st.divider()
-
-    # --- PRE-PROCESAMIENTO DE CAPAS ---
-    capas = {}
-    try:
-        if gdf_zona is not None and not gdf_zona.empty:
-            capas = load_context_layers(tuple(gdf_zona.total_bounds))
-    except Exception as e:
-        st.warning(f"Aviso al cargar capas SIG: {e}")
-
     # ==============================================================================
-    # 📥 MOTOR DE DESCARGA PREDIAL (AHORA FUERA DEL EXCEPT, SIEMPRE SE EJECUTA)
-    # ==============================================================================
-    @st.cache_data(ttl=3600, show_spinner=False)
-    def obtener_predios_y_hectareas(_gdf_zona, nombre_zona_txt):
-        import requests, tempfile
-        import pandas as pd
-        import geopandas as gpd
-        
-        ha_calc = 0.0
-        info_debug = "Descargando predios..."
-        gdf_predios_final = None 
-        
-        try:
-            url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
-            res = requests.get(url_predios)
-            if res.status_code != 200: return 0.0, f"❌ Fallo descarga API", None
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp:
-                tmp.write(res.content)
-                tmp_path = tmp.name
-                
-            gdf_p = gpd.read_file(tmp_path)
-
-            if gdf_p.empty: return 0.0, "❌ GeoJSON vacío", None
-
-            gdf_p.set_crs(epsg=4326, allow_override=True, inplace=True)
-            gdf_p_3116 = gdf_p.to_crs(epsg=3116)
-            gdf_z_3116 = _gdf_zona.to_crs(epsg=3116)
-            
-            gdf_p_3116['geometry'] = gdf_p_3116.geometry.make_valid().buffer(0)
-            gdf_z_3116['geometry'] = gdf_z_3116.geometry.make_valid().buffer(0)
-            
-            recorte_exacto = gpd.clip(gdf_p_3116, gdf_z_3116)
-            
-            if not recorte_exacto.empty:
-                ha_calc = recorte_exacto.area.sum() / 10000.0
-                info_debug = f"✅ CORTE EXACTO: {len(recorte_exacto)} fragmentos de predios operan físicamente dentro de la cuenca."
-                gdf_predios_final = recorte_exacto.to_crs(epsg=4326)
-            else:
-                info_debug = f"ℹ️ ZONA VIRGEN: Ningún predio cae dentro de {nombre_zona_txt}."
-
-        except Exception as e: 
-            info_debug = f"❌ ERROR GEOMÉTRICO: {e}"
-            
-        return ha_calc, info_debug, gdf_predios_final
-
-    with st.spinner("Descargando inventario predial de la Nube (Supabase)..."):
-        ha_reales_sig, info_debug, gdf_predios_mapa = obtener_predios_y_hectareas(gdf_zona, nombre_zona)
-
-    # ==============================================================================
-    # 🗺️ MAPA TÁCTICO DE PRIORIZACIÓN
+    #  📍 PASO 5: Inteligencia Táctica (Terreno y Operatividad)
     # ==============================================================================
     with st.expander(f"🗺️ SÍNTESIS ESPACIAL: {nombre_zona}", expanded=True):
         if estres_hidrico_porcentaje > 80: color_alerta, opacidad_alerta = '#8B0000', 0.5
@@ -1099,332 +1205,6 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.plotly_chart(crear_velocimetro(ind_toxicidad, "Salud Agroquímica (Tóxicos)", "#f39c12", 40, 75), use_container_width=True)
             st.markdown(f"<h4 style='text-align: center; color: {col_tox}; margin-top:-20px;'>{est_tox}</h4>", unsafe_allow_html=True)
     
-    # =========================================================================
-    # BLOQUE 2: SIMULADOR DE INVERSIONES Y PORTAFOLIOS (WRI) + SANKEY
-    # =========================================================================
-    with st.expander(f"💼 SIMULADOR DE INVERSIONES Y PORTAFOLIOS (WRI): {nombre_zona}", expanded=False):
-        import plotly.express as px
-        import plotly.graph_objects as go
-        
-        st.markdown("Transforma las métricas biofísicas en indicadores estandarizados, simula portafolios de inversión y visualiza el impacto de los proyectos en la seguridad hídrica.")
-        
-        # --- 1. INTEGRACIÓN CARTOGRÁFICA Y SOLUCIONES BASADAS EN LA NATURALEZA (SbN) ---
-        st.markdown("---")
-        st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
-        
-        # 🛰️ INTEGRACIÓN CON EL SATÉLITE EN VIVO
-        ha_satelite_memoria = st.session_state.get('satelite_ha_bosque', 0.0)
-        
-        if ha_satelite_memoria > 0:
-            activar_sig = st.toggle("🛰️ Usar Hectáreas de Bosque detectadas por Satélite (Dynamic World)", value=True, key="td_toggle_sat")
-            ha_base_calculo = float(ha_satelite_memoria) if activar_sig else float(ha_reales_sig)
-        else:
-            activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
-            ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
-        
-        # 🚨 MOSTRAR SIEMPRE EL DIAGNÓSTICO
-        st.info(f"🕵️ **Diagnóstico del Motor:** {info_debug}")
-        
-        # --- Conexión Riparia (Nexo Físico Integrado con Biodiversidad) ---
-        ha_riparias_potenciales = 0.0
-        sumar_riparias = False
-        df_str = st.session_state.get('geomorfo_strahler_df')
-        
-        if df_str is not None and not df_str.empty:
-            st.markdown("<br>", unsafe_allow_html=True)
-            with st.container(border=True):
-                st.markdown("🌿 **Infraestructura Verde: Potencial Ripario (Conectado a Biodiversidad)**")
-                
-                # 🧠 LEEMOS LA MEMORIA DE BIODIVERSIDAD_TOOLS.PY
-                anillos = st.session_state.get('multi_rings', [10, 20, 30])
-                escenario_nombres = [
-                    f"🔴 Escenario Mínimo Normativo ({anillos[0]}m)", 
-                    f"🟡 Escenario Ideal Recomendado ({anillos[1]}m)", 
-                    f"🟢 Escenario Óptimo Ecológico ({anillos[2]}m)"
-                ]
-                
-                if 'aleph_twi_umbral' in st.session_state:
-                    st.success("🧠 **Nexo Físico Activo:** Integrando zona de amenaza de inundación/avalancha como área de restauración prioritaria.")
-
-                cr1, cr2, cr3 = st.columns(3)
-                
-                # REEMPLAZAMOS EL NUMBER_INPUT POR UN SELECTOR INTELIGENTE
-                escenario_sel = cr1.selectbox("Selecciona Escenario a Financiar en WRI:", escenario_nombres, index=1, key="td_sel_rip")
-                
-                # Mapeamos la selección al valor numérico
-                idx_sel = escenario_nombres.index(escenario_sel)
-                ancho_buffer = anillos[idx_sel]
-                
-                longitud_total_km = df_str['Longitud_Km'].sum()
-                cr2.metric("Longitud de Cauces", f"{longitud_total_km:,.2f} km")
-                
-                # Cálculo de hectáreas usando el anillo seleccionado
-                ha_riparias_potenciales = (longitud_total_km * 1000 * (ancho_buffer * 2)) / 10000.0
-                cr3.metric("Potencial Ripario (SbN)", f"{ha_riparias_potenciales:,.1f} ha")
-                
-                sumar_riparias = st.checkbox("📥 Incorporar estas hectáreas riparias a la simulación financiera WRI", value=True, key="td_sumar_rip")
-        else:
-            st.info("💡 **Tip:** Usa el motor de Geomorfología para detectar la red de drenaje y luego la página de Biodiversidad para definir los anillos de protección.")
-        
-        # --- Inputs del Simulador ---
-        st.markdown("<br>", unsafe_allow_html=True)
-        c_inv1, c_inv2, c_inv3 = st.columns(3)
-        with c_inv1:
-            st.metric("✅ Área Conservada (Base SIG)", f"{ha_reales_sig:,.1f} ha")
-            ha_simuladas = st.number_input("➕ Adicionar Hectáreas Extra (Manual):", min_value=0.0, value=0.0, step=10.0, key="td_ha_sim")
-            ha_total = ha_base_calculo + ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
-            beneficio_restauracion_m3 = ha_total * 2500 # 2500 m3/ha/año (Factor WRI estándar)
-            
-        with c_inv2:
-            sist_saneamiento = st.number_input("Sistemas Tratamiento (STAM/PTAR):", min_value=0, value=50, step=5, key="td_stam")
-            beneficio_calidad_m3 = sist_saneamiento * 1200
-            
-        with c_inv3:
-            volumen_repuesto_m3 = beneficio_restauracion_m3 + beneficio_calidad_m3
-            st.metric("💧 Agua 'Devuelta' (VWBA)", f"{volumen_repuesto_m3:,.0f} m³/año", "Impacto total simulado")
-            
-        # ==============================================================================
-        # 🔬 MOTOR DE REGULACIÓN HIDROLÓGICA Y TERMODINÁMICA (SANKEY DINÁMICO)
-        # ==============================================================================
-        with st.container(border=True):
-            st.markdown("#### ⚖️ Dinámica de Regulación Eco-Hidrológica (Source-to-Tap)")
-            st.markdown("Integración de la termodinámica del bosque: Intercepción del dosel foliar, regulación de Evapotranspiración (ETP) y recarga del flujo base.")
-            
-            # 1. Parámetros Base
-            area_cuenca_ha = area_km2 * 100                            
-            pct_bosque = min(1.0, ha_total / area_cuenca_ha) if area_cuenca_ha > 0 else 0
-                                                                       
-            # --- 🌊 BALANCE HÍDRICO DE EMERGENCIA ---
-            # 🔥 FIX 3: Protección contra división por cero si el área es 0
-            if area_km2 > 0:
-                ppt_mm_estimada = (oferta_anual_m3 / (area_km2 * 1000)) * 2.5
-                vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000
-            else:
-                # Valores por defecto si no hay matriz hidrológica cargada para este nivel
-                ppt_mm_estimada = 0.0
-                vol_lluvia_total = 0.0     
-                                                                       
-             # 2. CONEXIÓN CON BIODIVERSIDAD: Retención del Dosel (Intercepción)
-            # Se conecta a la Pág 04, si no hay dato, asume 25% óptimo
-            eficiencia_dosel_max = st.session_state.get('bio_eficiencia_retencion_pct', 25.0) / 100.0
-            # Suelo degradado retiene 5%. El bosque escala hasta el máximo.
-            pct_intercepcion = 0.05 + ((eficiencia_dosel_max - 0.05) * pct_bosque)
-            vol_intercepcion = vol_lluvia_total * pct_intercepcion
-
-            # 3. DINÁMICA DE EVAPOTRANSPIRACIÓN (ETP)
-            # El suelo desnudo evapora el agua superficial rápido (35%), el bosque transpira y regula (hasta 45%)
-            pct_etp = 0.35 + (0.10 * pct_bosque)
-            vol_etp = vol_lluvia_total * pct_etp
-
-            # 4. PRECIPITACIÓN EFECTIVA Y ESCORRENTÍA VS INFILTRACIÓN
-            vol_al_suelo = vol_lluvia_total - vol_intercepcion - vol_etp
-            
-            # Sin bosque se infiltra el 20%, con bosque hasta el 70% del agua que llega al suelo
-            pct_infiltracion = 0.20 + (0.50 * pct_bosque)
-            vol_infiltracion = vol_al_suelo * pct_infiltracion
-            vol_escorrentia = vol_al_suelo - vol_infiltracion
-            
-            # Nodos del Sankey
-            labels = [
-                "<b>Lluvia Total</b>",                  # 0
-                "<b>Retención del Dosel (Hojas)</b>",     # 1
-                "<b>Evapotranspiración (ETP)</b>",        # 2
-                "<b>Escorrentía Rápida (Riesgo)</b>",     # 3
-                "<b>Infiltración (Acuífero)</b>",         # 4
-                "<b>Flujo Base (Oferta Segura)</b>"       # 5
-            ]
-            
-            # Enlaces (Links)
-            source = [0, 0, 0, 0, 4]
-            target = [1, 2, 3, 4, 5]
-            value = [
-                vol_intercepcion,  # Lluvia -> Dosel (Vuelve a la atmósfera)
-                vol_etp,           # Lluvia -> ETP
-                vol_escorrentia,   # Lluvia -> Escorrentía
-                vol_infiltracion,  # Lluvia -> Suelo/Acuífero
-                vol_infiltracion   # Acuífero -> Río (Flujo regulado)
-            ]
-            
-            color_links = [
-                "rgba(46, 204, 113, 0.5)",  # Verde: Dosel
-                "rgba(241, 196, 15, 0.4)",  # Amarillo: ETP
-                "rgba(231, 76, 60, 0.6)",   # Rojo: Escorrentía (Peligro)
-                "rgba(52, 152, 219, 0.4)",  # Azul: Infiltración
-                "rgba(41, 128, 185, 0.6)"   # Azul oscuro: Flujo Base
-            ]
-            
-            fig_sankey = go.Figure(data=[go.Sankey(
-                valueformat=".0f", valuesuffix=" m³/año",
-                textfont=dict(size=14, color="#000000", family="Georgia, serif"),
-                node=dict(
-                    pad=25, thickness=25, line=dict(color="black", width=0.5),
-                    label=labels,
-                    color=["#34495e", "#2ecc71", "#f39c12", "#e74c3c", "#3498db", "#2980b9"]
-                ),
-                link=dict(source=source, target=target, value=value, color=color_links)
-            )])
-            
-            fig_sankey.update_layout(height=420, margin=dict(l=20, r=20, t=30, b=20), font_family="Georgia")
-            
-            c_sk1, c_sk2 = st.columns([1, 2.5])
-            with c_sk1:
-                st.metric("🌧️ Lluvia Total", f"{vol_lluvia_total/1e6:,.1f} Mm³")
-                st.metric("🍃 Agua Retenida en Dosel", f"{vol_intercepcion/1e6:,.1f} Mm³", "Regulación microclimática", delta_color="normal")
-                st.metric("💧 Oferta Regulada (Infiltrada)", f"{vol_infiltracion/1e6:,.1f} Mm³", "Trasladada al flujo base", delta_color="normal")
-                st.caption("A mayor inversión en área conservada (SbN), aumenta la intercepción foliar y la infiltración, reduciendo drásticamente la vena roja de escorrentía rápida.")
-            with c_sk2:
-                st.plotly_chart(fig_sankey, use_container_width=True)
-                
-        # --- 2. PORTAFOLIOS DE INVERSIÓN ---
-        st.markdown("---")
-        st.markdown(f"#### 💼 2. Portafolios de Inversión Multi-Objetivo")
-
-        # Portafolio 1: Cantidad
-        with st.container(border=True):
-            st.markdown("🎯 **Portafolio 1: Neutralidad Volumétrica (Cantidad)**")
-            col_m1, col_m2 = st.columns([1, 2.5])
-            with col_m1:
-                meta_neutralidad = st.slider("Meta Neutralidad (%)", 10.0, 100.0, 100.0, 5.0, key="td_meta_n")
-                costo_ha = st.number_input("Restauración (1 ha) [M COP]:", value=8.5, step=0.5, key="td_c_ha")
-                costo_stam_n = st.number_input("Saneamiento (1 STAM) [M COP]:", value=15.0, step=1.0, key="td_c_stamn")
-                costo_lps = st.number_input("Eficiencia (1 L/s) [M COP]:", value=120.0, step=10.0, key="td_c_lps")
-            
-            with col_m2:
-                vol_requerido_m3 = (meta_neutralidad / 100.0) * consumo_anual_m3
-                brecha_m3 = vol_requerido_m3 - volumen_repuesto_m3
-                ha_proyectos_simulados = ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
-                costo_proyectos_simulados = ha_proyectos_simulados * costo_ha
-                
-                if brecha_m3 <= 0: 
-                    st.success("✅ ¡Se cumple la meta de Neutralidad Volumétrica con la cobertura natural y/o proyectos simulados!")
-                    st.info(f"💰 Inversión en proyectos simulados (SbN): **${costo_proyectos_simulados:,.0f} M COP** (~${costo_proyectos_simulados/4000:,.2f} M USD)")
-                else:
-                    st.warning(f"⚠️ Faltan compensar **{brecha_m3/1e6:,.2f} Millones de m³/año**.")
-                    
-                    # 💡 NUEVO: Análisis de Costo Marginal
-                    ce_sbn = (costo_ha * 1_000_000) / 2500.0
-                    ce_stam = (costo_stam_n * 1_000_000) / 1200.0
-                    ce_lps = (costo_lps * 1_000_000) / 31536.0
-                    
-                    st.markdown(f"""
-                    <div style='font-size:0.85rem; color:#666; margin-bottom:10px;'>
-                        <b>Costo Marginal Unitario (COP por m³):</b> 🌲 SbN: <span style='color:green;'>${ce_sbn:,.0f}</span> | 🚰 Eficiencia: <span style='color:orange;'>${ce_lps:,.0f}</span> | 🚽 STAM: <span style='color:red;'>${ce_stam:,.0f}</span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    optimo_p1 = st.toggle("🪄 Activar Óptimo Técnico-Financiero", key="td_opt_p1")
-                    
-                    cmix1, cmix2, cmix3 = st.columns(3)
-                    if optimo_p1:
-                        st.info("Algoritmo activo: Maximiza la inversión en Restauración (65%) y Eficiencia (30%) por ser las vías más económicas, reservando un 5% a Saneamiento gris.")
-                        pct_a = cmix1.number_input("% Cierre vía Restauración", 0, 100, 65, disabled=True)
-                        pct_b = cmix2.number_input("% Cierre vía Saneamiento", 0, 100, 5, disabled=True)
-                        pct_c = cmix3.number_input("% Cierre vía Eficiencia", 0, 100, 30, disabled=True)
-                    else:
-                        pct_a = cmix1.number_input("% Cierre vía Restauración", 0, 100, 40)
-                        pct_b = cmix2.number_input("% Cierre vía Saneamiento", 0, 100, 40)
-                        pct_c = cmix3.number_input("% Cierre vía Eficiencia", 0, 100, 20)
-                    
-                    if (pct_a + pct_b + pct_c) == 100:
-                        ha_req = (brecha_m3 * (pct_a/100)) / 2500.0
-                        stam_req = (brecha_m3 * (pct_b/100)) / 1200.0
-                        lps_req = ((brecha_m3 * (pct_c/100)) * 1000) / 31536000 
-                        
-                        inv_brecha = (ha_req * costo_ha) + (stam_req * costo_stam_n) + (lps_req * costo_lps)
-                        inv_total = inv_brecha + costo_proyectos_simulados
-                        
-                        co1, co2, co3, co4 = st.columns(4)
-                        co1.metric("🌲 Restaurar Total", f"{(ha_req + ha_proyectos_simulados):,.1f} ha")
-                        co2.metric("🚽 STAM", f"{stam_req:,.0f} unds")
-                        co3.metric("🚰 Eficiencia", f"{lps_req:,.1f} L/s")
-                        co4.metric("💰 INVERSIÓN TOTAL", f"${inv_total:,.0f} M COP", f"~${inv_total/4000:,.2f} M USD", delta_color="off")
-                    else: st.error("La suma de los porcentajes debe ser exactamente 100%.")
-
-        # Portafolio 2: Calidad
-        with st.container(border=True):
-            st.markdown("🎯 **Portafolio 2: Remoción de Cargas (Calidad DBO5)**")
-            col_c1, col_c2 = st.columns([1, 2.5])
-            with col_c1:
-                meta_remocion = st.slider("Meta Remoción DBO (%)", 10.0, 100.0, 85.0, 5.0, key="td_meta_c")
-                costo_ptar = st.number_input("PTAR (1 Ton/a) [M COP]:", value=150.0, step=10.0, key="td_c_ptar")
-                costo_stam_c = st.number_input("STAM (1 Ton/a) [M COP]:", value=45.0, step=5.0, key="td_c_stamc")
-                costo_sbn_c = st.number_input("SbN (1 Ton/a) [M COP]:", value=12.0, step=2.0, key="td_c_sbn_c")
-            with col_c2:
-                carga_objetivo = (meta_remocion / 100.0) * carga_total_ton
-                brecha_ton = carga_objetivo - (sist_saneamiento * 0.5) 
-                
-                if brecha_ton <= 0: st.success("✅ ¡Meta de Remoción de Cargas alcanzada con la simulación!")
-                else:
-                    st.warning(f"⚠️ Faltan remover **{brecha_ton:,.1f} Ton/año** de DBO5.")
-                    
-                    # 💡 NUEVO: Análisis de Costo Marginal Calidad
-                    st.markdown(f"""
-                    <div style='font-size:0.85rem; color:#666; margin-bottom:10px;'>
-                        <b>Costo Marginal por Tonelada DBO5:</b> 🌿 SbN Biofiltros: <span style='color:green;'>${costo_sbn_c}M</span> | 🏡 STAM Rural: <span style='color:orange;'>${costo_stam_c}M</span> | 🏙️ PTAR: <span style='color:red;'>${costo_ptar}M</span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    optimo_p2 = st.toggle("🪄 Activar Óptimo Técnico-Financiero", key="td_opt_p2")
-                    
-                    cmc1, cmc2, cmc3 = st.columns(3)
-                    if optimo_p2:
-                        st.info("Algoritmo activo: Prioriza Biofiltros SbN (60%) por su inmenso ahorro, combinados con STAM rural (30%) y solo un 10% en infraestructura pesada (PTAR).")
-                        pct_ptar = cmc1.number_input("% Cierre vía PTAR", 0, 100, 10, disabled=True)
-                        pct_stam_c = cmc2.number_input("% Cierre vía STAM", 0, 100, 30, disabled=True)
-                        pct_sbn_c = cmc3.number_input("% Cierre vía SbN", 0, 100, 60, disabled=True)
-                    else:
-                        pct_ptar = cmc1.number_input("% Cierre vía PTAR", 0, 100, 50)
-                        pct_stam_c = cmc2.number_input("% Cierre vía STAM", 0, 100, 30)
-                        pct_sbn_c = cmc3.number_input("% Cierre vía SbN", 0, 100, 20)
-                    
-                    if (pct_ptar + pct_stam_c + pct_sbn_c) == 100:
-                        t_ptar = brecha_ton * (pct_ptar/100)
-                        t_stam = brecha_ton * (pct_stam_c/100)
-                        t_sbn = brecha_ton * (pct_sbn_c/100)
-                        inv_tot_c = (t_ptar * costo_ptar) + (t_stam * costo_stam_c) + (t_sbn * costo_sbn_c)
-                        
-                        coc1, coc2, coc3, coc4 = st.columns(4)
-                        coc1.metric("🏙️ PTAR", f"{t_ptar:,.0f} Ton")
-                        coc2.metric("🏡 STAM Rural", f"{t_stam:,.0f} Ton")
-                        coc3.metric("🌿 SbN Biofiltros", f"{t_sbn:,.0f} Ton")
-                        coc4.metric("💰 INVERSIÓN CALIDAD", f"${inv_tot_c:,.0f} M COP", f"~${inv_tot_c/4000:,.2f} M USD", delta_color="off")
-                    else: st.error("La suma debe ser exactamente 100%.")
-
-        # --- 3. IMPACTO PROYECTADO (NUEVOS INDICADORES) ---
-        st.markdown("---")
-        st.markdown("#### 🚀 3. Impacto Proyectado en la Salud Territorial")
-        st.info("Los siguientes velocímetros recalculan la salud de la cuenca asumiendo que se implementan los proyectos simulados en los pasos anteriores.")
-        
-        area_km2 = float(st.session_state.get('aleph_area_km2', 10.0))
-        
-        # 🔥 FIX 1: Definimos el caudal de oferta en L/s antes de usarlo (Evita el NameError)
-        caudal_oferta_L_s = (oferta_anual_m3 / 31536000) * 1000 
-        
-        carga_removida_sim = sist_saneamiento * 2.5
-        carga_final_rio_sim = max(0.0, carga_total_ton - carga_removida_sim)
-        carga_mg_s_sim = (carga_final_rio_sim * 1_000_000_000) / 31536000
-        conc_dbo_sim = carga_mg_s_sim / caudal_oferta_L_s if caudal_oferta_L_s > 0 else 999.0
-        
-        # 🔥 FIX 2: Usamos la Fórmula Exponencial para que coincida con la física del velocímetro base
-        ind_calidad_sim = max(0.0, min(100.0, 100 * math.exp(-0.07 * conc_dbo_sim)))
-        
-        ind_neutralidad_sim = min(100.0, (volumen_repuesto_m3 / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
-        
-        mejora_infiltracion = (ha_total / (area_km2 * 100)) * 0.10 
-        bfi_ratio_sim = bfi_ratio * (1 + mejora_infiltracion)
-        ind_resiliencia_sim = max(0.0, min(100.0, (bfi_ratio_sim / 0.70) * 100 * factor_supervivencia))
-
-        oferta_efectiva_sim = oferta_anual_m3 + volumen_repuesto_m3
-        wei_ratio_sim = consumo_anual_m3 / oferta_efectiva_sim if oferta_efectiva_sim > 0 else 1.0
-        estres_sim_porcentaje = wei_ratio_sim * 100
-        estres_gauge_sim_val = min(100.0, estres_sim_porcentaje)
-
-        cg1, cg2, cg3, cg4 = st.columns(4)
-        with cg1: st.plotly_chart(crear_velocimetro(ind_neutralidad_sim, "Neutralidad (Proyectada)", "#2ecc71", 40, 80), width="stretch")
-        with cg2: st.plotly_chart(crear_velocimetro(ind_resiliencia_sim, "Resiliencia (Proyectada)", "#3498db", 30, 70), width="stretch")
-        with cg3: st.plotly_chart(crear_velocimetro(estres_gauge_sim_val, "Estrés (Proyectado)", "#e74c3c", 20, 40, invertido=True), width="stretch")
-        with cg4: st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), width="stretch")
-            
     # =========================================================================
     # BLOQUE 3: PROYECCIÓN CLIMÁTICA, RANKING AHP Y PREPARACIÓN PREDIAL
     # =========================================================================
