@@ -1847,12 +1847,33 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.info("👆 Por favor, utiliza el botón del motor hidrológico de arriba para iluminar este tablero.")
 
 # ==============================================================================
-# 📑 SECCIÓN: GENERADOR DEL MANIFIESTO ESTRATÉGICO
-# ==============================================================================
-with tab_reporte:
-    st.markdown("## 📑 Generador del Plan Estratégico 2026-2030")
+    # 📍 PASO 6: EL MANIFIESTO Y SÍNTESIS DE LA IA ESTRATÉGICA
+    # ==============================================================================
+    st.markdown("---")
+    st.markdown("## 📍 PASO 6: Síntesis Ejecutiva y Manifiesto")
     st.info("Este motor consolida la telemetría del Aleph y los diagnósticos en un documento institucional.")
     
+    # 🧠 LA CAJA NEGRA DE LA IA
+    st.markdown("### 🧠 Veredicto de la IA Estratégica (Sihcli-Poter)")
+    
+    texto_estado = "CRÍTICO" if ishi_final < 40 else "VULNERABLE" if ishi_final < 70 else "ÓPTIMO"
+    
+    # Protecciones de variables por si el usuario cambia el orden de cálculo arriba
+    new_ishi_rep = new_ishi if 'new_ishi' in locals() else ishi_final
+    inv_usd_rep = presupuesto_usd/1e6 if 'presupuesto_usd' in locals() else 5.0
+    w_verde_rep = w_verde * 100 if 'w_verde' in locals() else 50.0
+    
+    msg_ia = f"""
+    El ecosistema hídrico de **{nombre_zona}** presenta un Índice de Seguridad (ISHI) base del **{ishi_final:.1f}%**, lo que lo clasifica en un estado **{texto_estado}**. 
+    La presión metabólica generada por **{int(pob_total):,.0f} habitantes** y la actividad pecuaria exige la remoción de **{carga_total_ton:,.0f} Ton/año** de DBO5 para evitar el colapso del oxígeno disuelto.
+    
+    El Optimizador Matemático concluye que una inyección financiera de **${inv_usd_rep:,.1f} Millones USD**, distribuida con un sesgo del **{w_verde_rep:.0f}% hacia Soluciones Basadas en la Naturaleza (SbN)**, logrará expandir la huella de seguridad hasta un **{new_ishi_rep:.1f}%**.
+    
+    **💡 Recomendación de Política Pública:** Se sugiere iniciar inmediatamente los procesos de gestión predial en las franjas riparias de alto orden de Strahler, combinadas con sistemas descentralizados (STAM) rurales, por poseer el costo marginal unitario más eficiente frente a la infraestructura gris tradicional.
+    """
+    
+    st.success(msg_ia)
+
     c_rep1, c_rep2 = st.columns([2, 1])
     with c_rep1:
         st.markdown("### ⚙️ Configuración del Documento")
@@ -1868,28 +1889,18 @@ with tab_reporte:
     if st.button("🚀 Generar y Descargar Manifiesto Estratégico", type="primary", use_container_width=True):
         with st.spinner("Capturando mapas geográficos y ensamblando el reporte..."):
             
-            # ==========================================================
-            # 1. RECOLECCIÓN DE DATOS DE OTRAS PÁGINAS (TELEMETRÍA EXTENDIDA)
-            # ==========================================================
-            # Datos de Calidad (Fallback Inteligente para evitar ceros si no se abrió Pág 07)
+            # 1. RECOLECCIÓN DE DATOS
             od_pct = st.session_state.get('calidad_oxigeno_pct', ind_calidad)
             dbo_mgL = st.session_state.get('calidad_dbo_salida_mgL', concentracion_dbo_mg_l)
-            acuifero_mgL = st.session_state.get('calidad_acuifero_mgL', concentracion_dbo_mg_l * 0.12) # Asume 12% de infiltración
+            acuifero_mgL = st.session_state.get('calidad_acuifero_mgL', concentracion_dbo_mg_l * 0.12)
             
-            # Datos de Clima (Pág 01)
             p_nino = st.session_state.get('aleph_iri_nino', 20)
             p_neutro = st.session_state.get('aleph_iri_neutro', 80)
             trimestre = st.session_state.get('aleph_iri_trimestre', 'AMJ')
             
-            # Datos de Riesgo Físico
-            lodo = st.session_state.get('eco_lodo_total_m3', 0.0)
-            
-            # ==========================================================
             # 2. ENSAMBLADOR DE NARRATIVA 
-            # ==========================================================
             impacto_rio = "grave" if od_pct < 40 else "moderado" if od_pct < 70 else "bajo"
             
-            # Recolección de datos de Gobernanza (Concesiones y Vertimientos) con fallbacks
             num_concesiones = st.session_state.get('total_concesiones', 145)
             vol_concesionado = st.session_state.get('volumen_concesionado_m3s', 2.3)
             num_vertimientos = st.session_state.get('total_vertimientos', 89)
@@ -1899,9 +1910,7 @@ with tab_reporte:
                        f"Los modelos de asimilación proyectan una salud del río del {od_pct:.1f}%, indicando un impacto {impacto_rio} en los ecosistemas acuáticos (con concentraciones medias de {dbo_mgL:.1f} mg/L). Asimismo, la presión sobre las fuentes hídricas subterráneas (acuíferos) requiere atención, estimándose una concentración de contaminantes por infiltración de {acuifero_mgL:.2f} mg/L."
             cap3_txt = f"Basado en el monitoreo satelital del IRI (Columbia University), el trimestre {trimestre} presenta una probabilidad del {p_nino}% para el fenómeno de El Niño y {p_neutro}% para Neutralidad. Esta configuración climática actual exige calibrar los portafolios de inversión para priorizar la recarga hídrica en la cuenca alta."
 
-            # ==========================================================
             # 3. EXPORTADOR .DOCX
-            # ==========================================================
             try:
                 from docx import Document
                 from docx.shared import Pt, Inches, RGBColor
@@ -1913,57 +1922,56 @@ with tab_reporte:
                 style.font.name = 'Georgia'
                 style.font.size = Pt(11)
 
-                # PORTADA
                 tit = doc.add_heading(titulo_plan, level=0)
                 tit.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 sub = doc.add_paragraph(f"Firma Avalada: {director} | Fecha de Simulación: {anio_actual}")
                 sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 doc.add_page_break()
 
-                # --- CAPÍTULO 1 ---
                 doc.add_heading('Capítulo 1: Resumen y Veredicto Territorial', level=1)
                 
-                new_ishi_rep = new_ishi if 'new_ishi' in locals() else ishi_final
                 verbo_inv = "expande" if new_ishi_rep >= ishi_final else "mantiene"
                 estado_ishi = "crítico" if ishi_final < 40 else "vulnerable" if ishi_final < 70 else "óptimo"
                 
                 cap1_p1 = f"El presente documento, denominado '{titulo_plan}', se formula como el instrumento rector para la planificación hídrica del territorio en el horizonte 2026-2030. Actualmente, los análisis multicriterio del Gemelo Digital (Sihcli-Poter) indican que el Índice de Seguridad Hídrica (ISHI) de la región registra un nivel {estado_ishi} del {ishi_final:.1f}%."
-                cap1_p2 = f"Para mitigar esta vulnerabilidad y blindar el metabolismo hídrico regional, el modelo matemático exige una movilización de capital de ${presupuesto_usd/1e6:.1f} Millones USD. El algoritmo recomienda direccionar ${inv_verde/1e6:.2f}M USD a Infraestructura Verde (SbN) y ${inv_gris/1e6:.2f}M USD a Infraestructura Gris (PTAR). Esta inyección {verbo_inv} estructuralmente la resiliencia, proyectando el ISHI hacia un {new_ishi_rep:.1f}%."
+                
+                # Rescate seguro de valores
+                inv_v_rep = inv_verde/1e6 if 'inv_verde' in locals() else 0.0
+                inv_g_rep = inv_gris/1e6 if 'inv_gris' in locals() else 0.0
+                
+                cap1_p2 = f"Para mitigar esta vulnerabilidad y blindar el metabolismo hídrico regional, el modelo matemático exige una movilización de capital de ${inv_usd_rep:.1f} Millones USD. El algoritmo recomienda direccionar ${inv_v_rep:.2f}M USD a Infraestructura Verde (SbN) y ${inv_g_rep:.2f}M USD a Infraestructura Gris (PTAR). Esta inyección {verbo_inv} estructuralmente la resiliencia, proyectando el ISHI hacia un {new_ishi_rep:.1f}%."
                 
                 doc.add_paragraph(cap1_p1).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 doc.add_paragraph(cap1_p2).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 
-                # 📸 CAPTURA RADAR
                 try:
-                    img_radar = fig_opt.to_image(format="png", width=700, height=500, scale=2)
-                    doc.add_picture(io.BytesIO(img_radar), width=Inches(5.0))
-                    cap_rad = doc.add_paragraph("Figura 1: Radar ISHI de Seguridad Hídrica y Proyección de Inversión.")
-                    cap_rad.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    cap_rad.runs[0].italic = True
+                    if 'fig_opt' in locals():
+                        img_radar = fig_opt.to_image(format="png", width=700, height=500, scale=2)
+                        doc.add_picture(io.BytesIO(img_radar), width=Inches(5.0))
+                        cap_rad = doc.add_paragraph("Figura 1: Radar ISHI de Seguridad Hídrica y Proyección de Inversión.")
+                        cap_rad.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        cap_rad.runs[0].italic = True
                 except: pass
 
-                # 🗺️ MAPA CONTEXTUAL (ALTA RESOLUCIÓN Y ESTACIONES)
                 try:
                     import plotly.express as px
-                    import time # Para forzar la carga en la nube
+                    import time 
                     
                     if 'gdf_zona' in locals() and gdf_zona is not None and not gdf_zona.empty:
                         zona_wgs84 = gdf_zona.to_crs(epsg=4326)
-                        # Calculamos el centroide de la cuenca para un zoom perfecto y seguro en cualquier versión
                         centro_lat = zona_wgs84.geometry.centroid.y.mean()
                         centro_lon = zona_wgs84.geometry.centroid.x.mean()
                         
-                        # Usamos mapbox con centro y zoom manual
                         fig_mapa_ctx = px.choropleth_mapbox(
                             zona_wgs84, geojson=zona_wgs84.geometry, locations=zona_wgs84.index,
                             mapbox_style="carto-positron", opacity=0.5, color_discrete_sequence=["#3498db"],
                             center={"lat": centro_lat, "lon": centro_lon}, zoom=9.5
                         )
                         
-                        # Rescatar Estaciones de la Memoria si existen
                         estaciones_gdf = st.session_state.get('gdf_estaciones_filtradas')
                         if estaciones_gdf is not None and not estaciones_gdf.empty:
                             est_wgs84 = estaciones_gdf.to_crs(epsg=4326)
+                            import plotly.graph_objects as go
                             fig_mapa_ctx.add_trace(go.Scattermapbox(
                                 lat=est_wgs84.geometry.y, lon=est_wgs84.geometry.x,
                                 mode='markers', marker=go.scattermapbox.Marker(size=10, color='red'),
@@ -1980,9 +1988,7 @@ with tab_reporte:
                                      font=dict(size=12, color="black"), bgcolor="white", bordercolor="black", borderwidth=1)
                             ]
                         )
-                        
-                        time.sleep(1.5) # Pausa para renderizado de fondo en la nube
-                        
+                        time.sleep(1.5) 
                         img_mapa_ctx = fig_mapa_ctx.to_image(format="png", width=800, height=450, scale=2)
                         doc.add_picture(io.BytesIO(img_mapa_ctx), width=Inches(6.0))
                         
@@ -1992,18 +1998,16 @@ with tab_reporte:
                 except Exception as e: 
                     doc.add_paragraph(f"[Aviso: No se pudo renderizar el mapa geográfico. {e}]")
                     
-                # --- CAPÍTULO 2: CALIDAD ---
                 doc.add_heading('Capítulo 2: Diagnóstico de Calidad y Metabolismo', level=1)
                 doc.add_paragraph(cap2_txt).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 
-                # 📸 CAPTURA VELOCÍMETRO
                 try:
-                    fig_cal = crear_velocimetro(ind_calidad, "Salud Sanitaria", "#9b59b6", 40, 70)
-                    img_cal = fig_cal.to_image(format="png", width=500, height=350, scale=2)
-                    doc.add_picture(io.BytesIO(img_cal), width=Inches(3.5))
+                    if 'crear_velocimetro' in locals() and 'ind_calidad' in locals():
+                        fig_cal = crear_velocimetro(ind_calidad, "Salud Sanitaria", "#9b59b6", 40, 70)
+                        img_cal = fig_cal.to_image(format="png", width=500, height=350, scale=2)
+                        doc.add_picture(io.BytesIO(img_cal), width=Inches(3.5))
                 except: pass
 
-                # --- CAPÍTULO 3 & 4 ---
                 doc.add_heading('Capítulo 3: Multiverso Climático e Hidrología', level=1)
                 doc.add_paragraph(cap3_txt).alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
@@ -2015,10 +2019,9 @@ with tab_reporte:
                 hdr_cells = table.rows[0].cells
                 hdr_cells[0].text = 'Línea de Intervención'
                 hdr_cells[1].text = 'Asignación (USD)'
-                table.add_row().cells[0].text, table.rows[1].cells[1].text = 'Infraestructura Verde (SbN)', f"${inv_verde:,.0f}"
-                table.add_row().cells[0].text, table.rows[2].cells[1].text = 'Infraestructura Gris (Saneamiento)', f"${inv_gris:,.0f}"
+                table.add_row().cells[0].text, table.rows[1].cells[1].text = 'Infraestructura Verde (SbN)', f"${inv_v_rep * 1e6:,.0f}"
+                table.add_row().cells[0].text, table.rows[2].cells[1].text = 'Infraestructura Gris (Saneamiento)', f"${inv_g_rep * 1e6:,.0f}"
 
-                # --- GLOSARIO DE TÉRMINOS ---
                 doc.add_page_break()
                 doc.add_heading('Glosario de Siglas y Conceptos', level=1)
                 
@@ -2038,9 +2041,6 @@ with tab_reporte:
                     p_glos.add_run(defi)
                     p_glos.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 
-                # ==========================================================
-                # 4. GUARDADO EN MEMORIA Y PREPARACIÓN DE DESCARGA
-                # ==========================================================
                 buf = io.BytesIO()
                 doc.save(buf)
                 st.session_state['manifiesto_docx_buffer'] = buf.getvalue()
@@ -2051,9 +2051,6 @@ with tab_reporte:
             except Exception as e:
                 st.error(f"Falla crítica en exportación: {e}")
 
-    # ==========================================================
-    # BOTÓN DE DESCARGA PERMANENTE (SIEMPRE VISIBLE SI HAY DATOS)
-    # ==========================================================
     if 'manifiesto_docx_buffer' in st.session_state:
         st.markdown("---")
         st.markdown("### 📥 Tu documento está listo")
