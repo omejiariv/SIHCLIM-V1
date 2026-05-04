@@ -1103,40 +1103,6 @@ if gdf_zona is not None and not gdf_zona.empty:
         fig_curva.update_layout(height=250, margin=dict(t=10, b=10, l=10, r=10), yaxis=dict(range=[0, 100]))
         st.plotly_chart(fig_curva, use_container_width=True)
 
-        # ==========================================
-        # 7. ☠️ RIESGO AGROQUÍMICO (FUENTES DIFUSAS)
-        # ==========================================
-        st.markdown("---")
-        st.markdown("### ☠️ Impacto Agroquímico y Eutrofización")
-        
-        # 1. Extraer Hectáreas del Diccionario Satelital
-        ha_cultivos = next((x["Área (Ha)"] for x in areas_data if "Cultivos" in x["Cobertura"]), 0.0)
-        ha_pastos = next((x["Área (Ha)"] for x in areas_data if "Pastos" in x["Cobertura"]), 0.0)
-        area_total_ha = sum([x["Área (Ha)"] for x in areas_data]) if areas_data else area_cuenca_km2 * 100
-
-        # 2. Factores de Exportación (N y P) adaptados para Antioquia
-        # (Aguacate, Cítricos y Ganadería intensa)
-        carga_N_kg = (ha_cultivos * 28.5) + (ha_pastos * 9.2)
-        carga_P_kg = (ha_cultivos * 5.8) + (ha_pastos * 1.5)
-        
-        # 3. Índice de Riesgo Tóxico (Pesticidas)
-        # Castiga la salud agroquímica según la densidad de la frontera agrícola
-        pct_agricola = ((ha_cultivos + ha_pastos) / area_total_ha) * 100 if area_total_ha > 0 else 0
-        ind_toxicidad = 100.0 - min(100.0, (pct_agricola / 45.0) * 100) 
-
-        c_agro1, c_agro2, c_agro3 = st.columns([1, 1, 1.5])
-        with c_agro1:
-            st.metric("🌾 Nitrógeno (Eutrofización)", f"{carga_N_kg:,.0f} kg/año", "Potencial de Algas", delta_color="inverse")
-            st.metric("🥑 Fósforo Total", f"{carga_P_kg:,.0f} kg/año")
-        with c_agro2:
-            st.metric("🚜 Densidad Frontera Agro", f"{pct_agricola:.1f}%", "Carga Crítica > 45%", delta_color="inverse")
-            st.caption(f"Área Detectada: {ha_cultivos:,.1f} ha de Cultivos")
-        
-        with c_agro3:
-            est_tox, col_tox = evaluar_indice(ind_toxicidad, 40, 75)
-            st.plotly_chart(crear_velocimetro(ind_toxicidad, "Salud Agroquímica (Tóxicos)", "#f39c12", 40, 75), use_container_width=True)
-            st.markdown(f"<h4 style='text-align: center; color: {col_tox}; margin-top:-20px;'>{est_tox}</h4>", unsafe_allow_html=True)
-    
     # =========================================================================
     # BLOQUE 3: PROYECCIÓN CLIMÁTICA, RANKING AHP Y PREPARACIÓN PREDIAL
     # =========================================================================
