@@ -555,8 +555,12 @@ if gdf_zona is not None and not gdf_zona.empty:
             <li style='margin-bottom: 6px;'><span style='background:#E4A63F; width: 16px; height: 16px; display: inline-block; margin-right: 8px;'></span>Pastos</li>
             <li style='margin-bottom: 6px;'><span style='background:#A55194; width: 16px; height: 16px; display: inline-block; margin-right: 8px;'></span>Cultivos</li>
             <li style='margin-bottom: 6px;'><span style='background:#C4281B; width: 16px; height: 16px; display: inline-block; margin-right: 8px;'></span>Urbano</li>
+
         </ul></div>{% endmacro %}"""
-        m.get_root().add_child(MacroElement(_template=Template(leyenda_html)))
+        macro = MacroElement()
+        macro._template = Template(leyenda_html)
+        m.get_root().add_child(macro)
+        
         folium.LayerControl(position='topright').add_to(m)
         st_folium(m, width="100%", height=500, returned_objects=[])
 
