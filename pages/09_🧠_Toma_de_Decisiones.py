@@ -784,14 +784,19 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
     
-    ha_satelite_memoria = st.session_state.get('satelite_ha_bosque', 0.0)
-    if ha_satelite_memoria > 0:
+    # 🧠 FIX: Conectar el toggle directamente al cerebro satelital en vivo
+    if 'areas_data' in locals() and areas_data:
+        ha_satelite_vivo = next((x["Área (Ha)"] for x in areas_data if "Bosque" in x["Cobertura"]), 0.0)
+    else:
+        ha_satelite_vivo = 0.0
+        
+    if ha_satelite_vivo > 0:
         activar_sig = st.toggle("🛰️ Usar Hectáreas de Bosque detectadas por Satélite (Dynamic World)", value=True, key="td_toggle_sat")
-        ha_base_calculo = float(ha_satelite_memoria) if activar_sig else float(ha_reales_sig)
+        ha_base_calculo = float(ha_satelite_vivo) if activar_sig else float(ha_reales_sig)
     else:
         activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
         ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
-    
+        
     st.info(f"🕵️ **Diagnóstico del Motor Predial:** {info_debug}")
     
     ha_riparias_potenciales = 0.0
