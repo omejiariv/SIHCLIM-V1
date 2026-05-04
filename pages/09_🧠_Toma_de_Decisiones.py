@@ -623,6 +623,35 @@ if gdf_zona is not None and not gdf_zona.empty:
 
     st.markdown("<br>", unsafe_allow_html=True)
     
+    # --- FUNCIONES DE RENDERIZADO VISUAL ---
+    def evaluar_indice(valor, umbral_rojo, umbral_verde, invertido=False):
+        if not invertido:
+            if valor < umbral_rojo: return "🔴 CRÍTICO", "#c0392b"
+            elif valor < umbral_verde: return "🟡 VULNERABLE", "#f39c12"
+            else: return "🟢 ÓPTIMO", "#27ae60"
+        else:
+            if valor < umbral_verde: return "🟢 HOLGADO", "#27ae60"
+            elif valor < umbral_rojo: return "🟡 MODERADO", "#f39c12"
+            else: return "🔴 CRÍTICO", "#c0392b"
+
+    def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
+        import plotly.graph_objects as go
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number", value = valor,
+            number = {'suffix': "%", 'font': {'size': 24}}, title = {'text': titulo, 'font': {'size': 14}},
+            gauge = {
+                'axis': {'range': [None, 100], 'tickwidth': 1}, 'bar': {'color': color_bar}, 'bgcolor': "white",
+                'steps': [
+                    {'range': [0, umbral_rojo], 'color': "#ffcccb" if not invertido else "#e8f8f5"},
+                    {'range': [umbral_rojo, umbral_verde], 'color': "#fff2cc"},
+                    {'range': [umbral_verde, 100], 'color': "#e8f8f5" if not invertido else "#ffcccb"}
+                ],
+                'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': valor}
+            }
+        ))
+        fig.update_layout(height=230, margin=dict(l=10, r=10, t=30, b=10), font_family="Georgia")
+        return fig
+    
     # --- RENDERIZADO DE LOS VELOCÍMETROS ---
     estres_gauge_val = min(100.0, estres_hidrico_porcentaje)
     col_g1, col_g2, col_g3, col_g4 = st.columns(4)
