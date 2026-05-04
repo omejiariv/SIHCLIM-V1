@@ -654,6 +654,16 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     # --- RENDERIZADO DE LOS VELOCÍMETROS ---
     estres_gauge_val = min(100.0, estres_hidrico_porcentaje)
+    
+    # 💧 NUEVO: CÁLCULO DE NEUTRALIDAD BASE BASADO EN EL SATÉLITE (Reemplaza el 0.0 antiguo)
+    if 'areas_data' in locals() and areas_data:
+        ha_bosque_base = next((x["Área (Ha)"] for x in areas_data if "Bosque" in x["Cobertura"]), 0.0)
+    else:
+        ha_bosque_base = float(ha_reales_sig) if 'ha_reales_sig' in locals() else 0.0
+        
+    volumen_repuesto_base = ha_bosque_base * 2500
+    ind_neutralidad = min(100.0, (volumen_repuesto_base / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
+    
     col_g1, col_g2, col_g3, col_g4 = st.columns(4)
     
     est_neu, col_neu = evaluar_indice(ind_neutralidad, 40, 80)
