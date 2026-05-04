@@ -114,13 +114,25 @@ button[data-baseweb="tab"][aria-selected="true"] {
 
 # --- 2. EXPLICACIÓN METODOLÓGICA ---
 def render_metodologia():
-    with st.expander("🔬 METODOLOGÍA Y GUÍA DEL TABLERO", expanded=False):
+    with st.expander("🔬 METODOLOGÍA Y GUÍA DEL TABLERO (Leer antes de iniciar)", expanded=False):
         st.markdown("""
         ### ¿Cómo funciona esta página?
-        Este módulo es la **Síntesis Estratégica** de Sihcli-Poter. Integra dos visiones:
+        Este módulo es la **Síntesis Estratégica** de Sihcli-Poter. Su motor matemático funde dos marcos de trabajo internacionales:
         
         1. **Análisis Multicriterio Espacial (SMCA):** Identifica *dónde* actuar cruzando Balance Hídrico, Biodiversidad y Geomorfología.
-        2. **Estándares Corporativos (WRI):** Mide el *impacto volumétrico* de las intervenciones usando la metodología VWBA.
+        2. **Estándares Corporativos (WRI):** Mide el *impacto volumétrico* de las intervenciones usando la metodología VWBA (Volumetric Water Benefit Accounting).
+        
+        ---
+        
+        ### 🗺️ La Arquitectura Conceptual (Ruta de Decisión Informada)
+        Para facilitar la estructuración de la política pública, este tablero está diseñado como un embudo lógico de 6 pasos. Le recomendamos descender secuencialmente:
+
+        *   **📍 PASO 1: Fotografía del Paciente (Diagnóstico Base):** ¿Dónde estamos parados hoy? *(Métricas iniciales de metabolismo y Velocímetros de Salud).*
+        *   **📍 PASO 2: Prueba de Estrés (Riesgo Físico y Climático):** ¿Qué pasa si la situación empeora? *(Simulador de Avenidas Torrenciales y Fenómeno ENSO).*
+        *   **📍 PASO 3: Ingeniería de Soluciones (Simulador WRI):** ¿Qué necesitamos construir físicamente para mitigar el déficit? *(Diagrama termodinámico Sankey, metas en hectáreas y toneladas).*
+        *   **📍 PASO 4: Viabilidad Financiera (Optimizador ROI):** ¿Cuánto cuesta la infraestructura y cuál es el retorno de inversión? *(Simulador de capital Dólar vs. ISHI).*
+        *   **📍 PASO 5: Inteligencia Táctica (Terreno):** ¿Exactamente en cuáles cuencas y predios vamos a poner ese dinero? *(Ranking AHP y Visor 3D PyDeck).*
+        *   **📍 PASO 6: La Gran Síntesis (Manifiesto Estratégico):** La Inteligencia Artificial consolida las decisiones anteriores, redacta un veredicto gerencial y exporta el Plan de Acción en un documento oficial Word.
         """)
 
 # --- 3. FUNCIONES DE CARGA ROBUSTAS ---
