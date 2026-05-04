@@ -564,13 +564,33 @@ if gdf_zona is not None and not gdf_zona.empty:
         folium.LayerControl(position='topright').add_to(m)
         st_folium(m, width="100%", height=500, returned_objects=[])
 
-        if areas_data:
-            st.markdown("### 🌍 Distribución de Coberturas Satelitales (Ha)")
-            df_areas = pd.DataFrame(areas_data).sort_values(by="Área (Ha)", ascending=False).reset_index(drop=True)
-            cols = st.columns(len(df_areas))
-            for idx, row in df_areas.iterrows(): cols[idx].metric(label=row["Cobertura"], value=f"{row['Área (Ha)']:,.0f}")
+        # ==========================================
+        # 5. MOSTRAR MÉTRICAS: NATURAL VS GESTIONADO
+        # ==========================================
+        st.markdown("### 🌍 Balance de Coberturas: Capital Natural vs. Capital Gestionado")
+        
+        c_met1, c_met2 = st.columns([3, 1])
+        
+        with c_met1:
+            if areas_data:
+                df_areas = pd.DataFrame(areas_data).sort_values(by="Área (Ha)", ascending=False).reset_index(drop=True)
+                cols = st.columns(len(df_areas))
+                for idx, row in df_areas.iterrows(): 
+                    # Limpiamos el texto para que se vea más estético
+                    nombre_limpio = row['Cobertura'].split(' ')[1] if ' ' in row['Cobertura'] else row['Cobertura']
+                    cols[idx].metric(label=f"🛰️ {nombre_limpio}", value=f"{row['Área (Ha)']:,.0f}")
+        
+        with c_met2:
+            # El recuadro distintivo para la inversión SIG
+            ha_historicas = float(ha_reales_sig) if 'ha_reales_sig' in locals() else 0.0
+            st.markdown(f"""
+            <div style="background-color: #e8f8f5; padding: 10px; border-radius: 8px; border: 2px solid #2ecc71; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="font-size: 0.85rem; color: #27ae60; margin-bottom: 5px;">🟢 Inversión Histórica (SIG)</div>
+                <div style="font-size: 1.4rem; font-weight: bold; color: #1e8449;">{ha_historicas:,.1f} ha</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-    # ==============================================================================
+     # ==============================================================================
     # 📍 PASO 1: LA FOTOGRAFÍA DEL PACIENTE (DIAGNÓSTICO BASE)
     # ==============================================================================
     st.markdown("---")
@@ -655,13 +675,9 @@ if gdf_zona is not None and not gdf_zona.empty:
     # --- RENDERIZADO DE LOS VELOCÍMETROS ---
     estres_gauge_val = min(100.0, estres_hidrico_porcentaje)
     
-    # 💧 NUEVO: CÁLCULO DE NEUTRALIDAD BASE BASADO EN EL SATÉLITE (Reemplaza el 0.0 antiguo)
-    if 'areas_data' in locals() and areas_data:
-        ha_bosque_base = next((x["Área (Ha)"] for x in areas_data if "Bosque" in x["Cobertura"]), 0.0)
-    else:
-        ha_bosque_base = float(ha_reales_sig) if 'ha_reales_sig' in locals() else 0.0
-        
-    volumen_repuesto_base = ha_bosque_base * 2500
+    # 💧 REGLA WRI: La Neutralidad Institucional Base usa solo el área gestionada en el SIG
+    ha_gestionadas_base = float(ha_reales_sig) if 'ha_reales_sig' in locals() else 0.0
+    volumen_repuesto_base = ha_gestionadas_base * 2500
     ind_neutralidad = min(100.0, (volumen_repuesto_base / consumo_anual_m3) * 100) if consumo_anual_m3 > 0 else 0.0
     
     col_g1, col_g2, col_g3, col_g4 = st.columns(4)
@@ -784,20 +800,10 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     st.markdown(f"#### 🌲 1. Simulación de Beneficios Volumétricos (SbN) en: **{nombre_zona}**")
     
-    # 🧠 FIX: Conectar el toggle directamente al cerebro satelital en vivo
-    if 'areas_data' in locals() and areas_data:
-        ha_satelite_vivo = next((x["Área (Ha)"] for x in areas_data if "Bosque" in x["Cobertura"]), 0.0)
-    else:
-        ha_satelite_vivo = 0.0
-        
-    if ha_satelite_vivo > 0:
-        activar_sig = st.toggle("🛰️ Usar Hectáreas de Bosque detectadas por Satélite (Dynamic World)", value=True, key="td_toggle_sat")
-        ha_base_calculo = float(ha_satelite_vivo) if activar_sig else float(ha_reales_sig)
-    else:
-        activar_sig = st.toggle("✅ Incluir Área Restaurada del SIG actual en la simulación", value=True, key="td_toggle_sig")
-        ha_base_calculo = float(ha_reales_sig) if activar_sig else 0.0
-        
-    st.info(f"🕵️ **Diagnóstico del Motor Predial:** {info_debug}")
+    st.info("💡 **Regla de Contabilidad WRI (VWBA):** Para el cierre de brechas financieras (Neutralidad), el modelo solo reconoce el volumen de agua generado por el *Capital Gestionado* (Áreas SIG de conservación histórica) y las nuevas inversiones simuladas.")
+    
+    # El cálculo financiero base es ESTRICTAMENTE lo gestionado en el SIG
+    ha_base_calculo = float(ha_reales_sig) if 'ha_reales_sig' in locals() else 0.0
     
     ha_riparias_potenciales = 0.0
     sumar_riparias = False
@@ -839,10 +845,20 @@ if gdf_zona is not None and not gdf_zona.empty:
         
     with st.container(border=True):
         st.markdown("#### ⚖️ Dinámica de Regulación Eco-Hidrológica (Source-to-Tap)")
-        st.markdown("Integración de la termodinámica del bosque: Intercepción del dosel foliar, regulación de Evapotranspiración (ETP) y recarga del flujo base.")
+        st.markdown("Integración de la termodinámica del ecosistema. **Nota:** Este diagrama físico sí utiliza la totalidad del *Capital Natural* detectado por el satélite (Bosques + Matorrales) más las nuevas áreas simuladas.")
+        
+        # Rescatamos el bosque total del satélite para la física del agua
+        if 'areas_data' in locals() and areas_data:
+            ha_bosque_sat = next((x["Área (Ha)"] for x in areas_data if "Bosque" in x["Cobertura"]), 0.0)
+            ha_matorral_sat = next((x["Área (Ha)"] for x in areas_data if "Matorrales" in x["Cobertura"]), 0.0)
+        else:
+            ha_bosque_sat, ha_matorral_sat = 0.0, 0.0
+            
+        ha_fisica_total = ha_bosque_sat + ha_matorral_sat + ha_simuladas + (ha_riparias_potenciales if sumar_riparias else 0.0)
         
         area_cuenca_ha = area_km2 * 100                            
-        pct_bosque = min(1.0, ha_total / area_cuenca_ha) if area_cuenca_ha > 0 else 0
+        pct_bosque = min(1.0, ha_fisica_total / area_cuenca_ha) if area_cuenca_ha > 0 else 0
+        
         if area_km2 > 0:
             ppt_mm_estimada = (oferta_anual_m3 / (area_km2 * 1000)) * 2.5
             vol_lluvia_total = ppt_mm_estimada * area_km2 * 1000
