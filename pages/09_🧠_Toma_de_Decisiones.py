@@ -54,7 +54,6 @@ st.markdown("""
 Integración Multicriterio para la **Seguridad Hídrica**, la **Conservación de la Biodiversidad** y la **Gestión del Riesgo**.  
 *Utilice este tablero gerencial para simular escenarios de inversión y priorizar áreas de restauración ecológica.*
 """)
-st.divider()
 
 # 🎨 INYECCIÓN CSS PREMIUM (Para Expanders y Tipografía Gerencial)
 st.markdown("""
