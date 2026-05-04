@@ -426,35 +426,32 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.session_state['estres_hidrico_global'] = estres_hidrico_porcentaje
     
     # ==============================================================================
-    # 📑 ARQUITECTURA DE PESTAÑAS: DASHBOARD VS MANIFIESTO
+    # 📍 PASO 1: LA FOTOGRAFÍA DEL PACIENTE (DIAGNÓSTICO BASE)
     # ==============================================================================
-    tab_dashboard, tab_reporte = st.tabs(["🎛️ Centro de Comando", "📑 Manifiesto Estratégico 2026-2030"])
-
-    with tab_dashboard:
-        st.markdown("### 🎛️ Centro de Comando: Seguridad Hídrica")
+    st.markdown("---")
+    st.markdown("## 📍 PASO 1: Diagnóstico Territorial Base")
+    st.info("Fotografía actual del metabolismo hídrico antes de aplicar inversiones o escenarios climáticos extremos.")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("👥 Población Servida", f"{int(pob_total):,.0f} hab")
         
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("👥 Población Servida", f"{int(pob_total):,.0f} hab")
-            
-        with col2:
-            st.metric("☣️ Carga Orgánica (DBO5)", f"{carga_total_ton:,.1f} Ton/año", origen_carga, delta_color="inverse")
-        
-        with col3:
-            st.markdown(f"""
-            <div style="background-color: white; padding: 10px; border-radius: 5px; border: 1px solid #eee; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);">
-                <div style="font-size: 0.85rem; color: #555; margin-bottom: 5px;">🐄 Presión Pecuaria</div>
-                <div style="font-size: 1rem; font-weight: bold; color: #2c3e50;">
-                    🐮 {bovinos:,.0f} Bov <br>
-                    🐷 {porcinos:,.0f} Por <br>
-                    🐔 {aves:,.0f} Ave
-                </div>
+    with col2:
+        st.metric("☣️ Carga Orgánica (DBO5)", f"{carga_total_ton:,.1f} Ton/año", origen_carga, delta_color="inverse")
+    
+    with col3:
+        st.markdown(f"""
+        <div style="background-color: white; padding: 10px; border-radius: 5px; border: 1px solid #eee; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);">
+            <div style="font-size: 0.85rem; color: #555; margin-bottom: 5px;">🐄 Presión Pecuaria</div>
+            <div style="font-size: 1rem; font-weight: bold; color: #2c3e50;">
+                🐮 {bovinos:,.0f} Bov | 🐷 {porcinos:,.0f} Por | 🐔 {aves:,.0f} Ave
             </div>
-            """, unsafe_allow_html=True)
-            
-        with col4:
-            st.metric("⚠️ Estrés Hídrico Neto", f"{estres_hidrico_porcentaje:,.1f} %", "Crítico" if estres_hidrico_porcentaje > 40 else "Estable", delta_color="inverse")
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with col4:
+        st.metric("⚠️ Estrés Hídrico Neto", f"{estres_hidrico_porcentaje:,.1f} %", "Crítico" if estres_hidrico_porcentaje > 40 else "Estable", delta_color="inverse")
 
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -470,6 +467,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             else: return "🔴 CRÍTICO", "#c0392b"
 
     def crear_velocimetro(valor, titulo, color_bar, umbral_rojo, umbral_verde, invertido=False):
+        import plotly.graph_objects as go
         fig = go.Figure(go.Indicator(
             mode = "gauge+number", value = valor,
             number = {'suffix': "%", 'font': {'size': 24}}, title = {'text': titulo, 'font': {'size': 14}},
@@ -508,61 +506,48 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.plotly_chart(crear_velocimetro(ind_calidad, "Calidad Sanitaria (DBO)", "#9b59b6", 40, 70), width="stretch")
         st.markdown(f"<h4 style='text-align: center; color: {col_cal}; margin-top:-20px;'>{est_cal}</h4>", unsafe_allow_html=True)
 
-    
-        
     # ==============================================================================
-    # 🧠 CAPTURA DEL ALEPH (Impactos Físicos desde Pág 04) Y MATRIZ ISHI
+    # 📍 PASO 2: LA PRUEBA DE ESTRÉS (RIESGOS FÍSICOS Y CLIMÁTICOS)
     # ==============================================================================
-    st.divider()
+    st.markdown("---")
+    st.markdown("## 📍 PASO 2: Prueba de Estrés (Riesgos)")
     
-    # 1. Leemos el desastre físico si hubo tormenta en Biodiversidad
-    lodo_memoria = st.session_state.get('eco_lodo_total_m3', 0.0)
-    sobrecosto_memoria = st.session_state.get('eco_sobrecosto_usd', 0.0)
-    
-    st.markdown("### ⚖️ Matriz Multi-Criterio: Índice de Seguridad Hídrica (ISHI)")
-    
-    # 🚀 NUEVO: Control Manual y Gradual de la Tormenta. Simulación de crisis (Prueba de Estrés)
-    st.markdown("#### ⛈️ Inyección de Estrés Físico")
-    activar_tormenta_local = st.toggle("Activar Control Manual de Avenida Torrencial")
-    
-    if activar_tormenta_local:
-        lodo_total_m3 = st.slider("Magnitud del Deslizamiento (m³ de Lodo):", min_value=0.0, max_value=250000.0, value=85000.0, step=5000.0)
-        # Calculamos un sobrecosto estimado en PTAP ($0.4 USD por m³ de lodo a remover)
-        sobrecosto_ptap = lodo_total_m3 * 0.4 
-        # Inyectamos al Aleph para que la barra lateral lo vea
-        st.session_state['eco_lodo_total_m3'] = lodo_total_m3
-        st.session_state['eco_sobrecosto_usd'] = sobrecosto_ptap
-    else:
-        # Si está apagado, lee lo que venga de la Página 04 de Biodiversidad
-        lodo_total_m3 = st.session_state.get('eco_lodo_total_m3', 0.0)
-        sobrecosto_ptap = st.session_state.get('eco_sobrecosto_usd', 0.0)
-    
-    col_mat1, col_mat2 = st.columns([1, 2])
+    col_mat1, col_mat2 = st.columns([1, 1.5])
     
     with col_mat1:
-        st.info("El ISHI consolida los 4 indicadores superiores en un único perfil de salud territorial.")
+        st.markdown("#### ⛈️ Inyección de Estrés Físico (Avalancha)")
+        activar_tormenta_local = st.toggle("Activar Control Manual de Avenida Torrencial")
         
-        # Penalizamos la resiliencia estructural si hay una avalancha de lodo activa en la memoria
+        if activar_tormenta_local:
+            lodo_total_m3 = st.slider("Magnitud del Deslizamiento (m³ de Lodo):", min_value=0.0, max_value=250000.0, value=85000.0, step=5000.0)
+            sobrecosto_ptap = lodo_total_m3 * 0.4 
+            st.session_state['eco_lodo_total_m3'] = lodo_total_m3
+            st.session_state['eco_sobrecosto_usd'] = sobrecosto_ptap
+        else:
+            lodo_total_m3 = st.session_state.get('eco_lodo_total_m3', 0.0)
+            sobrecosto_ptap = st.session_state.get('eco_sobrecosto_usd', 0.0)
+            
         penalidad_lodo = (lodo_total_m3 / 100000.0) * 100
         resiliencia_real = max(0.0, ind_resiliencia - penalidad_lodo)
         
         ishi_final = (ind_estres + ind_calidad + resiliencia_real + ind_neutralidad) / 4
         
-        st.metric("🎯 ISHI Global", f"{ishi_final:.1f}%", "Estado de Seguridad Hídrica")
-        
+        st.metric("🎯 ISHI Global Base", f"{ishi_final:.1f}%", "Estado Pre-Inversión")
         if lodo_total_m3 > 0:
-            st.warning(f"⚠️ **Riesgo Físico Activo:** La tormenta modelada inyectó **{lodo_total_m3:,.0f} m³** de sedimentos. Sobrecosto proyectado en PTAP: **${sobrecosto_ptap:,.0f} USD**.")
-
+            st.warning(f"⚠️ **Riesgo Físico Activo:** La tormenta inyectó **{lodo_total_m3:,.0f} m³** de sedimentos. Sobrecosto PTAP: **${sobrecosto_ptap:,.0f} USD**.")
+            
     with col_mat2:
+        st.markdown("#### 🌊 Fotografía Radial")
+        st.info("💡 Este es el perfil de salud actual. En el Paso 4 evaluaremos cómo las inversiones logran expandirlo.")
         import plotly.graph_objects as go
         fig_radar = go.Figure()
         fig_radar.add_trace(go.Scatterpolar(
             r=[estres_gauge_val, ind_calidad, resiliencia_real, ind_neutralidad, estres_gauge_val],
             theta=['Abastecimiento (Estrés)', 'Calidad (DBO)', 'Resiliencia (Física)', 'Neutralidad (Huella)', 'Abastecimiento (Estrés)'],
-            fill='toself', fillcolor='rgba(46, 204, 113, 0.4)', line=dict(color='#27ae60', width=2)
+            fill='toself', fillcolor='rgba(231, 76, 60, 0.15)', line=dict(color='#e74c3c', width=2, dash='dot'),
+            name=f'Línea Base ({ishi_final:.1f}%)'
         ))
-
-        fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=False, height=350, margin=dict(t=30, b=30, l=40, r=40))
+        fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=True, legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"), height=300, margin=dict(t=30, b=30, l=40, r=40))
         st.plotly_chart(fig_radar, use_container_width=True)
 
     # ==============================================================================
