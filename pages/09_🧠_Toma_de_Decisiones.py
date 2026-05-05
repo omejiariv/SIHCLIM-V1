@@ -1372,8 +1372,36 @@ if gdf_zona is not None and not gdf_zona.empty:
         # BLOQUE 4: MOTOR DE CRUCE MULTI-ANILLO Y VISOR 3D (PYDECK)
         # =========================================================================
         
-        # 2. Cargar Capa Predial (100% Cloud Native o Fallback Local)
-        capa_predios = capas.get('predios')
+        # 2. Cargar Universo Catastral (Capa Predial Total desde Supabase)
+        @st.cache_data(ttl=3600, show_spinner=False)
+        def obtener_catastro_estrategico(_gdf_zona):
+            import requests, tempfile
+            import pandas as pd
+            import geopandas as gpd
+            try:
+                # 🎯 Apuntamos al nuevo archivo maestro del catastro
+                url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosDTM_CV_2018.geojson"
+                res = requests.get(url)
+                if res.status_code == 200:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp:
+                        tmp.write(res.content)
+                        tmp_path = tmp.name
+                    gdf_c = gpd.read_file(tmp_path)
+                    if not gdf_c.empty:
+                        gdf_c.set_crs(epsg=4326, allow_override=True, inplace=True)
+                        gdf_c_3116 = gdf_c.to_crs(epsg=3116)
+                        zona_3116 = _gdf_zona.to_crs(epsg=3116)
+                        
+                        # Corrección de geometrías y recorte estricto a la zona de interés
+                        gdf_c_3116['geometry'] = gdf_c_3116.geometry.make_valid().buffer(0)
+                        zona_3116['geometry'] = zona_3116.geometry.make_valid().buffer(0)
+                        return gpd.clip(gdf_c_3116, zona_3116)
+            except Exception as e:
+                return None
+            return None
+            
+        with st.spinner("Descargando Universo Catastral (PrediosDTM_CV_2018)..."):
+            capa_predios = obtener_catastro_estrategico(gdf_zona)
 
         # 3. Ejecutar el Motor de Cruce
         if rios_strahler is not None and not rios_strahler.empty:
