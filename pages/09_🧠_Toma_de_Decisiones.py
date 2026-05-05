@@ -1380,7 +1380,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             import geopandas as gpd
             try:
                 # 🎯 Apuntamos al nuevo archivo maestro del catastro
-                url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosDTM_CV_2018.geojson"
+                url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosVeredas_CV.geojson"
                 res = requests.get(url)
                 if res.status_code == 200:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".geojson") as tmp:
@@ -1400,7 +1400,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 return None
             return None
             
-        with st.spinner("Descargando Universo Catastral (PrediosDTM_CV_2018)..."):
+        with st.spinner("Descargando Universo Catastral (PrediosVeredas_CV)..."):
             capa_predios = obtener_catastro_estrategico(gdf_zona)
 
         # 3. Ejecutar el Motor de Cruce
