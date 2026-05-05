@@ -1009,11 +1009,25 @@ if gdf_zona is not None and not gdf_zona.empty:
     estres_sim_porcentaje = wei_ratio_sim * 100
     estres_gauge_sim_val = min(100.0, estres_sim_porcentaje)
 
+    # Calculamos los estados (colores y textos) para los índices proyectados
+    est_neu_sim, col_neu_sim = evaluar_indice(ind_neutralidad_sim, 40, 80)
+    est_res_sim, col_res_sim = evaluar_indice(ind_resiliencia_sim, 30, 70)
+    est_est_sim, col_est_sim = evaluar_indice(estres_gauge_sim_val, 40, 20, invertido=True)
+    est_cal_sim, col_cal_sim = evaluar_indice(ind_calidad_sim, 40, 70)
+
     cg1, cg2, cg3, cg4 = st.columns(4)
-    with cg1: st.plotly_chart(crear_velocimetro(ind_neutralidad_sim, "Neutralidad (Proyectada)", "#2ecc71", 40, 80), width="stretch")
-    with cg2: st.plotly_chart(crear_velocimetro(ind_resiliencia_sim, "Resiliencia (Proyectada)", "#3498db", 30, 70), width="stretch")
-    with cg3: st.plotly_chart(crear_velocimetro(estres_gauge_sim_val, "Estrés (Proyectado)", "#e74c3c", 20, 40, invertido=True), width="stretch")
-    with cg4: st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), width="stretch")
+    with cg1: 
+        st.plotly_chart(crear_velocimetro(ind_neutralidad_sim, "Neutralidad (Proyectada)", "#2ecc71", 40, 80), width="stretch")
+        st.markdown(f"<h4 style='text-align: center; color: {col_neu_sim}; margin-top:-20px;'>{est_neu_sim}</h4>", unsafe_allow_html=True)
+    with cg2: 
+        st.plotly_chart(crear_velocimetro(ind_resiliencia_sim, "Resiliencia (Proyectada)", "#3498db", 30, 70), width="stretch")
+        st.markdown(f"<h4 style='text-align: center; color: {col_res_sim}; margin-top:-20px;'>{est_res_sim}</h4>", unsafe_allow_html=True)
+    with cg3: 
+        st.plotly_chart(crear_velocimetro(estres_gauge_sim_val, "Estrés (Proyectado)", "#e74c3c", 20, 40, invertido=True), width="stretch")
+        st.markdown(f"<h4 style='text-align: center; color: {col_est_sim}; margin-top:-20px;'>{est_est_sim}</h4>", unsafe_allow_html=True)
+    with cg4: 
+        st.plotly_chart(crear_velocimetro(ind_calidad_sim, "Calidad (Proyectada)", "#9b59b6", 40, 70), width="stretch")
+        st.markdown(f"<h4 style='text-align: center; color: {col_cal_sim}; margin-top:-20px;'>{est_cal_sim}</h4>", unsafe_allow_html=True)
 
     # ==============================================================================
     # 📍 PASO 4: LA VIABILIDAD FINANCIERA (OPTIMIZADOR ROI)
