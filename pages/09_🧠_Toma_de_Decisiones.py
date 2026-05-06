@@ -1207,7 +1207,28 @@ if gdf_zona is not None and not gdf_zona.empty:
     fig_acb.add_trace(go.Bar(x=df_flujos['Año'], y=df_flujos['Neto_Desc'], name='Flujo Neto Descontado', marker_color='#2ecc71'), secondary_y=False)
     fig_acb.add_trace(go.Scatter(x=df_flujos['Año'], y=df_flujos['Acumulado'], name='VPN Acumulado', line=dict(color='#2980b9', width=3)), secondary_y=True)
     fig_acb.update_layout(title="Viabilidad Financiera del Portafolio SbN", height=400, hovermode="x unified", legend=dict(orientation="h", y=-0.2))
-    st.plotly_chart(fig_acb, use_container_width=True)    
+    st.plotly_chart(fig_acb, use_container_width=True)
+
+    # 🧠 CAJA INTELIGENTE DE SÍNTESIS FINANCIERA (Sihcli-Poter AI)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### 🧠 Veredicto Financiero (Sihcli-Poter AI)")
+    
+    if vpn_acb > 0:
+        msg_fin = f"✅ **Proyecto Estructuralmente Viable:** La intervención de conservación/restauración sobre **{ha_proyecto_acb:,.0f} hectáreas** genera valor económico real. Con una Relación Costo-Beneficio de **{rcb_acb:.2f}x**, la suma de los servicios ecosistémicos (agua, carbono y mitigación) supera ampliamente el CAPEX y los costos de oportunidad a lo largo de los {horizonte} años. El capital se recupera totalmente en el **Año {pback}**."
+        st.success(msg_fin)
+    else:
+        déficit_m = abs(vpn_acb)
+        msg_fin = f"⚠️ **Riesgo de Déficit Financiero:** Bajo los parámetros actuales, la intervención sobre **{ha_proyecto_acb:,.0f} hectáreas** destruye valor (VPN negativo de **${déficit_m:,.1f} M COP**). El RCB de **{rcb_acb:.2f}x** indica que por cada peso invertido, la sociedad solo recupera {rcb_acb*100:.0f} centavos en servicios ecosistémicos."
+        
+        # Lógica de recomendaciones dinámicas
+        recomendaciones = []
+        if horizonte < 30: recomendaciones.append(f"**1. Ampliar el Horizonte:** Los bosques son activos de maduración lenta. Evaluar el proyecto a 30 o 40 años permitirá que la curva de beneficios supere el punto de equilibrio.")
+        if tasa_desc > 0.08: recomendaciones.append(f"**2. Buscar Capital Concesional:** Una tasa de descuento del {tasa_desc*100:.1f}% es muy exigente. Acudir a banca multilateral (BID/BM) o fondos climáticos puede reducir esta tasa al 4% - 6%.")
+        if c_oportunidad_ha > 0.5: recomendaciones.append(f"**3. Reubicar Tácticas:** El costo de oportunidad agrario es muy alto (${c_oportunidad_ha} M). Use el mapa del 'Paso 6' para enfocar las SbN en tierras marginales más baratas.")
+        
+        rec_texto = "<br>".join(recomendaciones)
+        
+        st.warning(msg_fin + "<br><br>💡 <b>Recomendación Estratégica para viabilizar el proyecto:</b><br>" + rec_texto, icon="💡")
 
     # =========================================================================
     ## 📍 PASO 6: Proyección Climática y Priorización Predial
