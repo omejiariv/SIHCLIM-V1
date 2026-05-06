@@ -1133,8 +1133,84 @@ if gdf_zona is not None and not gdf_zona.empty:
         fig_curva.update_layout(height=250, margin=dict(t=10, b=10, l=10, r=10), yaxis=dict(range=[0, 100]))
         st.plotly_chart(fig_curva, use_container_width=True)
 
+    # ==============================================================================
+    # 📍 PASO 5: ANÁLISIS COSTO-BENEFICIO (ACB) Y FACTIBILIDAD FINANCIERA
+    # ==============================================================================
+    st.markdown("---")
+    st.markdown("## 📍 PASO 5: Análisis Costo-Beneficio (ACB)")
+    st.info("Traducción de los impactos ecológicos a flujos financieros descontados para justificar la viabilidad económica ante bancas de desarrollo.")
+
+    with st.expander("💸 Configuración de Parámetros Económicos", expanded=True):
+        c_acb1, c_acb2, c_acb3 = st.columns(3)
+        
+        with c_acb1:
+            st.markdown("#### 📏 Escala del Proyecto")
+            # Heredamos las hectáreas totales simuladas en el Paso 3
+            ha_proyecto_acb = st.number_input("Hectáreas Totales a Evaluar:", value=float(ha_total) if 'ha_total' in locals() else 1500.0, help="Heredado de la simulación física del Paso 3.")
+            horizonte = st.slider("Horizonte de Evaluación (Años):", 10, 50, 20, key="acb_hor")
+            tasa_desc = st.slider("Tasa de Descuento (Social) %:", 1.0, 15.0, 10.0) / 100
+
+        with c_acb2:
+            st.markdown("#### 💰 OPEX y Oportunidad")
+            # Usamos el costo_ha que ya definió el usuario arriba (en Millones COP)
+            costo_unit_ha = costo_ha if 'costo_ha' in locals() else 8.5
+            opex_pct = st.slider("Mantenimiento Anual (% del CAPEX):", 1.0, 10.0, 3.5) / 100
+            c_oportunidad_ha = st.number_input("Costo Oportunidad (M COP/ha/año):", value=0.6, help="Renta agrícola/ganadera dejada de percibir.")
+
+        with c_acb3:
+            st.markdown("#### 🌍 Valoración de Servicios")
+            v_agua_m3 = st.number_input("Valor Social Agua (COP/m³):", value=150, help="Ahorro en tratamiento y escasez.")
+            v_carbono_ton = st.number_input("Valor Carbono (COP/Ton CO2):", value=65000, help="Precio de mercado de bonos de carbono.")
+            v_riesgo_ha = st.number_input("Evitación Desastres (M COP/ha/año):", value=1.2)
+
+    # --- MOTOR FINANCIERO INTEGRADO ---
+    capex_total = ha_proyecto_acb * costo_unit_ha
+    opex_anual = (capex_total * opex_pct) + (ha_proyecto_acb * c_oportunidad_ha)
+    
+    # Beneficios anuales (con maduración biológica)
+    b_agua = (ha_proyecto_acb * 2500) * v_agua_m3 / 1e6 # En Millones COP
+    b_co2 = (ha_proyecto_acb * 12.0) * v_carbono_ton / 1e6 # En Millones COP
+    b_riesgo = ha_proyecto_acb * v_riesgo_ha
+    beneficio_anual_potencial = b_agua + b_co2 + b_riesgo
+
+    df_flujos = pd.DataFrame({'Año': np.arange(0, horizonte + 1)})
+    df_flujos['Costos'] = opex_anual
+    df_flujos.loc[0, 'Costos'] = capex_total
+    
+    # Curva de maduración: El bosque tarda en dar beneficios
+    df_flujos['Maduracion'] = np.where(df_flujos['Año'] == 0, 0.0, 1 - np.exp(-0.3 * df_flujos['Año']))
+    df_flujos['Beneficios'] = beneficio_anual_potencial * df_flujos['Maduracion']
+    
+    # Descuento financiero
+    df_flujos['Neto'] = df_flujos['Beneficios'] - df_flujos['Costos']
+    df_flujos['Factor'] = 1 / ((1 + tasa_desc) ** df_flujos['Año'])
+    df_flujos['Neto_Desc'] = df_flujos['Neto'] * df_flujos['Factor']
+    df_flujos['Acumulado'] = df_flujos['Neto_Desc'].cumsum()
+
+    # Métricas
+    vpn_acb = df_flujos['Neto_Desc'].sum()
+    rcb_acb = (df_flujos['Beneficios'] * df_flujos['Factor']).sum() / (df_flujos['Costos'] * df_flujos['Factor']).sum()
+    
+    m_acb1, m_acb2, m_acb3 = st.columns(3)
+    with m_acb1:
+        st.metric("Valor Presente Neto (VPN)", f"${vpn_acb:,.1f} M COP", "Viable" if vpn_acb > 0 else "No Viable")
+    with m_acb2:
+        st.metric("Relación Beneficio/Costo", f"{rcb_acb:.2f}x", "Genera Valor" if rcb_acb > 1 else "Riesgo")
+    with m_acb3:
+        try: pback = df_flujos[df_flujos['Acumulado'] >= 0]['Año'].iloc[0]
+        except: pback = ">" + str(horizonte)
+        st.metric("Punto de Equilibrio", f"Año {pback}")
+
+    # Gráfico Profesional
+    from plotly.subplots import make_subplots
+    fig_acb = make_subplots(specs=[[{"secondary_y": True}]])
+    fig_acb.add_trace(go.Bar(x=df_flujos['Año'], y=df_flujos['Neto_Desc'], name='Flujo Neto Descontado', marker_color='#2ecc71'), secondary_y=False)
+    fig_acb.add_trace(go.Scatter(x=df_flujos['Año'], y=df_flujos['Acumulado'], name='VPN Acumulado', line=dict(color='#2980b9', width=3)), secondary_y=True)
+    fig_acb.update_layout(title="Viabilidad Financiera del Portafolio SbN", height=400, hovermode="x unified", legend=dict(orientation="h", y=-0.2))
+    st.plotly_chart(fig_acb, use_container_width=True)    
+
     # =========================================================================
-    # BLOQUE 3: PROYECCIÓN CLIMÁTICA, RANKING AHP Y PREPARACIÓN PREDIAL
+    ## 📍 PASO 6: Proyección Climática y Priorización Predial
     # =========================================================================
     
     # --- 1. TRAYECTORIA CLIMÁTICA Y DEMOGRÁFICA (EXPLORADOR ENSO) ---
@@ -1582,7 +1658,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.warning("⚠️ El cruce predial y el mapa táctico están en pausa porque aún no se han calculado los ríos.")
             st.info("👆 Por favor, utiliza el botón del motor hidrológico de arriba para iluminar este tablero.")
 
-# ==============================================================================
+    # ==============================================================================
     # 📍 PASO 6: EL MANIFIESTO Y SÍNTESIS DE LA IA ESTRATÉGICA
     # ==============================================================================
     st.markdown("---")
