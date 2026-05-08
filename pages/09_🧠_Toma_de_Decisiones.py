@@ -1039,19 +1039,33 @@ if gdf_zona is not None and not gdf_zona.empty:
     c_opt1, c_opt2 = st.columns([1, 2.5])
     with c_opt1:
         st.markdown("#### 💰 Estrategia de Capital")
-        modo_plan = st.radio("Seleccione el Enfoque Financiero:", ["📊 1. Asignar Presupuesto Disponible", "🎯 2. Definir Meta de Seguridad (ISHI)"])
+        modo_plan = st.radio("Seleccione el Enfoque Financiero:", [
+            "📊 1. Asignar Presupuesto Disponible", 
+            "🎯 2. Definir Meta de Seguridad (ISHI)", 
+            "🌲 3. Valorar Capital Histórico (SIG)"
+        ])
         
         if "1. Asignar" in modo_plan:
             presupuesto_MUSD = st.number_input("Presupuesto de Inversión (Millones USD):", 0.5, 100.0, 5.0, 0.5)
             presupuesto_usd = presupuesto_MUSD * 1_000_000
-        else:
+        elif "2. Definir" in modo_plan:
             ishi_minimo = float(int(ishi_final)) if ishi_final < 100 else 100.0
             meta_ishi = st.slider("Definir Meta ISHI (%):", ishi_minimo, 100.0, max(75.0, ishi_minimo + 5.0), 1.0)
             brecha_ishi = max(0.0, meta_ishi - ishi_final)
             presupuesto_MUSD = brecha_ishi * 0.35
             presupuesto_usd = presupuesto_MUSD * 1_000_000
-            if presupuesto_usd > 0: st.info(f"🎯 Para alcanzar {meta_ishi}%, se requieren **${presupuesto_MUSD:,.1f} M USD**.")
-            else: st.success("✅ La región ya cumple con esta meta.")
+            if presupuesto_usd > 0: 
+                st.info(f"🎯 Para alcanzar {meta_ishi}%, se requieren **${presupuesto_MUSD:,.1f} M USD**.")
+            else: 
+                st.success("✅ La región ya cumple con esta meta.")
+        else:
+            # 3. Valorar Capital Histórico
+            ha_hist = float(ha_reales_sig) if 'ha_reales_sig' in locals() else 0.0
+            c_ha_cop = costo_ha if 'costo_ha' in locals() else 8.5
+            valor_hist_cop_M = ha_hist * c_ha_cop
+            presupuesto_MUSD = valor_hist_cop_M / 4000.0 # Tasa de cambio aproximada
+            presupuesto_usd = presupuesto_MUSD * 1_000_000
+            st.success(f"🌲 **Capital Institucional:** Si la organización iniciara hoy, restaurar las **{ha_hist:,.1f} hectáreas** históricas costaría **${valor_hist_cop_M:,.0f} Millones COP** (~${presupuesto_MUSD:,.2f} Millones USD). El algoritmo usará este valor histórico como capital de simulación.")
 
         brecha_calidad = max(0.1, 100 - ind_calidad)
         brecha_resiliencia = max(0.1, 100 - resiliencia_real)
