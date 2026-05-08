@@ -1218,18 +1218,26 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.success(msg_fin)
     else:
         déficit_m = abs(vpn_acb)
-        msg_fin = f"⚠️ **Riesgo de Déficit Financiero:** Bajo los parámetros actuales, la intervención sobre **{ha_proyecto_acb:,.0f} hectáreas** destruye valor (VPN negativo de **${déficit_m:,.1f} M COP**). El RCB de **{rcb_acb:.2f}x** indica que por cada peso invertido, la sociedad solo recupera {rcb_acb*100:.0f} centavos en servicios ecosistémicos."
+        # Separamos el símbolo $ de los asteriscos para evitar el bug de LaTeX en Streamlit
+        msg_fin = f"Bajo los parámetros actuales, la intervención sobre **{ha_proyecto_acb:,.0f} hectáreas** destruye valor (VPN negativo de **$ {déficit_m:,.1f} M COP**). El RCB de **{rcb_acb:.2f}x** indica que por cada peso invertido, la sociedad solo recupera {rcb_acb*100:.0f} centavos en servicios ecosistémicos."
         
-        # Lógica de recomendaciones dinámicas
+        # Lógica de recomendaciones dinámicas usando Markdown puro (\n\n)
         recomendaciones = []
-        if horizonte < 30: recomendaciones.append(f"**1. Ampliar el Horizonte:** Los bosques son activos de maduración lenta. Evaluar el proyecto a 30 o 40 años permitirá que la curva de beneficios supere el punto de equilibrio.")
-        if tasa_desc > 0.08: recomendaciones.append(f"**2. Buscar Capital Concesional:** Una tasa de descuento del {tasa_desc*100:.1f}% es muy exigente. Acudir a banca multilateral (BID/BM) o fondos climáticos puede reducir esta tasa al 4% - 6%.")
-        if c_oportunidad_ha > 0.5: recomendaciones.append(f"**3. Reubicar Tácticas:** El costo de oportunidad agrario es muy alto (${c_oportunidad_ha} M). Use el mapa del 'Paso 6' para enfocar las SbN en tierras marginales más baratas.")
+        if horizonte < 30: 
+            recomendaciones.append("🔸 **1. Ampliar el Horizonte:** Los bosques son activos de maduración lenta. Evaluar el proyecto a 30 o 40 años permitirá que la curva de beneficios supere el punto de equilibrio.")
+        if tasa_desc > 0.08: 
+            recomendaciones.append(f"🔸 **2. Buscar Capital Concesional:** Una tasa de descuento del {tasa_desc*100:.1f}% es muy exigente. Acudir a banca multilateral (BID/BM) o fondos climáticos puede reducirla al 4% - 6%.")
+        if c_oportunidad_ha > 0.5: 
+            recomendaciones.append(f"🔸 **3. Reubicar Tácticas:** El costo de oportunidad agrario es muy alto ($ {c_oportunidad_ha} M). Use el mapa táctico para enfocar las SbN en tierras marginales más baratas.")
         
-        rec_texto = "<br>".join(recomendaciones)
+        # Unimos con saltos de línea nativos de Markdown
+        rec_texto = "\n\n".join(recomendaciones)
         
-        st.warning(msg_fin + "<br><br>💡 <b>Recomendación Estratégica para viabilizar el proyecto:</b><br>" + rec_texto, icon="💡")
-
+        # Ensamblamos el mensaje final estructurado
+        alerta_completa = f"⚠️ **Riesgo de Déficit Financiero:**\n\n{msg_fin}\n\n---\n\n💡 **Recomendación Estratégica para viabilizar el proyecto:**\n\n{rec_texto}"
+        
+        st.warning(alerta_completa)
+        
     # =========================================================================
     ## 📍 PASO 6: Proyección Climática y Priorización Predial
     # =========================================================================
