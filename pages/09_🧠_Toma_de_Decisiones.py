@@ -1713,11 +1713,11 @@ if gdf_zona is not None and not gdf_zona.empty:
                     pickable=True, autoHighlight=True
                 ))
             
-            # Renderizado 3D Final con Extracción Estricta de 'properties'
+            # Renderizado 3D Final (Corregido para sintaxis directa de Streamlit/PyDeck)
             view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=13, pitch=45)
             
             tooltip = {
-                "html": "{properties.TOOLTIP_TEXT}",
+                "html": "{TOOLTIP_TEXT}",
                 "style": {
                     "backgroundColor": "#2c3e50", 
                     "color": "white", 
