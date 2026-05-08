@@ -1652,6 +1652,10 @@ if gdf_zona is not None and not gdf_zona.empty:
             # =========================================================
             st.markdown("---")
             st.markdown(f"#### 🗺️ Visor Táctico de Conectividad y Predios: **{nombre_zona}**")
+            
+            # 🔘 NUEVO: INTERRUPTOR PARA LA CAPA DE PREDIOS
+            mostrar_predios = st.toggle("🏡 Visualizar Capa de Predios Estratégicos (Polígonos Naranjas)", value=True)
+            
             import pydeck as pdk
             
             try:
@@ -1679,7 +1683,6 @@ if gdf_zona is not None and not gdf_zona.empty:
 
             # Capa 3: Red Hídrica (Strahler) - CON TOOLTIP INTELIGENTE
             if 'rios_4326' in locals() and not rios_4326.empty:
-                # Pre-formateamos el texto del popup usando HTML nativo
                 rios_4326['TOOLTIP_TEXT'] = rios_4326.apply(lambda r: f"<b>💧 Tramo Hídrico:</b> {r.get('ID_Tramo', 'N/A')}<br/><b>🌊 Orden (Strahler):</b> {r.get('Orden_Strahler', 'N/A')}<br/><b>📏 Longitud:</b> {r.get('longitud_km', 0):.2f} km", axis=1)
                 
                 capas_mapa.append(pdk.Layer(
@@ -1688,8 +1691,8 @@ if gdf_zona is not None and not gdf_zona.empty:
                     pickable=True, autoHighlight=True
                 ))
             
-            # Capa 4: Predios Estratégicos (Afectados) - CON TOOLTIP DE NEGOCIACIÓN
-            if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
+            # Capa 4: Predios Estratégicos (Afectados) - CONECTADA AL INTERRUPTOR
+            if mostrar_predios and 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
                 col_id_oficial = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id', 'NOMBRE'] if capa_predios is not None and col in capa_predios.columns), None)
                 
                 if col_id_oficial:
