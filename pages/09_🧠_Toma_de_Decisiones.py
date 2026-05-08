@@ -1574,54 +1574,78 @@ if gdf_zona is not None and not gdf_zona.empty:
                     st.dataframe(df_tramos.style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format(precision=2), use_container_width=True, hide_index=True)
                 
                 with tab_predios:
+                    st.markdown("##### 🧬 Álgebra de Mapas: Aplicación de Reglas CuencaVerde")
+                    st.info("**R1:** Cuidar lo bien conservado | **R2:** Mejorar lo cercano | **R3:** Conectar fragmentos | **R4:** Prioridad a bosques riparios.")
+                    
                     predios_en_buffer = gpd.GeoDataFrame()
                     if capa_predios is not None and not capa_predios.empty:
-                        with st.spinner("Ejecutando intersección de anillos concéntricos con predios de Supabase..."):
+                        with st.spinner("Ejecutando Resta Espacial e Intersección Catastral..."):
                             try:
                                 predios_3116 = capa_predios.to_crs(epsg=3116)
-                                # Cruce espacial estricto
-                                predios_en_buffer = gpd.overlay(predios_3116, buffer_max_gdf, how='intersection')
+                                
+                                # 🧮 ÁLGEBRA ESPACIAL 1: Restar Capital Gestionado (Evitar doble esfuerzo)
+                                if 'gdf_predios_mapa' in locals() and gdf_predios_mapa is not None and not gdf_predios_mapa.empty:
+                                    gestionados_3116 = gdf_predios_mapa.to_crs(3116)
+                                    # La Resta: Lo que falta = Buffer IDEAL (Regla 4) - Lo ya intervenido
+                                    buffer_deficit_geom = buffer_max_gdf.geometry.iloc[0].difference(gestionados_3116.unary_union)
+                                    buffer_evaluacion_gdf = gpd.GeoDataFrame(geometry=[buffer_deficit_geom], crs=3116)
+                                else:
+                                    buffer_evaluacion_gdf = buffer_max_gdf
+                                
+                                # 🧮 ÁLGEBRA ESPACIAL 2: Intersección con Universo Catastral (Identificar dueños)
+                                predios_en_buffer = gpd.overlay(predios_3116, buffer_evaluacion_gdf, how='intersection')
                                 
                                 if not predios_en_buffer.empty:
-                                    predios_en_buffer['Area_Max_ha'] = predios_en_buffer.geometry.area / 10000.0
-                                    predios_en_buffer['Area_Med_ha'] = predios_en_buffer.geometry.intersection(geom_med).area / 10000.0
-                                    predios_en_buffer['Area_Min_ha'] = predios_en_buffer.geometry.intersection(geom_min).area / 10000.0
+                                    predios_en_buffer['Area_Faltante_ha'] = predios_en_buffer.geometry.area / 10000.0
                                     
-                                    col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id'] if col in predios_en_buffer.columns), None)
+                                    col_id = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id', 'NOMBRE'] if col in predios_en_buffer.columns), None)
                                     if col_id is None:
                                         predios_en_buffer['ID_Predio'] = predios_en_buffer.index
                                         col_id = 'ID_Predio'
                                         
-                                    predios_agrupados = predios_en_buffer.groupby(col_id).agg({
-                                        'Area_Min_ha': 'sum', 'Area_Med_ha': 'sum', 'Area_Max_ha': 'sum'
-                                    }).reset_index()
+                                    predios_agrupados = predios_en_buffer.groupby(col_id).agg({'Area_Faltante_ha': 'sum'}).reset_index()
                                     
+                                    # 🧮 ÁLGEBRA ESPACIAL 3: Inyectar datos satelitales (Reglas 1, 2 y 3)
+                                    # Usamos las coberturas leídas en el Paso 1 para tipificar el esfuerzo necesario
+                                    if 'areas_data' in locals() and areas_data and area_total_ha > 0:
+                                        pct_bosque = sum([x["Área (Ha)"] for x in areas_data if "Bosque" in x["Cobertura"]]) / area_total_ha
+                                        pct_matorral = sum([x["Área (Ha)"] for x in areas_data if "Matorrales" in x["Cobertura"]]) / area_total_ha
+                                    else:
+                                        pct_bosque, pct_matorral = 0.4, 0.15 # Valores refugio
+                                        
                                     datos_prioridad = []
                                     for idx, row in predios_agrupados.iterrows():
+                                        area_tot = row['Area_Faltante_ha']
+                                        
+                                        # Aplicación paramétrica
+                                        area_cuidar = area_tot * pct_bosque
+                                        area_mejorar = area_tot * pct_matorral
+                                        area_conectar = area_tot - area_cuidar - area_mejorar
+                                        
                                         datos_prioridad.append({
-                                            "Identificador Predial": row[col_id],
-                                            f"Mínimo ({b_min}m) ha": row['Area_Min_ha'],
-                                            f"Ideal ({b_med}m) ha": row['Area_Med_ha'],
-                                            f"Óptimo ({b_max}m) ha": row['Area_Max_ha'],
-                                            "ROI (Máx)": row['Area_Max_ha'] * 100
+                                            "Predio (ID/Matrícula)": row[col_id],
+                                            "Déficit Ripario (Ha)": area_tot,
+                                            "🟢 Conservar (R1)": area_cuidar,
+                                            "🟡 Mejorar (R2)": area_mejorar,
+                                            "🔴 Conectar (R3)": max(0.0, area_conectar),
+                                            "Prioridad Estratégica": (max(0, area_conectar) * 10) + (area_mejorar * 5)
                                         })
                                         
-                                    df_prioridad = pd.DataFrame(datos_prioridad).sort_values(by="ROI (Máx)", ascending=False)
+                                    df_prioridad = pd.DataFrame(datos_prioridad).sort_values(by="Prioridad Estratégica", ascending=False)
                                     
-                                    c_rank1, c_rank2 = st.columns([2, 1])
+                                    c_rank1, c_rank2 = st.columns([2.5, 1])
                                     with c_rank1:
-                                        st.markdown("##### 📋 Top 15 Predios Estratégicos")
-                                        st.dataframe(df_prioridad.head(15).style.background_gradient(cmap="YlOrRd", subset=["ROI (Máx)"]).format(precision=2), use_container_width=True, hide_index=True)
+                                        st.dataframe(df_prioridad.head(15).style.background_gradient(cmap="YlOrRd", subset=["🔴 Conectar (R3)", "Prioridad Estratégica"]).background_gradient(cmap="Greens", subset=["🟢 Conservar (R1)"]).format(precision=2), use_container_width=True, hide_index=True)
                                     with c_rank2:
-                                        st.info("Exporta esta matriz para dirigir las campañas de gestión territorial.")
-                                        st.metric("Predios Involucrados", f"{len(df_prioridad)}")
-                                        st.download_button("📥 Descargar Matriz Predial", df_prioridad.to_csv(index=False).encode('utf-8'), "Prioridad_Predios.csv", "text/csv")
+                                        st.info("💡 **Guía Táctica:** Los predios con puntajes rojos altos son los 'cuellos de botella'. Ahí la sabana o el cultivo cortan la ronda del río. **Son la máxima prioridad de negociación.**")
+                                        st.metric("Nuevos Predios a Contactar", f"{len(df_prioridad)}")
+                                        st.download_button("📥 Descargar Matriz de Intervención", df_prioridad.to_csv(index=False).encode('utf-8'), "Matriz_Reglas_CV.csv", "text/csv")
                                 else:
-                                    st.info("Ninguno de los predios protegidos intercepta la red hidrográfica modelada en esta simulación.")
+                                    st.success("Toda la red hídrica en esta zona ya se encuentra dentro de las áreas históricamente gestionadas. No hay déficit ripario reportado.")
                             except Exception as e:
-                                st.error(f"Error técnico en el cruce geográfico: {e}")
+                                st.error(f"Error técnico en el cruce geográfico de Álgebra de Mapas: {e}")
                     else:
-                        st.info("ℹ️ No se detectó un mapa predial maestro en la base de datos para esta zona.")
+                        st.info("ℹ️ Carga la red de predios catastrales para correr el álgebra de mapas.")
 
             # =========================================================
             # 🗺️ EL MAPA TÁCTICO PYDECK (VISOR 3D DE NEGOCIACIÓN)
