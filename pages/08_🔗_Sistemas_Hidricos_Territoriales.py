@@ -432,6 +432,16 @@ with st.expander(f"💧 Balance de Masa en Tiempo Real: {nodo_seleccionado}", ex
     ingreso_hora_cop = potencia_generada_kw * 350
     costo_hora_cop = potencia_consumida_kw * 350
 
+    # =====================================================================
+    # 🧠 TELEMETRÍA: ENVIANDO CABLES A LA PÁGINA 09 (TOMA DE DECISIONES)
+    # =====================================================================
+    st.session_state['sys_nodo_activo'] = nodo_seleccionado
+    st.session_state['sys_turbinado_m3s'] = val_turbinado
+    st.session_state['sys_trasvase_m3s'] = caudal_total_trasvase
+    st.session_state['sys_factor_energia'] = datos_nodo["factor_energia_kwh_m3"]
+    st.session_state['sys_costo_bombeo'] = datos_nodo["costo_bombeo_kwh_m3"]
+    # =====================================================================
+
     st.markdown("---")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Balance Hídrico (ΔS/Δt)", f"{balance:+.1f} m³/s", "Llenándose 📈" if balance > 0 else "Vaciándose 📉" if balance < 0 else "Estable ⚖️")
