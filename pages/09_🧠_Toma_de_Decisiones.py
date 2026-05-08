@@ -1677,24 +1677,35 @@ if gdf_zona is not None and not gdf_zona.empty:
                 gdf_min = gpd.GeoDataFrame(geometry=[geom_min], crs=3116).to_crs(4326)
                 capas_mapa.append(pdk.Layer("GeoJsonLayer", data=gdf_min, opacity=0.6, get_fill_color=[40, 180, 99], stroked=False))
 
-            # Capa 3: Red Hídrica (Strahler)
-            if 'rios_4326' in locals():
+            # Capa 3: Red Hídrica (Strahler) - CON TOOLTIP INTELIGENTE
+            if 'rios_4326' in locals() and not rios_4326.empty:
+                # Pre-formateamos el texto del popup usando HTML nativo
+                rios_4326['TOOLTIP_TEXT'] = rios_4326.apply(lambda r: f"<b>💧 Tramo Hídrico:</b> {r.get('ID_Tramo', 'N/A')}<br/><b>🌊 Orden (Strahler):</b> {r.get('Orden_Strahler', 'N/A')}<br/><b>📏 Longitud:</b> {r.get('longitud_km', 0):.2f} km", axis=1)
+                
                 capas_mapa.append(pdk.Layer(
                     "GeoJsonLayer", data=rios_4326,
                     get_line_color=[31, 97, 141, 255], get_line_width=2, lineWidthMinPixels=2,
                     pickable=True, autoHighlight=True
                 ))
             
-            # Capa 4: Predios Estratégicos (Afectados)
+            # Capa 4: Predios Estratégicos (Afectados) - CON TOOLTIP DE NEGOCIACIÓN
             if 'predios_en_buffer' in locals() and not predios_en_buffer.empty:
-                col_id_oficial = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id'] if capa_predios is not None and col in capa_predios.columns), None)
+                col_id_oficial = next((col for col in ['MATRICULA', 'COD_CATAST', 'FICHA', 'OBJECTID', 'id', 'NOMBRE'] if capa_predios is not None and col in capa_predios.columns), None)
                 
                 if col_id_oficial:
                     ids_afectados = predios_en_buffer[col_id_oficial].unique()
-                    predios_a_dibujar = capa_predios[capa_predios[col_id_oficial].isin(ids_afectados)].to_crs(epsg=4326)
+                    predios_a_dibujar = capa_predios[capa_predios[col_id_oficial].isin(ids_afectados)].to_crs(epsg=4326).copy()
                 else:
-                    predios_a_dibujar = predios_en_buffer.to_crs(epsg=4326)
-                    
+                    predios_a_dibujar = predios_en_buffer.to_crs(epsg=4326).copy()
+                    col_id_oficial = 'index'
+                
+                # Rescatamos el Déficit Ripario que calculamos arriba en el Álgebra de Mapas
+                if 'df_prioridad' in locals() and not df_prioridad.empty:
+                    predios_a_dibujar = predios_a_dibujar.merge(df_prioridad[['Predio (ID/Matrícula)', 'Déficit Ripario (Ha)']], left_on=col_id_oficial, right_on='Predio (ID/Matrícula)', how='left')
+                
+                # Pre-formateamos el texto del popup para las fincas
+                predios_a_dibujar['TOOLTIP_TEXT'] = predios_a_dibujar.apply(lambda r: f"<b>🏡 Finca / Matrícula:</b> {r.get(col_id_oficial, 'Desconocido')}<br/><b>⚠️ Déficit Ripario:</b> {r.get('Déficit Ripario (Ha)', 0):.2f} hectáreas", axis=1)
+                
                 capas_mapa.append(pdk.Layer(
                     "GeoJsonLayer", data=predios_a_dibujar, opacity=0.4,
                     stroked=True, filled=True, get_fill_color=[255, 165, 0, 150],
@@ -1702,9 +1713,20 @@ if gdf_zona is not None and not gdf_zona.empty:
                     pickable=True, autoHighlight=True
                 ))
             
-            # Renderizado 3D
+            # Renderizado 3D Final con Extracción Estricta de 'properties'
             view_state = pdk.ViewState(latitude=c_lat, longitude=c_lon, zoom=13, pitch=45)
-            tooltip = {"html": "<b>Tramo Hídrico:</b> {ID_Tramo}<br/><b>Orden:</b> {Orden_Strahler}<br/><b>Longitud:</b> {longitud_km} km", "style": {"backgroundColor": "steelblue", "color": "white"}}
+            
+            tooltip = {
+                "html": "{properties.TOOLTIP_TEXT}",
+                "style": {
+                    "backgroundColor": "#2c3e50", 
+                    "color": "white", 
+                    "font-family": "Georgia, serif", 
+                    "padding": "12px", 
+                    "border-radius": "8px",
+                    "box-shadow": "0 4px 6px rgba(0,0,0,0.3)"
+                }
+            }
             st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
 
         else:
