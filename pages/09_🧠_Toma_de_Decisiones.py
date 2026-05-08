@@ -1134,79 +1134,97 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.plotly_chart(fig_curva, use_container_width=True)
 
     # ==============================================================================
-    # 📍 PASO 5: ANÁLISIS COSTO-BENEFICIO (ACB) Y FACTIBILIDAD FINANCIERA
+    # 📍 PASO 5: ANÁLISIS COSTO-BENEFICIO (ACB) - ENFOQUE MULTI-SECTORIAL EMBALSES
     # ==============================================================================
     st.markdown("---")
-    st.markdown("## 📍 PASO 5: Análisis Costo-Beneficio (ACB)")
-    st.info("Traducción de los impactos ecológicos a flujos financieros descontados para justificar la viabilidad económica ante bancas de desarrollo.")
+    st.markdown("## 📍 PASO 5: Análisis Costo-Beneficio (Modelación Río Grande II - Tasajera)")
+    st.info("Traducción de los impactos hidrológicos a flujos financieros reales para los tres grandes negocios de la región: Agua Potable, Generación de Energía y Sector Agropecuario.")
 
-    with st.expander("💸 Configuración de Parámetros Económicos", expanded=True):
+    with st.expander("💸 Configuración de Parámetros Económicos por Sector", expanded=True):
+        st.markdown("#### 📏 Escala del Proyecto y Capital")
+        c_acb_main1, c_acb_main2, c_acb_main3, c_acb_main4 = st.columns(4)
+        ha_proyecto_acb = c_acb_main1.number_input("Hectáreas Totales a Evaluar:", value=float(ha_total) if 'ha_total' in locals() else 1500.0, help="Área de SbN (Heredado del Paso 3).")
+        horizonte = c_acb_main2.slider("Horizonte de Evaluación (Años):", 10, 50, 20, key="acb_hor")
+        tasa_desc = c_acb_main3.slider("Tasa de Descuento (WACC) %:", 1.0, 15.0, 9.0) / 100
+        costo_unit_ha = c_acb_main4.number_input("CAPEX: Costo Restauración (M COP/ha):", value=costo_ha if 'costo_ha' in locals() else 8.5)
+
+        st.markdown("---")
         c_acb1, c_acb2, c_acb3 = st.columns(3)
         
         with c_acb1:
-            st.markdown("#### 📏 Escala del Proyecto")
-            # Heredamos las hectáreas totales simuladas en el Paso 3
-            ha_proyecto_acb = st.number_input("Hectáreas Totales a Evaluar:", value=float(ha_total) if 'ha_total' in locals() else 1500.0, help="Heredado de la simulación física del Paso 3.")
-            horizonte = st.slider("Horizonte de Evaluación (Años):", 10, 50, 20, key="acb_hor")
-            tasa_desc = st.slider("Tasa de Descuento (Social) %:", 1.0, 15.0, 10.0) / 100
+            st.markdown("#### 🚰 Sector Agua (Manantiales)")
+            v_ahorro_ptap = st.number_input("Ahorro Químicos PTAP (COP/m³):", value=45.0, help="Ahorro en carbón activado y coagulantes por menor DBO y sedimentos.")
+            v_evitacion_dragado = st.number_input("Evitación Dragado Embalse (M COP/ha/año):", value=0.15, help="Menor sedimentación = mayor vida útil del embalse.")
 
         with c_acb2:
-            st.markdown("#### 💰 OPEX y Oportunidad")
-            # Usamos el costo_ha que ya definió el usuario arriba (en Millones COP)
-            costo_unit_ha = costo_ha if 'costo_ha' in locals() else 8.5
-            opex_pct = st.slider("Mantenimiento Anual (% del CAPEX):", 1.0, 10.0, 3.5) / 100
-            c_oportunidad_ha = st.number_input("Costo Oportunidad (M COP/ha/año):", value=0.6, help="Renta agrícola/ganadera dejada de percibir.")
+            st.markdown("#### ⚡ Sector Energía (Tasajera)")
+            v_kwh_bolsa = st.number_input("Precio Energía en Bolsa (COP/kWh):", value=550.0, help="Precio de escasez (estiaje).")
+            factor_kwh_m3 = st.number_input("Eficiencia Turbinas (kWh/m³):", value=1.15, help="Energía generada por cada metro cúbico turbinado debido a la caída (cabeza).")
 
         with c_acb3:
-            st.markdown("#### 🌍 Valoración de Servicios")
-            v_agua_m3 = st.number_input("Valor Social Agua (COP/m³):", value=150, help="Ahorro en tratamiento y escasez.")
-            v_carbono_ton = st.number_input("Valor Carbono (COP/Ton CO2):", value=65000, help="Precio de mercado de bonos de carbono.")
-            v_riesgo_ha = st.number_input("Evitación Desastres (M COP/ha/año):", value=1.2)
+            st.markdown("#### 🐄 Sector Agro / Social")
+            v_carbono_ton = st.number_input("Precio Bono Carbono (COP/Ton CO2):", value=65000.0)
+            v_productividad_ha = st.number_input("Evitación Pérdida Lechera (M COP/ha/año):", value=0.4, help="Seguridad de pastos en sequía.")
+            opex_pct = st.slider("OPEX + PSA (% del CAPEX anual):", 1.0, 15.0, 5.0, help="Incluye el Pago por Servicios Ambientales (PSA) a campesinos.") / 100
 
-    # --- MOTOR FINANCIERO INTEGRADO ---
+    # --- MOTOR FINANCIERO INTEGRADO (LA CONVERSIÓN FÍSICA A DINERO) ---
     capex_total = ha_proyecto_acb * costo_unit_ha
-    opex_anual = (capex_total * opex_pct) + (ha_proyecto_acb * c_oportunidad_ha)
+    opex_anual = capex_total * opex_pct
     
-    # Beneficios anuales (con maduración biológica)
-    b_agua = (ha_proyecto_acb * 2500) * v_agua_m3 / 1e6 # En Millones COP
-    b_co2 = (ha_proyecto_acb * 12.0) * v_carbono_ton / 1e6 # En Millones COP
-    b_riesgo = ha_proyecto_acb * v_riesgo_ha
-    beneficio_anual_potencial = b_agua + b_co2 + b_riesgo
+    # 🧠 NÚCLEO: Usamos el agua física adicional generada en el Paso 3
+    vol_extra_m3 = volumen_repuesto_m3 if 'volumen_repuesto_m3' in locals() else (ha_proyecto_acb * 2500)
+    
+    # Cálculos de Ingresos/Ahorros Anuales (Potencial Máximo)
+    b_agua_potable = (vol_extra_m3 * v_ahorro_ptap) / 1e6 # En Millones COP
+    b_dragado = ha_proyecto_acb * v_evitacion_dragado
+    b_energia = (vol_extra_m3 * factor_kwh_m3 * v_kwh_bolsa) / 1e6 # En Millones COP
+    b_co2 = (ha_proyecto_acb * 12.0) * v_carbono_ton / 1e6 # Asumiendo 12 Ton/ha/año
+    b_agro = ha_proyecto_acb * v_productividad_ha
+    
+    beneficio_anual_potencial = b_agua_potable + b_dragado + b_energia + b_co2 + b_agro
 
+    # Proyección en DataFrame
     df_flujos = pd.DataFrame({'Año': np.arange(0, horizonte + 1)})
     df_flujos['Costos'] = opex_anual
     df_flujos.loc[0, 'Costos'] = capex_total
     
-    # Curva de maduración: El bosque tarda en dar beneficios
+    # Curva de maduración biológica (Los beneficios no son 100% el año 1)
     df_flujos['Maduracion'] = np.where(df_flujos['Año'] == 0, 0.0, 1 - np.exp(-0.3 * df_flujos['Año']))
     df_flujos['Beneficios'] = beneficio_anual_potencial * df_flujos['Maduracion']
     
-    # Descuento financiero
+    # Descuento financiero (WACC)
     df_flujos['Neto'] = df_flujos['Beneficios'] - df_flujos['Costos']
     df_flujos['Factor'] = 1 / ((1 + tasa_desc) ** df_flujos['Año'])
     df_flujos['Neto_Desc'] = df_flujos['Neto'] * df_flujos['Factor']
     df_flujos['Acumulado'] = df_flujos['Neto_Desc'].cumsum()
 
-    # Métricas
+    # Métricas Globales
     vpn_acb = df_flujos['Neto_Desc'].sum()
     rcb_acb = (df_flujos['Beneficios'] * df_flujos['Factor']).sum() / (df_flujos['Costos'] * df_flujos['Factor']).sum()
     
+    # --- RENDERIZADO DEL DASHBOARD FINANCIERO ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("#### 💵 Composición de Beneficios (Al alcanzar madurez ecosistémica)")
+    
+    cm_b1, cm_b2, cm_b3, cm_b4 = st.columns(4)
+    cm_b1.metric("💧 Ahorros EPM (Agua/Dragado)", f"${(b_agua_potable + b_dragado):,.0f} M/año")
+    cm_b2.metric("⚡ Ingresos Tasajera (Energía)", f"${b_energia:,.0f} M/año")
+    cm_b3.metric("🐄 Impacto Agro/Social", f"${b_agro:,.0f} M/año")
+    cm_b4.metric("🌳 Bonos de Carbono", f"${b_co2:,.0f} M/año")
+
     m_acb1, m_acb2, m_acb3 = st.columns(3)
-    with m_acb1:
-        st.metric("Valor Presente Neto (VPN)", f"${vpn_acb:,.1f} M COP", "Viable" if vpn_acb > 0 else "No Viable")
-    with m_acb2:
-        st.metric("Relación Beneficio/Costo", f"{rcb_acb:.2f}x", "Genera Valor" if rcb_acb > 1 else "Riesgo")
+    with m_acb1: st.metric("Valor Presente Neto (VPN)", f"${vpn_acb:,.1f} M COP", "Viable" if vpn_acb > 0 else "No Viable")
+    with m_acb2: st.metric("Relación Beneficio/Costo (RCB)", f"{rcb_acb:.2f}x", "Genera Valor" if rcb_acb > 1 else "Riesgo")
     with m_acb3:
         try: pback = df_flujos[df_flujos['Acumulado'] >= 0]['Año'].iloc[0]
         except: pback = ">" + str(horizonte)
-        st.metric("Punto de Equilibrio", f"Año {pback}")
+        st.metric("Punto de Equilibrio (Payback)", f"Año {pback}")
 
-    # Gráfico Profesional
     from plotly.subplots import make_subplots
     fig_acb = make_subplots(specs=[[{"secondary_y": True}]])
     fig_acb.add_trace(go.Bar(x=df_flujos['Año'], y=df_flujos['Neto_Desc'], name='Flujo Neto Descontado', marker_color='#2ecc71'), secondary_y=False)
     fig_acb.add_trace(go.Scatter(x=df_flujos['Año'], y=df_flujos['Acumulado'], name='VPN Acumulado', line=dict(color='#2980b9', width=3)), secondary_y=True)
-    fig_acb.update_layout(title="Viabilidad Financiera del Portafolio SbN", height=400, hovermode="x unified", legend=dict(orientation="h", y=-0.2))
+    fig_acb.update_layout(title="Proyección de Flujos: Ecosistema Río Grande - Tasajera", height=400, hovermode="x unified", legend=dict(orientation="h", y=-0.2))
     st.plotly_chart(fig_acb, use_container_width=True)
 
     # 🧠 CAJA INTELIGENTE DE SÍNTESIS FINANCIERA (Sihcli-Poter AI)
@@ -1214,28 +1232,19 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.markdown("### 🧠 Veredicto Financiero (Sihcli-Poter AI)")
     
     if vpn_acb > 0:
-        msg_fin = f"✅ **Proyecto Estructuralmente Viable:** La intervención de conservación/restauración sobre **{ha_proyecto_acb:,.0f} hectáreas** genera valor económico real. Con una Relación Costo-Beneficio de **{rcb_acb:.2f}x**, la suma de los servicios ecosistémicos (agua, carbono y mitigación) supera ampliamente el CAPEX y los costos de oportunidad a lo largo de los {horizonte} años. El capital se recupera totalmente en el **Año {pback}**."
+        msg_fin = f"✅ **Proyecto Estructuralmente Viable:** La intervención sobre **{ha_proyecto_acb:,.0f} hectáreas** genera valor económico real para la región. El modelo demuestra que el negocio de generación eléctrica en Tasajera (aportando **${b_energia:,.0f} M COP/año**) y los ahorros operativos de PTAP Manantiales pagan sobradamente el CAPEX del proyecto. El capital se recupera totalmente en el **Año {pback}**."
         st.success(msg_fin)
     else:
         déficit_m = abs(vpn_acb)
-        # Separamos el símbolo $ de los asteriscos para evitar el bug de LaTeX en Streamlit
         msg_fin = f"Bajo los parámetros actuales, la intervención sobre **{ha_proyecto_acb:,.0f} hectáreas** destruye valor (VPN negativo de **$ {déficit_m:,.1f} M COP**). El RCB de **{rcb_acb:.2f}x** indica que por cada peso invertido, la sociedad solo recupera {rcb_acb*100:.0f} centavos en servicios ecosistémicos."
         
-        # Lógica de recomendaciones dinámicas usando Markdown puro (\n\n)
         recomendaciones = []
-        if horizonte < 30: 
-            recomendaciones.append("🔸 **1. Ampliar el Horizonte:** Los bosques son activos de maduración lenta. Evaluar el proyecto a 30 o 40 años permitirá que la curva de beneficios supere el punto de equilibrio.")
-        if tasa_desc > 0.08: 
-            recomendaciones.append(f"🔸 **2. Buscar Capital Concesional:** Una tasa de descuento del {tasa_desc*100:.1f}% es muy exigente. Acudir a banca multilateral (BID/BM) o fondos climáticos puede reducirla al 4% - 6%.")
-        if c_oportunidad_ha > 0.5: 
-            recomendaciones.append(f"🔸 **3. Reubicar Tácticas:** El costo de oportunidad agrario es muy alto ($ {c_oportunidad_ha} M). Use el mapa táctico para enfocar las SbN en tierras marginales más baratas.")
+        if horizonte < 30: recomendaciones.append("🔸 **1. Ampliar el Horizonte:** Las represas operan a 50+ años; evaluar el bosque a solo 20 años penaliza los beneficios de Tasajera a largo plazo.")
+        if tasa_desc > 0.08: recomendaciones.append(f"🔸 **2. Negociar Deuda Climática:** Una tasa del {tasa_desc*100:.1f}% asfixia el flujo. EPM y CuencaVerde pueden emitir 'Bonos Verdes' con tasas subsidiadas del 4% - 6%.")
+        if v_kwh_bolsa < 700: recomendaciones.append(f"🔸 **3. Indexar a Precio de Escasez:** Se está valorando la energía a $ {v_kwh_bolsa}. Si se indexa al precio del Cargo por Confiabilidad durante Fenómeno de El Niño (>800 COP/kWh), los ingresos por energía regulada dispararán el VPN.")
         
-        # Unimos con saltos de línea nativos de Markdown
         rec_texto = "\n\n".join(recomendaciones)
-        
-        # Ensamblamos el mensaje final estructurado
         alerta_completa = f"⚠️ **Riesgo de Déficit Financiero:**\n\n{msg_fin}\n\n---\n\n💡 **Recomendación Estratégica para viabilizar el proyecto:**\n\n{rec_texto}"
-        
         st.warning(alerta_completa)
         
     # =========================================================================
