@@ -1134,49 +1134,66 @@ if gdf_zona is not None and not gdf_zona.empty:
         st.plotly_chart(fig_curva, use_container_width=True)
 
     # ==============================================================================
-    # 📍 PASO 5: ANÁLISIS COSTO-BENEFICIO (ACB) - ENRUTADOR DINÁMICO DE EMBALSES
+    # 📍 PASO 5: ANÁLISIS COSTO-BENEFICIO (ACB) - CONECTADO A PÁGINA 08
     # ==============================================================================
     st.markdown("---")
     
-    # 🧠 CEREBRO ENRUTADOR: Identifica el Embalse según la Cuenca
+    # 🧠 CEREBRO ENRUTADOR: Lee el territorio y busca los cables de la Pág 08
     zona_eval = str(nombre_zona).upper()
+    sys_nodo = st.session_state.get('sys_nodo_activo', '')
+    
+    # Valores telemetricos en vivo (si existen)
+    vivo_efi = st.session_state.get('sys_factor_energia', None)
+    
     if any(k in zona_eval for k in ["GRANDE", "CHICO", "ANIMAS", "ÁNIMAS"]):
         perfil_acb = {
             "titulo": "Modelación Río Grande II - Tasajera",
             "desc": "Traducción de los impactos hidrológicos a flujos financieros para PTAP Manantiales y Central Tasajera.",
             "agua_lbl": "Sector Agua (PTAP Manantiales)",
             "ene_lbl": "Sector Energía (Central Tasajera)",
-            "def_ptap": 45.0, "def_kwh": 550.0, "def_efi": 1.15,
+            "def_ptap": 45.0, 
+            "def_kwh": 550.0, 
+            "def_efi": vivo_efi if vivo_efi is not None else 1.15, # 🔌 Cable conectado
             "ia_msg": "el negocio de generación eléctrica en Tasajera",
             "ia_warn": "Las represas operan a 50+ años; evaluar el bosque a solo 20 años penaliza los beneficios de Tasajera a largo plazo."
         }
+        if sys_nodo == "Río Grande II": st.toast("🔌 **Telemetría Conectada:** Recibiendo datos en vivo del sistema Río Grande II (Pág 08).", icon="⚡")
+
     elif any(k in zona_eval for k in ["NEGRO", "ARMA", "PANTANILLO", "MOSCA", "FE"]):
         perfil_acb = {
             "titulo": "Modelación Sistema La Fe - Ayurá",
             "desc": "Traducción a flujos financieros priorizando la potabilización en PTAP La Ayurá y regulación del Valle de Aburrá Sur.",
             "agua_lbl": "Sector Agua (PTAP La Ayurá)",
-            "ene_lbl": "Sector Energía (Bombeo / Microcentrales)",
-            "def_ptap": 65.0, "def_kwh": 300.0, "def_efi": 0.5,
-            "ia_msg": "los inmensos ahorros en tratamiento de la PTAP La Ayurá y la regulación del embalse",
-            "ia_warn": "El sistema La Fe es muy sensible a sedimentos. Extender el horizonte a 30 años refleja mejor el ahorro gigante en dragado."
+            "ene_lbl": "Sector Energía (Costo Bombeo / Trasvases)",
+            "def_ptap": 65.0, 
+            "def_kwh": 350.0, # Costo de energía comprada
+            "def_efi": st.session_state.get('sys_costo_bombeo', 0.85), # 🔌 Cable de bombeo
+            "ia_msg": "los inmensos ahorros en tratamiento de la PTAP La Ayurá y la protección contra sobrecostos de bombeo",
+            "ia_warn": "El sistema La Fe depende del bombeo externo. Una cuenca sana reduce la dependencia de trasvases costosos."
         }
+        if sys_nodo == "La Fe": st.toast("🔌 **Telemetría Conectada:** Recibiendo costos de bombeo en vivo del sistema La Fe (Pág 08).", icon="⚡")
+
     elif any(k in zona_eval for k in ["NARE", "GUATAP", "PEÑOL"]):
         perfil_acb = {
             "titulo": "Modelación Embalse Peñol - Guatapé",
             "desc": "Traducción a flujos financieros priorizando la inmensa generación eléctrica en la cadena Guatapé - Playas - San Carlos.",
             "agua_lbl": "Sector Agua (Regulación Regional)",
             "ene_lbl": "Sector Energía (Cadena Guatapé)",
-            "def_ptap": 20.0, "def_kwh": 550.0, "def_efi": 2.5,
+            "def_ptap": 20.0, 
+            "def_kwh": 550.0, 
+            "def_efi": vivo_efi if vivo_efi is not None else 2.5, # 🔌 Cable conectado
             "ia_msg": "la inmensa generación en cascada de la cadena Guatapé-Playas",
             "ia_warn": "La cadena Guatapé tiene una caída (cabeza) enorme. Subestimar la eficiencia hidroeléctrica castiga fuertemente el VPN."
         }
+        if sys_nodo == "El Peñol (Guatapé)": st.toast("🔌 **Telemetría Conectada:** Recibiendo datos en vivo de la cadena Guatapé (Pág 08).", icon="⚡")
+
     else:
         perfil_acb = {
             "titulo": "Valoración de Servicios Ecosistémicos Locales",
             "desc": "Traducción de los impactos hidrológicos a flujos financieros para acueductos locales, sector agro y mitigación de riesgo.",
             "agua_lbl": "Sector Agua Potable (Acueductos Veredales)",
             "ene_lbl": "Sector Productivo / Energía Menor",
-            "def_ptap": 30.0, "def_kwh": 0.0, "def_efi": 0.0, # Por defecto 0 si no hay represa asociada
+            "def_ptap": 30.0, "def_kwh": 0.0, "def_efi": 0.0, 
             "ia_msg": "la protección de acueductos veredales y la resiliencia productiva local",
             "ia_warn": "Evaluar a 30 años permite que los ecosistemas locales maduren y muestren su verdadero valor de protección."
         }
