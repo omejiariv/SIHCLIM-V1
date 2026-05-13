@@ -63,7 +63,7 @@ from modules.stats_analyser import (
 
 # Importaciones seguras de APIs externas
 try:
-    from modules.iri_api import fetch_iri_data, process_iri_plume, process_iri_probabilities
+    from modules.climate_api import fetch_iri_data, process_iri_plume, process_iri_probabilities
 except ImportError:
     fetch_iri_data = None
 
@@ -852,7 +852,7 @@ def parse_spanish_date_visualizer(x):
 # -----------------------------------------------------------------------------
 # --- IMPORTACIÓN ROBUSTA DE IRI ---
 try:
-    from modules.iri_api import fetch_iri_data, process_iri_plume, process_iri_probabilities
+    from modules.climate_api import fetch_iri_data, process_iri_plume, process_iri_probabilities
 except ImportError as e:
     st.error(f"Error crítico: No se pudo cargar 'modules/iri_api.py'. Verifique la existencia del archivo. Detalle: {e}")
     fetch_iri_data = None
@@ -2250,7 +2250,7 @@ def display_climate_forecast_tab(df_enso, **kwargs):
             else:
                 st.warning("⚠️ Datos de la NOAA no disponibles en este momento o el formato de columnas ha cambiado.")
         else:
-            st.error("Error crítico: Función 'get_iri_enso_forecast' no encontrada en 'modules.iri_api'.")
+            st.error("Error crítico: Función 'get_iri_enso_forecast' no encontrada en 'modules.climate_api'.")
 
     # -------------------------------------------------------------------------
     # PESTAÑA 3: PROPHET (GENERADOR AVANZADO)
