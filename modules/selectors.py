@@ -272,219 +272,201 @@ def cargar_mapa_municipios():
     return gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
 
 def render_selector_espacial():
+    """
+    Renderiza el panel lateral para filtrar estaciones base por Cuencas o Administrativo.
+    🔥 INCLUYE EFECTO MEMORIA: Guarda el estado al cambiar de página.
+    """
+    # Siempre inyectamos el Aleph primero
+    renderizar_telemetria_aleph()
+    
+    st.sidebar.markdown("### 📍 Filtros Geográficos Principales")
+
+    # =========================================================
+    # 🧠 ESCUDO DE MEMORIA INTELIGENTE
+    # =========================================================
+    def selector_seguro(label, opciones, clave_memoria):
+        opciones_lista = list(opciones)
+        if not opciones_lista: opciones_lista = ["-- NO HAY DATOS --"]
+            
+        idx_defecto = 0
+        if clave_memoria in st.session_state:
+            valor_guardado = st.session_state[clave_memoria]
+            if valor_guardado in opciones_lista:
+                idx_defecto = opciones_lista.index(valor_guardado)
+                
+        seleccion = st.sidebar.selectbox(label, opciones_lista, index=idx_defecto)
+        st.session_state[clave_memoria] = seleccion
+        return seleccion
+
+    # ---------------------------------------------------------
+    # 1. Filtro Principal: Nivel de Agregación
+    # ---------------------------------------------------------
+    opciones_agregacion = ["Por Cuenca", "Por Municipio", "Por Región", "Departamento"]
+    idx_agr = 0
+    if 'mem_nivel_agregacion' in st.session_state and st.session_state['mem_nivel_agregacion'] in opciones_agregacion:
+        idx_agr = opciones_agregacion.index(st.session_state['mem_nivel_agregacion'])
+        
+    nivel_agregacion = st.sidebar.radio("Nivel de Agregación:", opciones_agregacion, index=idx_agr)
+    st.session_state['mem_nivel_agregacion'] = nivel_agregacion
+
     ids_estaciones = []
-    nombre_zona = "Antioquia"
-    altitud_ref = 1500.0
+    nombre_zona = "Sin Selección"
+    altitud_ref = 1500
     gdf_zona = None
-    nivel_jerarquico = "DEPARTAMENTO" # 🔥 FIX 1: Nueva variable para la Llave Universal
-    
-    try: engine = db_manager.get_engine()
-    except Exception as e:
-        st.error(f"Error conectando a BD: {e}")
-        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
-    
-    with st.sidebar.expander("📍 Filtros Geográficos Principales", expanded=True):
-        modo = st.radio("Nivel de Agregación:", ["Por Cuenca", "Por Municipio", "Por Región", "Departamento"], index=0)
-        
-        # --- A. POR CUENCA (DISEÑO INTUITIVO) ---
-        if modo == "Por Cuenca":
-            gdf_c = cargar_mapa_cuencas()
-            ruta = st.selectbox("Ruta de Búsqueda:", ["Hidrología", "CAR"], index=0)
+
+    # --- LÓGICA POR CUENCAS ---
+    if nivel_agregacion == "Por Cuenca":
+        df_cuencas = cargar_maestro_cuencas()
+        if df_cuencas is not None and not df_cuencas.empty:
             
-            if ruta == "Hidrología":
-                # 1. Primero define QUÉ nivel quiere evaluar
-                nivel = st.selectbox("1. Nivel a Evaluar:", ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"], index=5)
-                col_obj = {"AH": "nomah", "ZH": "nomzh", "SZH": "nom_szh", "NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
-                
-                st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
-                st.markdown("<span style='font-size:0.85em; color:gray;'>Filtros Opcionales de Búsqueda:</span>", unsafe_allow_html=True)
-                
-                df_f = gdf_c
-                # Solo mostramos los filtros superiores al nivel elegido
-                if nivel in ["ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
-                    ah = st.selectbox("Filtro AH:", ["-- TODAS --"] + sorted(df_f['nomah'].dropna().unique()))
-                    if ah != "-- TODAS --": df_f = df_f[df_f['nomah']==ah]
-                    
-                if nivel in ["SZH", "NSS1", "NSS2", "NSS3"]:
-                    zh = st.selectbox("Filtro ZH:", ["-- TODAS --"] + sorted(df_f['nomzh'].dropna().unique()))
-                    if zh != "-- TODAS --": df_f = df_f[df_f['nomzh']==zh]
-                    
-                if nivel in ["NSS1", "NSS2", "NSS3"]:
-                    szh = st.selectbox("Filtro SZH:", ["-- TODAS --"] + sorted(df_f['nom_szh'].dropna().unique()))
-                    if szh != "-- TODAS --": df_f = df_f[df_f['nom_szh']==szh]
-                    
-                st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
-                
-                # 2. Selección FINAL obligatoria
-                sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f[col_obj].dropna().unique()))
-                
-                if sel_fin != "-- Seleccione --":
-                    nombre_zona = sel_fin
-                    gdf_zona = df_f[df_f[col_obj]==sel_fin]
-                    nivel_jerarquico = nivel 
-                else:
-                    nombre_zona, gdf_zona = "-- Seleccione --", None
-                    nivel_jerarquico = "NINGUNO"
+            ruta_busqueda = selector_seguro("Ruta de Búsqueda:", ["Hidrología", "Administrativo"], "mem_ruta_busqueda")
             
-            elif ruta == "CAR":
-                # 🔥 FIX AMVA: Leemos las CARs directamente de la Matriz de Toma de Decisiones, 
-                # así garantizamos que "AMVA" siempre aparezca en el menú.
+            if ruta_busqueda == "Hidrología":
+                nivel_evaluar = selector_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_evaluar")
+
+                with st.sidebar.expander("Filtros Opcionales de Búsqueda:", expanded=False):
+                    lista_ah = ["-- TODAS --"] + sorted(df_cuencas['nomah'].dropna().unique().tolist())
+                    filtro_ah = selector_seguro("Filtro AH:", lista_ah, "mem_filtro_ah")
+                    
+                    df_opciones = df_cuencas if filtro_ah == "-- TODAS --" else df_cuencas[df_cuencas['nomah'] == filtro_ah]
+                    
+                    lista_zh = ["-- TODAS --"] + sorted(df_opciones['nomzh'].dropna().unique().tolist())
+                    filtro_zh = selector_seguro("Filtro ZH:", lista_zh, "mem_filtro_zh")
+                    
+                    if filtro_zh != "-- TODAS --": df_opciones = df_opciones[df_opciones['nomzh'] == filtro_zh]
+                    
+                    lista_szh = ["-- TODAS --"] + sorted(df_opciones['nom_szh'].dropna().unique().tolist())
+                    filtro_szh = selector_seguro("Filtro SZH:", lista_szh, "mem_filtro_szh")
+                    
+                    if filtro_szh != "-- TODAS --": df_opciones = df_opciones[df_opciones['nom_szh'] == filtro_szh]
+
+                columna_nombre = {
+                    "NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3",
+                    "SZH": "nom_szh", "ZH": "nomzh", "AH": "nomah"
+                }
+                
+                col_busqueda = columna_nombre.get(nivel_evaluar, "nom_nss1")
+                lista_territorios = sorted(df_opciones[col_busqueda].dropna().unique().tolist())
+                
+                territorio_sel = selector_seguro(f"🎯 2. Territorio Exacto ({nivel_evaluar}):", lista_territorios, "mem_territorio_sel")
+                
+                if territorio_sel and territorio_sel != "-- NO HAY DATOS --":
+                    nombre_zona = decodificar_tildes(territorio_sel)
+                    df_final = df_cuencas[df_cuencas[col_busqueda] == territorio_sel]
+                    
+                    ids_str = df_final['estaciones_id'].dropna().astype(str).tolist()
+                    ids_estaciones = []
+                    for item in ids_str:
+                        if item.strip():
+                            ids_estaciones.extend([x.strip() for x in item.split(',') if x.strip()])
+                    ids_estaciones = list(set(ids_estaciones))
+                    altitud_ref = df_final['altitud_media'].mean() if 'altitud_media' in df_final.columns else 1500
+                    
+                    from modules.db_manager import get_engine
+                    try:
+                        engine = get_engine()
+                        col_geom = col_busqueda.replace('nom_', '')
+                        query = text(f"SELECT geometry FROM cuencas WHERE {col_busqueda} = :val")
+                        gdf_z = gpd.read_postgis(query, engine, params={"val": territorio_sel}, geom_col="geometry")
+                        if not gdf_z.empty: gdf_zona = gdf_z.dissolve()
+                    except: pass
+
+            elif ruta_busqueda == "Administrativo":
+                nivel_evaluar = selector_seguro("1. Nivel a Evaluar:", ["CAR", "Subregión", "Departamento"], "mem_nivel_evaluar_admin")
+                
+                col_busqueda = {"CAR": "CorpoAmb", "Subregión": "depto_regi", "Departamento": "departamen"}.get(nivel_evaluar, "CorpoAmb")
+                lista_territorios = sorted(df_cuencas[col_busqueda].dropna().unique().tolist())
+                
+                territorio_sel = selector_seguro(f"🎯 2. Territorio Exacto ({nivel_evaluar}):", lista_territorios, "mem_territorio_admin")
+                
+                if territorio_sel and territorio_sel != "-- NO HAY DATOS --":
+                    nombre_zona = decodificar_tildes(territorio_sel)
+                    df_final = df_cuencas[df_cuencas[col_busqueda] == territorio_sel]
+                    
+                    ids_str = df_final['estaciones_id'].dropna().astype(str).tolist()
+                    ids_estaciones = []
+                    for item in ids_str:
+                        if item.strip():
+                            ids_estaciones.extend([x.strip() for x in item.split(',') if x.strip()])
+                    ids_estaciones = list(set(ids_estaciones))
+                    altitud_ref = df_final['altitud_media'].mean() if 'altitud_media' in df_final.columns else 1500
+
+    # --- LÓGICA POR MUNICIPIO ---
+    elif nivel_agregacion == "Por Municipio":
+        df_mun = cargar_maestro_municipios()
+        if df_mun is not None and not df_mun.empty:
+            
+            lista_municipios = sorted(df_mun['MPIO_CNMBR'].dropna().unique().tolist())
+            municipio_sel = selector_seguro("Municipio:", lista_municipios, "mem_municipio_sel")
+            
+            if municipio_sel and municipio_sel != "-- NO HAY DATOS --":
+                nombre_zona = decodificar_tildes(municipio_sel)
+                df_final = df_mun[df_mun['MPIO_CNMBR'] == municipio_sel]
+                
+                ids_str = df_final['estaciones_id'].dropna().astype(str).tolist()
+                ids_estaciones = []
+                for item in ids_str:
+                    if item.strip():
+                        ids_estaciones.extend([x.strip() for x in item.split(',') if x.strip()])
+                ids_estaciones = list(set(ids_estaciones))
+                altitud_ref = df_final['altitud_media'].mean() if 'altitud_media' in df_final.columns else 1500
+
                 try:
-                    q_cars = text("SELECT DISTINCT territorio FROM matriz_maestra_hidrologia WHERE UPPER(nivel) = 'CAR' ORDER BY territorio")
-                    df_cars = pd.read_sql(q_cars, db_manager.get_engine())
-                    opciones_car = df_cars['territorio'].tolist() if not df_cars.empty else ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
-                except:
-                    opciones_car = ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
+                    from modules.db_manager import get_engine
+                    engine = get_engine()
+                    query = text("SELECT geometry FROM municipios WHERE \"MPIO_CNMBR\" = :val")
+                    gdf_z = gpd.read_postgis(query, engine, params={"val": municipio_sel}, geom_col="geometry")
+                    if not gdf_z.empty: gdf_zona = gdf_z.dissolve()
+                except: pass
 
-                car_sel = st.selectbox("Autoridad Ambiental (CAR):", ["-- Seleccione --"] + sorted(opciones_car))
-                
-                if car_sel != "-- Seleccione --":
-                    # Mapeamos las geometrías de las CAR (Asegurando que el AMVA tenga geometría)
-                    if car_sel == "AMVA":
-                        mask_car = gdf_c['corpoamb'].str.contains('AMVA|ABURR|METROPOLITANA', case=False, na=False)
-                    else:
-                        mask_car = gdf_c['corpoamb'].str.contains(car_sel[:4], case=False, na=False)
-                    
-                    df_f = gdf_c[mask_car]
-                    
-                    # Salvavidas de diseño: Si la CAR no está dibujada en el mapa físico, devolvemos el mapa completo para no romper la app
-                    if df_f.empty: 
-                        df_f = gdf_c
-                    
-                    # Permite evaluar toda la jurisdicción de la CAR o bajar a sus microcuencas
-                    nivel = st.selectbox("1. Resolución a Evaluar:", ["CAR", "NSS1", "NSS2", "NSS3"], index=0)
-                    
-                    if nivel == "CAR":
-                        nombre_zona = car_sel
-                        gdf_zona = df_f if not df_f.empty else None
-                        nivel_jerarquico = "CAR"
-                    else:
-                        col_obj = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
-                        sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f[col_obj].dropna().unique()))
-                        
-                        if sel_fin != "-- Seleccione --":
-                            nombre_zona = sel_fin
-                            gdf_zona = df_f[df_f[col_obj]==sel_fin]
-                            nivel_jerarquico = nivel 
-                        else:
-                            nombre_zona, gdf_zona = "-- Seleccione --", None
-                            nivel_jerarquico = "NINGUNO"
-                else:
-                    nombre_zona, gdf_zona = "-- Seleccione --", None
-                    nivel_jerarquico = "NINGUNO"
-                    
-        # --- B. POR REGIÓN ---
-        elif modo == "Por Región":
-            try:
-                # 🔥 FIX: Forzamos la lectura con openpyxl y usamos la columna correcta 'subregion'
-                df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx", engine='openpyxl')
-                df_m.columns = [c.lower() for c in df_m.columns]
-                
-                col_reg = 'subregion' if 'subregion' in df_m.columns else 'region'
-                lista_reg = sorted([str(r).title() for r in df_m[col_reg].dropna().unique()])
-                
-                sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
-                if sel_reg != "-- Seleccione --":
-                    nombre_zona = sel_reg # Enviamos el nombre limpio sin prefijo para que SQL haga match
-                    nivel_jerarquico = "Regional" # Coincide exacto con la Matriz Demográfica
-                    
-                    cods = df_m[df_m[col_reg].str.lower()==sel_reg.lower()]['dp_mp'].astype(str).str.replace(".0", "", regex=False).str.zfill(5).tolist()
-                    gdf_mun = cargar_mapa_municipios()
-                    
-                    col_mpio = 'mpio_ccdgo' if 'mpio_ccdgo' in gdf_mun.columns else 'MPIO_CCDGO'
-                    gdf_zona = gdf_mun[gdf_mun[col_mpio].astype(str).str.replace(".0", "", regex=False).str.zfill(5).isin(cods)]
-                    
-                    # Escudo anti-pantalla blanca: si el filtro geográfico falla, evita que muera la app
-                    if gdf_zona.empty: gdf_zona = gdf_mun.head(1) 
-                else:
-                    nombre_zona, gdf_zona = "-- Seleccione --", None
-                    nivel_jerarquico = "NINGUNO"
-            except Exception as e: 
-                st.error(f"Error cargando regiones: {e}")
-                nombre_zona, gdf_zona = "-- Seleccione --", None
-                nivel_jerarquico = "NINGUNO"
-
-        # --- C. POR MUNICIPIO ---
-        elif modo == "Por Municipio":
-            gdf_mun = cargar_mapa_municipios()
-            # 🔥 FIX: Usamos la función decodificar_tildes que ya existe arriba en este mismo archivo
-            try:
-                col_nombre = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
-                gdf_mun['display'] = gdf_mun[col_nombre].apply(decodificar_tildes).str.title()
-            except:
-                gdf_mun['display'] = gdf_mun[col_nombre].str.title()
+    # --- LÓGICA POR REGIÓN ---
+    elif nivel_agregacion == "Por Región":
+        df_mun = cargar_maestro_municipios()
+        if df_mun is not None and not df_mun.empty:
             
-            sel_mpio = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + sorted(gdf_mun['display'].unique()))
-            if sel_mpio != "-- Seleccione --":
-                nombre_zona, gdf_zona = sel_mpio, gdf_mun[gdf_mun['display']==sel_mpio]
-                nivel_jerarquico = "Municipal" 
-            else:
-                nombre_zona, gdf_zona = "-- Seleccione --", None
-                nivel_jerarquico = "NINGUNO"
+            lista_regiones = sorted(df_mun['subregion'].dropna().unique().tolist())
+            region_sel = selector_seguro("Región:", lista_regiones, "mem_region_sel")
+            
+            if region_sel and region_sel != "-- NO HAY DATOS --":
+                nombre_zona = decodificar_tildes(region_sel)
+                df_final = df_mun[df_mun['subregion'] == region_sel]
+                
+                ids_str = df_final['estaciones_id'].dropna().astype(str).tolist()
+                ids_estaciones = []
+                for item in ids_str:
+                    if item.strip():
+                        ids_estaciones.extend([x.strip() for x in item.split(',') if x.strip()])
+                ids_estaciones = list(set(ids_estaciones))
+                altitud_ref = df_final['altitud_media'].mean() if 'altitud_media' in df_final.columns else 1500
 
-        # --- D. DEPARTAMENTO ---
-        else:
-            gdf_mun = cargar_mapa_municipios()
-            nombre_zona, gdf_zona = "Antioquia", gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_mun.unary_union], crs=gdf_mun.crs)
-            nivel_jerarquico = "Departamental" # 🔥 FIX 5
+    # --- LÓGICA POR DEPARTAMENTO ---
+    elif nivel_agregacion == "Departamento":
+        df_mun = cargar_maestro_municipios()
+        if df_mun is not None and not df_mun.empty:
+            
+            lista_deptos = sorted(df_mun['DPTO_CNMBR'].dropna().unique().tolist())
+            depto_sel = selector_seguro("Departamento:", lista_deptos, "mem_depto_sel")
+            
+            if depto_sel and depto_sel != "-- NO HAY DATOS --":
+                nombre_zona = decodificar_tildes(depto_sel)
+                df_final = df_mun[df_mun['DPTO_CNMBR'] == depto_sel]
+                
+                ids_str = df_final['estaciones_id'].dropna().astype(str).tolist()
+                ids_estaciones = []
+                for item in ids_str:
+                    if item.strip():
+                        ids_estaciones.extend([x.strip() for x in item.split(',') if x.strip()])
+                ids_estaciones = list(set(ids_estaciones))
+                altitud_ref = df_final['altitud_media'].mean() if 'altitud_media' in df_final.columns else 1500
 
-        # --- FILTRO DE ESTACIONES ---
-        if gdf_zona is not None and not gdf_zona.empty:
-            buff = st.slider("Buffer (km):", 0.0, 50.0, 25.0)
-            minx, miny, maxx, maxy = gdf_zona.to_crs(4326).total_bounds
-            q = text(f"SELECT id_estacion, altitud FROM estaciones WHERE longitud BETWEEN {minx-0.2} AND {maxx+0.2} AND latitud BETWEEN {miny-0.2} AND {maxy+0.2}")
-            df_est = pd.read_sql(q, engine)
-            ids_estaciones = df_est['id_estacion'].astype(str).tolist()
-            altitud_ref = df_est['altitud'].mean()
-
-    # ====================================================================
-    # 🧠 ORQUESTADOR SILENCIOSO (Equipado con Llave Universal)
-    # ====================================================================
-    # 🔥 FIX 1: Eliminamos "Antioquia" de la lista de ignorados
-    zonas_ignoradas = ["Bloque Regional", "-- TODAS --", "-- Seleccione --", "", "NINGUNO"]
+    st.sidebar.markdown("---")
     
-    zona_activa = st.session_state.get('zona_activa_global')
+    # 🧠 MEMORIA DEL SLIDER DE BUFFER
+    buffer_def = float(st.session_state.get('buffer_global_km', 25.0))
+    buffer_km = st.sidebar.slider("Buffer (km):", 0.0, 100.0, buffer_def, 5.0)
     
-    # 🔥 FIX 2: Permitimos que el nivel se actualice para Antioquia y Regiones
-    if nombre_zona not in zonas_ignoradas and nombre_zona != zona_activa:
-        st.session_state['zona_activa_global'] = nombre_zona
-        st.session_state['nivel_activo_global'] = nivel_jerarquico 
-        
-        # Limpieza de estados para nueva carga
-        claves_a_borrar = [
-            'pob_hum_calc_met', 'ica_bovinos_calc_met', 'ica_porcinos_calc_met', 'ica_aves_calc_met', 
-            'demanda_total_m3s', 'carga_dbo_total_ton',
-            'aleph_oferta_m3s', 'aleph_lluvia_mm', 'aleph_area_km2', 'aleph_recarga_mm'
-        ]
-        for k in claves_a_borrar: st.session_state.pop(k, None)
-            
-        try:
-            from modules.utils import obtener_metabolismo_exacto
-            datos_precargados = obtener_metabolismo_exacto(nombre_zona, 2025)
-            if datos_precargados:
-                st.session_state['aleph_pob_total'] = datos_precargados.get('pob_total', 0)
-                st.session_state['ica_bovinos_calc_met'] = datos_precargados.get('bovinos', 0)
-                st.session_state['ica_porcinos_calc_met'] = datos_precargados.get('porcinos', 0)
-                st.session_state['ica_aves_calc_met'] = datos_precargados.get('aves', 0)
-                st.session_state['aleph_lugar'] = nombre_zona
-        except: pass 
-            
-        try:
-            # 🔥 FIX 7: BÚSQUEDA EXACTA CON LLAVE UNIVERSAL
-            q_hidro = text("SELECT * FROM matriz_hidrologica_maestra WHERE \"Jerarquia\" = :nivel AND \"Territorio\" = :zona LIMIT 1")
-            df_hidro = pd.read_sql(q_hidro, engine, params={"nivel": nivel_jerarquico, "zona": nombre_zona})
-            
-            if not df_hidro.empty:
-                row_h = df_hidro.iloc[0]
-                st.session_state['aleph_oferta_m3s'] = float(row_h['Caudal_Medio_m3s'])
-                st.session_state['aleph_lluvia_mm'] = float(row_h['Lluvia_mm'])
-                st.session_state['aleph_area_km2'] = float(row_h['Area_km2'])
-                st.session_state['aleph_recarga_mm'] = float(row_h['Recarga_mm'])
-                st.session_state['aleph_altitud_m'] = float(row_h['Altitud_m'])
-        except Exception as e:
-            pass
+    # Guardamos en sesión las variables clave para otros módulos
+    st.session_state['buffer_global_km'] = buffer_km
+    st.session_state['aleph_lugar'] = nombre_zona
 
-    renderizar_gestor_escenarios(nombre_zona)
     return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
-
-
