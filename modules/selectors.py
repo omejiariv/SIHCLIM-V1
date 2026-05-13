@@ -13,6 +13,34 @@ from modules import db_manager
 from modules.config import Config
 
 # ====================================================================
+# --- MOTORES DE CARGA DE METADATOS (MAESTROS) ---
+# ====================================================================
+
+@st.cache_data(show_spinner=False)
+def cargar_maestro_cuencas():
+    """Carga el inventario de subcuencas y su codificación desde el Storage."""
+    try:
+        import io, requests
+        url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/cuencas_maestro.xlsx"
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+        return pd.read_excel(io.BytesIO(response.content))
+    except Exception as e:
+        st.error(f"Error cargando maestro de cuencas: {e}")
+        return None
+
+@st.cache_data(show_spinner=False)
+def cargar_maestro_municipios():
+    """Carga el inventario de municipios y su codificación desde el Storage."""
+    try:
+        import io, requests
+        url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+        return pd.read_excel(io.BytesIO(response.content))
+    except Exception as e:
+        st.error(f"Error cargando maestro de municipios: {e}")
+        return None
+
+# ====================================================================
 # --- REPARADOR DE TILDES (MOJIBAKE) ---
 # ====================================================================
 def decodificar_tildes(texto):
