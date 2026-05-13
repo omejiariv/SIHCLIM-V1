@@ -892,183 +892,192 @@ def main():
 if __name__ == "__main__":
     main()
 
-# ==============================================================================
+    # ==============================================================================
     # ⚙️ BÓVEDA DE ADMINISTRADOR: FORJA DE LA MATRIZ MAESTRA
     # ==============================================================================
     st.markdown("---")
     with st.expander("⚙️ Área Restringida: Motor de Generación de Matriz Hidrológica", expanded=False):
         st.subheader("Matriz Hidrológica Maestra (Recálculo Global)")
         
-        st.markdown("""
-        <div style="border-left: 5px solid #f39c12; padding: 15px; background-color: rgba(243, 156, 18, 0.1); border-radius: 5px; margin-bottom: 15px;">
-            <h4 style="color: #d35400; margin-top: 0;">⚠️ Advertencia de Sincronización Territorial</h4>
-            <b style="font-size: 0.95em;">Esta Matriz Maestra es el motor de alta velocidad que alimenta la Toma de Decisiones. Solo debe ejecutarse si se han modificado las bases de datos espaciales (nuevos municipios, cuencas o capas topográficas).</b>
-        </div>
-        """, unsafe_allow_html=True)
+        # 🔐 SISTEMA DE SEGURIDAD
+        admin_pwd = st.text_input("🔑 Ingrese clave de administrador para desbloquear el motor:", type="password", key="admin_pwd_forja")
+        
+        if admin_pwd == "AdminPoter":
+            st.success("🔓 Acceso Concedido. Protocolos de forja desbloqueados.")
+            
+            st.markdown("""
+            <div style="border-left: 5px solid #f39c12; padding: 15px; background-color: rgba(243, 156, 18, 0.1); border-radius: 5px; margin-bottom: 15px;">
+                <h4 style="color: #d35400; margin-top: 0;">⚠️ Advertencia de Sincronización Territorial</h4>
+                <b style="font-size: 0.95em;">Esta Matriz Maestra es el motor de alta velocidad que alimenta la Toma de Decisiones. Solo debe ejecutarse si se han modificado las bases de datos espaciales (nuevos municipios, cuencas o capas topográficas).</b>
+            </div>
+            """, unsafe_allow_html=True)
 
-        from modules.db_manager import get_engine
-        engine = get_engine()
+            from modules.db_manager import get_engine
+            engine = get_engine()
 
-        if st.button("⚡ Forjar Matriz Multiescala Definitiva", key="btn_gen_rep_multi", type="primary"):
-            try:
-                import numpy as np
-                import geopandas as gpd
-                from sqlalchemy import text
-                import pandas as pd
-                
-                prog_nivel = st.progress(0, text="Iniciando motores espaciales...")
-
-                # 1. Cargamos el clima global (Estaciones y Lluvia)
-                with st.spinner("📡 Cargando red de Estaciones Climáticas..."):
-                    q_est = text("SELECT id_estacion, altitud, ST_SetSRID(ST_MakePoint(CAST(longitud AS FLOAT), CAST(latitud AS FLOAT)), 4326) as geometry FROM estaciones WHERE latitud IS NOT NULL")
-                    gdf_est = gpd.read_postgis(q_est, engine, geom_col="geometry").to_crs("EPSG:3116")
-                    gdf_est['id_estacion'] = gdf_est['id_estacion'].astype(str)
+            if st.button("⚡ Forjar Matriz Multiescala Definitiva", key="btn_gen_rep_multi", type="primary"):
+                try:
+                    import numpy as np
+                    import geopandas as gpd
+                    from sqlalchemy import text
+                    import pandas as pd
                     
-                    df_rain = pd.read_sql("SELECT id_estacion, AVG(valor)*12 as ppt FROM precipitacion GROUP BY id_estacion", engine)
-                    df_rain['id_estacion'] = df_rain['id_estacion'].astype(str)
+                    prog_nivel = st.progress(0, text="Iniciando motores espaciales...")
 
-                res_multiescala = []
+                    # 1. Cargamos el clima global (Estaciones y Lluvia)
+                    with st.spinner("📡 Cargando red de Estaciones Climáticas..."):
+                        q_est = text("SELECT id_estacion, altitud, ST_SetSRID(ST_MakePoint(CAST(longitud AS FLOAT), CAST(latitud AS FLOAT)), 4326) as geometry FROM estaciones WHERE latitud IS NOT NULL")
+                        gdf_est = gpd.read_postgis(q_est, engine, geom_col="geometry").to_crs("EPSG:3116")
+                        gdf_est['id_estacion'] = gdf_est['id_estacion'].astype(str)
+                        
+                        df_rain = pd.read_sql("SELECT id_estacion, AVG(valor)*12 as ppt FROM precipitacion GROUP BY id_estacion", engine)
+                        df_rain['id_estacion'] = df_rain['id_estacion'].astype(str)
 
-                def procesar_capa_espacial(gdf_base, dicc_niveles, offset_progreso, total_pasos):
-                    gdf_base['geometry'] = gdf_base.geometry.make_valid()
-                    gdf_base = gdf_base[gdf_base.geometry.notnull()]
-                    
-                    paso_actual = offset_progreso
-                    for nombre_nivel, col_bd in dicc_niveles.items():
-                        if col_bd not in gdf_base.columns: continue
+                    res_multiescala = []
+
+                    def procesar_capa_espacial(gdf_base, dicc_niveles, offset_progreso, total_pasos):
+                        gdf_base['geometry'] = gdf_base.geometry.make_valid()
+                        gdf_base = gdf_base[gdf_base.geometry.notnull()]
                         
-                        prog_nivel.progress(paso_actual / total_pasos, text=f"Calculando Hidrología para: {nombre_nivel}")
-                        paso_actual += 1
-                        
-                        gdf_nivel = gdf_base.dissolve(by=col_bd).reset_index()
-                        
-                        for i, row in gdf_nivel.iterrows():
-                            nom_territorio = str(row.get(col_bd, "Desconocido")).strip()
-                            if nom_territorio in ["", "None", "nan", "Cuenca Sin Nombre"]: continue
+                        paso_actual = offset_progreso
+                        for nombre_nivel, col_bd in dicc_niveles.items():
+                            if col_bd not in gdf_base.columns: continue
                             
-                            area_km2 = row.geometry.area / 1e6
-                            if area_km2 <= 0: area_km2 = 1.0
+                            prog_nivel.progress(paso_actual / total_pasos, text=f"Calculando Hidrología para: {nombre_nivel}")
+                            paso_actual += 1
                             
-                            buffer_seguro = float(st.session_state.get("buffer_global_km", 15.0))
-                            buf = row.geometry.buffer(buffer_seguro * 1000)
-                            est_in = gdf_est[gdf_est.geometry.within(buf)]
+                            gdf_nivel = gdf_base.dissolve(by=col_bd).reset_index()
                             
-                            ppt_media, altitud_media = 2500.0, 1500.0
-                            if not est_in.empty:
-                                ids = est_in['id_estacion'].tolist()
-                                vals_ppt = df_rain[df_rain['id_estacion'].isin(ids)]['ppt']
-                                if not vals_ppt.empty: ppt_media = vals_ppt.mean()
-                                vals_alt = est_in['altitud'].dropna()
-                                if not vals_alt.empty: altitud_media = vals_alt.mean()
+                            for i, row in gdf_nivel.iterrows():
+                                nom_territorio = str(row.get(col_bd, "Desconocido")).strip()
+                                if nom_territorio in ["", "None", "nan", "Cuenca Sin Nombre"]: continue
                                 
-                            temp_calc = max(5.0, 28.0 - (0.006 * altitud_media))
-                            L = 300 + 25*temp_calc + 0.05*(temp_calc**3)
-                            etr = ppt_media / np.sqrt(0.9 + (ppt_media/L)**2) if L > 0 else 0
-                            escorrentia_total = ppt_media - etr
+                                area_km2 = row.geometry.area / 1e6
+                                if area_km2 <= 0: area_km2 = 1.0
+                                
+                                buffer_seguro = float(st.session_state.get("buffer_global_km", 15.0))
+                                buf = row.geometry.buffer(buffer_seguro * 1000)
+                                est_in = gdf_est[gdf_est.geometry.within(buf)]
+                                
+                                ppt_media, altitud_media = 2500.0, 1500.0
+                                if not est_in.empty:
+                                    ids = est_in['id_estacion'].tolist()
+                                    vals_ppt = df_rain[df_rain['id_estacion'].isin(ids)]['ppt']
+                                    if not vals_ppt.empty: ppt_media = vals_ppt.mean()
+                                    vals_alt = est_in['altitud'].dropna()
+                                    if not vals_alt.empty: altitud_media = vals_alt.mean()
+                                    
+                                temp_calc = max(5.0, 28.0 - (0.006 * altitud_media))
+                                L = 300 + 25*temp_calc + 0.05*(temp_calc**3)
+                                etr = ppt_media / np.sqrt(0.9 + (ppt_media/L)**2) if L > 0 else 0
+                                escorrentia_total = ppt_media - etr
+                                
+                                recarga_mm = escorrentia_total * 0.15
+                                escorrentia_superficial = escorrentia_total * 0.85
+                                q_medio = (escorrentia_superficial * area_km2 * 1000) / 31536000
+                                q_base = (recarga_mm * area_km2 * 1000) / 31536000
+                                
+                                res_multiescala.append({
+                                    "Jerarquia": nombre_nivel,
+                                    "Territorio": nom_territorio,
+                                    "Area_km2": round(area_km2, 2), 
+                                    "Altitud_m": round(altitud_media, 0),
+                                    "Temp_C": round(temp_calc, 1),
+                                    "Lluvia_mm": round(ppt_media, 0), 
+                                    "ETR_mm": round(etr, 0),
+                                    "Recarga_mm": round(recarga_mm, 0),
+                                    "Escorrentia_mm": round(escorrentia_superficial, 0),
+                                    "Caudal_Medio_m3s": round(q_medio + q_base, 3)
+                                })
+                        return paso_actual
+
+                    # --- 🗺️ FASE 1: PROCESAR CUENCAS ---
+                    with st.spinner("💧 Calculando red hidrográfica..."):
+                        gdf_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
+                        if 'CorpoAmb' in gdf_cuencas.columns and 'depto_regi' in gdf_cuencas.columns:
+                            gdf_cuencas['CorpoAmb'] = gdf_cuencas['CorpoAmb'].str.strip()
+                            gdf_cuencas['depto_regi'] = gdf_cuencas['depto_regi'].str.strip()
+                            mask_aburra = gdf_cuencas['depto_regi'].str.contains('Aburr', case=False, na=False)
+                            gdf_cuencas.loc[mask_aburra, 'CorpoAmb'] = 'AMVA'
+
+                        niveles_cuencas = {'NSS3': 'nom_nss3', 'NSS2': 'nom_nss2', 'NSS1': 'nom_nss1', 'SZH': 'nom_szh', 'ZH': 'nomzh', 'AH': 'nomah', 'CAR': 'CorpoAmb', 'REGION_CUENCA': 'depto_regi'}
+                        pasos_totales = len(niveles_cuencas) + 5
+                        paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
+
+                    # --- 🏛️ FASE 2: PROCESAR MUNICIPIOS ---
+                    with st.spinner("🏛️ Sincronizando Niveles Administrativos..."):
+                        try:
+                            import io, requests
+                            url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
+                            res_m = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+                            df_maestro = pd.read_excel(io.BytesIO(res_m.content))
+                            df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
                             
-                            recarga_mm = escorrentia_total * 0.15
-                            escorrentia_superficial = escorrentia_total * 0.85
-                            q_medio = (escorrentia_superficial * area_km2 * 1000) / 31536000
-                            q_base = (recarga_mm * area_km2 * 1000) / 31536000
+                            gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
+                            posibles_cols = ['mpio_cdpmp', 'MPIO_CDPMP', 'dp_mp', 'mpio_cdp', 'MPIO_CDP']
+                            col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
+                            gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
                             
-                            res_multiescala.append({
-                                "Jerarquia": nombre_nivel,
-                                "Territorio": nom_territorio,
-                                "Area_km2": round(area_km2, 2), 
-                                "Altitud_m": round(altitud_media, 0),
-                                "Temp_C": round(temp_calc, 1),
-                                "Lluvia_mm": round(ppt_media, 0), 
-                                "ETR_mm": round(etr, 0),
-                                "Recarga_mm": round(recarga_mm, 0),
-                                "Escorrentia_mm": round(escorrentia_superficial, 0),
-                                "Caudal_Medio_m3s": round(q_medio + q_base, 3)
-                            })
-                    return paso_actual
-
-                # --- 🗺️ FASE 1: PROCESAR CUENCAS ---
-                with st.spinner("💧 Calculando red hidrográfica..."):
-                    gdf_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
-                    if 'CorpoAmb' in gdf_cuencas.columns and 'depto_regi' in gdf_cuencas.columns:
-                        gdf_cuencas['CorpoAmb'] = gdf_cuencas['CorpoAmb'].str.strip()
-                        gdf_cuencas['depto_regi'] = gdf_cuencas['depto_regi'].str.strip()
-                        mask_aburra = gdf_cuencas['depto_regi'].str.contains('Aburr', case=False, na=False)
-                        gdf_cuencas.loc[mask_aburra, 'CorpoAmb'] = 'AMVA'
-
-                    niveles_cuencas = {'NSS3': 'nom_nss3', 'NSS2': 'nom_nss2', 'NSS1': 'nom_nss1', 'SZH': 'nom_szh', 'ZH': 'nomzh', 'AH': 'nomah', 'CAR': 'CorpoAmb', 'REGION_CUENCA': 'depto_regi'}
-                    pasos_totales = len(niveles_cuencas) + 5
-                    paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
-
-                # --- 🏛️ FASE 2: PROCESAR MUNICIPIOS ---
-                with st.spinner("🏛️ Sincronizando Niveles Administrativos..."):
-                    try:
-                        import io, requests
-                        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-                        res_m = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
-                        df_maestro = pd.read_excel(io.BytesIO(res_m.content))
-                        df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
-                        
-                        gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
-                        posibles_cols = ['mpio_cdpmp', 'MPIO_CDPMP', 'dp_mp', 'mpio_cdp', 'MPIO_CDP']
-                        col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
-                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
-                        
-                        gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
-                        mask_aburra = gdf_mun['subregion'].str.contains('Aburr', case=False, na=False)
-                        gdf_mun.loc[mask_aburra, 'car'] = 'AMVA'
-                        
-                        col_nom_mapa = next((c for c in ['mpio_cnmbr', 'MPIO_CNMBR', 'municipio'] if c in gdf_mun.columns), 'municipio')
-                        gdf_mun['municipio_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
-                        gdf_mun['subregion'] = gdf_mun['subregion'].fillna('Sin Region')
-                        gdf_mun['region'] = gdf_mun['region'].fillna('Sin Macroregion')
-                        gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Antioquia')
-                        gdf_mun = gdf_mun[gdf_mun['dp_mp'].str.startswith('05')].copy()
-                        
-                        niveles_admin = {'MUNICIPAL': 'municipio_clean', 'REGION': 'subregion', 'MACROREGION': 'region', 'DEPARTAMENTO': 'depto_nom', 'CAR': 'car'}
-                        paso_actual = procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
-                    except Exception as e:
-                        st.error(f"Error en Fase 2: {e}")
-                        st.stop()
-                        
-                prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
-                
-                # --- 💾 GUARDADO MAESTRO ---
-                with st.spinner("Forjando Llaves Universales e Inyectando a PostgreSQL..."):
-                    from modules.utils import normalizar_texto
-                    df_matriz = pd.DataFrame(res_multiescala)
+                            gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
+                            mask_aburra = gdf_mun['subregion'].str.contains('Aburr', case=False, na=False)
+                            gdf_mun.loc[mask_aburra, 'car'] = 'AMVA'
+                            
+                            col_nom_mapa = next((c for c in ['mpio_cnmbr', 'MPIO_CNMBR', 'municipio'] if c in gdf_mun.columns), 'municipio')
+                            gdf_mun['municipio_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
+                            gdf_mun['subregion'] = gdf_mun['subregion'].fillna('Sin Region')
+                            gdf_mun['region'] = gdf_mun['region'].fillna('Sin Macroregion')
+                            gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Antioquia')
+                            gdf_mun = gdf_mun[gdf_mun['dp_mp'].str.startswith('05')].copy()
+                            
+                            niveles_admin = {'MUNICIPAL': 'municipio_clean', 'REGION': 'subregion', 'MACROREGION': 'region', 'DEPARTAMENTO': 'depto_nom', 'CAR': 'car'}
+                            paso_actual = procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
+                        except Exception as e:
+                            st.error(f"Error en Fase 2: {e}")
+                            st.stop()
+                            
+                    prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                     
-                    def forjar_llave_hidro(row):
-                        jerarquia = str(row.get('Jerarquia', '')).upper()
-                        if jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
-                        elif jerarquia == "REGIONAL": jerarquia = "REGION"
-                        if row.get('Territorio') is None or str(row.get('Territorio')) == 'nan': return None
-                        terr = str(normalizar_texto(row.get('Territorio', ''))).replace(" ", "_").upper()
-                        return f"{jerarquia}_{terr}_TOTAL"
+                    # --- 💾 GUARDADO MAESTRO ---
+                    with st.spinner("Forjando Llaves Universales e Inyectando a PostgreSQL..."):
+                        from modules.utils import normalizar_texto
+                        df_matriz = pd.DataFrame(res_multiescala)
+                        
+                        def forjar_llave_hidro(row):
+                            jerarquia = str(row.get('Jerarquia', '')).upper()
+                            if jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
+                            elif jerarquia == "REGIONAL": jerarquia = "REGION"
+                            if row.get('Territorio') is None or str(row.get('Territorio')) == 'nan': return None
+                            terr = str(normalizar_texto(row.get('Territorio', ''))).replace(" ", "_").upper()
+                            return f"{jerarquia}_{terr}_TOTAL"
 
-                    df_matriz['LLAVE_UNIVERSAL'] = df_matriz.apply(forjar_llave_hidro, axis=1)
-                    df_matriz = df_matriz.drop_duplicates(subset=['LLAVE_UNIVERSAL'], keep='first')
+                        df_matriz['LLAVE_UNIVERSAL'] = df_matriz.apply(forjar_llave_hidro, axis=1)
+                        df_matriz = df_matriz.drop_duplicates(subset=['LLAVE_UNIVERSAL'], keep='first')
+                        
+                        with engine.begin() as conn:
+                            conn.execute(text('ALTER TABLE matriz_hidrologica_maestra ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
+                            conn.execute(text("DELETE FROM matriz_hidrologica_maestra;"))
+                        df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='append', index=False)
+                        st.cache_data.clear()
+                        st.success(f"✅ EL ALEPH ESTÁ COMPLETO. {len(df_matriz)} territorios sincronizados.")
+                        
+                        csv_data = df_matriz.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Descargar Matriz Recién Forjada (CSV)", csv_data, "Matriz_Hidro_Multiescala.csv", "text/csv")
+
+                except Exception as e:
+                    st.error(f"❌ Error crítico: {e}")
+
+            st.markdown("---")
+            if st.button("🔍 Preparar Descarga de Base Guardada"):
+                try:
+                    df_export = pd.read_sql("SELECT * FROM matriz_hidrologica_maestra", engine)
+                    if not df_export.empty:
+                        st.write(f"✅ Se encontraron {len(df_export)} territorios listos para exportar.")
+                        csv_export = df_export.to_csv(index=False).encode('utf-8')
+                        st.download_button(label="💾 Descargar Matriz Maestra (CSV)", data=csv_export, file_name="Matriz_Hidro_Maestra_SQL.csv", mime="text/csv")
+                    else:
+                        st.warning("La base de datos está vacía. Ejecuta la forja primero.")
+                except Exception as e:
+                    st.error(f"Error al conectar con la base: {e}")
                     
-                    with engine.begin() as conn:
-                        conn.execute(text('ALTER TABLE matriz_hidrologica_maestra ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
-                        conn.execute(text("DELETE FROM matriz_hidrologica_maestra;"))
-                    df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='append', index=False)
-                    st.cache_data.clear()
-                    st.success(f"✅ EL ALEPH ESTÁ COMPLETO. {len(df_matriz)} territorios sincronizados.")
-                    
-                    csv_data = df_matriz.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Descargar Matriz Recién Forjada (CSV)", csv_data, "Matriz_Hidro_Multiescala.csv", "text/csv")
-
-            except Exception as e:
-                st.error(f"❌ Error crítico: {e}")
-
-        st.markdown("---")
-        if st.button("🔍 Preparar Descarga de Base Guardada"):
-            try:
-                df_export = pd.read_sql("SELECT * FROM matriz_hidrologica_maestra", engine)
-                if not df_export.empty:
-                    st.write(f"✅ Se encontraron {len(df_export)} territorios listos para exportar.")
-                    csv_export = df_export.to_csv(index=False).encode('utf-8')
-                    st.download_button(label="💾 Descargar Matriz Maestra (CSV)", data=csv_export, file_name="Matriz_Hidro_Maestra_SQL.csv", mime="text/csv")
-                else:
-                    st.warning("La base de datos está vacía. Ejecuta la forja primero.")
-            except Exception as e:
-                st.error(f"Error al conectar con la base: {e}")
+        elif admin_pwd != "":
+            st.error("❌ Clave incorrecta. Acceso denegado.")
