@@ -13,31 +13,46 @@ from modules import db_manager
 from modules.config import Config
 
 # ====================================================================
-# --- MOTORES DE CARGA DE METADATOS (MAESTROS) ---
+# --- MOTORES DE CARGA DE METADATOS (MAESTROS DESDE BD) ---
 # ====================================================================
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestro_cuencas():
-    """Carga el inventario de subcuencas y su codificación desde el Storage."""
+    """Carga el inventario de subcuencas directamente desde PostgreSQL."""
     try:
-        import io, requests
-        url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/cuencas_maestro.xlsx"
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
-        return pd.read_excel(io.BytesIO(response.content))
+        from modules.db_manager import get_engine
+        import pandas as pd
+        engine = get_engine()
+        # Leemos la tabla directamente de la base de datos viva
+        df = pd.read_sql("SELECT * FROM cuencas", engine)
+        return df
     except Exception as e:
-        st.error(f"Error cargando maestro de cuencas: {e}")
+        st.error(f"Error conectando a BD de cuencas: {e}")
         return None
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestro_municipios():
-    """Carga el inventario de municipios y su codificación desde el Storage."""
+    """Carga el inventario de municipios directamente desde PostgreSQL."""
     try:
-        import io, requests
-        url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
-        return pd.read_excel(io.BytesIO(response.content))
+        from modules.db_manager import get_engine
+        import pandas as pd
+        engine = get_engine()
+        # Leemos la tabla directamente de la base de datos viva
+        df = pd.read_sql("SELECT * FROM municipios", engine)
+        
+        # 🛡️ Escudo de Columnas: Garantizamos que las columnas clave estén en mayúsculas
+        # (PostgreSQL a veces fuerza los títulos a minúsculas)
+        col_map = {}
+        for col in df.columns:
+            if col.lower() == 'mpio_cnmbr': col_map[col] = 'MPIO_CNMBR'
+            if col.lower() == 'dpto_cnmbr': col_map[col] = 'DPTO_CNMBR'
+        
+        if col_map:
+            df = df.rename(columns=col_map)
+            
+        return df
     except Exception as e:
-        st.error(f"Error cargando maestro de municipios: {e}")
+        st.error(f"Error conectando a BD de municipios: {e}")
         return None
 
 # ====================================================================
