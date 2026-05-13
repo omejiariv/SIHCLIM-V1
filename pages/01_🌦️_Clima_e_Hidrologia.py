@@ -889,16 +889,5 @@ def main():
 
     st.markdown("""<style>.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }</style>""", unsafe_allow_html=True)
     
-# --- REPORTE ---
-    elif selected_module == "📄 Reporte":
-        st.header("Generación de Informe")
-        if st.button("📄 Crear PDF"):
-            res = {"n_estaciones": len(stations_for_analysis), "rango": f"{year_range}"}
-            pdf = generate_pdf_report(df_monthly_filtered, gdf_filtered, res)
-            if pdf: 
-                st.download_button("Descargar PDF", pdf, "reporte_hidro.pdf", "application/pdf")
-
-    st.markdown("""<style>.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }</style>""", unsafe_allow_html=True)
-    
 if __name__ == "__main__":
     main()
