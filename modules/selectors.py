@@ -276,8 +276,6 @@ def render_selector_espacial():
     Renderiza el panel lateral para filtrar estaciones base por Cuencas o Administrativo.
     🔥 INCLUYE EFECTO MEMORIA: Guarda el estado al cambiar de página.
     """
-    # Siempre inyectamos el Aleph primero
-    renderizar_telemetria_aleph()
     
     st.sidebar.markdown("### 📍 Filtros Geográficos Principales")
 
