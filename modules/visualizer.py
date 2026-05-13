@@ -63,9 +63,9 @@ from modules.stats_analyser import (
 
 # Importaciones seguras de APIs externas
 try:
-    from modules.climate_api import fetch_iri_data, process_iri_plume, process_iri_probabilities
+    from modules.climate_api import get_iri_enso_forecast, get_live_oni_data, get_live_soi_data, get_live_iod_data
 except ImportError:
-    fetch_iri_data = None
+    get_live_oni_data = get_live_soi_data = get_live_iod_data = None
 
 try:
     from modules.openmeteo_api import get_weather_forecast_detailed, get_historical_monthly_series, get_weather_forecast_simple
@@ -2087,39 +2087,40 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                 df_enso[col] = pd.to_numeric(df_enso[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
             except: pass
 
-    # --- 2. ⚡ FUSIÓN CON DATOS EN VIVO (NOAA ONI) ---
-    if get_live_oni_data is not None:
-        df_live = get_live_oni_data()
+    # --- 2. ⚡ FUSIÓN MAESTRA CON DATOS EN VIVO (NOAA & PSL) ---
+    def fusionar_indice(df_base, fn_live, col_name):
+        if fn_live is None: return df_base
+        df_live = fn_live()
         
         if df_live is not None and not df_live.empty:
-            # Si el usuario no tiene datos previos, creamos desde cero
-            if df_enso is None or df_enso.empty:
-                df_enso = pd.DataFrame()
-                df_enso[Config.DATE_COL] = df_live['fecha']
-                df_enso['anomalia_oni'] = df_live['anomalia_oni']
-            else:
-                # Buscar nombre de la columna ONI
-                col_oni_hist = next((c for c in df_enso.columns if 'oni' in c.lower() and 'anomalia' in c.lower()), 'anomalia_oni')
+            if df_base is None or df_base.empty:
+                df_base = pd.DataFrame({Config.DATE_COL: df_live['fecha']})
                 
-                # Alinear columnas de la tabla en vivo
-                df_live_renamed = df_live.rename(columns={'fecha': Config.DATE_COL, 'anomalia_oni': col_oni_hist})
-                
-                # Usar fechas como índice para fusionar correctamente
-                df_enso = df_enso.set_index(Config.DATE_COL)
-                df_live_renamed = df_live_renamed.set_index(Config.DATE_COL)
-                
-                # 1. ACTUALIZAR: Solo pisa los datos de ONI existentes sin borrar el SOI/IOD
-                df_enso.update(df_live_renamed)
-                
-                # 2. AÑADIR: Incorpora los meses nuevos que trae la NOAA al final
-                nuevas_fechas = df_live_renamed[~df_live_renamed.index.isin(df_enso.index)]
-                if not nuevas_fechas.empty:
-                    df_enso = pd.concat([df_enso, nuevas_fechas])
-                
-                # Restaurar el índice
-                df_enso = df_enso.reset_index().sort_values(Config.DATE_COL)
+            # Buscar el nombre exacto de la columna en tu histórico
+            col_hist = next((c for c in df_base.columns if col_name in c.lower()), col_name)
+            df_live_renamed = df_live.rename(columns={'fecha': Config.DATE_COL, df_live.columns[1]: col_hist})
             
-            st.toast("📡 Índices Históricos ONI sincronizados con la base en tiempo real de la NOAA.", icon="🔄")
+            df_base = df_base.set_index(Config.DATE_COL)
+            df_live_renamed = df_live_renamed.set_index(Config.DATE_COL)
+            
+            if col_hist not in df_base.columns:
+                df_base[col_hist] = np.nan
+                
+            # Actualizamos datos existentes y concatenamos las fechas del futuro
+            df_base.update(df_live_renamed)
+            nuevas_fechas = df_live_renamed[~df_live_renamed.index.isin(df_base.index)]
+            if not nuevas_fechas.empty:
+                df_base = pd.concat([df_base, nuevas_fechas])
+                
+            return df_base.reset_index().sort_values(Config.DATE_COL)
+        return df_base
+
+    # Aplicamos la fusión a los 3 índices vitales
+    df_enso = fusionar_indice(df_enso, get_live_oni_data, 'oni')
+    df_enso = fusionar_indice(df_enso, get_live_soi_data, 'soi')
+    df_enso = fusionar_indice(df_enso, get_live_iod_data, 'iod')
+    
+    st.toast("📡 Índices Históricos (ONI, SOI, IOD) sincronizados con la base en tiempo real global.", icon="🔄")
 
     # -------------------------------------------------------------------------
     # 1. CONFIGURACIÓN DE PESTAÑAS
