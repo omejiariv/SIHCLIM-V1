@@ -48,45 +48,42 @@ selectors.renderizar_menu_navegacion("Clima e Hidrología")
 # ==============================================================================
 if 'enso_fase' not in st.session_state:
     try:
-        # 🔌 Importamos desde el nuevo hub centralizado que renombramos
+        # 🔌 Importamos desde el nuevo hub centralizado
         from modules.climate_api import get_iri_enso_forecast
         df_enso_ini, meta = get_iri_enso_forecast()
         
         if df_enso_ini is not None and not df_enso_ini.empty:
-            # Extraemos datos del primer trimestre disponible (tiempo real)
             fila_actual = df_enso_ini.iloc[0]
             prob_nina = float(fila_actual.get('La Niña', 0))
             prob_neutro = float(fila_actual.get('Neutral', 0))
             prob_nino = float(fila_actual.get('El Niño', 0))
             trimestre_sel = str(fila_actual.get('Trimestre', 'N/A'))
             
-            # Determinamos el estado dominante para los semáforos
             if prob_nina > 50: estado_actual = "Niña 🌧️"
             elif prob_nino > 50: estado_actual = "Niño ☀️"
             else: estado_actual = "Neutro ⚖️"
             
-            # 💉 INYECCIÓN AL ALEPH CLIMÁTICO (Session State)
             st.session_state['enso_fase'] = estado_actual
             st.session_state['aleph_iri_nino'] = int(prob_nino)
             st.session_state['aleph_iri_neutro'] = int(prob_neutro)
             st.session_state['aleph_iri_nina'] = int(prob_nina)
             st.session_state['aleph_iri_trimestre'] = trimestre_sel
+            st.session_state['aleph_iri_tendencia'] = "Sincronización Exitosa"
             
             st.toast(f"📡 Clima Global Sincronizado: {estado_actual} ({trimestre_sel})", icon="✅")
         else:
-            raise ValueError("El servidor devolvió una tabla vacía.")
+            raise ValueError("Tabla vacía")
 
     except Exception as e:
-        # 🛡️ ESCUDO DE SEGURIDAD: Si falla la red, evitamos el colapso del sistema
         st.session_state['enso_fase'] = "Neutro ⚖️"
         st.session_state['aleph_iri_nino'] = 0
         st.session_state['aleph_iri_neutro'] = 100
         st.session_state['aleph_iri_nina'] = 0
         st.session_state['aleph_iri_trimestre'] = "N/A"
-        st.session_state['aleph_iri_tendencia'] = "Modo desconectado (Valores por defecto)"
+        st.session_state['aleph_iri_tendencia'] = "Modo desconectado"
         st.toast("⚠️ Usando clima Neutro por fallo de conexión con NOAA.", icon="🔌")
 
-# --- 2. IMPORTACIONES ROBUSTAS Y LIMPIEZA DE DEPENDENCIAS ---
+# --- 2. IMPORTACIONES ROBUSTAS ---
 try:
     from modules.config import Config
     from modules.db_manager import get_engine
@@ -95,7 +92,6 @@ try:
     from modules import selectors
     from modules import visualizer as viz
     
-    # Módulos de Física con manejo de errores interno
     try:
         from modules import hydro_physics as physics
         from modules.admin_utils import download_raster_to_temp
@@ -104,8 +100,13 @@ try:
         PHYSICS_AVAILABLE = False
         st.toast(f"⚠️ Módulos físicos limitados: {e}", icon="⚠️")
 
+    try:
+        from modules.analysis import calculate_trends_mann_kendall
+    except ImportError:
+        calculate_trends_mann_kendall = None
+
 except Exception as e:
-    st.error(f"❌ Error Crítico en el Cuarto de Máquinas: {e}")
+    st.error(f"❌ Error Crítico de Importación: {e}")
     st.stop()
 
 # --- FUNCIÓN MAESTRA DE CARGA (VERSIÓN STORAGE / BUCKET) ---
@@ -888,276 +889,16 @@ def main():
 
     st.markdown("""<style>.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }</style>""", unsafe_allow_html=True)
     
+# --- REPORTE ---
+    elif selected_module == "📄 Reporte":
+        st.header("Generación de Informe")
+        if st.button("📄 Crear PDF"):
+            res = {"n_estaciones": len(stations_for_analysis), "rango": f"{year_range}"}
+            pdf = generate_pdf_report(df_monthly_filtered, gdf_filtered, res)
+            if pdf: 
+                st.download_button("Descargar PDF", pdf, "reporte_hidro.pdf", "application/pdf")
+
+    st.markdown("""<style>.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }</style>""", unsafe_allow_html=True)
+    
 if __name__ == "__main__":
-
     main()
-
-    # ==============================================================================
-    # ⚙️ CUARTO DE MÁQUINAS: FORJA DE LA MATRIZ MAESTRA
-    # ==============================================================================
-    st.markdown("---")
-    st.subheader("⚙️ Motor Administrativo: Matriz Hidrológica Maestra")
-    
-    # 📣 EL MANIFIESTO DEL ESTADO DINÁMICO
-    st.markdown("""
-    <div style="border-left: 5px solid #f39c12; padding: 15px; background-color: rgba(243, 156, 18, 0.1); border-radius: 5px; margin-bottom: 15px;">
-        <h4 style="color: #d35400; margin-top: 0;">⚠️ Advertencia de Sincronización Territorial</h4>
-        <b style="font-size: 0.95em;">Esta Matriz Maestra es una fotografía del estado dinámico de la realidad. Es el motor de alta velocidad que alimenta la Toma de Decisiones. Si hay cambios sustanciales en el sistema (inclusión de nuevas áreas de análisis, nuevas cuencas, nueva información hidrometeorológica, actualizaciones de coberturas o correcciones topográficas), se DEBE generar una nueva matriz maestra para asegurar que la planificación se base en la verdad territorial más reciente.</b>
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.expander("🚀 Ejecutar Generación Masiva Multiescala (Recálculo Global)", expanded=False):
-        st.info("Esta herramienta recorrerá espacialmente el territorio y calculará la hidrología para TODOS los niveles jerárquicos (NSS3, NSS2, SZH, etc.) en una sola ejecución. La matriz resultante será la fuente de verdad universal.")
-        
-        # 🔌 INYECCIÓN DE LA LLAVE DE LA BASE DE DATOS (ENGINE)
-        from modules.db_manager import get_engine
-        engine = get_engine()
-
-        if st.button("⚡ Forjar Matriz Multiescala Definitiva", key="btn_gen_rep_multi", type="primary"):
-            try:
-                import numpy as np
-                import geopandas as gpd
-                from sqlalchemy import text
-                import pandas as pd
-                
-                prog_nivel = st.progress(0, text="Iniciando motores espaciales...")
-
-                # 1. Cargamos el clima global (Estaciones y Lluvia)
-                with st.spinner("📡 Cargando red de Estaciones Climáticas..."):
-                    q_est = text("SELECT id_estacion, altitud, ST_SetSRID(ST_MakePoint(CAST(longitud AS FLOAT), CAST(latitud AS FLOAT)), 4326) as geometry FROM estaciones WHERE latitud IS NOT NULL")
-                    gdf_est = gpd.read_postgis(q_est, engine, geom_col="geometry").to_crs("EPSG:3116")
-                    gdf_est['id_estacion'] = gdf_est['id_estacion'].astype(str)
-                    
-                    df_rain = pd.read_sql("SELECT id_estacion, AVG(valor)*12 as ppt FROM precipitacion GROUP BY id_estacion", engine)
-                    df_rain['id_estacion'] = df_rain['id_estacion'].astype(str)
-
-                res_multiescala = []
-
-                # 🧠 EL NÚCLEO FÍSICO: Función maestra que procesa CUALQUIER mapa que le pasemos
-                def procesar_capa_espacial(gdf_base, dicc_niveles, offset_progreso, total_pasos):
-                    gdf_base['geometry'] = gdf_base.geometry.make_valid()
-                    gdf_base = gdf_base[gdf_base.geometry.notnull()]
-                    
-                    paso_actual = offset_progreso
-                    for nombre_nivel, col_bd in dicc_niveles.items():
-                        if col_bd not in gdf_base.columns: continue
-                        
-                        prog_nivel.progress(paso_actual / total_pasos, text=f"Calculando Hidrología para: {nombre_nivel}")
-                        paso_actual += 1
-                        
-                        # Magia Espacial: Agrupamos y fusionamos los polígonos
-                        gdf_nivel = gdf_base.dissolve(by=col_bd).reset_index()
-                        
-                        for i, row in gdf_nivel.iterrows():
-                            nom_territorio = str(row.get(col_bd, "Desconocido")).strip()
-                            if nom_territorio in ["", "None", "nan", "Cuenca Sin Nombre"]: continue
-                            
-                            area_km2 = row.geometry.area / 1e6
-                            if area_km2 <= 0: area_km2 = 1.0
-                            
-                            # Cruce Climático (Qué estaciones caen cerca de este territorio)
-                            # Convertimos km a metros para el buffer geoespacial
-                            dist_m = distancia_buffer * 1000 if 'distancia_buffer' in locals() else 15000
-                            # Extraemos el buffer directamente de la sesión para evitar pérdida de variables
-                            buffer_seguro = float(st.session_state.get("buffer_global_km", 15.0))
-                            buf = row.geometry.buffer(buffer_seguro * 1000)
-                            est_in = gdf_est[gdf_est.geometry.within(buf)]
-                            
-                            ppt_media, altitud_media = 2500.0, 1500.0
-                            if not est_in.empty:
-                                ids = est_in['id_estacion'].tolist()
-                                vals_ppt = df_rain[df_rain['id_estacion'].isin(ids)]['ppt']
-                                if not vals_ppt.empty: ppt_media = vals_ppt.mean()
-                                vals_alt = est_in['altitud'].dropna()
-                                if not vals_alt.empty: altitud_media = vals_alt.mean()
-                                
-                            # 🔬 MODELACIÓN FÍSICA Y TERMODINÁMICA
-                            temp_calc = max(5.0, 28.0 - (0.006 * altitud_media))
-                            L = 300 + 25*temp_calc + 0.05*(temp_calc**3)
-                            etr = ppt_media / np.sqrt(0.9 + (ppt_media/L)**2) if L > 0 else 0
-                            escorrentia_total = ppt_media - etr
-                            
-                            # Partición del Flujo
-                            recarga_mm = escorrentia_total * 0.15
-                            escorrentia_superficial = escorrentia_total * 0.85
-                            q_medio = (escorrentia_superficial * area_km2 * 1000) / 31536000
-                            q_base = (recarga_mm * area_km2 * 1000) / 31536000
-                            
-                            res_multiescala.append({
-                                "Jerarquia": nombre_nivel,
-                                "Territorio": nom_territorio,
-                                "Area_km2": round(area_km2, 2), 
-                                "Altitud_m": round(altitud_media, 0),
-                                "Temp_C": round(temp_calc, 1),
-                                "Lluvia_mm": round(ppt_media, 0), 
-                                "ETR_mm": round(etr, 0),
-                                "Recarga_mm": round(recarga_mm, 0),
-                                "Escorrentia_mm": round(escorrentia_superficial, 0),
-                                "Caudal_Medio_m3s": round(q_medio + q_base, 3)
-                            })
-                    return paso_actual
-
-                # --- 🗺️ FASE 1: PROCESAR EL MAPA DE CUENCAS Y CARs ---
-                with st.spinner("💧 Calculando red hidrográfica y Corporaciones Autónomas..."):
-                    gdf_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
-                    
-                    # 🔥 REGLA DE ORO: JURISDICCIÓN AMVA
-                    # Verificamos que las columnas existan antes de aplicar la regla
-                    if 'CorpoAmb' in gdf_cuencas.columns and 'depto_regi' in gdf_cuencas.columns:
-                        # 1. Limpiamos espacios en blanco
-                        gdf_cuencas['CorpoAmb'] = gdf_cuencas['CorpoAmb'].str.strip()
-                        gdf_cuencas['depto_regi'] = gdf_cuencas['depto_regi'].str.strip()
-                        
-                        # 2. Si la región es el Valle de Aburrá, le asignamos la jurisdicción al AMVA
-                        mask_aburra = gdf_cuencas['depto_regi'].str.contains('Aburr', case=False, na=False)
-                        gdf_cuencas.loc[mask_aburra, 'CorpoAmb'] = 'AMVA'
-
-                    # Agregamos tus dos nuevos campos al motor de disolución espacial
-                    niveles_cuencas = {
-                        'NSS3': 'nom_nss3', 
-                        'NSS2': 'nom_nss2', 
-                        'NSS1': 'nom_nss1', 
-                        'SZH': 'nom_szh', 
-                        'ZH': 'nomzh', 
-                        'AH': 'nomah',
-                        'CAR': 'CorpoAmb',               # ✨ NUEVO NIVEL: Autoridad Ambiental
-                        'REGION_CUENCA': 'depto_regi'    # ✨ NUEVO NIVEL: Subregión desde la capa física
-                    }
-                    
-                    pasos_totales = len(niveles_cuencas) + 5 # Sumamos los 5 niveles (ahora incluye CORPOAMB)
-                    paso_actual = procesar_capa_espacial(gdf_cuencas, niveles_cuencas, 0, pasos_totales)
-
-                # --- 🏛️ FASE 2: PROCESAR EL MAPA ADMINISTRATIVO (CON SONDA FORENSE) ---
-                with st.spinner("🏛️ Sincronizando Niveles Administrativos..."):
-                    try:
-                        import io
-                        import requests
-                        import traceback  # 🔬 LIBRERÍA FORENSE (Rastrea errores exactos)
-                        from modules.utils import normalizar_texto
-                        
-                        # 1. Carga Maestro
-                        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-                        res_m = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
-                        df_maestro = pd.read_excel(io.BytesIO(res_m.content))
-                        df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
-                        
-                        # 2. Carga Mapa desde PostGIS
-                        gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
-                        
-                        # 👁️ SONDA 1: Mostrar en pantalla las columnas que REALMENTE trae la base de datos
-                        with st.expander("🔍 DATOS FORENSES: Columnas en PostGIS", expanded=True):
-                            st.write(gdf_mun.columns.tolist())
-                        
-                        posibles_cols = ['mpio_cdpmp', 'MPIO_CDPMP', 'dp_mp', 'mpio_cdp', 'MPIO_CDP']
-                        col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
-                        
-                        if not col_id_mapa:
-                            raise ValueError(f"CRÍTICO: Ninguna columna de ID DANE fue encontrada. Columnas disponibles: {gdf_mun.columns.tolist()}")
-                            
-                        # 3. Limpieza de ID Blindada
-                        gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
-                        
-                        # 4. Cruce Maestro
-                        gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
-                        
-                        # Reglas y Fallbacks seguros
-                        mask_aburra = gdf_mun['subregion'].str.contains('Aburr', case=False, na=False)
-                        gdf_mun.loc[mask_aburra, 'car'] = 'AMVA'
-                        
-                        col_nom_mapa = next((c for c in ['mpio_cnmbr', 'MPIO_CNMBR', 'municipio'] if c in gdf_mun.columns), 'municipio')
-                        gdf_mun['municipio_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
-                        
-                        # Limpieza de nulos antes de mandar al motor físico
-                        gdf_mun['subregion'] = gdf_mun['subregion'].fillna('Sin Region')
-                        gdf_mun['region'] = gdf_mun['region'].fillna('Sin Macroregion')
-                        gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Antioquia')
-                        
-                        # 🛡️ FILTRO ESTRICTO ANTIOQUIA: Eliminamos del mapa todo lo que no empiece con el código '05'
-                        gdf_mun = gdf_mun[gdf_mun['dp_mp'].str.startswith('05')].copy()
-                        
-                        niveles_admin = {
-                            'MUNICIPAL': 'municipio_clean',
-                            'REGION': 'subregion',
-                            'MACROREGION': 'region',
-                            'DEPARTAMENTO': 'depto_nom',
-                            'CAR': 'car'
-                        }
-                        
-                        paso_actual = procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
-                        
-                    except Exception as e:
-                        # 🚨 LA AUTOPSIA: Si algo falla, mostrará el rastro completo sin ocultar nada
-                        st.error("🚨 ERROR CRÍTICO EN FASE 2. PROTOCOLO FORENSE ACTIVADO:")
-                        st.code(traceback.format_exc(), language="python")
-                        st.stop()  # Detenemos todo para no generar datos corruptos
-                        
-                prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
-                
-                # --- 💾 GUARDADO MAESTRO Y DESCARGA INMEDIATA ---
-                with st.spinner("Forjando Llaves Universales e Inyectando a PostgreSQL..."):
-                    from modules.utils import normalizar_texto
-                    df_matriz = pd.DataFrame(res_multiescala)
-                    
-                    # Forja de Llave Universal
-                    def forjar_llave_hidro(row):
-                        jerarquia = str(row.get('Jerarquia', '')).upper()
-                        if jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
-                        elif jerarquia == "REGIONAL": jerarquia = "REGION"
-                        if row.get('Territorio') is None or str(row.get('Territorio')) == 'nan': return None
-                        terr = str(normalizar_texto(row.get('Territorio', ''))).replace(" ", "_").upper()
-                        return f"{jerarquia}_{terr}_TOTAL"
-
-                    df_matriz['LLAVE_UNIVERSAL'] = df_matriz.apply(forjar_llave_hidro, axis=1)
-                    df_matriz = df_matriz.drop_duplicates(subset=['LLAVE_UNIVERSAL'], keep='first')
-                    
-                    try:
-                        with engine.begin() as conn:
-                            conn.execute(text('ALTER TABLE matriz_hidrologica_maestra ADD COLUMN IF NOT EXISTS "LLAVE_UNIVERSAL" TEXT;'))
-                            conn.execute(text("DELETE FROM matriz_hidrologica_maestra;"))
-                        df_matriz.to_sql("matriz_hidrologica_maestra", engine, if_exists='append', index=False)
-                        st.cache_data.clear()
-                        
-                        st.success(f"✅ EL ALEPH ESTÁ COMPLETO. {len(df_matriz)} territorios sincronizados.")
-                        
-                        # 📥 BOTÓN DE DESCARGA INMEDIATA
-                        csv_data = df_matriz.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Descargar Matriz Recién Forjada (CSV)", csv_data, "Matriz_Hidro_Multiescala.csv", "text/csv", key="btn_dl_instant")
-                        
-                    except Exception as e:
-                        st.error(f"🚨 Error inyectando a SQL: {e}")
-            
-            except Exception as e:
-                st.error(f"❌ Error crítico: {e}")
-
-# ==============================================================================
-# 📥 PANEL DE EXPORTACIÓN PERMANENTE (FUERA DEL BUCLE DE FORJA)
-# ==============================================================================
-st.markdown("---")
-with st.expander("📥 Panel de Descarga de Matriz Hidrológica (Desde Base de Datos)", expanded=False):
-    st.info("Utiliza este panel para descargar la última versión guardada en PostgreSQL sin necesidad de ejecutar el recálculo global.")
-    
-    if st.button("🔍 Preparar Descarga desde SQL"):
-        try:
-            # Consultamos la tabla maestra directamente
-            df_export = pd.read_sql("SELECT * FROM matriz_hidrologica_maestra", engine)
-            
-            if not df_export.empty:
-                st.write(f"✅ Se encontraron {len(df_export)} territorios listos para exportar.")
-                
-                # Resumen rápido para tranquilidad del usuario
-                resumen = df_export['Jerarquia'].value_counts().reset_index()
-                resumen.columns = ['Nivel', 'Cantidad']
-                st.dataframe(resumen, hide_index=True)
-                
-                csv_export = df_export.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="💾 Descargar Matriz Maestra (CSV)",
-                    data=csv_export,
-                    file_name="Matriz_Hidro_Maestra_SQL.csv",
-                    mime="text/csv",
-                    key="btn_dl_sql_permanent"
-                )
-            else:
-                st.warning("La base de datos parece estar vacía. Por favor, ejecuta la forja primero.")
-        except Exception as e:
-            st.error(f"Error al conectar con la base de datos: {e}")
