@@ -2096,6 +2096,10 @@ def display_climate_forecast_tab(df_enso, **kwargs):
             if df_base is None or df_base.empty:
                 df_base = pd.DataFrame({Config.DATE_COL: df_live['fecha']})
                 
+            # 🛡️ FIX: Eliminar fechas duplicadas (basura histórica) antes de indexar
+            df_base = df_base.drop_duplicates(subset=[Config.DATE_COL], keep='last')
+            df_live = df_live.drop_duplicates(subset=['fecha'], keep='last')
+            
             # Buscar el nombre exacto de la columna en tu histórico
             col_hist = next((c for c in df_base.columns if col_name in c.lower()), col_name)
             df_live_renamed = df_live.rename(columns={'fecha': Config.DATE_COL, df_live.columns[1]: col_hist})
