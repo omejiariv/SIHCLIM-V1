@@ -355,7 +355,33 @@ def main():
                 legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5),
                 margin=dict(t=50, b=20, l=20, r=20)
             )
+
             st.plotly_chart(fig_enso, use_container_width=True)
+            
+            # CAJA DESPLEGABLE DE CONCEPTOS Y METODOLOGÍA ---
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.expander("📚 Conceptos, Metodología y Fuentes (Pronóstico ENSO)", expanded=False):
+                st.info("""
+                ### 📖 Conceptos Clave
+                * **ENSO (El Niño-Oscilación del Sur):** Fenómeno climático natural y cíclico que implica la fluctuación de las temperaturas oceánicas y la presión atmosférica en el Pacífico ecuatorial.
+                * **El Niño (Fase Cálida):** Calentamiento anormal del océano. En la región Andina de Colombia, suele traducirse en un severo **déficit de precipitaciones**, aumento de la temperatura, mayor evaporación y riesgo de estrés hídrico.
+                * **La Niña (Fase Fría):** Enfriamiento anormal del océano. En Colombia, altera los vientos alisios incrementando las lluvias, provocando **excesos hídricos**, saturación de suelos y riesgo inminente de avenidas torrenciales y colmatación de embalses.
+                
+                ### ⚙️ Metodología
+                * **Pronóstico de Consenso:** Las probabilidades mostradas no provienen de un solo algoritmo. Son el resultado del *Consenso de Expertos* del Centro de Predicción Climática (CPC) de la NOAA y el IRI. Sintetizan las salidas de decenas de modelos climáticos **dinámicos** (simulaciones termodinámicas de la atmósfera y el océano en supercomputadoras) y **estadísticos** (análisis de patrones históricos).
+                
+                ### 🎯 Utilidad para la Toma de Decisiones
+                * **Operación de Embalses:** Permite activar protocolos de ahorro de agua o vertimientos preventivos con 3 a 6 meses de anticipación.
+                * **Gestión de Riesgos:** Detona la reasignación de presupuestos (CAPEX/OPEX) hacia Soluciones Basadas en la Naturaleza (SbN) en zonas de alta erosión antes de que inicie La Niña.
+                
+                ### 🌐 Fuentes de Información
+                * **Fuente Primaria:** [NOAA Climate Prediction Center (CPC)](https://www.cpc.ncep.noaa.gov/) - Actualización oficial publicada el segundo jueves de cada mes.
+                
+                ### 🔬 Referencias Científicas Clave
+                1. **Poveda, G. (2004).** *La Hidroclimatología de Colombia: Una Síntesis desde la Escala Inter-decadal hasta la Escala Diurna*. Revista de la Academia Colombiana de Ciencias Exactas, Físicas y Naturales. *(Referencia fundamental para entender la teleconexión del ENSO en Antioquia).*
+                2. **Trenberth, K. E. (1997).** *The Definition of El Niño*. Bulletin of the American Meteorological Society.
+                3. **World Meteorological Organization (WMO).** *El Niño/La Niña Update*.
+                """)
         else:
             st.warning("⚠️ Datos de la NOAA no disponibles en este momento o el formato de columnas ha cambiado.")
 
