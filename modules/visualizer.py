@@ -2049,36 +2049,45 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
     # 3. RENDERIZADO
     st_folium(m, use_container_width=True, height=600, key=f"map_{capa_sel}")
 
-# PESTAÑA DE PRONÓSTICO CLIMÁTICO (INDICES + GENERADOR)
+# ==============================================================================
+# PESTAÑA DE PRONÓSTICO CLIMÁTICO (HISTORIA + NOAA + PROPHET)
+# ==============================================================================
 
 def display_climate_forecast_tab(df_enso, **kwargs):
-    # --- AGREGAR ESTAS IMPORTACIONES AL INICIO DE LA FUNCIÓN ---
-    import plotly.graph_objects as go  # <--- ESTA ES LA QUE FALTA
-    from prophet import Prophet
+    # --- IMPORTACIONES REQUERIDAS ---
+    import plotly.graph_objects as go
+    import plotly.express as px
     import pandas as pd
+    import numpy as np
     import streamlit as st
+    from modules.config import Config
+    
+    # Importar el motor directo de la NOAA
+    try:
+        from modules.iri_api import get_iri_enso_forecast
+    except ImportError:
+        get_iri_enso_forecast = None
 
     st.title("🔮 Pronóstico Climático & Fenómenos Globales")
   
     # --- 1. LIMPIEZA DE DATOS (FECHAS Y NÚMEROS) ---
     if df_enso is not None and not df_enso.empty:
-        # Copia de seguridad
         df_enso = df_enso.copy()
         
-        # A. ARREGLO DE FECHAS (Ya lo teníamos)
+        # A. ARREGLO DE FECHAS
         col_fecha_enso = next((c for c in df_enso.columns if 'fecha' in c.lower()), None)
         if col_fecha_enso:
-            df_enso[Config.DATE_COL] = df_enso[col_fecha_enso].apply(parse_spanish_date_visualizer)
-            df_enso = df_enso.dropna(subset=[Config.DATE_COL])
-            df_enso = df_enso.sort_values(Config.DATE_COL)
+            # Asumimos que parse_spanish_date_visualizer está definida arriba en tu archivo
+            try:
+                df_enso[Config.DATE_COL] = df_enso[col_fecha_enso].apply(parse_spanish_date_visualizer)
+                df_enso = df_enso.dropna(subset=[Config.DATE_COL])
+                df_enso = df_enso.sort_values(Config.DATE_COL)
+            except NameError:
+                df_enso[Config.DATE_COL] = pd.to_datetime(df_enso[col_fecha_enso], errors='coerce')
 
-        # B. ARREGLO DE NÚMEROS (Versión Definitiva) 🔢
-        # Convertimos todo a minúsculas para comparar
+        # B. ARREGLO DE NÚMEROS
         cols_indices = [c for c in df_enso.columns if c.lower() in ['oni', 'anomalia_oni', 'soi', 'iod', 'mei']]
-        
         for col in cols_indices:
-            # Forzamos conversión: Texto -> Reemplazar Coma -> Número
-            # Si ya es número, el .astype(str) lo protege temporalmente para el replace
             try:
                 df_enso[col] = pd.to_numeric(
                     df_enso[col].astype(str).str.replace(',', '.', regex=False), 
@@ -2087,49 +2096,34 @@ def display_climate_forecast_tab(df_enso, **kwargs):
             except Exception as e:
                 print(f"Error convirtiendo columna {col}: {e}")
 
-
     # -------------------------------------------------------------------------
-    # 1. CONFIGURACIÓN DE PESTAÑAS Y DATOS EXTERNOS
+    # 1. CONFIGURACIÓN DE PESTAÑAS
     # -------------------------------------------------------------------------
-    tab_hist, tab_iri_plumas, tab_iri_probs, tab_gen = st.tabs([
+    # Redujimos de 4 a 3 pestañas, fusionando las del IRI en una sola de la NOAA
+    tab_hist, tab_noaa, tab_gen = st.tabs([
         "📜 Historia Índices (ONI/SOI/IOD)",
-        "🌍 Pronóstico Oficial (IRI)",
-        "📊 Probabilidad Multimodelo",
+        "🌍 Pronóstico Oficial (NOAA)",
         "⚙️ Generador Prophet"
     ])
-    
-    # Cargar datos IRI (Manejo de errores incorporado en fetch_iri_data si existe)
-    # Asegúrate de que esta función esté importada o definida
-    try:
-        json_plumas = fetch_iri_data("enso_plumes.json")
-        json_probs = fetch_iri_data("enso_cpc_prob.json")
-    except NameError:
-        # Fallback si no tienes la función definida en este archivo
-        json_plumas, json_probs = {}, {}
 
-    # --- CAJA INFORMATIVA (Formato Mejorado) ---
-    with st.expander("ℹ️ Guía Técnica: Pronósticos Climáticos e Interpretación (IRI/CPC)", expanded=False):
+    # --- CAJA INFORMATIVA GENERAL ---
+    with st.expander("ℹ️ Guía Técnica: Pronósticos Climáticos e Interpretación (NOAA/CPC)", expanded=False):
         st.markdown("""
-        Este módulo integra datos del **International Research Institute for Climate and Society (IRI)** y registros históricos de la NOAA.
+        Este módulo integra datos en vivo del **Climate Prediction Center (NOAA)** y registros históricos globales.
         
         ### 1. ¿Qué es el pronóstico ENSO?
         Es una predicción probabilística sobre las condiciones de El Niño Oscilación del Sur (ENSO) basada en la región **Niño 3.4** del Pacífico. Combina más de 20 modelos globales:
-        * **Dinámicos:** Basados en ecuaciones físicas de la atmósfera y el océano (ej. NCEP CFSv2).
+        * **Dinámicos:** Basados en ecuaciones físicas de la atmósfera y el océano.
         * **Estadísticos:** Basados en patrones históricos.
 
         ### 2. Impacto General en Colombia
-        * 🔥 **El Niño (Fase Cálida):** Generalmente asociado a disminución de lluvias, aumento de temperatura y riesgo de incendios.
-        * 💧 **La Niña (Fase Fría):** Generalmente asociada a excesos de lluvia, inundaciones y deslizamientos.
+        * 🔥 **El Niño (Fase Cálida):** Generalmente asociado a disminución de lluvias, aumento de temperatura y riesgo de estrés hídrico/incendios.
+        * 💧 **La Niña (Fase Fría):** Generalmente asociada a excesos de lluvia, inundaciones y avenidas torrenciales.
 
         ### 3. Glosario de Términos
-        * **Anomalía:** Diferencia entre el valor actual y el promedio histórico de largo plazo.
-        * **Termoclina:** Capa bajo la superficie del océano donde la temperatura desciende rápidamente; su profundidad es clave para monitorear El Niño.
+        * **Anomalía:** Diferencia entre el valor actual y el promedio histórico.
         * **ONI (Oceanic Niño Index):** Principal indicador para definir eventos de El Niño/La Niña (Media móvil de 3 meses de anomalías en la región Niño 3.4).
-        * **Convección:** Ascenso de aire cálido y húmedo que forma nubes y lluvias.
-        * **Vientos Alisios:** Vientos que soplan de Este a Oeste en el trópico. Su debilitamiento es una señal temprana de El Niño.
         * **Probabilidad:** Certeza estadística (en %) de que ocurra una fase climática específica en un trimestre dado.
-        
-        _Fuente de datos primaria: NOAA NCEI & IRI Columbia University._
         """)
 
     # -------------------------------------------------------------------------
@@ -2138,12 +2132,9 @@ def display_climate_forecast_tab(df_enso, **kwargs):
     with tab_hist:
         st.markdown("#### 📉 Evolución Histórica de Índices Climáticos")
         
-        # Validación robusta de datos
         if df_enso is not None and not df_enso.empty:
-            
             c1, c2 = st.columns([1, 3])
             with c1:
-                # Filtrar columnas disponibles para evitar errores si falta alguna
                 cols_disponibles = [c for c in [Config.ENSO_ONI_COL, Config.SOI_COL, Config.IOD_COL] if c in df_enso.columns]
                 
                 if cols_disponibles:
@@ -2153,328 +2144,100 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                     idx_sel = None
 
             if idx_sel:
-                # Limpiar datos para el gráfico
                 d = df_enso.dropna(subset=[idx_sel, Config.DATE_COL]).sort_values(Config.DATE_COL)
                 
                 if not d.empty:
-                    # Gráfico Específico para ONI (Con colores rojo/azul)
                     if idx_sel == Config.ENSO_ONI_COL:
                         try:
-                            # Aseguramos que create_enso_chart exista
+                            # Asumimos que create_enso_chart está definida arriba
                             fig = create_enso_chart(d) 
                             st.plotly_chart(fig, use_container_width=True, key="chart_oni_hist")
                         except Exception as e:
-                            st.error(f"Error generando gráfico ONI: {e}")
                             st.line_chart(d.set_index(Config.DATE_COL)[idx_sel])
                     
-                    # Gráfico Genérico para otros índices (SOI, IOD)
                     else:
                         fig_simple = px.line(
                             d, x=Config.DATE_COL, y=idx_sel, 
                             title=f"Evolución Histórica: {idx_sel}",
                             color_discrete_sequence=["#2c3e50"]
                         )
-                        # Línea cero de referencia
                         fig_simple.add_hline(y=0, line_width=1, line_color="red", line_dash="dash", opacity=0.7)
                         fig_simple.update_layout(hovermode="x unified")
                         
                         st.plotly_chart(fig_simple, use_container_width=True, key=f"chart_{idx_sel}_hist")
-                else:
-                    st.warning(f"La columna '{idx_sel}' existe pero no tiene datos válidos.")
+            else:
+                st.warning(f"La columna '{idx_sel}' existe pero no tiene datos válidos.")
         else:
-            # Mensaje amigable cuando no hay datos cargados aún
-            st.info("ℹ️ **No hay datos históricos cargados.**")
-            st.markdown("""
-            Para visualizar esta sección:
-            1. Ve al **Panel de Administración**.
-            2. En la pestaña **Carga de Datos**, sube el archivo de índices climáticos (`indices.csv`).
-            3. Asegúrate de incluir columnas como `anomalia_oni`, `soi` o `iod`.
-            """)
+            st.info("ℹ️ **No hay datos históricos cargados.** Sube el archivo `indices.csv` desde el Panel de Administración.")
 
-    # ==========================================
-    # PESTAÑA 2: PRONÓSTICO OFICIAL (PLUMAS)
-    # ==========================================
-    with tab_iri_plumas:
-        if json_plumas:
-            # Mensaje de Fecha
+    # -------------------------------------------------------------------------
+    # PESTAÑA 2: PRONÓSTICO OFICIAL (NOAA) - REEMPLAZA LAS DOS DEL IRI
+    # -------------------------------------------------------------------------
+    with tab_noaa:
+        st.markdown("#### 📊 Pronóstico Climático Global (Fenómeno ENSO)")
+        st.info("Pronóstico oficial de la **NOAA (Climate Prediction Center)** extraído en tiempo real. Este módulo reemplaza a la antigua API del IRI.")
+        
+        if get_iri_enso_forecast is not None:
             try:
-                last_year = json_plumas["years"][-1]["year"]
-                last_month_idx = json_plumas["years"][-1]["months"][-1]["month"]
-                meses = [
-                    "Ene",
-                    "Feb",
-                    "Mar",
-                    "Abr",
-                    "May",
-                    "Jun",
-                    "Jul",
-                    "Ago",
-                    "Sep",
-                    "Oct",
-                    "Nov",
-                    "Dic",
-                ]
-                st.info(
-                    f"📅 Pronóstico de Plumas actualizado a: **{meses[last_month_idx]} {last_year}**"
-                )
-            except:
-                st.info("📅 Pronóstico Mensual Oficial (Plumas)")
-
-            st.markdown("#### 🍝 Modelos de Predicción (Plumas)")
-            data_plume = process_iri_plume(json_plumas)
-
-            if data_plume:
-                fig_plume = go.Figure()
-
-                # Colección de valores para calcular promedio
-                all_values = []
-
-                # Variables para controlar la leyenda (que aparezca solo una vez por tipo)
-                show_dyn_legend = True
-                show_stat_legend = True
-
-                for model in data_plume["models"]:
-                    is_dyn = model["type"] == "Dynamical"
-                    color = (
-                        "rgba(100, 149, 237, 0.6)"
-                        if is_dyn
-                        else "rgba(255, 165, 0, 0.6)"
-                    )  # Azul/Naranja
-
-                    # Nombre genérico para la leyenda
-                    legend_group = (
-                        "Modelos Dinámicos" if is_dyn else "Modelos Estadísticos"
-                    )
-
-                    # Control de visualización en leyenda (solo el primero de cada grupo)
-                    show_in_legend = False
-                    if is_dyn and show_dyn_legend:
-                        show_in_legend = True
-                        show_dyn_legend = False
-                    elif not is_dyn and show_stat_legend:
-                        show_in_legend = True
-                        show_stat_legend = False
-
-                    # Guardar valores para promedio
-                    vals = model["values"][: len(data_plume["seasons"])]
-                    all_values.append(vals)
-
-                    fig_plume.add_trace(
-                        go.Scatter(
-                            x=data_plume["seasons"],
-                            y=model["values"],
-                            mode="lines",
-                            name=legend_group,  # Nombre agrupado para la leyenda
-                            legendgroup=legend_group,  # Agrupar interactividad
-                            showlegend=show_in_legend,
-                            line=dict(color=color, width=1.5),
-                            opacity=0.7,
-                            hovertemplate=f"<b>{model['name']}</b><br>%{{y:.2f}} °C<extra></extra>",  # Nombre real en hover
-                        )
-                    )
-
-                # --- CÁLCULO DE PROMEDIO MULTIMODELO ---
-                try:
-                    max_len = len(data_plume["seasons"])
-                    clean_matrix = []
-                    for v in all_values:
-                        row = [float(x) if x is not None else np.nan for x in v]
-                        if len(row) < max_len:
-                            row += [np.nan] * (max_len - len(row))
-                        clean_matrix.append(row)
-
-                    avg_vals = np.nanmean(np.array(clean_matrix), axis=0)
-
-                    fig_plume.add_trace(
-                        go.Scatter(
-                            x=data_plume["seasons"],
-                            y=avg_vals,
-                            mode="lines+markers",
-                            name="PROMEDIO MULTIMODELO",
-                            line=dict(color="black", width=4),
-                            marker=dict(size=6, color="black"),
-                            showlegend=True,
-                        )
-                    )
-                except Exception as e:
-                    st.warning(f"Nota: No se pudo calcular el promedio ({e})")
-
-                # Umbrales
-                fig_plume.add_hline(
-                    y=0.5,
-                    line_dash="dash",
-                    line_color="red",
-                    annotation_text="El Niño (+0.5)",
-                )
-                fig_plume.add_hline(
-                    y=-0.5,
-                    line_dash="dash",
-                    line_color="blue",
-                    annotation_text="La Niña (-0.5)",
-                )
-
-                fig_plume.update_layout(
-                    title="Anomalía SST Niño 3.4 (Spaghetti Plot)",
-                    height=550,
-                    xaxis_title="Trimestres Móviles",
-                    yaxis_title="Anomalía SST (°C)",
+                df_enso_fresco, meta_info = get_iri_enso_forecast()
+            except Exception:
+                df_enso_fresco = pd.DataFrame()
+                meta_info = {"fuente": "Desconocida"}
+            
+            if not df_enso_fresco.empty and 'Trimestre' in df_enso_fresco.columns:
+                fig_enso_noaa = go.Figure()
+                
+                fig_enso_noaa.add_trace(go.Bar(x=df_enso_fresco['Trimestre'], y=df_enso_fresco['El Niño'], name='El Niño (Déficit)', marker_color='#e74c3c'))
+                fig_enso_noaa.add_trace(go.Bar(x=df_enso_fresco['Trimestre'], y=df_enso_fresco['Neutral'], name='Neutral', marker_color='#95a5a6'))
+                fig_enso_noaa.add_trace(go.Bar(x=df_enso_fresco['Trimestre'], y=df_enso_fresco['La Niña'], name='La Niña (Exceso)', marker_color='#3498db'))
+                
+                fig_enso_noaa.update_layout(
+                    title=f"Probabilidades de Fase ENSO por Trimestre ({meta_info.get('fuente', 'NOAA')})",
+                    yaxis_title="Probabilidad (%)",
+                    barmode='stack',
                     hovermode="x unified",
-                    legend=dict(
-                        orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-                    ),
+                    height=450,
+                    legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5),
+                    margin=dict(t=50, b=20, l=20, r=20)
                 )
-                st.plotly_chart(
-                    fig_plume, use_container_width=True, key="chart_iri_plume"
-                )
+                st.plotly_chart(fig_enso_noaa, use_container_width=True)
+                
+                # --- CAJA DESPLEGABLE DE METODOLOGÍA ---
+                st.markdown("<br>", unsafe_allow_html=True)
+                with st.expander("📚 Conceptos, Metodología y Fuentes (Pronóstico ENSO)", expanded=False):
+                    st.info("""
+                    ### 📖 Conceptos Clave
+                    * **ENSO (El Niño-Oscilación del Sur):** Fenómeno climático natural y cíclico que implica la fluctuación de las temperaturas oceánicas y la presión atmosférica en el Pacífico ecuatorial.
+                    * **El Niño (Fase Cálida):** Calentamiento anormal del océano. En la región Andina de Colombia, suele traducirse en un severo **déficit de precipitaciones**, aumento de la temperatura, mayor evaporación y riesgo de estrés hídrico.
+                    * **La Niña (Fase Fría):** Enfriamiento anormal del océano. En Colombia, altera los vientos alisios incrementando las lluvias, provocando **excesos hídricos**, saturación de suelos y riesgo inminente de avenidas torrenciales y colmatación de embalses.
+                    
+                    ### ⚙️ Metodología
+                    * **Pronóstico de Consenso:** Las probabilidades mostradas no provienen de un solo algoritmo. Son el resultado del *Consenso de Expertos* del Centro de Predicción Climática (CPC) de la NOAA y el IRI. Sintetizan las salidas de decenas de modelos climáticos **dinámicos** y **estadísticos**.
+                    
+                    ### 🎯 Utilidad para la Toma de Decisiones
+                    * **Operación de Embalses:** Permite activar protocolos de ahorro de agua o vertimientos preventivos con anticipación.
+                    * **Gestión de Riesgos:** Detona la reasignación de presupuestos (CAPEX/OPEX) hacia Soluciones Basadas en la Naturaleza (SbN).
+                    
+                    ### 🔬 Referencias Científicas Clave
+                    1. **Poveda, G. (2004).** *La Hidroclimatología de Colombia: Una Síntesis desde la Escala Inter-decadal hasta la Escala Diurna*.
+                    2. **Trenberth, K. E. (1997).** *The Definition of El Niño*. BAMS.
+                    """)
             else:
-                st.warning("Error al procesar la estructura del archivo de plumas.")
+                st.warning("⚠️ Datos de la NOAA no disponibles en este momento o el formato de columnas ha cambiado.")
         else:
-            st.error("⚠️ No se encontró el archivo `enso_plumes.json` en `data/iri/`.")
+            st.error("Error crítico: Función 'get_iri_enso_forecast' no encontrada en 'modules.iri_api'.")
 
-    # ==========================================
-    # PESTAÑA 3: PROBABILIDAD MULTIMODELO
-    # ==========================================
-    with tab_iri_probs:
-        if json_probs:
-            # Mensaje de Fecha para Probabilidades
-            try:
-                last_year = json_probs["years"][-1]["year"]
-                last_month_idx = json_probs["years"][-1]["months"][-1]["month"]
-                meses = [
-                    "Ene",
-                    "Feb",
-                    "Mar",
-                    "Abr",
-                    "May",
-                    "Jun",
-                    "Jul",
-                    "Ago",
-                    "Sep",
-                    "Oct",
-                    "Nov",
-                    "Dic",
-                ]
-                st.info(
-                    f"📅 Pronóstico de Probabilidades (Consenso CPC/IRI) actualizado a: **{meses[last_month_idx]} {last_year}**"
-                )
-            except:
-                pass
-
-            st.markdown("#### 📊 Probabilidad de Eventos (El Niño/La Niña/Neutral)")
-            df_probs = process_iri_probabilities(json_probs)
-
-            if df_probs is not None and not df_probs.empty:
-                try:
-                    # Normalización de columnas
-                    df_probs.columns = [str(c).strip() for c in df_probs.columns]
-
-                    # Identificar columna de tiempo
-                    col_tiempo = None
-                    for nombre in ["Trimestre", "Season", "season", "SEASON"]:
-                        if nombre in df_probs.columns:
-                            col_tiempo = nombre
-                            break
-
-                    if not col_tiempo and len(df_probs.columns) > 0:
-                        col_tiempo = df_probs.columns[0]
-
-                    if col_tiempo:
-                        if col_tiempo != "Trimestre":
-                            df_probs.rename(
-                                columns={col_tiempo: "Trimestre"}, inplace=True
-                            )
-
-                        # Melt seguro
-                        # Buscamos columnas de eventos (ignorando mayúsculas/minúsculas)
-                        cols_val = [c for c in df_probs.columns if c != "Trimestre"]
-
-                        df_melt = df_probs.melt(
-                            id_vars="Trimestre",
-                            value_vars=cols_val,
-                            var_name="Evento",
-                            value_name="Probabilidad",
-                        )
-
-                        # Normalización para colores
-                        df_melt["Evento_Norm"] = (
-                            df_melt["Evento"]
-                            .astype(str)
-                            .str.lower()
-                            .str.replace(" ", "")
-                        )
-
-                        # Mapeo de colores
-                        color_map = {
-                            "elnino": "#FF4B4B",
-                            "el niño": "#FF4B4B",
-                            "lanina": "#1C83E1",
-                            "la niña": "#1C83E1",
-                            "neutral": "#808495",
-                        }
-
-                        def get_color(evt_norm):
-                            for key, color in color_map.items():
-                                if key in evt_norm:
-                                    return color
-                            return "gray"
-
-                        df_melt["Color"] = df_melt["Evento_Norm"].apply(get_color)
-
-                        fig_probs = px.bar(
-                            df_melt,
-                            x="Trimestre",
-                            y="Probabilidad",
-                            color="Evento",
-                            color_discrete_map={
-                                evt: get_color(evt.lower().replace(" ", ""))
-                                for evt in df_melt["Evento"].unique()
-                            },
-                            text="Probabilidad",
-                            barmode="group",
-                        )
-                        fig_probs.update_traces(
-                            texttemplate="%{text:.0f}%", textposition="outside"
-                        )
-                        fig_probs.update_layout(
-                            height=500,
-                            yaxis=dict(range=[0, 105]),
-                            xaxis_title="Trimestre Pronosticado",
-                            legend=dict(
-                                orientation="h",
-                                yanchor="bottom",
-                                y=1.02,
-                                xanchor="right",
-                                x=1,
-                            ),
-                        )
-                        st.plotly_chart(
-                            fig_probs, use_container_width=True, key="chart_iri_probs"
-                        )
-                    else:
-                        st.error("No se pudo identificar la columna de tiempo.")
-                except Exception as e:
-                    st.error(f"Error generando gráfico: {e}")
-            else:
-                st.warning("DataFrame de probabilidades vacío.")
-        else:
-            st.error("⚠️ No se encontró el archivo `enso_cpc_prob.json` en `data/iri/`.")
-
-# ==========================================
-    # PESTAÑA 4: PROPHET (GENERADOR AVANZADO)
-    # ==========================================
+    # -------------------------------------------------------------------------
+    # PESTAÑA 3: PROPHET (GENERADOR AVANZADO)
+    # -------------------------------------------------------------------------
     with tab_gen:
         st.markdown("#### 🤖 Generador Prophet (Proyección Estadística Local)")
         
-        # 1. Validación Inicial de Datos
         if df_enso is None or df_enso.empty:
-            st.warning("⚠️ No hay datos históricos de índices climáticos cargados.")
-            st.info("Por favor, cargue el archivo de índices (ONI/SOI) en el Panel de Administración para usar esta herramienta.")
+            st.warning("⚠️ No hay datos históricos de índices climáticos cargados para entrenar a Prophet.")
         else:
-            # 2. Selector de Índice (Mapeo Inteligente)
-            # Buscamos columnas candidatas
             col_oni = next((c for c in df_enso.columns if 'oni' in c.lower() and 'anomalia' in c.lower()), None) or \
                       next((c for c in df_enso.columns if 'oni' in c.lower()), None)
-            
             col_soi = next((c for c in df_enso.columns if 'soi' in c.lower()), None)
             col_iod = next((c for c in df_enso.columns if 'iod' in c.lower()), None)
             
@@ -2484,7 +2247,6 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                 "IOD (Indian Ocean Dipole)": col_iod
             }
             
-            # Filtramos solo los que existen en la BD
             opciones_validas = {k: v for k, v in mapa_indices.items() if v is not None}
             
             if not opciones_validas:
@@ -2500,49 +2262,38 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                 if st.button("Generar Proyección Prophet"):
                     with st.spinner(f"Entrenando modelo para {selected_label}..."):
                         try:
-                            # A. Importación Diferida (para evitar error si falta la librería)
                             from prophet import Prophet
                             
-                            # B. Preparación de Datos
                             df_prophet = df_enso[[Config.DATE_COL, target_col]].copy()
                             df_prophet.columns = ['ds', 'y']
                             
-                            # Limpieza robusta
                             df_prophet['y'] = pd.to_numeric(df_prophet['y'], errors='coerce')
                             df_prophet = df_prophet.dropna()
                             
-                            # C. Validación de Cantidad de Datos (EL ARREGLO CRÍTICO)
                             if len(df_prophet) < 12:
-                                st.warning(f"⚠️ Datos insuficientes: Solo se encontraron {len(df_prophet)} meses válidos. Prophet requiere al menos 12 meses de historia.")
+                                st.warning(f"⚠️ Datos insuficientes: Solo {len(df_prophet)} meses válidos. Se requieren 12.")
                             else:
-                                # D. Entrenamiento
-                                # Ajustamos changepoint_prior_scale para capturar variabilidad climática
                                 m = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=True, changepoint_prior_scale=0.3)
                                 m.fit(df_prophet)
 
-                                # E. Predicción
                                 future = m.make_future_dataframe(periods=months_future, freq='MS')
                                 forecast = m.predict(future)
 
-                                # F. Visualización
-                                fig = go.Figure()
+                                fig_prophet = go.Figure()
 
-                                # Historia
-                                fig.add_trace(go.Scatter(
+                                fig_prophet.add_trace(go.Scatter(
                                     x=df_prophet['ds'], y=df_prophet['y'],
                                     mode='lines', name='Historia Real',
                                     line=dict(color='gray', width=1)
                                 ))
 
-                                # Proyección
-                                fig.add_trace(go.Scatter(
+                                fig_prophet.add_trace(go.Scatter(
                                     x=forecast['ds'], y=forecast['yhat'],
                                     mode='lines', name='Proyección',
                                     line=dict(color='#007BFF', width=2)
                                 ))
 
-                                # Incertidumbre
-                                fig.add_trace(go.Scatter(
+                                fig_prophet.add_trace(go.Scatter(
                                     x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
                                     y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
                                     fill='toself', fillcolor='rgba(0,123,255,0.2)',
@@ -2551,22 +2302,20 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                                     name='Incertidumbre'
                                 ))
 
-                                fig.update_layout(
+                                fig_prophet.update_layout(
                                     title=f"Proyección Estadística: {selected_label}",
                                     xaxis_title="Fecha", yaxis_title="Valor Índice",
                                     hovermode="x unified",
                                     legend=dict(orientation="h", y=1.1)
                                 )
 
-                                st.plotly_chart(fig, use_container_width=True)
+                                st.plotly_chart(fig_prophet, use_container_width=True)
                                 st.success(f"✅ Proyección generada hasta {forecast['ds'].max().strftime('%Y-%m')}")
 
                         except ImportError:
                             st.error("Librería 'prophet' no instalada en el servidor.")
                         except Exception as e:
                             st.error(f"Error calculando proyección: {e}")
-# -----------------------------------------------------------------------------
-
 
 def display_trends_and_forecast_tab(**kwargs):
     st.subheader("📉 Tendencias y Pronósticos (Series de Tiempo)")
