@@ -322,8 +322,31 @@ def main():
         viz.display_station_table_tab(**display_args)
    
     elif selected_module == "🔮 Pronóstico Climático": 
-        # 1. Llamada original al visualizador (Mantiene intacto lo que ya tenías)
-        viz.display_climate_forecast_tab(**display_args)
+        # --- NUEVA VISUALIZACIÓN NATIVA NOAA (Reemplaza al visualizador antiguo) ---
+        st.markdown("## 🔮 Pronóstico Climático Global (Fenómeno ENSO)")
+        st.info("Pronóstico oficial de la **NOAA (Climate Prediction Center)** extraído en tiempo real. Este módulo reemplaza a la antigua API de Columbia University.")
+        
+        if 'df_enso' in locals() and df_enso is not None and not df_enso.empty:
+            import plotly.graph_objects as go
+            fig_enso = go.Figure()
+            
+            # Construcción de barras apiladas (Stacked Bar Chart)
+            fig_enso.add_trace(go.Bar(x=df_enso['Trimestre'], y=df_enso['El Niño'], name='El Niño (Déficit)', marker_color='#e74c3c'))
+            fig_enso.add_trace(go.Bar(x=df_enso['Trimestre'], y=df_enso['Neutral'], name='Neutral', marker_color='#95a5a6'))
+            fig_enso.add_trace(go.Bar(x=df_enso['Trimestre'], y=df_enso['La Niña'], name='La Niña (Exceso)', marker_color='#3498db'))
+            
+            fig_enso.update_layout(
+                title="Probabilidades de Fase ENSO por Trimestre (NOAA)",
+                yaxis_title="Probabilidad (%)",
+                barmode='stack',
+                hovermode="x unified",
+                height=450,
+                legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5),
+                margin=dict(t=50, b=20, l=20, r=20)
+            )
+            st.plotly_chart(fig_enso, use_container_width=True)
+        else:
+            st.warning("⚠️ Datos de la NOAA no disponibles en este momento. Revisa tu conexión a internet o el estado del servidor.")
         
         # =========================================================================
         # 2. NUEVA SECCIÓN: EMISOR CLIMÁTICO (MULTIVERSO ENSO) HACIA EL METABOLISMO
