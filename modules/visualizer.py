@@ -2054,7 +2054,6 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
 # ==============================================================================
 
 def display_climate_forecast_tab(df_enso, **kwargs):
-    # --- IMPORTACIONES REQUERIDAS ---
     import plotly.graph_objects as go
     import plotly.express as px
     import pandas as pd
@@ -2062,39 +2061,56 @@ def display_climate_forecast_tab(df_enso, **kwargs):
     import streamlit as st
     from modules.config import Config
     
-    # Importar el motor directo de la NOAA
+    # 🔌 Importar las herramientas del nuevo motor climático
     try:
-        from modules.iri_api import get_iri_enso_forecast
+        from modules.climate_api import get_iri_enso_forecast, get_live_oni_data
     except ImportError:
         get_iri_enso_forecast = None
+        get_live_oni_data = None
 
     st.title("🔮 Pronóstico Climático & Fenómenos Globales")
   
-    # --- 1. LIMPIEZA DE DATOS (FECHAS Y NÚMEROS) ---
+    # --- 1. LIMPIEZA DE DATOS HISTÓRICOS (LOCALES) ---
     if df_enso is not None and not df_enso.empty:
         df_enso = df_enso.copy()
-        
-        # A. ARREGLO DE FECHAS
         col_fecha_enso = next((c for c in df_enso.columns if 'fecha' in c.lower()), None)
         if col_fecha_enso:
-            # Asumimos que parse_spanish_date_visualizer está definida arriba en tu archivo
             try:
                 df_enso[Config.DATE_COL] = df_enso[col_fecha_enso].apply(parse_spanish_date_visualizer)
-                df_enso = df_enso.dropna(subset=[Config.DATE_COL])
-                df_enso = df_enso.sort_values(Config.DATE_COL)
             except NameError:
                 df_enso[Config.DATE_COL] = pd.to_datetime(df_enso[col_fecha_enso], errors='coerce')
+            df_enso = df_enso.dropna(subset=[Config.DATE_COL]).sort_values(Config.DATE_COL)
 
-        # B. ARREGLO DE NÚMEROS
         cols_indices = [c for c in df_enso.columns if c.lower() in ['oni', 'anomalia_oni', 'soi', 'iod', 'mei']]
         for col in cols_indices:
             try:
-                df_enso[col] = pd.to_numeric(
-                    df_enso[col].astype(str).str.replace(',', '.', regex=False), 
-                    errors='coerce'
-                )
-            except Exception as e:
-                print(f"Error convirtiendo columna {col}: {e}")
+                df_enso[col] = pd.to_numeric(df_enso[col].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+            except: pass
+
+    # --- 2. ⚡ FUSIÓN CON DATOS EN VIVO (NOAA ONI) ---
+    if get_live_oni_data is not None:
+        df_live = get_live_oni_data()
+        
+        if df_live is not None and not df_live.empty:
+            # Si el usuario borró su CSV por error, el sistema crea la tabla desde cero
+            if df_enso is None or df_enso.empty:
+                df_enso = pd.DataFrame()
+                df_enso[Config.DATE_COL] = df_live['fecha']
+                df_enso['anomalia_oni'] = df_live['anomalia_oni']
+            else:
+                # Buscar cómo se llama la columna ONI en el archivo del usuario
+                col_oni_hist = next((c for c in df_enso.columns if 'oni' in c.lower() and 'anomalia' in c.lower()), None)
+                if not col_oni_hist: col_oni_hist = 'anomalia_oni'
+                
+                # Alinear nombres de columnas y fusionar
+                df_live.rename(columns={'fecha': Config.DATE_COL, 'anomalia_oni': col_oni_hist}, inplace=True)
+                
+                # Fusión inteligente: Concatenamos y borramos duplicados conservando el último (el dato en vivo más fresco)
+                df_enso = pd.concat([df_enso, df_live], ignore_index=True)
+                df_enso = df_enso.drop_duplicates(subset=[Config.DATE_COL], keep='last')
+                df_enso = df_enso.sort_values(Config.DATE_COL).reset_index(drop=True)
+            
+            st.toast("📡 Índices Históricos ONI sincronizados con la base en tiempo real de la NOAA.", icon="🔄")
 
     # -------------------------------------------------------------------------
     # 1. CONFIGURACIÓN DE PESTAÑAS
