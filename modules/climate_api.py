@@ -4,6 +4,8 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from io import StringIO
+
 # ==============================================================================
 # 🛡️ ESCUDOS DE IMPORTACIÓN (FALLBACK SHIELDS)
 # ==============================================================================
@@ -28,7 +30,8 @@ def get_iri_enso_forecast():
     try:
         response = requests.get(url_noaa, headers=headers, timeout=15)
         response.raise_for_status()
-        tablas = pd.read_html(response.text)
+        # 🛡️ FIX: Envolvemos el texto en StringIO para evitar el FutureWarning de Pandas
+        tablas = pd.read_html(StringIO(response.text))
         
         df_probs = None
         for df in tablas:
