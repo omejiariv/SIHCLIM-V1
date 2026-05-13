@@ -2092,23 +2092,32 @@ def display_climate_forecast_tab(df_enso, **kwargs):
         df_live = get_live_oni_data()
         
         if df_live is not None and not df_live.empty:
-            # Si el usuario borró su CSV por error, el sistema crea la tabla desde cero
+            # Si el usuario no tiene datos previos, creamos desde cero
             if df_enso is None or df_enso.empty:
                 df_enso = pd.DataFrame()
                 df_enso[Config.DATE_COL] = df_live['fecha']
                 df_enso['anomalia_oni'] = df_live['anomalia_oni']
             else:
-                # Buscar cómo se llama la columna ONI en el archivo del usuario
-                col_oni_hist = next((c for c in df_enso.columns if 'oni' in c.lower() and 'anomalia' in c.lower()), None)
-                if not col_oni_hist: col_oni_hist = 'anomalia_oni'
+                # Buscar nombre de la columna ONI
+                col_oni_hist = next((c for c in df_enso.columns if 'oni' in c.lower() and 'anomalia' in c.lower()), 'anomalia_oni')
                 
-                # Alinear nombres de columnas y fusionar
-                df_live.rename(columns={'fecha': Config.DATE_COL, 'anomalia_oni': col_oni_hist}, inplace=True)
+                # Alinear columnas de la tabla en vivo
+                df_live_renamed = df_live.rename(columns={'fecha': Config.DATE_COL, 'anomalia_oni': col_oni_hist})
                 
-                # Fusión inteligente: Concatenamos y borramos duplicados conservando el último (el dato en vivo más fresco)
-                df_enso = pd.concat([df_enso, df_live], ignore_index=True)
-                df_enso = df_enso.drop_duplicates(subset=[Config.DATE_COL], keep='last')
-                df_enso = df_enso.sort_values(Config.DATE_COL).reset_index(drop=True)
+                # Usar fechas como índice para fusionar correctamente
+                df_enso = df_enso.set_index(Config.DATE_COL)
+                df_live_renamed = df_live_renamed.set_index(Config.DATE_COL)
+                
+                # 1. ACTUALIZAR: Solo pisa los datos de ONI existentes sin borrar el SOI/IOD
+                df_enso.update(df_live_renamed)
+                
+                # 2. AÑADIR: Incorpora los meses nuevos que trae la NOAA al final
+                nuevas_fechas = df_live_renamed[~df_live_renamed.index.isin(df_enso.index)]
+                if not nuevas_fechas.empty:
+                    df_enso = pd.concat([df_enso, nuevas_fechas])
+                
+                # Restaurar el índice
+                df_enso = df_enso.reset_index().sort_values(Config.DATE_COL)
             
             st.toast("📡 Índices Históricos ONI sincronizados con la base en tiempo real de la NOAA.", icon="🔄")
 
