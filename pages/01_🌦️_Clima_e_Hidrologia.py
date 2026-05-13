@@ -44,57 +44,58 @@ warnings.filterwarnings("ignore")
 selectors.renderizar_menu_navegacion("Clima e Hidrología")
 
 # ==============================================================================
-# 📡 1. CONEXIÓN SATELITAL (AUTO-FETCH ENSO DESDE COLUMBIA UNIVERSITY)
+# 📡 1. CONEXIÓN SATELITAL (AUTO-FETCH ENSO DIRECTO A NOAA)
 # ==============================================================================
 if 'enso_fase' not in st.session_state:
     try:
-        from modules.forecasting import get_iri_enso_forecast
-        df_enso, _ = get_iri_enso_forecast()
+        # 🔌 Importamos desde el nuevo hub centralizado que renombramos
+        from modules.climate_api import get_iri_enso_forecast
+        df_enso_ini, meta = get_iri_enso_forecast()
         
-        # Tomamos el pronóstico del trimestre actual (primera fila)
-        if df_enso is not None and not df_enso.empty:
-            prob_nina = df_enso.iloc[0]['Niña']
-            prob_nino = df_enso.iloc[0]['Niño']
+        if df_enso_ini is not None and not df_enso_ini.empty:
+            # Extraemos datos del primer trimestre disponible (tiempo real)
+            fila_actual = df_enso_ini.iloc[0]
+            prob_nina = float(fila_actual.get('La Niña', 0))
+            prob_neutro = float(fila_actual.get('Neutral', 0))
+            prob_nino = float(fila_actual.get('El Niño', 0))
+            trimestre_sel = str(fila_actual.get('Trimestre', 'N/A'))
             
+            # Determinamos el estado dominante para los semáforos
             if prob_nina > 50: estado_actual = "Niña 🌧️"
             elif prob_nino > 50: estado_actual = "Niño ☀️"
             else: estado_actual = "Neutro ⚖️"
             
+            # 💉 INYECCIÓN AL ALEPH CLIMÁTICO (Session State)
             st.session_state['enso_fase'] = estado_actual
-            st.toast(f"📡 Clima Global Sincronizado: Condición actual {estado_actual}", icon="✅")
-    except Exception as e:
-        st.session_state['enso_fase'] = "Neutro ⚖️"
-        st.toast("⚠️ No se pudo conectar con el servidor IRI. Usando clima Neutro.", icon="🔌")
-
-        # ------------------------------------------------------------------
-        # 🔌 CONEXIÓN AL ALEPH CLIMÁTICO (Transmisor de Telemetría Global)
-        # ------------------------------------------------------------------
-        # Inyectamos los datos vivos del IRI al torrente sanguíneo de Sihcli-Poter
-        st.session_state['aleph_iri_nino'] = int(prob_nino)
-        st.session_state['aleph_iri_neutro'] = int(prob_neutro)
-        st.session_state['aleph_iri_nina'] = int(prob_nina)
-        
-        st.session_state['aleph_iri_trimestre'] = str(trimestre_sel)
-        
-        # Usamos el mensaje generado automáticamente arriba como tendencia
-        if total_prob == 100:
-            st.session_state['aleph_iri_tendencia'] = msg_iri
+            st.session_state['aleph_iri_nino'] = int(prob_nino)
+            st.session_state['aleph_iri_neutro'] = int(prob_neutro)
+            st.session_state['aleph_iri_nina'] = int(prob_nina)
+            st.session_state['aleph_iri_trimestre'] = trimestre_sel
+            
+            st.toast(f"📡 Clima Global Sincronizado: {estado_actual} ({trimestre_sel})", icon="✅")
         else:
-            st.session_state['aleph_iri_tendencia'] = "Ajustando probabilidades..."
+            raise ValueError("El servidor devolvió una tabla vacía.")
 
-# --- 2. IMPORTACIONES ROBUSTAS ---
+    except Exception as e:
+        # 🛡️ ESCUDO DE SEGURIDAD: Si falla la red, evitamos el colapso del sistema
+        st.session_state['enso_fase'] = "Neutro ⚖️"
+        st.session_state['aleph_iri_nino'] = 0
+        st.session_state['aleph_iri_neutro'] = 100
+        st.session_state['aleph_iri_nina'] = 0
+        st.session_state['aleph_iri_trimestre'] = "N/A"
+        st.session_state['aleph_iri_tendencia'] = "Modo desconectado (Valores por defecto)"
+        st.toast("⚠️ Usando clima Neutro por fallo de conexión con NOAA.", icon="🔌")
+
+# --- 2. IMPORTACIONES ROBUSTAS Y LIMPIEZA DE DEPENDENCIAS ---
 try:
-    # Módulos Base (Tus archivos subidos)
     from modules.config import Config
     from modules.db_manager import get_engine
     from modules.data_processor import complete_series, load_and_process_all_data
     from modules.reporter import generate_pdf_report
-    
-    # Módulos Críticos de Visualización y Selección
     from modules import selectors
     from modules import visualizer as viz
     
-    # Módulos de Física y Utilidades (Manejo de errores si faltan dependencias)
+    # Módulos de Física con manejo de errores interno
     try:
         from modules import hydro_physics as physics
         from modules.admin_utils import download_raster_to_temp
@@ -103,14 +104,8 @@ try:
         PHYSICS_AVAILABLE = False
         st.toast(f"⚠️ Módulos físicos limitados: {e}", icon="⚠️")
 
-    # Análisis
-    try:
-        from modules.analysis import calculate_trends_mann_kendall
-    except ImportError:
-        calculate_trends_mann_kendall = None
-
 except Exception as e:
-    st.error(f"❌ Error Crítico de Importación: {e}")
+    st.error(f"❌ Error Crítico en el Cuarto de Máquinas: {e}")
     st.stop()
 
 # --- FUNCIÓN MAESTRA DE CARGA (VERSIÓN STORAGE / BUCKET) ---
