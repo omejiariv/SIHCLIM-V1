@@ -63,7 +63,7 @@ def renderizar_telemetria_aleph():
         # 📡 AUTO-FETCH INTELIGENTE (Búsqueda por Trimestre AMJ)
         if 'aleph_iri_nino' not in st.session_state:
             try:
-                from modules.iri_api import get_iri_enso_forecast
+                from modules.climate_api import get_iri_enso_forecast
                 df_enso, _ = get_iri_enso_forecast()
                 
                 if df_enso is not None and not df_enso.empty:
