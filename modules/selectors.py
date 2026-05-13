@@ -282,7 +282,7 @@ def render_selector_espacial():
     st.sidebar.markdown("### 📍 Filtros Geográficos Principales")
 
     # =========================================================
-    # 🧠 ESCUDO DE MEMORIA INTELIGENTE
+    # 🧠 ESCUDO DE MEMORIA INTELIGENTE (Corregido con Keys únicas)
     # =========================================================
     def selector_seguro(label, opciones, clave_memoria):
         opciones_lista = list(opciones)
@@ -294,8 +294,8 @@ def render_selector_espacial():
             if valor_guardado in opciones_lista:
                 idx_defecto = opciones_lista.index(valor_guardado)
                 
-        seleccion = st.sidebar.selectbox(label, opciones_lista, index=idx_defecto)
-        st.session_state[clave_memoria] = seleccion
+        # 🛡️ FIX: Pasamos la 'key' directamente al widget para evitar colapsos de ID
+        seleccion = st.sidebar.selectbox(label, opciones_lista, index=idx_defecto, key=clave_memoria)
         return seleccion
 
     # ---------------------------------------------------------
@@ -306,7 +306,8 @@ def render_selector_espacial():
     if 'mem_nivel_agregacion' in st.session_state and st.session_state['mem_nivel_agregacion'] in opciones_agregacion:
         idx_agr = opciones_agregacion.index(st.session_state['mem_nivel_agregacion'])
         
-    nivel_agregacion = st.sidebar.radio("Nivel de Agregación:", opciones_agregacion, index=idx_agr)
+    # 🛡️ FIX: Añadimos un key único al radio button
+    nivel_agregacion = st.sidebar.radio("Nivel de Agregación:", opciones_agregacion, index=idx_agr, key="radio_nivel_agregacion")
     st.session_state['mem_nivel_agregacion'] = nivel_agregacion
 
     ids_estaciones = []
