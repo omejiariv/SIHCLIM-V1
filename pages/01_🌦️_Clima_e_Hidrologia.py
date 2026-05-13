@@ -324,7 +324,7 @@ def main():
     elif selected_module == "🔮 Pronóstico Climático": 
         # --- NUEVA VISUALIZACIÓN NATIVA NOAA (Reemplaza al visualizador antiguo) ---
         st.markdown("## 🔮 Pronóstico Climático Global (Fenómeno ENSO)")
-        st.info("Pronóstico oficial de la **NOAA (Climate Prediction Center)** extraído en tiempo real. Este módulo reemplaza a la antigua API de Columbia University.")
+        st.info("Pronóstico oficial de la **NOAA (Climate Prediction Center)** extraído en tiempo real.")
         
         # 🔌 LLAMADA DIRECTA AL NUEVO MOTOR NOAA
         # Nos aseguramos de obtener los datos exactos con las columnas correctas
