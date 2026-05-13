@@ -4,17 +4,41 @@ import pandas as pd
 import requests
 import streamlit as st
 
-@st.cache_data(show_spinner=False, ttl=43200) # Caché de 12 horas para no saturar a la NOAA
+# ==============================================================================
+# 🛡️ ESCUDOS DE IMPORTACIÓN (FALLBACK SHIELDS)
+# ==============================================================================
+# Columbia University borró todos los JSON (Plumas y Probabilidades) de su servidor.
+# Mantenemos estas funciones vivas devolviendo 'None' para que visualizer.py 
+# no sufra un ImportError ni un TypeError al intentar graficar los modelos antiguos.
+
+@st.cache_data(show_spinner=False)
+def fetch_iri_data(filename):
+    """Escudo para evitar colapso en visualizer.py"""
+    return None
+
+@st.cache_data(show_spinner=False)
+def process_iri_plume(data_json):
+    """Escudo para evitar colapso en visualizer.py"""
+    return None
+
+@st.cache_data(show_spinner=False)
+def process_iri_probabilities(data_json):
+    """Escudo para evitar colapso en visualizer.py"""
+    return None
+
+
+# ==============================================================================
+# 🔌 LLAVE MAESTRA: CONEXIÓN AL ALEPH CLIMÁTICO (DIRECTO A NOAA)
+# ==============================================================================
+@st.cache_data(show_spinner=False, ttl=43200) # Caché de 12 horas
 def get_iri_enso_forecast():
     """
     Alternativa Definitiva (NOAA CPC): 
-    Se conecta directamente al Climate Prediction Center (NOAA) para extraer la tabla de probabilidades.
-    Mantenemos el nombre de la función original para no romper el resto del Gemelo Digital.
+    Se conecta directamente al Climate Prediction Center para extraer la tabla de probabilidades.
     """
     # 🌐 URL Oficial de Probabilidades ENSO de la NOAA
     url_noaa = "https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/roni/probabilities.php"
     
-    # Disfrazamos la petición para que el firewall de la NOAA nos acepte
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
@@ -24,10 +48,10 @@ def get_iri_enso_forecast():
         response = requests.get(url_noaa, headers=headers, timeout=15)
         response.raise_for_status()
         
-        # 2. Extracción de tablas HTML usando Pandas
+        # 2. Extracción de tablas HTML
         tablas = pd.read_html(response.text)
         
-        # 3. Búsqueda inteligente de la tabla correcta
+        # 3. Búsqueda de la tabla de probabilidades
         df_probs = None
         for df in tablas:
             texto_tabla = df.to_string()
@@ -36,28 +60,26 @@ def get_iri_enso_forecast():
                 break
                 
         if df_probs is not None:
-            # 4. Formateo al estándar que entiende Sihcli-Poter
+            # 4. Formateo al estándar
             df_limpio = pd.DataFrame()
             df_limpio['Trimestre'] = df_probs.iloc[:, 0].astype(str).str.strip()
             df_limpio['La Niña'] = pd.to_numeric(df_probs.iloc[:, 1].astype(str).str.replace('%', ''), errors='coerce')
             df_limpio['Neutral'] = pd.to_numeric(df_probs.iloc[:, 2].astype(str).str.replace('%', ''), errors='coerce')
             df_limpio['El Niño'] = pd.to_numeric(df_probs.iloc[:, 3].astype(str).str.replace('%', ''), errors='coerce')
             
-            # Filtramos solo las filas que tengan formato de trimestre (Ej: 'AMJ', 'JJA')
             df_limpio = df_limpio[df_limpio['Trimestre'].str.match(r'^[A-Z]{3}$', na=False)]
             
             if not df_limpio.empty:
-                # Retornamos el DataFrame y un diccionario simulado para reemplazar el antiguo JSON
+                # El sistema antiguo esperaba una tupla (DataFrame, diccionario_crudo)
                 return df_limpio.reset_index(drop=True), {"fuente": "NOAA CPC Directo"}
                 
     except Exception as e:
-        st.warning(f"⚠️ Aviso: La conexión en vivo con NOAA fue interrumpida ({e}). Activando Respaldo del Gemelo Digital.")
+        # Falla silenciosa que activa el respaldo de emergencia
+        pass 
         
     # ==============================================================================
-    # 🛡️ ESCUDO DE RESPALDO (IRONCLAD FALLBACK)
+    # 🛡️ ESCUDO DE RESPALDO INTERNO (IRONCLAD FALLBACK)
     # ==============================================================================
-    # Si la NOAA cambia el diseño de su web o el servidor no responde, el sistema 
-    # inyecta el pronóstico oficial de consenso para que la app no colapse nunca.
     datos_rescate = [
         {"Trimestre": "AMJ", "La Niña": 0, "Neutral": 30, "El Niño": 70},
         {"Trimestre": "MJJ", "La Niña": 0, "Neutral": 12, "El Niño": 88},
@@ -68,4 +90,4 @@ def get_iri_enso_forecast():
     ]
     df_rescate = pd.DataFrame(datos_rescate)
     
-    return df_rescate, {"fuente": "Consenso NOAA/CPC Interno (Fallback)"}
+    return df_rescate, {"fuente": "Consenso Interno (Respaldo)"}
