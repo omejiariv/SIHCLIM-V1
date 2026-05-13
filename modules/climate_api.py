@@ -90,3 +90,60 @@ def get_live_oni_data():
     except Exception as e:
         print(f"Error extrayendo ONI: {e}")
         return None
+
+# ==============================================================================
+# 🔌 LLAVE 3: CONEXIÓN DE ÍNDICE SOI (EN VIVO NOAA CPC)
+# ==============================================================================
+@st.cache_data(show_spinner=False, ttl=43200)
+def get_live_soi_data():
+    """Descarga el registro histórico oficial del SOI en formato de texto plano y lo estructura."""
+    url = "https://www.cpc.ncep.noaa.gov/data/indices/soi"
+    try:
+        # La NOAA publica el SOI con 3 líneas de encabezado de texto
+        df = pd.read_csv(url, skiprows=3, delim_whitespace=True, header=None, 
+                         names=['YEAR','01','02','03','04','05','06','07','08','09','10','11','12'])
+        
+        # Filtramos posibles textos basura al final del archivo
+        df['YEAR'] = pd.to_numeric(df['YEAR'], errors='coerce')
+        df = df.dropna(subset=['YEAR'])
+        
+        # Convertimos la matriz (Años x Meses) a una serie temporal lineal
+        df_melt = df.melt(id_vars=['YEAR'], var_name='mes', value_name='soi')
+        df_melt['soi'] = pd.to_numeric(df_melt['soi'], errors='coerce')
+        df_melt = df_melt.dropna()
+        
+        # Creamos la fecha exacta
+        df_melt['fecha'] = pd.to_datetime(df_melt['YEAR'].astype(int).astype(str) + '-' + df_melt['mes'] + '-01')
+        df_live = pd.DataFrame({'fecha': df_melt['fecha'], 'soi': df_melt['soi']})
+        return df_live.sort_values('fecha').reset_index(drop=True)
+    except Exception as e:
+        print(f"Error extrayendo SOI: {e}")
+        return None
+
+# ==============================================================================
+# 🔌 LLAVE 4: CONEXIÓN DE ÍNDICE IOD (EN VIVO NOAA PSL)
+# ==============================================================================
+@st.cache_data(show_spinner=False, ttl=43200)
+def get_live_iod_data():
+    """Descarga el registro histórico oficial del Dipolo del Océano Índico (DMI)."""
+    url = "https://psl.noaa.gov/gcos_wgsp/Timeseries/Data/dmi.had.long.data"
+    try:
+        # PSL publica el IOD saltando 1 línea de metadatos
+        df = pd.read_csv(url, skiprows=1, delim_whitespace=True, header=None, 
+                         names=['YEAR','01','02','03','04','05','06','07','08','09','10','11','12'])
+        
+        df['YEAR'] = pd.to_numeric(df['YEAR'], errors='coerce')
+        df = df.dropna(subset=['YEAR'])
+        df = df[df['YEAR'] > 1800] # Evitamos leer el texto del pie de página
+        
+        df_melt = df.melt(id_vars=['YEAR'], var_name='mes', value_name='iod')
+        df_melt['iod'] = pd.to_numeric(df_melt['iod'], errors='coerce')
+        
+        # PSL usa -9999 para indicar meses futuros sin datos
+        df_melt = df_melt[df_melt['iod'] > -99] 
+        df_melt['fecha'] = pd.to_datetime(df_melt['YEAR'].astype(int).astype(str) + '-' + df_melt['mes'] + '-01')
+        df_live = pd.DataFrame({'fecha': df_melt['fecha'], 'iod': df_melt['iod']})
+        return df_live.sort_values('fecha').reset_index(drop=True)
+    except Exception as e:
+        print(f"Error extrayendo IOD: {e}")
+        return None
