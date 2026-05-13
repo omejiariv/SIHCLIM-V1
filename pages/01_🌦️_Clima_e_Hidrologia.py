@@ -326,17 +326,28 @@ def main():
         st.markdown("## 🔮 Pronóstico Climático Global (Fenómeno ENSO)")
         st.info("Pronóstico oficial de la **NOAA (Climate Prediction Center)** extraído en tiempo real. Este módulo reemplaza a la antigua API de Columbia University.")
         
-        if 'df_enso' in locals() and df_enso is not None and not df_enso.empty:
+        # 🔌 LLAMADA DIRECTA AL NUEVO MOTOR NOAA
+        # Nos aseguramos de obtener los datos exactos con las columnas correctas
+        from modules.iri_api import get_iri_enso_forecast
+        
+        try:
+            df_enso_fresco, meta_info = get_iri_enso_forecast()
+        except Exception:
+            df_enso_fresco = pd.DataFrame()
+            meta_info = {"fuente": "Desconocida"}
+        
+        # 🛡️ Validamos que el DataFrame exista y tenga la columna 'Trimestre'
+        if not df_enso_fresco.empty and 'Trimestre' in df_enso_fresco.columns:
             import plotly.graph_objects as go
             fig_enso = go.Figure()
             
             # Construcción de barras apiladas (Stacked Bar Chart)
-            fig_enso.add_trace(go.Bar(x=df_enso['Trimestre'], y=df_enso['El Niño'], name='El Niño (Déficit)', marker_color='#e74c3c'))
-            fig_enso.add_trace(go.Bar(x=df_enso['Trimestre'], y=df_enso['Neutral'], name='Neutral', marker_color='#95a5a6'))
-            fig_enso.add_trace(go.Bar(x=df_enso['Trimestre'], y=df_enso['La Niña'], name='La Niña (Exceso)', marker_color='#3498db'))
+            fig_enso.add_trace(go.Bar(x=df_enso_fresco['Trimestre'], y=df_enso_fresco['El Niño'], name='El Niño (Déficit)', marker_color='#e74c3c'))
+            fig_enso.add_trace(go.Bar(x=df_enso_fresco['Trimestre'], y=df_enso_fresco['Neutral'], name='Neutral', marker_color='#95a5a6'))
+            fig_enso.add_trace(go.Bar(x=df_enso_fresco['Trimestre'], y=df_enso_fresco['La Niña'], name='La Niña (Exceso)', marker_color='#3498db'))
             
             fig_enso.update_layout(
-                title="Probabilidades de Fase ENSO por Trimestre (NOAA)",
+                title=f"Probabilidades de Fase ENSO por Trimestre ({meta_info.get('fuente', 'NOAA')})",
                 yaxis_title="Probabilidad (%)",
                 barmode='stack',
                 hovermode="x unified",
@@ -346,11 +357,12 @@ def main():
             )
             st.plotly_chart(fig_enso, use_container_width=True)
         else:
-            st.warning("⚠️ Datos de la NOAA no disponibles en este momento. Revisa tu conexión a internet o el estado del servidor.")
-        
+            st.warning("⚠️ Datos de la NOAA no disponibles en este momento o el formato de columnas ha cambiado.")
+
         # =========================================================================
         # 2. NUEVA SECCIÓN: EMISOR CLIMÁTICO (MULTIVERSO ENSO) HACIA EL METABOLISMO
         # =========================================================================
+
         st.markdown("---")
         st.subheader("📡 Emisor Climático: Multiverso Probabilístico (IRI)")
         st.info("Integra el pronóstico atmosférico en vivo con la realidad terrestre. Exporta el paquete de probabilidades completo a la Memoria Global para evaluar el Riesgo Esperado en el metabolismo territorial y la toma de decisiones.")
