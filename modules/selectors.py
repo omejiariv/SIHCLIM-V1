@@ -276,32 +276,30 @@ def cargar_mapa_municipios():
     return gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
 
 # ====================================================================
-# --- MOTORES DE CARGA DE METADATOS (MAESTROS ORIGINALES DESDE EXCEL) ---
+# --- MOTORES DE CARGA DE METADATOS (PUNTO CERO - SQL DIRECTO) ---
 # ====================================================================
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestro_cuencas():
-    """Carga el inventario de subcuencas desde el Excel maestro en Supabase."""
+    """Carga el inventario de subcuencas directamente desde PostgreSQL."""
     try:
-        import io, requests
+        from modules.db_manager import get_engine
         import pandas as pd
-        url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/cuencas_maestro.xlsx"
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
-        return pd.read_excel(io.BytesIO(response.content))
+        engine = get_engine()
+        return pd.read_sql("SELECT * FROM cuencas", engine)
     except Exception as e:
-        st.error(f"Error cargando maestro de cuencas: {e}")
+        st.error(f"Error conectando a BD de cuencas: {e}")
         return None
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestro_municipios():
-    """Carga el inventario de municipios desde el Excel maestro en Supabase."""
+    """Carga el inventario de municipios directamente desde PostgreSQL."""
     try:
-        import io, requests
+        from modules.db_manager import get_engine
         import pandas as pd
-        url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
-        df = pd.read_excel(io.BytesIO(response.content))
+        engine = get_engine()
+        df = pd.read_sql("SELECT * FROM municipios", engine)
         
-        # 🛡️ Escudo Anti-Minúsculas (Mantenemos la protección de compatibilidad)
+        # 🛡️ Escudo de Compatibilidad para el Punto Cero
         col_map = {}
         for col in df.columns:
             if col.lower() == 'mpio_cnmbr': col_map[col] = 'MPIO_CNMBR'
@@ -312,7 +310,7 @@ def cargar_maestro_municipios():
             
         return df
     except Exception as e:
-        st.error(f"Error cargando maestro de municipios: {e}")
+        st.error(f"Error conectando a BD de municipios: {e}")
         return None
 
 # ====================================================================
