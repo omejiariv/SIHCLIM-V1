@@ -22,34 +22,27 @@ def create_sidebar(gdf_stations, df_long):
         # --- 1. FILTROS DE PROCESAMIENTO ---
         with st.expander("🛠️ Procesamiento y Calidad", expanded=False):
             run_complete_series = st.checkbox(
-                "Interpolación (Rellenar huecos)", 
-                value=st.session_state.get('mem_interp', False),
-                key='mem_interp'
+                "Interpolación (Rellenar huecos)", value=False
             )
-            exclude_nulls = st.checkbox(
-                "Excluir datos nulos (NaN)", 
-                value=st.session_state.get('mem_nulls', False),
-                key='mem_nulls'
-            )
-            exclude_zeros = st.checkbox(
-                "Excluir valores cero (0)", 
-                value=st.session_state.get('mem_zeros', False),
-                key='mem_zeros'
-            )
+            exclude_nulls = st.checkbox("Excluir datos nulos (NaN)", value=False)
+            exclude_zeros = st.checkbox("Excluir valores cero (0)", value=False)
 
             st.markdown("---")
 
             min_pct = st.slider(
                 "Mínimo % de Datos Disponibles:",
-                0, 100, 
-                st.session_state.get('mem_min_pct', 0),
-                key='mem_min_pct',
+                0,
+                100,
+                0,
                 help="Filtra estaciones que tengan al menos este porcentaje de datos en el histórico.",
             )
 
-            # Manejo de estado forzado para interpolación (si aplica)
-            if run_complete_series != st.session_state.get("force_interpolate", False):
-                st.session_state["force_interpolate"] = run_complete_series
+            # Manejo de estado para interpolación
+            if run_complete_series != st.session_state.get("apply_interpolation"):
+                st.session_state["apply_interpolation"] = run_complete_series
+                st.rerun()
+
+        st.divider()
 
         # --- 2. FILTROS DE UBICACIÓN ---
         st.markdown("### 📍 Filtros de Ubicación")
