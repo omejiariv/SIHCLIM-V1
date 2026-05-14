@@ -69,7 +69,7 @@ def muro_de_acceso_beta():
             clave_beta = st.text_input("Credencial de Acceso:", type="password")
             if st.button("Ingresar al Gemelo Digital", type="primary", use_container_width=True):
                 # 💡 La contraseña por defecto es "Agua2026"
-                if clave_beta == st.secrets.get("CLAVE_BETA", "Agua2026"):
+                if clave_beta == st.secrets.get("CLAVE_BETA", "AdminPoter"):
                     st.session_state["beta_unlocked"] = True
                     st.rerun() # Recarga la página y muestra todo el contenido
                 else:
