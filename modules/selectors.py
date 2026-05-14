@@ -244,13 +244,14 @@ def renderizar_gestor_escenarios(nombre_zona_actual):
                 st.error(f"Error consultando base: {e}")
 
 # ====================================================================
-# --- 6. MOTORES DE CARGA ESPACIAL (EL MOTOR 4x4) ---
+# --- 6. MOTORES DE CARGA ESPACIAL (EL MOTOR 4x4 CORREGIDO) ---
 # ====================================================================
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestro_cuencas():
     try:
         engine = db_manager.get_engine()
-        return gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
+        # 🛠️ CORRECCIÓN: Folium exige EPSG:4326 (Latitud/Longitud) para dibujar
+        return gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:4326")
     except Exception as e:
         st.error(f"Error cargando cuencas: {e}")
         return None
@@ -259,7 +260,8 @@ def cargar_maestro_cuencas():
 def cargar_maestro_municipios():
     try:
         engine = db_manager.get_engine()
-        gdf = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
+        # 🛠️ CORRECCIÓN: Devolvemos EPSG:4326 para que el Gemelo Digital no se rompa
+        gdf = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:4326")
         col_map = {}
         for col in gdf.columns:
             if col.lower() in ['mpio_cnmbr', 'municipio']: col_map[col] = 'MPIO_CNMBR'
@@ -274,15 +276,22 @@ def cargar_estaciones_geometria():
     try:
         engine = db_manager.get_engine()
         q = text("SELECT id_estacion, altitud, ST_SetSRID(ST_MakePoint(CAST(longitud AS FLOAT), CAST(latitud AS FLOAT)), 4326) as geometry FROM estaciones WHERE latitud IS NOT NULL")
-        return gpd.read_postgis(q, engine, geom_col="geometry").to_crs("EPSG:3116")
+        # 🛠️ CORRECCIÓN: Mantenemos EPSG:4326
+        return gpd.read_postgis(q, engine, geom_col="geometry").to_crs("EPSG:4326")
     except: return None
 
 def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
     gdf_est = cargar_estaciones_geometria()
     if gdf_zona is None or gdf_zona.empty or gdf_est is None or gdf_est.empty:
         return [], 1500
-    area_busqueda = gdf_zona.geometry.unary_union.buffer(buffer_km * 1000)
-    est_finales = gdf_est[gdf_est.geometry.within(area_busqueda)]
+    
+    # 🛠️ MAGIA ESPACIAL: Convertimos a Metros (3116) SOLO para calcular el círculo exacto
+    zona_metros = gdf_zona.to_crs("EPSG:3116")
+    est_metros = gdf_est.to_crs("EPSG:3116")
+    
+    area_busqueda = zona_metros.geometry.unary_union.buffer(buffer_km * 1000)
+    est_finales = est_metros[est_metros.geometry.within(area_busqueda)]
+    
     ids = est_finales['id_estacion'].astype(str).tolist()
     alt = est_finales['altitud'].mean() if not est_finales.empty else 1500
     return ids, alt
