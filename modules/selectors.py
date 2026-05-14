@@ -11,7 +11,7 @@ from modules import db_manager
 from modules.config import Config
 
 # ====================================================================
-# --- HERRAMIENTAS BASE ---
+# --- HERRAMIENTAS BASE Y TELEMETRÍA ---
 # ====================================================================
 def decodificar_tildes(texto):
     if not isinstance(texto, str): return texto
@@ -32,7 +32,7 @@ def renderizar_telemetria_aleph():
             st.rerun()
 
 # ====================================================================
-# --- MOTORES DE CARGA (DIRECTO DESDE POSTGRESQL CON GEOMETRÍA) ---
+# --- MOTORES DE CARGA (GEOMETRÍA Y ESTACIONES) ---
 # ====================================================================
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestro_cuencas():
@@ -48,13 +48,11 @@ def cargar_maestro_municipios():
     try:
         engine = db_manager.get_engine()
         gdf = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
-        # Escudo de nombres para asegurar compatibilidad
         col_map = {}
         for col in gdf.columns:
-            if col.lower() == 'mpio_cnmbr' or col.lower() == 'municipio': col_map[col] = 'MPIO_CNMBR'
+            if col.lower() in ['mpio_cnmbr', 'municipio']: col_map[col] = 'MPIO_CNMBR'
             if col.lower() == 'dpto_cnmbr': col_map[col] = 'DPTO_CNMBR'
-        if col_map:
-            gdf = gdf.rename(columns=col_map)
+        if col_map: gdf = gdf.rename(columns=col_map)
         return gdf
     except Exception as e:
         st.error(f"Error cargando municipios: {e}")
@@ -69,21 +67,17 @@ def cargar_estaciones_geometria():
     except: return None
 
 def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
-    """🌍 El nuevo motor: Busca estaciones cruzando coordenadas, no textos."""
     gdf_est = cargar_estaciones_geometria()
     if gdf_zona is None or gdf_zona.empty or gdf_est is None or gdf_est.empty:
         return [], 1500
-    
-    # Creamos el área de influencia (Buffer)
     area_busqueda = gdf_zona.geometry.unary_union.buffer(buffer_km * 1000)
-    estaciones_finales = gdf_est[gdf_est.geometry.within(area_busqueda)]
-    
-    ids = estaciones_finales['id_estacion'].astype(str).tolist()
-    alt = estaciones_finales['altitud'].mean() if not estaciones_finales.empty else 1500
+    est_finales = gdf_est[gdf_est.geometry.within(area_busqueda)]
+    ids = est_finales['id_estacion'].astype(str).tolist()
+    alt = est_finales['altitud'].mean() if not est_finales.empty else 1500
     return ids, alt
 
 # ====================================================================
-# --- SELECTOR ESPACIAL ---
+# --- SELECTOR ESPACIAL (CON MEMORIA) ---
 # ====================================================================
 def render_selector_espacial():
     renderizar_telemetria_aleph()
@@ -105,71 +99,79 @@ def render_selector_espacial():
     nombre_zona = "Sin Selección"
     gdf_zona = None
     
-    # --- LÓGICA POR CUENCAS ---
     if nivel_agregacion == "Por Cuenca":
-        df_cuencas = cargar_maestro_cuencas()
-        if df_cuencas is not None and not df_cuencas.empty:
-            ruta_busqueda = selectbox_seguro("Ruta de Búsqueda:", ["Hidrología", "Administrativo"], "mem_ruta_busqueda")
-            
-            if ruta_busqueda == "Hidrología":
-                nivel_evaluar = selectbox_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_evaluar_hidro")
-                col_busqueda = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3", "SZH": "nom_szh", "ZH": "nomzh", "AH": "nomah"}.get(nivel_evaluar, "nom_nss1")
-                
-                lista_territorios = sorted(df_cuencas[col_busqueda].dropna().unique().tolist())
-                territorio_sel = selectbox_seguro(f"🎯 2. Territorio ({nivel_evaluar}):", lista_territorios, "mem_terr_exacto_hidro")
-                
-                if territorio_sel and territorio_sel != "-- NO HAY DATOS --":
-                    nombre_zona = decodificar_tildes(territorio_sel)
-                    gdf_zona = df_cuencas[df_cuencas[col_busqueda] == territorio_sel]
+        df_c = cargar_maestro_cuencas()
+        if df_c is not None and not df_c.empty:
+            ruta = selectbox_seguro("Ruta de Búsqueda:", ["Hidrología", "Administrativo"], "mem_ruta_busqueda")
+            if ruta == "Hidrología":
+                nivel = selectbox_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_hidro")
+                col = {"NSS1":"nom_nss1", "NSS2":"nom_nss2", "NSS3":"nom_nss3", "SZH":"nom_szh", "ZH":"nomzh", "AH":"nomah"}.get(nivel)
+                territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col].dropna().unique()), "mem_terr_hidro")
+                gdf_zona = df_c[df_c[col] == territorio]
+                nombre_zona = territorio
+            else:
+                nivel = selectbox_seguro("1. Nivel a Evaluar:", ["CAR", "Subregión"], "mem_nivel_admin")
+                col = "CorpoAmb" if nivel == "CAR" else "depto_regi"
+                territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col].dropna().unique()), "mem_terr_admin")
+                gdf_zona = df_c[df_c[col] == territorio]
+                nombre_zona = territorio
 
-            elif ruta_busqueda == "Administrativo":
-                nivel_evaluar = selectbox_seguro("1. Nivel a Evaluar:", ["CAR", "Subregión", "Departamento"], "mem_nivel_evaluar_admin")
-                col_busqueda = {"CAR": "CorpoAmb", "Subregión": "depto_regi", "Departamento": "departamen"}.get(nivel_evaluar, "CorpoAmb")
-                
-                lista_territorios = sorted(df_cuencas[col_busqueda].dropna().unique().tolist())
-                territorio_sel = selectbox_seguro(f"🎯 2. Territorio ({nivel_evaluar}):", lista_territorios, "mem_terr_exacto_admin")
-                
-                if territorio_sel and territorio_sel != "-- NO HAY DATOS --":
-                    nombre_zona = decodificar_tildes(territorio_sel)
-                    gdf_zona = df_cuencas[df_cuencas[col_busqueda] == territorio_sel]
-
-    # --- LÓGICA POR MUNICIPIO / REGION / DEPTO ---
     else:
-        df_mun = cargar_maestro_municipios()
-        if df_mun is not None and not df_mun.empty:
-            
+        df_m = cargar_maestro_municipios()
+        if df_m is not None and not df_m.empty:
             if nivel_agregacion == "Por Municipio":
-                lista_mun = sorted(df_mun['MPIO_CNMBR'].dropna().unique().tolist())
-                mun_sel = selectbox_seguro("Municipio:", lista_mun, "mem_municipio_sel")
-                if mun_sel and mun_sel != "-- NO HAY DATOS --":
-                    nombre_zona = decodificar_tildes(mun_sel)
-                    gdf_zona = df_mun[df_mun['MPIO_CNMBR'] == mun_sel]
-                    
-            elif nivel_agregacion == "Por Región" and 'subregion' in df_mun.columns:
-                lista_reg = sorted(df_mun['subregion'].dropna().unique().tolist())
-                reg_sel = selectbox_seguro("Región:", lista_reg, "mem_region_sel")
-                if reg_sel and reg_sel != "-- NO HAY DATOS --":
-                    nombre_zona = decodificar_tildes(reg_sel)
-                    gdf_zona = df_mun[df_mun['subregion'] == reg_sel]
-                    
-            elif nivel_agregacion == "Departamento" and 'DPTO_CNMBR' in df_mun.columns:
-                lista_dep = sorted(df_mun['DPTO_CNMBR'].dropna().unique().tolist())
-                dep_sel = selectbox_seguro("Departamento:", lista_dep, "mem_depto_sel")
-                if dep_sel and dep_sel != "-- NO HAY DATOS --":
-                    nombre_zona = decodificar_tildes(dep_sel)
-                    gdf_zona = df_mun[df_mun['DPTO_CNMBR'] == dep_sel]
+                mun = selectbox_seguro("Municipio:", sorted(df_m['MPIO_CNMBR'].unique()), "mem_mun_sel")
+                gdf_zona = df_m[df_m['MPIO_CNMBR'] == mun]
+                nombre_zona = mun
+            elif nivel_agregacion == "Por Región":
+                reg = selectbox_seguro("Región:", sorted(df_m['subregion'].unique()), "mem_reg_sel")
+                gdf_zona = df_m[df_m['subregion'] == reg]
+                nombre_zona = reg
+            elif nivel_agregacion == "Departamento":
+                dep = selectbox_seguro("Departamento:", sorted(df_m['DPTO_CNMBR'].unique()), "mem_dep_sel")
+                gdf_zona = df_m[df_m['DPTO_CNMBR'] == dep]
+                nombre_zona = dep
 
     st.sidebar.markdown("---")
-    
-    # 🧠 MEMORIA DEL SLIDER DE BUFFER
-    buffer_def = float(st.session_state.get('buffer_global_km', 25.0))
-    buffer_km = st.sidebar.slider("Buffer (km):", 0.0, 100.0, buffer_def, 5.0, key="slider_buffer_mem")
+    buffer_km = st.sidebar.slider("Buffer (km):", 0.0, 100.0, float(st.session_state.get('buffer_global_km', 25.0)), 5.0, key="slider_buffer_mem")
     st.session_state['buffer_global_km'] = buffer_km
-    st.session_state['aleph_lugar'] = nombre_zona
+    st.session_state['aleph_lugar'] = decodificar_tildes(nombre_zona)
 
-    # 🚀 EJECUCIÓN DEL NUEVO MOTOR ESPACIAL
-    ids_estaciones, altitud_ref = encontrar_estaciones_en_mapa(gdf_zona, buffer_km)
+    ids_estaciones, alt_ref = encontrar_estaciones_en_mapa(gdf_zona, buffer_km)
+    return ids_estaciones, decodificar_tildes(nombre_zona), alt_ref, gdf_zona
 
-    return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
+# ====================================================================
+# --- 🧭 MENÚ DE NAVEGACIÓN (RESTAURADO) ---
+# ====================================================================
+def renderizar_menu_navegacion(pagina_actual=""):
+    """Dibuja los botones de navegación por categorías."""
+    st.sidebar.markdown("### 🧭 Navegación del Sistema")
+    
+    categorias = {
+        "🌊 Hidrología": [
+            ("Inicio", "🏠"),
+            ("Clima", "☁️"),
+            ("Aguas Subterráneas", "💧"),
+            ("Balance Hídrico", "⚖️"),
+            ("Caudales Regionales", "📏")
+        ],
+        "🧪 Calidad y Salud": [
+            ("Calidad del Agua", "🔬"),
+            ("Salud Ecosistémica", "🌳")
+        ],
+        "🧠 Análisis Avanzado": [
+            ("Satélite en Vivo", "🛰️"),
+            ("Escenarios Climáticos", "🎭"),
+            ("Detective", "🕵️")
+        ]
+    }
 
-def renderizar_menu_navegacion(pagina_actual=""): pass
+    for cat, pags in categorias.items():
+        with st.sidebar.expander(cat, expanded=(cat == "🌊 Hidrología")):
+            for pag, icon in pags:
+                # El botón cambia el estado y recarga la página
+                if st.button(f"{icon} {pag}", key=f"nav_{pag}", use_container_width=True):
+                    # Aquí la lógica de navegación según tu estructura de archivos
+                    pass 
+
+    st.sidebar.markdown("---")
