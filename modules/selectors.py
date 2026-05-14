@@ -271,6 +271,46 @@ def cargar_mapa_municipios():
     engine = db_manager.get_engine()
     return gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
 
+# ====================================================================
+# --- MOTORES DE CARGA DE METADATOS (MAESTROS DESDE BD) ---
+# ====================================================================
+@st.cache_data(show_spinner=False, ttl=3600)
+def cargar_maestro_cuencas():
+    """Carga el inventario de subcuencas directamente desde PostgreSQL."""
+    try:
+        from modules.db_manager import get_engine
+        import pandas as pd
+        engine = get_engine()
+        return pd.read_sql("SELECT * FROM cuencas", engine)
+    except Exception as e:
+        st.error(f"Error conectando a BD de cuencas: {e}")
+        return None
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def cargar_maestro_municipios():
+    """Carga el inventario de municipios directamente desde PostgreSQL."""
+    try:
+        from modules.db_manager import get_engine
+        import pandas as pd
+        engine = get_engine()
+        df = pd.read_sql("SELECT * FROM municipios", engine)
+        
+        # 🛡️ Escudo Anti-Minúsculas
+        col_map = {}
+        for col in df.columns:
+            if col.lower() == 'mpio_cnmbr': col_map[col] = 'MPIO_CNMBR'
+            if col.lower() == 'dpto_cnmbr': col_map[col] = 'DPTO_CNMBR'
+        
+        if col_map:
+            df = df.rename(columns=col_map)
+            
+        return df
+    except Exception as e:
+        st.error(f"Error conectando a BD de municipios: {e}")
+        return None
+
+# ====================================================================
+
 def render_selector_espacial():
     """
     Renderiza el panel lateral para filtrar estaciones base por Cuencas o Administrativo.
