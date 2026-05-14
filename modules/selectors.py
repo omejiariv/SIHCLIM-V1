@@ -13,6 +13,49 @@ from modules import db_manager
 from modules.config import Config
 
 # ====================================================================
+# --- MOTORES DE CARGA DE METADATOS (MAESTROS DESDE BD) ---
+# ====================================================================
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def cargar_maestro_cuencas():
+    """Carga el inventario de subcuencas directamente desde PostgreSQL."""
+    try:
+        from modules.db_manager import get_engine
+        import pandas as pd
+        engine = get_engine()
+        # Leemos la tabla directamente de la base de datos viva
+        df = pd.read_sql("SELECT * FROM cuencas", engine)
+        return df
+    except Exception as e:
+        st.error(f"Error conectando a BD de cuencas: {e}")
+        return None
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def cargar_maestro_municipios():
+    """Carga el inventario de municipios directamente desde PostgreSQL."""
+    try:
+        from modules.db_manager import get_engine
+        import pandas as pd
+        engine = get_engine()
+        # Leemos la tabla directamente de la base de datos viva
+        df = pd.read_sql("SELECT * FROM municipios", engine)
+        
+        # 🛡️ Escudo de Columnas: Garantizamos que las columnas clave estén en mayúsculas
+        # (PostgreSQL a veces fuerza los títulos a minúsculas)
+        col_map = {}
+        for col in df.columns:
+            if col.lower() == 'mpio_cnmbr': col_map[col] = 'MPIO_CNMBR'
+            if col.lower() == 'dpto_cnmbr': col_map[col] = 'DPTO_CNMBR'
+        
+        if col_map:
+            df = df.rename(columns=col_map)
+            
+        return df
+    except Exception as e:
+        st.error(f"Error conectando a BD de municipios: {e}")
+        return None
+
+# ====================================================================
 # --- REPARADOR DE TILDES (MOJIBAKE) ---
 # ====================================================================
 def decodificar_tildes(texto):
@@ -259,88 +302,53 @@ def renderizar_gestor_escenarios(nombre_zona_actual):
                 st.error(f"Error consultando base: {e}")
 
 # ====================================================================
-# 🌍 SELECTOR ESPACIAL MAESTRO (SQL ESTRICTO - GEOMETRÍAS)
+# 🌍 SELECTOR ESPACIAL MAESTRO (SQL ESTRICTO - SIN FANTASMAS)
 # ====================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_mapa_cuencas():
-    from modules.db_manager import get_engine
-    import geopandas as gpd
-    engine = get_engine()
+    engine = db_manager.get_engine()
     return gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry")
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_mapa_municipios():
-    from modules.db_manager import get_engine
-    import geopandas as gpd
-    engine = get_engine()
+    engine = db_manager.get_engine()
     return gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
-
-# ====================================================================
-# --- MOTORES DE CARGA DE METADATOS (PUNTO CERO - SQL DIRECTO) ---
-# ====================================================================
-@st.cache_data(show_spinner=False, ttl=3600)
-def cargar_maestro_cuencas():
-    """Carga el inventario de subcuencas directamente desde PostgreSQL."""
-    try:
-        from modules.db_manager import get_engine
-        import pandas as pd
-        engine = get_engine()
-        return pd.read_sql("SELECT * FROM cuencas", engine)
-    except Exception as e:
-        st.error(f"Error conectando a BD de cuencas: {e}")
-        return None
-
-@st.cache_data(show_spinner=False, ttl=3600)
-def cargar_maestro_municipios():
-    """Carga el inventario de municipios directamente desde PostgreSQL."""
-    try:
-        from modules.db_manager import get_engine
-        import pandas as pd
-        engine = get_engine()
-        df = pd.read_sql("SELECT * FROM municipios", engine)
-        
-        # 🛡️ Escudo de Compatibilidad para el Punto Cero
-        col_map = {}
-        for col in df.columns:
-            if col.lower() == 'mpio_cnmbr': col_map[col] = 'MPIO_CNMBR'
-            if col.lower() == 'dpto_cnmbr': col_map[col] = 'DPTO_CNMBR'
-        
-        if col_map:
-            df = df.rename(columns=col_map)
-            
-        return df
-    except Exception as e:
-        st.error(f"Error conectando a BD de municipios: {e}")
-        return None
-
-# ====================================================================
 
 def render_selector_espacial():
     """
     Renderiza el panel lateral para filtrar estaciones base por Cuencas o Administrativo.
-    🔥 MICROCIRUGÍA APLICADA: Mantiene toda la lógica original, pero añade memoria.
+    🔥 INCLUYE EFECTO MEMORIA: Guarda el estado al cambiar de página.
     """
-    # renderizar_telemetria_aleph()  # Comentado si ya se llama en la navegación para evitar error de duplicados
+    
     st.sidebar.markdown("### 📍 Filtros Geográficos Principales")
 
     # =========================================================
-    # 🧠 ESCUDO DE MEMORIA INTELIGENTE (No rompe listas vacías)
+    # 🧠 ESCUDO DE MEMORIA INTELIGENTE (Corregido con Keys únicas)
     # =========================================================
-    def selectbox_seguro(label, opciones, clave):
-        lista = list(opciones)
-        if not lista: lista = ["-- NO HAY DATOS --"]
-        idx = 0
-        if clave in st.session_state and st.session_state[clave] in lista:
-            idx = lista.index(st.session_state[clave])
-        return st.sidebar.selectbox(label, lista, index=idx, key=clave)
+    def selector_seguro(label, opciones, clave_memoria):
+        opciones_lista = list(opciones)
+        if not opciones_lista: opciones_lista = ["-- NO HAY DATOS --"]
+            
+        idx_defecto = 0
+        if clave_memoria in st.session_state:
+            valor_guardado = st.session_state[clave_memoria]
+            if valor_guardado in opciones_lista:
+                idx_defecto = opciones_lista.index(valor_guardado)
+                
+        # 🛡️ FIX: Pasamos la 'key' directamente al widget para evitar colapsos de ID
+        seleccion = st.sidebar.selectbox(label, opciones_lista, index=idx_defecto, key=clave_memoria)
+        return seleccion
 
-    # 1. Nivel de Agregación
-    opciones_agr = ["Por Cuenca", "Por Municipio", "Por Región", "Departamento"]
+    # ---------------------------------------------------------
+    # 1. Filtro Principal: Nivel de Agregación
+    # ---------------------------------------------------------
+    opciones_agregacion = ["Por Cuenca", "Por Municipio", "Por Región", "Departamento"]
     idx_agr = 0
-    if 'mem_nivel_agregacion' in st.session_state and st.session_state['mem_nivel_agregacion'] in opciones_agr:
-        idx_agr = opciones_agr.index(st.session_state['mem_nivel_agregacion'])
-    
-    nivel_agregacion = st.sidebar.radio("Nivel de Agregación:", opciones_agr, index=idx_agr, key="radio_agregacion_mem")
+    if 'mem_nivel_agregacion' in st.session_state and st.session_state['mem_nivel_agregacion'] in opciones_agregacion:
+        idx_agr = opciones_agregacion.index(st.session_state['mem_nivel_agregacion'])
+        
+    # 🛡️ FIX: Añadimos un key único al radio button
+    nivel_agregacion = st.sidebar.radio("Nivel de Agregación:", opciones_agregacion, index=idx_agr, key="radio_nivel_agregacion")
     st.session_state['mem_nivel_agregacion'] = nivel_agregacion
 
     ids_estaciones = []
@@ -353,24 +361,24 @@ def render_selector_espacial():
         df_cuencas = cargar_maestro_cuencas()
         if df_cuencas is not None and not df_cuencas.empty:
             
-            ruta_busqueda = selectbox_seguro("Ruta de Búsqueda:", ["Hidrología", "Administrativo"], "mem_ruta_busqueda")
+            ruta_busqueda = selector_seguro("Ruta de Búsqueda:", ["Hidrología", "Administrativo"], "mem_ruta_busqueda")
             
             if ruta_busqueda == "Hidrología":
-                nivel_evaluar = selectbox_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_evaluar_hidro")
+                nivel_evaluar = selector_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_evaluar")
 
                 with st.sidebar.expander("Filtros Opcionales de Búsqueda:", expanded=False):
                     lista_ah = ["-- TODAS --"] + sorted(df_cuencas['nomah'].dropna().unique().tolist())
-                    filtro_ah = selectbox_seguro("Filtro AH:", lista_ah, "mem_filtro_ah")
+                    filtro_ah = selector_seguro("Filtro AH:", lista_ah, "mem_filtro_ah")
                     
                     df_opciones = df_cuencas if filtro_ah == "-- TODAS --" else df_cuencas[df_cuencas['nomah'] == filtro_ah]
                     
                     lista_zh = ["-- TODAS --"] + sorted(df_opciones['nomzh'].dropna().unique().tolist())
-                    filtro_zh = selectbox_seguro("Filtro ZH:", lista_zh, "mem_filtro_zh")
+                    filtro_zh = selector_seguro("Filtro ZH:", lista_zh, "mem_filtro_zh")
                     
                     if filtro_zh != "-- TODAS --": df_opciones = df_opciones[df_opciones['nomzh'] == filtro_zh]
                     
                     lista_szh = ["-- TODAS --"] + sorted(df_opciones['nom_szh'].dropna().unique().tolist())
-                    filtro_szh = selectbox_seguro("Filtro SZH:", lista_szh, "mem_filtro_szh")
+                    filtro_szh = selector_seguro("Filtro SZH:", lista_szh, "mem_filtro_szh")
                     
                     if filtro_szh != "-- TODAS --": df_opciones = df_opciones[df_opciones['nom_szh'] == filtro_szh]
 
@@ -382,7 +390,7 @@ def render_selector_espacial():
                 col_busqueda = columna_nombre.get(nivel_evaluar, "nom_nss1")
                 lista_territorios = sorted(df_opciones[col_busqueda].dropna().unique().tolist())
                 
-                territorio_sel = selectbox_seguro(f"🎯 2. Territorio Exacto ({nivel_evaluar}):", lista_territorios, "mem_terr_exacto_hidro")
+                territorio_sel = selector_seguro(f"🎯 2. Territorio Exacto ({nivel_evaluar}):", lista_territorios, "mem_territorio_sel")
                 
                 if territorio_sel and territorio_sel != "-- NO HAY DATOS --":
                     nombre_zona = decodificar_tildes(territorio_sel)
@@ -406,12 +414,12 @@ def render_selector_espacial():
                     except: pass
 
             elif ruta_busqueda == "Administrativo":
-                nivel_evaluar = selectbox_seguro("1. Nivel a Evaluar:", ["CAR", "Subregión", "Departamento"], "mem_nivel_evaluar_admin")
+                nivel_evaluar = selector_seguro("1. Nivel a Evaluar:", ["CAR", "Subregión", "Departamento"], "mem_nivel_evaluar_admin")
                 
                 col_busqueda = {"CAR": "CorpoAmb", "Subregión": "depto_regi", "Departamento": "departamen"}.get(nivel_evaluar, "CorpoAmb")
                 lista_territorios = sorted(df_cuencas[col_busqueda].dropna().unique().tolist())
                 
-                territorio_sel = selectbox_seguro(f"🎯 2. Territorio Exacto ({nivel_evaluar}):", lista_territorios, "mem_terr_exacto_admin")
+                territorio_sel = selector_seguro(f"🎯 2. Territorio Exacto ({nivel_evaluar}):", lista_territorios, "mem_territorio_admin")
                 
                 if territorio_sel and territorio_sel != "-- NO HAY DATOS --":
                     nombre_zona = decodificar_tildes(territorio_sel)
@@ -431,7 +439,7 @@ def render_selector_espacial():
         if df_mun is not None and not df_mun.empty:
             
             lista_municipios = sorted(df_mun['MPIO_CNMBR'].dropna().unique().tolist())
-            municipio_sel = selectbox_seguro("Municipio:", lista_municipios, "mem_municipio_sel")
+            municipio_sel = selector_seguro("Municipio:", lista_municipios, "mem_municipio_sel")
             
             if municipio_sel and municipio_sel != "-- NO HAY DATOS --":
                 nombre_zona = decodificar_tildes(municipio_sel)
@@ -459,7 +467,7 @@ def render_selector_espacial():
         if df_mun is not None and not df_mun.empty:
             
             lista_regiones = sorted(df_mun['subregion'].dropna().unique().tolist())
-            region_sel = selectbox_seguro("Región:", lista_regiones, "mem_region_sel")
+            region_sel = selector_seguro("Región:", lista_regiones, "mem_region_sel")
             
             if region_sel and region_sel != "-- NO HAY DATOS --":
                 nombre_zona = decodificar_tildes(region_sel)
@@ -479,7 +487,7 @@ def render_selector_espacial():
         if df_mun is not None and not df_mun.empty:
             
             lista_deptos = sorted(df_mun['DPTO_CNMBR'].dropna().unique().tolist())
-            depto_sel = selectbox_seguro("Departamento:", lista_deptos, "mem_depto_sel")
+            depto_sel = selector_seguro("Departamento:", lista_deptos, "mem_depto_sel")
             
             if depto_sel and depto_sel != "-- NO HAY DATOS --":
                 nombre_zona = decodificar_tildes(depto_sel)
@@ -497,10 +505,10 @@ def render_selector_espacial():
     
     # 🧠 MEMORIA DEL SLIDER DE BUFFER
     buffer_def = float(st.session_state.get('buffer_global_km', 25.0))
-    buffer_km = st.sidebar.slider("Buffer (km):", 0.0, 100.0, buffer_def, 5.0, key="slider_buffer_mem")
-    st.session_state['buffer_global_km'] = buffer_km
+    buffer_km = st.sidebar.slider("Buffer (km):", 0.0, 100.0, buffer_def, 5.0)
     
-    # Guardamos el nombre final
+    # Guardamos en sesión las variables clave para otros módulos
+    st.session_state['buffer_global_km'] = buffer_km
     st.session_state['aleph_lugar'] = nombre_zona
 
     return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
