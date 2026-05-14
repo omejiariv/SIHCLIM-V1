@@ -259,43 +259,49 @@ def renderizar_gestor_escenarios(nombre_zona_actual):
                 st.error(f"Error consultando base: {e}")
 
 # ====================================================================
-# 🌍 SELECTOR ESPACIAL MAESTRO (SQL ESTRICTO - SIN FANTASMAS)
+# 🌍 SELECTOR ESPACIAL MAESTRO (SQL ESTRICTO - GEOMETRÍAS)
 # ====================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_mapa_cuencas():
-    engine = db_manager.get_engine()
+    from modules.db_manager import get_engine
+    import geopandas as gpd
+    engine = get_engine()
     return gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry")
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_mapa_municipios():
-    engine = db_manager.get_engine()
+    from modules.db_manager import get_engine
+    import geopandas as gpd
+    engine = get_engine()
     return gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
 
 # ====================================================================
-# --- MOTORES DE CARGA DE METADATOS (MAESTROS DESDE BD) ---
+# --- MOTORES DE CARGA DE METADATOS (MAESTROS ORIGINALES DESDE EXCEL) ---
 # ====================================================================
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestro_cuencas():
-    """Carga el inventario de subcuencas directamente desde PostgreSQL."""
+    """Carga el inventario de subcuencas desde el Excel maestro en Supabase."""
     try:
-        from modules.db_manager import get_engine
+        import io, requests
         import pandas as pd
-        engine = get_engine()
-        return pd.read_sql("SELECT * FROM cuencas", engine)
+        url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/cuencas_maestro.xlsx"
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+        return pd.read_excel(io.BytesIO(response.content))
     except Exception as e:
-        st.error(f"Error conectando a BD de cuencas: {e}")
+        st.error(f"Error cargando maestro de cuencas: {e}")
         return None
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestro_municipios():
-    """Carga el inventario de municipios directamente desde PostgreSQL."""
+    """Carga el inventario de municipios desde el Excel maestro en Supabase."""
     try:
-        from modules.db_manager import get_engine
+        import io, requests
         import pandas as pd
-        engine = get_engine()
-        df = pd.read_sql("SELECT * FROM municipios", engine)
+        url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+        df = pd.read_excel(io.BytesIO(response.content))
         
-        # 🛡️ Escudo Anti-Minúsculas
+        # 🛡️ Escudo Anti-Minúsculas (Mantenemos la protección de compatibilidad)
         col_map = {}
         for col in df.columns:
             if col.lower() == 'mpio_cnmbr': col_map[col] = 'MPIO_CNMBR'
@@ -306,7 +312,7 @@ def cargar_maestro_municipios():
             
         return df
     except Exception as e:
-        st.error(f"Error conectando a BD de municipios: {e}")
+        st.error(f"Error cargando maestro de municipios: {e}")
         return None
 
 # ====================================================================
