@@ -75,7 +75,8 @@ engine = db_manager.get_engine()
 st.sidebar.divider()
 st.sidebar.header("🎛️ Parámetros del Modelo")
 
-RUTA_RASTER = "data/Cob25m_WGS84.tif"
+# URL de Supabase proporcionada
+URL_RASTER_SUPABASE = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob25m_WGS84.tif"
 
 modo_params = st.sidebar.radio(
     "Fuente de Coberturas:", 
@@ -83,31 +84,61 @@ modo_params = st.sidebar.radio(
     horizontal=True
 )
 
-# Valores por defecto
+# Valores por defecto (se actualizarán si el satélite responde)
 pct_bosque, pct_agricola, pct_pecuario, pct_agua, pct_urbano = 40.0, 20.0, 30.0, 5.0, 5.0
 
 # Lógica de Coberturas
 if modo_params == "Automático (Satélite)" and gdf_zona is not None and land_cover:
-    with st.sidebar.status("🛰️ Analizando territorio..."):
+    with st.sidebar.status("🛰️ Conectando con Supabase Raster...", expanded=False) as status:
         try:
-            stats_raw = land_cover.calcular_estadisticas_zona(gdf_zona, RUTA_RASTER)
-            p_bosque, p_agricola, p_pecuario, p_agua, p_urbano = land_cover.agrupar_coberturas_turc(stats_raw)
+            import requests
+            import tempfile
+            import os
+
+            # Definimos una ruta temporal segura en el servidor de Streamlit
+            ruta_temporal = os.path.join(tempfile.gettempdir(), "Cob25m_WGS84_cache.tif")
             
-            if stats_raw:
-                st.sidebar.success("✅ Datos extraídos del satélite")
-                pct_bosque, pct_agricola, pct_pecuario, pct_agua, pct_urbano = p_bosque, p_agricola, p_pecuario, p_agua, p_urbano
+            # Descarga inteligente: Solo si el archivo no existe en el contenedor temporal
+            if not os.path.exists(ruta_temporal):
+                status.update(label="Descargando mapa base desde Supabase...", state="running")
+                response = requests.get(URL_RASTER_SUPABASE, stream=True, verify=False)
+                if response.status_code == 200:
+                    with open(ruta_temporal, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                else:
+                    st.sidebar.error(f"Error de conexión: Status {response.status_code}")
+                    ruta_temporal = None
+
+            # Procesamiento Espacial
+            if ruta_temporal and os.path.exists(ruta_temporal):
+                status.update(label=f"Analizando coberturas en {nombre_zona}...", state="running")
                 
-                # Visualización rápida en sidebar
-                st.sidebar.progress(int(pct_bosque), text=f"Bosque: {pct_bosque:.0f}%")
-                st.sidebar.progress(int(pct_pecuario + pct_agricola), text=f"Agro: {(pct_pecuario+pct_agricola):.0f}%")
-            else:
-                st.sidebar.warning("⚠️ Sin datos raster en la zona. Usando valores manuales.")
+                # Usamos la ruta temporal para el cálculo
+                stats_raw = land_cover.calcular_estadisticas_zona(gdf_zona, ruta_temporal)
+                
+                if stats_raw:
+                    p_bosque, p_agricola, p_pecuario, p_agua, p_urbano = land_cover.agrupar_coberturas_turc(stats_raw)
+                    
+                    st.sidebar.success(f"✅ Datos extraídos para {nombre_zona}")
+                    pct_bosque, pct_agricola, pct_pecuario, pct_agua, pct_urbano = p_bosque, p_agricola, p_pecuario, p_agua, p_urbano
+                    
+                    # Visualización en sidebar
+                    st.sidebar.progress(min(100, int(pct_bosque)), text=f"Bosque: {pct_bosque:.1f}%")
+                    st.sidebar.progress(min(100, int(pct_pecuario + pct_agricola)), text=f"Agro: {(pct_pecuario+pct_agricola):.1f}%")
+                    status.update(label="Análisis completado", state="complete")
+                else:
+                    status.update(label="⚠️ Sin datos raster en la zona.", state="error")
+                    st.sidebar.warning("Usando valores manuales por defecto.")
+
         except Exception as e:
             st.sidebar.error(f"Error procesando raster: {e}")
+            status.update(label="Error en el motor espacial", state="error")
 else:
     if modo_params == "Automático (Satélite)" and not land_cover:
         st.sidebar.warning("Módulo land_cover no disponible.")
         
+    # Modo Manual o Fallback
     pct_bosque = st.sidebar.number_input("% Bosque", 0, 100, 40)
     pct_agricola = st.sidebar.number_input("% Agrícola", 0, 100, 20)
     pct_pecuario = st.sidebar.number_input("% Pecuario", 0, 100, 30)
@@ -122,7 +153,13 @@ tipo_suelo = st.sidebar.select_slider(
     options=["Arcilloso (Baja)", "Franco-Arcilloso", "Franco (Media)", "Franco-Arenoso", "Arenoso (Alta)"],
     value="Franco (Media)"
 )
-mapa_factores_suelo = {"Arcilloso (Baja)": 0.6, "Franco-Arcilloso": 0.8, "Franco (Media)": 1.0, "Franco-Arenoso": 1.2, "Arenoso (Alta)": 1.35}
+mapa_factores_suelo = {
+    "Arcilloso (Baja)": 0.6, 
+    "Franco-Arcilloso": 0.8, 
+    "Franco (Media)": 1.0, 
+    "Franco-Arenoso": 1.2, 
+    "Arenoso (Alta)": 1.35
+}
 factor_suelo = mapa_factores_suelo[tipo_suelo]
 
 st.sidebar.subheader("🪨 Geología (Recarga)")
