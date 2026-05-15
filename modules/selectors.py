@@ -457,8 +457,8 @@ def render_selector_espacial():
             ruta = selectbox_seguro("Ruta de Búsqueda:", ["Hidrología", "Administrativo"], "mem_ruta_busqueda")
             if ruta == "Hidrología":
                 nivel = selectbox_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_hidro")
-                col = {"NSS1":"nom_nss1", "NSS2":"nom_nss2", "NSS3":"nom_nss3", "SZH":"nom_szh", "ZH":"nomzh", "AH":"nomah"}._pob_u = pob_urbana if 'pob_urbana' in locals() else st.session_state.get('aleph_pob_urbana', 0)
-                col_real = get_col_case_insensitive(df_c, col.get(nivel)) if col.get(nivel) else None
+                col = {"NSS1":"nom_nss1", "NSS2":"nom_nss2", "NSS3":"nom_nss3", "SZH":"nom_szh", "ZH":"nomzh", "AH":"nomah"}.get(nivel)
+                col_real = get_col_case_insensitive(df_c, col) if col else None
                 if col_real:
                     territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col_real].dropna().unique()), "mem_terr_hidro")
                     if territorio != "-- NO HAY DATOS --":
