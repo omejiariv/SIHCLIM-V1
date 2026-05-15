@@ -300,11 +300,10 @@ def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
 # 🧠 MOTORES DE DESCARGA MAESTRA (DESDE SUPABASE STORAGE)
 # ====================================================================
 def normalizar_para_cruce(texto):
-    """Elimina tildes y pasa a mayúsculas, PERO CONSERVA TUS CLAVES COMBINADAS (guiones, NSS, etc.)"""
+    """Elimina tildes y pasa a mayúsculas, PERO CONSERVA INTEGRALMENTE TUS CLAVES COMBINADAS."""
     import unicodedata
     if not isinstance(texto, str): return ""
     texto = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('utf-8')
-    # Ya NO borramos '- NSS' ni nada. Respetamos tu arquitectura de llaves únicas.
     return texto.strip().upper()
 
 @st.cache_data(show_spinner=False, ttl=86400)
@@ -313,15 +312,52 @@ def obtener_matriz_maestra_csv(url):
     try:
         df = pd.read_csv(url)
         df.columns = df.columns.str.strip().str.upper()
-        # Normalizamos todo el texto del DataFrame de una vez para un cruce a la velocidad de la luz
-        for col in df.select_dtypes(include=['object']).columns:
-            df[col] = df[col].apply(normalizar_para_cruce)
         return df
     except Exception as e:
         return pd.DataFrame()
 
 # ====================================================================
-# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN 6.0 - RESPETANDO CLAVES COMBINADAS)
+# 🔮 MOTOR DE CONCILIACIÓN INTELIGENTE (RESPETA CLAVES COMPUESTAS)
+# ====================================================================
+def buscar_fila_inteligente(df, zona_nombre):
+    """
+    Busca una zona dentro del DataFrame usando coincidencia exacta, 
+    contención o la lógica de claves combinadas multi-campo original del proyecto.
+    """
+    import pandas as pd
+    term = normalizar_para_cruce(zona_nombre)
+    if term == "" or "SIN SELECCION" in term:
+        return pd.DataFrame()
+        
+    # 1. Intento por coincidencia exacta directa en cualquier columna
+    for col in df.columns:
+        mask = df[col].astype(str).str.strip().str.upper() == term
+        if mask.any(): return df[mask]
+            
+    # 2. Intento por contención de texto (substring) en cualquier columna
+    for col in df.columns:
+        mask = df[col].astype(str).str.strip().str.upper().str.contains(term, regex=False)
+        if mask.any(): return df[mask]
+            
+    # 3. LÓGICA DE CLAVE COMBINADA (Conciliación multi-campo original)
+    # Extrae las palabras clave principales de la llave compuesta (ej: ['ALTO', 'NECHI', 'NSS'])
+    palabras = [p for p in term.split() if len(p) > 2]
+    if palabras:
+        # Fusiona todas las celdas de cada fila en una sola cadena de texto en mayúsculas
+        texto_filas = df.astype(str).apply(lambda row: ' '.join(row).upper(), axis=1)
+        # Filtra las filas que contienen simultáneamente todos los componentes de la clave
+        mask_combinada = texto_filas.apply(lambda text: all(p in text for p in palabras))
+        if mask_combinada.any(): return df[mask_combinada]
+            
+    # 4. Fallback de mitigación por si la clave compuesta se corta en el origen
+    if " - " in zona_nombre:
+        parte_principal = zona_nombre.split(" - ")[0]
+        return buscar_fila_inteligente(df, parte_principal)
+        
+    return pd.DataFrame()
+
+# ====================================================================
+# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN OMNISCIENTE CONECTADA A STORAGE)
 # ====================================================================
 def auto_cargar_matrices_al_aleph(nombre_zona):
     import streamlit as st
@@ -329,17 +365,21 @@ def auto_cargar_matrices_al_aleph(nombre_zona):
     url_demo = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Demografica.csv"
     url_pecu = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Pecuaria.csv"
     
-    # La llave exacta que configuraste en tu selector, ej: "ALTO NECHI - NSS"
-    zona_norm = normalizar_para_cruce(nombre_zona)
+    # Reinicio preventivo estructural de la memoria global (Aleph)
+    st.session_state['aleph_pob_total'] = 0
+    st.session_state['aleph_pob_urbana'] = 0
+    st.session_state['aleph_pob_rural'] = 0
+    st.session_state['ica_bovinos_calc_met'] = 0
+    st.session_state['ica_porcinos_calc_met'] = 0
+    st.session_state['ica_aves_calc_met'] = 0
+
+    if not nombre_zona or nombre_zona == "Sin Selección":
+        return
 
     # --- 1. CARGA DEMOGRÁFICA ---
     df_demo = obtener_matriz_maestra_csv(url_demo)
-    st.session_state['aleph_pob_total'], st.session_state['aleph_pob_urbana'], st.session_state['aleph_pob_rural'] = 0, 0, 0
-    
-    if not df_demo.empty and zona_norm != "" and "SIN SELECCION" not in zona_norm:
-        # MAGIA: Busca tu llave exacta combinada en CUALQUIER columna del CSV
-        filtro_demo = df_demo[(df_demo.astype(str) == zona_norm).any(axis=1)]
-        
+    if not df_demo.empty:
+        filtro_demo = buscar_fila_inteligente(df_demo, nombre_zona)
         if not filtro_demo.empty:
             fila = filtro_demo.iloc[0]
             st.session_state['aleph_pob_total'] = int(fila.get('POB_TOTAL', fila.get('POBLACION', 0)))
@@ -348,18 +388,12 @@ def auto_cargar_matrices_al_aleph(nombre_zona):
 
     # --- 2. CARGA PECUARIA ---
     df_pecu = obtener_matriz_maestra_csv(url_pecu)
-    st.session_state['ica_bovinos_calc_met'] = 0
-    st.session_state['ica_porcinos_calc_met'] = 0
-    st.session_state['ica_aves_calc_met'] = 0
-    
-    if not df_pecu.empty and zona_norm != "" and "SIN SELECCION" not in zona_norm:
-        # Busca tu llave exacta combinada
-        filtro_pecu = df_pecu[(df_pecu.astype(str) == zona_norm).any(axis=1)]
-        
+    if not df_pecu.empty:
+        filtro_pecu = buscar_fila_inteligente(df_pecu, nombre_zona)
         if not filtro_pecu.empty:
             if 'ESPECIE' in filtro_pecu.columns:
                 for _, row in filtro_pecu.iterrows():
-                    esp = str(row['ESPECIE'])
+                    esp = str(row['ESPECIE']).upper()
                     cabezas = int(row.get('CABEZAS_ACTUALES', row.get('CANTIDAD', row.get('TOTAL', 0))))
                     if 'BOVINO' in esp: st.session_state['ica_bovinos_calc_met'] = cabezas
                     elif 'PORCINO' in esp: st.session_state['ica_porcinos_calc_met'] = cabezas
@@ -371,10 +405,10 @@ def auto_cargar_matrices_al_aleph(nombre_zona):
                 st.session_state['ica_aves_calc_met'] = int(fila_pec.get('AVES', 0))
 
 # ====================================================================
-# 🟩 FUNCIÓN DE INTERFAZ: CAJA VERDE DE SÍNTESIS (BODY)
+# 🟩 FUNCIÓN DE INTERFAZ: CAJA VERDE DE SÍNTESIS (BODY PRINCIPAL)
 # ====================================================================
 def render_cabezote_sintesis_body(nombre_zona):
-    """Renderiza la síntesis activa en el centro de la página."""
+    """Dibuja la caja verde original de Síntesis Activa en el centro del body."""
     import streamlit as st
     pob = st.session_state.get('aleph_pob_total', 0)
     bov = st.session_state.get('ica_bovinos_calc_met', 0)
@@ -385,9 +419,9 @@ def render_cabezote_sintesis_body(nombre_zona):
         if pob > 0 or bov > 0 or por > 0 or ave > 0:
             st.success(f"📌 **SÍNTESIS ACTIVA** | 📍 Territorio: {nombre_zona} \n\n 👥 Humanos: {pob:,} | 🐄 Bov: {bov:,} | 🐖 Porc: {por:,} | 🐔 Aves: {ave:,}")
         else:
-            st.warning(f"⚠️ **SIN DATOS MAESTROS** para: {nombre_zona}. No se encontraron coincidencias en los archivos de Supabase Storage.")
+            st.warning(f"⚠️ **SIN DATOS MAESTROS** para: {nombre_zona}. No se encontraron registros coincidentes en Supabase Storage.")
     else:
-        st.info("👈 Por favor, utiliza el menú lateral para seleccionar una zona.")
+        st.info("👈 Por favor, utiliza el menú lateral para seleccionar una zona de trabajo.")
 
 # ====================================================================
 # --- 7. SELECTOR ESPACIAL PRINCIPAL ---
@@ -423,8 +457,8 @@ def render_selector_espacial():
             ruta = selectbox_seguro("Ruta de Búsqueda:", ["Hidrología", "Administrativo"], "mem_ruta_busqueda")
             if ruta == "Hidrología":
                 nivel = selectbox_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_hidro")
-                col = {"NSS1":"nom_nss1", "NSS2":"nom_nss2", "NSS3":"nom_nss3", "SZH":"nom_szh", "ZH":"nomzh", "AH":"nomah"}.get(nivel)
-                col_real = get_col_case_insensitive(df_c, col) if col else None
+                col = {"NSS1":"nom_nss1", "NSS2":"nom_nss2", "NSS3":"nom_nss3", "SZH":"nom_szh", "ZH":"nomzh", "AH":"nomah"}._pob_u = pob_urbana if 'pob_urbana' in locals() else st.session_state.get('aleph_pob_urbana', 0)
+                col_real = get_col_case_insensitive(df_c, col.get(nivel)) if col.get(nivel) else None
                 if col_real:
                     territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col_real].dropna().unique()), "mem_terr_hidro")
                     if territorio != "-- NO HAY DATOS --":
@@ -443,6 +477,7 @@ def render_selector_espacial():
     else:
         df_m = cargar_maestro_municipios()
         if df_m is not None and not df_m.empty:
+            # 🏙️ NIVEL MUNICIPIO
             if nivel_agregacion == "Por Municipio":
                 col_mun = get_col_case_insensitive(df_m, 'MPIO_CNMBR')
                 if col_mun:
@@ -450,15 +485,23 @@ def render_selector_espacial():
                     if mun != "-- NO HAY DATOS --":
                         gdf_zona = df_m[df_m[col_mun] == mun]
                         nombre_zona = mun
+            
+            # 🌿 NIVEL REGIÓN (Buscador elástico restaurado con fallback estricto original)
             elif nivel_agregacion == "Por Región":
-                col_reg = get_col_case_insensitive(df_m, 'subregion')
+                col_reg = next((c for c in df_m.columns if c.lower() in ['subregion', 'subregión', 'region', 'región']), None)
+                if not col_reg and 'subregion' in df_m.columns: col_reg = 'subregion'
+                
                 if col_reg:
                     reg = selectbox_seguro("Región:", sorted(df_m[col_reg].dropna().unique()), "mem_reg_sel")
                     if reg != "-- NO HAY DATOS --":
                         gdf_zona = df_m[df_m[col_reg] == reg]
                         nombre_zona = reg
+            
+            # 🏔️ NIVEL DEPARTAMENTO (Restaurado con fallback estricto original)
             elif nivel_agregacion == "Departamento":
-                col_dep = get_col_case_insensitive(df_m, 'DPTO_CNMBR')
+                col_dep = next((c for c in df_m.columns if c.lower() in ['dpto_cnmbr', 'dpto', 'departamento', 'depto']), None)
+                if not col_dep and 'DPTO_CNMBR' in df_m.columns: col_dep = 'DPTO_CNMBR'
+                
                 if col_dep:
                     dep = selectbox_seguro("Departamento:", sorted(df_m[col_dep].dropna().unique()), "mem_dep_sel")
                     if dep != "-- NO HAY DATOS --":
@@ -475,7 +518,7 @@ def render_selector_espacial():
     ids_estaciones, alt_ref = encontrar_estaciones_en_mapa(gdf_zona, buffer_km)
     
     if nombre_decodificado != "Sin Selección":
-        # 🚀 EJECUCIÓN CON LLAVE EXACTA (Respeta tu lógica de diseño)
+        # Ejecución del Auto-Cargador con tu clave compuesta intacta
         auto_cargar_matrices_al_aleph(nombre_decodificado)
         renderizar_gestor_escenarios(nombre_decodificado)
 
