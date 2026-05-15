@@ -413,6 +413,9 @@ def render_selector_espacial():
 
     ids_estaciones, alt_ref = encontrar_estaciones_en_mapa(gdf_zona, buffer_km)
     
+    # 🚀 EJECUCIÓN DEL AUTO-CARGADOR RESTAURADO
+    auto_cargar_matrices_al_aleph(decodificar_tildes(nombre_zona), nivel_agregacion)
+
     # Renderizamos el Gestor de Escenarios con el nombre de la zona actual
     renderizar_gestor_escenarios(decodificar_tildes(nombre_zona))
 
