@@ -300,11 +300,10 @@ def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
 # 🧠 MOTORES DE DESCARGA MAESTRA (DESDE SUPABASE STORAGE)
 # ====================================================================
 def normalizar_para_cruce(texto):
-    """Elimina tildes, espacios extra, sufijos técnicos y pasa a mayúsculas para un cruce perfecto."""
+    """Elimina tildes, espacios extra y pasa a mayúsculas para un cruce perfecto."""
     import unicodedata
     if not isinstance(texto, str): return ""
     texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
-    # Limpieza agresiva de sufijos comunes en el selector
     return texto.strip().upper().replace(' - NSS', '').replace('CAR: ', '')
 
 @st.cache_data(show_spinner=False, ttl=86400)
@@ -314,8 +313,22 @@ def obtener_matriz_maestra_csv(url):
     try:
         df = pd.read_csv(url)
         df.columns = df.columns.str.strip().str.upper()
-        if 'TERRITORIO' in df.columns:
-            df['TERRITORIO_NORM'] = df['TERRITORIO'].apply(normalizar_para_cruce)
+        
+        # 🛡️ BUSCADOR INTELIGENTE DE COLUMNAS (Para cruzar con Abejorral sin importar el nombre de la columna)
+        posibles_nombres = ['TERRITORIO', 'MUNICIPIO', 'NOM_NSS1', 'NOMBRE', 'ZONA', 'MPIO_CNMBR']
+        col_encontrada = None
+        
+        for col in posibles_nombres:
+            if col in df.columns:
+                col_encontrada = col
+                break
+                
+        if col_encontrada:
+            df['TERRITORIO_NORM'] = df[col_encontrada].astype(str).apply(normalizar_para_cruce)
+        else:
+            # Fallback de emergencia: usar la primera columna que tenga texto
+            df['TERRITORIO_NORM'] = df.iloc[:, 0].astype(str).apply(normalizar_para_cruce)
+            
         return df
     except Exception as e:
         return pd.DataFrame()
