@@ -300,25 +300,28 @@ def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
 # 🧠 MOTORES DE DESCARGA MAESTRA (DESDE SUPABASE STORAGE)
 # ====================================================================
 def normalizar_para_cruce(texto):
-    """Elimina tildes, espacios extra y limpia sufijos para el cruce."""
+    """Elimina tildes y pasa a mayúsculas, PERO CONSERVA TUS CLAVES COMBINADAS (guiones, NSS, etc.)"""
     import unicodedata
     if not isinstance(texto, str): return ""
-    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
-    return texto.strip().upper().replace(' - NSS', '').replace('CAR: ', '')
+    texto = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('utf-8')
+    # Ya NO borramos '- NSS' ni nada. Respetamos tu arquitectura de llaves únicas.
+    return texto.strip().upper()
 
 @st.cache_data(show_spinner=False, ttl=86400)
 def obtener_matriz_maestra_csv(url):
     import pandas as pd
     try:
         df = pd.read_csv(url)
-        # Estandarizamos todas las columnas a MAYÚSCULAS
         df.columns = df.columns.str.strip().str.upper()
+        # Normalizamos todo el texto del DataFrame de una vez para un cruce a la velocidad de la luz
+        for col in df.select_dtypes(include=['object']).columns:
+            df[col] = df[col].apply(normalizar_para_cruce)
         return df
     except Exception as e:
         return pd.DataFrame()
 
 # ====================================================================
-# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN OMNISCIENTE - BUSCA EN TODO EL CSV)
+# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN 6.0 - RESPETANDO CLAVES COMBINADAS)
 # ====================================================================
 def auto_cargar_matrices_al_aleph(nombre_zona):
     import streamlit as st
@@ -326,16 +329,16 @@ def auto_cargar_matrices_al_aleph(nombre_zona):
     url_demo = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Demografica.csv"
     url_pecu = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Pecuaria.csv"
     
+    # La llave exacta que configuraste en tu selector, ej: "ALTO NECHI - NSS"
     zona_norm = normalizar_para_cruce(nombre_zona)
 
     # --- 1. CARGA DEMOGRÁFICA ---
     df_demo = obtener_matriz_maestra_csv(url_demo)
     st.session_state['aleph_pob_total'], st.session_state['aleph_pob_urbana'], st.session_state['aleph_pob_rural'] = 0, 0, 0
     
-    if not df_demo.empty and zona_norm != "" and zona_norm != "SIN SELECCION":
-        # Magia: Busca la zona en TODAS las columnas del CSV al mismo tiempo
-        mask_demo = df_demo.astype(str).apply(lambda col: col.str.upper().str.replace(' - NSS', '').str.contains(zona_norm, regex=False)).any(axis=1)
-        filtro_demo = df_demo[mask_demo]
+    if not df_demo.empty and zona_norm != "" and "SIN SELECCION" not in zona_norm:
+        # MAGIA: Busca tu llave exacta combinada en CUALQUIER columna del CSV
+        filtro_demo = df_demo[(df_demo.astype(str) == zona_norm).any(axis=1)]
         
         if not filtro_demo.empty:
             fila = filtro_demo.iloc[0]
@@ -349,14 +352,14 @@ def auto_cargar_matrices_al_aleph(nombre_zona):
     st.session_state['ica_porcinos_calc_met'] = 0
     st.session_state['ica_aves_calc_met'] = 0
     
-    if not df_pecu.empty and zona_norm != "" and zona_norm != "SIN SELECCION":
-        mask_pecu = df_pecu.astype(str).apply(lambda col: col.str.upper().str.replace(' - NSS', '').str.contains(zona_norm, regex=False)).any(axis=1)
-        filtro_pecu = df_pecu[mask_pecu]
+    if not df_pecu.empty and zona_norm != "" and "SIN SELECCION" not in zona_norm:
+        # Busca tu llave exacta combinada
+        filtro_pecu = df_pecu[(df_pecu.astype(str) == zona_norm).any(axis=1)]
         
         if not filtro_pecu.empty:
             if 'ESPECIE' in filtro_pecu.columns:
                 for _, row in filtro_pecu.iterrows():
-                    esp = normalizar_para_cruce(str(row['ESPECIE']))
+                    esp = str(row['ESPECIE'])
                     cabezas = int(row.get('CABEZAS_ACTUALES', row.get('CANTIDAD', row.get('TOTAL', 0))))
                     if 'BOVINO' in esp: st.session_state['ica_bovinos_calc_met'] = cabezas
                     elif 'PORCINO' in esp: st.session_state['ica_porcinos_calc_met'] = cabezas
@@ -378,7 +381,7 @@ def render_cabezote_sintesis_body(nombre_zona):
     por = st.session_state.get('ica_porcinos_calc_met', 0)
     ave = st.session_state.get('ica_aves_calc_met', 0)
     
-    if nombre_zona != "Sin Selección":
+    if nombre_zona != "Sin Selección" and nombre_zona != "":
         if pob > 0 or bov > 0 or por > 0 or ave > 0:
             st.success(f"📌 **SÍNTESIS ACTIVA** | 📍 Territorio: {nombre_zona} \n\n 👥 Humanos: {pob:,} | 🐄 Bov: {bov:,} | 🐖 Porc: {por:,} | 🐔 Aves: {ave:,}")
         else:
@@ -401,7 +404,6 @@ def render_selector_espacial():
             idx = lista.index(st.session_state[clave])
         return st.sidebar.selectbox(label, lista, index=idx, key=clave)
         
-    # Helper para buscar columnas sin importar mayúsculas/minúsculas
     def get_col_case_insensitive(df, col_name):
         for c in df.columns:
             if c.lower() == col_name.lower(): return c
@@ -422,7 +424,6 @@ def render_selector_espacial():
             if ruta == "Hidrología":
                 nivel = selectbox_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_hidro")
                 col = {"NSS1":"nom_nss1", "NSS2":"nom_nss2", "NSS3":"nom_nss3", "SZH":"nom_szh", "ZH":"nomzh", "AH":"nomah"}.get(nivel)
-                # Verificamos que la columna exista (insensible a mayúsculas)
                 col_real = get_col_case_insensitive(df_c, col) if col else None
                 if col_real:
                     territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col_real].dropna().unique()), "mem_terr_hidro")
@@ -449,7 +450,6 @@ def render_selector_espacial():
                     if mun != "-- NO HAY DATOS --":
                         gdf_zona = df_m[df_m[col_mun] == mun]
                         nombre_zona = mun
-            # 🚀 RESTAURACIÓN: Búsqueda de columna de Región sin importar si es mayúscula o minúscula
             elif nivel_agregacion == "Por Región":
                 col_reg = get_col_case_insensitive(df_m, 'subregion')
                 if col_reg:
@@ -457,7 +457,6 @@ def render_selector_espacial():
                     if reg != "-- NO HAY DATOS --":
                         gdf_zona = df_m[df_m[col_reg] == reg]
                         nombre_zona = reg
-            # 🚀 RESTAURACIÓN: Búsqueda de columna de Departamento
             elif nivel_agregacion == "Departamento":
                 col_dep = get_col_case_insensitive(df_m, 'DPTO_CNMBR')
                 if col_dep:
@@ -475,8 +474,8 @@ def render_selector_espacial():
 
     ids_estaciones, alt_ref = encontrar_estaciones_en_mapa(gdf_zona, buffer_km)
     
-    # 🚀 EJECUCIÓN DEL AUTO-CARGADOR OMNISCIENTE
     if nombre_decodificado != "Sin Selección":
+        # 🚀 EJECUCIÓN CON LLAVE EXACTA (Respeta tu lógica de diseño)
         auto_cargar_matrices_al_aleph(nombre_decodificado)
         renderizar_gestor_escenarios(nombre_decodificado)
 
