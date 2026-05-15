@@ -31,6 +31,12 @@ except ImportError:
     from modules.config import Config
     from modules.utils import encender_gemelo_digital
 
+try:
+    import modules.water_quality as wq
+except ImportError:
+    # Fallback si el nombre del archivo es diferente en tu estructura
+    import water_quality as wq
+
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
@@ -47,10 +53,9 @@ Modelo integral del ciclo hidrosocial: Desde la captación y uso del recurso, ha
 st.divider()
 
 # ====================================================================
-# 🛡️ ESTRUCTURA RAÍZ: PREVENCIÓN DE VARIABLES HUÉRFANAS (TROMBOS)
+# 🛡️ ESTRUCTURA RAÍZ: PREVENCIÓN DE VARIABLES HUÉRFANAS
 # ====================================================================
-# Declaramos las variables globales con valores neutros al inicio. 
-# Así garantizamos que el Aleph al final del archivo siempre tenga qué leer.
+# Garantizamos que estas variables existan desde el segundo 0
 carga_total_anual_ton = 0.0
 max_dbo = 0.0
 od_minimo = 0.0
@@ -831,86 +836,104 @@ with tab_demanda:
             st.caption("Al hacer clic, el valor de extracción se convierte en la variable de 'Demanda' en los cálculos de Estrés Hídrico y Resiliencia del sistema.")
 
 # ------------------------------------------------------------------------------
-# TAB 2: INVENTARIO DE CARGAS (CONECTADO AL ALEPH)
+# TAB 2: INVENTARIO DE CARGAS (INTEGRACIÓN CIENTÍFICA CON MÓDULO WQ)
 # ------------------------------------------------------------------------------
 with tab_fuentes:
     st.header(f"Inventario de Cargas Contaminantes ({anio_analisis})")
     
-    # Lógica de recepción del Aleph (Blindada contra mayúsculas/minúsculas)
+    # 1. SINCRONIZACIÓN GEOGRÁFICA (ALEPH)
     aleph_activo = False
     if 'aleph_ha_pastos' in st.session_state and 'aleph_territorio_origen' in st.session_state:
-        origen_aleph = normalizar_texto(st.session_state['aleph_territorio_origen'])
-        destino_actual = normalizar_texto(nombre_seleccion)
-        
-        if origen_aleph == destino_actual:
+        # Usamos normalización para evitar fallos por tildes o mayúsculas
+        origen = normalizar_texto(st.session_state['aleph_territorio_origen'])
+        destino = normalizar_texto(nombre_seleccion)
+        if origen == destino:
             aleph_activo = True
 
     if aleph_activo:
-        st.success(f"🌐 **Conexión Aleph:** Las áreas agrícolas y de pastos para **{nombre_seleccion}** han sido extraídas automáticamente del modelo satelital.")
+        st.success(f"🌐 **Conexión Aleph Activa:** Coberturas vegetales para **{nombre_seleccion}** sincronizadas con el satélite.")
     
-    # Extraer valores del satélite, o usar manuales por defecto
-    val_def_papa = float(st.session_state.get('aleph_ha_agricola', 50.0)) if aleph_activo else 50.0
-    val_def_pastos = float(st.session_state.get('aleph_ha_pastos', 200.0)) if aleph_activo else 200.0
+    # 2. CÁLCULO DINÁMICO DE CARGA DOMÉSTICA (LÍNEA BASE)
+    # Extraemos población del Aleph de forma segura
+    pob_urbana = st.session_state.get('aleph_pob_urbana', 0)
+    pob_rural = st.session_state.get('aleph_pob_rural', 0)
     
+    # Usamos las constantes de tu módulo (Convertimos gramos a kg dividiendo por 1000)
+    factor_urbano_kg = wq.DBO_HAB_URBANO / 1000.0
+    factor_rural_kg = wq.DBO_HAB_RURAL / 1000.0
+    
+    # --- INPUTS DE USUARIO ---
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("### 🏘️ Saneamiento")
         cobertura_ptar = st.slider("Cobertura de Tratamiento PTAR Urbana %:", 0, 100, 15)
         eficiencia_ptar = st.slider("Remoción DBO en PTAR %:", 0, 100, 80)
+        
     with col2:
         st.markdown("### 🏭 Agroindustria")
         vol_suero = st.number_input("Sueros Lácteos Vertidos (L/día):", min_value=0, value=2000, step=500)
+        factor_suero_kg = wq.DBO_SUERO_LACTEO / 1000000.0 # g/m3 a kg/L
+        
     with col3:
         st.markdown("### 🍓 Agricultura")
+        val_def_papa = float(st.session_state.get('aleph_ha_agricola', 50.0)) if aleph_activo else 50.0
+        val_def_pastos = float(st.session_state.get('aleph_ha_pastos', 200.0)) if aleph_activo else 200.0
         ha_papa = st.number_input("Cultivos / Mosaico [Ha]:", min_value=0.0, value=val_def_papa, step=5.0, disabled=aleph_activo)
         ha_pastos = st.number_input("Pastos [Ha]:", min_value=0.0, value=val_def_pastos, step=10.0, disabled=aleph_activo)
 
     st.markdown("---")
-    st.markdown(f"### 🐄🚜 Censo Pecuario (Calibrado a {anio_analisis}) para: **{nombre_seleccion}**")
+    st.markdown(f"### 🐄🚜 Censo Pecuario Calibrado: **{nombre_seleccion}**")
     
-    # SE ELIMINÓ EL DUPLICADO DE CÓDIGO AQUÍ. AHORA USAMOS DIRECTAMENTE LAS VARIABLES LIMPIAS DEL TOP
+    # Extracción segura de bases pecuarias
+    bov_base = st.session_state.get('ica_bovinos_calc_met', 0)
+    por_base = st.session_state.get('ica_porcinos_calc_met', 0)
+    ave_base = st.session_state.get('ica_aves_calc_met', 0)
     
+    # 3. CENSO PECUARIO (Conectado a la Base de Datos)
     col_pec1, col_pec2, col_pec3 = st.columns(3)
     with col_pec1:
-        st.subheader("Sector Bovino")
-        cabezas_bovinos = st.number_input("Bovinos (Cabezas):", min_value=0, value=int(bov_base), step=100)
-        sistema_bovino = st.radio("Sistema Bovino:", ["Extensivo", "Estabulado"])
-        factor_dbo_bov = 0.8 if "Estabulado" in sistema_bovino else 0.15 
+        st.subheader("Bovinos")
+        cab_bov = st.number_input("Cabezas:", min_value=0, value=int(bov_base), step=100, key="inp_bov")
+        sistema_bov = st.radio("Sistema Bovino:", ["Extensivo", "Estabulado"])
+        f_vert_bov = 0.8 if "Estabulado" in sistema_bov else 0.15 
+        factor_dbo_bov = (wq.DBO_VACA_ORDENO / 1000.0) * f_vert_bov
         
     with col_pec2:
-        st.subheader("Sector Porcícola")
-        cabezas_porcinos = st.number_input("Porcinos (Cabezas):", min_value=0, value=int(por_base), step=100)
-        tratamiento_porc = st.slider("Eficiencia Biodigestor %:", 0, 100, 20)
-        factor_dbo_porc = 0.150 * (1 - (tratamiento_porc/100))
+        st.subheader("Porcinos")
+        cab_por = st.number_input("Cabezas:", min_value=0, value=int(por_base), step=100, key="inp_por")
+        trat_porc = st.slider("Eficiencia Biodigestor %:", 0, 100, 20)
+        factor_dbo_porc = (wq.DBO_CERDO_CONFINADO / 1000.0) * (1 - (trat_porc/100))
         
     with col_pec3:
-        st.subheader("Sector Avícola")
-        # ¡ESTA ES LA LÍNEA QUE CAUSABA EL ERROR TypeError! Ahora int(ave_base) SIEMPRE será un número.
-        cabezas_aves = st.number_input("Aves (Galpones/Cabezas):", min_value=0, value=int(ave_base), step=1000)
-        tratamiento_aves = st.slider("Manejo Gallinaza %:", 0, 100, 75)
-        factor_dbo_aves = 0.015 * (1 - (tratamiento_aves/100)) 
+        st.subheader("Aves")
+        cab_ave = st.number_input("Aves (Cabezas):", min_value=0, value=int(ave_base), step=1000, key="inp_ave")
+        trat_ave = st.slider("Manejo Gallinaza %:", 0, 100, 75)
+        factor_dbo_aves = 0.015 * (1 - (trat_ave/100))
 
-    # --- CÁLCULOS DE CARGA ORGÁNICA (DBO5) ---
-    dbo_urbana = pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100)) 
-    dbo_rural = pob_rural * 0.040 
-    dbo_suero = vol_suero * 0.035 
+    # 4. MOTOR DE CÁLCULO VECTORIAL (Cargas diarias en kg DBO5/día)
+    dbo_urbana = pob_urbana * factor_urbano_kg * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))
+    dbo_rural = pob_rural * factor_rural_kg
+    dbo_suero = vol_suero * factor_suero_kg
     dbo_agricola = (ha_papa + ha_pastos) * 0.8 
-    dbo_bovinos = cabezas_bovinos * factor_dbo_bov
-    dbo_porcinos = cabezas_porcinos * factor_dbo_porc
-    dbo_aves = cabezas_aves * factor_dbo_aves
+    dbo_bovinos = cab_bov * factor_dbo_bov
+    dbo_porcinos = cab_por * factor_dbo_porc
+    dbo_aves = cab_ave * factor_dbo_aves
     
-    carga_total_dbo = dbo_urbana + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
+    carga_total_dbo_dia = dbo_urbana + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
     
-    # 🤝 EL APRETÓN DE MANOS HACIA LA PÁGINA 09 (WRI)
-    # Se inyecta la carga total simulada en toneladas/año para el tablero gerencial
-    st.session_state['carga_dbo_total_ton'] = float((carga_total_dbo * 365) / 1000.0)
+    # 5. SINCRONIZACIÓN CON EL ALEPH (Para Tablero Gerencial)
+    carga_total_anual_ton = (carga_total_dbo_dia * 365) / 1000.0
+    st.session_state['carga_dbo_total_ton'] = float(carga_total_anual_ton)
     
+    # Cálculo de concentración de efluente usando variables seguras
     coef_retorno = 0.85
-    q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400) + ((cabezas_porcinos * 40)/86400)
-    conc_efluente_mg_l = (carga_total_dbo * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
+    q_necesario_dom = st.session_state.get('demanda_domestica_lps', 0)
+    q_necesario_ind = st.session_state.get('demanda_industrial_lps', 0)
+    
+    q_efluente_lps = (q_necesario_dom * coef_retorno) + (q_necesario_ind * 0.8) + (vol_suero / 86400) + ((cab_por * 40)/86400)
+    conc_efluente_mg_l = (carga_total_dbo_dia * 1_000_000) / (q_efluente_lps * 86400) if q_efluente_lps > 0 else 0
     
     # =====================================================================
-# =====================================================================
     # 🔮 SIMULADOR DINÁMICO DE METABOLISMO (Conectado a Memoria Global)
     # =====================================================================
     st.markdown("---")
@@ -929,43 +952,42 @@ with tab_fuentes:
             else: return fila['Poly_A']*(x_norm**3) + fila['Poly_B']*(x_norm**2) + fila['Poly_C']*x_norm + fila.get('Poly_D',0)
 
         def obtener_vector_v2(df, territorio, nivel_exacto, categoria, col_cat, anios, val_fallback):
-            # Filtro directo por nombres de columna, inmune a llaves rotas
             mask = (df['Territorio'].str.strip().str.upper() == str(territorio).strip().upper()) & \
                    (df[col_cat].str.strip().str.lower() == str(categoria).lower())
-                   
-            # Relajamos el nivel si es necesario
+            
             mask_nivel = df['Nivel'].str.strip().str.upper() == str(nivel_exacto).strip().upper()
             if not mask_nivel.any() and nivel_exacto in ["AH", "ZH", "SZH"]:
                 mask_nivel = df['Nivel'].str.strip().str.upper() == "CUENCA"
                 
             filtro = df[mask & mask_nivel]
-            
             if filtro.empty: return np.full(len(anios), val_fallback)
             return np.maximum(0, calcular_curva_v2(filtro.iloc[0], anios))
             
         anio_limite = st.slider("⏳ Horizonte de Simulación:", min_value=2025, max_value=2050, value=2035, step=1)
         anios_vector = np.arange(anio_analisis, anio_limite + 1)
         
-        # Extraemos los vectores evolutivos usando los nombres reales
+        # Necesitamos el nivel exacto, lo extraemos con fallback a "MUNICIPIO"
+        nivel_demo = st.session_state.get('mem_nivel_agregacion', 'MUNICIPIO').upper()
+        nivel_req = nivel_demo
+        
+        # Extraemos los vectores evolutivos poblacionales
         v_pob_urbana = obtener_vector_v2(df_demo, nombre_seleccion, nivel_demo, 'urbana', 'Area', anios_vector, pob_urbana)
         v_pob_rural = obtener_vector_v2(df_demo, nombre_seleccion, nivel_demo, 'rural', 'Area', anios_vector, pob_rural)
-        
-        v_bovinos = obtener_vector_v2(df_pecu, nombre_seleccion, nivel_req, 'bovinos', 'Especie', anios_vector, cabezas_bovinos)
-        v_porcinos = obtener_vector_v2(df_pecu, nombre_seleccion, nivel_req, 'porcinos', 'Especie', anios_vector, cabezas_porcinos)
-        v_aves = obtener_vector_v2(df_pecu, nombre_seleccion, nivel_req, 'aves', 'Especie', anios_vector, cabezas_aves)
+        v_bovinos = obtener_vector_v2(df_pecu, nombre_seleccion, nivel_req, 'bovinos', 'Especie', anios_vector, cab_bov)
+        v_porcinos = obtener_vector_v2(df_pecu, nombre_seleccion, nivel_req, 'porcinos', 'Especie', anios_vector, cab_por)
+        v_aves = obtener_vector_v2(df_pecu, nombre_seleccion, nivel_req, 'aves', 'Especie', anios_vector, cab_ave)
 
-        # 5. Motor Bioquímico Vectorial (Multiplicamos población futura por eficiencia actual de los sliders)
-        v_dbo_urbana = v_pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))
-        v_dbo_rural = v_pob_rural * 0.040
+        # 5. Motor Bioquímico Vectorial (Usando las constantes oficiales del módulo WQ)
+        v_dbo_urbana = v_pob_urbana * factor_urbano_kg * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))
+        v_dbo_rural = v_pob_rural * factor_rural_kg
         v_dbo_bovinos = v_bovinos * factor_dbo_bov
         v_dbo_porcinos = v_porcinos * factor_dbo_porc
         v_dbo_aves = v_aves * factor_dbo_aves
-        v_dbo_agricola = np.full(len(anios_vector), dbo_agricola) # La agricultura y el suero los mantenemos constantes por ahora
+        v_dbo_agricola = np.full(len(anios_vector), dbo_agricola)
         v_dbo_suero = np.full(len(anios_vector), dbo_suero)
         
         # 6. Renderizado de Gráficas Comparativas
         col_g1, col_g2 = st.columns(2)
-        
         with col_g1:
             st.caption(f"**Instantánea Actual ({anio_analisis})**")
             df_cargas_hoy = pd.DataFrame({
@@ -1006,14 +1028,20 @@ with tab_fuentes:
         
         col_g1, col_g2 = st.columns(2)
         with col_g1:
-            fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
+            fig_cargas = px.bar(df_cargas, x="DBO_kg_dia", y="Fuente", orientation='h', title=f"Aportes de DBO5 ({carga_total_dbo_dia:,.1f} kg/día)", color="Fuente", color_discrete_sequence=px.colors.qualitative.Bold)
             st.plotly_chart(fig_cargas, use_container_width=True)
         with col_g2:
             st.subheader("📈 Evolución de Carga Orgánica (Proyectada)")
-            pob_u_evo = pob_urbana * factor_evo
-            dbo_evo = (pob_u_evo * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
+            # Fallback seguro por si anios_evo y factor_evo no vienen de arriba
+            factor_evo_seguro = 1.015 # 1.5% crecimiento lineal manual como fallback
+            anios_evo_seguros = np.arange(anio_analisis, 2036)
+            
+            # Vectorizando el fallback lineal
+            crecimiento_pob = pob_urbana * (factor_evo_seguro ** (anios_evo_seguros - anio_analisis))
+            dbo_evo = (crecimiento_pob * factor_urbano_kg * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))) + dbo_rural + dbo_suero + dbo_bovinos + dbo_porcinos + dbo_aves + dbo_agricola
+            
             fig_dbo_evo = go.Figure()
-            fig_dbo_evo.add_trace(go.Scatter(x=anios_evo, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
+            fig_dbo_evo.add_trace(go.Scatter(x=anios_evo_seguros, y=dbo_evo, mode='lines', fill='tozeroy', name='Carga DBO (kg/d)', line=dict(color='#e74c3c', width=3)))
             st.plotly_chart(fig_dbo_evo, use_container_width=True)
         
 # =====================================================================
@@ -1023,6 +1051,7 @@ st.markdown("---")
 with st.expander(f"🌊 4. Capacidad de Asimilación del Río Receptor: {nombre_seleccion}", expanded=True):
     st.info("Modelo de Streeter-Phelps: Simula la caída y recuperación del Oxígeno Disuelto (OD) aguas abajo del vertimiento principal de la zona seleccionada.")
 
+import modules.water_quality as wq
 from modules.water_quality import calcular_streeter_phelps_multipunto
 
 # -------------------------------------------------------------------------
@@ -1174,7 +1203,6 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
         if q_base_cuenca <= 0: q_base_cuenca = 1.25 # Fallback
             
         # 🧮 CÁLCULO DE CAUDAL POR ALTITUD (MATEMÁTICA HIPSOMÉTRICA)
-        # Usamos los coeficientes reales de la matriz para hallar la fracción de área a esa altura
         frac_area, fuente_hipso, eq_hipso = calcular_area_inversa(h_descarga, res_hipso_actual)
         q_rio = max(0.01, q_base_cuenca * frac_area)
         
@@ -1210,27 +1238,27 @@ with st.expander("⚙️ Características Físicas y Climáticas del Río", expa
         dist_sim = st.slider("Distancia a Simular (km):", 5, 150, 50, 5)
         
 # =========================================================================
-# 2. Balance de Masas (Mezcla Río + Vertimiento) Parámetros del Vertimiento Y VERTIMIENTO HIPOTÉTICO
+# 2. Balance de Masas (Mezcla Río + Vertimiento) y Vertimiento Hipotético
 # =========================================================================
 
 # 2.1 Calcular Carga Difusa Base (El "Fondo" del Río)
-pob_u, pob_r = pob_urbana, pob_rural
+pob_u = st.session_state.get('aleph_pob_urbana', 0)
+pob_r = st.session_state.get('aleph_pob_rural', 0)
+bov = st.session_state.get('ica_bovinos_calc_met', 0)
+por = st.session_state.get('ica_porcinos_calc_met', 0)
+ave = st.session_state.get('ica_aves_calc_met', 0)
 
-# 🔗 CONEXIÓN CORREGIDA: Usamos directamente las variables de la pestaña 
-# 'Inventario de Cargas' (respetando los salvavidas y tus ajustes manuales)
-bov = cabezas_bovinos if 'cabezas_bovinos' in locals() else 0
-por = cabezas_porcinos if 'cabezas_porcinos' in locals() else 0
-ave = cabezas_aves if 'cabezas_aves' in locals() else 0
+# Sincronización oficial con las constantes de wq (Convertido a kg/día)
+dbo_hab_u = pob_u * (wq.DBO_HAB_URBANO / 1000.0)
+dbo_hab_r = pob_r * (wq.DBO_HAB_RURAL / 1000.0)
+dbo_bov = bov * (wq.DBO_VACA_ORDENO / 1000.0)
+dbo_por = por * (wq.DBO_CERDO_CONFINADO / 1000.0)
+dbo_ave = ave * 0.015  # Constante estándar avícola
 
-# Factores de Emisión Típicos (kg DBO/día por individuo)
-dbo_hab = (pob_u + pob_r) * 0.054
-dbo_bov = bov * 0.600
-dbo_por = por * 0.200
-dbo_ave = ave * 0.015  # Nuevo aporte avícola
-
-# Carga Pecuaria Total
+# Carga Pecuaria Total y Carga Total de Fondo
+dbo_hab_total = dbo_hab_u + dbo_hab_r
 dbo_gan = dbo_bov + dbo_por + dbo_ave
-carga_difusa_total_kg = dbo_hab + dbo_gan
+carga_difusa_total_kg = dbo_hab_total + dbo_gan
 
 with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre_seleccion}", expanded=True):
     st.markdown(f"##### 🐄🐖🐔 1. Carga Difusa Base (Cuenca Aguas Arriba de {nombre_seleccion})")
@@ -1239,10 +1267,14 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
     factor_escorrentia = st.slider(
         "Atenuación Natural (% de carga difusa que llega al cauce):", 
         min_value=0.5, max_value=30.0, value=5.0, step=0.5,
-        help="Los bosques y el suelo actúan como filtro. Ajusta este valor para que la 'DBO de Fondo' coincida con las mediciones reales de laboratorio de esta cuenca."
+        help="Los bosques y el suelo actúan como filtro. Ajusta este valor para calibrar la 'DBO de Fondo'."
     ) / 100.0
     
-    dbo_rio_arriba_fondo = max(1.0, ((carga_difusa_total_kg * factor_escorrentia) * 1000) / (q_rio * 86400))
+    # Calculamos la DBO de fondo en mg/L. Protegemos contra división por cero y fijamos mínimo 1.0 mg/L
+    if q_rio > 0:
+        dbo_rio_arriba_fondo = max(1.0, ((carga_difusa_total_kg * factor_escorrentia) * 1000) / (q_rio * 86400))
+    else:
+        dbo_rio_arriba_fondo = 1.0
 
     cd1, cd2, cd3 = st.columns(3)
     st.markdown("---")
@@ -1252,7 +1284,7 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
     q_ini = caudal_real_lps / 1000 if 'caudal_real_lps' in locals() and caudal_real_lps > 0 else 0.150
     h_defecto = h_real_vert if 'h_real_vert' in locals() and h_real_vert else h_med_cuenca
     
-    # 🚀 FIX: Aseguramos que la columna 'Altitud (m)' exista desde el nacimiento de la tabla
+    # Aseguramos que la tabla inicie de manera robusta
     df_descargas_base = pd.DataFrame([
         {"Activo": True, "Fuente": "PTAR Principal", "Altitud (m)": float(h_defecto), "Caudal (m3/s)": q_ini, "DBO (mg/L)": 250.0, "Temp (°C)": 24.0},
         {"Activo": False, "Fuente": "Industria Textil Hipotética", "Altitud (m)": float(max(h_min_cuenca, h_defecto - 50)), "Caudal (m3/s)": 0.050, "DBO (mg/L)": 600.0, "Temp (°C)": 30.0}
@@ -1276,7 +1308,7 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
     # 🧠 PRE-PROCESAMIENTO ESPACIAL PARA STREETER-PHELPS
     df_activas = df_portafolio[df_portafolio["Activo"] == True].copy()
     
-    # FORZAMOS VALORES NUMÉRICOS (Seguro de vida contra NaNs)
+    # FORZAMOS VALORES NUMÉRICOS (Seguro contra NaNs)
     if not df_activas.empty:
         df_activas["Altitud (m)"] = pd.to_numeric(df_activas["Altitud (m)"], errors='coerce').fillna(h_med_cuenca)
         df_activas["Caudal (m3/s)"] = pd.to_numeric(df_activas["Caudal (m3/s)"], errors='coerce').fillna(0)
@@ -1291,7 +1323,7 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
         
         st.info(f"🏔️ **Cascada Topográfica:** {len(df_activas)} descargas ordenadas | Caudal Total: **{q_vert_total:.3f} m³/s** | Carga: **{carga_puntual_kg:,.1f} kg DBO/día**")
         
-        # Variables legado (mezcla ponderada inicial por si alguna gráfica antigua las llama)
+        # Variables legado por seguridad de compatibilidad
         q_vertimiento = q_vert_total
         t_vertimiento = (df_activas["Caudal (m3/s)"] * df_activas["Temp (°C)"]).sum() / q_vert_total if q_vert_total > 0 else 20
         dbo_vert_mgL = (df_activas["Caudal (m3/s)"] * df_activas["DBO (mg/L)"]).sum() / q_vert_total if q_vert_total > 0 else 0
@@ -1302,14 +1334,14 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
 # =========================================================================
 # 3. Ejecución del Motor Streeter-Phelps en Cascada (Multipunto)
 # =========================================================================
-dbo_fondo_rio = 2.0  # DBO natural del río limpio aguas arriba
 paso_simulacion = 0.5  # Resolución de la gráfica en km
 
 # El nuevo motor realiza los balances de masa automáticamente en cada tramo
+# Pasamos dbo_rio_arriba_fondo que ahora es coherente con el módulo WQ
 df_sag = calcular_streeter_phelps_multipunto(
     q_rio=q_rio, 
     t_rio=t_agua, 
-    dbo_rio=dbo_fondo_rio, 
+    dbo_rio=dbo_rio_arriba_fondo, 
     od_rio=od_rio_arriba, 
     v_ms=v_rio, 
     H_m=h_rio, 
@@ -1323,14 +1355,13 @@ df_sag = calcular_streeter_phelps_multipunto(
 if not df_sag.empty and not df_sag['Oxigeno_Disuelto_mgL'].isna().all():
     idx_min = df_sag['Oxigeno_Disuelto_mgL'].idxmin()
     punto_critico = df_sag.loc[idx_min]
-    od_minimo = punto_critico['Oxigeno_Disuelto_mgL']
-    km_critico = punto_critico['Distancia_km']
+    od_minimo = float(punto_critico['Oxigeno_Disuelto_mgL'])
+    km_critico = float(punto_critico['Distancia_km'])
     
     if q_vertimiento > 0:
         st.info(f"🧬 **Física de la Cascada:** El simulador procesó la caída topográfica inyectando {len(df_activas)} vertimientos. El punto más crítico de oxígeno (**{od_minimo:.1f} mg/L**) ocurre en el **Km {km_critico:.1f}**.")
 else:
-    # Fallback si el modelo matemático colapsa temporalmente
-    od_minimo = od_rio_arriba
+    od_minimo = float(od_rio_arriba)
     km_critico = 0.0
     st.warning("No se pudo calcular la curva de oxígeno. Verifique los datos de la tabla de vertimientos.")
 
@@ -1373,8 +1404,8 @@ fig_sag.add_trace(go.Scatter(
     textposition="bottom center"
 ))
 
-# 🚀 FIX: Usamos el valor máximo de saturación calculado por el nuevo motor
-max_od_sat = df_sag['OD_Saturacion'].max() if not df_sag.empty else 10.0
+# Usamos el valor máximo de saturación calculado por el nuevo motor
+max_od_sat = float(df_sag['OD_Saturacion'].max()) if not df_sag.empty else 10.0
 
 fig_sag.update_layout(
     title=f"Perfil Topográfico de Oxígeno Disuelto en Cascada (Streeter-Phelps)",
@@ -1388,8 +1419,8 @@ fig_sag.update_layout(
 # Mostrar métricas y gráfica de la Cascada
 m_r1, m_r2, m_r3 = st.columns(3)
 
-# 🚀 FIX: Buscamos el pico máximo de contaminación en toda la simulación
-max_dbo = df_sag['DBO_Remanente_mgL'].max() if not df_sag.empty else 0.0
+# Buscamos el pico máximo de contaminación en toda la simulación
+max_dbo = float(df_sag['DBO_Remanente_mgL'].max()) if not df_sag.empty else 0.0
 
 m_r1.metric("Pico Máx. Contaminación (DBO)", f"{max_dbo:.1f} mg/L")
 estado_rio = "⚠️ Riesgo Ecológico" if od_minimo < 4.0 else "✅ Saludable"
@@ -1398,20 +1429,22 @@ m_r3.metric("Ubicación del Impacto", f"Km {km_critico:.1f}")
 
 st.plotly_chart(fig_sag, use_container_width=True)
 
-# ====================================================================
-# 🧠 TELEMETRÍA FINAL: ACTUALIZACIÓN DEL ALEPH
-# ====================================================================
-# 1. Calculamos el índice de salud de oxígeno (Protegido contra división por cero)
+# ==========================================================
+# 🧠 ACTUALIZACIÓN DEL ALEPH (Sincronización Total)
+# ==========================================================
 if max_od_sat > 0:
-    oxigeno_salud_pct = (od_minimo / max_od_sat) * 100 
+    oxigeno_salud_pct = (od_minimo / max_od_sat) * 100
 else:
     oxigeno_salud_pct = 0.0
 
-# 2. Inyectamos los datos al torrente sanguíneo de Sihcli-Poter (Sin riesgo de NameError)
-st.session_state['carga_dbo_total_ton'] = float(carga_total_anual_ton)
+# Inyección al torrente sanguíneo de la aplicación con recuperación segura 
+# para demanda_m3s en caso de que no venga del bloque superior
+dem_total = st.session_state.get('demanda_total_m3s', 0.0)
+
+st.session_state['carga_dbo_total_ton'] = float(carga_total_anual_ton) if 'carga_total_anual_ton' in locals() else st.session_state.get('carga_dbo_total_ton', 0.0)
 st.session_state['calidad_oxigeno_pct'] = float(oxigeno_salud_pct)
 st.session_state['calidad_dbo_salida_mgL'] = float(max_dbo)
-st.session_state['demanda_total_m3s'] = float(demanda_m3s)
+st.session_state['demanda_total_m3s'] = float(dem_total)
 
 # 3. Sincronizamos también la contaminación de pozos (Acuíferos)
 if 'concentracion_acuifero' in locals():
@@ -1465,7 +1498,7 @@ with tab_mitigacion:
         fig_esc = px.bar(df_esc, x="Variable", y="Valor", color="Escenario", barmode="group", title="Impacto Integral del Proyecto", color_discrete_sequence=["#e74c3c", "#2ecc71"])
         st.plotly_chart(fig_esc, use_container_width=True)
 
-# -------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     # PORTAFOLIO DE INVERSIÓN (SANEAMIENTO Y SbN) EN CALIDAD
     # -------------------------------------------------------------------------
     st.markdown("---")
