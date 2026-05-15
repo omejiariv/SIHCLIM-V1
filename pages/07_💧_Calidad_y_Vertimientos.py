@@ -1745,12 +1745,31 @@ with tab_extern:
     st.header("⚠️ Análisis Sectorial de Externalidades Ambientales")
     st.markdown(f"Evaluación avanzada de Huella de Carbono y Balance de Nutrientes (NPK) en **{nombre_seleccion}**.")
     
-    # 1. RE-CÁLCULO INTERNO (Para evitar errores de variables huérfanas)
-    dbo_domestica = pob_urbana * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100)) + (pob_rural * 0.040)
-    dbo_bovinos_ext = cabezas_bovinos * factor_dbo_bov
-    dbo_porcinos_ext = cabezas_porcinos * factor_dbo_porc
-    dbo_agricola_ext = (ha_papa + ha_pastos) * 0.8
-    dbo_agroind_ext = vol_suero * 0.035
+    # ==============================================================================
+    # 1. ESCUDO DE EXTRACCIÓN Y RE-CÁLCULO (Sincronizado con Aleph y WQ)
+    # ==============================================================================
+    _pob_u = pob_urbana if 'pob_urbana' in locals() else st.session_state.get('aleph_pob_urbana', 0)
+    _pob_r = pob_rural if 'pob_rural' in locals() else st.session_state.get('aleph_pob_rural', 0)
+    _cab_bov = cab_bov if 'cab_bov' in locals() else st.session_state.get('ica_bovinos_calc_met', 0)
+    _cab_por = cab_por if 'cab_por' in locals() else st.session_state.get('ica_porcinos_calc_met', 0)
+    _cab_ave = cab_ave if 'cab_ave' in locals() else st.session_state.get('ica_aves_calc_met', 0)
+    _ha_papa = ha_papa if 'ha_papa' in locals() else st.session_state.get('aleph_ha_agricola', 50.0)
+    _ha_pastos = ha_pastos if 'ha_pastos' in locals() else st.session_state.get('aleph_ha_pastos', 200.0)
+    _vol_suero = vol_suero if 'vol_suero' in locals() else 2000.0
+
+    _cob_ptar = cobertura_ptar if 'cobertura_ptar' in locals() else 15.0
+    _efi_ptar = eficiencia_ptar if 'eficiencia_ptar' in locals() else 80.0
+    _trat_porc = trat_porc if 'trat_porc' in locals() else 20.0
+    _trat_ave = trat_ave if 'trat_ave' in locals() else 75.0
+    _f_vert_bov = f_vert_bov if 'f_vert_bov' in locals() else 0.15
+
+    # 🧮 CÁLCULO SINCRONIZADO CON EL MÓDULO WQ
+    dbo_domestica = _pob_u * (wq.DBO_HAB_URBANO/1000.0) * (1 - (_cob_ptar/100.0 * _efi_ptar/100.0)) + (_pob_r * (wq.DBO_HAB_RURAL/1000.0))
+    dbo_bovinos_ext = _cab_bov * (wq.DBO_VACA_ORDENO/1000.0) * _f_vert_bov
+    dbo_porcinos_ext = _cab_por * (wq.DBO_CERDO_CONFINADO/1000.0) * (1 - (_trat_porc/100.0))
+    dbo_aves_ext = _cab_ave * 0.015 * (1 - (_trat_ave/100.0))
+    dbo_agricola_ext = (_ha_papa + _ha_pastos) * 0.8
+    dbo_agroind_ext = _vol_suero * (wq.DBO_SUERO_LACTEO/1000000.0)
     
     # 2. MODELO DE NUTRIENTES (Nitrógeno, Fósforo, Potasio)
     # Factores de excreción y escorrentía aproximados (kg/día)
