@@ -297,14 +297,15 @@ def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
     return ids, alt
     
 # ====================================================================
-# 🧠 MOTORES DE DESCARGA MAESTRA (DESDE SUPABASE STORAGE)
+# 🧠 MOTORES DE DESCARGA MAESTRA (DESDE SUPABASE)
 # ====================================================================
-def normalizar_para_cruce(texto):
-    """Elimina tildes y pasa a mayúsculas, PERO CONSERVA INTEGRALMENTE TUS CLAVES COMBINADAS."""
+def limpiar_texto_absoluto(texto):
+    """Limpieza forense: quita tildes, mayúsculas y espacios invisibles, pero CONSERVA tus guiones y llaves."""
     import unicodedata
-    if not isinstance(texto, str): return ""
-    texto = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('utf-8')
-    return texto.strip().upper()
+    import pandas as pd
+    if pd.isna(texto): return ""
+    t = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('utf-8')
+    return t.strip().upper()
 
 @st.cache_data(show_spinner=False, ttl=86400)
 def obtener_matriz_maestra_csv(url):
@@ -312,119 +313,80 @@ def obtener_matriz_maestra_csv(url):
     try:
         df = pd.read_csv(url)
         df.columns = df.columns.str.strip().str.upper()
+        # Transformamos TODO el dataframe a formato limpio en memoria para un cruce perfecto
+        for col in df.select_dtypes(include=['object']).columns:
+            df[col] = df[col].apply(limpiar_texto_absoluto)
         return df
-    except Exception as e:
+    except:
         return pd.DataFrame()
 
 # ====================================================================
-# 🔮 MOTOR DE CONCILIACIÓN INTELIGENTE (RESPETA CLAVES COMPUESTAS)
-# ====================================================================
-def buscar_fila_inteligente(df, zona_nombre):
-    """
-    Busca una zona dentro del DataFrame usando coincidencia exacta, 
-    contención o la lógica de claves combinadas multi-campo original del proyecto.
-    """
-    import pandas as pd
-    term = normalizar_para_cruce(zona_nombre)
-    if term == "" or "SIN SELECCION" in term:
-        return pd.DataFrame()
-        
-    # 1. Intento por coincidencia exacta directa en cualquier columna
-    for col in df.columns:
-        mask = df[col].astype(str).str.strip().str.upper() == term
-        if mask.any(): return df[mask]
-            
-    # 2. Intento por contención de texto (substring) en cualquier columna
-    for col in df.columns:
-        mask = df[col].astype(str).str.strip().str.upper().str.contains(term, regex=False)
-        if mask.any(): return df[mask]
-            
-    # 3. LÓGICA DE CLAVE COMBINADA (Conciliación multi-campo original)
-    # Extrae las palabras clave principales de la llave compuesta (ej: ['ALTO', 'NECHI', 'NSS'])
-    palabras = [p for p in term.split() if len(p) > 2]
-    if palabras:
-        # Fusiona todas las celdas de cada fila en una sola cadena de texto en mayúsculas
-        texto_filas = df.astype(str).apply(lambda row: ' '.join(row).upper(), axis=1)
-        # Filtra las filas que contienen simultáneamente todos los componentes de la clave
-        mask_combinada = texto_filas.apply(lambda text: all(p in text for p in palabras))
-        if mask_combinada.any(): return df[mask_combinada]
-            
-    # 4. Fallback de mitigación por si la clave compuesta se corta en el origen
-    if " - " in zona_nombre:
-        parte_principal = zona_nombre.split(" - ")[0]
-        return buscar_fila_inteligente(df, parte_principal)
-        
-    return pd.DataFrame()
-
-# ====================================================================
-# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN OMNISCIENTE CONECTADA A STORAGE)
+# 🧠 AUTO-CARGADOR DEL ALEPH (SISTEMA FORENSE DE BÚSQUEDA EXACTA)
 # ====================================================================
 def auto_cargar_matrices_al_aleph(nombre_zona):
     import streamlit as st
-    
     url_demo = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Demografica.csv"
     url_pecu = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Pecuaria.csv"
     
-    # Reinicio preventivo estructural de la memoria global (Aleph)
-    st.session_state['aleph_pob_total'] = 0
-    st.session_state['aleph_pob_urbana'] = 0
-    st.session_state['aleph_pob_rural'] = 0
-    st.session_state['ica_bovinos_calc_met'] = 0
-    st.session_state['ica_porcinos_calc_met'] = 0
-    st.session_state['ica_aves_calc_met'] = 0
+    # Reseteo preventivo a 0
+    for key in ['aleph_pob_total', 'aleph_pob_urbana', 'aleph_pob_rural', 'ica_bovinos_calc_met', 'ica_porcinos_calc_met', 'ica_aves_calc_met']:
+        st.session_state[key] = 0
 
-    if not nombre_zona or nombre_zona == "Sin Selección":
-        return
+    if not nombre_zona or nombre_zona == "Sin Selección": return
 
-    # --- 1. CARGA DEMOGRÁFICA ---
+    # La llave de búsqueda exacta que usaste (ej: "ALTO NECHI - NSS")
+    zona_target = limpiar_texto_absoluto(nombre_zona)
+
+    # 1. DEMOGRÁFICO
     df_demo = obtener_matriz_maestra_csv(url_demo)
     if not df_demo.empty:
-        filtro_demo = buscar_fila_inteligente(df_demo, nombre_zona)
-        if not filtro_demo.empty:
-            fila = filtro_demo.iloc[0]
+        # Busca si zona_target existe EXACTAMENTE en alguna celda de toda la fila
+        mask = (df_demo == zona_target).any(axis=1)
+        if mask.any():
+            fila = df_demo[mask].iloc[0]
             st.session_state['aleph_pob_total'] = int(fila.get('POB_TOTAL', fila.get('POBLACION', 0)))
             st.session_state['aleph_pob_urbana'] = int(fila.get('POB_URBANA', fila.get('URBANA', 0)))
             st.session_state['aleph_pob_rural'] = int(fila.get('POB_RURAL', fila.get('RURAL', 0)))
 
-    # --- 2. CARGA PECUARIA ---
+    # 2. PECUARIO
     df_pecu = obtener_matriz_maestra_csv(url_pecu)
     if not df_pecu.empty:
-        filtro_pecu = buscar_fila_inteligente(df_pecu, nombre_zona)
-        if not filtro_pecu.empty:
-            if 'ESPECIE' in filtro_pecu.columns:
-                for _, row in filtro_pecu.iterrows():
-                    esp = str(row['ESPECIE']).upper()
-                    cabezas = int(row.get('CABEZAS_ACTUALES', row.get('CANTIDAD', row.get('TOTAL', 0))))
-                    if 'BOVINO' in esp: st.session_state['ica_bovinos_calc_met'] = cabezas
-                    elif 'PORCINO' in esp: st.session_state['ica_porcinos_calc_met'] = cabezas
-                    elif 'AVE' in esp: st.session_state['ica_aves_calc_met'] = cabezas
+        mask_p = (df_pecu == zona_target).any(axis=1)
+        if mask_p.any():
+            filtro_p = df_pecu[mask_p]
+            if 'ESPECIE' in filtro_p.columns:
+                for _, row in filtro_p.iterrows():
+                    esp = str(row['ESPECIE'])
+                    cab = int(row.get('CABEZAS_ACTUALES', row.get('CANTIDAD', row.get('TOTAL', 0))))
+                    if 'BOVINO' in esp: st.session_state['ica_bovinos_calc_met'] = cab
+                    elif 'PORCINO' in esp: st.session_state['ica_porcinos_calc_met'] = cab
+                    elif 'AVE' in esp: st.session_state['ica_aves_calc_met'] = cab
             else:
-                fila_pec = filtro_pecu.iloc[0]
-                st.session_state['ica_bovinos_calc_met'] = int(fila_pec.get('BOVINOS', 0))
-                st.session_state['ica_porcinos_calc_met'] = int(fila_pec.get('PORCINOS', 0))
-                st.session_state['ica_aves_calc_met'] = int(fila_pec.get('AVES', 0))
+                fila_p = filtro_p.iloc[0]
+                st.session_state['ica_bovinos_calc_met'] = int(fila_p.get('BOVINOS', 0))
+                st.session_state['ica_porcinos_calc_met'] = int(fila_p.get('PORCINOS', 0))
+                st.session_state['ica_aves_calc_met'] = int(fila_p.get('AVES', 0))
 
 # ====================================================================
-# 🟩 FUNCIÓN DE INTERFAZ: CAJA VERDE DE SÍNTESIS (BODY PRINCIPAL)
+# 🟩 CAJA VERDE (BODY)
 # ====================================================================
 def render_cabezote_sintesis_body(nombre_zona):
-    """Dibuja la caja verde original de Síntesis Activa en el centro del body."""
     import streamlit as st
     pob = st.session_state.get('aleph_pob_total', 0)
     bov = st.session_state.get('ica_bovinos_calc_met', 0)
     por = st.session_state.get('ica_porcinos_calc_met', 0)
     ave = st.session_state.get('ica_aves_calc_met', 0)
     
-    if nombre_zona != "Sin Selección" and nombre_zona != "":
+    if nombre_zona and nombre_zona != "Sin Selección":
         if pob > 0 or bov > 0 or por > 0 or ave > 0:
             st.success(f"📌 **SÍNTESIS ACTIVA** | 📍 Territorio: {nombre_zona} \n\n 👥 Humanos: {pob:,} | 🐄 Bov: {bov:,} | 🐖 Porc: {por:,} | 🐔 Aves: {ave:,}")
         else:
-            st.warning(f"⚠️ **SIN DATOS MAESTROS** para: {nombre_zona}. No se encontraron registros coincidentes en Supabase Storage.")
+            st.warning(f"⚠️ **SIN DATOS MAESTROS** para: {nombre_zona}. No se encontraron coincidencias en el CSV.")
     else:
-        st.info("👈 Por favor, utiliza el menú lateral para seleccionar una zona de trabajo.")
+        pass # Silenciado para evitar el doble mensaje de "Por favor, utiliza el menú..."
 
 # ====================================================================
-# --- 7. SELECTOR ESPACIAL PRINCIPAL ---
+# --- 7. SELECTOR ESPACIAL (ROLLBACK A TU VERSIÓN ORIGINAL ESTABLE) ---
 # ====================================================================
 def render_selector_espacial():
     import streamlit as st
@@ -437,11 +399,6 @@ def render_selector_espacial():
         if clave in st.session_state and st.session_state[clave] in lista:
             idx = lista.index(st.session_state[clave])
         return st.sidebar.selectbox(label, lista, index=idx, key=clave)
-        
-    def get_col_case_insensitive(df, col_name):
-        for c in df.columns:
-            if c.lower() == col_name.lower(): return c
-        return None
 
     opciones_agr = ["Por Cuenca", "Por Municipio", "Por Región", "Departamento"]
     idx_agr = opciones_agr.index(st.session_state.get('mem_nivel_agregacion', "Por Cuenca")) if st.session_state.get('mem_nivel_agregacion') in opciones_agr else 0
@@ -457,72 +414,48 @@ def render_selector_espacial():
             ruta = selectbox_seguro("Ruta de Búsqueda:", ["Hidrología", "Administrativo"], "mem_ruta_busqueda")
             if ruta == "Hidrología":
                 nivel = selectbox_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_hidro")
-                
-                # 🛠️ AQUÍ ESTÁ LA LÍNEA CORREGIDA (Ya no tiene el _pob_u)
                 col = {"NSS1":"nom_nss1", "NSS2":"nom_nss2", "NSS3":"nom_nss3", "SZH":"nom_szh", "ZH":"nomzh", "AH":"nomah"}.get(nivel)
-                col_real = get_col_case_insensitive(df_c, col) if col else None
-                
-                if col_real:
-                    territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col_real].dropna().unique()), "mem_terr_hidro")
-                    if territorio != "-- NO HAY DATOS --":
-                        gdf_zona = df_c[df_c[col_real] == territorio]
-                        nombre_zona = territorio
+                territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col].dropna().unique()), "mem_terr_hidro")
+                if territorio != "-- NO HAY DATOS --":
+                    gdf_zona = df_c[df_c[col] == territorio]
+                    nombre_zona = territorio
             else:
                 nivel = selectbox_seguro("1. Nivel a Evaluar:", ["CAR", "Subregión"], "mem_nivel_admin")
                 col = "CorpoAmb" if nivel == "CAR" else "depto_regi"
-                col_real = get_col_case_insensitive(df_c, col)
-                if col_real:
-                    territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col_real].dropna().unique()), "mem_terr_admin")
-                    if territorio != "-- NO HAY DATOS --":
-                        gdf_zona = df_c[df_c[col_real] == territorio]
-                        nombre_zona = territorio
-
+                territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col].dropna().unique()), "mem_terr_admin")
+                if territorio != "-- NO HAY DATOS --":
+                    gdf_zona = df_c[df_c[col] == territorio]
+                    nombre_zona = territorio
     else:
         df_m = cargar_maestro_municipios()
         if df_m is not None and not df_m.empty:
-            # 🏙️ NIVEL MUNICIPIO
+            # RESTAURADO EXACTAMENTE COMO TÚ LO TENÍAS ORIGINALMENTE
             if nivel_agregacion == "Por Municipio":
-                col_mun = get_col_case_insensitive(df_m, 'MPIO_CNMBR')
-                if col_mun:
-                    mun = selectbox_seguro("Municipio:", sorted(df_m[col_mun].dropna().unique()), "mem_mun_sel")
-                    if mun != "-- NO HAY DATOS --":
-                        gdf_zona = df_m[df_m[col_mun] == mun]
-                        nombre_zona = mun
-            
-            # 🌿 NIVEL REGIÓN 
-            elif nivel_agregacion == "Por Región":
-                col_reg = next((c for c in df_m.columns if c.lower() in ['subregion', 'subregión', 'region', 'región']), None)
-                if not col_reg and 'subregion' in df_m.columns: col_reg = 'subregion'
-                
-                if col_reg:
-                    reg = selectbox_seguro("Región:", sorted(df_m[col_reg].dropna().unique()), "mem_reg_sel")
-                    if reg != "-- NO HAY DATOS --":
-                        gdf_zona = df_m[df_m[col_reg] == reg]
-                        nombre_zona = reg
-            
-            # 🏔️ NIVEL DEPARTAMENTO 
-            elif nivel_agregacion == "Departamento":
-                col_dep = next((c for c in df_m.columns if c.lower() in ['dpto_cnmbr', 'dpto', 'departamento', 'depto']), None)
-                if not col_dep and 'DPTO_CNMBR' in df_m.columns: col_dep = 'DPTO_CNMBR'
-                
-                if col_dep:
-                    dep = selectbox_seguro("Departamento:", sorted(df_m[col_dep].dropna().unique()), "mem_dep_sel")
-                    if dep != "-- NO HAY DATOS --":
-                        gdf_zona = df_m[df_m[col_dep] == dep]
-                        nombre_zona = dep
+                mun = selectbox_seguro("Municipio:", sorted(df_m['MPIO_CNMBR'].dropna().unique()), "mem_mun_sel")
+                if mun != "-- NO HAY DATOS --":
+                    gdf_zona = df_m[df_m['MPIO_CNMBR'] == mun]
+                    nombre_zona = mun
+            elif nivel_agregacion == "Por Región" and 'subregion' in df_m.columns:
+                reg = selectbox_seguro("Región:", sorted(df_m['subregion'].dropna().unique()), "mem_reg_sel")
+                if reg != "-- NO HAY DATOS --":
+                    gdf_zona = df_m[df_m['subregion'] == reg]
+                    nombre_zona = reg
+            elif nivel_agregacion == "Departamento" and 'DPTO_CNMBR' in df_m.columns:
+                dep = selectbox_seguro("Departamento:", sorted(df_m['DPTO_CNMBR'].dropna().unique()), "mem_dep_sel")
+                if dep != "-- NO HAY DATOS --":
+                    gdf_zona = df_m[df_m['DPTO_CNMBR'] == dep]
+                    nombre_zona = dep
 
     st.sidebar.markdown("---")
     buffer_km = st.sidebar.slider("Buffer (km):", 0.0, 100.0, float(st.session_state.get('buffer_global_km', 25.0)), 5.0, key="slider_buffer_mem")
     st.session_state['buffer_global_km'] = buffer_km
-    
-    nombre_decodificado = decodificar_tildes(nombre_zona) if nombre_zona != "Sin Selección" else "Sin Selección"
-    st.session_state['aleph_lugar'] = nombre_decodificado
+    st.session_state['aleph_lugar'] = nombre_zona
 
     ids_estaciones, alt_ref = encontrar_estaciones_en_mapa(gdf_zona, buffer_km)
     
-    if nombre_decodificado != "Sin Selección":
-        # Ejecución del Auto-Cargador
-        auto_cargar_matrices_al_aleph(nombre_decodificado)
-        renderizar_gestor_escenarios(nombre_decodificado)
+    # 🚀 EJECUCIÓN DEL AUTO-CARGADOR Y GESTOR
+    auto_cargar_matrices_al_aleph(nombre_zona)
+    if nombre_zona != "Sin Selección":
+        renderizar_gestor_escenarios(nombre_zona)
 
-    return ids_estaciones, nombre_decodificado, alt_ref, gdf_zona
+    return ids_estaciones, nombre_zona, alt_ref, gdf_zona
