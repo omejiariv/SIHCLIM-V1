@@ -299,50 +299,43 @@ def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
 # ====================================================================
 # 🧠 MOTORES DE DESCARGA MAESTRA (DESDE SUPABASE STORAGE)
 # ====================================================================
-@st.cache_data(show_spinner=False, ttl=86400) # Descarga una vez al día (86400 seg)
+def normalizar_para_cruce(texto):
+    """Elimina tildes, espacios extra y pasa a mayúsculas para un cruce perfecto."""
+    import unicodedata
+    if not isinstance(texto, str): return ""
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
+    return texto.strip().upper()
+
+@st.cache_data(show_spinner=False, ttl=86400)
 def obtener_matriz_maestra_csv(url):
-    """
-    Descarga el CSV directamente desde el Storage de Supabase.
-    Estandariza automáticamente todas las columnas a MAYÚSCULAS para evitar errores.
-    """
     import pandas as pd
     import streamlit as st
     try:
         df = pd.read_csv(url)
-        # Limpieza extrema: Quitamos espacios y pasamos todo a mayúsculas
         df.columns = df.columns.str.strip().str.upper()
-        # Normalizamos la columna territorio para cruces perfectos
         if 'TERRITORIO' in df.columns:
-            df['TERRITORIO_NORM'] = df['TERRITORIO'].astype(str).str.strip().str.upper()
+            df['TERRITORIO_NORM'] = df['TERRITORIO'].apply(normalizar_para_cruce)
         return df
     except Exception as e:
-        st.sidebar.error(f"Error conectando al Storage de Supabase: {e}")
         return pd.DataFrame()
 
 # ====================================================================
-# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN 4.0 - SINGLE SOURCE OF TRUTH)
+# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN 4.0 - A PRUEBA DE TILDES)
 # ====================================================================
 def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
-    """
-    Lee directamente los archivos maestros en la nube. Cero consultas SQL.
-    A prueba de caídas, esquemas rotos o problemas de mayúsculas.
-    """
     import streamlit as st
     
     url_demo = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Demografica.csv"
     url_pecu = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Pecuaria.csv"
     
-    zona_upper = str(nombre_zona).strip().upper()
+    zona_norm = normalizar_para_cruce(nombre_zona)
 
     # --- 1. CARGA DEMOGRÁFICA ---
     df_demo = obtener_matriz_maestra_csv(url_demo)
-    
     if not df_demo.empty and 'TERRITORIO_NORM' in df_demo.columns:
-        filtro_demo = df_demo[df_demo['TERRITORIO_NORM'] == zona_upper]
-        
+        filtro_demo = df_demo[df_demo['TERRITORIO_NORM'] == zona_norm]
         if not filtro_demo.empty:
             fila = filtro_demo.iloc[0]
-            # Usamos .get() buscando los nombres más lógicos, y si no están, pone 0
             st.session_state['aleph_pob_total'] = int(fila.get('POB_TOTAL', fila.get('POBLACION', 0)))
             st.session_state['aleph_pob_urbana'] = int(fila.get('POB_URBANA', fila.get('URBANA', 0)))
             st.session_state['aleph_pob_rural'] = int(fila.get('POB_RURAL', fila.get('RURAL', 0)))
@@ -353,27 +346,21 @@ def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
 
     # --- 2. CARGA PECUARIA ---
     df_pecu = obtener_matriz_maestra_csv(url_pecu)
-    
     st.session_state['ica_bovinos_calc_met'] = 0
     st.session_state['ica_porcinos_calc_met'] = 0
     st.session_state['ica_aves_calc_met'] = 0
     
     if not df_pecu.empty and 'TERRITORIO_NORM' in df_pecu.columns:
-        filtro_pecu = df_pecu[df_pecu['TERRITORIO_NORM'] == zona_upper]
-        
+        filtro_pecu = df_pecu[df_pecu['TERRITORIO_NORM'] == zona_norm]
         if not filtro_pecu.empty:
-            # Detectar si el CSV está ordenado por filas (Especie) o por columnas (Bovinos, Porcinos...)
             if 'ESPECIE' in filtro_pecu.columns:
                 for _, row in filtro_pecu.iterrows():
-                    esp = str(row['ESPECIE']).upper()
-                    # Buscar la columna de cantidad (suele llamarse CABEZAS_ACTUALES, CANTIDAD, o TOTAL)
+                    esp = normalizar_para_cruce(str(row['ESPECIE']))
                     cabezas = int(row.get('CABEZAS_ACTUALES', row.get('CANTIDAD', row.get('TOTAL', 0))))
-                    
                     if 'BOVINO' in esp: st.session_state['ica_bovinos_calc_met'] = cabezas
                     elif 'PORCINO' in esp: st.session_state['ica_porcinos_calc_met'] = cabezas
                     elif 'AVE' in esp: st.session_state['ica_aves_calc_met'] = cabezas
             else:
-                # Si el CSV tiene una columna para cada animal
                 fila_pec = filtro_pecu.iloc[0]
                 st.session_state['ica_bovinos_calc_met'] = int(fila_pec.get('BOVINOS', 0))
                 st.session_state['ica_porcinos_calc_met'] = int(fila_pec.get('PORCINOS', 0))
@@ -442,14 +429,27 @@ def render_selector_espacial():
     st.sidebar.markdown("---")
     buffer_km = st.sidebar.slider("Buffer (km):", 0.0, 100.0, float(st.session_state.get('buffer_global_km', 25.0)), 5.0, key="slider_buffer_mem")
     st.session_state['buffer_global_km'] = buffer_km
-    st.session_state['aleph_lugar'] = decodificar_tildes(nombre_zona)
+    
+    nombre_decodificado = decodificar_tildes(nombre_zona)
+    st.session_state['aleph_lugar'] = nombre_decodificado
 
     ids_estaciones, alt_ref = encontrar_estaciones_en_mapa(gdf_zona, buffer_km)
     
     # 🚀 EJECUCIÓN DEL AUTO-CARGADOR RESTAURADO
-    auto_cargar_matrices_al_aleph(decodificar_tildes(nombre_zona), nivel_agregacion)
+    auto_cargar_matrices_al_aleph(nombre_decodificado, nivel_agregacion)
+
+    # 🟩 RESTAURACIÓN DE LA CAJA VERDE (SÍNTESIS ACTIVA)
+    pob_act = st.session_state.get('aleph_pob_total', 0)
+    bov_act = st.session_state.get('ica_bovinos_calc_met', 0)
+    por_act = st.session_state.get('ica_porcinos_calc_met', 0)
+    ave_act = st.session_state.get('ica_aves_calc_met', 0)
+    
+    if pob_act > 0 or bov_act > 0 or por_act > 0 or ave_act > 0:
+        st.sidebar.success(f"📌 **SÍNTESIS ACTIVA** | 📍 Territorio: {nombre_decodificado} \n\n 👥 Humanos: {pob_act:,} | 🐄 Bov: {bov_act:,} | 🐖 Porc: {por_act:,} | 🐔 Aves: {ave_act:,}")
+    else:
+        st.sidebar.warning(f"⚠️ **SIN DATOS** | No se encontraron registros maestros para: {nombre_decodificado}")
 
     # Renderizamos el Gestor de Escenarios con el nombre de la zona actual
-    renderizar_gestor_escenarios(decodificar_tildes(nombre_zona))
+    renderizar_gestor_escenarios(nombre_decodificado)
 
-    return ids_estaciones, decodificar_tildes(nombre_zona), alt_ref, gdf_zona
+    return ids_estaciones, nombre_decodificado, alt_ref, gdf_zona
