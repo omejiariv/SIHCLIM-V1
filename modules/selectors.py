@@ -300,11 +300,12 @@ def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
 # 🧠 MOTORES DE DESCARGA MAESTRA (DESDE SUPABASE STORAGE)
 # ====================================================================
 def normalizar_para_cruce(texto):
-    """Elimina tildes, espacios extra y pasa a mayúsculas para un cruce perfecto."""
+    """Elimina tildes, espacios extra, sufijos técnicos y pasa a mayúsculas para un cruce perfecto."""
     import unicodedata
     if not isinstance(texto, str): return ""
     texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
-    return texto.strip().upper()
+    # Limpieza agresiva de sufijos comunes en el selector
+    return texto.strip().upper().replace(' - NSS', '').replace('CAR: ', '')
 
 @st.cache_data(show_spinner=False, ttl=86400)
 def obtener_matriz_maestra_csv(url):
@@ -320,9 +321,9 @@ def obtener_matriz_maestra_csv(url):
         return pd.DataFrame()
 
 # ====================================================================
-# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN 4.0 - A PRUEBA DE TILDES)
+# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN 5.0 - BÚSQUEDA FLEXIBLE)
 # ====================================================================
-def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
+def auto_cargar_matrices_al_aleph(nombre_zona):
     import streamlit as st
     
     url_demo = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Demografica.csv"
@@ -332,17 +333,16 @@ def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
 
     # --- 1. CARGA DEMOGRÁFICA ---
     df_demo = obtener_matriz_maestra_csv(url_demo)
+    st.session_state['aleph_pob_total'], st.session_state['aleph_pob_urbana'], st.session_state['aleph_pob_rural'] = 0, 0, 0
+    
     if not df_demo.empty and 'TERRITORIO_NORM' in df_demo.columns:
-        filtro_demo = df_demo[df_demo['TERRITORIO_NORM'] == zona_norm]
+        # Búsqueda flexible: Busca coincidencia exacta o si la matriz contiene la raíz del nombre
+        filtro_demo = df_demo[df_demo['TERRITORIO_NORM'].str.contains(zona_norm, na=False) | (df_demo['TERRITORIO_NORM'] == zona_norm)]
         if not filtro_demo.empty:
             fila = filtro_demo.iloc[0]
             st.session_state['aleph_pob_total'] = int(fila.get('POB_TOTAL', fila.get('POBLACION', 0)))
             st.session_state['aleph_pob_urbana'] = int(fila.get('POB_URBANA', fila.get('URBANA', 0)))
             st.session_state['aleph_pob_rural'] = int(fila.get('POB_RURAL', fila.get('RURAL', 0)))
-        else:
-            st.session_state['aleph_pob_total'], st.session_state['aleph_pob_urbana'], st.session_state['aleph_pob_rural'] = 0, 0, 0
-    else:
-        st.session_state['aleph_pob_total'], st.session_state['aleph_pob_urbana'], st.session_state['aleph_pob_rural'] = 0, 0, 0
 
     # --- 2. CARGA PECUARIA ---
     df_pecu = obtener_matriz_maestra_csv(url_pecu)
@@ -351,7 +351,7 @@ def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
     st.session_state['ica_aves_calc_met'] = 0
     
     if not df_pecu.empty and 'TERRITORIO_NORM' in df_pecu.columns:
-        filtro_pecu = df_pecu[df_pecu['TERRITORIO_NORM'] == zona_norm]
+        filtro_pecu = df_pecu[df_pecu['TERRITORIO_NORM'].str.contains(zona_norm, na=False) | (df_pecu['TERRITORIO_NORM'] == zona_norm)]
         if not filtro_pecu.empty:
             if 'ESPECIE' in filtro_pecu.columns:
                 for _, row in filtro_pecu.iterrows():
@@ -365,11 +365,28 @@ def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
                 st.session_state['ica_bovinos_calc_met'] = int(fila_pec.get('BOVINOS', 0))
                 st.session_state['ica_porcinos_calc_met'] = int(fila_pec.get('PORCINOS', 0))
                 st.session_state['ica_aves_calc_met'] = int(fila_pec.get('AVES', 0))
-                
+
+# ====================================================================
+# 🟩 FUNCIÓN DE INTERFAZ: CAJA VERDE DE SÍNTESIS (CUERPO PRINCIPAL)
+# ====================================================================
+def render_cabezote_sintesis_body(nombre_zona):
+    """Renderiza la síntesis activa en el centro de la página, NO en el sidebar."""
+    import streamlit as st
+    pob = st.session_state.get('aleph_pob_total', 0)
+    bov = st.session_state.get('ica_bovinos_calc_met', 0)
+    por = st.session_state.get('ica_porcinos_calc_met', 0)
+    ave = st.session_state.get('ica_aves_calc_met', 0)
+    
+    if pob > 0 or bov > 0 or por > 0 or ave > 0:
+        st.success(f"📌 **SÍNTESIS ACTIVA** | 📍 Territorio: {nombre_zona} \n\n 👥 Humanos: {pob:,} | 🐄 Bov: {bov:,} | 🐖 Porc: {por:,} | 🐔 Aves: {ave:,}")
+    else:
+        st.warning(f"⚠️ **SIN DATOS MAESTROS** para: {nombre_zona}. No se encontraron registros en Supabase Storage.")
+
 # ====================================================================
 # --- 7. SELECTOR ESPACIAL PRINCIPAL ---
 # ====================================================================
 def render_selector_espacial():
+    import streamlit as st
     st.sidebar.markdown("### 📍 Filtros Geográficos Principales")
 
     def selectbox_seguro(label, opciones, clave):
@@ -435,21 +452,10 @@ def render_selector_espacial():
 
     ids_estaciones, alt_ref = encontrar_estaciones_en_mapa(gdf_zona, buffer_km)
     
-    # 🚀 EJECUCIÓN DEL AUTO-CARGADOR RESTAURADO
-    auto_cargar_matrices_al_aleph(nombre_decodificado, nivel_agregacion)
+    # 🚀 EJECUCIÓN DEL AUTO-CARGADOR SILENCIOSO
+    auto_cargar_matrices_al_aleph(nombre_decodificado)
 
-    # 🟩 RESTAURACIÓN DE LA CAJA VERDE (SÍNTESIS ACTIVA)
-    pob_act = st.session_state.get('aleph_pob_total', 0)
-    bov_act = st.session_state.get('ica_bovinos_calc_met', 0)
-    por_act = st.session_state.get('ica_porcinos_calc_met', 0)
-    ave_act = st.session_state.get('ica_aves_calc_met', 0)
-    
-    if pob_act > 0 or bov_act > 0 or por_act > 0 or ave_act > 0:
-        st.sidebar.success(f"📌 **SÍNTESIS ACTIVA** | 📍 Territorio: {nombre_decodificado} \n\n 👥 Humanos: {pob_act:,} | 🐄 Bov: {bov_act:,} | 🐖 Porc: {por_act:,} | 🐔 Aves: {ave_act:,}")
-    else:
-        st.sidebar.warning(f"⚠️ **SIN DATOS** | No se encontraron registros maestros para: {nombre_decodificado}")
-
-    # Renderizamos el Gestor de Escenarios con el nombre de la zona actual
+    # Renderizamos el Gestor de Escenarios
     renderizar_gestor_escenarios(nombre_decodificado)
 
     return ids_estaciones, nombre_decodificado, alt_ref, gdf_zona
