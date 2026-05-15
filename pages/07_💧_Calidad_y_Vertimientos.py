@@ -388,7 +388,7 @@ st.session_state['ica_aves_calc_met'] = total_aves
 # ==============================================================================
 # 🎨 3. INTERFAZ DE SÍNTESIS Y CALIBRACIÓN DE CAMPO
 # ==============================================================================
-st.markdown("---")
+
 with st.expander(f"📍 Contexto Demográfico Base ({anio_analisis}): {nombre_seleccion}", expanded=False):
     
     if "SQL" in origen_dato:
