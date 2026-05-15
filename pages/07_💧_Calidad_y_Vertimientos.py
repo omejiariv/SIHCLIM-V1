@@ -1438,7 +1438,7 @@ st.plotly_chart(fig_sag, use_container_width=True)
 # ==========================================================
 # 🧠 ACTUALIZACIÓN DEL ALEPH (Sincronización Total)
 # ==========================================================
-if max_od_sat > 0:
+if 'max_od_sat' in locals() and max_od_sat > 0:
     oxigeno_salud_pct = (od_minimo / max_od_sat) * 100
 else:
     oxigeno_salud_pct = 0.0
@@ -1449,7 +1449,7 @@ dem_total = st.session_state.get('demanda_total_m3s', 0.0)
 
 st.session_state['carga_dbo_total_ton'] = float(carga_total_anual_ton) if 'carga_total_anual_ton' in locals() else st.session_state.get('carga_dbo_total_ton', 0.0)
 st.session_state['calidad_oxigeno_pct'] = float(oxigeno_salud_pct)
-st.session_state['calidad_dbo_salida_mgL'] = float(max_dbo)
+st.session_state['calidad_dbo_salida_mgL'] = float(max_dbo) if 'max_dbo' in locals() else 0.0
 st.session_state['demanda_total_m3s'] = float(dem_total)
 
 # 3. Sincronizamos también la contaminación de pozos (Acuíferos)
@@ -1457,7 +1457,7 @@ if 'concentracion_acuifero' in locals():
     st.session_state['calidad_acuifero_mgL'] = float(concentracion_acuifero)
 
 # Mensaje de confirmación silencioso para el usuario
-st.toast(f"🧪 Calidad Sincronizada: OD {oxigeno_salud_pct:.1f}% | DBO {max_dbo:.1f} mg/L", icon="🔄")
+st.toast(f"🧪 Calidad Sincronizada: OD {oxigeno_salud_pct:.1f}% | DBO {st.session_state['calidad_dbo_salida_mgL']:.1f} mg/L", icon="🔄")
 
 # ------------------------------------------------------------------------------
 # TAB 4: ESCENARIOS DE MITIGACIÓN (HOLÍSTICOS)
@@ -1466,44 +1466,64 @@ with tab_mitigacion:
     st.header("🛡️ Simulador de Escenarios de Intervención (CuencaVerde)")
     st.markdown("Combina infraestructura gris (PTAR) con soluciones basadas en la naturaleza y agroecología.")
     
+    # --- 🛡️ EXTRACCIÓN SEGURA DE VARIABLES BASE ---
+    _perd_dom = perd_dom if 'perd_dom' in locals() else 30.0
+    _cob_ptar = cobertura_ptar if 'cobertura_ptar' in locals() else 15.0
+    _efi_ptar = eficiencia_ptar if 'eficiencia_ptar' in locals() else 80.0
+    _trat_porc = trat_porc if 'trat_porc' in locals() else 20.0
+    _trat_ave = trat_ave if 'trat_ave' in locals() else 75.0
+    
+    _q_nec_dom = q_necesario_dom if 'q_necesario_dom' in locals() else st.session_state.get('demanda_domestica_lps', 100.0)
+    _q_efec_dom = q_efectivo_dom if 'q_efectivo_dom' in locals() else (_q_nec_dom / (1 - (_perd_dom/100.0)) if _perd_dom < 100 else _q_nec_dom)
+    
+    _pob_u = pob_urbana if 'pob_urbana' in locals() else st.session_state.get('aleph_pob_urbana', 0)
+    _cab_por = cab_por if 'cab_por' in locals() else st.session_state.get('ica_porcinos_calc_met', 0)
+    _cab_ave = cab_ave if 'cab_ave' in locals() else st.session_state.get('ica_aves_calc_met', 0)
+    _vol_suero = vol_suero if 'vol_suero' in locals() else 2000.0
+
     st.subheader("A. Saneamiento Urbano")
     col_e1, col_e2, col_e3 = st.columns(3)
-    with col_e1: esc_perdidas = st.slider("Fugas Acueducto (%):", 0.0, 100.0, float(max(0, perd_dom - 10)))
-    with col_e2: esc_cobertura = st.slider("Cobertura PTAR Urbana (%):", 0.0, 100.0, float(min(100, cobertura_ptar + 30)))
-    with col_e3: esc_eficiencia = st.slider("Remoción DBO PTAR (%):", 0.0, 100.0, float(min(100, eficiencia_ptar + 10)))
+    with col_e1: esc_perdidas = st.slider("Fugas Acueducto (%):", 0.0, 100.0, float(max(0, _perd_dom - 10)))
+    with col_e2: esc_cobertura = st.slider("Cobertura PTAR Urbana (%):", 0.0, 100.0, float(min(100, _cob_ptar + 30)))
+    with col_e3: esc_eficiencia = st.slider("Remoción DBO PTAR (%):", 0.0, 100.0, float(min(100, _efi_ptar + 10)))
         
     st.subheader("B. Intervención Rural y Agroindustrial")
     col_e4, col_e5, col_e6 = st.columns(3)
-    
-    with col_e4: 
-        esc_biodigestores = st.slider("Cerdos con Biodigestor (%):", 0.0, 100.0, float(min(100.0, trat_porc + 40.0)))
-    with col_e5: 
-        esc_gallinaza = st.slider("Manejo de Gallinaza (%):", 0.0, 100.0, float(min(100.0, trat_ave + 20.0)))
-    with col_e6: 
-        esc_suero = st.slider("Suero Recuperado (Economía Circular) %:", 0.0, 100.0, 50.0)
+    with col_e4: esc_biodigestores = st.slider("Cerdos con Biodigestor (%):", 0.0, 100.0, float(min(100.0, _trat_porc + 40.0)))
+    with col_e5: esc_gallinaza = st.slider("Manejo de Gallinaza (%):", 0.0, 100.0, float(min(100.0, _trat_ave + 20.0)))
+    with col_e6: esc_suero = st.slider("Suero Recuperado (Economía Circular) %:", 0.0, 100.0, 50.0)
 
     st.divider()
     
-    # Cálculos del nuevo escenario
-    q_efectivo_esc = q_necesario_dom / (1 - (esc_perdidas/100)) if esc_perdidas < 100 else q_necesario_dom
+    # ====================================================================
+    # 🧮 CÁLCULOS DEL ESCENARIO (Integración Científica Módulo WQ)
+    # ====================================================================
+    q_efectivo_esc = _q_nec_dom / (1 - (esc_perdidas/100.0)) if esc_perdidas < 100 else _q_nec_dom
     
-    dbo_urbana_esc = pob_urbana * 0.050 * (1 - (esc_cobertura/100 * esc_eficiencia/100))
-    dbo_porcinos_esc = cabezas_porcinos * (0.150 * (1 - (esc_biodigestores/100)))
-    dbo_aves_esc = cabezas_aves * (0.015 * (1 - (esc_gallinaza/100)))
-    dbo_suero_esc = vol_suero * (1 - (esc_suero/100)) * 0.035
+    # Motor Bioquímico (kilogramos diarios)
+    dbo_urbana_esc = _pob_u * (wq.DBO_HAB_URBANO / 1000.0) * (1 - (esc_cobertura/100.0 * esc_eficiencia/100.0))
+    dbo_porcinos_esc = _cab_por * (wq.DBO_CERDO_CONFINADO / 1000.0) * (1 - (esc_biodigestores/100.0))
+    dbo_aves_esc = _cab_ave * 0.015 * (1 - (esc_gallinaza/100.0)) # Factor avícola estándar
+    dbo_suero_esc = _vol_suero * (1 - (esc_suero/100.0)) * (wq.DBO_SUERO_LACTEO / 1000000.0)
     
-    carga_total_esc = dbo_urbana_esc + dbo_rural + dbo_suero_esc + dbo_bovinos + dbo_porcinos_esc + dbo_aves_esc + dbo_agricola
+    # Rescatamos las cargas inalteradas
+    _dbo_rural = dbo_rural if 'dbo_rural' in locals() else (_pob_u * wq.DBO_HAB_RURAL / 1000.0) # Fallback estimado
+    _dbo_bovinos = dbo_bovinos if 'dbo_bovinos' in locals() else 0.0
+    _dbo_agricola = dbo_agricola if 'dbo_agricola' in locals() else 0.0
+    _carga_base_dia = carga_total_dbo_dia if 'carga_total_dbo_dia' in locals() else (_dbo_rural + dbo_urbana_esc + _dbo_bovinos)
+    
+    carga_total_esc = dbo_urbana_esc + _dbo_rural + dbo_suero_esc + _dbo_bovinos + dbo_porcinos_esc + dbo_aves_esc + _dbo_agricola
     
     col_er1, col_er2 = st.columns([1, 1.5])
     with col_er1:
-        st.metric("Agua extraída de la fuente", f"{q_efectivo_esc:,.1f} L/s", delta=f"{q_efectivo_esc - q_efectivo_dom:,.1f} L/s (Agua conservada)", delta_color="inverse")
-        st.metric("Materia Orgánica Total al Río", f"{carga_total_esc:,.1f} kg/día", delta=f"{carga_total_esc - carga_total_dbo:,.1f} kg/día (Contaminación evitada)", delta_color="inverse")
+        st.metric("Agua extraída de la fuente", f"{q_efectivo_esc:,.1f} L/s", delta=f"{q_efectivo_esc - _q_efec_dom:,.1f} L/s (Agua conservada)", delta_color="inverse")
+        st.metric("Materia Orgánica Total al Río", f"{carga_total_esc:,.1f} kg/día", delta=f"{carga_total_esc - _carga_base_dia:,.1f} kg/día (Contaminación evitada)", delta_color="inverse")
     
     with col_er2:
         df_esc = pd.DataFrame({
             "Escenario": ["1. Situación Actual", "1. Situación Actual", "2. Con Proyecto CuencaVerde", "2. Con Proyecto CuencaVerde"],
             "Variable": ["Extracción de Agua (L/s)", "Carga DBO (kg/día)", "Extracción de Agua (L/s)", "Carga DBO (kg/día)"],
-            "Valor": [q_efectivo_dom, carga_total_dbo, q_efectivo_esc, carga_total_esc]
+            "Valor": [_q_efec_dom, _carga_base_dia, q_efectivo_esc, carga_total_esc]
         })
         fig_esc = px.bar(df_esc, x="Variable", y="Valor", color="Escenario", barmode="group", title="Impacto Integral del Proyecto", color_discrete_sequence=["#e74c3c", "#2ecc71"])
         st.plotly_chart(fig_esc, use_container_width=True)
@@ -1524,8 +1544,11 @@ with tab_mitigacion:
             costo_sbn = st.number_input("SbN/Filtros Verdes (por Ton/año removida):", value=12.0, step=2.0)
         
         with col_m2:
-            # Asumimos que carga_total_ton viene calculada de las pestañas anteriores
-            carga_actual = st.session_state.get('carga_total_ton', 1000.0)
+            # 🚀 FIX: Leemos la llave correcta del Aleph para la carga actual
+            carga_actual = st.session_state.get('carga_dbo_total_ton', 0.0)
+            if carga_actual == 0.0: 
+                carga_actual = 1000.0 # Fallback visual si no hay cálculos previos
+                
             carga_a_remover = carga_actual * (meta_remocion / 100.0)
             
             st.info(f"⚖️ Para cumplir la meta del {meta_remocion}%, debes remover **{carga_a_remover:,.1f} Toneladas/año** del sistema hídrico.")
@@ -1552,7 +1575,7 @@ with tab_mitigacion:
                 c_op2.metric("🏡 STAM Rural", f"{ton_stam:,.0f} Ton", f"${inv_stam:,.0f} M")
                 c_op3.metric("🌿 SbN / Humedales", f"{ton_sbn:,.0f} Ton", f"${inv_sbn:,.0f} M")
                 c_op4.metric("💰 INVERSIÓN TOTAL", f"${(inv_ptar+inv_stam+inv_sbn):,.0f} M", "Millones COP", delta_color="off")
-        
+                
 # ------------------------------------------------------------------------------
 # TAB 5: MAPA DE CALOR (VISOR ESPACIAL CON FONDO MAPBOX)
 # ------------------------------------------------------------------------------
