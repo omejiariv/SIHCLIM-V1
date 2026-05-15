@@ -297,6 +297,56 @@ def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
     return ids, alt
 
 # ====================================================================
+# 🧠 AUTO-CARGADOR DEL ALEPH (RESTAURADO)
+# ====================================================================
+def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
+    """
+    Motor diseñado por el usuario para inyectar datos demográficos y pecuarios
+    directamente a la memoria global al cambiar de territorio.
+    """
+    try:
+        from modules.db_manager import get_engine
+        import pandas as pd
+        from sqlalchemy import text
+        
+        engine = get_engine()
+        nivel_req = "CUENCA" if nivel_agregacion == "Por Cuenca" else nivel_agregacion.replace("Por ", "").upper()
+        zona_upper = str(nombre_zona).strip().upper()
+
+        # 1. Precarga Demográfica
+        q_demo = text('SELECT "Pob_Total", "Pob_Urbana", "Pob_Rural" FROM matriz_demografica WHERE UPPER("Nivel") = :nivel AND UPPER("Territorio") = :zona LIMIT 1')
+        df_demo = pd.read_sql(q_demo, engine, params={"nivel": nivel_req, "zona": zona_upper})
+        
+        if not df_demo.empty:
+            st.session_state['aleph_pob_total'] = int(df_demo.iloc[0]['Pob_Total'])
+            st.session_state['aleph_pob_urbana'] = int(df_demo.iloc[0]['Pob_Urbana'])
+            st.session_state['aleph_pob_rural'] = int(df_demo.iloc[0]['Pob_Rural'])
+        else:
+            # Limpiamos para no arrastrar fantasmas de la zona anterior
+            st.session_state['aleph_pob_total'] = 0
+            st.session_state['aleph_pob_urbana'] = 0
+            st.session_state['aleph_pob_rural'] = 0
+
+        # 2. Precarga Pecuaria
+        q_pecu = text('SELECT "Especie", "Cabezas_Actuales" FROM matriz_pecuaria WHERE UPPER("Nivel") = :nivel AND UPPER("Territorio") = :zona')
+        df_pecu = pd.read_sql(q_pecu, engine, params={"nivel": nivel_req, "zona": zona_upper})
+        
+        st.session_state['ica_bovinos_calc_met'] = 0
+        st.session_state['ica_porcinos_calc_met'] = 0
+        st.session_state['ica_aves_calc_met'] = 0
+        
+        if not df_pecu.empty:
+            for _, row in df_pecu.iterrows():
+                esp = str(row['Especie']).upper()
+                cab = int(row['Cabezas_Actuales'])
+                if 'BOVINO' in esp: st.session_state['ica_bovinos_calc_met'] = cab
+                elif 'PORCINO' in esp: st.session_state['ica_porcinos_calc_met'] = cab
+                elif 'AVE' in esp: st.session_state['ica_aves_calc_met'] = cab
+                
+    except Exception as e:
+        pass # Silencioso para no generar errores rojos si la base de datos está cargando
+
+# ====================================================================
 # --- 7. SELECTOR ESPACIAL PRINCIPAL ---
 # ====================================================================
 def render_selector_espacial():
