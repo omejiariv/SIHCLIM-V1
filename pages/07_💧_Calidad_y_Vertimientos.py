@@ -62,6 +62,13 @@ max_od_sat = 0.0
 oxigeno_salud_pct = 0.0
 demanda_m3s = st.session_state.get('demanda_total_m3s', 0.0)
 
+# 🛡️ ESCUDO DE INTERFAZ: Valores por defecto para la pestaña de Escenarios
+cobertura_ptar = 15.0
+eficiencia_ptar = 80.0
+vol_suero = 2000.0
+trat_porc = 20.0
+trat_ave = 75.0
+
 # ==============================================================================
 # 🧽 FUNCIÓN NORMALIZADORA (MATA-TILDES Y ESPACIOS)
 # ==============================================================================
@@ -1467,9 +1474,13 @@ with tab_mitigacion:
         
     st.subheader("B. Intervención Rural y Agroindustrial")
     col_e4, col_e5, col_e6 = st.columns(3)
-    with col_e4: esc_biodigestores = st.slider("Cerdos con Biodigestor (%):", 0.0, 100.0, float(min(100, tratamiento_porc + 40)))
-    with col_e5: esc_gallinaza = st.slider("Manejo de Gallinaza (%):", 0.0, 100.0, float(min(100, tratamiento_aves + 20)))
-    with col_e6: esc_suero = st.slider("Suero Recuperado (Economía Circular) %:", 0.0, 100.0, 50.0)
+    
+    with col_e4: 
+        esc_biodigestores = st.slider("Cerdos con Biodigestor (%):", 0.0, 100.0, float(min(100.0, trat_porc + 40.0)))
+    with col_e5: 
+        esc_gallinaza = st.slider("Manejo de Gallinaza (%):", 0.0, 100.0, float(min(100.0, trat_ave + 20.0)))
+    with col_e6: 
+        esc_suero = st.slider("Suero Recuperado (Economía Circular) %:", 0.0, 100.0, 50.0)
 
     st.divider()
     
