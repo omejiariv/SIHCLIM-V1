@@ -42,9 +42,21 @@ encender_gemelo_digital()
 
 st.title("💧 Demanda, Calidad del Agua y Metabolismo Hídrico")
 st.markdown("""
-Modelo integral del ciclo hidrosocial: Simulación de demanda, cargas contaminantes, 
-capacidad de asimilación, formalización y visor espacial de calor (Concesiones y Vertimientos).
+Modelo integral del ciclo hidrosocial: Desde la captación y uso del recurso, hasta el análisis de vertimientos y la autodepuración de los cuerpos de agua receptores.
 """)
+st.divider()
+
+# ====================================================================
+# 🛡️ ESTRUCTURA RAÍZ: PREVENCIÓN DE VARIABLES HUÉRFANAS (TROMBOS)
+# ====================================================================
+# Declaramos las variables globales con valores neutros al inicio. 
+# Así garantizamos que el Aleph al final del archivo siempre tenga qué leer.
+carga_total_anual_ton = 0.0
+max_dbo = 0.0
+od_minimo = 0.0
+max_od_sat = 0.0
+oxigeno_salud_pct = 0.0
+demanda_m3s = st.session_state.get('demanda_total_m3s', 0.0)
 
 # ==============================================================================
 # 🧽 FUNCIÓN NORMALIZADORA (MATA-TILDES Y ESPACIOS)
@@ -1386,17 +1398,20 @@ m_r3.metric("Ubicación del Impacto", f"Km {km_critico:.1f}")
 
 st.plotly_chart(fig_sag, use_container_width=True)
 
-# ==============================================================================
-# 🔌 CONEXIÓN AL ALEPH (Transmisor de Calidad Global)
-# ==============================================================================
-# 1. Calculamos el porcentaje de salud del río (Oxígeno Real vs Saturación)
-oxigeno_salud_pct = (od_minimo / max_od_sat) * 100 if max_od_sat > 0 else 0.0
+# ====================================================================
+# 🧠 TELEMETRÍA FINAL: ACTUALIZACIÓN DEL ALEPH
+# ====================================================================
+# 1. Calculamos el índice de salud de oxígeno (Protegido contra división por cero)
+if max_od_sat > 0:
+    oxigeno_salud_pct = (od_minimo / max_od_sat) * 100 
+else:
+    oxigeno_salud_pct = 0.0
 
-# 2. Inyectamos los datos al torrente sanguíneo de Sihcli-Poter
-st.session_state['carga_dbo_total_ton'] = float(carga_total_anual_ton) # Viene de la Sección 2
+# 2. Inyectamos los datos al torrente sanguíneo de Sihcli-Poter (Sin riesgo de NameError)
+st.session_state['carga_dbo_total_ton'] = float(carga_total_anual_ton)
 st.session_state['calidad_oxigeno_pct'] = float(oxigeno_salud_pct)
 st.session_state['calidad_dbo_salida_mgL'] = float(max_dbo)
-st.session_state['demanda_total_m3s'] = float(demanda_m3s) # Viene de la Sección 1
+st.session_state['demanda_total_m3s'] = float(demanda_m3s)
 
 # 3. Sincronizamos también la contaminación de pozos (Acuíferos)
 if 'concentracion_acuifero' in locals():
