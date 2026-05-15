@@ -1773,25 +1773,25 @@ with tab_extern:
     
     # 2. MODELO DE NUTRIENTES (Nitrógeno, Fósforo, Potasio)
     # Factores de excreción y escorrentía aproximados (kg/día)
-    n_dom = pob_urbana * 0.012 * (1 - (cobertura_ptar/100 * 0.3)) + (pob_rural * 0.012)
-    p_dom = pob_urbana * 0.003 * (1 - (cobertura_ptar/100 * 0.2)) + (pob_rural * 0.003)
-    k_dom = pob_urbana * 0.005 + (pob_rural * 0.005)
+    n_dom = _pob_u * 0.012 * (1 - (_cob_ptar/100.0 * 0.3)) + (_pob_r * 0.012)
+    p_dom = _pob_u * 0.003 * (1 - (_cob_ptar/100.0 * 0.2)) + (_pob_r * 0.003)
+    k_dom = _pob_u * 0.005 + (_pob_r * 0.005)
     
-    n_bov = cabezas_bovinos * 0.15 * 0.2 # Solo el 20% llega a cuerpos de agua (escorrentía)
-    p_bov = cabezas_bovinos * 0.04 * 0.2
-    k_bov = cabezas_bovinos * 0.12 * 0.2
+    n_bov = _cab_bov * 0.15 * 0.2 # Solo el 20% llega a cuerpos de agua (escorrentía)
+    p_bov = _cab_bov * 0.04 * 0.2
+    k_bov = _cab_bov * 0.12 * 0.2
     
-    n_porc = cabezas_porcinos * 0.08 * (1 - (tratamiento_porc/100 * 0.5))
-    p_porc = cabezas_porcinos * 0.02 * (1 - (tratamiento_porc/100 * 0.4))
-    k_porc = cabezas_porcinos * 0.05 * (1 - (tratamiento_porc/100 * 0.2))
+    n_porc = _cab_por * 0.08 * (1 - (_trat_porc/100.0 * 0.5))
+    p_porc = _cab_por * 0.02 * (1 - (_trat_porc/100.0 * 0.4))
+    k_porc = _cab_por * 0.05 * (1 - (_trat_porc/100.0 * 0.2))
 
-    n_aves = cabezas_aves * 0.0015 * (1 - (tratamiento_aves/100 * 0.6))
-    p_aves = cabezas_aves * 0.0005 * (1 - (tratamiento_aves/100 * 0.6))
-    k_aves = cabezas_aves * 0.0006 * (1 - (tratamiento_aves/100 * 0.6))    
+    n_aves = _cab_ave * 0.0015 * (1 - (_trat_ave/100.0 * 0.6))
+    p_aves = _cab_ave * 0.0005 * (1 - (_trat_ave/100.0 * 0.6))
+    k_aves = _cab_ave * 0.0006 * (1 - (_trat_ave/100.0 * 0.6))    
     
-    n_agr = (ha_papa * 1.5) + (ha_pastos * 0.5)
-    p_agr = (ha_papa * 0.3) + (ha_pastos * 0.1)
-    k_agr = (ha_papa * 1.2) + (ha_pastos * 0.4)
+    n_agr = (_ha_papa * 1.5) + (_ha_pastos * 0.5)
+    p_agr = (_ha_papa * 0.3) + (_ha_pastos * 0.1)
+    k_agr = (_ha_papa * 1.2) + (_ha_pastos * 0.4)
 
     col_ext1, col_ext2 = st.columns([1, 1.2])
     
