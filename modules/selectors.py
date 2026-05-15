@@ -295,57 +295,90 @@ def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
     ids = est_finales['id_estacion'].astype(str).tolist()
     alt = est_finales['altitud'].mean() if not est_finales.empty else 1500
     return ids, alt
+    
 # ====================================================================
-# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN TODOTERRENO)
+# 🧠 MOTORES DE DESCARGA MAESTRA (DESDE SUPABASE STORAGE)
+# ====================================================================
+@st.cache_data(show_spinner=False, ttl=86400) # Descarga una vez al día (86400 seg)
+def obtener_matriz_maestra_csv(url):
+    """
+    Descarga el CSV directamente desde el Storage de Supabase.
+    Estandariza automáticamente todas las columnas a MAYÚSCULAS para evitar errores.
+    """
+    import pandas as pd
+    import streamlit as st
+    try:
+        df = pd.read_csv(url)
+        # Limpieza extrema: Quitamos espacios y pasamos todo a mayúsculas
+        df.columns = df.columns.str.strip().str.upper()
+        # Normalizamos la columna territorio para cruces perfectos
+        if 'TERRITORIO' in df.columns:
+            df['TERRITORIO_NORM'] = df['TERRITORIO'].astype(str).str.strip().str.upper()
+        return df
+    except Exception as e:
+        st.sidebar.error(f"Error conectando al Storage de Supabase: {e}")
+        return pd.DataFrame()
+
+# ====================================================================
+# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN 4.0 - SINGLE SOURCE OF TRUTH)
 # ====================================================================
 def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
     """
-    Motor diseñado para inyectar datos demográficos y pecuarios a la memoria global.
-    Versión a prueba de balas contra errores de mayúsculas/minúsculas en PostgreSQL.
+    Lee directamente los archivos maestros en la nube. Cero consultas SQL.
+    A prueba de caídas, esquemas rotos o problemas de mayúsculas.
     """
-    try:
-        from modules.db_manager import get_engine
-        import pandas as pd
-        from sqlalchemy import text
-        
-        engine = get_engine()
-        zona_upper = str(nombre_zona).strip().upper()
+    import streamlit as st
+    
+    url_demo = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Demografica.csv"
+    url_pecu = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Maestra_Pecuaria.csv"
+    
+    zona_upper = str(nombre_zona).strip().upper()
 
-        # 1. Precarga Demográfica (Sin comillas estrictas y buscando solo por territorio)
-        q_demo = text("SELECT * FROM matriz_demografica WHERE UPPER(territorio) = :zona LIMIT 1")
-        df_demo = pd.read_sql(q_demo, engine, params={"zona": zona_upper})
+    # --- 1. CARGA DEMOGRÁFICA ---
+    df_demo = obtener_matriz_maestra_csv(url_demo)
+    
+    if not df_demo.empty and 'TERRITORIO_NORM' in df_demo.columns:
+        filtro_demo = df_demo[df_demo['TERRITORIO_NORM'] == zona_upper]
         
-        if not df_demo.empty:
-            df_demo.columns = df_demo.columns.str.lower() # Todo a minúsculas para encontrarlo fácil
-            st.session_state['aleph_pob_total'] = int(df_demo.get('pob_total', [0]).iloc[0])
-            st.session_state['aleph_pob_urbana'] = int(df_demo.get('pob_urbana', [0]).iloc[0])
-            st.session_state['aleph_pob_rural'] = int(df_demo.get('pob_rural', [0]).iloc[0])
+        if not filtro_demo.empty:
+            fila = filtro_demo.iloc[0]
+            # Usamos .get() buscando los nombres más lógicos, y si no están, pone 0
+            st.session_state['aleph_pob_total'] = int(fila.get('POB_TOTAL', fila.get('POBLACION', 0)))
+            st.session_state['aleph_pob_urbana'] = int(fila.get('POB_URBANA', fila.get('URBANA', 0)))
+            st.session_state['aleph_pob_rural'] = int(fila.get('POB_RURAL', fila.get('RURAL', 0)))
         else:
-            st.session_state['aleph_pob_total'] = 0
-            st.session_state['aleph_pob_urbana'] = 0
-            st.session_state['aleph_pob_rural'] = 0
+            st.session_state['aleph_pob_total'], st.session_state['aleph_pob_urbana'], st.session_state['aleph_pob_rural'] = 0, 0, 0
+    else:
+        st.session_state['aleph_pob_total'], st.session_state['aleph_pob_urbana'], st.session_state['aleph_pob_rural'] = 0, 0, 0
 
-        # 2. Precarga Pecuaria
-        q_pecu = text("SELECT * FROM matriz_pecuaria WHERE UPPER(territorio) = :zona")
-        df_pecu = pd.read_sql(q_pecu, engine, params={"zona": zona_upper})
+    # --- 2. CARGA PECUARIA ---
+    df_pecu = obtener_matriz_maestra_csv(url_pecu)
+    
+    st.session_state['ica_bovinos_calc_met'] = 0
+    st.session_state['ica_porcinos_calc_met'] = 0
+    st.session_state['ica_aves_calc_met'] = 0
+    
+    if not df_pecu.empty and 'TERRITORIO_NORM' in df_pecu.columns:
+        filtro_pecu = df_pecu[df_pecu['TERRITORIO_NORM'] == zona_upper]
         
-        st.session_state['ica_bovinos_calc_met'] = 0
-        st.session_state['ica_porcinos_calc_met'] = 0
-        st.session_state['ica_aves_calc_met'] = 0
-        
-        if not df_pecu.empty:
-            df_pecu.columns = df_pecu.columns.str.lower()
-            for _, row in df_pecu.iterrows():
-                esp = str(row.get('especie', '')).upper()
-                cab = int(row.get('cabezas_actuales', 0))
-                if 'BOVINO' in esp: st.session_state['ica_bovinos_calc_met'] = cab
-                elif 'PORCINO' in esp: st.session_state['ica_porcinos_calc_met'] = cab
-                elif 'AVE' in esp: st.session_state['ica_aves_calc_met'] = cab
+        if not filtro_pecu.empty:
+            # Detectar si el CSV está ordenado por filas (Especie) o por columnas (Bovinos, Porcinos...)
+            if 'ESPECIE' in filtro_pecu.columns:
+                for _, row in filtro_pecu.iterrows():
+                    esp = str(row['ESPECIE']).upper()
+                    # Buscar la columna de cantidad (suele llamarse CABEZAS_ACTUALES, CANTIDAD, o TOTAL)
+                    cabezas = int(row.get('CABEZAS_ACTUALES', row.get('CANTIDAD', row.get('TOTAL', 0))))
+                    
+                    if 'BOVINO' in esp: st.session_state['ica_bovinos_calc_met'] = cabezas
+                    elif 'PORCINO' in esp: st.session_state['ica_porcinos_calc_met'] = cabezas
+                    elif 'AVE' in esp: st.session_state['ica_aves_calc_met'] = cabezas
+            else:
+                # Si el CSV tiene una columna para cada animal
+                fila_pec = filtro_pecu.iloc[0]
+                st.session_state['ica_bovinos_calc_met'] = int(fila_pec.get('BOVINOS', 0))
+                st.session_state['ica_porcinos_calc_met'] = int(fila_pec.get('PORCINOS', 0))
+                st.session_state['ica_aves_calc_met'] = int(fila_pec.get('AVES', 0))
                 
-    except Exception as e:
-        # Si algo falla, ahora nos mostrará una advertencia amarilla en lugar de callarse
-        st.sidebar.warning(f"⚠️ Aviso del Auto-Cargador: {e}")
-
 # ====================================================================
 # --- 7. SELECTOR ESPACIAL PRINCIPAL ---
 # ====================================================================
