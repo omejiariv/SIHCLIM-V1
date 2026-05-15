@@ -295,14 +295,13 @@ def encontrar_estaciones_en_mapa(gdf_zona, buffer_km):
     ids = est_finales['id_estacion'].astype(str).tolist()
     alt = est_finales['altitud'].mean() if not est_finales.empty else 1500
     return ids, alt
-
 # ====================================================================
-# 🧠 AUTO-CARGADOR DEL ALEPH (RESTAURADO)
+# 🧠 AUTO-CARGADOR DEL ALEPH (VERSIÓN TODOTERRENO)
 # ====================================================================
 def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
     """
-    Motor diseñado por el usuario para inyectar datos demográficos y pecuarios
-    directamente a la memoria global al cambiar de territorio.
+    Motor diseñado para inyectar datos demográficos y pecuarios a la memoria global.
+    Versión a prueba de balas contra errores de mayúsculas/minúsculas en PostgreSQL.
     """
     try:
         from modules.db_manager import get_engine
@@ -310,41 +309,42 @@ def auto_cargar_matrices_al_aleph(nombre_zona, nivel_agregacion):
         from sqlalchemy import text
         
         engine = get_engine()
-        nivel_req = "CUENCA" if nivel_agregacion == "Por Cuenca" else nivel_agregacion.replace("Por ", "").upper()
         zona_upper = str(nombre_zona).strip().upper()
 
-        # 1. Precarga Demográfica
-        q_demo = text('SELECT "Pob_Total", "Pob_Urbana", "Pob_Rural" FROM matriz_demografica WHERE UPPER("Nivel") = :nivel AND UPPER("Territorio") = :zona LIMIT 1')
-        df_demo = pd.read_sql(q_demo, engine, params={"nivel": nivel_req, "zona": zona_upper})
+        # 1. Precarga Demográfica (Sin comillas estrictas y buscando solo por territorio)
+        q_demo = text("SELECT * FROM matriz_demografica WHERE UPPER(territorio) = :zona LIMIT 1")
+        df_demo = pd.read_sql(q_demo, engine, params={"zona": zona_upper})
         
         if not df_demo.empty:
-            st.session_state['aleph_pob_total'] = int(df_demo.iloc[0]['Pob_Total'])
-            st.session_state['aleph_pob_urbana'] = int(df_demo.iloc[0]['Pob_Urbana'])
-            st.session_state['aleph_pob_rural'] = int(df_demo.iloc[0]['Pob_Rural'])
+            df_demo.columns = df_demo.columns.str.lower() # Todo a minúsculas para encontrarlo fácil
+            st.session_state['aleph_pob_total'] = int(df_demo.get('pob_total', [0]).iloc[0])
+            st.session_state['aleph_pob_urbana'] = int(df_demo.get('pob_urbana', [0]).iloc[0])
+            st.session_state['aleph_pob_rural'] = int(df_demo.get('pob_rural', [0]).iloc[0])
         else:
-            # Limpiamos para no arrastrar fantasmas de la zona anterior
             st.session_state['aleph_pob_total'] = 0
             st.session_state['aleph_pob_urbana'] = 0
             st.session_state['aleph_pob_rural'] = 0
 
         # 2. Precarga Pecuaria
-        q_pecu = text('SELECT "Especie", "Cabezas_Actuales" FROM matriz_pecuaria WHERE UPPER("Nivel") = :nivel AND UPPER("Territorio") = :zona')
-        df_pecu = pd.read_sql(q_pecu, engine, params={"nivel": nivel_req, "zona": zona_upper})
+        q_pecu = text("SELECT * FROM matriz_pecuaria WHERE UPPER(territorio) = :zona")
+        df_pecu = pd.read_sql(q_pecu, engine, params={"zona": zona_upper})
         
         st.session_state['ica_bovinos_calc_met'] = 0
         st.session_state['ica_porcinos_calc_met'] = 0
         st.session_state['ica_aves_calc_met'] = 0
         
         if not df_pecu.empty:
+            df_pecu.columns = df_pecu.columns.str.lower()
             for _, row in df_pecu.iterrows():
-                esp = str(row['Especie']).upper()
-                cab = int(row['Cabezas_Actuales'])
+                esp = str(row.get('especie', '')).upper()
+                cab = int(row.get('cabezas_actuales', 0))
                 if 'BOVINO' in esp: st.session_state['ica_bovinos_calc_met'] = cab
                 elif 'PORCINO' in esp: st.session_state['ica_porcinos_calc_met'] = cab
                 elif 'AVE' in esp: st.session_state['ica_aves_calc_met'] = cab
                 
     except Exception as e:
-        pass # Silencioso para no generar errores rojos si la base de datos está cargando
+        # Si algo falla, ahora nos mostrará una advertencia amarilla en lugar de callarse
+        st.sidebar.warning(f"⚠️ Aviso del Auto-Cargador: {e}")
 
 # ====================================================================
 # --- 7. SELECTOR ESPACIAL PRINCIPAL ---
