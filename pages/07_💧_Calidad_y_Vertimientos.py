@@ -52,8 +52,18 @@ Modelo integral del ciclo hidrosocial: Desde la captación y uso del recurso, ha
 """)
 
 # ====================================================================
+# 🗺️ RENDERIZADO DEL SELECTOR ESPACIAL Y LA CAJA VERDE
+# ====================================================================
+# 1. PRIMERO obtenemos el nombre de la selección desde el sidebar
+ids_estaciones, nombre_seleccion, altitud_referencia, gdf_zona = selectors.render_selector_espacial()
+
+# 2. LUEGO dibujamos la caja verde en el centro, porque ya sabemos qué nombre escogió el usuario
+selectors.render_cabezote_sintesis_body(nombre_seleccion)
+
+# ====================================================================
 # 🛡️ ESTRUCTURA RAÍZ: PREVENCIÓN DE VARIABLES HUÉRFANAS
 # ====================================================================
+
 # Garantizamos que estas variables existan desde el segundo 0
 carga_total_anual_ton = 0.0
 max_dbo = 0.0
