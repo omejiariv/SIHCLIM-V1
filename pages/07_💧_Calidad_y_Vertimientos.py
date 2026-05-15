@@ -50,7 +50,6 @@ st.title("💧 Demanda, Calidad del Agua y Metabolismo Hídrico")
 st.markdown("""
 Modelo integral del ciclo hidrosocial: Desde la captación y uso del recurso, hasta el análisis de vertimientos y la autodepuración de los cuerpos de agua receptores.
 """)
-st.divider()
 
 # ====================================================================
 # 🛡️ ESTRUCTURA RAÍZ: PREVENCIÓN DE VARIABLES HUÉRFANAS
