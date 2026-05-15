@@ -1803,11 +1803,11 @@ with tab_extern:
         # Doméstico: Principalmente CH4 de fosas sépticas y PTAR sin captura.
         co2e_dom = (dbo_domestica * 0.25 * 28 * 365) / 1000 
         # Bovinos: Fermentación entérica (muy alta) + estiércol
-        co2e_bov = (cabezas_bovinos * 0.16 * 28 * 365) / 1000 # ~60kg CH4/vaca/año
+        co2e_bov = (_cab_bov * 0.16 * 28 * 365) / 1000 # ~60kg CH4/vaca/año
         # Porcinos: Manejo de estiércol (Lagunas anaerobias generan mucho CH4)
         co2e_porc = (dbo_porcinos_ext * 0.25 * 28 * 365) / 1000
         # Aves: Manejo de Gallinaza (Compost)
-        co2e_aves = (dbo_aves * 0.25 * 28 * 365) / 1000
+        co2e_aves = (dbo_aves_ext * 0.25 * 28 * 365) / 1000
         
         # Agrícola: Emisiones de N2O por fertilización nitrogenada
         co2e_agr = (n_agr * 0.01 * 265 * 365) / 1000 
@@ -1884,9 +1884,10 @@ with tab_lactosuero:
     
     # Extraer específicamente las vacas en edad de producción del censo ICA
     vacas_adultas = 0
-    if not df_bovinos.empty and 'HEMBRAS>3AÑOS' in df_bovinos.columns:
-        vacas_adultas = int(df_bovinos[df_bovinos['MUNICIPIO_NORM'].isin(mpios_activos)]['HEMBRAS>3AÑOS'].sum())
-    if vacas_adultas == 0: vacas_adultas = int(cabezas_bovinos * 0.45) # Estimado si no hay datos
+    _mpios_activos = mpios_activos if 'mpios_activos' in locals() else []
+    if 'df_bovinos' in locals() and not df_bovinos.empty and 'HEMBRAS>3AÑOS' in df_bovinos.columns:
+        vacas_adultas = int(df_bovinos[df_bovinos['MUNICIPIO_NORM'].isin(_mpios_activos)]['HEMBRAS>3AÑOS'].sum())
+    if vacas_adultas == 0: vacas_adultas = int(_cab_bov * 0.45) # Estimado si no hay datos
     
     col_l1, col_l2 = st.columns([1, 1.3])
     with col_l1:
@@ -1918,18 +1919,18 @@ with tab_lactosuero:
         st.info("El suero contiene proteínas y lactosa de altísimo valor. Mediante plantas de **Ultrafiltración (UF)** y secado, se obtiene Proteína de Suero Concentrada (WPC) comercial.")
         
         # Rendimiento tecnológico: 1000 L de suero generan aprox. 6.5 a 7 kg de WPC al 80%
-        kg_proteina = (suero_generado / 1000) * 6.8 
+        kg_proteina = (suero_generado / 1000.0) * 6.8 
         precio_kg_wpc = 8.5 # Precio internacional USD/kg aprox
         ingresos_anuales = (kg_proteina * precio_kg_wpc) * 365
         
-        # Impacto Ambiental Evitado (El suero tiene aprox. 35,000 mg/L de DBO)
-        dbo_suero_evitada = suero_generado * 0.035 # kg/día
+        # Impacto Ambiental Evitado (Sincronizado con Módulo WQ)
+        dbo_suero_evitada = suero_generado * (wq.DBO_SUERO_LACTEO/1000000.0) # kg/día
         
         c_res1, c_res2 = st.columns(2)
         c_res1.metric("Proteína Extraíble (WPC 80%)", f"{kg_proteina:,.1f} kg/día")
         c_res2.metric("Nuevos Ingresos Potenciales", f"${ingresos_anuales:,.0f} USD/año")
         
-        st.success(f"🌱 **Impacto Hídrico Evitado:** Si este suero se procesa en lugar de arrojarse al campo o alcantarillado, el territorio evita la contaminación equivalente a **{dbo_suero_evitada:,.0f} kg de DBO/día**. ¡Esto equivale a las aguas residuales de una ciudad de {(dbo_suero_evitada/0.050):,.0f} habitantes!")
+        st.success(f"🌱 **Impacto Hídrico Evitado:** Si este suero se procesa en lugar de arrojarse al campo o alcantarillado, el territorio evita la contaminación equivalente a **{dbo_suero_evitada:,.0f} kg de DBO/día**. ¡Esto equivale a las aguas residuales de una ciudad de {(dbo_suero_evitada/(wq.DBO_HAB_URBANO/1000.0)):,.0f} habitantes!")
         
         # Integración con el Aleph: Sincroniza el dato si quieren usarlo en la pestaña de inventario
         if st.button("🔌 Sincronizar suero con el Inventario General (Aleph)"):
@@ -1961,13 +1962,13 @@ with st.expander("🪨 Filtro del Suelo y Termodinámica de Recarga", expanded=T
         )
         
         # 2. Calcular Área Aferente con Geometría Espacial Pura (A prueba de balas)
-        if gdf_zona is not None and not gdf_zona.empty:
+        if 'gdf_zona' in locals() and gdf_zona is not None and not gdf_zona.empty:
             area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000.0 # Metros cuadrados a km²
         else:
             area_km2 = 100.0 # Default
             
         st.caption(f"Área aferente de recarga (Cálculo Espacial): **{area_km2:,.1f} km²**")
-        volumen_recarga_m3 = recarga_anual_mm * area_km2 * 1000
+        volumen_recarga_m3 = recarga_anual_mm * area_km2 * 1000.0
         st.metric("Volumen de Infiltración Anual", f"{volumen_recarga_m3:,.0f} m³")
 
     with cg2:
@@ -1978,11 +1979,13 @@ with st.expander("🪨 Filtro del Suelo y Termodinámica de Recarga", expanded=T
             help="El suelo actúa como filtro natural. Arcillas retienen más, suelos arenosos y kársticos dejan pasar más contaminantes."
         ) / 100.0
         
-        # 3. Extraer la carga difusa total (calculada en la sección 2: Humanos + Vacas + Cerdos)
-        # Asegurarnos de que la variable existe por si se ejecuta en otro orden
-        carga_difusa_dia = carga_difusa_total_kg if 'carga_difusa_total_kg' in locals() else 1000.0
-        
-        carga_difusa_anual_kg = carga_difusa_dia * 365
+        # 3. Recálculo Seguro de la Carga Difusa
+        if 'carga_difusa_total_kg' in locals():
+            carga_difusa_dia = carga_difusa_total_kg
+        else:
+            carga_difusa_dia = dbo_domestica + dbo_bovinos_ext + dbo_porcinos_ext + dbo_aves_ext
+            
+        carga_difusa_anual_kg = carga_difusa_dia * 365.0
         masa_lixiviada_kg = carga_difusa_anual_kg * factor_lixiviacion
         
         st.metric(
@@ -1998,7 +2001,7 @@ with st.expander("🪨 Filtro del Suelo y Termodinámica de Recarga", expanded=T
         # 4. Mezcla Subterránea: C = Masa / Volumen
         # Convertimos: (kg * 1,000,000 mg/kg) / (m3 * 1000 L/m3) = mg/L
         if volumen_recarga_m3 > 0:
-            concentracion_acuifero = (masa_lixiviada_kg * 1000) / volumen_recarga_m3
+            concentracion_acuifero = (masa_lixiviada_kg * 1000.0) / volumen_recarga_m3
         else:
             concentracion_acuifero = 0.0
             
@@ -2020,4 +2023,3 @@ with st.expander("🪨 Filtro del Suelo y Termodinámica de Recarga", expanded=T
             delta_color=color_alerta
         )
         st.caption("Esta concentración es la que emergerá como **Caudal Base** en las épocas de estiaje, afectando el río de forma retardada.")
-
