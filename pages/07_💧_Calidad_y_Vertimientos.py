@@ -52,15 +52,6 @@ Modelo integral del ciclo hidrosocial: Desde la captación y uso del recurso, ha
 """)
 
 # ====================================================================
-# 🗺️ RENDERIZADO DEL SELECTOR ESPACIAL Y LA CAJA VERDE
-# ====================================================================
-# 1. PRIMERO obtenemos el nombre de la selección desde el sidebar
-ids_estaciones, nombre_seleccion, altitud_referencia, gdf_zona = selectors.render_selector_espacial()
-
-# 2. LUEGO dibujamos la caja verde en el centro, porque ya sabemos qué nombre escogió el usuario
-selectors.render_cabezote_sintesis_body(nombre_seleccion)
-
-# ====================================================================
 # 🛡️ ESTRUCTURA RAÍZ: PREVENCIÓN DE VARIABLES HUÉRFANAS
 # ====================================================================
 
@@ -285,14 +276,17 @@ df_aves = dict_pecuarios.get("aves", pd.DataFrame())
 # ==============================================================================
 # 🌍 1. SELECTOR ESPACIAL Y RECEPTOR DE CONTEXTO (SÍNTESIS UNIFICADA)
 # ==============================================================================
-from modules import selectors
-
-# El selector nos entrega los IDs, el nombre, la altitud de referencia y el mapa (GeoDataFrame)
+import modules.selectors as selectors
+# El selector nos entrega los IDs, el nombre, la altitud de referencia
 ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona = selectors.render_selector_espacial()
 
+# 🟩 DIBUJAMOS LA SÍNTESIS ACTIVA JUSTO DESPUÉS DEL SELECTOR
+selectors.render_cabezote_sintesis_body(nombre_seleccion)
+# -------------------------------------------------------------------
+
 if gdf_zona is None or gdf_zona.empty:
-    st.info("👈 Por favor, utiliza el menú lateral para seleccionar un territorio.")
-    st.stop() 
+    st.info("👈 Por favor, utiliza el menú lateral para seleccionar una zona.")
+    st.stop()
 
 # ==============================================================================
 # 🧠 2. NÚCLEO DE METABOLISMO UNIFICADO (Sincronía con Llave Universal)
