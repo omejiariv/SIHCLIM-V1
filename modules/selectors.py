@@ -457,8 +457,11 @@ def render_selector_espacial():
             ruta = selectbox_seguro("Ruta de Búsqueda:", ["Hidrología", "Administrativo"], "mem_ruta_busqueda")
             if ruta == "Hidrología":
                 nivel = selectbox_seguro("1. Nivel a Evaluar:", ["NSS1", "NSS2", "NSS3", "SZH", "ZH", "AH"], "mem_nivel_hidro")
+                
+                # 🛠️ AQUÍ ESTÁ LA LÍNEA CORREGIDA (Ya no tiene el _pob_u)
                 col = {"NSS1":"nom_nss1", "NSS2":"nom_nss2", "NSS3":"nom_nss3", "SZH":"nom_szh", "ZH":"nomzh", "AH":"nomah"}.get(nivel)
                 col_real = get_col_case_insensitive(df_c, col) if col else None
+                
                 if col_real:
                     territorio = selectbox_seguro(f"🎯 Territorio ({nivel}):", sorted(df_c[col_real].dropna().unique()), "mem_terr_hidro")
                     if territorio != "-- NO HAY DATOS --":
@@ -486,7 +489,7 @@ def render_selector_espacial():
                         gdf_zona = df_m[df_m[col_mun] == mun]
                         nombre_zona = mun
             
-            # 🌿 NIVEL REGIÓN (Buscador elástico restaurado con fallback estricto original)
+            # 🌿 NIVEL REGIÓN 
             elif nivel_agregacion == "Por Región":
                 col_reg = next((c for c in df_m.columns if c.lower() in ['subregion', 'subregión', 'region', 'región']), None)
                 if not col_reg and 'subregion' in df_m.columns: col_reg = 'subregion'
@@ -497,7 +500,7 @@ def render_selector_espacial():
                         gdf_zona = df_m[df_m[col_reg] == reg]
                         nombre_zona = reg
             
-            # 🏔️ NIVEL DEPARTAMENTO (Restaurado con fallback estricto original)
+            # 🏔️ NIVEL DEPARTAMENTO 
             elif nivel_agregacion == "Departamento":
                 col_dep = next((c for c in df_m.columns if c.lower() in ['dpto_cnmbr', 'dpto', 'departamento', 'depto']), None)
                 if not col_dep and 'DPTO_CNMBR' in df_m.columns: col_dep = 'DPTO_CNMBR'
@@ -518,7 +521,7 @@ def render_selector_espacial():
     ids_estaciones, alt_ref = encontrar_estaciones_en_mapa(gdf_zona, buffer_km)
     
     if nombre_decodificado != "Sin Selección":
-        # Ejecución del Auto-Cargador con tu clave compuesta intacta
+        # Ejecución del Auto-Cargador
         auto_cargar_matrices_al_aleph(nombre_decodificado)
         renderizar_gestor_escenarios(nombre_decodificado)
 
