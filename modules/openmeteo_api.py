@@ -117,32 +117,33 @@ def get_weather_forecast_detailed(lat, lon):
 
 
 # ==============================================================================
-# 2. FUNCIÓN PARA SERIES MENSUALES (CORRECCIÓN DE SESGO)
+# 2. FUNCIÓN PARA SERIES MENSUALES (LLUVIA, ETR, TEMP, RADIACIÓN)
 # ==============================================================================
-def get_historical_monthly_series(lats, lons, start_date, end_date):
+def get_historical_monthly_series(station_ids, lats, lons, start_date, end_date):
     """
-    Descarga series de tiempo históricas de precipitación (ERA5-Land) usando Open-Meteo Archive API.
+    Descarga series históricas (Precipitación, ETR, Temperatura, Radiación) 
+    usando Open-Meteo Archive API. Procesa por lotes y maneja límites de tasa.
     """
     url = "https://archive-api.open-meteo.com/v1/archive"
 
-    if not lats or not lons:
+    if not lats or not lons or not station_ids:
         return pd.DataFrame()
-    if not isinstance(lats, list):
-        lats = [lats]
-    if not isinstance(lons, list):
-        lons = [lons]
+        
+    # Asegurar que sean listas
+    if not isinstance(lats, list): lats = [lats]
+    if not isinstance(lons, list): lons = [lons]
+    if not isinstance(station_ids, list): station_ids = [station_ids]
 
     BATCH_SIZE = 20
     all_series = []
-
     total_points = len(lats)
+    
     progress_bar = None
     if total_points > BATCH_SIZE:
-        progress_bar = st.progress(
-            0, text="📡 Descargando datos satelitales por lotes..."
-        )
+        progress_bar = st.progress(0, text="📡 Descargando datos climáticos satelitales por lotes...")
 
     for i in range(0, total_points, BATCH_SIZE):
+        ids_batch = station_ids[i : i + BATCH_SIZE]
         lats_batch = lats[i : i + BATCH_SIZE]
         lons_batch = lons[i : i + BATCH_SIZE]
 
@@ -151,64 +152,65 @@ def get_historical_monthly_series(lats, lons, start_date, end_date):
             "longitude": ",".join(map(str, lons_batch)),
             "start_date": start_date,
             "end_date": end_date,
-            "daily": "precipitation_sum",
+            # Pedimos todas las variables estratégicas de una vez
+            "daily": ["precipitation_sum", "et0_fao_evapotranspiration", "temperature_2m_mean", "shortwave_radiation_sum"],
             "timezone": "America/Bogota",
         }
 
         try:
-            for attempt in range(3):
+            for attempt in range(4):
                 try:
                     response = requests.get(url, params=params, timeout=60)
                     if response.status_code == 200:
                         break
-                    elif response.status_code == 429:
-                        time.sleep(2 * (attempt + 1))
+                    elif response.status_code == 429: # Límite de peticiones
+                        time.sleep(3 * (attempt + 1))
                 except:
-                    time.sleep(1)
+                    time.sleep(2)
 
-            if response.status_code != 200:
-                continue
+            if response.status_code != 200: continue
 
             data = response.json()
             results = data if isinstance(data, list) else [data]
 
             for j, res in enumerate(results):
-                if "daily" not in res:
-                    continue
+                if "daily" not in res: continue
 
-                df = pd.DataFrame(
-                    {
-                        "date": res["daily"]["time"],
-                        "ppt_daily": res["daily"]["precipitation_sum"],
-                    }
-                )
+                # Construimos DataFrame Diario
+                df = pd.DataFrame({
+                    "date": res["daily"]["time"],
+                    "ppt_mm": res["daily"].get("precipitation_sum", []),
+                    "etr_mm": res["daily"].get("et0_fao_evapotranspiration", []),
+                    "temp_c": res["daily"].get("temperature_2m_mean", []),
+                    "rad_mj": res["daily"].get("shortwave_radiation_sum", [])
+                })
                 df["date"] = pd.to_datetime(df["date"])
 
-                # Agregación Mensual
-                df_monthly = (
-                    df.groupby(df["date"].dt.to_period("M"))["ppt_daily"]
-                    .sum()
-                    .reset_index()
-                )
+                # Agregación Mensual Matemática Correcta
+                df_monthly = df.groupby(df["date"].dt.to_period("M")).agg({
+                    "ppt_mm": "sum",  # Lluvia se suma
+                    "etr_mm": "sum",  # ETR se suma
+                    "temp_c": "mean", # Temperatura se promedia
+                    "rad_mj": "sum"   # Radiación se suma
+                }).reset_index()
+                
                 df_monthly["date"] = df_monthly["date"].dt.to_timestamp()
-
-                df_monthly["latitude"] = lats_batch[j]
-                df_monthly["longitude"] = lons_batch[j]
-                df_monthly.rename(columns={"ppt_daily": "ppt_sat"}, inplace=True)
+                
+                # Le inyectamos el ID real de la estación para el cruce
+                df_monthly["id_estacion"] = ids_batch[j]
+                
                 all_series.append(df_monthly)
 
-            time.sleep(0.2)
+            time.sleep(0.5) # Respiro para la API
             if progress_bar:
                 progress_bar.progress(min((i + BATCH_SIZE) / total_points, 1.0))
 
         except Exception as e:
-            print(f"Error lote {i}: {e}")
+            print(f"Error en lote {i}: {e}")
             continue
 
-    if progress_bar:
-        progress_bar.empty()
-    if not all_series:
-        return pd.DataFrame()
+    if progress_bar: progress_bar.empty()
+    if not all_series: return pd.DataFrame()
 
     return pd.concat(all_series, ignore_index=True)
 
