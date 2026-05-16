@@ -17,7 +17,6 @@ import folium
 from streamlit_folium import st_folium
 from shapely.geometry import shape
 from supabase import create_client
-from modules.sync_hydro import actualizar_estaciones_bache_reciente
 
 import streamlit as st
 
@@ -1578,26 +1577,3 @@ with tabs[16]:
                 st.info("El depósito está vacío.")
         except Exception as e:
             st.warning(f"No se pudo conectar al bucket: {e}")
-
-st.header("🛰️ Centro de Sincronización Hidrometeorológica (Sihcli-Poter)")
-st.info("Este motor conecta el Gemelo Digital con los satélites de Copernicus (Agencia Espacial Europea) para rellenar los baches de datos desde 2021 hasta el presente.")
-
-if st.button("🚀 Iniciar Sincronización Satelital (Delta 2021-HOY)", type="primary"):
-    with st.spinner("Inicializando protocolos de conexión satelital... esto tomará unos minutos."):
-        exito, resultado = actualizar_estaciones_bache_reciente()
-        
-        if exito:
-            st.success("¡Sincronización Exitosa! Se ha generado el nuevo bloque de datos.")
-            st.dataframe(resultado)
-            
-            # Botón para descargar el Delta y luego tú lo unes a tu CSV maestro de Supabase
-            csv_data = resultado.to_csv(index=False, sep=";").encode('utf-8')
-            st.download_button(
-                label="📥 Descargar Tramo Actualizado (CSV)",
-                data=csv_data,
-                file_name="DatosPptnmes_Delta_2021_Presente.csv",
-                mime="text/csv",
-            )
-            st.caption("☝️ Descarga este archivo y fusiénalo con tu base histórica en Supabase.")
-        else:
-            st.error(f"Fallo en la sincronización: {resultado}")
