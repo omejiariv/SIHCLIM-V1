@@ -49,10 +49,10 @@ fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.ti
 if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"):
     engine = db_manager.get_engine()
     
-    with st.spinner("1. Extrayendo coordenadas de estaciones de la base de datos..."):
+    with st.spinner("1. Extrayendo coordenadas de TODAS las estaciones de la base de datos..."):
         try:
-            # Traemos las estaciones (puedes quitar el LIMIT 10 cuando vayas a hacerlo para las 800)
-            df_estaciones = pd.read_sql("SELECT id_estacion, latitud, longitud FROM estaciones WHERE latitud IS NOT NULL LIMIT 10", engine)
+            # Traemos absolutamente todas las estaciones válidas
+            df_estaciones = pd.read_sql("SELECT id_estacion, latitud, longitud FROM estaciones WHERE latitud IS NOT NULL", engine)
         except Exception as e:
             st.error(f"Error conectando a BD: {e}")
             st.stop()
