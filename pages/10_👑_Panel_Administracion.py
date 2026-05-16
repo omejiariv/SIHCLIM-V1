@@ -35,6 +35,67 @@ except ImportError:
     from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
     from modules.db_manager import get_engine
 
+import datetime
+from modules import db_manager
+from modules.openmeteo_api import get_historical_monthly_series
+
+st.header("🛰️ Sincronizador Maestro Satelital (2021 - Presente)")
+st.info("Descarga el 'Delta' de datos faltantes (Lluvia, ETR, Temp, Rad) para todas las estaciones usando la red satelital Copernicus (Open-Meteo).")
+
+col1, col2 = st.columns(2)
+fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2021, 1, 1))
+fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.timedelta(days=10))
+
+if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"):
+    engine = db_manager.get_engine()
+    
+    with st.spinner("1. Extrayendo coordenadas de estaciones de la base de datos..."):
+        try:
+            # Traemos las estaciones (puedes quitar el LIMIT 10 cuando vayas a hacerlo para las 800)
+            df_estaciones = pd.read_sql("SELECT id_estacion, latitud, longitud FROM estaciones WHERE latitud IS NOT NULL LIMIT 10", engine)
+        except Exception as e:
+            st.error(f"Error conectando a BD: {e}")
+            st.stop()
+            
+    if not df_estaciones.empty:
+        ids = df_estaciones['id_estacion'].astype(str).tolist()
+        lats = df_estaciones['latitud'].astype(float).tolist()
+        lons = df_estaciones['longitud'].astype(float).tolist()
+        
+        with st.spinner(f"2. Conectando con satélites para {len(ids)} estaciones..."):
+            df_resultado = get_historical_monthly_series(
+                station_ids=ids, 
+                lats=lats, 
+                lons=lons, 
+                start_date=fecha_inicio.strftime('%Y-%m-%d'), 
+                end_date=fecha_fin.strftime('%Y-%m-%d')
+            )
+            
+            if not df_resultado.empty:
+                st.success("✅ ¡Datos descargados exitosamente!")
+                
+                # --- MAGIA: Formatear como DatosPptnmes_ENSO.csv ---
+                # Hacemos un PIVOT para que las fechas sean filas y las estaciones sean columnas
+                df_lluvia_ancha = df_resultado.pivot(index='date', columns='id_estacion', values='ppt_mm').reset_index()
+                
+                # Formateamos la fecha para que quede como en tu CSV (ej: 2021-01-01)
+                df_lluvia_ancha['date'] = df_lluvia_ancha['date'].dt.strftime('%Y-%m-%d')
+                df_lluvia_ancha.rename(columns={'date': 'fecha'}, inplace=True)
+                
+                st.subheader("📊 Vista Previa del Delta de Lluvia (Formato Maestro)")
+                st.dataframe(df_lluvia_ancha)
+                
+                # Botón de descarga con separador ";" tal cual tu CSV original
+                csv_data = df_lluvia_ancha.to_csv(index=False, sep=";").encode('utf-8')
+                st.download_button(
+                    label="📥 Descargar Delta de Lluvia (Listo para Supabase)",
+                    data=csv_data,
+                    file_name="DatosPptnmes_Delta_2021_HOY.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.error("No se pudieron descargar datos. Verifica la conexión a internet o los límites de la API.")
+
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
