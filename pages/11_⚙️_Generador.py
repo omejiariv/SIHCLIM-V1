@@ -449,87 +449,86 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA (NUEVO)
+# 🚀 PESTAÑA 3: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (NUEVO)
 # ------------------------------------------------------------------------------
 with tab6:
-    st.header("🌧️ Fusión Inteligente de Series de Tiempo")
+    st.header("🌧️ Fusión Inteligente en Cascada (3 Capas)")
     st.markdown("""
-    Esta herramienta permite rellenar los vacíos (baches) de tu **Archivo Maestro Histórico** usando los datos de un **Archivo Parche/Delta** (como el descargado recientemente desde Supabase/Copérnicus).
+    Esta herramienta rellena vacíos hidrometeorológicos usando un sistema de jerarquía de 3 niveles. 
+    **El nivel superior jamás se sobrescribe**, solo se rellenan sus `NaN` (huecos) con el nivel inferior.
     
-    *🔐 Seguridad: Los datos que ya existen en el archivo Maestro **nunca** se sobrescriben, solo se rellenan las celdas vacías (`NaN`).*
+    * **Prioridad 1:** Archivo Histórico Maestro (Base intocable)
+    * **Prioridad 2:** Parche Institucional (Ej: Viejos registros de IDEAM)
+    * **Prioridad 3:** Delta Satelital (Copérnicus 2021-Hoy)
     """)
     
-    col_m, col_p = st.columns(2)
-    with col_m:
-        file_maestro = st.file_uploader("1️⃣ Sube el Archivo Maestro Histórico (CSV)", type=['csv'], key='up_maestro')
-    with col_p:
-        file_parche = st.file_uploader("2️⃣ Sube el Archivo Delta/Nuevo (CSV)", type=['csv'], key='up_parche')
+    col_1, col_2, col_3 = st.columns(3)
+    with col_1:
+        file_maestro = st.file_uploader("🥇 1. Archivo Maestro Base", type=['csv'], key='up_maestro')
+    with col_2:
+        file_parche_1 = st.file_uploader("🥈 2. Parche Intermedio", type=['csv'], key='up_parche1')
+    with col_3:
+        file_parche_2 = st.file_uploader("🥉 3. Delta Satelital", type=['csv'], key='up_parche2')
         
-    if file_maestro and file_parche:
-        if st.button("🔄 Ejecutar Fusión Inteligente", type="primary", use_container_width=True):
-            with st.spinner("Alineando fechas y cruzando estaciones..."):
+    if file_maestro and file_parche_1 and file_parche_2:
+        if st.button("🔄 Ejecutar Fusión en Cascada", type="primary", use_container_width=True):
+            with st.spinner("Alineando fechas y cruzando estaciones de 3 fuentes..."):
                 try:
-                    # 1. Leer archivos asumiendo separador ';'
-                    # Usamos 'latin1' como fallback porque muchos archivos de IDEAM vienen así.
-                    try:
-                        df_m = pd.read_csv(file_maestro, sep=';', encoding='utf-8')
-                    except UnicodeDecodeError:
-                        file_maestro.seek(0)
-                        df_m = pd.read_csv(file_maestro, sep=';', encoding='latin1')
-                        
-                    try:
-                        df_p = pd.read_csv(file_parche, sep=';', encoding='utf-8')
-                    except UnicodeDecodeError:
-                        file_parche.seek(0)
-                        df_p = pd.read_csv(file_parche, sep=';', encoding='latin1')
+                    # Función local para lectura a prueba de balas (Encoding)
+                    def leer_csv_seguro(file_obj):
+                        try:
+                            return pd.read_csv(file_obj, sep=';', encoding='utf-8')
+                        except UnicodeDecodeError:
+                            file_obj.seek(0)
+                            return pd.read_csv(file_obj, sep=';', encoding='latin1')
+                            
+                    # 1. Leer los tres archivos
+                    df_m = leer_csv_seguro(file_maestro)
+                    df_p1 = leer_csv_seguro(file_parche_1)
+                    df_p2 = leer_csv_seguro(file_parche_2)
 
-                    # 2. Homologar columna de fecha
-                    if 'date' in df_p.columns:
-                        df_p.rename(columns={'date': 'fecha'}, inplace=True)
-                    if 'date' in df_m.columns:
-                        df_m.rename(columns={'date': 'fecha'}, inplace=True)
-                        
-                    if 'fecha' not in df_m.columns or 'fecha' not in df_p.columns:
-                        st.error("❌ Los archivos deben contener una columna llamada 'fecha' o 'date'.")
+                    # 2. Homologar columnas de fechas a "fecha"
+                    for df_temp in [df_m, df_p1, df_p2]:
+                        if 'date' in df_temp.columns:
+                            df_temp.rename(columns={'date': 'fecha'}, inplace=True)
+                            
+                    if 'fecha' not in df_m.columns or 'fecha' not in df_p1.columns or 'fecha' not in df_p2.columns:
+                        st.error("❌ Los tres archivos deben contener una columna llamada 'fecha' o 'date'.")
                         st.stop()
 
-                    # 3. Convertir a datetime estrictamente
-                    df_m['fecha'] = pd.to_datetime(df_m['fecha'], errors='coerce')
-                    df_p['fecha'] = pd.to_datetime(df_p['fecha'], errors='coerce')
-                    
-                    # Eliminar filas donde la fecha no se pudo procesar
-                    df_m = df_m.dropna(subset=['fecha'])
-                    df_p = df_p.dropna(subset=['fecha'])
-                    
-                    # 4. Establecer la fecha como índice (columna vertebral del cruce)
-                    df_m.set_index('fecha', inplace=True)
-                    df_p.set_index('fecha', inplace=True)
+                    # 3. Convertir a datetime estrictamente y limpiar nulos
+                    for df_temp in [df_m, df_p1, df_p2]:
+                        df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
+                        df_temp.dropna(subset=['fecha'], inplace=True)
+                        df_temp.set_index('fecha', inplace=True)
                     
                     # ==========================================================
-                    # 🧠 COMBINE FIRST: Fusión de Relleno Inteligente
+                    # 🧠 CASCADA COMBINE FIRST: Fusión de Relleno Jerárquico
+                    # df_m manda. Sus huecos los tapa df_p1. Los huecos que queden los tapa df_p2.
                     # ==========================================================
-                    df_final = df_m.combine_first(df_p)
+                    df_final = df_m.combine_first(df_p1).combine_first(df_p2)
                     
                     # 5. Reorganizar y limpiar el formato
                     df_final = df_final.sort_index().reset_index()
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
-                    st.success("✅ ¡Fusión completada con éxito! La matriz se ha consolidado.")
+                    st.success("✅ ¡Fusión en cascada completada! La matriz se ha blindado.")
                     
                     # Mostrar métricas de éxito
-                    st.info(f"📊 **Resumen:** El archivo final contiene {len(df_final)} filas y {len(df_final.columns)} columnas.")
-                    st.dataframe(df_final.tail(10), use_container_width=True) # Mostrar el final (datos nuevos)
+                    st.info(f"📊 **Resumen:** El archivo final contiene **{len(df_final)} filas (meses)** y **{len(df_final.columns) - 1} estaciones**.")
+                    st.dataframe(df_final.tail(10), use_container_width=True)
                     
                     # 6. Preparar descarga
                     csv_fusionado = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
                     
                     st.download_button(
-                        label="📥 Descargar Matriz Consolidada (Listo para Supabase)",
+                        label="📥 Descargar Matriz Consolidada (Lista para Supabase)",
                         data=csv_fusionado,
                         file_name="DatosPptnmes_ENSO_Actualizado.csv",
-                        mime="text/csv"
+                        mime="text/csv",
+                        type="primary"
                     )
-                    st.caption("☝️ Descarga este archivo y súbelo a tu bucket de **Supabase Storage** reemplazando el antiguo.")
+                    st.caption("☝️ Sube este archivo consolidado a tu bucket de **Supabase Storage** reemplazando el antiguo.")
                     
                 except Exception as e:
                     st.error(f"❌ Ocurrió un error procesando los archivos: {e}")
