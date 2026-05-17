@@ -74,18 +74,39 @@ if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"
             if not df_resultado.empty:
                 st.success("✅ ¡Datos descargados exitosamente!")
                 
-                # --- MAGIA: Formatear como DatosPptnmes_ENSO.csv ---
-                # Hacemos un PIVOT para que las fechas sean filas y las estaciones sean columnas
+                # --- PROCESO DE PIVOTEO (MATRIZ ANCHA) ---
                 df_lluvia_ancha = df_resultado.pivot(index='date', columns='id_estacion', values='ppt_mm').reset_index()
-                
-                # Formateamos la fecha para que quede como en tu CSV (ej: 2021-01-01)
                 df_lluvia_ancha['date'] = df_lluvia_ancha['date'].dt.strftime('%Y-%m-%d')
                 df_lluvia_ancha.rename(columns={'date': 'fecha'}, inplace=True)
                 
-                st.subheader("📊 Vista Previa del Delta de Lluvia (Formato Maestro)")
+                # ==========================================================
+                # 📊 SISTEMA DE AUDITORÍA FORENSE (NUEVO)
+                # ==========================================================
+                # Identificamos qué columnas (estaciones) tienen al menos un dato numérico válido
+                columnas_estaciones = [col for col in df_lluvia_ancha.columns if col != 'fecha']
+                estaciones_exitosas = [col for col in columnas_estaciones if df_lluvia_ancha[col].notna().any()]
+                estaciones_fallidas = list(set(ids) - set(estaciones_exitosas))
+                
+                st.markdown("### 📋 Reporte de Auditoría del Escaneo")
+                col_aud1, col_aud2 = st.columns(2)
+                
+                with col_aud1:
+                    st.metric("🟢 Estaciones Actualizadas", f"{len(estaciones_exitosas)} / {len(ids)}")
+                    if estaciones_exitosas:
+                        with st.expander("Ver lista de IDs Sincronizados"):
+                            st.write(estaciones_exitosas)
+                            
+                with col_aud2:
+                    st.metric("🔴 Estaciones Sin Datos (Bache)", f"{len(estaciones_fallidas)} / {len(ids)}")
+                    if estaciones_fallidas:
+                        with st.expander("Ver lista de IDs Fallidos / Sin Coordenadas"):
+                            st.write(estaciones_fallidas)
+                # ==========================================================
+                
+                st.subheader("📊 Vista Previa del Delta de Lluvia")
                 st.dataframe(df_lluvia_ancha)
                 
-                # Botón de descarga con separador ";" tal cual tu CSV original
+                # Botón de descarga original con formato de salida maestro
                 csv_data = df_lluvia_ancha.to_csv(index=False, sep=";").encode('utf-8')
                 st.download_button(
                     label="📥 Descargar Delta de Lluvia (Listo para Supabase)",
@@ -93,8 +114,6 @@ if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"
                     file_name="DatosPptnmes_Delta_2021_HOY.csv",
                     mime="text/csv",
                 )
-            else:
-                st.error("No se pudieron descargar datos. Verifica la conexión a internet o los límites de la API.")
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
