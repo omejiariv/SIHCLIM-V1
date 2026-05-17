@@ -47,12 +47,13 @@ muro_de_acceso_beta()
 # ==============================================================================
 
 # --- ACTUALIZACIÓN: AGREGAMOS LA CUARTA PESTAÑA ---
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🧩 1. Intersecciones Espaciales (Cuencas)", 
     "🔄 2. Convertidor GeoJSON (Soporta ZIP y Simplificación)", 
     "🗜️ 3. Compresor/Extractor ZIP",
     "🔁 4. Convertidor GeoJSON a SHP + Atributos",
-    "🔗 5. Homologador de Veredas"
+    "🔗 5. Homologador de Veredas",
+    "🌧️ 6. Fusión Hidrometeorológica"
 ])
 
 # =====================================================================
@@ -446,3 +447,89 @@ with tab4:
 
                     except Exception as e:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
+
+# ------------------------------------------------------------------------------
+# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA (NUEVO)
+# ------------------------------------------------------------------------------
+with tab6:
+    st.header("🌧️ Fusión Inteligente de Series de Tiempo")
+    st.markdown("""
+    Esta herramienta permite rellenar los vacíos (baches) de tu **Archivo Maestro Histórico** usando los datos de un **Archivo Parche/Delta** (como el descargado recientemente desde Supabase/Copérnicus).
+    
+    *🔐 Seguridad: Los datos que ya existen en el archivo Maestro **nunca** se sobrescriben, solo se rellenan las celdas vacías (`NaN`).*
+    """)
+    
+    col_m, col_p = st.columns(2)
+    with col_m:
+        file_maestro = st.file_uploader("1️⃣ Sube el Archivo Maestro Histórico (CSV)", type=['csv'], key='up_maestro')
+    with col_p:
+        file_parche = st.file_uploader("2️⃣ Sube el Archivo Delta/Nuevo (CSV)", type=['csv'], key='up_parche')
+        
+    if file_maestro and file_parche:
+        if st.button("🔄 Ejecutar Fusión Inteligente", type="primary", use_container_width=True):
+            with st.spinner("Alineando fechas y cruzando estaciones..."):
+                try:
+                    # 1. Leer archivos asumiendo separador ';'
+                    # Usamos 'latin1' como fallback porque muchos archivos de IDEAM vienen así.
+                    try:
+                        df_m = pd.read_csv(file_maestro, sep=';', encoding='utf-8')
+                    except UnicodeDecodeError:
+                        file_maestro.seek(0)
+                        df_m = pd.read_csv(file_maestro, sep=';', encoding='latin1')
+                        
+                    try:
+                        df_p = pd.read_csv(file_parche, sep=';', encoding='utf-8')
+                    except UnicodeDecodeError:
+                        file_parche.seek(0)
+                        df_p = pd.read_csv(file_parche, sep=';', encoding='latin1')
+
+                    # 2. Homologar columna de fecha
+                    if 'date' in df_p.columns:
+                        df_p.rename(columns={'date': 'fecha'}, inplace=True)
+                    if 'date' in df_m.columns:
+                        df_m.rename(columns={'date': 'fecha'}, inplace=True)
+                        
+                    if 'fecha' not in df_m.columns or 'fecha' not in df_p.columns:
+                        st.error("❌ Los archivos deben contener una columna llamada 'fecha' o 'date'.")
+                        st.stop()
+
+                    # 3. Convertir a datetime estrictamente
+                    df_m['fecha'] = pd.to_datetime(df_m['fecha'], errors='coerce')
+                    df_p['fecha'] = pd.to_datetime(df_p['fecha'], errors='coerce')
+                    
+                    # Eliminar filas donde la fecha no se pudo procesar
+                    df_m = df_m.dropna(subset=['fecha'])
+                    df_p = df_p.dropna(subset=['fecha'])
+                    
+                    # 4. Establecer la fecha como índice (columna vertebral del cruce)
+                    df_m.set_index('fecha', inplace=True)
+                    df_p.set_index('fecha', inplace=True)
+                    
+                    # ==========================================================
+                    # 🧠 COMBINE FIRST: Fusión de Relleno Inteligente
+                    # ==========================================================
+                    df_final = df_m.combine_first(df_p)
+                    
+                    # 5. Reorganizar y limpiar el formato
+                    df_final = df_final.sort_index().reset_index()
+                    df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
+                    
+                    st.success("✅ ¡Fusión completada con éxito! La matriz se ha consolidado.")
+                    
+                    # Mostrar métricas de éxito
+                    st.info(f"📊 **Resumen:** El archivo final contiene {len(df_final)} filas y {len(df_final.columns)} columnas.")
+                    st.dataframe(df_final.tail(10), use_container_width=True) # Mostrar el final (datos nuevos)
+                    
+                    # 6. Preparar descarga
+                    csv_fusionado = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
+                    
+                    st.download_button(
+                        label="📥 Descargar Matriz Consolidada (Listo para Supabase)",
+                        data=csv_fusionado,
+                        file_name="DatosPptnmes_ENSO_Actualizado.csv",
+                        mime="text/csv"
+                    )
+                    st.caption("☝️ Descarga este archivo y súbelo a tu bucket de **Supabase Storage** reemplazando el antiguo.")
+                    
+                except Exception as e:
+                    st.error(f"❌ Ocurrió un error procesando los archivos: {e}")
