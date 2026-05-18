@@ -1657,3 +1657,37 @@ with tabs[16]:
                 st.info("El depósito está vacío.")
         except Exception as e:
             st.warning(f"No se pudo conectar al bucket: {e}")
+
+from modules.piragua_api import extraer_datos_piragua
+
+st.markdown("---")
+st.header("💧 Conector Capa 2: Red Piragua (Corantioquia)")
+st.info("Herramienta de Ingeniería Inversa para extraer datos del Geoportal Institucional.")
+
+url_piragua = st.text_input(
+    "URL del Endpoint (JSON/REST):", 
+    placeholder="Ej: https://piragua.corantioquia.gov.co/api/v1/lecturas...",
+    help="Abre el geoportal de Piragua, pulsa F12, ve a 'Red/Network' y copia la URL del archivo JSON que carga las estaciones."
+)
+
+if st.button("🕵️‍♂️ Extraer Datos de Piragua", type="primary"):
+    if url_piragua:
+        with st.spinner("Infiltrando el geoportal institucional..."):
+            exito, resultado = extraer_datos_piragua(url_piragua)
+            
+            if exito:
+                st.success("✅ ¡Datos extraídos con éxito desde Corantioquia!")
+                st.dataframe(resultado)
+                
+                csv_piragua = resultado.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
+                st.download_button(
+                    label="📥 Descargar Parche Piragua (Capa 2)",
+                    data=csv_piragua,
+                    file_name="Datos_Piragua_Capa2.csv",
+                    mime="text/csv"
+                )
+                st.caption("☝️ Este archivo es tu 'Parche Intermedio'. Úsalo en la Caja 2 de la herramienta de Fusión.")
+            else:
+                st.error(f"Fallo en la extracción: {resultado}")
+    else:
+        st.warning("⚠️ Debes ingresar una URL válida obtenida con F12.")
