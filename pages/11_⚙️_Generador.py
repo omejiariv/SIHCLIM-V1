@@ -500,15 +500,28 @@ with tab6:
                         df_temp.dropna(subset=['fecha'], inplace=True)
                         df_temp.set_index('fecha', inplace=True)
                     
-                    # Fusión jerárquica
+                    # ==========================================================
+                    # 🧠 CASCADA COMBINE FIRST: Fusión de Relleno Jerárquico
+                    # ==========================================================
                     df_final = df_m.combine_first(df_p1).combine_first(df_p2)
                     
+                    # 🧹 GUILLOTINA TEMPORAL (Eliminar filas 791-795 o basura futura)
+                    # 1. Cortamos cualquier fecha que sea mayor al día de hoy
+                    df_final = df_final[df_final.index <= pd.Timestamp.today()]
+                    
+                    # 2. Eliminamos filas donde TODAS las estaciones estén vacías (NaN)
+                    # (ignorando las columnas de índices como 'soi' o 'oni' si existen)
+                    cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
+                    if cols_estaciones:
+                        df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
+                    
+                    # 5. Reorganizar y limpiar el formato
                     df_final = df_final.sort_index().reset_index()
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
                     # Guardamos los resultados en la memoria de la sesión
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"El archivo final contiene **{len(df_final)} filas (meses)** y **{len(df_final.columns) - 1} estaciones**."
+                    st.session_state['fusion_resumen'] = f"El archivo final depurado contiene **{len(df_final)} filas (meses válidos)** y **{len(df_final.columns) - 1} estaciones**."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
