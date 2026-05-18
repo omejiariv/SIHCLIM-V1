@@ -449,19 +449,21 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 3: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (NUEVO)
+# 🚀 PESTAÑA 3: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (ESTABILIZADA)
 # ------------------------------------------------------------------------------
 with tab6:
     st.header("🌧️ Fusión Inteligente en Cascada (3 Capas)")
     st.markdown("""
     Esta herramienta rellena vacíos hidrometeorológicos usando un sistema de jerarquía de 3 niveles. 
     **El nivel superior jamás se sobrescribe**, solo se rellenan sus `NaN` (huecos) con el nivel inferior.
-    
-    * **Prioridad 1:** Archivo Histórico Maestro (Base intocable)
-    * **Prioridad 2:** Parche Institucional (Ej: Viejos registros de IDEAM)
-    * **Prioridad 3:** Delta Satelital (Copérnicus 2021-Hoy)
     """)
     
+    # Inicializar llaves en el session_state para evitar que se borren al descargar
+    if 'csv_fusionado_data' not in st.session_state:
+        st.session_state['csv_fusionado_data'] = None
+        st.session_state['fusion_resumen'] = ""
+        st.session_state['fusion_preview'] = None
+
     col_1, col_2, col_3 = st.columns(3)
     with col_1:
         file_maestro = st.file_uploader("🥇 1. Archivo Maestro Base", type=['csv'], key='up_maestro')
@@ -474,7 +476,6 @@ with tab6:
         if st.button("🔄 Ejecutar Fusión en Cascada", type="primary", use_container_width=True):
             with st.spinner("Alineando fechas y cruzando estaciones de 3 fuentes..."):
                 try:
-                    # Función local para lectura a prueba de balas (Encoding)
                     def leer_csv_seguro(file_obj):
                         try:
                             return pd.read_csv(file_obj, sep=';', encoding='utf-8')
@@ -482,12 +483,10 @@ with tab6:
                             file_obj.seek(0)
                             return pd.read_csv(file_obj, sep=';', encoding='latin1')
                             
-                    # 1. Leer los tres archivos
                     df_m = leer_csv_seguro(file_maestro)
                     df_p1 = leer_csv_seguro(file_parche_1)
                     df_p2 = leer_csv_seguro(file_parche_2)
 
-                    # 2. Homologar columnas de fechas a "fecha"
                     for df_temp in [df_m, df_p1, df_p2]:
                         if 'date' in df_temp.columns:
                             df_temp.rename(columns={'date': 'fecha'}, inplace=True)
@@ -496,39 +495,38 @@ with tab6:
                         st.error("❌ Los tres archivos deben contener una columna llamada 'fecha' o 'date'.")
                         st.stop()
 
-                    # 3. Convertir a datetime estrictamente y limpiar nulos
                     for df_temp in [df_m, df_p1, df_p2]:
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
                         df_temp.set_index('fecha', inplace=True)
                     
-                    # ==========================================================
-                    # 🧠 CASCADA COMBINE FIRST: Fusión de Relleno Jerárquico
-                    # df_m manda. Sus huecos los tapa df_p1. Los huecos que queden los tapa df_p2.
-                    # ==========================================================
+                    # Fusión jerárquica
                     df_final = df_m.combine_first(df_p1).combine_first(df_p2)
                     
-                    # 5. Reorganizar y limpiar el formato
                     df_final = df_final.sort_index().reset_index()
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
-                    st.success("✅ ¡Fusión en cascada completada! La matriz se ha blindado.")
-                    
-                    # Mostrar métricas de éxito
-                    st.info(f"📊 **Resumen:** El archivo final contiene **{len(df_final)} filas (meses)** y **{len(df_final.columns) - 1} estaciones**.")
-                    st.dataframe(df_final.tail(10), use_container_width=True)
-                    
-                    # 6. Preparar descarga
-                    csv_fusionado = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
-                    
-                    st.download_button(
-                        label="📥 Descargar Matriz Consolidada (Lista para Supabase)",
-                        data=csv_fusionado,
-                        file_name="DatosPptnmes_ENSO_Actualizado.csv",
-                        mime="text/csv",
-                        type="primary"
-                    )
-                    st.caption("☝️ Sube este archivo consolidado a tu bucket de **Supabase Storage** reemplazando el antiguo.")
+                    # Guardamos los resultados en la memoria de la sesión
+                    st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
+                    st.session_state['fusion_resumen'] = f"El archivo final contiene **{len(df_final)} filas (meses)** y **{len(df_final.columns) - 1} estaciones**."
+                    st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
                     st.error(f"❌ Ocurrió un error procesando los archivos: {e}")
+
+    # Renderizado fuera del botón: Garantiza que no desaparezca al hacer clic en descargar
+    if st.session_state['csv_fusionado_data'] is not None:
+        st.markdown("---")
+        st.success("✅ ¡Fusión en cascada completada! La matriz se ha blindado.")
+        st.info(st.session_state['fusion_resumen'])
+        st.dataframe(st.session_state['fusion_preview'], use_container_width=True)
+        
+        st.download_button(
+            label="📥 Descargar Matriz Consolidada (Listo para Supabase)",
+            data=st.session_state['csv_fusionado_data'],
+            file_name="DatosPptnmes_ENSO_Actualizado.csv",
+            mime="text/csv",
+            type="primary",
+            use_container_width=True
+        )
+        st.caption("☝️ Sube este archivo consolidado a tu bucket de **Supabase Storage** reemplazando el antiguo.")
