@@ -23,17 +23,23 @@ def extraer_datos_ideam(estaciones_ids, fecha_inicio):
     
     progreso = st.progress(0, text="📡 IDEAM: Sumando millones de registros de 10 minutos en los servidores del Estado...")
 
+    # Reemplaza la sección del bucle for en modules/ideam_api.py con esto:
+
     for i in range(0, len(estaciones_str), BATCH_SIZE):
         lote = estaciones_str[i:i + BATCH_SIZE]
         lista_sql = ",".join([f"'{e}'" for e in lote])
         
-        # 🧠 INGENIERÍA SoQL: Le decimos al IDEAM que agrupe por mes y sume la lluvia ANTES de enviarla
         query = {
             "$select": "codigoestacion, date_trunc_ym(fechaobservacion) as mes_ano, sum(valorobservado) as valor_mensual",
             "$where": f"codigoestacion in ({lista_sql}) AND fechaobservacion >= '{fecha_inicio}T00:00:00.000'",
             "$group": "codigoestacion, date_trunc_ym(fechaobservacion)",
             "$limit": 50000
         }
+        
+        # 🕵️‍♂️ MODO DIAGNÓSTICO: Construimos la URL visible para que el Capitán audite
+        req = requests.Request('GET', url, params=query).prepare()
+        if i == 0: # Solo mostramos la URL del primer lote para no inundar la pantalla
+            st.info(f"🔗 **URL de Prueba IDEAM (Lote 1):**\n[Haz clic aquí para ver la respuesta cruda del Estado]({req.url})")
         
         try:
             response = requests.get(url, params=query, timeout=45)
@@ -42,9 +48,9 @@ def extraer_datos_ideam(estaciones_ids, fecha_inicio):
                 if data:
                     all_data.extend(data)
             else:
-                print(f"Error {response.status_code}: {response.text}")
+                print(f"Error IDEAM: {response.status_code}")
         except Exception as e:
-            print(f"Error de red: {e}")
+            print(f"Fallo de red: {e}")
             
         progreso.progress(min((i + BATCH_SIZE) / len(estaciones_str), 1.0))
 
