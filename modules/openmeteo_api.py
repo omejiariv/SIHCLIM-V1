@@ -128,19 +128,24 @@ def get_historical_monthly_series(station_ids, lats, lons, start_date, end_date)
 
     if not lats or not lons or not station_ids:
         return pd.DataFrame()
-        
-    if not isinstance(lats, list): lats = [lats]
-    if not isinstance(lons, list): lons = [lons]
-    if not isinstance(station_ids, list): station_ids = [station_ids]
 
-    # 🔥 OPTIMIZACIÓN EXTREMA: 80 estaciones por consulta (Límite de API es 100)
-    BATCH_SIZE = 80
+    # Limpieza estricta: asegurar que sean números puros
+    try:
+        lats = [float(lat) for lat in lats]
+        lons = [float(lon) for lon in lons]
+    except Exception as e:
+        st.error(f"Error de formato en coordenadas. Revisa la base de datos: {e}")
+        return pd.DataFrame()
+        
+    station_ids = [str(sid) for sid in station_ids]
+
+    # 🔥 TAMAÑO TÁCTICO: 25. Minimiza el riesgo de "manzanas podridas"
+    BATCH_SIZE = 25
     all_series = []
     total_points = len(lats)
     
-    progress_bar = None
-    if total_points > BATCH_SIZE:
-        progress_bar = st.progress(0, text=f"🛰️ Satélite Copérnicus: Escaneando {total_points} estaciones en lotes gigantes...")
+    progress_bar = st.progress(0, text=f"🛰️ Copérnicus: Escaneando {total_points} estaciones...")
+    aviso_errores = st.empty() # Cajita para que la app nos avise si un lote falla
 
     for i in range(0, total_points, BATCH_SIZE):
         ids_batch = station_ids[i : i + BATCH_SIZE]
@@ -156,19 +161,28 @@ def get_historical_monthly_series(station_ids, lats, lons, start_date, end_date)
             "timezone": "America/Bogota",
         }
 
-        try:
-            for attempt in range(3):
-                response = requests.get(url, params=params, timeout=60)
+        exito = False
+        for attempt in range(3):
+            try:
+                response = requests.get(url, params=params, timeout=40)
                 if response.status_code == 200:
+                    exito = True
                     break
                 elif response.status_code == 429:
-                    print(f"⚠️ Alerta de límite en lote {i}. Pausa táctica de 10s...")
-                    time.sleep(10)
+                    aviso_errores.warning(f"⚠️ Pausa obligatoria por límite de API (Lote {i}). Esperando 15s...")
+                    time.sleep(15)
+                elif response.status_code == 400:
+                    aviso_errores.error(f"❌ Error de Coordenadas en lote {i}. El servidor dice: {response.text}")
+                    break # Si es error 400, no reintentamos porque la coordenada está mal de fábrica
                 else:
-                    time.sleep(2)
+                    time.sleep(5)
+            except Exception as e:
+                time.sleep(5)
 
-            if response.status_code != 200: continue
+        if not exito:
+            continue
 
+        try:
             data = response.json()
             results = data if isinstance(data, list) else [data]
 
@@ -192,22 +206,19 @@ def get_historical_monthly_series(station_ids, lats, lons, start_date, end_date)
                 df_monthly["id_estacion"] = ids_batch[j]
                 
                 all_series.append(df_monthly)
-
-            # 🛡️ ESCUDO ANTI-BLOQUEOS: Dormimos 5 segundos obligatorios antes del siguiente lote
-            time.sleep(5)
-            
-            if progress_bar:
-                progress_bar.progress(min((i + BATCH_SIZE) / total_points, 1.0))
-
         except Exception as e:
-            print(f"❌ Error en lote {i}: {e}")
-            continue
+            aviso_errores.error(f"Error procesando JSON en lote {i}: {e}")
 
-    if progress_bar: progress_bar.empty()
-    if not all_series: return pd.DataFrame()
+        # 🛡️ ESCUDO ANTI-BLOQUEOS: Dormimos 7 segundos
+        time.sleep(7)
+        progress_bar.progress(min((i + BATCH_SIZE) / total_points, 1.0))
+
+    progress_bar.empty()
+    if not all_series: 
+        return pd.DataFrame()
 
     return pd.concat(all_series, ignore_index=True)
-
+    
 # ==============================================================================
 # 3. FUNCIÓN PARA PROMEDIOS CLIMÁTICOS (MAPAS ESTÁTICOS)
 # ==============================================================================
