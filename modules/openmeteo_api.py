@@ -115,7 +115,6 @@ def get_weather_forecast_detailed(lat, lon):
 
     return pd.DataFrame()
 
-
 # ==============================================================================
 # 2. FUNCIÓN PARA SERIES MENSUALES (LLUVIA, ETR, TEMP, RADIACIÓN)
 # ==============================================================================
