@@ -47,75 +47,98 @@ col1, col2 = st.columns(2)
 fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2021, 1, 1))
 fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.timedelta(days=10))
 
+# ==============================================================================
+# 🧠 MEMORIA DEL PANEL: Evitar que el archivo desaparezca si la página parpadea
+# ==============================================================================
+if 'copernicus_descargado' not in st.session_state:
+    st.session_state['copernicus_descargado'] = None
+    st.session_state['copernicus_metricas'] = None
+    st.session_state['copernicus_exitosas'] = []
+    st.session_state['copernicus_fallidas'] = []
+
+# ==============================================================================
+# BOTÓN DE SINCRONIZACIÓN SATELITAL
+# ==============================================================================
 if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"):
     engine = db_manager.get_engine()
     
-    with st.spinner("1. Extrayendo coordenadas de TODAS las estaciones de la base de datos..."):
+    with st.spinner("1. Extrayendo coordenadas de TODAS las estaciones..."):
         try:
-            # Traemos absolutamente todas las estaciones válidas
             df_estaciones = pd.read_sql("SELECT id_estacion, latitud, longitud FROM estaciones WHERE latitud IS NOT NULL", engine)
         except Exception as e:
             st.error(f"Error conectando a BD: {e}")
             st.stop()
-            
-    if not df_estaciones.empty:
-        ids = df_estaciones['id_estacion'].astype(str).tolist()
-        lats = df_estaciones['latitud'].astype(float).tolist()
-        lons = df_estaciones['longitud'].astype(float).tolist()
-        
-        with st.spinner(f"2. Conectando con satélites para {len(ids)} estaciones..."):
-            df_resultado = get_historical_monthly_series(
-                station_ids=ids, 
-                lats=lats, 
-                lons=lons, 
-                start_date=fecha_inicio.strftime('%Y-%m-%d'), 
-                end_date=fecha_fin.strftime('%Y-%m-%d')
-            )
-            
-            if not df_resultado.empty:
-                st.success("✅ ¡Datos descargados exitosamente!")
-                
-                # --- PROCESO DE PIVOTEO (MATRIZ ANCHA) ---
-                df_lluvia_ancha = df_resultado.pivot(index='date', columns='id_estacion', values='ppt_mm').reset_index()
-                df_lluvia_ancha['date'] = df_lluvia_ancha['date'].dt.strftime('%Y-%m-%d')
-                df_lluvia_ancha.rename(columns={'date': 'fecha'}, inplace=True)
-                
-                # ==========================================================
-                # 📊 SISTEMA DE AUDITORÍA FORENSE (NUEVO)
-                # ==========================================================
-                # Identificamos qué columnas (estaciones) tienen al menos un dato numérico válido
-                columnas_estaciones = [col for col in df_lluvia_ancha.columns if col != 'fecha']
-                estaciones_exitosas = [col for col in columnas_estaciones if df_lluvia_ancha[col].notna().any()]
-                estaciones_fallidas = list(set(ids) - set(estaciones_exitosas))
-                
-                st.markdown("### 📋 Reporte de Auditoría del Escaneo")
-                col_aud1, col_aud2 = st.columns(2)
-                
-                with col_aud1:
-                    st.metric("🟢 Estaciones Actualizadas", f"{len(estaciones_exitosas)} / {len(ids)}")
-                    if estaciones_exitosas:
-                        with st.expander("Ver lista de IDs Sincronizados"):
-                            st.write(estaciones_exitosas)
-                            
-                with col_aud2:
-                    st.metric("🔴 Estaciones Sin Datos (Bache)", f"{len(estaciones_fallidas)} / {len(ids)}")
-                    if estaciones_fallidas:
-                        with st.expander("Ver lista de IDs Fallidos / Sin Coordenadas"):
-                            st.write(estaciones_fallidas)
-                # ==========================================================
-                
-                st.subheader("📊 Vista Previa del Delta de Lluvia")
-                st.dataframe(df_lluvia_ancha)
-                
-                # Botón de descarga original con formato de salida maestro
-                csv_data = df_lluvia_ancha.to_csv(index=False, sep=";").encode('utf-8')
-                st.download_button(
-                    label="📥 Descargar Delta de Lluvia (Listo para Supabase)",
-                    data=csv_data,
-                    file_name="DatosPptnmes_Delta_2021_HOY.csv",
-                    mime="text/csv",
-                )
 
+    if not df_estaciones.empty:
+        ids = df_estaciones['id_estacion'].tolist()
+        lats = df_estaciones['latitud'].tolist()
+        lons = df_estaciones['longitud'].tolist()
+        
+        # Escaneo profundo de Copérnicus
+        df_resultado = openmeteo_api.get_historical_monthly_series(
+            station_ids=ids, lats=lats, lons=lons, 
+            start_date=fecha_inicio.strftime('%Y-%m-%d'), 
+            end_date=fecha_fin.strftime('%Y-%m-%d')
+        )
+        
+        if not df_resultado.empty:
+            # 1. PIVOTEO A MATRIZ ANCHA
+            df_lluvia_ancha = df_resultado.pivot(index='date', columns='id_estacion', values='ppt_mm').reset_index()
+            df_lluvia_ancha['date'] = df_lluvia_ancha['date'].dt.strftime('%Y-%m-%d')
+            df_lluvia_ancha.rename(columns={'date': 'fecha'}, inplace=True)
+            
+            # 2. AUDITORÍA FORENSE
+            columnas_estaciones = [col for col in df_lluvia_ancha.columns if col != 'fecha']
+            estaciones_exitosas = [col for col in columnas_estaciones if df_lluvia_ancha[col].notna().any()]
+            estaciones_fallidas = list(set(ids) - set(estaciones_exitosas))
+            
+            # 3. GUARDAR EN LA BÓVEDA (SESSION STATE)
+            st.session_state['copernicus_descargado'] = df_lluvia_ancha
+            st.session_state['copernicus_exitosas'] = estaciones_exitosas
+            st.session_state['copernicus_fallidas'] = estaciones_fallidas
+            st.rerun() # Recargar la interfaz suavemente para mostrar los resultados fijos
+
+# ==============================================================================
+# RENDERIZADO FUERA DEL BOTÓN (Para que nunca desaparezca)
+# ==============================================================================
+if st.session_state['copernicus_descargado'] is not None:
+    st.markdown("---")
+    st.success("✅ ¡Datos satelitales descargados y protegidos en memoria!")
+    
+    df_lluvia_ancha = st.session_state['copernicus_descargado']
+    est_exit = st.session_state['copernicus_exitosas']
+    est_fall = st.session_state['copernicus_fallidas']
+    total_ids = len(est_exit) + len(est_fall)
+    
+    st.markdown("### 📋 Reporte de Auditoría del Escaneo")
+    col_aud1, col_aud2 = st.columns(2)
+    
+    with col_aud1:
+        st.metric("🟢 Estaciones Actualizadas", f"{len(est_exit)} / {total_ids}")
+        if est_exit:
+            with st.expander("Ver lista de IDs Sincronizados"):
+                st.write(est_exit)
+                
+    with col_aud2:
+        st.metric("🔴 Estaciones Sin Datos (Bache)", f"{len(est_fall)} / {total_ids}")
+        if est_fall:
+            with st.expander("Ver lista de IDs Fallidos / Sin Coordenadas"):
+                st.write(est_fall)
+                
+    st.subheader("📊 Vista Previa del Delta de Lluvia")
+    st.dataframe(df_lluvia_ancha.tail(10))
+    
+    # BOTÓN DE DESCARGA ETERNO
+    csv_data = df_lluvia_ancha.to_csv(index=False, sep=";").encode('utf-8')
+    st.download_button(
+        label="📥 Descargar Delta de Lluvia Satelital",
+        data=csv_data,
+        file_name="DatosPptnmes_Delta_2021_HOY.csv",
+        mime="text/csv",
+        type="primary",
+        use_container_width=True
+    )
+    
 # Datos IDEAM
 
 st.markdown("---")
