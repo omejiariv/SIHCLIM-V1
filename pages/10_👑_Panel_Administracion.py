@@ -37,6 +37,7 @@ except ImportError:
 
 import datetime
 from modules import db_manager
+from modules.ideam_api import extraer_datos_ideam
 from modules.openmeteo_api import get_historical_monthly_series
 
 st.header("🛰️ Sincronizador Maestro Satelital (2021 - Presente)")
@@ -114,6 +115,46 @@ if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"
                     file_name="DatosPptnmes_Delta_2021_HOY.csv",
                     mime="text/csv",
                 )
+
+# Datos IDEAM
+
+st.markdown("---")
+st.header("🇨🇴 Conector Capa 2: Red Oficial IDEAM (Datos Abiertos)")
+st.info("Descarga registros crudos de precipitación directamente de los servidores del Estado para rellenar vacíos recientes.")
+
+fecha_inicio_ideam = st.date_input("Fecha de Inicio (Búsqueda IDEAM):", datetime.date(2021, 1, 1), key="ideam_date")
+
+if st.button("🏛️ Extraer Datos Oficiales IDEAM", type="primary"):
+    engine = db_manager.get_engine()
+    
+    with st.spinner("1. Extrayendo catálogo de estaciones de la base de datos..."):
+        try:
+            # Traemos TODAS las estaciones de Sihcli-Poter
+            df_est = pd.read_sql("SELECT id_estacion FROM estaciones", engine)
+            ids_sihcli = df_est['id_estacion'].astype(str).tolist()
+        except Exception as e:
+            st.error(f"Error conectando a BD: {e}")
+            st.stop()
+            
+    if ids_sihcli:
+        with st.spinner(f"2. Consultando la API del IDEAM para {len(ids_sihcli)} estaciones..."):
+            exito, resultado = extraer_datos_ideam(ids_sihcli, fecha_inicio_ideam.strftime('%Y-%m-%d'))
+            
+            if exito:
+                st.success("✅ ¡Datos oficiales extraídos con éxito desde el IDEAM!")
+                st.dataframe(resultado)
+                
+                csv_ideam = resultado.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
+                st.download_button(
+                    label="📥 Descargar Parche IDEAM (Capa 2)",
+                    data=csv_ideam,
+                    file_name="Datos_IDEAM_Capa2.csv",
+                    mime="text/csv",
+                    type="primary"
+                )
+                st.caption("☝️ Este archivo es tu 'Parche Intermedio Institucional'. Úsalo en la Caja 2 de la herramienta de Fusión en Cascada.")
+            else:
+                st.warning(f"Aviso del sistema: {resultado}")
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
