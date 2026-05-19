@@ -151,7 +151,7 @@ st.markdown("---")
 st.header("🇨🇴 Conector Capa 2: Red Oficial IDEAM (Datos Abiertos)")
 st.info("Descarga registros crudos de precipitación directamente de los servidores del Estado para rellenar vacíos recientes.")
 
-fecha_inicio_ideam = st.date_input("Fecha de Inicio (Búsqueda IDEAM):", datetime.date(2021, 1, 1), key="ideam_date")
+fecha_inicio_ideam = st.date_input("Fecha de Inicio (Búsqueda IDEAM):", datetime.date(2020, 1, 1), key="ideam_date")
 
 if st.button("🏛️ Extraer Datos Oficiales IDEAM", type="primary"):
     engine = db_manager.get_engine()
