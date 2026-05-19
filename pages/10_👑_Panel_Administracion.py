@@ -37,6 +37,7 @@ except ImportError:
 
 import datetime
 from modules import db_manager
+from modules import openmeteo_api
 from modules.ideam_api import extraer_datos_ideam
 from modules.openmeteo_api import get_historical_monthly_series
 
