@@ -45,7 +45,7 @@ st.header("🛰️ Sincronizador Maestro Satelital (2021 - Presente)")
 st.info("Descarga el 'Delta' de datos faltantes (Lluvia, ETR, Temp, Rad) para todas las estaciones usando la red satelital Copernicus (Open-Meteo).")
 
 col1, col2 = st.columns(2)
-fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2021, 1, 1))
+fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2020, 1, 1))
 fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.timedelta(days=10))
 
 # ==============================================================================
