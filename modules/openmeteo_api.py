@@ -139,13 +139,13 @@ def get_historical_monthly_series(station_ids, lats, lons, start_date, end_date)
         
     station_ids = [str(sid) for sid in station_ids]
 
-    # 🔥 TAMAÑO TÁCTICO: 25. Minimiza el riesgo de "manzanas podridas"
-    BATCH_SIZE = 25
+    # 🔥 TAMAÑO TÁCTICO: 40 estaciones por lote.
+    BATCH_SIZE = 40
     all_series = []
     total_points = len(lats)
     
-    progress_bar = st.progress(0, text=f"🛰️ Copérnicus: Escaneando {total_points} estaciones...")
-    aviso_errores = st.empty() # Cajita para que la app nos avise si un lote falla
+    progress_bar = st.progress(0, text=f"🛰️ Copérnicus: Escaneando {total_points} estaciones en Modo Sigilo...")
+    aviso_errores = st.empty() 
 
     for i in range(0, total_points, BATCH_SIZE):
         ids_batch = station_ids[i : i + BATCH_SIZE]
@@ -162,22 +162,24 @@ def get_historical_monthly_series(station_ids, lats, lons, start_date, end_date)
         }
 
         exito = False
-        for attempt in range(3):
+        # 🛡️ 5 INTENTOS DE RESCATE
+        for attempt in range(5):
             try:
-                response = requests.get(url, params=params, timeout=40)
+                response = requests.get(url, params=params, timeout=60)
                 if response.status_code == 200:
                     exito = True
                     break
                 elif response.status_code == 429:
-                    aviso_errores.warning(f"⚠️ Pausa obligatoria por límite de API (Lote {i}). Esperando 15s...")
-                    time.sleep(15)
+                    # El castigo del satélite dura un minuto, así que dormimos 60 segundos
+                    aviso_errores.warning(f"⚠️ El satélite nos pide calma (Lote {i}). Esperando 60 segundos para enfriar...")
+                    time.sleep(60)
                 elif response.status_code == 400:
-                    aviso_errores.error(f"❌ Error de Coordenadas en lote {i}. El servidor dice: {response.text}")
-                    break # Si es error 400, no reintentamos porque la coordenada está mal de fábrica
+                    aviso_errores.error(f"❌ Error de Coordenadas en lote {i}. Saltando...")
+                    break 
                 else:
-                    time.sleep(5)
+                    time.sleep(10)
             except Exception as e:
-                time.sleep(5)
+                time.sleep(10)
 
         if not exito:
             continue
@@ -209,8 +211,8 @@ def get_historical_monthly_series(station_ids, lats, lons, start_date, end_date)
         except Exception as e:
             aviso_errores.error(f"Error procesando JSON en lote {i}: {e}")
 
-        # 🛡️ ESCUDO ANTI-BLOQUEOS: Dormimos 7 segundos
-        time.sleep(7)
+        # 🛡️ DESCANSO PREVENTIVO: 12 segundos entre lotes exitosos para NO despertar al sistema de defensa
+        time.sleep(12)
         progress_bar.progress(min((i + BATCH_SIZE) / total_points, 1.0))
 
     progress_bar.empty()
