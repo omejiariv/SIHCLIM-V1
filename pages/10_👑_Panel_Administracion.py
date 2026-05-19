@@ -87,6 +87,11 @@ if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"
             df_lluvia_ancha = df_resultado.pivot(index='date', columns='id_estacion', values='ppt_mm').reset_index()
             df_lluvia_ancha['date'] = df_lluvia_ancha['date'].dt.strftime('%Y-%m-%d')
             df_lluvia_ancha.rename(columns={'date': 'fecha'}, inplace=True)
+
+            st.rerun()
+        else:
+            # 🚨 ALARMA DE FALLO SILENCIOSO
+            st.error("❌ El escaneo terminó, pero el satélite bloqueó todas las descargas. La tabla está vacía.")
             
             # 2. AUDITORÍA FORENSE
             columnas_estaciones = [col for col in df_lluvia_ancha.columns if col != 'fecha']
