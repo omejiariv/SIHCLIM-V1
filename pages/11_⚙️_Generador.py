@@ -539,69 +539,81 @@ with tab6:
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     
                     if usar_imputacion:
-                        with st.spinner("2. Cruzando con índices NOAA (En Vivo) e inyectando resina matemática..."):
-                            from modules import climate_api  # Importamos el módulo de conexión
+                        with st.spinner("2. Calculando Perfiles Climatológicos e inyectando resina matemática..."):
+                            from modules import climate_api  
                             
-                            col_enso_name = None
-                            df_clima = None
+                            # ==========================================================
+                            # 1. 🛡️ APRENDIZAJE LOCAL (El fin de los parches globales)
+                            # Calculamos la realidad estadística de CADA estación para CADA mes
+                            # ==========================================================
+                            historico_max = df_final.groupby(df_final.index.month)[cols_estaciones].transform('max')
+                            historico_mean = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
+                            historico_std = df_final.groupby(df_final.index.month)[cols_estaciones].transform('std')
                             
-                            # 🎯 NUEVO: Motor ENSO Autónomo (Prioridad: API en vivo, Respaldo: Archivo CSV)
-                            df_clima_vivo = climate_api.get_live_oni_data()
+                            # Techo Dinámico: Permite un 25% más del máximo histórico, 
+                            # o la media + 3 desviaciones estándar (lo que sea mayor para permitir récords reales).
+                            limite_dinamico = np.maximum(historico_max * 1.25, historico_mean + 3 * historico_std)
                             
-                            if df_clima_vivo is not None and not df_clima_vivo.empty:
-                                df_clima = df_clima_vivo.copy()
-                                df_clima.set_index('fecha', inplace=True)
-                                st.toast("📡 Clima NOAA sincronizado en tiempo real.")
-                            elif file_indices:
-                                # Fallback: Si la API falla, usamos el archivo manual
-                                df_idx = leer_csv_seguro(file_indices)
-                                col_fecha = 'fecha' if 'fecha' in df_idx.columns else 'date' if 'date' in df_idx.columns else None
-                                col_oni = next((c for c in df_idx.columns if 'oni' in c.lower()), None)
-                                
-                                if col_fecha and col_oni:
-                                    df_idx[col_fecha] = pd.to_datetime(df_idx[col_fecha], errors='coerce').dt.to_period('M').dt.to_timestamp()
-                                    
-                                    # Clasificador Científico
-                                    def clasificar(val):
-                                        try:
-                                            v = float(val)
-                                            if v >= 0.5: return "Niño"
-                                            if v <= -0.5: return "Niña"
-                                            return "Neutro"
-                                        except:
-                                            return "Neutro"
-                                            
-                                    df_idx['fase_enso'] = df_idx[col_oni].apply(clasificar)
-                                    df_clima = df_idx[[col_fecha, 'fase_enso']].dropna().groupby(col_fecha).first()
-                                    st.toast("⚠️ API NOAA offline. Usando archivo local de índices como respaldo.")
-                            
-                            # Si logramos obtener el clima de cualquier fuente, lo acoplamos
-                            if df_clima is not None:
-                                df_final = df_final.join(df_clima[['fase_enso']], how='left')
-                                col_enso_name = 'fase_enso'
+                            # Fallback de seguridad (por si la estación es tan nueva que no tiene std)
+                            limite_dinamico = limite_dinamico.fillna(800.0)
 
-                            if col_enso_name:
-                                st.toast("✅ Fases ENSO detectadas. Aplicando promedios específicos (Niño/Niña).")
-                                # CAPA 4A: PROMEDIO ENSO
-                                df_promedios_enso = df_final.groupby([df_final.index.month, col_enso_name])[cols_estaciones].transform('mean')
-                                df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_enso)
-                                df_final.drop(columns=[col_enso_name], inplace=True)
-                            else:
-                                st.toast("⚠️ Índices no detectados. Aplicando promedios generales.")
+                            # ==========================================================
+                            # 2. FILTRO ANTI-CLONACIÓN (Para estaciones fantasma)
+                            # ==========================================================
+                            MIN_DATOS_REALES = 24
+                            conteo_reales = df_final[cols_estaciones].notna().sum()
+                            estaciones_robustas = conteo_reales[conteo_reales >= MIN_DATOS_REALES].index.tolist()
                             
-                            # CAPA 4B y 5: Red de seguridad general para vacíos residuales
-                            df_promedios_mensuales = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
-                            df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_mensuales)
-                            df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
+                            # ==========================================================
+                            # 3. MOTOR ENSO Y RELLENO
+                            # ==========================================================
+                            if estaciones_robustas:
+                                col_enso_name = None
+                                df_clima = None
+                                
+                                df_clima_vivo = climate_api.get_live_oni_data()
+                                if df_clima_vivo is not None and not df_clima_vivo.empty:
+                                    df_clima = df_clima_vivo.copy()
+                                    df_clima.set_index('fecha', inplace=True)
+                                    st.toast("📡 Clima NOAA sincronizado en tiempo real.")
+                                elif file_indices:
+                                    df_idx = leer_csv_seguro(file_indices)
+                                    col_fecha = 'fecha' if 'fecha' in df_idx.columns else 'date' if 'date' in df_idx.columns else None
+                                    col_oni = next((c for c in df_idx.columns if 'oni' in c.lower()), None)
+                                    if col_fecha and col_oni:
+                                        df_idx[col_fecha] = pd.to_datetime(df_idx[col_fecha], errors='coerce').dt.to_period('M').dt.to_timestamp()
+                                        def clasificar(val):
+                                            try:
+                                                v = float(val)
+                                                if v >= 0.5: return "Niño"
+                                                if v <= -0.5: return "Niña"
+                                                return "Neutro"
+                                            except: return "Neutro"
+                                        df_idx['fase_enso'] = df_idx[col_oni].apply(clasificar)
+                                        df_clima = df_idx[[col_fecha, 'fase_enso']].dropna().groupby(col_fecha).first()
+                                
+                                if df_clima is not None:
+                                    df_final = df_final.join(df_clima[['fase_enso']], how='left')
+                                    col_enso_name = 'fase_enso'
+
+                                if col_enso_name:
+                                    # Solo imputamos a las estaciones robustas
+                                    df_promedios_enso = df_final.groupby([df_final.index.month, col_enso_name])[estaciones_robustas].transform('mean')
+                                    df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_enso)
+                                    df_final.drop(columns=[col_enso_name], inplace=True)
+                                
+                                df_promedios_mensuales = df_final.groupby(df_final.index.month)[estaciones_robustas].transform('mean')
+                                df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_mensuales)
+                                df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_final[estaciones_robustas].mean())
 
                     # ==========================================================
-                    # 🛡️ CORTAFUEGOS ABSOLUTO Y EXPORTACIÓN SEGURA
+                    # 🛡️ CORTAFUEGOS ESTADÍSTICO RELATIVO (La guillotina inteligente)
                     # ==========================================================
                     if cols_estaciones:
                         for col in cols_estaciones:
                             df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
-                            # Restauramos el límite máximo de 1000 mm para evitar anomalías
-                            df_final[col] = df_final[col].clip(lower=0.0, upper=1000.0)
+                            # Aplicar el límite dinámico. Si el dato imputado es mayor a su umbral histórico local, se recorta.
+                            df_final[col] = np.minimum(df_final[col], limite_dinamico[col])
                             
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
