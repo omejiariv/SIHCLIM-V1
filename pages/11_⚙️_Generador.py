@@ -481,7 +481,7 @@ with tab6:
         
     if file_maestro and file_parche_1 and file_parche_2:
         if st.button("🔄 Ejecutar Fusión Integral", type="primary", use_container_width=True):
-            with st.spinner("1. Alineando fechas y cruzando estaciones de 3 fuentes externas..."):
+            with st.spinner("1. Limpiando anomalías, alineando fechas y cruzando estaciones..."):
                 try:
                     def leer_csv_seguro(file_obj):
                         try:
@@ -503,50 +503,53 @@ with tab6:
                         st.stop()
 
                     # ==========================================================
-                    # 🧹 ALINEACIÓN MAESTRA (Sanitización del Día 1)
+                    # 🧹 ADUANA DE DATOS: Limpieza Física y Sanitización del Día 1
                     # ==========================================================
+                    import numpy as np
+                    
+                    # Disfraces de sensores y límite físico
+                    codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -999.0, -9999.0]
+                    UMBRAL_MAX_PPT = 2000.0 
+                    
                     dfs_procesados = []
                     for df_temp in [df_m, df_p1, df_p2]:
+                        # A. Alineación Maestra (Día 1)
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
                         df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
                         df_temp = df_temp.groupby('fecha').first().reset_index()
                         df_temp.set_index('fecha', inplace=True)
+                        
+                        # B. Escudo Anti-Banderas (Se aplica ANTES de fusionar)
+                        cols_est = [c for c in df_temp.columns if str(c).isnumeric()]
+                        for col in cols_est:
+                            # Arreglar formato europeo de Excel (comas por puntos) si ocurre
+                            if df_temp[col].dtype == object:
+                                df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
+                            
+                            # Forzar número
+                            df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
+                            # Destruir códigos falsos
+                            df_temp[col] = df_temp[col].replace(codigos_falsos, np.nan)
+                            # Destruir imposibilidades físicas
+                            df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > UMBRAL_MAX_PPT), col] = np.nan
+                            
                         dfs_procesados.append(df_temp)
                         
                     df_m, df_p1, df_p2 = dfs_procesados
                     
                     # ==========================================================
-                    # 🧠 FUSIÓN DE FUENTES (Capas 1, 2 y 3)
+                    # 🧠 FUSIÓN DE FUENTES PURIFICADAS (Capas 1, 2 y 3)
                     # ==========================================================
                     df_final = df_m.combine_first(df_p1).combine_first(df_p2)
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
-                    
-                    # ==========================================================
-                    # 🛡️ ESCUDO ANTI-BANDERAS METEOROLÓGICAS Y ANOMALÍAS
-                    # ==========================================================
-                    import numpy as np
-                    
-                    # Estos son los disfraces que usan los sensores para ocultar un vacío
-                    codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -999.0, -9999.0]
-                    UMBRAL_MAX_PPT = 2000.0 # Límite físico absoluto
-                    
-                    cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
-                    for col in cols_estaciones:
-                        # 1. Forzar a número puro
-                        df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
-                        
-                        # 2. Cazar y destruir los códigos 999.9 exactos
-                        df_final[col] = df_final[col].replace(codigos_falsos, np.nan)
-                        
-                        # 3. Eliminar imposibilidades físicas
-                        df_final.loc[(df_final[col] < 0) | (df_final[col] > UMBRAL_MAX_PPT), col] = np.nan
                     
                     # ==========================================================
                     # 🧩 IMPUTACIÓN MATEMÁTICA CLIMÁTICAMENTE INTELIGENTE
                     # ==========================================================
                     if usar_imputacion:
                         with st.spinner("2. Inyectando resina matemática (Imputación Condicionada)..."):
+                            cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                             col_enso = next((col for col in df_final.columns if col.lower() in ['fase_enso', 'enso', 'oni', 'soi', 'clima', 'fase']), None)
                             
                             if col_enso:
@@ -559,6 +562,7 @@ with tab6:
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
 
                     # 🧹 Limpieza final
+                    cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     if cols_estaciones:
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
@@ -567,7 +571,7 @@ with tab6:
                     
                     # Guardar en memoria
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz final contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**."
+                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz final contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**, completamente limpia."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
