@@ -523,21 +523,23 @@ with tab6:
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
                     
                     # ==========================================================
-                    # 🛡️ ESCUDO DE REALIDAD FÍSICA Y ANTI-TEXTO
+                    # 🛡️ ESCUDO ANTI-BANDERAS METEOROLÓGICAS Y ANOMALÍAS
                     # ==========================================================
                     import numpy as np
                     
-                    # Límite máximo razonable de precipitación mensual (ajustable)
-                    UMBRAL_MAX_PPT = 1500.0 
+                    # Estos son los disfraces que usan los sensores para ocultar un vacío
+                    codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -999.0, -9999.0]
+                    UMBRAL_MAX_PPT = 2000.0 # Límite físico absoluto
                     
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     for col in cols_estaciones:
-                        # 1. Convertir todo a número (letras/comas se vuelven NaN)
+                        # 1. Forzar a número puro
                         df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
                         
-                        # 2. El Filtro del "Diluvio Universal": 
-                        # Si es menor a 0 o mayor a 1500, es un glitch. Lo convertimos a NaN 
-                        # para que la Inteligencia Climática lo repare con promedios reales.
+                        # 2. Cazar y destruir los códigos 999.9 exactos
+                        df_final[col] = df_final[col].replace(codigos_falsos, np.nan)
+                        
+                        # 3. Eliminar imposibilidades físicas
                         df_final.loc[(df_final[col] < 0) | (df_final[col] > UMBRAL_MAX_PPT), col] = np.nan
                     
                     # ==========================================================
@@ -545,19 +547,15 @@ with tab6:
                     # ==========================================================
                     if usar_imputacion:
                         with st.spinner("2. Inyectando resina matemática (Imputación Condicionada)..."):
-                            # 1. Detectar automáticamente si hay una columna climática en el archivo
                             col_enso = next((col for col in df_final.columns if col.lower() in ['fase_enso', 'enso', 'oni', 'soi', 'clima', 'fase']), None)
                             
                             if col_enso:
-                                # CAPA 4A: Imputación Condicionada por Fase Climática (Ej: Promedio de Mayos en año Niño)
                                 df_promedios_enso = df_final.groupby([df_final.index.month, col_enso])[cols_estaciones].transform('mean')
                                 df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_enso)
                             
-                            # CAPA 4B: Red de Seguridad (Promedio mensual general)
                             df_promedios_mensuales = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_mensuales)
                             
-                            # CAPA 5: Soporte Vital (Promedio histórico total)
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
 
                     # 🧹 Limpieza final
@@ -569,7 +567,7 @@ with tab6:
                     
                     # Guardar en memoria
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz de trabajo final contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**, completamente blindada frente a anomalías físicas."
+                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz final contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
