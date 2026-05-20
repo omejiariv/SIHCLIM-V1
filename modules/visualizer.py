@@ -2157,12 +2157,29 @@ def display_climate_forecast_tab(df_enso, **kwargs):
         """)
 
     # -------------------------------------------------------------------------
-    # PESTAÑA 1: HISTORIA DE ÍNDICES (ONI, SOI, IOD)
+    # PESTAÑA 1: HISTORIA DE ÍNDICES Y CLASIFICACIÓN ENSO
     # -------------------------------------------------------------------------
     with tab_hist:
         st.markdown("#### 📉 Evolución Histórica de Índices Climáticos")
         
         if df_enso is not None and not df_enso.empty:
+            
+            # ==========================================================
+            # 🧠 MOTOR CLASIFICADOR ENSO (Automático)
+            # ==========================================================
+            if Config.ENSO_ONI_COL in df_enso.columns:
+                def clasificar_fase(oni_val):
+                    if pd.isna(oni_val): return "Desconocido"
+                    if oni_val >= 0.5: return "Niño"
+                    if oni_val <= -0.5: return "Niña"
+                    return "Neutro"
+                
+                # Creamos la llave maestra que usará el Generador
+                df_enso['fase_enso'] = df_enso[Config.ENSO_ONI_COL].apply(clasificar_fase)
+
+            # ==========================================================
+            # VISUALIZACIÓN DE GRÁFICOS
+            # ==========================================================
             c1, c2 = st.columns([1, 3])
             with c1:
                 cols_disponibles = [c for c in [Config.ENSO_ONI_COL, Config.SOI_COL, Config.IOD_COL] if c in df_enso.columns]
@@ -2197,6 +2214,25 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                         st.plotly_chart(fig_simple, use_container_width=True, key=f"chart_{idx_sel}_hist")
             else:
                 st.warning(f"La columna '{idx_sel}' existe pero no tiene datos válidos.")
+                
+            # ==========================================================
+            # AUDITORÍA DE FASES CLIMÁTICAS (Tabla visible para el usuario)
+            # ==========================================================
+            if 'fase_enso' in df_enso.columns:
+                st.markdown("---")
+                st.markdown("#### 📊 Auditoría de Fases Climáticas (Cálculo Automático)")
+                st.info("El sistema ha calculado automáticamente la fase climática basándose en el índice ONI. Esta columna (`fase_enso`) es la que utiliza el Generador para realizar imputaciones matemáticas precisas.")
+                
+                # Mostramos los datos más recientes clasificados
+                df_mostrar = df_enso[[Config.DATE_COL, Config.ENSO_ONI_COL, 'fase_enso']].dropna().sort_values(Config.DATE_COL, ascending=False)
+                
+                # Pequeña función para dar color a la tabla
+                def color_fase(val):
+                    color = 'red' if val == 'Niño' else 'blue' if val == 'Niña' else 'gray'
+                    return f'color: {color}; font-weight: bold'
+
+                st.dataframe(df_mostrar.head(24).style.map(color_fase, subset=['fase_enso']), use_container_width=True)
+
         else:
             st.info("ℹ️ **No hay datos históricos cargados.** Sube el archivo `indices.csv` desde el Panel de Administración.")
 
