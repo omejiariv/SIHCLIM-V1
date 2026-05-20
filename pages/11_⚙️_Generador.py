@@ -449,7 +449,7 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (CON CORTAFUEGOS ABSOLUTO)
+# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (VANGUARDIA)
 # ------------------------------------------------------------------------------
 with tab6:
     st.header("🌧️ Fusión Inteligente en Cascada (5 Capas)")
@@ -458,7 +458,6 @@ with tab6:
     **El nivel superior jamás se sobrescribe**, solo se rellenan sus `NaN` (huecos) con el nivel inferior.
     """)
     
-    # Inicializar llaves en la memoria
     if 'csv_fusionado_data' not in st.session_state:
         st.session_state['csv_fusionado_data'] = None
         st.session_state['fusion_resumen'] = ""
@@ -475,7 +474,7 @@ with tab6:
     st.markdown("---")
     st.markdown("#### 🧩 Arsenal Matemático (Capas de Imputación)")
     usar_imputacion = st.checkbox(
-        "Activar Imputación Climatológica (Capa 4 & 5): Rellena los baches restantes calculando el promedio histórico mensual de cada estación y sus correlaciones.", 
+        "Activar Imputación Climatológica (Capa 4 & 5): Rellena los baches calculando promedios por fase ENSO.", 
         value=True
     )
         
@@ -503,40 +502,33 @@ with tab6:
                         st.stop()
 
                     # ==========================================================
-                    # 🧹 ADUANA DE DATOS ENTRADA: Sanitización Física y del Día 1
+                    # 🧹 ADUANA DE DATOS ENTRADA
                     # ==========================================================
                     import numpy as np
-                    
-                    # Filtro estricto inicial para limpiar banderas (999.9) o errores de los archivos originales
                     codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -99.0, -999.0, -9999.0]
-                    UMBRAL_MAX_PPT = 1000.0  # Techo físico regional para Antioquia (Precipitación Mensual)
+                    UMBRAL_MAX_PPT = 1500.0  
                     
                     dfs_procesados = []
                     for df_temp in [df_m, df_p1, df_p2]:
-                        # A. Alineación Temporal
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
                         df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
                         df_temp = df_temp.groupby('fecha').first().reset_index()
                         df_temp.set_index('fecha', inplace=True)
                         
-                        # B. Purificación de Columnas
                         cols_est = [c for c in df_temp.columns if str(c).isnumeric()]
                         for col in cols_est:
                             if df_temp[col].dtype == object:
                                 df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
-                            
                             df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
                             df_temp[col] = df_temp[col].replace(codigos_falsos, np.nan)
-                            df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > UBRAL_MAX_PPT), col] = np.nan
+                            df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > UMBRAL_MAX_PPT), col] = np.nan
                             
                         dfs_procesados.append(df_temp)
                         
                     df_m, df_p1, df_p2 = dfs_procesados
                     
-                    # ==========================================================
-                    # 🧠 FUSIÓN DE FUENTES PURIFICADAS (Capas 1, 2 y 3)
-                    # ==========================================================
+                    # FUSIÓN
                     df_final = df_m.combine_first(df_p1).combine_first(df_p2)
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
                     
@@ -546,37 +538,47 @@ with tab6:
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     
                     if usar_imputacion:
-                        with st.spinner("2. Inyectando resina matemática (Imputación Condicionada)..."):
-                            col_enso = next((col for col in df_final.columns if col.lower() in ['fase_enso', 'enso', 'oni', 'soi', 'clima', 'fase']), None)
+                        with st.spinner("2. Cruzando con índices NOAA e inyectando resina matemática..."):
+                            
+                            # 🎯 NUEVO: Extraemos la fase ENSO directamente de la base de datos o dataframe histórico
+                            # Asumimos que df_enso está cargado globalmente (como lo usas en la Pestaña 1)
+                            if 'df_enso' in globals() and 'fase_enso' in df_enso.columns:
+                                df_clima = df_enso[[Config.DATE_COL, 'fase_enso']].copy()
+                                df_clima.rename(columns={Config.DATE_COL: 'fecha'}, inplace=True)
+                                df_clima['fecha'] = pd.to_datetime(df_clima['fecha'], errors='coerce').dt.to_period('M').dt.to_timestamp()
+                                df_clima.set_index('fecha', inplace=True)
+                                
+                                # Pegamos la fase climática temporalmente a la matriz de lluvias
+                                df_final = df_final.join(df_clima, how='left')
+                            
+                            col_enso = 'fase_enso' if 'fase_enso' in df_final.columns else None
                             
                             if col_enso:
+                                # CAPA 4A: PROMEDIO ENSO (Niño, Niña, Neutro)
                                 df_promedios_enso = df_final.groupby([df_final.index.month, col_enso])[cols_estaciones].transform('mean')
                                 df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_enso)
+                                # Borramos la columna ENSO para que no ensucie el CSV final de lluvias
+                                df_final.drop(columns=[col_enso], inplace=True)
                             
+                            # CAPA 4B y 5: Red de seguridad general
                             df_promedios_mensuales = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_mensuales)
-                            
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
 
-                    # ==========================================================
-                    # 🛡️ CORTAFUEGOS ABSOLUTO FINAL (EL FILTRO DEFINITIVO)
-                    # ==========================================================
-                    # Si la matemática interna o un archivo previo intentó inyectar números gigantes, 
-                    # este bloque los decapita y los fuerza a límites físicos terrestres antes de guardar.
+                    # 🧹 Limpieza final
                     if cols_estaciones:
-                        for col in cols_estaciones:
-                            df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
-                            # Forzar un límite máximo estricto de 1000 mm y mínimo de 0 mm
-                            df_final[col] = df_final[col].clip(lower=0.0, upper=1000.0)
-                        
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
                     df_final = df_final.sort_index().reset_index()
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
-                    # Guardar en memoria
-                    st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz final contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**, completamente purificada."
+                    # ==========================================================
+                    # 🛠️ LA SOLUCIÓN EXCEL (decimal=',')
+                    # ==========================================================
+                    # Obligamos a Python a usar la coma como decimal para exportar el CSV
+                    st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', decimal=',', index=False, encoding='utf-8-sig').encode('utf-8')
+                    
+                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
@@ -590,7 +592,7 @@ with tab6:
         st.dataframe(st.session_state['fusion_preview'], use_container_width=True)
         
         st.download_button(
-            label="📥 Descargar Matriz Definitiva (Cero Vacíos)",
+            label="📥 Descargar Matriz Definitiva (Apta para Excel y Supabase)",
             data=st.session_state['csv_fusionado_data'],
             file_name="DatosPptnmes_Maestro_Integral.csv",
             mime="text/csv",
