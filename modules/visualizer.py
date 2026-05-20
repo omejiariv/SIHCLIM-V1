@@ -5167,19 +5167,32 @@ def display_statistics_summary_tab(df_monthly, df_anual, gdf_stations, **kwargs)
         df_anual[col_cuenca] = df_anual[col_cuenca].fillna("N/A")
         df_monthly[col_cuenca] = df_monthly[col_cuenca].fillna("N/A")
 
-    # --- 2. CÁLCULO DE RÉCORDS ANUALES ---
-    # Máximo Anual
-    idx_max_anual = df_anual[Config.PRECIPITATION_COL].idxmax()
-    row_max_anual = df_anual.loc[idx_max_anual]
+    # ==============================================================================
+    # --- 2. CÁLCULO DE RÉCORDS ANUALES (🛡️ CON CANDADO DE 12 MESES) ---
+    # ==============================================================================
+    # 1. Identificar qué estaciones y años tienen sus 12 meses completos
+    conteo_meses = df_monthly.groupby([Config.YEAR_COL, Config.STATION_NAME_COL]).size().reset_index(name='conteo')
+    datos_completos = conteo_meses[conteo_meses['conteo'] == 12]
 
-    # Mínimo Anual (evitando ceros si se desea, o absoluto)
-    # Filtramos ceros si se considera error, o los dejamos si son reales. Asumimos > 0 para "año seco real" vs "sin datos"
-    df_anual_pos = df_anual[df_anual[Config.PRECIPITATION_COL] > 0]
-    if not df_anual_pos.empty:
-        idx_min_anual = df_anual_pos[Config.PRECIPITATION_COL].idxmin()
-        row_min_anual = df_anual_pos.loc[idx_min_anual]
+    # 2. Filtrar df_anual para que solo evalúe años que pasaron la prueba
+    df_anual_filtrado = pd.merge(df_anual, datos_completos[[Config.YEAR_COL, Config.STATION_NAME_COL]], on=[Config.YEAR_COL, Config.STATION_NAME_COL])
+
+    # 3. Calcular Récords sobre la base filtrada
+    if not df_anual_filtrado.empty:
+        # Máximo Anual
+        row_max_anual = df_anual_filtrado.loc[df_anual_filtrado[Config.PRECIPITATION_COL].idxmax()]
+        
+        # Mínimo Anual (evitando ceros si se desea)
+        df_anual_pos = df_anual_filtrado[df_anual_filtrado[Config.PRECIPITATION_COL] > 0]
+        if not df_anual_pos.empty:
+            row_min_anual = df_anual_pos.loc[df_anual_pos[Config.PRECIPITATION_COL].idxmin()]
+        else:
+            row_min_anual = row_max_anual  # Fallback
     else:
-        row_min_anual = row_max_anual  # Fallback
+        # Fallback de seguridad extrema (por si no hay ningún año completo)
+        row_max_anual = df_anual.loc[df_anual[Config.PRECIPITATION_COL].idxmax()]
+        df_anual_pos = df_anual[df_anual[Config.PRECIPITATION_COL] > 0]
+        row_min_anual = df_anual_pos.loc[df_anual_pos[Config.PRECIPITATION_COL].idxmin()] if not df_anual_pos.empty else row_max_anual
 
     # --- 3. CÁLCULO DE RÉCORDS MENSUALES ---
     idx_max_men = df_monthly[Config.PRECIPITATION_COL].idxmax()
@@ -5193,16 +5206,22 @@ def display_statistics_summary_tab(df_monthly, df_anual, gdf_stations, **kwargs)
     else:
         row_min_men = row_max_men
 
-    # --- 4. PROMEDIOS REGIONALES ---
-    # Año más lluvioso (Promedio de todas las estaciones ese año)
-    regional_anual = df_anual.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].mean()
+    # ==============================================================================
+    # --- 4. PROMEDIOS REGIONALES (🛡️ CON CANDADO DE 12 MESES) ---
+    # ==============================================================================
+    # Año más lluvioso y menos lluvioso (usamos la matriz filtrada de años completos)
+    if not df_anual_filtrado.empty:
+        regional_anual = df_anual_filtrado.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].mean()
+    else:
+        regional_anual = df_anual.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].mean()
+
     year_max_reg = regional_anual.idxmax()
     val_max_reg = regional_anual.max()
 
     year_min_reg = regional_anual.idxmin()
     val_min_reg = regional_anual.min()
 
-    # Mes Climatológico más lluvioso
+    # Mes Climatológico más lluvioso (aquí sí sirven todos los meses)
     regional_mensual = df_monthly.groupby(Config.MONTH_COL)[
         Config.PRECIPITATION_COL
     ].mean()
