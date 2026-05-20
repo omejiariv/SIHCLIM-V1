@@ -5259,7 +5259,7 @@ def display_statistics_summary_tab(df_monthly, df_anual, gdf_stations, **kwargs)
         max_alt = {"Estacion": "N/A", Config.ALTITUDE_COL: 0}
         min_alt = {"Estacion": "N/A", Config.ALTITUDE_COL: 0}
 
-    # ==========================================================================
+# ==========================================================================
     # RENDERIZADO VISUAL (TARJETAS)
     # ==========================================================================
 
@@ -5368,15 +5368,41 @@ def display_statistics_summary_tab(df_monthly, df_anual, gdf_stations, **kwargs)
     # --- FILA 3: COMPORTAMIENTO REGIONAL ---
     st.markdown("#### 🌐 Comportamiento Regional y Tendencias")
 
+    # ==============================================================================
+    # 🛡️ FILTRO DE AÑOS COMPLETOS PARA EXTREMOS REGIONALES
+    # ==============================================================================
+    # 1. Agrupar la tabla original (asumo que se llama df) por Año y Estación para contar meses
+    conteo_meses = df.groupby([Config.YEAR_COL, Config.STATION_NAME_COL]).size().reset_index(name='conteo')
+    
+    # 2. Filtrar solo los años donde esa estación tuvo 12 meses de datos
+    datos_completos = conteo_meses[conteo_meses['conteo'] == 12]
+    
+    # 3. Cruzar con la tabla original para tener solo data de años completos
+    df_completos = pd.merge(df, datos_completos[[Config.YEAR_COL, Config.STATION_NAME_COL]], on=[Config.YEAR_COL, Config.STATION_NAME_COL])
+    
+    # 4. Calcular los nuevos extremos regionales basados solo en años completos
+    lluvia_anual_reg = df_completos.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].mean()
+    
+    if not lluvia_anual_reg.empty:
+        year_max_reg_filtrado = lluvia_anual_reg.idxmax()
+        val_max_reg_filtrado = lluvia_anual_reg.max()
+        year_min_reg_filtrado = lluvia_anual_reg.idxmin()
+        val_min_reg_filtrado = lluvia_anual_reg.min()
+    else:
+        year_max_reg_filtrado = year_max_reg
+        val_max_reg_filtrado = val_max_reg
+        year_min_reg_filtrado = year_min_reg
+        val_min_reg_filtrado = val_min_reg
+
     # Métricas Regionales
     m1, m2, m3, m4 = st.columns(4)
     m1.metric(
-        "Año Más Lluvioso (Promedio)", f"{year_max_reg}", f"{val_max_reg:,.0f} mm/año"
+        "Año Más Lluvioso (Promedio)", f"{year_max_reg_filtrado}", f"{val_max_reg_filtrado:,.0f} mm/año"
     )
     m2.metric(
         "Año Menos Lluvioso (Promedio)",
-        f"{year_min_reg}",
-        f"{val_min_reg:,.0f} mm/año",
+        f"{year_min_reg_filtrado}",
+        f"{val_min_reg_filtrado:,.0f} mm/año",
         delta_color="inverse",
     )
     m3.metric(
@@ -5475,7 +5501,6 @@ def display_current_filters(stations_sel, regions_sel, munis_sel, year_range, in
                 if not munis_sel: txt_munis = f"(Incluye: {txt_munis})"
 
             st.markdown(f"**🏙️ Municipios:** {txt_munis}")
-
 
 # --- B. MAPA INTERACTIVO MAESTRO ---
 def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buffer, 
