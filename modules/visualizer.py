@@ -5371,14 +5371,14 @@ def display_statistics_summary_tab(df_monthly, df_anual, gdf_stations, **kwargs)
     # ==============================================================================
     # 🛡️ FILTRO DE AÑOS COMPLETOS PARA EXTREMOS REGIONALES
     # ==============================================================================
-    # 1. Agrupar la tabla original (asumo que se llama df) por Año y Estación para contar meses
-    conteo_meses = df.groupby([Config.YEAR_COL, Config.STATION_NAME_COL]).size().reset_index(name='conteo')
+    # 1. Agrupar la tabla original (df_long) por Año y Estación para contar meses
+    conteo_meses = df_long.groupby([Config.YEAR_COL, Config.STATION_NAME_COL]).size().reset_index(name='conteo')
     
     # 2. Filtrar solo los años donde esa estación tuvo 12 meses de datos
     datos_completos = conteo_meses[conteo_meses['conteo'] == 12]
     
     # 3. Cruzar con la tabla original para tener solo data de años completos
-    df_completos = pd.merge(df, datos_completos[[Config.YEAR_COL, Config.STATION_NAME_COL]], on=[Config.YEAR_COL, Config.STATION_NAME_COL])
+    df_completos = pd.merge(df_long, datos_completos[[Config.YEAR_COL, Config.STATION_NAME_COL]], on=[Config.YEAR_COL, Config.STATION_NAME_COL])
     
     # 4. Calcular los nuevos extremos regionales basados solo en años completos
     lluvia_anual_reg = df_completos.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].mean()
