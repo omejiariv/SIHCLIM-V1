@@ -449,7 +449,7 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (VANGUARDIA)
+# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (AUTÓNOMA)
 # ------------------------------------------------------------------------------
 with tab6:
     st.header("🌧️ Fusión Inteligente en Cascada (5 Capas)")
@@ -463,18 +463,19 @@ with tab6:
         st.session_state['fusion_resumen'] = ""
         st.session_state['fusion_preview'] = None
 
-    col_1, col_2, col_3 = st.columns(3)
+    # Reorganizamos en 2 columnas para que quepan los 4 archivos
+    col_1, col_2 = st.columns(2)
     with col_1:
         file_maestro = st.file_uploader("🥇 1. Histórico In Situ", type=['csv'], key='up_maestro')
-    with col_2:
-        file_parche_1 = st.file_uploader("🥈 2. Institucional (IDEAM/Local)", type=['csv'], key='up_parche1')
-    with col_3:
         file_parche_2 = st.file_uploader("🥉 3. Satelital (Copérnicus)", type=['csv'], key='up_parche2')
+    with col_2:
+        file_parche_1 = st.file_uploader("🥈 2. Institucional (IDEAM)", type=['csv'], key='up_parche1')
+        file_indices = st.file_uploader("🌍 4. Índices (NOAA/ONI) *Para Imputación Inteligente*", type=['csv'], key='up_indices')
         
     st.markdown("---")
     st.markdown("#### 🧩 Arsenal Matemático (Capas de Imputación)")
     usar_imputacion = st.checkbox(
-        "Activar Imputación Climatológica (Capa 4 & 5): Rellena los baches calculando promedios por fase ENSO.", 
+        "Activar Imputación Climatológica (Capa 4 & 5): Rellena baches calculando promedios por fase ENSO.", 
         value=True
     )
         
@@ -527,8 +528,6 @@ with tab6:
                         dfs_procesados.append(df_temp)
                         
                     df_m, df_p1, df_p2 = dfs_procesados
-                    
-                    # FUSIÓN
                     df_final = df_m.combine_first(df_p1).combine_first(df_p2)
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
                     
@@ -539,52 +538,63 @@ with tab6:
                     
                     if usar_imputacion:
                         with st.spinner("2. Cruzando con índices NOAA e inyectando resina matemática..."):
+                            col_enso_name = None
                             
-                            # 🎯 NUEVO: Extraemos la fase ENSO directamente de la base de datos o dataframe histórico
-                            # Asumimos que df_enso está cargado globalmente (como lo usas en la Pestaña 1)
-                            if 'df_enso' in globals() and 'fase_enso' in df_enso.columns:
-                                df_clima = df_enso[[Config.DATE_COL, 'fase_enso']].copy()
-                                df_clima.rename(columns={Config.DATE_COL: 'fecha'}, inplace=True)
-                                df_clima['fecha'] = pd.to_datetime(df_clima['fecha'], errors='coerce').dt.to_period('M').dt.to_timestamp()
-                                df_clima.set_index('fecha', inplace=True)
+                            # 🎯 NUEVO: Motor ENSO Autónomo
+                            if file_indices:
+                                df_idx = leer_csv_seguro(file_indices)
+                                col_fecha = 'fecha' if 'fecha' in df_idx.columns else 'date' if 'date' in df_idx.columns else None
+                                col_oni = next((c for c in df_idx.columns if 'oni' in c.lower()), None)
                                 
-                                # Pegamos la fase climática temporalmente a la matriz de lluvias
-                                df_final = df_final.join(df_clima, how='left')
-                            
-                            col_enso = 'fase_enso' if 'fase_enso' in df_final.columns else None
-                            
-                            if col_enso:
-                                # CAPA 4A: PROMEDIO ENSO (Niño, Niña, Neutro)
-                                df_promedios_enso = df_final.groupby([df_final.index.month, col_enso])[cols_estaciones].transform('mean')
+                                if col_fecha and col_oni:
+                                    df_idx[col_fecha] = pd.to_datetime(df_idx[col_fecha], errors='coerce').dt.to_period('M').dt.to_timestamp()
+                                    
+                                    # Clasificador Científico
+                                    def clasificar(val):
+                                        try:
+                                            v = float(val)
+                                            if v >= 0.5: return "Niño"
+                                            if v <= -0.5: return "Niña"
+                                            return "Neutro"
+                                        except:
+                                            return "Neutro"
+                                            
+                                    df_idx['fase_enso'] = df_idx[col_oni].apply(clasificar)
+                                    df_clima = df_idx[[col_fecha, 'fase_enso']].dropna().groupby(col_fecha).first()
+                                    
+                                    # Acoplamos el clima a nuestra matriz
+                                    df_final = df_final.join(df_clima, how='left')
+                                    col_enso_name = 'fase_enso'
+
+                            if col_enso_name:
+                                st.toast("✅ Fases ENSO detectadas. Aplicando promedios específicos (Niño/Niña).")
+                                # CAPA 4A: PROMEDIO ENSO
+                                df_promedios_enso = df_final.groupby([df_final.index.month, col_enso_name])[cols_estaciones].transform('mean')
                                 df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_enso)
-                                # Borramos la columna ENSO para que no ensucie el CSV final de lluvias
-                                df_final.drop(columns=[col_enso], inplace=True)
+                                df_final.drop(columns=[col_enso_name], inplace=True)
+                            else:
+                                st.toast("⚠️ Archivo de índices no detectado. Aplicando promedios generales.")
                             
-                            # CAPA 4B y 5: Red de seguridad general
+                            # CAPA 4B y 5: Red de seguridad general para vacíos residuales
                             df_promedios_mensuales = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_mensuales)
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
 
-                    # 🧹 Limpieza final
+                    # 🧹 Limpieza y Exportación Segura para Excel
                     if cols_estaciones:
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
                     df_final = df_final.sort_index().reset_index()
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
-                    # ==========================================================
-                    # 🛠️ LA SOLUCIÓN EXCEL (decimal=',')
-                    # ==========================================================
-                    # Obligamos a Python a usar la coma como decimal para exportar el CSV
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', decimal=',', index=False, encoding='utf-8-sig').encode('utf-8')
-                    
                     st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
                     st.error(f"❌ Ocurrió un error procesando los archivos: {e}")
 
-    # Renderizado fuera del botón
+    # Renderizado
     if st.session_state['csv_fusionado_data'] is not None:
         st.markdown("---")
         st.success("✅ ¡Matriz Única de Trabajo Generada con Éxito!")
