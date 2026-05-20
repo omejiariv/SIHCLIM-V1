@@ -60,22 +60,37 @@ if 'copernicus_descargado' not in st.session_state:
 # ==============================================================================
 # BOTÓN DE SINCRONIZACIÓN SATELITAL
 # ==============================================================================
-if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"):
+st.markdown("### 🎯 Modo Francotirador (Descarga Incremental)")
+ids_especificos = st.text_area(
+    "Para no sobrecargar el satélite, pega aquí los IDs de las estaciones que fallaron o que deseas actualizar (separados por coma o espacio). Si deseas escanear TODA la red, deja este cuadro vacío:",
+    placeholder="Ejemplo: 11025010, 11100010, 23065110..."
+)
+
+if st.button("🚀 Iniciar Sincronización Satelital", type="primary"):
     engine = db_manager.get_engine()
     
-    with st.spinner("1. Extrayendo coordenadas de TODAS las estaciones..."):
+    with st.spinner("1. Extrayendo coordenadas de la base de datos..."):
         try:
             df_estaciones = pd.read_sql("SELECT id_estacion, latitud, longitud FROM estaciones WHERE latitud IS NOT NULL", engine)
         except Exception as e:
             st.error(f"Error conectando a BD: {e}")
             st.stop()
 
+    # 🛡️ FILTRO FRANCOTIRADOR: Solo dejamos las estaciones que el usuario pegó
+    if ids_especificos.strip():
+        import re
+        # Extraer todos los números del texto ingresado
+        lista_ids = re.findall(r'\d+', ids_especificos)
+        if lista_ids:
+            df_estaciones = df_estaciones[df_estaciones['id_estacion'].astype(str).isin(lista_ids)]
+            st.info(f"🎯 Modo Francotirador Activado: Escaneando únicamente {len(df_estaciones)} estaciones específicas.")
+
     if not df_estaciones.empty:
         ids = df_estaciones['id_estacion'].tolist()
         lats = df_estaciones['latitud'].tolist()
         lons = df_estaciones['longitud'].tolist()
         
-        # Escaneo profundo de Copérnicus
+        # Escaneo profundo de Copérnicus (Usa el Modo Sigilo que ya programamos)
         df_resultado = openmeteo_api.get_historical_monthly_series(
             station_ids=ids, lats=lats, lons=lons, 
             start_date=fecha_inicio.strftime('%Y-%m-%d'), 
@@ -88,16 +103,6 @@ if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"
             df_lluvia_ancha['date'] = df_lluvia_ancha['date'].dt.strftime('%Y-%m-%d')
             df_lluvia_ancha.rename(columns={'date': 'fecha'}, inplace=True)
             
-            # ... (todo tu código de auditoría y session_state)
-            
-            st.session_state['copernicus_descargado'] = df_lluvia_ancha
-            st.session_state['copernicus_exitosas'] = estaciones_exitosas
-            st.session_state['copernicus_fallidas'] = estaciones_fallidas
-            st.rerun() 
-        else:
-            # 🚨 NUEVA ALARMA DE FALLO SILENCIOSO
-            st.error("❌ Misión Abortada: El escaneo terminó, pero la tabla llegó 100% vacía. Causa probable: Bloqueo por límite diario de descargas de Open-Meteo. Intenta de nuevo en 12-24 horas.")
-            
             # 2. AUDITORÍA FORENSE
             columnas_estaciones = [col for col in df_lluvia_ancha.columns if col != 'fecha']
             estaciones_exitosas = [col for col in columnas_estaciones if df_lluvia_ancha[col].notna().any()]
@@ -107,8 +112,12 @@ if st.button("🚀 Iniciar Sincronización Global de Estaciones", type="primary"
             st.session_state['copernicus_descargado'] = df_lluvia_ancha
             st.session_state['copernicus_exitosas'] = estaciones_exitosas
             st.session_state['copernicus_fallidas'] = estaciones_fallidas
-            st.rerun() # Recargar la interfaz suavemente para mostrar los resultados fijos
-
+            st.rerun() 
+        else:
+            st.error("❌ Misión Abortada: El escaneo terminó, pero la tabla llegó 100% vacía. Causa probable: Bloqueo por límite diario de descargas de Open-Meteo. Intenta de nuevo en 12-24 horas.")
+    else:
+        st.warning("No se encontraron estaciones válidas para consultar. Revisa los IDs ingresados.")
+            
 # ==============================================================================
 # RENDERIZADO FUERA DEL BOTÓN (Para que nunca desaparezca)
 # ==============================================================================
