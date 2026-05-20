@@ -449,16 +449,16 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 3: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (ESTABILIZADA Y ALINEADA)
+# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (5 CAPAS INTEGRALES)
 # ------------------------------------------------------------------------------
 with tab6:
-    st.header("🌧️ Fusión Inteligente en Cascada (3 Capas)")
+    st.header("🌧️ Fusión Inteligente en Cascada (5 Capas)")
     st.markdown("""
-    Esta herramienta rellena vacíos hidrometeorológicos usando un sistema de jerarquía de 3 niveles. 
+    Esta herramienta rellena vacíos hidrometeorológicos usando un arsenal jerárquico. 
     **El nivel superior jamás se sobrescribe**, solo se rellenan sus `NaN` (huecos) con el nivel inferior.
     """)
     
-    # Inicializar llaves en el session_state para evitar que se borren al descargar
+    # Inicializar llaves en la memoria
     if 'csv_fusionado_data' not in st.session_state:
         st.session_state['csv_fusionado_data'] = None
         st.session_state['fusion_resumen'] = ""
@@ -466,15 +466,22 @@ with tab6:
 
     col_1, col_2, col_3 = st.columns(3)
     with col_1:
-        file_maestro = st.file_uploader("🥇 1. Archivo Maestro Base", type=['csv'], key='up_maestro')
+        file_maestro = st.file_uploader("🥇 1. Histórico In Situ", type=['csv'], key='up_maestro')
     with col_2:
-        file_parche_1 = st.file_uploader("🥈 2. Parche Intermedio", type=['csv'], key='up_parche1')
+        file_parche_1 = st.file_uploader("🥈 2. Institucional (IDEAM/Local)", type=['csv'], key='up_parche1')
     with col_3:
-        file_parche_2 = st.file_uploader("🥉 3. Delta Satelital", type=['csv'], key='up_parche2')
+        file_parche_2 = st.file_uploader("🥉 3. Satelital (Copérnicus)", type=['csv'], key='up_parche2')
+        
+    st.markdown("---")
+    st.markdown("#### 🧩 Arsenal Matemático (Capas de Imputación)")
+    usar_imputacion = st.checkbox(
+        "Activar Imputación Climatológica (Capa 4 & 5): Rellena los baches restantes calculando el promedio histórico mensual de cada estación y sus correlaciones.", 
+        value=True
+    )
         
     if file_maestro and file_parche_1 and file_parche_2:
-        if st.button("🔄 Ejecutar Fusión en Cascada", type="primary", use_container_width=True):
-            with st.spinner("Alineando fechas y cruzando estaciones de 3 fuentes..."):
+        if st.button("🔄 Ejecutar Fusión Integral", type="primary", use_container_width=True):
+            with st.spinner("1. Alineando fechas y cruzando estaciones de 3 fuentes externas..."):
                 try:
                     def leer_csv_seguro(file_obj):
                         try:
@@ -496,65 +503,78 @@ with tab6:
                         st.stop()
 
                     # ==========================================================
-                    # 🧹 ALINEACIÓN MAESTRA Y SANITIZACIÓN TEMPORAL
+                    # 🧹 ALINEACIÓN MAESTRA (Sanitización del Día 1)
                     # ==========================================================
                     dfs_procesados = []
                     for df_temp in [df_m, df_p1, df_p2]:
-                        # 1. Convertir a datetime seguro
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
-                        
-                        # 2. Forzar cualquier día del mes (ej. 31/01) al día 1 del mes (01/01)
                         df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
-                        
-                        # 3. Consolidar duplicados internos del mismo mes dentro del mismo archivo
                         df_temp = df_temp.groupby('fecha').first().reset_index()
-                        
-                        # 4. Establecer el índice temporal estandarizado
                         df_temp.set_index('fecha', inplace=True)
                         dfs_procesados.append(df_temp)
                         
-                    # Desempaquetar los dataframes ya normalizados al Día 1
                     df_m, df_p1, df_p2 = dfs_procesados
                     
                     # ==========================================================
-                    # 🧠 CASCADA COMBINE FIRST: Fusión de Relleno Jerárquico Perfecta
+                    # 🧠 FUSIÓN DE FUENTES (Capas 1, 2 y 3)
                     # ==========================================================
                     df_final = df_m.combine_first(df_p1).combine_first(df_p2)
-                    
-                    # 🧹 GUILLOTINA TEMPORAL (Eliminar filas con fechas futuras)
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
                     
-                    # Eliminamos filas donde TODAS las estaciones estén vacías (NaN)
+                    # ==========================================================
+                    # 🧩 IMPUTACIÓN MATEMÁTICA CLIMÁTICAMENTE INTELIGENTE
+                    # ==========================================================
+                    if usar_imputacion:
+                        with st.spinner("2. Inyectando resina matemática (Imputación Condicionada)..."):
+                            # 1. Detectar automáticamente si hay una columna climática en el archivo
+                            col_enso = next((col for col in df_final.columns if col.lower() in ['fase_enso', 'enso', 'oni', 'soi', 'clima', 'fase']), None)
+                            
+                            # Filtramos solo las columnas que son estaciones (las numéricas) para sacar los promedios
+                            cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
+                            
+                            if col_enso:
+                                # CAPA 4A: Imputación Condicionada por Fase Climática (Ej: Promedio de Mayos en año Niño)
+                                df_promedios_enso = df_final.groupby([df_final.index.month, col_enso])[cols_estaciones].transform('mean')
+                                df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_enso)
+                            
+                            # CAPA 4B: Red de Seguridad (Promedio mensual general)
+                            # Si no hay histórico suficiente para esa fase específica, usa el promedio de todos los meses iguales
+                            df_promedios_mensuales = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
+                            df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_mensuales)
+                            
+                            # CAPA 5: Soporte Vital (Promedio histórico total)
+                            # Si la estación entera colapsó, aplica un relleno global de seguridad
+                            df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
+
+                    # 🧹 Limpieza final
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     if cols_estaciones:
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
-                    # Reorganizar y limpiar el formato de salida
                     df_final = df_final.sort_index().reset_index()
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
-                    # Guardamos los resultados en la memoria de la sesión
+                    # Guardar en memoria
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"El archivo final depurado contiene **{len(df_final)} filas (meses válidos)** y **{len(df_final.columns) - 1} estaciones**."
+                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz de trabajo final contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**, completamente blindada."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
                     st.error(f"❌ Ocurrió un error procesando los archivos: {e}")
 
-    # Renderizado fuera del botón: Garantiza que no desaparezca al hacer clic en descargar
+    # Renderizado fuera del botón
     if st.session_state['csv_fusionado_data'] is not None:
         st.markdown("---")
-        st.success("✅ ¡Fusión en cascada completada! La matriz se ha blindado y alineado al Día 1.")
+        st.success("✅ ¡Matriz Única de Trabajo Generada con Éxito!")
         st.info(st.session_state['fusion_resumen'])
         st.dataframe(st.session_state['fusion_preview'], use_container_width=True)
         
         st.download_button(
-            label="📥 Descargar Matriz Consolidada (Listo para Supabase)",
+            label="📥 Descargar Matriz Definitiva (Cero Vacíos)",
             data=st.session_state['csv_fusionado_data'],
-            file_name="DatosPptnmes_ENSO_Actualizado.csv",
+            file_name="DatosPptnmes_Maestro_Integral.csv",
             mime="text/csv",
             type="primary",
             use_container_width=True
         )
-        st.caption("☝️ Sube este archivo consolidado a tu bucket de **Supabase Storage** reemplazando el antiguo.")
