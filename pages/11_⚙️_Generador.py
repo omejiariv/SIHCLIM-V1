@@ -522,6 +522,11 @@ with tab6:
                     df_final = df_m.combine_first(df_p1).combine_first(df_p2)
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
                     
+                    # 🛡️ ESCUDO ANTI-TEXTO: Forzamos a que todo sea número antes de la matemática
+                    cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
+                    for col in cols_estaciones:
+                        df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
+                    
                     # ==========================================================
                     # 🧩 IMPUTACIÓN MATEMÁTICA CLIMÁTICAMENTE INTELIGENTE
                     # ==========================================================
@@ -530,25 +535,19 @@ with tab6:
                             # 1. Detectar automáticamente si hay una columna climática en el archivo
                             col_enso = next((col for col in df_final.columns if col.lower() in ['fase_enso', 'enso', 'oni', 'soi', 'clima', 'fase']), None)
                             
-                            # Filtramos solo las columnas que son estaciones (las numéricas) para sacar los promedios
-                            cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
-                            
                             if col_enso:
                                 # CAPA 4A: Imputación Condicionada por Fase Climática (Ej: Promedio de Mayos en año Niño)
                                 df_promedios_enso = df_final.groupby([df_final.index.month, col_enso])[cols_estaciones].transform('mean')
                                 df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_enso)
                             
                             # CAPA 4B: Red de Seguridad (Promedio mensual general)
-                            # Si no hay histórico suficiente para esa fase específica, usa el promedio de todos los meses iguales
                             df_promedios_mensuales = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_mensuales)
                             
                             # CAPA 5: Soporte Vital (Promedio histórico total)
-                            # Si la estación entera colapsó, aplica un relleno global de seguridad
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
 
                     # 🧹 Limpieza final
-                    cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     if cols_estaciones:
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
