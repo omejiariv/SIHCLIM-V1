@@ -1665,17 +1665,37 @@ def display_spatial_distribution_tab(
             fig_avail.update_layout(xaxis_title="Año", yaxis_title="Estación", coloraxis_colorbar=dict(title="Meses"), xaxis=dict(dtick=1), yaxis=dict(dtick=1))
             st.plotly_chart(fig_avail, use_container_width=True)
 
-            # Métricas
+            # ==========================================================
+            # 📊 MÉTRICAS BLINDADAS
+            # ==========================================================
             c1, c2, c3 = st.columns(3)
-            total_months = len(all_years) * 12
-            actual_months = avail["Meses con Datos"].sum()
-            completeness = (actual_months / (len(all_stations) * total_months)) * 100 if len(all_stations) > 0 else 0
+            
+            # 1. Asegurar el número exacto de estaciones presentes en la tabla
+            num_estaciones = len(avail[Config.STATION_NAME_COL].unique()) if Config.STATION_NAME_COL in avail.columns else len(all_stations)
+            
+            # 2. Cálculo Teórico Dinámico (No asumimos 12 meses para el año en curso)
+            if not avail.empty:
+                # Buscamos cuál fue el máximo de meses reportados para cada año
+                max_meses_por_año = avail.groupby(Config.YEAR_COL)["Meses con Datos"].max()
+                total_months_teorico = max_meses_por_año.sum()
+                
+                # 3. Cálculo Real
+                actual_months = avail["Meses con Datos"].sum()
+                
+                # 4. Porcentaje seguro
+                completeness = (actual_months / (num_estaciones * total_months_teorico)) * 100 if (num_estaciones * total_months_teorico) > 0 else 0
+            else:
+                completeness = 0
 
-            c1.metric("Total Estaciones", len(all_stations))
+            # 🔒 Candado de Seguridad: La matemática pura dice que con la matriz blindada esto dará 100.0%
+            completeness = min(completeness, 100.0)
+
+            c1.metric("Total Estaciones", num_estaciones)
             c2.metric("Rango de Años", f"{min(all_years)} - {max(all_years)}")
             c3.metric("Completitud Global", f"{completeness:.1f}%")
 
             with st.expander("Ver Tabla de Disponibilidad", expanded=False):
+                # pivot_avail usa avail_full para mostrar el mapa de calor de todas
                 pivot_avail = avail_full.pivot(index=Config.STATION_NAME_COL, columns=Config.YEAR_COL, values="Meses con Datos")
                 st.dataframe(pivot_avail.style.background_gradient(cmap="Greens", vmin=0, vmax=12).format("{:.0f}"))
         else:
