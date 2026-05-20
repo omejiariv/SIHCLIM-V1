@@ -449,7 +449,7 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 3: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (ESTABILIZADA)
+# 🚀 PESTAÑA 3: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (ESTABILIZADA Y ALINEADA)
 # ------------------------------------------------------------------------------
 with tab6:
     st.header("🌧️ Fusión Inteligente en Cascada (3 Capas)")
@@ -495,27 +495,42 @@ with tab6:
                         st.error("❌ Los tres archivos deben contener una columna llamada 'fecha' o 'date'.")
                         st.stop()
 
+                    # ==========================================================
+                    # 🧹 ALINEACIÓN MAESTRA Y SANITIZACIÓN TEMPORAL
+                    # ==========================================================
+                    dfs_procesados = []
                     for df_temp in [df_m, df_p1, df_p2]:
+                        # 1. Convertir a datetime seguro
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
+                        
+                        # 2. Forzar cualquier día del mes (ej. 31/01) al día 1 del mes (01/01)
+                        df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
+                        
+                        # 3. Consolidar duplicados internos del mismo mes dentro del mismo archivo
+                        df_temp = df_temp.groupby('fecha').first().reset_index()
+                        
+                        # 4. Establecer el índice temporal estandarizado
                         df_temp.set_index('fecha', inplace=True)
+                        dfs_procesados.append(df_temp)
+                        
+                    # Desempaquetar los dataframes ya normalizados al Día 1
+                    df_m, df_p1, df_p2 = dfs_procesados
                     
                     # ==========================================================
-                    # 🧠 CASCADA COMBINE FIRST: Fusión de Relleno Jerárquico
+                    # 🧠 CASCADA COMBINE FIRST: Fusión de Relleno Jerárquico Perfecta
                     # ==========================================================
                     df_final = df_m.combine_first(df_p1).combine_first(df_p2)
                     
-                    # 🧹 GUILLOTINA TEMPORAL (Eliminar filas 791-795 o basura futura)
-                    # 1. Cortamos cualquier fecha que sea mayor al día de hoy
+                    # 🧹 GUILLOTINA TEMPORAL (Eliminar filas con fechas futuras)
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
                     
-                    # 2. Eliminamos filas donde TODAS las estaciones estén vacías (NaN)
-                    # (ignorando las columnas de índices como 'soi' o 'oni' si existen)
+                    # Eliminamos filas donde TODAS las estaciones estén vacías (NaN)
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     if cols_estaciones:
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
-                    # 5. Reorganizar y limpiar el formato
+                    # Reorganizar y limpiar el formato de salida
                     df_final = df_final.sort_index().reset_index()
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
@@ -530,7 +545,7 @@ with tab6:
     # Renderizado fuera del botón: Garantiza que no desaparezca al hacer clic en descargar
     if st.session_state['csv_fusionado_data'] is not None:
         st.markdown("---")
-        st.success("✅ ¡Fusión en cascada completada! La matriz se ha blindado.")
+        st.success("✅ ¡Fusión en cascada completada! La matriz se ha blindado y alineado al Día 1.")
         st.info(st.session_state['fusion_resumen'])
         st.dataframe(st.session_state['fusion_preview'], use_container_width=True)
         
