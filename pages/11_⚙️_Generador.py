@@ -11,6 +11,8 @@ import warnings
 import re
 import unicodedata
 
+from modules import climate_api
+
 warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Generador Espacial", page_icon="⚙️", layout="wide")
 
@@ -537,11 +539,21 @@ with tab6:
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     
                     if usar_imputacion:
-                        with st.spinner("2. Cruzando con índices NOAA e inyectando resina matemática..."):
-                            col_enso_name = None
+                        with st.spinner("2. Cruzando con índices NOAA (En Vivo) e inyectando resina matemática..."):
+                            from modules import climate_api  # Importamos el módulo de conexión
                             
-                            # 🎯 NUEVO: Motor ENSO Autónomo
-                            if file_indices:
+                            col_enso_name = None
+                            df_clima = None
+                            
+                            # 🎯 NUEVO: Motor ENSO Autónomo (Prioridad: API en vivo, Respaldo: Archivo CSV)
+                            df_clima_vivo = climate_api.get_live_oni_data()
+                            
+                            if df_clima_vivo is not None and not df_clima_vivo.empty:
+                                df_clima = df_clima_vivo.copy()
+                                df_clima.set_index('fecha', inplace=True)
+                                st.toast("📡 Clima NOAA sincronizado en tiempo real.")
+                            elif file_indices:
+                                # Fallback: Si la API falla, usamos el archivo manual
                                 df_idx = leer_csv_seguro(file_indices)
                                 col_fecha = 'fecha' if 'fecha' in df_idx.columns else 'date' if 'date' in df_idx.columns else None
                                 col_oni = next((c for c in df_idx.columns if 'oni' in c.lower()), None)
@@ -561,10 +573,12 @@ with tab6:
                                             
                                     df_idx['fase_enso'] = df_idx[col_oni].apply(clasificar)
                                     df_clima = df_idx[[col_fecha, 'fase_enso']].dropna().groupby(col_fecha).first()
-                                    
-                                    # Acoplamos el clima a nuestra matriz
-                                    df_final = df_final.join(df_clima, how='left')
-                                    col_enso_name = 'fase_enso'
+                                    st.toast("⚠️ API NOAA offline. Usando archivo local de índices como respaldo.")
+                            
+                            # Si logramos obtener el clima de cualquier fuente, lo acoplamos
+                            if df_clima is not None:
+                                df_final = df_final.join(df_clima[['fase_enso']], how='left')
+                                col_enso_name = 'fase_enso'
 
                             if col_enso_name:
                                 st.toast("✅ Fases ENSO detectadas. Aplicando promedios específicos (Niño/Niña).")
@@ -573,15 +587,22 @@ with tab6:
                                 df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_enso)
                                 df_final.drop(columns=[col_enso_name], inplace=True)
                             else:
-                                st.toast("⚠️ Archivo de índices no detectado. Aplicando promedios generales.")
+                                st.toast("⚠️ Índices no detectados. Aplicando promedios generales.")
                             
                             # CAPA 4B y 5: Red de seguridad general para vacíos residuales
                             df_promedios_mensuales = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_mensuales)
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
 
-                    # 🧹 Limpieza y Exportación Segura para Excel
+                    # ==========================================================
+                    # 🛡️ CORTAFUEGOS ABSOLUTO Y EXPORTACIÓN SEGURA
+                    # ==========================================================
                     if cols_estaciones:
+                        for col in cols_estaciones:
+                            df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
+                            # Restauramos el límite máximo de 1000 mm para evitar anomalías
+                            df_final[col] = df_final[col].clip(lower=0.0, upper=1000.0)
+                            
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
                     df_final = df_final.sort_index().reset_index()
