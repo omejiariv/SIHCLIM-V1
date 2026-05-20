@@ -509,7 +509,7 @@ with tab6:
                     # ==========================================================
                     import numpy as np
                     codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -99.0, -999.0, -9999.0]
-                    UMBRAL_MAX_PPT = 1500.0  
+                    UMBRAL_MAX_PPT = 1200.0  
                     
                     dfs_procesados = []
                     for df_temp in [df_m, df_p1, df_p2]:
