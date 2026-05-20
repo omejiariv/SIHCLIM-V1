@@ -150,3 +150,47 @@ def get_live_iod_data():
     except Exception as e:
         print(f"Error extrayendo IOD: {e}")
         return None
+
+# ==============================================================================
+# 🔌 LLAVE 5: CONEXIÓN EN VIVO ÍNDICE ONI (NOAA PSL)
+# ==============================================================================
+@st.cache_data(show_spinner=False, ttl=43200) # Se actualiza automáticamente cada 12 horas
+def get_live_oni_data():
+    """Descarga el registro oficial en vivo del Oceanic Niño Index (ONI) desde NOAA."""
+    url = "https://psl.noaa.gov/data/correlation/oni.data"
+    try:
+        # 1. Leer datos crudos de la NOAA (formato texto con espacios)
+        df = pd.read_csv(url, skiprows=1, delim_whitespace=True, header=None, 
+                         names=['YEAR','01','02','03','04','05','06','07','08','09','10','11','12'])
+        
+        # 2. Limpieza (ignorar texto del pie de página que pone la NOAA)
+        df['YEAR'] = pd.to_numeric(df['YEAR'], errors='coerce')
+        df = df.dropna(subset=['YEAR'])
+        
+        # 3. Transformar tabla ancha a matriz larga (Wide to Long)
+        df_melt = df.melt(id_vars=['YEAR'], var_name='mes', value_name='oni')
+        df_melt['oni'] = pd.to_numeric(df_melt['oni'], errors='coerce')
+        
+        # 4. NOAA usa -99.9 para indicar meses futuros sin datos aún. Los eliminamos.
+        df_melt = df_melt[df_melt['oni'] > -90.0] 
+        
+        # 5. Crear columna de fecha estandarizada al Día 1
+        df_melt['fecha'] = pd.to_datetime(df_melt['YEAR'].astype(int).astype(str) + '-' + df_melt['mes'] + '-01')
+        df_melt = df_melt.sort_values('fecha').reset_index(drop=True)
+        
+        # 6. 🎯 CEREBRO ENSO: Clasificador Automático de Fases
+        def clasificar_fase(val):
+            if val >= 0.5: return "Niño"
+            if val <= -0.5: return "Niña"
+            return "Neutro"
+            
+        df_melt['fase_enso'] = df_melt['oni'].apply(clasificar_fase)
+        
+        # Renombramos para que sea idéntico a tu Indices_Globales.csv
+        df_melt.rename(columns={'oni': 'anomalia_oni'}, inplace=True)
+        
+        return df_melt[['fecha', 'anomalia_oni', 'fase_enso']]
+        
+    except Exception as e:
+        st.error(f"❌ Error conectando con la NOAA (ONI en vivo): {e}")
+        return None
