@@ -541,21 +541,28 @@ with tab6:
                     if usar_imputacion:
                         with st.spinner("2. Calculando Perfiles Climatológicos e inyectando resina matemática..."):
                             from modules import climate_api  
+                            import numpy as np
                             
                             # ==========================================================
-                            # 1. 🛡️ APRENDIZAJE LOCAL (El fin de los parches globales)
-                            # Calculamos la realidad estadística de CADA estación para CADA mes
+                            # 1. 🛡️ APRENDIZAJE LOCAL ROBUSTO (Filtro de Tukey)
+                            # Inmune a anomalías preexistentes en los archivos
                             # ==========================================================
-                            historico_max = df_final.groupby(df_final.index.month)[cols_estaciones].transform('max')
-                            historico_mean = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
-                            historico_std = df_final.groupby(df_final.index.month)[cols_estaciones].transform('std')
+                            # Calculamos Cuartil 1 (25%) y Cuartil 3 (75%)
+                            Q1 = df_final.groupby(df_final.index.month)[cols_estaciones].transform(lambda x: x.quantile(0.25))
+                            Q3 = df_final.groupby(df_final.index.month)[cols_estaciones].transform(lambda x: x.quantile(0.75))
+                            IQR = Q3 - Q1
                             
-                            # Techo Dinámico: Permite un 25% más del máximo histórico, 
-                            # o la media + 3 desviaciones estándar (lo que sea mayor para permitir récords reales).
-                            limite_dinamico = np.maximum(historico_max * 1.25, historico_mean + 3 * historico_std)
+                            # Techo Dinámico Robusto: Q3 + 3*IQR (Límite de Outliers Extremos)
+                            limite_dinamico = Q3 + (3 * IQR)
                             
-                            # Fallback de seguridad (por si la estación es tan nueva que no tiene std)
-                            limite_dinamico = limite_dinamico.fillna(800.0)
+                            # Piso y techo de seguridad física (Protege meses secos reales y limita diluvios)
+                            limite_dinamico = np.clip(limite_dinamico, a_min=300.0, a_max=1500.0).fillna(800.0)
+
+                            # 🚨 DECAPITACIÓN PREVIA: Aniquilar anomalías ANTES de calcular promedios
+                            for col in cols_estaciones:
+                                df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
+                                # Todo valor irreal (como el 1204) se convierte en NaN para ser imputado correctamente
+                                df_final.loc[df_final[col] > limite_dinamico[col], col] = np.nan
 
                             # ==========================================================
                             # 2. FILTRO ANTI-CLONACIÓN (Para estaciones fantasma)
@@ -607,21 +614,16 @@ with tab6:
                                 df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_final[estaciones_robustas].mean())
 
                     # ==========================================================
-                    # 🛡️ CORTAFUEGOS ESTADÍSTICO RELATIVO (La guillotina inteligente)
+                    # 🛡️ EXPORTACIÓN SEGURA
                     # ==========================================================
                     if cols_estaciones:
-                        for col in cols_estaciones:
-                            df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
-                            # Aplicar el límite dinámico. Si el dato imputado es mayor a su umbral histórico local, se recorta.
-                            df_final[col] = np.minimum(df_final[col], limite_dinamico[col])
-                            
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
                     df_final = df_final.sort_index().reset_index()
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', decimal=',', index=False, encoding='utf-8-sig').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**."
+                    st.session_state['fusion_resumen'] = f"Operación exitosa. Matriz blindada con estadística robusta."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
