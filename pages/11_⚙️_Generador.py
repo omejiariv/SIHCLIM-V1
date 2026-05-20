@@ -449,7 +449,7 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (5 CAPAS INTEGRALES)
+# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (CON CORTAFUEGOS ABSOLUTO)
 # ------------------------------------------------------------------------------
 with tab6:
     st.header("🌧️ Fusión Inteligente en Cascada (5 Capas)")
@@ -503,36 +503,32 @@ with tab6:
                         st.stop()
 
                     # ==========================================================
-                    # 🧹 ADUANA DE DATOS: Limpieza Física y Sanitización del Día 1
+                    # 🧹 ADUANA DE DATOS ENTRADA: Sanitización Física y del Día 1
                     # ==========================================================
                     import numpy as np
                     
-                    # Disfraces de sensores y límite físico
-                    codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -999.0, -9999.0]
-                    UMBRAL_MAX_PPT = 2000.0 
+                    # Filtro estricto inicial para limpiar banderas (999.9) o errores de los archivos originales
+                    codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -99.0, -999.0, -9999.0]
+                    UMBRAL_MAX_PPT = 1000.0  # Techo físico regional para Antioquia (Precipitación Mensual)
                     
                     dfs_procesados = []
                     for df_temp in [df_m, df_p1, df_p2]:
-                        # A. Alineación Maestra (Día 1)
+                        # A. Alineación Temporal
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
                         df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
                         df_temp = df_temp.groupby('fecha').first().reset_index()
                         df_temp.set_index('fecha', inplace=True)
                         
-                        # B. Escudo Anti-Banderas (Se aplica ANTES de fusionar)
+                        # B. Purificación de Columnas
                         cols_est = [c for c in df_temp.columns if str(c).isnumeric()]
                         for col in cols_est:
-                            # Arreglar formato europeo de Excel (comas por puntos) si ocurre
                             if df_temp[col].dtype == object:
                                 df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
                             
-                            # Forzar número
                             df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
-                            # Destruir códigos falsos
                             df_temp[col] = df_temp[col].replace(codigos_falsos, np.nan)
-                            # Destruir imposibilidades físicas
-                            df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > UMBRAL_MAX_PPT), col] = np.nan
+                            df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > UBRAL_MAX_PPT), col] = np.nan
                             
                         dfs_procesados.append(df_temp)
                         
@@ -547,9 +543,10 @@ with tab6:
                     # ==========================================================
                     # 🧩 IMPUTACIÓN MATEMÁTICA CLIMÁTICAMENTE INTELIGENTE
                     # ==========================================================
+                    cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
+                    
                     if usar_imputacion:
                         with st.spinner("2. Inyectando resina matemática (Imputación Condicionada)..."):
-                            cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                             col_enso = next((col for col in df_final.columns if col.lower() in ['fase_enso', 'enso', 'oni', 'soi', 'clima', 'fase']), None)
                             
                             if col_enso:
@@ -561,9 +558,17 @@ with tab6:
                             
                             df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
 
-                    # 🧹 Limpieza final
-                    cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
+                    # ==========================================================
+                    # 🛡️ CORTAFUEGOS ABSOLUTO FINAL (EL FILTRO DEFINITIVO)
+                    # ==========================================================
+                    # Si la matemática interna o un archivo previo intentó inyectar números gigantes, 
+                    # este bloque los decapita y los fuerza a límites físicos terrestres antes de guardar.
                     if cols_estaciones:
+                        for col in cols_estaciones:
+                            df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
+                            # Forzar un límite máximo estricto de 1000 mm y mínimo de 0 mm
+                            df_final[col] = df_final[col].clip(lower=0.0, upper=1000.0)
+                        
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
                     df_final = df_final.sort_index().reset_index()
@@ -571,7 +576,7 @@ with tab6:
                     
                     # Guardar en memoria
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz final contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**, completamente limpia."
+                    st.session_state['fusion_resumen'] = f"Operación exitosa. La matriz final contiene **{len(df_final)} meses** y **{len(df_final.columns) - 1} estaciones**, completamente purificada."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
