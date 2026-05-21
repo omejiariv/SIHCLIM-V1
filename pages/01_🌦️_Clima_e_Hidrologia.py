@@ -231,25 +231,36 @@ def main():
             help="Filtra estaciones que no cumplan con este mínimo de años históricos. Útil para eliminar el 'escalón' de estaciones post-2010."
         )
 
-    # --- E. PROCESAMIENTO ---
-    # 1. Aplicar Homogenización a la matriz base ANTES de extraer las estaciones
-    if min_years > 0 and not df_long.empty:
-        conteo_agnos = df_long.groupby(Config.STATION_NAME_COL)[Config.YEAR_COL].nunique()
-        estaciones_validas = conteo_agnos[conteo_agnos >= min_years].index.tolist()
-        df_long = df_long[df_long[Config.STATION_NAME_COL].isin(estaciones_validas)]
-        st.sidebar.success(f"✅ {len(estaciones_validas)} estaciones históricas retenidas.")
-        
-    # Extraemos la lista final y purificada para los módulos de análisis
-    stations_for_analysis = df_long[Config.STATION_NAME_COL].unique().tolist()
-
-    # 2. Aplicar filtro temporal
+    # --- E. PROCESAMIENTO ESTRATÉGICO ---
+    # 1. Aplicar filtro temporal primero
     mask_time = (df_long[Config.YEAR_COL] >= year_range[0]) & (df_long[Config.YEAR_COL] <= year_range[1])
     df_monthly_filtered = df_long.loc[mask_time].copy()
     
-    # 3. Limpieza de calidad
-    if ignore_zeros: df_monthly_filtered = df_monthly_filtered[df_monthly_filtered[Config.PRECIPITATION_COL] != 0]
-    if ignore_nulls: df_monthly_filtered = df_monthly_filtered.dropna(subset=[Config.PRECIPITATION_COL])
+    # 2. LIMPIEZA DE CALIDAD (Fundamental hacerlo antes de contar años)
+    if ignore_zeros: 
+        df_monthly_filtered = df_monthly_filtered[df_monthly_filtered[Config.PRECIPITATION_COL] > 0]
+    if ignore_nulls: 
+        df_monthly_filtered = df_monthly_filtered.dropna(subset=[Config.PRECIPITATION_COL])
 
+    # 3. ⏳ FILTRO DE HOMOGENIZACIÓN (Ahora sí, contando solo la verdad)
+    if min_years > 0 and not df_monthly_filtered.empty:
+        # Contamos años únicos que sobrevivieron a la purga de ceros y nulos
+        conteo_agnos = df_monthly_filtered.groupby(Config.STATION_NAME_COL)[Config.YEAR_COL].nunique()
+        estaciones_validas = conteo_agnos[conteo_agnos >= min_years].index.tolist()
+        
+        # Recortamos la matriz
+        df_monthly_filtered = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL].isin(estaciones_validas)]
+        st.sidebar.success(f"✅ {len(estaciones_validas)} estaciones cumplen con >{min_years} años reales.")
+
+    # 4. Extraemos la lista final y purificada para los módulos de análisis
+    if not df_monthly_filtered.empty:
+        stations_for_analysis = df_monthly_filtered[Config.STATION_NAME_COL].unique().tolist()
+    else:
+        stations_for_analysis = []
+        st.warning(f"Ninguna estación cumple con el requisito de tener {min_years} años de datos continuos.")
+        st.stop()
+
+    # 5. Interpolación (Solo a las estaciones sobrevivientes históricas)
     if apply_interp:
         with st.spinner("Interpolando series..."):
             df_monthly_filtered = complete_series(df_monthly_filtered)
