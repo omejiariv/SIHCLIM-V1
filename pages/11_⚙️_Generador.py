@@ -534,84 +534,101 @@ with tab6:
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
                     
                     # ==========================================================
-                    # 🧩 IMPUTACIÓN MATEMÁTICA CLIMÁTICAMENTE INTELIGENTE
+                    # 🧩 IMPUTACIÓN HÍBRIDA (CORRELACIÓN ESPACIAL + CLIMÁTICA ENSO)
                     # ==========================================================
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     
                     if usar_imputacion:
-                        with st.spinner("2. Calculando Perfiles Climatológicos e inyectando resina matemática..."):
+                        with st.spinner("2. Forjando Matriz de Correlación Cruda e Imputando Espacialmente..."):
                             from modules import climate_api  
                             import numpy as np
                             
-                            # ==========================================================
-                            # 1. 🛡️ APRENDIZAJE LOCAL ROBUSTO (Filtro de Tukey)
-                            # Inmune a anomalías preexistentes en los archivos
-                            # ==========================================================
-                            # Calculamos Cuartil 1 (25%) y Cuartil 3 (75%)
-                            Q1 = df_final.groupby(df_final.index.month)[cols_estaciones].transform(lambda x: x.quantile(0.25))
-                            Q3 = df_final.groupby(df_final.index.month)[cols_estaciones].transform(lambda x: x.quantile(0.75))
-                            IQR = Q3 - Q1
-                            
-                            # Techo Dinámico Robusto: Q3 + 3*IQR (Límite de Outliers Extremos)
-                            limite_dinamico = Q3 + (3 * IQR)
-                            
-                            # Piso y techo de seguridad física (Protege meses secos reales y limita diluvios)
-                            limite_dinamico = np.clip(limite_dinamico, a_min=300.0, a_max=1500.0).fillna(800.0)
-
-                            # 🚨 DECAPITACIÓN PREVIA: Aniquilar anomalías ANTES de calcular promedios
+                            # Forzar conversión a flotantes puros
                             for col in cols_estaciones:
                                 df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
-                                # Todo valor irreal (como el 1204) se convierte en NaN para ser imputado correctamente
-                                df_final.loc[df_final[col] > limite_dinamico[col], col] = np.nan
 
-                            # ==========================================================
-                            # 2. FILTRO ANTI-CLONACIÓN (Para estaciones fantasma)
-                            # ==========================================================
-                            MIN_DATOS_REALES = 24
-                            conteo_reales = df_final[cols_estaciones].notna().sum()
-                            estaciones_robustas = conteo_reales[conteo_reales >= MIN_DATOS_REALES].index.tolist()
+                            # --------------------------------------------------
+                            # CAPA A: FILTRO DE TUKEY BI-DIMENSIONAL (Limpieza previa)
+                            # --------------------------------------------------
+                            Q1_global = df_final[cols_estaciones].quantile(0.25)
+                            Q3_global = df_final[cols_estaciones].quantile(0.75)
+                            IQR_global = Q3_global - Q1_global
+                            techo_global = Q3_global + (4 * IQR_global) 
+
+                            Q1_mes = df_final.groupby(df_final.index.month)[cols_estaciones].transform(lambda x: x.quantile(0.25))
+                            Q3_mes = df_final.groupby(df_final.index.month)[cols_estaciones].transform(lambda x: x.quantile(0.75))
+                            IQR_mes = Q3_mes - Q1_mes
+                            techo_mensual = Q3_mes + (3 * IQR_mes)
+
+                            for col in cols_estaciones:
+                                limite_final = np.maximum(250.0, np.minimum(techo_global[col], techo_mensual[col]))
+                                df_final.loc[df_final[col] > limite_final, col] = np.nan
+
+                            # --------------------------------------------------
+                            # 🔥 NUEVA CAPA B: MOTOR DE CORRELACIÓN ESPACIAL PROPORCIONAL
+                            # Generada puramente con los datos limpios antes de imputar
+                            # --------------------------------------------------
+                            st.text("📡 Calculando coeficientes de Pearson de la red real...")
+                            matriz_corr = df_final[cols_estaciones].corr(method='pearson')
                             
-                            # ==========================================================
-                            # 3. MOTOR ENSO Y RELLENO
-                            # ==========================================================
-                            if estaciones_robustas:
-                                col_enso_name = None
-                                df_clima = None
+                            # Calcular la climatología mensual base de cada estación para el escalamiento microclimático
+                            climatologia_mensual = df_final.groupby(df_final.index.month)[cols_estaciones].mean()
+                            
+                            # Umbral mínimo de confianza estadística para aceptar una estación vecina
+                            UMBRAL_CORRELACION = 0.65
+                            
+                            df_imputado_espacial = df_final[cols_estaciones].copy()
+                            
+                            # Recorremos la matriz buscando baches para aplicar regresión por vecindad
+                            for estacion in cols_estaciones:
+                                registros_vacios = df_final[df_final[estacion].isna()].index
                                 
-                                df_clima_vivo = climate_api.get_live_oni_data()
-                                if df_clima_vivo is not None and not df_clima_vivo.empty:
-                                    df_clima = df_clima_vivo.copy()
-                                    df_clima.set_index('fecha', inplace=True)
-                                    st.toast("📡 Clima NOAA sincronizado en tiempo real.")
-                                elif file_indices:
-                                    df_idx = leer_csv_seguro(file_indices)
-                                    col_fecha = 'fecha' if 'fecha' in df_idx.columns else 'date' if 'date' in df_idx.columns else None
-                                    col_oni = next((c for c in df_idx.columns if 'oni' in c.lower()), None)
-                                    if col_fecha and col_oni:
-                                        df_idx[col_fecha] = pd.to_datetime(df_idx[col_fecha], errors='coerce').dt.to_period('M').dt.to_timestamp()
-                                        def clasificar(val):
-                                            try:
-                                                v = float(val)
-                                                if v >= 0.5: return "Niño"
-                                                if v <= -0.5: return "Niña"
-                                                return "Neutro"
-                                            except: return "Neutro"
-                                        df_idx['fase_enso'] = df_idx[col_oni].apply(clasificar)
-                                        df_clima = df_idx[[col_fecha, 'fase_enso']].dropna().groupby(col_fecha).first()
-                                
-                                if df_clima is not None:
-                                    df_final = df_final.join(df_clima[['fase_enso']], how='left')
-                                    col_enso_name = 'fase_enso'
+                                if len(registros_vacios) > 0:
+                                    # Ordenar las estaciones vecinas de mayor a menor correlación real con nuestra estación objetivo
+                                    vecinas_ordenadas = matriz_corr[estacion].drop(estacion).sort_values(ascending=False)
+                                    vecinas_validas = vecinas_ordenadas[vecinas_ordenadas >= UBRAL_CORRELACION].index.tolist()
+                                    
+                                    for fecha_idx in registros_vacios:
+                                        mes_actual = fecha_idx.month
+                                        
+                                        # Buscar cuál de las vecinas altamente correlacionadas SÍ tiene datos reales en esta fecha exacta
+                                        for vecina in vecinas_validas:
+                                            valor_vecina = df_final.loc[fecha_idx, vecina]
+                                            
+                                            if not np.isnan(valor_vecina):
+                                                # Extraer medias climatológicas para el ajuste de escala microclimática
+                                                media_target = climatologia_mensual.loc[mes_actual, estacion]
+                                                media_vecina = climatologia_mensual.loc[mes_actual, vecina]
+                                                
+                                                if media_vecina > 0:
+                                                    # Regresión proporcional: proyecta la anomalía respetando el volumen local
+                                                    valor_imputado = valor_vecina * (media_target / media_vecina)
+                                                    df_imputado_espacial.loc[fecha_idx, estacion] = valor_imputado
+                                                    break # Éxito: bache cubierto por la mejor vecina disponible, pasamos a la siguiente fecha
+                            
+                            # Inyectar los datos estimados espacialmente a la matriz principal
+                            df_final[cols_estaciones] = df_imputado_espacial
 
-                                if col_enso_name:
-                                    # Solo imputamos a las estaciones robustas
-                                    df_promedios_enso = df_final.groupby([df_final.index.month, col_enso_name])[estaciones_robustas].transform('mean')
-                                    df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_enso)
-                                    df_final.drop(columns=[col_enso_name], inplace=True)
-                                
-                                df_promedios_mensuales = df_final.groupby(df_final.index.month)[estaciones_robustas].transform('mean')
-                                df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_mensuales)
-                                df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_final[estaciones_robustas].mean())
+                            # --------------------------------------------------
+                            # CAPA C: RED DE SEGURIDAD CLIMÁTICA (ENSO / Mensual)
+                            # Para cubrir vacíos residuales en estaciones aisladas sin vecinas correlacionadas
+                            # --------------------------------------------------
+                            df_clima_vivo = climate_api.get_live_oni_data()
+                            col_enso_name = None
+                            
+                            if df_clima_vivo is not None and not df_clima_vivo.empty:
+                                df_clima_vivo.set_index('fecha', inplace=True)
+                                df_final = df_final.join(df_clima_vivo[['fase_enso']], how='left')
+                                col_enso_name = 'fase_enso'
+                            
+                            if col_enso_name:
+                                df_promedios_enso = df_final.groupby([df_final.index.month, col_enso_name])[cols_estaciones].transform('mean')
+                                df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_enso)
+                                df_final.drop(columns=[col_enso_name], inplace=True)
+                            
+                            df_promedios_mensuales = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
+                            df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_mensuales)
+                            df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
 
                     # ==========================================================
                     # 🛡️ EXPORTACIÓN SEGURA
