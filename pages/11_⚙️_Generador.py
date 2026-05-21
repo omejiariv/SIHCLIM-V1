@@ -566,47 +566,39 @@ with tab6:
 
                             # --------------------------------------------------
                             # 🔥 NUEVA CAPA B: MOTOR DE CORRELACIÓN ESPACIAL PROPORCIONAL
-                            # Generada puramente con los datos limpios antes de imputar
                             # --------------------------------------------------
                             st.text("📡 Calculando coeficientes de Pearson de la red real...")
-                            matriz_corr = df_final[cols_estaciones].corr(method='pearson')
+                            # 🛡️ CORRECCIÓN: Solo correlacionamos las estaciones con datos suficientes
+                            matriz_corr = df_final[estaciones_robustas].corr(method='pearson')
                             
-                            # Calcular la climatología mensual base de cada estación para el escalamiento microclimático
-                            climatologia_mensual = df_final.groupby(df_final.index.month)[cols_estaciones].mean()
-                            
-                            # Umbral mínimo de confianza estadística para aceptar una estación vecina
+                            climatologia_mensual = df_final.groupby(df_final.index.month)[estaciones_robustas].mean()
                             UMBRAL_CORRELACION = 0.65
                             
                             df_imputado_espacial = df_final[cols_estaciones].copy()
                             
-                            # Recorremos la matriz buscando baches para aplicar regresión por vecindad
-                            for estacion in cols_estaciones:
+                            # 🛡️ CORRECCIÓN: Iteramos SOLO sobre estaciones robustas. Las fantasma se ignoran.
+                            for estacion in estaciones_robustas:
                                 registros_vacios = df_final[df_final[estacion].isna()].index
                                 
                                 if len(registros_vacios) > 0:
-                                    # Ordenar las estaciones vecinas de mayor a menor correlación real con nuestra estación objetivo
                                     vecinas_ordenadas = matriz_corr[estacion].drop(estacion).sort_values(ascending=False)
                                     vecinas_validas = vecinas_ordenadas[vecinas_ordenadas >= UMBRAL_CORRELACION].index.tolist()
                                     
                                     for fecha_idx in registros_vacios:
                                         mes_actual = fecha_idx.month
                                         
-                                        # Buscar cuál de las vecinas altamente correlacionadas SÍ tiene datos reales en esta fecha exacta
                                         for vecina in vecinas_validas:
                                             valor_vecina = df_final.loc[fecha_idx, vecina]
                                             
                                             if not np.isnan(valor_vecina):
-                                                # Extraer medias climatológicas para el ajuste de escala microclimática
                                                 media_target = climatologia_mensual.loc[mes_actual, estacion]
                                                 media_vecina = climatologia_mensual.loc[mes_actual, vecina]
                                                 
                                                 if media_vecina > 0:
-                                                    # Regresión proporcional: proyecta la anomalía respetando el volumen local
                                                     valor_imputado = valor_vecina * (media_target / media_vecina)
                                                     df_imputado_espacial.loc[fecha_idx, estacion] = valor_imputado
-                                                    break # Éxito: bache cubierto por la mejor vecina disponible, pasamos a la siguiente fecha
+                                                    break 
                             
-                            # Inyectar los datos estimados espacialmente a la matriz principal
                             df_final[cols_estaciones] = df_imputado_espacial
 
                             # --------------------------------------------------
