@@ -454,13 +454,14 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 6: FUSIÓN HIDROMETEOROLÓGICA EN CASCADA (AUTÓNOMA)
+# 🚀 PESTAÑA 6: GEMELO DIGITAL (FUSIÓN MODULAR ADAPTATIVA)
 # ------------------------------------------------------------------------------
 with tab6:
-    st.header("🌧️ Fusión Inteligente en Cascada (5 Capas)")
+    st.header("🌧️ Gemelo Digital: Fusión Modular Adaptativa")
     st.markdown("""
-    Esta herramienta rellena vacíos hidrometeorológicos usando un arsenal jerárquico. 
-    **El nivel superior jamás se sobrescribe**, solo se rellenan sus `NaN` (huecos) con el nivel inferior.
+    Este motor se adapta a los datos proporcionados:
+    * **Modo Puerto Seguro:** Si solo subes datos del IDEAM, usará correlación espacial pura.
+    * **Modo Híbrido Calibrado:** Si añades datos satelitales, los calibrará matemáticamente antes de fusionarlos.
     """)
     
     if 'csv_fusionado_data' not in st.session_state:
@@ -468,28 +469,22 @@ with tab6:
         st.session_state['fusion_resumen'] = ""
         st.session_state['fusion_preview'] = None
 
-    # Reorganizamos en 2 columnas para que quepan los 4 archivos
     col_1, col_2 = st.columns(2)
     with col_1:
-        file_maestro = st.file_uploader("🥇 1. Histórico In Situ", type=['csv'], key='up_maestro')
-        file_parche_2 = st.file_uploader("🥉 3. Satelital (Copérnicus)", type=['csv'], key='up_parche2')
+        file_maestro = st.file_uploader("🥇 1. Histórico In Situ IDEAM (<2010)", type=['csv'])
+        file_parche_2 = st.file_uploader("🥉 3. Satelital Copernicus (Opcional)", type=['csv'])
     with col_2:
-        file_parche_1 = st.file_uploader("🥈 2. Institucional (IDEAM)", type=['csv'], key='up_parche1')
-        file_indices = st.file_uploader("🌍 4. Índices (NOAA/ONI) *Para Imputación Inteligente*", type=['csv'], key='up_indices')
-        file_calibracion = st.file_uploader("📥 Matriz de Calibración Copernicus (Opcional)", type=['csv'])
+        file_parche_1 = st.file_uploader("🥈 2. IDEAM Reciente (2010-2025)", type=['csv'])
+        file_calibracion = st.file_uploader("📥 Matriz Calibración Copernicus (Opcional)", type=['csv'])
         
-    st.markdown("---")
-    st.markdown("#### 🧩 Arsenal Matemático (Capas de Imputación)")
-    usar_imputacion = st.checkbox(
-        "Activar Imputación Climatológica (Capa 4 & 5): Rellena baches calculando promedios por fase ENSO.", 
-        value=True
-    )
+    usar_imputacion = st.checkbox("Activar Gemelo Digital (Correlación Espacial + ENSO)", value=True)
         
-    if file_maestro and file_parche_1 and file_parche_2:
-        if st.button("🔄 Ejecutar Fusión Integral", type="primary", use_container_width=True):
-            with st.spinner("1. Limpiando anomalías, alineando fechas y cruzando estaciones..."):
+    if file_maestro and file_parche_1:
+        if st.button("🔄 Ejecutar Motor Fusión", type="primary", use_container_width=True):
+            with st.spinner("1. Consolidando la verdad terrestre y evaluando módulos..."):
                 try:
                     def leer_csv_seguro(file_obj):
+                        if file_obj is None: return None
                         try:
                             return pd.read_csv(file_obj, sep=';', encoding='utf-8')
                         except UnicodeDecodeError:
@@ -498,25 +493,17 @@ with tab6:
                             
                     df_m = leer_csv_seguro(file_maestro)
                     df_p1 = leer_csv_seguro(file_parche_1)
-                    df_p2 = leer_csv_seguro(file_parche_2)
+                    df_p2 = leer_csv_seguro(file_parche_2) # Puede ser None
 
-                    for df_temp in [df_m, df_p1, df_p2]:
-                        if 'date' in df_temp.columns:
-                            df_temp.rename(columns={'date': 'fecha'}, inplace=True)
-                            
-                    if 'fecha' not in df_m.columns or 'fecha' not in df_p1.columns or 'fecha' not in df_p2.columns:
-                        st.error("❌ Los tres archivos deben contener una columna llamada 'fecha' o 'date'.")
-                        st.stop()
-
-                    # ==========================================================
-                    # 🧹 ADUANA DE DATOS ENTRADA
-                    # ==========================================================
+                    # 🧹 ADUANA Y LIMPIEZA DE DATOS
                     import numpy as np
                     codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -99.0, -999.0, -9999.0]
-                    UMBRAL_MAX_PPT = 1200.0  
-                    
                     dfs_procesados = []
-                    for df_temp in [df_m, df_p1, df_p2]:
+                    
+                    archivos_activos = [df for df in [df_m, df_p1, df_p2] if df is not None]
+                    
+                    for df_temp in archivos_activos:
+                        if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
                         df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
@@ -529,125 +516,79 @@ with tab6:
                                 df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
                             df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
                             df_temp[col] = df_temp[col].replace(codigos_falsos, np.nan)
-                            df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > UMBRAL_MAX_PPT), col] = np.nan
+                            df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > 1500.0), col] = np.nan
                             
                         dfs_procesados.append(df_temp)
                         
-                    df_m, df_p1, df_p2 = dfs_procesados
-                    
-                    # Consolidamos la verdad terrestre primero
-                    df_terrestre = df_m.combine_first(df_p1)
-                    df_satelite = df_p2
+                    # 🌍 PASO 1: CONSOLIDAR LA VERDAD DEL TERRENO (IDEAM)
+                    df_terrestre = dfs_procesados[0].combine_first(dfs_procesados[1])
+                    df_final = df_terrestre.copy()
+                    mensaje_fusion = "✅ Matriz construida en Modo Puerto Seguro (Solo IDEAM)."
 
-                    # ==========================================================
-                    # 🛰️ CALIBRADOR SATELITAL INTELIGENTE (Downscaling + Bias)
-                    # ==========================================================
-                    st.info("🛰️ Aterrizando datos satelitales a la realidad terrestre...")
-                    
-                    df_cal = None
-                    if file_calibracion is not None:
-                        try:
-                            df_cal = pd.read_csv(file_calibracion, sep=';', decimal=',')
-                            df_cal['Estacion'] = df_cal['Estacion'].astype(str).str.strip()
-                            df_cal.set_index('Estacion', inplace=True)
-                        except Exception as e:
-                            st.warning(f"No se pudo procesar la matriz de calibración: {e}")
-                        
-                    cols_comunes = [c for c in df_satelite.columns if c in df_terrestre.columns and str(c).isnumeric()]
-                    log_eq = 0
-                    log_factor = 0
-                    
-                    for col in cols_comunes:
-                        df_terrestre[col] = pd.to_numeric(df_terrestre[col], errors='coerce')
-                        df_satelite[col] = pd.to_numeric(df_satelite[col], errors='coerce')
-                        
-                        aplicado_ecuacion = False
-                        
-                        # 🎯 VÍA A: Ecuación Lineal (Y = mX + b)
-                        if df_cal is not None and col in df_cal.index:
-                            m = df_cal.loc[col, 'Pendiente_m']
-                            b = df_cal.loc[col, 'Intercepto_b']
-                            r2 = df_cal.loc[col, 'R2']
-                            
-                            if pd.notna(m) and pd.notna(b) and pd.notna(r2) and r2 >= 0.2: 
-                                df_satelite[col] = (df_satelite[col] * m) + b
-                                df_satelite[col] = df_satelite[col].clip(lower=0) 
-                                aplicado_ecuacion = True
-                                log_eq += 1
-                        
-                        # ⚖️ VÍA B: Factor de Proporción (Fallback)
-                        if not aplicado_ecuacion:
-                            hist_terrestre = df_terrestre[df_terrestre[col] > 0][col]
-                            hist_satelite = df_satelite[df_satelite[col] > 0][col]
-                            
-                            if not hist_terrestre.empty and not hist_satelite.empty:
-                                media_terrestre = hist_terrestre.mean()
-                                media_satelite = hist_satelite.mean()
-                                
-                                factor_correccion = media_terrestre / media_satelite
-                                factor_correccion = max(0.3, min(factor_correccion, 3.0)) 
-                                
-                                df_satelite[col] = df_satelite[col] * factor_correccion
-                                log_factor += 1
-                                
-                    st.success(f"✅ Calibración completada: {log_eq} estaciones con Regresión Lineal, {log_factor} con Factor de Escala.")
+                    # Capturar límite de nacimiento basado ÚNICAMENTE en datos reales del IDEAM
+                    cols_est_terrestre = [c for c in df_terrestre.columns if str(c).isnumeric()]
+                    limites_nacimiento = {}
+                    for col in cols_est_terrestre:
+                        datos_validos = df_terrestre[col].dropna()
+                        limites_nacimiento[col] = datos_validos.index.min() if not datos_validos.empty else None
 
-                    # Fusión Final
-                    df_final = df_terrestre.combine_first(df_satelite)
+                    # 🛰️ PASO 2: MÓDULO SATELITAL (EJECUCIÓN CONDICIONAL)
+                    if df_p2 is not None:
+                        df_satelite = dfs_procesados[2]
+                        st.info("🛰️ Módulo Satelital detectado. Aterrizando datos a la realidad terrestre...")
+                        
+                        df_cal = None
+                        if file_calibracion is not None:
+                            try:
+                                df_cal = pd.read_csv(file_calibracion, sep=';', decimal=',')
+                                df_cal['Estacion'] = df_cal['Estacion'].astype(str).str.strip()
+                                df_cal.set_index('Estacion', inplace=True)
+                            except Exception: pass
+                            
+                        cols_comunes = [c for c in df_satelite.columns if c in df_terrestre.columns and str(c).isnumeric()]
+                        
+                        for col in cols_comunes:
+                            aplicado_ecuacion = False
+                            # VÍA A: Ecuación Lineal
+                            if df_cal is not None and col in df_cal.index:
+                                m, b, r2 = df_cal.loc[col, 'Pendiente_m'], df_cal.loc[col, 'Intercepto_b'], df_cal.loc[col, 'R2']
+                                if pd.notna(m) and pd.notna(b) and pd.notna(r2) and r2 >= 0.2: 
+                                    df_satelite[col] = (df_satelite[col] * m) + b
+                                    df_satelite[col] = df_satelite[col].clip(lower=0) 
+                                    aplicado_ecuacion = True
+                            
+                            # VÍA B: Factor de Proporción (Fallback)
+                            if not aplicado_ecuacion:
+                                hist_terrestre = df_terrestre[df_terrestre[col] > 0][col]
+                                hist_satelite = df_satelite[df_satelite[col] > 0][col]
+                                if not hist_terrestre.empty and not hist_satelite.empty:
+                                    factor = max(0.3, min(hist_terrestre.mean() / hist_satelite.mean(), 3.0)) 
+                                    df_satelite[col] = df_satelite[col] * factor
+                                    
+                        df_final = df_terrestre.combine_first(df_satelite)
+                        mensaje_fusion = "✅ Matriz construida en Modo Híbrido (IDEAM + Satélite Calibrado)."
+
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
-                    
-                    # ==========================================================
-                    # 🧩 IMPUTACIÓN HÍBRIDA (CORRELACIÓN ESPACIAL + CLIMÁTICA ENSO)
-                    # ==========================================================
+
+                    # 🧩 PASO 3: GEMELO DIGITAL (IMPUTACIÓN ESPACIAL)
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     
-                    # 🛡️ NUEVO: CAPTURAR EL "CICLO DE VIDA" DE CADA ESTACIÓN
-                    limites_vida = {}
-                    for col in cols_estaciones:
-                        df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
-                        datos_validos = df_final[col].dropna()
-                        if not datos_validos.empty:
-                            limites_vida[col] = (datos_validos.index.min(), datos_validos.index.max())
-                        else:
-                            limites_vida[col] = (None, None)
-                    
                     if usar_imputacion:
-                        with st.spinner("2. Forjando Matriz de Correlación e Imputando Espacialmente..."):
+                        with st.spinner("2. Levantando Gemelo Digital: Calculando vecindad matemática..."):
                             from modules import climate_api  
-                            import numpy as np
                             
-                            # Forzar conversión a numérico puro
-                            for col in cols_estaciones:
-                                df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
-
-                            # --------------------------------------------------
-                            # CAPA A: FILTRO DE TUKEY BI-DIMENSIONAL (Limpieza previa)
-                            # --------------------------------------------------
-                            Q1_global = df_final[cols_estaciones].quantile(0.25)
-                            Q3_global = df_final[cols_estaciones].quantile(0.75)
-                            IQR_global = Q3_global - Q1_global
-                            techo_global = Q3_global + (4 * IQR_global) 
-
+                            # Filtro Tukey
                             Q1_mes = df_final.groupby(df_final.index.month)[cols_estaciones].transform(lambda x: x.quantile(0.25))
                             Q3_mes = df_final.groupby(df_final.index.month)[cols_estaciones].transform(lambda x: x.quantile(0.75))
-                            IQR_mes = Q3_mes - Q1_mes
-                            techo_mensual = Q3_mes + (3 * IQR_mes)
+                            techo_mensual = Q3_mes + (3 * (Q3_mes - Q1_mes))
 
                             for col in cols_estaciones:
-                                limite_final = np.maximum(250.0, np.minimum(techo_global[col], techo_mensual[col]))
-                                df_final.loc[df_final[col] > limite_final, col] = np.nan
+                                df_final.loc[df_final[col] > np.maximum(250.0, techo_mensual[col]), col] = np.nan
 
-                            # --------------------------------------------------
-                            # 🛡️ DEFINICIÓN DE ESTACIONES ROBUSTAS (El eslabón perdido)
-                            # --------------------------------------------------
                             MIN_DATOS_REALES = 24
                             conteo_reales = df_final[cols_estaciones].notna().sum()
                             estaciones_robustas = conteo_reales[conteo_reales >= MIN_DATOS_REALES].index.tolist()
 
-                            # --------------------------------------------------
-                            # 🔥 CAPA B: MOTOR DE CORRELACIÓN ESPACIAL PROPORCIONAL
-                            # --------------------------------------------------
-                            st.text("📡 Calculando coeficientes de Pearson de la red real...")
                             if estaciones_robustas:
                                 matriz_corr = df_final[estaciones_robustas].corr(method='pearson')
                                 climatologia_mensual = df_final.groupby(df_final.index.month)[estaciones_robustas].mean()
@@ -657,7 +598,6 @@ with tab6:
                                 
                                 for estacion in estaciones_robustas:
                                     registros_vacios = df_final[df_final[estacion].isna()].index
-                                    
                                     if len(registros_vacios) > 0:
                                         vecinas_ordenadas = matriz_corr[estacion].drop(estacion).sort_values(ascending=False)
                                         vecinas_validas = vecinas_ordenadas[vecinas_ordenadas >= UMBRAL_CORRELACION].index.tolist()
@@ -671,56 +611,37 @@ with tab6:
                                                     media_vecina = climatologia_mensual.loc[mes_actual, vecina]
                                                     
                                                     if media_vecina > 0:
-                                                        valor_imputado = valor_vecina * (media_target / media_vecina)
-                                                        df_imputado_espacial.loc[fecha_idx, estacion] = valor_imputado
+                                                        df_imputado_espacial.loc[fecha_idx, estacion] = valor_vecina * (media_target / media_vecina)
                                                         break 
                                 
                                 df_final[cols_estaciones] = df_imputado_espacial
 
-                            # --------------------------------------------------
-                            # CAPA C: RED DE SEGURIDAD CLIMÁTICA (ENSO / Mensual)
-                            # --------------------------------------------------
+                            # RED DE SEGURIDAD ENSO
                             if estaciones_robustas:
                                 df_clima_vivo = climate_api.get_live_oni_data()
-                                col_enso_name = None
-                                
                                 if df_clima_vivo is not None and not df_clima_vivo.empty:
                                     df_clima_vivo.set_index('fecha', inplace=True)
                                     df_final = df_final.join(df_clima_vivo[['fase_enso']], how='left')
-                                    col_enso_name = 'fase_enso'
-                                
-                                if col_enso_name:
-                                    df_promedios_enso = df_final.groupby([df_final.index.month, col_enso_name])[estaciones_robustas].transform('mean')
+                                    df_promedios_enso = df_final.groupby([df_final.index.month, 'fase_enso'])[estaciones_robustas].transform('mean')
                                     df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_enso)
-                                    df_final.drop(columns=[col_enso_name], inplace=True)
+                                    df_final.drop(columns=['fase_enso'], inplace=True)
                                 
                                 df_promedios_mensuales = df_final.groupby(df_final.index.month)[estaciones_robustas].transform('mean')
                                 df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_mensuales)
-                                df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_final[estaciones_robustas].mean())
 
-                    # ==========================================================
-                    # 🛡️ EXPORTACIÓN SEGURA (EL PROTOCOLO LÁZARO)
-                    # ==========================================================
+                    # 🛡️ CORTAFUEGOS DE NACIMIENTO
                     if cols_estaciones:
                         for col in cols_estaciones:
-                            inicio, fin = limites_vida.get(col, (None, None))
-                            
-                            # 1. Candado de Nacimiento (Mantenido): 
-                            # No dejamos que la máquina viaje al pasado antes de que la estación existiera.
+                            inicio = limites_nacimiento.get(col)
                             if inicio:
                                 df_final.loc[df_final.index < inicio, col] = np.nan
-                                
-                            # 2. Candado de Muerte (ELIMINADO):
-                            # Permitimos que la Imputación Espacial y el Satélite proyecten 
-                            # la estación hacia el presente, resucitando la red completa.
-                                
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
                     df_final = df_final.sort_index().reset_index()
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', decimal=',', index=False, encoding='utf-8-sig').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"Operación exitosa. Matriz blindada. Gemelo Digital ha proyectado la red histórica hasta el presente."
+                    st.session_state['fusion_resumen'] = f"{mensaje_fusion} Gemelo Digital aplicado."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
@@ -729,12 +650,12 @@ with tab6:
     # Renderizado
     if st.session_state['csv_fusionado_data'] is not None:
         st.markdown("---")
-        st.success("✅ ¡Matriz Única de Trabajo Generada con Éxito!")
+        st.success("✅ ¡Matriz Generada con Éxito!")
         st.info(st.session_state['fusion_resumen'])
         st.dataframe(st.session_state['fusion_preview'], use_container_width=True)
         
         st.download_button(
-            label="📥 Descargar Matriz Definitiva (Apta para Excel y Supabase)",
+            label="📥 Descargar Matriz Definitiva (Apta para Supabase)",
             data=st.session_state['csv_fusionado_data'],
             file_name="DatosPptnmes_Maestro_Integral.csv",
             mime="text/csv",
