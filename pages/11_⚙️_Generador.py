@@ -473,6 +473,7 @@ with tab6:
     with col_2:
         file_parche_1 = st.file_uploader("🥈 2. Institucional (IDEAM)", type=['csv'], key='up_parche1')
         file_indices = st.file_uploader("🌍 4. Índices (NOAA/ONI) *Para Imputación Inteligente*", type=['csv'], key='up_indices')
+        file_calibracion = st.file_uploader("📥 Matriz de Calibración Copernicus (Opcional)", type=['csv'])
         
     st.markdown("---")
     st.markdown("#### 🧩 Arsenal Matemático (Capas de Imputación)")
@@ -530,7 +531,66 @@ with tab6:
                         dfs_procesados.append(df_temp)
                         
                     df_m, df_p1, df_p2 = dfs_procesados
-                    df_final = df_m.combine_first(df_p1).combine_first(df_p2)
+                    
+                    # Consolidamos la verdad terrestre primero
+                    df_terrestre = df_m.combine_first(df_p1)
+                    df_satelite = df_p2
+
+                    # ==========================================================
+                    # 🛰️ CALIBRADOR SATELITAL INTELIGENTE (Downscaling + Bias)
+                    # ==========================================================
+                    st.info("🛰️ Aterrizando datos satelitales a la realidad terrestre...")
+                    
+                    df_cal = None
+                    if file_calibracion is not None:
+                        try:
+                            df_cal = pd.read_csv(file_calibracion, sep=';', decimal=',')
+                            df_cal['Estacion'] = df_cal['Estacion'].astype(str).str.strip()
+                            df_cal.set_index('Estacion', inplace=True)
+                        except Exception as e:
+                            st.warning(f"No se pudo procesar la matriz de calibración: {e}")
+                        
+                    cols_comunes = [c for c in df_satelite.columns if c in df_terrestre.columns and str(c).isnumeric()]
+                    log_eq = 0
+                    log_factor = 0
+                    
+                    for col in cols_comunes:
+                        df_terrestre[col] = pd.to_numeric(df_terrestre[col], errors='coerce')
+                        df_satelite[col] = pd.to_numeric(df_satelite[col], errors='coerce')
+                        
+                        aplicado_ecuacion = False
+                        
+                        # 🎯 VÍA A: Ecuación Lineal (Y = mX + b)
+                        if df_cal is not None and col in df_cal.index:
+                            m = df_cal.loc[col, 'Pendiente_m']
+                            b = df_cal.loc[col, 'Intercepto_b']
+                            r2 = df_cal.loc[col, 'R2']
+                            
+                            if pd.notna(m) and pd.notna(b) and pd.notna(r2) and r2 >= 0.2: 
+                                df_satelite[col] = (df_satelite[col] * m) + b
+                                df_satelite[col] = df_satelite[col].clip(lower=0) 
+                                aplicado_ecuacion = True
+                                log_eq += 1
+                        
+                        # ⚖️ VÍA B: Factor de Proporción (Fallback)
+                        if not aplicado_ecuacion:
+                            hist_terrestre = df_terrestre[df_terrestre[col] > 0][col]
+                            hist_satelite = df_satelite[df_satelite[col] > 0][col]
+                            
+                            if not hist_terrestre.empty and not hist_satelite.empty:
+                                media_terrestre = hist_terrestre.mean()
+                                media_satelite = hist_satelite.mean()
+                                
+                                factor_correccion = media_terrestre / media_satelite
+                                factor_correccion = max(0.3, min(factor_correccion, 3.0)) 
+                                
+                                df_satelite[col] = df_satelite[col] * factor_correccion
+                                log_factor += 1
+                                
+                    st.success(f"✅ Calibración completada: {log_eq} estaciones con Regresión Lineal, {log_factor} con Factor de Escala.")
+
+                    # Fusión Final
+                    df_final = df_terrestre.combine_first(df_satelite)
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
                     
                     # ==========================================================
