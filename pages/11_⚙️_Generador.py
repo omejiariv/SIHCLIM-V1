@@ -586,7 +586,7 @@ with tab6:
                                 if len(registros_vacios) > 0:
                                     # Ordenar las estaciones vecinas de mayor a menor correlación real con nuestra estación objetivo
                                     vecinas_ordenadas = matriz_corr[estacion].drop(estacion).sort_values(ascending=False)
-                                    vecinas_validas = vecinas_ordenadas[vecinas_ordenadas >= UBRAL_CORRELACION].index.tolist()
+                                    vecinas_validas = vecinas_ordenadas[vecinas_ordenadas >= UMBRAL_CORRELACION].index.tolist()
                                     
                                     for fecha_idx in registros_vacios:
                                         mes_actual = fecha_idx.month
