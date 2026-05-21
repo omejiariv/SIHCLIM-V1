@@ -538,6 +538,16 @@ with tab6:
                     # ==========================================================
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     
+                    # 🛡️ NUEVO: CAPTURAR EL "CICLO DE VIDA" DE CADA ESTACIÓN
+                    limites_vida = {}
+                    for col in cols_estaciones:
+                        df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
+                        datos_validos = df_final[col].dropna()
+                        if not datos_validos.empty:
+                            limites_vida[col] = (datos_validos.index.min(), datos_validos.index.max())
+                        else:
+                            limites_vida[col] = (None, None)
+                    
                     if usar_imputacion:
                         with st.spinner("2. Forjando Matriz de Correlación e Imputando Espacialmente..."):
                             from modules import climate_api  
