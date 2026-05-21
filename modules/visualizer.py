@@ -5207,13 +5207,21 @@ def display_statistics_summary_tab(df_monthly, df_anual, gdf_stations, **kwargs)
         row_min_men = row_max_men
 
     # ==============================================================================
-    # --- 4. PROMEDIOS REGIONALES (🛡️ CON CANDADO DE 12 MESES) ---
+    # --- 4. PROMEDIOS REGIONALES (🛡️ CÁLCULO ESTRICTO DE VOLUMEN) ---
     # ==============================================================================
-    # Año más lluvioso y menos lluvioso (usamos la matriz filtrada de años completos)
-    if not df_anual_filtrado.empty:
-        regional_anual = df_anual_filtrado.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].mean()
+    # 1. Usamos 'datos_completos' (el candado de 12 meses calculado en el paso 2)
+    # Cruzamos con la matriz mensual para asegurar que solo usamos años perfectos
+    df_mensual_completo = pd.merge(df_monthly, datos_completos[[Config.YEAR_COL, Config.STATION_NAME_COL]], on=[Config.YEAR_COL, Config.STATION_NAME_COL])
+    
+    # 2. SUMA: Calculamos el volumen TOTAL ANUAL que cayó en CADA estación
+    anual_por_estacion = df_mensual_completo.groupby([Config.YEAR_COL, Config.STATION_NAME_COL])[Config.PRECIPITATION_COL].sum().reset_index()
+    
+    # 3. PROMEDIO: Promediamos esos totales para obtener la media regional del año
+    if not anual_por_estacion.empty:
+        regional_anual = anual_por_estacion.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].mean()
     else:
-        regional_anual = df_anual.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].mean()
+        # Fallback de seguridad
+        regional_anual = df_anual.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].sum() / len(stations)
 
     year_max_reg = regional_anual.idxmax()
     val_max_reg = regional_anual.max()
@@ -5221,26 +5229,11 @@ def display_statistics_summary_tab(df_monthly, df_anual, gdf_stations, **kwargs)
     year_min_reg = regional_anual.idxmin()
     val_min_reg = regional_anual.min()
 
-    # Mes Climatológico más lluvioso (aquí sí sirven todos los meses)
-    regional_mensual = df_monthly.groupby(Config.MONTH_COL)[
-        Config.PRECIPITATION_COL
-    ].mean()
+    # Mes Climatológico más lluvioso (Aquí sí aplica el mean)
+    regional_mensual = df_monthly.groupby(Config.MONTH_COL)[Config.PRECIPITATION_COL].mean()
     mes_max_reg_idx = regional_mensual.idxmax()
     val_mes_max_reg = regional_mensual.max()
-    meses_dict = {
-        1: "Ene",
-        2: "Feb",
-        3: "Mar",
-        4: "Abr",
-        5: "May",
-        6: "Jun",
-        7: "Jul",
-        8: "Ago",
-        9: "Sep",
-        10: "Oct",
-        11: "Nov",
-        12: "Dic",
-    }
+    meses_dict = {1:"Ene", 2:"Feb", 3:"Mar", 4:"Abr", 5:"May", 6:"Jun", 7:"Jul", 8:"Ago", 9:"Sep", 10:"Oct", 11:"Nov", 12:"Dic"}
     mes_max_name = meses_dict.get(mes_max_reg_idx, str(mes_max_reg_idx))
 
     # --- 5. TENDENCIAS (Si hay datos suficientes) ---
