@@ -309,3 +309,98 @@ with tab_bd:
                 st.dataframe(res)
             except Exception as e:
                 st.error(f"Error SQL: {e}")
+
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+
+st.set_page_config(page_title="Diagnóstico Forense", page_icon="🕵️‍♂️", layout="wide")
+
+st.title("🕵️‍♂️ Escáner Forense: Buscando el 'Abultamiento' 2010-2025")
+st.markdown("Este módulo aísla los 3 archivos crudos y compara sus promedios anuales puros para detectar si alguna fuente tiene un error de escala (ej. comas por puntos) o un sesgo satelital de sobreestimación.")
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    file_m = st.file_uploader("1. Histórico (< 2010)", type=['csv'])
+with col2:
+    file_p1 = st.file_uploader("2. Institucional (2010-2025)", type=['csv'])
+with col3:
+    file_p2 = st.file_uploader("3. Satelital (Delta Copérnicus)", type=['csv'])
+
+def procesar_archivo(file_obj, nombre_fuente):
+    """Lee un archivo ancho, limpia fechas, y saca el promedio puro mensual y anual de TODA la red de ese archivo."""
+    if file_obj is None: return None
+    
+    try:
+        # Lectura segura
+        try:
+            df = pd.read_csv(file_obj, sep=';', encoding='utf-8')
+        except UnicodeDecodeError:
+            file_obj.seek(0)
+            df = pd.read_csv(file_obj, sep=';', encoding='latin1')
+            
+        # Homologar fecha
+        if 'date' in df.columns: df.rename(columns={'date': 'fecha'}, inplace=True)
+        if 'fecha' not in df.columns: return None
+        
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+        df = df.dropna(subset=['fecha'])
+        df.set_index('fecha', inplace=True)
+        
+        # Filtrar solo columnas de estaciones (numéricas)
+        cols_estaciones = [c for c in df.columns if str(c).isnumeric()]
+        
+        # ⚠️ AUDITORÍA DE DECIMALES (No forzamos la coma a punto, solo convertimos para ver qué pasa)
+        for col in cols_estaciones:
+            if df[col].dtype == object:
+                # Si el archivo original traía comas, aquí las cambiamos para que Python las lea
+                df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+        # Calcular el promedio espacial (cuánto llovió en promedio en toda la red ese mes)
+        # mean(axis=1) calcula el promedio de todas las estaciones en una misma fila (mes)
+        df_mensual = df[cols_estaciones].mean(axis=1).reset_index()
+        df_mensual.columns = ['fecha', 'promedio_red_mes']
+        
+        # Sumar los meses para obtener el total anual
+        df_anual = df_mensual.groupby(df_mensual['fecha'].dt.year)['promedio_red_mes'].sum().reset_index()
+        df_anual.columns = ['año', 'precipitacion_total_anual']
+        df_anual['fuente'] = nombre_fuente
+        
+        return df_anual
+    except Exception as e:
+        st.error(f"Error procesando {nombre_fuente}: {e}")
+        return None
+
+if file_m or file_p1 or file_p2:
+    if st.button("🚀 Ejecutar Diagnóstico", type="primary"):
+        with st.spinner("Analizando matrices..."):
+            res_m = procesar_archivo(file_m, "Histórico")
+            res_p1 = procesar_archivo(file_p1, "Institucional (2010-2025)")
+            res_p2 = procesar_archivo(file_p2, "Satelital (Copérnicus)")
+            
+            # Unir los resultados en una sola tabla
+            lista_dfs = [df for df in [res_m, res_p1, res_p2] if df is not None]
+            
+            if lista_dfs:
+                df_total = pd.concat(lista_dfs, ignore_index=True)
+                
+                # Graficar superposiciones
+                st.subheader("📈 Comparativa Anual Pura (Sin Imputaciones)")
+                fig = px.line(df_total, x='año', y='precipitacion_total_anual', color='fuente', markers=True,
+                              title="Precipitación Total Anual Promedio (Por Fuente de Datos)",
+                              labels={'precipitacion_total_anual': 'Precipitación Anual (mm)', 'año': 'Año'},
+                              template="plotly_white")
+                
+                fig.update_layout(hovermode="x unified")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.markdown("""
+                ### 🕵️‍♂️ ¿Cómo leer este gráfico?
+                1. **El Factor X (Escala):** Si la línea de 'Institucional' o 'Satelital' está en 3,000+ mm y el 'Histórico' está en 1,500 mm, significa que los archivos modernos están en una escala diferente (probablemente un problema de miles vs. decimales en Excel).
+                2. **El Sesgo Satelital:** Si el satélite (Copérnicus) está consistentemente un 30% o 40% por encima de los otros dos, confirma que el radar satelital está sobreestimando las lluvias orográficas en los Andes.
+                3. **Completitud:** Si un año se desploma a casi cero (como 2026), es simplemente porque no ha terminado, no te preocupes por esos valles en los bordes.
+                """)
+                
+                st.dataframe(df_total.pivot(index='año', columns='fuente', values='precipitacion_total_anual').style.format("{:.1f}"))
