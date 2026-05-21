@@ -558,65 +558,77 @@ with tabs[1]:
             if st.button("🚀 Procesar y Cargar Lluvia"):
                 status = st.status("Procesando...", expanded=True)
                 try:
+                    # 1. Lectura garantizando el formato de decimales de la plataforma
                     df = pd.read_csv(up_rain, sep=';', decimal=',')
                     
-                    # Limpieza básica
+                    # Limpieza básica de cabeceras
                     if 'fecha' not in df.columns and 'Fecha' in df.columns:
                         df = df.rename(columns={'Fecha': 'fecha'})
                         
-                    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+                    # 🛡️ FIJACIÓN TEMPORAL ESTRICTA: Evita intercambio de mes/día
+                    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce', format='%Y-%m-%d')
                     df = df.dropna(subset=['fecha'])
                     
-                    # Melt (Pivot)
+                    # Melt (Pivot de matriz ancha a estructura relacional larga)
                     est_cols = [c for c in df.columns if c != 'fecha']
                     df_long = df.melt(id_vars=['fecha'], value_vars=est_cols, var_name='id_estacion', value_name='valor')
                     
-                    # Limpieza de valores
+                    # Limpieza de valores numéricos e IDs
                     df_long['valor'] = pd.to_numeric(df_long['valor'], errors='coerce')
                     df_long = df_long.dropna(subset=['valor'])
-                    # Limpieza de IDs (CRÍTICO: quitar espacios)
                     df_long['id_estacion'] = df_long['id_estacion'].astype(str).str.strip()
                     
-                    status.write(f"Cargando {len(df_long):,.0f} datos...")
+                    status.write(f"📊 Preparando {len(df_long):,.0f} registros para inserción...")
                     
-                    # Carga por lotes (Chunking) para no saturar memoria
-                    chunk_size = 50000
+                    # 🧹 LIMPIEZA PREVIA DE LA ADUANA TEMPORAL
+                    # Borramos la tabla temporal si quedó algún residuo del pasado antes de iniciar
+                    with engine.begin() as conn:
+                        conn.execute(text("DROP TABLE IF EXISTS temp_rain;"))
+                    
+                    # 📥 CARGA POR LOTES A TABLA TEMPORAL (Rápido y seguro)
+                    chunk_size = 60000
                     total_chunks = (len(df_long) // chunk_size) + 1
                     bar = status.progress(0)
                     
                     for i, start in enumerate(range(0, len(df_long), chunk_size)):
                         batch = df_long.iloc[start : start + chunk_size]
                         
-                        # Usamos tabla temporal para carga rápida
-                        batch.to_sql('temp_rain', engine, if_exists='replace', index=False)
+                        # El primer lote crea la tabla; los siguientes se anexan (append) de forma eficiente
+                        modo_insercion = 'replace' if i == 0 else 'append'
+                        batch.to_sql('temp_rain', engine, if_exists=modo_insercion, index=False, method='multi')
                         
-                        with engine.begin() as conn:
-                            # 1. Crear estaciones faltantes (Salvavidas FK)
-                            conn.execute(text("""
-                                INSERT INTO estaciones (id_estacion, nombre)
-                                SELECT DISTINCT id_estacion, 'Auto-Generada ' || id_estacion
-                                FROM temp_rain
-                                WHERE id_estacion NOT IN (SELECT id_estacion FROM estaciones)
-                            """))
-                            
-                            # 2. Insertar Lluvia
-                            conn.execute(text("""
-                                INSERT INTO precipitacion (fecha, id_estacion, valor)
-                                SELECT fecha, id_estacion, valor FROM temp_rain
-                                ON CONFLICT (fecha, id_estacion) DO UPDATE SET valor = EXCLUDED.valor
-                            """))
-                        
-                        bar.progress((i+1)/total_chunks)
+                        bar.progress((i + 1) / total_chunks)
                     
-                    status.update(label="✅ ¡Carga Completa!", state="complete")
+                    # 🚀 INYECCIÓN ATÓMICA FINAL (Una sola transacción interna en Supabase)
+                    status.write("⚡ Sincronizando registros con las tablas maestras de Supabase...")
+                    with engine.begin() as conn:
+                        # Paso A: Crear estaciones faltantes para no violar Claves Foráneas (FK)
+                        conn.execute(text("""
+                            INSERT INTO estaciones (id_estacion, nombre)
+                            SELECT DISTINCT id_estacion, 'Auto-Generada ' || id_estacion
+                            FROM temp_rain
+                            WHERE id_estacion NOT IN (SELECT id_estacion FROM estaciones);
+                        """))
+                        
+                        # Paso B: Upsert masivo de precipitaciones (Actualiza si la combinación fecha-estación ya existe)
+                        conn.execute(text("""
+                            INSERT INTO precipitacion (fecha, id_estacion, valor)
+                            SELECT fecha, id_estacion, valor FROM temp_rain
+                            ON CONFLICT (fecha, id_estacion) 
+                            DO UPDATE SET valor = EXCLUDED.valor;
+                        """))
+                        
+                        # Paso C: Borrar aduana para dejar la base de datos limpia
+                        conn.execute(text("DROP TABLE IF EXISTS temp_rain;"))
+                        
+                    status.update(label="✅ ¡Carga Completa y Base de Datos Sincronizada!", state="complete")
                     st.balloons()
                     time.sleep(2)
                     st.rerun()
                     
                 except Exception as ex:
-                    status.update(label="❌ Error", state="error")
-                    st.error(f"Detalle: {ex}")
-
+                    status.update(label="❌ Error Crítico en Ingesta", state="error")
+                    st.error(f"Detalle del fallo: {ex}")
 
 # ==============================================================================
 # TAB 2: ÍNDICES (CORREGIDO Y BLINDADO)
