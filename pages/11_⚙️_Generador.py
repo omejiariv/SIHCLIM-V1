@@ -10,6 +10,9 @@ import os
 import warnings
 import re
 import unicodedata
+import requests
+import time
+
 
 from modules import climate_api
 
@@ -738,3 +741,71 @@ with tab6:
             type="primary",
             use_container_width=True
         )
+
+# Extraer datos del IDEAM
+
+def extraer_ideam_datos_abiertos(lista_estaciones, limite_registros=50000):
+    """
+    Se conecta al API de Datos Abiertos de Colombia (Socrata) para extraer 
+    registros de precipitación del IDEAM.
+    """
+    print("📡 Iniciando conexión con el portal de Datos Abiertos del Gobierno...")
+    
+    # El ID del dataset oficial del IDEAM en datos.gov.co (Catálogo de precipitación)
+    # Nota: Este ID corresponde a Catálogo de Datos Climáticos, puede requerir ajuste 
+    # si el IDEAM migra el servidor, pero es el punto de entrada estándar.
+    DATASET_ID = "s54a-sygg" 
+    URL_BASE = f"https://www.datos.gov.co/resource/{DATASET_ID}.json"
+    
+    resultados = []
+    
+    for estacion in lista_estaciones:
+        print(f"Buscando estación: {estacion}...")
+        
+        # Construimos la consulta SoQL (Socrata Query Language)
+        parametros = {
+            "codigoestacion": str(estacion),
+            "$limit": limite_registros,
+            "$order": "fechaobservacion ASC"
+        }
+        
+        try:
+            respuesta = requests.get(URL_BASE, params=parametros)
+            
+            if respuesta.status_code == 200:
+                datos = respuesta.json()
+                if datos:
+                    df_temp = pd.DataFrame(datos)
+                    resultados.append(df_temp)
+                    print(f"  ✅ {len(datos)} registros encontrados.")
+                else:
+                    print("  ⚠️ Sin datos recientes en la API.")
+            else:
+                print(f"  ❌ Error de conexión: {respuesta.status_code}")
+                
+        except Exception as e:
+            print(f"  ❌ Fallo crítico en estación {estacion}: {e}")
+            
+        # Pausa táctica para no saturar el servidor del gobierno
+        time.sleep(1)
+        
+    if resultados:
+        df_final = pd.concat(resultados, ignore_index=True)
+        print("\n✅ Extracción completada.")
+        return df_final
+    else:
+        return pd.DataFrame()
+
+# ==========================================
+# 🚀 ZONA DE PRUEBAS
+# ==========================================
+if __name__ == "__main__":
+    # Pon aquí 3 o 4 códigos de estaciones que sepas que tienen vacíos post-2010
+    mis_estaciones = ["23060110", "23080950", "27010810"] 
+    
+    df_descarga = extraer_ideam_datos_abiertos(mis_estaciones)
+    
+    if not df_descarga.empty:
+        # Guardamos el botín para inspeccionarlo
+        df_descarga.to_csv("Botin_IDEAM_Directo.csv", index=False, sep=';', encoding='utf-8')
+        print(df_descarga.head())
