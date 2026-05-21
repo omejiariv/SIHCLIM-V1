@@ -208,8 +208,6 @@ def main():
                     del st.session_state[key]
             st.rerun()
 
-    st.markdown("---")
-
     # --- D. FILTROS EN BARRA LATERAL (TIEMPO Y LIMPIEZA) ---
     with st.sidebar:
         with st.expander("⏳ Tiempo y Limpieza", expanded=False):
