@@ -5,11 +5,9 @@ import os
 import sys
 
 # --- PARCHE UNIVERSAL PARA WINDOWS/PROJ (GDAL HELL) ---
-# Esto arregla Rasterio tanto en el script principal como en los módulos importados
-if os.name == 'nt': # Solo en Windows
+if os.name == 'nt':
     try:
         import pyproj
-        # Forzamos a que todo el sistema use el diccionario de coordenadas de Python
         os.environ['PROJ_LIB'] = pyproj.datadir.get_data_dir()
     except: pass
 # ------------------------------------------------------
@@ -23,12 +21,11 @@ from sqlalchemy import text
 import geopandas as gpd
 from rasterio.io import MemoryFile
 
-# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS (SOLUCIÓN AL NAMEERROR) ---
+# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
 try:
     from modules import selectors
     from modules.admin_utils import init_supabase
 except ImportError:
-    # Fallback de rutas por si hay problemas de lectura entre carpetas
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors
     from modules.admin_utils import init_supabase
@@ -40,7 +37,6 @@ warnings.filterwarnings("ignore")
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
-# Llama al menú expandible y resalta la página actual
 selectors.renderizar_menu_navegacion("Clima e Hidrología")
 
 # ==============================================================================
@@ -48,7 +44,6 @@ selectors.renderizar_menu_navegacion("Clima e Hidrología")
 # ==============================================================================
 if 'enso_fase' not in st.session_state:
     try:
-        # 🔌 Importamos desde el nuevo hub centralizado
         from modules.climate_api import get_iri_enso_forecast
         df_enso_ini, meta = get_iri_enso_forecast()
         
@@ -109,35 +104,19 @@ except Exception as e:
     st.error(f"❌ Error Crítico de Importación: {e}")
     st.stop()
 
-# --- FUNCIÓN MAESTRA DE CARGA (VERSIÓN STORAGE / BUCKET) ---
-# Esta versión conecta con la pestaña "Coberturas" del Panel de Admin
+# --- FUNCIÓN MAESTRA DE CARGA ---
 @st.cache_resource(show_spinner=False)
 def cargar_raster_db(filename):
-    """
-    Descarga un archivo raster (TIF) desde el Storage (Bucket 'rasters') de Supabase
-    y lo devuelve como un objeto en memoria (BytesIO).
-    """
     try:
-        # 1. Iniciamos cliente usando tus credenciales existentes
         client = init_supabase()
-        
-        # 2. Descargamos los bytes del bucket 'rasters'
-        # (El Panel de Admin sube los archivos a este bucket por defecto)
         file_bytes = client.storage.from_("rasters").download(filename)
-        
-        # 3. Devolvemos el objeto en memoria
         return io.BytesIO(file_bytes)
-        
     except Exception as e:
-        # Si falla (ej. archivo no existe), retornamos None
-        # st.error(f"Error descargando '{filename}' del Storage: {e}") 
         return None
-# -----------------------------------------------------------
 
-# --- 3. CARGA DE DATOS UNIFICADA (Con Caché) ---
+# --- 3. CARGA DE DATOS UNIFICADA ---
 @st.cache_resource(show_spinner="📡 Consultando Sistema de Información...", ttl=3600)
 def load_all_data_cached():
-    """Wrapper con caché para la carga pesada de data_processor"""
     return load_and_process_all_data()
 
 # ==============================================================================
@@ -145,18 +124,15 @@ def load_all_data_cached():
 # ==============================================================================
 def main():
     
-    # --- A. SELECTOR ESPACIAL (Módulo selectors.py) ---
+    # --- A. SELECTOR ESPACIAL ---
     try:
-        # Llama a tu selector espacial existente
         ids_estaciones, nombre_zona, altitud_ref, gdf_zona = selectors.render_selector_espacial()
     except Exception as e:
         st.sidebar.error(f"Error en Selector: {e}")
         st.stop()
 
-    # Validación de Selección
     if not ids_estaciones:
         st.info("👈 Seleccione una Cuenca o Municipio en el menú lateral para comenzar.")
-        # Opcional: Mostrar mapa general o mensaje de bienvenida aquí
         st.stop()
 
     # --- B. CARGA DE DATOS ---
@@ -166,16 +142,12 @@ def main():
         st.error(f"Error cargando datos base: {e}")
         st.stop()
 
-    # Filtro de datos según selección del usuario
     if df_all_rain is not None and not df_all_rain.empty and ids_estaciones:
-        # Asegurar tipos string para cruce exacto
         df_all_rain['id_estacion'] = df_all_rain['id_estacion'].astype(str).str.strip()
         ids_estaciones = [str(x).strip() for x in ids_estaciones]
         
-        # Filtro Principal
         df_long = df_all_rain[df_all_rain['id_estacion'].isin(ids_estaciones)].copy()
         
-        # Filtrar GeoDataFrame de estaciones
         if gdf_stations is not None:
             gdf_stations['id_estacion'] = gdf_stations['id_estacion'].astype(str).str.strip()
             gdf_filtered = gdf_stations[gdf_stations['id_estacion'].isin(ids_estaciones)]
@@ -189,17 +161,12 @@ def main():
         st.warning(f"La zona '{nombre_zona}' no tiene registros históricos de precipitación.")
         st.stop()
 
-    stations_for_analysis = df_long[Config.STATION_NAME_COL].unique().tolist()
-
     # =========================================================================
-    # --- C. JERARQUÍA DE NAVEGACIÓN (Centro de Comando Principal) ---
+    # --- C. JERARQUÍA DE NAVEGACIÓN ---
     # =========================================================================
-    
-    # 🛡️ PARCHE CSS: Evita que el módulo 'Inicio' elimine el margen superior
     st.markdown("""
     <style>
     .block-container { padding-top: 3rem !important; }
-    /* Estilo premium para botones */
     div[data-testid="stButton"] button[kind="primary"] {
         background: linear-gradient(135deg, #2c3e50, #3498db); border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
@@ -212,7 +179,6 @@ def main():
     st.title(f"🌦️ Análisis Hidroclimático: {nombre_zona}")
     st.markdown("### 🎛️ Centro de Comando y Módulos de Análisis")
     
-    # 1. Agrupamos los módulos en Categorías para no abrumar al usuario
     col_nav1, col_nav2, col_nav3 = st.columns([1.5, 1.5, 1])
     
     with col_nav1:
@@ -223,7 +189,6 @@ def main():
         
     with col_nav2:
         if "Analítica" in categoria_nav:
-            # 🚀 AQUÍ ESTÁ EL CAMBIO: Movimos "🗺️ Distribución" a la posición 0
             opciones = ["🗺️ Distribución", "🚨 Monitoreo", "📈 Gráficos", "📊 Estadísticas", "📄 Reporte", "🏠 Inicio"]
         elif "Ciencia" in categoria_nav:
             opciones = ["🔮 Pronóstico Climático", "📉 Tendencias", "⚠️ Anomalías", "🔗 Correlación", "🌊 Extremos", "🧪 Sesgo"]
@@ -234,7 +199,6 @@ def main():
 
     with col_nav3:
         st.markdown("<br>", unsafe_allow_html=True)
-        # El botón salvavidas, ahora visible y accesible en la barra superior
         if st.button("🔄 Refrescar Memoria", help="Limpia el caché y recarga los datos desde cero", use_container_width=True):
             st.cache_data.clear()
             st.cache_resource.clear()
@@ -258,10 +222,31 @@ def main():
             ignore_nulls = c2.checkbox("🚫 Sin Nulos", value=False)
             apply_interp = st.checkbox("🔄 Interpolación", value=False)
 
+        # 🛡️ INYECCIÓN QUIRÚRGICA: Filtro de Homogenización
+        st.markdown("---")
+        st.markdown("### ⏳ Filtro de Homogenización")
+        min_years = st.slider(
+            "Años mínimos de registro continuos", 
+            min_value=0, max_value=50, value=0, step=1, 
+            help="Filtra estaciones que no cumplan con este mínimo de años históricos. Útil para eliminar el 'escalón' de estaciones post-2010."
+        )
+
     # --- E. PROCESAMIENTO ---
+    # 1. Aplicar Homogenización a la matriz base ANTES de extraer las estaciones
+    if min_years > 0 and not df_long.empty:
+        conteo_agnos = df_long.groupby(Config.STATION_NAME_COL)[Config.YEAR_COL].nunique()
+        estaciones_validas = conteo_agnos[conteo_agnos >= min_years].index.tolist()
+        df_long = df_long[df_long[Config.STATION_NAME_COL].isin(estaciones_validas)]
+        st.sidebar.success(f"✅ {len(estaciones_validas)} estaciones históricas retenidas.")
+        
+    # Extraemos la lista final y purificada para los módulos de análisis
+    stations_for_analysis = df_long[Config.STATION_NAME_COL].unique().tolist()
+
+    # 2. Aplicar filtro temporal
     mask_time = (df_long[Config.YEAR_COL] >= year_range[0]) & (df_long[Config.YEAR_COL] <= year_range[1])
     df_monthly_filtered = df_long.loc[mask_time].copy()
     
+    # 3. Limpieza de calidad
     if ignore_zeros: df_monthly_filtered = df_monthly_filtered[df_monthly_filtered[Config.PRECIPITATION_COL] != 0]
     if ignore_nulls: df_monthly_filtered = df_monthly_filtered.dropna(subset=[Config.PRECIPITATION_COL])
 
@@ -287,7 +272,6 @@ def main():
         "user_loc": None, "gdf_zona": gdf_zona 
     }
 
-    # Limpiamos el nombre para que los 'elif' de tu código sigan funcionando intactos
     selected_module = "🌍 Mapas Avanzados" if "Mapas Avanzados" in selected_module_raw else selected_module_raw
 
     # =========================================================================
