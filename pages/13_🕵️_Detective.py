@@ -12,6 +12,10 @@ from shapely.geometry import box
 from sqlalchemy import create_engine, text
 
 import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
+from scipy import stats
 
 # --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
 st.set_page_config(page_title="Centro de Diagnóstico", page_icon="🕵️", layout="wide")
@@ -404,3 +408,104 @@ if file_m or file_p1 or file_p2:
                 """)
                 
                 st.dataframe(df_total.pivot(index='año', columns='fuente', values='precipitacion_total_anual').style.format("{:.1f}"))
+
+# Laboratorio de Correlación: IDEAM vs Copernicus
+
+st.set_page_config(page_title="Correlación Satélite-Tierra", page_icon="🔬", layout="wide")
+
+st.title("🔬 Laboratorio de Correlación: IDEAM vs Copernicus")
+st.markdown("Este módulo cruza el periodo de solapamiento (2020-2025) para descubrir la verdadera relación matemática entre el sensor terrestre y el radar satelital.")
+
+col1, col2 = st.columns(2)
+with col1:
+    file_ideam = st.file_uploader("📥 Subir Histórico IDEAM (Ej. Maestro Integral)", type=['csv'])
+with col2:
+    file_copernicus = st.file_uploader("🛰️ Subir Satelital (Copernicus Delta)", type=['csv'])
+
+if file_ideam and file_copernicus:
+    if st.button("🚀 Ejecutar Análisis de Correlación", type="primary"):
+        with st.spinner("Alineando líneas temporales y buscando estaciones comunes..."):
+            try:
+                # 1. Lectura de datos
+                df_ideam = pd.read_csv(file_ideam, sep=';', decimal=',', encoding='utf-8')
+                df_cop = pd.read_csv(file_copernicus, sep=';', decimal=',', encoding='utf-8')
+                
+                # Estandarización de fechas
+                for df in [df_ideam, df_cop]:
+                    if 'date' in df.columns: df.rename(columns={'date': 'fecha'}, inplace=True)
+                    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+                    df.set_index('fecha', inplace=True)
+                    
+                # 2. Encontrar estaciones comunes
+                cols_ideam = set([c for c in df_ideam.columns if str(c).isnumeric()])
+                cols_cop = set([c for c in df_cop.columns if str(c).isnumeric()])
+                estaciones_comunes = list(cols_ideam.intersection(cols_cop))
+                
+                st.success(f"✅ Se encontraron {len(estaciones_comunes)} estaciones comunes entre ambas fuentes.")
+                
+                # 3. Construir Matriz de Solapamiento (Solo meses donde AMBOS tienen datos)
+                datos_cruzados = []
+                
+                for est in estaciones_comunes:
+                    # Extraer serie de cada fuente para la estación
+                    s_ideam = pd.to_numeric(df_ideam[est], errors='coerce')
+                    s_cop = pd.to_numeric(df_cop[est], errors='coerce')
+                    
+                    # Unir por fecha
+                    df_cruce = pd.DataFrame({'IDEAM': s_ideam, 'Copernicus': s_cop}).dropna()
+                    
+                    if not df_cruce.empty:
+                        # Calcular Regresión Lineal y Pearson
+                        slope, intercept, r_value, p_value, std_err = stats.linregress(df_cruce['Copernicus'], df_cruce['IDEAM'])
+                        
+                        datos_cruzados.append({
+                            'Estacion': est,
+                            'Meses_Solapados': len(df_cruce),
+                            'Media_IDEAM': df_cruce['IDEAM'].mean(),
+                            'Media_Copernicus': df_cruce['Copernicus'].mean(),
+                            'Correlacion_R': r_value,
+                            'R2': r_value**2,
+                            'Pendiente_m': slope,
+                            'Intercepto_b': intercept,
+                            'df_plot': df_cruce # Guardamos los datos para graficar
+                        })
+                
+                # 4. Resultados Globales
+                df_resultados = pd.DataFrame(datos_cruzados)
+                
+                if df_resultados.empty:
+                    st.error("No se encontraron meses superpuestos con datos válidos en ambas fuentes.")
+                    st.stop()
+                    
+                df_resultados = df_resultados.sort_values(by='R2', ascending=False).drop(columns=['df_plot'])
+                
+                st.markdown("### 📊 Tabla de Relaciones Matemáticas (Y = mX + b)")
+                st.markdown("**Y** = Lluvia Real (IDEAM) | **X** = Lluvia Satélite (Copernicus) | **R²** = Confiabilidad del modelo")
+                st.dataframe(df_resultados.style.background_gradient(subset=['R2', 'Correlacion_R'], cmap='viridis'))
+                
+                # 5. Visualizador Individual Interactivo
+                st.markdown("---")
+                st.markdown("### 📈 Análisis de Dispersión por Estación")
+                est_seleccionada = st.selectbox("Seleccione una estación para ver su correlación:", [d['Estacion'] for d in datos_cruzados])
+                
+                # Extraer datos de la estación seleccionada
+                datos_est = next(item for item in datos_cruzados if item["Estacion"] == est_seleccionada)
+                df_grafico = datos_est['df_plot']
+                
+                fig = px.scatter(
+                    df_grafico, x='Copernicus', y='IDEAM', 
+                    title=f"Estación {est_seleccionada} | R² = {datos_est['R2']:.3f}",
+                    labels={'Copernicus': 'Copernicus (mm) [Satélite]', 'IDEAM': 'IDEAM (mm) [Pluviómetro]'},
+                    trendline="ols", trendline_color_override="red",
+                    opacity=0.7
+                )
+                # Línea de identidad (1:1) para ver sobre/sub estimación visualmente
+                max_val = max(df_grafico['Copernicus'].max(), df_grafico['IDEAM'].max())
+                fig.add_shape(type="line", x0=0, y0=0, x1=max_val, y1=max_val, line=dict(color="gray", dash="dash"))
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.info(f"**💡 Ecuación de Calibración Sugerida para {est_seleccionada}:**\n`Lluvia_Real = ({datos_est['Pendiente_m']:.3f} * Lluvia_Copernicus) + {datos_est['Intercepto_b']:.3f}`")
+
+            except Exception as e:
+                st.error(f"Error procesando: {e}")
