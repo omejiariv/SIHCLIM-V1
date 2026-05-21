@@ -696,15 +696,20 @@ with tab6:
                                 df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_final[estaciones_robustas].mean())
 
                     # ==========================================================
-                    # 🛡️ EXPORTACIÓN SEGURA (APLICAR CORTAFUEGOS DE VIDA ÚTIL)
+                    # 🛡️ EXPORTACIÓN SEGURA (EL PROTOCOLO LÁZARO)
                     # ==========================================================
                     if cols_estaciones:
-                        # 🚫 Borramos los datos imputados fuera de la vida real de la estación
                         for col in cols_estaciones:
                             inicio, fin = limites_vida.get(col, (None, None))
-                            if inicio and fin:
+                            
+                            # 1. Candado de Nacimiento (Mantenido): 
+                            # No dejamos que la máquina viaje al pasado antes de que la estación existiera.
+                            if inicio:
                                 df_final.loc[df_final.index < inicio, col] = np.nan
-                                df_final.loc[df_final.index > fin, col] = np.nan
+                                
+                            # 2. Candado de Muerte (ELIMINADO):
+                            # Permitimos que la Imputación Espacial y el Satélite proyecten 
+                            # la estación hacia el presente, resucitando la red completa.
                                 
                         df_final.dropna(subset=cols_estaciones, how='all', inplace=True)
                     
@@ -712,7 +717,7 @@ with tab6:
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', decimal=',', index=False, encoding='utf-8-sig').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"Operación exitosa. Matriz blindada con Híbrido Espacial-Climático y límites de vida útiles."
+                    st.session_state['fusion_resumen'] = f"Operación exitosa. Matriz blindada. Gemelo Digital ha proyectado la red histórica hasta el presente."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
