@@ -754,7 +754,7 @@ def extraer_ideam_datos_abiertos(lista_estaciones, limite_registros=50000):
     # El ID del dataset oficial del IDEAM en datos.gov.co (Catálogo de precipitación)
     # Nota: Este ID corresponde a Catálogo de Datos Climáticos, puede requerir ajuste 
     # si el IDEAM migra el servidor, pero es el punto de entrada estándar.
-    DATASET_ID = "s54a-sygg" 
+    DATASET_ID = "s54a-sgyg"
     URL_BASE = f"https://www.datos.gov.co/resource/{DATASET_ID}.json"
     
     resultados = []
