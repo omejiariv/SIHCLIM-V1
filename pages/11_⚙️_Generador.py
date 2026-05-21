@@ -539,11 +539,11 @@ with tab6:
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     
                     if usar_imputacion:
-                        with st.spinner("2. Forjando Matriz de Correlación Cruda e Imputando Espacialmente..."):
+                        with st.spinner("2. Forjando Matriz de Correlación e Imputando Espacialmente..."):
                             from modules import climate_api  
                             import numpy as np
                             
-                            # Forzar conversión a flotantes puros
+                            # Forzar conversión a numérico puro
                             for col in cols_estaciones:
                                 df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
 
@@ -565,62 +565,65 @@ with tab6:
                                 df_final.loc[df_final[col] > limite_final, col] = np.nan
 
                             # --------------------------------------------------
-                            # 🔥 NUEVA CAPA B: MOTOR DE CORRELACIÓN ESPACIAL PROPORCIONAL
+                            # 🛡️ DEFINICIÓN DE ESTACIONES ROBUSTAS (El eslabón perdido)
+                            # --------------------------------------------------
+                            MIN_DATOS_REALES = 24
+                            conteo_reales = df_final[cols_estaciones].notna().sum()
+                            estaciones_robustas = conteo_reales[conteo_reales >= MIN_DATOS_REALES].index.tolist()
+
+                            # --------------------------------------------------
+                            # 🔥 CAPA B: MOTOR DE CORRELACIÓN ESPACIAL PROPORCIONAL
                             # --------------------------------------------------
                             st.text("📡 Calculando coeficientes de Pearson de la red real...")
-                            # 🛡️ CORRECCIÓN: Solo correlacionamos las estaciones con datos suficientes
-                            matriz_corr = df_final[estaciones_robustas].corr(method='pearson')
-                            
-                            climatologia_mensual = df_final.groupby(df_final.index.month)[estaciones_robustas].mean()
-                            UMBRAL_CORRELACION = 0.65
-                            
-                            df_imputado_espacial = df_final[cols_estaciones].copy()
-                            
-                            # 🛡️ CORRECCIÓN: Iteramos SOLO sobre estaciones robustas. Las fantasma se ignoran.
-                            for estacion in estaciones_robustas:
-                                registros_vacios = df_final[df_final[estacion].isna()].index
+                            if estaciones_robustas:
+                                matriz_corr = df_final[estaciones_robustas].corr(method='pearson')
+                                climatologia_mensual = df_final.groupby(df_final.index.month)[estaciones_robustas].mean()
+                                UMBRAL_CORRELACION = 0.65
                                 
-                                if len(registros_vacios) > 0:
-                                    vecinas_ordenadas = matriz_corr[estacion].drop(estacion).sort_values(ascending=False)
-                                    vecinas_validas = vecinas_ordenadas[vecinas_ordenadas >= UMBRAL_CORRELACION].index.tolist()
+                                df_imputado_espacial = df_final[cols_estaciones].copy()
+                                
+                                for estacion in estaciones_robustas:
+                                    registros_vacios = df_final[df_final[estacion].isna()].index
                                     
-                                    for fecha_idx in registros_vacios:
-                                        mes_actual = fecha_idx.month
+                                    if len(registros_vacios) > 0:
+                                        vecinas_ordenadas = matriz_corr[estacion].drop(estacion).sort_values(ascending=False)
+                                        vecinas_validas = vecinas_ordenadas[vecinas_ordenadas >= UMBRAL_CORRELACION].index.tolist()
                                         
-                                        for vecina in vecinas_validas:
-                                            valor_vecina = df_final.loc[fecha_idx, vecina]
-                                            
-                                            if not np.isnan(valor_vecina):
-                                                media_target = climatologia_mensual.loc[mes_actual, estacion]
-                                                media_vecina = climatologia_mensual.loc[mes_actual, vecina]
-                                                
-                                                if media_vecina > 0:
-                                                    valor_imputado = valor_vecina * (media_target / media_vecina)
-                                                    df_imputado_espacial.loc[fecha_idx, estacion] = valor_imputado
-                                                    break 
-                            
-                            df_final[cols_estaciones] = df_imputado_espacial
+                                        for fecha_idx in registros_vacios:
+                                            mes_actual = fecha_idx.month
+                                            for vecina in vecinas_validas:
+                                                valor_vecina = df_final.loc[fecha_idx, vecina]
+                                                if not np.isnan(valor_vecina):
+                                                    media_target = climatologia_mensual.loc[mes_actual, estacion]
+                                                    media_vecina = climatologia_mensual.loc[mes_actual, vecina]
+                                                    
+                                                    if media_vecina > 0:
+                                                        valor_imputado = valor_vecina * (media_target / media_vecina)
+                                                        df_imputado_espacial.loc[fecha_idx, estacion] = valor_imputado
+                                                        break 
+                                
+                                df_final[cols_estaciones] = df_imputado_espacial
 
                             # --------------------------------------------------
                             # CAPA C: RED DE SEGURIDAD CLIMÁTICA (ENSO / Mensual)
-                            # Para cubrir vacíos residuales en estaciones aisladas sin vecinas correlacionadas
                             # --------------------------------------------------
-                            df_clima_vivo = climate_api.get_live_oni_data()
-                            col_enso_name = None
-                            
-                            if df_clima_vivo is not None and not df_clima_vivo.empty:
-                                df_clima_vivo.set_index('fecha', inplace=True)
-                                df_final = df_final.join(df_clima_vivo[['fase_enso']], how='left')
-                                col_enso_name = 'fase_enso'
-                            
-                            if col_enso_name:
-                                df_promedios_enso = df_final.groupby([df_final.index.month, col_enso_name])[cols_estaciones].transform('mean')
-                                df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_enso)
-                                df_final.drop(columns=[col_enso_name], inplace=True)
-                            
-                            df_promedios_mensuales = df_final.groupby(df_final.index.month)[cols_estaciones].transform('mean')
-                            df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_promedios_mensuales)
-                            df_final[cols_estaciones] = df_final[cols_estaciones].fillna(df_final[cols_estaciones].mean())
+                            if estaciones_robustas:
+                                df_clima_vivo = climate_api.get_live_oni_data()
+                                col_enso_name = None
+                                
+                                if df_clima_vivo is not None and not df_clima_vivo.empty:
+                                    df_clima_vivo.set_index('fecha', inplace=True)
+                                    df_final = df_final.join(df_clima_vivo[['fase_enso']], how='left')
+                                    col_enso_name = 'fase_enso'
+                                
+                                if col_enso_name:
+                                    df_promedios_enso = df_final.groupby([df_final.index.month, col_enso_name])[estaciones_robustas].transform('mean')
+                                    df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_enso)
+                                    df_final.drop(columns=[col_enso_name], inplace=True)
+                                
+                                df_promedios_mensuales = df_final.groupby(df_final.index.month)[estaciones_robustas].transform('mean')
+                                df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_mensuales)
+                                df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_final[estaciones_robustas].mean())
 
                     # ==========================================================
                     # 🛡️ EXPORTACIÓN SEGURA
@@ -632,7 +635,7 @@ with tab6:
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', decimal=',', index=False, encoding='utf-8-sig').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"Operación exitosa. Matriz blindada con estadística robusta."
+                    st.session_state['fusion_resumen'] = f"Operación exitosa. Matriz blindada con Híbrido Espacial-Climático."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
