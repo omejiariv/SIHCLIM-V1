@@ -454,15 +454,13 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 6: GEMELO DIGITAL (FUSIÓN MODULAR CON CALIBRADOR DE ÉPOCAS)
+# 🚀 PESTAÑA 6: GEMELO DIGITAL (HOMOGENEIZACIÓN ABSOLUTA 2010)
 # ------------------------------------------------------------------------------
 with tab6:
-    st.header("🌧️ Gemelo Digital: Fusión Modular Adaptativa")
+    st.header("🌧️ Gemelo Digital: Fusión y Homogeneidad Absoluta")
     st.markdown("""
-    Este motor se adapta a los datos proporcionados y corrige rupturas de homogeneidad:
-    * **Calibrador de Épocas IDEAM:** Ajusta los sensores recientes a su propia línea base histórica.
-    * **Modo Puerto Seguro:** Usa correlación espacial pura si solo subes datos del IDEAM.
-    * **Modo Híbrido Calibrado:** Si añades datos satelitales, los calibra matemáticamente antes de fusionarlos.
+    Este motor implementa un **Bisturí Temporal en 2010**. 
+    Detecta rupturas en la medición del IDEAM y fuerza a la década reciente a respetar la magnitud climática de su Era Dorada (1970-2009).
     """)
     
     if 'csv_fusionado_data' not in st.session_state:
@@ -472,7 +470,7 @@ with tab6:
 
     col_1, col_2 = st.columns(2)
     with col_1:
-        file_maestro = st.file_uploader("🥇 1. Histórico IDEAM (<2010)", type=['csv'])
+        file_maestro = st.file_uploader("🥇 1. Histórico IDEAM (1970-2020)", type=['csv'])
         file_parche_2 = st.file_uploader("🥉 3. Satelital Copernicus (Opcional)", type=['csv'])
     with col_2:
         file_parche_1 = st.file_uploader("🥈 2. IDEAM Reciente (2010-2025)", type=['csv'])
@@ -482,7 +480,7 @@ with tab6:
         
     if file_maestro and file_parche_1:
         if st.button("🔄 Ejecutar Motor Fusión", type="primary", use_container_width=True):
-            with st.spinner("1. Consolidando y Homogeneizando la Verdad Terrestre..."):
+            with st.spinner("1. Consolidando matrices y ejecutando Bisturí Temporal 2010..."):
                 try:
                     def leer_csv_seguro(file_obj):
                         if file_obj is None: return None
@@ -521,45 +519,47 @@ with tab6:
                             
                         dfs_procesados.append(df_temp)
                         
-                    df_m_clean = dfs_procesados[0]
-                    df_p1_clean = dfs_procesados[1]
-
                     # ==========================================================
-                    # ⚖️ CALIBRADOR DE ÉPOCAS (RESTAURACIÓN DE HOMOGENEIDAD IDEAM)
+                    # 🌍 PASO 1: CONSOLIDACIÓN CRUDA
+                    # Mezclamos los dos archivos del IDEAM sin importar los errores aún
                     # ==========================================================
-                    st.info("⚖️ Evaluando homogeneidad climática de la red reciente vs histórica...")
-                    cols_comunes_ideam = [c for c in df_p1_clean.columns if c in df_m_clean.columns and str(c).isnumeric()]
+                    df_raw = dfs_procesados[0].combine_first(dfs_procesados[1])
+                    
+                    # ==========================================================
+                    # ⚖️ PASO 2: EL BISTURÍ TEMPORAL (CORRECCIÓN DE ÉPOCA 2010)
+                    # ==========================================================
+                    AÑO_RUPTURA = 2010
+                    cols_est_raw = [c for c in df_raw.columns if str(c).isnumeric()]
                     log_homogeneidad = 0
                     
-                    for col in cols_comunes_ideam:
-                        hist_base = df_m_clean[df_m_clean[col] > 0][col].dropna()
-                        hist_reciente = df_p1_clean[df_p1_clean[col] > 0][col].dropna()
+                    for col in cols_est_raw:
+                        # Cortamos la vida de la estación en dos mitades exactas
+                        serie_hist = df_raw.loc[df_raw.index.year < AÑO_RUPTURA, col].dropna()
+                        serie_reciente = df_raw.loc[df_raw.index.year >= AÑO_RUPTURA, col].dropna()
                         
-                        if not hist_base.empty and not hist_reciente.empty:
-                            media_base = hist_base.mean()
-                            media_reciente = hist_reciente.mean()
+                        # Exigimos al menos 5 años de datos en ambas eras para poder comparar
+                        if len(serie_hist) > 60 and len(serie_reciente) > 24:
+                            media_hist = serie_hist[serie_hist > 0].mean()
+                            media_reciente = serie_reciente[serie_reciente > 0].mean()
                             
-                            if media_reciente > 0:
-                                factor_epoca = media_base / media_reciente
-                                # Candado de seguridad: solo calibramos si el desajuste es lógico (limite entre 0.4x y 2.5x)
-                                factor_epoca = max(0.4, min(factor_epoca, 2.5))
+                            if pd.notna(media_hist) and pd.notna(media_reciente) and media_reciente > 0:
+                                factor = media_hist / media_reciente
                                 
-                                # Si el factor es distinto de 1, hubo calibración
-                                if abs(1 - factor_epoca) > 0.05: 
-                                    df_p1_clean[col] = df_p1_clean[col] * factor_epoca
+                                # Si hay un salto brutal (desfase mayor al 15%)
+                                if abs(1 - factor) > 0.15:
+                                    factor = max(0.3, min(factor, 3.0)) # Candado de cordura
+                                    
+                                    # Aplicamos el castigo SOLO a la era reciente, aplastando el abultamiento
+                                    df_raw.loc[df_raw.index.year >= AÑO_RUPTURA, col] = df_raw.loc[df_raw.index.year >= AÑO_RUPTURA, col] * factor
                                     log_homogeneidad += 1
                                     
-                    st.success(f"✅ Homogeneidad restaurada: {log_homogeneidad} pluviómetros recientes ajustados a su línea base histórica.")
+                    st.success(f"⚖️ Bisturí Temporal aplicado: Se corrigió la inflación post-2010 en {log_homogeneidad} estaciones.")
+                    
+                    df_terrestre = df_raw.copy()
 
-                    # 🌍 CONSOLIDAR LA VERDAD DEL TERRENO HOMOGENEIZADA
-                    df_terrestre = df_m_clean.combine_first(df_p1_clean)
-                    df_final = df_terrestre.copy()
-                    mensaje_fusion = "✅ Matriz construida en Modo Puerto Seguro Homogeneizado."
-
-                    # Capturar límite de nacimiento
-                    cols_est_terrestre = [c for c in df_terrestre.columns if str(c).isnumeric()]
+                    # Capturar límite de nacimiento (Para no viajar al pasado antes de que naciera)
                     limites_nacimiento = {}
-                    for col in cols_est_terrestre:
+                    for col in cols_est_raw:
                         datos_validos = df_terrestre[col].dropna()
                         limites_nacimiento[col] = datos_validos.index.min() if not datos_validos.empty else None
 
@@ -595,11 +595,12 @@ with tab6:
                                     df_satelite[col] = df_satelite[col] * factor
                                     
                         df_final = df_terrestre.combine_first(df_satelite)
-                        mensaje_fusion = "✅ Matriz construida en Modo Híbrido (IDEAM Homogeneizado + Satélite Calibrado)."
+                    else:
+                        df_final = df_terrestre.copy()
 
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
 
-                    # 🧩 GEMELO DIGITAL (IMPUTACIÓN ESPACIAL)
+                    # 🧩 GEMELO DIGITAL (IMPUTACIÓN ESPACIAL PARA ESTACIONES MUERTAS)
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     
                     if usar_imputacion:
@@ -655,7 +656,7 @@ with tab6:
                                 df_promedios_mensuales = df_final.groupby(df_final.index.month)[estaciones_robustas].transform('mean')
                                 df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_mensuales)
 
-                    # 🛡️ CORTAFUEGOS DE NACIMIENTO
+                    # 🛡️ CORTAFUEGOS DE NACIMIENTO (No resucitar en el pasado)
                     if cols_estaciones:
                         for col in cols_estaciones:
                             inicio = limites_nacimiento.get(col)
@@ -667,7 +668,7 @@ with tab6:
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', decimal=',', index=False, encoding='utf-8-sig').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"{mensaje_fusion} Gemelo Digital aplicado."
+                    st.session_state['fusion_resumen'] = f"✅ Matriz Blindada. El Gemelo Digital operó sobre datos temporalmente calibrados."
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
@@ -688,7 +689,7 @@ with tab6:
             type="primary",
             use_container_width=True
         )
-
+        
 # Extraer datos del IDEAM
 
 def extraer_ideam_datos_abiertos(lista_estaciones, limite_registros=50000):
