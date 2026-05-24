@@ -330,7 +330,7 @@ tabs = st.tabs([
 ])
 
 # ==============================================================================
-# TAB 0: GESTIÓN DE ESTACIONES (CON DESBLOQUEO DE TRANSACCIÓN)
+# TAB 0: GESTIÓN DE ESTACIONES (CON DESBLOQUEO DE TRANSACCIÓN Y MAPEO UNIVERSAL)
 # ==============================================================================
 with tabs[0]: 
     st.header("📍 Gestión de Estaciones")
@@ -339,7 +339,7 @@ with tabs[0]:
     
     # --- SUB-PESTAÑA 1: EDITOR ---
     with subtab_ver:
-        st.info("Visualiza y edita las estaciones registradas.")
+        st.info("Visualiza y edita las estaciones registradas en la base de datos central.")
         
         col_ref, col_msg = st.columns([1, 3])
         if col_ref.button("🔄 Refrescar Tabla"):
@@ -347,95 +347,127 @@ with tabs[0]:
             st.rerun()
             
         try:
-            # Consulta segura
-            df_est_db = pd.read_sql("SELECT * FROM estaciones ORDER BY id_estacion", engine)
+            df_est_db = pd.read_sql("SELECT id_estacion, nombre, municipio, departamento, latitud, longitud, altitud FROM estaciones ORDER BY id_estacion", engine)
             st.dataframe(df_est_db, use_container_width=True)
-        except:
-            st.warning("No se pudo cargar la tabla de estaciones.")
+        except Exception as e:
+            st.warning(f"No se pudo cargar la tabla de estaciones: {e}")
 
-    # --- SUB-PESTAÑA 2: CARGA MASIVA (BLINDADA) ---
+    # --- SUB-PESTAÑA 2: CARGA MASIVA (UNIVERSAL & BLINDADA) ---
     with subtab_carga:
         st.markdown("### Cargar Archivo de Estaciones")
-        st.info("Sube `mapaCVENSO.csv`. El sistema limpiará las coordenadas automáticamente.")
-        up_est = st.file_uploader("Cargar CSV Estaciones", type=["csv"], key="up_est_csv_fix_v3")
+        st.info("Sube cualquier catálogo oficial. El sistema reconoce automáticamente formatos de estaciones convencionales (`mapaCVENSO.csv`) o automáticas (`estaciones_automaticas_catalogo.csv`).")
+        
+        up_est = st.file_uploader("Cargar CSV Estaciones", type=["csv"], key="up_est_csv_universal_v4")
         
         if up_est and st.button("🚀 Procesar Carga Masiva"):
             try:
-                # 1. Lectura Robusta (Detecta separador automáticamente)
+                # 1. Lectura Inteligente de Delimitadores y Codificación
                 try:
-                    df_new = pd.read_csv(up_est, sep=';', decimal=',')
-                    if len(df_new.columns) < 2: raise ValueError
+                    df_new = pd.read_csv(up_est, sep=';', decimal=',', encoding='utf-8')
+                    if len(df_new.columns) < 3: raise ValueError
                 except:
                     up_est.seek(0)
-                    df_new = pd.read_csv(up_est, sep=',', decimal='.')
+                    try:
+                        df_new = pd.read_csv(up_est, sep=',', decimal='.', encoding='utf-8')
+                        if len(df_new.columns) < 3: raise ValueError
+                    except:
+                        up_est.seek(0)
+                        df_new = pd.read_csv(up_est, sep=',', decimal='.', encoding='latin1')
                 
-                # 2. Limpieza de Columnas
+                # 2. Normalización de Encabezados (Minúsculas y Limpieza)
                 df_new.columns = df_new.columns.str.lower().str.strip()
+                
+                # Diccionario de mapeo extendido para ambas fuentes
                 rename_map = {
-                    'id_estacio': 'id_estacion', 'codigo': 'id_estacion',
-                    'nom_est': 'nombre', 'station': 'nombre',
-                    'longitud_geo': 'longitud', 'lon': 'longitud',
-                    'latitud_geo': 'latitud', 'lat': 'latitud',
-                    'alt_est': 'altitud', 'elev': 'altitud'
+                    'id_estacio': 'id_estacion', 'codigo': 'id_estacion', 'codigo_estacion': 'id_estacion', 'id_estacion': 'id_estacion',
+                    'nom_est': 'nombre', 'station': 'nombre', 'nombre_estacion': 'nombre', 'nombre': 'nombre',
+                    'longitud_geo': 'longitud', 'lon': 'longitud', 'longitud': 'longitud',
+                    'latitud_geo': 'latitud', 'lat': 'latitud', 'latitud': 'latitud',
+                    'alt_est': 'altitud', 'elev': 'altitud', 'altitud': 'altitud',
+                    'municipio': 'municipio', 'departamento': 'departamento'
                 }
+                
                 df_new = df_new.rename(columns={k: v for k, v in rename_map.items() if k in df_new.columns})
                 
-                # 3. Validación y Conversión Numérica
+                # 3. Validación de Columnas Vitales
                 req = ['id_estacion', 'latitud', 'longitud']
                 if not all(c in df_new.columns for c in req):
-                    st.error(f"Faltan columnas requeridas: {req}")
+                    st.error(f"❌ El archivo no contiene las columnas mínimas requeridas estructurales: {req}")
                 else:
-                    # Forzar conversión a números (limpia errores de tipeo)
+                    # Forzar tipificado de datos numéricos en Coordenadas
                     for c in ['latitud', 'longitud', 'altitud']:
                         if c in df_new.columns:
                             df_new[c] = pd.to_numeric(
                                 df_new[c].astype(str).str.replace(',', '.'), errors='coerce'
                             )
                     
-                    # 4. INSERCIÓN BLINDADA (El secreto está aquí)
+                    # Limpieza estricta de IDs de estación (enteros limpios sin decimales flotantes)
+                    df_new['id_estacion'] = pd.to_numeric(df_new['id_estacion'], errors='coerce')
+                    df_new = df_new.dropna(subset=['id_estacion'])
+                    df_new['id_estacion'] = df_new['id_estacion'].astype(int).astype(str).str.strip()
+                    
+                    # 4. Homogeneización de Campos Opcionales antes de impactar la Base de Datos
+                    columnas_maestras = ['id_estacion', 'nombre', 'latitud', 'longitud', 'altitud', 'municipio', 'departamento']
+                    for col_m in columnas_maestras:
+                        if col_m not in df_new.columns:
+                            df_new[col_m] = None # Inyecta valores nulos si la fuente no posee la variable
+                    
+                    # Filtrar el DataFrame final para contener estrictamente la estructura de base de datos
+                    df_payload = df_new[columnas_maestras].copy()
+                    
+                    # 5. INSERCIÓN ATÓMICA Y TRANSACCIONAL (UPSERT INTEGRAL)
+                    from sqlalchemy import text
+                    import numpy as np
+                    
+                    # Reemplazar NaNs por None nativos para evitar conflictos de tipos en la carga SQL
+                    df_payload = df_payload.replace({np.nan: None})
+                    
                     with engine.connect() as conn:
-                        # PASO CRÍTICO: Rollback preventivo para desbloquear la BD
+                        # Desbloqueo preventivo de transacciones colgadas
                         try: conn.rollback() 
                         except: pass
                         
-                        # Iniciar transacción limpia
                         trans = conn.begin()
                         try:
-                            # Subir a tabla temporal
-                            df_new.to_sql('temp_est_load', conn, if_exists='replace', index=False)
+                            # Subir carga limpia a tabla temporal de staging
+                            df_payload.to_sql('temp_est_load', conn, if_exists='replace', index=False)
                             
-                            # Ejecutar UPSERT (Actualizar si existe, Insertar si no)
-                            conn.execute(text("""
-                                INSERT INTO estaciones (id_estacion, nombre, latitud, longitud, altitud)
-                                SELECT id_estacion, nombre, latitud, longitud, altitud FROM temp_est_load
+                            # Consulta de actualización masiva con control de conflictos por ID Único
+                            upsert_query = text("""
+                                INSERT INTO estaciones (id_estacion, nombre, latitud, longitud, altitud, municipio, departamento)
+                                SELECT id_estacion, nombre, latitud, longitud, altitud, municipio, departamento FROM temp_est_load
                                 ON CONFLICT (id_estacion) DO UPDATE SET
                                     nombre = EXCLUDED.nombre,
                                     latitud = EXCLUDED.latitud,
                                     longitud = EXCLUDED.longitud,
-                                    altitud = EXCLUDED.altitud;
-                            """))
+                                    altitud = COALESCE(EXCLUDED.altitud, estaciones.altitud),
+                                    municipio = COALESCE(EXCLUDED.municipio, estaciones.municipio),
+                                    departamento = COALESCE(EXCLUDED.departamento, estaciones.departamento);
+                            """)
+                            conn.execute(upsert_query)
                             
-                            # Actualizar Geometrías para los mapas (PostGIS)
+                            # 🗺️ Actualización Dinámica del Motor Geográfico PostGIS
                             try:
-                                conn.execute(text("UPDATE estaciones SET geom = ST_SetSRID(ST_MakePoint(longitud, latitud), 4326) WHERE longitud IS NOT NULL"))
+                                conn.execute(text("""
+                                    UPDATE estaciones 
+                                    SET geom = ST_SetSRID(ST_MakePoint(longitud, latitud), 4326) 
+                                    WHERE longitud IS NOT NULL AND latitud IS NOT NULL
+                                """))
                             except: pass
                             
-                            # Limpieza
+                            # Destrucción de la tabla de paso
                             conn.execute(text("DROP TABLE IF EXISTS temp_est_load"))
                             
-                            # Confirmar transacción
                             trans.commit()
-                            
-                            st.success(f"✅ ¡Éxito! {len(df_new)} estaciones procesadas y guardadas.")
+                            st.success(f"✅ ¡Base de Datos Sincronizada! Se procesaron {len(df_payload)} estaciones exitosamente.")
                             st.balloons()
                             
                         except Exception as sql_err:
-                            trans.rollback() # Si falla algo, deshacemos para no bloquear
-                            st.error(f"Error SQL durante la carga: {sql_err}")
+                            trans.rollback()
+                            st.error(f"❌ Fallo crítico en la transacción SQL: {sql_err}")
                             
             except Exception as ex:
-                st.error(f"Error procesando el archivo: {ex}")
-
+                st.error(f"❌ Error general de procesamiento de archivos: {ex}")
 
 # ==============================================================================
 # TAB 1: GESTIÓN DE LLUVIA (VERSIÓN DIAGNÓSTICO & CORRECCIÓN)
