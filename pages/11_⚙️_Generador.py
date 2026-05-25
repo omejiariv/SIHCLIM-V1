@@ -619,6 +619,7 @@ with tab6:
                         
                         # Solo calibramos si ambas eras tienen datos suficientes
                         if len(serie_hist) > 24 and len(serie_reciente) > 12:
+                            # Filtramos valores > 0 para evitar el sesgo de sensores dañados
                             media_hist = serie_hist[serie_hist > 0].mean()
                             media_reciente = serie_reciente[serie_reciente > 0].mean()
                             
