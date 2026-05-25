@@ -187,9 +187,10 @@ def main():
             ["📊 Analítica y Monitoreo Base", "🔬 Ciencia y Pronóstico Climático", "🌍 Gemelo Digital (Modelación Avanzada)"]
         )
         
-    with col_nav2:
+   with col_nav2:
         if "Analítica" in categoria_nav:
-            opciones = ["🗺️ Distribución", "🚨 Monitoreo", "📈 Gráficos", "📊 Estadísticas", "📄 Reporte", "🏠 Inicio"]
+            # 🧠 Inyectamos la nueva opción en la lista base
+            opciones = ["🗺️ Distribución", "🚨 Monitoreo", "📈 Gráficos", "📊 Estadísticas", "🧠 Peritaje y Consistencia", "📄 Reporte", "🏠 Inicio"]
         elif "Ciencia" in categoria_nav:
             opciones = ["🔮 Pronóstico Climático", "📉 Tendencias", "⚠️ Anomalías", "🔗 Correlación", "🌊 Extremos", "🧪 Sesgo"]
         else:
@@ -309,7 +310,84 @@ def main():
         viz.display_stats_tab(**display_args)
         st.markdown("---")
         viz.display_station_table_tab(**display_args)
-   
+
+    # ==============================================================================
+    # 🧠 NUEVO MÓDULO: PERITAJE Y CONSISTENCIA HIDROMETEOROLÓGICA
+    # ==============================================================================
+    elif selected_module == "🧠 Peritaje y Consistencia":
+        st.subheader("🧠 Analítica Avanzada: Peritaje de Consistencia Hidrometeorológica")
+        st.markdown("Evaluación forense automática de la calidad de las series de tiempo y su respuesta ante macro-eventos globales (ENOS).")
+        
+        if stations_for_analysis:
+            # Selector local dinámico alimentado por las estaciones que pasaron los filtros globales
+            est_sel = st.selectbox("🔍 Seleccione la Estación para Peritaje Forense:", stations_for_analysis)
+            
+            if est_sel and df_monthly_filtered is not None and not df_monthly_filtered.empty:
+                # Filtrado de la serie purificada para la estación seleccionada
+                df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL] == est_sel].copy()
+                
+                # Agrupación anual para evaluar acumulados e integridad mensual
+                df_anual = df_est.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
+                df_anual.columns = ['Año', 'Precipitación', 'Meses_Validos']
+                
+                # Umbral de integridad corporativa (>10 meses válidos)
+                df_integro = df_anual[df_anual['Meses_Validos'] >= 10]
+                
+                # --- DISEÑO DEL PANEL DE CONTROL FORENSE ---
+                col_panel1, col_panel2 = st.columns([1.5, 2])
+                
+                with col_panel1:
+                    with st.container(border=True):
+                        st.markdown(f"### 🛡️ Diagnóstico Técnico: {est_sel}")
+                        
+                        años_totales = df_anual.shape[0]
+                        años_completos = df_integro.shape[0]
+                        # Identificación de la firma digital del Gemelo Digital (valores con decimales complejos no enteros)
+                        años_reconstruidos = df_anual[(df_anual['Precipitación'].notna()) & (df_anual['Precipitación'] % 1 != 0)].shape[0]
+                        
+                        st.metric(label="Años con Datos Activos", value=f"{años_totales} años")
+                        st.metric(label="Años con Integridad (>10 meses)", value=f"{años_completos} años")
+                        st.metric(label="Años Reparados por Gemelo Digital", value=f"{años_reconstruidos} años")
+                
+                with col_panel2:
+                    with st.container(border=True):
+                        st.markdown("### 🌍 Validación Macroclimática Base")
+                        
+                        if not df_integro.empty:
+                            idx_max = df_integro['Precipitación'].idxmax()
+                            idx_min = df_integro['Precipitación'].idxmin()
+                            
+                            max_año = int(df_integro.loc[idx_max, 'Año'])
+                            max_val = df_integro.loc[idx_max, 'Precipitación']
+                            min_año = int(df_integro.loc[idx_min, 'Año'])
+                            min_val = df_integro.loc[idx_min, 'Precipitación']
+                            
+                            # Hitos macroclimáticos de control histórico en Colombia (Región Andina / Antioquia)
+                            anios_niña_hitos = [1975, 1988, 1999, 2010, 2011, 2022]
+                            anios_niño_hitos = [1983, 1992, 1997, 2015, 2023]
+                            
+                            diag_max = "✅ **Consistente:** Coincide con un evento histórico de excesos por La Niña." if max_año in anios_niña_hitos else "ℹ️ Máximo local regular."
+                            diag_min = "✅ **Consistente:** Coincide con una sequía crítica por El Niño fuerte." if min_año in anios_niño_hitos else "ℹ️ Mínimo local regular."
+                            
+                            st.markdown(f"**Año Más Lluvioso Registrado:**")
+                            st.markdown(f"🥇 {max_año} con **{max_val:,.1f} mm/año**")
+                            st.caption(diag_max)
+                            st.markdown("---")
+                            st.markdown(f"**Año Menos Lluvioso Registrado:**")
+                            st.markdown(f"🌵 {min_año} con **{min_val:,.1f} mm/año**")
+                            st.caption(diag_min)
+                        else:
+                            st.warning("⚠️ Sin suficientes años íntegros para emitir un dictamen macroclimático robusto.")
+                
+                # Gráfico multianual integrado de soporte visual
+                st.markdown("#### 📈 Evolución Multianual de Soporte")
+                df_grafico = df_anual.set_index('Año')[['Precipitación']]
+                st.bar_chart(df_grafico, color="#3498db")
+            else:
+                st.error("❌ No se pudieron procesar las series para la estación seleccionada.")
+        else:
+            st.info("👈 Seleccione una Cuenca o Municipio con estaciones activas en el menú lateral para iniciar el peritaje.")
+
     elif selected_module == "🔮 Pronóstico Climático": 
         # Llama al visualizador reconstruido (que ahora tiene historia, NOAA y Prophet)
         viz.display_climate_forecast_tab(**display_args)
