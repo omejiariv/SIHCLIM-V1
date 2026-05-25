@@ -50,7 +50,9 @@ def muro_de_acceso_beta():
 # Llamamos a la función para activar el escudo
 muro_de_acceso_beta()
 
-# 1. Definición global de la función (Corregida)
+# ==========================================================
+# 🧠 MOTOR DE INFERENCIA: RECONSTRUCCIÓN POR VECINOS
+# ==========================================================
 def reconstruir_vacios(df, matriz_corr_path):
     if not os.path.exists(matriz_corr_path):
         return df
@@ -768,6 +770,13 @@ with tab6:
                     # 🧠 EJECUCIÓN DEL MOTOR (Ahora correctamente indentado)
                     st.info("🧠 Aplicando Motor de Inferencia sobre vacíos residuales...")
                     df_final = reconstruir_vacios(df_final, 'data/matriz_correlacion_estaciones.csv')
+
+                    # Buscamos la matriz de correlación guardada en tu carpeta de datos
+                    if os.path.exists('data/matriz_correlacion_estaciones.csv'):
+                        st.info("🧠 Aplicando Motor de Inferencia sobre vacíos residuales...")
+                        df_final = reconstruir_vacios(df_final, 'data/matriz_correlacion_estaciones.csv')
+                    else:
+                        st.warning("⚠️ Matriz de correlación no encontrada en data/. Saltando reconstrucción.")
 
                     # 🛡️ CORTAFUEGOS DE NACIMIENTO (Ya fuera del try o correctamente alineado)
                     if cols_estaciones:
