@@ -508,6 +508,9 @@ with tab6:
                     archivos_activos = [df for df in [df_m, df_p1, df_auto, df_sat] if df is not None]
                     
                     for df_temp in archivos_activos:
+                        # 🚨 CINTURÓN DE SEGURIDAD: Obligar a que todos los códigos sean texto limpio
+                        df_temp.columns = [str(c).strip() for c in df_temp.columns]
+                        
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
@@ -515,7 +518,8 @@ with tab6:
                         df_temp = df_temp.groupby('fecha').first().reset_index()
                         df_temp.set_index('fecha', inplace=True)
                         
-                        cols_est = [c for c in df_temp.columns if str(c).isnumeric()]
+                        # Ahora sí podemos buscar números de forma segura
+                        cols_est = [c for c in df_temp.columns if c.isnumeric()]
                         for col in cols_est:
                             if df_temp[col].dtype == object:
                                 df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
