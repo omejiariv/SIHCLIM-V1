@@ -500,7 +500,34 @@ with tab6:
                     df_auto = leer_csv_seguro(file_auto_ideam)
                     df_sat = leer_csv_seguro(file_satelital) 
 
-                    # 🧹 ADUANA DE DATOS Y ESTANDARIZACIÓN
+                    # ----------------------------------------------------------
+                    # 🧹 ADUANA DE DATOS: LECTURA INTELIGENTE
+                    # ----------------------------------------------------------
+                    def leer_csv_seguro(file_obj):
+                        if file_obj is None: return None
+                        try:
+                            # Intento 1: Punto y coma
+                            df = pd.read_csv(file_obj, sep=';', encoding='utf-8')
+                            if len(df.columns) < 3: # Si no separó bien, es porque era con coma
+                                file_obj.seek(0)
+                                df = pd.read_csv(file_obj, sep=',', encoding='utf-8')
+                            return df
+                        except UnicodeDecodeError:
+                            file_obj.seek(0)
+                            df = pd.read_csv(file_obj, sep=';', encoding='latin1')
+                            if len(df.columns) < 3:
+                                file_obj.seek(0)
+                                df = pd.read_csv(file_obj, sep=',', encoding='latin1')
+                            return df
+                            
+                    df_m = leer_csv_seguro(file_maestro)
+                    df_p1 = leer_csv_seguro(file_parche_1)
+                    df_auto = leer_csv_seguro(file_auto_ideam)
+                    df_sat = leer_csv_seguro(file_satelital) 
+
+                    # ----------------------------------------------------------
+                    # 🛡️ CINTURÓN DE SEGURIDAD Y ESTANDARIZACIÓN
+                    # ----------------------------------------------------------
                     import numpy as np
                     codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -99.0, -999.0, -9999.0]
                     dfs_procesados = []
@@ -508,18 +535,29 @@ with tab6:
                     archivos_activos = [df for df in [df_m, df_p1, df_auto, df_sat] if df is not None]
                     
                     for df_temp in archivos_activos:
-                        # 🚨 CINTURÓN DE SEGURIDAD: Obligar a que todos los códigos sean texto limpio
-                        df_temp.columns = [str(c).strip() for c in df_temp.columns]
+                        # 1. Amputar comillas y decimales fantasma (.0) de los encabezados
+                        nuevas_columnas = []
+                        for c in df_temp.columns:
+                            c_str = str(c).strip().replace('"', '')
+                            if c_str.endswith('.0'): 
+                                c_str = c_str[:-2]
+                            nuevas_columnas.append(c_str)
+                        df_temp.columns = nuevas_columnas
                         
+                        # 2. Estandarizar la columna de fechas
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
+                        if 'fecha' not in df_temp.columns:
+                            continue # Evitar que el motor explote si subes un archivo equivocado
+                            
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
                         df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
                         df_temp = df_temp.groupby('fecha').first().reset_index()
                         df_temp.set_index('fecha', inplace=True)
                         
-                        # Ahora sí podemos buscar números de forma segura
+                        # 3. Detectar estaciones (ahora sí, 100% seguro)
                         cols_est = [c for c in df_temp.columns if c.isnumeric()]
+                        
                         for col in cols_est:
                             if df_temp[col].dtype == object:
                                 df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
@@ -527,12 +565,13 @@ with tab6:
                             df_temp[col] = df_temp[col].replace(codigos_falsos, np.nan)
                             df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > 1500.0), col] = np.nan
                             
-                        dfs_procesados.append(df_temp)
-                        
-                    # Despaquetar fuentes terrestres limpias
-                    df_m_clean = dfs_procesados[0]
-                    df_p1_clean = dfs_procesados[1]
-                    df_auto_clean = dfs_procesados[2]
+                        # Solo conservamos las columnas que son estrictamente estaciones
+                        dfs_procesados.append(df_temp[cols_est])
+
+                    # Despaquetar fuentes terrestres limpias (Asegurando variables vacías si falta algo)
+                    df_m_clean = dfs_procesados[0] if len(dfs_procesados) > 0 else pd.DataFrame()
+                    df_p1_clean = dfs_procesados[1] if len(dfs_procesados) > 1 else pd.DataFrame()
+                    df_auto_clean = dfs_procesados[2] if len(dfs_procesados) > 2 else pd.DataFrame()
 
                     # ==========================================================
                     # 🌍 PASO 1: CONSOLIDACIÓN SECUENCIAL DE LA RED TERRESTE
