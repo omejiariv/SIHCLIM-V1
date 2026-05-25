@@ -546,14 +546,20 @@ with tab6:
                             nuevas_columnas.append(c_str)
                         df_temp.columns = nuevas_columnas
                         
+                        # 2. Estandarizar la columna de fechas a estricto MENSUAL (Día 1)
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
                         if 'fecha' not in df_temp.columns:
                             continue 
                             
+                        # Convertir a datetime de forma segura
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
-                        df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
-                        df_temp = df_temp.groupby('fecha').first().reset_index()
+                        
+                        # 🚨 FORZAR A QUE TODOS LOS MESES SEAN EL DÍA 1 DEL MES CORRESPONDIENTE
+                        df_temp['fecha'] = df_temp['fecha'].apply(lambda x: x.replace(day=1))
+                        
+                        # Agrupar por fecha EXACTA (Año y Mes) para evitar duplicados, sin borrar meses
+                        df_temp = df_temp.groupby('fecha').mean().reset_index()
                         df_temp.set_index('fecha', inplace=True)
                         
                         cols_est = [c for c in df_temp.columns if c.isnumeric()]
