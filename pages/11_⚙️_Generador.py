@@ -533,14 +533,22 @@ with tab6:
                         # 1. Limpiar nombres de columnas (quitar comillas y decimales fantasma)
                         df_temp.columns = [str(c).strip().replace('"', '').replace('.0', '') for c in df_temp.columns]
                         
-                        # 2. Normalización de fecha
+                        # 2. Normalización de fecha (VERSIÓN TRANSPARENTE)
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
                         if 'fecha' not in df_temp.columns: continue
                         
-                        df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
+                        # --- TESTIGO ---
+                        # Antes de tocar la fecha, imprimamos qué hay ahí
+                        st.write(f"Primeras 5 fechas crudas leídas: {df_temp['fecha'].head(5).tolist()}")
+                        
+                        # Convertimos a datetime. 
+                        # Si tu CSV tiene formato día/mes/año, debemos especificar dayfirst=True
+                        df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], dayfirst=True, errors='coerce')
+                        
                         df_temp.dropna(subset=['fecha'], inplace=True)
-                        # Truncar al primer día del mes
-                        df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
+                        
+                        # --- TESTIGO 2 ---
+                        st.write(f"Fechas después de convertir a datetime: {df_temp['fecha'].head(5).tolist()}")
                         
                         # 3. Conversión de columnas a numérico (solo si el nombre es identificador)
                         cols_est = [c for c in df_temp.columns if c != 'fecha' and str(c).replace('.','',1).isdigit()]
