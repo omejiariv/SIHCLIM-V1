@@ -611,6 +611,7 @@ with tab6:
                     
                     for col in cols_est:
                         # Filtrar datos válidos antes de cualquier cálculo
+                        df_terrestre[col] = df_terrestre[col].replace(0, np.nan)
                         serie_col = df_terrestre[col].dropna()
                         
                         # Dividir en eras
