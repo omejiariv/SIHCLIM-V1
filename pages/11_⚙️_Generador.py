@@ -530,39 +530,39 @@ with tab6:
                     archivos = [df_m, df_p1, df_auto, df_sat]
                     for df_temp in [f for f in archivos if f is not None]:
                         
-                        # 1. Limpiar nombres de columnas (quitar comillas y decimales fantasma)
+                        # 1. Limpiar nombres de columnas
                         df_temp.columns = [str(c).strip().replace('"', '').replace('.0', '') for c in df_temp.columns]
                         
-                        # 2. Normalización de fecha (VERSIÓN TRANSPARENTE)
+                        # 2. Normalización de fecha
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
                         if 'fecha' not in df_temp.columns: continue
                         
-                        # --- TESTIGO ---
-                        # Antes de tocar la fecha, imprimamos qué hay ahí
-                        st.write(f"Primeras 5 fechas crudas leídas: {df_temp['fecha'].head(5).tolist()}")
-                        
-                        # Convertimos a datetime. 
-                        # Si tu CSV tiene formato día/mes/año, debemos especificar dayfirst=True
+                        # Convertimos a datetime
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], dayfirst=True, errors='coerce')
-                        
                         df_temp.dropna(subset=['fecha'], inplace=True)
                         
-                        # --- TESTIGO 2 ---
-                        st.write(f"Fechas después de convertir a datetime: {df_temp['fecha'].head(5).tolist()}")
-                        
-                        # 3. Conversión de columnas a numérico (solo si el nombre es identificador)
+                        # 3. Conversión de columnas a numérico y BLINDAJE DE CEROS
                         cols_est = [c for c in df_temp.columns if c != 'fecha' and str(c).replace('.','',1).isdigit()]
                         
                         for col in cols_est:
+                            # Convertir a numérico
                             if df_temp[col].dtype == object:
                                 df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
                             df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
-                            # Aplicar filtros de calidad
-                            df_temp.loc[df_temp[col].isin(codigos_falsos) | (df_temp[col] < 0) | (df_temp[col] > 1500), col] = np.nan
+                            
+                            # APLICAR BLINDAJE: Reemplazar ceros y valores falsos por NaN 
+                            # Esto evita que el promedio/suma se distorsione por sensores caídos
+                            df_temp.loc[df_temp[col].isin(codigos_falsos) | 
+                                        (df_temp[col] < 0) | 
+                                        (df_temp[col] > 1500) | 
+                                        (df_temp[col] == 0), col] = np.nan
                         
-                        # 4. Agrupar por fecha y limpiar columnas no deseadas
-                        df_temp = df_temp.groupby('fecha')[cols_est].mean()
+                        # 4. AGRUPACIÓN POR SUMA (Crucial para precipitación)
+                        # Usamos sum() en lugar de mean() para el acumulado mensual
+                        df_temp = df_temp.groupby('fecha')[cols_est].sum()
                         df_temp = df_temp.sort_index()
+                        
+                        dfs_procesados.append(df_temp)
                         
                         # 🔍 RAYOS X: ¿QUÉ ESTÁ PASANDO CON LAS FECHAS?
                         st.write(f"--- Diagnóstico de {col} ---")
