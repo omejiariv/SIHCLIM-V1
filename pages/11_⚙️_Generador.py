@@ -600,20 +600,35 @@ with tab6:
                         datos_validos = df_terrestre[col].dropna()
                         limites_nacimiento[col] = datos_validos.index.min() if not datos_validos.empty else None
 
+                    # ==========================================================
                     # ⚖️ PASO 2: BISTURÍ TEMPORAL (HOMOGENEIZACIÓN DE ERAS)
-                    # Cambiamos el umbral de 0.12 (12%) a 0.25 (25%) para dar más margen a datos reales
+                    # ==========================================================
                     AÑO_RUPTURA = 2010
                     log_homogeneidad = 0
                     
+                    # Aseguramos que el índice sea DatetimeIndex
+                    df_terrestre.index = pd.to_datetime(df_terrestre.index)
+                    
                     for col in cols_est:
-                        # ... (mismo código anterior) ...
-                        if pd.notna(media_hist) and pd.notna(media_reciente) and media_reciente > 0:
-                            factor = media_hist / media_reciente
-                            # Aumentamos la tolerancia del 12% al 25% para evitar cortes innecesarios
-                            if abs(1 - factor) > 0.25: 
-                                factor = max(0.35, min(factor, 2.5))
-                                df_terrestre.loc[df_terrestre.index.year >= AÑO_RUPTURA, col] = df_terrestre.loc[df_terrestre.index.year >= AÑO_RUPTURA, col] * factor
-                                log_homogeneidad += 1
+                        # Filtrar datos válidos antes de cualquier cálculo
+                        serie_col = df_terrestre[col].dropna()
+                        
+                        # Dividir en eras
+                        serie_hist = serie_col[serie_col.index.year < AÑO_RUPTURA]
+                        serie_reciente = serie_col[serie_col.index.year >= AÑO_RUPTURA]
+                        
+                        # Solo calibramos si ambas eras tienen datos suficientes
+                        if len(serie_hist) > 24 and len(serie_reciente) > 12:
+                            media_hist = serie_hist[serie_hist > 0].mean()
+                            media_reciente = serie_reciente[serie_reciente > 0].mean()
+                            
+                            if pd.notna(media_hist) and pd.notna(media_reciente) and media_reciente > 0:
+                                factor = media_hist / media_reciente
+                                # Tolerancia de hasta 25% (0.25)
+                                if abs(1 - factor) > 0.25:
+                                    factor = max(0.35, min(factor, 2.5))
+                                    df_terrestre.loc[df_terrestre.index.year >= AÑO_RUPTURA, col] *= factor
+                                    log_homogeneidad += 1
                                     
                     st.success(f"⚖️ Homogeneidad Terrestre: Se calibró el bloque moderno de {log_homogeneidad} estaciones.")
                     
