@@ -577,6 +577,32 @@ with tab6:
                         dfs_procesados.append(df_temp[cols_est])
 
                     # Despaquetar fuentes terrestres limpias con control de seguridad
+
+                    # ==========================================================
+                    # 🔍 MÁQUINA DE RAYOS X (ANÁLISIS FORENSE)
+                    # ==========================================================
+                    with st.expander("🔍 RESULTADOS DE LA RADIOGRAFÍA DE DATOS (Ábreme para ver qué está pasando)", expanded=True):
+                        st.markdown("### 1. Tamaño y Forma de los Archivos")
+                        st.write(f"- **Histórico:** {len(df_m_clean.columns)} estaciones. Ejemplo de códigos: `{list(df_m_clean.columns[:5]) if not df_m_clean.empty else 'Vacio'}`")
+                        st.write(f"- **Transición:** {len(df_p1_clean.columns)} estaciones. Ejemplo de códigos: `{list(df_p1_clean.columns[:5]) if not df_p1_clean.empty else 'Vacio'}`")
+                        st.write(f"- **Automáticas:** {len(df_auto_clean.columns)} estaciones. Ejemplo de códigos: `{list(df_auto_clean.columns[:5]) if not df_auto_clean.empty else 'Vacio'}`")
+
+                        st.markdown("### 2. El Cruce Vital (¿Se están reconociendo?)")
+                        if not df_m_clean.empty and not df_p1_clean.empty:
+                            comunes_1_2 = set(df_m_clean.columns).intersection(set(df_p1_clean.columns))
+                            st.write(f"- Estaciones que existen en Histórico Y TAMBIÉN en Transición: **{len(comunes_1_2)}**")
+                        
+                        if not df_m_clean.empty and not df_auto_clean.empty:
+                            comunes_1_3 = set(df_m_clean.columns).intersection(set(df_auto_clean.columns))
+                            st.write(f"- Estaciones que existen en Histórico Y TAMBIÉN en Automáticas: **{len(comunes_1_3)}**")
+
+                        st.markdown("### 3. Fechas Detectadas (Línea de Tiempo)")
+                        if not df_m_clean.empty: 
+                            st.write(f"- **Histórico va desde:** `{df_m_clean.index.min().strftime('%Y-%m')}` hasta `{df_m_clean.index.max().strftime('%Y-%m')}`")
+                        if not df_p1_clean.empty: 
+                            st.write(f"- **Transición va desde:** `{df_p1_clean.index.min().strftime('%Y-%m')}` hasta `{df_p1_clean.index.max().strftime('%Y-%m')}`")
+                    # ==========================================================
+                    
                     df_m_clean = dfs_procesados[0] if len(dfs_procesados) > 0 else pd.DataFrame()
                     df_p1_clean = dfs_procesados[1] if len(dfs_procesados) > 1 else pd.DataFrame()
                     df_auto_clean = dfs_procesados[2] if len(dfs_procesados) > 2 else pd.DataFrame()
