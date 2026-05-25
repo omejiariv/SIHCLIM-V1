@@ -593,8 +593,6 @@ with tab6:
                         st.write(f"Fechas únicas encontradas antes de agrupar: {len(df_temp.index.unique())}")
                         st.write(f"Meses presentes: {df_temp.index.month.unique()}") 
                         # ----------------------------------------------------
-                        
-                        dfs_procesados.append(df_temp)
 
                     # Despaquetado de variables
                     df_m_clean = dfs_procesados[0] if len(dfs_procesados) > 0 else pd.DataFrame()
