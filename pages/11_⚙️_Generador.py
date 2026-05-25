@@ -501,28 +501,20 @@ with tab6:
                     df_sat = leer_csv_seguro(file_satelital) 
 
                     # ----------------------------------------------------------
-                    # 🧹 ADUANA DE DATOS: LECTURA INTELIGENTE
+                    # 🧹 ADUANA DE DATOS: LECTURA INTELIGENTE (ESTANDARIZADA)
                     # ----------------------------------------------------------
                     def leer_csv_seguro(file_obj):
                         if file_obj is None: return None
-                        file_obj.seek(0) 
+                        file_obj.seek(0)
                         try:
-                            df = pd.read_csv(file_obj, sep=';', encoding='utf-8')
-                            if len(df.columns) < 3: 
-                                file_obj.seek(0)
-                                df = pd.read_csv(file_obj, sep=',', encoding='utf-8')
-                            return df
-                        except UnicodeDecodeError:
-                            file_obj.seek(0)
-                            df = pd.read_csv(file_obj, sep=';', encoding='latin1')
-                            if len(df.columns) < 3:
-                                file_obj.seek(0)
-                                df = pd.read_csv(file_obj, sep=',', encoding='latin1')
+                            # Intentar lectura automática de separador y codificación
+                            df = pd.read_csv(file_obj, sep=None, engine='python', encoding='utf-8-sig')
                             return df
                         except Exception:
                             file_obj.seek(0)
-                            return pd.read_csv(file_obj, encoding='utf-8', on_bad_lines='skip')
-                            
+                            return pd.read_csv(file_obj, sep=';', engine='python', encoding='latin1', on_bad_lines='skip')
+
+                    # Ejecución de carga
                     df_m = leer_csv_seguro(file_maestro)
                     df_p1 = leer_csv_seguro(file_parche_1)
                     df_auto = leer_csv_seguro(file_auto_ideam)
@@ -535,52 +527,41 @@ with tab6:
                     codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -99.0, -999.0, -9999.0]
                     dfs_procesados = []
                     
-                    archivos_activos = [df for df in [df_m, df_p1, df_auto, df_sat] if df is not None]
-                    
-                    for df_temp in archivos_activos:
-                        # 1. Amputar comillas y decimales fantasma de los encabezados
-                        nuevas_columnas = []
-                        for c in df_temp.columns:
-                            c_str = str(c).strip().replace('"', '')
-                            if c_str.endswith('.0'): 
-                                c_str = c_str[:-2]
-                            nuevas_columnas.append(c_str)
-                        df_temp.columns = nuevas_columnas
+                    archivos = [df_m, df_p1, df_auto, df_sat]
+                    for df_temp in [f for f in archivos if f is not None]:
                         
-                        # 2. Configurar la columna de fecha sin agrupar todavía
+                        # 1. Limpiar nombres de columnas (quitar comillas y decimales fantasma)
+                        df_temp.columns = [str(c).strip().replace('"', '').replace('.0', '') for c in df_temp.columns]
+                        
+                        # 2. Normalización de fecha
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
-                        if 'fecha' not in df_temp.columns:
-                            continue 
-                            
+                        if 'fecha' not in df_temp.columns: continue
+                        
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
-                        # Forzar día 1 para estandarizar el mes y que no haya duplicados
-                        df_temp['fecha'] = df_temp['fecha'].apply(lambda x: x.replace(day=1) if pd.notna(x) else x)
+                        # Truncar al primer día del mes
+                        df_temp['fecha'] = df_temp['fecha'].dt.to_period('M').dt.to_timestamp()
                         
-                        # 3. CONVERTIR TEXTO A NÚMEROS (Paso vital antes de promediar)
-                        cols_est = [c for c in df_temp.columns if c.isnumeric()]
+                        # 3. Conversión de columnas a numérico (solo si el nombre es identificador)
+                        cols_est = [c for c in df_temp.columns if c != 'fecha' and str(c).replace('.','',1).isdigit()]
+                        
                         for col in cols_est:
                             if df_temp[col].dtype == object:
                                 df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
                             df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
-                            df_temp[col] = df_temp[col].replace(codigos_falsos, np.nan)
-                            df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > 1500.0), col] = np.nan
-                            
-                        # 4. AHORA SÍ: Agrupar por mes de forma segura con datos puramente numéricos
-                        # Filtramos para usar solo la fecha y las columnas de estaciones válidas
-                        df_temp = df_temp[['fecha'] + cols_est]
-                        # Al hacer groupby, 'fecha' se convierte automáticamente en el índice
-                        df_temp = df_temp.groupby('fecha').mean() 
-                            
+                            # Aplicar filtros de calidad
+                            df_temp.loc[df_temp[col].isin(codigos_falsos) | (df_temp[col] < 0) | (df_temp[col] > 1500), col] = np.nan
+                        
+                        # 4. Agrupar por fecha y limpiar columnas no deseadas
+                        df_temp = df_temp.groupby('fecha')[cols_est].mean()
+                        df_temp = df_temp.sort_index()
                         dfs_procesados.append(df_temp)
 
-                    # ==========================================================
-                    # 📦 DESPAQUETADO VITAL (Aquí nacen las variables limpias)
-                    # ==========================================================
+                    # Despaquetado de variables
                     df_m_clean = dfs_procesados[0] if len(dfs_procesados) > 0 else pd.DataFrame()
                     df_p1_clean = dfs_procesados[1] if len(dfs_procesados) > 1 else pd.DataFrame()
                     df_auto_clean = dfs_procesados[2] if len(dfs_procesados) > 2 else pd.DataFrame()
-
+                    
                     # ==========================================================
                     # 🔍 MÁQUINA DE RAYOS X (ANÁLISIS FORENSE)
                     # ==========================================================
