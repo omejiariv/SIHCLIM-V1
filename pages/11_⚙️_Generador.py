@@ -49,6 +49,30 @@ def muro_de_acceso_beta():
 
 # Llamamos a la función para activar el escudo
 muro_de_acceso_beta()
+
+# 1. Definición global de la función (Corregida)
+def reconstruir_vacios(df, matriz_corr_path):
+    if not os.path.exists(matriz_corr_path):
+        return df
+    df_corr = pd.read_csv(matriz_corr_path, index_col=0)
+    for est_objetivo in df.columns:
+        if est_objetivo == 'fecha': continue
+        if df[est_objetivo].isna().sum() > 0:
+            donantes = df_corr[est_objetivo].sort_values(ascending=False)
+            donantes = donantes[(donantes > 0.65) & (donantes.index != est_objetivo)].index.tolist()
+            if donantes:
+                media_objetivo = df.groupby(df.index.month)[est_objetivo].mean()
+                vacios = df[df[est_objetivo].isna()].index
+                for fecha in vacios:
+                    mes = fecha.month
+                    for donante in donantes:
+                        if donante in df.columns and pd.notna(df.loc[fecha, donante]):
+                            media_donante = df.groupby(df.index.month)[donante].mean()[mes]
+                            if media_donante > 0:
+                                df.loc[fecha, est_objetivo] = df.loc[fecha, donante] * (media_objetivo[mes] / media_donante)
+                                break
+    return df
+    
 # ==============================================================================
 
 # --- ACTUALIZACIÓN: AGREGAMOS LA CUARTA PESTAÑA ---
@@ -743,38 +767,11 @@ with tab6:
                                 df_promedios_mensuales = df_final.groupby(df_final.index.month)[estaciones_robustas].transform('mean')
                                 df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_mensuales)
 
-# ==========================================================
-# 🧠 MOTOR DE INFERENCIA: RECONSTRUCCIÓN POR VECINOS
-# ==========================================================
-def reconstruir_vacios(df, matriz_corr_path):
-    # Cargar matriz de correlación
-    df_corr = pd.read_csv(matriz_corr_path, index_col=0)
-    
-    # Iterar sobre las estaciones que tienen NaNs
-    for est_objetivo in df.columns:
-        if df[est_objetivo].isna().sum() > 0:
-            # Buscar mejores donantes (Correlación > 0.65)
-            donantes = df_corr[est_objetivo].sort_values(ascending=False)
-            donantes = donantes[(donantes > 0.65) & (donantes.index != est_objetivo)].index.tolist()
-            
-            if donantes:
-                # Calcular climatología mensual de la objetivo
-                media_objetivo = df.groupby(df.index.month)[est_objetivo].mean()
-                
-                # Para cada fecha con vacío, inferir usando el mejor donante disponible
-                vacios = df[df[est_objetivo].isna()].index
-                for fecha in vacios:
-                    mes = fecha.month
-                    for donante in donantes:
-                        if pd.notna(df.loc[fecha, donante]):
-                            # Inferencia simple por ratio de medias mensuales
-                            media_donante = df.groupby(df.index.month)[donante].mean()[mes]
-                            if media_donante > 0:
-                                df.loc[fecha, est_objetivo] = df.loc[fecha, donante] * (media_objetivo[mes] / media_donante)
-                                break
-    return df
+                    # 🧠 EJECUCIÓN DEL MOTOR (Ahora correctamente indentado)
+                    st.info("🧠 Aplicando Motor de Inferencia sobre vacíos residuales...")
+                    df_final = reconstruir_vacios(df_final, 'data/matriz_correlacion_estaciones.csv')
 
-                    # 🛡️ CORTAFUEGOS DE NACIMIENTO
+                    # 🛡️ CORTAFUEGOS DE NACIMIENTO (Ya fuera del try o correctamente alineado)
                     if cols_estaciones:
                         for col in cols_estaciones:
                             inicio = limites_nacimiento.get(col)
