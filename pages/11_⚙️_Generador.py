@@ -505,6 +505,10 @@ with tab6:
                     # ----------------------------------------------------------
                     def leer_csv_seguro(file_obj):
                         if file_obj is None: return None
+                        
+                        # 🚨 Rebobinar siempre el archivo al inicio antes de leer
+                        file_obj.seek(0) 
+                        
                         try:
                             # Intento 1: Punto y coma
                             df = pd.read_csv(file_obj, sep=';', encoding='utf-8')
@@ -519,7 +523,11 @@ with tab6:
                                 file_obj.seek(0)
                                 df = pd.read_csv(file_obj, sep=',', encoding='latin1')
                             return df
+                        except Exception:
+                            file_obj.seek(0)
+                            return pd.read_csv(file_obj, encoding='utf-8', on_bad_lines='skip')
                             
+                    # 📌 LAS LÍNEAS POR LAS QUE PREGUNTAS QUEDAN AQUÍ (Y SOLO AQUÍ):
                     df_m = leer_csv_seguro(file_maestro)
                     df_p1 = leer_csv_seguro(file_parche_1)
                     df_auto = leer_csv_seguro(file_auto_ideam)
@@ -547,7 +555,7 @@ with tab6:
                         # 2. Estandarizar la columna de fechas
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
                         if 'fecha' not in df_temp.columns:
-                            continue # Evitar que el motor explote si subes un archivo equivocado
+                            continue # Salta el archivo si no tiene columna de tiempo válida
                             
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
@@ -555,7 +563,7 @@ with tab6:
                         df_temp = df_temp.groupby('fecha').first().reset_index()
                         df_temp.set_index('fecha', inplace=True)
                         
-                        # 3. Detectar estaciones (ahora sí, 100% seguro)
+                        # 3. Detectar columnas numéricas de estaciones
                         cols_est = [c for c in df_temp.columns if c.isnumeric()]
                         
                         for col in cols_est:
@@ -565,10 +573,10 @@ with tab6:
                             df_temp[col] = df_temp[col].replace(codigos_falsos, np.nan)
                             df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > 1500.0), col] = np.nan
                             
-                        # Solo conservamos las columnas que son estrictamente estaciones
+                        # Conservamos estrictamente las columnas de estaciones validadas
                         dfs_procesados.append(df_temp[cols_est])
 
-                    # Despaquetar fuentes terrestres limpias (Asegurando variables vacías si falta algo)
+                    # Despaquetar fuentes terrestres limpias con control de seguridad
                     df_m_clean = dfs_procesados[0] if len(dfs_procesados) > 0 else pd.DataFrame()
                     df_p1_clean = dfs_procesados[1] if len(dfs_procesados) > 1 else pd.DataFrame()
                     df_auto_clean = dfs_procesados[2] if len(dfs_procesados) > 2 else pd.DataFrame()
