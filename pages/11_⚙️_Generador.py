@@ -538,6 +538,7 @@ with tab6:
                     archivos_activos = [df for df in [df_m, df_p1, df_auto, df_sat] if df is not None]
                     
                     for df_temp in archivos_activos:
+                        # 1. Amputar comillas y decimales fantasma de los encabezados
                         nuevas_columnas = []
                         for c in df_temp.columns:
                             c_str = str(c).strip().replace('"', '')
@@ -546,24 +547,18 @@ with tab6:
                             nuevas_columnas.append(c_str)
                         df_temp.columns = nuevas_columnas
                         
-                        # 2. Estandarizar la columna de fechas a estricto MENSUAL (Día 1)
+                        # 2. Configurar la columna de fecha sin agrupar todavía
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
                         if 'fecha' not in df_temp.columns:
                             continue 
                             
-                        # Convertir a datetime de forma segura
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
+                        # Forzar día 1 para estandarizar el mes y que no haya duplicados
+                        df_temp['fecha'] = df_temp['fecha'].apply(lambda x: x.replace(day=1) if pd.notna(x) else x)
                         
-                        # 🚨 FORZAR A QUE TODOS LOS MESES SEAN EL DÍA 1 DEL MES CORRESPONDIENTE
-                        df_temp['fecha'] = df_temp['fecha'].apply(lambda x: x.replace(day=1))
-                        
-                        # Agrupar por fecha EXACTA (Año y Mes) para evitar duplicados, sin borrar meses
-                        df_temp = df_temp.groupby('fecha').mean().reset_index()
-                        df_temp.set_index('fecha', inplace=True)
-                        
+                        # 3. CONVERTIR TEXTO A NÚMEROS (Paso vital antes de promediar)
                         cols_est = [c for c in df_temp.columns if c.isnumeric()]
-                        
                         for col in cols_est:
                             if df_temp[col].dtype == object:
                                 df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
@@ -571,7 +566,13 @@ with tab6:
                             df_temp[col] = df_temp[col].replace(codigos_falsos, np.nan)
                             df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > 1500.0), col] = np.nan
                             
-                        dfs_procesados.append(df_temp[cols_est])
+                        # 4. AHORA SÍ: Agrupar por mes de forma segura con datos puramente numéricos
+                        # Filtramos para usar solo la fecha y las columnas de estaciones válidas
+                        df_temp = df_temp[['fecha'] + cols_est]
+                        # Al hacer groupby, 'fecha' se convierte automáticamente en el índice
+                        df_temp = df_temp.groupby('fecha').mean() 
+                            
+                        dfs_procesados.append(df_temp)
 
                     # ==========================================================
                     # 📦 DESPAQUETADO VITAL (Aquí nacen las variables limpias)
