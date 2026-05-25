@@ -505,14 +505,10 @@ with tab6:
                     # ----------------------------------------------------------
                     def leer_csv_seguro(file_obj):
                         if file_obj is None: return None
-                        
-                        # 🚨 Rebobinar siempre el archivo al inicio antes de leer
                         file_obj.seek(0) 
-                        
                         try:
-                            # Intento 1: Punto y coma
                             df = pd.read_csv(file_obj, sep=';', encoding='utf-8')
-                            if len(df.columns) < 3: # Si no separó bien, es porque era con coma
+                            if len(df.columns) < 3: 
                                 file_obj.seek(0)
                                 df = pd.read_csv(file_obj, sep=',', encoding='utf-8')
                             return df
@@ -527,7 +523,6 @@ with tab6:
                             file_obj.seek(0)
                             return pd.read_csv(file_obj, encoding='utf-8', on_bad_lines='skip')
                             
-                    # 📌 LAS LÍNEAS POR LAS QUE PREGUNTAS QUEDAN AQUÍ (Y SOLO AQUÍ):
                     df_m = leer_csv_seguro(file_maestro)
                     df_p1 = leer_csv_seguro(file_parche_1)
                     df_auto = leer_csv_seguro(file_auto_ideam)
@@ -543,7 +538,6 @@ with tab6:
                     archivos_activos = [df for df in [df_m, df_p1, df_auto, df_sat] if df is not None]
                     
                     for df_temp in archivos_activos:
-                        # 1. Amputar comillas y decimales fantasma (.0) de los encabezados
                         nuevas_columnas = []
                         for c in df_temp.columns:
                             c_str = str(c).strip().replace('"', '')
@@ -552,10 +546,9 @@ with tab6:
                             nuevas_columnas.append(c_str)
                         df_temp.columns = nuevas_columnas
                         
-                        # 2. Estandarizar la columna de fechas
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
                         if 'fecha' not in df_temp.columns:
-                            continue # Salta el archivo si no tiene columna de tiempo válida
+                            continue 
                             
                         df_temp['fecha'] = pd.to_datetime(df_temp['fecha'], errors='coerce')
                         df_temp.dropna(subset=['fecha'], inplace=True)
@@ -563,7 +556,6 @@ with tab6:
                         df_temp = df_temp.groupby('fecha').first().reset_index()
                         df_temp.set_index('fecha', inplace=True)
                         
-                        # 3. Detectar columnas numéricas de estaciones
                         cols_est = [c for c in df_temp.columns if c.isnumeric()]
                         
                         for col in cols_est:
@@ -573,43 +565,43 @@ with tab6:
                             df_temp[col] = df_temp[col].replace(codigos_falsos, np.nan)
                             df_temp.loc[(df_temp[col] < 0) | (df_temp[col] > 1500.0), col] = np.nan
                             
-                        # Conservamos estrictamente las columnas de estaciones validadas
                         dfs_procesados.append(df_temp[cols_est])
 
-                    # Despaquetar fuentes terrestres limpias con control de seguridad
-
                     # ==========================================================
-                    # 🔍 MÁQUINA DE RAYOS X (ANÁLISIS FORENSE)
+                    # 📦 DESPAQUETADO VITAL (Aquí nacen las variables limpias)
                     # ==========================================================
-                    with st.expander("🔍 RESULTADOS DE LA RADIOGRAFÍA DE DATOS (Ábreme para ver qué está pasando)", expanded=True):
-                        st.markdown("### 1. Tamaño y Forma de los Archivos")
-                        st.write(f"- **Histórico:** {len(df_m_clean.columns)} estaciones. Ejemplo de códigos: `{list(df_m_clean.columns[:5]) if not df_m_clean.empty else 'Vacio'}`")
-                        st.write(f"- **Transición:** {len(df_p1_clean.columns)} estaciones. Ejemplo de códigos: `{list(df_p1_clean.columns[:5]) if not df_p1_clean.empty else 'Vacio'}`")
-                        st.write(f"- **Automáticas:** {len(df_auto_clean.columns)} estaciones. Ejemplo de códigos: `{list(df_auto_clean.columns[:5]) if not df_auto_clean.empty else 'Vacio'}`")
-
-                        st.markdown("### 2. El Cruce Vital (¿Se están reconociendo?)")
-                        if not df_m_clean.empty and not df_p1_clean.empty:
-                            comunes_1_2 = set(df_m_clean.columns).intersection(set(df_p1_clean.columns))
-                            st.write(f"- Estaciones que existen en Histórico Y TAMBIÉN en Transición: **{len(comunes_1_2)}**")
-                        
-                        if not df_m_clean.empty and not df_auto_clean.empty:
-                            comunes_1_3 = set(df_m_clean.columns).intersection(set(df_auto_clean.columns))
-                            st.write(f"- Estaciones que existen en Histórico Y TAMBIÉN en Automáticas: **{len(comunes_1_3)}**")
-
-                        st.markdown("### 3. Fechas Detectadas (Línea de Tiempo)")
-                        if not df_m_clean.empty: 
-                            st.write(f"- **Histórico va desde:** `{df_m_clean.index.min().strftime('%Y-%m')}` hasta `{df_m_clean.index.max().strftime('%Y-%m')}`")
-                        if not df_p1_clean.empty: 
-                            st.write(f"- **Transición va desde:** `{df_p1_clean.index.min().strftime('%Y-%m')}` hasta `{df_p1_clean.index.max().strftime('%Y-%m')}`")
-                    # ==========================================================
-                    
                     df_m_clean = dfs_procesados[0] if len(dfs_procesados) > 0 else pd.DataFrame()
                     df_p1_clean = dfs_procesados[1] if len(dfs_procesados) > 1 else pd.DataFrame()
                     df_auto_clean = dfs_procesados[2] if len(dfs_procesados) > 2 else pd.DataFrame()
 
                     # ==========================================================
+                    # 🔍 MÁQUINA DE RAYOS X (ANÁLISIS FORENSE)
+                    # ==========================================================
+                    with st.expander("🔍 RESULTADOS DE LA RADIOGRAFÍA DE DATOS", expanded=True):
+                        st.markdown("### 1. Tamaño y Forma de los Archivos")
+                        st.write(f"- **Histórico:** {len(df_m_clean.columns)} estaciones.")
+                        st.write(f"- **Transición:** {len(df_p1_clean.columns)} estaciones.")
+                        st.write(f"- **Automáticas:** {len(df_auto_clean.columns)} estaciones.")
+
+                        st.markdown("### 2. El Cruce Vital (¿Se están reconociendo?)")
+                        if not df_m_clean.empty and not df_p1_clean.empty:
+                            comunes_1_2 = set(df_m_clean.columns).intersection(set(df_p1_clean.columns))
+                            st.write(f"- Estaciones en Histórico Y TAMBIÉN en Transición: **{len(comunes_1_2)}**")
+                        
+                        if not df_m_clean.empty and not df_auto_clean.empty:
+                            comunes_1_3 = set(df_m_clean.columns).intersection(set(df_auto_clean.columns))
+                            st.write(f"- Estaciones en Histórico Y TAMBIÉN en Automáticas: **{len(comunes_1_3)}**")
+
+                        st.markdown("### 3. Fechas Detectadas (Línea de Tiempo)")
+                        if not df_m_clean.empty: 
+                            st.write(f"- **Histórico:** `{df_m_clean.index.min().strftime('%Y-%m')}` a `{df_m_clean.index.max().strftime('%Y-%m')}`")
+                        if not df_p1_clean.empty: 
+                            st.write(f"- **Transición:** `{df_p1_clean.index.min().strftime('%Y-%m')}` a `{df_p1_clean.index.max().strftime('%Y-%m')}`")
+                        if not df_auto_clean.empty: 
+                            st.write(f"- **Automáticas:** `{df_auto_clean.index.min().strftime('%Y-%m')}` a `{df_auto_clean.index.max().strftime('%Y-%m')}`")
+                    
+                    # ==========================================================
                     # 🌍 PASO 1: CONSOLIDACIÓN SECUENCIAL DE LA RED TERRESTE
-                    # Combina Histórico -> parche 2010-2025 -> Automáticas nuevas
                     # ==========================================================
                     df_terrestre = df_m_clean.combine_first(df_p1_clean).combine_first(df_auto_clean)
                     
