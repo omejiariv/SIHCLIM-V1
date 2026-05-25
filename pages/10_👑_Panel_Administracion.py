@@ -415,7 +415,7 @@ with tabs[0]:
                     # Filtrar el DataFrame final para contener estrictamente la estructura de base de datos
                     df_payload = df_new[columnas_maestras].copy()
                     
-                    # 5. INSERCIÓN ATÓMICA Y TRANSACCIONAL (UPSERT INTEGRAL)
+                    # 5. INSERCIÓN ATÓMICA Y TRANSACCIONAL (UPSERT CON CAST DE TIPOS)
                     from sqlalchemy import text
                     import numpy as np
                     
@@ -432,10 +432,18 @@ with tabs[0]:
                             # Subir carga limpia a tabla temporal de staging
                             df_payload.to_sql('temp_est_load', conn, if_exists='replace', index=False)
                             
-                            # Consulta de actualización masiva con control de conflictos por ID Único
+                            # Consulta de actualización masiva con conversión explícita (CAST) a double precision
                             upsert_query = text("""
                                 INSERT INTO estaciones (id_estacion, nombre, latitud, longitud, altitud, municipio, departamento)
-                                SELECT id_estacion, nombre, latitud, longitud, altitud, municipio, departamento FROM temp_est_load
+                                SELECT 
+                                    id_estacion, 
+                                    nombre, 
+                                    CAST(latitud AS double precision), 
+                                    CAST(longitud AS double precision), 
+                                    CAST(altitud AS double precision), 
+                                    municipio, 
+                                    departamento 
+                                FROM temp_est_load
                                 ON CONFLICT (id_estacion) DO UPDATE SET
                                     nombre = EXCLUDED.nombre,
                                     latitud = EXCLUDED.latitud,
