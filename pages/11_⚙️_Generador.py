@@ -555,6 +555,13 @@ with tab6:
                         # 4. Agrupar por fecha y limpiar columnas no deseadas
                         df_temp = df_temp.groupby('fecha')[cols_est].mean()
                         df_temp = df_temp.sort_index()
+                        
+                        # 🔍 RAYOS X: ¿QUÉ ESTÁ PASANDO CON LAS FECHAS?
+                        st.write(f"--- Diagnóstico de {col} ---")
+                        st.write(f"Fechas únicas encontradas antes de agrupar: {len(df_temp.index.unique())}")
+                        st.write(f"Meses presentes: {df_temp.index.month.unique()}") 
+                        # ----------------------------------------------------
+                        
                         dfs_procesados.append(df_temp)
 
                     # Despaquetado de variables
