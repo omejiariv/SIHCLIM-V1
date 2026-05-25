@@ -601,34 +601,30 @@ with tab6:
                         limites_nacimiento[col] = datos_validos.index.min() if not datos_validos.empty else None
 
                     # ==========================================================
-                    # ⚖️ PASO 2: BISTURÍ TEMPORAL (HOMOGENEIZACIÓN DE ERAS)
+                    # 🛡️ PASO 2: BISTURÍ TEMPORAL (INMUNIZADO CONTRA CERO TÉCNICO)
                     # ==========================================================
                     AÑO_RUPTURA = 2010
                     log_homogeneidad = 0
                     
-                    # Aseguramos que el índice sea DatetimeIndex
                     df_terrestre.index = pd.to_datetime(df_terrestre.index)
                     
                     for col in cols_est:
-                        # Filtrar datos válidos antes de cualquier cálculo
+                        # 🚨 BLINDAJE: Reemplazamos ceros por NaN ANTES de promediar
+                        # Esto asegura que si el sensor marcó 0 por error, no lo tome como '0 mm de lluvia'
                         df_terrestre[col] = df_terrestre[col].replace(0, np.nan)
-                        serie_col = df_terrestre[col].dropna()
                         
-                        # Dividir en eras
+                        serie_col = df_terrestre[col].dropna()
                         serie_hist = serie_col[serie_col.index.year < AÑO_RUPTURA]
                         serie_reciente = serie_col[serie_col.index.year >= AÑO_RUPTURA]
                         
-                        # Solo calibramos si ambas eras tienen datos suficientes
                         if len(serie_hist) > 24 and len(serie_reciente) > 12:
-                            # Filtramos valores > 0 para evitar el sesgo de sensores dañados
-                            media_hist = serie_hist[serie_hist > 0].mean()
-                            media_reciente = serie_reciente[serie_reciente > 0].mean()
+                            media_hist = serie_hist.mean()
+                            media_reciente = serie_reciente.mean()
                             
                             if pd.notna(media_hist) and pd.notna(media_reciente) and media_reciente > 0:
                                 factor = media_hist / media_reciente
-                                # Tolerancia de hasta 25% (0.25)
-                                if abs(1 - factor) > 0.25:
-                                    factor = max(0.35, min(factor, 2.5))
+                                # Blindaje contra inversiones de fase extremas
+                                if 0.5 < factor < 2.0: 
                                     df_terrestre.loc[df_terrestre.index.year >= AÑO_RUPTURA, col] *= factor
                                     log_homogeneidad += 1
                                     
