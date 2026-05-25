@@ -454,13 +454,15 @@ with tab4:
                         st.error(f"❌ Error interno durante el procesamiento: {e}")
 
 # ------------------------------------------------------------------------------
-# 🚀 PESTAÑA 6: GEMELO DIGITAL (HOMOGENEIZACIÓN ABSOLUTA 2010)
+# 🚀 PESTAÑA 6: GEMELO DIGITAL (CONSOLIDADOR MAESTRO DE REDES)
 # ------------------------------------------------------------------------------
 with tab6:
-    st.header("🌧️ Gemelo Digital: Fusión y Homogeneidad Absoluta")
+    st.header("🌧️ Gemelo Digital: Súper-Consolidador de Redes Hidrometeorológicas")
     st.markdown("""
-    Este motor implementa un **Bisturí Temporal en 2010**. 
-    Detecta rupturas en la medición del IDEAM y fuerza a la década reciente a respetar la magnitud climática de su Era Dorada (1970-2009).
+    Este motor unifica todo tu arsenal de datos en una única base de datos coherente:
+    1. Combina secuencialmente el **Histórico ENSO**, la **Transición 2010-2025** y las **Automáticas API en Tiempo Real**.
+    2. Aplica el **Bisturí Temporal 2010** para homogeneizar sensores modernos con líneas base antiguas.
+    3. Levanta el **Gemelo Digital** para imputar vacíos mediante correlación espacial de vecindad (>0.65) y fases ENSO.
     """)
     
     if 'csv_fusionado_data' not in st.session_state:
@@ -468,19 +470,22 @@ with tab6:
         st.session_state['fusion_resumen'] = ""
         st.session_state['fusion_preview'] = None
 
+    # Interfaz organizada para los 5 flujos de datos posibles
     col_1, col_2 = st.columns(2)
     with col_1:
-        file_maestro = st.file_uploader("🥇 1. Histórico IDEAM (1970-2020)", type=['csv'])
-        file_parche_2 = st.file_uploader("🥉 3. Satelital Copernicus (Opcional)", type=['csv'])
+        file_maestro = st.file_uploader("🥇 1. Histórico IDEAM Base (1970-2020)", type=['csv'])
+        file_auto_ideam = st.file_uploader("🥉 3. IDEAM Automáticas API (Bot Matriz)", type=['csv'])
     with col_2:
-        file_parche_1 = st.file_uploader("🥈 2. IDEAM Reciente (2010-2025)", type=['csv'])
+        file_parche_1 = st.file_uploader("🥈 2. IDEAM Transición Reciente (2010-2025)", type=['csv'])
+        file_satelital = st.file_uploader("🚀 4. Satelital Copernicus (Opcional)", type=['csv'])
         file_calibracion = st.file_uploader("📥 Matriz Calibración Copernicus (Opcional)", type=['csv'])
         
-    usar_imputacion = st.checkbox("Activar Gemelo Digital (Correlación Espacial + ENSO)", value=True)
+    usar_imputacion = st.checkbox("Activar Imputación Avanzada del Gemelo Digital (Espacial + ENSO)", value=True)
         
-    if file_maestro and file_parche_1:
-        if st.button("🔄 Ejecutar Motor Fusión", type="primary", use_container_width=True):
-            with st.spinner("1. Consolidando matrices y ejecutando Bisturí Temporal 2010..."):
+    # Exigimos los 3 archivos terrestres como mínimo para encender el motor
+    if file_maestro and file_parche_1 and file_auto_ideam:
+        if st.button("🔄 Ejecutar Fusión e Imputación Maestra", type="primary", use_container_width=True):
+            with st.spinner("1. Tejiendo la red del IDEAM (Histórica + Transición + Automática)..."):
                 try:
                     def leer_csv_seguro(file_obj):
                         if file_obj is None: return None
@@ -492,14 +497,15 @@ with tab6:
                             
                     df_m = leer_csv_seguro(file_maestro)
                     df_p1 = leer_csv_seguro(file_parche_1)
-                    df_p2 = leer_csv_seguro(file_parche_2) 
+                    df_auto = leer_csv_seguro(file_auto_ideam)
+                    df_sat = leer_csv_seguro(file_satelital) 
 
-                    # 🧹 ADUANA Y LIMPIEZA DE DATOS
+                    # 🧹 ADUANA DE DATOS Y ESTANDARIZACIÓN
                     import numpy as np
                     codigos_falsos = [999.9, 999.0, 999, 9999.9, 9999.0, 9999, -99.9, -99.0, -999.0, -9999.0]
                     dfs_procesados = []
                     
-                    archivos_activos = [df for df in [df_m, df_p1, df_p2] if df is not None]
+                    archivos_activos = [df for df in [df_m, df_p1, df_auto, df_sat] if df is not None]
                     
                     for df_temp in archivos_activos:
                         if 'date' in df_temp.columns: df_temp.rename(columns={'date': 'fecha'}, inplace=True)
@@ -519,54 +525,56 @@ with tab6:
                             
                         dfs_procesados.append(df_temp)
                         
+                    # Despaquetar fuentes terrestres limpias
+                    df_m_clean = dfs_procesados[0]
+                    df_p1_clean = dfs_procesados[1]
+                    df_auto_clean = dfs_procesados[2]
+
                     # ==========================================================
-                    # 🌍 PASO 1: CONSOLIDACIÓN CRUDA
-                    # Mezclamos los dos archivos del IDEAM sin importar los errores aún
+                    # 🌍 PASO 1: CONSOLIDACIÓN SECUENCIAL DE LA RED TERRESTE
+                    # Combina Histórico -> parche 2010-2025 -> Automáticas nuevas
                     # ==========================================================
-                    df_raw = dfs_procesados[0].combine_first(dfs_procesados[1])
+                    df_terrestre = df_m_clean.combine_first(df_p1_clean).combine_first(df_auto_clean)
                     
+                    # Capturar límites de nacimiento
+                    cols_totales = [c for c in df_terrestre.columns if str(c).isnumeric()]
+                    limites_nacimiento = {}
+                    for col in cols_totales:
+                        datos_validos = df_terrestre[col].dropna()
+                        limites_nacimiento[col] = datos_validos.index.min() if not datos_validos.empty else None
+
                     # ==========================================================
-                    # ⚖️ PASO 2: EL BISTURÍ TEMPORAL (CORRECCIÓN DE ÉPOCA 2010)
+                    # ⚖️ PASO 2: BISTURÍ TEMPORAL (HOMOGENEIZACIÓN DE ERAS)
                     # ==========================================================
                     AÑO_RUPTURA = 2010
-                    cols_est_raw = [c for c in df_raw.columns if str(c).isnumeric()]
                     log_homogeneidad = 0
                     
-                    for col in cols_est_raw:
-                        # Cortamos la vida de la estación en dos mitades exactas
-                        serie_hist = df_raw.loc[df_raw.index.year < AÑO_RUPTURA, col].dropna()
-                        serie_reciente = df_raw.loc[df_raw.index.year >= AÑO_RUPTURA, col].dropna()
+                    for col in cols_totales:
+                        serie_hist = df_terrestre.loc[df_terrestre.index.year < AÑO_RUPTURA, col].dropna()
+                        serie_reciente = df_terrestre.loc[df_terrestre.index.year >= AÑO_RUPTURA, col].dropna()
                         
-                        # Exigimos al menos 5 años de datos en ambas eras para poder comparar
                         if len(serie_hist) > 60 and len(serie_reciente) > 24:
                             media_hist = serie_hist[serie_hist > 0].mean()
                             media_reciente = serie_reciente[serie_reciente > 0].mean()
                             
                             if pd.notna(media_hist) and pd.notna(media_reciente) and media_reciente > 0:
                                 factor = media_hist / media_reciente
-                                
-                                # Si hay un salto brutal (desfase mayor al 15%)
-                                if abs(1 - factor) > 0.15:
-                                    factor = max(0.3, min(factor, 3.0)) # Candado de cordura
-                                    
-                                    # Aplicamos el castigo SOLO a la era reciente, aplastando el abultamiento
-                                    df_raw.loc[df_raw.index.year >= AÑO_RUPTURA, col] = df_raw.loc[df_raw.index.year >= AÑO_RUPTURA, col] * factor
+                                if abs(1 - factor) > 0.12:
+                                    factor = max(0.35, min(factor, 2.5))
+                                    df_terrestre.loc[df_terrestre.index.year >= AÑO_RUPTURA, col] = df_terrestre.loc[df_terrestre.index.year >= AÑO_RUPTURA, col] * factor
                                     log_homogeneidad += 1
                                     
-                    st.success(f"⚖️ Bisturí Temporal aplicado: Se corrigió la inflación post-2010 en {log_homogeneidad} estaciones.")
+                    st.success(f"⚖️ Homogeneidad Terrestre: Se calibró el bloque moderno de {log_homogeneidad} estaciones.")
                     
-                    df_terrestre = df_raw.copy()
+                    df_final = df_terrestre.copy()
+                    mensaje_estatus = "Ecosistema unificado basado en 3 redes del IDEAM."
 
-                    # Capturar límite de nacimiento (Para no viajar al pasado antes de que naciera)
-                    limites_nacimiento = {}
-                    for col in cols_est_raw:
-                        datos_validos = df_terrestre[col].dropna()
-                        limites_nacimiento[col] = datos_validos.index.min() if not datos_validos.empty else None
-
-                    # 🛰️ MÓDULO SATELITAL CONDICIONAL
-                    if df_p2 is not None:
-                        df_satelite = dfs_procesados[2]
-                        st.info("🛰️ Aterrizando datos satelitales a la realidad terrestre...")
+                    # ==========================================================
+                    # 🛰️ PASO 3: INGESTIÓN SATELITAL (OPCIONAL)
+                    # ==========================================================
+                    if df_sat is not None:
+                        df_satelite = dfs_procesados[3]
+                        st.info("🛰️ Datos satelitales detectados. Integrando capa adicional...")
                         
                         df_cal = None
                         if file_calibracion is not None:
@@ -579,32 +587,32 @@ with tab6:
                         cols_comunes_sat = [c for c in df_satelite.columns if c in df_terrestre.columns and str(c).isnumeric()]
                         
                         for col in cols_comunes_sat:
-                            aplicado_ecuacion = False
+                            aplicado_eq = False
                             if df_cal is not None and col in df_cal.index:
                                 m, b, r2 = df_cal.loc[col, 'Pendiente_m'], df_cal.loc[col, 'Intercepto_b'], df_cal.loc[col, 'R2']
                                 if pd.notna(m) and pd.notna(b) and pd.notna(r2) and r2 >= 0.2: 
                                     df_satelite[col] = (df_satelite[col] * m) + b
                                     df_satelite[col] = df_satelite[col].clip(lower=0) 
-                                    aplicado_ecuacion = True
+                                    aplicado_eq = True
                             
-                            if not aplicado_ecuacion:
+                            if not aplicado_eq:
                                 hist_terr = df_terrestre[df_terrestre[col] > 0][col]
-                                hist_sat = df_satelite[df_satelite[col] > 0][col]
-                                if not hist_terr.empty and not hist_sat.empty:
-                                    factor = max(0.3, min(hist_terr.mean() / hist_sat.mean(), 3.0)) 
-                                    df_satelite[col] = df_satelite[col] * factor
+                                hist_s = df_satelite[df_satelite[col] > 0][col]
+                                if not hist_terr.empty and not hist_s.empty:
+                                    df_satelite[col] = df_satelite[col] * max(0.3, min(hist_terr.mean() / hist_s.mean(), 3.0))
                                     
                         df_final = df_terrestre.combine_first(df_satelite)
-                    else:
-                        df_final = df_terrestre.copy()
+                        mensaje_estatus = "Ecosistema unificado Híbrido (3 Redes IDEAM + Copernicus)."
 
                     df_final = df_final[df_final.index <= pd.Timestamp.today()]
 
-                    # 🧩 GEMELO DIGITAL (IMPUTACIÓN ESPACIAL PARA ESTACIONES MUERTAS)
+                    # ==========================================================
+                    # 🧩 PASO 4: GEMELO DIGITAL (IMPUTACIÓN ESPACIAL)
+                    # ==========================================================
                     cols_estaciones = [c for c in df_final.columns if str(c).isnumeric()]
                     
                     if usar_imputacion:
-                        with st.spinner("2. Levantando Gemelo Digital: Calculando vecindad matemática..."):
+                        with st.spinner("2. Levantando Gemelo Digital: Interconectando estaciones..."):
                             from modules import climate_api  
                             
                             Q1_mes = df_final.groupby(df_final.index.month)[cols_estaciones].transform(lambda x: x.quantile(0.25))
@@ -656,7 +664,7 @@ with tab6:
                                 df_promedios_mensuales = df_final.groupby(df_final.index.month)[estaciones_robustas].transform('mean')
                                 df_final[estaciones_robustas] = df_final[estaciones_robustas].fillna(df_promedios_mensuales)
 
-                    # 🛡️ CORTAFUEGOS DE NACIMIENTO (No resucitar en el pasado)
+                    # 🛡️ CORTAFUEGOS DE NACIMIENTO
                     if cols_estaciones:
                         for col in cols_estaciones:
                             inicio = limites_nacimiento.get(col)
@@ -668,7 +676,7 @@ with tab6:
                     df_final['fecha'] = df_final['fecha'].dt.strftime('%Y-%m-%d')
                     
                     st.session_state['csv_fusionado_data'] = df_final.to_csv(sep=';', decimal=',', index=False, encoding='utf-8-sig').encode('utf-8')
-                    st.session_state['fusion_resumen'] = f"✅ Matriz Blindada. El Gemelo Digital operó sobre datos temporalmente calibrados."
+                    st.session_state['fusion_resumen'] = f"✅ Operación Exitosa. {mensaje_estatus}"
                     st.session_state['fusion_preview'] = df_final.tail(10)
                     
                 except Exception as e:
@@ -677,12 +685,12 @@ with tab6:
     # Renderizado
     if st.session_state['csv_fusionado_data'] is not None:
         st.markdown("---")
-        st.success("✅ ¡Matriz Generada con Éxito!")
+        st.success("✅ ¡Súper-Matriz Unificada Generada con Éxito!")
         st.info(st.session_state['fusion_resumen'])
         st.dataframe(st.session_state['fusion_preview'], use_container_width=True)
         
         st.download_button(
-            label="📥 Descargar Matriz Definitiva (Apta para Supabase)",
+            label="📥 Descargar Matriz Definitiva Total (Apta para Supabase)",
             data=st.session_state['csv_fusionado_data'],
             file_name="DatosPptnmes_Maestro_Integral.csv",
             mime="text/csv",
