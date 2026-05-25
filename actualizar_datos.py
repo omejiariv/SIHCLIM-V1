@@ -117,14 +117,7 @@ def descargar_y_actualizar_ideam():
             df_cat.to_csv(ARCHIVO_ESTACIONES_NUEVAS, index=False, sep=',')
             print(f"Catalogo geografico actualizado con exito ({len(df_cat)} estaciones).")
         
-        print(f"Pipeline finalizado con exito. Archivos guardados en la carpeta data/.")
-    else:
-        print("Error: No se recuperaron datos validos de la API.")
-
-if __name__ == "__main__":
-    descargar_y_actualizar_ideam()
-
-# ==========================================
+        # ==========================================
         # 🔄 TRANSFORMACIÓN MATRICIAL PARA SIHCLI-POTER
         # ==========================================
         print("Pivotando datos a formato matricial (Ancho)...")
@@ -139,4 +132,11 @@ if __name__ == "__main__":
         
         ARCHIVO_MATRIZ = "data/Pp_Automatica_IDEAM_Matriz.csv"
         df_matriz.to_csv(ARCHIVO_MATRIZ, index=False, sep=';', decimal=',')
-        print(f"✅ Matriz ancha guardada lista para fusión en: {ARCHI
+        print(f"✅ Matriz ancha guardada lista para fusión en: {ARCHIVO_MATRIZ}")
+
+        print(f"Pipeline finalizado con exito. Archivos guardados en la carpeta data/.")
+    else:
+        print("Error: No se recuperaron datos validos de la API.")
+
+if __name__ == "__main__":
+    descargar_y_actualizar_ideam()
