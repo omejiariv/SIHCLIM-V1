@@ -187,7 +187,7 @@ def main():
             ["📊 Analítica y Monitoreo Base", "🔬 Ciencia y Pronóstico Climático", "🌍 Gemelo Digital (Modelación Avanzada)"]
         )
         
-   with col_nav2:
+    with col_nav2:
         if "Analítica" in categoria_nav:
             # 🧠 Inyectamos la nueva opción en la lista base
             opciones = ["🗺️ Distribución", "🚨 Monitoreo", "📈 Gráficos", "📊 Estadísticas", "🧠 Peritaje y Consistencia", "📄 Reporte", "🏠 Inicio"]
