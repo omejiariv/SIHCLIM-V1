@@ -3557,7 +3557,11 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                         st.error(f"Error procesando el modelo espacial: {e}")
 
     # --- PESTAÑA 2: PUNTOS (ESTACIONES) ---
-    with tab_puntos:
+    with tab_puntos: # <-- Busca esta línea en tu código
+        import plotly.express as px
+        import plotly.graph_objects as go
+        
+        # ... aquí continúa tu código actual de la pestaña ...
         df_anual = kwargs.get("df_anual_melted")
         
         # Validación inicial
