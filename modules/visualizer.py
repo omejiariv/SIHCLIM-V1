@@ -3401,80 +3401,53 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
         ["🗺️ Mapa Raster", "📍 Puntos (Estaciones)", "📐 Descarga Vectorial"]
     )
 
-    # --- PESTAÑA 1: MAPA RASTER (ZONAS DE VIDA + SIMULADOR TÉRMICO) ---
+    # --- PESTAÑA 1: MAPA RASTER (SIMULADOR CLIMÁTICO BIVARIADO) ---
     with tab_raster:
-        st.markdown("### 🏔️ Mapa de Zonas de Vida (Sistema Holdridge)")
+        st.markdown("### 🏔️ Mapa Dinámico de Zonas de Vida (Holdridge)")
         
-        # 🎛️ CONTROLES DEL SIMULADOR
-        col1, col2, col3 = st.columns([1.5, 1.5, 1])
+        # Recuperamos la geometría maestra del territorio
+        gdf_zona_activa = kwargs.get("gdf_zona", None)
+        
+        # 🎛️ CONTROLES DEL SIMULADOR ECOLÓGICO
+        col1, col2, col3, col4 = st.columns([1, 1.2, 1.2, 1.2])
         with col1:
-            res_option = st.select_slider(
-                "Resolución del Modelo:",
-                options=["Baja (Rápido)", "Media", "Alta (Lento)"],
-                value="Media",
-            )
+            res_option = st.select_slider("Resolución:", ["Baja", "Media", "Alta"], value="Media")
             downscale = 8 if "Baja" in res_option else (4 if "Media" in res_option else 1)
         with col2:
-            delta_t = st.slider(
-                "🌡️ Simulador: + °C (Cambio Climático)", 
-                min_value=0.0, max_value=4.0, value=0.0, step=0.5,
-                help="Aumenta la temperatura para observar la migración altitudinal de ecosistemas."
-            )
+            delta_t = st.slider("🌡️ Δ Temperatura (°C)", 0.0, 4.0, 0.0, 0.5)
         with col3:
-            map_style = st.selectbox(
-                "🗺️ Mapa Base:", 
-                ["carto-positron", "open-street-map", "stamen-terrain", "satellite"]
-            )
+            delta_p = st.slider("🌧️ Δ Precipitación (%)", -50.0, 50.0, 0.0, 5.0)
+        with col4:
+            map_style = st.selectbox("🗺️ Capa Base:", ["satellite", "carto-positron", "open-street-map"])
 
         st.markdown("---")
-        
-        c_mask1, c_mask2 = st.columns([1, 1])
+        c_mask1, c_mask2 = st.columns(2)
         with c_mask1:
-            use_mask = st.checkbox("✂️ Recortar por Cuenca Seleccionada", value=True)
+            use_mask = st.checkbox("✂️ Recortar por Cuenca y mostrar Divisoria", value=True)
         with c_mask2:
-            extraer_estaciones = st.checkbox("📍 Extraer Altitud de Estaciones (Pinchar DEM)", value=False)
+            extraer_estaciones = st.checkbox("📍 Mostrar Altitudes de Estaciones (DEM)", value=False)
 
-        basin_geom = None
-        if use_mask:
-            # Lógica de prioridades de máscara
-            res_basin = st.session_state.get("basin_res")
-            if res_basin and res_basin.get("ready"):
-                basin_geom = res_basin.get("gdf_cuenca", res_basin.get("gdf_union"))
-                st.success(f"✅ Máscara activa: {res_basin.get('names', 'Cuenca Específica')}")
-            elif gdf_subcuencas is not None and not gdf_subcuencas.empty:
-                basin_geom = gdf_subcuencas
-                st.info("ℹ️ Usando todas las subcuencas (Regional).")
-            else:
-                st.warning("⚠️ No se detectó ninguna geometría para recortar.")
+        # 🛡️ ASIGNACIÓN CORRECTA DE LA MÁSCARA
+        basin_geom = gdf_zona_activa if use_mask else None
+        
+        if use_mask and (basin_geom is None or basin_geom.empty):
+            st.warning("⚠️ No se ha detectado una cuenca seleccionada en el menú principal para recortar.")
 
-        if st.button("🚀 Generar Simulador de Zonas de Vida", use_container_width=True):
-            # --- VALIDACIÓN CRÍTICA (NUBE) ---
+        if st.button("🚀 Ejecutar Simulación de Zonas de Vida", use_container_width=True):
             if not dem_file or not ppt_file:
-                st.error("❌ Error: No se han cargado los mapas base desde Supabase.")
-                st.info("Por favor verifica que los archivos .tif estén subidos en el Panel de Administración.")
+                st.error("❌ Faltan los mapas raster base (DEM / Lluvia).")
             else:
-                with st.spinner(f"Calculando ecosistemas (+{delta_t}°C)..."):
+                with st.spinner(f"Cruzando termodinámica (+{delta_t}°C) y precipitación ({delta_p}%)..."):
                     try:
-                        # 1. 🧬 EJECUCIÓN DEL MOTOR DE HOLDRIDGE
-                        lz_arr, profile, dynamic_legend, color_map = (
-                            lz.generate_life_zone_map(
-                                dem_input=dem_file,   
-                                ppt_input=ppt_file,   
-                                mask_geometry=basin_geom if use_mask else None,
-                                downscale_factor=downscale,
-                                delta_temp=delta_t  # 🌡️ Inyección térmica
-                            )
+                        # 1. 🧬 MOTOR DE HOLDRIDGE BIVARIADO
+                        lz_arr, profile, dynamic_legend, color_map = lz.generate_life_zone_map(
+                            dem_input=dem_file, ppt_input=ppt_file,   
+                            mask_geometry=basin_geom, downscale_factor=downscale,
+                            delta_temp=delta_t, delta_ppt_pct=delta_p
                         )
 
                         if lz_arr is not None:
-                            # 2. 💾 GUARDAR EN ESTADO (SESIÓN)
-                            st.session_state.lz_raster_result = lz_arr
-                            st.session_state.lz_profile = profile
-                            st.session_state.lz_names = dynamic_legend
-                            st.session_state.lz_colors = color_map
-
-                            # 3. 🗺️ PREPARACIÓN DE GEOMETRÍAS (Raster a Vector para Plotly Mapbox)
-                            # Usamos la función nativa que creamos en life_zones.py para crear polígonos
+                            # 2. 🗺️ VECTORIZACIÓN PARA MAPBOX
                             gdf_poly = lz.vectorize_raster_to_gdf(lz_arr, profile["transform"], profile["crs"])
                             
                             if not gdf_poly.empty:
@@ -3484,77 +3457,80 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                                 color_discrete = {zona: color_map.get(k, "#000") for k, zona in dynamic_legend.items()}
                                 
                                 fig = px.choropleth_mapbox(
-                                    gdf_poly,
-                                    geojson=gdf_poly.geometry,
-                                    locations=gdf_poly.index,
-                                    color="zona_vida",
-                                    color_discrete_map=color_discrete,
+                                    gdf_poly, geojson=gdf_poly.geometry, locations=gdf_poly.index,
+                                    color="zona_vida", color_discrete_map=color_discrete,
                                     mapbox_style=map_style if map_style != "satellite" else "carto-positron",
                                     center={"lat": gdf_poly.geometry.centroid.y.mean(), "lon": gdf_poly.geometry.centroid.x.mean()},
-                                    zoom=9,
-                                    opacity=0.65,
-                                    labels={'zona_vida': 'Ecosistema'}
+                                    zoom=9, opacity=0.60, labels={'zona_vida': 'Ecosistema'}
                                 )
                                 
-                                # Si el usuario pidió satélite, hacemos el override del estilo
                                 if map_style == "satellite":
                                     fig.update_layout(mapbox_style="white-bg", mapbox_layers=[{
                                         "below": 'traces', "sourcetype": "raster",
-                                        "sourceattribution": "Esri",
                                         "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
                                     }])
                                 
-                                # 📍 Añadir ubicación del usuario (si existe)
-                                if user_loc:
-                                    fig.add_trace(go.Scattermapbox(
-                                        lat=[user_loc[0]], lon=[user_loc[1]], mode="markers+text",
-                                        marker=go.scattermapbox.Marker(size=15, color="black", symbol="star"),
-                                        text=["📍 TÚ ESTÁS AQUÍ"], textposition="top center", showlegend=False
-                                    ))
+                                # 🛡️ AGREGAR LA LÍNEA DIVISORIA DE LA CUENCA
+                                if use_mask and basin_geom is not None and not basin_geom.empty:
+                                    poly_wgs84 = basin_geom.to_crs(4326).unary_union
+                                    geoms = poly_wgs84.geoms if hasattr(poly_wgs84, "geoms") else [poly_wgs84]
+                                    for p in geoms:
+                                        bx, by = p.exterior.xy
+                                        fig.add_trace(go.Scattermapbox(
+                                            lon=list(bx), lat=list(by), mode="lines",
+                                            line=dict(color="#f1c40f", width=3), name="Divisoria",
+                                            hoverinfo='skip'
+                                        ))
                                 
-                                fig.update_layout(
-                                    margin={"r":0,"t":0,"l":0,"b":0}, 
-                                    height=650,
-                                    legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5)
-                                )
-                                
+                                fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=650, legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5))
                                 st.plotly_chart(fig, use_container_width=True)
 
-                                # 4. 📊 CÁLCULO DE ÁREAS EXACTAS Y TABLA DE RESULTADOS
-                                st.markdown("#### 📊 Distribución de Ecosistemas")
-                                # Reproyectamos temporalmente a metros (EPSG:3116 Colombia) para medir áreas
+                                # 3. 📊 ANÁLISIS DE ÁREAS Y CAJA INTELIGENTE
                                 gdf_poly['Area_ha'] = gdf_poly.to_crs(3116).area / 10000.0  
                                 resumen = gdf_poly.groupby('zona_vida')['Area_ha'].sum().reset_index().sort_values(by='Area_ha', ascending=False)
                                 resumen['%'] = (resumen['Area_ha'] / resumen['Area_ha'].sum()) * 100
                                 
-                                st.dataframe(resumen.style.format({'Area_ha': '{:,.1f}', '%': '{:.1f}%'}), use_container_width=True)
-
-                                # 5. 📍 EXTRACCIÓN DE ALTITUD PARA ESTACIONES (CORREGIDO)
-                                if extraer_estaciones:
-                                    st.markdown("#### 📍 Ecosistemas y Altitudes por Estación (Extraídas del DEM)")
+                                # 🤖 CAJA DE ANÁLISIS DINÁMICO
+                                ecosistema_dominante = resumen.iloc[0]['zona_vida']
+                                pct_dom = resumen.iloc[0]['%']
+                                
+                                st.markdown("---")
+                                st.info("🧠 **Análisis de Vulnerabilidad Ecológica**")
+                                
+                                txt_analisis = f"**Diagnóstico:** "
+                                if delta_t == 0 and delta_p == 0:
+                                    txt_analisis += "El mapa refleja la **línea base hidrometeorológica** del territorio. "
+                                else:
+                                    txt_analisis += f"El escenario proyecta un estrés térmico de **+{delta_t}°C** y una alteración hídrica del **{delta_p}%**. "
                                     
-                                    # 🛡️ CORRECCIÓN: Cambiamos gdf_filtered por gdf_stations, que es la variable local legítima
-                                    if gdf_stations is not None and not gdf_stations.empty:
-                                        with st.spinner("Pinchando topografía de estaciones..."):
-                                            # Pasamos gdf_stations al extractor
-                                            estaciones_alt = lz.extract_elevation_from_dem(gdf_stations, dem_file)
-                                            
-                                            # Mostrar resultados filtrando las columnas existentes
-                                            cols_mostrar = [c for c in ['id_estacion', 'nombre', 'altitud_dem'] if c in estaciones_alt.columns]
-                                            st.dataframe(estaciones_alt[cols_mostrar].dropna(), use_container_width=True)
-                                    else:
-                                        st.info("⚠️ No hay estaciones sincronizadas en el contexto actual para analizar.")
+                                    if delta_t > 0:
+                                        txt_analisis += "El aumento de temperatura evapora humedad y provoca un **desplazamiento altitudinal**, empujando ecosistemas cálidos hacia las cumbres. "
+                                    if delta_p < 0:
+                                        txt_analisis += "La contracción de lluvias induce un **secamiento acelerado**, transformando bosques de transición hacia el espectro seco. "
+                                    elif delta_p > 0:
+                                        txt_analisis += "El superávit pluviométrico compensa parte del estrés térmico, pero incrementa dramáticamente el potencial de erosión en laderas desprotegidas. "
                                         
-                                # 6. 📥 DESCARGA DEL TIFF RASTER
-                                tiff = lz.get_raster_bytes(lz_arr, profile)
-                                if tiff:
-                                    st.download_button("📥 Descargar Mapa Clasificado (.tif)", tiff, "zonas_vida_holdridge.tif", "image/tiff")
-
+                                txt_analisis += f"\n\nBajo estas condiciones de borde, el **{ecosistema_dominante}** se consolida como el bioma predominante, ocupando el **{pct_dom:.1f}%** de la cuenca."
+                                
+                                st.markdown(txt_analisis)
+                                
+                                c_tab1, c_tab2 = st.columns(2)
+                                with c_tab1:
+                                    st.markdown("#### 📈 Distribución Proyectada")
+                                    st.dataframe(resumen.style.format({'Area_ha': '{:,.1f}', '%': '{:.1f}%'}), use_container_width=True)
+                                
+                                with c_tab2:
+                                    if extraer_estaciones:
+                                        st.markdown("#### 📍 Estaciones Afectadas")
+                                        gdf_stations = kwargs.get("gdf_stations", None)
+                                        if gdf_stations is not None and not gdf_stations.empty:
+                                            estaciones_alt = lz.extract_elevation_from_dem(gdf_stations, dem_file)
+                                            cols_m = [c for c in ['id_estacion', 'nombre', 'altitud_dem'] if c in estaciones_alt.columns]
+                                            st.dataframe(estaciones_alt[cols_m].dropna(), use_container_width=True)
                             else:
-                                st.warning("El modelo matemático procesó los datos, pero la máscara recortó toda la geometría (quedó vacía).")
-
+                                st.warning("La simulación no arrojó geometrías válidas. Revisa los umbrales climáticos.")
                     except Exception as e:
-                        st.error(f"Error procesando el modelo espacial: {e}")
+                        st.error(f"Error procesando simulación: {e}")
 
     # --- PESTAÑA 2: PUNTOS (ESTACIONES) ---
     with tab_puntos: # <-- Busca esta línea en tu código
