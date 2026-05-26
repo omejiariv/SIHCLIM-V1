@@ -4002,10 +4002,10 @@ def display_drought_analysis_tab(df_long, gdf_stations, **kwargs):
 def display_climate_scenarios_tab(**kwargs):
     st.subheader("🌡️ Clima Futuro y Vulnerabilidad (CMIP6 / Riesgo)")
 
-    # Recuperamos datos maestros
+    # Recuperamos datos maestros de la sesión
     df_anual = kwargs.get("df_anual_melted")
     gdf_stations = kwargs.get("gdf_stations")
-    gdf_zona = kwargs.get("gdf_zona") 
+    gdf_zona = kwargs.get("gdf_zona") # 🛡️ Geometría oficial directa sin intermediarios
     
     basin_name = "Zona Seleccionada"
     if gdf_zona is not None and not gdf_zona.empty:
@@ -4024,25 +4024,41 @@ def display_climate_scenarios_tab(**kwargs):
         st.markdown(f"#### Vulnerabilidad Hídrica: Tendencias de Precipitación")
         st.caption(f"**Territorio Analizado:** {basin_name}")
 
-        with st.expander("ℹ️ Acerca del Motor de Interpolación", expanded=False):
+        with st.expander("ℹ️ Acerca del Motor Geoestadístico Seleccionado", expanded=False):
             st.markdown("""
-                * **IDW (Inverso de la Distancia):** Asigna mayor peso a las estaciones cercanas. Excelente para lluvia (Estándar IDEAM).
-                * **Spline (RBF):** Genera una superficie elástica ultra-suave. Ideal para visualizar tendencias macro.
-                * **Cúbica / Lineal:** Interpolaciones geométricas basadas en los triángulos entre estaciones.
+                * **Kriging (Ordinario):** Método probabilístico avanzado que asume continuidad espacial. Utiliza un semivariograma esférico adaptativo.
+                * **IDW (Distancia Inversa):** Algorítmica clásica donde las estaciones más próximas dominan el pixel (Estándar hidrológico IDEAM).
+                * **Spline (RBF):** Ajuste de membrana delgada de alta tensión para contornos y transiciones macro ultra-suaves.
             """)
 
-        # 🎛️ CONTROLES DEL MAPA (INCLUYE SELECTOR DE INTERPOLACIÓN)
+        # 🎛️ PANEL DE CONTROL MULTIVARIADO DEL GEMELO DIGITAL
         c1, c2, c3 = st.columns([1, 1.2, 1.2])
         with c1:
-            use_mask = st.checkbox("✂️ Recortar por polígono", value=True)
+            use_mask = st.checkbox("✂️ Recortar por polígono de cuenca", value=True, key="mask_geo_active")
         with c2:
-            interp_method = st.selectbox("🧠 Algoritmo de Interpolación:", 
-                                         ["IDW (Distancia Inversa)", "Spline (RBF)", "Cúbica", "Lineal"], index=0)
+            interp_method = st.selectbox(
+                "🧠 Algoritmo de Interpolación:", 
+                ["IDW (Distancia Inversa)", "Kriging (Ordinario)", "Spline (RBF)", "Cúbica", "Lineal"], 
+                index=1 # Kriging por defecto
+            )
         with c3:
-            generar_mapa = st.button("🚀 Generar Superficie", use_container_width=True)
+            map_style = st.selectbox(
+                "🗺️ Contexto Cartográfico Base:", 
+                ["open-street-map", "carto-positron", "carto-darkmatter", "white-bg"], 
+                index=0
+            )
 
-        if generar_mapa:
-            with st.spinner(f"Calculando Malla Espacial vía {interp_method}..."):
+        # 📡 INTERFAZ DINÁMICA DE CAPAS (Checkboxes de activación permanente)
+        st.markdown("<span style='font-size:0.85em; color:gray;'>🎛️ Conmutador de Capas del Mapa:</span>", unsafe_allow_html=True)
+        lc1, lc2, lc3 = st.columns(3)
+        with lc1: show_surf = st.checkbox("📈 Mostrar Superficie de Tendencia", value=True, key="lay_surf")
+        with lc2: show_div = st.checkbox("📍 Mostrar Límite Divisorio", value=True, key="lay_div")
+        with lc3: show_est = st.checkbox("⭐ Mostrar Estaciones Físicas", value=True, key="lay_est")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if st.button("🚀 Compilar Escenario de Vulnerabilidad Espacial", use_container_width=True):
+            with st.spinner(f"Sincronizando estaciones (internas + buffer) vía {interp_method}..."):
                 trend_data = []
                 if df_anual is not None:
                     stations_pool = df_anual[Config.STATION_NAME_COL].unique()
@@ -4063,8 +4079,8 @@ def display_climate_scenarios_tab(**kwargs):
                                         iloc = loc.iloc[0]
                                         muni = iloc.get(Config.MUNICIPALITY_COL, "Desconocido")
                                         
-                                        # Limitamos valores astronómicos que dañan el Spline
-                                        slope_clamped = max(min(slope, 1500.0), -1500.0) 
+                                        # Truncamiento de ruido/valores atípicos masivos
+                                        slope_clamped = max(min(slope, 1200.0), -1200.0) 
                                         
                                         trend_data.append({
                                             "lat": iloc["latitude"], "lon": iloc["longitude"],
@@ -4075,23 +4091,23 @@ def display_climate_scenarios_tab(**kwargs):
                             except:
                                 continue
 
-                # --- 🧮 PROCESO DE INTERPOLACIÓN AVANZADA ---
+                # --- 🧮 MOTOR DE CÓMPUTO ESPACIAL ---
                 if len(trend_data) >= 4:
                     df_trend = pd.DataFrame(trend_data)
 
-                    # Expandimos (Pad) el Bounding Box para que la interpolación cubra los bordes de la cuenca
-                    pad = 0.05
+                    # Forzado de márgenes (Pad) para evitar zonas muertas en los bordes divisorios
+                    pad = 0.04
                     if gdf_zona is not None and not gdf_zona.empty:
                         minx, miny, maxx, maxy = gdf_zona.to_crs(4326).total_bounds
                     else:
                         minx, maxx = df_trend.lon.min(), df_trend.lon.max()
                         miny, maxy = df_trend.lat.min(), df_trend.lat.max()
 
-                    # Malla de alta resolución (200x200 píxeles espaciales)
-                    grid_res = 200j
+                    # Resolución de malla geoespacial densa
+                    grid_res = 180j
                     grid_x, grid_y = np.mgrid[minx-pad:maxx+pad:grid_res, miny-pad:maxy+pad:grid_res]
 
-                    # 1. EJECUCIÓN DEL ALGORITMO SELECCIONADO
+                    # 👑 EJECUCIÓN CONDICIONAL DEL MODELO SELECCIONADO
                     if interp_method == "Lineal":
                         from scipy.interpolate import griddata
                         grid_z = griddata((df_trend.lon, df_trend.lat), df_trend.slope, (grid_x, grid_y), method='linear')
@@ -4102,30 +4118,61 @@ def display_climate_scenarios_tab(**kwargs):
                         
                     elif interp_method == "Spline (RBF)":
                         from scipy.interpolate import Rbf
-                        # RBF extrapola de forma elástica creando superficies muy suaves
                         rbf = Rbf(df_trend.lon, df_trend.lat, df_trend.slope, function='thin_plate', smooth=0.1)
                         grid_z = rbf(grid_x, grid_y)
                         
                     elif interp_method == "IDW (Distancia Inversa)":
                         from scipy.spatial import cKDTree
-                        # Búsqueda espacial rápida (KDTree) de las 6 estaciones más cercanas por cada pixel
                         tree = cKDTree(np.c_[df_trend.lon, df_trend.lat])
                         dist, idx = tree.query(np.c_[grid_x.ravel(), grid_y.ravel()], k=min(6, len(df_trend)))
-                        dist = np.maximum(dist, 1e-9) # Evitar división por cero
-                        weights = 1.0 / (dist**2) # Inverso de la distancia al cuadrado
-                        z_values = df_trend.slope.values[idx]
-                        grid_z_flat = np.sum(weights * z_values, axis=1) / np.sum(weights, axis=1)
+                        dist = np.maximum(dist, 1e-9)
+                        weights = 1.0 / (dist**2)
+                        grid_z_flat = np.sum(weights * df_trend.slope.values[idx], axis=1) / np.sum(weights, axis=1)
                         grid_z = grid_z_flat.reshape(grid_x.shape)
+                        
+                    elif interp_method == "Kriging (Ordinario)":
+                        try:
+                            # 🧪 Implementación matemática pura del Kriging Ordinario sobre numpy
+                            num_st = len(df_trend)
+                            st_coords = np.column_stack((df_trend.lon, df_trend.lat))
+                            st_dists = np.linalg.norm(st_coords[:, np.newaxis] - st_coords[np.newaxis, :], axis=2)
+                            
+                            # Calibración empírica adaptativa de rango y sill semivariográfico
+                            v_range = np.max(st_dists) * 0.65 if np.max(st_dists) > 0 else 1.0
+                            v_sill = np.var(df_trend.slope) if np.var(df_trend.slope) > 0 else 1.0
+                            
+                            def variograma_esferico(h):
+                                return np.where(h < v_range, v_sill * (1.5 * (h / v_range) - 0.5 * (h / v_range)**3), v_sill)
+                            
+                            # Forjado de la matriz de covarianza espacial A
+                            A_mat = variograma_esferico(st_dists)
+                            A_mat = np.vstack([A_mat, np.ones(num_st)])
+                            A_mat = np.column_stack([A_mat, np.ones(num_st + 1)])
+                            A_mat[-1, -1] = 0.0
+                            
+                            # Puntos objetivo de la grilla
+                            grid_points = np.column_stack((grid_x.ravel(), grid_y.ravel()))
+                            g_dists = np.linalg.norm(grid_points[:, np.newaxis, :] - st_coords[np.newaxis, :, :], axis=2)
+                            
+                            B_mat = variograma_esferico(g_dists)
+                            B_mat = np.column_stack([B_mat, np.ones(len(grid_points))])
+                            
+                            # Resolución matricial del estimador lineal insesgado (BLUE)
+                            W_weights = np.linalg.solve(A_mat, B_mat.T)
+                            grid_z_flat = np.dot(W_weights[:-1, :].T, df_trend.slope.values)
+                            grid_z = grid_z_flat.reshape(grid_x.shape)
+                        except:
+                            # Fallback de seguridad resiliente en caso de matriz singular
+                            from scipy.interpolate import griddata
+                            grid_z = griddata((df_trend.lon, df_trend.lat), df_trend.slope, (grid_x, grid_y), method='cubic')
 
-                    # 2. CONTROL DE VALORES EXTREMOS (ANTI-DESBORDAMIENTO RBF/SPLINE)
-                    # Si Spline se dispara en los bordes vacíos, lo truncamos al máximo real de las estaciones
+                    # Control y acotamiento de leyenda para simetría perfecta alrededor del cero
                     z_min_real, z_max_real = df_trend.slope.min(), df_trend.slope.max()
-                    grid_z = np.clip(grid_z, z_min_real * 1.5, z_max_real * 1.5)
-                    
-                    # Forzamos simetría en la leyenda para que el blanco sea cero exacto
+                    grid_z = np.clip(grid_z, z_min_real * 1.3, z_max_real * 1.3)
                     max_abs = max(abs(np.nanmin(grid_z)), abs(np.nanmax(grid_z)))
-                    
-                    # 3. MÁSCARA GEOMÉTRICA (Recorte de la forma exacta)
+                    if max_abs > 800: max_abs = 800 # Umbral representativo regional sugerido
+
+                    # --- MÁSCARA GEOMÉTRICA DE RECORTE ---
                     if use_mask and gdf_zona is not None and not gdf_zona.empty:
                         try:
                             from shapely.geometry import Point
@@ -4142,59 +4189,128 @@ def display_climate_scenarios_tab(**kwargs):
 
                             grid_z = flat_z.reshape(grid_x.shape)
                         except Exception as e:
-                            st.warning(f"Aviso: Fallo en recorte visual ({e})")
+                            st.warning(f"Aviso: Recorte territorial omitido ({e})")
 
-                    # --- CONSTRUCCIÓN DEL MAPA ---
+                    # --- CONSTRUCCIÓN INTELIGENTE DE CAPAS EN PLOTLY ---
                     fig = go.Figure()
+                    is_mapbox = map_style != "white-bg"
 
-                    # Capa Raster de Interpolación
-                    fig.add_trace(go.Contour(
-                        z=grid_z.T, x=grid_x[:, 0], y=grid_y[0, :],
-                        colorscale="RdBu_r", zmin=-max_abs, zmax=max_abs, opacity=0.8,
-                        contours=dict(showlines=False), 
-                        colorbar=dict(title="Pendiente<br>(mm/año)", thickness=15, len=0.8, x=1.02),
-                        connectgaps=False, hoverinfo='skip'
-                    ))
+                    # 🗺️ RAMAL A: RENDERIZADO EN MAPA VECTORIAL BASE (MAPBOX)
+                    if is_mapbox:
+                        # 1. Superficie Continua rasterizada de alta densidad
+                        if show_surf:
+                            fx, fy, fz = grid_x.flatten(), grid_y.flatten(), grid_z.flatten()
+                            val_m = ~np.isnan(fz)
+                            fig.add_trace(go.Scattermapbox(
+                                lon=fx[val_m], lat=fy[val_m], mode="markers",
+                                marker=dict(
+                                    size=4, color=fz[val_m], colorscale="RdBu_r",
+                                    cmin=-max_abs, cmax=max_abs, opacity=0.55,
+                                    colorbar=dict(title="Pendiente<br>(mm/año)", thickness=15, len=0.8, x=1.02)
+                                ),
+                                name="Tendencia Espacial", hoverinfo="skip"
+                            ))
+                        
+                        # 2. Línea Divisoria Cartográfica
+                        if show_div and gdf_zona is not None and not gdf_zona.empty:
+                            try:
+                                poly_wgs84 = gdf_zona.to_crs(4326).unary_union
+                                geoms = poly_wgs84.geoms if hasattr(poly_wgs84, "geoms") else [poly_wgs84]
+                                for i, p in enumerate(geoms):
+                                    bx, by = p.exterior.xy
+                                    fig.add_trace(go.Scattermapbox(
+                                        lon=list(bx), lat=list(by), mode="lines",
+                                        line=dict(color="#2c3e50", width=3.5),
+                                        name="Divisoria de Cuenca" if i == 0 else "",
+                                        showlegend=(i == 0), hoverinfo='skip'
+                                    ))
+                            except: pass
 
-                    # Capa de Puntos (Estaciones)
-                    df_trend["line_width"] = df_trend["p"].apply(lambda x: 2.5 if x < 0.05 else 0.8)
-                    fig.add_trace(go.Scatter(
-                        x=df_trend.lon, y=df_trend.lat, mode="markers",
-                        text=df_trend.apply(
-                            lambda r: f"<b>{r['name']}</b><br>Tendencia real: {r['slope_raw']:.1f} mm/año<br>Confianza: {r['sig']}", axis=1),
-                        hoverinfo="text",
-                        marker=dict(size=9, color="#FFFD01", line=dict(width=df_trend["line_width"], color="black")),
-                        name="Estaciones"
-                    ))
+                        # 3. Estaciones Físicas de Control
+                        if show_est:
+                            fig.add_trace(go.Scattermapbox(
+                                lon=df_trend.lon, lat=df_trend.lat, mode="markers",
+                                text=df_trend.apply(lambda r: f"<b>{r['name']}</b><br>Municipio: {r['municipio']}<br>Tendencia: {r['slope_raw']:.1f} mm/año<br>Confianza: {r['sig']}", axis=1),
+                                hoverinfo="text",
+                                marker=dict(size=11, color="#FFFD01", opacity=1.0),
+                                name="Estaciones (Red Sincronizada)"
+                            ))
 
-                    # Línea Divisoria de la Cuenca/Municipio
-                    if gdf_zona is not None and not gdf_zona.empty:
-                        try:
-                            poly_wgs84 = gdf_zona.to_crs(4326).unary_union
-                            geoms = poly_wgs84.geoms if hasattr(poly_wgs84, "geoms") else [poly_wgs84]
-                            for i, p in enumerate(geoms):
-                                bx, by = p.exterior.xy
-                                fig.add_trace(go.Scatter(
-                                    x=list(bx), y=list(by), mode="lines",
-                                    line=dict(color="#2c3e50", width=3),
-                                    name="Límite Divisorio" if i == 0 else "",
-                                    showlegend=(i == 0), hoverinfo='skip'
-                                ))
-                        except: pass
+                        # Configuración del Layout del Mapa
+                        fig.update_layout(
+                            mapbox=dict(
+                                style=map_style,
+                                center=dict(lat=df_trend.lat.mean(), lon=df_trend.lon.mean()),
+                                zoom=9.2
+                            ),
+                            margin=dict(l=0, r=30, t=30, b=0), height=720,
+                            legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5)
+                        )
 
-                    fig.update_layout(
-                        title=dict(text=f"Tendencias (Interpolación: {interp_method})", font=dict(size=18)),
-                        xaxis=dict(showgrid=False, zeroline=False, visible=False),
-                        yaxis=dict(showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1, visible=False),
-                        height=700, margin=dict(l=0, r=50, t=50, b=0),
-                        legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5),
-                        plot_bgcolor='#e8f4f8'
-                    )
+                    # 🎨 RAMAL B: RENDERIZADO EN MODO CARTESIANO TRADICIONAL DE ISOLÍNEAS
+                    else:
+                        if show_surf:
+                            fig.add_trace(go.Contour(
+                                z=grid_z.T, x=grid_x[:, 0], y=grid_y[0, :],
+                                colorscale="RdBu_r", zmin=-max_abs, zmax=max_abs, opacity=0.85,
+                                contours=dict(showlines=False), 
+                                colorbar=dict(title="Pendiente<br>(mm/año)", thickness=15, len=0.8, x=1.02),
+                                connectgaps=False, hoverinfo='skip'
+                            ))
+
+                        if show_div and gdf_zona is not None and not gdf_zona.empty:
+                            try:
+                                poly_wgs84 = gdf_zona.to_crs(4326).unary_union
+                                geoms = poly_wgs84.geoms if hasattr(poly_wgs84, "geoms") else [poly_wgs84]
+                                for i, p in enumerate(geoms):
+                                    bx, by = p.exterior.xy
+                                    fig.add_trace(go.Scatter(
+                                        x=list(bx), y=list(by), mode="lines",
+                                        line=dict(color="#2c3e50", width=3),
+                                        name="Límite Territorial" if i == 0 else "",
+                                        showlegend=(i == 0), hoverinfo='skip'
+                                    ))
+                            except: pass
+
+                        if show_est:
+                            df_trend["line_width"] = df_trend["p"].apply(lambda x: 2.5 if x < 0.05 else 0.8)
+                            fig.add_trace(go.Scatter(
+                                x=df_trend.lon, y=df_trend.lat, mode="markers",
+                                text=df_trend.apply(lambda r: f"<b>{r['name']}</b><br>Tendencia real: {r['slope_raw']:.1f} mm/año<br>Confianza: {r['sig']}", axis=1),
+                                hoverinfo="text",
+                                marker=dict(size=9, color="#FFFD01", line=dict(width=df_trend["line_width"], color="black")),
+                                name="Estaciones"
+                            ))
+
+                        fig.update_layout(
+                            title=dict(text=f"Superficie de Vulnerabilidad: {basin_name}", font=dict(size=16)),
+                            xaxis=dict(showgrid=False, zeroline=False, visible=False),
+                            yaxis=dict(showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1, visible=False),
+                            height=700, margin=dict(l=0, r=50, t=50, b=0),
+                            legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5),
+                            plot_bgcolor='#e8f4f8'
+                        )
 
                     st.plotly_chart(fig, use_container_width=True)
 
+                    # --- CONSOLA DE DESCARGAS MULTIFORMATO ---
+                    st.success(f"Análisis geoestadístico completado con éxito para {len(trend_data)} estaciones.")
+                    cd1, cd2 = st.columns(2)
+                    with cd1:
+                        st.download_button(
+                            "📥 Exportar Tendencias (JSON)", 
+                            df_trend.to_json(orient="records"), 
+                            "vulnerabilidad_puntos.json", "application/json", use_container_width=True
+                        )
+                    with cd2:
+                        df_grid = pd.DataFrame({"lon": grid_x.flatten(), "lat": grid_y.flatten(), "slope": grid_z.flatten()}).dropna()
+                        st.download_button(
+                            "📥 Exportar Capa Raster (CSV)", 
+                            df_grid.to_csv(index=False), 
+                            "vulnerabilidad_espacial.csv", "text/csv", use_container_width=True
+                        )
                 else:
-                    st.error("⚠️ Se requieren al menos 4 estaciones válidas.")
+                    st.error("⚠️ Se requieren al menos 4 estaciones con series históricas para interpolar el espacio.")
                     
     # --- TAB 2: SIMULADOR CMIP6 (MANTENIDO IGUAL) ---
     with tab_cmip6:
