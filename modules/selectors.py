@@ -379,18 +379,17 @@ def render_selector_espacial():
             nombre_zona, gdf_zona = "Antioquia", gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_mun.unary_union], crs=gdf_mun.crs)
             nivel_jerarquico = "Departamental" 
 
-        # --- FILTRADO DE ESTACIONES CON CONTROLES DE BUFFER DINÁMICOS ACENTUADOS ---
+        # --- FILTRO DE ESTACIONES (CON CONEXIÓN DINÁMICA AL BUFFER) ---
         if gdf_zona is not None and not gdf_zona.empty:
             buff = st.slider("Buffer (km):", 0.0, 50.0, 25.0)
             
-            # Extraemos los límites geográficos estrictos del territorio en WGS84
+            # 1. Extraemos los límites geográficos del territorio seleccionado
             minx, miny, maxx, maxy = gdf_zona.to_crs(4326).total_bounds
             
-            # 🛡️ CONVERSIÓN EQUIVALENTE: En la zona ecuatorial de Antioquia, 1 km equivale aproximadamente a 0.009 grados decimales.
-            # Convertimos el valor dinámico del slider 'buff' a grados de tolerancia para la consulta espacial
+            # 2. Convertimos el valor del slider (km) a su equivalente aproximado en grados decimales
             tolerancia_grados = buff * 0.009
             
-            # Inyectamos la variable 'tolerancia_grados' calculada directamente en la ventana SQL
+            # 3. Inyectamos la tolerancia dinámica en la consulta SQL
             q = text(f"""
                 SELECT id_estacion, altitud 
                 FROM estaciones 
@@ -403,7 +402,7 @@ def render_selector_espacial():
                 ids_estaciones = df_est['id_estacion'].astype(str).tolist()
                 altitud_ref = df_est['altitud'].mean()
             except Exception as e:
-                st.sidebar.error(f"Error en consulta de estaciones por buffer: {e}")
+                st.sidebar.error(f"Error consulta buffer SQL: {e}")
                 ids_estaciones = []
 
     # ====================================================================
