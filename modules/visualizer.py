@@ -4041,12 +4041,14 @@ def display_climate_scenarios_tab(**kwargs):
                 """
             )
 
-        c1, c2 = st.columns(2)
-        use_mask = c1.checkbox(
-            "Recortar por Cuenca Seleccionada", value=True, key="risk_mask_cb"
-        )
+        # Optimización UI: Controles en la misma línea
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            use_mask = st.checkbox("Recortar por Cuenca Seleccionada", value=True, key="risk_mask_cb")
+        with c2:
+            generar_mapa = st.button("🚀 Generar Mapa de Vulnerabilidad", use_container_width=True)
 
-        if st.button("🚀 Generar Mapa de Vulnerabilidad"):
+        if generar_mapa:
             with st.spinner("Ejecutando análisis regional de Mann-Kendall..."):
                 trend_data = []
                 if df_anual is not None:
@@ -4055,10 +4057,12 @@ def display_climate_scenarios_tab(**kwargs):
                     for stn in stations_pool:
                         sub = df_anual[df_anual[Config.STATION_NAME_COL] == stn]
                         
-                        # 1. Llamada al motor estadístico modular (Blindado)
-                        # Retorna: trend_type, p_val, slope, icon, sig_text
-                        res_mk = calcular_tendencia_mk_estacion(sub[Config.PRECIPITATION_COL])
-                        trend_type, p_val, slope, icon, sig_text = res_mk
+                        # 1. Llamada al motor estadístico modular
+                        try:
+                            res_mk = calcular_tendencia_mk_estacion(sub[Config.PRECIPITATION_COL])
+                            trend_type, p_val, slope, icon, sig_text = res_mk
+                        except Exception:
+                            continue # Si falla la estadística de una estación, saltar a la siguiente
                         
                         if trend_type != "Insuficiente":
                             try:
@@ -4088,7 +4092,7 @@ def display_climate_scenarios_tab(**kwargs):
                 if len(trend_data) >= 4:
                     df_trend = pd.DataFrame(trend_data)
 
-                    # Configuración de Grilla (Resolución mejorada)
+                    # Configuración de Grilla 
                     grid_res = 200j
                     grid_x, grid_y = np.mgrid[
                         df_trend.lon.min() - 0.05 : df_trend.lon.max() + 0.05 : grid_res,
@@ -4131,14 +4135,15 @@ def display_climate_scenarios_tab(**kwargs):
                     fig = go.Figure()
 
                     # 1. Capa de Contorno (Tendencia)
+                    # CORRECCIÓN: Se eliminó project_z=True que causaba el ValueError
                     fig.add_trace(go.Contour(
                         z=grid_z.T,
                         x=grid_x[:, 0],
                         y=grid_y[0, :],
-                        colorscale="RdBu", # Rojo (Baja) a Azul (Sube)
+                        colorscale="RdBu_r", # Invertido para que rojo sea negativo y azul positivo
                         zmid=0,
                         opacity=0.85,
-                        contours=dict(showlines=False, project_z=True),
+                        contours=dict(showlines=False), 
                         colorbar=dict(
                             title="Pendiente (mm/año)",
                             thickness=20,
@@ -4150,7 +4155,6 @@ def display_climate_scenarios_tab(**kwargs):
                     ))
 
                     # 2. Capa de Estaciones (Indicadores de Calidad)
-                    # El ancho de línea (line_width) representa la significancia estadística
                     df_trend["line_width"] = df_trend["p"].apply(lambda x: 2.5 if x < 0.05 else 0.8)
                     
                     fig.add_trace(go.Scatter(
@@ -4164,7 +4168,7 @@ def display_climate_scenarios_tab(**kwargs):
                         hoverinfo="text",
                         marker=dict(
                             size=11,
-                            color="#FFFD01", # Amarillo puro para máximo contraste
+                            color="#FFFD01", 
                             line=dict(width=df_trend["line_width"], color="black")
                         ),
                         name="Estaciones"
@@ -4173,8 +4177,10 @@ def display_climate_scenarios_tab(**kwargs):
                     # 3. Línea de Contorno de Cuenca
                     if basin_geom is not None:
                         try:
-                            # Soporte para Polygon y MultiPolygon
+                            # Soporte seguro para Polygon y MultiPolygon
+                            poly = basin_geom.unary_union if hasattr(basin_geom, "unary_union") else basin_geom
                             geoms = poly.geoms if hasattr(poly, "geoms") else [poly]
+                            
                             for i, p in enumerate(geoms):
                                 bx, by = p.exterior.xy
                                 fig.add_trace(go.Scatter(
@@ -4185,7 +4191,8 @@ def display_climate_scenarios_tab(**kwargs):
                                     showlegend=(i == 0),
                                     hoverinfo='skip'
                                 ))
-                        except: pass
+                        except Exception: 
+                            pass
 
                     # Ajustes de Layout Profesionales
                     fig.update_layout(
@@ -4204,14 +4211,22 @@ def display_climate_scenarios_tab(**kwargs):
                     st.success(f"Análisis completado para {len(trend_data)} estaciones.")
                     cd1, cd2 = st.columns(2)
                     with cd1:
-                        st.download_button("📥 Descargar Tendencias (JSON)", 
-                                           df_trend.to_json(orient="records"), 
-                                           "vulnerabilidad_puntos.json", "application/json")
+                        st.download_button(
+                            "📥 Descargar Tendencias (JSON)", 
+                            df_trend.to_json(orient="records"), 
+                            "vulnerabilidad_puntos.json", 
+                            "application/json",
+                            use_container_width=True
+                        )
                     with cd2:
                         df_grid = pd.DataFrame({"lon": grid_x.flatten(), "lat": grid_y.flatten(), "slope": grid_z.flatten()}).dropna()
-                        st.download_button("📥 Descargar Grilla (CSV)", 
-                                           df_grid.to_csv(index=False), 
-                                           "vulnerabilidad_espacial.csv", "text/csv")
+                        st.download_button(
+                            "📥 Descargar Grilla (CSV)", 
+                            df_grid.to_csv(index=False), 
+                            "vulnerabilidad_espacial.csv", 
+                            "text/csv",
+                            use_container_width=True
+                        )
                 else:
                     st.error("⚠️ Se requieren al menos 4 estaciones con series históricas (>10 años) para generar la interpolación regional.")
                     
