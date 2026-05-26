@@ -83,7 +83,7 @@ try:
     from modules.config import Config
     from modules.db_manager import get_engine
     from modules.data_processor import complete_series, load_and_process_all_data
-    from modules.reporter import generate_pdf_report
+    from modules import reporter
     from modules import selectors
     from modules import visualizer as viz
     
