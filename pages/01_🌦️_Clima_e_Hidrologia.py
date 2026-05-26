@@ -348,7 +348,13 @@ def main():
                 df_anual.columns = ['Año', 'Precipitación', 'Meses_Validos']
                 
                 # Criterio estricto: El año debe tener al menos 10 meses con mediciones reales y más de 50 mm acumulados
-                df_integro = df_anual[(df_anual['Meses_Validos'] >= 10) & (df_anual['Precipitación'] > 50.0)]
+                # 🛡️ PASO 3: AGRUPACIÓN Y COMPRENSIÓN ANUAL (BLINDAJE ANDINO)
+                df_anual = df_est.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
+                df_anual.columns = ['Año', 'Precipitación', 'Meses_Validos']
+
+                # Exigimos un mínimo de 10 meses válidos Y una precipitación anual lógica para la región (> 700 mm)
+                # Esto descarta de inmediato años con sensores bloqueados o descalibrados en baja escala.
+                df_integro = df_anual[(df_anual['Meses_Validos'] >= 10) & (df_anual['Precipitación'] > 700.0)]
                 
                 # --- DISEÑO DEL PANEL DE CONTROL FORENSE ---
                 col_panel1, col_panel2 = st.columns([1.5, 2])
