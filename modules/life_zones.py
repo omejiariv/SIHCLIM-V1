@@ -86,10 +86,9 @@ def classify_life_zone_alt_ppt(altitude, ppt):
 
 _vectorized_classify = np.vectorize(classify_life_zone_alt_ppt)
 
-def generate_life_zone_map(dem_input, ppt_input, mask_geometry=None, downscale_factor=4, delta_temp=0.0):
+def generate_life_zone_map(dem_input, ppt_input, mask_geometry=None, downscale_factor=4, delta_temp=0.0, delta_ppt_pct=0.0):
     """
-    Genera el raster con soporte para Delta de Temperatura (Migración Altitudinal)
-    y enmascaramiento estricto por polígono.
+    Genera mapa raster con Simulador Bivariado (ΔT y ΔPpt) y recorte estricto.
     """
     try:
         if downscale_factor is None or downscale_factor <= 0: downscale_factor = 1
@@ -99,8 +98,6 @@ def generate_life_zone_map(dem_input, ppt_input, mask_geometry=None, downscale_f
             dst_width = max(1, dem_src.width // downscale_factor)
             dst_height = max(1, dem_src.height // downscale_factor)
 
-            # 🛡️ CORRECCIÓN: Usamos siempre los límites originales del DEM para mantener la escala del pixel.
-            # El "molde de galletas" (recorte) se aplicará limpiamente al final del proceso.
             dst_transform, dst_width, dst_height = calculate_default_transform(
                 dem_src.crs, dst_crs, dem_src.width, dem_src.height, 
                 *dem_src.bounds, dst_width=dst_width, dst_height=dst_height
@@ -108,42 +105,41 @@ def generate_life_zone_map(dem_input, ppt_input, mask_geometry=None, downscale_f
 
             dem_resampled = np.empty((dst_height, dst_width), dtype=np.float32)
             reproject(
-                source=rasterio.band(dem_src, 1),
-                destination=dem_resampled,
-                src_transform=dem_src.transform,
-                src_crs=dem_src.crs,
-                dst_transform=dst_transform,
-                dst_crs=dst_crs,
-                resampling=Resampling.bilinear,
+                source=rasterio.band(dem_src, 1), destination=dem_resampled,
+                src_transform=dem_src.transform, src_crs=dem_src.crs,
+                dst_transform=dst_transform, dst_crs=dst_crs, resampling=Resampling.bilinear,
             )
 
         with open_raster_source(ppt_input) as ppt_src:
             ppt_resampled = np.empty((dst_height, dst_width), dtype=np.float32)
             reproject(
-                source=rasterio.band(ppt_src, 1),
-                destination=ppt_resampled,
-                src_transform=ppt_src.transform,
-                src_crs=ppt_src.crs,
-                dst_transform=dst_transform,
-                dst_crs=dst_crs,
-                resampling=Resampling.average,
+                source=rasterio.band(ppt_src, 1), destination=ppt_resampled,
+                src_transform=ppt_src.transform, src_crs=ppt_src.crs,
+                dst_transform=dst_transform, dst_crs=dst_crs, resampling=Resampling.average,
             )
 
-        # 🌡️ Inyección de Cambio Climático: 1°C = -154m de altitud equivalente
+        # ---------------------------------------------------------------------
+        # 🌡️🌧️ SIMULADOR BIVARIADO DE CAMBIO CLIMÁTICO
+        # ---------------------------------------------------------------------
+        # 1. TEMPERATURA: 1°C = -154m de altitud equivalente
         shift_metros = delta_temp * (100.0 / 0.65)
         dem_simulado = dem_resampled - shift_metros
 
+        # 2. PRECIPITACIÓN: Variación porcentual
+        ppt_simulado = ppt_resampled * (1.0 + (delta_ppt_pct / 100.0))
+
+        # 3. Clasificación con variables alteradas
         dem_mask = np.isnan(dem_resampled)
         ppt_mask = np.isnan(ppt_resampled)
-        valid_mask = (~dem_mask) & (~ppt_mask) & (dem_resampled > -500) & (ppt_resampled >= 0)
+        valid_mask = (~dem_mask) & (~ppt_mask) & (dem_resampled > -500) & (ppt_simulado >= 0)
 
         classified_raster = np.zeros((dst_height, dst_width), dtype=np.int16)
 
         if np.any(valid_mask):
-            zone_ints = _vectorized_classify(dem_simulado[valid_mask], ppt_resampled[valid_mask])
+            zone_ints = _vectorized_classify(dem_simulado[valid_mask], ppt_simulado[valid_mask])
             classified_raster[valid_mask] = zone_ints.astype(np.int16)
 
-        # ✂️ Recorte Perfecto (Máscara Vectorial)
+        # ✂️ Máscara Vectorial de Recorte
         if mask_geometry is not None and not mask_geometry.empty:
             try:
                 mask_reproj = mask_geometry.to_crs(dst_crs)
@@ -156,21 +152,18 @@ def generate_life_zone_map(dem_input, ppt_input, mask_geometry=None, downscale_f
             except Exception as e:
                 st.warning(f"Error en recorte vectorial: {e}")
 
-        # 5. Perfil de salida
         output_profile = {
             "driver": "GTiff", "dtype": "int16", "nodata": 0,
             "width": dst_width, "height": dst_height, "count": 1,
             "crs": dst_crs, "transform": dst_transform, "compress": "lzw",
         }
 
-        # 🛡️ CORRECCIÓN: Volvemos a retornar 4 valores estrictamente
         return classified_raster, output_profile, holdridge_int_to_name_simplified, holdridge_colors
 
     except Exception as e:
         st.error(f"Error generando mapa de Holdridge: {e}")
-        # 🛡️ CORRECCIÓN: Retornamos 4 Nones
         return None, None, None, None
-
+        
 def vectorize_raster_to_gdf(raster_array, transform, crs):
     try:
         mask = raster_array != 0
