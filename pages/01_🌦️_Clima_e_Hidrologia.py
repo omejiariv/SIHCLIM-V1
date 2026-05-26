@@ -1,127 +1,80 @@
-# pages/01_🌦️_Clima_e_Hidrologia.py
-
-import io
 import os
 import sys
-
-# --- PARCHE UNIVERSAL PARA WINDOWS/PROJ (GDAL HELL) ---
-if os.name == 'nt':
-    try:
-        import pyproj
-        os.environ['PROJ_LIB'] = pyproj.datadir.get_data_dir()
-    except: pass
-# ------------------------------------------------------
-
 import warnings
-import pandas as pd
-import numpy as np
+import io
 import streamlit as st
+import pandas as pd  # 🛡️ Importación obligatoria al inicio
+import numpy as np
 import plotly.graph_objects as go
 from sqlalchemy import text
 import geopandas as gpd
 from rasterio.io import MemoryFile
 
-# --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
-try:
-    from modules import selectors
-    from modules.admin_utils import init_supabase
-except ImportError:
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from modules import selectors
-    from modules.admin_utils import init_supabase
-    
-# --- 1. CONFIGURACIÓN DE PÁGINA ---
+# 1. CONFIGURACIÓN DE PÁGINA (PRIMERA LÍNEA SIEMPRE)
 st.set_page_config(page_title="SIHCLI-POTER", page_icon="🌦️", layout="wide")
 warnings.filterwarnings("ignore")
 
-# ==========================================
-# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
-# ==========================================
+# 2. PARCHE UNIVERSAL (GDAL/PROJ)
+if os.name == 'nt':
+    try:
+        import pyproj
+        os.environ['PROJ_LIB'] = pyproj.datadir.get_data_dir()
+    except: pass
+
+# 3. IMPORTACIÓN ROBUSTA DE MÓDULOS (PATH FIX)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from modules import selectors, admin_utils, reporter, visualizer as viz
+from modules.config import Config
+from modules.db_manager import get_engine
+from modules.data_processor import complete_series, load_and_process_all_data
+
+# Intentar cargar módulos avanzados
+try:
+    from modules import hydro_physics as physics
+    from modules.admin_utils import download_raster_to_temp
+    from modules.analysis import calculate_trends_mann_kendall
+    PHYSICS_AVAILABLE = True
+except ImportError as e:
+    PHYSICS_AVAILABLE = False
+    st.toast(f"⚠️ Módulos avanzados limitados: {e}", icon="⚠️")
+
+# 4. MENÚ DE NAVEGACIÓN
 selectors.renderizar_menu_navegacion("Clima e Hidrología")
 
-# ==============================================================================
-# 📡 1. CONEXIÓN SATELITAL (AUTO-FETCH ENSO DIRECTO A NOAA)
-# ==============================================================================
+# 5. SINCRONIZACIÓN CLIMÁTICA (NOAA/IRI)
 if 'enso_fase' not in st.session_state:
     try:
         from modules.climate_api import get_iri_enso_forecast
-        df_enso_ini, meta = get_iri_enso_forecast()
-        
-        if df_enso_ini is not None and not df_enso_ini.empty:
-            fila_actual = df_enso_ini.iloc[0]
-            prob_nina = float(fila_actual.get('La Niña', 0))
-            prob_neutro = float(fila_actual.get('Neutral', 0))
-            prob_nino = float(fila_actual.get('El Niño', 0))
-            trimestre_sel = str(fila_actual.get('Trimestre', 'N/A'))
-            
-            if prob_nina > 50: estado_actual = "Niña 🌧️"
-            elif prob_nino > 50: estado_actual = "Niño ☀️"
-            else: estado_actual = "Neutro ⚖️"
-            
-            st.session_state['enso_fase'] = estado_actual
-            st.session_state['aleph_iri_nino'] = int(prob_nino)
-            st.session_state['aleph_iri_neutro'] = int(prob_neutro)
-            st.session_state['aleph_iri_nina'] = int(prob_nina)
-            st.session_state['aleph_iri_trimestre'] = trimestre_sel
-            st.session_state['aleph_iri_tendencia'] = "Sincronización Exitosa"
-            
-            st.toast(f"📡 Clima Global Sincronizado: {estado_actual} ({trimestre_sel})", icon="✅")
-        else:
-            raise ValueError("Tabla vacía")
+        df_enso, _ = get_iri_enso_forecast()
+        if df_enso is not None and not df_enso.empty:
+            f = df_enso.iloc[0]
+            st.session_state.update({
+                'enso_fase': "Niña 🌧️" if f.get('La Niña', 0) > 50 else ("Niño ☀️" if f.get('El Niño', 0) > 50 else "Neutro ⚖️"),
+                'aleph_iri_nino': int(f.get('El Niño', 0)),
+                'aleph_iri_neutro': int(f.get('Neutral', 0)),
+                'aleph_iri_nina': int(f.get('La Niña', 0)),
+                'aleph_iri_trimestre': str(f.get('Trimestre', 'N/A'))
+            })
+            st.toast(f"📡 Clima Global Sincronizado: {st.session_state['enso_fase']}", icon="✅")
+    except Exception:
+        st.session_state.update({'enso_fase': "Neutro ⚖️", 'aleph_iri_nino': 0, 'aleph_iri_neutro': 100, 'aleph_iri_nina': 0})
+        st.toast("⚠️ Usando clima Neutro por fallo de conexión.", icon="🔌")
 
-    except Exception as e:
-        st.session_state['enso_fase'] = "Neutro ⚖️"
-        st.session_state['aleph_iri_nino'] = 0
-        st.session_state['aleph_iri_neutro'] = 100
-        st.session_state['aleph_iri_nina'] = 0
-        st.session_state['aleph_iri_trimestre'] = "N/A"
-        st.session_state['aleph_iri_tendencia'] = "Modo desconectado"
-        st.toast("⚠️ Usando clima Neutro por fallo de conexión con NOAA.", icon="🔌")
-
-# --- 2. IMPORTACIONES ROBUSTAS ---
-try:
-    from modules.config import Config
-    from modules.db_manager import get_engine
-    from modules.data_processor import complete_series, load_and_process_all_data
-    from modules import reporter
-    from modules import selectors
-    from modules import visualizer as viz
-    
-    try:
-        from modules import hydro_physics as physics
-        from modules.admin_utils import download_raster_to_temp
-        PHYSICS_AVAILABLE = True
-    except ImportError as e:
-        PHYSICS_AVAILABLE = False
-        st.toast(f"⚠️ Módulos físicos limitados: {e}", icon="⚠️")
-
-    try:
-        from modules.analysis import calculate_trends_mann_kendall
-    except ImportError:
-        calculate_trends_mann_kendall = None
-
-except Exception as e:
-    st.error(f"❌ Error Crítico de Importación: {e}")
-    st.stop()
-
-# --- FUNCIÓN MAESTRA DE CARGA ---
+# 6. CACHÉ DE RASTERS (OPTIMIZADO)
 @st.cache_resource(show_spinner=False)
 def cargar_raster_db(filename):
     try:
-        client = init_supabase()
-        file_bytes = client.storage.from_("rasters").download(filename)
-        return io.BytesIO(file_bytes)
-    except Exception as e:
-        return None
+        client = admin_utils.init_supabase()
+        return io.BytesIO(client.storage.from_("rasters").download(filename))
+    except: return None
 
-# --- 3. CARGA DE DATOS UNIFICADA ---
-@st.cache_resource(show_spinner="📡 Consultando Sistema de Información...", ttl=3600)
+@st.cache_resource(show_spinner="📡 Consultando Sistema...")
 def load_all_data_cached():
     return load_and_process_all_data()
 
-# ==============================================================================
+# ==========================================
 # APLICACIÓN PRINCIPAL
-# ==============================================================================
+# ==========================================
 def main():
     
     # --- A. SELECTOR ESPACIAL ---
