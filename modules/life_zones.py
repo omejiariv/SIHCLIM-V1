@@ -160,17 +160,20 @@ def generate_life_zone_map(dem_input, ppt_input, mask_geometry=None, downscale_f
             except Exception as e:
                 st.warning(f"Error en recorte vectorial: {e}")
 
+        # 5. Perfil de salida
         output_profile = {
             "driver": "GTiff", "dtype": "int16", "nodata": 0,
             "width": dst_width, "height": dst_height, "count": 1,
             "crs": dst_crs, "transform": dst_transform, "compress": "lzw",
         }
 
-        return classified_raster, output_profile, holdridge_int_to_name_simplified, holdridge_colors, dst_transform
+        # 🛡️ CORRECCIÓN: Volvemos a retornar 4 valores estrictamente
+        return classified_raster, output_profile, holdridge_int_to_name_simplified, holdridge_colors
 
     except Exception as e:
         st.error(f"Error generando mapa de Holdridge: {e}")
-        return None, None, None, None, None
+        # 🛡️ CORRECCIÓN: Retornamos 4 Nones
+        return None, None, None, None
 
 def vectorize_raster_to_gdf(raster_array, transform, crs):
     try:
