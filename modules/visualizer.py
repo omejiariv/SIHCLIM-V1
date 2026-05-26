@@ -3532,11 +3532,14 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                                 # 5. 📍 EXTRACCIÓN DE ALTITUD PARA ESTACIONES
                                 if extraer_estaciones:
                                     st.markdown("#### 📍 Ecosistemas y Altitudes por Estación (Extraídas del DEM)")
-                                    # Intentamos recuperar las estaciones de la sesión o variables locales
-                                    if 'gdf_filtered' in locals() and not gdf_filtered.empty:
+                                    
+                                    # Verificamos directamente tu variable oficial de estaciones filtradas
+                                    if gdf_filtered is not None and not gdf_filtered.empty:
                                         with st.spinner("Pinchando topografía de estaciones..."):
+                                            # Llamamos al extractor
                                             estaciones_alt = lz.extract_elevation_from_dem(gdf_filtered, dem_file)
-                                            # Mostrar resultados
+                                            
+                                            # Extraer datos para visualizar en tabla
                                             cols_mostrar = [c for c in ['id_estacion', 'nombre', 'altitud_dem'] if c in estaciones_alt.columns]
                                             st.dataframe(estaciones_alt[cols_mostrar].dropna(), use_container_width=True)
                                     else:
