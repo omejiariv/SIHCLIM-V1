@@ -1,7 +1,6 @@
 import os
 import tempfile
-import matplotlib.pyplot as plt
-from datetime import datetime
+import plotly.io as pio
 from fpdf import FPDF
 from modules.config import Config
 
@@ -13,10 +12,10 @@ class PDFReport(FPDF):
             if os.path.exists(Config.LOGO_PATH):
                 self.image(Config.LOGO_PATH, 10, 8, 15)
             self.set_font("Arial", "B", 10)
-            self.cell(0, 10, f"{Config.APP_TITLE} - Reporte Ejecutivo", 0, 1, "R")
+            self.cell(0, 10, "Reporte Ejecutivo - SIHCLI-POTER", 0, 1, "R")
             self.ln(5)
 
-    def print_chapter(self, title, text, figure=None):
+    def print_chapter(self, title, text, fig=None):
         self.add_page()
         self.set_font("Arial", "B", 14)
         self.cell(0, 10, title, 0, 1, "L", 1)
@@ -24,31 +23,27 @@ class PDFReport(FPDF):
         self.set_font("Arial", "", 11)
         self.multi_cell(0, 6, text)
         self.ln(5)
-        if figure:
-            self.add_matplotlib_figure(figure)
+        if fig:
+            self.add_plotly_figure(fig)
 
-    def add_matplotlib_figure(self, fig, title=""):
+    def add_plotly_figure(self, fig):
+        """Convierte Plotly a imagen temporal e inserta en PDF."""
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-            fig.savefig(tmp.name, format="png", dpi=100, bbox_inches="tight")
+            pio.write_image(fig, tmp.name, format="png", scale=2)
+            if self.get_y() + 100 > 270: self.add_page()
             self.image(tmp.name, x=20, w=170)
             os.remove(tmp.name)
-            plt.close(fig)
+            self.ln(5)
 
-# --- MOTOR DE CONSOLIDACIÓN MODULAR ---
 def generate_consolidated_pdf(lista_capitulos):
-    """
-    Recibe una lista de diccionarios: 
-    [{'title': '...', 'text': '...', 'fig': figure_obj}, ...]
-    """
     pdf = PDFReport()
     pdf.set_auto_page_break(auto=True, margin=15)
     
     # Portada
     pdf.add_page()
     pdf.set_font("Arial", "B", 24)
-    pdf.cell(0, 100, "INFORME EJECUTIVO CONSOLIDADO", 0, 1, "C")
+    pdf.cell(0, 100, "INFORME TÉCNICO CONSOLIDADO", 0, 1, "C")
     
-    # Iterar sobre los fragmentos guardados en sesión
     for cap in lista_capitulos:
         pdf.print_chapter(cap['title'], cap['text'], cap.get('fig'))
         
