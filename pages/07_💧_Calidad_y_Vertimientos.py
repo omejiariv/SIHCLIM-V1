@@ -678,7 +678,6 @@ bov_base = 0 if bov_base is None else bov_base
 por_base = 0 if por_base is None else por_base
 ave_base = 0 if ave_base is None else ave_base
 
-
 # ------------------------------------------------------------------------------
 # TAB 1: DEMANDA HÍDRICA Y EFICIENCIA
 # ------------------------------------------------------------------------------
@@ -1286,18 +1285,58 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
     else:
         dbo_rio_arriba_fondo = 1.0
 
-    cd1, cd2, cd3 = st.columns(3)
     st.markdown("---")
     st.markdown(f"##### 🧪 2. Portafolio Espacial de Vertimientos en {nombre_seleccion}")
     st.caption("Añade descargas a diferentes altitudes. El simulador modelará la cascada de impactos a lo largo del perfil del río.")
     
-    q_ini = caudal_real_lps / 1000 if 'caudal_real_lps' in locals() and caudal_real_lps > 0 else 0.150
+    # -------------------------------------------------------------------------
+    # 🔗 INYECCIÓN MATEMÁTICA: DEMOGRAFÍA -> CAUDAL -> PTAR
+    # -------------------------------------------------------------------------
+    q_ini_defecto = caudal_real_lps / 1000 if 'caudal_real_lps' in locals() and caudal_real_lps > 0 else 0.150
     h_defecto = h_real_vert if 'h_real_vert' in locals() and h_real_vert else h_med_cuenca
     
-    # Aseguramos que la tabla inicie de manera robusta
+    # Control gerencial de la Planta de Tratamiento
+    eficiencia_ptar = st.slider(
+        "⚙️ Eficiencia de la PTAR Principal (% de remoción DBO):",
+        min_value=0.0, max_value=99.0, value=0.0, step=1.0,
+        help="Simula el impacto de construir o mejorar la planta de tratamiento urbana."
+    )
+
+    # 1. Calcular Caudal de Alcantarillado Real (Sincronizado con la población)
+    dotacion_l_hab_dia = 150.0
+    coef_retorno = 0.8
+    caudal_vert_urbano_m3s = (pob_u * dotacion_l_hab_dia * coef_retorno) / (86400 * 1000)
+    
+    q_ptar_final = caudal_vert_urbano_m3s if caudal_vert_urbano_m3s > 0.001 else q_ini_defecto
+    
+    # 2. Calcular Concentración Cruda (Masa Urbana [kg/día] a Concentración [mg/L])
+    if q_ptar_final > 0 and dbo_hab_u > 0:
+        # Fórmula: (kg/día * 1000 g/kg) / (m3/s * 86400 s/día) = g/m3 = mg/L
+        dbo_colector_cruda_mgl = (dbo_hab_u * 1000) / (q_ptar_final * 86400)
+    else:
+        dbo_colector_cruda_mgl = 250.0
+        
+    # 3. Aplicar Tratamiento
+    dbo_ptar_final_mgl = dbo_colector_cruda_mgl * (1.0 - (eficiencia_ptar / 100.0))
+
+    # Aseguramos que la tabla inicie con la telemetría viva de la cuenca
     df_descargas_base = pd.DataFrame([
-        {"Activo": True, "Fuente": "PTAR Principal", "Altitud (m)": float(h_defecto), "Caudal (m3/s)": q_ini, "DBO (mg/L)": 250.0, "Temp (°C)": 24.0},
-        {"Activo": False, "Fuente": "Industria Textil Hipotética", "Altitud (m)": float(max(h_min_cuenca, h_defecto - 50)), "Caudal (m3/s)": 0.050, "DBO (mg/L)": 600.0, "Temp (°C)": 30.0}
+        {
+            "Activo": True, 
+            "Fuente": f"PTAR Urbana (Efic: {eficiencia_ptar:.0f}%)", 
+            "Altitud (m)": float(h_defecto), 
+            "Caudal (m3/s)": round(q_ptar_final, 4), 
+            "DBO (mg/L)": round(dbo_ptar_final_mgl, 1), 
+            "Temp (°C)": 24.0
+        },
+        {
+            "Activo": False, 
+            "Fuente": "Industria Textil Hipotética", 
+            "Altitud (m)": float(max(h_min_cuenca, h_defecto - 50)), 
+            "Caudal (m3/s)": 0.050, 
+            "DBO (mg/L)": 600.0, 
+            "Temp (°C)": 30.0
+        }
     ])
     
     # 🎛️ TABLA EDITABLE CON DIMENSIÓN ALTITUDINAL
@@ -1305,6 +1344,7 @@ with st.expander(f"🏭 Presión Antrópica y Vertimiento Hipotético en {nombre
         df_descargas_base, 
         num_rows="dynamic", 
         use_container_width=True,
+        hide_index=True,
         column_config={
             "Activo": st.column_config.CheckboxColumn("Activo", default=True),
             "Fuente": st.column_config.TextColumn("Nombre de la Fuente"),
