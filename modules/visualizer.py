@@ -3401,21 +3401,38 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
         ["🗺️ Mapa Raster", "📍 Puntos (Estaciones)", "📐 Descarga Vectorial"]
     )
 
-    # --- PESTAÑA 1: MAPA RASTER ---
+    # --- PESTAÑA 1: MAPA RASTER (ZONAS DE VIDA + SIMULADOR TÉRMICO) ---
     with tab_raster:
-        col1, col2 = st.columns(2)
+        st.markdown("### 🏔️ Mapa de Zonas de Vida (Sistema Holdridge)")
+        
+        # 🎛️ CONTROLES DEL SIMULADOR
+        col1, col2, col3 = st.columns([1.5, 1.5, 1])
         with col1:
             res_option = st.select_slider(
-                "Resolución:",
+                "Resolución del Modelo:",
                 options=["Baja (Rápido)", "Media", "Alta (Lento)"],
-                value="Baja (Rápido)",
+                value="Media",
             )
-            downscale = (
-                8 if "Baja" in res_option else (4 if "Media" in res_option else 1)
+            downscale = 8 if "Baja" in res_option else (4 if "Media" in res_option else 1)
+        with col2:
+            delta_t = st.slider(
+                "🌡️ Simulador: + °C (Cambio Climático)", 
+                min_value=0.0, max_value=4.0, value=0.0, step=0.5,
+                help="Aumenta la temperatura para observar la migración altitudinal de ecosistemas."
+            )
+        with col3:
+            map_style = st.selectbox(
+                "🗺️ Mapa Base:", 
+                ["carto-positron", "open-street-map", "stamen-terrain", "satellite"]
             )
 
-        with col2:
-            use_mask = st.checkbox("Recortar por Cuenca Seleccionada", value=True)
+        st.markdown("---")
+        
+        c_mask1, c_mask2 = st.columns([1, 1])
+        with c_mask1:
+            use_mask = st.checkbox("✂️ Recortar por Cuenca Seleccionada", value=True)
+        with c_mask2:
+            extraer_estaciones = st.checkbox("📍 Extraer Altitud de Estaciones (Pinchar DEM)", value=False)
 
         basin_geom = None
         if use_mask:
@@ -3430,122 +3447,111 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
             else:
                 st.warning("⚠️ No se detectó ninguna geometría para recortar.")
 
-        if st.button("Generar Mapa de Zonas de Vida"):
+        if st.button("🚀 Generar Simulador de Zonas de Vida", use_container_width=True):
             # --- VALIDACIÓN CRÍTICA (NUBE) ---
             if not dem_file or not ppt_file:
                 st.error("❌ Error: No se han cargado los mapas base desde Supabase.")
                 st.info("Por favor verifica que los archivos .tif estén subidos en el Panel de Administración.")
             else:
-                with st.spinner("Generando mapa clasificado (Procesando en Memoria)..."):
+                with st.spinner(f"Calculando ecosistemas (+{delta_t}°C)..."):
                     try:
-                        # Llamamos a la lógica enviando los OBJETOS EN MEMORIA (BytesIO)
+                        # 1. 🧬 EJECUCIÓN DEL MOTOR DE HOLDRIDGE
                         lz_arr, profile, dynamic_legend, color_map = (
                             lz.generate_life_zone_map(
-                                dem_file,   # BytesIO
-                                ppt_file,   # BytesIO
-                                mask_geometry=basin_geom,
+                                dem_input=dem_file,   
+                                ppt_input=ppt_file,   
+                                mask_geometry=basin_geom if use_mask else None,
                                 downscale_factor=downscale,
+                                delta_temp=delta_t  # 🌡️ Inyección térmica
                             )
                         )
 
                         if lz_arr is not None:
-                            # Guardar en sesión
+                            # 2. 💾 GUARDAR EN ESTADO (SESIÓN)
                             st.session_state.lz_raster_result = lz_arr
                             st.session_state.lz_profile = profile
                             st.session_state.lz_names = dynamic_legend
                             st.session_state.lz_colors = color_map
 
-                            # VISUALIZACIÓN
-                            h, w = lz_arr.shape
-                            transform = profile["transform"]
-                            dx, dy = transform.a, transform.e
-                            x0, y0 = transform.c, transform.f
-
-                            xs = np.linspace(x0, x0 + dx * w, w)
-                            ys = np.linspace(y0, y0 + dy * h, h)
-                            xx, yy = np.meshgrid(xs, ys)
-
-                            lat_flat = yy.flatten()
-                            lon_flat = xx.flatten()
-                            z_flat = lz_arr.flatten()
-                            mask = z_flat > 0
-
-                            if not np.any(mask):
-                                st.warning("El mapa se generó pero está vacío (revise la máscara).")
-                            else:
-                                lat_clean = lat_flat[mask]
-                                lon_clean = lon_flat[mask]
-                                z_clean = z_flat[mask]
-                                center_lat = np.mean(lat_clean)
-                                center_lon = np.mean(lon_clean)
-
-                                # Cálculo de Área Aprox
-                                meters_deg = 111132.0
-                                px_area_ha = (
-                                    abs(dx * meters_deg * cos(radians(center_lat)))
-                                    * abs(dy * meters_deg)
-                                ) / 10000.0
-
-                                colors_hex = [color_map.get(v, "#808080") for v in z_clean]
-                                hover_text = [f"{dynamic_legend.get(v, 'ID '+str(v))}" for v in z_clean]
-
-                                fig = go.Figure(
-                                    go.Scattermapbox(
-                                        lat=lat_clean,
-                                        lon=lon_clean,
-                                        mode="markers",
-                                        marker=go.scattermapbox.Marker(
-                                            size=8 if downscale > 4 else 5,
-                                            color=colors_hex,
-                                            opacity=0.75,
-                                        ),
-                                        text=hover_text,
-                                        hovertemplate="%{text}<extra></extra>",
-                                    )
+                            # 3. 🗺️ PREPARACIÓN DE GEOMETRÍAS (Raster a Vector para Plotly Mapbox)
+                            # Usamos la función nativa que creamos en life_zones.py para crear polígonos
+                            gdf_poly = lz.vectorize_raster_to_gdf(lz_arr, profile["transform"], profile["crs"])
+                            
+                            if not gdf_poly.empty:
+                                import plotly.express as px
+                                import plotly.graph_objects as go
+                                
+                                color_discrete = {zona: color_map.get(k, "#000") for k, zona in dynamic_legend.items()}
+                                
+                                fig = px.choropleth_mapbox(
+                                    gdf_poly,
+                                    geojson=gdf_poly.geometry,
+                                    locations=gdf_poly.index,
+                                    color="zona_vida",
+                                    color_discrete_map=color_discrete,
+                                    mapbox_style=map_style if map_style != "satellite" else "carto-positron",
+                                    center={"lat": gdf_poly.geometry.centroid.y.mean(), "lon": gdf_poly.geometry.centroid.x.mean()},
+                                    zoom=9,
+                                    opacity=0.65,
+                                    labels={'zona_vida': 'Ecosistema'}
                                 )
-
+                                
+                                # Si el usuario pidió satélite, hacemos el override del estilo
+                                if map_style == "satellite":
+                                    fig.update_layout(mapbox_style="white-bg", mapbox_layers=[{
+                                        "below": 'traces', "sourcetype": "raster",
+                                        "sourceattribution": "Esri",
+                                        "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
+                                    }])
+                                
+                                # 📍 Añadir ubicación del usuario (si existe)
                                 if user_loc:
                                     fig.add_trace(go.Scattermapbox(
-                                        lat=[user_loc[0]], lon=[user_loc[1]],
-                                        mode="markers+text",
+                                        lat=[user_loc[0]], lon=[user_loc[1]], mode="markers+text",
                                         marker=go.scattermapbox.Marker(size=15, color="black", symbol="star"),
-                                        text=["📍 TÚ ESTÁS AQUÍ"], textposition="top center"
+                                        text=["📍 TÚ ESTÁS AQUÍ"], textposition="top center", showlegend=False
                                     ))
-
+                                
                                 fig.update_layout(
-                                    mapbox_style="carto-positron",
-                                    mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=9),
-                                    height=600,
-                                    margin={"r": 0, "t": 0, "l": 0, "b": 0},
-                                    showlegend=False,
+                                    margin={"r":0,"t":0,"l":0,"b":0}, 
+                                    height=650,
+                                    legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5)
                                 )
-                                st.plotly_chart(fig)
+                                
+                                st.plotly_chart(fig, use_container_width=True)
 
-                                # Tabla de Resultados
-                                unique, counts = np.unique(z_clean, return_counts=True)
-                                data = [
-                                    {
-                                        "Zona": dynamic_legend.get(v, str(v)),
-                                        "Ha": c * px_area_ha,
-                                        "%": c / counts.sum() * 100,
-                                    }
-                                    for v, c in zip(unique, counts)
-                                ]
-                                st.dataframe(
-                                    pd.DataFrame(data)
-                                    .sort_values("%", ascending=False)
-                                    .style.format({"Ha": "{:,.1f}", "%": "{:.1f}%"})
-                                )
+                                # 4. 📊 CÁLCULO DE ÁREAS EXACTAS Y TABLA DE RESULTADOS
+                                st.markdown("#### 📊 Distribución de Ecosistemas")
+                                # Reproyectamos temporalmente a metros (EPSG:3116 Colombia) para medir áreas
+                                gdf_poly['Area_ha'] = gdf_poly.to_crs(3116).area / 10000.0  
+                                resumen = gdf_poly.groupby('zona_vida')['Area_ha'].sum().reset_index().sort_values(by='Area_ha', ascending=False)
+                                resumen['%'] = (resumen['Area_ha'] / resumen['Area_ha'].sum()) * 100
+                                
+                                st.dataframe(resumen.style.format({'Area_ha': '{:,.1f}', '%': '{:.1f}%'}), use_container_width=True)
 
-                                # Descarga TIFF
+                                # 5. 📍 EXTRACCIÓN DE ALTITUD PARA ESTACIONES
+                                if extraer_estaciones:
+                                    st.markdown("#### 📍 Ecosistemas y Altitudes por Estación (Extraídas del DEM)")
+                                    # Intentamos recuperar las estaciones de la sesión o variables locales
+                                    if 'gdf_filtered' in locals() and not gdf_filtered.empty:
+                                        with st.spinner("Pinchando topografía de estaciones..."):
+                                            estaciones_alt = lz.extract_elevation_from_dem(gdf_filtered, dem_file)
+                                            # Mostrar resultados
+                                            cols_mostrar = [c for c in ['id_estacion', 'nombre', 'altitud_dem'] if c in estaciones_alt.columns]
+                                            st.dataframe(estaciones_alt[cols_mostrar].dropna(), use_container_width=True)
+                                    else:
+                                        st.info("⚠️ No hay estaciones filtradas en la memoria actual para analizar.")
+
+                                # 6. 📥 DESCARGA DEL TIFF RASTER
                                 tiff = lz.get_raster_bytes(lz_arr, profile)
                                 if tiff:
-                                    st.download_button(
-                                        "📥 Descargar TIFF", tiff, "zonas_vida.tif", "image/tiff"
-                                    )
+                                    st.download_button("📥 Descargar Mapa Clasificado (.tif)", tiff, "zonas_vida_holdridge.tif", "image/tiff")
+
+                            else:
+                                st.warning("El modelo matemático procesó los datos, pero la máscara recortó toda la geometría (quedó vacía).")
 
                     except Exception as e:
-                        st.error(f"Error visualizando: {e}")
+                        st.error(f"Error procesando el modelo espacial: {e}")
 
     # --- PESTAÑA 2: PUNTOS (ESTACIONES) ---
     with tab_puntos:
