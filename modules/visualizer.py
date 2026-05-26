@@ -3401,7 +3401,7 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
         ["🗺️ Mapa Raster", "📍 Puntos (Estaciones)", "📐 Descarga Vectorial"]
     )
 
-    # --- PESTAÑA 1: MAPA RASTER (SIMULADOR CLIMÁTICO BIVARIADO) ---
+    # --- PESTAÑA 1: MAPA RASTER (SIMULADOR CLIMÁTICO BIVARIADO CON COMPARATIVA) ---
     with tab_raster:
         st.markdown("### 🏔️ Mapa Dinámico de Zonas de Vida (Holdridge)")
         
@@ -3437,9 +3437,23 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
             if not dem_file or not ppt_file:
                 st.error("❌ Faltan los mapas raster base (DEM / Lluvia).")
             else:
-                with st.spinner(f"Cruzando termodinámica (+{delta_t}°C) y precipitación ({delta_p}%)..."):
+                with st.spinner("Procesando matrices ecológicas y cruzando escenarios..."):
                     try:
-                        # 1. 🧬 MOTOR DE HOLDRIDGE BIVARIADO
+                        # 1. 🟢 COMPULSIÓN DE LA LÍNEA BASE (Sin alteraciones climáticas)
+                        lz_arr_base, profile_base, _, _ = lz.generate_life_zone_map(
+                            dem_input=dem_file, ppt_input=ppt_file,   
+                            mask_geometry=basin_geom, downscale_factor=downscale,
+                            delta_temp=0.0, delta_ppt_pct=0.0
+                        )
+                        gdf_poly_base = lz.vectorize_raster_to_gdf(lz_arr_base, profile_base["transform"], profile_base["crs"])
+                        
+                        if not gdf_poly_base.empty:
+                            gdf_poly_base['Area_ha_base'] = gdf_poly_base.to_crs(3116).area / 10000.0
+                            resumen_base = gdf_poly_base.groupby('zona_vida')['Area_ha_base'].sum().reset_index()
+                        else:
+                            resumen_base = pd.DataFrame(columns=['zona_vida', 'Area_ha_base'])
+
+                        # 2. 🧬 MOTOR DE HOLDRIDGE ESCENARIO SIMULADO
                         lz_arr, profile, dynamic_legend, color_map = lz.generate_life_zone_map(
                             dem_input=dem_file, ppt_input=ppt_file,   
                             mask_geometry=basin_geom, downscale_factor=downscale,
@@ -3447,7 +3461,13 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                         )
 
                         if lz_arr is not None:
-                            # 2. 🗺️ VECTORIZACIÓN PARA MAPBOX
+                            # Guardar en sesión interna de Streamlit
+                            st.session_state.lz_raster_result = lz_arr
+                            st.session_state.lz_profile = profile
+                            st.session_state.lz_names = dynamic_legend
+                            st.session_state.lz_colors = color_map
+
+                            # 3. 🗺️ VECTORIZACIÓN PARA MAPBOX
                             gdf_poly = lz.vectorize_raster_to_gdf(lz_arr, profile["transform"], profile["crs"])
                             
                             if not gdf_poly.empty:
@@ -3470,7 +3490,7 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                                         "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
                                     }])
                                 
-                                # 🛡️ AGREGAR LA LÍNEA DIVISORIA DE LA CUENCA
+                                # Capa de la Divisoria de la Cuenca
                                 if use_mask and basin_geom is not None and not basin_geom.empty:
                                     poly_wgs84 = basin_geom.to_crs(4326).unary_union
                                     geoms = poly_wgs84.geoms if hasattr(poly_wgs84, "geoms") else [poly_wgs84]
@@ -3485,52 +3505,77 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                                 fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=650, legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5))
                                 st.plotly_chart(fig, use_container_width=True)
 
-                                # 3. 📊 ANÁLISIS DE ÁREAS Y CAJA INTELIGENTE
+                                # 4. 🧮 CRUCE ESPACIAL COMPARATIVO (ESCENARIO VS LÍNEA BASE)
                                 gdf_poly['Area_ha'] = gdf_poly.to_crs(3116).area / 10000.0  
-                                resumen = gdf_poly.groupby('zona_vida')['Area_ha'].sum().reset_index().sort_values(by='Area_ha', ascending=False)
-                                resumen['%'] = (resumen['Area_ha'] / resumen['Area_ha'].sum()) * 100
+                                resumen_sim = gdf_poly.groupby('zona_vida')['Area_ha'].sum().reset_index()
                                 
-                                # 🤖 CAJA DE ANÁLISIS DINÁMICO
-                                ecosistema_dominante = resumen.iloc[0]['zona_vida']
-                                pct_dom = resumen.iloc[0]['%']
+                                # Mezclamos ambas tablas asegurando mapear pérdidas/ganancias completas
+                                resumen_comp = pd.merge(resumen_sim, resumen_base, on='zona_vida', how='outer').fillna(0)
+                                resumen_comp['Cambio_ha'] = resumen_comp['Area_ha'] - resumen_comp['Area_ha_base']
+                                resumen_comp['%'] = (resumen_comp['Area_ha'] / resumen_comp['Area_ha'].sum()) * 100 if resumen_comp['Area_ha'].sum() > 0 else 0
+                                resumen_comp = resumen_comp.sort_values(by='Area_ha', ascending=False)
                                 
+                                # Filtramos biomas que efectivamente tienen presencia en el escenario actual
+                                df_activos = resumen_comp[resumen_comp['Area_ha'] > 0].copy()
+                                
+                                # 🤖 CONSTRUCCIÓN DE LA CAJA INTELIGENTE DINÁMICA AVANZADA
                                 st.markdown("---")
-                                st.info("🧠 **Análisis de Vulnerabilidad Ecológica**")
+                                st.info("🧠 **Análisis de Vulnerabilidad y Desplazamiento Ecológico**")
                                 
-                                txt_analisis = f"**Diagnóstico:** "
+                                txt_analisis = f"**Diagnóstico Climático:** "
                                 if delta_t == 0 and delta_p == 0:
-                                    txt_analisis += "El mapa refleja la **línea base hidrometeorológica** del territorio. "
+                                    txt_analisis += "El mapa refleja las condiciones de la **línea base hidrometeorológica** del territorio actual sin variaciones antropogénicas. "
                                 else:
-                                    txt_analisis += f"El escenario proyecta un estrés térmico de **+{delta_t}°C** y una alteración hídrica del **{delta_p}%**. "
-                                    
+                                    txt_analisis += f"El escenario proyecta un estrés térmico de **+{delta_t}°C** y una alteración en el régimen de lluvias del **{delta_p}%**. "
                                     if delta_t > 0:
-                                        txt_analisis += "El aumento de temperatura evapora humedad y provoca un **desplazamiento altitudinal**, empujando ecosistemas cálidos hacia las cumbres. "
+                                        txt_analisis += "El aumento de temperatura reduce la humedad efectiva y altera el gradiente altitudinal de los biomas de montaña. "
                                     if delta_p < 0:
-                                        txt_analisis += "La contracción de lluvias induce un **secamiento acelerado**, transformando bosques de transición hacia el espectro seco. "
+                                        txt_analisis += "La contracción pluviométrica induce un secamiento regional acelerado. "
                                     elif delta_p > 0:
-                                        txt_analisis += "El superávit pluviométrico compensa parte del estrés térmico, pero incrementa dramáticamente el potencial de erosión en laderas desprotegidas. "
-                                        
-                                txt_analisis += f"\n\nBajo estas condiciones de borde, el **{ecosistema_dominante}** se consolida como el bioma predominante, ocupando el **{pct_dom:.1f}%** de la cuenca."
+                                        txt_analisis += "El superávit de precipitaciones expande los límites de humedad basales. "
+                                
+                                if not df_activos.empty:
+                                    # Extraemos extremos (Máximo y Mínimo representativo)
+                                    row_max = df_activos.iloc[0]
+                                    row_min = df_activos.iloc[-1]
+                                    
+                                    def format_delta(val):
+                                        return f"+{val:,.1f} ha (incremento)" if val > 0 else (f"{val:,.1f} ha (contracción)" if val < 0 else "sin variaciones")
+
+                                    txt_analisis += f"\n\n**Comportamiento de la Cobertura Biológica:**\n"
+                                    txt_analisis += f"* 🟢 **Bioma Predominante:** El **{row_max['zona_vida']}** se consolida como el ecosistema mayoritario, ocupando el **{row_max['%']:.1f}%** de la cuenca ({row_max['Area_ha']:,.1f} ha). Al compararlo con la línea base, registra una variación neta de **{format_delta(row_max['Cambio_ha'])}**.\n"
+                                    
+                                    if len(df_activos) > 1:
+                                        txt_analisis += f"* 🔴 **Bioma Menos Representativo:** En el extremo opuesto, el **{row_min['zona_vida']}** es el ecosistema más restringido o vulnerable de la malla, cubriendo apenas el **{row_min['%']:.1f}%** del territorio ({row_min['Area_ha']:,.1f} ha), evidenciando una alteración de **{format_delta(row_min['Cambio_ha'])}** frente al registro histórico."
                                 
                                 st.markdown(txt_analisis)
                                 
-                                c_tab1, c_tab2 = st.columns(2)
+                                # 📊 TABLA COMPARATIVA GERENCIAL DE RESULTADOS
+                                c_tab1, c_tab2 = st.columns([1.3, 1])
                                 with c_tab1:
-                                    st.markdown("#### 📈 Distribución Proyectada")
-                                    st.dataframe(resumen.style.format({'Area_ha': '{:,.1f}', '%': '{:.1f}%'}), use_container_width=True)
+                                    st.markdown("#### 📊 Matriz Comparativa de Áreas")
+                                    resumen_visual = resumen_comp[['zona_vida', 'Area_ha_base', 'Area_ha', 'Cambio_ha', '%']].copy()
+                                    resumen_visual.columns = ['Zona de Vida', 'Línea Base (ha)', 'Simulado (ha)', 'Variación Neta (ha)', '% Ocupación']
+                                    
+                                    st.dataframe(resumen_visual.style.format({
+                                        'Línea Base (ha)': '{:,.1f}', 
+                                        'Simulado (ha)': '{:,.1f}', 
+                                        'Variación Neta (ha)': lambda x: f"+{x:,.1f}" if x > 0 else f"{x:,.1f}", 
+                                        '% Ocupación': '{:.1f}%'
+                                    }), use_container_width=True)
                                 
                                 with c_tab2:
                                     if extraer_estaciones:
-                                        st.markdown("#### 📍 Estaciones Afectadas")
+                                        st.markdown("#### 📍 Estaciones en Contexto")
                                         gdf_stations = kwargs.get("gdf_stations", None)
                                         if gdf_stations is not None and not gdf_stations.empty:
                                             estaciones_alt = lz.extract_elevation_from_dem(gdf_stations, dem_file)
                                             cols_m = [c for c in ['id_estacion', 'nombre', 'altitud_dem'] if c in estaciones_alt.columns]
                                             st.dataframe(estaciones_alt[cols_m].dropna(), use_container_width=True)
                             else:
-                                st.warning("La simulación no arrojó geometrías válidas. Revisa los umbrales climáticos.")
+                                st.warning("La simulación no arrojó geometrías válidas.")
                     except Exception as e:
-                        st.error(f"Error procesando simulación: {e}")
+                        st.error(f"Error procesando simulación comparativa: {e}")
 
     # --- PESTAÑA 2: PUNTOS (ESTACIONES) ---
     with tab_puntos: # <-- Busca esta línea en tu código
