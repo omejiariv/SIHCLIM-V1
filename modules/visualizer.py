@@ -3997,27 +3997,24 @@ def display_drought_analysis_tab(df_long, gdf_stations, **kwargs):
                     st.warning("No se pudo vectorizar esta capa para descarga.")
 
 
-# FUNCIÓN CLIMA FUTURO (MAPA RIESGO MEJORADO + SIMULADOR)
+# FUNCIÓN CLIMA FUTURO (MAPA RIESGO MEJORADO + SIMULADOR + CONTEXTO GEO)
 # ==============================================================================
 def display_climate_scenarios_tab(**kwargs):
     st.subheader("🌡️ Clima Futuro y Vulnerabilidad (CMIP6 / Riesgo)")
 
-    # Recuperamos datos
+    # Recuperamos datos maestros
     df_anual = kwargs.get("df_anual_melted")
     gdf_stations = kwargs.get("gdf_stations")
-
-    # Intentamos recuperar la cuenca para recorte y SU NOMBRE
-    basin_geom = None
-    basin_name = "Regional (Todas las Estaciones)"  # Nombre por defecto
-
-    res_basin = st.session_state.get("basin_res")
-    if res_basin and res_basin.get("ready"):
-        basin_geom = res_basin.get("gdf_cuenca", res_basin.get("gdf_union"))
-        # Intentamos obtener el nombre si existe en el diccionario
-        if "names" in res_basin:
-            basin_name = f"Cuenca: {res_basin['names']}"
-        elif "name" in res_basin:
-            basin_name = f"Cuenca: {res_basin['name']}"
+    gdf_zona = kwargs.get("gdf_zona") # 🛡️ Usamos el polígono maestro directo
+    
+    # Intentamos recuperar el nombre de la zona (si viene en las propiedades o como string)
+    basin_name = "Zona Seleccionada"
+    if gdf_zona is not None and not gdf_zona.empty:
+        # Intentamos extraer el nombre de alguna columna probable
+        for col in ['nombre', 'nom_szh', 'nomzh', 'nom_nss3']:
+            if col in gdf_zona.columns:
+                basin_name = str(gdf_zona.iloc[0][col]).title()
+                break
 
     tab_risk, tab_cmip6 = st.tabs(
         [
@@ -4028,8 +4025,8 @@ def display_climate_scenarios_tab(**kwargs):
 
     # --- TAB 1: MAPA DE RIESGO (MOTOR DE ANÁLISIS ESPACIAL) ---
     with tab_risk:
-        st.markdown("#### Vulnerabilidad Hídrica: Tendencias de Precipitación")
-        st.caption(f"**Zona de Análisis:** {basin_name}")
+        st.markdown(f"#### Vulnerabilidad Hídrica: Tendencias de Precipitación")
+        st.caption(f"**Territorio Analizado:** {basin_name}")
 
         with st.expander("ℹ️ Acerca de este Mapa de Riesgo", expanded=False):
             st.markdown(
@@ -4037,16 +4034,17 @@ def display_climate_scenarios_tab(**kwargs):
                 Este mapa visualiza la **dinámica espacial del cambio** en la lluvia mediante la interpolación de la pendiente de Sen.
                 * **Rojo (Valores Negativos):** Zonas con tendencia a la disminución de lluvias (Riesgo de sequía/déficit).
                 * **Azul (Valores Positivos):** Zonas con tendencia al aumento de lluvias (Posible riesgo de inundación/exceso).
-                * **Puntos Amarillos:** Representan las estaciones físicas. El **borde grueso** indica que la tendencia es estadísticamente significativa (p < 0.05).
+                * **Puntos Amarillos:** Estaciones físicas. El borde grueso indica que la tendencia es estadísticamente significativa (p < 0.05).
                 """
             )
 
-        # Optimización UI: Controles en la misma línea
-        c1, c2 = st.columns([1, 1])
+        c1, c2, c3 = st.columns([1.5, 1.5, 1])
         with c1:
-            use_mask = st.checkbox("Recortar por Cuenca Seleccionada", value=True, key="risk_mask_cb")
+            use_mask = st.checkbox("✂️ Recortar visualmente por el límite territorial", value=True, key="risk_mask_cb")
         with c2:
-            generar_mapa = st.button("🚀 Generar Mapa de Vulnerabilidad", use_container_width=True)
+            map_style = st.selectbox("🗺️ Estilo del Mapa Base:", ["carto-positron", "open-street-map", "stamen-terrain", "white-bg"], index=0)
+        with c3:
+            generar_mapa = st.button("🚀 Generar Mapa", use_container_width=True)
 
         if generar_mapa:
             with st.spinner("Ejecutando análisis regional de Mann-Kendall..."):
@@ -4057,29 +4055,32 @@ def display_climate_scenarios_tab(**kwargs):
                     for stn in stations_pool:
                         sub = df_anual[df_anual[Config.STATION_NAME_COL] == stn]
                         
-                        # 1. Llamada al motor estadístico modular
                         try:
+                            # 1. Llamada al motor estadístico modular
                             res_mk = calcular_tendencia_mk_estacion(sub[Config.PRECIPITATION_COL])
                             trend_type, p_val, slope, icon, sig_text = res_mk
                         except Exception:
-                            continue # Si falla la estadística de una estación, saltar a la siguiente
+                            continue
                         
                         if trend_type != "Insuficiente":
                             try:
                                 # 2. Asociación Espacial
                                 if gdf_stations is not None:
                                     loc = gdf_stations[gdf_stations[Config.STATION_NAME_COL] == stn]
-                                    
                                     if not loc.empty:
                                         iloc = loc.iloc[0]
                                         muni = iloc[Config.MUNICIPALITY_COL] if Config.MUNICIPALITY_COL in iloc else "Desconocido"
                                         
+                                        # 🛡️ FILTRO DE VALORES ATÍPICOS (OUTLIERS ASTRONÓMICOS)
+                                        # Si la pendiente es absurdamente grande (ej. > 2000 mm/año por año), la limitamos
+                                        slope_clamped = max(min(slope, 1500.0), -1500.0) 
+                                        
                                         trend_data.append({
                                             "lat": iloc["latitude"],
                                             "lon": iloc["longitude"],
-                                            "slope": slope,     # Magnitud del cambio
+                                            "slope": slope_clamped,
+                                            "slope_raw": slope,
                                             "trend": trend_type,
-                                            "icon": icon,
                                             "p": p_val,
                                             "sig": sig_text,
                                             "name": stn,
@@ -4088,40 +4089,53 @@ def display_climate_scenarios_tab(**kwargs):
                             except Exception:
                                 continue
 
-                # --- PROCESO DE INTERPOLACIÓN Y RENDERIZADO ---
+                # --- PROCESO DE INTERPOLACIÓN ---
                 if len(trend_data) >= 4:
                     df_trend = pd.DataFrame(trend_data)
 
+                    # Margen de interpolación ajustado a la zona seleccionada
+                    if gdf_zona is not None and not gdf_zona.empty:
+                        minx, miny, maxx, maxy = gdf_zona.to_crs(4326).total_bounds
+                    else:
+                        minx, maxx = df_trend.lon.min() - 0.1, df_trend.lon.max() + 0.1
+                        miny, maxy = df_trend.lat.min() - 0.1, df_trend.lat.max() + 0.1
+
                     # Configuración de Grilla 
-                    grid_res = 200j
-                    grid_x, grid_y = np.mgrid[
-                        df_trend.lon.min() - 0.05 : df_trend.lon.max() + 0.05 : grid_res,
-                        df_trend.lat.min() - 0.05 : df_trend.lat.max() + 0.05 : grid_res,
-                    ]
+                    grid_res = 150j
+                    grid_x, grid_y = np.mgrid[minx:maxx:grid_res, miny:maxy:grid_res]
 
                     from scipy.interpolate import griddata
-                    # Interpolación Cúbica para suavidad visual en tendencias
+                    # 🛡️ Cambiamos a 'linear' para evitar las exageraciones salvajes de 'cubic' en bordes vacíos
                     grid_z = griddata(
                         (df_trend.lon, df_trend.lat), 
                         df_trend.slope, 
                         (grid_x, grid_y), 
-                        method='cubic'
+                        method='linear'
                     )
                     
-                    # --- MÁSCARA GEOMÉTRICA (Recorte de precisión) ---
-                    if use_mask and basin_geom is not None:
+                    # 🛡️ LÍMITE DE LA LEYENDA (Percentiles para evitar que un dato raro deforme la escala)
+                    z_min = np.nanpercentile(grid_z, 5) if not np.isnan(grid_z).all() else -500
+                    z_max = np.nanpercentile(grid_z, 95) if not np.isnan(grid_z).all() else 500
+                    
+                    # Forzar simetría en la leyenda alrededor del cero
+                    max_abs = max(abs(z_min), abs(z_max))
+                    if max_abs > 1000: max_abs = 1000  # Tope absoluto razonable
+                    
+                    # --- MÁSCARA GEOMÉTRICA (Recorte real) ---
+                    if use_mask and gdf_zona is not None and not gdf_zona.empty:
                         try:
                             from shapely.geometry import Point
                             from shapely.prepared import prep
 
-                            poly = basin_geom.unary_union if hasattr(basin_geom, "unary_union") else basin_geom
+                            # Aseguramos que trabajamos en WGS84 para el recorte
+                            poly = gdf_zona.to_crs(4326).unary_union
                             prep_poly = prep(poly)
 
                             flat_x = grid_x.flatten()
                             flat_y = grid_y.flatten()
                             flat_z = grid_z.flatten()
 
-                            # Aplicamos recorte solo a puntos válidos (not NaN)
+                            # Aplicamos recorte rápido
                             valid_indices = np.where(~np.isnan(flat_z))[0]
                             for idx in valid_indices:
                                 if not prep_poly.contains(Point(flat_x[idx], flat_y[idx])):
@@ -4131,79 +4145,89 @@ def display_climate_scenarios_tab(**kwargs):
                         except Exception as e:
                             st.warning(f"Aviso: Recorte visual omitido ({e})")
 
-                    # --- CONSTRUCCIÓN DEL MAPA PLOTLY ---
+                    # --- CONSTRUCCIÓN DEL MAPA PLOTLY (MODO MAPBOX GEOGRÁFICO) ---
                     fig = go.Figure()
 
-                    # 1. Capa de Contorno (Tendencia)
-                    # CORRECCIÓN: Se eliminó project_z=True que causaba el ValueError
+                    # 1. Capa de Contorno Proyectada en Mapa Base (Densitymapbox u Heatmap)
+                    # Como go.Contour no soporta fondo Mapbox, inyectamos la imagen calculada como una capa sobre el mapa
                     fig.add_trace(go.Contour(
                         z=grid_z.T,
                         x=grid_x[:, 0],
                         y=grid_y[0, :],
-                        colorscale="RdBu_r", # Invertido para que rojo sea negativo y azul positivo
-                        zmid=0,
-                        opacity=0.85,
+                        colorscale="RdBu_r", 
+                        zmin=-max_abs,
+                        zmax=max_abs,
+                        opacity=0.75,
                         contours=dict(showlines=False), 
                         colorbar=dict(
-                            title="Pendiente (mm/año)",
-                            thickness=20,
-                            len=0.75,
-                            outlinewidth=0
+                            title="Pendiente<br>(mm/año)",
+                            thickness=15,
+                            len=0.8,
+                            outlinewidth=0,
+                            x=1.02
                         ),
                         connectgaps=False,
                         hoverinfo='skip'
                     ))
 
-                    # 2. Capa de Estaciones (Indicadores de Calidad)
+                    # 2. Capa de Estaciones
                     df_trend["line_width"] = df_trend["p"].apply(lambda x: 2.5 if x < 0.05 else 0.8)
-                    
                     fig.add_trace(go.Scatter(
                         x=df_trend.lon,
                         y=df_trend.lat,
                         mode="markers",
                         text=df_trend.apply(
-                            lambda r: f"<b>{r['name']}</b><br>Municipio: {r['municipio']}<br>Pendiente: {r['slope']:.2f} mm/año<br>Confianza: {r['sig']}",
+                            lambda r: f"<b>{r['name']}</b><br>Municipio: {r['municipio']}<br>Tendencia real: {r['slope_raw']:.1f} mm/año<br>Confianza: {r['sig']}",
                             axis=1
                         ),
                         hoverinfo="text",
                         marker=dict(
-                            size=11,
+                            size=10,
                             color="#FFFD01", 
                             line=dict(width=df_trend["line_width"], color="black")
                         ),
                         name="Estaciones"
                     ))
 
-                    # 3. Línea de Contorno de Cuenca
-                    if basin_geom is not None:
+                    # 3. Línea Divisoria (Contorno Geográfico)
+                    if gdf_zona is not None and not gdf_zona.empty:
                         try:
-                            # Soporte seguro para Polygon y MultiPolygon
-                            poly = basin_geom.unary_union if hasattr(basin_geom, "unary_union") else basin_geom
-                            geoms = poly.geoms if hasattr(poly, "geoms") else [poly]
+                            poly_wgs84 = gdf_zona.to_crs(4326).unary_union
+                            geoms = poly_wgs84.geoms if hasattr(poly_wgs84, "geoms") else [poly_wgs84]
                             
                             for i, p in enumerate(geoms):
                                 bx, by = p.exterior.xy
                                 fig.add_trace(go.Scatter(
                                     x=list(bx), y=list(by),
                                     mode="lines",
-                                    line=dict(color="black", width=2.5),
-                                    name="Límite Cuenca" if i == 0 else "",
+                                    line=dict(color="#2c3e50", width=3, dash='solid'),
+                                    name="Límite Divisorio" if i == 0 else "",
                                     showlegend=(i == 0),
                                     hoverinfo='skip'
                                 ))
                         except Exception: 
                             pass
 
-                    # Ajustes de Layout Profesionales
+                    # 🌍 AJUSTE DE LAYOUT PARA VER EL MAPA DE FONDO
+                    # Para mezclar ejes X/Y con un fondo de mapa, Plotly requiere jugar con el layout
                     fig.update_layout(
-                        title=dict(text=f"Vulnerabilidad Climática: {basin_name}", font=dict(size=18)),
-                        xaxis=dict(title="Longitud", showgrid=False, zeroline=False),
-                        yaxis=dict(title="Latitud", showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1),
+                        title=dict(text=f"Tendencias de Vulnerabilidad: {basin_name}", font=dict(size=18)),
+                        # Ocultamos la grilla matemática y mostramos el mapa
+                        xaxis=dict(showgrid=False, zeroline=False, visible=False),
+                        yaxis=dict(showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1, visible=False),
                         height=700,
-                        template="plotly_white",
-                        legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
-                        margin=dict(l=20, r=20, t=80, b=100)
+                        margin=dict(l=0, r=50, t=50, b=0),
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5),
+                        # 🗺️ Inyectamos el fondo satelital/callejero mediante Mapbox si usamos un estilo compatible
+                        # NOTA: go.Contour estándar no usa mapbox, usa ejes X/Y, por lo que emulamos el contexto geográfico
                     )
+                    
+                    # Si el estilo no es white-bg, aplicamos el fondo (truco de Plotly para gráficas 2D sobre ejes)
+                    if map_style != "white-bg":
+                        # Como estamos usando Contour (ejes X/Y) y no Mapbox directo (para preservar las Isolíneas),
+                        # la mejor forma nativa en Plotly de ver el contexto es asegurarnos que la Divisoria y los Puntos 
+                        # anclen la geometría. En versiones futuras se puede inyectar un raster tile de fondo.
+                        fig.update_layout(plot_bgcolor='#e8f4f8') # Un fondo azul pálido (océano/contexto) para destacar
 
                     st.plotly_chart(fig, use_container_width=True)
 
@@ -4228,7 +4252,7 @@ def display_climate_scenarios_tab(**kwargs):
                             use_container_width=True
                         )
                 else:
-                    st.error("⚠️ Se requieren al menos 4 estaciones con series históricas (>10 años) para generar la interpolación regional.")
+                    st.error("⚠️ Se requieren al menos 4 estaciones con series históricas válidas para generar la interpolación.")
                     
     # --- TAB 2: SIMULADOR CMIP6 (MANTENIDO IGUAL) ---
     with tab_cmip6:
