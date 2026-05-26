@@ -314,58 +314,126 @@ def main():
     # ==============================================================================
     # 🧠 NUEVO MÓDULO: PERITAJE Y CONSISTENCIA HIDROMETEOROLÓGICA
     # ==============================================================================
-    # 🧠 NUEVO MÓDULO: PERITAJE Y CONSISTENCIA HIDROMETEOROLÓGICA
-    # ==============================================================================
     elif selected_module == "🧠 Peritaje y Consistencia":
         st.subheader("🧠 Analítica Avanzada: Peritaje de Consistencia Hidrometeorológica")
         st.markdown("Evaluación forense automática de la calidad de las series de tiempo y su respuesta ante macro-eventos globales (ENOS).")
         
+        # ----------------------------------------------------------------------
+        # 🏢 CAJA MENSAJE PERMANENTE: BALANCE MACROREGIONAL DEL SIDEBAR
+        # ----------------------------------------------------------------------
+        if df_monthly_filtered is not None and not df_monthly_filtered.empty and stations_for_analysis:
+            with st.container(border=True):
+                st.markdown("### 🌍 Diagnóstico Macroregional de la Selección")
+                
+                # Filtrar el DataFrame global solo para las estaciones válidas en la selección actual
+                df_macro = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL].isin(stations_for_analysis)].copy()
+                
+                if not df_macro.empty:
+                    # Agrupación anual por estación para hallar los extremos regionales
+                    df_macro_anual = df_macro.groupby([Config.STATION_NAME_COL, Config.YEAR_COL])[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
+                    df_macro_anual.columns = ['Estación', 'Año', 'Precipitación', 'Meses_Validos']
+                    
+                    # Filtro de integridad regional (>700 mm/año y meses completos)
+                    df_macro_integro = df_macro_anual[(df_macro_anual['Meses_Validos'] >= 10) & (df_macro_anual['Precipitación'] >= 700.0)]
+                    
+                    if not df_macro_integro.empty:
+                        # 1. Extremos Absolutos
+                        idx_macro_max = df_macro_integro['Precipitación'].idxmax()
+                        idx_macro_min = df_macro_integro['Precipitación'].idxmin()
+                        
+                        est_max_reg = df_macro_integro.loc[idx_macro_max, 'Estación']
+                        ano_max_reg = int(df_macro_integro.loc[idx_macro_max, 'Año'])
+                        val_max_reg = df_macro_integro.loc[idx_macro_max, 'Precipitación']
+                        
+                        est_min_reg = df_macro_integro.loc[idx_macro_min, 'Estación']
+                        ano_min_reg = int(df_macro_integro.loc[idx_macro_min, 'Año'])
+                        val_min_reg = df_macro_integro.loc[idx_macro_min, 'Precipitación']
+                        
+                        # 2. Valores Medios Anuales por Estación para identificar la más húmeda y más seca en promedio
+                        df_medias = df_macro_integro.groupby('Estación')['Precipitación'].mean().reset_index()
+                        est_mas_humeda = df_medias.loc[df_medias['Precipitación'].idxmax(), 'Estación']
+                        media_mas_humeda = df_medias['Precipitación'].max()
+                        
+                        est_mas_seca = df_medias.loc[df_medias['Precipitación'].idxmin(), 'Estación']
+                        media_mas_seca = df_medias['Precipitación'].min()
+                        
+                        # Despliegue en Columnas del balance de la cuenca/municipio
+                        c_macro1, c_macro2 = st.columns(2)
+                        
+                        with c_macro1:
+                            st.markdown(f"**🌧️ Núcleo de Alta Precipitación (Más Húmedo):**")
+                            st.markdown(f"* **Estación Predominante:** `{est_mas_humeda}`")
+                            st.markdown(f"* **Rendimiento Medio Anual:** `{media_mas_humeda:,.1f} mm/año`")
+                            st.markdown(f"* **Récord Histórico Absoluto:** `{val_max_reg:,.1f} mm` en el año **{ano_max_reg}** (`{est_max_reg}`)")
+                            
+                        with c_macro2:
+                            st.markdown(f"**🌵 Núcleo de Sombra de Lluvia (Más Seco):**")
+                            st.markdown(f"* **Estación Predominante:** `{est_mas_seca}`")
+                            st.markdown(f"* **Rendimiento Medio Anual:** `{media_mas_seca:,.1f} mm/año`")
+                            st.markdown(f"* **Mínimo Histórico Absoluto:** `{val_min_reg:,.1f} mm` en el año **{ano_min_reg}** (`{est_min_reg}`)")
+                    else:
+                        st.warning("⚠️ No hay suficientes años con registros que superen el umbral de integridad de 700 mm en esta selección geográfica.")
+                else:
+                    st.info("No se encontraron registros de series temporales para las estaciones de este sector.")
+            st.markdown("---")
+
+        # ----------------------------------------------------------------------
+        # 🔍 SELECTOR LOCAL Y PROCESAMIENTO DE LA ESTACIÓN SELECCIONADA
+        # ----------------------------------------------------------------------
         if stations_for_analysis:
             est_sel = st.selectbox("🔍 Seleccione la Estación para Peritaje Forense:", stations_for_analysis)
             
             if est_sel and df_monthly_filtered is not None and not df_monthly_filtered.empty:
                 
                 # 🛡️ PASO 1: EXTRACCIÓN QUIRÚRGICA DE LA LLAVE DE BÚSQUEDA
-                # Si el selector viene como "SANTO DOMINGO [23080390]", extraemos el nombre puro y el código por separado
                 nombre_estacion_puro = est_sel.split('[')[0].strip() if '[' in est_sel else est_sel
                 codigo_puro = est_sel.split('[')[1].replace(']', '').strip() if '[' in est_sel else ""
                 
-                # Intentamos la estrategia de filtrado multivariado para asegurar capturar todo el histórico sin pérdidas
                 df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL] == est_sel].copy()
-                
                 if df_est.empty:
                     df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL] == nombre_estacion_puro].copy()
-                
                 if df_est.empty and codigo_puro:
                     df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL].astype(str).str.contains(codigo_puro)].copy()
                 
-                # 🛡️ PASO 2: PURGA FORENSE DE REGISTROS VACÍOS O INCOMPLETOS
-                # Eliminamos nulos en la columna de precipitación para que no sumen ceros falsos al agrupar por año
+                # Purga forense de registros nulos en la columna de lluvia
                 df_est = df_est.dropna(subset=[Config.PRECIPITATION_COL])
                 
-                # 🛡️ PASO 3: AGRUPACIÓN Y COMPRENSIÓN ANUAL
+                # 🛡️ PASO 2: AGRUPACIÓN Y COMPRENSIÓN ANUAL
                 df_anual = df_est.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
                 df_anual.columns = ['Año', 'Precipitación', 'Meses_Validos']
                 
-                # Criterio estricto: El año debe tener al menos 10 meses con mediciones reales y más de 50 mm acumulados
-                # 🛡️ PASO 3: AGRUPACIÓN Y COMPRENSIÓN ANUAL (BLINDAJE ANDINO)
-                df_anual = df_est.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
-                df_anual.columns = ['Año', 'Precipitación', 'Meses_Validos']
-
-                # Exigimos un mínimo de 10 meses válidos Y una precipitación anual lógica para la región (> 700 mm)
-                # Esto descarta de inmediato años con sensores bloqueados o descalibrados en baja escala.
-                df_integro = df_anual[(df_anual['Meses_Validos'] >= 10) & (df_anual['Precipitación'] > 700.0)]
+                # Filtro Andino de Integridad Física corregido a 700.0 mm
+                df_integro = df_anual[(df_anual['Meses_Validos'] >= 10) & (df_anual['Precipitación'] >= 700.0)]
                 
                 # --- DISEÑO DEL PANEL DE CONTROL FORENSE ---
                 col_panel1, col_panel2 = st.columns([1.5, 2])
                 
                 with col_panel1:
                     with st.container(border=True):
-                        st.markdown(f"### 🛡️ Diagnóstico Técnico: {est_sel}")
+                        st.markdown(f"### 🛡️ Ficha Técnica Geográfica")
+                        
+                        # Extracción dinámica de metadatos desde el GeoDataFrame
+                        municipio_est = "No especificado"
+                        altitud_est = "N/D"
+                        
+                        if gdf_stations is not None and not gdf_stations.empty:
+                            meta_est = gdf_stations[gdf_stations[Config.STATION_NAME_COL].astype(str).str.contains(codigo_puro)] if codigo_puro else gdf_stations[gdf_stations[Config.STATION_NAME_COL] == est_sel]
+                            if not meta_est.empty:
+                                col_muni = [c for c in meta_est.columns if 'muni' in c.lower() or 'id_muni' in c.lower()]
+                                col_alt = [c for c in meta_est.columns if 'alt' in c.lower() or 'ele' in c.lower() or 'msnm' in c.lower()]
+                                
+                                if col_muni: municipio_est = str(meta_est.iloc[0][col_muni[0]]).upper()
+                                if col_alt: 
+                                    val_alt = meta_est.iloc[0][col_alt[0]]
+                                    altitud_est = f"{int(val_alt):,} msnm" if pd.notna(val_alt) else "N/D"
+                        
+                        st.markdown(f"**📍 Estación:** `{est_sel}`")
+                        st.markdown(f"**🏢 Municipio:** `{municipio_est}`")
+                        st.markdown(f"**⛰️ Altitud:** `{altitud_est}`")
+                        st.markdown("---")
                         
                         años_totales = df_anual.shape[0]
                         años_completos = df_integro.shape[0]
-                        # Identificación de la firma digital del Gemelo Digital (valores con decimales complejos no enteros)
                         años_reconstruidos = df_anual[(df_anual['Precipitación'].notna()) & (df_anual['Precipitación'] % 1 != 0)].shape[0]
                         
                         st.metric(label="Años con Datos Activos", value=f"{años_totales} años")
@@ -385,7 +453,6 @@ def main():
                             min_año = int(df_integro.loc[idx_min, 'Año'])
                             min_val = df_integro.loc[idx_min, 'Precipitación']
                             
-                            # Hitos macroclimáticos de control histórico en Colombia (Región Andina / Antioquia)
                             anios_niña_hitos = [1975, 1988, 1999, 2010, 2011, 2022]
                             anios_niño_hitos = [1983, 1992, 1997, 2015, 2023]
                             
@@ -402,7 +469,38 @@ def main():
                         else:
                             st.warning("⚠️ Sin suficientes años íntegros para emitir un dictamen macroclimático robusto.")
                 
-                # Gráfico multianual de soporte ocular con el histórico recuperado
+                # ----------------------------------------------------------------------
+                # 📅 NUEVO SUBPANEL: EXTRACTO DE EXTREMOS MENSUALES ABSOLUTOS
+                # ----------------------------------------------------------------------
+                st.markdown("---")
+                with st.container(border=True):
+                    st.markdown("### 📅 Diagnóstico de Extremos Mensuales de la Serie")
+                    
+                    # Diccionario de traducción para presentación estética
+                    meses_dict = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+                                  7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
+                    
+                    # Identificar el mes de mayor y menor precipitación de toda la historia registrada
+                    if Config.MONTH_COL in df_est.columns and not df_est.empty:
+                        idx_mes_max = df_est[Config.PRECIPITATION_COL].idxmax()
+                        # Para el mes menos lluvioso filtramos ceros absolutos si se desea consistencia o dejamos el mínimo real registrado
+                        idx_mes_min = df_est[Config.PRECIPITATION_COL].idxmin()
+                        
+                        val_mes_max = df_est.loc[idx_mes_max, Config.PRECIPITATION_COL]
+                        num_mes_max = int(df_est.loc[idx_mes_max, Config.MONTH_COL])
+                        ano_mes_max = int(df_est.loc[idx_mes_max, Config.YEAR_COL])
+                        
+                        val_mes_min = df_est.loc[idx_mes_min, Config.PRECIPITATION_COL]
+                        num_mes_min = int(df_est.loc[idx_mes_min, Config.MONTH_COL])
+                        ano_mes_min = int(df_est.loc[idx_mes_min, Config.YEAR_COL])
+                        
+                        col_mes1, col_mes2 = st.columns(2)
+                        with col_mes1:
+                            st.info(f"🌊 **Mes Más Lluvioso de la Historia:**\n\n**{meses_dict.get(num_mes_max, str(num_mes_max))} de {ano_mes_max}** con **{val_mes_max:,.1f} mm**")
+                        with col_mes2:
+                            st.warning(f"🍂 **Mes Menos Lluvioso de la Historia:**\n\n**{meses_dict.get(num_mes_min, str(num_mes_min))} de {ano_mes_min}** con **{val_mes_min:,.1f} mm**")
+                
+                # Gráfico multianual de soporte ocular
                 st.markdown("#### 📈 Evolución Multianual de Soporte")
                 df_grafico = df_anual.set_index('Año')[['Precipitación']]
                 st.bar_chart(df_grafico, color="#3498db")
@@ -410,7 +508,7 @@ def main():
                 st.error("❌ No se pudieron procesar las series para la estación seleccionada.")
         else:
             st.info("👈 Seleccione una Cuenca o Municipio con estaciones activas en el menú lateral para iniciar el peritaje.")
-
+            
     elif selected_module == "🔮 Pronóstico Climático": 
         # Llama al visualizador reconstruido (que ahora tiene historia, NOAA y Prophet)
         viz.display_climate_forecast_tab(**display_args)
