@@ -314,6 +314,8 @@ def main():
     # ==============================================================================
     # 🧠 NUEVO MÓDULO: PERITAJE Y CONSISTENCIA HIDROMETEOROLÓGICA
     # ==============================================================================
+    # 🧠 NUEVO MÓDULO: PERITAJE Y CONSISTENCIA HIDROMETEOROLÓGICA
+    # ==============================================================================
     elif selected_module == "🧠 Peritaje y Consistencia":
         st.subheader("🧠 Analítica Avanzada: Peritaje de Consistencia Hidrometeorológica")
         st.markdown("Evaluación forense automática de la calidad de las series de tiempo y su respuesta ante macro-eventos globales (ENOS).")
@@ -323,25 +325,30 @@ def main():
             
             if est_sel and df_monthly_filtered is not None and not df_monthly_filtered.empty:
                 
-                # 🛡️ LIMPIEZA DE LLAVE: Si el selector viene como "NOMBRE [CODIGO]", extraemos solo el NOMBRE
+                # 🛡️ PASO 1: EXTRACCIÓN QUIRÚRGICA DE LA LLAVE DE BÚSQUEDA
+                # Si el selector viene como "SANTO DOMINGO [23080390]", extraemos el nombre puro y el código por separado
                 nombre_estacion_puro = est_sel.split('[')[0].strip() if '[' in est_sel else est_sel
+                codigo_puro = est_sel.split('[')[1].replace(']', '').strip() if '[' in est_sel else ""
                 
-                # Intentamos filtrar primero por el nombre combinado y si da vacío, por el nombre puro
+                # Intentamos la estrategia de filtrado multivariado para asegurar capturar todo el histórico sin pérdidas
                 df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL] == est_sel].copy()
+                
                 if df_est.empty:
                     df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL] == nombre_estacion_puro].copy()
                 
-                # Si sigue vacío, probamos buscando si el código está contenido en la columna
-                if df_est.empty and '[' in est_sel:
-                    codigo_puro = est_sel.split('[')[1].replace(']', '').strip()
+                if df_est.empty and codigo_puro:
                     df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL].astype(str).str.contains(codigo_puro)].copy()
-
-                # --- CONTINÚA LA LÓGICA DE AGREGACIÓN ---
+                
+                # 🛡️ PASO 2: PURGA FORENSE DE REGISTROS VACÍOS O INCOMPLETOS
+                # Eliminamos nulos en la columna de precipitación para que no sumen ceros falsos al agrupar por año
+                df_est = df_est.dropna(subset=[Config.PRECIPITATION_COL])
+                
+                # 🛡️ PASO 3: AGRUPACIÓN Y COMPRENSIÓN ANUAL
                 df_anual = df_est.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
                 df_anual.columns = ['Año', 'Precipitación', 'Meses_Validos']
                 
-                # Filtro de integridad estándar
-                df_integro = df_anual[df_anual['Meses_Validos'] >= 10]
+                # Criterio estricto: El año debe tener al menos 10 meses con mediciones reales y más de 50 mm acumulados
+                df_integro = df_anual[(df_anual['Meses_Validos'] >= 10) & (df_anual['Precipitación'] > 50.0)]
                 
                 # --- DISEÑO DEL PANEL DE CONTROL FORENSE ---
                 col_panel1, col_panel2 = st.columns([1.5, 2])
@@ -389,7 +396,7 @@ def main():
                         else:
                             st.warning("⚠️ Sin suficientes años íntegros para emitir un dictamen macroclimático robusto.")
                 
-                # Gráfico multianual integrado de soporte visual
+                # Gráfico multianual de soporte ocular con el histórico recuperado
                 st.markdown("#### 📈 Evolución Multianual de Soporte")
                 df_grafico = df_anual.set_index('Año')[['Precipitación']]
                 st.bar_chart(df_grafico, color="#3498db")
