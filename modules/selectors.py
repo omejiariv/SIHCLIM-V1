@@ -379,14 +379,32 @@ def render_selector_espacial():
             nombre_zona, gdf_zona = "Antioquia", gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_mun.unary_union], crs=gdf_mun.crs)
             nivel_jerarquico = "Departamental" 
 
-        # --- FILTRO DE ESTACIONES ---
+        # --- FILTRADO DE ESTACIONES CON CONTROLES DE BUFFER DINÁMICOS ACENTUADOS ---
         if gdf_zona is not None and not gdf_zona.empty:
             buff = st.slider("Buffer (km):", 0.0, 50.0, 25.0)
+            
+            # Extraemos los límites geográficos estrictos del territorio en WGS84
             minx, miny, maxx, maxy = gdf_zona.to_crs(4326).total_bounds
-            q = text(f"SELECT id_estacion, altitud FROM estaciones WHERE longitud BETWEEN {minx-0.2} AND {maxx+0.2} AND latitud BETWEEN {miny-0.2} AND {maxy+0.2}")
-            df_est = pd.read_sql(q, engine)
-            ids_estaciones = df_est['id_estacion'].astype(str).tolist()
-            altitud_ref = df_est['altitud'].mean()
+            
+            # 🛡️ CONVERSIÓN EQUIVALENTE: En la zona ecuatorial de Antioquia, 1 km equivale aproximadamente a 0.009 grados decimales.
+            # Convertimos el valor dinámico del slider 'buff' a grados de tolerancia para la consulta espacial
+            tolerancia_grados = buff * 0.009
+            
+            # Inyectamos la variable 'tolerancia_grados' calculada directamente en la ventana SQL
+            q = text(f"""
+                SELECT id_estacion, altitud 
+                FROM estaciones 
+                WHERE longitud BETWEEN {minx - tolerancia_grados} AND {maxx + tolerancia_grados} 
+                  AND latitud BETWEEN {miny - tolerancia_grados} AND {maxy + tolerancia_grados}
+            """)
+            
+            try:
+                df_est = pd.read_sql(q, engine)
+                ids_estaciones = df_est['id_estacion'].astype(str).tolist()
+                altitud_ref = df_est['altitud'].mean()
+            except Exception as e:
+                st.sidebar.error(f"Error en consulta de estaciones por buffer: {e}")
+                ids_estaciones = []
 
     # ====================================================================
     # 🧠 ORQUESTADOR SILENCIOSO (FUSIONADO CON CSV SUPABASE)
