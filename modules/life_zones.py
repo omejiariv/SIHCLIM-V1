@@ -188,15 +188,23 @@ def vectorize_raster_to_gdf(raster_array, transform, crs):
     except:
         return gpd.GeoDataFrame()
 
-# 🏔️ NUEVA FUNCIÓN EXTRACTORA DE ALTITUD PARA ESTACIONES
+# 🏔️ FUNCIÓN EXTRACTORA DE ALTITUD PARA ESTACIONES (BLINDADA)
 def extract_elevation_from_dem(gdf_points, dem_input):
     """
     Toma un GeoDataFrame de estaciones y les asigna su elevación real pinchando el DEM.
+    Filtra estaciones sin coordenadas para evitar errores de NoneType.
     """
     try:
-        # Aseguramos que los puntos estén en WGS84 para cruzar con el DEM
-        gdf_points = gdf_points.to_crs("EPSG:4326")
-        coords = [(geom.x, geom.y) for geom in gdf_points.geometry]
+        # 1. 🛡️ FILTRO CRÍTICO: Eliminar geometrías nulas o vacías
+        gdf_valid = gdf_points.dropna(subset=['geometry']).copy()
+        gdf_valid = gdf_valid[~gdf_valid.geometry.is_empty]
+        
+        if gdf_valid.empty:
+            return gdf_points # Si todas están vacías, devolvemos el original
+            
+        # 2. Proyección y extracción
+        gdf_valid = gdf_valid.to_crs("EPSG:4326")
+        coords = [(geom.x, geom.y) for geom in gdf_valid.geometry]
         
         elevations = []
         with open_raster_source(dem_input) as src:
@@ -204,8 +212,8 @@ def extract_elevation_from_dem(gdf_points, dem_input):
                 # val[0] es el valor del pixel pinchado
                 elevations.append(val[0] if val[0] != src.nodata else np.nan)
                 
-        gdf_points['altitud_dem'] = elevations
-        return gdf_points
+        gdf_valid['altitud_dem'] = elevations
+        return gdf_valid
     except Exception as e:
         st.error(f"Error extrayendo elevación: {e}")
         return gdf_points
