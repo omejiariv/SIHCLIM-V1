@@ -1118,20 +1118,36 @@ def main():
         else: 
             st.warning("Se requieren mín. 3 estaciones para calcular isoyetas.")
 
-    # --- REPORTE (SOLUCIONADO EL DUPLICADO) ---
+    # --- REPORTE INTEGRADO ---
     elif selected_module == "📄 Reporte":
         st.header("Generación de Informe")
-        if st.button("📄 Crear PDF"):
-            res = {"n_estaciones": len(stations_for_analysis), "rango": f"{year_range}"}
-            pdf = generate_pdf_report(df_monthly_filtered, gdf_filtered, res)
-            if pdf: 
-                st.download_button("Descargar PDF", pdf, "reporte_hidro.pdf", "application/pdf")
-
-    st.markdown("""<style>.stTabs [data-baseweb="tab-panel"] { padding-top: 1rem; }</style>""", unsafe_allow_html=True)
+        
+        # 1. Definimos el capítulo de esta página
+        # (Aquí debes usar la figura que ya tengas en memoria en esta página)
+        fig_actual = st.session_state.get('fig_clima_principal') 
+        
+        capitulo = {
+            'title': 'Análisis Hidroclimático',
+            'text': f'Análisis realizado con {len(stations_for_analysis)} estaciones. Periodo: {year_range}.',
+            'fig': fig_actual
+        }
+        
+        # 2. Inicializar lista global si no existe
+        if 'pdf_chapters' not in st.session_state:
+            st.session_state.pdf_chapters = []
+            
+        # 3. Guardar el capítulo en la mochila global
+        if capitulo not in st.session_state.pdf_chapters:
+            st.session_state.pdf_chapters.append(capitulo)
+            st.success("✅ Capítulo de Clima capturado para el reporte final.")
+        
+        # 4. Botón de descarga consolidada
+        st.info("Este reporte consolidará todo lo que hayas visitado en otras pestañas.")
+        if st.button("📥 Generar PDF Consolidado de SIHCLI"):
+            from modules import reporter
+            pdf_data = reporter.generate_consolidated_pdf(st.session_state.pdf_chapters)
+            st.download_button("Descargar PDF Final", pdf_data, "Reporte_Sihcli_Final.pdf", "application/pdf")
     
-if __name__ == "__main__":
-    main()
-
     # ==============================================================================
     # ⚙️ BÓVEDA DE ADMINISTRADOR: FORJA DE LA MATRIZ MAESTRA
     # ==============================================================================
@@ -1321,3 +1337,7 @@ if __name__ == "__main__":
                     
         elif admin_pwd != "":
             st.error("❌ Clave incorrecta. Acceso denegado.")
+
+if __name__ == "__main__":
+    main()
+
