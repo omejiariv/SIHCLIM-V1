@@ -318,6 +318,9 @@ def main():
         st.subheader("🧠 Analítica Avanzada: Peritaje de Consistencia Hidrometeorológica")
         st.markdown("Evaluación forense automática de la calidad de las series de tiempo y su respuesta ante macro-eventos globales (ENOS).")
         
+        # Ruta propuesta para el Modelo de Elevación Digital ráster (Ajustar según corresponda)
+        RUTA_DEM = os.path.join("data", "dem_antioquia.tif")
+        
         # ----------------------------------------------------------------------
         # 🏢 CAJA MENSAJE PERMANENTE: BALANCE MACROREGIONAL DEL SIDEBAR
         # ----------------------------------------------------------------------
@@ -325,19 +328,15 @@ def main():
             with st.container(border=True):
                 st.markdown("### 🌍 Diagnóstico Macroregional de la Selección")
                 
-                # Filtrar el DataFrame global solo para las estaciones válidas en la selección actual
                 df_macro = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL].isin(stations_for_analysis)].copy()
                 
                 if not df_macro.empty:
-                    # Agrupación anual por estación para hallar los extremos regionales
                     df_macro_anual = df_macro.groupby([Config.STATION_NAME_COL, Config.YEAR_COL])[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
                     df_macro_anual.columns = ['Estación', 'Año', 'Precipitación', 'Meses_Validos']
                     
-                    # Filtro de integridad regional (>700 mm/año y meses completos)
                     df_macro_integro = df_macro_anual[(df_macro_anual['Meses_Validos'] >= 10) & (df_macro_anual['Precipitación'] >= 700.0)]
                     
                     if not df_macro_integro.empty:
-                        # 1. Extremos Absolutos
                         idx_macro_max = df_macro_integro['Precipitación'].idxmax()
                         idx_macro_min = df_macro_integro['Precipitación'].idxmin()
                         
@@ -349,7 +348,6 @@ def main():
                         ano_min_reg = int(df_macro_integro.loc[idx_macro_min, 'Año'])
                         val_min_reg = df_macro_integro.loc[idx_macro_min, 'Precipitación']
                         
-                        # 2. Valores Medios Anuales por Estación para identificar la más húmeda y más seca en promedio
                         df_medias = df_macro_integro.groupby('Estación')['Precipitación'].mean().reset_index()
                         est_mas_humeda = df_medias.loc[df_medias['Precipitación'].idxmax(), 'Estación']
                         media_mas_humeda = df_medias['Precipitación'].max()
@@ -357,9 +355,7 @@ def main():
                         est_mas_seca = df_medias.loc[df_medias['Precipitación'].idxmin(), 'Estación']
                         media_mas_seca = df_medias['Precipitación'].min()
                         
-                        # Despliegue en Columnas del balance de la cuenca/municipio
                         c_macro1, c_macro2 = st.columns(2)
-                        
                         with c_macro1:
                             st.markdown(f"**🌧️ Núcleo de Alta Precipitación (Más Húmedo):**")
                             st.markdown(f"* **Estación Predominante:** `{est_mas_humeda}`")
@@ -385,7 +381,6 @@ def main():
             
             if est_sel and df_monthly_filtered is not None and not df_monthly_filtered.empty:
                 
-                # 🛡️ PASO 1: EXTRACCIÓN QUIRÚRGICA DE LA LLAVE DE BÚSQUEDA
                 nombre_estacion_puro = est_sel.split('[')[0].strip() if '[' in est_sel else est_sel
                 codigo_puro = est_sel.split('[')[1].replace(']', '').strip() if '[' in est_sel else ""
                 
@@ -395,24 +390,18 @@ def main():
                 if df_est.empty and codigo_puro:
                     df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL].astype(str).str.contains(codigo_puro)].copy()
                 
-                # Purga forense de registros nulos en la columna de lluvia
                 df_est = df_est.dropna(subset=[Config.PRECIPITATION_COL])
                 
-                # 🛡️ PASO 2: AGRUPACIÓN Y COMPRENSIÓN ANUAL
                 df_anual = df_est.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
                 df_anual.columns = ['Año', 'Precipitación', 'Meses_Validos']
-                
-                # Filtro Andino de Integridad Física corregido a 700.0 mm
                 df_integro = df_anual[(df_anual['Meses_Validos'] >= 10) & (df_anual['Precipitación'] >= 700.0)]
                 
-                # --- DISEÑO DEL PANEL DE CONTROL FORENSE ---
                 col_panel1, col_panel2 = st.columns([1.5, 2])
                 
                 with col_panel1:
                     with st.container(border=True):
                         st.markdown(f"### 🛡️ Ficha Técnica Geográfica")
                         
-                        # Extracción dinámica de metadatos desde el GeoDataFrame
                         municipio_est = "No especificado"
                         altitud_est = "N/D"
                         
@@ -423,9 +412,24 @@ def main():
                                 col_alt = [c for c in meta_est.columns if 'alt' in c.lower() or 'ele' in c.lower() or 'msnm' in c.lower()]
                                 
                                 if col_muni: municipio_est = str(meta_est.iloc[0][col_muni[0]]).upper()
-                                if col_alt: 
-                                    val_alt = meta_est.iloc[0][col_alt[0]]
-                                    altitud_est = f"{int(val_alt):,} msnm" if pd.notna(val_alt) else "N/D"
+                                
+                                # ⛰️ EXTRACCIÓN POR DEM (Si Supabase viene vacío o N/D y el ráster existe)
+                                if col_alt and pd.notna(meta_est.iloc[0][col_alt[0]]) and str(meta_est.iloc[0][col_alt[0]]).strip() != "":
+                                    altitud_est = f"{int(meta_est.iloc[0][col_alt[0]]):,} msnm"
+                                elif os.path.exists(RUTA_DEM):
+                                    try:
+                                        import rasterio
+                                        # Aseguramos que el punto esté en el mismo sistema de coordenadas que el ráster
+                                        punto_geom = meta_est.geometry.iloc[0]
+                                        with rasterio.open(RUTA_DEM) as src:
+                                            # Muestreo espacial de la coordenada del punto en el ráster
+                                            coord_par = [(punto_geom.x, punto_geom.y)]
+                                            for val in src.sample(coord_par):
+                                                alt_dem = val[0]
+                                                if alt_dem > -9999: # Evitar valores de no-data del ráster
+                                                    altitud_est = f"{int(alt_dem):,} msnm (Vía DEM)"
+                                    except Exception as e:
+                                        altitud_est = "Error muestreo DEM"
                         
                         st.markdown(f"**📍 Estación:** `{est_sel}`")
                         st.markdown(f"**🏢 Municipio:** `{municipio_est}`")
@@ -470,20 +474,16 @@ def main():
                             st.warning("⚠️ Sin suficientes años íntegros para emitir un dictamen macroclimático robusto.")
                 
                 # ----------------------------------------------------------------------
-                # 📅 NUEVO SUBPANEL: EXTRACTO DE EXTREMOS MENSUALES ABSOLUTOS
+                # 📅 SUBPANEL: EXTRACTO DE EXTREMOS MENSUALES ABSOLUTOS
                 # ----------------------------------------------------------------------
                 st.markdown("---")
                 with st.container(border=True):
                     st.markdown("### 📅 Diagnóstico de Extremos Mensuales de la Serie")
-                    
-                    # Diccionario de traducción para presentación estética
                     meses_dict = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
                                   7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
                     
-                    # Identificar el mes de mayor y menor precipitación de toda la historia registrada
                     if Config.MONTH_COL in df_est.columns and not df_est.empty:
                         idx_mes_max = df_est[Config.PRECIPITATION_COL].idxmax()
-                        # Para el mes menos lluvioso filtramos ceros absolutos si se desea consistencia o dejamos el mínimo real registrado
                         idx_mes_min = df_est[Config.PRECIPITATION_COL].idxmin()
                         
                         val_mes_max = df_est.loc[idx_mes_max, Config.PRECIPITATION_COL]
@@ -504,6 +504,63 @@ def main():
                 st.markdown("#### 📈 Evolución Multianual de Soporte")
                 df_grafico = df_anual.set_index('Año')[['Precipitación']]
                 st.bar_chart(df_grafico, color="#3498db")
+                
+                # ----------------------------------------------------------------------
+                # 📊 SECCIÓN NUEVA: TABLA DE REPORTE CONSOLIDADO REGIONAL DE ESTADÍSTICAS
+                # ----------------------------------------------------------------------
+                st.markdown("---")
+                st.markdown("### 📊 Reporte Consolidado Forense de la Selección")
+                st.markdown("Matriz unificada de estadísticas críticas para todas las estaciones activas en la delimitación actual.")
+                
+                registros_tabla = []
+                
+                # Iterar en lote sobre las estaciones de la selección para consolidar la tabla maestra
+                for est_item in stations_for_analysis:
+                    code_item = est_item.split('[')[1].replace(']', '').strip() if '[' in est_item else ""
+                    name_item = est_item.split('[')[0].strip() if '[' in est_item else est_item
+                    
+                    df_sub = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL].astype(str).str.contains(code_item if code_item else name_item)].copy()
+                    df_sub = df_sub.dropna(subset=[Config.PRECIPITATION_COL])
+                    
+                    if not df_sub.empty:
+                        df_sub_anual = df_sub.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
+                        df_sub_anual.columns = ['Año', 'Precipitación', 'Meses_Validos']
+                        df_sub_integro = df_sub_anual[(df_sub_anual['Meses_Validos'] >= 10) & (df_sub_anual['Precipitación'] >= 700.0)]
+                        
+                        anios_activos = df_sub_anual.shape[0]
+                        anios_integros = df_sub_integro.shape[0]
+                        media_anual = df_sub_integro['Precipitación'].mean() if not df_sub_integro.empty else np.nan
+                        
+                        if not df_sub_integro.empty:
+                            idx_sub_max = df_sub_integro['Precipitación'].idxmax()
+                            idx_sub_min = df_sub_integro['Precipitación'].idxmin()
+                            max_val_anual = f"{df_sub_integro.loc[idx_sub_max, 'Precipitación']:,.1f} ({int(df_sub_integro.loc[idx_sub_max, 'Año'])})"
+                            min_val_anual = f"{df_sub_integro.loc[idx_sub_min, 'Precipitación']:,.1f} ({int(df_sub_integro.loc[idx_sub_min, 'Año'])})"
+                        else:
+                            max_val_anual, min_val_anual = "N/D", "N/D"
+                            
+                        registros_tabla.append({
+                            "Código/Estación": est_item,
+                            "Años Activos": anios_activos,
+                            "Años Íntegros": anios_integros,
+                            "Media Anual (mm)": round(media_anual, 1) if pd.notna(media_anual) else "N/D",
+                            "Máximo Anual Histór. (Año)": max_val_anual,
+                            "Mínimo Anual Histór. (Año)": min_val_anual
+                        })
+                
+                if registros_tabla:
+                    df_reporte_final = pd.DataFrame(registros_tabla)
+                    st.dataframe(df_reporte_final, use_container_width=True, hide_index=True)
+                    
+                    # Forjado del botón de descarga en formato CSV
+                    csv_reporte = df_reporte_final.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Descargar Reporte de Estadísticas Básicas (CSV)",
+                        data=csv_reporte,
+                        file_name="Reporte_Consolidado_Forense_Hidro.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
             else:
                 st.error("❌ No se pudieron procesar las series para la estación seleccionada.")
         else:
