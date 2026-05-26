@@ -3997,7 +3997,7 @@ def display_drought_analysis_tab(df_long, gdf_stations, **kwargs):
                     st.warning("No se pudo vectorizar esta capa para descarga.")
 
 
-# FUNCIÓN CLIMA FUTURO (MAPA RIESGO MEJORADO + SIMULADOR + CONTEXTO GEO)
+# FUNCIÓN CLIMA FUTURO (MAPA RIESGO MEJORADO + SIMULADOR + GEOESTADÍSTICA)
 # ==============================================================================
 def display_climate_scenarios_tab(**kwargs):
     st.subheader("🌡️ Clima Futuro y Vulnerabilidad (CMIP6 / Riesgo)")
@@ -4005,137 +4005,136 @@ def display_climate_scenarios_tab(**kwargs):
     # Recuperamos datos maestros
     df_anual = kwargs.get("df_anual_melted")
     gdf_stations = kwargs.get("gdf_stations")
-    gdf_zona = kwargs.get("gdf_zona") # 🛡️ Usamos el polígono maestro directo
+    gdf_zona = kwargs.get("gdf_zona") 
     
-    # Intentamos recuperar el nombre de la zona (si viene en las propiedades o como string)
     basin_name = "Zona Seleccionada"
     if gdf_zona is not None and not gdf_zona.empty:
-        # Intentamos extraer el nombre de alguna columna probable
         for col in ['nombre', 'nom_szh', 'nomzh', 'nom_nss3']:
             if col in gdf_zona.columns:
                 basin_name = str(gdf_zona.iloc[0][col]).title()
                 break
 
-    tab_risk, tab_cmip6 = st.tabs(
-        [
-            "🗺️ Mapa de Riesgo (Tendencias Históricas)",
-            "🌍 Simulador de Cambio Climático (CMIP6)",
-        ]
-    )
+    tab_risk, tab_cmip6 = st.tabs([
+        "🗺️ Mapa de Riesgo (Tendencias Históricas)",
+        "🌍 Simulador de Cambio Climático (CMIP6)"
+    ])
 
     # --- TAB 1: MAPA DE RIESGO (MOTOR DE ANÁLISIS ESPACIAL) ---
     with tab_risk:
         st.markdown(f"#### Vulnerabilidad Hídrica: Tendencias de Precipitación")
         st.caption(f"**Territorio Analizado:** {basin_name}")
 
-        with st.expander("ℹ️ Acerca de este Mapa de Riesgo", expanded=False):
-            st.markdown(
-                """
-                Este mapa visualiza la **dinámica espacial del cambio** en la lluvia mediante la interpolación de la pendiente de Sen.
-                * **Rojo (Valores Negativos):** Zonas con tendencia a la disminución de lluvias (Riesgo de sequía/déficit).
-                * **Azul (Valores Positivos):** Zonas con tendencia al aumento de lluvias (Posible riesgo de inundación/exceso).
-                * **Puntos Amarillos:** Estaciones físicas. El borde grueso indica que la tendencia es estadísticamente significativa (p < 0.05).
-                """
-            )
+        with st.expander("ℹ️ Acerca del Motor de Interpolación", expanded=False):
+            st.markdown("""
+                * **IDW (Inverso de la Distancia):** Asigna mayor peso a las estaciones cercanas. Excelente para lluvia (Estándar IDEAM).
+                * **Spline (RBF):** Genera una superficie elástica ultra-suave. Ideal para visualizar tendencias macro.
+                * **Cúbica / Lineal:** Interpolaciones geométricas basadas en los triángulos entre estaciones.
+            """)
 
-        c1, c2, c3 = st.columns([1.5, 1.5, 1])
+        # 🎛️ CONTROLES DEL MAPA (INCLUYE SELECTOR DE INTERPOLACIÓN)
+        c1, c2, c3 = st.columns([1, 1.2, 1.2])
         with c1:
-            use_mask = st.checkbox("✂️ Recortar visualmente por el límite territorial", value=True, key="risk_mask_cb")
+            use_mask = st.checkbox("✂️ Recortar por polígono", value=True)
         with c2:
-            map_style = st.selectbox("🗺️ Estilo del Mapa Base:", ["carto-positron", "open-street-map", "stamen-terrain", "white-bg"], index=0)
+            interp_method = st.selectbox("🧠 Algoritmo de Interpolación:", 
+                                         ["IDW (Distancia Inversa)", "Spline (RBF)", "Cúbica", "Lineal"], index=0)
         with c3:
-            generar_mapa = st.button("🚀 Generar Mapa", use_container_width=True)
+            generar_mapa = st.button("🚀 Generar Superficie", use_container_width=True)
 
         if generar_mapa:
-            with st.spinner("Ejecutando análisis regional de Mann-Kendall..."):
+            with st.spinner(f"Calculando Malla Espacial vía {interp_method}..."):
                 trend_data = []
                 if df_anual is not None:
                     stations_pool = df_anual[Config.STATION_NAME_COL].unique()
                     
                     for stn in stations_pool:
                         sub = df_anual[df_anual[Config.STATION_NAME_COL] == stn]
-                        
                         try:
-                            # 1. Llamada al motor estadístico modular
                             res_mk = calcular_tendencia_mk_estacion(sub[Config.PRECIPITATION_COL])
                             trend_type, p_val, slope, icon, sig_text = res_mk
-                        except Exception:
+                        except:
                             continue
                         
                         if trend_type != "Insuficiente":
                             try:
-                                # 2. Asociación Espacial
                                 if gdf_stations is not None:
                                     loc = gdf_stations[gdf_stations[Config.STATION_NAME_COL] == stn]
                                     if not loc.empty:
                                         iloc = loc.iloc[0]
-                                        muni = iloc[Config.MUNICIPALITY_COL] if Config.MUNICIPALITY_COL in iloc else "Desconocido"
+                                        muni = iloc.get(Config.MUNICIPALITY_COL, "Desconocido")
                                         
-                                        # 🛡️ FILTRO DE VALORES ATÍPICOS (OUTLIERS ASTRONÓMICOS)
-                                        # Si la pendiente es absurdamente grande (ej. > 2000 mm/año por año), la limitamos
+                                        # Limitamos valores astronómicos que dañan el Spline
                                         slope_clamped = max(min(slope, 1500.0), -1500.0) 
                                         
                                         trend_data.append({
-                                            "lat": iloc["latitude"],
-                                            "lon": iloc["longitude"],
-                                            "slope": slope_clamped,
-                                            "slope_raw": slope,
-                                            "trend": trend_type,
-                                            "p": p_val,
-                                            "sig": sig_text,
-                                            "name": stn,
-                                            "municipio": muni
+                                            "lat": iloc["latitude"], "lon": iloc["longitude"],
+                                            "slope": slope_clamped, "slope_raw": slope,
+                                            "trend": trend_type, "p": p_val,
+                                            "sig": sig_text, "name": stn, "municipio": muni
                                         })
-                            except Exception:
+                            except:
                                 continue
 
-                # --- PROCESO DE INTERPOLACIÓN ---
+                # --- 🧮 PROCESO DE INTERPOLACIÓN AVANZADA ---
                 if len(trend_data) >= 4:
                     df_trend = pd.DataFrame(trend_data)
 
-                    # Margen de interpolación ajustado a la zona seleccionada
+                    # Expandimos (Pad) el Bounding Box para que la interpolación cubra los bordes de la cuenca
+                    pad = 0.05
                     if gdf_zona is not None and not gdf_zona.empty:
                         minx, miny, maxx, maxy = gdf_zona.to_crs(4326).total_bounds
                     else:
-                        minx, maxx = df_trend.lon.min() - 0.1, df_trend.lon.max() + 0.1
-                        miny, maxy = df_trend.lat.min() - 0.1, df_trend.lat.max() + 0.1
+                        minx, maxx = df_trend.lon.min(), df_trend.lon.max()
+                        miny, maxy = df_trend.lat.min(), df_trend.lat.max()
 
-                    # Configuración de Grilla 
-                    grid_res = 150j
-                    grid_x, grid_y = np.mgrid[minx:maxx:grid_res, miny:maxy:grid_res]
+                    # Malla de alta resolución (200x200 píxeles espaciales)
+                    grid_res = 200j
+                    grid_x, grid_y = np.mgrid[minx-pad:maxx+pad:grid_res, miny-pad:maxy+pad:grid_res]
 
-                    from scipy.interpolate import griddata
-                    # 🛡️ Cambiamos a 'linear' para evitar las exageraciones salvajes de 'cubic' en bordes vacíos
-                    grid_z = griddata(
-                        (df_trend.lon, df_trend.lat), 
-                        df_trend.slope, 
-                        (grid_x, grid_y), 
-                        method='linear'
-                    )
+                    # 1. EJECUCIÓN DEL ALGORITMO SELECCIONADO
+                    if interp_method == "Lineal":
+                        from scipy.interpolate import griddata
+                        grid_z = griddata((df_trend.lon, df_trend.lat), df_trend.slope, (grid_x, grid_y), method='linear')
+                        
+                    elif interp_method == "Cúbica":
+                        from scipy.interpolate import griddata
+                        grid_z = griddata((df_trend.lon, df_trend.lat), df_trend.slope, (grid_x, grid_y), method='cubic')
+                        
+                    elif interp_method == "Spline (RBF)":
+                        from scipy.interpolate import Rbf
+                        # RBF extrapola de forma elástica creando superficies muy suaves
+                        rbf = Rbf(df_trend.lon, df_trend.lat, df_trend.slope, function='thin_plate', smooth=0.1)
+                        grid_z = rbf(grid_x, grid_y)
+                        
+                    elif interp_method == "IDW (Distancia Inversa)":
+                        from scipy.spatial import cKDTree
+                        # Búsqueda espacial rápida (KDTree) de las 6 estaciones más cercanas por cada pixel
+                        tree = cKDTree(np.c_[df_trend.lon, df_trend.lat])
+                        dist, idx = tree.query(np.c_[grid_x.ravel(), grid_y.ravel()], k=min(6, len(df_trend)))
+                        dist = np.maximum(dist, 1e-9) # Evitar división por cero
+                        weights = 1.0 / (dist**2) # Inverso de la distancia al cuadrado
+                        z_values = df_trend.slope.values[idx]
+                        grid_z_flat = np.sum(weights * z_values, axis=1) / np.sum(weights, axis=1)
+                        grid_z = grid_z_flat.reshape(grid_x.shape)
+
+                    # 2. CONTROL DE VALORES EXTREMOS (ANTI-DESBORDAMIENTO RBF/SPLINE)
+                    # Si Spline se dispara en los bordes vacíos, lo truncamos al máximo real de las estaciones
+                    z_min_real, z_max_real = df_trend.slope.min(), df_trend.slope.max()
+                    grid_z = np.clip(grid_z, z_min_real * 1.5, z_max_real * 1.5)
                     
-                    # 🛡️ LÍMITE DE LA LEYENDA (Percentiles para evitar que un dato raro deforme la escala)
-                    z_min = np.nanpercentile(grid_z, 5) if not np.isnan(grid_z).all() else -500
-                    z_max = np.nanpercentile(grid_z, 95) if not np.isnan(grid_z).all() else 500
+                    # Forzamos simetría en la leyenda para que el blanco sea cero exacto
+                    max_abs = max(abs(np.nanmin(grid_z)), abs(np.nanmax(grid_z)))
                     
-                    # Forzar simetría en la leyenda alrededor del cero
-                    max_abs = max(abs(z_min), abs(z_max))
-                    if max_abs > 1000: max_abs = 1000  # Tope absoluto razonable
-                    
-                    # --- MÁSCARA GEOMÉTRICA (Recorte real) ---
+                    # 3. MÁSCARA GEOMÉTRICA (Recorte de la forma exacta)
                     if use_mask and gdf_zona is not None and not gdf_zona.empty:
                         try:
                             from shapely.geometry import Point
                             from shapely.prepared import prep
 
-                            # Aseguramos que trabajamos en WGS84 para el recorte
                             poly = gdf_zona.to_crs(4326).unary_union
                             prep_poly = prep(poly)
 
-                            flat_x = grid_x.flatten()
-                            flat_y = grid_y.flatten()
-                            flat_z = grid_z.flatten()
-
-                            # Aplicamos recorte rápido
+                            flat_x, flat_y, flat_z = grid_x.flatten(), grid_y.flatten(), grid_z.flatten()
                             valid_indices = np.where(~np.isnan(flat_z))[0]
                             for idx in valid_indices:
                                 if not prep_poly.contains(Point(flat_x[idx], flat_y[idx])):
@@ -4143,116 +4142,59 @@ def display_climate_scenarios_tab(**kwargs):
 
                             grid_z = flat_z.reshape(grid_x.shape)
                         except Exception as e:
-                            st.warning(f"Aviso: Recorte visual omitido ({e})")
+                            st.warning(f"Aviso: Fallo en recorte visual ({e})")
 
-                    # --- CONSTRUCCIÓN DEL MAPA PLOTLY (MODO MAPBOX GEOGRÁFICO) ---
+                    # --- CONSTRUCCIÓN DEL MAPA ---
                     fig = go.Figure()
 
-                    # 1. Capa de Contorno Proyectada en Mapa Base (Densitymapbox u Heatmap)
-                    # Como go.Contour no soporta fondo Mapbox, inyectamos la imagen calculada como una capa sobre el mapa
+                    # Capa Raster de Interpolación
                     fig.add_trace(go.Contour(
-                        z=grid_z.T,
-                        x=grid_x[:, 0],
-                        y=grid_y[0, :],
-                        colorscale="RdBu_r", 
-                        zmin=-max_abs,
-                        zmax=max_abs,
-                        opacity=0.75,
+                        z=grid_z.T, x=grid_x[:, 0], y=grid_y[0, :],
+                        colorscale="RdBu_r", zmin=-max_abs, zmax=max_abs, opacity=0.8,
                         contours=dict(showlines=False), 
-                        colorbar=dict(
-                            title="Pendiente<br>(mm/año)",
-                            thickness=15,
-                            len=0.8,
-                            outlinewidth=0,
-                            x=1.02
-                        ),
-                        connectgaps=False,
-                        hoverinfo='skip'
+                        colorbar=dict(title="Pendiente<br>(mm/año)", thickness=15, len=0.8, x=1.02),
+                        connectgaps=False, hoverinfo='skip'
                     ))
 
-                    # 2. Capa de Estaciones
+                    # Capa de Puntos (Estaciones)
                     df_trend["line_width"] = df_trend["p"].apply(lambda x: 2.5 if x < 0.05 else 0.8)
                     fig.add_trace(go.Scatter(
-                        x=df_trend.lon,
-                        y=df_trend.lat,
-                        mode="markers",
+                        x=df_trend.lon, y=df_trend.lat, mode="markers",
                         text=df_trend.apply(
-                            lambda r: f"<b>{r['name']}</b><br>Municipio: {r['municipio']}<br>Tendencia real: {r['slope_raw']:.1f} mm/año<br>Confianza: {r['sig']}",
-                            axis=1
-                        ),
+                            lambda r: f"<b>{r['name']}</b><br>Tendencia real: {r['slope_raw']:.1f} mm/año<br>Confianza: {r['sig']}", axis=1),
                         hoverinfo="text",
-                        marker=dict(
-                            size=10,
-                            color="#FFFD01", 
-                            line=dict(width=df_trend["line_width"], color="black")
-                        ),
+                        marker=dict(size=9, color="#FFFD01", line=dict(width=df_trend["line_width"], color="black")),
                         name="Estaciones"
                     ))
 
-                    # 3. Línea Divisoria (Contorno Geográfico)
+                    # Línea Divisoria de la Cuenca/Municipio
                     if gdf_zona is not None and not gdf_zona.empty:
                         try:
                             poly_wgs84 = gdf_zona.to_crs(4326).unary_union
                             geoms = poly_wgs84.geoms if hasattr(poly_wgs84, "geoms") else [poly_wgs84]
-                            
                             for i, p in enumerate(geoms):
                                 bx, by = p.exterior.xy
                                 fig.add_trace(go.Scatter(
-                                    x=list(bx), y=list(by),
-                                    mode="lines",
-                                    line=dict(color="#2c3e50", width=3, dash='solid'),
+                                    x=list(bx), y=list(by), mode="lines",
+                                    line=dict(color="#2c3e50", width=3),
                                     name="Límite Divisorio" if i == 0 else "",
-                                    showlegend=(i == 0),
-                                    hoverinfo='skip'
+                                    showlegend=(i == 0), hoverinfo='skip'
                                 ))
-                        except Exception: 
-                            pass
+                        except: pass
 
-                    # 🌍 AJUSTE DE LAYOUT PARA VER EL MAPA DE FONDO
-                    # Para mezclar ejes X/Y con un fondo de mapa, Plotly requiere jugar con el layout
                     fig.update_layout(
-                        title=dict(text=f"Tendencias de Vulnerabilidad: {basin_name}", font=dict(size=18)),
-                        # Ocultamos la grilla matemática y mostramos el mapa
+                        title=dict(text=f"Tendencias (Interpolación: {interp_method})", font=dict(size=18)),
                         xaxis=dict(showgrid=False, zeroline=False, visible=False),
                         yaxis=dict(showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1, visible=False),
-                        height=700,
-                        margin=dict(l=0, r=50, t=50, b=0),
+                        height=700, margin=dict(l=0, r=50, t=50, b=0),
                         legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5),
-                        # 🗺️ Inyectamos el fondo satelital/callejero mediante Mapbox si usamos un estilo compatible
-                        # NOTA: go.Contour estándar no usa mapbox, usa ejes X/Y, por lo que emulamos el contexto geográfico
+                        plot_bgcolor='#e8f4f8'
                     )
-                    
-                    # Si el estilo no es white-bg, aplicamos el fondo (truco de Plotly para gráficas 2D sobre ejes)
-                    if map_style != "white-bg":
-                        # Como estamos usando Contour (ejes X/Y) y no Mapbox directo (para preservar las Isolíneas),
-                        # la mejor forma nativa en Plotly de ver el contexto es asegurarnos que la Divisoria y los Puntos 
-                        # anclen la geometría. En versiones futuras se puede inyectar un raster tile de fondo.
-                        fig.update_layout(plot_bgcolor='#e8f4f8') # Un fondo azul pálido (océano/contexto) para destacar
 
                     st.plotly_chart(fig, use_container_width=True)
 
-                    # --- ZONA DE DESCARGAS ---
-                    st.success(f"Análisis completado para {len(trend_data)} estaciones.")
-                    cd1, cd2 = st.columns(2)
-                    with cd1:
-                        st.download_button(
-                            "📥 Descargar Tendencias (JSON)", 
-                            df_trend.to_json(orient="records"), 
-                            "vulnerabilidad_puntos.json", 
-                            "application/json",
-                            use_container_width=True
-                        )
-                    with cd2:
-                        df_grid = pd.DataFrame({"lon": grid_x.flatten(), "lat": grid_y.flatten(), "slope": grid_z.flatten()}).dropna()
-                        st.download_button(
-                            "📥 Descargar Grilla (CSV)", 
-                            df_grid.to_csv(index=False), 
-                            "vulnerabilidad_espacial.csv", 
-                            "text/csv",
-                            use_container_width=True
-                        )
                 else:
-                    st.error("⚠️ Se requieren al menos 4 estaciones con series históricas válidas para generar la interpolación.")
+                    st.error("⚠️ Se requieren al menos 4 estaciones válidas.")
                     
     # --- TAB 2: SIMULADOR CMIP6 (MANTENIDO IGUAL) ---
     with tab_cmip6:
