@@ -1,3 +1,5 @@
+# modules/reporter.py
+
 import os
 import tempfile
 import plotly.io as pio
