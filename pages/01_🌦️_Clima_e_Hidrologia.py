@@ -319,18 +319,28 @@ def main():
         st.markdown("Evaluación forense automática de la calidad de las series de tiempo y su respuesta ante macro-eventos globales (ENOS).")
         
         if stations_for_analysis:
-            # Selector local dinámico alimentado por las estaciones que pasaron los filtros globales
             est_sel = st.selectbox("🔍 Seleccione la Estación para Peritaje Forense:", stations_for_analysis)
             
             if est_sel and df_monthly_filtered is not None and not df_monthly_filtered.empty:
-                # Filtrado de la serie purificada para la estación seleccionada
-                df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL] == est_sel].copy()
                 
-                # Agrupación anual para evaluar acumulados e integridad mensual
+                # 🛡️ LIMPIEZA DE LLAVE: Si el selector viene como "NOMBRE [CODIGO]", extraemos solo el NOMBRE
+                nombre_estacion_puro = est_sel.split('[')[0].strip() if '[' in est_sel else est_sel
+                
+                # Intentamos filtrar primero por el nombre combinado y si da vacío, por el nombre puro
+                df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL] == est_sel].copy()
+                if df_est.empty:
+                    df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL] == nombre_estacion_puro].copy()
+                
+                # Si sigue vacío, probamos buscando si el código está contenido en la columna
+                if df_est.empty and '[' in est_sel:
+                    codigo_puro = est_sel.split('[')[1].replace(']', '').strip()
+                    df_est = df_monthly_filtered[df_monthly_filtered[Config.STATION_NAME_COL].astype(str).str.contains(codigo_puro)].copy()
+
+                # --- CONTINÚA LA LÓGICA DE AGREGACIÓN ---
                 df_anual = df_est.groupby(Config.YEAR_COL)[Config.PRECIPITATION_COL].agg(['sum', 'count']).reset_index()
                 df_anual.columns = ['Año', 'Precipitación', 'Meses_Validos']
                 
-                # Umbral de integridad corporativa (>10 meses válidos)
+                # Filtro de integridad estándar
                 df_integro = df_anual[df_anual['Meses_Validos'] >= 10]
                 
                 # --- DISEÑO DEL PANEL DE CONTROL FORENSE ---
