@@ -3529,22 +3529,22 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                                 
                                 st.dataframe(resumen.style.format({'Area_ha': '{:,.1f}', '%': '{:.1f}%'}), use_container_width=True)
 
-                                # 5. 📍 EXTRACCIÓN DE ALTITUD PARA ESTACIONES
+                                # 5. 📍 EXTRACCIÓN DE ALTITUD PARA ESTACIONES (CORREGIDO)
                                 if extraer_estaciones:
                                     st.markdown("#### 📍 Ecosistemas y Altitudes por Estación (Extraídas del DEM)")
                                     
-                                    # Verificamos directamente tu variable oficial de estaciones filtradas
-                                    if gdf_filtered is not None and not gdf_filtered.empty:
+                                    # 🛡️ CORRECCIÓN: Cambiamos gdf_filtered por gdf_stations, que es la variable local legítima
+                                    if gdf_stations is not None and not gdf_stations.empty:
                                         with st.spinner("Pinchando topografía de estaciones..."):
-                                            # Llamamos al extractor
-                                            estaciones_alt = lz.extract_elevation_from_dem(gdf_filtered, dem_file)
+                                            # Pasamos gdf_stations al extractor
+                                            estaciones_alt = lz.extract_elevation_from_dem(gdf_stations, dem_file)
                                             
-                                            # Extraer datos para visualizar en tabla
+                                            # Mostrar resultados filtrando las columnas existentes
                                             cols_mostrar = [c for c in ['id_estacion', 'nombre', 'altitud_dem'] if c in estaciones_alt.columns]
                                             st.dataframe(estaciones_alt[cols_mostrar].dropna(), use_container_width=True)
                                     else:
-                                        st.info("⚠️ No hay estaciones filtradas en la memoria actual para analizar.")
-
+                                        st.info("⚠️ No hay estaciones sincronizadas en el contexto actual para analizar.")
+                                        
                                 # 6. 📥 DESCARGA DEL TIFF RASTER
                                 tiff = lz.get_raster_bytes(lz_arr, profile)
                                 if tiff:
