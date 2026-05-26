@@ -439,10 +439,9 @@ def main():
                         st.metric(label="Años con Integridad (>10 meses)", value=f"{años_completos} años")
                         st.metric(label="Años Reparados por Gemelo Digital", value=f"{años_reconstruidos} años")
                 
-                # 🌍 3. VALIDACIÓN MACROCLIMÁTICA BASE CON EXTREMOS MENSUALES (TERCERA FILA)
+                # 🌍 3. VALIDACIÓN MACROCLIMÁTICA BASE CON EXTREMOS MENSUALES (AHORA EXPANDIBLE)
                 with col_panel2:
-                    with st.container(border=True):
-                        st.markdown("### 🌍 Validación Macroclimática Base")
+                    with st.expander("🌍 Validación Macroclimática Base", expanded=True):
                         
                         if not df_integro.empty:
                             # Cálculos anuales
@@ -472,7 +471,7 @@ def main():
                             st.caption(diag_min)
                             st.divider()
                             
-                            # Fila 3: NUEVA FILA UNIFICADA DE EXTREMOS MENSUALES ABSOLUTOS
+                            # Fila 3: Hitos Mensuales Absolutos de la Serie
                             st.markdown(f"**📊 Hitos Mensuales Absolutos de la Serie:**")
                             if Config.MONTH_COL in df_est.columns and not df_est.empty:
                                 meses_dict = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
