@@ -139,66 +139,111 @@ def get_supabase_client():
     except ImportError: return "NO_LIBRARY"
     except Exception as e: return str(e)
 
-def renderizar_gestor_escenarios(nombre_zona_actual):
+def renderizar_gestor_escenarios(lugar):
+    """
+    Gestor de escenarios persistente conectado a PostgreSQL (Supabase).
+    Guarda la configuración actual del usuario en la BD para restaurarla en cualquier momento.
+    """
     st.sidebar.markdown("---")
-    with st.sidebar.expander("💾 Gestor de Escenarios (Snapshots)", expanded=False):
-        supabase = get_supabase_client()
-        if supabase in ["NO_SECRETS", "NO_LIBRARY"] or isinstance(supabase, str) or not supabase:
-            st.error("Error de conexión a Supabase. Revisa tus credenciales.")
+    with st.sidebar.expander("📸 Gestor de Escenarios", expanded=False):
+        st.markdown(f"**Territorio:** `{lugar}`")
+        
+        # 1. CONEXIÓN Y VERIFICACIÓN DE LA TABLA EN BASE DE DATOS
+        engine = db_manager.get_engine()
+        try:
+            with engine.begin() as conn:
+                # El sistema crea automáticamente la tabla la primera vez que se ejecuta
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS escenarios_sihcli (
+                        id SERIAL PRIMARY KEY,
+                        territorio TEXT NOT NULL,
+                        nombre_escenario TEXT NOT NULL,
+                        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        datos JSONB,
+                        UNIQUE (territorio, nombre_escenario)
+                    )
+                """))
+        except Exception as e:
+            st.error(f"⚠️ Error verificando BD de escenarios: {e}")
             return
 
-        tab_guardar, tab_cargar = st.tabs(["Guardar", "Cargar / Eliminar"])
+        # 2. SECCIÓN DE GUARDADO
+        nombre_nuevo = st.text_input("Nombre del Nuevo Escenario:", placeholder="Ej: Plan Resiliencia 2027")
         
-        with tab_guardar:
-            nombre_escenario = st.text_input("Nombre del Proyecto/Escenario:", placeholder="Ej: Río Buey - Plan 2030")
-            if st.button("💾 Guardar Sesión", use_container_width=True):
-                if nombre_escenario:
-                    with st.spinner("Empaquetando sesión en JSON..."):
-                        estado_limpio = {k: v for k, v in st.session_state.items() if isinstance(v, (int, float, str, bool, list, dict)) and not k.startswith('FormSubmitter')}
-                        try:
-                            supabase.table("escenarios_guardados").insert({
-                                "nombre_escenario": nombre_escenario,
-                                "territorio": nombre_zona_actual,
-                                "estado_json": estado_limpio
-                            }).execute()
-                            st.success("✅ ¡Escenario guardado en la Nube!")
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e: st.error(f"Error guardando en tabla: {e}")
-                else:
-                    st.warning("⚠️ Debes darle un nombre al escenario.")
+        if st.button("💾 Guardar Escenario Actual", use_container_width=True):
+            if nombre_nuevo.strip():
+                # Empaquetamos todo el estado actual excluyendo objetos no serializables de Streamlit
+                estado_actual = {
+                    k: v for k, v in st.session_state.items() 
+                    if isinstance(v, (int, float, str, bool, list, dict)) and not k.startswith("FormSubmitter")
+                }
+                
+                try:
+                    # Usamos UPSERT: Si el nombre ya existe para este territorio, lo sobrescribe
+                    query_insert = text("""
+                        INSERT INTO escenarios_sihcli (territorio, nombre_escenario, datos, fecha) 
+                        VALUES (:terr, :nom, :datos, CURRENT_TIMESTAMP)
+                        ON CONFLICT (territorio, nombre_escenario) 
+                        DO UPDATE SET datos = EXCLUDED.datos, fecha = CURRENT_TIMESTAMP
+                    """)
+                    with engine.begin() as conn:
+                        conn.execute(query_insert, {
+                            "terr": lugar, 
+                            "nom": nombre_nuevo.strip(), 
+                            "datos": json.dumps(estado_actual)
+                        })
+                    st.success(f"✅ Escenario '{nombre_nuevo}' blindado en Supabase.")
+                except Exception as e:
+                    st.error(f"❌ Error al guardar en la nube: {e}")
+            else:
+                st.warning("⚠️ Debes asignar un nombre al escenario.")
 
-        with tab_cargar:
-            try:
-                res = supabase.table("escenarios_guardados").select("id, nombre_escenario, territorio, fecha_creacion").order("fecha_creacion", desc=True).execute()
-                escenarios = res.data
-                if escenarios:
-                    opciones = {f"{e['nombre_escenario']} ({e['territorio']})": e['id'] for e in escenarios}
-                    seleccion = st.selectbox("Selecciona un proyecto:", list(opciones.keys()))
-                    col_c, col_d = st.columns(2)
-                    
-                    with col_c:
-                        if st.button("📂 Cargar", type="primary", use_container_width=True):
-                            id_sel = opciones[seleccion]
-                            res_json = supabase.table("escenarios_guardados").select("estado_json").eq("id", id_sel).execute()
-                            estado_recuperado = res_json.data[0]['estado_json']
-                            with st.spinner("Inyectando variables..."):
-                                for k, v in estado_recuperado.items(): st.session_state[k] = v
-                                st.success("✅ Interfaz restaurada.")
-                                time.sleep(1)
-                                st.rerun()
+        st.markdown("---")
+        
+        # 3. SECCIÓN DE RESTAURACIÓN
+        try:
+            # Consultamos los escenarios guardados para el territorio actual, del más reciente al más antiguo
+            query_load = text("SELECT nombre_escenario FROM escenarios_sihcli WHERE territorio = :terr ORDER BY fecha DESC")
+            df_escenarios = pd.read_sql(query_load, engine, params={"terr": lugar})
+            opciones_guardadas = df_escenarios['nombre_escenario'].tolist() if not df_escenarios.empty else []
+        except Exception:
+            opciones_guardadas = []
+
+        if opciones_guardadas:
+            esc_sel = st.selectbox("📂 Escenarios en la Nube:", opciones_guardadas)
+            
+            # Botones de acción alineados
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                if st.button("🚀 Cargar", use_container_width=True):
+                    try:
+                        q_fetch = text("SELECT datos FROM escenarios_sihcli WHERE territorio = :terr AND nombre_escenario = :nom")
+                        with engine.connect() as conn:
+                            resultado = conn.execute(q_fetch, {"terr": lugar, "nom": esc_sel}).fetchone()
+                            if resultado and resultado[0]:
+                                datos_recuperados = resultado[0] if isinstance(resultado[0], dict) else json.loads(resultado[0])
                                 
-                    with col_d:
-                        if st.button("🗑️ Borrar", type="secondary", use_container_width=True):
-                            id_del = opciones[seleccion]
-                            with st.spinner("Eliminando de la nube..."):
-                                supabase.table("escenarios_guardados").delete().eq("id", id_del).execute()
-                                st.warning("🗑️ Proyecto eliminado.")
-                                time.sleep(1)
-                                st.rerun()
-                else:
-                    st.info("No hay escenarios guardados aún.")
-            except Exception as e: st.error(f"Error consultando base: {e}")
+                                # Inyectamos la memoria guardada de vuelta a la sesión actual
+                                for k, v in datos_recuperados.items():
+                                    st.session_state[k] = v
+                                    
+                                st.success(f"Restaurando '{esc_sel}'...")
+                                time.sleep(0.5)
+                                st.rerun() # Forzamos la recarga para que toda la plataforma reaccione
+                    except Exception as e:
+                        st.error(f"Error restaurando: {e}")
+                        
+            with col2:
+                if st.button("🗑️", help="Eliminar este escenario"):
+                    try:
+                        q_del = text("DELETE FROM escenarios_sihcli WHERE territorio = :terr AND nombre_escenario = :nom")
+                        with engine.begin() as conn:
+                            conn.execute(q_del, {"terr": lugar, "nom": esc_sel})
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+        else:
+            st.info("Sin escenarios guardados.")
 
 # ====================================================================
 # 🛡️ DESCARGA MAESTRA DE CSVs DE SUPABASE
