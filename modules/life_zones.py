@@ -99,15 +99,11 @@ def generate_life_zone_map(dem_input, ppt_input, mask_geometry=None, downscale_f
             dst_width = max(1, dem_src.width // downscale_factor)
             dst_height = max(1, dem_src.height // downscale_factor)
 
-            # Si hay un polígono, ajustamos el bounding box a los límites de la cuenca
-            if mask_geometry is not None and not mask_geometry.empty:
-                bounds = mask_geometry.to_crs(dst_crs).total_bounds
-            else:
-                bounds = dem_src.bounds
-
+            # 🛡️ CORRECCIÓN: Usamos siempre los límites originales del DEM para mantener la escala del pixel.
+            # El "molde de galletas" (recorte) se aplicará limpiamente al final del proceso.
             dst_transform, dst_width, dst_height = calculate_default_transform(
                 dem_src.crs, dst_crs, dem_src.width, dem_src.height, 
-                *bounds, dst_width=dst_width, dst_height=dst_height
+                *dem_src.bounds, dst_width=dst_width, dst_height=dst_height
             )
 
             dem_resampled = np.empty((dst_height, dst_width), dtype=np.float32)
