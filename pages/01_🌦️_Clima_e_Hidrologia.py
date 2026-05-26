@@ -1138,10 +1138,12 @@ def main():
             st.session_state.pdf_chapters = []
         if capitulo not in st.session_state.pdf_chapters:
             st.session_state.pdf_chapters.append(capitulo)
-            st.success("✅ Capítulo de Clima capturado.")
+            st.success("✅ Capítulo de Clima capturado para el reporte final.")
         
         # 4. GENERAR PDF CONSOLIDADO
+        st.info("Este reporte consolidará todo lo que hayas visitado en otras pestañas.")
         if st.button("📥 Generar PDF Consolidado de SIHCLI"):
+            # AQUÍ ESTÁ LA CLAVE: Llamamos al nombre correcto de la función
             pdf_data = reporter.generate_consolidated_pdf(st.session_state.pdf_chapters)
             st.download_button(
                 "Descargar PDF Final", 
