@@ -209,3 +209,14 @@ def extract_elevation_from_dem(gdf_points, dem_input):
     except Exception as e:
         st.error(f"Error extrayendo elevación: {e}")
         return gdf_points
+
+def get_raster_bytes(raster_array, profile):
+    """Escribe el array raster a un objeto BytesIO (memoria) para su descarga."""
+    try:
+        mem_file = MemoryFile()
+        with mem_file.open(**profile) as dataset:
+            dataset.write(raster_array, 1)
+        return mem_file.read()
+    except Exception as e:
+        st.error(f"Error preparando descarga TIFF: {e}")
+        return None
