@@ -272,3 +272,18 @@ def cargar_territorio_maestro():
             df['region_norm'] = df['region'].astype(str).apply(normalizar_texto_maestro)
             
     return df
+
+def aplicar_filtro_calidad(df, umbral_maximo=10000): # 10,000mm es ya una exageración técnica
+    """
+    Elimina registros físicamente imposibles.
+    Si una estación reporta > 10,000 mm en un año, el dato se marca como NaN.
+    """
+    df_limpio = df.copy()
+    # Identificar picos irrealistas
+    picos = df_limpio[df_limpio['precipitacion'] > umbral_maximo]
+    
+    if not picos.empty:
+        st.warning(f"⚠️ Se detectaron {len(picos)} registros físicamente imposibles (> {umbral_maximo}mm). Purga iniciada...")
+        df_limpio.loc[df_limpio['precipitacion'] > umbral_maximo, 'precipitacion'] = np.nan
+        
+    return df_limpio
