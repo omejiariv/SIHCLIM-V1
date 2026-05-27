@@ -28,26 +28,36 @@ from modules.config import Config
 from modules.db_manager import get_engine
 from modules.data_processor import complete_series, load_and_process_all_data
 
-# Intentar cargar módulos avanzados
+# 4. IMPORTACIÓN Y BLINDAJE DE MÓDULOS AVANZADOS
 try:
     from modules import hydro_physics as physics
     from modules.admin_utils import download_raster_to_temp
-    from modules.analysis import calculate_trends_mann_kendall
+    
+    # Intentamos importar la función de análisis
+    try:
+        from modules.analysis import calculate_trends_mann_kendall
+    except ImportError:
+        # SI FALLA: Definimos un "wrapper" de emergencia usando la librería mk
+        import pymannkendall as mk
+        def calculate_trends_mann_kendall(serie):
+            return mk.original_test(serie)
+            
     PHYSICS_AVAILABLE = True
 except ImportError as e:
     PHYSICS_AVAILABLE = False
     st.toast(f"⚠️ Módulos avanzados limitados: {e}", icon="⚠️")
 
-# 4. MENÚ DE NAVEGACIÓN
+# 5. MENÚ DE NAVEGACIÓN
 selectors.renderizar_menu_navegacion("Clima e Hidrología")
 
-# 5. SINCRONIZACIÓN CLIMÁTICA (NOAA/IRI)
+# 6. SINCRONIZACIÓN CLIMÁTICA (NOAA/IRI)
 if 'enso_fase' not in st.session_state:
     try:
         from modules.climate_api import get_iri_enso_forecast
         df_enso, _ = get_iri_enso_forecast()
         if df_enso is not None and not df_enso.empty:
             f = df_enso.iloc[0]
+            # Usamos update para mantener el código limpio
             st.session_state.update({
                 'enso_fase': "Niña 🌧️" if f.get('La Niña', 0) > 50 else ("Niño ☀️" if f.get('El Niño', 0) > 50 else "Neutro ⚖️"),
                 'aleph_iri_nino': int(f.get('El Niño', 0)),
@@ -59,7 +69,7 @@ if 'enso_fase' not in st.session_state:
     except Exception:
         st.session_state.update({'enso_fase': "Neutro ⚖️", 'aleph_iri_nino': 0, 'aleph_iri_neutro': 100, 'aleph_iri_nina': 0})
         st.toast("⚠️ Usando clima Neutro por fallo de conexión.", icon="🔌")
-
+        
 # 6. CACHÉ DE RASTERS (OPTIMIZADO)
 @st.cache_resource(show_spinner=False)
 def cargar_raster_db(filename):
