@@ -1221,3 +1221,7 @@ def calculate_hydrological_statistics(series_mensual, runoff_coeff, area_km2, q_
 
 
     return stats_dict
+
+def calculate_trends_mann_kendall(serie):
+    """Wrapper para la librería pymannkendall"""
+    return mk.original_test(serie)
