@@ -111,19 +111,32 @@ def main():
         df_all_rain['id_estacion'] = df_all_rain['id_estacion'].astype(str).str.strip()
         ids_estaciones = [str(x).strip() for x in ids_estaciones]
         
+        # 1. 📂 Extracción de la zona seleccionada (Copia segura)
         df_long = df_all_rain[df_all_rain['id_estacion'].isin(ids_estaciones)].copy()
         
+        # 🛡️ 2. FILTRO DE INTEGRIDAD FÍSICA (PURGA DE ANOMALÍAS EXTREMAS)
+        if not df_long.empty and Config.PRECIPITATION_COL in df_long.columns:
+            umbral_maximo = 8000  # Límite físico en mm (Ej. diluvios irreales > 30,000mm)
+            picos_mask = df_long[Config.PRECIPITATION_COL] > umbral_maximo
+            
+            if picos_mask.any():
+                num_picos = picos_mask.sum()
+                st.warning(f"⚠️ Alerta de Calidad: Se neutralizaron {num_picos} registros físicamente imposibles (> {umbral_maximo}mm) en esta zona. Han sido pasados a nulos para no sesgar la interpolación.")
+                df_long.loc[picos_mask, Config.PRECIPITATION_COL] = np.nan
+        
+        # 3. 📍 Filtro de geometrías espaciales
         if gdf_stations is not None:
             gdf_stations['id_estacion'] = gdf_stations['id_estacion'].astype(str).str.strip()
-            gdf_filtered = gdf_stations[gdf_stations['id_estacion'].isin(ids_estaciones)]
+            # Usamos .copy() también aquí por buenas prácticas espaciales
+            gdf_filtered = gdf_stations[gdf_stations['id_estacion'].isin(ids_estaciones)].copy()
         else:
             gdf_filtered = gpd.GeoDataFrame()
     else:
-        st.warning("No hay datos de lluvia disponibles en la base de datos para esta selección.")
+        st.warning("No hay datos de lluvia disponibles en el sistema para esta selección.")
         st.stop()
 
     if df_long.empty:
-        st.warning(f"La zona '{nombre_zona}' no tiene registros históricos de precipitación.")
+        st.warning(f"La zona '{nombre_zona}' no tiene registros históricos de precipitación válidos.")
         st.stop()
 
     # =========================================================================
