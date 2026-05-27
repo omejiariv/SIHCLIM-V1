@@ -221,6 +221,10 @@ def main():
     
     df_anual_melted = df_monthly_filtered.groupby([Config.STATION_NAME_COL, Config.YEAR_COL])[Config.PRECIPITATION_COL].sum().reset_index()
 
+    # 4. Ajuste de seguridad para year_range
+    if 'year_range' not in locals() or year_range is None:
+        year_range = [2020, 2026]
+
     # Argumentos Globales para Visualizer
     display_args = {
         "df_long": df_monthly_filtered, "df_complete": df_monthly_filtered,
@@ -231,8 +235,6 @@ def main():
         "df_monthly_filtered": df_monthly_filtered, "analysis_mode": "Anual",
         "selected_regions": [], "selected_municipios": [],
         "selected_months": list(range(1, 13)), "year_range": year_range,
-        if 'year_range' not in locals() or year_range is None:
-            year_range = [2020, 2026]
         "start_date": pd.to_datetime(f"{year_range[0]}-01-01"), 
         "end_date": pd.to_datetime(f"{year_range[1]}-12-31"),
         "gdf_coberturas": gdf_predios, "interpolacion": "Si" if apply_interp else "No",
