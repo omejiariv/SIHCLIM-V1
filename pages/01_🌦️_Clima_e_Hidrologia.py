@@ -1,3 +1,5 @@
+# pages/Clima_e_Hidrologia.py
+
 import os
 import sys
 import warnings
@@ -27,6 +29,7 @@ from modules import selectors, admin_utils, reporter, visualizer as viz
 from modules.config import Config
 from modules.db_manager import get_engine
 from modules.data_processor import complete_series, load_and_process_all_data
+from modules.dem_extractor import completar_altitudes_con_dem
 
 # 4. IMPORTACIÓN Y BLINDAJE DE MÓDULOS AVANZADOS
 try:
