@@ -563,7 +563,7 @@ with tab6:
                                         (df_temp[col] > 1500) | 
                                         (df_temp[col] == 0), col] = np.nan
                         
-                        df_temp = df_temp.groupby('fecha')[cols_est].sum()
+                        df_temp = df_temp.groupby('fecha')[cols_est].sum(min_count=1)
                         df_temp = df_temp.sort_index()
                         dfs_procesados.append(df_temp)
 
