@@ -3584,19 +3584,23 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
         import plotly.graph_objects as go
         
         # 🛡️ BUSCADOR INFALIBLE (kwargs + session_state fallback)
+        # 1. Extracción exacta del "maletín" display_args (CON ATRAPALOTODO)
         df_anual = kwargs.get("df_anual_melted")
-        if df_anual is None:
-            # Si no viene en kwargs, lo sacamos de la memoria global
-            df_anual = st.session_state.get('df_anual_melted', None)
+        
+        # 🚁 Buscar primero las estaciones recortadas por la cuenca, si no, buscar el catálogo global
+        gdf_stations_tab2 = kwargs.get("gdf_filtered")
+        if gdf_stations_tab2 is None or gdf_stations_tab2.empty:
+            gdf_stations_tab2 = kwargs.get("gdf_stations")
             
-        gdf_stations_tab2 = kwargs.get("gdf_stations")
-        if gdf_stations_tab2 is None:
-            gdf_stations_tab2 = st.session_state.get('gdf_stations', None)
-
+        # 2. 🚨 RADAR DE DIAGNÓSTICO EN CASCADA
         if df_anual is None:
-            st.error("❌ Falla técnica: No se encontró 'df_anual_melted'. Verifica que la página principal lo esté calculando o enviando.")
-        elif gdf_stations_tab2 is None or gdf_stations_tab2.empty:
-            st.error("❌ Falla técnica: No se encontró 'gdf_stations'. Verifica que el catálogo esté cargado.")
+            st.error("❌ Fallo Crítico: El visualizador no recibió la variable 'df_anual_melted'.")
+        elif df_anual.empty:
+            st.warning("⚠️ La tabla de lluvia llegó vacía. Revisa el filtro temporal o geográfico.")
+        elif gdf_stations_tab2 is None:
+            st.error("❌ Fallo Crítico: El visualizador no recibió ni 'gdf_filtered' ni 'gdf_stations'.")
+        elif gdf_stations_tab2.empty:
+            st.warning("⚠️ El mapa de estaciones está vacío para esta cuenca.")
         else:
             try:
                 # 1. PREPARACIÓN DE COORDENADAS
