@@ -3583,26 +3583,30 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
         import plotly.express as px
         import plotly.graph_objects as go
         
-        # 🛡️ BUSCADOR INTELIGENTE DE DATOS (Atrapa la variable sin importar su nombre)
-        df_anual = kwargs.get("df_anual_melted", kwargs.get("df_anual", kwargs.get("df_data", kwargs.get("df", None))))
-        gdf_stations_tab2 = kwargs.get("gdf_stations", kwargs.get("gdf_estaciones", None))
-        
-        # 🚨 RADAR DE DIAGNÓSTICO (Nos dirá exactamente qué falta)
+        # 🛡️ BUSCADOR INFALIBLE (kwargs + session_state fallback)
+        df_anual = kwargs.get("df_anual_melted")
         if df_anual is None:
-            st.error("❌ Falla técnica: El visualizador no recibió la tabla de lluvia anual.")
+            # Si no viene en kwargs, lo sacamos de la memoria global
+            df_anual = st.session_state.get('df_anual_melted', None)
+            
+        gdf_stations_tab2 = kwargs.get("gdf_stations")
+        if gdf_stations_tab2 is None:
+            gdf_stations_tab2 = st.session_state.get('gdf_stations', None)
+
+        if df_anual is None:
+            st.error("❌ Falla técnica: No se encontró 'df_anual_melted'. Verifica que la página principal lo esté calculando o enviando.")
         elif gdf_stations_tab2 is None or gdf_stations_tab2.empty:
-            st.error("❌ Falla técnica: El visualizador no recibió el mapa/catálogo de estaciones.")
+            st.error("❌ Falla técnica: No se encontró 'gdf_stations'. Verifica que el catálogo esté cargado.")
         else:
             try:
-                # 1. PREPARACIÓN DE COORDENADAS (PARCHE DE COMPATIBILIDAD)
+                # 1. PREPARACIÓN DE COORDENADAS
                 gdf_plot = gdf_stations_tab2.copy()
                 
-                # Mapeo Latitud
+                # Mapeo Latitud/Longitud
                 if 'latitude' not in gdf_plot.columns:
                     if 'latitud' in gdf_plot.columns: gdf_plot['latitude'] = gdf_plot['latitud']
                     elif 'geometry' in gdf_plot.columns: gdf_plot['latitude'] = gdf_plot.geometry.y
                 
-                # Mapeo Longitud
                 if 'longitude' not in gdf_plot.columns:
                     if 'longitud' in gdf_plot.columns: gdf_plot['longitude'] = gdf_plot['longitud']
                     elif 'geometry' in gdf_plot.columns: gdf_plot['longitude'] = gdf_plot.geometry.x
