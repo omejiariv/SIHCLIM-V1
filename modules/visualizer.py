@@ -3583,15 +3583,19 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
         import plotly.express as px
         import plotly.graph_objects as go
         
-        df_anual = kwargs.get("df_anual_melted")
+        # 🛡️ BUSCADOR INTELIGENTE DE DATOS (Atrapa la variable sin importar su nombre)
+        df_anual = kwargs.get("df_anual_melted", kwargs.get("df_anual", kwargs.get("df_data", kwargs.get("df", None))))
+        gdf_stations_tab2 = kwargs.get("gdf_stations", kwargs.get("gdf_estaciones", None))
         
-        # Validación inicial
-        if df_anual is None or gdf_stations is None or gdf_stations.empty:
-            st.warning("⚠️ Datos insuficientes para el análisis de estaciones.")
+        # 🚨 RADAR DE DIAGNÓSTICO (Nos dirá exactamente qué falta)
+        if df_anual is None:
+            st.error("❌ Falla técnica: El visualizador no recibió la tabla de lluvia anual.")
+        elif gdf_stations_tab2 is None or gdf_stations_tab2.empty:
+            st.error("❌ Falla técnica: El visualizador no recibió el mapa/catálogo de estaciones.")
         else:
             try:
                 # 1. PREPARACIÓN DE COORDENADAS (PARCHE DE COMPATIBILIDAD)
-                gdf_plot = gdf_stations.copy()
+                gdf_plot = gdf_stations_tab2.copy()
                 
                 # Mapeo Latitud
                 if 'latitude' not in gdf_plot.columns:
@@ -3609,7 +3613,6 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                 try:
                     from modules.dem_extractor import completar_altitudes_con_dem
                     with st.spinner("🏔️ Rescatando altitudes perdidas con el DEM para la clasificación..."):
-                        # Aseguramos que la columna de altitud exista antes de evaluarla
                         if Config.ALTITUDE_COL not in gdf_plot.columns:
                             gdf_plot[Config.ALTITUDE_COL] = None
                             
@@ -3643,7 +3646,6 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
 
                 # 4. CLASIFICACIÓN HOLDRIDGE PUNTUAL
                 def get_zone_data(row):
-                    # Usamos .get() para evitar errores y aseguramos que sean numéricos
                     alt = row.get(Config.ALTITUDE_COL, 0)
                     ppt = row.get(Config.PRECIPITATION_COL, 0)
                     
