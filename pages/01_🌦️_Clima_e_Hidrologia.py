@@ -242,7 +242,7 @@ def main():
         with st.spinner("Interpolando series..."):
             df_monthly_filtered = complete_series(df_monthly_filtered)
     
-    df_anual_melted = df_monthly_filtered.groupby([Config.STATION_NAME_COL, Config.YEAR_COL])[Config.PRECIPITATION_COL].sum().reset_index()
+    df_anual_melted = df_monthly_filtered.groupby([Config.STATION_NAME_COL, Config.YEAR_COL])[Config.PRECIPITATION_COL].sum(min_count=10).reset_index()
 
     # 4. Ajuste de seguridad para year_range
     if 'year_range' not in locals() or year_range is None:
@@ -753,7 +753,7 @@ def main():
             bounds_calc = (minx, miny, maxx, maxy)
             
             # 3. DATOS ESTACIONES
-            df_annual_sums = df_monthly_filtered.groupby([Config.STATION_NAME_COL, Config.YEAR_COL])[Config.PRECIPITATION_COL].sum().reset_index()
+            df_annual_sums = df_monthly_filtered.groupby([Config.STATION_NAME_COL, Config.YEAR_COL])[Config.PRECIPITATION_COL].sum(min_count=10).reset_index()
             df_stats = df_annual_sums.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL].agg(['mean', 'std']).reset_index()
             df_stats.columns = [Config.STATION_NAME_COL, 'ppt_media', 'ppt_std']
             
