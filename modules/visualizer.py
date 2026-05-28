@@ -3671,6 +3671,9 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                     merged[["Zona de Vida", "Color"]] = merged.apply(get_zone_data, axis=1)
 
                     # 5. MAPA INTERACTIVO
+                    # 🚨 PARCHE ANTI-NAN PARA PLOTLY: Llenar vacíos con 0
+                    merged[Config.PRECIPITATION_COL] = merged[Config.PRECIPITATION_COL].fillna(0)
+                    
                     fig_map = px.scatter_mapbox(
                         merged,
                         lat="latitude",
