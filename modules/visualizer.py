@@ -3578,11 +3578,10 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                         st.error(f"Error procesando simulación comparativa: {e}")
 
     # --- PESTAÑA 2: PUNTOS (ESTACIONES) ---
-    with tab_puntos: # <-- Busca esta línea en tu código
+    with tab_puntos: 
         import plotly.express as px
         import plotly.graph_objects as go
         
-        # ... aquí continúa tu código actual de la pestaña ...
         df_anual = kwargs.get("df_anual_melted")
         
         # Validación inicial
@@ -3591,8 +3590,6 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
         else:
             try:
                 # 1. PREPARACIÓN DE COORDENADAS (PARCHE DE COMPATIBILIDAD)
-                # Plotly prefiere 'latitude'/'longitude'. La BD nueva trae 'latitud'/'longitud'.
-                # Aseguramos que existan las columnas en inglés para el merge y el mapa.
                 gdf_plot = gdf_stations.copy()
                 
                 # Mapeo Latitud
@@ -3605,8 +3602,27 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                     if 'longitud' in gdf_plot.columns: gdf_plot['longitude'] = gdf_plot['longitud']
                     elif 'geometry' in gdf_plot.columns: gdf_plot['longitude'] = gdf_plot.geometry.x
 
+                # ==========================================================
+                # 🚁 ESCUADRÓN DE RESCATE DE ALTITUDES (DEM EXTRACTOR)
+                # ==========================================================
+                try:
+                    from modules.dem_extractor import completar_altitudes_con_dem
+                    with st.spinner("🏔️ Rescatando altitudes perdidas con el DEM para la clasificación..."):
+                        # Aseguramos que la columna de altitud exista antes de evaluarla
+                        if Config.ALTITUDE_COL not in gdf_plot.columns:
+                            gdf_plot[Config.ALTITUDE_COL] = None
+                            
+                        gdf_plot = completar_altitudes_con_dem(
+                            df_estaciones=gdf_plot,
+                            col_lat='latitude',
+                            col_lon='longitude',
+                            col_alt=Config.ALTITUDE_COL
+                        )
+                except Exception as e:
+                    st.warning(f"⚠️ No se pudo ejecutar el rescate espacial de altitudes: {e}")
+                # ==========================================================
+
                 # 2. CÁLCULO DE PRECIPITACIÓN MEDIA
-                # Agrupamos por estación para obtener el promedio histórico
                 ppt_media = (
                     df_anual.groupby(Config.STATION_NAME_COL)[Config.PRECIPITATION_COL]
                     .mean()
@@ -3614,9 +3630,7 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                 )
 
                 # 3. UNIÓN DE DATOS (MERGE)
-                # Unimos la lluvia media con los metadatos (altura y coordenadas)
                 cols_to_merge = [Config.STATION_NAME_COL, Config.ALTITUDE_COL, "latitude", "longitude"]
-                # Filtramos solo las columnas que realmente existen para evitar KeyError
                 cols_available = [c for c in cols_to_merge if c in gdf_plot.columns]
                 
                 merged = pd.merge(
@@ -3628,11 +3642,13 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
 
                 # 4. CLASIFICACIÓN HOLDRIDGE PUNTUAL
                 def get_zone_data(row):
-                    # Usamos .get() para evitar errores si falta la columna
+                    # Usamos .get() para evitar errores y aseguramos que sean numéricos
                     alt = row.get(Config.ALTITUDE_COL, 0)
                     ppt = row.get(Config.PRECIPITATION_COL, 0)
                     
-                    # Clasificar
+                    if pd.isna(alt): alt = 0
+                    if pd.isna(ppt): ppt = 0
+                    
                     z_id = lz.classify_life_zone_alt_ppt(alt, ppt)
                     
                     return pd.Series([
@@ -3655,10 +3671,9 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                         zoom=8,
                         mapbox_style="carto-positron",
                         title="Clasificación Bioclimática por Estación",
-                        color_discrete_map={v: k for k, v in lz.holdridge_colors.items()} # Intento de mapeo inverso si es necesario, sino Plotly asigna auto
+                        color_discrete_map={v: k for k, v in lz.holdridge_colors.items()}
                     )
                     
-                    # Añadir ubicación del usuario si existe
                     if user_loc:
                         fig_map.add_trace(go.Scattermapbox(
                             lat=[user_loc[0]],
