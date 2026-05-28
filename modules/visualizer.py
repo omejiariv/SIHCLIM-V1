@@ -46,6 +46,7 @@ from prophet import Prophet
 from statsmodels.tsa.seasonal import seasonal_decompose
 from modules.maps_engine import generar_mapa_interactivo
 import modules.charts_engine as ce
+from modules.dem_extractor import completar_altitudes_con_dem
 
 import streamlit as st
 
