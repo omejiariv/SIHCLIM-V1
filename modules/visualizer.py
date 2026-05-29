@@ -4794,29 +4794,27 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
         raster_path = Config.LAND_COVER_RASTER_PATH
 
     # ==========================================================
-    # 🛠️ 2. CONTROL DE VISTA (CORRECCIÓN ESTRUCTURAL)
+    # 🛠️ 2. CONTROL DE VISTA (DINÁMICO)
     # ==========================================================
-    # Ya no dependemos del viejo 'basin_res', extraemos la geometría directamente de los kwargs
     gdf_zona_activa = kwargs.get("gdf_zona", kwargs.get("gdf_filtered", None))
     has_basin_data = gdf_zona_activa is not None and not gdf_zona_activa.empty
     
     col_ctrl, col_info = st.columns([1, 2])
     with col_ctrl:
         idx = 1 if has_basin_data else 0
-        view_mode = st.radio("📍 Modo Visualización:", ["Regional", "Cuenca"], index=idx, horizontal=True)
+        # Ahora dice "Territorio" en lugar de "Cuenca"
+        view_mode = st.radio("📍 Modo Visualización:", ["Regional", "Territorio"], index=idx, horizontal=True)
     
     gdf_mask = None
     basin_name = "Regional (Antioquia)"
     area_cuenca_km2 = None 
     
-    if view_mode == "Cuenca":
+    if view_mode == "Territorio":
         if has_basin_data:
             gdf_mask = gdf_zona_activa
+            # Extraemos el nombre exacto del filtro geográfico que aplicaste en la barra lateral
+            basin_name = kwargs.get("nombre_zona", "Territorio Seleccionado")
             
-            # Intentamos extraer el nombre si viene en kwargs, sino usamos uno genérico
-            basin_name = kwargs.get("nombre_zona", "Cuenca Seleccionada")
-            
-            # Calculamos el área geométricamente al vuelo (en km2) para el simulador SCS-CN
             try:
                 area_cuenca_km2 = gdf_mask.to_crs(3116).area.sum() / 1000000.0
             except:
@@ -4825,7 +4823,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             with col_info:
                 st.success(f"Analizando: **{basin_name}** (Área: {area_cuenca_km2:,.1f} km²)")
         else:
-            st.warning("⚠️ No hay cuenca delimitada. Cambiando a modo Regional.")
+            st.warning("⚠️ No hay territorio delimitado. Cambiando a modo Regional.")
             view_mode = "Regional"
 
     # 3. Procesamiento
@@ -4846,7 +4844,13 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
         )
 
         # 4. Visualización
-        tab_map, tab_stat, tab_sim = st.tabs(["🗺️ Mapa Interactivo", "📊 Tabla & Gráficos", "🎛️ Simulador SCS-CN"])
+        # Añadimos la nueva pestaña de Comparativa
+        tab_map, tab_comp, tab_stat, tab_sim = st.tabs([
+            "🗺️ Mapa 2020", 
+            "⚖️ Comparativa (2020 vs 2026)", 
+            "📊 Tabla & Gráficos", 
+            "🎛️ Simulador SCS-CN"
+        ])
 
         with tab_map:
             c_tools, c_map = st.columns([1, 4])
@@ -5034,6 +5038,49 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
 
     except Exception as e:
         st.error(f"Error en módulo de coberturas: {e}")
+
+        # =====================================================================
+        # --- NUEVA PESTAÑA: COMPARATIVA SINCRONIZADA DUALMAP ---
+        # =====================================================================
+        with tab_comp:
+            st.markdown("### ⚖️ Comparativa de Cambios de Cobertura")
+            st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente.")
+            
+            from folium.plugins import DualMap
+            from streamlit_folium import st_folium
+            
+            # 1. Crear el lienzo dual sincronizado
+            m_dual = DualMap(location=center, zoom_start=12 if view_mode=="Territorio" else 8, tiles="CartoDB positron")
+            
+            # 2. CAPA IZQUIERDA (m_dual.m1) -> Línea Base 2020 (Supabase)
+            if img_url:
+                folium.raster_layers.ImageOverlay(
+                    image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
+                ).add_to(m_dual.m1)
+                
+            # 3. CAPA DERECHA (m_dual.m2) -> Nueva Capa 2026 (Earth Engine o Supabase)
+            # NOTA: Tu función 'add_ee_layer' funciona aquí llamando a m_dual.m2.add_ee_layer(...)
+            try:
+                import ee
+                # Ejemplo estructural de cómo inyectar tu capa de Google Earth Engine:
+                # roi_ee = ee.Geometry(gdf_mask.geometry.unary_union.__geo_interface__)
+                # img_2026 = ee.Image("TU_COLECCION_2026").clip(roi_ee)
+                # m_dual.m2.add_ee_layer(img_2026, vis_params, 'Cobertura 2026')
+                
+                # Placeholder temporal mientras configuras GEE:
+                folium.raster_layers.ImageOverlay(
+                    image=img_url, bounds=bounds, opacity=0.4, name="Cobertura 2026 (Pendiente)"
+                ).add_to(m_dual.m2)
+                
+            except Exception as e:
+                st.warning(f"Error conectando con Earth Engine: {e}")
+
+            # 4. Renderizar el mapa dual
+            st_folium(m_dual, width=900, height=500, returned_objects=[])
+            
+            # 5. Aquí añadiremos más adelante la tabla matemática de hectáreas ganadas/perdidas (como en Zonas de Vida)
+            st.markdown("---")
+            st.markdown("#### 📊 Matriz de Transición de Ecosistemas (Próximamente)")
 
 
 # PESTAÑA: CORRECCIÓN DE SESGO (VERSIÓN BLINDADA)
