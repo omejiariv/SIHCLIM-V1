@@ -4926,13 +4926,17 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente.")
             
             from folium.plugins import DualMap
-            from streamlit_folium import st_folium
+            import streamlit.components.v1 as components  # 👈 NUEVA HERRAMIENTA DE RENDERIZADO
             
-            # 1. Inicializar el lienzo de mapas gemelos acoplados
-            m_dual = DualMap(location=center, zoom_start=12 if view_mode=="Territorio" else 8, tiles="CartoDB positron")
+            # 1. Inicializar el lienzo (Forzamos la carga explícita de mapas base)
+            m_dual = DualMap(location=center, zoom_start=12 if view_mode=="Territorio" else 8)
+            
+            import folium
+            folium.TileLayer("CartoDB positron").add_to(m_dual.m1)
+            folium.TileLayer("CartoDB positron").add_to(m_dual.m2)
             
             # 2. PANEL IZQUIERDO (m_dual.m1) -> Cobertura Histórica 2020
-            if img_url:
+            if 'img_url' in locals() and img_url:
                 folium.raster_layers.ImageOverlay(
                     image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
                 ).add_to(m_dual.m1)
@@ -4941,7 +4945,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             try:
                 url_2026 = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada.tif"
                 
-                # Procesamos el segundo raster bajo la misma máscara geográfica y escala del visor
+                # Procesamos el raster recién salido del horno de Earth Engine
                 data_2026, transform_2026, crs_2026, nodata_2026 = lc.process_land_cover_raster(
                     url_2026, gdf_mask=gdf_mask, scale_factor=scale
                 )
@@ -4954,10 +4958,11 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     ).add_to(m_dual.m2)
                     
             except Exception as e:
-                st.warning(f"Procesando el escenario de coberturas 2026: {e}")
+                st.warning(f"Error procesando el escenario de coberturas 2026: {e}")
 
-            # 4. Renderizar la suite cartográfica dual en la interfaz
-            st_folium(m_dual, width=900, height=500, returned_objects=[])
+            # 4. 🚀 RENDERIZADO NATIVO (BYPASS)
+            # Esto convierte el mapa dual en HTML puro, evitando el fallo de st_folium
+            components.html(m_dual._repr_html_(), height=550)
             
             st.markdown("---")
             st.markdown("#### 📊 Matriz de Transición de Ecosistemas (Próximamente)")
