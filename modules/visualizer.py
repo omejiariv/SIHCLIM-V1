@@ -5107,7 +5107,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     else: st.warning(resumen)
                         
                 else:
-                st.info("Calculando matriz de transición...")
+                    st.info("Calculando matriz de transición...")
 
         with tab_stat:
             c1, c2 = st.columns([1, 1])
