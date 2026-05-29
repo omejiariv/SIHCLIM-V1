@@ -3398,10 +3398,11 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
             unsafe_allow_html=True,
         )
 
-    tab_raster, tab_comparativo, tab_puntos = st.tabs([
+    tab_raster, tab_comparativo, tab_puntos, tab_vector = st.tabs([
     "🗺️ Mapa Bioclimático", 
     "⚖️ Comparativa Dual", 
-    "📍 Estaciones"
+    "📍 Estaciones",
+    "📥 Descarga Vectorial"
     ])
 
     # --- PESTAÑA 1: MAPA RASTER (SIMULADOR CLIMÁTICO BIVARIADO CON COMPARATIVA) ---
