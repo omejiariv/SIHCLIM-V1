@@ -4919,43 +4919,44 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 st_folium(m, height=600, use_container_width=True, key="map_lc_final")
 
         # =====================================================================
-        # --- NUEVA PESTAÑA: COMPARATIVA SINCRONIZADA DUALMAP ---
+        # --- PESTAÑA 2: COMPARATIVA SINCRONIZADA DUALMAP (LÍNEA BASE VS 2026) ---
         # =====================================================================
         with tab_comp:
             st.markdown("### ⚖️ Comparativa de Cambios de Cobertura")
             st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente.")
             
-            # 👇 BOTÓN EN SU LUGAR CORRECTO 👇
-            if st.button("📥 Extraer y Enviar Raster 2026 a mi Google Drive", type="primary"):
-                try:
-                    from modules.exportar_cobertura_2026 import lanzar_exportacion_ge_to_drive
-                    with st.spinner("🛰️ Comunicando con Google Earth Engine..."):
-                        zona_actual = kwargs.get("gdf_zona", kwargs.get("gdf_filtered"))
-                        nombre_zona = kwargs.get("nombre_zona", "Territorio_Seleccionado")
-                        
-                        if zona_actual is not None and not zona_actual.empty:
-                            lanzar_exportacion_ge_to_drive(zona_actual, nombre_zona)
-                            st.success(f"✅ ¡Misión cumplida! El raster de {nombre_zona} se está generando. Revisa tu carpeta 'SIHCLI_Rasters' en Google Drive en un par de minutos.")
-                        else:
-                            st.warning("⚠️ Selecciona primero un territorio en los filtros geográficos.")
-                except Exception as e:
-                    st.error(f"Error al lanzar la exportación: {e}")
-            
             from folium.plugins import DualMap
             from streamlit_folium import st_folium
             
+            # 1. Inicializar el lienzo de mapas gemelos acoplados
             m_dual = DualMap(location=center, zoom_start=12 if view_mode=="Territorio" else 8, tiles="CartoDB positron")
             
+            # 2. PANEL IZQUIERDO (m_dual.m1) -> Cobertura Histórica 2020
             if img_url:
                 folium.raster_layers.ImageOverlay(
                     image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
                 ).add_to(m_dual.m1)
                 
-            if img_url:
-                folium.raster_layers.ImageOverlay(
-                    image=img_url, bounds=bounds, opacity=0.4, name="Cobertura 2026 (Pendiente)"
-                ).add_to(m_dual.m2)
+            # 3. PANEL DERECHO (m_dual.m2) -> Cobertura Satelital Unificada 2026
+            try:
+                url_2026 = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada.tif"
                 
+                # Procesamos el segundo raster bajo la misma máscara geográfica y escala del visor
+                data_2026, transform_2026, crs_2026, nodata_2026 = lc.process_land_cover_raster(
+                    url_2026, gdf_mask=gdf_mask, scale_factor=scale
+                )
+                
+                img_url_2026 = lc.get_raster_img_b64(data_2026, nodata_2026)
+                
+                if img_url_2026:
+                    folium.raster_layers.ImageOverlay(
+                        image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
+                    ).add_to(m_dual.m2)
+                    
+            except Exception as e:
+                st.warning(f"Procesando el escenario de coberturas 2026: {e}")
+
+            # 4. Renderizar la suite cartográfica dual en la interfaz
             st_folium(m_dual, width=900, height=500, returned_objects=[])
             
             st.markdown("---")
