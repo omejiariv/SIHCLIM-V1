@@ -4978,11 +4978,31 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     0: 13, 1: 9, 2: 7, 3: 12, 4: 8, 5: 10, 6: 1, 7: 11, 8: 11
                 }
                 
-                data_2026_reclass = np.copy(data_2026)
+                # 1. Inicializamos un lienzo en blanco
+                data_2026_reclass = np.zeros_like(data_2026)
+                
+                # 2. Traducimos todos los píxeles
                 for google_val, tu_val in traductor_dw.items():
-                    mask_traduccion = (data_2026 == google_val) & (data_2026 != nodata_2026)
-                    data_2026_reclass[mask_traduccion] = tu_val
+                    data_2026_reclass[data_2026 == google_val] = tu_val
                     
+                # 💡 3. ELIMINACIÓN DEL MAR AZUL (Recorte con Molde Geométrico)
+                if gdf_mask is not None and not gdf_mask.empty:
+                    from rasterio.features import geometry_mask
+                    # Verificamos que el molde tenga la misma proyección que el satélite
+                    gdf_mask_proj = gdf_mask.to_crs(crs_2026) if gdf_mask.crs.to_string() != str(crs_2026) else gdf_mask
+                    
+                    # 'geometry_mask' crea una plantilla que marca True todo lo que está AFUERA de la cuenca
+                    mask_exterior = geometry_mask(
+                        gdf_mask_proj.geometry, 
+                        out_shape=data_2026.shape, 
+                        transform=transform_2026, 
+                        invert=False
+                    )
+                    
+                    # Forzamos todo el exterior a ser 0 (tu sistema convierte el 0 en Transparente)
+                    data_2026_reclass[mask_exterior] = 0
+                    
+                # 4. Renderizamos la imagen final
                 img_url_2026 = lc.get_raster_img_b64(data_2026_reclass, nodata_2026)
                 
                 if img_url_2026:
@@ -4990,6 +5010,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                         image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
                     ).add_to(m_dual.m2)
                     
+                # 5. Calculamos la matriz (ignorando el fondo transparente)
                 df_res_2026, _ = lc.calculate_land_cover_stats(
                     data_2026_reclass, transform_2026, crs_2026, nodata_2026, manual_area_km2=area_cuenca_km2
                 )
