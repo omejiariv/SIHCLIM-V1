@@ -4785,19 +4785,20 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
     except: pass
     
     # --- ☁️ MIGRACIÓN A SUPABASE STORAGE ---
-    # Ya no leemos desde la carpeta data/ de GitHub
     SUPABASE_PROJECT_ID = "ldunpssoxvifemoyeuac" # Tu ID de proyecto
     url_nube = f"https://{SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public/rasters/Cob25m_WGS84.tif"
     
     raster_path = url_nube
     
-    # Si tienes la ruta definida explícitamente en tu archivo config.yaml o config.py, la respeta
     if Config and hasattr(Config, "LAND_COVER_RASTER_PATH") and str(Config.LAND_COVER_RASTER_PATH).startswith("http"):
         raster_path = Config.LAND_COVER_RASTER_PATH
 
-    # 2. Control de Vista
-    res_basin = st.session_state.get("basin_res")
-    has_basin_data = res_basin and res_basin.get("ready")
+    # ==========================================================
+    # 🛠️ 2. CONTROL DE VISTA (CORRECCIÓN ESTRUCTURAL)
+    # ==========================================================
+    # Ya no dependemos del viejo 'basin_res', extraemos la geometría directamente de los kwargs
+    gdf_zona_activa = kwargs.get("gdf_zona", kwargs.get("gdf_filtered", None))
+    has_basin_data = gdf_zona_activa is not None and not gdf_zona_activa.empty
     
     col_ctrl, col_info = st.columns([1, 2])
     with col_ctrl:
@@ -4806,26 +4807,30 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
     
     gdf_mask = None
     basin_name = "Regional (Antioquia)"
-    ppt_anual = 2000
     area_cuenca_km2 = None 
     
     if view_mode == "Cuenca":
         if has_basin_data:
-            gdf_mask = res_basin.get("gdf_cuenca", res_basin.get("gdf_union"))
-            basin_name = res_basin.get("names", "Cuenca Actual")
-            bal = res_basin.get("bal", {})
-            ppt_anual = bal.get("P", 2000)
-            morph = res_basin.get("morph", {})
-            area_cuenca_km2 = morph.get("area_km2", 0)
+            gdf_mask = gdf_zona_activa
+            
+            # Intentamos extraer el nombre si viene en kwargs, sino usamos uno genérico
+            basin_name = kwargs.get("nombre_zona", "Cuenca Seleccionada")
+            
+            # Calculamos el área geométricamente al vuelo (en km2) para el simulador SCS-CN
+            try:
+                area_cuenca_km2 = gdf_mask.to_crs(3116).area.sum() / 1000000.0
+            except:
+                area_cuenca_km2 = 0
+                
             with col_info:
-                st.success(f"Analizando: **{basin_name}**")
+                st.success(f"Analizando: **{basin_name}** (Área: {area_cuenca_km2:,.1f} km²)")
         else:
             st.warning("⚠️ No hay cuenca delimitada. Cambiando a modo Regional.")
             view_mode = "Regional"
 
     # 3. Procesamiento
     try:
-        # Procesar Raster (lc.process_land_cover_raster ya maneja proyecciones internamente gracias a nuestro fix anterior)
+        # Procesar Raster (lc.process_land_cover_raster ya maneja proyecciones)
         scale = 10 if view_mode == "Regional" else 1
         data, transform, crs, nodata = lc.process_land_cover_raster(
             raster_path, gdf_mask=gdf_mask, scale_factor=scale
