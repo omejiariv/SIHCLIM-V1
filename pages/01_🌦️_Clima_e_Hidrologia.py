@@ -750,6 +750,7 @@ def main():
             minx, miny, maxx, maxy = gdf_buffer.total_bounds
             
             # Creamos la malla matemática (Meshgrid)
+            import numpy as np  # <--- INYECTA ESTA LÍNEA AQUÍ
             xi = np.linspace(minx, maxx, grid_res)
             yi = np.linspace(miny, maxy, grid_res)
             grid_x, grid_y = np.meshgrid(xi, yi)
