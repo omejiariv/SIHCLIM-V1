@@ -4922,50 +4922,112 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
         # --- PESTAÑA 2: COMPARATIVA SINCRONIZADA DUALMAP (LÍNEA BASE VS 2026) ---
         # =====================================================================
         with tab_comp:
-            st.markdown("### ⚖️ Comparativa de Cambios de Cobertura")
+            st.markdown("### ⚖️ Comparativa de Cambios de Cobertura (2020 vs 2026)")
             st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente.")
             
             from folium.plugins import DualMap
-            import streamlit.components.v1 as components  # 👈 NUEVA HERRAMIENTA DE RENDERIZADO
-            
-            # 1. Inicializar el lienzo (Forzamos la carga explícita de mapas base)
-            m_dual = DualMap(location=center, zoom_start=12 if view_mode=="Territorio" else 8)
-            
+            import streamlit.components.v1 as components
+            import numpy as np
+            import pandas as pd
             import folium
+            
+            # 1. INICIALIZAR EL LIENZO DUAL
+            m_dual = DualMap(location=center, zoom_start=12 if view_mode=="Territorio" else 8)
             folium.TileLayer("CartoDB positron").add_to(m_dual.m1)
             folium.TileLayer("CartoDB positron").add_to(m_dual.m2)
             
-            # 2. PANEL IZQUIERDO (m_dual.m1) -> Cobertura Histórica 2020
+            # 2. LEYENDA GLOBAL
+            if show_legend and hasattr(lc, 'generate_legend_html'):
+                m_dual.m1.get_root().html.add_child(folium.Element(lc.generate_legend_html()))
+            
+            # 3. PANEL IZQUIERDO (2020) + HOVER INTERACTIVO
             if 'img_url' in locals() and img_url:
                 folium.raster_layers.ImageOverlay(
                     image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
                 ).add_to(m_dual.m1)
                 
-            # 3. PANEL DERECHO (m_dual.m2) -> Cobertura Satelital Unificada 2026
+                # Inyectar el Hover vectorial del 2020 si está activado
+                if use_hover and 'gdf_vec' in locals() and not gdf_vec.empty:
+                    folium.GeoJson(
+                        gdf_vec,
+                        style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
+                        tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['2020:']),
+                        name="Hover 2020"
+                    ).add_to(m_dual.m1)
+                
+            # 4. PANEL DERECHO (2026) -> EXTRACCIÓN Y RECLASIFICACIÓN
             try:
                 url_2026 = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada.tif"
-                
-                # Procesamos el raster recién salido del horno de Earth Engine
                 data_2026, transform_2026, crs_2026, nodata_2026 = lc.process_land_cover_raster(
                     url_2026, gdf_mask=gdf_mask, scale_factor=scale
                 )
                 
-                img_url_2026 = lc.get_raster_img_b64(data_2026, nodata_2026)
+                # -----------------------------------------------------------------
+                # 🧠 MOTOR DE TRADUCCIÓN (Dynamic World -> Tus Códigos 2020)
+                # Google envía: 0:Agua, 1:Bosque, 2:Pasto, 3:Humedal, 4:Cultivo, 5:Matorral, 6:Urbano, 7:Suelo, 8:Nieve
+                # ¡AJUSTA LOS NÚMEROS DE LA DERECHA PARA QUE COINCIDAN CON LOS IDs DE TU MAPA 2020!
+                # -----------------------------------------------------------------
+                traductor_dw = {
+                    0: 6,  # Agua DW -> Tu ID para Agua (ej. 6)
+                    1: 1,  # Bosque DW -> Tu ID para Bosque
+                    2: 2,  # Pasto DW -> Tu ID para Pastos
+                    3: 6,  # Veg. Inundada -> Tu ID para Agua/Humedal
+                    4: 3,  # Cultivos DW -> Tu ID para Cultivos
+                    5: 1,  # Matorral DW -> Tu ID para Bosque/Rastrojo
+                    6: 4,  # Urbano DW -> Tu ID para Urbano
+                    7: 5,  # Suelo desnudo -> Tu ID para Suelo
+                    8: 5   # Nieve -> Tu ID para Suelo
+                }
+                
+                # Aplicamos la traducción píxel por píxel
+                data_2026_reclass = np.copy(data_2026)
+                for google_val, tu_val in traductor_dw.items():
+                    data_2026_reclass[data_2026 == google_val] = tu_val
+                    
+                # Generamos la imagen ya con tus colores equivalentes
+                img_url_2026 = lc.get_raster_img_b64(data_2026_reclass, nodata_2026)
                 
                 if img_url_2026:
                     folium.raster_layers.ImageOverlay(
                         image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
                     ).add_to(m_dual.m2)
                     
+                # 5. CÁLCULO DE LA MATRIZ COMPARATIVA (Pandas)
+                # Calculamos las áreas del 2026 usando la misma función matemática del 2020
+                df_res_2026, _ = lc.calculate_land_cover_stats(
+                    data_2026_reclass, transform_2026, crs_2026, nodata_2026, manual_area_km2=area_cuenca_km2
+                )
+                
             except Exception as e:
-                st.warning(f"Error procesando el escenario de coberturas 2026: {e}")
+                st.warning(f"Error procesando el escenario 2026: {e}")
 
-            # 4. 🚀 RENDERIZADO NATIVO (BYPASS)
-            # Esto convierte el mapa dual en HTML puro, evitando el fallo de st_folium
+            # 6. RENDERIZADO DEL MAPA DUAL
             components.html(m_dual._repr_html_(), height=550)
             
+            # 7. TABLA DE MATRIZ DE TRANSICIÓN
             st.markdown("---")
-            st.markdown("#### 📊 Matriz de Transición de Ecosistemas (Próximamente)")
+            st.markdown("#### 📊 Matriz de Desplazamiento de Coberturas (2020 vs 2026)")
+            
+            if 'df_res' in locals() and not df_res.empty and 'df_res_2026' in locals() and not df_res_2026.empty:
+                # Unificamos ambas tablas usando el nombre de la cobertura
+                df_comp = pd.merge(
+                    df_res_2026[['Cobertura', 'Área (km²)']], 
+                    df_res[['Cobertura', 'Área (km²)']], 
+                    on='Cobertura', how='outer'
+                ).fillna(0)
+                
+                # Renombramos columnas y calculamos la variación
+                df_comp.columns = ['Ecosistema / Cobertura', 'Escenario 2026 (km²)', 'Línea Base 2020 (km²)']
+                df_comp['Variación Neta (km²)'] = df_comp['Escenario 2026 (km²)'] - df_comp['Línea Base 2020 (km²)']
+                
+                # Renderizamos la tabla estilizada
+                st.dataframe(df_comp.style.format({
+                    'Escenario 2026 (km²)': '{:,.2f}', 
+                    'Línea Base 2020 (km²)': '{:,.2f}', 
+                    'Variación Neta (km²)': lambda x: f"+{x:,.2f}" if x > 0 else f"{x:,.2f}"
+                }), use_container_width=True)
+            else:
+                st.info("Calculando matriz de transición...")
 
         with tab_stat:
             c1, c2 = st.columns([1, 1])
