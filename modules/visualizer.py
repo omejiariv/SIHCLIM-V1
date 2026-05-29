@@ -5031,15 +5031,26 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
                 gdf_predios = gpd.read_file(url_predios)
                 style_predios = lambda x: {'color': '#FF0000', 'fillColor': '#FF0000', 'weight': 2, 'fillOpacity': 0.4}
-                folium.GeoJson(gdf_predios, style_function=style_predios, name="Predios Ejecutados").add_to(m_dual.m1)
-                folium.GeoJson(gdf_predios, style_function=style_predios, name="Predios Ejecutados").add_to(m_dual.m2)
+                # interactive=False permite que el ratón ignore el predio y lea el hover que hay debajo
+                folium.GeoJson(gdf_predios, style_function=style_predios, name="Predios Ejecutados", interactive=False).add_to(m_dual.m1)
+                folium.GeoJson(gdf_predios, style_function=style_predios, name="Predios Ejecutados", interactive=False).add_to(m_dual.m2)
             except: pass
-
+                
             folium.LayerControl().add_to(m_dual.m1)
             folium.LayerControl().add_to(m_dual.m2)
             
-            # 1. RENDERIZAR MAPAS
-            components.html(m_dual._repr_html_(), height=550)
+            # Renderizar Mapa Principal
+            components.html(m._repr_html_(), height=600)
+            
+            # 🎨 LEYENDA NATIVA STREAMLIT (Idéntica a la Pestaña 2)
+            if show_legend:
+                st.markdown("#### 🎨 Leyenda de Ecosistemas")
+                legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 12px; padding: 10px; background-color: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;'>"
+                for cat_id, hex_color in lc.LAND_COVER_COLORS.items():
+                    name = lc.LAND_COVER_LEGEND.get(cat_id, f"Categoría {cat_id}")
+                    legend_html += f"<div style='display: flex; align-items: center;'><div style='width: 16px; height: 16px; background-color: {hex_color}; border: 1px solid #999; margin-right: 6px; border-radius: 3px;'></div><span style='font-size: 13px; color: #333;'>{name}</span></div>"
+                legend_html += "</div>"
+                st.markdown(legend_html, unsafe_allow_html=True)
             
             # 2. LEYENDA NATIVA STREAMLIT (A prueba de fallos)
             if show_legend:
