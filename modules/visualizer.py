@@ -4951,34 +4951,23 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             folium.TileLayer("CartoDB positron").add_to(m_dual.m1)
             folium.TileLayer("CartoDB positron").add_to(m_dual.m2)
             
-            # -----------------------------------------------------------------
-            # 🎨 INYECCIÓN DE LEYENDA GLOBAL
-            # -----------------------------------------------------------------
-            if show_legend and hasattr(lc, 'generate_legend_html'):
-                # Inyectamos la leyenda en el mapa izquierdo, que siempre está visible
-                m_dual.m1.get_root().html.add_child(folium.Element(lc.generate_legend_html()))
-            
+            # --- MAPA IZQUIERDO (2020) ---
             if 'img_url' in locals() and img_url:
                 folium.raster_layers.ImageOverlay(
                     image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
                 ).add_to(m_dual.m1)
                 
-                # --- HOVER 2020 ---
+                # HOVER 2020 (Límite expandido)
                 if use_hover:
-                    with st.spinner("Generando capa interactiva de coberturas..."):
-                        scale_vec = 50 if view_mode == "Regional" else 1
-                        if view_mode == "Regional":
-                            d_hov, t_hov, _, _ = lc.process_land_cover_raster(raster_path, gdf_mask=None, scale_factor=scale_vec)
-                            gdf_vec_comp = lc.vectorize_raster_optimized(d_hov, t_hov, crs, nodata)
-                        else:
-                            gdf_vec_comp = lc.vectorize_raster_optimized(data, transform, crs, nodata)
-                        
-                        if not gdf_vec_comp.empty:
+                    with st.spinner("Generando hover interactivo 2020..."):
+                        gdf_vec_2020 = lc.vectorize_raster_optimized(data, transform, crs, nodata, max_shapes=5000)
+                        if gdf_vec_2020 is not None and not gdf_vec_2020.empty:
                             folium.GeoJson(
-                                gdf_vec_comp, style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
-                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['2020:']), name="Hover 2020"
+                                gdf_vec_2020, style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
+                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['Ecosistema 2020:']), name="Hover 2020"
                             ).add_to(m_dual.m1)
             
+            # --- MAPA DERECHO (2026) ---
             try:
                 data_2026, transform_2026, crs_2026, nodata_2026 = lc.process_land_cover_raster(
                     url_2026_dinamica, gdf_mask=gdf_mask, scale_factor=scale
@@ -5008,27 +4997,20 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     folium.raster_layers.ImageOverlay(
                         image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
                     ).add_to(m_dual.m2)
-                    
-                # -----------------------------------------------------------------
-                # 🖱️ HOVER 2026 (Generación Dinámica)
-                # -----------------------------------------------------------------
-                if use_hover:
-                    with st.spinner("Generando hover para mapa 2026..."):
-                        # Reutilizamos la función de vectorización de land_cover.py para crear el tooltip de 2026
-                        gdf_vec_2026 = lc.vectorize_raster_optimized(data_2026_reclass, transform_2026, crs_2026, nodata=0, max_shapes=2000)
-                        
-                        if not gdf_vec_2026.empty:
-                            folium.GeoJson(
-                                gdf_vec_2026, 
-                                style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
-                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['2026:']), 
-                                name="Hover 2026"
-                            ).add_to(m_dual.m2)
                 
+                # HOVER 2026 (Límite expandido)
+                if use_hover:
+                    with st.spinner("Generando hover interactivo 2026..."):
+                        gdf_vec_2026 = lc.vectorize_raster_optimized(data_2026_reclass, transform_2026, crs_2026, nodata=0, max_shapes=5000)
+                        if gdf_vec_2026 is not None and not gdf_vec_2026.empty:
+                            folium.GeoJson(
+                                gdf_vec_2026, style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
+                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['Ecosistema 2026:']), name="Hover 2026"
+                            ).add_to(m_dual.m2)
+                    
                 df_res_2026_fair, area_efectiva_2026 = lc.calculate_land_cover_stats(
                     data_2026_reclass, transform_2026, crs_2026, nodata=0, manual_area_km2=area_cuenca_km2
                 )
-                
                 df_res_2020_fair, area_efectiva_2020 = lc.calculate_land_cover_stats(
                     data, transform, crs, nodata=nodata, manual_area_km2=area_cuenca_km2
                 )
@@ -5053,7 +5035,16 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
 
             folium.LayerControl().add_to(m_dual.m1)
             folium.LayerControl().add_to(m_dual.m2)
+            
+            # Renderizar Mapas
             components.html(m_dual._repr_html_(), height=550)
+            
+            # 🎨 LEYENDA GLOBAL (Inyectada a prueba de fallos debajo del mapa)
+            if show_legend and hasattr(lc, 'generate_legend_html'):
+                leyenda_html = lc.generate_legend_html()
+                leyenda_html = leyenda_html.replace('position: fixed; bottom: 30px; left: 30px; z-index:9999;', 'display: flex; flex-wrap: wrap; gap: 12px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; margin-top: 5px;')
+                leyenda_html = leyenda_html.replace('max-height: 250px; overflow-y: auto;', '')
+                st.markdown(leyenda_html, unsafe_allow_html=True)
             
             st.markdown("---")
             st.markdown(f"#### 📊 Matriz de Desplazamiento ({resolucion_elegida})")
