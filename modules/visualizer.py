@@ -4961,6 +4961,63 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 data_2026, transform_2026, crs_2026, nodata_2026 = lc.process_land_cover_raster(
                     url_2026, gdf_mask=gdf_mask, scale_factor=scale
                 )
+
+            # =====================================================================
+            # 8. CAJA INTELIGENTE DE ANÁLISIS ECOSISTÉMICO
+            # =====================================================================
+            st.markdown("### 🧠 Diagnóstico Ecosistémico Automatizado")
+            
+            if 'df_comp' in locals() and not df_comp.empty:
+                # 1. Definir agrupaciones estratégicas
+                cat_naturales = ['Bosque', 'Vegetación Herbácea / Arbustiva', 'Humedales', 'Agua / Cuerpos de Agua']
+                cat_antropicas = ['Zonas Urbanas', 'Cultivos permanentes', 'Cultivos transitorios', 'Pastos', 'Areas Agrícolas Heterogéneas', 'Zonas degradadas -canteras, escombreras, minas']
+                
+                # 2. Filtrar y sumar áreas
+                df_nat = df_comp[df_comp['Ecosistema / Cobertura'].isin(cat_naturales)]
+                df_ant = df_comp[df_comp['Ecosistema / Cobertura'].isin(cat_antropicas)]
+                
+                nat_2020 = df_nat['Línea Base 2020 (km²)'].sum()
+                nat_2026 = df_nat['Escenario 2026 (km²)'].sum()
+                ant_2020 = df_ant['Línea Base 2020 (km²)'].sum()
+                ant_2026 = df_ant['Escenario 2026 (km²)'].sum()
+                
+                delta_nat = nat_2026 - nat_2020
+                delta_ant = ant_2026 - ant_2020
+                
+                # 3. Extraer métricas clave específicas
+                bosque_row = df_comp[df_comp['Ecosistema / Cobertura'] == 'Bosque']
+                delta_bosque = bosque_row['Variación Neta (km²)'].values[0] if not bosque_row.empty else 0
+                
+                urbano_row = df_comp[df_comp['Ecosistema / Cobertura'] == 'Zonas Urbanas']
+                delta_urbano = urbano_row['Variación Neta (km²)'].values[0] if not urbano_row.empty else 0
+                
+                # 4. Lógica del motor de inferencia
+                estado_general = "🟢 Recuperación Ecológica" if delta_nat > 0 else "🔴 Presión Ecosistémica"
+                
+                resumen = f"**Análisis de Dinámica de Coberturas (2020 - 2026)**\n\n"
+                resumen += f"El territorio presenta una tendencia de **{estado_general}**. "
+                
+                # Análisis de Antropización
+                if delta_ant > 0:
+                    resumen += f"Se evidencia un avance de la frontera de intervención humana, con un aumento de **{delta_ant:,.2f} km²** en coberturas antrópicas (agricultura, pasturas, urbanización). "
+                else:
+                    resumen += f"Se observa una retracción de las actividades antrópicas en **{abs(delta_ant):,.2f} km²**. "
+                
+                # Implicaciones Ecosistémicas (Bosque y Biodiversidad)
+                if delta_bosque < 0:
+                    resumen += f"\n\n* **⚠️ Riesgo Estructural:** La pérdida de **{abs(delta_bosque):,.2f} km²** de bosque sugiere una fragmentación de hábitats y pérdida de conectividad ecológica. Esto impacta negativamente la infiltración, elevando el riesgo de picos de escorrentía."
+                elif delta_bosque > 0:
+                    resumen += f"\n\n* **🌱 Ganancia en Biodiversidad:** El aumento de **{delta_bosque:,.2f} km²** de cobertura boscosa fortalece los corredores biológicos, mejora la resiliencia climática local y optimiza la recarga de acuíferos."
+                
+                # Implicaciones Urbanas
+                if delta_urbano > 0.5:
+                    resumen += f"\n* **🏙️ Impermeabilización:** El crecimiento urbano detectado (+{delta_urbano:,.2f} km²) reduce la infiltración natural, requiriendo estrategias de drenaje sostenible."
+
+                # Renderizar la caja inteligente
+                if delta_nat >= 0:
+                    st.success(resumen)
+                else:
+                    st.warning(resumen)
                 
                 # -----------------------------------------------------------------
                 # 🧠 MOTOR DE TRADUCCIÓN (Dynamic World -> SIHCLIM 2020)
