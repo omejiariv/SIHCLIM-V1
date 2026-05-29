@@ -4802,7 +4802,6 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
     col_ctrl, col_info = st.columns([1, 2])
     with col_ctrl:
         idx = 1 if has_basin_data else 0
-        # Ahora dice "Territorio" en lugar de "Cuenca"
         view_mode = st.radio("📍 Modo Visualización:", ["Regional", "Territorio"], index=idx, horizontal=True)
     
     gdf_mask = None
@@ -4812,7 +4811,6 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
     if view_mode == "Territorio":
         if has_basin_data:
             gdf_mask = gdf_zona_activa
-            # Extraemos el nombre exacto del filtro geográfico que aplicaste en la barra lateral
             basin_name = kwargs.get("nombre_zona", "Territorio Seleccionado")
             
             try:
@@ -4828,7 +4826,6 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
 
     # 3. Procesamiento
     try:
-        # Procesar Raster (lc.process_land_cover_raster ya maneja proyecciones)
         scale = 10 if view_mode == "Regional" else 1
         data, transform, crs, nodata = lc.process_land_cover_raster(
             raster_path, gdf_mask=gdf_mask, scale_factor=scale
@@ -4844,7 +4841,6 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
         )
 
         # 4. Visualización
-        # Añadimos la nueva pestaña de Comparativa
         tab_map, tab_comp, tab_stat, tab_sim = st.tabs([
             "🗺️ Mapa 2020", 
             "⚖️ Comparativa (2020 vs 2026)", 
@@ -4870,47 +4866,30 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 from folium import plugins 
                 from streamlit_folium import st_folium
 
-                # Bounds
                 h, w = data.shape
                 minx, miny, maxx, maxy = array_bounds(h, w, transform)
                 
-                # Transformar bounds a Lat/Lon para centrar el mapa
                 transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
                 lon_min, lat_min = transformer.transform(minx, miny)
                 lon_max, lat_max = transformer.transform(maxx, maxy)
                 bounds = [[lat_min, lon_min], [lat_max, lon_max]]
                 center = [(lat_min+lat_max)/2, (lon_min+lon_max)/2]
 
-                # --- CREACIÓN DEL MAPA ---
-                m = folium.Map(location=center, zoom_start=12 if view_mode=="Cuenca" else 8, tiles="CartoDB positron")
+                m = folium.Map(location=center, zoom_start=12 if view_mode=="Territorio" else 8, tiles="CartoDB positron")
                 
-                plugins.Fullscreen(
-                    position='topright', title='Pantalla completa',
-                    title_cancel='Salir', force_separate_button=True
-                ).add_to(m)
+                plugins.Fullscreen(position='topright', title='Pantalla completa', title_cancel='Salir', force_separate_button=True).add_to(m)
 
-                # --- LEYENDA HTML DINÁMICA ---
                 if show_legend and not df_res.empty:
-                    legend_html = lc.generate_legend_html() # Usamos la del módulo si existe, o construimos manual
-                    # Si prefieres la manual que tenías, mantenla, pero aquí uso una lógica simplificada
-                    if not hasattr(lc, 'generate_legend_html'):
-                         # Fallback a tu lógica manual si la función no está en lc
-                         pass 
-                    else:
+                    if hasattr(lc, 'generate_legend_html'):
                          m.get_root().html.add_child(folium.Element(lc.generate_legend_html()))
 
-                # CAPA 1: IMAGEN (Raster)
                 img_url = lc.get_raster_img_b64(data, nodata)
                 if img_url:
-                    folium.raster_layers.ImageOverlay(
-                        image=img_url, bounds=bounds, opacity=0.75, name="Cobertura"
-                    ).add_to(m)
+                    folium.raster_layers.ImageOverlay(image=img_url, bounds=bounds, opacity=0.75, name="Cobertura").add_to(m)
 
-                # CAPA 2: INTERACTIVA (Vectorial)
                 if use_hover:
                     with st.spinner("Generando capa interactiva..."):
                         scale_vec = 50 if view_mode == "Regional" else 1
-                        # Re-procesar para hover si es regional (downsampling)
                         if view_mode == "Regional":
                             d_hov, t_hov, _, _ = lc.process_land_cover_raster(raster_path, gdf_mask=None, scale_factor=scale_vec)
                             gdf_vec = lc.vectorize_raster_optimized(d_hov, t_hov, crs, nodata)
@@ -4925,56 +4904,62 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                                 name="Hover Info"
                             ).add_to(m)
 
-                # --- CORRECCIÓN CRÍTICA: PROYECCIÓN DE LA MÁSCARA ---
-                if view_mode == "Cuenca" and gdf_mask is not None:
+                if view_mode == "Territorio" and gdf_mask is not None:
                     try:
-                        # Asegurar que la máscara esté en Lat/Lon para que Folium la muestre
                         gdf_mask_viz = gdf_mask.to_crs(epsg=4326) if gdf_mask.crs.to_string() != "EPSG:4326" else gdf_mask
                         folium.GeoJson(
                             gdf_mask_viz, 
                             style_function=lambda x: {'color': 'black', 'fill': False, 'weight': 2},
-                            name="Límite Cuenca"
+                            name="Límite Territorio"
                         ).add_to(m)
                     except Exception as e:
                         print(f"Error proyectando máscara: {e}")
 
-                # --- INTERVENCIÓN 2: CAPAS DE VULNERABILIDAD (Con búsqueda segura) ---
-                
-                # Intentar buscar las capas en kwargs o session_state
-                gdf_inc = kwargs.get('gdf_amenaza_incendios', st.session_state.get('gdf_amenaza_incendios'))
-                gdf_agr = kwargs.get('gdf_aptitud_agricola', st.session_state.get('gdf_aptitud_agricola'))
-
-                # Capa Incendios
-                if gdf_inc is not None and not gdf_inc.empty:
-                    try:
-                        gdf_inc_viz = gdf_inc.to_crs(epsg=4326) # Reproyectar siempre por seguridad
-                        folium.GeoJson(
-                            data=gdf_inc_viz,
-                            name='Amenaza Incendios',
-                            style_function=lambda x: {
-                                'fillColor': '#e74c3c' if x['properties'].get('riesgo') == 'Alto' else '#f1c40f',
-                                'color': 'black', 'weight': 0.5, 'fillOpacity': 0.6
-                            },
-                            tooltip="Riesgo Incendio: " + folium.features.GeoJsonTooltip(fields=['riesgo'])
-                        ).add_to(m)
-                    except Exception as e: print(f"Error capa incendios: {e}")
-
-                # Capa Agrícola
-                if gdf_agr is not None and not gdf_agr.empty:
-                    try:
-                        gdf_agr_viz = gdf_agr.to_crs(epsg=4326) # Reproyectar siempre por seguridad
-                        folium.GeoJson(
-                            data=gdf_agr_viz,
-                            name='Aptitud Agrícola',
-                            show=False, 
-                            style_function=lambda x: {
-                                'fillColor': '#2ecc71', 'color': 'black', 'weight': 0.5, 'fillOpacity': 0.5
-                            }
-                        ).add_to(m)
-                    except Exception as e: print(f"Error capa agrícola: {e}")
-                
                 folium.LayerControl().add_to(m)
                 st_folium(m, height=600, use_container_width=True, key="map_lc_final")
+
+        # =====================================================================
+        # --- NUEVA PESTAÑA: COMPARATIVA SINCRONIZADA DUALMAP ---
+        # =====================================================================
+        with tab_comp:
+            st.markdown("### ⚖️ Comparativa de Cambios de Cobertura")
+            st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente.")
+            
+            # 👇 BOTÓN EN SU LUGAR CORRECTO 👇
+            if st.button("📥 Extraer y Enviar Raster 2026 a mi Google Drive", type="primary"):
+                try:
+                    from modules.exportar_cobertura_2026 import lanzar_exportacion_ge_to_drive
+                    with st.spinner("🛰️ Comunicando con Google Earth Engine..."):
+                        zona_actual = kwargs.get("gdf_zona", kwargs.get("gdf_filtered"))
+                        nombre_zona = kwargs.get("nombre_zona", "Territorio_Seleccionado")
+                        
+                        if zona_actual is not None and not zona_actual.empty:
+                            lanzar_exportacion_ge_to_drive(zona_actual, nombre_zona)
+                            st.success(f"✅ ¡Misión cumplida! El raster de {nombre_zona} se está generando. Revisa tu carpeta 'SIHCLI_Rasters' en Google Drive en un par de minutos.")
+                        else:
+                            st.warning("⚠️ Selecciona primero un territorio en los filtros geográficos.")
+                except Exception as e:
+                    st.error(f"Error al lanzar la exportación: {e}")
+            
+            from folium.plugins import DualMap
+            from streamlit_folium import st_folium
+            
+            m_dual = DualMap(location=center, zoom_start=12 if view_mode=="Territorio" else 8, tiles="CartoDB positron")
+            
+            if img_url:
+                folium.raster_layers.ImageOverlay(
+                    image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
+                ).add_to(m_dual.m1)
+                
+            if img_url:
+                folium.raster_layers.ImageOverlay(
+                    image=img_url, bounds=bounds, opacity=0.4, name="Cobertura 2026 (Pendiente)"
+                ).add_to(m_dual.m2)
+                
+            st_folium(m_dual, width=900, height=500, returned_objects=[])
+            
+            st.markdown("---")
+            st.markdown("#### 📊 Matriz de Transición de Ecosistemas (Próximamente)")
 
         with tab_stat:
             c1, c2 = st.columns([1, 1])
@@ -4989,7 +4974,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 st.plotly_chart(fig)
 
         with tab_sim:
-            if view_mode == "Cuenca":
+            if view_mode == "Territorio":
                 st.info("Simula cambios de uso del suelo.")
                 with st.expander("⚙️ Configuración CN", expanded=False):
                     cc = st.columns(5)
@@ -5015,6 +5000,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                                   inputs[2]*cn_cfg['cultivo'] + inputs[3]*cn_cfg['urbano'] + 
                                   inputs[4]*cn_cfg['suelo']) / 100
                         
+                        ppt_anual = kwargs.get("bal", {}).get("P", 2000)
                         q_act = lc.calculate_scs_runoff(cn_act, ppt_anual)
                         q_fut = lc.calculate_scs_runoff(cn_fut, ppt_anual)
                         
@@ -5034,73 +5020,10 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 else:
                     st.warning("La suma debe ser 100%.")
             else:
-                st.info("⚠️ Requiere modo Cuenca.")
+                st.info("⚠️ Requiere modo Territorio para realizar cálculos de escorrentía.")
 
     except Exception as e:
         st.error(f"Error en módulo de coberturas: {e}")
-
-        # =====================================================================
-        # --- NUEVA PESTAÑA: COMPARATIVA SINCRONIZADA DUALMAP ---
-        # =====================================================================
-        with tab_comp:
-            st.markdown("### ⚖️ Comparativa de Cambios de Cobertura")
-            st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente.")
-            
-            # 👇 INYECTA ESTE BOTÓN AQUÍ 👇
-            if st.button("📥 Extraer y Enviar Raster 2026 a mi Google Drive", type="primary"):
-                try:
-                    # Importamos tu nuevo archivo desde la carpeta modules
-                    from modules.exportar_cobertura_2026 import lanzar_exportacion_ge_to_drive
-                    
-                    with st.spinner("🛰️ Comunicando con Google Earth Engine..."):
-                        # Extraemos la cuenca actual y su nombre
-                        zona_actual = kwargs.get("gdf_zona", kwargs.get("gdf_filtered"))
-                        nombre_zona = kwargs.get("nombre_zona", "Territorio_Seleccionado")
-                        
-                        if zona_actual is not None and not zona_actual.empty:
-                            lanzar_exportacion_ge_to_drive(zona_actual, nombre_zona)
-                            st.success(f"✅ ¡Misión cumplida! El raster de {nombre_zona} se está generando. Revisa tu carpeta 'SIHCLI_Rasters' en Google Drive en un par de minutos.")
-                        else:
-                            st.warning("⚠️ Selecciona primero un territorio en los filtros geográficos.")
-                except Exception as e:
-                    st.error(f"Error al lanzar la exportación: {e}")
-            # 👆 FIN DEL BOTÓN 👆
-            
-            from folium.plugins import DualMap
-            from streamlit_folium import st_folium
-            
-            # 1. Crear el lienzo dual sincronizado
-            m_dual = DualMap(location=center, zoom_start=12 if view_mode=="Territorio" else 8, tiles="CartoDB positron")
-            
-            # 2. CAPA IZQUIERDA (m_dual.m1) -> Línea Base 2020 (Supabase)
-            if img_url:
-                folium.raster_layers.ImageOverlay(
-                    image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
-                ).add_to(m_dual.m1)
-                
-            # 3. CAPA DERECHA (m_dual.m2) -> Nueva Capa 2026 (Earth Engine o Supabase)
-            # NOTA: Tu función 'add_ee_layer' funciona aquí llamando a m_dual.m2.add_ee_layer(...)
-            try:
-                import ee
-                # Ejemplo estructural de cómo inyectar tu capa de Google Earth Engine:
-                # roi_ee = ee.Geometry(gdf_mask.geometry.unary_union.__geo_interface__)
-                # img_2026 = ee.Image("TU_COLECCION_2026").clip(roi_ee)
-                # m_dual.m2.add_ee_layer(img_2026, vis_params, 'Cobertura 2026')
-                
-                # Placeholder temporal mientras configuras GEE:
-                folium.raster_layers.ImageOverlay(
-                    image=img_url, bounds=bounds, opacity=0.4, name="Cobertura 2026 (Pendiente)"
-                ).add_to(m_dual.m2)
-                
-            except Exception as e:
-                st.warning(f"Error conectando con Earth Engine: {e}")
-
-            # 4. Renderizar el mapa dual
-            st_folium(m_dual, width=900, height=500, returned_objects=[])
-            
-            # 5. Aquí añadiremos más adelante la tabla matemática de hectáreas ganadas/perdidas (como en Zonas de Vida)
-            st.markdown("---")
-            st.markdown("#### 📊 Matriz de Transición de Ecosistemas (Próximamente)")
 
 
 # PESTAÑA: CORRECCIÓN DE SESGO (VERSIÓN BLINDADA)
