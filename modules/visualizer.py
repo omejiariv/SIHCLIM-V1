@@ -3571,11 +3571,32 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                                 with c_tab2:
                                     if extraer_estaciones:
                                         st.markdown("#### 📍 Estaciones en Contexto")
-                                        gdf_stations = kwargs.get("gdf_stations", None)
-                                        if gdf_stations is not None and not gdf_stations.empty:
-                                            estaciones_alt = lz.extract_elevation_from_dem(gdf_stations, dem_file)
-                                            cols_m = [c for c in ['id_estacion', 'nombre', 'altitud_dem'] if c in estaciones_alt.columns]
-                                            st.dataframe(estaciones_alt[cols_m].dropna(), use_container_width=True)
+                                        
+                                        # 1. Buscar estaciones de la cuenca filtrada primero, sino usar catálogo global
+                                        gdf_stations_cxt = kwargs.get("gdf_filtered")
+                                        if gdf_stations_cxt is None or gdf_stations_cxt.empty:
+                                            gdf_stations_cxt = kwargs.get("gdf_stations", None)
+                                            
+                                        if gdf_stations_cxt is not None and not gdf_stations_cxt.empty:
+                                            estaciones_alt = lz.extract_elevation_from_dem(gdf_stations_cxt.copy(), dem_file)
+                                            
+                                            # 2. 🛡️ BLINDAJE DE COLUMNAS (Capturar el nombre real de la estación)
+                                            col_nombre = 'nombre'
+                                            if 'Estación' in estaciones_alt.columns:
+                                                col_nombre = 'Estación'
+                                            elif hasattr(Config, 'STATION_NAME_COL') and Config.STATION_NAME_COL in estaciones_alt.columns:
+                                                col_nombre = Config.STATION_NAME_COL
+                                                
+                                            # Ensamblar las columnas que realmente existen en el dataframe
+                                            cols_m = [c for c in ['id_estacion', col_nombre, 'altitud_dem'] if c in estaciones_alt.columns]
+                                            
+                                            # 3. 🚨 Mostrar datos SIN el .dropna() para evitar que una estación nula borre toda la tabla
+                                            if cols_m:
+                                                st.dataframe(estaciones_alt[cols_m], use_container_width=True)
+                                            else:
+                                                st.dataframe(estaciones_alt, use_container_width=True)
+                                        else:
+                                            st.warning("No hay estaciones cargadas para este territorio.")
                             else:
                                 st.warning("La simulación no arrojó geometrías válidas.")
                     except Exception as e:
