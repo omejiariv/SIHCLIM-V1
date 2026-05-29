@@ -5129,57 +5129,101 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                              color_discrete_map={r["Cobertura"]: r["Color"] for _, r in df_res.iterrows()}, hole=0.4)
                 st.plotly_chart(fig)
 
+        # =====================================================================
+        # --- PESTAÑA 4: SIMULADOR HIDROLÓGICO (SCS-CN) ---
+        # =====================================================================
         with tab_sim:
             if view_mode == "Territorio":
-                st.info("Simula cambios de uso del suelo.")
-                with st.expander("⚙️ Configuración CN", expanded=False):
+                st.markdown("### 💧 Simulador de Escorrentía y Retención (SCS-CN)")
+                st.info("Este módulo traduce los cambios de cobertura en impactos directos sobre el ciclo hidrológico de la cuenca.")
+                
+                with st.expander("⚙️ Configuración de Curvas de Número (CN)", expanded=False):
+                    st.write("Ajusta el valor de escorrentía típico para cada ecosistema (0 = Retención Total, 100 = Impermeable).")
                     cc = st.columns(5)
                     cn_cfg = {
                         'bosque': cc[0].number_input("Bosque", value=55),
                         'pasto': cc[1].number_input("Pasto", value=75),
                         'cultivo': cc[2].number_input("Cultivo", value=85),
                         'urbano': cc[3].number_input("Urbano", value=95),
-                        'suelo': cc[4].number_input("Suelo", value=90)
+                        'suelo': cc[4].number_input("Suelo Desnudo", value=90)
                     }
                 
-                st.write("**Defina el Escenario Futuro (%):**")
-                sl = st.columns(5)
-                inputs = [sl[0].slider("% Bosque",0,100,40), sl[1].slider("% Pasto",0,100,30),
-                          sl[2].slider("% Cultivo",0,100,20), sl[3].slider("% Urbano",0,100,5),
-                          sl[4].slider("% Suelo",0,100,5)]
+                # 1. Recuperar DataFrames Base y 2026 de la pestaña comparativa
+                df_base = df_res_2020_fair if 'df_res_2020_fair' in locals() else df_res
+                df_2026 = df_res_2026_fair if 'df_res_2026_fair' in locals() else pd.DataFrame()
+                
+                # 2. Calcular CN Actual (2020) y Satelital (2026)
+                cn_2020 = lc.calculate_weighted_cn(df_base, cn_cfg)
+                cn_2026 = lc.calculate_weighted_cn(df_2026, cn_cfg) if not df_2026.empty else cn_2020
+                
+                st.markdown("#### 🎯 Proyectar Escenario Futuro")
+                st.write("**Ajusta los deslizadores para simular un tercer escenario hipotético (La suma debe ser 100%):**")
+                
+                # Pre-cargar los sliders basándose en el estado actual de 2026
+                bosq_pct = float(df_2026[df_2026['Cobertura'] == 'Bosque']['%'].values[0]) if not df_2026.empty and not df_2026[df_2026['Cobertura'] == 'Bosque'].empty else 40.0
+                past_pct = float(df_2026[df_2026['Cobertura'].str.contains('Pasto', na=False)]['%'].sum()) if not df_2026.empty else 30.0
+                cult_pct = float(df_2026[df_2026['Cobertura'].str.contains('Cultivo|Agrícola', na=False)]['%'].sum()) if not df_2026.empty else 20.0
+                urb_pct = float(df_2026[df_2026['Cobertura'] == 'Zonas Urbanas']['%'].values[0]) if not df_2026.empty and not df_2026[df_2026['Cobertura'] == 'Zonas Urbanas'].empty else 5.0
+                suel_pct = 100 - (bosq_pct + past_pct + cult_pct + urb_pct)
+                if suel_pct < 0: suel_pct = 0.0
 
-                if abs(sum(inputs) - 100) < 0.1:
-                    if st.button("🚀 Calcular Escenario"):
+                sl = st.columns(5)
+                inputs = [
+                    sl[0].slider("% Bosque", 0, 100, int(bosq_pct)), 
+                    sl[1].slider("% Pasto", 0, 100, int(past_pct)),
+                    sl[2].slider("% Cultivo", 0, 100, int(cult_pct)), 
+                    sl[3].slider("% Urbano", 0, 100, int(urb_pct)),
+                    sl[4].slider("% Suelo", 0, 100, int(suel_pct))
+                ]
+
+                if abs(sum(inputs) - 100) < 1.0: # Margen de error pequeño por redondeos
+                    if st.button("🚀 Calcular Balance Hidrológico", type="primary"):
                         import plotly.graph_objects as go
-                        cn_act = lc.calculate_weighted_cn(df_res, cn_cfg)
-                        cn_fut = (inputs[0]*cn_cfg['bosque'] + inputs[1]*cn_cfg['pasto'] + 
+                        
+                        # Cálculo de CN Simulado
+                        cn_sim = (inputs[0]*cn_cfg['bosque'] + inputs[1]*cn_cfg['pasto'] + 
                                   inputs[2]*cn_cfg['cultivo'] + inputs[3]*cn_cfg['urbano'] + 
                                   inputs[4]*cn_cfg['suelo']) / 100
                         
-                        ppt_anual = kwargs.get("bal", {}).get("P", 2000)
-                        q_act = lc.calculate_scs_runoff(cn_act, ppt_anual)
-                        q_fut = lc.calculate_scs_runoff(cn_fut, ppt_anual)
+                        ppt_anual = kwargs.get("bal", {}).get("P", 2000) # Lluvia anual
                         
-                        vol_act = (q_act * area_total_km2) / 1000
-                        vol_fut = (q_fut * area_total_km2) / 1000
+                        # Escorrentía (mm)
+                        q_2020 = lc.calculate_scs_runoff(cn_2020, ppt_anual)
+                        q_2026 = lc.calculate_scs_runoff(cn_2026, ppt_anual)
+                        q_sim = lc.calculate_scs_runoff(cn_sim, ppt_anual)
+                        
+                        # Volúmenes en Millones de Metros Cúbicos (Mm3)
+                        vol_2020 = (q_2020 * area_total_km2) / 1000
+                        vol_2026 = (q_2026 * area_total_km2) / 1000
+                        vol_sim = (q_sim * area_total_km2) / 1000
+                        
+                        st.markdown("---")
+                        st.markdown("### 📊 Resultados del Balance de Escorrentía")
                         
                         c_res = st.columns(3)
-                        c_res[0].metric("CN Escenario", f"{cn_fut:.1f}", delta=f"{cn_fut-cn_act:.1f}", delta_color="inverse")
-                        c_res[1].metric("Escorrentía Q", f"{q_fut:.0f} mm", delta=f"{q_fut-q_act:.0f} mm", delta_color="inverse")
-                        c_res[2].metric("Volumen Total", f"{vol_fut:.2f} Mm³", delta=f"{vol_fut-vol_act:.2f} Mm³")
+                        c_res[0].metric("1. Línea Base (2020)", f"{vol_2020:.2f} Mm³", f"Curva de Número: {cn_2020:.1f}", delta_color="off")
+                        c_res[1].metric("2. Estado Actual (2026)", f"{vol_2026:.2f} Mm³", f"{vol_2026-vol_2020:.2f} Mm³ vs Base", delta_color="inverse")
+                        c_res[2].metric("3. Escenario Simulado", f"{vol_sim:.2f} Mm³", f"{vol_sim-vol_2026:.2f} Mm³ vs Actual", delta_color="inverse")
                         
+                        # Gráfico comparativo
                         fig_sim = go.Figure(data=[
-                            go.Bar(name="Actual", x=["Escorrentía"], y=[q_act], marker_color="#1f77b4", text=f"{q_act:.0f}", textposition="auto"),
-                            go.Bar(name="Futuro", x=["Escorrentía"], y=[q_fut], marker_color="#2ca02c", text=f"{q_fut:.0f}", textposition="auto"),
+                            go.Bar(name="2020 (Línea Base)", x=["Escorrentía Anual"], y=[vol_2020], marker_color="#8c564b", text=f"{vol_2020:.1f} Mm³", textposition="auto"),
+                            go.Bar(name="2026 (Satélite)", x=["Escorrentía Anual"], y=[vol_2026], marker_color="#1f77b4", text=f"{vol_2026:.1f} Mm³", textposition="auto"),
+                            go.Bar(name="Proyectado", x=["Escorrentía Anual"], y=[vol_sim], marker_color="#2ca02c", text=f"{vol_sim:.1f} Mm³", textposition="auto")
                         ])
+                        fig_sim.update_layout(barmode='group', title="Comparativa de Volúmenes de Escorrentía (Millones de m³)")
                         st.plotly_chart(fig_sim, use_container_width=True)
-                else:
-                    st.warning("La suma debe ser 100%.")
-            else:
-                st.info("⚠️ Requiere modo Territorio para realizar cálculos de escorrentía.")
+                        
+                        # Análisis de Riesgo Hídrico
+                        if vol_2026 > vol_2020:
+                            st.warning(f"⚠️ **Observación Hídrica:** El cambio de coberturas entre 2020 y 2026 generó un aumento de **{vol_2026-vol_2020:.2f} Millones de m³** en la escorrentía superficial anual. Esto significa menor infiltración al subsuelo y mayor riesgo de picos en el caudal.")
+                        else:
+                            st.success(f"🌱 **Observación Hídrica:** La evolución de coberturas ha logrado reducir la escorrentía en **{abs(vol_2026-vol_2020):.2f} Millones de m³**, favoreciendo la infiltración y recargando los acuíferos de la cuenca.")
 
-    except Exception as e:
-        st.error(f"Error en módulo de coberturas: {e}")
+                else:
+                    st.warning("⚠️ La suma de los porcentajes del escenario simulado debe ser exactamente 100%.")
+            else:
+                st.info("⚠️ Requiere seleccionar el modo 'Territorio' en los controles principales para realizar cálculos hidrológicos precisos.")
 
 
 # PESTAÑA: CORRECCIÓN DE SESGO (VERSIÓN BLINDADA)
