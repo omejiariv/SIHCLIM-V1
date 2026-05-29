@@ -4973,36 +4973,25 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     url_2026, gdf_mask=gdf_mask, scale_factor=scale
                 )
                 
-                # Motor de Traducción (Dynamic World -> SIHCLIM 2020)
-                traductor_dw = {
-                    0: 13, 1: 9, 2: 7, 3: 12, 4: 8, 5: 10, 6: 1, 7: 11, 8: 11
-                }
+                # Traductor Dynamic World -> SIHCLIM
+                traductor_dw = {0: 13, 1: 9, 2: 7, 3: 12, 4: 8, 5: 10, 6: 1, 7: 11, 8: 11}
                 
-                # 1. Inicializamos un lienzo en blanco
+                # Inicializamos el lienzo vacío (0 = Transparente en SIHCLIM)
                 data_2026_reclass = np.zeros_like(data_2026)
                 
-                # 2. Traducimos todos los píxeles
-                for google_val, tu_val in traductor_dw.items():
-                    data_2026_reclass[data_2026 == google_val] = tu_val
-                    
-                # 💡 3. ELIMINACIÓN DEL MAR AZUL (Recorte con Molde Geométrico)
+                # Generamos una máscara estricta de la cuenca para ignorar el "fondo" que manda Google
                 if gdf_mask is not None and not gdf_mask.empty:
                     from rasterio.features import geometry_mask
-                    # Verificamos que el molde tenga la misma proyección que el satélite
                     gdf_mask_proj = gdf_mask.to_crs(crs_2026) if gdf_mask.crs.to_string() != str(crs_2026) else gdf_mask
+                    # mask_inside es True solo DENTRO de los límites del polígono
+                    mask_inside = ~geometry_mask(gdf_mask_proj.geometry, out_shape=data_2026.shape, transform=transform_2026, invert=False)
+                else:
+                    mask_inside = np.ones_like(data_2026, dtype=bool)
+
+                # Traducimos SOLO los píxeles que caen dentro del límite de la cuenca
+                for google_val, tu_val in traductor_dw.items():
+                    data_2026_reclass[(data_2026 == google_val) & mask_inside] = tu_val
                     
-                    # 'geometry_mask' crea una plantilla que marca True todo lo que está AFUERA de la cuenca
-                    mask_exterior = geometry_mask(
-                        gdf_mask_proj.geometry, 
-                        out_shape=data_2026.shape, 
-                        transform=transform_2026, 
-                        invert=False
-                    )
-                    
-                    # Forzamos todo el exterior a ser 0 (tu sistema convierte el 0 en Transparente)
-                    data_2026_reclass[mask_exterior] = 0
-                    
-                # 4. Renderizamos la imagen final
                 img_url_2026 = lc.get_raster_img_b64(data_2026_reclass, nodata_2026)
                 
                 if img_url_2026:
@@ -5010,51 +4999,27 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                         image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
                     ).add_to(m_dual.m2)
                     
-                # 5. Calculamos la matriz (ignorando el fondo transparente)
-                df_res_2026, _ = lc.calculate_land_cover_stats(
-                    data_2026_reclass, transform_2026, crs_2026, nodata_2026, manual_area_km2=area_cuenca_km2
-                )
             except Exception as e:
                 st.warning(f"Error procesando el escenario 2026: {e}")
 
             # =====================================================================
-            # 5. INYECCIÓN DE LÍMITES GEOGRÁFICOS Y PREDIOS EJECUTADOS
+            # 5. INYECCIÓN DE LÍMITES GEOGRÁFICOS Y PREDIOS
             # =====================================================================
-            # A. Límite de Cuenca / Territorio
             if gdf_mask is not None and not gdf_mask.empty:
                 try:
                     gdf_mask_viz = gdf_mask.to_crs(epsg=4326) if gdf_mask.crs.to_string() != "EPSG:4326" else gdf_mask
                     style_cuenca = lambda x: {'color': 'black', 'fillColor': 'none', 'weight': 2.5, 'dashArray': '5, 5'}
-                    
                     folium.GeoJson(gdf_mask_viz, style_function=style_cuenca, name="Límite Territorio").add_to(m_dual.m1)
                     folium.GeoJson(gdf_mask_viz, style_function=style_cuenca, name="Límite Territorio").add_to(m_dual.m2)
-                except Exception as e:
-                    print(f"Error proyectando máscara: {e}")
+                except: pass
 
-            # B. Predios Ejecutados de Supabase
             try:
                 url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
                 gdf_predios = gpd.read_file(url_predios)
-                
-                # Estilo visual impactante (Rojo brillante semi-transparente)
                 style_predios = lambda x: {'color': '#FF0000', 'fillColor': '#FF0000', 'weight': 2, 'fillOpacity': 0.4}
-                
-                # Se añade a ambos paneles para poder comparar qué había en 2020 y qué hay en 2026 en esos predios
-                folium.GeoJson(
-                    gdf_predios, 
-                    style_function=style_predios, 
-                    name="Predios Ejecutados",
-                    tooltip="Predio Intervenido"
-                ).add_to(m_dual.m1)
-                
-                folium.GeoJson(
-                    gdf_predios, 
-                    style_function=style_predios, 
-                    name="Predios Ejecutados",
-                    tooltip="Predio Intervenido"
-                ).add_to(m_dual.m2)
-            except Exception as e:
-                st.warning(f"No se pudo cargar la capa de predios: {e}")
+                folium.GeoJson(gdf_predios, style_function=style_predios, name="Predios Ejecutados", tooltip="Predio").add_to(m_dual.m1)
+                folium.GeoJson(gdf_predios, style_function=style_predios, name="Predios Ejecutados", tooltip="Predio").add_to(m_dual.m2)
+            except: pass
 
             # 6. RENDERIZADO DEL MAPA DUAL
             folium.LayerControl().add_to(m_dual.m1)
@@ -5062,72 +5027,86 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             components.html(m_dual._repr_html_(), height=550)
             
             # =====================================================================
-            # 7. TABLA DE MATRIZ DE TRANSICIÓN & CAJA INTELIGENTE
+            # 7. HOMOLOGACIÓN ESTRICTA Y MATRIZ DE TRANSICIÓN (FAIR COMPARISON)
             # =====================================================================
             st.markdown("---")
             st.markdown("#### 📊 Matriz de Desplazamiento de Coberturas (2020 vs 2026)")
             
-            if 'df_res' in locals() and not df_res.empty and 'df_res_2026' in locals() and not df_res_2026.empty:
-                df_comp = pd.merge(
-                    df_res_2026[['Cobertura', 'Área (km²)']], 
-                    df_res[['Cobertura', 'Área (km²)']], 
-                    on='Cobertura', how='outer'
-                ).fillna(0)
-                
-                df_comp.columns = ['Ecosistema / Cobertura', 'Escenario 2026 (km²)', 'Línea Base 2020 (km²)']
-                df_comp['Variación Neta (km²)'] = df_comp['Escenario 2026 (km²)'] - df_comp['Línea Base 2020 (km²)']
-                
-                st.dataframe(df_comp.style.format({
-                    'Escenario 2026 (km²)': '{:,.2f}', 
-                    'Línea Base 2020 (km²)': '{:,.2f}', 
-                    'Variación Neta (km²)': lambda x: f"+{x:,.2f}" if x > 0 else f"{x:,.2f}"
-                }), use_container_width=True)
-
-                st.markdown("### 🧠 Diagnóstico Ecosistémico Automatizado")
-                
-                cat_naturales = ['Bosque', 'Vegetación Herbácea / Arbustiva', 'Humedales', 'Agua / Cuerpos de Agua']
-                cat_antropicas = ['Zonas Urbanas', 'Cultivos permanentes', 'Cultivos transitorios', 'Pastos', 'Areas Agrícolas Heterogéneas', 'Zonas degradadas -canteras, escombreras, minas']
-                
-                df_nat = df_comp[df_comp['Ecosistema / Cobertura'].isin(cat_naturales)]
-                df_ant = df_comp[df_comp['Ecosistema / Cobertura'].isin(cat_antropicas)]
-                
-                nat_2020 = df_nat['Línea Base 2020 (km²)'].sum()
-                nat_2026 = df_nat['Escenario 2026 (km²)'].sum()
-                ant_2020 = df_ant['Línea Base 2020 (km²)'].sum()
-                ant_2026 = df_ant['Escenario 2026 (km²)'].sum()
-                
-                delta_nat = nat_2026 - nat_2020
-                delta_ant = ant_2026 - ant_2020
-                
-                bosque_row = df_comp[df_comp['Ecosistema / Cobertura'] == 'Bosque']
-                delta_bosque = bosque_row['Variación Neta (km²)'].values[0] if not bosque_row.empty else 0
-                
-                urbano_row = df_comp[df_comp['Ecosistema / Cobertura'] == 'Zonas Urbanas']
-                delta_urbano = urbano_row['Variación Neta (km²)'].values[0] if not urbano_row.empty else 0
-                
-                estado_general = "🟢 Recuperación Ecológica" if delta_nat > 0 else "🔴 Presión Ecosistémica"
-                
-                resumen = f"**Análisis de Dinámica de Coberturas (2020 - 2026)**\n\n"
-                resumen += f"El territorio presenta una tendencia de **{estado_general}**. "
-                
-                if delta_ant > 0:
-                    resumen += f"Se evidencia un avance de la frontera de intervención humana, con un aumento de **{delta_ant:,.2f} km²** en coberturas antrópicas (agricultura, pasturas, urbanización). "
+            if 'data' in locals() and 'data_2026_reclass' in locals():
+                # 🛡️ Aplicamos la "Máscara de Intersección": Solo píxeles válidos en AMBOS mapas
+                if data.shape == data_2026_reclass.shape:
+                    fair_mask = (data > 0) & (data_2026_reclass > 0)
+                    data_2020_fair = np.where(fair_mask, data, 0)
+                    data_2026_fair = np.where(fair_mask, data_2026_reclass, 0)
                 else:
-                    resumen += f"Se observa una retracción de las actividades antrópicas en **{abs(delta_ant):,.2f} km²**. "
+                    data_2020_fair, data_2026_fair = data, data_2026_reclass
                 
-                if delta_bosque < 0:
-                    resumen += f"\n\n* **⚠️ Riesgo Estructural:** La pérdida de **{abs(delta_bosque):,.2f} km²** de bosque sugiere una fragmentación de hábitats y pérdida de conectividad ecológica. Esto impacta negativamente la infiltración, elevando el riesgo de picos de escorrentía."
-                elif delta_bosque > 0:
-                    resumen += f"\n\n* **🌱 Ganancia en Biodiversidad:** El aumento de **{delta_bosque:,.2f} km²** de cobertura boscosa fortalece los corredores biológicos, mejora la resiliencia climática local y optimiza la recarga de acuíferos."
+                # Recalculamos estadísticas basadas exclusivamente en el área homologada
+                df_res_2020_fair, area_efectiva = lc.calculate_land_cover_stats(data_2020_fair, transform, crs, nodata=0, manual_area_km2=None)
+                df_res_2026_fair, _ = lc.calculate_land_cover_stats(data_2026_fair, transform_2026, crs_2026, nodata=0, manual_area_km2=None)
                 
-                if delta_urbano > 0.5:
-                    resumen += f"\n* **🏙️ Impermeabilización:** El crecimiento urbano detectado (+{delta_urbano:,.2f} km²) reduce la infiltración natural, requiriendo estrategias de drenaje sostenible."
+                st.info(f"📐 **Área Efectiva Homologada:** El análisis se realiza sobre **{area_efectiva:,.2f} km²** (áreas con información satelital válida en ambos periodos).")
 
-                if delta_nat >= 0:
-                    st.success(resumen)
+                if not df_res_2020_fair.empty and not df_res_2026_fair.empty:
+                    df_comp = pd.merge(
+                        df_res_2026_fair[['Cobertura', 'Área (km²)']], 
+                        df_res_2020_fair[['Cobertura', 'Área (km²)']], 
+                        on='Cobertura', how='outer'
+                    ).fillna(0)
+                    
+                    df_comp.columns = ['Ecosistema / Cobertura', 'Escenario 2026 (km²)', 'Línea Base 2020 (km²)']
+                    df_comp['Variación Neta (km²)'] = df_comp['Escenario 2026 (km²)'] - df_comp['Línea Base 2020 (km²)']
+                    
+                    st.dataframe(df_comp.style.format({
+                        'Escenario 2026 (km²)': '{:,.2f}', 
+                        'Línea Base 2020 (km²)': '{:,.2f}', 
+                        'Variación Neta (km²)': lambda x: f"+{x:,.2f}" if x > 0 else f"{x:,.2f}"
+                    }), use_container_width=True)
+
+                    # =====================================================================
+                    # 8. CAJA INTELIGENTE DE ANÁLISIS ECOSISTÉMICO
+                    # =====================================================================
+                    st.markdown("### 🧠 Diagnóstico Ecosistémico Automatizado")
+                    
+                    cat_naturales = ['Bosque', 'Vegetación Herbácea / Arbustiva', 'Humedales', 'Agua / Cuerpos de Agua']
+                    cat_antropicas = ['Zonas Urbanas', 'Cultivos permanentes', 'Cultivos transitorios', 'Pastos', 'Areas Agrícolas Heterogéneas', 'Zonas degradadas -canteras, escombreras, minas']
+                    
+                    df_nat = df_comp[df_comp['Ecosistema / Cobertura'].isin(cat_naturales)]
+                    df_ant = df_comp[df_comp['Ecosistema / Cobertura'].isin(cat_antropicas)]
+                    
+                    nat_2020, nat_2026 = df_nat['Línea Base 2020 (km²)'].sum(), df_nat['Escenario 2026 (km²)'].sum()
+                    ant_2020, ant_2026 = df_ant['Línea Base 2020 (km²)'].sum(), df_ant['Escenario 2026 (km²)'].sum()
+                    
+                    delta_nat, delta_ant = nat_2026 - nat_2020, ant_2026 - ant_2020
+                    
+                    bosque_row = df_comp[df_comp['Ecosistema / Cobertura'] == 'Bosque']
+                    delta_bosque = bosque_row['Variación Neta (km²)'].values[0] if not bosque_row.empty else 0
+                    
+                    urbano_row = df_comp[df_comp['Ecosistema / Cobertura'] == 'Zonas Urbanas']
+                    delta_urbano = urbano_row['Variación Neta (km²)'].values[0] if not urbano_row.empty else 0
+                    
+                    estado_general = "🟢 Recuperación Ecológica" if delta_nat > 0 else "🔴 Presión Ecosistémica"
+                    
+                    resumen = f"**Análisis de Dinámica de Coberturas (2020 - 2026)**\n\n"
+                    resumen += f"El territorio presenta una tendencia de **{estado_general}**. "
+                    
+                    if delta_ant > 0:
+                        resumen += f"Se evidencia un avance de la frontera de intervención humana, con un aumento de **{delta_ant:,.2f} km²** en coberturas antrópicas. "
+                    else:
+                        resumen += f"Se observa una retracción de las actividades antrópicas en **{abs(delta_ant):,.2f} km²**. "
+                    
+                    if delta_bosque < 0:
+                        resumen += f"\n\n* **⚠️ Riesgo Estructural:** La pérdida de **{abs(delta_bosque):,.2f} km²** de bosque sugiere una fragmentación de hábitats. Esto impacta negativamente la infiltración, elevando el riesgo de picos de escorrentía."
+                    elif delta_bosque > 0:
+                        resumen += f"\n\n* **🌱 Ganancia en Biodiversidad:** El aumento de **{delta_bosque:,.2f} km²** de cobertura boscosa fortalece los corredores biológicos y optimiza la recarga de acuíferos."
+                    
+                    if delta_urbano > 0.5:
+                        resumen += f"\n* **🏙️ Impermeabilización:** El crecimiento urbano detectado (+{delta_urbano:,.2f} km²) reduce la infiltración natural, requiriendo estrategias de drenaje sostenible."
+
+                    if delta_nat >= 0: st.success(resumen)
+                    else: st.warning(resumen)
+                        
                 else:
-                    st.warning(resumen)
-            else:
                 st.info("Calculando matriz de transición...")
 
         with tab_stat:
