@@ -4918,7 +4918,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 folium.LayerControl().add_to(m)
                 st_folium(m, height=600, use_container_width=True, key="map_lc_final")
 
-# =====================================================================
+        # =====================================================================
         # --- PESTAÑA 2: COMPARATIVA SINCRONIZADA DUALMAP (LÍNEA BASE VS 2026) ---
         # =====================================================================
         with tab_comp:
@@ -4927,6 +4927,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             
             from folium.plugins import DualMap
             import streamlit.components.v1 as components
+            import geopandas as gpd
             import numpy as np
             import pandas as pd
             import folium
@@ -4940,20 +4941,30 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             if show_legend and hasattr(lc, 'generate_legend_html'):
                 m_dual.m1.get_root().html.add_child(folium.Element(lc.generate_legend_html()))
             
-            # 3. PANEL IZQUIERDO (2020) + HOVER INTERACTIVO
+            # 3. PANEL IZQUIERDO (2020) + RECUPERACIÓN DE HOVER
             if 'img_url' in locals() and img_url:
                 folium.raster_layers.ImageOverlay(
                     image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
                 ).add_to(m_dual.m1)
                 
-                # Inyectar el Hover vectorial del 2020 si está activado
-                if use_hover and 'gdf_vec' in locals() and not gdf_vec.empty:
-                    folium.GeoJson(
-                        gdf_vec,
-                        style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
-                        tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['2020:']),
-                        name="Hover 2020"
-                    ).add_to(m_dual.m1)
+                # Inyección robusta del hover para 2020
+                if use_hover:
+                    with st.spinner("Generando capa interactiva de coberturas..."):
+                        scale_vec = 50 if view_mode == "Regional" else 1
+                        if view_mode == "Regional":
+                            d_hov, t_hov, _, _ = lc.process_land_cover_raster(raster_path, gdf_mask=None, scale_factor=scale_vec)
+                            gdf_vec_comp = lc.vectorize_raster_optimized(d_hov, t_hov, crs, nodata)
+                        else:
+                            # Reutiliza la data del 2020 que ya se cargó arriba en el script
+                            gdf_vec_comp = lc.vectorize_raster_optimized(data, transform, crs, nodata)
+                        
+                        if not gdf_vec_comp.empty:
+                            folium.GeoJson(
+                                gdf_vec_comp,
+                                style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
+                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['Ecosistema 2020:']),
+                                name="Hover 2020"
+                            ).add_to(m_dual.m1)
                 
             # 4. PANEL DERECHO (2026) -> EXTRACCIÓN Y RECLASIFICACIÓN
             try:
@@ -4962,29 +4973,16 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     url_2026, gdf_mask=gdf_mask, scale_factor=scale
                 )
                 
-                # -----------------------------------------------------------------
-                # 🧠 MOTOR DE TRADUCCIÓN (Dynamic World -> SIHCLIM 2020)
-                # -----------------------------------------------------------------
+                # Motor de Traducción (Dynamic World -> SIHCLIM 2020)
                 traductor_dw = {
-                    0: 13, # Agua DW -> 13: Agua / Cuerpos de Agua
-                    1: 9,  # Árboles DW -> 9: Bosque
-                    2: 7,  # Pasto DW -> 7: Pastos
-                    3: 12, # Veg. Inundada DW -> 12: Humedales
-                    4: 8,  # Cultivos DW -> 8: Areas Agrícolas Heterogéneas (Predominante)
-                    5: 10, # Matorral DW -> 10: Vegetación Herbácea / Arbustiva
-                    6: 1,  # Urbano DW -> 1: Zonas Urbanas
-                    7: 11, # Suelo desnudo DW -> 11: Areas abiertas sin o con poca cobertura vegetal
-                    8: 11  # Nieve DW -> 11: Mapeado a suelo desnudo por seguridad local
+                    0: 13, 1: 9, 2: 7, 3: 12, 4: 8, 5: 10, 6: 1, 7: 11, 8: 11
                 }
                 
-                # Aplicamos la traducción píxel por píxel (IGNORANDO NODATA)
                 data_2026_reclass = np.copy(data_2026)
                 for google_val, tu_val in traductor_dw.items():
-                    # Solo traducir si el píxel no es "Nodata" (fuera del mapa)
                     mask_traduccion = (data_2026 == google_val) & (data_2026 != nodata_2026)
                     data_2026_reclass[mask_traduccion] = tu_val
                     
-                # Generamos la imagen ya con tus colores equivalentes
                 img_url_2026 = lc.get_raster_img_b64(data_2026_reclass, nodata_2026)
                 
                 if img_url_2026:
@@ -4992,50 +4990,83 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                         image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
                     ).add_to(m_dual.m2)
                     
-                # 5. CÁLCULO DE LA MATRIZ COMPARATIVA (Pandas)
                 df_res_2026, _ = lc.calculate_land_cover_stats(
                     data_2026_reclass, transform_2026, crs_2026, nodata_2026, manual_area_km2=area_cuenca_km2
                 )
-                
             except Exception as e:
                 st.warning(f"Error procesando el escenario 2026: {e}")
 
+            # =====================================================================
+            # 5. INYECCIÓN DE LÍMITES GEOGRÁFICOS Y PREDIOS EJECUTADOS
+            # =====================================================================
+            # A. Límite de Cuenca / Territorio
+            if gdf_mask is not None and not gdf_mask.empty:
+                try:
+                    gdf_mask_viz = gdf_mask.to_crs(epsg=4326) if gdf_mask.crs.to_string() != "EPSG:4326" else gdf_mask
+                    style_cuenca = lambda x: {'color': 'black', 'fillColor': 'none', 'weight': 2.5, 'dashArray': '5, 5'}
+                    
+                    folium.GeoJson(gdf_mask_viz, style_function=style_cuenca, name="Límite Territorio").add_to(m_dual.m1)
+                    folium.GeoJson(gdf_mask_viz, style_function=style_cuenca, name="Límite Territorio").add_to(m_dual.m2)
+                except Exception as e:
+                    print(f"Error proyectando máscara: {e}")
+
+            # B. Predios Ejecutados de Supabase
+            try:
+                url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
+                gdf_predios = gpd.read_file(url_predios)
+                
+                # Estilo visual impactante (Rojo brillante semi-transparente)
+                style_predios = lambda x: {'color': '#FF0000', 'fillColor': '#FF0000', 'weight': 2, 'fillOpacity': 0.4}
+                
+                # Se añade a ambos paneles para poder comparar qué había en 2020 y qué hay en 2026 en esos predios
+                folium.GeoJson(
+                    gdf_predios, 
+                    style_function=style_predios, 
+                    name="Predios Ejecutados",
+                    tooltip="Predio Intervenido"
+                ).add_to(m_dual.m1)
+                
+                folium.GeoJson(
+                    gdf_predios, 
+                    style_function=style_predios, 
+                    name="Predios Ejecutados",
+                    tooltip="Predio Intervenido"
+                ).add_to(m_dual.m2)
+            except Exception as e:
+                st.warning(f"No se pudo cargar la capa de predios: {e}")
+
             # 6. RENDERIZADO DEL MAPA DUAL
+            folium.LayerControl().add_to(m_dual.m1)
+            folium.LayerControl().add_to(m_dual.m2)
             components.html(m_dual._repr_html_(), height=550)
             
-            # 7. TABLA DE MATRIZ DE TRANSICIÓN
+            # =====================================================================
+            # 7. TABLA DE MATRIZ DE TRANSICIÓN & CAJA INTELIGENTE
+            # =====================================================================
             st.markdown("---")
             st.markdown("#### 📊 Matriz de Desplazamiento de Coberturas (2020 vs 2026)")
             
             if 'df_res' in locals() and not df_res.empty and 'df_res_2026' in locals() and not df_res_2026.empty:
-                # Unificamos ambas tablas usando el nombre de la cobertura
                 df_comp = pd.merge(
                     df_res_2026[['Cobertura', 'Área (km²)']], 
                     df_res[['Cobertura', 'Área (km²)']], 
                     on='Cobertura', how='outer'
                 ).fillna(0)
                 
-                # Renombramos columnas y calculamos la variación
                 df_comp.columns = ['Ecosistema / Cobertura', 'Escenario 2026 (km²)', 'Línea Base 2020 (km²)']
                 df_comp['Variación Neta (km²)'] = df_comp['Escenario 2026 (km²)'] - df_comp['Línea Base 2020 (km²)']
                 
-                # Renderizamos la tabla estilizada
                 st.dataframe(df_comp.style.format({
                     'Escenario 2026 (km²)': '{:,.2f}', 
                     'Línea Base 2020 (km²)': '{:,.2f}', 
                     'Variación Neta (km²)': lambda x: f"+{x:,.2f}" if x > 0 else f"{x:,.2f}"
                 }), use_container_width=True)
 
-                # =====================================================================
-                # 8. CAJA INTELIGENTE DE ANÁLISIS ECOSISTÉMICO
-                # =====================================================================
                 st.markdown("### 🧠 Diagnóstico Ecosistémico Automatizado")
                 
-                # 1. Definir agrupaciones estratégicas
                 cat_naturales = ['Bosque', 'Vegetación Herbácea / Arbustiva', 'Humedales', 'Agua / Cuerpos de Agua']
                 cat_antropicas = ['Zonas Urbanas', 'Cultivos permanentes', 'Cultivos transitorios', 'Pastos', 'Areas Agrícolas Heterogéneas', 'Zonas degradadas -canteras, escombreras, minas']
                 
-                # 2. Filtrar y sumar áreas
                 df_nat = df_comp[df_comp['Ecosistema / Cobertura'].isin(cat_naturales)]
                 df_ant = df_comp[df_comp['Ecosistema / Cobertura'].isin(cat_antropicas)]
                 
@@ -5047,41 +5078,34 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 delta_nat = nat_2026 - nat_2020
                 delta_ant = ant_2026 - ant_2020
                 
-                # 3. Extraer métricas clave específicas
                 bosque_row = df_comp[df_comp['Ecosistema / Cobertura'] == 'Bosque']
                 delta_bosque = bosque_row['Variación Neta (km²)'].values[0] if not bosque_row.empty else 0
                 
                 urbano_row = df_comp[df_comp['Ecosistema / Cobertura'] == 'Zonas Urbanas']
                 delta_urbano = urbano_row['Variación Neta (km²)'].values[0] if not urbano_row.empty else 0
                 
-                # 4. Lógica del motor de inferencia
                 estado_general = "🟢 Recuperación Ecológica" if delta_nat > 0 else "🔴 Presión Ecosistémica"
                 
                 resumen = f"**Análisis de Dinámica de Coberturas (2020 - 2026)**\n\n"
                 resumen += f"El territorio presenta una tendencia de **{estado_general}**. "
                 
-                # Análisis de Antropización
                 if delta_ant > 0:
                     resumen += f"Se evidencia un avance de la frontera de intervención humana, con un aumento de **{delta_ant:,.2f} km²** en coberturas antrópicas (agricultura, pasturas, urbanización). "
                 else:
                     resumen += f"Se observa una retracción de las actividades antrópicas en **{abs(delta_ant):,.2f} km²**. "
                 
-                # Implicaciones Ecosistémicas (Bosque y Biodiversidad)
                 if delta_bosque < 0:
                     resumen += f"\n\n* **⚠️ Riesgo Estructural:** La pérdida de **{abs(delta_bosque):,.2f} km²** de bosque sugiere una fragmentación de hábitats y pérdida de conectividad ecológica. Esto impacta negativamente la infiltración, elevando el riesgo de picos de escorrentía."
                 elif delta_bosque > 0:
                     resumen += f"\n\n* **🌱 Ganancia en Biodiversidad:** El aumento de **{delta_bosque:,.2f} km²** de cobertura boscosa fortalece los corredores biológicos, mejora la resiliencia climática local y optimiza la recarga de acuíferos."
                 
-                # Implicaciones Urbanas
                 if delta_urbano > 0.5:
                     resumen += f"\n* **🏙️ Impermeabilización:** El crecimiento urbano detectado (+{delta_urbano:,.2f} km²) reduce la infiltración natural, requiriendo estrategias de drenaje sostenible."
 
-                # Renderizar la caja inteligente
                 if delta_nat >= 0:
                     st.success(resumen)
                 else:
                     st.warning(resumen)
-
             else:
                 st.info("Calculando matriz de transición...")
 
