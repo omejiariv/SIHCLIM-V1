@@ -4923,7 +4923,29 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
         # =====================================================================
         with tab_comp:
             st.markdown("### ⚖️ Comparativa de Cambios de Cobertura (2020 vs 2026)")
-            st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente.")
+            
+            # =====================================================================
+            # 🎛️ SELECTOR DE RESOLUCIÓN (ANÁLISIS DE SENSIBILIDAD ESPACIAL)
+            # =====================================================================
+            st.markdown("#### ⚙️ Configuración del Satélite")
+            
+            # Diccionario con las opciones de resolución y sus respectivas URLs en Supabase
+            # REEMPLAZA LAS URLS VACÍAS CON TUS ENLACES REALES
+            # Diccionario con las opciones de resolución y sus respectivas URLs en Supabase
+            opciones_raster = {
+                "Alta Resolución (10m)": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada1.tif",
+                "Media Resolución (30m)": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada2.tif",
+                "Baja Resolución (100m)": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada3.tif"
+            }
+            
+            resolucion_elegida = st.selectbox(
+                "Selecciona el escenario satelital de 2026 para evaluar el impacto de la resolución:", 
+                list(opciones_raster.keys())
+            )
+            
+            url_2026_dinamica = opciones_raster[resolucion_elegida]
+            
+            st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente. El cálculo se actualiza según la resolución elegida.")
             
             from folium.plugins import DualMap
             import streamlit.components.v1 as components
@@ -4965,11 +4987,11 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                                 name="Hover 2020"
                             ).add_to(m_dual.m1)
             
-            # 4. PANEL DERECHO (2026) -> EXTRACCIÓN, CORRECCIÓN Y RECLASIFICACIÓN
+            # 4. PANEL DERECHO (2026 DINÁMICO) -> EXTRACCIÓN, CORRECCIÓN Y RECLASIFICACIÓN
             try:
-                url_2026 = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada.tif"
+                # Usamos la URL que el usuario eligió en el selectbox
                 data_2026, transform_2026, crs_2026, nodata_2026 = lc.process_land_cover_raster(
-                    url_2026, gdf_mask=gdf_mask, scale_factor=scale
+                    url_2026_dinamica, gdf_mask=gdf_mask, scale_factor=scale
                 )
                 
                 traductor_dw = {0: 13, 1: 9, 2: 7, 3: 12, 4: 8, 5: 10, 6: 1, 7: 11, 8: 11}
@@ -4985,20 +5007,12 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 for google_val, tu_val in traductor_dw.items():
                     data_2026_reclass[(data_2026 == google_val) & (~mask_outside)] = tu_val
                     
-                # ---------------------------------------------------------------------
-                # 🛡️ FILTRO DE SOMBRAS DE MONTAÑA (Corrección Inteligente de Falsa Agua)
-                # ---------------------------------------------------------------------
+                # Filtro de Sombras de Montaña
                 if 'data' in locals() and data is not None:
-                    # Redimensionamos la matriz 2020 para que calce como un guante sobre la 2026
                     data_2020_resized = np.array(Image.fromarray(data).resize((data_2026_reclass.shape[1], data_2026_reclass.shape[0]), resample=Image.NEAREST))
-                    
-                    # Identificamos el engaño: 2026 dice "Agua (13)" pero 2020 confirma que NO lo es.
                     mask_falsa_agua = (data_2026_reclass == 13) & (data_2020_resized != 13)
-                    
-                    # Restauramos la cobertura del 2020 en esos píxeles erróneos
                     data_2026_reclass[mask_falsa_agua] = data_2020_resized[mask_falsa_agua]
                 
-                # Generamos la imagen con el parámetro correcto (nodata=0)
                 img_url_2026 = lc.get_raster_img_b64(data_2026_reclass, nodata=0)
                 
                 if img_url_2026:
@@ -5030,7 +5044,6 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 url_predios = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PrediosEjecutados.geojson"
                 gdf_predios = gpd.read_file(url_predios)
                 style_predios = lambda x: {'color': '#FF0000', 'fillColor': '#FF0000', 'weight': 2, 'fillOpacity': 0.4}
-                # Se retiró el Tooltip que estaba colapsando el mapa
                 folium.GeoJson(gdf_predios, style_function=style_predios, name="Predios Ejecutados").add_to(m_dual.m1)
                 folium.GeoJson(gdf_predios, style_function=style_predios, name="Predios Ejecutados").add_to(m_dual.m2)
             except: pass
@@ -5042,7 +5055,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             
             # 7. TABLA DE COMPARATIVA Y DIAGNÓSTICO ECOSISTÉMICO
             st.markdown("---")
-            st.markdown("#### 📊 Matriz de Desplazamiento de Coberturas (2020 vs 2026)")
+            st.markdown(f"#### 📊 Matriz de Desplazamiento ({resolucion_elegida})")
             
             if 'df_res_2020_fair' in locals() and 'df_res_2026_fair' in locals() and not df_res_2020_fair.empty:
                 st.info(f"📐 **Área con Información Válida:** "
