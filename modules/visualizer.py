@@ -4918,7 +4918,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 folium.LayerControl().add_to(m)
                 st_folium(m, height=600, use_container_width=True, key="map_lc_final")
 
-        # =====================================================================
+# =====================================================================
         # --- PESTAÑA 2: COMPARATIVA SINCRONIZADA DUALMAP (LÍNEA BASE VS 2026) ---
         # =====================================================================
         with tab_comp:
@@ -4961,13 +4961,76 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 data_2026, transform_2026, crs_2026, nodata_2026 = lc.process_land_cover_raster(
                     url_2026, gdf_mask=gdf_mask, scale_factor=scale
                 )
+                
+                # -----------------------------------------------------------------
+                # 🧠 MOTOR DE TRADUCCIÓN (Dynamic World -> SIHCLIM 2020)
+                # -----------------------------------------------------------------
+                traductor_dw = {
+                    0: 13, # Agua DW -> 13: Agua / Cuerpos de Agua
+                    1: 9,  # Árboles DW -> 9: Bosque
+                    2: 7,  # Pasto DW -> 7: Pastos
+                    3: 12, # Veg. Inundada DW -> 12: Humedales
+                    4: 8,  # Cultivos DW -> 8: Areas Agrícolas Heterogéneas (Predominante)
+                    5: 10, # Matorral DW -> 10: Vegetación Herbácea / Arbustiva
+                    6: 1,  # Urbano DW -> 1: Zonas Urbanas
+                    7: 11, # Suelo desnudo DW -> 11: Areas abiertas sin o con poca cobertura vegetal
+                    8: 11  # Nieve DW -> 11: Mapeado a suelo desnudo por seguridad local
+                }
+                
+                # Aplicamos la traducción píxel por píxel (IGNORANDO NODATA)
+                data_2026_reclass = np.copy(data_2026)
+                for google_val, tu_val in traductor_dw.items():
+                    # Solo traducir si el píxel no es "Nodata" (fuera del mapa)
+                    mask_traduccion = (data_2026 == google_val) & (data_2026 != nodata_2026)
+                    data_2026_reclass[mask_traduccion] = tu_val
+                    
+                # Generamos la imagen ya con tus colores equivalentes
+                img_url_2026 = lc.get_raster_img_b64(data_2026_reclass, nodata_2026)
+                
+                if img_url_2026:
+                    folium.raster_layers.ImageOverlay(
+                        image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
+                    ).add_to(m_dual.m2)
+                    
+                # 5. CÁLCULO DE LA MATRIZ COMPARATIVA (Pandas)
+                df_res_2026, _ = lc.calculate_land_cover_stats(
+                    data_2026_reclass, transform_2026, crs_2026, nodata_2026, manual_area_km2=area_cuenca_km2
+                )
+                
+            except Exception as e:
+                st.warning(f"Error procesando el escenario 2026: {e}")
 
-            # =====================================================================
-            # 8. CAJA INTELIGENTE DE ANÁLISIS ECOSISTÉMICO
-            # =====================================================================
-            st.markdown("### 🧠 Diagnóstico Ecosistémico Automatizado")
+            # 6. RENDERIZADO DEL MAPA DUAL
+            components.html(m_dual._repr_html_(), height=550)
             
-            if 'df_comp' in locals() and not df_comp.empty:
+            # 7. TABLA DE MATRIZ DE TRANSICIÓN
+            st.markdown("---")
+            st.markdown("#### 📊 Matriz de Desplazamiento de Coberturas (2020 vs 2026)")
+            
+            if 'df_res' in locals() and not df_res.empty and 'df_res_2026' in locals() and not df_res_2026.empty:
+                # Unificamos ambas tablas usando el nombre de la cobertura
+                df_comp = pd.merge(
+                    df_res_2026[['Cobertura', 'Área (km²)']], 
+                    df_res[['Cobertura', 'Área (km²)']], 
+                    on='Cobertura', how='outer'
+                ).fillna(0)
+                
+                # Renombramos columnas y calculamos la variación
+                df_comp.columns = ['Ecosistema / Cobertura', 'Escenario 2026 (km²)', 'Línea Base 2020 (km²)']
+                df_comp['Variación Neta (km²)'] = df_comp['Escenario 2026 (km²)'] - df_comp['Línea Base 2020 (km²)']
+                
+                # Renderizamos la tabla estilizada
+                st.dataframe(df_comp.style.format({
+                    'Escenario 2026 (km²)': '{:,.2f}', 
+                    'Línea Base 2020 (km²)': '{:,.2f}', 
+                    'Variación Neta (km²)': lambda x: f"+{x:,.2f}" if x > 0 else f"{x:,.2f}"
+                }), use_container_width=True)
+
+                # =====================================================================
+                # 8. CAJA INTELIGENTE DE ANÁLISIS ECOSISTÉMICO
+                # =====================================================================
+                st.markdown("### 🧠 Diagnóstico Ecosistémico Automatizado")
+                
                 # 1. Definir agrupaciones estratégicas
                 cat_naturales = ['Bosque', 'Vegetación Herbácea / Arbustiva', 'Humedales', 'Agua / Cuerpos de Agua']
                 cat_antropicas = ['Zonas Urbanas', 'Cultivos permanentes', 'Cultivos transitorios', 'Pastos', 'Areas Agrícolas Heterogéneas', 'Zonas degradadas -canteras, escombreras, minas']
@@ -5018,71 +5081,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     st.success(resumen)
                 else:
                     st.warning(resumen)
-                
-                # -----------------------------------------------------------------
-                # 🧠 MOTOR DE TRADUCCIÓN (Dynamic World -> SIHCLIM 2020)
-                # -----------------------------------------------------------------
-                traductor_dw = {
-                    0: 13, # Agua DW -> 13: Agua / Cuerpos de Agua
-                    1: 9,  # Árboles DW -> 9: Bosque
-                    2: 7,  # Pasto DW -> 7: Pastos
-                    3: 12, # Veg. Inundada DW -> 12: Humedales
-                    4: 8,  # Cultivos DW -> 8: Areas Agrícolas Heterogéneas (Predominante)
-                    5: 10, # Matorral DW -> 10: Vegetación Herbácea / Arbustiva
-                    6: 1,  # Urbano DW -> 1: Zonas Urbanas
-                    7: 11, # Suelo desnudo DW -> 11: Areas abiertas sin o con poca cobertura vegetal
-                    8: 11  # Nieve DW -> 11: Mapeado a suelo desnudo por seguridad local
-                }
-                
-                # Aplicamos la traducción píxel por píxel
-                data_2026_reclass = np.copy(data_2026)
-                for google_val, tu_val in traductor_dw.items():
-                    # Solo traducir si el píxel no es "Nodata" (fuera del mapa)
-                    mask_traduccion = (data_2026 == google_val) & (data_2026 != nodata_2026)
-                    data_2026_reclass[mask_traduccion] = tu_val
-                    
-                # Generamos la imagen ya con tus colores equivalentes
-                img_url_2026 = lc.get_raster_img_b64(data_2026_reclass, nodata_2026)
-                
-                if img_url_2026:
-                    folium.raster_layers.ImageOverlay(
-                        image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
-                    ).add_to(m_dual.m2)
-                    
-                # 5. CÁLCULO DE LA MATRIZ COMPARATIVA (Pandas)
-                # Calculamos las áreas del 2026 usando la misma función matemática del 2020
-                df_res_2026, _ = lc.calculate_land_cover_stats(
-                    data_2026_reclass, transform_2026, crs_2026, nodata_2026, manual_area_km2=area_cuenca_km2
-                )
-                
-            except Exception as e:
-                st.warning(f"Error procesando el escenario 2026: {e}")
 
-            # 6. RENDERIZADO DEL MAPA DUAL
-            components.html(m_dual._repr_html_(), height=550)
-            
-            # 7. TABLA DE MATRIZ DE TRANSICIÓN
-            st.markdown("---")
-            st.markdown("#### 📊 Matriz de Desplazamiento de Coberturas (2020 vs 2026)")
-            
-            if 'df_res' in locals() and not df_res.empty and 'df_res_2026' in locals() and not df_res_2026.empty:
-                # Unificamos ambas tablas usando el nombre de la cobertura
-                df_comp = pd.merge(
-                    df_res_2026[['Cobertura', 'Área (km²)']], 
-                    df_res[['Cobertura', 'Área (km²)']], 
-                    on='Cobertura', how='outer'
-                ).fillna(0)
-                
-                # Renombramos columnas y calculamos la variación
-                df_comp.columns = ['Ecosistema / Cobertura', 'Escenario 2026 (km²)', 'Línea Base 2020 (km²)']
-                df_comp['Variación Neta (km²)'] = df_comp['Escenario 2026 (km²)'] - df_comp['Línea Base 2020 (km²)']
-                
-                # Renderizamos la tabla estilizada
-                st.dataframe(df_comp.style.format({
-                    'Escenario 2026 (km²)': '{:,.2f}', 
-                    'Línea Base 2020 (km²)': '{:,.2f}', 
-                    'Variación Neta (km²)': lambda x: f"+{x:,.2f}" if x > 0 else f"{x:,.2f}"
-                }), use_container_width=True)
             else:
                 st.info("Calculando matriz de transición...")
 
