@@ -5228,6 +5228,9 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             else:
                 st.info("⚠️ Requiere seleccionar el modo 'Territorio' en los controles principales para realizar cálculos hidrológicos.")
 
+    except Exception as e:
+        st.error(f"Error en módulo de coberturas: {e}")
+        
 # PESTAÑA: CORRECCIÓN DE SESGO (VERSIÓN BLINDADA)
 # -----------------------------------------------------------------------------
 def display_bias_correction_tab(df_long, gdf_stations, gdf_filtered, **kwargs):
