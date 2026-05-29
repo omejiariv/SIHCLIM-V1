@@ -5089,16 +5089,25 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     st.info("Aísla matemáticamente los polígonos de inversión para evaluar el retorno ecológico exacto.")
                     try:
                         from rasterio.features import geometry_mask
+                        from PIL import Image
+                        
                         gdf_predios_proj = gdf_predios.to_crs(crs_2026) if gdf_predios.crs.to_string() != str(crs_2026) else gdf_predios
                         mask_predios = geometry_mask(gdf_predios_proj.geometry, out_shape=data_2026_reclass.shape, transform=transform_2026, invert=False)
                         
-                        # Recuperar fair_mask (asegurar intersección válida)
-                        fair_mask = (data > 0) & (data_2026_reclass > 0) if data.shape == data_2026_reclass.shape else np.ones_like(data_2026_reclass, dtype=bool)
-                        data_2020_fair = np.where(fair_mask, data, 0) if data.shape == data_2026_reclass.shape else data
+                        # 🛡️ SOLUCIÓN AL ERROR DE DIMENSIONES: Homologar mallas de píxeles
+                        if data.shape != data_2026_reclass.shape:
+                            data_2020_base = np.array(Image.fromarray(data).resize((data_2026_reclass.shape[1], data_2026_reclass.shape[0]), resample=Image.NEAREST))
+                        else:
+                            data_2020_base = data
+                            
+                        # Intersección válida para evitar falsas comparaciones en los predios
+                        fair_mask = (data_2020_base > 0) & (data_2026_reclass > 0)
                         
-                        data_2020_predios = np.where((~mask_predios) & fair_mask, data_2020_fair, 0)
+                        # Extraer SOLO los píxeles DENTRO de los predios (~mask_predios) que tengan información válida
+                        data_2020_predios = np.where((~mask_predios) & fair_mask, data_2020_base, 0)
                         data_2026_predios = np.where((~mask_predios) & fair_mask, data_2026_reclass, 0)
                         
+                        # Calcular las estadísticas focalizadas
                         df_predios_2020, _ = lc.calculate_land_cover_stats(data_2020_predios, transform_2026, crs_2026, nodata=0, manual_area_km2=None)
                         df_predios_2026, _ = lc.calculate_land_cover_stats(data_2026_predios, transform_2026, crs_2026, nodata=0, manual_area_km2=None)
                         
@@ -5110,18 +5119,22 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                             df_comp_predios.columns = ['Ecosistema', 'Escenario 2026 (km²)', 'Línea Base 2020 (km²)']
                             df_comp_predios['Variación Neta (km²)'] = df_comp_predios['Escenario 2026 (km²)'] - df_comp_predios['Línea Base 2020 (km²)']
                             
+                            # Mostrar tabla refinada a 4 decimales
                             st.dataframe(df_comp_predios.style.format({
                                 'Escenario 2026 (km²)': '{:,.4f}', 'Línea Base 2020 (km²)': '{:,.4f}', 
                                 'Variación Neta (km²)': lambda x: f"+{x:,.4f}" if x > 0 else f"{x:,.4f}"
                             }), use_container_width=True)
                             
+                            # Diagnóstico Automático
                             bosque_predios = df_comp_predios[df_comp_predios['Ecosistema'] == 'Bosque']
                             delta_b_predios = bosque_predios['Variación Neta (km²)'].values[0] if not bosque_predios.empty else 0
                             
                             if delta_b_predios > 0:
                                 st.success(f"🌟 **Efectividad de Gestión Confirmada:** Dentro de los predios gestionados, la cobertura boscosa aumentó en **{delta_b_predios:,.4f} km²**.")
                             elif delta_b_predios < 0:
-                                st.warning(f"⚠️ **Alerta en Áreas de Gestión:** Se detecta una pérdida de **{abs(delta_b_predios):,.4f} km²** de bosque dentro de los predios. Sugiere revisión en campo.")
+                                st.warning(f"⚠️ **Alerta en Áreas de Gestión:** Se detecta una pérdida de **{abs(delta_b_predios):,.4f} km²** de bosque dentro de los predios. Se sugiere revisión técnica.")
+                        else:
+                            st.info("No se detectaron coberturas válidas dentro de los predios en esta resolución.")
                     except Exception as e:
                         st.error(f"Error calculando matriz de predios: {e}")
             else:
