@@ -4957,15 +4957,14 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
                 ).add_to(m_dual.m1)
                 
-                # HOVER 2020 (Límite expandido)
-                if use_hover:
-                    with st.spinner("Generando hover interactivo 2020..."):
-                        gdf_vec_2020 = lc.vectorize_raster_optimized(data, transform, crs, nodata, max_shapes=5000)
-                        if gdf_vec_2020 is not None and not gdf_vec_2020.empty:
-                            folium.GeoJson(
-                                gdf_vec_2020, style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
-                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['Ecosistema 2020:']), name="Hover 2020"
-                            ).add_to(m_dual.m1)
+                # Restauramos la memoria original del Hover 2020 (Super rápido)
+                if use_hover and 'gdf_vec' in locals() and not gdf_vec.empty:
+                    folium.GeoJson(
+                        gdf_vec,
+                        style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
+                        tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['Ecosistema 2020:']),
+                        name="Hover 2020"
+                    ).add_to(m_dual.m1)
             
             # --- MAPA DERECHO (2026) ---
             try:
@@ -4998,15 +4997,17 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                         image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
                     ).add_to(m_dual.m2)
                 
-                # HOVER 2026 (Límite expandido)
+                # Hover 2026 optimizado con límite expandido
                 if use_hover:
-                    with st.spinner("Generando hover interactivo 2026..."):
-                        gdf_vec_2026 = lc.vectorize_raster_optimized(data_2026_reclass, transform_2026, crs_2026, nodata=0, max_shapes=5000)
-                        if gdf_vec_2026 is not None and not gdf_vec_2026.empty:
-                            folium.GeoJson(
-                                gdf_vec_2026, style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
-                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['Ecosistema 2026:']), name="Hover 2026"
-                            ).add_to(m_dual.m2)
+                    with st.spinner("Generando hover 2026..."):
+                        try:
+                            gdf_vec_2026 = lc.vectorize_raster_optimized(data_2026_reclass, transform_2026, crs_2026, nodata=0, max_shapes=15000)
+                            if gdf_vec_2026 is not None and not gdf_vec_2026.empty:
+                                folium.GeoJson(
+                                    gdf_vec_2026, style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
+                                    tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['Ecosistema 2026:']), name="Hover 2026"
+                                ).add_to(m_dual.m2)
+                        except: pass
                     
                 df_res_2026_fair, area_efectiva_2026 = lc.calculate_land_cover_stats(
                     data_2026_reclass, transform_2026, crs_2026, nodata=0, manual_area_km2=area_cuenca_km2
@@ -5017,6 +5018,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             except Exception as e:
                 st.warning(f"Error procesando el escenario 2026: {e}")
 
+            # --- VECTORES ADICIONALES ---
             if gdf_mask is not None and not gdf_mask.empty:
                 try:
                     gdf_mask_viz = gdf_mask.to_crs(epsg=4326) if gdf_mask.crs.to_string() != "EPSG:4326" else gdf_mask
@@ -5036,16 +5038,20 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             folium.LayerControl().add_to(m_dual.m1)
             folium.LayerControl().add_to(m_dual.m2)
             
-            # Renderizar Mapas
+            # 1. RENDERIZAR MAPAS
             components.html(m_dual._repr_html_(), height=550)
             
-            # 🎨 LEYENDA GLOBAL (Inyectada a prueba de fallos debajo del mapa)
-            if show_legend and hasattr(lc, 'generate_legend_html'):
-                leyenda_html = lc.generate_legend_html()
-                leyenda_html = leyenda_html.replace('position: fixed; bottom: 30px; left: 30px; z-index:9999;', 'display: flex; flex-wrap: wrap; gap: 12px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; margin-top: 5px;')
-                leyenda_html = leyenda_html.replace('max-height: 250px; overflow-y: auto;', '')
-                st.markdown(leyenda_html, unsafe_allow_html=True)
+            # 2. LEYENDA NATIVA STREAMLIT (A prueba de fallos)
+            if show_legend:
+                st.markdown("#### 🎨 Leyenda de Ecosistemas")
+                legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 12px; padding: 10px; background-color: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;'>"
+                for cat_id, hex_color in lc.LAND_COVER_COLORS.items():
+                    name = lc.LAND_COVER_LEGEND.get(cat_id, f"Categoría {cat_id}")
+                    legend_html += f"<div style='display: flex; align-items: center;'><div style='width: 16px; height: 16px; background-color: {hex_color}; border: 1px solid #999; margin-right: 6px; border-radius: 3px;'></div><span style='font-size: 13px; color: #333;'>{name}</span></div>"
+                legend_html += "</div>"
+                st.markdown(legend_html, unsafe_allow_html=True)
             
+            # --- TABLA DE DESPLAZAMIENTO Y DIAGNÓSTICO ---
             st.markdown("---")
             st.markdown(f"#### 📊 Matriz de Desplazamiento ({resolucion_elegida})")
             
@@ -5098,7 +5104,6 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 if 'gdf_predios' in locals() and not gdf_predios.empty:
                     st.markdown("---")
                     st.markdown("#### 🎯 Impacto Focalizado: Predios Intervenidos")
-                    st.info("Aísla matemáticamente los polígonos de inversión para evaluar el retorno ecológico exacto.")
                     try:
                         from rasterio.features import geometry_mask
                         from PIL import Image
