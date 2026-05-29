@@ -4937,7 +4937,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             )
             url_2026_dinamica = opciones_raster[resolucion_elegida]
             
-            st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente. El cálculo se actualiza según la resolución elegida.")
+            st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente.")
             
             from folium.plugins import DualMap
             import streamlit.components.v1 as components
@@ -4951,7 +4951,11 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             folium.TileLayer("CartoDB positron").add_to(m_dual.m1)
             folium.TileLayer("CartoDB positron").add_to(m_dual.m2)
             
+            # -----------------------------------------------------------------
+            # 🎨 INYECCIÓN DE LEYENDA GLOBAL
+            # -----------------------------------------------------------------
             if show_legend and hasattr(lc, 'generate_legend_html'):
+                # Inyectamos la leyenda en el mapa izquierdo, que siempre está visible
                 m_dual.m1.get_root().html.add_child(folium.Element(lc.generate_legend_html()))
             
             if 'img_url' in locals() and img_url:
@@ -4959,6 +4963,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                     image=img_url, bounds=bounds, opacity=0.85, name="Cobertura 2020"
                 ).add_to(m_dual.m1)
                 
+                # --- HOVER 2020 ---
                 if use_hover:
                     with st.spinner("Generando capa interactiva de coberturas..."):
                         scale_vec = 50 if view_mode == "Regional" else 1
@@ -4971,7 +4976,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                         if not gdf_vec_comp.empty:
                             folium.GeoJson(
                                 gdf_vec_comp, style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
-                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['Ecosistema 2020:']), name="Hover 2020"
+                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['2020:']), name="Hover 2020"
                             ).add_to(m_dual.m1)
             
             try:
@@ -5004,6 +5009,22 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                         image=img_url_2026, bounds=bounds, opacity=0.85, name="Cobertura 2026"
                     ).add_to(m_dual.m2)
                     
+                # -----------------------------------------------------------------
+                # 🖱️ HOVER 2026 (Generación Dinámica)
+                # -----------------------------------------------------------------
+                if use_hover:
+                    with st.spinner("Generando hover para mapa 2026..."):
+                        # Reutilizamos la función de vectorización de land_cover.py para crear el tooltip de 2026
+                        gdf_vec_2026 = lc.vectorize_raster_optimized(data_2026_reclass, transform_2026, crs_2026, nodata=0, max_shapes=2000)
+                        
+                        if not gdf_vec_2026.empty:
+                            folium.GeoJson(
+                                gdf_vec_2026, 
+                                style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
+                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['2026:']), 
+                                name="Hover 2026"
+                            ).add_to(m_dual.m2)
+                
                 df_res_2026_fair, area_efectiva_2026 = lc.calculate_land_cover_stats(
                     data_2026_reclass, transform_2026, crs_2026, nodata=0, manual_area_km2=area_cuenca_km2
                 )
@@ -5094,20 +5115,16 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                         gdf_predios_proj = gdf_predios.to_crs(crs_2026) if gdf_predios.crs.to_string() != str(crs_2026) else gdf_predios
                         mask_predios = geometry_mask(gdf_predios_proj.geometry, out_shape=data_2026_reclass.shape, transform=transform_2026, invert=False)
                         
-                        # 🛡️ SOLUCIÓN AL ERROR DE DIMENSIONES: Homologar mallas de píxeles
                         if data.shape != data_2026_reclass.shape:
                             data_2020_base = np.array(Image.fromarray(data).resize((data_2026_reclass.shape[1], data_2026_reclass.shape[0]), resample=Image.NEAREST))
                         else:
                             data_2020_base = data
                             
-                        # Intersección válida para evitar falsas comparaciones en los predios
                         fair_mask = (data_2020_base > 0) & (data_2026_reclass > 0)
                         
-                        # Extraer SOLO los píxeles DENTRO de los predios (~mask_predios) que tengan información válida
                         data_2020_predios = np.where((~mask_predios) & fair_mask, data_2020_base, 0)
                         data_2026_predios = np.where((~mask_predios) & fair_mask, data_2026_reclass, 0)
                         
-                        # Calcular las estadísticas focalizadas
                         df_predios_2020, _ = lc.calculate_land_cover_stats(data_2020_predios, transform_2026, crs_2026, nodata=0, manual_area_km2=None)
                         df_predios_2026, _ = lc.calculate_land_cover_stats(data_2026_predios, transform_2026, crs_2026, nodata=0, manual_area_km2=None)
                         
@@ -5119,20 +5136,18 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                             df_comp_predios.columns = ['Ecosistema', 'Escenario 2026 (km²)', 'Línea Base 2020 (km²)']
                             df_comp_predios['Variación Neta (km²)'] = df_comp_predios['Escenario 2026 (km²)'] - df_comp_predios['Línea Base 2020 (km²)']
                             
-                            # Mostrar tabla refinada a 4 decimales
                             st.dataframe(df_comp_predios.style.format({
                                 'Escenario 2026 (km²)': '{:,.4f}', 'Línea Base 2020 (km²)': '{:,.4f}', 
                                 'Variación Neta (km²)': lambda x: f"+{x:,.4f}" if x > 0 else f"{x:,.4f}"
                             }), use_container_width=True)
                             
-                            # Diagnóstico Automático
                             bosque_predios = df_comp_predios[df_comp_predios['Ecosistema'] == 'Bosque']
                             delta_b_predios = bosque_predios['Variación Neta (km²)'].values[0] if not bosque_predios.empty else 0
                             
                             if delta_b_predios > 0:
-                                st.success(f"🌟 **Efectividad de Gestión Confirmada:** Dentro de los predios gestionados, la cobertura boscosa aumentó en **{delta_b_predios:,.1f} km²**.")
+                                st.success(f"🌟 **Efectividad de Gestión Confirmada:** Dentro de los predios gestionados, la cobertura boscosa aumentó en **{delta_b_predios:,.4f} km²**.")
                             elif delta_b_predios < 0:
-                                st.warning(f"⚠️ **Alerta en Áreas de Gestión:** Se detecta una pérdida de **{abs(delta_b_predios):,.2f} km²** de bosque dentro de los predios. Se sugiere revisión técnica.")
+                                st.warning(f"⚠️ **Alerta en Áreas de Gestión:** Se detecta una pérdida de **{abs(delta_b_predios):,.4f} km²** de bosque dentro de los predios. Sugiere revisión en campo.")
                         else:
                             st.info("No se detectaron coberturas válidas dentro de los predios en esta resolución.")
                     except Exception as e:
