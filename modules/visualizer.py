@@ -4963,20 +4963,18 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 )
                 
                 # -----------------------------------------------------------------
-                # 🧠 MOTOR DE TRADUCCIÓN (Dynamic World -> Tus Códigos 2020)
-                # Google envía: 0:Agua, 1:Bosque, 2:Pasto, 3:Humedal, 4:Cultivo, 5:Matorral, 6:Urbano, 7:Suelo, 8:Nieve
-                # ¡AJUSTA LOS NÚMEROS DE LA DERECHA PARA QUE COINCIDAN CON LOS IDs DE TU MAPA 2020!
+                # 🧠 MOTOR DE TRADUCCIÓN (Dynamic World -> SIHCLIM 2020)
                 # -----------------------------------------------------------------
                 traductor_dw = {
-                    0: 6,  # Agua DW -> Tu ID para Agua (ej. 6)
-                    1: 1,  # Bosque DW -> Tu ID para Bosque
-                    2: 2,  # Pasto DW -> Tu ID para Pastos
-                    3: 6,  # Veg. Inundada -> Tu ID para Agua/Humedal
-                    4: 3,  # Cultivos DW -> Tu ID para Cultivos
-                    5: 1,  # Matorral DW -> Tu ID para Bosque/Rastrojo
-                    6: 4,  # Urbano DW -> Tu ID para Urbano
-                    7: 5,  # Suelo desnudo -> Tu ID para Suelo
-                    8: 5   # Nieve -> Tu ID para Suelo
+                    0: 13, # Agua DW -> 13: Agua / Cuerpos de Agua
+                    1: 9,  # Árboles DW -> 9: Bosque
+                    2: 7,  # Pasto DW -> 7: Pastos
+                    3: 12, # Veg. Inundada DW -> 12: Humedales
+                    4: 8,  # Cultivos DW -> 8: Areas Agrícolas Heterogéneas (Predominante)
+                    5: 10, # Matorral DW -> 10: Vegetación Herbácea / Arbustiva
+                    6: 1,  # Urbano DW -> 1: Zonas Urbanas
+                    7: 11, # Suelo desnudo DW -> 11: Areas abiertas sin o con poca cobertura vegetal
+                    8: 11  # Nieve DW -> 11: Mapeado a suelo desnudo por seguridad local
                 }
                 
                 # Aplicamos la traducción píxel por píxel
