@@ -5130,9 +5130,9 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                             delta_b_predios = bosque_predios['Variación Neta (km²)'].values[0] if not bosque_predios.empty else 0
                             
                             if delta_b_predios > 0:
-                                st.success(f"🌟 **Efectividad de Gestión Confirmada:** Dentro de los predios gestionados, la cobertura boscosa aumentó en **{delta_b_predios:,.4f} km²**.")
+                                st.success(f"🌟 **Efectividad de Gestión Confirmada:** Dentro de los predios gestionados, la cobertura boscosa aumentó en **{delta_b_predios:,.1f} km²**.")
                             elif delta_b_predios < 0:
-                                st.warning(f"⚠️ **Alerta en Áreas de Gestión:** Se detecta una pérdida de **{abs(delta_b_predios):,.4f} km²** de bosque dentro de los predios. Se sugiere revisión técnica.")
+                                st.warning(f"⚠️ **Alerta en Áreas de Gestión:** Se detecta una pérdida de **{abs(delta_b_predios):,.2f} km²** de bosque dentro de los predios. Se sugiere revisión técnica.")
                         else:
                             st.info("No se detectaron coberturas válidas dentro de los predios en esta resolución.")
                     except Exception as e:
