@@ -4879,14 +4879,12 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 
                 plugins.Fullscreen(position='topright', title='Pantalla completa', title_cancel='Salir', force_separate_button=True).add_to(m)
 
-                if show_legend and not df_res.empty:
-                    if hasattr(lc, 'generate_legend_html'):
-                         m.get_root().html.add_child(folium.Element(lc.generate_legend_html()))
-
+                # Capa del Raster Base (2020)
                 img_url = lc.get_raster_img_b64(data, nodata)
                 if img_url:
                     folium.raster_layers.ImageOverlay(image=img_url, bounds=bounds, opacity=0.75, name="Cobertura").add_to(m)
 
+                # Capa Interactiva (Hover sin la palabra "Tipo:")
                 if use_hover:
                     with st.spinner("Generando capa interactiva..."):
                         scale_vec = 50 if view_mode == "Regional" else 1
@@ -4900,10 +4898,11 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                             folium.GeoJson(
                                 gdf_vec,
                                 style_function=lambda x: {'fillColor': '#ffffff', 'color': 'none', 'fillOpacity': 0},
-                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], aliases=['Tipo:']),
+                                tooltip=folium.GeoJsonTooltip(fields=['Cobertura'], labels=False), # <-- Se oculta la etiqueta aquí
                                 name="Hover Info"
                             ).add_to(m)
 
+                # Capa de la Divisoria de Cuenca
                 if view_mode == "Territorio" and gdf_mask is not None:
                     try:
                         gdf_mask_viz = gdf_mask.to_crs(epsg=4326) if gdf_mask.crs.to_string() != "EPSG:4326" else gdf_mask
@@ -4916,8 +4915,20 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                         print(f"Error proyectando máscara: {e}")
 
                 folium.LayerControl().add_to(m)
+                
+                # 1. RENDERIZAR MAPA (Usando la librería nativa que ya tenías)
                 st_folium(m, height=600, use_container_width=True, key="map_lc_final")
-
+                
+                # 2. INYECTAR LEYENDA HORIZONTAL (Alineada en la interfaz de usuario)
+                if show_legend:
+                    st.markdown("#### 🎨 Leyenda de Ecosistemas")
+                    legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 12px; padding: 10px; background-color: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;'>"
+                    for cat_id, hex_color in lc.LAND_COVER_COLORS.items():
+                        name = lc.LAND_COVER_LEGEND.get(cat_id, f"Categoría {cat_id}")
+                        legend_html += f"<div style='display: flex; align-items: center;'><div style='width: 16px; height: 16px; background-color: {hex_color}; border: 1px solid #999; margin-right: 6px; border-radius: 3px;'></div><span style='font-size: 13px; color: #333;'>{name}</span></div>"
+                    legend_html += "</div>"
+                    st.markdown(legend_html, unsafe_allow_html=True)
+                    
         # =====================================================================
         # --- PESTAÑA 2: COMPARATIVA SINCRONIZADA DUALMAP (LÍNEA BASE VS 2026) ---
         # =====================================================================
