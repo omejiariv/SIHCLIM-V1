@@ -5037,7 +5037,9 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
                 # Aplicamos la traducción píxel por píxel
                 data_2026_reclass = np.copy(data_2026)
                 for google_val, tu_val in traductor_dw.items():
-                    data_2026_reclass[data_2026 == google_val] = tu_val
+                    # Solo traducir si el píxel no es "Nodata" (fuera del mapa)
+                    mask_traduccion = (data_2026 == google_val) & (data_2026 != nodata_2026)
+                    data_2026_reclass[mask_traduccion] = tu_val
                     
                 # Generamos la imagen ya con tus colores equivalentes
                 img_url_2026 = lc.get_raster_img_b64(data_2026_reclass, nodata_2026)
