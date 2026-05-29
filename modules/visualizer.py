@@ -5046,6 +5046,26 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             st.markdown("### ⚖️ Comparativa de Cambios de Cobertura")
             st.info("💡 **Vista Sincronizada:** Desplaza o haz zoom en un mapa y el otro lo seguirá automáticamente.")
             
+            # 👇 INYECTA ESTE BOTÓN AQUÍ 👇
+            if st.button("📥 Extraer y Enviar Raster 2026 a mi Google Drive", type="primary"):
+                try:
+                    # Importamos tu nuevo archivo desde la carpeta modules
+                    from modules.exportar_cobertura_2026 import lanzar_exportacion_ge_to_drive
+                    
+                    with st.spinner("🛰️ Comunicando con Google Earth Engine..."):
+                        # Extraemos la cuenca actual y su nombre
+                        zona_actual = kwargs.get("gdf_zona", kwargs.get("gdf_filtered"))
+                        nombre_zona = kwargs.get("nombre_zona", "Territorio_Seleccionado")
+                        
+                        if zona_actual is not None and not zona_actual.empty:
+                            lanzar_exportacion_ge_to_drive(zona_actual, nombre_zona)
+                            st.success(f"✅ ¡Misión cumplida! El raster de {nombre_zona} se está generando. Revisa tu carpeta 'SIHCLI_Rasters' en Google Drive en un par de minutos.")
+                        else:
+                            st.warning("⚠️ Selecciona primero un territorio en los filtros geográficos.")
+                except Exception as e:
+                    st.error(f"Error al lanzar la exportación: {e}")
+            # 👆 FIN DEL BOTÓN 👆
+            
             from folium.plugins import DualMap
             from streamlit_folium import st_folium
             
