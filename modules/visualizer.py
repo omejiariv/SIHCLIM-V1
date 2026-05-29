@@ -3398,9 +3398,11 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
             unsafe_allow_html=True,
         )
 
-    tab_raster, tab_puntos, tab_vector = st.tabs(
-        ["🗺️ Mapa Raster", "📍 Puntos (Estaciones)", "📐 Descarga Vectorial"]
-    )
+    tab_raster, tab_comparativo, tab_puntos = st.tabs([
+    "🗺️ Mapa Bioclimático", 
+    "⚖️ Comparativa Dual", 
+    "📍 Estaciones"
+    ])
 
     # --- PESTAÑA 1: MAPA RASTER (SIMULADOR CLIMÁTICO BIVARIADO CON COMPARATIVA) ---
     with tab_raster:
@@ -3578,7 +3580,122 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
                     except Exception as e:
                         st.error(f"Error procesando simulación comparativa: {e}")
 
-    # --- PESTAÑA 2: PUNTOS (ESTACIONES) ---
+    # =====================================================================
+    # --- PESTAÑA 2 (NUEVA): COMPARATIVA DUAL DE ESCENARIOS GEMELOS ---
+    # =====================================================================
+    with tab_comparativo:
+        st.markdown("### ⚖️ Comparador Lado a Lado (Línea Base vs. Simulación)")
+        
+        gdf_zona_activa = kwargs.get("gdf_zona", None)
+        
+        # 🎛️ CONTROLES INDEPENDIENTES (Con 'key' únicas para no chocar con la Pestaña 1)
+        col1_c, col2_c, col3_c, col4_c = st.columns([1, 1.2, 1.2, 1.2])
+        with col1_c:
+            res_opt_c = st.select_slider("Resolución:", ["Baja", "Media", "Alta"], value="Media", key="res_comp")
+            downscale_c = 8 if "Baja" in res_opt_c else (4 if "Media" in res_opt_c else 1)
+        with col2_c:
+            delta_t_c = st.slider("🌡️ Δ Temperatura (°C)", 0.0, 4.0, 0.0, 0.5, key="dt_comp")
+        with col3_c:
+            delta_p_c = st.slider("🌧️ Δ Precipitación (%)", -50.0, 50.0, 0.0, 5.0, key="dp_comp")
+        with col4_c:
+            map_style_c = st.selectbox("🗺️ Capa Base:", ["satellite", "carto-positron", "open-street-map"], key="style_comp")
+
+        st.markdown("---")
+        use_mask_c = st.checkbox("✂️ Recortar por Cuenca y mostrar Divisoria", value=True, key="mask_comp")
+        basin_geom_c = gdf_zona_activa if use_mask_c else None
+
+        if st.button("🚀 Renderizar Mapas Gemelos", use_container_width=True, key="btn_comp"):
+            if not dem_file or not ppt_file:
+                st.error("❌ Faltan los mapas raster base (DEM / Lluvia).")
+            else:
+                with st.spinner("Procesando física atmosférica y dividiendo lienzos..."):
+                    try:
+                        import plotly.express as px
+                        import plotly.graph_objects as go
+                        
+                        # 1. 🟢 MOTOR BASE (Sin alteraciones)
+                        lz_arr_base, prof_base, _, _ = lz.generate_life_zone_map(
+                            dem_input=dem_file, ppt_input=ppt_file,   
+                            mask_geometry=basin_geom_c, downscale_factor=downscale_c,
+                            delta_temp=0.0, delta_ppt_pct=0.0
+                        )
+                        gdf_base = lz.vectorize_raster_to_gdf(lz_arr_base, prof_base["transform"], prof_base["crs"])
+                        
+                        # 2. 🔴 MOTOR SIMULADO (Con alteraciones)
+                        lz_arr_sim, prof_sim, dyn_legend, color_map = lz.generate_life_zone_map(
+                            dem_input=dem_file, ppt_input=ppt_file,   
+                            mask_geometry=basin_geom_c, downscale_factor=downscale_c,
+                            delta_temp=delta_t_c, delta_ppt_pct=delta_p_c
+                        )
+                        gdf_sim = lz.vectorize_raster_to_gdf(lz_arr_sim, prof_sim["transform"], prof_sim["crs"])
+
+                        if not gdf_base.empty and not gdf_sim.empty:
+                            # Preparar colores y centro del mapa
+                            color_discrete = {zona: color_map.get(k, "#000") for k, zona in dyn_legend.items()}
+                            center_lat = gdf_sim.geometry.centroid.y.mean()
+                            center_lon = gdf_sim.geometry.centroid.x.mean()
+                            
+                            # Función fábrica de mapas (para código limpio)
+                            def build_dual_map(gdf_data, title_text):
+                                fig = px.choropleth_mapbox(
+                                    gdf_data, geojson=gdf_data.geometry, locations=gdf_data.index,
+                                    color="zona_vida", color_discrete_map=color_discrete,
+                                    mapbox_style=map_style_c if map_style_c != "satellite" else "carto-positron",
+                                    center={"lat": center_lat, "lon": center_lon},
+                                    zoom=8.5, opacity=0.60, labels={'zona_vida': 'Ecosistema'},
+                                    title=title_text
+                                )
+                                if map_style_c == "satellite":
+                                    fig.update_layout(mapbox_style="white-bg", mapbox_layers=[{
+                                        "below": 'traces', "sourcetype": "raster",
+                                        "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
+                                    }])
+                                if use_mask_c and basin_geom_c is not None and not basin_geom_c.empty:
+                                    poly_wgs84 = basin_geom_c.to_crs(4326).unary_union
+                                    geoms = poly_wgs84.geoms if hasattr(poly_wgs84, "geoms") else [poly_wgs84]
+                                    for p in geoms:
+                                        bx, by = p.exterior.xy
+                                        fig.add_trace(go.Scattermapbox(
+                                            lon=list(bx), lat=list(by), mode="lines",
+                                            line=dict(color="#f1c40f", width=3), name="Divisoria", hoverinfo='skip'
+                                        ))
+                                fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=500, 
+                                                  legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
+                                return fig
+
+                            # 3. 🗺️ RENDERIZAR EN DOS COLUMNAS
+                            st.markdown("---")
+                            map_col1, map_col2 = st.columns(2)
+                            with map_col1:
+                                st.plotly_chart(build_dual_map(gdf_base, "Línea Base (Histórica)"), use_container_width=True)
+                            with map_col2:
+                                st.plotly_chart(build_dual_map(gdf_sim, f"Simulado (ΔT: +{delta_t_c}°C, ΔP: {delta_p_c}%)"), use_container_width=True)
+
+                            # 4. 🧮 TABLA COMPARATIVA
+                            gdf_base['Area_ha'] = gdf_base.to_crs(3116).area / 10000.0
+                            gdf_sim['Area_ha'] = gdf_sim.to_crs(3116).area / 10000.0
+                            
+                            res_base = gdf_base.groupby('zona_vida')['Area_ha'].sum().reset_index().rename(columns={'Area_ha': 'Base_ha'})
+                            res_sim = gdf_sim.groupby('zona_vida')['Area_ha'].sum().reset_index().rename(columns={'Area_ha': 'Sim_ha'})
+                            
+                            res_comp = pd.merge(res_sim, res_base, on='zona_vida', how='outer').fillna(0)
+                            res_comp['Variacion_ha'] = res_comp['Sim_ha'] - res_comp['Base_ha']
+                            res_comp['%_Ocupacion'] = (res_comp['Sim_ha'] / res_comp['Sim_ha'].sum()) * 100 if res_comp['Sim_ha'].sum() > 0 else 0
+                            
+                            st.markdown("#### 📊 Matriz Comparativa de Desplazamiento Ecológico")
+                            res_comp.columns = ['Zona de Vida', 'Escenario Simulado (ha)', 'Línea Base (ha)', 'Variación Neta (ha)', '% Ocupación Actual']
+                            st.dataframe(res_comp.style.format({
+                                'Línea Base (ha)': '{:,.1f}', 'Escenario Simulado (ha)': '{:,.1f}', 
+                                'Variación Neta (ha)': lambda x: f"+{x:,.1f}" if x > 0 else f"{x:,.1f}", 
+                                '% Ocupación Actual': '{:.1f}%'
+                            }), use_container_width=True)
+
+                        else:
+                            st.warning("La simulación no arrojó geometrías válidas en uno de los escenarios.")
+                    except Exception as e:
+                        st.error(f"Error procesando simulación gemela: {e}")
+
+    # --- PESTAÑA 3: PUNTOS (ESTACIONES) ---
     with tab_puntos: 
         import plotly.express as px
         import plotly.graph_objects as go
@@ -3711,7 +3828,7 @@ def display_life_zones_tab(df_long, gdf_stations, gdf_subcuencas=None, user_loc=
             except Exception as e:
                 st.error(f"Error generando análisis de puntos: {e}")
 
-    # --- PESTAÑA 3: VECTORIAL (TU CÓDIGO ORIGINAL - FUNCIONAL) ---
+    # --- PESTAÑA 4: VECTORIAL (TU CÓDIGO ORIGINAL - FUNCIONAL) ---
     with tab_vector:
         st.info("🛠️ Herramienta para convertir el mapa raster generado a polígonos (GeoJSON) para uso en SIG.")
 
