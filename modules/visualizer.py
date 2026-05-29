@@ -4929,13 +4929,11 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
             # =====================================================================
             st.markdown("#### ⚙️ Configuración del Satélite")
             
-            # Diccionario con las opciones de resolución y sus respectivas URLs en Supabase
-            # REEMPLAZA LAS URLS VACÍAS CON TUS ENLACES REALES
-            # Diccionario con las opciones de resolución y sus respectivas URLs en Supabase
+            # Diccionario con las opciones de resolución ajustado a la nomenclatura real
             opciones_raster = {
-                "Alta Resolución (10m)": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada1.tif",
-                "Media Resolución (30m)": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada2.tif",
-                "Baja Resolución (100m)": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada3.tif"
+                "Baja Resolución (Actualizada 1)": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada1.tif",
+                "Media Resolución (Actualizada 2)": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada2.tif",
+                "Alta Resolución (Actualizada 3)": "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada3.tif"
             }
             
             resolucion_elegida = st.selectbox(
