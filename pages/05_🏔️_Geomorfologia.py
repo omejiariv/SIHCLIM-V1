@@ -892,28 +892,36 @@ if gdf_zona_seleccionada is not None:
                     lon_max, lat_max = transformer.transform(maxx, maxy)
                     center = [(lat_min+lat_max)/2, (lon_min+lon_max)/2]
 
-                    # 2. 🛠️ CORRECCIÓN 2: Usar mapa Topográfico ultrarrápido nativo (sin carga de imágenes pesadas)
-                    m_pour = folium.Map(location=center, zoom_start=12)
+                    # 2. Mapas Base Optimizados para Hidrología
+                    # Aumentamos un punto el zoom_start (13) para ver mejor la red de drenaje
+                    m_pour = folium.Map(location=center, zoom_start=13)
                     
-                    # Capa Base 1: Topografía (ideal para ver cauces)
+                    # Capa Base 1: OpenTopoMap (Especializado en relieve y red hídrica en azul)
                     folium.TileLayer(
-                        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-                        attr='Esri',
-                        name='Topografía de Cauces'
+                        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                        attr='Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)',
+                        name='Topografía y Ríos (OpenTopoMap)'
                     ).add_to(m_pour)
                     
-                    # Capa Base 2: Satélite (por si quieres más detalle)
+                    # Capa Base 2: OpenStreetMap Estándar (Dibuja todas las quebradas urbanas y rurales)
+                    folium.TileLayer(
+                        'OpenStreetMap',
+                        name='Red de Drenaje (OSM Estándar)',
+                        show=False
+                    ).add_to(m_pour)
+                    
+                    # Capa Base 3: Satélite (Por si necesitas contexto visual real)
                     folium.TileLayer(
                         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                         attr='Esri',
-                        name='Satélite',
+                        name='Satélite (Esri)',
                         show=False
                     ).add_to(m_pour)
 
                     m_pour.add_child(folium.LatLngPopup())
                     folium.LayerControl().add_to(m_pour)
                     
-                    # 3. Renderizar (Ahora es inmediato)
+                    # 3. Renderizar el mapa (Se mantendrá ultrarrápido)
                     mapa_clic = st_folium(m_pour, height=500, use_container_width=True, key="mapa_pour_point")
                     
                 with c_controles_pour:
