@@ -279,28 +279,42 @@ if gdf_zona_seleccionada is not None:
             c3.metric("Media", f"{mean_el:.0f} m")
             c4.metric("Rango", f"{max_el - min_el:.0f} m")
 
-            tab1, tab2, tab3, tab4, tab6, tab7, tab5 = st.tabs([
+            tab1, tab2, tab3, tab4, tab6, tab7, tab8, tab5  = st.tabs([
                 "🗺️ 3D", "📐 Pendientes", "📈 Hipsometría", 
-                "🌊 Hidrología", "📊 Índices Morfo-métricos", "🚨 Amenazas", "📥 Descargas"
+                "🌊 Hidrología", "📊 Índices Morfo-métricos", "🚨 Amenazas", "💧 Delimitación de Cuencas", "📥 Descargas"
             ])
             
             h, w = arr_elevacion.shape
             factor = max(1, int(max(h, w) / 200)) 
 
+            # =====================================================================
             # --- TAB 1: 3D Y CURVAS ---
+            # =====================================================================
             with tab1:
                 c1, c2 = st.columns([1, 4])
                 with c1:
                     st.markdown("#### Visualización")
                     exag = st.slider("Exageración Vertical:", 0.5, 5.0, 1.5, 0.1, key="z_exag")
                     st.markdown("---")
+                    
+                    # --- NUEVO: Selector de Paleta de Colores ---
+                    escala_color = st.selectbox(
+                        "🎨 Escala de Color:",
+                        options=["Earth", "Terrain", "Viridis", "Turbo", "Oryel", "IceFire", "Magma", "Cividis"],
+                        index=0,
+                        key="color_3d"
+                    )
+                    st.markdown("---")
+                    
                     ver_curvas = st.toggle("Ver Curvas de Nivel", value=True)
                     intervalo_curvas = st.select_slider("Intervalo (m):", options=[10, 25, 50, 100], value=50)
                     
                 with c2:
                     arr_3d = arr_elevacion[::factor, ::factor]
                     contours_conf = dict(z=dict(show=ver_curvas, start=np.nanmin(arr_elevacion), end=np.nanmax(arr_elevacion), size=intervalo_curvas, color="white", usecolormap=False, project_z=False))
-                    fig = go.Figure(data=[go.Surface(z=arr_3d, colorscale='Earth', contours=contours_conf, name="Terreno")])
+                    
+                    # --- MODIFICADO: Aplicamos el color seleccionado ---
+                    fig = go.Figure(data=[go.Surface(z=arr_3d, colorscale=escala_color, contours=contours_conf, name="Terreno")])
 
                     if ver_curvas:
                         try:
@@ -854,6 +868,80 @@ if gdf_zona_seleccionada is not None:
                             mapa_amenaza_contexto(mask_i, "#0099FF", f"Llanura de Inundación (Q = {q_diseno:,.1f} m³/s)", gdf_zona_seleccionada)
                 else:
                     st.warning("⚠️ Calcula la Hidrología en el Tab 4 primero.")
+
+            # =====================================================================
+            # --- TAB 8: DELIMITACIÓN DE CUENCAS (POUR POINT) ---
+            # =====================================================================
+            with tab8:
+                st.markdown("### 💧 Motor de Delimitación de Cuencas")
+                st.info("👇 **Haz clic en cualquier punto del mapa** sobre el cauce de un río para definir el punto de cierre (Pour Point). El sistema capturará las coordenadas exactas.")
+                
+                c_mapa_pour, c_controles_pour = st.columns([2, 1])
+                
+                with c_mapa_pour:
+                    import folium
+                    from streamlit_folium import st_folium
+                    from rasterio.transform import array_bounds
+                    from pyproj import Transformer
+                    import base64
+                    from io import BytesIO
+                    from PIL import Image
+                    import matplotlib.pyplot as plt
+
+                    # 1. Calcular los límites geográficos (bounds) de tu raster actual
+                    h_arr, w_arr = arr_elevacion.shape
+                    minx, miny, maxx, maxy = array_bounds(h_arr, w_arr, transform)
+                    transformer = Transformer.from_crs(meta['crs'], "EPSG:4326", always_xy=True)
+                    lon_min, lat_min = transformer.transform(minx, miny)
+                    lon_max, lat_max = transformer.transform(maxx, maxy)
+                    bounds = [[lat_min, lon_min], [lat_max, lon_max]]
+                    center = [(lat_min+lat_max)/2, (lon_min+lon_max)/2]
+
+                    # 2. Renderizar una imagen PNG temporal para ponerla de fondo en Folium
+                    try:
+                        cm = plt.get_cmap('terrain')
+                        norm_arr = (arr_elevacion - np.nanmin(arr_elevacion)) / (np.nanmax(arr_elevacion) - np.nanmin(arr_elevacion))
+                        colored_arr = cm(norm_arr)
+                        colored_arr[np.isnan(arr_elevacion)] = [0, 0, 0, 0] # Transparente en NoData
+                        img = Image.fromarray((colored_arr * 255).astype(np.uint8))
+                        buffered = BytesIO()
+                        img.save(buffered, format="PNG")
+                        img_str = "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
+                    except Exception as e:
+                        img_str = None
+                        print(f"Error generando imagen base de elevación: {e}")
+
+                    # 3. Construir el mapa interactivo
+                    m_pour = folium.Map(location=center, zoom_start=12, tiles="CartoDB positron")
+                    
+                    if img_str:
+                        folium.raster_layers.ImageOverlay(
+                            image=img_str, bounds=bounds, opacity=0.65, name="Elevación Base"
+                        ).add_to(m_pour)
+                    
+                    m_pour.add_child(folium.LatLngPopup())
+                    
+                    # 4. Renderizar y capturar clics
+                    mapa_clic = st_folium(m_pour, height=500, use_container_width=True, key="mapa_pour_point")
+                    
+                with c_controles_pour:
+                    st.markdown("#### 📍 Coordenadas Capturadas")
+                    
+                    if mapa_clic and mapa_clic.get("last_clicked"):
+                        lat_cierre = mapa_clic["last_clicked"]["lat"]
+                        lon_cierre = mapa_clic["last_clicked"]["lng"]
+                        
+                        st.success(f"**Latitud:** {lat_cierre:.6f}\n\n**Longitud:** {lon_cierre:.6f}")
+                        st.markdown("---")
+                        st.write("**Opciones de Procesamiento:**")
+                        snap_dist = st.slider("Tolerancia de encaje (m):", 50, 500, 150, step=50, help="Busca la mayor acumulación de flujo cerca del punto de clic.")
+                        
+                        if st.button("🚀 Generar Cuenca Aferente", type="primary", use_container_width=True):
+                            st.warning("⚙️ Conectando con motor de enrutamiento (PySheds/Whitebox)...")
+                            st.info(f"Coordenadas `{lat_cierre:.5f}, {lon_cierre:.5f}` listas para procesamiento topológico.")
+                    else:
+                        st.write("A la espera de selección en el mapa...")
+                        st.info("Navega, haz zoom y da clic izquierdo para anclar el punto.") 
                     
             # --- TAB 5: DESCARGAS ---
             with tab5:
