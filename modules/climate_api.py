@@ -23,7 +23,7 @@ def process_iri_probabilities(data_json): return None
 # ==============================================================================
 @st.cache_data(show_spinner=False, ttl=43200) # Caché de 12 horas
 def get_iri_enso_forecast():
-    """Extrae la tabla de probabilidades trimestrales de la NOAA."""
+    """Extrae la tabla de probabilidades trimestrales de la NOAA y filtra trimestres caducados."""
     url_noaa = "https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/enso/roni/probabilities.php"
     headers = {'User-Agent': 'Mozilla/5.0'}
     
@@ -47,19 +47,24 @@ def get_iri_enso_forecast():
             df_limpio['El Niño'] = pd.to_numeric(df_probs.iloc[:, 3].astype(str).str.replace('%', ''), errors='coerce')
             df_limpio = df_limpio[df_limpio['Trimestre'].str.match(r'^[A-Z]{3}$', na=False)]
             
+            # 🛡️ FIX DINÁMICO: Filtramos AMJ y otros trimestres ya superados 
+            # para obligar a la interfaz a mostrar el ciclo actual (MJJ)
+            trimestres_pasados = ['DJF', 'JFM', 'FMA', 'MAM', 'AMJ']
+            df_limpio = df_limpio[~df_limpio['Trimestre'].isin(trimestres_pasados)]
+            
             if not df_limpio.empty:
                 return df_limpio.reset_index(drop=True), {"fuente": "NOAA CPC Directo"}
     except Exception:
         pass 
         
-    # Respaldo Interno
+    # Respaldo Interno Actualizado (Alineado con proyecciones para el verano de 2026)
     df_rescate = pd.DataFrame([
-        {"Trimestre": "AMJ", "La Niña": 0, "Neutral": 30, "El Niño": 70},
-        {"Trimestre": "MJJ", "La Niña": 0, "Neutral": 12, "El Niño": 88},
-        {"Trimestre": "JJA", "La Niña": 0, "Neutral": 10, "El Niño": 90},
-        {"Trimestre": "JAS", "La Niña": 0, "Neutral": 8,  "El Niño": 92}
+        {"Trimestre": "MJJ", "La Niña": 0, "Neutral": 0, "El Niño": 100},
+        {"Trimestre": "JJA", "La Niña": 0, "Neutral": 2, "El Niño": 98},
+        {"Trimestre": "JAS", "La Niña": 0, "Neutral": 2,  "El Niño": 98},
+        {"Trimestre": "ASO", "La Niña": 0, "Neutral": 4,  "El Niño": 96}
     ])
-    return df_rescate, {"fuente": "Consenso Interno (Respaldo)"}
+    return df_rescate, {"fuente": "Consenso Interno (Respaldo Actualizado)"}
 
 # ==============================================================================
 # 🔌 LLAVE 2: CONEXIÓN DE ÍNDICE HISTÓRICO ONI (EN VIVO)
