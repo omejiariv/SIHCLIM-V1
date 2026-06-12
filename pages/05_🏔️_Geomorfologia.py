@@ -300,7 +300,7 @@ if gdf_zona_seleccionada is not None:
                     # --- NUEVO: Selector de Paleta de Colores ---
                     escala_color = st.selectbox(
                         "🎨 Escala de Color:",
-                        options=["Earth", "Terrain", "Viridis", "Turbo", "Oryel", "IceFire", "Magma", "Cividis"],
+                        options=["Earth", "Viridis", "Turbo", "Oryel", "IceFire", "Magma", "Cividis", "haline", "deep"],
                         index=0,
                         key="color_3d"
                     )
@@ -874,7 +874,7 @@ if gdf_zona_seleccionada is not None:
             # =====================================================================
             with tab8:
                 st.markdown("### 💧 Motor de Delimitación de Cuencas")
-                st.info("👇 **Haz clic en cualquier punto del mapa** sobre el cauce de un río para definir el punto de cierre (Pour Point). El sistema capturará las coordenadas exactas.")
+                st.info("👇 **Haz clic en cualquier punto del mapa** sobre el cauce de un río para definir el punto de cierre (Pour Point).")
                 
                 c_mapa_pour, c_controles_pour = st.columns([2, 1])
                 
@@ -883,65 +883,63 @@ if gdf_zona_seleccionada is not None:
                     from streamlit_folium import st_folium
                     from rasterio.transform import array_bounds
                     from pyproj import Transformer
-                    import base64
-                    from io import BytesIO
-                    from PIL import Image
-                    import matplotlib.pyplot as plt
 
-                    # 1. Calcular los límites geográficos (bounds) de tu raster actual
+                    # 1. Calcular el centro exacto de la cuenca
                     h_arr, w_arr = arr_elevacion.shape
                     minx, miny, maxx, maxy = array_bounds(h_arr, w_arr, transform)
                     transformer = Transformer.from_crs(meta['crs'], "EPSG:4326", always_xy=True)
                     lon_min, lat_min = transformer.transform(minx, miny)
                     lon_max, lat_max = transformer.transform(maxx, maxy)
-                    bounds = [[lat_min, lon_min], [lat_max, lon_max]]
                     center = [(lat_min+lat_max)/2, (lon_min+lon_max)/2]
 
-                    # 2. Renderizar una imagen PNG temporal para ponerla de fondo en Folium
-                    try:
-                        cm = plt.get_cmap('terrain')
-                        norm_arr = (arr_elevacion - np.nanmin(arr_elevacion)) / (np.nanmax(arr_elevacion) - np.nanmin(arr_elevacion))
-                        colored_arr = cm(norm_arr)
-                        colored_arr[np.isnan(arr_elevacion)] = [0, 0, 0, 0] # Transparente en NoData
-                        img = Image.fromarray((colored_arr * 255).astype(np.uint8))
-                        buffered = BytesIO()
-                        img.save(buffered, format="PNG")
-                        img_str = "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
-                    except Exception as e:
-                        img_str = None
-                        print(f"Error generando imagen base de elevación: {e}")
+                    # 2. 🛠️ CORRECCIÓN 2: Usar mapa Topográfico ultrarrápido nativo (sin carga de imágenes pesadas)
+                    m_pour = folium.Map(location=center, zoom_start=12)
+                    
+                    # Capa Base 1: Topografía (ideal para ver cauces)
+                    folium.TileLayer(
+                        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+                        attr='Esri',
+                        name='Topografía de Cauces'
+                    ).add_to(m_pour)
+                    
+                    # Capa Base 2: Satélite (por si quieres más detalle)
+                    folium.TileLayer(
+                        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                        attr='Esri',
+                        name='Satélite',
+                        show=False
+                    ).add_to(m_pour)
 
-                    # 3. Construir el mapa interactivo
-                    m_pour = folium.Map(location=center, zoom_start=12, tiles="CartoDB positron")
-                    
-                    if img_str:
-                        folium.raster_layers.ImageOverlay(
-                            image=img_str, bounds=bounds, opacity=0.65, name="Elevación Base"
-                        ).add_to(m_pour)
-                    
                     m_pour.add_child(folium.LatLngPopup())
+                    folium.LayerControl().add_to(m_pour)
                     
-                    # 4. Renderizar y capturar clics
+                    # 3. Renderizar (Ahora es inmediato)
                     mapa_clic = st_folium(m_pour, height=500, use_container_width=True, key="mapa_pour_point")
                     
                 with c_controles_pour:
-                    st.markdown("#### 📍 Coordenadas Capturadas")
+                    st.markdown("#### 📍 Punto de Cierre")
                     
                     if mapa_clic and mapa_clic.get("last_clicked"):
                         lat_cierre = mapa_clic["last_clicked"]["lat"]
                         lon_cierre = mapa_clic["last_clicked"]["lng"]
                         
-                        st.success(f"**Latitud:** {lat_cierre:.6f}\n\n**Longitud:** {lon_cierre:.6f}")
+                        st.success(f"**Coordenadas Capturadas:**\n\nLAT: `{lat_cierre:.5f}`\n\nLON: `{lon_cierre:.5f}`")
                         st.markdown("---")
-                        st.write("**Opciones de Procesamiento:**")
-                        snap_dist = st.slider("Tolerancia de encaje (m):", 50, 500, 150, step=50, help="Busca la mayor acumulación de flujo cerca del punto de clic.")
+                        st.write("**Opciones de Enrutamiento:**")
+                        snap_dist = st.slider("Ajuste automático al cauce (m):", 50, 500, 150, step=50, help="Busca la mayor acumulación de flujo cerca del punto.")
                         
-                        if st.button("🚀 Generar Cuenca Aferente", type="primary", use_container_width=True):
-                            st.warning("⚙️ Conectando con motor de enrutamiento (PySheds/Whitebox)...")
-                            st.info(f"Coordenadas `{lat_cierre:.5f}, {lon_cierre:.5f}` listas para procesamiento topológico.")
+                        if st.button("🚀 Extraer Microcuenca", type="primary", use_container_width=True):
+                            st.warning("⚙️ Conectando con motor hidrológico (Whitebox/PySheds)...")
+                            st.info("💡 En la próxima fase, estas coordenadas detonarán la delimitación del polígono.")
                     else:
-                        st.write("A la espera de selección en el mapa...")
-                        st.info("Navega, haz zoom y da clic izquierdo para anclar el punto.") 
+                        st.write("A la espera de selección...")
+                        st.markdown("""
+                        <div style="padding: 10px; border-left: 3px solid #f5b041; background-color: #fdf2e9; font-size: 0.9em;">
+                            <b>1.</b> Localiza un cauce principal.<br>
+                            <b>2.</b> Haz clic izquierdo en el río.<br>
+                            <b>3.</b> El sistema leerá las coordenadas.
+                        </div>
+                        """, unsafe_allow_html=True)
                     
             # --- TAB 5: DESCARGAS ---
             with tab5:
