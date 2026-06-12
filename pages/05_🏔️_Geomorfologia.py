@@ -874,9 +874,13 @@ if gdf_zona_seleccionada is not None:
             # =====================================================================
             with tab8:
                 st.markdown("### 💧 Motor de Delimitación de Cuencas")
-                st.info("👇 **Haz clic en cualquier punto del mapa** sobre el cauce de un río para definir el punto de cierre (Pour Point).")
+                st.info("👇 **Haz clic en el mapa** sobre el cauce de un río. El sistema capturará las coordenadas y delimitará la cuenca aportante.")
                 
                 c_mapa_pour, c_controles_pour = st.columns([2, 1])
+                
+                # --- MEMORIA DE ESTADO PARA LA CUENCA ---
+                if 'cuenca_delimitada' not in st.session_state:
+                    st.session_state['cuenca_delimitada'] = None
                 
                 with c_mapa_pour:
                     import folium
@@ -884,7 +888,6 @@ if gdf_zona_seleccionada is not None:
                     from rasterio.transform import array_bounds
                     from pyproj import Transformer
 
-                    # 1. Calcular el centro exacto de la cuenca
                     h_arr, w_arr = arr_elevacion.shape
                     minx, miny, maxx, maxy = array_bounds(h_arr, w_arr, transform)
                     transformer = Transformer.from_crs(meta['crs'], "EPSG:4326", always_xy=True)
@@ -892,36 +895,34 @@ if gdf_zona_seleccionada is not None:
                     lon_max, lat_max = transformer.transform(maxx, maxy)
                     center = [(lat_min+lat_max)/2, (lon_min+lon_max)/2]
 
-                    # 2. Mapas Base Optimizados para Hidrología
-                    # Aumentamos un punto el zoom_start (13) para ver mejor la red de drenaje
                     m_pour = folium.Map(location=center, zoom_start=13)
                     
-                    # Capa Base 1: OpenTopoMap (Especializado en relieve y red hídrica en azul)
                     folium.TileLayer(
                         tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
                         attr='Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)',
-                        name='Topografía y Ríos (OpenTopoMap)'
+                        name='Topografía y Ríos'
                     ).add_to(m_pour)
-                    
-                    # Capa Base 2: OpenStreetMap Estándar (Dibuja todas las quebradas urbanas y rurales)
-                    folium.TileLayer(
-                        'OpenStreetMap',
-                        name='Red de Drenaje (OSM Estándar)',
-                        show=False
-                    ).add_to(m_pour)
-                    
-                    # Capa Base 3: Satélite (Por si necesitas contexto visual real)
-                    folium.TileLayer(
-                        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                        attr='Esri',
-                        name='Satélite (Esri)',
-                        show=False
-                    ).add_to(m_pour)
+
+                    # --- DIBUJAR LA CUENCA SI YA FUE DELIMITADA ---
+                    if st.session_state['cuenca_delimitada'] is not None:
+                        gdf_viz = st.session_state['cuenca_delimitada'].to_crs("EPSG:4326")
+                        folium.GeoJson(
+                            gdf_viz,
+                            style_function=lambda x: {'fillColor': '#3498db', 'color': '#2980b9', 'weight': 3, 'fillOpacity': 0.4},
+                            name="Microcuenca Extraída"
+                        ).add_to(m_pour)
+                        
+                        # Añadir un marcador en el punto de cierre (Pour Point)
+                        if 'pour_point_coords' in st.session_state:
+                            folium.Marker(
+                                location=st.session_state['pour_point_coords'],
+                                icon=folium.Icon(color='red', icon='tint'),
+                                tooltip="Punto de Cierre (Pour Point)"
+                            ).add_to(m_pour)
 
                     m_pour.add_child(folium.LatLngPopup())
                     folium.LayerControl().add_to(m_pour)
                     
-                    # 3. Renderizar el mapa (Se mantendrá ultrarrápido)
                     mapa_clic = st_folium(m_pour, height=500, use_container_width=True, key="mapa_pour_point")
                     
                 with c_controles_pour:
@@ -933,21 +934,73 @@ if gdf_zona_seleccionada is not None:
                         
                         st.success(f"**Coordenadas Capturadas:**\n\nLAT: `{lat_cierre:.5f}`\n\nLON: `{lon_cierre:.5f}`")
                         st.markdown("---")
-                        st.write("**Opciones de Enrutamiento:**")
-                        snap_dist = st.slider("Ajuste automático al cauce (m):", 50, 500, 150, step=50, help="Busca la mayor acumulación de flujo cerca del punto.")
+                        
+                        umbral_acc = st.slider("Sensibilidad de encaje (Celdas de Acumulación):", 100, 2000, 500, step=100, help="Fuerza el punto al río principal más cercano.")
                         
                         if st.button("🚀 Extraer Microcuenca", type="primary", use_container_width=True):
-                            st.warning("⚙️ Conectando con motor hidrológico (Whitebox/PySheds)...")
-                            st.info("💡 En la próxima fase, estas coordenadas detonarán la delimitación del polígono.")
+                            try:
+                                with st.spinner("⚙️ Procesando MDE, Calculando Flujos y Delimitando Cuenca..."):
+                                    from pysheds.grid import Grid
+                                    from shapely.geometry import shape
+                                    import geopandas as gpd
+                                    
+                                    # 1. Cargar DEM a PySheds
+                                    grid = Grid()
+                                    grid.add_gridded_data(arr_elevacion, data_name='dem', affine=transform, crs=meta['crs'])
+                                    
+                                    # 2. Acondicionamiento (Llenar sumideros)
+                                    grid.fill_depressions(data='dem', out_name='flooded_dem')
+                                    grid.resolve_flats(data='flooded_dem', out_name='inflated_dem')
+                                    
+                                    # 3. Dirección de Flujo (D8)
+                                    dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
+                                    grid.flowdir(data='inflated_dem', out_name='dir', dirmap=dirmap)
+                                    
+                                    # 4. Acumulación de Flujo
+                                    grid.accumulation(data='dir', dirmap=dirmap, out_name='acc')
+                                    
+                                    # 5. Transformar coordenadas de clic al CRS del MDE
+                                    transformer_in = Transformer.from_crs("EPSG:4326", meta['crs'], always_xy=True)
+                                    x_click, y_click = transformer_in.transform(lon_cierre, lat_cierre)
+                                    
+                                    # 6. Snapping al cauce principal (Acumulacion > umbral)
+                                    x_snap, y_snap = grid.snap_to_mask(grid.acc > umbral_acc, (x_click, y_click), return_dist=False)
+                                    
+                                    # 7. Delimitar la cuenca
+                                    grid.catchment(data='dir', x=x_snap, y=y_snap, dirmap=dirmap, out_name='catch', xytype='coordinate')
+                                    
+                                    # 8. Vectorizar a Polígono
+                                    shapes = grid.polygonize(data='catch')
+                                    catchment_geom = None
+                                    for geom, val in shapes:
+                                        if val == 1:
+                                            catchment_geom = shape(geom)
+                                            break
+                                            
+                                    if catchment_geom:
+                                        gdf_cuenca = gpd.GeoDataFrame([{'geometry': catchment_geom}], crs=meta['crs'])
+                                        st.session_state['cuenca_delimitada'] = gdf_cuenca
+                                        st.session_state['pour_point_coords'] = [lat_cierre, lon_cierre]
+                                        st.rerun() # Reinicia la app sutilmente para dibujar el polígono
+                                    else:
+                                        st.error("⚠️ No se pudo delimitar la cuenca. Intenta haciendo clic más cerca de la línea azul principal.")
+                            
+                            except ImportError:
+                                st.error("🚨 Falta la librería hidrológica. Instálala en tu terminal con: `pip install pysheds`")
+                            except Exception as e:
+                                st.error(f"Error en el motor hidrológico: {e}")
+                                
+                        # Botón para limpiar el mapa
+                        if st.session_state['cuenca_delimitada'] is not None:
+                            st.markdown("---")
+                            if st.button("🗑️ Limpiar Mapa", use_container_width=True):
+                                st.session_state['cuenca_delimitada'] = None
+                                st.session_state.pop('pour_point_coords', None)
+                                st.rerun()
+                                
                     else:
                         st.write("A la espera de selección...")
-                        st.markdown("""
-                        <div style="padding: 10px; border-left: 3px solid #f5b041; background-color: #fdf2e9; font-size: 0.9em;">
-                            <b>1.</b> Localiza un cauce principal.<br>
-                            <b>2.</b> Haz clic izquierdo en el río.<br>
-                            <b>3.</b> El sistema leerá las coordenadas.
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.info("Haz clic izquierdo sobre la línea azul de un río o quebrada para anclar el punto de cierre.")
                     
             # --- TAB 5: DESCARGAS ---
             with tab5:
