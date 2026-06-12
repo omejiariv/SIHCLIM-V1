@@ -943,34 +943,50 @@ if gdf_zona_seleccionada is not None:
                                     from pysheds.grid import Grid
                                     from shapely.geometry import shape
                                     import geopandas as gpd
+                                    import rasterio
                                     
-                                    # 1. Cargar DEM a PySheds
-                                    grid = Grid()
-                                    grid.add_gridded_data(arr_elevacion, data_name='dem', affine=transform, crs=meta['crs'])
+                                    # 1. Crear un archivo temporal raster en memoria para que PySheds lo lea nativamente
+                                    with rasterio.MemoryFile() as memfile:
+                                        with memfile.open(
+                                            driver='GTiff',
+                                            height=arr_elevacion.shape[0],
+                                            width=arr_elevacion.shape[1],
+                                            count=1,
+                                            dtype=arr_elevacion.dtype,
+                                            crs=meta['crs'],
+                                            transform=transform,
+                                            nodata=np.nanmin(arr_elevacion) # O el valor de nodata que uses
+                                        ) as dataset:
+                                            dataset.write(arr_elevacion, 1)
+                                            
+                                        # 2. Cargar DEM a PySheds (Sintaxis Nueva)
+                                        grid = Grid.from_raster(memfile.name)
+                                        dem = grid.read_raster(memfile.name)
                                     
-                                    # 2. Acondicionamiento (Llenar sumideros)
-                                    grid.fill_depressions(data='dem', out_name='flooded_dem')
-                                    grid.resolve_flats(data='flooded_dem', out_name='inflated_dem')
+                                    # 3. Acondicionamiento (Llenar sumideros)
+                                    # En la nueva versión se asigna directamente
+                                    flooded_dem = grid.fill_depressions(dem)
+                                    inflated_dem = grid.resolve_flats(flooded_dem)
                                     
-                                    # 3. Dirección de Flujo (D8)
+                                    # 4. Dirección de Flujo (D8)
                                     dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
-                                    grid.flowdir(data='inflated_dem', out_name='dir', dirmap=dirmap)
+                                    fdir = grid.flowdir(inflated_dem, dirmap=dirmap)
                                     
-                                    # 4. Acumulación de Flujo
-                                    grid.accumulation(data='dir', dirmap=dirmap, out_name='acc')
+                                    # 5. Acumulación de Flujo
+                                    acc = grid.accumulation(fdir, dirmap=dirmap)
                                     
-                                    # 5. Transformar coordenadas de clic al CRS del MDE
+                                    # 6. Transformar coordenadas de clic al CRS del MDE
                                     transformer_in = Transformer.from_crs("EPSG:4326", meta['crs'], always_xy=True)
                                     x_click, y_click = transformer_in.transform(lon_cierre, lat_cierre)
                                     
-                                    # 6. Snapping al cauce principal (Acumulacion > umbral)
-                                    x_snap, y_snap = grid.snap_to_mask(grid.acc > umbral_acc, (x_click, y_click), return_dist=False)
+                                    # 7. Snapping al cauce principal (Acumulacion > umbral)
+                                    x_snap, y_snap = grid.snap_to_mask(acc > umbral_acc, (x_click, y_click), return_dist=False)
                                     
-                                    # 7. Delimitar la cuenca
-                                    grid.catchment(data='dir', x=x_snap, y=y_snap, dirmap=dirmap, out_name='catch', xytype='coordinate')
+                                    # 8. Delimitar la cuenca
+                                    catch = grid.catchment(x=x_snap, y=y_snap, fdir=fdir, dirmap=dirmap, xytype='coordinate')
                                     
-                                    # 8. Vectorizar a Polígono
-                                    shapes = grid.polygonize(data='catch')
+                                    # 9. Vectorizar a Polígono
+                                    shapes = grid.polygonize(catch)
                                     catchment_geom = None
                                     for geom, val in shapes:
                                         if val == 1:
