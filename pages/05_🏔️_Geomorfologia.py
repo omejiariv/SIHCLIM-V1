@@ -912,7 +912,6 @@ if gdf_zona_seleccionada is not None:
                             name="Microcuenca Extraída"
                         ).add_to(m_pour)
                         
-                        # Añadir un marcador en el punto de cierre (Pour Point)
                         if 'pour_point_coords' in st.session_state:
                             folium.Marker(
                                 location=st.session_state['pour_point_coords'],
@@ -923,7 +922,8 @@ if gdf_zona_seleccionada is not None:
                     m_pour.add_child(folium.LatLngPopup())
                     folium.LayerControl().add_to(m_pour)
                     
-                    mapa_clic = st_folium(m_pour, height=500, use_container_width=True, key="mapa_pour_point")
+                    # CORRECCIÓN DE ALERTA: width='stretch' en lugar de use_container_width
+                    mapa_clic = st_folium(m_pour, height=500, width="stretch", key="mapa_pour_point")
                     
                 with c_controles_pour:
                     st.markdown("#### 📍 Punto de Cierre")
@@ -945,44 +945,43 @@ if gdf_zona_seleccionada is not None:
                                     import geopandas as gpd
                                     import rasterio
                                     import numpy as np
+                                    import tempfile
+                                    import os
                                     
-                                    # 0. PURIFICACIÓN DEL ARRAY (El antídoto para el ValueError)
-                                    # Forzamos la extracción a un array puro de Numpy en float32
-                                    arr_puro = np.asarray(arr_elevacion, dtype=np.float32)
+                                    # 0. PURIFICACIÓN ABSOLUTA (Garantía de Numpy puro 2D)
+                                    arr_puro = np.squeeze(np.array(arr_elevacion))
+                                    arr_puro = arr_puro.astype(np.float32)
                                     
-                                    # Si es un array enmascarado (MaskedArray), rellenamos los vacíos
-                                    if np.ma.is_masked(arr_puro):
-                                        arr_puro = arr_puro.filled(np.nan)
-                                        
-                                    # Asegurar el "endianness" nativo (Rasterio odia el formato big-endian '>f4')
-                                    if arr_puro.dtype.byteorder not in ('=', '|'):
-                                        arr_puro = arr_puro.newbyteorder('=').byteswap()
-                                        
-                                    # Definir un valor de NoData seguro
-                                    nodata_val = np.nanmin(arr_puro)
-                                    if np.isnan(nodata_val):
-                                        nodata_val = -9999.0
-                                    
-                                    # Rellenar los NaNs temporales para el análisis hidrológico
+                                    nodata_val = -9999.0
                                     arr_puro = np.nan_to_num(arr_puro, nan=nodata_val)
                                     
-                                    # 1. Crear un archivo temporal raster en memoria
-                                    with rasterio.MemoryFile() as memfile:
-                                        with memfile.open(
-                                            driver='GTiff',
-                                            height=arr_puro.shape[0],
-                                            width=arr_puro.shape[1],
-                                            count=1,
-                                            dtype=rasterio.float32, # Declaración explícita y canónica
-                                            crs=meta['crs'],
-                                            transform=transform,
-                                            nodata=nodata_val
-                                        ) as dataset:
-                                            dataset.write(arr_puro, 1)
-                                            
-                                        # 2. Cargar DEM a PySheds (Sintaxis Nueva)
-                                        grid = Grid.from_raster(memfile.name)
-                                        dem = grid.read_raster(memfile.name)
+                                    # 1. PUENTE FÍSICO: Archivo temporal real (Evita conflictos GDAL en la nube)
+                                    with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
+                                        tmp_dem_path = tmp.name
+                                        
+                                    with rasterio.open(
+                                        tmp_dem_path,
+                                        'w',
+                                        driver='GTiff',
+                                        height=arr_puro.shape[0],
+                                        width=arr_puro.shape[1],
+                                        count=1,
+                                        dtype='float32',  # STRING explícito
+                                        crs=meta['crs'],
+                                        transform=transform,
+                                        nodata=nodata_val
+                                    ) as dst:
+                                        dst.write(arr_puro, 1)
+                                        
+                                    # 2. PySheds lee el archivo físico de forma nativa y segura
+                                    grid = Grid.from_raster(tmp_dem_path)
+                                    dem = grid.read_raster(tmp_dem_path)
+                                    
+                                    # Limpiar disco inmediatamente para no dejar rastro
+                                    try:
+                                        os.remove(tmp_dem_path)
+                                    except:
+                                        pass
                                     
                                     # 3. Acondicionamiento (Llenar sumideros)
                                     flooded_dem = grid.fill_depressions(dem)
@@ -999,7 +998,7 @@ if gdf_zona_seleccionada is not None:
                                     transformer_in = Transformer.from_crs("EPSG:4326", meta['crs'], always_xy=True)
                                     x_click, y_click = transformer_in.transform(lon_cierre, lat_cierre)
                                     
-                                    # 7. Snapping al cauce principal (Acumulacion > umbral)
+                                    # 7. Snapping al cauce principal
                                     x_snap, y_snap = grid.snap_to_mask(acc > umbral_acc, (x_click, y_click), return_dist=False)
                                     
                                     # 8. Delimitar la cuenca
@@ -1022,7 +1021,7 @@ if gdf_zona_seleccionada is not None:
                                         st.error("⚠️ No se pudo delimitar la cuenca. Intenta haciendo clic más cerca de la línea azul principal.")
                             
                             except ImportError:
-                                st.error("🚨 Falta la librería hidrológica. Instálala en tu terminal con: `pip install pysheds`")
+                                st.error("🚨 Falta la librería hidrológica. Instálala con: `pip install pysheds`")
                             except Exception as e:
                                 st.error(f"Error en el motor hidrológico: {e}")
                                 
