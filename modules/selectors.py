@@ -454,19 +454,24 @@ def render_selector_espacial():
                         nombre_zona = sel_reg 
                         nivel_jerarquico = "Regional" 
                         
-                        # 🚀 3. PURIFICACIÓN MATEMÁTICA DANE (EXCEL)
-                        # Forzamos a que sea un número entero (matando decimales) y luego lo convertimos a texto de 5 dígitos
+                        # 3. PURIFICACIÓN DANE (EXCEL) -> Produce '05031'
                         cods_crudos = df_m[df_m[col_reg].astype(str).str.strip().str.lower() == sel_reg.lower()][col_dane_ex]
                         cods = pd.to_numeric(cods_crudos, errors='coerce').dropna().astype(int).astype(str).str.zfill(5).tolist()
                         
-                        # 4. Cargar el mapa y buscar la columna de códigos
+                        # 4. Cargar el mapa y forzar selección de la columna completa de 5 dígitos
                         gdf_mun = cargar_mapa_municipios()
-                        col_mpio_geo = next((c for c in gdf_mun.columns if c.lower() in ['mpio_cdpmp', 'mpio_ccdgo', 'dane', 'cod_dane']), None)
+                        nombres_cols = [c.lower() for c in gdf_mun.columns]
+                        
+                        if 'mpio_cdpmp' in nombres_cols: col_mpio_geo = gdf_mun.columns[nombres_cols.index('mpio_cdpmp')]
+                        elif 'dane' in nombres_cols: col_mpio_geo = gdf_mun.columns[nombres_cols.index('dane')]
+                        else: col_mpio_geo = next((c for c in gdf_mun.columns if c.lower() in ['mpio_ccdgo', 'cod_dane']), None)
                         
                         if col_mpio_geo:
-                            # 🚀 5. PURIFICACIÓN MATEMÁTICA DANE (CAPA GIS)
-                            # Hacemos exactamente el mismo proceso de limpieza en el mapa para garantizar el match
+                            # 5. PURIFICACIÓN DANE (CAPA GIS)
                             gdf_mun['dane_match'] = pd.to_numeric(gdf_mun[col_mpio_geo], errors='coerce').fillna(0).astype(int).astype(str).str.zfill(5)
+                            
+                            # 🚀 SEGURO ANTI-FALLOS: Si atrapó la columna de 3 dígitos, forzamos el '05' de Antioquia
+                            gdf_mun['dane_match'] = gdf_mun['dane_match'].apply(lambda x: f"05{x[-3:]}" if x.startswith("000") else x)
                             
                             # 6. Filtrar y fusionar
                             gdf_zona_filtrada = gdf_mun[gdf_mun['dane_match'].isin(cods)]
@@ -475,7 +480,7 @@ def render_selector_espacial():
                                 poly_region = gdf_zona_filtrada.unary_union
                                 gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_mun.crs)
                             else:
-                                st.warning(f"⚠️ No se encontraron cruces. Excel buscó estos DANE: {cods[:5]}...")
+                                st.warning(f"⚠️ No se encontraron cruces. Excel buscó: {cods[:5]}...")
                                 nombre_zona, gdf_zona = "-- Seleccione --", None
                         else:
                             st.error("⚠️ No se encontró la columna de código DANE en la capa de municipios.")
