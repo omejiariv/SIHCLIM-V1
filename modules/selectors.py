@@ -440,37 +440,38 @@ def render_selector_espacial():
             try:
                 # 1. Cargar el maestro de territorios desde Supabase
                 df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx", engine='openpyxl')
-                df_m.columns = [c.lower() for c in df_m.columns]
+                # Limpiamos los nombres de las columnas para evitar errores por espacios
+                df_m.columns = [str(c).lower().strip() for c in df_m.columns]
                 
-                # 2. Buscador inteligente de columnas en el Excel
-                col_reg = next((c for c in df_m.columns if c in ['subregion', 'region', 'provincia', 'nombre_subregion']), None)
+                # 2. 🚀 PRIORIDAD ABSOLUTA A 'subregion'
+                col_reg = 'subregion' if 'subregion' in df_m.columns else next((c for c in df_m.columns if c in ['region', 'provincia']), None)
                 col_dane_ex = next((c for c in df_m.columns if c in ['dp_mp', 'cod_dane', 'dane', 'codigo_mpio']), None)
                 
                 if col_reg and col_dane_ex:
-                    lista_reg = sorted([str(r).title() for r in df_m[col_reg].dropna().unique()])
+                    # Extraemos las subregiones, limpiamos espacios y descartamos celdas vacías
+                    lista_reg = sorted([str(r).strip().title() for r in df_m[col_reg].dropna().unique() if str(r).strip() != ''])
                     sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                     
                     if sel_reg != "-- Seleccione --":
                         nombre_zona = sel_reg 
                         nivel_jerarquico = "Regional" 
                         
-                        # 3. Extraer los códigos DANE de la región seleccionada (limpiando ceros y decimales)
-                        cods = df_m[df_m[col_reg].str.lower() == sel_reg.lower()][col_dane_ex].astype(str).str.replace(".0", "", regex=False).str.zfill(5).tolist()
+                        # 3. Extraer los códigos DANE de la región seleccionada
+                        cods = df_m[df_m[col_reg].astype(str).str.strip().str.lower() == sel_reg.lower()][col_dane_ex].astype(str).str.replace(".0", "", regex=False).str.zfill(5).tolist()
                         
                         # 4. Cargar el mapa de municipios y buscar la columna de códigos real
                         gdf_mun = cargar_mapa_municipios()
                         col_mpio_geo = next((c for c in gdf_mun.columns if c.lower() in ['mpio_cdpmp', 'mpio_ccdgo', 'dane', 'cod_dane']), None)
                         
                         if col_mpio_geo:
-                            # 5. Filtrar los municipios que pertenecen a la región seleccionada
+                            # 5. Filtrar y fusionar los municipios
                             gdf_zona_filtrada = gdf_mun[gdf_mun[col_mpio_geo].astype(str).str.replace(".0", "", regex=False).str.zfill(5).isin(cods)]
                             
                             if not gdf_zona_filtrada.empty:
-                                # 🚀 EL TRUCO MAESTRO: Fusionar (Dissolve) los municipios en un solo polígono
                                 poly_region = gdf_zona_filtrada.unary_union
                                 gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_mun.crs)
                             else:
-                                st.warning(f"⚠️ No se encontraron cruces espaciales para los DANE de la región {sel_reg}.")
+                                st.warning(f"⚠️ No se encontraron cruces espaciales para los códigos DANE de la subregión {sel_reg}.")
                                 nombre_zona, gdf_zona = "-- Seleccione --", None
                         else:
                             st.error("⚠️ No se encontró la columna de código DANE en la capa de municipios.")
