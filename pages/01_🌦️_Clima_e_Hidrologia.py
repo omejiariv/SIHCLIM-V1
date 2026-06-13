@@ -289,7 +289,30 @@ def main():
     # Módulos Estándar (Usando visualizer.py)
     if selected_module == "🏠 Inicio": viz.display_welcome_tab()
     elif selected_module == "🚨 Monitoreo": viz.display_realtime_dashboard(df_monthly_filtered, gdf_stations, gdf_filtered)
-    elif selected_module == "🗺️ Distribución": viz.display_spatial_distribution_tab(**display_args)
+    elif selected_module == "🗺️ Distribución": 
+        viz.display_spatial_distribution_tab(**display_args)
+        
+        # =====================================================================
+        # --- CAJA DESPLEGABLE: GUÍA DE CODIFICACIÓN HIDROLÓGICA (IDEAM) ---
+        # =====================================================================
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("📖 Guía de Navegación: ¿Cómo leer los códigos hidrológicos (IDEAM)?", expanded=False):
+            st.markdown("""
+            ### El Sistema de las "Muñecas Rusas" (Metodología Pfafstetter)
+            Para organizar el agua en Colombia, el IDEAM utiliza un sistema jerárquico. Imagina que el agua de nuestro territorio se organiza como un árbol, desde el tronco más grueso hasta la hoja más pequeña. Cada nivel añade más dígitos al código:
+            
+            * **🌊 AH (Área Hidrográfica - 1 dígito):** *El Gran Tronco.* Son las 5 grandes vertientes del país. Por ejemplo, el `2` representa a la inmensa cuenca Magdalena-Cauca.
+            * **Ríos Principales:**
+                * **💧 ZH (Zona Hidrográfica - 2 dígitos):** *Las Ramas Principales.* Grandes divisiones del área. Por ejemplo, `26` corresponde a todo el Río Cauca.
+                * **🌿 SZH (Subzona Hidrográfica - 4 dígitos):** *Las Ramas Secundarias.* Ríos muy importantes que alimentan la zona. Por ejemplo, `2601` es el Río Porce. **(Este es el nivel más común para proyectos de planificación regional)**.
+            * **Tributarios y Microcuencas (Niveles Subsiguientes - NSS):**
+                * **🍃 NSS1 (Nivel 4):** Afluentes directos de la SZH (Ríos menores y quebradas grandes). Ej: `2601-01`.
+                * **🌱 NSS2 (Nivel 5):** Microcuencas locales y quebradas veredales.
+                * **💧 NSS3 (Nivel 6):** Pequeños drenajes y nacimientos muy específicos.
+                
+            > **💡 Tip de Navegación:** Si te pierdes buscando un cuerpo de agua específico, te sugerimos buscar primero en el nivel **SZH (Subzona Hidrográfica)** o **NSS1**, que es donde solemos ubicar los nombres de los ríos y quebradas que la comunidad reconoce históricamente.
+            """)
+            
     elif selected_module == "📈 Gráficos": viz.display_graphs_tab(**display_args)
     elif selected_module == "📊 Estadísticas": 
         viz.display_stats_tab(**display_args)
