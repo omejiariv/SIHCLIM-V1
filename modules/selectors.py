@@ -311,8 +311,17 @@ def render_selector_espacial():
             ruta = st.selectbox("Ruta de Búsqueda:", ["Hidrología", "CAR"], index=0)
             
             if ruta == "Hidrología":
-                nivel = st.selectbox("1. Nivel a Evaluar:", ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"], index=5)
-                
+                nombres_niveles = {
+                    "AH": "🌊 AH - Área Hidrográfica (Macrorregión Nacional)",
+                    "ZH": "💧 ZH - Zona Hidrográfica (Cuenca Mayor)",
+                    "SZH": "🌿 SZH - Subzona Hidr. (Río Principal ej. Porce)",
+                    "NSS1": "🍃 NSS1 - Cuenca Tributaria (Ríos menores)",
+                    "NSS2": "🌱 NSS2 - Microcuenca Local",
+                    "NSS3": "💧 NSS3 - Drenaje Menor / Nacimiento"
+                }
+                nivel_display = st.selectbox("1. Escala a Evaluar:", list(nombres_niveles.values()), index=5)
+                nivel = next(key for key, value in nombres_niveles.items() if value == nivel_display)
+            
                 # 🚀 BUSCADOR INTELIGENTE DE COLUMNAS (Ignora mayúsculas/minúsculas)
                 col_obj_esperada = {"AH": "nomah", "ZH": "nomzh", "SZH": "nom_szh", "NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
                 col_cod_esperada = {"AH": "ah", "ZH": "zh", "SZH": "szh", "NSS1": "nss1", "NSS2": "nss2", "NSS3": "nss3"}[nivel]
