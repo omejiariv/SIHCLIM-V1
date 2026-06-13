@@ -1373,63 +1373,71 @@ def display_spatial_distribution_tab(
         plugins.Fullscreen(position='topright').add_to(m)
         plugins.Geocoder(position='topright').add_to(m)
 
-        # --- CAPA MUNICIPIOS (Usando Selector Manual) ---
+        # =====================================================================
+        # --- CAPA MUNICIPIOS ---
+        # =====================================================================
         if gdf_municipios is not None and not gdf_municipios.empty:
-            # Preparamos las listas dinámicas para el tooltip
-            campos_muni = [col_muni_show, 'mpio_cdpmp'] if col_muni_show else []
-            alias_muni = ['Municipio:', 'Código:'] if col_muni_show else []
+            # 🔍 Buscador Inteligente: Encuentra el nombre y el código
+            col_nom_m = next((c for c in gdf_municipios.columns if c.lower() in ['mpio_cnmbr', 'nombre', 'nom_muni']), gdf_municipios.columns[0])
+            col_cod_m = 'mpio_cdpmp' if 'mpio_cdpmp' in gdf_municipios.columns else gdf_municipios.columns[1]
             
             folium.GeoJson(
                 gdf_municipios,
                 name="Municipios",
                 style_function=lambda x: {'fillColor': '#95a5a6', 'color': 'white', 'weight': 0.5, 'fillOpacity': 0.1},
                 tooltip=folium.GeoJsonTooltip(
-                    fields=campos_muni, 
-                    aliases=alias_muni,
+                    fields=[col_nom_m, col_cod_m], 
+                    aliases=['Municipio:', 'Código DANE:'],
                     localize=True
-                ) if col_muni_show else None
+                )
             ).add_to(m)
 
-        # --- CAPA CUENCAS (Usando Selector Manual) ---
+        # =====================================================================
+        # --- CAPA CUENCAS ---
+        # =====================================================================
         if gdf_subcuencas is not None and not gdf_subcuencas.empty:
-            # Preparamos las listas dinámicas para el tooltip
-            # 🚀 CORRECCIÓN: 'objectid' en minúsculas
-            campos_cuenca = [col_cuenca_show, 'objectid'] if col_cuenca_show else []
-            alias_cuenca = ['Cuenca:', 'Código Pfafstetter:'] if col_cuenca_show else []
+            # 🔍 Buscador Inteligente: Encuentra cualquier columna que empiece por 'nom' (ej: nom_nss1, nom_szh, nombre_cuenca)
+            col_nom_c = next((c for c in gdf_subcuencas.columns if c.lower().startswith('nom')), gdf_subcuencas.columns[0])
+            col_cod_c = 'objectid' if 'objectid' in gdf_subcuencas.columns else gdf_subcuencas.columns[1]
             
             folium.GeoJson(
                 gdf_subcuencas,
                 name="Subcuencas",
                 style_function=lambda x: {
-                    'fillColor': '#3498db', 
-                    'color': '#2980b9', 
-                    'weight': 1.5, 
-                    'fillOpacity': 0.1
+                    'fillColor': '#3498db', 'color': '#2980b9', 'weight': 1.5, 'fillOpacity': 0.1
                 },
                 highlight_function=lambda x: {'weight': 3, 'color': '#e74c3c', 'fillOpacity': 0.3},
                 tooltip=folium.GeoJsonTooltip(
-                    fields=campos_cuenca,
-                    aliases=alias_cuenca,
+                    fields=[col_nom_c, col_cod_c],
+                    aliases=['Cuenca:', 'Código/ID:'],
                     style="font-size: 14px; font-weight: bold; color: #2980b9;"
-                ) if col_cuenca_show else None
+                )
             ).add_to(m)
 
-        # --- CAPA PREDIOS (Usando Selector Manual) ---
+        # =====================================================================
+        # --- CAPA PREDIOS ---
+        # =====================================================================
         if gdf_predios is not None and not gdf_predios.empty:
             try:
-                # 🚀 CORRECCIÓN DEL ERROR DE FECHAS (Timestamp no es serializable en JSON)
-                # Convertimos todas las columnas de tipo fecha a texto puro antes de renderizar
+                # 1. Purgar fechas para evitar el colapso del JSON
                 for col in gdf_predios.select_dtypes(include=['datetime64', 'datetimetz']).columns:
                     gdf_predios[col] = gdf_predios[col].astype(str)
 
-                # Determinar si es punto o polígono
+                # 2. 🔍 Buscador Inteligente: Busca la columna del nombre del predio
+                lista_nombres_posibles = ['nombre', 'nom_predio', 'predio', 'nombre_predio', 'propietario']
+                col_nom_p = next((c for c in gdf_predios.columns if c.lower() in lista_nombres_posibles), gdf_predios.columns[0])
+                
+                # Rescatamos la variable que usabas como código, o tomamos la primera disponible
+                col_cod_p = col_predio_show if (col_predio_show and col_predio_show in gdf_predios.columns) else gdf_predios.columns[1]
+
                 geom_type = gdf_predios.geometry.iloc[0].geom_type
                 
+                # 3. Armar el Tooltip con Nombre y Código
                 tooltip_obj = folium.GeoJsonTooltip(
-                    fields=[col_predio_show] if col_predio_show else [],
-                    aliases=['Predio:'],
+                    fields=[col_nom_p, col_cod_p],
+                    aliases=['Predio:', 'Código/ID:'],
                     localize=True
-                ) if col_predio_show else None
+                )
 
                 if geom_type == 'Point':
                     folium.GeoJson(
