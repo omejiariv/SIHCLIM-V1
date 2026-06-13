@@ -26,9 +26,11 @@ def decodificar_tildes(texto):
 
 def renderizar_telemetria_aleph():
     """Panel de control universal que monitorea las variables de estado en tiempo real."""
-    st.sidebar.markdown("---")
     
-    with st.sidebar.expander("🧠 Telemetría del Aleph", expanded=True):
+    st.sidebar.markdown("### 🧠 Telemetría del Aleph")
+    
+    # --- CAJA DESPLEGABLE 1: MÉTRICAS TERRITORIALES Y CARGAS ---
+    with st.sidebar.expander("📊 Métricas Demográficas y Cargas", expanded=True):
         pob_viva = st.session_state.get('aleph_pob_total', st.session_state.get('poblacion_servida', 0))
         if pob_viva > 0:
             st.markdown(f"👥 **Población:** <span style='color:#2ecc71'>Sincronizada ({pob_viva:,.0f} hab)</span>", unsafe_allow_html=True)
@@ -47,14 +49,15 @@ def renderizar_telemetria_aleph():
         else:
             st.markdown("☣️ **Carga DBO:** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
             
-        st.markdown("---")
-        
+    # --- CAJA DESPLEGABLE 2: PULSO CLIMÁTICO GLOBAL (ENSO) ---
+    with st.sidebar.expander("🌦️ Pulso Climático Global", expanded=True):
         if 'aleph_iri_nino' not in st.session_state:
             try:
                 from modules.climate_api import get_iri_enso_forecast
                 df_enso, _ = get_iri_enso_forecast()
                 if df_enso is not None and not df_enso.empty:
-                    df_target = df_enso[df_enso['Trimestre'].str.contains('AMJ', na=False)]
+                    # 🚀 ACTUALIZADO a MJJ
+                    df_target = df_enso[df_enso['Trimestre'].str.contains('MJJ', na=False)]
                     fila_actual = df_target.iloc[0] if not df_target.empty else df_enso.iloc[0]
                     
                     p_nina = float(fila_actual.get('La Niña', 0))
@@ -71,7 +74,8 @@ def renderizar_telemetria_aleph():
                     st.session_state['aleph_iri_neutro'] = int(p_neutro)
                     st.session_state['aleph_iri_nina'] = int(p_nina)
                     st.session_state['aleph_iri_trimestre'] = trim_txt
-                    st.session_state['aleph_iri_tendencia'] = "Sincronización AMJ Exitosa 📡"
+                    # 🚀 ACTUALIZADO a MJJ
+                    st.session_state['aleph_iri_tendencia'] = "Sincronización MJJ Exitosa 📡"
             except Exception as e:
                 st.session_state['aleph_iri_tendencia'] = f"Error: {str(e)}"
                 
@@ -94,11 +98,12 @@ def renderizar_telemetria_aleph():
         
         if tendencia: st.caption(f"📈 **Estado:** {tendencia}")
 
-        st.markdown("---")
-        if st.button("🧹 Purgar Memoria y Caché", use_container_width=True):
-            st.session_state.clear()
-            st.cache_data.clear()
-            st.rerun()
+    # --- BOTÓN DE PURGA (Fuera de los expanders) ---
+    st.sidebar.markdown("<br>", unsafe_allow_html=True) # Espaciador suave
+    if st.sidebar.button("🧹 Purgar Memoria y Caché", use_container_width=True):
+        st.session_state.clear()
+        st.cache_data.clear()
+        st.rerun()
             
 # ====================================================================
 # 📂 NAVEGACIÓN GLOBAL
