@@ -948,14 +948,12 @@ if gdf_zona_seleccionada is not None:
                                     import tempfile
                                     import os
                                     
-                                    # 0. PURIFICACIÓN ABSOLUTA (Garantía de Numpy puro 2D)
-                                    arr_puro = np.squeeze(np.array(arr_elevacion))
-                                    arr_puro = arr_puro.astype(np.float32)
-                                    
+                                    # 0. PURIFICACIÓN DE ENTRADA
+                                    arr_puro = np.squeeze(np.array(arr_elevacion)).astype(np.float32)
                                     nodata_val = -9999.0
                                     arr_puro = np.nan_to_num(arr_puro, nan=nodata_val)
                                     
-                                    # 1. PUENTE FÍSICO: Archivo temporal real (Evita conflictos GDAL en la nube)
+                                    # 1. PUENTE FÍSICO
                                     with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                                         tmp_dem_path = tmp.name
                                         
@@ -966,18 +964,18 @@ if gdf_zona_seleccionada is not None:
                                         height=arr_puro.shape[0],
                                         width=arr_puro.shape[1],
                                         count=1,
-                                        dtype='float32',  # STRING explícito
+                                        dtype='float32',
                                         crs=meta['crs'],
                                         transform=transform,
                                         nodata=nodata_val
                                     ) as dst:
                                         dst.write(arr_puro, 1)
                                         
-                                    # 2. PySheds lee el archivo físico de forma nativa y segura
+                                    # 2. PySheds (Carga Segura)
                                     grid = Grid.from_raster(tmp_dem_path)
                                     dem = grid.read_raster(tmp_dem_path)
                                     
-                                    # Limpiar disco inmediatamente para no dejar rastro
+                                    # Limpieza de disco
                                     try:
                                         os.remove(tmp_dem_path)
                                     except:
@@ -1001,14 +999,17 @@ if gdf_zona_seleccionada is not None:
                                     # 7. Snapping al cauce principal
                                     x_snap, y_snap = grid.snap_to_mask(acc > umbral_acc, (x_click, y_click), return_dist=False)
                                     
-                                    # 8. Delimitar la cuenca
+                                    # 8. Delimitar la cuenca (ESTO RETORNA UN BOOLEANO)
                                     catch = grid.catchment(x=x_snap, y=y_snap, fdir=fdir, dirmap=dirmap, xytype='coordinate')
                                     
-                                    # 9. Vectorizar a Polígono
-                                    shapes = grid.polygonize(catch)
+                                    # 9. 🛠️ EL ANTÍDOTO REAL: Convertir Booleano a Entero (uint8)
+                                    catch_uint8 = catch.astype(np.uint8)
+                                    
+                                    # 10. Vectorizar a Polígono
+                                    shapes = grid.polygonize(catch_uint8)
                                     catchment_geom = None
                                     for geom, val in shapes:
-                                        if val == 1:
+                                        if val == 1:  # Ahora sí buscará el número 1 en lugar de 'True'
                                             catchment_geom = shape(geom)
                                             break
                                             
