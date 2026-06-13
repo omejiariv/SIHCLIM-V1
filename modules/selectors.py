@@ -312,7 +312,10 @@ def render_selector_espacial():
             
             if ruta == "Hidrología":
                 nivel = st.selectbox("1. Nivel a Evaluar:", ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"], index=5)
+                # 🚀 DICCIONARIOS DINÁMICOS PARA NOMBRE Y CÓDIGO
                 col_obj = {"AH": "nomah", "ZH": "nomzh", "SZH": "nom_szh", "NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
+                # Nota: Si en tu base de datos las columnas de código se llaman distinto (ej: 'codigo_nss1'), ajusta estos nombres:
+                col_cod = {"AH": "codah", "ZH": "codzh", "SZH": "cod_szh", "NSS1": "cod_nss1", "NSS2": "cod_nss2", "NSS3": "cod_nss3"}[nivel]
                 
                 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
                 st.markdown("<span style='font-size:0.85em; color:gray;'>Filtros Opcionales de Búsqueda:</span>", unsafe_allow_html=True)
@@ -332,11 +335,17 @@ def render_selector_espacial():
                     
                 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
                 
-                sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f[col_obj].dropna().unique()))
+                # 🚀 CREACIÓN AL VUELO DE LA LLAVE VISUAL
+                # Forzamos la creación de la nueva columna usando el nombre y el código correspondientes
+                df_f = df_f.copy() # Evitamos warnings de pandas
+                df_f['Llave_Visual'] = df_f[col_obj].astype(str) + " - (" + df_f[col_cod].astype(str) + ")"
+                
+                # 🎯 EL SELECTOR AHORA USA LA LLAVE VISUAL
+                sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f['Llave_Visual'].dropna().unique()))
                 
                 if sel_fin != "-- Seleccione --":
                     nombre_zona = sel_fin
-                    gdf_zona = df_f[df_f[col_obj]==sel_fin]
+                    gdf_zona = df_f[df_f['Llave_Visual']==sel_fin]
                     nivel_jerarquico = nivel 
                 else:
                     nombre_zona, gdf_zona = "-- Seleccione --", None
@@ -366,11 +375,17 @@ def render_selector_espacial():
                         nivel_jerarquico = "CAR"
                     else:
                         col_obj = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
-                        sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f[col_obj].dropna().unique()))
+                        col_cod = {"NSS1": "cod_nss1", "NSS2": "cod_nss2", "NSS3": "cod_nss3"}[nivel]
+                        
+                        # 🚀 CREACIÓN AL VUELO DE LA LLAVE VISUAL PARA LA RUTA CAR
+                        df_f = df_f.copy()
+                        df_f['Llave_Visual'] = df_f[col_obj].astype(str) + " - (" + df_f[col_cod].astype(str) + ")"
+                        
+                        sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f['Llave_Visual'].dropna().unique()))
                         
                         if sel_fin != "-- Seleccione --":
                             nombre_zona = sel_fin
-                            gdf_zona = df_f[df_f[col_obj]==sel_fin]
+                            gdf_zona = df_f[df_f['Llave_Visual']==sel_fin]
                             nivel_jerarquico = nivel 
                         else:
                             nombre_zona, gdf_zona = "-- Seleccione --", None
