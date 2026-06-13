@@ -946,23 +946,39 @@ if gdf_zona_seleccionada is not None:
                                     import rasterio
                                     import numpy as np
                                     
-                                    # 0. Estandarizar la matriz a float32 (Previene errores de dtype en Rasterio)
-                                    arr_elev_32 = arr_elevacion.astype(np.float32)
-                                    nodata_val = np.nanmin(arr_elev_32)
+                                    # 0. PURIFICACIÓN DEL ARRAY (El antídoto para el ValueError)
+                                    # Forzamos la extracción a un array puro de Numpy en float32
+                                    arr_puro = np.asarray(arr_elevacion, dtype=np.float32)
+                                    
+                                    # Si es un array enmascarado (MaskedArray), rellenamos los vacíos
+                                    if np.ma.is_masked(arr_puro):
+                                        arr_puro = arr_puro.filled(np.nan)
+                                        
+                                    # Asegurar el "endianness" nativo (Rasterio odia el formato big-endian '>f4')
+                                    if arr_puro.dtype.byteorder not in ('=', '|'):
+                                        arr_puro = arr_puro.newbyteorder('=').byteswap()
+                                        
+                                    # Definir un valor de NoData seguro
+                                    nodata_val = np.nanmin(arr_puro)
+                                    if np.isnan(nodata_val):
+                                        nodata_val = -9999.0
+                                    
+                                    # Rellenar los NaNs temporales para el análisis hidrológico
+                                    arr_puro = np.nan_to_num(arr_puro, nan=nodata_val)
                                     
                                     # 1. Crear un archivo temporal raster en memoria
                                     with rasterio.MemoryFile() as memfile:
                                         with memfile.open(
                                             driver='GTiff',
-                                            height=arr_elev_32.shape[0],
-                                            width=arr_elev_32.shape[1],
+                                            height=arr_puro.shape[0],
+                                            width=arr_puro.shape[1],
                                             count=1,
-                                            dtype='float32', # Forzamos el tipo aceptado
+                                            dtype=rasterio.float32, # Declaración explícita y canónica
                                             crs=meta['crs'],
                                             transform=transform,
                                             nodata=nodata_val
                                         ) as dataset:
-                                            dataset.write(arr_elev_32, 1)
+                                            dataset.write(arr_puro, 1)
                                             
                                         # 2. Cargar DEM a PySheds (Sintaxis Nueva)
                                         grid = Grid.from_raster(memfile.name)
