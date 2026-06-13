@@ -1396,9 +1396,20 @@ def display_spatial_distribution_tab(
         # --- CAPA CUENCAS ---
         # =====================================================================
         if gdf_subcuencas is not None and not gdf_subcuencas.empty:
-            # 🔍 Buscador Inteligente: Encuentra cualquier columna que empiece por 'nom' (ej: nom_nss1, nom_szh, nombre_cuenca)
+            # 🔍 Buscador Inteligente: Encuentra Nombre y Código
             col_nom_c = next((c for c in gdf_subcuencas.columns if c.lower().startswith('nom')), gdf_subcuencas.columns[0])
             col_cod_c = 'objectid' if 'objectid' in gdf_subcuencas.columns else gdf_subcuencas.columns[1]
+            
+            col_subc_lbl = next((c for c in gdf_subcuencas.columns if c.lower() == 'subc_lbl'), None)
+            
+            # Armamos las listas dinámicamente
+            campos_cuenca = [col_nom_c, col_cod_c]
+            alias_cuenca = ['Cuenca:', 'Código/ID:']
+            
+            # Si la columna SUBC_LBL existe, la inyectamos en la tarjeta
+            if col_subc_lbl:
+                campos_cuenca.append(col_subc_lbl)
+                alias_cuenca.append('Etiqueta (SUBC_LBL):')
             
             folium.GeoJson(
                 gdf_subcuencas,
@@ -1408,8 +1419,8 @@ def display_spatial_distribution_tab(
                 },
                 highlight_function=lambda x: {'weight': 3, 'color': '#e74c3c', 'fillOpacity': 0.3},
                 tooltip=folium.GeoJsonTooltip(
-                    fields=[col_nom_c, col_cod_c],
-                    aliases=['Cuenca:', 'Código/ID:'],
+                    fields=campos_cuenca,
+                    aliases=alias_cuenca,
                     style="font-size: 14px; font-weight: bold; color: #2980b9;"
                 )
             ).add_to(m)
@@ -1423,11 +1434,10 @@ def display_spatial_distribution_tab(
                 for col in gdf_predios.select_dtypes(include=['datetime64', 'datetimetz']).columns:
                     gdf_predios[col] = gdf_predios[col].astype(str)
 
-                # 2. 🔍 Buscador Inteligente: Busca la columna del nombre del predio
-                lista_nombres_posibles = ['nombre', 'nom_predio', 'predio', 'nombre_predio', 'propietario']
+                # 2. 🔍 Buscador Inteligente: 'nombre_pre' ahora tiene prioridad #1
+                lista_nombres_posibles = ['nombre_pre', 'nombre', 'nom_predio', 'predio', 'nombre_predio', 'propietario']
                 col_nom_p = next((c for c in gdf_predios.columns if c.lower() in lista_nombres_posibles), gdf_predios.columns[0])
                 
-                # Rescatamos la variable que usabas como código, o tomamos la primera disponible
                 col_cod_p = col_predio_show if (col_predio_show and col_predio_show in gdf_predios.columns) else gdf_predios.columns[1]
 
                 geom_type = gdf_predios.geometry.iloc[0].geom_type
@@ -1455,7 +1465,7 @@ def display_spatial_distribution_tab(
                     ).add_to(m)
             except Exception as e:
                 print(f"Error dibujando predios: {e}")
-
+                
         # --- CAPA ESTACIONES (Cluster) ---
         marker_cluster = MarkerCluster(name="Estaciones (Agrupadas)").add_to(m)
 
