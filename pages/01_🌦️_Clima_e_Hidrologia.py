@@ -5,7 +5,7 @@ import sys
 import warnings
 import io
 import streamlit as st
-import pandas as pd  # 🛡️ Importación obligatoria al inicio
+import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from sqlalchemy import text
@@ -564,7 +564,7 @@ def main():
                         
                         anios_activos = df_sub_anual.shape[0]
                         anios_integros = df_sub_integro.shape[0]
-                        media_anual = df_sub_integro['Precipitación'].mean() if not df_sub_integro.empty else np.nan
+                        media_anual = df_sub_integro['Precipitación'].mean() if not df_sub_integro.empty else float('nan')
                         
                         if not df_sub_integro.empty:
                             idx_sub_max = df_sub_integro['Precipitación'].idxmax()
