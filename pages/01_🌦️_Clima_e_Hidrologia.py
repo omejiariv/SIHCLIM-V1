@@ -308,7 +308,7 @@ def main():
             * **Tributarios y Microcuencas (Niveles Subsiguientes - NSS):**
                 * **🍃 NSS1 (Nivel 4):** Afluentes directos de la SZH (Ríos menores y quebradas grandes). Ej: `2601-01`.
                 * **🌱 NSS2 (Nivel 5):** Microcuencas locales y quebradas veredales.
-                * **💧 NSS3 (Nivel 6):** Pequeños drenajes y nacimientos muy específicos.
+                * **💧 NSS3 (Nivel 6):** Quebradas, arroyos, Drenajes de menor orden.
                 
             > **💡 Tip de Navegación:** Si te pierdes buscando un cuerpo de agua específico, te sugerimos buscar primero en el nivel **SZH (Subzona Hidrográfica)** o **NSS1**, que es donde solemos ubicar los nombres de los ríos y quebradas que la comunidad reconoce históricamente.
             """)
