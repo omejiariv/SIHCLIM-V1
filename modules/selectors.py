@@ -440,15 +440,13 @@ def render_selector_espacial():
             try:
                 # 1. Cargar el maestro de territorios desde Supabase
                 df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx", engine='openpyxl')
-                # Limpiamos los nombres de las columnas para evitar errores por espacios
                 df_m.columns = [str(c).lower().strip() for c in df_m.columns]
                 
-                # 2. 🚀 PRIORIDAD ABSOLUTA A 'subregion'
+                # 2. Prioridad a 'subregion'
                 col_reg = 'subregion' if 'subregion' in df_m.columns else next((c for c in df_m.columns if c in ['region', 'provincia']), None)
                 col_dane_ex = next((c for c in df_m.columns if c in ['dp_mp', 'cod_dane', 'dane', 'codigo_mpio']), None)
                 
                 if col_reg and col_dane_ex:
-                    # Extraemos las subregiones, limpiamos espacios y descartamos celdas vacías
                     lista_reg = sorted([str(r).strip().title() for r in df_m[col_reg].dropna().unique() if str(r).strip() != ''])
                     sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                     
@@ -456,22 +454,28 @@ def render_selector_espacial():
                         nombre_zona = sel_reg 
                         nivel_jerarquico = "Regional" 
                         
-                        # 3. Extraer los códigos DANE de la región seleccionada
-                        cods = df_m[df_m[col_reg].astype(str).str.strip().str.lower() == sel_reg.lower()][col_dane_ex].astype(str).str.replace(".0", "", regex=False).str.zfill(5).tolist()
+                        # 🚀 3. PURIFICACIÓN MATEMÁTICA DANE (EXCEL)
+                        # Forzamos a que sea un número entero (matando decimales) y luego lo convertimos a texto de 5 dígitos
+                        cods_crudos = df_m[df_m[col_reg].astype(str).str.strip().str.lower() == sel_reg.lower()][col_dane_ex]
+                        cods = pd.to_numeric(cods_crudos, errors='coerce').dropna().astype(int).astype(str).str.zfill(5).tolist()
                         
-                        # 4. Cargar el mapa de municipios y buscar la columna de códigos real
+                        # 4. Cargar el mapa y buscar la columna de códigos
                         gdf_mun = cargar_mapa_municipios()
                         col_mpio_geo = next((c for c in gdf_mun.columns if c.lower() in ['mpio_cdpmp', 'mpio_ccdgo', 'dane', 'cod_dane']), None)
                         
                         if col_mpio_geo:
-                            # 5. Filtrar y fusionar los municipios
-                            gdf_zona_filtrada = gdf_mun[gdf_mun[col_mpio_geo].astype(str).str.replace(".0", "", regex=False).str.zfill(5).isin(cods)]
+                            # 🚀 5. PURIFICACIÓN MATEMÁTICA DANE (CAPA GIS)
+                            # Hacemos exactamente el mismo proceso de limpieza en el mapa para garantizar el match
+                            gdf_mun['dane_match'] = pd.to_numeric(gdf_mun[col_mpio_geo], errors='coerce').fillna(0).astype(int).astype(str).str.zfill(5)
+                            
+                            # 6. Filtrar y fusionar
+                            gdf_zona_filtrada = gdf_mun[gdf_mun['dane_match'].isin(cods)]
                             
                             if not gdf_zona_filtrada.empty:
                                 poly_region = gdf_zona_filtrada.unary_union
                                 gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_mun.crs)
                             else:
-                                st.warning(f"⚠️ No se encontraron cruces espaciales para los códigos DANE de la subregión {sel_reg}.")
+                                st.warning(f"⚠️ No se encontraron cruces. Excel buscó estos DANE: {cods[:5]}...")
                                 nombre_zona, gdf_zona = "-- Seleccione --", None
                         else:
                             st.error("⚠️ No se encontró la columna de código DANE en la capa de municipios.")
