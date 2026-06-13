@@ -944,27 +944,31 @@ if gdf_zona_seleccionada is not None:
                                     from shapely.geometry import shape
                                     import geopandas as gpd
                                     import rasterio
+                                    import numpy as np
                                     
-                                    # 1. Crear un archivo temporal raster en memoria para que PySheds lo lea nativamente
+                                    # 0. Estandarizar la matriz a float32 (Previene errores de dtype en Rasterio)
+                                    arr_elev_32 = arr_elevacion.astype(np.float32)
+                                    nodata_val = np.nanmin(arr_elev_32)
+                                    
+                                    # 1. Crear un archivo temporal raster en memoria
                                     with rasterio.MemoryFile() as memfile:
                                         with memfile.open(
                                             driver='GTiff',
-                                            height=arr_elevacion.shape[0],
-                                            width=arr_elevacion.shape[1],
+                                            height=arr_elev_32.shape[0],
+                                            width=arr_elev_32.shape[1],
                                             count=1,
-                                            dtype=arr_elevacion.dtype,
+                                            dtype='float32', # Forzamos el tipo aceptado
                                             crs=meta['crs'],
                                             transform=transform,
-                                            nodata=np.nanmin(arr_elevacion) # O el valor de nodata que uses
+                                            nodata=nodata_val
                                         ) as dataset:
-                                            dataset.write(arr_elevacion, 1)
+                                            dataset.write(arr_elev_32, 1)
                                             
                                         # 2. Cargar DEM a PySheds (Sintaxis Nueva)
                                         grid = Grid.from_raster(memfile.name)
                                         dem = grid.read_raster(memfile.name)
                                     
                                     # 3. Acondicionamiento (Llenar sumideros)
-                                    # En la nueva versión se asigna directamente
                                     flooded_dem = grid.fill_depressions(dem)
                                     inflated_dem = grid.resolve_flats(flooded_dem)
                                     
@@ -997,7 +1001,7 @@ if gdf_zona_seleccionada is not None:
                                         gdf_cuenca = gpd.GeoDataFrame([{'geometry': catchment_geom}], crs=meta['crs'])
                                         st.session_state['cuenca_delimitada'] = gdf_cuenca
                                         st.session_state['pour_point_coords'] = [lat_cierre, lon_cierre]
-                                        st.rerun() # Reinicia la app sutilmente para dibujar el polígono
+                                        st.rerun() 
                                     else:
                                         st.error("⚠️ No se pudo delimitar la cuenca. Intenta haciendo clic más cerca de la línea azul principal.")
                             
