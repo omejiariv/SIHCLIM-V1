@@ -870,17 +870,19 @@ if gdf_zona_seleccionada is not None:
                     st.warning("⚠️ Calcula la Hidrología en el Tab 4 primero.")
 
             # =====================================================================
-            # --- TAB 8: DELIMITACIÓN DE CUENCAS (POUR POINT) ---
+            # --- TAB 8: DELIMITACIÓN Y MORFOMETRÍA DE CUENCAS ---
             # =====================================================================
             with tab8:
-                st.markdown("### 💧 Motor de Delimitación de Cuencas")
-                st.info("👇 **Haz clic en el mapa** sobre el cauce de un río. El sistema capturará las coordenadas y delimitará la cuenca aportante.")
+                st.markdown("### 💧 Motor de Delimitación y Análisis Morfométrico")
+                st.info("👇 **Haz clic en el mapa** sobre el cauce de un río. El sistema delimitará la cuenca aportante y calculará su morfometría.")
                 
                 c_mapa_pour, c_controles_pour = st.columns([2, 1])
                 
-                # --- MEMORIA DE ESTADO PARA LA CUENCA ---
+                # --- MEMORIA DE ESTADO ---
                 if 'cuenca_delimitada' not in st.session_state:
                     st.session_state['cuenca_delimitada'] = None
+                if 'cuenca_stats' not in st.session_state:
+                    st.session_state['cuenca_stats'] = None
                 
                 with c_mapa_pour:
                     import folium
@@ -897,13 +899,28 @@ if gdf_zona_seleccionada is not None:
 
                     m_pour = folium.Map(location=center, zoom_start=13)
                     
+                    # 🗺️ CAPAS BASE
                     folium.TileLayer(
                         tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-                        attr='Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)',
+                        attr='Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap',
                         name='Topografía y Ríos'
                     ).add_to(m_pour)
 
-                    # --- DIBUJAR LA CUENCA SI YA FUE DELIMITADA ---
+                    # 📂 CAPA DEL PROYECTO (Activable/Desactivable)
+                    # El sistema intentará cargar la variable gdf_mask (tu zona de estudio) si existe en la app
+                    try:
+                        if 'gdf_mask' in locals() and gdf_mask is not None and not gdf_mask.empty:
+                            gdf_proyecto = gdf_mask.to_crs("EPSG:4326")
+                            folium.GeoJson(
+                                gdf_proyecto,
+                                name="Límite General del Proyecto",
+                                style_function=lambda x: {'color': '#2c3e50', 'fillColor': 'none', 'weight': 2.5, 'dashArray': '5, 5'},
+                                show=False  # <--- Esto hace que inicie apagada y se pueda activar en el LayerControl
+                            ).add_to(m_pour)
+                    except:
+                        pass
+
+                    # 💧 DIBUJAR LA MICROCUENCA DELIMITADA
                     if st.session_state['cuenca_delimitada'] is not None:
                         gdf_viz = st.session_state['cuenca_delimitada'].to_crs("EPSG:4326")
                         folium.GeoJson(
@@ -922,24 +939,21 @@ if gdf_zona_seleccionada is not None:
                     m_pour.add_child(folium.LatLngPopup())
                     folium.LayerControl().add_to(m_pour)
                     
-                    # CORRECCIÓN DE ALERTA: width='stretch' en lugar de use_container_width
-                    mapa_clic = st_folium(m_pour, height=500, width="stretch", key="mapa_pour_point")
+                    mapa_clic = st_folium(m_pour, height=650, width="stretch", key="mapa_pour_point")
                     
                 with c_controles_pour:
-                    st.markdown("#### 📍 Punto de Cierre")
+                    st.markdown("#### 📍 Controlador Hidrológico")
                     
                     if mapa_clic and mapa_clic.get("last_clicked"):
                         lat_cierre = mapa_clic["last_clicked"]["lat"]
                         lon_cierre = mapa_clic["last_clicked"]["lng"]
                         
-                        st.success(f"**Coordenadas Capturadas:**\n\nLAT: `{lat_cierre:.5f}`\n\nLON: `{lon_cierre:.5f}`")
-                        st.markdown("---")
-                        
-                        umbral_acc = st.slider("Sensibilidad de encaje (Celdas de Acumulación):", 100, 2000, 500, step=100, help="Fuerza el punto al río principal más cercano.")
+                        st.info(f"**Cierre:** LAT `{lat_cierre:.5f}` | LON `{lon_cierre:.5f}`")
+                        umbral_acc = st.slider("Sensibilidad de encaje (Celdas):", 100, 2000, 500, step=100)
                         
                         if st.button("🚀 Extraer Microcuenca", type="primary", use_container_width=True):
                             try:
-                                with st.spinner("⚙️ Procesando MDE, Calculando Flujos y Delimitando Cuenca..."):
+                                with st.spinner("⚙️ Procesando Topología y Morfometría..."):
                                     from pysheds.grid import Grid
                                     from shapely.geometry import shape
                                     import geopandas as gpd
@@ -958,16 +972,8 @@ if gdf_zona_seleccionada is not None:
                                         tmp_dem_path = tmp.name
                                         
                                     with rasterio.open(
-                                        tmp_dem_path,
-                                        'w',
-                                        driver='GTiff',
-                                        height=arr_puro.shape[0],
-                                        width=arr_puro.shape[1],
-                                        count=1,
-                                        dtype='float32',
-                                        crs=meta['crs'],
-                                        transform=transform,
-                                        nodata=nodata_val
+                                        tmp_dem_path, 'w', driver='GTiff', height=arr_puro.shape[0], width=arr_puro.shape[1],
+                                        count=1, dtype='float32', crs=meta['crs'], transform=transform, nodata=nodata_val
                                     ) as dst:
                                         dst.write(arr_puro, 1)
                                         
@@ -975,68 +981,108 @@ if gdf_zona_seleccionada is not None:
                                     grid = Grid.from_raster(tmp_dem_path)
                                     dem = grid.read_raster(tmp_dem_path)
                                     
-                                    # Limpieza de disco
-                                    try:
-                                        os.remove(tmp_dem_path)
-                                    except:
-                                        pass
+                                    try: os.remove(tmp_dem_path) 
+                                    except: pass
                                     
-                                    # 3. Acondicionamiento (Llenar sumideros)
+                                    # 3. Flujos Hidrológicos
                                     flooded_dem = grid.fill_depressions(dem)
                                     inflated_dem = grid.resolve_flats(flooded_dem)
-                                    
-                                    # 4. Dirección de Flujo (D8)
                                     dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
                                     fdir = grid.flowdir(inflated_dem, dirmap=dirmap)
-                                    
-                                    # 5. Acumulación de Flujo
                                     acc = grid.accumulation(fdir, dirmap=dirmap)
                                     
-                                    # 6. Transformar coordenadas de clic al CRS del MDE
+                                    # 4. Snapping
                                     transformer_in = Transformer.from_crs("EPSG:4326", meta['crs'], always_xy=True)
                                     x_click, y_click = transformer_in.transform(lon_cierre, lat_cierre)
-                                    
-                                    # 7. Snapping al cauce principal
                                     x_snap, y_snap = grid.snap_to_mask(acc > umbral_acc, (x_click, y_click), return_dist=False)
                                     
-                                    # 8. Delimitar la cuenca (ESTO RETORNA UN BOOLEANO)
+                                    # 5. Delimitar y Vectorizar
                                     catch = grid.catchment(x=x_snap, y=y_snap, fdir=fdir, dirmap=dirmap, xytype='coordinate')
-                                    
-                                    # 9. 🛠️ EL ANTÍDOTO REAL: Convertir Booleano a Entero (uint8)
                                     catch_uint8 = catch.astype(np.uint8)
                                     
-                                    # 10. Vectorizar a Polígono
                                     shapes = grid.polygonize(catch_uint8)
                                     catchment_geom = None
                                     for geom, val in shapes:
-                                        if val == 1:  # Ahora sí buscará el número 1 en lugar de 'True'
+                                        if val == 1:
                                             catchment_geom = shape(geom)
                                             break
                                             
                                     if catchment_geom:
                                         gdf_cuenca = gpd.GeoDataFrame([{'geometry': catchment_geom}], crs=meta['crs'])
+                                        
+                                        # =========================================================
+                                        # 🧮 CÁLCULO DE LA RADIOGRAFÍA MORFOMÉTRICA
+                                        # =========================================================
+                                        # A. Dimensiones planimétricas (Reproyectamos a UTM/Métrico para medir exacto)
+                                        gdf_metric = gdf_cuenca.to_crs("EPSG:3116") # Origen Nacional Colombia
+                                        area_km2 = gdf_metric.area.iloc[0] / 1e6
+                                        perim_km = gdf_metric.length.iloc[0] / 1000
+                                        
+                                        # B. Altitudes (Cruzando la máscara de la cuenca con el DEM)
+                                        elevs = arr_puro[catch_uint8 == 1]
+                                        z_max = float(np.nanmax(elevs))
+                                        z_min = float(np.nanmin(elevs))
+                                        z_mean = float(np.nanmean(elevs))
+                                        
+                                        # C. Factor de Forma (Horton) y Longitud Axial
+                                        geom_metric = gdf_metric.geometry.iloc[0]
+                                        rect = geom_metric.minimum_rotated_rectangle # Rectángulo envolvente mínimo
+                                        x_c, y_c = rect.exterior.coords.xy
+                                        # Sacamos la longitud mayor del rectángulo envolvente para aproximar la longitud axial
+                                        L1 = np.sqrt((x_c[0]-x_c[1])**2 + (y_c[0]-y_c[1])**2)
+                                        L2 = np.sqrt((x_c[1]-x_c[2])**2 + (y_c[1]-y_c[2])**2)
+                                        L_cuenca = max(L1, L2) / 1000 # En kilómetros
+                                        
+                                        factor_forma = area_km2 / (L_cuenca**2) if L_cuenca > 0 else 0
+                                        
+                                        # D. Guardar en memoria de sesión
+                                        st.session_state['cuenca_stats'] = {
+                                            "Área": f"{area_km2:,.2f} km²",
+                                            "Perímetro": f"{perim_km:,.2f} km",
+                                            "Elevación Máxima": f"{z_max:,.0f} m",
+                                            "Elevación Mínima": f"{z_min:,.0f} m",
+                                            "Elevación Media": f"{z_mean:,.0f} m",
+                                            "Factor de Forma": f"{factor_forma:.3f}"
+                                        }
+                                        
                                         st.session_state['cuenca_delimitada'] = gdf_cuenca
                                         st.session_state['pour_point_coords'] = [lat_cierre, lon_cierre]
                                         st.rerun() 
                                     else:
-                                        st.error("⚠️ No se pudo delimitar la cuenca. Intenta haciendo clic más cerca de la línea azul principal.")
+                                        st.error("⚠️ No se pudo delimitar. Intenta hacer clic en un río más grueso.")
                             
                             except ImportError:
-                                st.error("🚨 Falta la librería hidrológica. Instálala con: `pip install pysheds`")
+                                st.error("🚨 Falta la librería hidrológica: `pip install pysheds`")
                             except Exception as e:
-                                st.error(f"Error en el motor hidrológico: {e}")
-                                
-                        # Botón para limpiar el mapa
-                        if st.session_state['cuenca_delimitada'] is not None:
-                            st.markdown("---")
-                            if st.button("🗑️ Limpiar Mapa", use_container_width=True):
-                                st.session_state['cuenca_delimitada'] = None
-                                st.session_state.pop('pour_point_coords', None)
-                                st.rerun()
-                                
+                                st.error(f"Error hidrológico: {e}")
                     else:
-                        st.write("A la espera de selección...")
-                        st.info("Haz clic izquierdo sobre la línea azul de un río o quebrada para anclar el punto de cierre.")
+                        st.write("Esperando selección en el mapa...")
+
+                    # --- RENDERIZADO DE LA CAJA RESUMEN MORFOMÉTRICA ---
+                    if st.session_state.get('cuenca_stats') is not None:
+                        st.markdown("---")
+                        st.markdown("### 📊 Radiografía de la Cuenca")
+                        stats = st.session_state['cuenca_stats']
+                        
+                        # Usamos columnas nativas de Streamlit para la caja resumen
+                        c1, c2 = st.columns(2)
+                        c1.metric("📐 Área Total", stats["Área"])
+                        c2.metric("📏 Perímetro", stats["Perímetro"])
+                        
+                        c3, c4 = st.columns(2)
+                        c3.metric("⛰️ Elevación Máx.", stats["Elevación Máxima"])
+                        c4.metric("📉 Elevación Mín.", stats["Elevación Mínima"])
+                        
+                        c5, c6 = st.columns(2)
+                        c5.metric("📈 Elevación Media", stats["Elevación Media"])
+                        c6.metric("💧 Factor de Forma", stats["Factor de Forma"], help="Fórmula de Horton (A/L²). Un valor cercano a 1 (redonda) indica alta susceptibilidad a crecientes súbitas. Un valor bajo (alargada) indica mejor regulación natural.")
+                        
+                        st.markdown("---")
+                        if st.button("🗑️ Descartar y Limpiar Mapa", use_container_width=True):
+                            st.session_state['cuenca_delimitada'] = None
+                            st.session_state['cuenca_stats'] = None
+                            st.session_state.pop('pour_point_coords', None)
+                            st.rerun()
                     
             # --- TAB 5: DESCARGAS ---
             with tab5:
