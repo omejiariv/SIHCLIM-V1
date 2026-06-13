@@ -301,17 +301,52 @@ def main():
             ### El Sistema de las "Muñecas Rusas" (Metodología Pfafstetter)
             Para organizar el agua en Colombia, el IDEAM utiliza un sistema jerárquico. Imagina que el agua de nuestro territorio se organiza como un árbol, desde el tronco más grueso hasta la hoja más pequeña. Cada nivel añade más dígitos al código:
             
-            * **🌊 AH (Área Hidrográfica - 1 dígito):** *El Gran Tronco.* Son las 5 grandes vertientes del país. Por ejemplo, el `2` representa a la inmensa cuenca Magdalena-Cauca.
+            * **🌊 AH (Área Hidrográfica - 1 dígito):** *El Gran Tronco.*
             * **Ríos Principales:**
-                * **💧 ZH (Zona Hidrográfica - 2 dígitos):** *Las Ramas Principales.* Grandes divisiones del área. Por ejemplo, `26` corresponde a todo el Río Cauca.
-                * **🌿 SZH (Subzona Hidrográfica - 4 dígitos):** *Las Ramas Secundarias.* Ríos muy importantes que alimentan la zona. Por ejemplo, `2601` es el Río Porce. **(Este es el nivel más común para proyectos de planificación regional)**.
+                * **💧 ZH (Zona Hidrográfica - 2 dígitos):** *Las Ramas Principales.*
+                * **🌿 SZH (Subzona Hidrográfica - 4 dígitos):** *Las Ramas Secundarias.*
             * **Tributarios y Microcuencas (Niveles Subsiguientes - NSS):**
-                * **🍃 NSS1 (Nivel 4):** Afluentes directos de la SZH (Ríos menores y quebradas grandes). Ej: `2601-01`.
-                * **🌱 NSS2 (Nivel 5):** Microcuencas locales y quebradas veredales.
-                * **💧 NSS3 (Nivel 6):** Quebradas, arroyos, Drenajes de menor orden.
-                
-            > **💡 Tip de Navegación:** Si te pierdes buscando un cuerpo de agua específico, te sugerimos buscar primero en el nivel **SZH (Subzona Hidrográfica)** o **NSS1**, que es donde solemos ubicar los nombres de los ríos y quebradas que la comunidad reconoce históricamente.
+                * **🍃 NSS1 (Nivel 4):** Afluentes directos de la SZH.
+                * **🌱 NSS2 (Nivel 5):** Microcuencas locales.
+                * **💧 NSS3 (Nivel 6):** Pequeños drenajes y nacimientos.
+            
+            ---
+            ### 🗺️ Diccionario Rápido: Códigos Principales en Antioquia
+            Para facilitar tu búsqueda en la plataforma, aquí tienes la relación exacta de los códigos mayores (Áreas y Zonas Hidrográficas) que rigen nuestro departamento:
+            
+            | 🌊 Área Hidrográfica (AH) | Código AH | 💧 Zona Hidrográfica (ZH) | Código ZH |
+            | :--- | :---: | :--- | :---: |
+            | **Magdalena Cauca** | `2` | Medio Magdalena | `23` |
+            | **Magdalena Cauca** | `2` | Cauca | `26` |
+            | **Magdalena Cauca** | `2` | Nechí | `27` |
+            | **Caribe** | `1` | Atrato - Darién | `11` |
+            | **Caribe** | `1` | Caribe - Litoral | `12` |
+            | **Caribe** | `1` | Sinú | `13` |
+            
+            > **💡 Tip de Navegación:** Si buscas el Río Porce (Código `2601`), fíjate que empieza por `26`. Esto te indica inmediatamente que pertenece a la Zona Hidrográfica del **Cauca** y, por consiguiente, al Área Hidrográfica **Magdalena Cauca** (`2`).
             """)
+            
+            # --- SECCIÓN DE DESCARGA DEL DOCUMENTO OFICIAL ---
+            st.markdown("---")
+            st.markdown("#### 📚 Documento Oficial de Referencia")
+            st.info("Consulta el manual completo de codificación y zonificación hidrológica para comprender los delineamientos técnicos a fondo.")
+            
+            # Botón de descarga en Streamlit
+            try:
+                # Asegúrate de que la ruta coincida con donde guardes el PDF en tu servidor/proyecto
+                ruta_pdf = "Codificacion Hidrologica Antioquia IDEAM.pdf" 
+                with open(ruta_pdf, "rb") as pdf_file:
+                    PDFbyte = pdf_file.read()
+                
+                st.download_button(
+                    label="📥 Descargar Manual de Codificación IDEAM (PDF)",
+                    data=PDFbyte,
+                    file_name="Codificacion_Hidrologica_Antioquia_IDEAM.pdf",
+                    mime='application/pdf',
+                    use_container_width=True
+                )
+            except FileNotFoundError:
+                st.error("⚠️ El archivo PDF de referencia no se encontró en el servidor. (Asegúrate de subir 'Codificacion Hidrologica Antioquia IDEAM.pdf' a la carpeta principal de tu aplicación).")
             
     elif selected_module == "📈 Gráficos": viz.display_graphs_tab(**display_args)
     elif selected_module == "📊 Estadísticas": 
