@@ -1376,7 +1376,7 @@ def display_spatial_distribution_tab(
         # --- CAPA MUNICIPIOS (Usando Selector Manual) ---
         if gdf_municipios is not None and not gdf_municipios.empty:
             # Preparamos las listas dinámicas para el tooltip
-            campos_muni = [col_muni_show, 'MPIO_CDPMP'] if col_muni_show else []
+            campos_muni = [col_muni_show, 'mpio_cdpmp'] if col_muni_show else []
             alias_muni = ['Municipio:', 'Código:'] if col_muni_show else []
             
             folium.GeoJson(
@@ -1393,7 +1393,8 @@ def display_spatial_distribution_tab(
         # --- CAPA CUENCAS (Usando Selector Manual) ---
         if gdf_subcuencas is not None and not gdf_subcuencas.empty:
             # Preparamos las listas dinámicas para el tooltip
-            campos_cuenca = [col_cuenca_show, 'COD/OBJECTID'] if col_cuenca_show else []
+            # Nota: Usamos 'OBJECTID' o el nivel (ej: 'NSS1') en lugar de 'COD/OBJECTID'
+            campos_cuenca = [col_cuenca_show, 'OBJECTID'] if col_cuenca_show else []
             alias_cuenca = ['Cuenca:', 'Código Pfafstetter:'] if col_cuenca_show else []
             
             folium.GeoJson(
@@ -1416,6 +1417,11 @@ def display_spatial_distribution_tab(
         # --- CAPA PREDIOS (Usando Selector Manual) ---
         if gdf_predios is not None and not gdf_predios.empty:
             try:
+                # 🚀 CORRECCIÓN DEL ERROR DE FECHAS (Timestamp no es serializable en JSON)
+                # Convertimos todas las columnas de tipo fecha a texto puro antes de renderizar
+                for col in gdf_predios.select_dtypes(include=['datetime64', 'datetimetz']).columns:
+                    gdf_predios[col] = gdf_predios[col].astype(str)
+
                 # Determinar si es punto o polígono
                 geom_type = gdf_predios.geometry.iloc[0].geom_type
                 
