@@ -312,35 +312,54 @@ def render_selector_espacial():
             
             if ruta == "Hidrología":
                 nivel = st.selectbox("1. Nivel a Evaluar:", ["AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"], index=5)
-                # 🚀 DICCIONARIOS DINÁMICOS PARA NOMBRE Y CÓDIGO
-                col_obj = {"AH": "nomah", "ZH": "nomzh", "SZH": "nom_szh", "NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
-                # Nota: Si en tu base de datos las columnas de código se llaman distinto (ej: 'codigo_nss1'), ajusta estos nombres:
-                col_cod = {"AH": "codah", "ZH": "codzh", "SZH": "cod_szh", "NSS1": "cod_nss1", "NSS2": "cod_nss2", "NSS3": "cod_nss3"}[nivel]
+                
+                # 🚀 BUSCADOR INTELIGENTE DE COLUMNAS (Ignora mayúsculas/minúsculas)
+                col_obj_esperada = {"AH": "nomah", "ZH": "nomzh", "SZH": "nom_szh", "NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
+                col_cod_esperada = {"AH": "ah", "ZH": "zh", "SZH": "szh", "NSS1": "nss1", "NSS2": "nss2", "NSS3": "nss3"}[nivel]
+                
+                # Encuentra el nombre real exacto en tu base de datos
+                col_obj = next((c for c in gdf_c.columns if c.lower() == col_obj_esperada.lower()), col_obj_esperada)
+                col_cod = next((c for c in gdf_c.columns if c.lower() == col_cod_esperada.lower()), col_cod_esperada)
                 
                 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
                 st.markdown("<span style='font-size:0.85em; color:gray;'>Filtros Opcionales de Búsqueda:</span>", unsafe_allow_html=True)
                 
                 df_f = gdf_c
+                # Extraemos los nombres de las columnas para los filtros opcionales también
+                col_f_ah = next((c for c in df_f.columns if c.lower() == 'nomah'), 'nomah')
+                col_f_zh = next((c for c in df_f.columns if c.lower() == 'nomzh'), 'nomzh')
+                col_f_szh = next((c for c in df_f.columns if c.lower() == 'nom_szh'), 'nom_szh')
+                
                 if nivel in ["ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
-                    ah = st.selectbox("Filtro AH:", ["-- TODAS --"] + sorted(df_f['nomah'].dropna().unique()))
-                    if ah != "-- TODAS --": df_f = df_f[df_f['nomah']==ah]
+                    if col_f_ah in df_f.columns:
+                        ah = st.selectbox("Filtro AH:", ["-- TODAS --"] + sorted(df_f[col_f_ah].dropna().unique()))
+                        if ah != "-- TODAS --": df_f = df_f[df_f[col_f_ah]==ah]
                     
                 if nivel in ["SZH", "NSS1", "NSS2", "NSS3"]:
-                    zh = st.selectbox("Filtro ZH:", ["-- TODAS --"] + sorted(df_f['nomzh'].dropna().unique()))
-                    if zh != "-- TODAS --": df_f = df_f[df_f['nomzh']==zh]
+                    if col_f_zh in df_f.columns:
+                        zh = st.selectbox("Filtro ZH:", ["-- TODAS --"] + sorted(df_f[col_f_zh].dropna().unique()))
+                        if zh != "-- TODAS --": df_f = df_f[df_f[col_f_zh]==zh]
                     
                 if nivel in ["NSS1", "NSS2", "NSS3"]:
-                    szh = st.selectbox("Filtro SZH:", ["-- TODAS --"] + sorted(df_f['nom_szh'].dropna().unique()))
-                    if szh != "-- TODAS --": df_f = df_f[df_f['nom_szh']==szh]
+                    if col_f_szh in df_f.columns:
+                        szh = st.selectbox("Filtro SZH:", ["-- TODAS --"] + sorted(df_f[col_f_szh].dropna().unique()))
+                        if szh != "-- TODAS --": df_f = df_f[df_f[col_f_szh]==szh]
                     
                 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
                 
-                # 🚀 CREACIÓN AL VUELO DE LA LLAVE VISUAL
-                # Forzamos la creación de la nueva columna usando el nombre y el código correspondientes
-                df_f = df_f.copy() # Evitamos warnings de pandas
-                df_f['Llave_Visual'] = df_f[col_obj].astype(str) + " - (" + df_f[col_cod].astype(str) + ")"
+                # 🚀 CREACIÓN AL VUELO BLINDADA DE LA LLAVE VISUAL
+                df_f = df_f.copy()
+                if col_cod in df_f.columns and col_obj in df_f.columns:
+                    # Ignoramos nulos en el código para que no diga "None"
+                    df_f['codigo_limpio'] = df_f[col_cod].fillna('Sin Código')
+                    df_f['Llave_Visual'] = df_f[col_obj].astype(str) + " - (" + df_f['codigo_limpio'].astype(str) + ")"
+                elif col_obj in df_f.columns:
+                    st.warning(f"⚠️ No se encontró la columna de código '{col_cod_esperada}'. Usando solo el nombre.")
+                    df_f['Llave_Visual'] = df_f[col_obj].astype(str)
+                else:
+                    st.error("🚨 Error crítico: No se encontró la columna de nombre.")
+                    df_f['Llave_Visual'] = "Desconocido"
                 
-                # 🎯 EL SELECTOR AHORA USA LA LLAVE VISUAL
                 sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f['Llave_Visual'].dropna().unique()))
                 
                 if sel_fin != "-- Seleccione --":
@@ -361,10 +380,15 @@ def render_selector_espacial():
                 car_sel = st.selectbox("Autoridad Ambiental (CAR):", ["-- Seleccione --"] + sorted(opciones_car))
                 
                 if car_sel != "-- Seleccione --":
-                    if car_sel == "AMVA": mask_car = gdf_c['corpoamb'].str.contains('AMVA|ABURR|METROPOLITANA', case=False, na=False)
-                    else: mask_car = gdf_c['corpoamb'].str.contains(car_sel[:4], case=False, na=False)
-                    
-                    df_f = gdf_c[mask_car]
+                    # Busca columna corpoamb o CorpoAmb
+                    col_car = next((c for c in gdf_c.columns if c.lower() == 'corpoamb'), 'corpoamb')
+                    if col_car in gdf_c.columns:
+                        if car_sel == "AMVA": mask_car = gdf_c[col_car].str.contains('AMVA|ABURR|METROPOLITANA', case=False, na=False)
+                        else: mask_car = gdf_c[col_car].str.contains(car_sel[:4], case=False, na=False)
+                        df_f = gdf_c[mask_car]
+                    else:
+                        df_f = gdf_c
+                        
                     if df_f.empty: df_f = gdf_c
                     
                     nivel = st.selectbox("1. Resolución a Evaluar:", ["CAR", "NSS1", "NSS2", "NSS3"], index=0)
@@ -374,13 +398,21 @@ def render_selector_espacial():
                         gdf_zona = df_f if not df_f.empty else None
                         nivel_jerarquico = "CAR"
                     else:
-                        col_obj = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
-                        col_cod = {"NSS1": "cod_nss1", "NSS2": "cod_nss2", "NSS3": "cod_nss3"}[nivel]
+                        col_obj_esperada = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
+                        col_cod_esperada = {"NSS1": "nss1", "NSS2": "nss2", "NSS3": "nss3"}[nivel]
                         
-                        # 🚀 CREACIÓN AL VUELO DE LA LLAVE VISUAL PARA LA RUTA CAR
+                        col_obj = next((c for c in df_f.columns if c.lower() == col_obj_esperada.lower()), col_obj_esperada)
+                        col_cod = next((c for c in df_f.columns if c.lower() == col_cod_esperada.lower()), col_cod_esperada)
+                        
                         df_f = df_f.copy()
-                        df_f['Llave_Visual'] = df_f[col_obj].astype(str) + " - (" + df_f[col_cod].astype(str) + ")"
-                        
+                        if col_cod in df_f.columns and col_obj in df_f.columns:
+                            df_f['codigo_limpio'] = df_f[col_cod].fillna('Sin Código')
+                            df_f['Llave_Visual'] = df_f[col_obj].astype(str) + " - (" + df_f['codigo_limpio'].astype(str) + ")"
+                        elif col_obj in df_f.columns:
+                            df_f['Llave_Visual'] = df_f[col_obj].astype(str)
+                        else:
+                            df_f['Llave_Visual'] = "Desconocido"
+                            
                         sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f['Llave_Visual'].dropna().unique()))
                         
                         if sel_fin != "-- Seleccione --":
