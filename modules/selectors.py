@@ -435,31 +435,56 @@ def render_selector_espacial():
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
                     
-        # --- B. POR REGIÓN (TU CÓDIGO MAESTRO RESTAURADO) ---
+        # --- B. POR REGIÓN (ROBUSTO Y FUSIONADO) ---
         elif modo == "Por Región":
             try:
+                # 1. Cargar el maestro de territorios desde Supabase
                 df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx", engine='openpyxl')
                 df_m.columns = [c.lower() for c in df_m.columns]
                 
-                col_reg = 'subregion' if 'subregion' in df_m.columns else 'region'
-                lista_reg = sorted([str(r).title() for r in df_m[col_reg].dropna().unique()])
+                # 2. Buscador inteligente de columnas en el Excel
+                col_reg = next((c for c in df_m.columns if c in ['subregion', 'region', 'provincia', 'nombre_subregion']), None)
+                col_dane_ex = next((c for c in df_m.columns if c in ['dp_mp', 'cod_dane', 'dane', 'codigo_mpio']), None)
                 
-                sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
-                if sel_reg != "-- Seleccione --":
-                    nombre_zona = sel_reg 
-                    nivel_jerarquico = "Regional" 
+                if col_reg and col_dane_ex:
+                    lista_reg = sorted([str(r).title() for r in df_m[col_reg].dropna().unique()])
+                    sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                     
-                    cods = df_m[df_m[col_reg].str.lower()==sel_reg.lower()]['dp_mp'].astype(str).str.replace(".0", "", regex=False).str.zfill(5).tolist()
-                    gdf_mun = cargar_mapa_municipios()
-                    
-                    col_mpio = 'mpio_ccdgo' if 'mpio_ccdgo' in gdf_mun.columns else 'MPIO_CCDGO'
-                    gdf_zona = gdf_mun[gdf_mun[col_mpio].astype(str).str.replace(".0", "", regex=False).str.zfill(5).isin(cods)]
-                    if gdf_zona.empty: gdf_zona = gdf_mun.head(1) 
+                    if sel_reg != "-- Seleccione --":
+                        nombre_zona = sel_reg 
+                        nivel_jerarquico = "Regional" 
+                        
+                        # 3. Extraer los códigos DANE de la región seleccionada (limpiando ceros y decimales)
+                        cods = df_m[df_m[col_reg].str.lower() == sel_reg.lower()][col_dane_ex].astype(str).str.replace(".0", "", regex=False).str.zfill(5).tolist()
+                        
+                        # 4. Cargar el mapa de municipios y buscar la columna de códigos real
+                        gdf_mun = cargar_mapa_municipios()
+                        col_mpio_geo = next((c for c in gdf_mun.columns if c.lower() in ['mpio_cdpmp', 'mpio_ccdgo', 'dane', 'cod_dane']), None)
+                        
+                        if col_mpio_geo:
+                            # 5. Filtrar los municipios que pertenecen a la región seleccionada
+                            gdf_zona_filtrada = gdf_mun[gdf_mun[col_mpio_geo].astype(str).str.replace(".0", "", regex=False).str.zfill(5).isin(cods)]
+                            
+                            if not gdf_zona_filtrada.empty:
+                                # 🚀 EL TRUCO MAESTRO: Fusionar (Dissolve) los municipios en un solo polígono
+                                poly_region = gdf_zona_filtrada.unary_union
+                                gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_mun.crs)
+                            else:
+                                st.warning(f"⚠️ No se encontraron cruces espaciales para los DANE de la región {sel_reg}.")
+                                nombre_zona, gdf_zona = "-- Seleccione --", None
+                        else:
+                            st.error("⚠️ No se encontró la columna de código DANE en la capa de municipios.")
+                            nombre_zona, gdf_zona = "-- Seleccione --", None
+                    else:
+                        nombre_zona, gdf_zona = "-- Seleccione --", None
+                        nivel_jerarquico = "NINGUNO"
                 else:
+                    st.error("⚠️ El archivo Excel no tiene las columnas 'subregion' o 'dp_mp' necesarias.")
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
+                    
             except Exception as e: 
-                st.error(f"Error cargando regiones: {e}")
+                st.error(f"🚨 Error conectando con el Maestro de Regiones: {e}")
                 nombre_zona, gdf_zona = "-- Seleccione --", None
                 nivel_jerarquico = "NINGUNO"
 
