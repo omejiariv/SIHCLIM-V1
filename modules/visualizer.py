@@ -1375,19 +1375,27 @@ def display_spatial_distribution_tab(
 
         # --- CAPA MUNICIPIOS (Usando Selector Manual) ---
         if gdf_municipios is not None and not gdf_municipios.empty:
+            # Preparamos las listas dinámicas para el tooltip
+            campos_muni = [col_muni_show, 'MPIO_CDPMP'] if col_muni_show else []
+            alias_muni = ['Municipio:', 'Código:'] if col_muni_show else []
+            
             folium.GeoJson(
                 gdf_municipios,
                 name="Municipios",
                 style_function=lambda x: {'fillColor': '#95a5a6', 'color': 'white', 'weight': 0.5, 'fillOpacity': 0.1},
                 tooltip=folium.GeoJsonTooltip(
-                    fields=[col_muni_show] if col_muni_show else [], 
-                    aliases=['Municipio:'],
+                    fields=campos_muni, 
+                    aliases=alias_muni,
                     localize=True
                 ) if col_muni_show else None
             ).add_to(m)
 
         # --- CAPA CUENCAS (Usando Selector Manual) ---
         if gdf_subcuencas is not None and not gdf_subcuencas.empty:
+            # Preparamos las listas dinámicas para el tooltip
+            campos_cuenca = [col_cuenca_show, 'COD/OBJECTID'] if col_cuenca_show else []
+            alias_cuenca = ['Cuenca:', 'Código Pfafstetter:'] if col_cuenca_show else []
+            
             folium.GeoJson(
                 gdf_subcuencas,
                 name="Subcuencas",
@@ -1399,8 +1407,8 @@ def display_spatial_distribution_tab(
                 },
                 highlight_function=lambda x: {'weight': 3, 'color': '#e74c3c', 'fillOpacity': 0.3},
                 tooltip=folium.GeoJsonTooltip(
-                    fields=[col_cuenca_show] if col_cuenca_show else [],
-                    aliases=['Cuenca:'],
+                    fields=campos_cuenca,
+                    aliases=alias_cuenca,
                     style="font-size: 14px; font-weight: bold; color: #2980b9;"
                 ) if col_cuenca_show else None
             ).add_to(m)
