@@ -3129,48 +3129,54 @@ def display_stats_tab(df_long, df_anual_melted, gdf_stations, **kwargs):
             # Copiamos para no afectar el original
             df_matrix = df_long.copy()
 
-            # Forzamos la creación de una columna 'date' compatible con Pandas
-            # Asumiendo que Config.YEAR_COL y Config.MONTH_COL son tus columnas de año y mes
-            df_matrix["date"] = pd.to_datetime(
-                dict(
-                    year=df_matrix[Config.YEAR_COL],
-                    month=df_matrix[Config.MONTH_COL],
-                    day=1,
-                )
+            # 1. Mapeo universal y blindado de meses
+            # (Soporta si vienen como "Ene", "Febrero", o números 1-12)
+            meses_map = {
+                'ene': 1, 'enero': 1, 'jan': 1, '1': 1, '01': 1, 1: 1, 1.0: 1,
+                'feb': 2, 'febrero': 2, '2': 2, '02': 2, 2: 2, 2.0: 2,
+                'mar': 3, 'marzo': 3, '3': 3, '03': 3, 3: 3, 3.0: 3,
+                'abr': 4, 'abril': 4, 'apr': 4, '4': 4, '04': 4, 4: 4, 4.0: 4,
+                'may': 5, 'mayo': 5, '5': 5, '05': 5, 5: 5, 5.0: 5,
+                'jun': 6, 'junio': 6, '6': 6, '06': 6, 6: 6, 6.0: 6,
+                'jul': 7, 'julio': 7, '7': 7, '07': 7, 7: 7, 7.0: 7,
+                'ago': 8, 'agosto': 8, 'aug': 8, '8': 8, '08': 8, 8: 8, 8.0: 8,
+                'sep': 9, 'septiembre': 9, '9': 9, '09': 9, 9: 9, 9.0: 9,
+                'oct': 10, 'octubre': 10, '10': 10, 10: 10, 10.0: 10,
+                'nov': 11, 'noviembre': 11, '11': 11, 11: 11, 11.0: 11,
+                'dic': 12, 'diciembre': 12, 'dec': 12, '12': 12, 12: 12, 12.0: 12
+            }
+            
+            # Limpiamos y aseguramos que el Año y Mes sean leídos matemáticamente
+            df_matrix['anio_limpio'] = pd.to_numeric(df_matrix[Config.YEAR_COL], errors='coerce').fillna(0).astype(int)
+            df_matrix['mes_limpio'] = df_matrix[Config.MONTH_COL].astype(str).str.lower().str.strip().map(meses_map)
+            
+            # 2. Eliminamos nulos para no colapsar el pivoteo
+            df_pivot = df_matrix.dropna(subset=['anio_limpio', 'mes_limpio'])
+
+            # 3. Creamos la matriz directamente (sin forzar pd.to_datetime)
+            matrix = df_pivot.pivot_table(
+                index='anio_limpio',
+                columns='mes_limpio',
+                values=Config.PRECIPITATION_COL,
+                aggfunc="count"
             )
 
-            matrix = df_matrix.pivot_table(
-                index=df_matrix["date"].dt.year,
-                columns=df_matrix["date"].dt.month,
-                values=Config.PRECIPITATION_COL,
-                aggfunc="count",
-            ).fillna(0)
+            # 4. ¡EL TRUCO MAESTRO!: Forzamos a que la matriz tenga exactamente 12 columnas (1 a 12)
+            # Así, si en los datos falta un mes, Plotly jamás desalineará las etiquetas
+            matrix = matrix.reindex(columns=range(1, 13), fill_value=0).fillna(0)
 
             # Mapa de calor semáforo
             fig_matrix = px.imshow(
                 matrix,
                 labels=dict(x="Mes", y="Año", color="N° Registros"),
-                x=[
-                    "Ene",
-                    "Feb",
-                    "Mar",
-                    "Abr",
-                    "May",
-                    "Jun",
-                    "Jul",
-                    "Ago",
-                    "Sep",
-                    "Oct",
-                    "Nov",
-                    "Dic",
-                ],
+                x=["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"],
                 title="Matriz de Densidad de Datos (Semáforo)",
                 color_continuous_scale="RdYlGn",  # Rojo a Verde
                 aspect="auto",
             )
             fig_matrix.update_layout(height=600)
             st.plotly_chart(fig_matrix, use_container_width=True)
-
+            
         except Exception as e:
             st.warning(f"No se pudo generar la matriz: {e}")
 
