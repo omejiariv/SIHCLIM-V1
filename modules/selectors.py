@@ -315,9 +315,9 @@ def render_selector_espacial():
                     "AH": "🌊 AH - Área Hidrográfica (Macrorregión Nacional)",
                     "ZH": "💧 ZH - Zona Hidrográfica (Cuenca Mayor)",
                     "SZH": "🌿 SZH - Subzona Hidr. (Río Principal ej. Porce)",
-                    "NSS1": "🍃 NSS1 - Cuenca Tributaria (Ríos menores)",
-                    "NSS2": "🌱 NSS2 - Microcuenca Local",
-                    "NSS3": "💧 NSS3 - Drenaje Menor / Nacimiento"
+                    "NSS1": "🍃 NSS1 - Cuenca Tributaria de Ríos importantes a escala regional)",
+                    "NSS2": "🌱 NSS2 - Microcuenca Local, Ríos y quebradas de importancia municipal",
+                    "NSS3": "💧 NSS3 - Cuencas de quebradas y arroyos de menor orden y de importancia veredal"
                 }
                 nivel_display = st.selectbox("1. Escala a Evaluar:", list(nombres_niveles.values()), index=5)
                 nivel = next(key for key, value in nombres_niveles.items() if value == nivel_display)
