@@ -1393,8 +1393,8 @@ def display_spatial_distribution_tab(
         # --- CAPA CUENCAS (Usando Selector Manual) ---
         if gdf_subcuencas is not None and not gdf_subcuencas.empty:
             # Preparamos las listas dinámicas para el tooltip
-            # Nota: Usamos 'OBJECTID' o el nivel (ej: 'NSS1') en lugar de 'COD/OBJECTID'
-            campos_cuenca = [col_cuenca_show, 'OBJECTID'] if col_cuenca_show else []
+            # 🚀 CORRECCIÓN: 'objectid' en minúsculas
+            campos_cuenca = [col_cuenca_show, 'objectid'] if col_cuenca_show else []
             alias_cuenca = ['Cuenca:', 'Código Pfafstetter:'] if col_cuenca_show else []
             
             folium.GeoJson(
