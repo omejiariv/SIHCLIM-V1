@@ -854,6 +854,7 @@ def main():
                         # 0. CARGAR MUNICIPIOS (Bypass v2)
                         gdf_municipios = None
                         try:
+                            import geopandas as gpd
                             from modules.db_manager import get_engine
                             eng = get_engine()
                             # Leemos la tabla v2 que acabas de subir
@@ -867,6 +868,9 @@ def main():
                             
                             # Limpieza de nombres para el popup
                             gdf_municipios = gdf_municipios.rename(columns={'MPIO_CNMBR': 'Municipio'})
+
+                        except ImportError:
+                            st.error("❌ Error Crítico: La librería 'geopandas' no está instalada en el servidor.")
                             
                         except Exception as e:
                             st.warning(f"Capa de municipios v2 no disponible aún: {e}")
