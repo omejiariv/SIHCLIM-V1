@@ -15,8 +15,8 @@ selectors.renderizar_menu_navegacion("Escenarios WEAP")
 
 # 3. 🚀 INYECTAR EL SELECTOR ESPACIAL Y TELEMETRÍA EN EL SIDEBAR
 st.sidebar.markdown("---")
-# Llamamos a tu selector para elegir Cuenca, Municipio o Región
-nombre_zona, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
+# Añadimos 'es_busqueda_global' para recibir los 4 valores correctamente
+nombre_zona, gdf_zona, nivel_jerarquico, es_busqueda_global = selectors.render_selector_espacial()
 # Mostramos los datos del Aleph en vivo
 selectors.renderizar_telemetria_aleph()
 
