@@ -5,11 +5,11 @@ import sys
 import warnings
 import io
 import streamlit as st
+import geopandas as gpd
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from sqlalchemy import text
-import geopandas as gpd
 from rasterio.io import MemoryFile
 
 # 1. CONFIGURACIÓN DE PÁGINA (PRIMERA LÍNEA SIEMPRE)
