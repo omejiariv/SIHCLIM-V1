@@ -5,19 +5,28 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-def renderizar_motor_escenarios_weap():
-    st.markdown("## ⚖️ Simulador de Estrés Hídrico (Estilo WEAP)")
+# 🚀 Añadimos el parámetro "territorio" a la función
+def renderizar_motor_escenarios_weap(territorio="Territorio Global"):
+    
+    # 1. TÍTULO DINÁMICO E INTELIGENTE
+    if territorio and territorio != "-- Seleccione --":
+        st.markdown(f"## ⚖️ Simulador de Estrés Hídrico: **{territorio}**")
+    else:
+        st.markdown("## ⚖️ Simulador de Estrés Hídrico: **Territorio Global (Defecto)**")
+        st.warning("⚠️ **Aviso:** No has seleccionado un territorio. Usa el panel izquierdo para elegir una Cuenca o Municipio y simular con datos reales.")
+
     st.info("Ajuste las variables de clima, población y eficiencia para proyectar el balance hídrico y detectar posibles déficits futuros.")
 
-    # 1. RECUPERAR DATOS BASE DEL ALEPH (Estado Actual)
-    # Si no hay datos, usamos valores por defecto para que el simulador siempre funcione
+    # 2. RECUPERAR DATOS BASE DEL ALEPH
     oferta_base_m3s = st.session_state.get('aleph_oferta_m3s', 12.5) 
     pob_base = st.session_state.get('aleph_pob_total', 150000)
-    
-    # Asumimos un consumo promedio de 150 litros/habitante/día para la demanda base
     demanda_base_m3s = (pob_base * 150) / (1000 * 86400) 
+    
+    # 🚀 NUEVO: MOSTRAR CONTEXTO ACTUAL
+    st.markdown(f"📌 **Base Actual del Territorio:** 👥 Población: `{pob_base:,.0f} hab` | 💧 Oferta Media: `{oferta_base_m3s:,.2f} m³/s`")
+    st.markdown("---")
 
-    # 2. PANEL DE CONTROL DE ESCENARIOS (Los "Sliders")
+    # 3. PANEL DE CONTROL DE ESCENARIOS (Los "Sliders")
     col1, col2, col3 = st.columns(3)
     
     with col1:
