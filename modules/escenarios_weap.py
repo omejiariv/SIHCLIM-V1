@@ -1,43 +1,47 @@
-# modules/escenarios_weap.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from sqlalchemy import text
+
+# Importamos el motor de base de datos de tu sistema
+from modules.db_manager import get_engine
 
 def renderizar_motor_escenarios_weap(territorio="Territorio Global"):
+    engine = get_engine()
     
     # 1. TÍTULO DINÁMICO
     if territorio and territorio != "-- Seleccione --":
         st.markdown(f"## ⚖️ Simulador de Estrés Hídrico: **{territorio}**")
     else:
         st.markdown("## ⚖️ Simulador de Estrés Hídrico: **Territorio Global**")
-        st.warning("⚠️ **Aviso:** Selecciona una Cuenca o Municipio en el panel izquierdo.")
-
-    st.info("Ajuste las variables de clima, población y eficiencia para proyectar el balance hídrico y detectar posibles déficits futuros.")
+        st.warning("⚠️ **Aviso:** Selecciona un territorio en el panel izquierdo.")
 
     # =====================================================================
-    # 🚀 2. CAPTURA INTELIGENTE DE DATOS DEL ALEPH
+    # 🚀 2. CAPTURA DE DATOS (Inteligente: Session State -> SQL Rescue)
     # =====================================================================
-    # Buscamos en múltiples variables por si el nombre cambia en otros módulos
-    pob_aleph = st.session_state.get('aleph_pob_total', st.session_state.get('poblacion_servida', 0))
+    pob_aleph = st.session_state.get('aleph_pob_total', 0)
     oferta_aleph = st.session_state.get('aleph_oferta_m3s', 0.0)
+
+    # RESCATE SQL: Si el Aleph está vacío, intentamos consultar la BD directamente
+    if (pob_aleph == 0 or oferta_aleph == 0.0) and territorio != "-- Seleccione --":
+        try:
+            query = text("SELECT * FROM matriz_hidrologica_maestra WHERE \"Territorio\" = :zona LIMIT 1")
+            df_rescue = pd.read_sql(query, engine, params={"zona": territorio})
+            if not df_rescue.empty:
+                pob_aleph = float(df_rescue.iloc[0].get('Poblacion', 150000))
+                oferta_aleph = float(df_rescue.iloc[0].get('Caudal_Medio_m3s', 12.5))
+        except: pass
 
     # 🚨 SISTEMA DE ALERTA FORENSE
     if pob_aleph == 0 or oferta_aleph == 0.0:
-        st.warning(f"⚠️ **Telemetría Inactiva para {territorio}:** El Aleph no encontró datos en la base. (Asegúrate de haber 'Forjado la Matriz' en el módulo de Hidrología). Activando Modo Demostración para no colapsar la gráfica.")
-        pob_base = 150000
-        oferta_base_m3s = 12.5
-        modo_demo = True
+        st.warning(f"⚠️ **Telemetría Inactiva:** Usando valores de referencia para simulación.")
+        pob_base, oferta_base_m3s, modo_demo = 150000, 12.5, True
     else:
-        pob_base = pob_aleph
-        oferta_base_m3s = oferta_aleph
-        modo_demo = False
+        pob_base, oferta_base_m3s, modo_demo = pob_aleph, oferta_aleph, False
 
-    # Cálculo de demanda base (asumiendo 150L / hab / día)
     demanda_base_m3s = (pob_base * 150) / (1000 * 86400) 
     
-    # 📌 MOSTRAR CONTEXTO ACTUAL (Con semáforo de estado)
     estado_txt = "🔴 MODO DEMO" if modo_demo else "🟢 DATOS REALES"
     st.markdown(f"📌 **Base Actual ({estado_txt}):** 👥 Población: `{pob_base:,.0f} hab` | 💧 Oferta Media: `{oferta_base_m3s:,.2f} m³/s`")
     st.markdown("---")
