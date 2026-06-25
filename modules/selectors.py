@@ -100,7 +100,7 @@ def renderizar_telemetria_aleph():
 
     # --- BOTÓN DE PURGA (Fuera de los expanders) ---
     st.sidebar.markdown("<br>", unsafe_allow_html=True) # Espaciador suave
-    if st.sidebar.button("🧹 Purgar Memoria y Caché", use_container_width=True):
+    if st.sidebar.button("🧹 Purgar Memoria y Caché", use_container_width=True, key="btn_purga_telemetria_aleph"):
         st.session_state.clear()
         st.cache_data.clear()
         st.rerun()
