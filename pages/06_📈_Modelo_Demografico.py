@@ -663,13 +663,12 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 try:
                     from modules.db_manager import get_engine
                     from sqlalchemy import text
-                    # 🔥 FIX KEYERROR: Restauramos la columna 'subc_lbl' que necesitan los Rankings
+                    # 🔥 FIX KEYERROR: Restauramos la columna 'subc_lbl' que necesitan los Rankings. Creamos 'clave_unica' combinando jerarquía + nombre
                     q_hier = text("""
                         SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
-                        COALESCE(
-                            NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), 
-                            NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre'
-                        ) AS subc_lbl
+                        COALESCE(NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''),
+                            NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre') AS subc_lbl,
+                        (nom_szh || ' | ' || COALESCE(NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''))) AS clave_unica
                         FROM cuencas
                     """)
                     return pd.read_sql(q_hier, get_engine())
