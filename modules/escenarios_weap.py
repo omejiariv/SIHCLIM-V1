@@ -9,70 +9,96 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     engine = get_engine()
     
     # =====================================================================
-    # 🚀 1. EXTRACCIÓN QUIRÚRGICA DE NOMBRES REALES
+    # 🚀 1. TRADUCTOR MAESTRO (De la Interfaz a la Base de Datos)
     # =====================================================================
-    nombres_reales = []
-    
-    # Estrategia A: Sacar los nombres directamente de los datos del mapa (Infalible)
-    # BLINDAJE: Verificamos que gdf_zona sea un DataFrame real y no un texto de error
-    if isinstance(gdf_zona, pd.DataFrame) and not gdf_zona.empty:
-        columnas_posibles = ['Territorio', 'nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'MPIO_CNMBR', 'Municipio']
-        col_nombre = next((col for col in columnas_posibles if col in gdf_zona.columns), None)
-        if col_nombre:
-            nombres_reales = gdf_zona[col_nombre].astype(str).dropna().unique().tolist()
-            
-    # Estrategia B: Si falla el mapa, limpiamos el texto del título a la fuerza
-    if not nombres_reales and isinstance(territorio, str):
-        clean_str = territorio.replace("Cuencas Seleccionadas: ", "").replace("SZH: ", "").replace("ZH: ", "").replace("AH: ", "").replace("Municipio: ", "")
-        partes = [n.strip().split(" - (")[0] for n in clean_str.split("+")]
-        nombres_reales = [p for p in partes if p and p != "-- Seleccione --"]
+    # A. Normalizamos la entrada (detectamos si es lista o texto)
+    if isinstance(territorio, list):
+        lista_raw = territorio
+    elif isinstance(territorio, str):
+        if territorio.startswith("[") and territorio.endswith("]"):
+            import ast
+            try:
+                lista_raw = ast.literal_eval(territorio)
+            except:
+                lista_raw = [territorio]
+        else:
+            lista_raw = [territorio]
+    else:
+        lista_raw = ["Territorio Global"]
+
+    # B. Limpiamos el código IDEAM (Traducción Inversa para los CSVs)
+    # Convierte "Q. La Honda - (2308-01-04-24)" -> "Q. La Honda"
+    nombres_limpios = []
+    for t in lista_raw:
+        t_str = str(t).replace("Cuencas Seleccionadas: ", "").replace("SZH: ", "")
+        # Extraemos solo lo que está antes de " - ("
+        nombre_real = t_str.split(" - (")[0].strip() if " - (" in t_str else t_str.strip()
         
-    nombre_display = territorio if isinstance(territorio, str) else "Territorio Global"
+        if nombre_real and nombre_real not in ["-- Seleccione --", "Territorio Global", "Ninguna"]:
+            nombres_limpios.append(nombre_real)
+            
+    # C. Título Dinámico para la pantalla
+    if nombres_limpios:
+        nombre_display = " + ".join(nombres_limpios[:2]) + ("..." if len(nombres_limpios)>2 else "")
+    else:
+        nombre_display = "Territorio Global"
+        st.warning("⚠️ **Aviso:** Selecciona un territorio válido en el panel izquierdo.")
+        
     st.markdown(f"## ⚖️ Simulador de Estrés Hídrico: **{nombre_display}**")
 
     # =====================================================================
-    # 🚀 2. CAPTURA Y RESCATE SQL INTELIGENTE
+    # 🚀 2. CAPTURA DEL ALEPH Y RESCATE INDEPENDIENTE
     # =====================================================================
-    pob_aleph = st.session_state.get('aleph_pob_total', 0)
-    oferta_aleph = st.session_state.get('aleph_oferta_m3s', 0.0)
+    # Tomamos lo que el Aleph ya haya calculado (¡Protegemos tus 7,563 habitantes!)
+    pob_aleph = float(st.session_state.get('aleph_pob_total', 0))
+    oferta_aleph = float(st.session_state.get('aleph_oferta_m3s', 0.0))
 
-    # RESCATE: Buscamos los nombres limpios (ej: 'Q. La Honda') en la Matriz Maestra
-    if (pob_aleph == 0 or oferta_aleph == 0.0) and nombres_reales:
+    # RESCATE HÍDRICO: Si el Aleph no tiene el caudal, lo buscamos limpiamente en la Matriz
+    if oferta_aleph == 0.0 and nombres_limpios:
         try:
-            placeholders = ", ".join([f":p{i}" for i in range(len(nombres_reales))])
-            params = {f"p{i}": val for i, val in enumerate(nombres_reales)}
-            
-            query = text(f"""
-                SELECT 
-                    SUM(CAST("Poblacion" AS FLOAT)) as tot_pob, 
-                    SUM(CAST("Caudal_Medio_m3s" AS FLOAT)) as tot_q 
+            placeholders = ", ".join([f":p{i}" for i in range(len(nombres_limpios))])
+            params = {f"p{i}": val for i, val in enumerate(nombres_limpios)}
+            # Sumamos los caudales de las cuencas seleccionadas
+            query_h = text(f"""
+                SELECT SUM(CAST("Caudal_Medio_m3s" AS FLOAT)) as tot_q 
                 FROM matriz_hidrologica_maestra 
-                WHERE "Territorio" IN ({placeholders}) 
+                WHERE "Territorio" IN ({placeholders})
             """)
-            
-            df_rescue = pd.read_sql(query, engine, params=params)
-            
-            if not df_rescue.empty:
-                val_pob = df_rescue.iloc[0]['tot_pob']
-                val_caudal = df_rescue.iloc[0]['tot_q']
-                if pd.notnull(val_pob) and float(val_pob) > 0: pob_aleph = float(val_pob)
-                if pd.notnull(val_caudal) and float(val_caudal) > 0: oferta_aleph = float(val_caudal)
-        except Exception:
-            pass 
+            df_h = pd.read_sql(query_h, engine, params=params)
+            if not df_h.empty and pd.notnull(df_h.iloc[0]['tot_q']):
+                oferta_aleph = float(df_h.iloc[0]['tot_q'])
+        except Exception as e:
+            pass
 
     # =====================================================================
-    # 🚨 3. ALERTA FORENSE Y DEMO
+    # 🚨 3. ENSAMBLE DEL BALANCE Y MODO DEMO PARCIAL
     # =====================================================================
-    if pob_aleph == 0 or oferta_aleph == 0.0:
-        st.warning(f"⚠️ **Telemetría Inactiva:** No se hallaron datos en la Matriz Maestra. Mostrando valores de calibración.")
-        pob_base, oferta_base_m3s, modo_demo = 500000, 1.2, True 
+    modo_demo_txt = []
+    
+    # Validamos Población de forma independiente
+    if pob_aleph > 0:
+        pob_base = pob_aleph
     else:
-        pob_base, oferta_base_m3s, modo_demo = pob_aleph, oferta_aleph, False
+        pob_base = 150000  # Paracaídas visual si falla todo
+        modo_demo_txt.append("Población")
+        
+    # Validamos Oferta Hídrica de forma independiente
+    if oferta_aleph > 0.0:
+        oferta_base_m3s = oferta_aleph
+    else:
+        oferta_base_m3s = 1.2  # Paracaídas visual si falla todo
+        modo_demo_txt.append("Oferta Hídrica")
 
+    # Consumo estimado: 150 Litros / habitante / día (convertido a m3/s)
     demanda_base_m3s = (pob_base * 150) / (1000 * 86400) 
     
-    estado_txt = "🔴 MODO DEMO (CALIBRACIÓN)" if modo_demo else "🟢 DATOS REALES CONECTADOS"
-    st.markdown(f"📌 **Base Actual ({estado_txt}):** 👥 Población: `{pob_base:,.0f} hab` | 💧 Oferta Media: `{oferta_base_m3s:,.2f} m³/s`")
+    if modo_demo_txt:
+        st.warning(f"⚠️ **Telemetría Parcial para '{nombre_display}':** Faltan datos en la BD para: {', '.join(modo_demo_txt)}. Se inyectaron valores de referencia para permitir la simulación visual.")
+        estado_txt = "🟡 MODO MIXTO"
+    else:
+        estado_txt = "🟢 DATOS REALES CONECTADOS"
+        
+    st.markdown(f"📌 **Base Actual ({estado_txt}):** 👥 Población: `{pob_base:,.0f} hab` | 💧 Oferta Media: `{oferta_base_m3s:,.3f} m³/s`")
     st.markdown("---")
 
     # =====================================================================
@@ -86,19 +112,23 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     with col3:
         var_eficiencia = st.slider("⚙️ Gestión (Eficiencia)", 0, 40, 0, step=5, help="Reducción de consumo en %")
 
+    # Modificadores Matemáticos
     oferta_modificada = oferta_base_m3s * (1 + (var_clima / 100))
     demanda_modificada = demanda_base_m3s * (1 + (var_pob / 100)) * (1 - (var_eficiencia / 100))
 
+    # Curva estacional base
     meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
     curva_estacional = np.array([0.7, 0.8, 1.0, 1.2, 1.3, 0.9, 0.8, 0.9, 1.1, 1.3, 1.2, 0.9])
     
     oferta_mensual = oferta_modificada * curva_estacional
     demanda_mensual = np.full(12, demanda_modificada)
 
+    # Gráfica WEAP
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=meses, y=oferta_mensual, name='Oferta Disponible', line=dict(color='#3498db', width=3), fill='tozeroy', fillcolor='rgba(52, 152, 219, 0.2)'))
     fig.add_trace(go.Scatter(x=meses, y=demanda_mensual, name='Demanda Total', line=dict(color='#e67e22', width=3, dash='dash')))
     
+    # Relleno del déficit (Rojo)
     oferta_minima = np.minimum(oferta_mensual, demanda_mensual)
     fig.add_trace(go.Scatter(x=meses, y=demanda_mensual, line=dict(width=0), showlegend=False, hoverinfo='skip'))
     fig.add_trace(go.Scatter(
@@ -113,6 +143,7 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    # Diagnóstico
     deficit_anual = np.sum(np.maximum(0, demanda_mensual - oferta_mensual))
     if deficit_anual > 0:
         st.error(f"⚠️ **Alerta de Vulnerabilidad:** El sistema entra en déficit hídrico.")
