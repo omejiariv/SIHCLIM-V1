@@ -663,12 +663,12 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 try:
                     from modules.db_manager import get_engine
                     from sqlalchemy import text
-                    # 🔥 Creamos 'clave_unica' combinando jerarquía + nombre
+                    # 🔥 FIX: Generamos los nombres compuestos (Nombre - Código IDEAM) directo en SQL
                     q_hier = text("""
                         SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
-                        COALESCE(NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), 
-                                 NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre') AS subc_lbl,
-                        (nom_szh || ' | ' || COALESCE(NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''))) AS clave_unica
+                        CASE WHEN nom_nss1 IS NOT NULL AND TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || COALESCE(' - (' || TRIM(CAST(nss1 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss1,
+                        CASE WHEN nom_nss2 IS NOT NULL AND TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || COALESCE(' - (' || TRIM(CAST(nss2 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss2,
+                        CASE WHEN nom_nss3 IS NOT NULL AND TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || COALESCE(' - (' || TRIM(CAST(nss3 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss3
                         FROM cuencas
                     """)
                     return pd.read_sql(q_hier, get_engine())
@@ -688,37 +688,43 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 sel_szh = st.sidebar.selectbox("3. Subzona (SZH):", ["-- Seleccione --"] + szh_opts)
                 
                 resolucion = st.sidebar.radio("🔎 Resolución de visualización:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"])
-                col_res = 'nom_nss1' if 'NSS1' in resolucion else ('nom_nss2' if 'NSS2' in resolucion else 'nom_nss3')
                 
-                # 🔥 FIX: Usamos clave_unica y corregimos nombres de columnas (nomzh y nomah)
+                # 🚀 Definir la "Identidad Real" (nom_nssX) y la "Identidad Visual" (disp_nssX)
+                if 'NSS1' in resolucion:
+                    col_res_real, col_res_disp = 'nom_nss1', 'disp_nss1'
+                elif 'NSS2' in resolucion:
+                    col_res_real, col_res_disp = 'nom_nss2', 'disp_nss2'
+                else:
+                    col_res_real, col_res_disp = 'nom_nss3', 'disp_nss3'
+                
+                # Llenar las opciones del multiselect usando la Identidad Visual
                 if sel_szh != "-- Seleccione --": 
-                    opciones = df_hier[df_hier['nom_szh'] == sel_szh][['clave_unica', col_res]].dropna(subset=[col_res]).drop_duplicates()
-                    cuencas_disp = opciones['clave_unica'].tolist()
+                    opciones = df_hier[df_hier['nom_szh'] == sel_szh][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
                 elif sel_zh != "-- Seleccione --": 
-                    opciones = df_hier[df_hier['nomzh'] == sel_zh][['clave_unica', col_res]].dropna(subset=[col_res]).drop_duplicates()
-                    cuencas_disp = opciones['clave_unica'].tolist()
+                    opciones = df_hier[df_hier['nomzh'] == sel_zh][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
                 elif sel_ah != "-- Seleccione --": 
-                    opciones = df_hier[df_hier['nomah'] == sel_ah][['clave_unica', col_res]].dropna(subset=[col_res]).drop_duplicates()
-                    cuencas_disp = opciones['clave_unica'].tolist()
+                    opciones = df_hier[df_hier['nomah'] == sel_ah][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
                 else: 
-                    opciones = df_hier[['clave_unica', col_res]].dropna(subset=[col_res]).drop_duplicates()
-                    cuencas_disp = sorted(opciones['clave_unica'].tolist())
+                    opciones = df_hier[[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
+                    
+                cuencas_disp = sorted(opciones[col_res_disp].tolist())
             else:
+                col_res_real = 'Territorio'
                 cuencas_disp = sorted(df_cuencas_solo['Territorio'].dropna().astype(str).unique())
 
-            cuenca_sel = st.sidebar.multiselect("🎯 Seleccione cuencas (Clave Única):", cuencas_disp, default=None)
+            cuenca_sel_disp = st.sidebar.multiselect("🎯 Seleccione cuencas específicas:", cuencas_disp, default=None)
             
             # --- 2. 🎯 DETERMINAR QUÉ LEER DE LA MATRIZ ---
-            if cuenca_sel:
-                filtro_zona = " + ".join(cuenca_sel[:2]) + ("..." if len(cuenca_sel)>2 else "")
+            if cuenca_sel_disp:
+                filtro_zona = " + ".join(cuenca_sel_disp[:2]) + ("..." if len(cuenca_sel_disp)>2 else "")
                 titulo_terr = f"Cuencas Seleccionadas: {filtro_zona}"
                 
-                # 🚀 TRADUCCIÓN INVERSA: Pasamos de "Clave Única" al nombre real (col_res) para buscar en la matriz poblacional
+                # 🚀 TRADUCCIÓN INVERSA: Buscamos el nombre real para cruzar con la matriz demográfica
                 if not df_hier.empty:
-                    df_lookup = df_hier[df_hier['clave_unica'].isin(cuenca_sel)]
-                    territorios_reales = df_lookup[col_res].dropna().unique().tolist()
+                    df_lookup = df_hier[df_hier[col_res_disp].isin(cuenca_sel_disp)]
+                    territorios_reales = df_lookup[col_res_real].dropna().unique().tolist()
                 else:
-                    territorios_reales = cuenca_sel
+                    territorios_reales = cuenca_sel_disp
                     
                 territorios_a_buscar = territorios_reales
                 territorios_para_mapa = territorios_reales
@@ -727,16 +733,15 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                     if sel_szh != "-- Seleccione --": 
                         titulo_terr = f"SZH: {sel_szh}"
                         territorios_a_buscar = [sel_szh]
-                        # Pasamos el nombre real de las sub-piezas para dibujar en el mapa
-                        territorios_para_mapa = df_hier[df_hier['nom_szh'] == sel_szh][col_res].dropna().unique().tolist()
+                        territorios_para_mapa = df_hier[df_hier['nom_szh'] == sel_szh][col_res_real].dropna().unique().tolist()
                     elif sel_zh != "-- Seleccione --": 
                         titulo_terr = f"ZH: {sel_zh}"
                         territorios_a_buscar = [sel_zh]
-                        territorios_para_mapa = df_hier[df_hier['nomzh'] == sel_zh][col_res].dropna().unique().tolist()
+                        territorios_para_mapa = df_hier[df_hier['nomzh'] == sel_zh][col_res_real].dropna().unique().tolist()
                     elif sel_ah != "-- Seleccione --": 
                         titulo_terr = f"AH: {sel_ah}"
                         territorios_a_buscar = [sel_ah]
-                        territorios_para_mapa = df_hier[df_hier['nomah'] == sel_ah][col_res].dropna().unique().tolist()
+                        territorios_para_mapa = df_hier[df_hier['nomah'] == sel_ah][col_res_real].dropna().unique().tolist()
                     else: 
                         titulo_terr = "Todas las Cuencas"
                         territorios_a_buscar = df_hier['nomah'].dropna().unique().tolist()
