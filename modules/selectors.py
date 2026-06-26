@@ -178,10 +178,12 @@ def renderizar_gestor_escenarios(lugar):
         
         if st.button("💾 Guardar Escenario Actual", use_container_width=True):
             if nombre_nuevo.strip():
-                # Empaquetamos todo el estado actual excluyendo objetos no serializables de Streamlit
+                # 🚀 FILTRO PREVENTIVO: Empaquetamos todo el estado excluyendo botones y envíos
                 estado_actual = {
                     k: v for k, v in st.session_state.items() 
-                    if isinstance(v, (int, float, str, bool, list, dict)) and not k.startswith("FormSubmitter")
+                    if isinstance(v, (int, float, str, bool, list, dict)) 
+                    and not k.startswith("FormSubmitter")
+                    and not k.startswith("btn_")
                 }
                 
                 try:
@@ -229,10 +231,14 @@ def renderizar_gestor_escenarios(lugar):
                             if resultado and resultado[0]:
                                 datos_recuperados = resultado[0] if isinstance(resultado[0], dict) else json.loads(resultado[0])
                                 
-                                # Inyectamos la memoria guardada de vuelta a la sesión actual
+                                # 🚀 FILTRO CURATIVO: Inyectamos la memoria guardada saltando variables protegidas
                                 for k, v in datos_recuperados.items():
-                                    st.session_state[k] = v
-                                    
+                                    if not k.startswith("btn_") and not k.startswith("FormSubmitter"):
+                                        try:
+                                            st.session_state[k] = v
+                                        except Exception:
+                                            pass
+                                
                                 st.success(f"Restaurando '{esc_sel}'...")
                                 time.sleep(0.5)
                                 st.rerun() # Forzamos la recarga para que toda la plataforma reaccione
