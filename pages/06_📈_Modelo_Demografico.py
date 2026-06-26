@@ -663,11 +663,11 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 try:
                     from modules.db_manager import get_engine
                     from sqlalchemy import text
-                    # 🔥 FIX KEYERROR: Restauramos la columna 'subc_lbl' que necesitan los Rankings. Creamos 'clave_unica' combinando jerarquía + nombre
+                    # 🔥 Creamos 'clave_unica' combinando jerarquía + nombre
                     q_hier = text("""
                         SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
-                        COALESCE(NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''),
-                            NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre') AS subc_lbl,
+                        COALESCE(NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), 
+                                 NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre') AS subc_lbl,
                         (nom_szh || ' | ' || COALESCE(NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''))) AS clave_unica
                         FROM cuencas
                     """)
@@ -690,41 +690,57 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 resolucion = st.sidebar.radio("🔎 Resolución de visualización:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"])
                 col_res = 'nom_nss1' if 'NSS1' in resolucion else ('nom_nss2' if 'NSS2' in resolucion else 'nom_nss3')
                 
-                if sel_szh != "-- Seleccione --": cuencas_disp = sorted(df_hier[df_hier['nom_szh'] == sel_szh][col_res].dropna().unique())
-                elif sel_zh != "-- Seleccione --": cuencas_disp = sorted(df_hier[df_hier['nomzh'] == sel_zh][col_res].dropna().unique())
-                elif sel_ah != "-- Seleccione --": cuencas_disp = sorted(df_hier[df_hier['nomah'] == sel_ah][col_res].dropna().unique())
-                else: cuencas_disp = sorted(df_hier[col_res].dropna().unique())
+                # 🔥 FIX: Usamos clave_unica y corregimos nombres de columnas (nomzh y nomah)
+                if sel_szh != "-- Seleccione --": 
+                    opciones = df_hier[df_hier['nom_szh'] == sel_szh][['clave_unica', col_res]].dropna(subset=[col_res]).drop_duplicates()
+                    cuencas_disp = opciones['clave_unica'].tolist()
+                elif sel_zh != "-- Seleccione --": 
+                    opciones = df_hier[df_hier['nomzh'] == sel_zh][['clave_unica', col_res]].dropna(subset=[col_res]).drop_duplicates()
+                    cuencas_disp = opciones['clave_unica'].tolist()
+                elif sel_ah != "-- Seleccione --": 
+                    opciones = df_hier[df_hier['nomah'] == sel_ah][['clave_unica', col_res]].dropna(subset=[col_res]).drop_duplicates()
+                    cuencas_disp = opciones['clave_unica'].tolist()
+                else: 
+                    opciones = df_hier[['clave_unica', col_res]].dropna(subset=[col_res]).drop_duplicates()
+                    cuencas_disp = sorted(opciones['clave_unica'].tolist())
             else:
                 cuencas_disp = sorted(df_cuencas_solo['Territorio'].dropna().astype(str).unique())
 
-            cuenca_sel = st.sidebar.multiselect("🎯 Seleccione cuencas específicas (Opcional):", cuencas_disp, default=None)
+            cuenca_sel = st.sidebar.multiselect("🎯 Seleccione cuencas (Clave Única):", cuencas_disp, default=None)
             
             # --- 2. 🎯 DETERMINAR QUÉ LEER DE LA MATRIZ ---
-            # REGLA DE ORO: No calcular piezas sueltas. Leer el dato maestro directamente.
             if cuenca_sel:
                 filtro_zona = " + ".join(cuenca_sel[:2]) + ("..." if len(cuenca_sel)>2 else "")
                 titulo_terr = f"Cuencas Seleccionadas: {filtro_zona}"
-                territorios_a_buscar = cuenca_sel
-                territorios_para_mapa = cuenca_sel
+                
+                # 🚀 TRADUCCIÓN INVERSA: Pasamos de "Clave Única" al nombre real (col_res) para buscar en la matriz poblacional
+                if not df_hier.empty:
+                    df_lookup = df_hier[df_hier['clave_unica'].isin(cuenca_sel)]
+                    territorios_reales = df_lookup[col_res].dropna().unique().tolist()
+                else:
+                    territorios_reales = cuenca_sel
+                    
+                territorios_a_buscar = territorios_reales
+                territorios_para_mapa = territorios_reales
             else:
                 if not df_hier.empty:
                     if sel_szh != "-- Seleccione --": 
                         titulo_terr = f"SZH: {sel_szh}"
                         territorios_a_buscar = [sel_szh]
-                        territorios_para_mapa = cuencas_disp # Dibujar las sub-piezas en el mapa
+                        # Pasamos el nombre real de las sub-piezas para dibujar en el mapa
+                        territorios_para_mapa = df_hier[df_hier['nom_szh'] == sel_szh][col_res].dropna().unique().tolist()
                     elif sel_zh != "-- Seleccione --": 
                         titulo_terr = f"ZH: {sel_zh}"
                         territorios_a_buscar = [sel_zh]
-                        territorios_para_mapa = cuencas_disp
+                        territorios_para_mapa = df_hier[df_hier['nomzh'] == sel_zh][col_res].dropna().unique().tolist()
                     elif sel_ah != "-- Seleccione --": 
                         titulo_terr = f"AH: {sel_ah}"
                         territorios_a_buscar = [sel_ah]
-                        territorios_para_mapa = cuencas_disp
+                        territorios_para_mapa = df_hier[df_hier['nomah'] == sel_ah][col_res].dropna().unique().tolist()
                     else: 
                         titulo_terr = "Todas las Cuencas"
-                        # 🔥 FIX 35M: Si son todas, sumamos SOLO las 3 Áreas Hidrográficas Mayores (No a los hijos)
                         territorios_a_buscar = df_hier['nomah'].dropna().unique().tolist()
-                        territorios_para_mapa = df_hier['nomzh'].dropna().unique().tolist() # Dibujar ZHs en el mapa
+                        territorios_para_mapa = df_hier['nomzh'].dropna().unique().tolist()
                 else:
                     titulo_terr = "Todas las Cuencas"
                     territorios_a_buscar = df_cuencas_solo['Territorio'].unique().tolist()
