@@ -17,25 +17,16 @@ selectors.renderizar_menu_navegacion("Escenarios WEAP")
 st.sidebar.markdown("---")
 nombre_zona, gdf_zona, nivel_jerarquico, es_busqueda_global = selectors.render_selector_espacial()
 
-# 4. 🛡️ GUARDIA DE SEGURIDAD PARA WEAP
-# Detectamos si 'nombre_zona' es una lista de puros números (códigos de estaciones)
-es_lista_estaciones = False
-if isinstance(nombre_zona, list):
-    # Si al menos el primer elemento es un código numérico (ej. '27015330')
-    if len(nombre_zona) > 0 and str(nombre_zona[0]).isdigit():
-        es_lista_estaciones = True
-elif isinstance(nombre_zona, str) and "[" in nombre_zona and "'" in nombre_zona:
-    # Si viene como string de lista (ej. "['27015330', ...]")
-    if any(char.isdigit() for char in nombre_zona.split("'")[1:2]):
-        es_lista_estaciones = True
-
-if es_lista_estaciones:
+# 4. 🛡️ GUARDIA DE SEGURIDAD DEFINITIVO
+# Usamos la jerarquía directa del sistema. Si es "Estaciones", bloqueamos.
+if nivel_jerarquico == "Estaciones":
     st.error("🛑 **Escala Geográfica Incorrecta**")
     st.warning("El simulador WEAP requiere una unidad territorial que contenga población (como una **Cuenca Hidrográfica** o un **Municipio**).")
-    st.info("👉 **Solución:** Ve al panel izquierdo, busca la opción 'Escala de Análisis' y cámbiala a 'Cuencas Hidrográficas'. Luego selecciona la cuenca que deseas analizar.")
+    st.info("👉 **Solución:** Ve al panel izquierdo, cambia la 'Escala de Análisis' a 'Cuencas Hidrográficas' o 'Municipios'.")
 else:
     # 5. ENCENDER EL MOTOR WEAP
     try:
-        escenarios_weap.renderizar_motor_escenarios_weap(nombre_zona)
+        # 🚀 TRUCO MAESTRO: Le enviamos el gdf_zona al motor para que pueda extraer los nombres reales
+        escenarios_weap.renderizar_motor_escenarios_weap(nombre_zona, gdf_zona)
     except Exception as e:
         st.error(f"Error al cargar el simulador: {e}")
