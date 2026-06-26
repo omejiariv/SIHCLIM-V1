@@ -14,7 +14,8 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     nombres_reales = []
     
     # Estrategia A: Sacar los nombres directamente de los datos del mapa (Infalible)
-    if gdf_zona is not None and not gdf_zona.empty:
+    # BLINDAJE: Verificamos que gdf_zona sea un DataFrame real y no un texto de error
+    if isinstance(gdf_zona, pd.DataFrame) and not gdf_zona.empty:
         columnas_posibles = ['Territorio', 'nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'MPIO_CNMBR', 'Municipio']
         col_nombre = next((col for col in columnas_posibles if col in gdf_zona.columns), None)
         if col_nombre:
