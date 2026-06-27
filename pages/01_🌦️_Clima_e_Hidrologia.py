@@ -1300,8 +1300,20 @@ def main():
                         return paso_actual
 
                     # --- 🗺️ FASE 1: PROCESAR CUENCAS ---
-                    with st.spinner("💧 Calculando red hidrográfica..."):
+                    with st.spinner("Calculando red hidrográfica..."):
                         gdf_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
+
+                        # 🧬 INYECCIÓN DE ADN (LLAVE ÚNICA)
+                        # Fusionamos Nombre + Código para evitar que cuencas homónimas se derritan en una sola
+                        mapa_columnas = {'nom_nss3': 'nss3', 'nom_nss2': 'nss2', 'nom_nss1': 'nss1', 'nom_szh': 'szh', 'nomzh': 'zh', 'nomah': 'ah'}
+                        for col_nom, col_cod in mapa_columnas.items():
+                            if col_nom in gdf_cuencas.columns and col_cod in gdf_cuencas.columns:
+                                gdf_cuencas[col_nom] = gdf_cuencas.apply(
+                                    lambda r: f"{str(r[col_nom]).strip()} - ({str(r[col_cod]).strip()})" 
+                                    if pd.notnull(r[col_nom]) and str(r[col_nom]).strip() != "" and pd.notnull(r[col_cod]) 
+                                    else r[col_nom], axis=1
+                                )
+                        
                         if 'CorpoAmb' in gdf_cuencas.columns and 'depto_regi' in gdf_cuencas.columns:
                             gdf_cuencas['CorpoAmb'] = gdf_cuencas['CorpoAmb'].str.strip()
                             gdf_cuencas['depto_regi'] = gdf_cuencas['depto_regi'].str.strip()
