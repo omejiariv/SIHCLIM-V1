@@ -2252,6 +2252,7 @@ with tab_matriz:
                                 CASE WHEN TRIM(nom_szh) != '' THEN TRIM(nom_szh) || ' - (' || TRIM(CAST(szh AS TEXT)) || ')' ELSE NULL END,
                                 CASE WHEN TRIM(nomzh) != '' THEN TRIM(nomzh) || ' - (' || TRIM(CAST(zh AS TEXT)) || ')' ELSE NULL END,
                                 CASE WHEN TRIM(nomah) != '' THEN TRIM(nomah) || ' - (' || TRIM(CAST(ah AS TEXT)) || ')' ELSE NULL END,
+                                'Cuenca Sin Nombre'
                             ) AS subc_lbl, geometry
                             FROM cuencas
                         """)
