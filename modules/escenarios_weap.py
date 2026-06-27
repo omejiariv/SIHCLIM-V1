@@ -7,13 +7,13 @@ from modules.db_manager import get_engine
 
 def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=None):
     engine = get_engine()
-
-    # 1. LIMPIEZA QUIRÚRGICA DE ENTRADA
-    # Convertimos cualquier lista o string sucio en una lista de nombres "limpios" (sin códigos IDEAM)
+    
+    # =====================================================================
+    # 🚀 1. LIMPIEZA QUIRÚRGICA DE ENTRADA Y VALIDACIÓN
+    # =====================================================================
     if isinstance(territorio, list):
         lista_raw = territorio
     elif isinstance(territorio, str):
-        # Si es un string que parece lista (ej: "[...]")
         if territorio.startswith("["):
             import ast
             try: lista_raw = ast.literal_eval(territorio)
@@ -21,78 +21,68 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
         else:
             lista_raw = [territorio]
     else:
-        lista_raw = [territorio]
-
-    # Quitamos el código IDEAM: "Q. La Honda - (2308-01-04-24)" -> "Q. La Honda"
-    nombres_limpios = [str(t).split(" - (")[0].strip() for t in lista_raw if str(t).strip() not in ["", "-- Seleccione --"]]
-    
-    # 🚨 FILTRO ANTI-ESTACIONES (Si el territorio tiene números largos, lo rechazamos)
-    if any(any(char.isdigit() for char in n) and len(n) > 5 for n in nombres_limpios):
-        st.warning("⚠️ El sistema detectó códigos de estaciones. Por favor, selecciona una Cuenca o Municipio en el filtro lateral.")
-        return    
-    
-    # =====================================================================
-    # 🚀 1. TRADUCTOR MAESTRO (De la Interfaz a la Base de Datos)
-    # =====================================================================
-    # A. Normalizamos la entrada (detectamos si es lista o texto)
-    if isinstance(territorio, list):
-        lista_raw = territorio
-    elif isinstance(territorio, str):
-        if territorio.startswith("[") and territorio.endswith("]"):
-            import ast
-            try:
-                lista_raw = ast.literal_eval(territorio)
-            except:
-                lista_raw = [territorio]
-        else:
-            lista_raw = [territorio]
-    else:
         lista_raw = ["Territorio Global"]
 
-    # B. Limpiamos el código IDEAM (Traducción Inversa para los CSVs)
-    # Convierte "Q. La Honda - (2308-01-04-24)" -> "Q. La Honda"
-    nombres_limpios = []
-    for t in lista_raw:
-        t_str = str(t).replace("Cuencas Seleccionadas: ", "").replace("SZH: ", "")
-        # Extraemos solo lo que está antes de " - ("
-        nombre_real = t_str.split(" - (")[0].strip() if " - (" in t_str else t_str.strip()
-        
-        if nombre_real and nombre_real not in ["-- Seleccione --", "Territorio Global", "Ninguna"]:
-            nombres_limpios.append(nombre_real)
-            
-    # C. Título Dinámico para la pantalla
-    if nombres_limpios:
-        nombre_display = " + ".join(nombres_limpios[:2]) + ("..." if len(nombres_limpios)>2 else "")
+    # 🚨 FILTRO ANTI-ESTACIONES INTELIGENTE
+    # Solo bloquea si el elemento es puramente numérico (ej: "27015330")
+    if any(str(t).strip().isdigit() for t in lista_raw):
+        st.error("🛑 **Escala Geográfica Incorrecta:** El sistema detectó códigos de estaciones puras.")
+        st.info("Por favor, selecciona una Cuenca o Municipio en el filtro lateral izquierdo.")
+        return 
+
+    # Conservamos los nombres EXACTOS (con código) para buscar en la nueva Matriz Demográfica
+    nombres_exactos = [str(t).replace("Cuencas Seleccionadas: ", "").replace("SZH: ", "").strip() 
+                       for t in lista_raw if str(t).strip() not in ["", "-- Seleccione --"]]
+    
+    # Generamos la versión CORTA (sin código) para buscar en la Matriz Hidrológica
+    nombres_cortos = [n.split(" - (")[0].strip() for n in nombres_exactos]
+
+    if nombres_cortos:
+        nombre_display = " + ".join(nombres_cortos[:2]) + ("..." if len(nombres_cortos)>2 else "")
+        st.markdown(f"## ⚖️ Simulador de Estrés Hídrico: **{nombre_display}**")
     else:
         nombre_display = "Territorio Global"
+        st.markdown(f"## ⚖️ Simulador de Estrés Hídrico: **{nombre_display}**")
         st.warning("⚠️ **Aviso:** Selecciona un territorio válido en el panel izquierdo.")
-        
-    st.markdown(f"## ⚖️ Simulador de Estrés Hídrico: **{nombre_display}**")
 
     # =====================================================================
     # 🚀 2. CAPTURA DEL ALEPH Y RESCATE INDEPENDIENTE
     # =====================================================================
-    # Tomamos lo que el Aleph ya haya calculado (¡Protegemos tus 7,563 habitantes!)
     pob_aleph = float(st.session_state.get('aleph_pob_total', 0))
     oferta_aleph = float(st.session_state.get('aleph_oferta_m3s', 0.0))
 
-    # RESCATE HÍDRICO: Si el Aleph no tiene el caudal, lo buscamos limpiamente en la Matriz
-    if oferta_aleph == 0.0 and nombres_limpios:
+    # RESCATE DEMOGRÁFICO: Buscamos con el nombre EXACTO (El que tiene el código de 14 dígitos)
+    if pob_aleph == 0 and nombres_exactos:
         try:
-            placeholders = ", ".join([f":p{i}" for i in range(len(nombres_limpios))])
-            params = {f"p{i}": val for i, val in enumerate(nombres_limpios)}
-            # Sumamos los caudales de las cuencas seleccionadas
+            placeholders_p = ", ".join([f":p{i}" for i in range(len(nombres_exactos))])
+            params_p = {f"p{i}": val for i, val in enumerate(nombres_exactos)}
+            query_p = text(f"""
+                SELECT SUM(CAST("Pob_Base" AS FLOAT)) as tot_pob 
+                FROM matriz_multimodelo_demografica 
+                WHERE "Territorio" IN ({placeholders_p})
+            """)
+            df_p = pd.read_sql(query_p, engine, params=params_p)
+            if not df_p.empty and pd.notnull(df_p.iloc[0]['tot_pob']):
+                pob_aleph = float(df_p.iloc[0]['tot_pob'])
+        except Exception:
+            pass
+
+    # RESCATE HÍDRICO: Buscamos con el nombre CORTO en la Matriz Hidrológica
+    if oferta_aleph == 0.0 and nombres_cortos:
+        try:
+            placeholders_h = ", ".join([f":h{i}" for i in range(len(nombres_cortos))])
+            params_h = {f"h{i}": val for i, val in enumerate(nombres_cortos)}
             query_h = text(f"""
                 SELECT SUM(CAST("Caudal_Medio_m3s" AS FLOAT)) as tot_q 
                 FROM matriz_hidrologica_maestra 
-                WHERE "Territorio" IN ({placeholders})
+                WHERE "Territorio" IN ({placeholders_h})
             """)
-            df_h = pd.read_sql(query_h, engine, params=params)
+            df_h = pd.read_sql(query_h, engine, params=params_h)
             if not df_h.empty and pd.notnull(df_h.iloc[0]['tot_q']):
                 oferta_aleph = float(df_h.iloc[0]['tot_q'])
-        except Exception as e:
+        except Exception:
             pass
-
+            
     # =====================================================================
     # 🚨 3. ENSAMBLE DEL BALANCE Y MODO DEMO PARCIAL
     # =====================================================================
