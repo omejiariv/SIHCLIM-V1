@@ -1309,8 +1309,8 @@ def main():
                         for col_nom, col_cod in mapa_columnas.items():
                             if col_nom in gdf_cuencas.columns and col_cod in gdf_cuencas.columns:
                                 gdf_cuencas[col_nom] = gdf_cuencas.apply(
-                                    lambda r: f"{str(r[col_nom]).strip()} - ({str(r[col_cod]).strip()})" 
-                                    if pd.notnull(r[col_nom]) and str(r[col_nom]).strip() != "" and pd.notnull(r[col_cod]) 
+                                    lambda r: f"{str(r[col_nom]).strip()} - ({str(r[col_cod]).strip()})"
+                                    if pd.notnull(r[col_nom]) and str(r[col_nom]).strip() != "" and pd.notnull(r[col_cod])
                                     else r[col_nom], axis=1
                                 )
                         
