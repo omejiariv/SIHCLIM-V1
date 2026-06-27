@@ -2169,8 +2169,14 @@ with tab_matriz:
                     df_mun_memoria = pd.concat([df_mun_memoria, df_totales_calc], ignore_index=True)
                     
             # --- 🕵️‍♂️ RECOLECCIÓN MASIVA DE CUENCAS DE LA BASE DE DATOS ---
-            q_todas = text("SELECT DISTINCT nom_nss3 FROM cuencas WHERE nom_nss3 IS NOT NULL")
-            lista_todas_cuencas = pd.read_sql(q_todas, engine_sql)['nom_nss3'].tolist()
+            q_todas = text("""
+                SELECT DISTINCT
+                CASE WHEN nom_nss3 IS NOT NULL AND TRIM(nom_nss3) != ''
+                THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' 
+                ELSE NULL END AS nom_nss3 
+                FROM cuencas
+            """)
+            lista_todas_cuencas = pd.read_sql(q_todas, engine_sql)['nom_nss3'].dropna().tolist()
             
             # --- ⚙️ MOTOR DE PROGRESO UI ---
             mpios = df_mun_memoria['municipio'].dropna().unique()
@@ -2240,9 +2246,13 @@ with tab_matriz:
                         
                         q_cue = text("""
                             SELECT COALESCE(
-                                NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), 
-                                NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre'
-                            ) AS subc_lbl, geometry 
+                                CASE WHEN TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || ' - (' || TRIM(CAST(nss2 AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || ' - (' || TRIM(CAST(nss1 AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nom_szh) != '' THEN TRIM(nom_szh) || ' - (' || TRIM(CAST(szh AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nomzh) != '' THEN TRIM(nomzh) || ' - (' || TRIM(CAST(zh AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nomah) != '' THEN TRIM(nomah) || ' - (' || TRIM(CAST(ah AS TEXT)) || ')' ELSE NULL END,
+                            ) AS subc_lbl, geometry
                             FROM cuencas
                         """)
                         gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
@@ -2516,13 +2526,24 @@ with tab_matriz:
                 try:
                     q_jerarquia = text("""
                         SELECT DISTINCT 
-                            nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
+                            CASE WHEN TRIM(nomah) != '' THEN TRIM(nomah) || ' - (' || TRIM(CAST(ah AS TEXT)) || ')' ELSE NULL END AS nomah,
+                            CASE WHEN TRIM(nomzh) != '' THEN TRIM(nomzh) || ' - (' || TRIM(CAST(zh AS TEXT)) || ')' ELSE NULL END AS nomzh,
+                            CASE WHEN TRIM(nom_szh) != '' THEN TRIM(nom_szh) || ' - (' || TRIM(CAST(szh AS TEXT)) || ')' ELSE NULL END AS nom_szh,
+                            CASE WHEN TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || ' - (' || TRIM(CAST(nss1 AS TEXT)) || ')' ELSE NULL END AS nom_nss1,
+                            CASE WHEN TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || ' - (' || TRIM(CAST(nss2 AS TEXT)) || ')' ELSE NULL END AS nom_nss2,
+                            CASE WHEN TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' ELSE NULL END AS nom_nss3,
                             COALESCE(
-                                NULLIF(TRIM(nom_nss3), ''), NULLIF(TRIM(nom_nss2), ''), NULLIF(TRIM(nom_nss1), ''), 
-                                NULLIF(TRIM(nom_szh), ''), NULLIF(TRIM(nomzh), ''), NULLIF(TRIM(nomah), ''), 'Cuenca Sin Nombre'
+                                CASE WHEN TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || ' - (' || TRIM(CAST(nss2 AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || ' - (' || TRIM(CAST(nss1 AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nom_szh) != '' THEN TRIM(nom_szh) || ' - (' || TRIM(CAST(szh AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nomzh) != '' THEN TRIM(nomzh) || ' - (' || TRIM(CAST(zh AS TEXT)) || ')' ELSE NULL END,
+                                CASE WHEN TRIM(nomah) != '' THEN TRIM(nomah) || ' - (' || TRIM(CAST(ah AS TEXT)) || ')' ELSE NULL END,
+                                'Cuenca Sin Nombre'
                             ) AS subc_lbl
                         FROM cuencas
                     """)
+                    
                     df_arbol = pd.read_sql(q_jerarquia, engine_sql)
                     for c in df_arbol.columns:
                         df_arbol[c] = df_arbol[c].astype(str).str.strip()
