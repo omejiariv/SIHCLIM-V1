@@ -7,6 +7,29 @@ from modules.db_manager import get_engine
 
 def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=None):
     engine = get_engine()
+
+    # 1. LIMPIEZA QUIRÚRGICA DE ENTRADA
+    # Convertimos cualquier lista o string sucio en una lista de nombres "limpios" (sin códigos IDEAM)
+    if isinstance(territorio, list):
+        lista_raw = territorio
+    elif isinstance(territorio, str):
+        # Si es un string que parece lista (ej: "[...]")
+        if territorio.startswith("["):
+            import ast
+            try: lista_raw = ast.literal_eval(territorio)
+            except: lista_raw = [territorio]
+        else:
+            lista_raw = [territorio]
+    else:
+        lista_raw = [territorio]
+
+    # Quitamos el código IDEAM: "Q. La Honda - (2308-01-04-24)" -> "Q. La Honda"
+    nombres_limpios = [str(t).split(" - (")[0].strip() for t in lista_raw if str(t).strip() not in ["", "-- Seleccione --"]]
+    
+    # 🚨 FILTRO ANTI-ESTACIONES (Si el territorio tiene números largos, lo rechazamos)
+    if any(any(char.isdigit() for char in n) and len(n) > 5 for n in nombres_limpios):
+        st.warning("⚠️ El sistema detectó códigos de estaciones. Por favor, selecciona una Cuenca o Municipio en el filtro lateral.")
+        return    
     
     # =====================================================================
     # 🚀 1. TRADUCTOR MAESTRO (De la Interfaz a la Base de Datos)
@@ -100,7 +123,7 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
         
     st.markdown(f"📌 **Base Actual ({estado_txt}):** 👥 Población: `{pob_base:,.0f} hab` | 💧 Oferta Media: `{oferta_base_m3s:,.3f} m³/s`")
     st.markdown("---")
-
+    
     # =====================================================================
     # 4. PANEL DE CONTROL Y MOTOR WEAP
     # =====================================================================
