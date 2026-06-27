@@ -4,18 +4,18 @@ import numpy as np
 import plotly.graph_objects as go
 from sqlalchemy import text
 from modules.db_manager import get_engine
+import ast
 
 def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=None):
     engine = get_engine()
     
     # =====================================================================
-    # 🚀 1. LIMPIEZA QUIRÚRGICA DE ENTRADA Y VALIDACIÓN
+    # 🚀 1. IDENTIFICACIÓN INTELIGENTE DEL TERRITORIO
     # =====================================================================
     if isinstance(territorio, list):
         lista_raw = territorio
     elif isinstance(territorio, str):
         if territorio.startswith("["):
-            import ast
             try: lista_raw = ast.literal_eval(territorio)
             except: lista_raw = [territorio]
         else:
@@ -23,19 +23,31 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     else:
         lista_raw = ["Territorio Global"]
 
-    # 🚨 FILTRO ANTI-ESTACIONES INTELIGENTE
-    # Solo bloquea si el elemento es puramente numérico (ej: "27015330")
-    if any(str(t).strip().isdigit() for t in lista_raw):
-        st.error("🛑 **Escala Geográfica Incorrecta:** El sistema detectó códigos de estaciones puras.")
-        st.info("Por favor, selecciona una Cuenca o Municipio en el filtro lateral izquierdo.")
-        return 
-
-    # Conservamos los nombres EXACTOS (con código) para buscar en la nueva Matriz Demográfica
-    nombres_exactos = [str(t).replace("Cuencas Seleccionadas: ", "").replace("SZH: ", "").strip() 
-                       for t in lista_raw if str(t).strip() not in ["", "-- Seleccione --"]]
+    nombres_exactos = []
     
+    # 🚨 EL TRUCO MAESTRO: Si la lista es de puros números (estaciones), la ignoramos
+    # y extraemos el nombre real desde el mapa (gdf_zona)
+    es_estaciones = all(str(t).strip().isdigit() for t in lista_raw if str(t).strip())
+    
+    if not es_estaciones and lista_raw and lista_raw[0] not in ["Territorio Global", "-- Seleccione --"]:
+        nombres_exactos = [str(t).replace("Cuencas Seleccionadas: ", "").replace("SZH: ", "").strip() for t in lista_raw]
+        
+    # 🗺️ RESCATE DESDE EL MAPA (Si recibimos estaciones, leemos las columnas del polígono)
+    if not nombres_exactos and isinstance(gdf_zona, pd.DataFrame) and not gdf_zona.empty:
+        # Buscamos de la escala más pequeña a la más grande
+        columnas_jerarquia = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'MPIO_CNMBR', 'municipio_clean', 'Territorio']
+        for col in columnas_jerarquia:
+            if col in gdf_zona.columns:
+                valores = gdf_zona[col].dropna().unique()
+                if len(valores) > 0 and str(valores[0]).strip() not in ["", "None", "nan"]:
+                    nombres_exactos = [str(v).strip() for v in valores]
+                    break # Encontramos la columna correcta, salimos del loop
+                    
+    if not nombres_exactos:
+        nombres_exactos = ["Territorio Global"]
+
     # Generamos la versión CORTA (sin código) para buscar en la Matriz Hidrológica
-    nombres_cortos = [n.split(" - (")[0].strip() for n in nombres_exactos]
+    nombres_cortos = [n.split(" - (")[0].strip() for n in nombres_exactos if n != "Territorio Global"]
 
     if nombres_cortos:
         nombre_display = " + ".join(nombres_cortos[:2]) + ("..." if len(nombres_cortos)>2 else "")
@@ -51,8 +63,8 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     pob_aleph = float(st.session_state.get('aleph_pob_total', 0))
     oferta_aleph = float(st.session_state.get('aleph_oferta_m3s', 0.0))
 
-    # RESCATE DEMOGRÁFICO: Buscamos con el nombre EXACTO (El que tiene el código de 14 dígitos)
-    if pob_aleph == 0 and nombres_exactos:
+    # RESCATE DEMOGRÁFICO: Buscamos con el nombre EXACTO (Con código IDEAM)
+    if pob_aleph == 0 and nombres_exactos and nombres_exactos[0] != "Territorio Global":
         try:
             placeholders_p = ", ".join([f":p{i}" for i in range(len(nombres_exactos))])
             params_p = {f"p{i}": val for i, val in enumerate(nombres_exactos)}
