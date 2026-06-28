@@ -1,8 +1,7 @@
-# pages/15_⚖️_Escenarios_WEAP.py
-
 import sys
 import os
 import streamlit as st
+import pandas as pd
 
 # 1. Configuración de página
 st.set_page_config(page_title="SIHCLI | Escenarios WEAP", page_icon="⚖️", layout="wide")
@@ -24,6 +23,14 @@ if nivel_jerarquico == "Estaciones":
     st.warning("El simulador WEAP requiere una unidad territorial que contenga población (como una **Cuenca Hidrográfica** o un **Municipio**).")
     st.info("👉 **Solución:** Ve al panel izquierdo, cambia la 'Escala de Análisis' a 'Cuencas Hidrográficas' o 'Municipios'.")
 else:
+    # --- SONDA FORENSE ---
+    st.info(f"🕵️‍♂️ DETECTIVE 1 (Lo que envía el selector): {nombre_zona}")
+    if isinstance(gdf_zona, pd.DataFrame):
+        st.info(f"🕵️‍♂️ DETECTIVE 2 (Columnas del mapa): {gdf_zona.columns.tolist()}")
+    else:
+        st.info(f"🕵️‍♂️ DETECTIVE 2: No llegó ningún mapa (gdf_zona es {type(gdf_zona)})")
+    # ---------------------
+
     # 5. ENCENDER EL MOTOR WEAP
     try:
         # 🚀 TRUCO MAESTRO: Le enviamos el gdf_zona al motor para que pueda extraer los nombres reales
