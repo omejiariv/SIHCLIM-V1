@@ -6269,8 +6269,11 @@ def generar_mapa_interactivo(grid_data, bounds, gdf_stations, gdf_zona, gdf_buff
 def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
     try:
         from modules.db_manager import get_engine
+        import pandas as pd
+        import geopandas as gpd
+        import plotly.express as px
     except ImportError:
-        st.error("Error importando db_manager.")
+        st.error("Error importando módulos necesarios.")
         return
 
     st.markdown("#### 🗺️ Comparativa de Regímenes de Lluvia")
@@ -6286,7 +6289,7 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
             # B. Metadatos de Estaciones (Con Región y Coordenadas)
             df_meta_bd = pd.read_sql("SELECT id_estacion, nombre, municipio, subregion, latitud, longitud FROM estaciones", conn)
             
-            # C. Mapa de Cuencas (Directo de la BD)
+            # C. Mapa de Cuencas (Directo de la BD, donde ya inyectamos el ADN)
             try:
                 gdf_polys_bd = gpd.read_postgis("SELECT * FROM cuencas", conn, geom_col="geometry")
             except Exception:
@@ -6308,7 +6311,7 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
     # --- 3. CÁLCULO DE CUENCA CON SELECTOR DE COLUMNAS ---
     col_cuenca_default = None
-    opciones_nombre_cuenca = [] # Aquí guardaremos las columnas disponibles (ej: subc_lbl, nombre)
+    opciones_nombre_cuenca = [] 
     
     # Priorizamos mapa de BD
     gdf_polys = gdf_polys_bd if gdf_polys_bd is not None else gdf_subcuencas
@@ -6319,7 +6322,7 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
             gdf_polys.columns = [str(c).strip().lower() for c in gdf_polys.columns]
             if gdf_polys.crs is None: gdf_polys.set_crs("EPSG:4326", inplace=True)
             
-            # Identificar columnas que parecen nombres (texto) para dárselas a elegir al usuario
+            # Identificar columnas que parecen nombres (texto)
             cols_ignore = ['geometry', 'id', 'gid', 'objectid', 'shape_leng', 'shape_area', 'index_right']
             opciones_nombre_cuenca = [c for c in gdf_polys.columns if c not in cols_ignore and not c.startswith('shape')]
             
@@ -6338,9 +6341,9 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
                 # Alinear proyecciones
                 if gdf_puntos.crs != gdf_polys.crs: gdf_polys = gdf_polys.to_crs(gdf_puntos.crs)
                 
-                # SPATIAL JOIN: Nos traemos TODAS las columnas de texto del mapa
+                # SPATIAL JOIN: sjoin_nearest asigna a cada estación la cuenca más cercana (incluso si está afuera)
                 cols_to_join = ['geometry'] + opciones_nombre_cuenca
-                gdf_cruce = gpd.sjoin(gdf_puntos, gdf_polys[cols_to_join], how="left", predicate="intersects")
+                gdf_cruce = gpd.sjoin_nearest(gdf_puntos, gdf_polys[cols_to_join], how="left", distance_col="dist")
                 
                 # Limpieza de duplicados
                 gdf_cruce = gdf_cruce.drop_duplicates(subset=['id_estacion'])
@@ -6353,9 +6356,9 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
                     how='left'
                 )
                 
-                # Intentamos definir una por defecto (prioridad subc_lbl)
-                if 'subc_lbl' in opciones_nombre_cuenca: col_cuenca_default = 'subc_lbl'
-                elif 'nombre_cuenca' in opciones_nombre_cuenca: col_cuenca_default = 'nombre_cuenca'
+                # Intentamos definir una por defecto (prioridad nom_nss3)
+                if 'nom_nss3' in opciones_nombre_cuenca: col_cuenca_default = 'nom_nss3'
+                elif 'subc_lbl' in opciones_nombre_cuenca: col_cuenca_default = 'subc_lbl'
                 elif opciones_nombre_cuenca: col_cuenca_default = opciones_nombre_cuenca[0]
 
         except Exception as e:
@@ -6365,8 +6368,8 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
     df_full = pd.merge(df_datos, df_meta, on='id_estacion', how='inner')
 
     # 5. DETECCIÓN DE COLUMNAS
-    col_municipio = find_col(df_full, ['municipio', 'mpio', 'mpio_cnmbr'])
-    col_region = find_col(df_full, ['subregion', 'region', 'zona'])
+    col_municipio = next((c for c in df_full.columns if c in ['municipio', 'mpio', 'mpio_cnmbr']), None)
+    col_region = next((c for c in df_full.columns if c in ['subregion', 'region', 'zona']), None)
     
     # 6. INTERFAZ GRÁFICA
     meses_mapa = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 
@@ -6378,7 +6381,6 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         opts = []
         if col_municipio: opts.append("Municipio")
         if col_region: opts.append("Región") 
-        # Si hay columnas de cuenca disponibles (aunque sea 1), mostramos la opción
         if opciones_nombre_cuenca: opts.append("Cuenca")
         
         if not opts:
@@ -6387,7 +6389,6 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
         nivel = st.radio("Agrupar por:", opts)
         
-        # --- LÓGICA DE SELECCIÓN DE COLUMNA ---
         campo_filtro = None
         
         if nivel == "Municipio": 
@@ -6397,12 +6398,10 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
             campo_filtro = col_region
             
         elif nivel == "Cuenca":
-            # 🔥 AQUÍ ESTÁ LA MAGIA: Selector de campo para Cuenca 🔥
             if opciones_nombre_cuenca:
-                # Calculamos el índice por defecto (buscando subc_lbl)
                 idx_def = 0
-                if 'subc_lbl' in opciones_nombre_cuenca:
-                    idx_def = opciones_nombre_cuenca.index('subc_lbl')
+                if col_cuenca_default in opciones_nombre_cuenca:
+                    idx_def = opciones_nombre_cuenca.index(col_cuenca_default)
                 
                 col_seleccionada = st.selectbox(
                     "🏷️ Etiqueta de Cuenca:", 
@@ -6433,4 +6432,3 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
         
         st.plotly_chart(fig, use_container_width=True)
         st.download_button("📥 Descargar CSV", df_gp.to_csv(index=False).encode('utf-8-sig'), "comparativa.csv")
-
