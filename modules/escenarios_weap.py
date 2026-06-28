@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from sqlalchemy import text
 from modules.db_manager import get_engine
 import ast
+import geopandas as gpd
 
 def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=None):
     engine = get_engine()
@@ -69,7 +70,7 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
         except Exception: pass
 
     # =====================================================================
-    # 🧬 3. FORJA DE LA CURVA ESTACIONAL REAL (Caché en Aleph)
+    # 🧬 3. FORJA DE LA CURVA ESTACIONAL REAL (Autosuficiente)
     # =====================================================================
     clave_curva = f"curva_{nombres_exactos[0]}" if nombres_exactos else "curva_global"
     
@@ -77,9 +78,19 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
         curva_estacional = np.array([0.7, 0.8, 1.0, 1.2, 1.3, 0.9, 0.8, 0.9, 1.1, 1.3, 1.2, 0.9])
         estacion_usada = "Curva Sintética Estándar"
         
-        if isinstance(gdf_zona, pd.DataFrame) and not gdf_zona.empty:
+        # 🛡️ TRUCO MAESTRO: Si el selector no nos mandó el mapa, lo buscamos en PostgreSQL
+        gdf_zona_real = gdf_zona
+        if not isinstance(gdf_zona_real, pd.DataFrame) or gdf_zona_real.empty:
+            if nombres_exactos and nombres_exactos[0] != "Territorio Global":
+                try:
+                    q_geom = text("SELECT geometry FROM cuencas WHERE nom_nss3 = :nom OR subc_lbl = :nom LIMIT 1")
+                    gdf_zona_real = gpd.read_postgis(q_geom, engine, params={"nom": nombres_exactos[0]}, geom_col="geometry")
+                except Exception:
+                    pass
+
+        # Con el mapa asegurado, buscamos la estación
+        if isinstance(gdf_zona_real, pd.DataFrame) and not gdf_zona_real.empty:
             try:
-                import geopandas as gpd
                 df_estaciones = pd.read_sql("SELECT id_estacion, nombre, latitud, longitud FROM estaciones", engine)
                 df_estaciones['longitud'] = pd.to_numeric(df_estaciones['longitud'], errors='coerce')
                 df_estaciones['latitud'] = pd.to_numeric(df_estaciones['latitud'], errors='coerce')
@@ -87,10 +98,10 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
                 
                 gdf_est = gpd.GeoDataFrame(df_estaciones, geometry=gpd.points_from_xy(df_estaciones.longitud, df_estaciones.latitud), crs="EPSG:4326")
                 
-                if gdf_zona.crs is None: gdf_zona.set_crs("EPSG:4326", inplace=True)
-                if gdf_est.crs != gdf_zona.crs: gdf_est = gdf_est.to_crs(gdf_zona.crs)
+                if gdf_zona_real.crs is None: gdf_zona_real.set_crs("EPSG:4326", inplace=True)
+                if gdf_est.crs != gdf_zona_real.crs: gdf_est = gdf_est.to_crs(gdf_zona_real.crs)
                 
-                cruce = gpd.sjoin_nearest(gdf_zona, gdf_est, how="left", distance_col="dist")
+                cruce = gpd.sjoin_nearest(gdf_zona_real, gdf_est, how="left", distance_col="dist")
                 
                 if not cruce.empty and 'id_estacion' in cruce.columns:
                     id_est_cercana = str(cruce.iloc[0]['id_estacion'])
@@ -117,7 +128,7 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     fuente_curva = st.session_state.get(f"est_{clave_curva}", "Curva Sintética Estándar")
 
     # =====================================================================
-    # 🚨 4. ENSAMBLE DEL BALANCE MULTIDIMENSIONAL (RURH + CALIDAD)
+    # 4. BASES MATEMÁTICAS (Preparación)
     # =====================================================================
     pob_base = pob_aleph if pob_aleph > 0 else 150000
     oferta_base_m3s = oferta_aleph if oferta_aleph > 0.0 else 1.2
@@ -127,9 +138,6 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     demanda_agro_base_m3s = float(st.session_state.get('aleph_concesiones_m3s', 0.0))
 
     st.markdown(f"📌 **Oferta Neta Disponible:** `{oferta_base_m3s:,.3f} m³/s` | 👥 **Población:** `{pob_base:,.0f} hab`")
-    st.info(f"🔍 **Anatomía de las Presiones:** 💧 Humano: `{demanda_humana_m3s:,.3f} m³/s` | 🌿 Ecológico: `{caudal_ecologico_m3s:,.3f} m³/s` | 🏭 RURH: `{demanda_agro_base_m3s:,.3f} m³/s`")
-    st.caption(f"🌧️ **Dinámica Climatológica Basada en:** `{fuente_curva}`")
-    st.markdown("---")
 
     # =====================================================================
     # 5. PANEL DE CONTROL AVANZADO (Escenarios RURH y Vertimientos)
@@ -142,21 +150,25 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     with col2:
         st.markdown("**👥 Presiones de Demanda**")
         var_pob = st.slider("Crecimiento Poblacional %", 0, 100, 15, step=5)
-        var_rurh = st.slider("🏭 Carga Agroindustrial RURH (m³/s)", 0.0, float(oferta_base_m3s * 2), demanda_agro_base_m3s, step=0.05)
+        # El slider controla ahora el valor en vivo
+        var_rurh = st.slider("🏭 Carga Agroindustrial RURH (m³/s)", 0.0, float(oferta_base_m3s * 2), demanda_agro_base_m3s, step=0.01)
     with col3:
         st.markdown("**⚙️ Medidas de Mitigación**")
         var_eficiencia = st.slider("Eficiencia Acueductos %", 0, 40, 0, step=5)
         var_reuso = st.slider("🔄 Reuso Agroindustrial %", 0, 50, 0, step=5)
 
-    # 🧮 MOTOR DE RECÁLCULO
+    # 🧮 MOTOR DE RECÁLCULO (En Vivo)
     oferta_efectiva = (oferta_base_m3s * (1 + (var_clima / 100))) * (1 - (var_calidad / 100))
     d_hum_mod = demanda_humana_m3s * (1 + (var_pob / 100)) * (1 - (var_eficiencia / 100))
     d_agro_mod = var_rurh * (1 - (var_reuso / 100))
     demanda_total_fija = d_hum_mod + d_agro_mod + caudal_ecologico_m3s
 
+    # 📊 IMPRESIÓN EN VIVO DE LAS PRESIONES (Ahora sí responde a los sliders)
+    st.info(f"🔍 **Anatomía de las Presiones (En Vivo):** 💧 Humano: `{d_hum_mod:,.3f} m³/s` | 🌿 Ecológico: `{caudal_ecologico_m3s:,.3f} m³/s` | 🏭 RURH (Agro/Ind): `{d_agro_mod:,.3f} m³/s`")
+    st.caption(f"🌧️ **Dinámica Climatológica Basada en:** `{fuente_curva}`")
+    st.markdown("---")
+
     meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-    
-    # Aplicamos la curva física extraída de la base de datos
     oferta_mensual = oferta_efectiva * curva_dinamica
     demanda_mensual = np.full(12, demanda_total_fija)
 
