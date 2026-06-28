@@ -7,99 +7,61 @@ import streamlit as st
 from sqlalchemy import text
 from modules.db_manager import get_engine
 
-def encontrar_columna(df, palabras_clave):
-    """Busca una columna basándose en coincidencias parciales más flexibles."""
-    for col in df.columns:
-        col_norm = str(col).upper().replace("Ó", "O").replace("Í", "I").replace(" ", "").replace("_", "")
-        # Buscamos si CUALQUIERA de las palabras clave está presente
-        # Por ejemplo: si buscas "CAUDAL", que acepte "CAUDAL (l/s)" o "CAUDAL TOTAL"
-        if any(p in col_norm for p in palabras_clave):
-            return col
-    return None
-
-def limpiar_y_sumar_caudales(df, tipo):
-    # Ajustamos las palabras clave para ser más permisivos con tus archivos
-    col_nombre = encontrar_columna(df, ["NOMBRECUENCA", "NOMBRE"])
-    col_codigo = encontrar_columna(df, ["CODIGO", "NSS3"])
-    
-    # Buscamos específicamente columnas de caudal que contengan el valor numérico
-    # En tus archivos dice "CAUDAL (l/s)" o "CAUDAL TOTAL CONCESIONADO"
-    col_caudal = encontrar_columna(df, ["CAUDAL"])
-
-    if not col_nombre or not col_codigo or not col_caudal:
-        # 🕵️‍♂️ DIAGNÓSTICO FORENSE: Imprimimos qué encontró el sistema para poder corregir
-        st.error(f"🚨 Columnas detectadas: {list(df.columns)}")
-        st.error(f"No pude encontrar columnas que contengan: Nombre={col_nombre}, Codigo={col_codigo}, Caudal={col_caudal}")
-        return pd.DataFrame()
-    
-    df_clean = df.dropna(subset=[col_nombre, col_codigo, col_caudal]).copy()
-    df_clean[col_caudal] = pd.to_numeric(df_clean[col_caudal], errors='coerce').fillna(0)
-
-    def formatear_territorio(row):
-        nombre = str(row[col_nombre]).strip().title().replace("Q.", "Q. ")
-        nombre = " ".join(nombre.split())
-        codigo = str(row[col_codigo]).strip()
-        return f"{nombre} - ({codigo})"
-
-    df_clean['Territorio'] = df_clean.apply(formatear_territorio, axis=1)
-
-    df_agrupado = df_clean.groupby('Territorio')[col_caudal].sum().reset_index()
-    df_agrupado.rename(columns={col_caudal: f'Caudal_{tipo}_Ls'}, inplace=True)
-    df_agrupado[f'Caudal_{tipo}_m3s'] = df_agrupado[f'Caudal_{tipo}_Ls'] / 1000.0
-
-    return df_agrupado
-
 def procesar_e_inyectar_rurh():
-    """Descarga los archivos de Supabase, los procesa y los inyecta en PostgreSQL."""
-    with st.spinner("Conectando con el Aleph de Supabase..."):
+    """Descarga el archivo RURH estandarizado de Supabase, lo procesa y lo inyecta en PostgreSQL."""
+    with st.spinner("Conectando con el Aleph de Supabase (RURH Consolidado)..."):
         try:
-            url_concesiones = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/CONCESIONES_RURH_GUARNE_LAHONDA.xlsx"
-            url_vertimientos = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/VERTIMIENTOS_LA_HONDA.xlsx"
+            # 1. DESCARGA DEL ARCHIVO MAESTRO
+            url_rurh = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/RURH_La_Honda.xlsx"
+            res = requests.get(url_rurh)
+            
+            # 🔥 CORRECCIÓN DEL ERROR EXCEL: Forzamos el motor openpyxl
+            df_rurh = pd.read_excel(io.BytesIO(res.content), engine='openpyxl')
+            
+            st.info("📊 Archivo RURH estandarizado descargado. Procesando sumatorias espaciales...")
 
-            # Descargar archivos
-            res_conc = requests.get(url_concesiones)
-            res_vert = requests.get(url_vertimientos)
+            # 2. LIMPIEZA Y FILTRADO
+            # Eliminamos filas que no tengan los datos críticos para el cruce
+            df_clean = df_rurh.dropna(subset=['nombre_cuenca_nss3', 'código_cuenca_nss3', 'caudal_total_requerido_lps']).copy()
+            
+            # 3. FORJA DE LA LLAVE UNIVERSAL
+            def formatear_territorio(row):
+                nombre = str(row['nombre_cuenca_nss3']).strip().title().replace("Q.", "Q. ")
+                # Colapsar espacios dobles
+                nombre = " ".join(nombre.split())
+                codigo = str(row['código_cuenca_nss3']).strip()
+                return f"{nombre} - ({codigo})"
 
-            # Leer todas las hojas y combinarlas
-            dict_conc = pd.read_excel(io.BytesIO(res_conc.content), sheet_name=None)
-            dict_vert = pd.read_excel(io.BytesIO(res_vert.content), sheet_name=None)
+            df_clean['Territorio'] = df_clean.apply(formatear_territorio, axis=1)
+            
+            # Aseguramos formato numérico
+            df_clean['caudal_total_requerido_lps'] = pd.to_numeric(df_clean['caudal_total_requerido_lps'], errors='coerce').fillna(0)
 
-            df_conc_total = pd.concat(dict_conc.values(), ignore_index=True)
-            df_vert_total = pd.concat(dict_vert.values(), ignore_index=True)
+            # 4. SUMATORIA ESPACIAL (Agrupamos por cuenca)
+            df_agrupado = df_clean.groupby('Territorio')['caudal_total_requerido_lps'].sum().reset_index()
+            
+            # Renombramos y convertimos a m3/s (1 m3/s = 1000 L/s)
+            df_agrupado.rename(columns={'caudal_total_requerido_lps': 'Caudal_Concesionado_Ls'}, inplace=True)
+            df_agrupado['Caudal_Concesionado_m3s'] = df_agrupado['Caudal_Concesionado_Ls'] / 1000.0
+            
+            # Espacio reservado para los vertimientos (cuando los estandarices de la misma forma)
+            df_agrupado['Caudal_Vertimiento_m3s'] = 0.0
+            df_agrupado['Presion_Total_RURH_m3s'] = df_agrupado['Caudal_Concesionado_m3s'] + df_agrupado['Caudal_Vertimiento_m3s']
 
-            st.info("📊 Archivos descargados. Procesando sumatorias espaciales...")
-
-            # Procesar
-            df_concesiones = limpiar_y_sumar_caudales(df_conc_total, "Concesionado")
-            df_vertimientos = limpiar_y_sumar_caudales(df_vert_total, "Vertimiento")
-
-            # Unir ambos DataFrames usando el Territorio
-            if not df_concesiones.empty and not df_vertimientos.empty:
-                df_final = pd.merge(df_concesiones, df_vertimientos, on="Territorio", how="outer").fillna(0.0)
-            elif not df_concesiones.empty:
-                df_final = df_concesiones
-                df_final['Caudal_Vertimiento_Ls'] = 0.0
-                df_final['Caudal_Vertimiento_m3s'] = 0.0
-            else:
-                st.error("No se encontraron columnas válidas en los archivos.")
-                return
-
-            # Calcular Presión Total RURH en m3/s
-            df_final['Presion_Total_RURH_m3s'] = df_final['Caudal_Concesionado_m3s'] + df_final['Caudal_Vertimiento_m3s']
-
-            st.dataframe(df_final.style.format({
+            # Mostrar tabla de resultados en la interfaz
+            st.dataframe(df_agrupado.style.format({
                 'Caudal_Concesionado_m3s': '{:.4f}',
                 'Caudal_Vertimiento_m3s': '{:.4f}',
                 'Presion_Total_RURH_m3s': '{:.4f}'
             }), use_container_width=True)
 
-            # Inyectar a PostgreSQL
+            # 5. INYECCIÓN A POSTGRESQL
             engine = get_engine()
             with engine.begin() as conn:
                 conn.execute(text("DROP TABLE IF EXISTS matriz_presiones_rurh"))
-            df_final.to_sql('matriz_presiones_rurh', engine, if_exists='replace', index=False)
+            df_agrupado.to_sql('matriz_presiones_rurh', engine, if_exists='replace', index=False)
 
-            st.success(f"✅ ¡Inyección Exitosa! {len(df_final)} cuencas actualizadas con presiones hídricas reales en PostgreSQL.")
+            st.success(f"✅ ¡Inyección Exitosa! {len(df_agrupado)} cuencas actualizadas con presiones hídricas reales en PostgreSQL.")
 
         except Exception as e:
             st.error(f"🚨 Error durante la inyección: {e}")
