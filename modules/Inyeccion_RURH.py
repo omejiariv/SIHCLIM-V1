@@ -1,28 +1,11 @@
 # modules/Inyeccion_RURH.py
 
-import os
-import sys
 import io
 import requests
 import pandas as pd
 import streamlit as st
 from sqlalchemy import text
-
-# Configuración inicial
-st.set_page_config(page_title="Inyección RURH", page_icon="🏭", layout="wide")
-
-try:
-    from modules import selectors
-    from modules.db_manager import get_engine
-except ImportError:
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from modules import selectors
-    from modules.db_manager import get_engine
-
-selectors.renderizar_menu_navegacion("Inyección RURH")
-
-st.title("🏭 Motor de Inyección RURH (Concesiones y Vertimientos)")
-st.markdown("Este módulo descarga automáticamente los archivos Excel desde Supabase, consolida los caudales concesionados y vertimientos, y los inyecta en la base de datos para alimentar el simulador WEAP.")
+from modules.db_manager import get_engine
 
 def encontrar_columna(df, palabras_clave):
     """Busca una columna en el DataFrame basándose en coincidencias de palabras clave."""
@@ -34,7 +17,6 @@ def encontrar_columna(df, palabras_clave):
 
 def limpiar_y_sumar_caudales(df, tipo):
     """Limpia los datos, formatea el territorio y suma el caudal total."""
-    # 1. Detectar columnas clave
     col_nombre = encontrar_columna(df, ["NOMBRE", "NSS3"])
     col_codigo = encontrar_columna(df, ["CODIGO", "NSS3"])
     col_caudal = encontrar_columna(df, ["CAUDAL"])
@@ -42,30 +24,25 @@ def limpiar_y_sumar_caudales(df, tipo):
     if not col_nombre or not col_codigo or not col_caudal:
         return pd.DataFrame()
 
-    # 2. Limpieza de datos
     df_clean = df.dropna(subset=[col_nombre, col_codigo, col_caudal]).copy()
-    
-    # Asegurar que el caudal sea numérico
     df_clean[col_caudal] = pd.to_numeric(df_clean[col_caudal], errors='coerce').fillna(0)
 
-    # 3. Construir la Llave Universal (Ej: "Q. La Honda - (2308-01-04-24)")
     def formatear_territorio(row):
         nombre = str(row[col_nombre]).strip().title().replace("Q.", "Q. ")
-        # Limpiar espacios dobles
         nombre = " ".join(nombre.split())
         codigo = str(row[col_codigo]).strip()
         return f"{nombre} - ({codigo})"
 
     df_clean['Territorio'] = df_clean.apply(formatear_territorio, axis=1)
 
-    # 4. Agrupar y sumar (Convertir L/s a m3/s)
     df_agrupado = df_clean.groupby('Territorio')[col_caudal].sum().reset_index()
     df_agrupado.rename(columns={col_caudal: f'Caudal_{tipo}_Ls'}, inplace=True)
     df_agrupado[f'Caudal_{tipo}_m3s'] = df_agrupado[f'Caudal_{tipo}_Ls'] / 1000.0
 
     return df_agrupado
 
-if st.button("🚀 Descargar, Procesar e Inyectar a Base de Datos", type="primary"):
+def procesar_e_inyectar_rurh():
+    """Descarga los archivos de Supabase, los procesa y los inyecta en PostgreSQL."""
     with st.spinner("Conectando con el Aleph de Supabase..."):
         try:
             url_concesiones = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/CONCESIONES_RURH_GUARNE_LAHONDA.xlsx"
@@ -97,7 +74,7 @@ if st.button("🚀 Descargar, Procesar e Inyectar a Base de Datos", type="primar
                 df_final['Caudal_Vertimiento_m3s'] = 0.0
             else:
                 st.error("No se encontraron columnas válidas en los archivos.")
-                st.stop()
+                return
 
             # Calcular Presión Total RURH en m3/s
             df_final['Presion_Total_RURH_m3s'] = df_final['Caudal_Concesionado_m3s'] + df_final['Caudal_Vertimiento_m3s']
