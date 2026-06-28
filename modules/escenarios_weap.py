@@ -78,13 +78,18 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
         curva_estacional = np.array([0.7, 0.8, 1.0, 1.2, 1.3, 0.9, 0.8, 0.9, 1.1, 1.3, 1.2, 0.9])
         estacion_usada = "Curva Sintética Estándar"
         
-        # 🛡️ TRUCO MAESTRO: Si el selector no nos mandó el mapa, lo buscamos en PostgreSQL
+        # 🛡️ TRUCO MAESTRO ACTUALIZADO: Búsqueda flexible del polígono
         gdf_zona_real = gdf_zona
         if not isinstance(gdf_zona_real, pd.DataFrame) or gdf_zona_real.empty:
             if nombres_exactos and nombres_exactos[0] != "Territorio Global":
                 try:
-                    q_geom = text("SELECT geometry FROM cuencas WHERE nom_nss3 = :nom OR subc_lbl = :nom LIMIT 1")
-                    gdf_zona_real = gpd.read_postgis(q_geom, engine, params={"nom": nombres_exactos[0]}, geom_col="geometry")
+                    # Usamos ILIKE para atrapar coincidencias parciales si el nombre varía ligeramente
+                    termino_busqueda = f"%{nombres_cortos[0]}%"
+                    q_geom = text("""
+                        SELECT geometry FROM cuencas 
+                        WHERE nom_nss3 ILIKE :busqueda OR subc_lbl ILIKE :busqueda LIMIT 1
+                    """)
+                    gdf_zona_real = gpd.read_postgis(q_geom, engine, params={"busqueda": termino_busqueda}, geom_col="geometry")
                 except Exception:
                     pass
 
