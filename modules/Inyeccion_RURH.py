@@ -8,22 +8,30 @@ from sqlalchemy import text
 from modules.db_manager import get_engine
 
 def encontrar_columna(df, palabras_clave):
-    """Busca una columna en el DataFrame basándose en coincidencias de palabras clave."""
+    """Busca una columna basándose en coincidencias parciales más flexibles."""
     for col in df.columns:
-        col_norm = str(col).upper().replace("Ó", "O").replace("Í", "I").replace(" ", "")
-        if all(p in col_norm for p in palabras_clave):
+        col_norm = str(col).upper().replace("Ó", "O").replace("Í", "I").replace(" ", "").replace("_", "")
+        # Buscamos si CUALQUIERA de las palabras clave está presente
+        # Por ejemplo: si buscas "CAUDAL", que acepte "CAUDAL (l/s)" o "CAUDAL TOTAL"
+        if any(p in col_norm for p in palabras_clave):
             return col
     return None
 
 def limpiar_y_sumar_caudales(df, tipo):
-    """Limpia los datos, formatea el territorio y suma el caudal total."""
-    col_nombre = encontrar_columna(df, ["NOMBRE", "NSS3"])
+    # Ajustamos las palabras clave para ser más permisivos con tus archivos
+    col_nombre = encontrar_columna(df, ["NOMBRECUENCA", "NOMBRE"])
     col_codigo = encontrar_columna(df, ["CODIGO", "NSS3"])
+    
+    # Buscamos específicamente columnas de caudal que contengan el valor numérico
+    # En tus archivos dice "CAUDAL (l/s)" o "CAUDAL TOTAL CONCESIONADO"
     col_caudal = encontrar_columna(df, ["CAUDAL"])
 
     if not col_nombre or not col_codigo or not col_caudal:
+        # 🕵️‍♂️ DIAGNÓSTICO FORENSE: Imprimimos qué encontró el sistema para poder corregir
+        st.error(f"🚨 Columnas detectadas: {list(df.columns)}")
+        st.error(f"No pude encontrar columnas que contengan: Nombre={col_nombre}, Codigo={col_codigo}, Caudal={col_caudal}")
         return pd.DataFrame()
-
+    
     df_clean = df.dropna(subset=[col_nombre, col_codigo, col_caudal]).copy()
     df_clean[col_caudal] = pd.to_numeric(df_clean[col_caudal], errors='coerce').fillna(0)
 
