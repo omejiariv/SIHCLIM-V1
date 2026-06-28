@@ -128,6 +128,7 @@ def renderizar_menu_navegacion(pagina_actual):
         st.page_link("pages/13_🕵️_Detective.py", label="Detective", icon="🕵️")
         st.page_link("pages/14_🛰️_Satelite_En_Vivo.py", label="Satélite en Vivo", icon="🛰️")
         st.page_link("pages/15_⚖️_Escenarios_WEAP.py", label="Escenarios WEAP", icon="⚖️")
+        st.page_link("pages/16_🏭_Inyeccion_RURH.py", label="Inyección RURH", icon="🏭")
     
     renderizar_telemetria_aleph()
 
