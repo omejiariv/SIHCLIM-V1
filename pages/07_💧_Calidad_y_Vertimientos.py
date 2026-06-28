@@ -151,62 +151,117 @@ def cargar_municipios():
         pass
     return pd.DataFrame()
 
-# 🌉 PUENTES DE COMPATIBILIDAD (RECUPERADOS)
+# 🌉 PUENTES DE COMPATIBILIDAD HÍBRIDOS (SUPABASE + POSTGRESQL)
 @st.cache_data(show_spinner=False)
 def cargar_vertimientos():
     import pandas as pd
+    from sqlalchemy import text
+    try:
+        from modules.db_manager import get_engine
+        engine = get_engine()
+    except Exception:
+        engine = None
+
+    # 1. Cargamos tu estándar de oro desde la nube
     gdf = cargar_maestros_nube("vertimientos")
-    if gdf.empty: return pd.DataFrame()
-    
-    df = pd.DataFrame(gdf)
-    df['caudal_vert_lps'] = df['Caudal_Lps']
-    df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
-    df['tipo_vertimiento'] = df['Tipo_Vertimiento']
-    df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
-    
-    # Extracción de coordenadas
-    centroides = gdf.geometry.centroid
-    df['coordenada_x'] = centroides.x.fillna(0)
-    df['coordenada_y'] = centroides.y.fillna(0)
-    
-    # 🛡️ EXTIRPACIÓN DE LA COLUMNA ASESINA DE MEMORIA
-    if 'geometry' in df.columns:
-        df = df.drop(columns=['geometry'])
+    if gdf.empty: df = pd.DataFrame()
+    else:
+        df = pd.DataFrame(gdf)
+        df['caudal_vert_lps'] = df.get('Caudal_Lps', 0.0)
+        df['municipio_norm'] = df.get('Municipio', '').apply(normalizar_texto)
+        df['tipo_vertimiento'] = df.get('Tipo_Vertimiento', 'No Registrado')
+        df['car_norm'] = df.get('Autoridad', '').apply(normalizar_texto)
         
+        centroides = gdf.geometry.centroid
+        df['coordenada_x'] = centroides.x.fillna(0)
+        df['coordenada_y'] = centroides.y.fillna(0)
+        if 'geometry' in df.columns: df = df.drop(columns=['geometry'])
+
+    # 2. 🚀 INYECCIÓN SQL: Sobrescribir/Añadir desde la Matriz RURH
+    if engine:
+        try:
+            q_sql = text('SELECT "Territorio", "Caudal_Vertimiento_m3s" FROM matriz_presiones_rurh WHERE "Caudal_Vertimiento_m3s" > 0')
+            df_sql = pd.read_sql(q_sql, engine)
+            if not df_sql.empty:
+                # Convertimos m3/s a L/s para compatibilidad con tu código
+                df_sql['caudal_vert_lps_sql'] = df_sql['Caudal_Vertimiento_m3s'] * 1000
+                
+                # Aquí puedes decidir si añadir estos registros como filas nuevas 
+                # o cruzar por nombre de cuenca (Territorio). 
+                # Por ahora, los añadimos como bloques consolidados por cuenca.
+                df_nuevos = pd.DataFrame({
+                    'caudal_vert_lps': df_sql['caudal_vert_lps_sql'],
+                    'municipio_norm': 'jurisdiccion_inyectada', # Etiqueta para rastreo
+                    'tipo_vertimiento': 'Consolidado RURH SQL',
+                    'car_norm': 'RURH_SQL',
+                    'Territorio_Llave': df_sql['Territorio'],
+                    'coordenada_x': 0, 'coordenada_y': 0
+                })
+                df = pd.concat([df, df_nuevos], ignore_index=True)
+        except Exception:
+            pass
+
     return df
 
 @st.cache_data(show_spinner=False)
 def cargar_concesiones():
     import pandas as pd
+    from sqlalchemy import text
+    try:
+        from modules.db_manager import get_engine
+        engine = get_engine()
+    except Exception:
+        engine = None
+
+    # 1. Cargamos tu estándar de oro desde la nube
     gdf = cargar_maestros_nube("concesiones")
-    if gdf.empty: return pd.DataFrame()
-    
-    df = pd.DataFrame(gdf)
-    df['caudal_lps'] = df['Caudal_Lps']
-    df['municipio_norm'] = df['Municipio'].apply(normalizar_texto)
-    df['tipo_agua'] = df['Tipo_Fuente']
-    df['uso_detalle'] = df['Uso_Agua']
-    df['estado'] = df['Estado']
-    df['car_norm'] = df['Autoridad'].apply(normalizar_texto)
-    
-    # Extracción de coordenadas
-    centroides = gdf.geometry.centroid
-    df['coordenada_x'] = centroides.x.fillna(0)
-    df['coordenada_y'] = centroides.y.fillna(0)
-    
-    def clasificar_uso(u):
-        u = normalizar_texto(u)
-        if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento']): return 'Doméstico'
-        elif any(x in u for x in ['agricola', 'pecuario', 'riego']): return 'Agrícola/Pecuario'
-        elif any(x in u for x in ['industrial', 'mineria']): return 'Industrial'
-        else: return 'Otros'
+    if gdf.empty: df = pd.DataFrame()
+    else:
+        df = pd.DataFrame(gdf)
+        df['caudal_lps'] = df.get('Caudal_Lps', 0.0)
+        df['municipio_norm'] = df.get('Municipio', '').apply(normalizar_texto)
+        df['tipo_agua'] = df.get('Tipo_Fuente', 'Superficial')
+        df['uso_detalle'] = df.get('Uso_Agua', 'No Registrado')
+        df['estado'] = df.get('Estado', 'Otorgada')
+        df['car_norm'] = df.get('Autoridad', '').apply(normalizar_texto)
         
-    df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
-    
-    # 🛡️ EXTIRPACIÓN DE LA COLUMNA ASESINA DE MEMORIA
-    if 'geometry' in df.columns:
-        df = df.drop(columns=['geometry'])
+        centroides = gdf.geometry.centroid
+        df['coordenada_x'] = centroides.x.fillna(0)
+        df['coordenada_y'] = centroides.y.fillna(0)
         
+        def clasificar_uso(u):
+            u = normalizar_texto(u)
+            if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento']): return 'Doméstico'
+            elif any(x in u for x in ['agricola', 'pecuario', 'riego']): return 'Agrícola/Pecuario'
+            elif any(x in u for x in ['industrial', 'mineria']): return 'Industrial'
+            else: return 'Otros'
+            
+        df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
+        if 'geometry' in df.columns: df = df.drop(columns=['geometry'])
+
+    # 2. 🚀 INYECCIÓN SQL: Añadir el RURH estandarizado (Ej: La Honda)
+    if engine:
+        try:
+            q_sql = text('SELECT "Territorio", "Caudal_Concesionado_m3s" FROM matriz_presiones_rurh WHERE "Caudal_Concesionado_m3s" > 0')
+            df_sql = pd.read_sql(q_sql, engine)
+            if not df_sql.empty:
+                df_sql['caudal_lps_sql'] = df_sql['Caudal_Concesionado_m3s'] * 1000
+                
+                df_nuevos = pd.DataFrame({
+                    'caudal_lps': df_sql['caudal_lps_sql'],
+                    'municipio_norm': 'jurisdiccion_inyectada',
+                    'tipo_agua': 'Superficial (SQL)',
+                    'uso_detalle': 'Consolidado Multiuso',
+                    'estado': 'Otorgada',
+                    'car_norm': 'RURH_SQL',
+                    'Sector_Sihcli': 'Consolidado RURH',
+                    'Territorio_Llave': df_sql['Territorio'],
+                    'coordenada_x': 0, 'coordenada_y': 0
+                })
+                df = pd.concat([df, df_nuevos], ignore_index=True)
+        except Exception:
+            pass
+
     return df
 
 @st.cache_data(show_spinner=False, ttl=3600)
