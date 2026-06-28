@@ -6283,18 +6283,12 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            # A. Datos de Lluvia
             df_fresh = pd.read_sql("SELECT fecha, id_estacion, valor FROM precipitacion", conn)
-            
-            # B. Metadatos de Estaciones (Con Región y Coordenadas)
             df_meta_bd = pd.read_sql("SELECT id_estacion, nombre, municipio, subregion, latitud, longitud FROM estaciones", conn)
-            
-            # C. Mapa de Cuencas (Directo de la BD, donde ya inyectamos el ADN)
             try:
                 gdf_polys_bd = gpd.read_postgis("SELECT * FROM cuencas", conn, geom_col="geometry")
             except Exception:
                 gdf_polys_bd = None 
-
     except Exception as e:
         st.error(f"Error crítico conectando a Base de Datos: {e}")
         return
@@ -6309,24 +6303,21 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
     df_meta.columns = [str(c).strip().lower() for c in df_meta.columns]
     df_meta['id_estacion'] = df_meta['id_estacion'].astype(str).str.strip()
 
-    # --- 3. CÁLCULO DE CUENCA CON SELECTOR DE COLUMNAS ---
+    # --- 3. CÁLCULO DE CUENCA CON SPATIAL JOIN INVERSO ---
     col_cuenca_default = None
     opciones_nombre_cuenca = [] 
+    mapping_cuencas = pd.DataFrame()
     
-    # Priorizamos mapa de BD
     gdf_polys = gdf_polys_bd if gdf_polys_bd is not None else gdf_subcuencas
 
     if gdf_polys is not None:
         try:
-            # Normalizar columnas del mapa
             gdf_polys.columns = [str(c).strip().lower() for c in gdf_polys.columns]
             if gdf_polys.crs is None: gdf_polys.set_crs("EPSG:4326", inplace=True)
             
-            # Identificar columnas que parecen nombres (texto)
             cols_ignore = ['geometry', 'id', 'gid', 'objectid', 'shape_leng', 'shape_area', 'index_right']
             opciones_nombre_cuenca = [c for c in gdf_polys.columns if c not in cols_ignore and not c.startswith('shape')]
             
-            # Preparar puntos de estaciones
             df_meta['longitud'] = pd.to_numeric(df_meta['longitud'], errors='coerce')
             df_meta['latitud'] = pd.to_numeric(df_meta['latitud'], errors='coerce')
             puntos_validos = df_meta.dropna(subset=['longitud', 'latitud']).copy()
@@ -6338,25 +6329,13 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
                     crs="EPSG:4326"
                 )
                 
-                # Alinear proyecciones
                 if gdf_puntos.crs != gdf_polys.crs: gdf_polys = gdf_polys.to_crs(gdf_puntos.crs)
                 
-                # SPATIAL JOIN: sjoin_nearest asigna a cada estación la cuenca más cercana (incluso si está afuera)
-                cols_to_join = ['geometry'] + opciones_nombre_cuenca
-                gdf_cruce = gpd.sjoin_nearest(gdf_puntos, gdf_polys[cols_to_join], how="left", distance_col="dist")
+                # 🔥 EL TRUCO INVERSO: Cada polígono busca su punto más cercano
+                gdf_cruce = gpd.sjoin_nearest(gdf_polys, gdf_puntos, how="left", distance_col="dist")
                 
-                # Limpieza de duplicados
-                gdf_cruce = gdf_cruce.drop_duplicates(subset=['id_estacion'])
+                mapping_cuencas = gdf_cruce[['id_estacion'] + opciones_nombre_cuenca].dropna(subset=['id_estacion'])
                 
-                # Merge final hacia los metadatos
-                df_meta = pd.merge(
-                    df_meta, 
-                    gdf_cruce[['id_estacion'] + opciones_nombre_cuenca], 
-                    on='id_estacion', 
-                    how='left'
-                )
-                
-                # Intentamos definir una por defecto (prioridad nom_nss3)
                 if 'nom_nss3' in opciones_nombre_cuenca: col_cuenca_default = 'nom_nss3'
                 elif 'subc_lbl' in opciones_nombre_cuenca: col_cuenca_default = 'subc_lbl'
                 elif opciones_nombre_cuenca: col_cuenca_default = opciones_nombre_cuenca[0]
@@ -6366,6 +6345,10 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
     # 4. MERGE FINAL DE TODO
     df_full = pd.merge(df_datos, df_meta, on='id_estacion', how='inner')
+    
+    # Inyectamos el cruce espacial a los datos base
+    if not mapping_cuencas.empty:
+        df_full = pd.merge(df_full, mapping_cuencas, on='id_estacion', how='left')
 
     # 5. DETECCIÓN DE COLUMNAS
     col_municipio = next((c for c in df_full.columns if c in ['municipio', 'mpio', 'mpio_cnmbr']), None)
@@ -6388,33 +6371,23 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
             return
 
         nivel = st.radio("Agrupar por:", opts)
-        
         campo_filtro = None
         
-        if nivel == "Municipio": 
-            campo_filtro = col_municipio
-            
-        elif nivel == "Región": 
-            campo_filtro = col_region
-            
+        if nivel == "Municipio": campo_filtro = col_municipio
+        elif nivel == "Región": campo_filtro = col_region
         elif nivel == "Cuenca":
             if opciones_nombre_cuenca:
                 idx_def = 0
                 if col_cuenca_default in opciones_nombre_cuenca:
                     idx_def = opciones_nombre_cuenca.index(col_cuenca_default)
                 
-                col_seleccionada = st.selectbox(
-                    "🏷️ Etiqueta de Cuenca:", 
-                    opciones_nombre_cuenca, 
-                    index=idx_def,
-                    help="Seleccione qué columna del mapa usar para los nombres."
-                )
+                col_seleccionada = st.selectbox("🏷️ Etiqueta de Cuenca:", opciones_nombre_cuenca, index=idx_def)
                 campo_filtro = col_seleccionada
             else:
                 st.warning("No hay etiquetas de texto en el mapa de cuencas.")
                 return
 
-        # Llenar lista de items
+        # Llenar lista de items excluyendo nulos
         items = sorted([str(x) for x in df_full[campo_filtro].dropna().unique() if str(x).lower() != 'nan'])
 
     with c2:
@@ -6426,7 +6399,7 @@ def display_multiscale_tab(df_ignored, gdf_stations, gdf_subcuencas):
 
         fig = px.line(
             df_gp, x='Nombre_Mes', y='valor', color=campo_filtro,
-            title=f"Régimen de Precipitación - Comparativa por {nivel} ({campo_filtro})", markers=True
+            title=f"Régimen de Precipitación - Comparativa por {nivel}", markers=True
         )
         fig.update_xaxes(categoryorder='array', categoryarray=list(meses_mapa.values()), title="Mes")
         
