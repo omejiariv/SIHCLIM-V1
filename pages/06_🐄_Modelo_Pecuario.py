@@ -101,7 +101,18 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
 
         texto_progreso.info("🗺️ Fase 1/2: Cruzando cartografía (Municipios y Cuencas)...")
         gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine_geo, geom_col="geometry").to_crs(epsg=4326)
-        q_cue = text("SELECT COALESCE(NULLIF(TRIM(nom_nss3), ''), 'Cuenca Sin Nombre') AS subc_lbl, geometry FROM cuencas")
+        q_cue = text("""
+            SELECT COALESCE(
+                CASE WHEN TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' ELSE NULL END,
+                CASE WHEN TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || ' - (' || TRIM(CAST(nss2 AS TEXT)) || ')' ELSE NULL END,
+                CASE WHEN TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || ' - (' || TRIM(CAST(nss1 AS TEXT)) || ')' ELSE NULL END,
+                CASE WHEN TRIM(nom_szh) != '' THEN TRIM(nom_szh) || ' - (' || TRIM(CAST(szh AS TEXT)) || ')' ELSE NULL END,
+                CASE WHEN TRIM(nomzh) != '' THEN TRIM(nomzh) || ' - (' || TRIM(CAST(zh AS TEXT)) || ')' ELSE NULL END,
+                CASE WHEN TRIM(nomah) != '' THEN TRIM(nomah) || ' - (' || TRIM(CAST(ah AS TEXT)) || ')' ELSE NULL END,
+                'Cuenca Sin Nombre'
+            ) AS subc_lbl, geometry
+            FROM cuencas
+        """)
         gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=4326)
 
         col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
@@ -262,8 +273,23 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
             
             # 2. Descargamos la genealogía hídrica de la base de datos
             q_jerarquia = text("""
-                SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
-                COALESCE(NULLIF(TRIM(nom_nss3), ''), 'Cuenca Sin Nombre') AS subc_lbl FROM cuencas
+                SELECT DISTINCT
+                    CASE WHEN TRIM(nomah) != '' THEN TRIM(nomah) || ' - (' || TRIM(CAST(ah AS TEXT)) || ')' ELSE NULL END AS nomah,
+                    CASE WHEN TRIM(nomzh) != '' THEN TRIM(nomzh) || ' - (' || TRIM(CAST(zh AS TEXT)) || ')' ELSE NULL END AS nomzh,
+                    CASE WHEN TRIM(nom_szh) != '' THEN TRIM(nom_szh) || ' - (' || TRIM(CAST(szh AS TEXT)) || ')' ELSE NULL END AS nom_szh,
+                    CASE WHEN TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || ' - (' || TRIM(CAST(nss1 AS TEXT)) || ')' ELSE NULL END AS nom_nss1,
+                    CASE WHEN TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || ' - (' || TRIM(CAST(nss2 AS TEXT)) || ')' ELSE NULL END AS nom_nss2,
+                    CASE WHEN TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' ELSE NULL END AS nom_nss3,
+                    COALESCE(
+                        CASE WHEN TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' ELSE NULL END,
+                        CASE WHEN TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || ' - (' || TRIM(CAST(nss2 AS TEXT)) || ')' ELSE NULL END,
+                        CASE WHEN TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || ' - (' || TRIM(CAST(nss1 AS TEXT)) || ')' ELSE NULL END,
+                        CASE WHEN TRIM(nom_szh) != '' THEN TRIM(nom_szh) || ' - (' || TRIM(CAST(szh AS TEXT)) || ')' ELSE NULL END,
+                        CASE WHEN TRIM(nomzh) != '' THEN TRIM(nomzh) || ' - (' || TRIM(CAST(zh AS TEXT)) || ')' ELSE NULL END,
+                        CASE WHEN TRIM(nomah) != '' THEN TRIM(nomah) || ' - (' || TRIM(CAST(ah AS TEXT)) || ')' ELSE NULL END,
+                        'Cuenca Sin Nombre'
+                    ) AS subc_lbl
+                FROM cuencas
             """)
             df_arbol = pd.read_sql(q_jerarquia, engine_geo)
             for c in df_arbol.columns: df_arbol[c] = df_arbol[c].astype(str).str.strip()
