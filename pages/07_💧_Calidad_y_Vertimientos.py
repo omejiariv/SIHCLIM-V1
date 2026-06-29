@@ -322,8 +322,8 @@ def cargar_territorio_maestro():
 # 🚀 INICIALIZACIÓN DE DATOS MAESTROS (100% CLOUD + BYPASS SQL)
 # ---------------------------------------------------------------------
 df_mpios = cargar_municipios()                                 
-df_concesiones = cargar_concesiones(gdf_zona)
-df_vertimientos = cargar_vertimientos(gdf_zona)
+df_concesiones = cargar_concesiones()
+df_vertimientos = cargar_vertimientos()
 df_territorio = cargar_territorio_maestro()
 
 dict_pecuarios = cargar_maestros_pecuarios()
