@@ -48,29 +48,42 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
         st.warning("⚠️ **Aviso:** Selecciona un territorio válido en el panel izquierdo.")
 
     # =====================================================================
-    # 🚀 2. CAPTURA DEL ALEPH Y RESCATE INDEPENDIENTE
+    # 🚀 2. CAPTURA DEL ALEPH (CONEXIÓN TOTAL SQL)
     # =====================================================================
     pob_aleph = float(st.session_state.get('aleph_pob_total', 0))
     oferta_aleph = float(st.session_state.get('aleph_oferta_m3s', 0.0))
+    rurh_aleph = float(st.session_state.get('aleph_concesiones_m3s', 0.0))
 
-    # 🔥 FIX 1: Bloqueo de desbordamiento demográfico
-    if pob_aleph == 0 and nombres_exactos and nombres_exactos[0] != "Territorio Global":
-        try:
-            # Cambiamos IN y SUM por una búsqueda exacta (=) y LIMIT 1
-            # Esto evita sumar accidentalmente regiones enteras de Antioquia
-            params_p = {"p0": nombres_exactos[0]}
-            df_p = pd.read_sql(text('SELECT CAST("Pob_Base" AS FLOAT) as tot_pob FROM matriz_multimodelo_demografica WHERE "Territorio" = :p0 LIMIT 1'), engine, params=params_p)
-            if not df_p.empty and pd.notnull(df_p.iloc[0]['tot_pob']): 
-                pob_aleph = float(df_p.iloc[0]['tot_pob'])
-        except Exception: pass
+    if nombres_exactos and nombres_exactos[0] != "Territorio Global":
+        territorio_llave = nombres_exactos[0]
+        params = {"t0": territorio_llave}
 
-    if oferta_aleph == 0.0 and nombres_cortos:
-        try:
-            placeholders_h = ", ".join([f":h{i}" for i in range(len(nombres_cortos))])
-            params_h = {f"h{i}": val for i, val in enumerate(nombres_cortos)}
-            df_h = pd.read_sql(text(f'SELECT SUM(CAST("Caudal_Medio_m3s" AS FLOAT)) as tot_q FROM matriz_hidrologica_maestra WHERE "Territorio" IN ({placeholders_h})'), engine, params=params_h)
-            if not df_h.empty and pd.notnull(df_h.iloc[0]['tot_q']): oferta_aleph = float(df_h.iloc[0]['tot_q'])
-        except Exception: pass
+        # 1. Leer Población (Demografía)
+        if pob_aleph == 0:
+            try:
+                df_p = pd.read_sql(text('SELECT CAST("Pob_Base" AS FLOAT) as tot_pob FROM matriz_multimodelo_demografica WHERE "Territorio" = :t0 LIMIT 1'), engine, params=params)
+                if not df_p.empty and pd.notnull(df_p.iloc[0]['tot_pob']): 
+                    pob_aleph = float(df_p.iloc[0]['tot_pob'])
+                    st.session_state['aleph_pob_total'] = pob_aleph
+            except Exception: pass
+
+        # 2. Leer Oferta Bruta (Hidrología)
+        if oferta_aleph == 0.0:
+            try:
+                df_h = pd.read_sql(text('SELECT CAST("Caudal_Medio_m3s" AS FLOAT) as tot_q FROM matriz_hidrologica_maestra WHERE "Territorio" = :t0 LIMIT 1'), engine, params=params)
+                if not df_h.empty and pd.notnull(df_h.iloc[0]['tot_q']): 
+                    oferta_aleph = float(df_h.iloc[0]['tot_q'])
+                    st.session_state['aleph_oferta_m3s'] = oferta_aleph
+            except Exception: pass
+
+        # 3. Leer Extracciones (Inyección RURH 65k)
+        if rurh_aleph == 0.0:
+            try:
+                df_r = pd.read_sql(text('SELECT CAST("Presion_Total_RURH_m3s" AS FLOAT) as tot_rurh FROM matriz_presiones_rurh WHERE "Territorio" = :t0 LIMIT 1'), engine, params=params)
+                if not df_r.empty and pd.notnull(df_r.iloc[0]['tot_rurh']): 
+                    rurh_aleph = float(df_r.iloc[0]['tot_rurh'])
+                    st.session_state['aleph_concesiones_m3s'] = rurh_aleph
+            except Exception: pass
 
     # =====================================================================
     # 🧬 3. FORJA DE LA CURVA ESTACIONAL REAL (Autosuficiente)
