@@ -30,13 +30,30 @@ def renderizar_telemetria_aleph():
     st.sidebar.markdown("### 🧠 Telemetría del Aleph")
     
     # --- CAJA DESPLEGABLE 1: MÉTRICAS TERRITORIALES Y CARGAS ---
-    with st.sidebar.expander("📊 Métricas Demográficas y Cargas", expanded=True):
+    with st.sidebar.expander("📊 Conexiones Multimodelo", expanded=True):
+        
+        # Sensor Demográfico
         pob_viva = st.session_state.get('aleph_pob_total', st.session_state.get('poblacion_servida', 0))
         if pob_viva > 0:
             st.markdown(f"👥 **Población:** <span style='color:#2ecc71'>Sincronizada ({pob_viva:,.0f} hab)</span>", unsafe_allow_html=True)
         else:
             st.markdown("👥 **Población:** <span style='color:#e74c3c'>Vacía (Default)</span>", unsafe_allow_html=True)
             
+        # Sensor Hidrológico (Página 01)
+        oferta_viva = st.session_state.get('aleph_oferta_m3s', 0.0)
+        if oferta_viva > 0:
+            st.markdown(f"🌧️ **Hidrología:** <span style='color:#3498db'>Enlazada ({oferta_viva:,.3f} m³/s)</span>", unsafe_allow_html=True)
+        else:
+            st.markdown("🌧️ **Hidrología:** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
+
+        # Sensor RURH (Concesiones y Extracciones)
+        rurh_viva = st.session_state.get('aleph_concesiones_m3s', 0.0)
+        if rurh_viva > 0:
+            st.markdown(f"🏭 **RURH (Extracción):** <span style='color:#e67e22'>Activa ({rurh_viva:,.3f} m³/s)</span>", unsafe_allow_html=True)
+        else:
+            st.markdown("🏭 **RURH (Extracción):** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
+            
+        # Sensor Calidad y Vertimientos (Tormentas y DBO)
         lodo_vivo = st.session_state.get('eco_lodo_total_m3', 0.0)
         if lodo_vivo > 0:
             st.markdown(f"⛈️ **Tormenta:** <span style='color:#e67e22'>Activa ({lodo_vivo:,.0f} m³ Lodo)</span>", unsafe_allow_html=True)
