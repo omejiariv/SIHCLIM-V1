@@ -42,3 +42,4 @@ python-box>=7.1.1
 xyzservices>=2024.4.0
 python-docx
 fiona
+xlrd>=2.0.1
