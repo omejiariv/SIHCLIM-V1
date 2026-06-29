@@ -221,24 +221,54 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     demanda_mensual = np.full(12, demanda_total_fija)
 
     # =====================================================================
-    # 6. GRÁFICA WEAP 2.0
+    # 6. GRÁFICA WEAP 2.0 (ARQUITECTURA DE MONTAÑA Y CUCHILLO)
     # =====================================================================
+    import plotly.graph_objects as go
+    import numpy as np
+    
     fig = go.Figure()
     
-    fig.add_trace(go.Scatter(x=meses, y=oferta_mensual, name='Oferta Neta', line=dict(color='#3498db', width=3), fill='tozeroy', fillcolor='rgba(52, 152, 219, 0.1)'))
-    
+    # 1. PREPARACIÓN DE LAS CAPAS APILADAS EXACTAS
     y_eco = np.full(12, caudal_ecologico_m3s)
-    fig.add_trace(go.Scatter(x=meses, y=y_eco, name='Caudal Ecológico', line=dict(color='#27ae60', width=1, dash='dot'), fill='tozeroy', fillcolor='rgba(39, 174, 96, 0.2)'))
-    
     y_hum = y_eco + d_hum_mod
-    fig.add_trace(go.Scatter(x=meses, y=y_hum, name='Demanda Humana', line=dict(color='#f1c40f', width=1), fill='tonexty', fillcolor='rgba(241, 196, 15, 0.4)'))
+    y_total_demanda = y_hum + d_agro_mod  # Reemplaza a demanda_mensual
     
-    fig.add_trace(go.Scatter(x=meses, y=demanda_mensual, name='Presión RURH (Agro)', line=dict(color='#e74c3c', width=2), fill='tonexty', fillcolor='rgba(231, 76, 60, 0.4)'))
+    # 2. CONSTRUCCIÓN DE LA MONTAÑA DE DEMANDA (De abajo hacia arriba)
+    # Capa Base: Caudal Ecológico (Verde)
+    fig.add_trace(go.Scatter(
+        x=meses, y=y_eco, name='Caudal Ecológico',
+        line=dict(width=0), fill='tozeroy', fillcolor='rgba(39, 174, 96, 0.6)'
+    ))
+    
+    # Capa Media: Demanda Humana (Amarillo)
+    fig.add_trace(go.Scatter(
+        x=meses, y=y_hum, name='Demanda Humana',
+        line=dict(width=0), fill='tonexty', fillcolor='rgba(241, 196, 15, 0.6)'
+    ))
+    
+    # Capa Superior: Presión Agroindustrial RURH (Rojo)
+    fig.add_trace(go.Scatter(
+        x=meses, y=y_total_demanda, name='Presión RURH (Agro/Ind)',
+        line=dict(color='#e74c3c', width=2), fill='tonexty', fillcolor='rgba(231, 76, 60, 0.6)'
+    ))
 
-    oferta_minima = np.minimum(oferta_mensual, demanda_mensual)
-    fig.add_trace(go.Scatter(x=meses, y=demanda_mensual, line=dict(width=0), showlegend=False, hoverinfo='skip'))
-    fig.add_trace(go.Scatter(x=meses, y=oferta_minima, name='⚠️ DÉFICIT CRÍTICO', fill='tonexty', fillcolor='rgba(0, 0, 0, 0.5)', line=dict(width=0)))
+    # 3. EL CUCHILLO: Línea de Oferta Neta Dinámica
+    fig.add_trace(go.Scatter(
+        x=meses, y=oferta_mensual, name='Oferta Neta',
+        line=dict(color='#3498db', width=4), mode='lines'
+    ))
 
+    # 4. LA SOMBRA DEL DÉFICIT CRÍTICO
+    # Truco Plotly: Trazamos una línea invisible en la oferta, y rellenamos 
+    # hacia arriba SOLO hasta donde la demanda la supere.
+    top_envelope = np.maximum(oferta_mensual, y_total_demanda)
+    fig.add_trace(go.Scatter(x=meses, y=oferta_mensual, showlegend=False, hoverinfo='skip', line=dict(width=0)))
+    fig.add_trace(go.Scatter(
+        x=meses, y=top_envelope, name='⚠️ DÉFICIT CRÍTICO',
+        fill='tonexty', fillcolor='rgba(0, 0, 0, 0.6)', line=dict(width=0)
+    ))
+
+    # 5. RENDERIZADO Y ESTÉTICA
     fig.update_layout(
         title="Balance de Masas - Presiones Apiladas", 
         xaxis_title="Meses", yaxis_title="Caudal (m³/s)", hovermode="x unified",
@@ -246,8 +276,9 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    deficit_anual = np.sum(np.maximum(0, demanda_mensual - oferta_mensual))
+    # 6. MOTOR DE ALARMAS
+    deficit_anual = np.sum(np.maximum(0, y_total_demanda - oferta_mensual))
     if deficit_anual > 0:
-        st.error(f"⚠️ **Colapso Hídrico Detectado:** El sistema no puede sostener la suma del caudal ecológico, poblacional y las concesiones. Revisa los meses críticos.")
+        st.error("⚠️ **Colapso Hídrico Detectado:** El sistema no puede sostener la suma del caudal ecológico, poblacional y las concesiones. Revisa las franjas oscuras (déficit) en el gráfico.")
     else:
-        st.success("✅ **Sistema en Equilibrio:** La oferta actual logra sostener las capas de presión configuradas.")
+        st.success("✅ **Sistema en Equilibrio:** La oferta actual logra sostener las capas de presión configuradas sin generar déficit crítico.")
