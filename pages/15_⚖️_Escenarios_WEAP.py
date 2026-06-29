@@ -52,22 +52,30 @@ else:
         # --- 1. CONEXIÓN DEMOGRÁFICA AUTÓNOMA (VÍA SUPABASE) ---
         url_csv = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Multimodelo_Demografica.csv"
         res_csv = requests.get(url_csv)
+        
         # Decodificamos en utf-8 para manejar correctamente tildes y caracteres latinos
         df_dem = pd.read_csv(io.StringIO(res_csv.content.decode('utf-8')))
         
-        # 🔥 FIX: El Bisturí de Nombres
+        # 🔥 EL BISTURÍ DE NOMBRES
         # Extraemos "Q. La Honda" de "Q. La Honda - (2308-01-04-24)"
-        nombre_puro = territorio_str.split(" - (")[0].strip() if " - (" in territorio_str else territorio_str.strip()
+        if " - (" in territorio_str:
+            nombre_puro = territorio_str.split(" - (")[0].strip()
+        else:
+            nombre_puro = territorio_str.strip()
         
-        # Filtramos por el nombre exacto Y garantizamos que solo traiga la fila 'Total'
-        row_pob = df_dem[(df_dem['Territorio'] == nombre_puro) & (df_dem['Area'] == 'Total')]
+        # Filtramos por el nombre exacto Y garantizamos que traiga el Área 'Total'
+        # Convertimos todo a minúsculas temporalmente para evitar fallos por mayúsculas
+        mascara = (df_dem['Territorio'].astype(str).str.strip().str.lower() == nombre_puro.lower()) & \
+                  (df_dem['Area'].astype(str).str.strip().str.lower() == 'total')
+        
+        row_pob = df_dem[mascara]
         
         if not row_pob.empty:
-            # Si existen cuencas homónimas, por seguridad tomamos el primer registro detectado
+            # Tomamos la columna Pob_Base (indistintamente de cómo esté escrita)
             col_pob = next((c for c in row_pob.columns if 'pob_base' in c.lower()), 'Pob_Base')
-            st.session_state['aleph_pob_total'] = float
+            st.session_state['aleph_pob_total'] = float(row_pob.iloc[0][col_pob])
         else:
-            st.sidebar.warning(f"⚠️ Demografía no hallada en el CSV para: {territorio_str}")
+            st.sidebar.warning(f"⚠️ Demografía no hallada en el CSV para el nombre puro: {nombre_puro}")
 
         # --- 2. CONEXIÓN HIDROLÓGICA Y RURH (VÍA POSTGRESQL) ---
         engine = get_engine()
