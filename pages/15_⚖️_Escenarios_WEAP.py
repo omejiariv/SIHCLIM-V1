@@ -40,23 +40,53 @@ else:
             territorio_final = ["Territorio en Memoria Aleph"]
 
     # 5. ENCENDER EL MOTOR WEAP
-
     try:
-        # 🔥 FIX: Forzar actualización de datos RURH desde SQL antes de renderizar
+        import pandas as pd
+        import requests
+        import io
         from sqlalchemy import text
         from modules.db_manager import get_engine
-        engine = get_engine()
-
-        # Consultamos el RURH real para el territorio seleccionado
+        from modules.utils import normalizar_texto
+        
+        # --- 1. CONEXIÓN DEMOGRÁFICA AUTÓNOMA (VÍA SUPABASE) ---
+        url_csv = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Multimodelo_Demografica.csv"
+        res_csv = requests.get(url_csv)
+        df_dem = pd.read_csv(io.StringIO(res_csv.text))
+        
+        # Extraemos el nombre limpio del territorio actual
         territorio_str = territorio_final[0] if isinstance(territorio_final, list) else territorio_final
-        query = text('SELECT COALESCE(SUM("Presion_Total_RURH_m3s"), 0) FROM matriz_presiones_rurh WHERE "Territorio" = :t')
+        
+        # Simulamos la "Llave Universal" para buscar con precisión quirúrgica
+        # Asumimos nivel CUENCA por defecto para el WEAP, ajusta si es municipio
+        terr_limpio = normalizar_texto(territorio_str).replace(" ", "_").upper()
+        llave_busqueda = f"CUENCA_{terr_limpio}_TOTAL"
+        
+        # Buscamos por Llave o por Nombre directo
+        row_pob = df_dem[(df_dem['LLAVE_UNIVERSAL'] == llave_busqueda) | (df_dem['Territorio'] == territorio_str)]
+        
+        if not row_pob.empty:
+            # Rescatamos la columna exacta de población
+            col_pob = next((c for c in row_pob.columns if 'pob' in c.lower()), 'Pob_Base')
+            st.session_state['aleph_pob_total'] = float(row_pob.iloc[0][col_pob])
+        else:
+            st.sidebar.warning(f"Demografía no hallada para: {territorio_str}")
 
+        # --- 2. CONEXIÓN HIDROLÓGICA Y RURH (VÍA POSTGRESQL) ---
+        engine = get_engine()
         with engine.connect() as conn:
-            rurh_real = conn.execute(query, {"t": territorio_str}).scalar()
-            st.session_state['aleph_concesiones_m3s'] = float(rurh_real)        
-
-        # Renderizamos el motor con la memoria refrescada
-        escenarios_weap.renderizar_motor_escenarios_weap(territorio_final, gdf_zona)        
-
+            # Oferta Hídrica
+            query_hidro = text('SELECT "Caudal_Medio_m3s" FROM matriz_hidrologica_maestra WHERE "Territorio" = :t LIMIT 1')
+            oferta_real = conn.execute(query_hidro, {"t": territorio_str}).scalar()
+            if oferta_real is not None:
+                st.session_state['aleph_oferta_m3s'] = float(oferta_real)
+                
+            # Presiones RURH (El fix que logramos antes)
+            query_rurh = text('SELECT COALESCE(SUM("Presion_Total_RURH_m3s"), 0) FROM matriz_presiones_rurh WHERE "Territorio" = :t')
+            rurh_real = conn.execute(query_rurh, {"t": territorio_str}).scalar()
+            st.session_state['aleph_concesiones_m3s'] = float(rurh_real)
+        
+        # --- 3. RENDERIZADO FINAL ---
+        escenarios_weap.renderizar_motor_escenarios_weap(territorio_final, gdf_zona)
+        
     except Exception as e:
-        st.error(f"Error al conectar con la base de datos de presiones: {e}")
+        st.error(f"Error crítico en sincronización Aleph (Demografía/RURH): {e}")
