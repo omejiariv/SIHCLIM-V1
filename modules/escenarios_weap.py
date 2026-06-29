@@ -53,12 +53,15 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     pob_aleph = float(st.session_state.get('aleph_pob_total', 0))
     oferta_aleph = float(st.session_state.get('aleph_oferta_m3s', 0.0))
 
+    # 🔥 FIX 1: Bloqueo de desbordamiento demográfico
     if pob_aleph == 0 and nombres_exactos and nombres_exactos[0] != "Territorio Global":
         try:
-            placeholders_p = ", ".join([f":p{i}" for i in range(len(nombres_exactos))])
-            params_p = {f"p{i}": val for i, val in enumerate(nombres_exactos)}
-            df_p = pd.read_sql(text(f'SELECT SUM(CAST("Pob_Base" AS FLOAT)) as tot_pob FROM matriz_multimodelo_demografica WHERE "Territorio" IN ({placeholders_p})'), engine, params=params_p)
-            if not df_p.empty and pd.notnull(df_p.iloc[0]['tot_pob']): pob_aleph = float(df_p.iloc[0]['tot_pob'])
+            # Cambiamos IN y SUM por una búsqueda exacta (=) y LIMIT 1
+            # Esto evita sumar accidentalmente regiones enteras de Antioquia
+            params_p = {"p0": nombres_exactos[0]}
+            df_p = pd.read_sql(text('SELECT CAST("Pob_Base" AS FLOAT) as tot_pob FROM matriz_multimodelo_demografica WHERE "Territorio" = :p0 LIMIT 1'), engine, params=params_p)
+            if not df_p.empty and pd.notnull(df_p.iloc[0]['tot_pob']): 
+                pob_aleph = float(df_p.iloc[0]['tot_pob'])
         except Exception: pass
 
     if oferta_aleph == 0.0 and nombres_cortos:
@@ -83,7 +86,6 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
         if not isinstance(gdf_zona_real, pd.DataFrame) or gdf_zona_real.empty:
             if nombres_exactos and nombres_exactos[0] != "Territorio Global":
                 try:
-                    # Usamos ILIKE para atrapar coincidencias parciales si el nombre varía ligeramente
                     termino_busqueda = f"%{nombres_cortos[0]}%"
                     q_geom = text("""
                         SELECT geometry FROM cuencas 
@@ -130,12 +132,20 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
         st.session_state[f"est_{clave_curva}"] = estacion_usada
         
     curva_dinamica = st.session_state[clave_curva]
-    fuente_curva = st.session_state.get(f"est_{clave_curva}", "Curva Sintética Estándar")
+    
+    # 🔥 FIX 2: Texto dinámico de la curva cuando falla la búsqueda de estación IDEAM
+    texto_fallback = f"Patrón Sintético Local ({nombres_cortos[0] if nombres_cortos else 'Territorio'})"
+    fuente_curva = st.session_state.get(f"est_{clave_curva}", texto_fallback)
+    if "Curva Sintética Estándar" in fuente_curva:
+        fuente_curva = texto_fallback
 
     # =====================================================================
     # 4. BASES MATEMÁTICAS (Preparación)
     # =====================================================================
-    pob_base = pob_aleph if pob_aleph > 0 else 150000
+    # Rescatamos prioritariamente la memoria de la sesión (donde tu motor ya calculó los 7,494 reales)
+    pob_memoria = float(st.session_state.get('aleph_pob_total', 0))
+    pob_base = pob_memoria if pob_memoria > 0 else (pob_aleph if pob_aleph > 0 else 150000)
+    
     oferta_base_m3s = oferta_aleph if oferta_aleph > 0.0 else 1.2
 
     demanda_humana_m3s = (pob_base * 150) / (1000 * 86400)
@@ -147,6 +157,7 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     # =====================================================================
     # 5. PANEL DE CONTROL AVANZADO (Escenarios RURH y Vertimientos)
     # =====================================================================
+
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("**🌦️ Escenarios de Oferta**")
