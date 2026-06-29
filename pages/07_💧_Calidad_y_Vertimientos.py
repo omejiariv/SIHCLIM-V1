@@ -152,55 +152,27 @@ def cargar_municipios():
     return pd.DataFrame()
 
 # 🌉 PUENTES DE COMPATIBILIDAD HÍBRIDOS (SUPABASE + POSTGRESQL)
-@st.cache_data(show_spinner=False)
-def cargar_vertimientos(_gdf_zona_actual): # El guión bajo evita que st.cache colapse al intentar hashear el mapa
+@st.cache_data(show_spinner=False, ttl=3600)
+def cargar_vertimientos():
     import pandas as pd
-    from sqlalchemy import text
-    try:
-        from modules.db_manager import get_engine
-        engine = get_engine()
-    except Exception:
-        engine = None
-
-    # 1. Cargamos tu estándar de oro desde la nube
+    # Cargamos el estándar de oro desde la nube (Supabase)
     gdf = cargar_maestros_nube("vertimientos")
-    if gdf.empty: df = pd.DataFrame()
-    else:
-        df = pd.DataFrame(gdf)
-        df['caudal_vert_lps'] = df.get('Caudal_Lps', 0.0)
-        df['municipio_norm'] = df.get('Municipio', '').apply(normalizar_texto)
-        df['tipo_vertimiento'] = df.get('Tipo_Vertimiento', 'No Registrado')
-        df['car_norm'] = df.get('Autoridad', '').apply(normalizar_texto)
-        
+    if gdf.empty: 
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(gdf)
+    df['caudal_vert_lps'] = df.get('Caudal_Lps', 0.0)
+    df['municipio_norm'] = df.get('Municipio', '').apply(normalizar_texto)
+    df['tipo_vertimiento'] = df.get('Tipo_Vertimiento', 'No Registrado')
+    df['car_norm'] = df.get('Autoridad', '').apply(normalizar_texto)
+    
+    # Extracción de coordenadas para el filtro espacial de tu página
+    if 'geometry' in gdf.columns:
         centroides = gdf.geometry.centroid
         df['coordenada_x'] = centroides.x.fillna(0)
         df['coordenada_y'] = centroides.y.fillna(0)
-        if 'geometry' in df.columns: df = df.drop(columns=['geometry'])
-
-    # 2. 🚀 INYECCIÓN SQL ESPACIALMENTE SEGURA
-    if engine and _gdf_zona_actual is not None and not _gdf_zona_actual.empty:
-        try:
-            # Obtenemos el centroide del mapa actual para "engañar" al filtro geográfico
-            centro_x = _gdf_zona_actual.geometry.centroid.x.values[0]
-            centro_y = _gdf_zona_actual.geometry.centroid.y.values[0]
-
-            q_sql = text('SELECT "Territorio", "Caudal_Vertimiento_m3s" FROM matriz_presiones_rurh WHERE "Caudal_Vertimiento_m3s" > 0')
-            df_sql = pd.read_sql(q_sql, engine)
-            if not df_sql.empty:
-                df_sql['caudal_vert_lps_sql'] = df_sql['Caudal_Vertimiento_m3s'] * 1000
-                
-                df_nuevos = pd.DataFrame({
-                    'caudal_vert_lps': df_sql['caudal_vert_lps_sql'],
-                    'municipio_norm': 'jurisdiccion_inyectada',
-                    'tipo_vertimiento': 'Consolidado RURH SQL',
-                    'car_norm': 'RURH_SQL',
-                    'coordenada_x': centro_x, # Coordenada garantizada dentro del polígono
-                    'coordenada_y': centro_y  # Coordenada garantizada dentro del polígono
-                })
-                df = pd.concat([df, df_nuevos], ignore_index=True)
-        except Exception as e:
-            pass # Si falla, sigue con los datos base
-
+        df = df.drop(columns=['geometry'])
+        
     return df
 
 @st.cache_data(show_spinner=False, ttl=3600)
