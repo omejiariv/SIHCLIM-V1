@@ -41,6 +41,21 @@ else:
 
     # 5. ENCENDER EL MOTOR WEAP
     try:
+        # 🔥 FIX: Forzar actualización de datos RURH desde SQL antes de renderizar
+        from sqlalchemy import text
+        from modules.db_manager import get_engine
+        engine = get_engine()
+        
+        # Consultamos el RURH real para el territorio seleccionado
+        territorio_str = territorio_final[0] if isinstance(territorio_final, list) else territorio_final
+        query = text('SELECT COALESCE(SUM("Presion_Total_RURH_m3s"), 0) FROM matriz_presiones_rurh WHERE "Territorio" = :t')
+        
+        with engine.connect() as conn:
+            rurh_real = conn.execute(query, {"t": territorio_str}).scalar()
+            st.session_state['aleph_concesiones_m3s'] = float(rurh_real)
+        
+        # Renderizamos el motor con la memoria refrescada
         escenarios_weap.renderizar_motor_escenarios_weap(territorio_final, gdf_zona)
+        
     except Exception as e:
-        st.error(f"Error al cargar el simulador: {e}")
+        st.error(f"Error al conectar con la base de datos de presiones: {e}")
