@@ -155,32 +155,51 @@ def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=No
     # =====================================================================
     # 4. BASES MATEMÁTICAS (Preparación)
     # =====================================================================
-    # Rescatamos prioritariamente la memoria de la sesión (donde tu motor ya calculó los 7,494 reales)
-    pob_memoria = float(st.session_state.get('aleph_pob_total', 0))
-    pob_base = pob_memoria if pob_memoria > 0 else (pob_aleph if pob_aleph > 0 else 150000)
     
-    oferta_base_m3s = oferta_aleph if oferta_aleph > 0.0 else 1.2
-
-    demanda_humana_m3s = (pob_base * 150) / (1000 * 86400)
-    caudal_ecologico_m3s = oferta_base_m3s * 0.25 
+    # 1. Rescatamos prioritariamente la memoria de la sesión (Aleph Telemetría)
+    pob_memoria = float(st.session_state.get('aleph_pob_total', 0))
+    pob_base = pob_memoria if pob_memoria > 0 else 150000
+    
+    oferta_memoria = float(st.session_state.get('aleph_oferta_m3s', 0.0))
+    oferta_base_m3s = oferta_memoria if oferta_memoria > 0.0 else 1.2
+    
     demanda_agro_base_m3s = float(st.session_state.get('aleph_concesiones_m3s', 0.0))
 
-    st.markdown(f"📌 **Oferta Neta Disponible:** `{oferta_base_m3s:,.3f} m³/s` | 👥 **Población:** `{pob_base:,.0f} hab`")
+    # 2. Fórmulas de metabolismo base
+    demanda_humana_m3s = (pob_base * 150) / (1000 * 86400) # Asume dotación estándar
+    caudal_ecologico_m3s = oferta_base_m3s * 0.25 
+
+    st.markdown(f"📌 **Oferta Neta Disponible:** `{oferta_base_m3s:,.3f} m³/s` | 👥 **Población Local:** `{pob_base:,.0f} hab`")
 
     # =====================================================================
     # 5. PANEL DE CONTROL AVANZADO (Escenarios RURH y Vertimientos)
     # =====================================================================
 
     col1, col2, col3 = st.columns(3)
+    
     with col1:
         st.markdown("**🌦️ Escenarios de Oferta**")
         var_clima = st.slider("Clima (El Niño/La Niña) %", -50, 50, 0, step=5)
-        var_calidad = st.slider("☣️ Castigo por Vertimientos %", 0, 80, 0, step=5, help="Simula caudal inutilizable.")
+        var_calidad = st.slider("☣️ Castigo por Vertimientos %", 0, 80, 0, step=5, help="Simula caudal inutilizable por alta contaminación.")
+        
     with col2:
         st.markdown("**👥 Presiones de Demanda**")
         var_pob = st.slider("Crecimiento Poblacional %", 0, 100, 15, step=5)
-        # El slider controla ahora el valor en vivo
-        var_rurh = st.slider("🏭 Carga Agroindustrial RURH (m³/s)", 0.0, float(oferta_base_m3s * 2), demanda_agro_base_m3s, step=0.01)
+        
+        # 🔥 BLINDAJE RURH: Límite dinámico. Asegura que el máximo siempre sea mayor que el valor base 
+        # para que Streamlit no arroje error "value must be between min and max".
+        tope_max_rurh = max(float(oferta_base_m3s * 2), float(demanda_agro_base_m3s * 1.5), 0.1)
+        
+        # El slider controla el valor en vivo, partiendo de la realidad oficial de PostgreSQL
+        var_rurh = st.slider(
+            "🏭 Carga Agroindustrial RURH (m³/s)", 
+            min_value=0.0, 
+            max_value=float(tope_max_rurh), 
+            value=float(demanda_agro_base_m3s), 
+            step=0.01,
+            help="Caudal concesionado total según la matriz RURH (PostGIS)."
+        )
+        
     with col3:
         st.markdown("**⚙️ Medidas de Mitigación**")
         var_eficiencia = st.slider("Eficiencia Acueductos %", 0, 40, 0, step=5)
