@@ -26,6 +26,7 @@ def decodificar_tildes(texto):
 
 def renderizar_telemetria_aleph():
     """Panel de control universal que monitorea las variables de estado en tiempo real."""
+    import streamlit as st
     
     st.sidebar.markdown("### 🧠 Telemetría del Aleph")
     
@@ -39,7 +40,7 @@ def renderizar_telemetria_aleph():
         else:
             st.markdown("👥 **Población:** <span style='color:#e74c3c'>Vacía (Default)</span>", unsafe_allow_html=True)
             
-        # Sensor Hidrológico (Página 01)
+        # Sensor Hidrológico
         oferta_viva = st.session_state.get('aleph_oferta_m3s', 0.0)
         if oferta_viva > 0:
             st.markdown(f"🌧️ **Hidrología:** <span style='color:#3498db'>Enlazada ({oferta_viva:,.3f} m³/s)</span>", unsafe_allow_html=True)
@@ -53,13 +54,7 @@ def renderizar_telemetria_aleph():
         else:
             st.markdown("🏭 **RURH (Extracción):** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
             
-        # Sensor Calidad y Vertimientos (Tormentas y DBO)
-        lodo_vivo = st.session_state.get('eco_lodo_total_m3', 0.0)
-        if lodo_vivo > 0:
-            st.markdown(f"⛈️ **Tormenta:** <span style='color:#e67e22'>Activa ({lodo_vivo:,.0f} m³ Lodo)</span>", unsafe_allow_html=True)
-        else:
-            st.markdown("⛈️ **Tormenta:** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
-            
+        # Sensor Calidad (Tormenta Eliminada)
         dbo_viva = st.session_state.get('carga_dbo_total_ton', 0.0)
         if dbo_viva > 0:
             st.markdown(f"☣️ **Carga DBO:** <span style='color:#8e44ad'>Registrada ({dbo_viva:,.0f} Ton)</span>", unsafe_allow_html=True)
