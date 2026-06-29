@@ -118,14 +118,14 @@ def procesar_e_inyectar_rurh():
             st.dataframe(df_agrupado.head(15).style.format(format_dict), use_container_width=True)
 
             # 9. INYECCIÓN DUAL A POSTGRESQL
+            # Extirpamos la columna 'geometry' porque PostgreSQL necesita el texto plano
             df_raw_sql = pd.DataFrame(gdf_cruzado.drop(columns=['geometry'])) 
 
-            with engine.begin() as conn:
-                conn.execute(text("DROP TABLE IF EXISTS matriz_presiones_rurh"))
-                df_agrupado.to_sql('matriz_presiones_rurh', engine, if_exists='replace', index=False)
-                
-                conn.execute(text("DROP TABLE IF EXISTS concesiones_maestras_rurh_raw"))
-                df_raw_sql.to_sql('concesiones_maestras_rurh_raw', engine, if_exists='replace', index=False)
+            # 🔥 FIX ANTI-BLOQUEOS: 
+            # Eliminamos el 'with engine.begin()' y el 'DROP TABLE' explícito.
+            # Delegamos el control total de la transacción al motor de Pandas.
+            df_agrupado.to_sql('matriz_presiones_rurh', engine, if_exists='replace', index=False)
+            df_raw_sql.to_sql('concesiones_maestras_rurh_raw', engine, if_exists='replace', index=False)
 
             st.success(f"✅ ¡Fusión y Doble Inyección Exitosa! {len(df_agrupado)} cuencas consolidadas y {len(df_raw_sql)} concesiones ancladas usando el mapa oficial de PostGIS.")
 
