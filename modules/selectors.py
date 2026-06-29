@@ -282,8 +282,8 @@ def render_cabezote_sintesis_body(nombre_zona):
     if nombre_zona and nombre_zona not in ["Sin Selección", "-- Seleccione --", "NINGUNO", ""]:
         if pob > 0 or bov > 0 or por > 0 or ave > 0:
             st.success(f"📌 **SÍNTESIS ACTIVA** | 📍 Territorio: {nombre_zona} \n\n 👥 Humanos: {pob:,} | 🐄 Bov: {bov:,} | 🐖 Porc: {por:,} | 🐔 Aves: {ave:,}")
-        else:
-            st.warning(f"⚠️ **SIN DATOS MAESTROS** para: {nombre_zona}. Verifica las matrices de población y pecuaria.")
+        # 🔥 Extirpamos el 'else' con el st.warning. 
+        # Si las variables inician en 0 milisegundos antes de calcular, simplemente espera en silencio.
 
 # ====================================================================
 # 🌍 SELECTOR ESPACIAL MAESTRO (SQL ESTRICTO - TU CÓDIGO ORIGINAL)
