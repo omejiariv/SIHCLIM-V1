@@ -324,6 +324,13 @@ with tab4:
                 # 1. Leer el GeoJSON
                 gdf_in = gpd.read_file(archivo_geojson_in)
                 
+                # 🔥 INYECCIÓN: Extraer X e Y de la geometría a columnas de la tabla
+                if gdf_in.crs is None or gdf_in.crs != "EPSG:4326":
+                    gdf_in = gdf_in.to_crs(epsg=4326) # Aseguramos formato WGS84 (Grados Decimales)
+                
+                gdf_in['Longitud_W'] = gdf_in.geometry.x
+                gdf_in['Latitud_N'] = gdf_in.geometry.y
+                
                 # 2. Mostrar Información de la Tabla
                 st.success(f"✅ Archivo cargado correctamente. Contiene **{len(gdf_in)}** geometrías/polígonos.")
                 
