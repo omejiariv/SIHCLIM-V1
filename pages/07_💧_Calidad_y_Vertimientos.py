@@ -294,10 +294,6 @@ import modules.selectors as selectors
 # El selector nos entrega los IDs, el nombre, la altitud de referencia
 ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona = selectors.render_selector_espacial()
 
-# 🟩 DIBUJAMOS LA SÍNTESIS ACTIVA JUSTO DESPUÉS DEL SELECTOR
-selectors.render_cabezote_sintesis_body(nombre_seleccion)
-# -------------------------------------------------------------------
-
 if gdf_zona is None or gdf_zona.empty:
     st.info("👈 Por favor, utiliza el menú lateral para seleccionar una zona.")
     st.stop()
