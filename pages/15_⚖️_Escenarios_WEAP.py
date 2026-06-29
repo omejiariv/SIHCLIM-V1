@@ -46,31 +46,26 @@ else:
         import io
         from sqlalchemy import text
         from modules.db_manager import get_engine
-        from modules.utils import normalizar_texto
+        
+        territorio_str = territorio_final[0] if isinstance(territorio_final, list) else territorio_final
         
         # --- 1. CONEXIÓN DEMOGRÁFICA AUTÓNOMA (VÍA SUPABASE) ---
         url_csv = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Multimodelo_Demografica.csv"
         res_csv = requests.get(url_csv)
-        df_dem = pd.read_csv(io.StringIO(res_csv.text))
+        # Decodificamos en utf-8 para manejar correctamente tildes y caracteres latinos
+        df_dem = pd.read_csv(io.StringIO(res_csv.content.decode('utf-8')))
         
-        # Extraemos el nombre limpio del territorio actual
-        territorio_str = territorio_final[0] if isinstance(territorio_final, list) else territorio_final
+        # 🔥 FIX: El Bisturí de Nombres
+        # Extraemos "Q. La Honda" de "Q. La Honda - (2308-01-04-24)"
+        nombre_puro = territorio_str.split(" - (")[0].strip() if " - (" in territorio_str else territorio_str.strip()
         
-        # 🔥 FIX: Filtro Blindado Anti-KeyError
-        if 'LLAVE_UNIVERSAL' in df_dem.columns:
-            terr_limpio = normalizar_texto(territorio_str).replace(" ", "_").upper()
-            llave_busqueda = f"CUENCA_{terr_limpio}_TOTAL" # Ajustar prefijo si es necesario
-            row_pob = df_dem[(df_dem['LLAVE_UNIVERSAL'] == llave_busqueda) | (df_dem['Territorio'] == territorio_str)]
-        elif 'Territorio' in df_dem.columns:
-            # Si no existe la llave universal, buscamos directamente por nombre
-            row_pob = df_dem[df_dem['Territorio'] == territorio_str]
-        else:
-            row_pob = pd.DataFrame() # Falla segura si el CSV no tiene formato esperado
+        # Filtramos por el nombre exacto Y garantizamos que solo traiga la fila 'Total'
+        row_pob = df_dem[(df_dem['Territorio'] == nombre_puro) & (df_dem['Area'] == 'Total')]
         
         if not row_pob.empty:
-            # Rescatamos la columna exacta de población
-            col_pob = next((c for c in row_pob.columns if 'pob' in c.lower()), 'Pob_Base')
-            st.session_state['aleph_pob_total'] = float(row_pob.iloc[0][col_pob])
+            # Si existen cuencas homónimas, por seguridad tomamos el primer registro detectado
+            col_pob = next((c for c in row_pob.columns if 'pob_base' in c.lower()), 'Pob_Base')
+            st.session_state['aleph_pob_total'] = float
         else:
             st.sidebar.warning(f"⚠️ Demografía no hallada en el CSV para: {territorio_str}")
 
