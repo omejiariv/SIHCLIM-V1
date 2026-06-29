@@ -56,20 +56,23 @@ else:
         # Extraemos el nombre limpio del territorio actual
         territorio_str = territorio_final[0] if isinstance(territorio_final, list) else territorio_final
         
-        # Simulamos la "Llave Universal" para buscar con precisión quirúrgica
-        # Asumimos nivel CUENCA por defecto para el WEAP, ajusta si es municipio
-        terr_limpio = normalizar_texto(territorio_str).replace(" ", "_").upper()
-        llave_busqueda = f"CUENCA_{terr_limpio}_TOTAL"
-        
-        # Buscamos por Llave o por Nombre directo
-        row_pob = df_dem[(df_dem['LLAVE_UNIVERSAL'] == llave_busqueda) | (df_dem['Territorio'] == territorio_str)]
+        # 🔥 FIX: Filtro Blindado Anti-KeyError
+        if 'LLAVE_UNIVERSAL' in df_dem.columns:
+            terr_limpio = normalizar_texto(territorio_str).replace(" ", "_").upper()
+            llave_busqueda = f"CUENCA_{terr_limpio}_TOTAL" # Ajustar prefijo si es necesario
+            row_pob = df_dem[(df_dem['LLAVE_UNIVERSAL'] == llave_busqueda) | (df_dem['Territorio'] == territorio_str)]
+        elif 'Territorio' in df_dem.columns:
+            # Si no existe la llave universal, buscamos directamente por nombre
+            row_pob = df_dem[df_dem['Territorio'] == territorio_str]
+        else:
+            row_pob = pd.DataFrame() # Falla segura si el CSV no tiene formato esperado
         
         if not row_pob.empty:
             # Rescatamos la columna exacta de población
             col_pob = next((c for c in row_pob.columns if 'pob' in c.lower()), 'Pob_Base')
             st.session_state['aleph_pob_total'] = float(row_pob.iloc[0][col_pob])
         else:
-            st.sidebar.warning(f"Demografía no hallada para: {territorio_str}")
+            st.sidebar.warning(f"⚠️ Demografía no hallada en el CSV para: {territorio_str}")
 
         # --- 2. CONEXIÓN HIDROLÓGICA Y RURH (VÍA POSTGRESQL) ---
         engine = get_engine()
@@ -80,7 +83,7 @@ else:
             if oferta_real is not None:
                 st.session_state['aleph_oferta_m3s'] = float(oferta_real)
                 
-            # Presiones RURH (El fix que logramos antes)
+            # Presiones RURH
             query_rurh = text('SELECT COALESCE(SUM("Presion_Total_RURH_m3s"), 0) FROM matriz_presiones_rurh WHERE "Territorio" = :t')
             rurh_real = conn.execute(query_rurh, {"t": territorio_str}).scalar()
             st.session_state['aleph_concesiones_m3s'] = float(rurh_real)
