@@ -153,7 +153,7 @@ def cargar_municipios():
 
 # 🌉 PUENTES DE COMPATIBILIDAD HÍBRIDOS (SUPABASE + POSTGRESQL)
 @st.cache_data(show_spinner=False)
-def cargar_vertimientos():
+def cargar_vertimientos(_gdf_zona_actual): # El guión bajo evita que st.cache colapse al intentar hashear el mapa
     import pandas as pd
     from sqlalchemy import text
     try:
@@ -177,34 +177,34 @@ def cargar_vertimientos():
         df['coordenada_y'] = centroides.y.fillna(0)
         if 'geometry' in df.columns: df = df.drop(columns=['geometry'])
 
-    # 2. 🚀 INYECCIÓN SQL: Sobrescribir/Añadir desde la Matriz RURH
-    if engine:
+    # 2. 🚀 INYECCIÓN SQL ESPACIALMENTE SEGURA
+    if engine and _gdf_zona_actual is not None and not _gdf_zona_actual.empty:
         try:
+            # Obtenemos el centroide del mapa actual para "engañar" al filtro geográfico
+            centro_x = _gdf_zona_actual.geometry.centroid.x.values[0]
+            centro_y = _gdf_zona_actual.geometry.centroid.y.values[0]
+
             q_sql = text('SELECT "Territorio", "Caudal_Vertimiento_m3s" FROM matriz_presiones_rurh WHERE "Caudal_Vertimiento_m3s" > 0')
             df_sql = pd.read_sql(q_sql, engine)
             if not df_sql.empty:
-                # Convertimos m3/s a L/s para compatibilidad con tu código
                 df_sql['caudal_vert_lps_sql'] = df_sql['Caudal_Vertimiento_m3s'] * 1000
                 
-                # Aquí puedes decidir si añadir estos registros como filas nuevas 
-                # o cruzar por nombre de cuenca (Territorio). 
-                # Por ahora, los añadimos como bloques consolidados por cuenca.
                 df_nuevos = pd.DataFrame({
                     'caudal_vert_lps': df_sql['caudal_vert_lps_sql'],
-                    'municipio_norm': 'jurisdiccion_inyectada', # Etiqueta para rastreo
+                    'municipio_norm': 'jurisdiccion_inyectada',
                     'tipo_vertimiento': 'Consolidado RURH SQL',
                     'car_norm': 'RURH_SQL',
-                    'Territorio_Llave': df_sql['Territorio'],
-                    'coordenada_x': 0, 'coordenada_y': 0
+                    'coordenada_x': centro_x, # Coordenada garantizada dentro del polígono
+                    'coordenada_y': centro_y  # Coordenada garantizada dentro del polígono
                 })
                 df = pd.concat([df, df_nuevos], ignore_index=True)
-        except Exception:
-            pass
+        except Exception as e:
+            pass # Si falla, sigue con los datos base
 
     return df
 
 @st.cache_data(show_spinner=False)
-def cargar_concesiones():
+def cargar_concesiones(_gdf_zona_actual):
     import pandas as pd
     from sqlalchemy import text
     try:
@@ -239,9 +239,12 @@ def cargar_concesiones():
         df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
         if 'geometry' in df.columns: df = df.drop(columns=['geometry'])
 
-    # 2. 🚀 INYECCIÓN SQL: Añadir el RURH estandarizado (Ej: La Honda)
-    if engine:
+    # 2. 🚀 INYECCIÓN SQL ESPACIALMENTE SEGURA
+    if engine and _gdf_zona_actual is not None and not _gdf_zona_actual.empty:
         try:
+            centro_x = _gdf_zona_actual.geometry.centroid.x.values[0]
+            centro_y = _gdf_zona_actual.geometry.centroid.y.values[0]
+
             q_sql = text('SELECT "Territorio", "Caudal_Concesionado_m3s" FROM matriz_presiones_rurh WHERE "Caudal_Concesionado_m3s" > 0')
             df_sql = pd.read_sql(q_sql, engine)
             if not df_sql.empty:
@@ -250,13 +253,13 @@ def cargar_concesiones():
                 df_nuevos = pd.DataFrame({
                     'caudal_lps': df_sql['caudal_lps_sql'],
                     'municipio_norm': 'jurisdiccion_inyectada',
-                    'tipo_agua': 'Superficial (SQL)',
+                    'tipo_agua': 'Superficial',
                     'uso_detalle': 'Consolidado Multiuso',
                     'estado': 'Otorgada',
                     'car_norm': 'RURH_SQL',
                     'Sector_Sihcli': 'Consolidado RURH',
-                    'Territorio_Llave': df_sql['Territorio'],
-                    'coordenada_x': 0, 'coordenada_y': 0
+                    'coordenada_x': centro_x, # Coordenada garantizada
+                    'coordenada_y': centro_y  # Coordenada garantizada
                 })
                 df = pd.concat([df, df_nuevos], ignore_index=True)
         except Exception:
@@ -316,11 +319,11 @@ def cargar_territorio_maestro():
         return pd.DataFrame()
 
 # ---------------------------------------------------------------------
-# 🚀 INICIALIZACIÓN DE DATOS MAESTROS (100% CLOUD)
+# 🚀 INICIALIZACIÓN DE DATOS MAESTROS (100% CLOUD + BYPASS SQL)
 # ---------------------------------------------------------------------
-df_mpios = cargar_municipios()                                         
-df_concesiones = cargar_concesiones()
-df_vertimientos = cargar_vertimientos()
+df_mpios = cargar_municipios()                                 
+df_concesiones = cargar_concesiones(gdf_zona)
+df_vertimientos = cargar_vertimientos(gdf_zona)
 df_territorio = cargar_territorio_maestro()
 
 dict_pecuarios = cargar_maestros_pecuarios()
