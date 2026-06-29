@@ -9,37 +9,37 @@ from sqlalchemy import text
 from modules.db_manager import get_engine
 
 def procesar_e_inyectar_rurh():
-    """Descarga el Metabolismo Maestro, realiza Cruce Espacial con el mapa base e inyecta en PostgreSQL."""
-    with st.spinner("Conectando con el Aleph de Supabase (Metabolismo Maestro + Capa Espacial)..."):
+    """Descarga el Metabolismo Maestro, realiza Cruce Espacial con la tabla 'cuencas' de PostGIS e inyecta."""
+    with st.spinner("Conectando con el Aleph (Descargando Concesiones y leyendo Mapa PostGIS)..."):
         try:
+            engine = get_engine()
+            
             # 1. DESCARGA DEL ARCHIVO MAESTRO DE CONCESIONES (.xls)
             url_concesiones = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Concesiones_SP_Metabolismo_Maestro.xls"
             res_c = requests.get(url_concesiones)
-            
-            # Nota: Al ser .xls, el servidor necesita tener instalada la librería xlrd.
             df_concesiones = pd.read_excel(io.BytesIO(res_c.content))
             
-            # 2. DESCARGA DE LA CAPA OFICIAL DE CUENCAS
-            # Asegúrate de que cuencas_sp.geojson esté subido en esta ruta exacta de tu bucket
-            url_cuencas = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/cuencas_sp.geojson"
+            # 2. LECTURA DE LA CAPA OFICIAL DE CUENCAS (Directo desde PostgreSQL)
             try:
-                gdf_cuencas = gpd.read_file(url_cuencas)
+                # Leemos la tabla geométrica usando el motor PostGIS
+                q_cuencas = text("SELECT * FROM cuencas")
+                gdf_cuencas = gpd.read_postgis(q_cuencas, engine, geom_col='geometry')
             except Exception as e:
-                st.error("🚨 No se pudo cargar el archivo cuencas_sp.geojson desde Supabase. Verifica que esté en el bucket sihcli_maestros.")
+                st.error(f"🚨 No se pudo leer la tabla 'cuencas' de la base de datos: {e}")
                 return
             
-            st.info("📊 Archivos descargados. Ejecutando Fusión Espacial (Spatial Join)...")
+            st.info("📊 Datos listos. Ejecutando Fusión Espacial (Point-in-Polygon)...")
 
-            # 3. DETECCIÓN DINÁMICA DE COORDENADAS
+            # 3. DETECCIÓN DINÁMICA DE COORDENADAS (Concesiones)
             cols = df_concesiones.columns.tolist()
             col_x = next((c for c in cols if str(c).lower() in ['coordenada_x', 'longitud_w', 'lon', 'x']), None)
             col_y = next((c for c in cols if str(c).lower() in ['coordenada_y', 'latitud_n', 'lat', 'y']), None)
             
             if not col_x or not col_y:
-                st.error(f"🚨 Falla estructural: No encuentro columnas de coordenadas. Columnas detectadas: {cols}")
+                st.error(f"🚨 No encuentro columnas de coordenadas en el Excel. Columnas: {cols}")
                 return
             
-            # Limpiar nulos y asegurar que sean números
+            # Limpiar nulos y asegurar formato numérico
             df_clean = df_concesiones.dropna(subset=[col_x, col_y]).copy()
             df_clean[col_x] = pd.to_numeric(df_clean[col_x], errors='coerce')
             df_clean[col_y] = pd.to_numeric(df_clean[col_y], errors='coerce')
@@ -52,27 +52,21 @@ def procesar_e_inyectar_rurh():
                 crs="EPSG:4326" 
             )
 
-            # Alineación de los sistemas de coordenadas (CRS) para un cruce perfecto
+            # Alineación de sistemas de coordenadas
             if gdf_cuencas.crs is None:
                 gdf_cuencas.set_crs(epsg=4326, inplace=True)
             gdf_puntos = gdf_puntos.to_crs(gdf_cuencas.crs)
 
-            # 5. 💥 CRUCE ESPACIAL (Point-in-Polygon)
-            # Cada punto hereda mágicamente los atributos de la cuenca donde cae físicamente
+            # 5. 💥 CRUCE ESPACIAL (La magia de heredar atributos)
             gdf_cruzado = gpd.sjoin(gdf_puntos, gdf_cuencas, how="inner", predicate="intersects")
             
             if gdf_cruzado.empty:
-                st.error("🚨 El cruce espacial resultó vacío. Verifica que las coordenadas estén en formato decimal y caigan dentro del polígono de Antioquia.")
+                st.error("🚨 El cruce espacial resultó vacío. Revisa que las coordenadas de las concesiones caigan dentro del mapa de Antioquia.")
                 return
 
-            # Detección de las columnas maestras de la cuenca que acabamos de heredar
-            cols_cruzadas = gdf_cruzado.columns.tolist()
-            col_cuenca_nom = next((c for c in cols_cruzadas if c.lower() in ['nom_nss3', 'nombre_cuenca_nss3', 'subc_lbl', 'nombre']), 'Cuenca_Desconocida')
-            col_cuenca_cod = next((c for c in cols_cruzadas if c.lower() in ['cod_nss3', 'código_cuenca_nss3', 'codigo']), '')
-
             # 6. ADAPTADOR DE CAUDALES Y SECTORES
-            col_caudal = next((c for c in cols_cruzadas if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal']), None)
-            col_uso = next((c for c in cols_cruzadas if 'uso' in str(c).lower()), None)
+            col_caudal = next((c for c in gdf_cruzado.columns if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal']), None)
+            col_uso = next((c for c in gdf_cruzado.columns if 'uso' in str(c).lower()), None)
             
             if not col_caudal:
                 st.error("🚨 No se encontró columna de caudal en las concesiones.")
@@ -89,11 +83,16 @@ def procesar_e_inyectar_rurh():
                 for c in ['caudal_domestico_lps', 'caudal_agricola_lps', 'caudal_pecuario_lps']:
                     if c not in gdf_cruzado.columns: gdf_cruzado[c] = 0.0
 
-            # 7. FORJA DE LA LLAVE UNIVERSAL (Con los datos geográficos exactos)
+            # 7. FORJA DE LA LLAVE UNIVERSAL (Usando las columnas que vi en tu Panel de Control)
             def formatear_territorio(row):
-                nombre = str(row.get(col_cuenca_nom, '')).strip().title().replace("Q.", "Q. ")
+                # Usamos nombre_cuenca o n_nss3 que tu panel de control asegura que existan
+                nombre_base = str(row.get('nombre_cuenca', row.get('n_nss3', ''))).strip()
+                nombre = nombre_base.title().replace("Q.", "Q. ")
                 nombre = " ".join(nombre.split())
-                codigo = str(row.get(col_cuenca_cod, "")).strip()
+                
+                # Intentamos usar n_nss3 como código si id_cuenca no está claro, o viceversa
+                codigo = str(row.get('n_nss3', row.get('id_cuenca', ''))).strip()
+                
                 if codigo and codigo.lower() != 'nan' and codigo != 'none':
                     return f"{nombre} - ({codigo})"
                 return nombre
@@ -104,7 +103,7 @@ def procesar_e_inyectar_rurh():
             cols_sumar = [col_caudal, 'caudal_domestico_lps', 'caudal_agricola_lps', 'caudal_pecuario_lps']
             df_agrupado = gdf_cruzado.groupby('Territorio')[cols_sumar].sum().reset_index()
             
-            # Conversión final a m3/s
+            # Conversión a m3/s
             df_agrupado.rename(columns={col_caudal: 'Caudal_Concesionado_Ls'}, inplace=True)
             df_agrupado['Caudal_Concesionado_m3s'] = df_agrupado['Caudal_Concesionado_Ls'] / 1000.0
             df_agrupado['Caudal_Domestico_m3s'] = df_agrupado['caudal_domestico_lps'] / 1000.0
@@ -113,16 +112,14 @@ def procesar_e_inyectar_rurh():
             df_agrupado['Caudal_Vertimiento_m3s'] = 0.0
             df_agrupado['Presion_Total_RURH_m3s'] = df_agrupado['Caudal_Concesionado_m3s'] + df_agrupado['Caudal_Vertimiento_m3s']
 
-            # Mostrar tabla de resultados en la interfaz
-            st.markdown("### 🗄️ Matriz Agrupada post-Cruce Espacial (Para Motor WEAP)")
+            # Mostrar resultados
+            st.markdown("### 🗄️ Matriz Agrupada post-Cruce Espacial (SQL Puro)")
             format_dict = {c: '{:.4f}' for c in df_agrupado.columns if '_m3s' in c}
             st.dataframe(df_agrupado.head(15).style.format(format_dict), use_container_width=True)
 
             # 9. INYECCIÓN DUAL A POSTGRESQL
-            # Extirpamos la columna 'geometry' porque PostgreSQL necesita el texto plano
             df_raw_sql = pd.DataFrame(gdf_cruzado.drop(columns=['geometry'])) 
 
-            engine = get_engine()
             with engine.begin() as conn:
                 conn.execute(text("DROP TABLE IF EXISTS matriz_presiones_rurh"))
                 df_agrupado.to_sql('matriz_presiones_rurh', engine, if_exists='replace', index=False)
@@ -130,7 +127,7 @@ def procesar_e_inyectar_rurh():
                 conn.execute(text("DROP TABLE IF EXISTS concesiones_maestras_rurh_raw"))
                 df_raw_sql.to_sql('concesiones_maestras_rurh_raw', engine, if_exists='replace', index=False)
 
-            st.success(f"✅ ¡Fusión y Doble Inyección Exitosa! {len(df_agrupado)} cuencas consolidadas y {len(df_raw_sql)} concesiones ancladas geográficamente.")
+            st.success(f"✅ ¡Fusión y Doble Inyección Exitosa! {len(df_agrupado)} cuencas consolidadas y {len(df_raw_sql)} concesiones ancladas usando el mapa oficial de PostGIS.")
 
         except Exception as e:
             st.error(f"🚨 Error durante la inyección o cruce espacial: {e}")
