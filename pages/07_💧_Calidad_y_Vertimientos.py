@@ -203,70 +203,54 @@ def cargar_vertimientos(_gdf_zona_actual): # El guión bajo evita que st.cache c
 
     return df
 
-@st.cache_data(show_spinner=False)
-def cargar_concesiones(_gdf_zona_actual):
+@st.cache_data(show_spinner=False, ttl=3600)
+def cargar_concesiones():
     import pandas as pd
     from sqlalchemy import text
     try:
         from modules.db_manager import get_engine
         engine = get_engine()
-    except Exception:
-        engine = None
+        
+        # 1. Leemos la matriz cruda de concesiones que inyectamos con el cruce espacial
+        query = text("SELECT * FROM concesiones_maestras_rurh_raw")
+        df = pd.read_sql(query, engine)
+        
+        if df.empty:
+            return pd.DataFrame()
 
-    # 1. Cargamos tu estándar de oro desde la nube
-    gdf = cargar_maestros_nube("concesiones")
-    if gdf.empty: df = pd.DataFrame()
-    else:
-        df = pd.DataFrame(gdf)
-        df['caudal_lps'] = df.get('Caudal_Lps', 0.0)
-        df['municipio_norm'] = df.get('Municipio', '').apply(normalizar_texto)
+        # 2. Adaptamos los nombres a la nomenclatura que exigen tus gráficas
+        cols = df.columns.tolist()
+        
+        # Detectamos las columnas de caudal y coordenadas dinámicamente
+        col_caudal = next((c for c in cols if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal']), None)
+        col_x = next((c for c in cols if str(c).lower() in ['coordenada_x', 'longitud_w', 'lon', 'x']), None)
+        col_y = next((c for c in cols if str(c).lower() in ['coordenada_y', 'latitud_n', 'lat', 'y']), None)
+
+        df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0) if col_caudal else 0.0
+        df['coordenada_x'] = pd.to_numeric(df[col_x], errors='coerce').fillna(0) if col_x else 0.0
+        df['coordenada_y'] = pd.to_numeric(df[col_y], errors='coerce').fillna(0) if col_y else 0.0
+        
         df['tipo_agua'] = df.get('Tipo_Fuente', 'Superficial')
-        df['uso_detalle'] = df.get('Uso_Agua', 'No Registrado')
+        df['uso_detalle'] = df.get('Uso_Agua', 'Consolidado')
         df['estado'] = df.get('Estado', 'Otorgada')
-        df['car_norm'] = df.get('Autoridad', '').apply(normalizar_texto)
         
-        centroides = gdf.geometry.centroid
-        df['coordenada_x'] = centroides.x.fillna(0)
-        df['coordenada_y'] = centroides.y.fillna(0)
-        
+        # 3. Clasificamos los sectores para la simbología del mapa
         def clasificar_uso(u):
-            u = normalizar_texto(u)
+            u = str(u).lower()
             if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento']): return 'Doméstico'
             elif any(x in u for x in ['agricola', 'pecuario', 'riego']): return 'Agrícola/Pecuario'
             elif any(x in u for x in ['industrial', 'mineria']): return 'Industrial'
             else: return 'Otros'
             
         df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
-        if 'geometry' in df.columns: df = df.drop(columns=['geometry'])
+        
+        return df
 
-    # 2. 🚀 INYECCIÓN SQL ESPACIALMENTE SEGURA
-    if engine and _gdf_zona_actual is not None and not _gdf_zona_actual.empty:
-        try:
-            centro_x = _gdf_zona_actual.geometry.centroid.x.values[0]
-            centro_y = _gdf_zona_actual.geometry.centroid.y.values[0]
-
-            q_sql = text('SELECT "Territorio", "Caudal_Concesionado_m3s" FROM matriz_presiones_rurh WHERE "Caudal_Concesionado_m3s" > 0')
-            df_sql = pd.read_sql(q_sql, engine)
-            if not df_sql.empty:
-                df_sql['caudal_lps_sql'] = df_sql['Caudal_Concesionado_m3s'] * 1000
-                
-                df_nuevos = pd.DataFrame({
-                    'caudal_lps': df_sql['caudal_lps_sql'],
-                    'municipio_norm': 'jurisdiccion_inyectada',
-                    'tipo_agua': 'Superficial',
-                    'uso_detalle': 'Consolidado Multiuso',
-                    'estado': 'Otorgada',
-                    'car_norm': 'RURH_SQL',
-                    'Sector_Sihcli': 'Consolidado RURH',
-                    'coordenada_x': centro_x, # Coordenada garantizada
-                    'coordenada_y': centro_y  # Coordenada garantizada
-                })
-                df = pd.concat([df, df_nuevos], ignore_index=True)
-        except Exception:
-            pass
-
-    return df
-
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error crítico cargando concesiones desde PostgreSQL: {e}")
+        return pd.DataFrame()
+        
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestros_pecuarios():
     """Descarga los archivos maestros pecuarios desde Supabase a la memoria RAM"""
