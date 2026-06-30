@@ -5,8 +5,10 @@ import pandas as pd
 import requests
 import io
 
-# Ajuste de rutas para asegurar que los módulos sean siempre visibles
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# FUERZA BRUTA: Añadimos la raíz del proyecto al PATH explícitamente
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
 
 # IMPORTACIONES CENTRALES (Aquí radica la solución)
 from modules.db_manager import get_engine
