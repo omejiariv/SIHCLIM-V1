@@ -21,25 +21,26 @@ def renderizar_inyeccion_rurh():
                 st.success(f"✅ Archivo crudo descargado. Filas detectadas: {len(df)}")
 
             with st.spinner("2. Detectando Coordenadas y Caudal..."):
-                # Búsqueda dinámica de las columnas (insensible a mayúsculas)
+                # Búsqueda dinámica de las columnas (insensible a mayúsculas y espacios)
                 cols_upper = {str(c).upper().strip(): c for c in df.columns}
                 
+                # 🔥 FIX: Búsqueda exacta de las columnas de coordenadas y caudal
                 col_caudal = cols_upper.get('CAUDAL_LPS')
-                col_norte = next((c for k, c in cols_upper.items() if 'NORTE' in k), None)
-                col_oeste = next((c for k, c in cols_upper.items() if 'OESTE' in k), None)
+                col_norte = cols_upper.get('LATITUD_N')
+                col_oeste = cols_upper.get('LONGITUD_W')
 
                 if not col_caudal:
                     st.error("❌ No se encontró la columna exacta 'Caudal_Lps' en el archivo.")
                     return
                 if not col_norte or not col_oeste:
-                    st.error("❌ No se encontraron las columnas de coordenadas ('norte' y 'oeste').")
+                    st.error("❌ No se encontraron las columnas de coordenadas ('Latitud_N' y 'Longitud_W').")
                     return
 
                 # Limpieza de coordenadas (Aseguramos que sean números)
                 df['y_coord'] = pd.to_numeric(df[col_norte], errors='coerce')
                 df['x_coord'] = pd.to_numeric(df[col_oeste], errors='coerce')
                 
-                # Ajuste técnico para Colombia: Si el "oeste" viene positivo, lo volvemos negativo para cuadrar la longitud WGS84
+                # Ajuste técnico para Colombia: Si la longitud "Longitud_W" viene positiva, la volvemos negativa para WGS84
                 df['x_coord'] = df['x_coord'].apply(lambda x: -x if pd.notnull(x) and x > 0 and x < 100 else x)
                 df_puntos = df.dropna(subset=['x_coord', 'y_coord']).copy()
                 
@@ -68,7 +69,7 @@ def renderizar_inyeccion_rurh():
                 gdf_cruce = gpd.sjoin(gdf_puntos, gdf_cuencas, how="inner", predicate="intersects")
                 
                 if gdf_cruce.empty:
-                    st.error("❌ El Join Espacial falló. Ningún punto cayó dentro de los polígonos de cuencas (Verificar sistema de coordenadas).")
+                    st.error("❌ El Join Espacial falló. Ningún punto cayó dentro de los polígonos de cuencas (Verificar sistema de coordenadas o si los puntos caen en el mar).")
                     return
 
                 st.success(f"✅ Join Espacial exitoso: {len(gdf_cruce)} concesiones asociadas a una cuenca IDEAM.")
