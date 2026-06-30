@@ -1,133 +1,93 @@
-# modules/Inyeccion_RURH.py
-
-import io
-import requests
-import pandas as pd
-import geopandas as gpd
 import streamlit as st
+import pandas as pd
+import requests
+import io
 from sqlalchemy import text
 from modules.db_manager import get_engine
 
-def procesar_e_inyectar_rurh():
-    """Descarga el Metabolismo Maestro, realiza Cruce Espacial con la tabla 'cuencas' de PostGIS e inyecta."""
-    with st.spinner("Conectando con el Aleph (Descargando Concesiones y leyendo Mapa PostGIS)..."):
+def renderizar_inyeccion_rurh():
+    st.markdown("### 🏭 Motor de Inyección RURH (Concesiones y Vertimientos)")
+    st.info("Este módulo lee el archivo maestro alojado en Supabase, forja la Llave Maestra Espacial y consolida las presiones hídricas en PostgreSQL para el simulador WEAP.")
+
+    url_excel = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Concesiones_SP_Metabolismo_Maestro.xls"
+    
+    if st.button("🚀 Iniciar Extracción, Transformación y Carga (ETL)", type="primary", use_container_width=True):
         try:
-            engine = get_engine()
-            
-            # 1. DESCARGA DEL ARCHIVO MAESTRO DE CONCESIONES (.xls)
-            url_concesiones = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Concesiones_SP_Metabolismo_Maestro.xls"
-            res_c = requests.get(url_concesiones)
-            df_concesiones = pd.read_excel(io.BytesIO(res_c.content))
-            
-            # 2. LECTURA DE LA CAPA OFICIAL DE CUENCAS (Directo desde PostgreSQL)
-            try:
-                # Leemos la tabla geométrica usando el motor PostGIS
-                q_cuencas = text("SELECT * FROM cuencas")
-                gdf_cuencas = gpd.read_postgis(q_cuencas, engine, geom_col='geometry')
-            except Exception as e:
-                st.error(f"🚨 No se pudo leer la tabla 'cuencas' de la base de datos: {e}")
-                return
-            
-            st.info("📊 Datos listos. Ejecutando Fusión Espacial (Point-in-Polygon)...")
-
-            # 3. DETECCIÓN DINÁMICA DE COORDENADAS (Concesiones)
-            cols = df_concesiones.columns.tolist()
-            col_x = next((c for c in cols if str(c).lower() in ['coordenada_x', 'longitud_w', 'lon', 'x']), None)
-            col_y = next((c for c in cols if str(c).lower() in ['coordenada_y', 'latitud_n', 'lat', 'y']), None)
-            
-            if not col_x or not col_y:
-                st.error(f"🚨 No encuentro columnas de coordenadas en el Excel. Columnas: {cols}")
-                return
-            
-            # Limpiar nulos y asegurar formato numérico
-            df_clean = df_concesiones.dropna(subset=[col_x, col_y]).copy()
-            df_clean[col_x] = pd.to_numeric(df_clean[col_x], errors='coerce')
-            df_clean[col_y] = pd.to_numeric(df_clean[col_y], errors='coerce')
-            df_clean = df_clean.dropna(subset=[col_x, col_y])
-
-            # 4. CREACIÓN DEL GEODATAFRAME DE PUNTOS
-            gdf_puntos = gpd.GeoDataFrame(
-                df_clean,
-                geometry=gpd.points_from_xy(df_clean[col_x], df_clean[col_y]),
-                crs="EPSG:4326" 
-            )
-
-            # Alineación de sistemas de coordenadas
-            if gdf_cuencas.crs is None:
-                gdf_cuencas.set_crs(epsg=4326, inplace=True)
-            gdf_puntos = gdf_puntos.to_crs(gdf_cuencas.crs)
-
-            # 5. 💥 CRUCE ESPACIAL (La magia de heredar atributos)
-            gdf_cruzado = gpd.sjoin(gdf_puntos, gdf_cuencas, how="inner", predicate="intersects")
-            
-            if gdf_cruzado.empty:
-                st.error("🚨 El cruce espacial resultó vacío. Revisa que las coordenadas de las concesiones caigan dentro del mapa de Antioquia.")
-                return
-
-            # 6. ADAPTADOR DE CAUDALES Y SECTORES
-            col_caudal = next((c for c in gdf_cruzado.columns if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal']), None)
-            col_uso = next((c for c in gdf_cruzado.columns if 'uso' in str(c).lower()), None)
-            
-            if not col_caudal:
-                st.error("🚨 No se encontró columna de caudal en las concesiones.")
-                return
+            with st.spinner("1. Descargando matriz maestra desde Supabase..."):
+                response = requests.get(url_excel)
+                response.raise_for_status()
                 
-            gdf_cruzado[col_caudal] = pd.to_numeric(gdf_cruzado[col_caudal], errors='coerce').fillna(0)
+                # Leemos el archivo Excel
+                df = pd.read_excel(io.BytesIO(response.content))
+                st.success(f"✅ Archivo descargado exitosamente. Filas detectadas: {len(df)}")
 
-            if col_uso:
-                gdf_cruzado['Uso_Norm'] = gdf_cruzado[col_uso].astype(str).str.lower().str.strip()
-                gdf_cruzado['caudal_domestico_lps'] = gdf_cruzado.apply(lambda x: x[col_caudal] if 'domest' in x['Uso_Norm'] or 'consumo' in x['Uso_Norm'] else 0, axis=1)
-                gdf_cruzado['caudal_agricola_lps'] = gdf_cruzado.apply(lambda x: x[col_caudal] if 'agric' in x['Uso_Norm'] or 'riego' in x['Uso_Norm'] else 0, axis=1)
-                gdf_cruzado['caudal_pecuario_lps'] = gdf_cruzado.apply(lambda x: x[col_caudal] if 'pecuar' in x['Uso_Norm'] else 0, axis=1)
-            else:
-                for c in ['caudal_domestico_lps', 'caudal_agricola_lps', 'caudal_pecuario_lps']:
-                    if c not in gdf_cruzado.columns: gdf_cruzado[c] = 0.0
-
-            # 7. FORJA DE LA LLAVE UNIVERSAL (Usando las columnas que vi en tu Panel de Control)
-            def formatear_territorio(row):
-                # Usamos nombre_cuenca o n_nss3 que tu panel de control asegura que existan
-                nombre_base = str(row.get('nombre_cuenca', row.get('n_nss3', ''))).strip()
-                nombre = nombre_base.title().replace("Q.", "Q. ")
-                nombre = " ".join(nombre.split())
+            with st.spinner("2. Forjando Llave Maestra Espacial y calculando presiones..."):
+                # =====================================================================
+                # 🗝️ FORJA DE LA LLAVE MAESTRA ESPACIAL
+                # =====================================================================
+                # Convertimos los nombres de las columnas a mayúsculas para una búsqueda segura
+                cols_upper = [str(c).upper().strip() for c in df.columns]
                 
-                # Intentamos usar n_nss3 como código si id_cuenca no está claro, o viceversa
-                codigo = str(row.get('n_nss3', row.get('id_cuenca', ''))).strip()
+                if 'NOM_NSS3' in cols_upper and 'NSS3' in cols_upper:
+                    # Encontramos los nombres reales de las columnas en el dataframe
+                    col_nom = df.columns[cols_upper.index('NOM_NSS3')]
+                    col_cod = df.columns[cols_upper.index('NSS3')]
+                    
+                    # Construcción de la Llave: Ejemplo "Q. La Honda - (2308-01-04-24)"
+                    df['Territorio'] = df[col_nom].astype(str).str.strip() + " - (" + df[col_cod].astype(str).str.strip() + ")"
+                    st.write("🔑 **Llave Maestra forjada correctamente** a partir del Join Espacial.")
+                else:
+                    # Plan B en caso de que el Excel no traiga las columnas del Join
+                    col_fallback = df.columns[cols_upper.index('SISTEMA_HIDRICO')] if 'SISTEMA_HIDRICO' in cols_upper else None
+                    if col_fallback:
+                        df['Territorio'] = df[col_fallback].fillna("Desconocido")
+                        st.warning("⚠️ Columnas NSS3 no detectadas. Se usó el nombre básico del sistema hídrico.")
+                    else:
+                        df['Territorio'] = "Desconocido"
+                        st.error("❌ No se encontraron columnas territoriales válidas en el archivo.")
+
+                # =====================================================================
+                # 🧮 CÁLCULO DE PRESIONES Y AGRUPACIÓN
+                # =====================================================================
+                col_caudal = next((c for c in df.columns if 'caudal' in str(c).lower() and 'concesionado' in str(c).lower()), None)
                 
-                if codigo and codigo.lower() != 'nan' and codigo != 'none':
-                    return f"{nombre} - ({codigo})"
-                return nombre
+                if not col_caudal:
+                    st.error("❌ No se encontró la columna de Caudal Concesionado en el Excel.")
+                    return
 
-            gdf_cruzado['Territorio'] = gdf_cruzado.apply(formatear_territorio, axis=1)
+                # Convertimos a numérico, forzando errores a NaN y luego a 0
+                df[col_caudal] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0)
+                
+                # Convertimos L/s a m³/s si es necesario (ajustar si el Excel ya viene en m³/s)
+                # Asumiendo que el Excel maestro suele venir en L/s según estándares corporativos
+                # Si ya viene en m3/s, elimina la división por 1000
+                df['Caudal_m3s'] = df[col_caudal] / 1000.0 
 
-            # 8. SUMATORIA ESPACIAL
-            cols_sumar = [col_caudal, 'caudal_domestico_lps', 'caudal_agricola_lps', 'caudal_pecuario_lps']
-            df_agrupado = gdf_cruzado.groupby('Territorio')[cols_sumar].sum().reset_index()
-            
-            # Conversión a m3/s
-            df_agrupado.rename(columns={col_caudal: 'Caudal_Concesionado_Ls'}, inplace=True)
-            df_agrupado['Caudal_Concesionado_m3s'] = df_agrupado['Caudal_Concesionado_Ls'] / 1000.0
-            df_agrupado['Caudal_Domestico_m3s'] = df_agrupado['caudal_domestico_lps'] / 1000.0
-            df_agrupado['Caudal_Agricola_m3s'] = df_agrupado['caudal_agricola_lps'] / 1000.0
-            df_agrupado['Caudal_Pecuario_m3s'] = df_agrupado['caudal_pecuario_lps'] / 1000.0
-            df_agrupado['Caudal_Vertimiento_m3s'] = 0.0
-            df_agrupado['Presion_Total_RURH_m3s'] = df_agrupado['Caudal_Concesionado_m3s'] + df_agrupado['Caudal_Vertimiento_m3s']
+                # Agrupamos por la Llave Maestra
+                df_consolidado = df.groupby('Territorio', as_index=False)['Caudal_m3s'].sum()
+                df_consolidado.rename(columns={'Caudal_m3s': 'Presion_Total_RURH_m3s'}, inplace=True)
+                
+                st.success(f"✅ Presiones consolidadas en {len(df_consolidado)} unidades territoriales únicas.")
+                
+                with st.expander("👁️ Vista Previa del Consolidado RURH"):
+                    st.dataframe(df_consolidado.head(10), use_container_width=True)
 
-            # Mostrar resultados
-            st.markdown("### 🗄️ Matriz Agrupada post-Cruce Espacial (SQL Puro)")
-            format_dict = {c: '{:.4f}' for c in df_agrupado.columns if '_m3s' in c}
-            st.dataframe(df_agrupado.head(15).style.format(format_dict), use_container_width=True)
-
-            # 9. INYECCIÓN DUAL A POSTGRESQL
-            # Extirpamos la columna 'geometry' porque PostgreSQL necesita el texto plano
-            df_raw_sql = pd.DataFrame(gdf_cruzado.drop(columns=['geometry'])) 
-
-            # 🔥 FIX ANTI-BLOQUEOS: 
-            # Eliminamos el 'with engine.begin()' y el 'DROP TABLE' explícito.
-            # Delegamos el control total de la transacción al motor de Pandas.
-            df_agrupado.to_sql('matriz_presiones_rurh', engine, if_exists='replace', index=False)
-            df_raw_sql.to_sql('concesiones_maestras_rurh_raw', engine, if_exists='replace', index=False)
-
-            st.success(f"✅ ¡Fusión y Doble Inyección Exitosa! {len(df_agrupado)} cuencas consolidadas y {len(df_raw_sql)} concesiones ancladas usando el mapa oficial de PostGIS.")
+            with st.spinner("3. Inyectando resultados en PostgreSQL..."):
+                engine = get_engine()
+                with engine.begin() as conn:
+                    # Opcional: Limpiar la tabla antes de inyectar los nuevos datos para evitar duplicados
+                    # conn.execute(text("TRUNCATE TABLE matriz_presiones_rurh RESTART IDENTITY"))
+                    
+                    df_consolidado.to_sql(
+                        'matriz_presiones_rurh',
+                        con=conn,
+                        if_exists='replace', # Reemplaza la tabla completa con la nueva verdad oficial
+                        index=False,
+                        method='multi',
+                        chunksize=1000
+                    )
+                st.balloons()
+                st.success("🎉 ¡Inyección exitosa! La base de datos RURH está actualizada y lista para el WEAP.")
 
         except Exception as e:
-            st.error(f"🚨 Error durante la inyección o cruce espacial: {e}")
+            st.error(f"🚨 Error crítico durante el proceso ETL: {str(e)}")
