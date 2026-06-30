@@ -183,54 +183,48 @@ def cargar_concesiones():
         from modules.db_manager import get_engine
         engine = get_engine()
         
-        # 1. Leemos la matriz cruda de concesiones inyectada por el ETL
         query = text("SELECT * FROM concesiones_maestras_rurh_raw")
         df = pd.read_sql(query, engine)
-        
-        if df.empty:
-            return pd.DataFrame()
+        if df.empty: return pd.DataFrame()
 
-        # 2. Adaptamos los nombres a la nomenclatura del simulador
         cols = df.columns.tolist()
         
+        # 🚀 Priorizamos las coordenadas WGS84 generadas por el ETL
+        col_x = next((c for c in cols if str(c).lower() in ['x_coord', 'longitud_w', 'coordenada_x', 'lon', 'x']), None)
+        col_y = next((c for c in cols if str(c).lower() in ['y_coord', 'latitud_n', 'coordenada_y', 'lat', 'y']), None)
         col_caudal = next((c for c in cols if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal', 'caudal_m3s']), None)
-        col_x = next((c for c in cols if str(c).lower() in ['coordenada_x', 'longitud_w', 'lon', 'x', 'x_coord']), None)
-        col_y = next((c for c in cols if str(c).lower() in ['coordenada_y', 'latitud_n', 'lat', 'y', 'y_coord']), None)
-
-        df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0) if col_caudal else 0.0
-        # Si el ETL lo guardó en m3/s (como se ve en el código), lo pasamos a L/s
-        if 'm3s' in str(col_caudal).lower():
-            df['caudal_lps'] = df['caudal_lps'] * 1000.0
 
         df['coordenada_x'] = pd.to_numeric(df[col_x], errors='coerce').fillna(0) if col_x else 0.0
         df['coordenada_y'] = pd.to_numeric(df[col_y], errors='coerce').fillna(0) if col_y else 0.0
+        df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0) if col_caudal else 0.0
         
+        # Corrección de m3/s a L/s
+        if col_caudal and 'm3s' in str(col_caudal).lower():
+            df['caudal_lps'] = df['caudal_lps'] * 1000.0
+
+        # Renombrar columnas clave (Insensible a mayúsculas/minúsculas de PostgreSQL)
+        col_terr = next((c for c in cols if str(c).lower() == 'territorio'), None)
+        if col_terr: df['Territorio'] = df[col_terr].astype(str).str.strip()
+        
+        col_muni = next((c for c in cols if 'municipio' in str(c).lower()), None)
+        if col_muni: df['municipio_norm'] = df[col_muni].astype(str)
+
         df['tipo_agua'] = df.get('Tipo_Fuente', 'Superficial')
         df['uso_detalle'] = df.get('Uso_Agua', 'Consolidado')
-        df['estado'] = df.get('Estado', 'Otorgada')
         
-        # 🔥 Aseguramos la Llave Maestra para el cruce de texto
-        col_terr = next((c for c in df.columns if str(c).lower() == 'territorio'), None)
-        if col_terr:
-            df['Territorio'] = df[col_terr].astype(str).str.strip()
-            # 🛡️ Creamos una llave infalible en mayúsculas
-            df['Territorio_Upper'] = df['Territorio'].str.upper()
-        
-        # 3. Clasificamos los sectores para la simbología del mapa
         def clasificar_uso(u):
             u = str(u).lower()
             if any(x in u for x in ['domestico', 'consumo humano', 'abastecimiento']): return 'Doméstico'
             elif any(x in u for x in ['agricola', 'pecuario', 'riego']): return 'Agrícola/Pecuario'
             elif any(x in u for x in ['industrial', 'mineria']): return 'Industrial'
-            else: return 'Otros'
+            else: return 'Doméstico'
             
         df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
-        
         return df
 
     except Exception as e:
         import streamlit as st
-        st.error(f"Error crítico cargando concesiones desde PostgreSQL: {e}")
+        st.error(f"Error crítico cargando concesiones: {e}")
         return pd.DataFrame()
         
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -505,83 +499,51 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
-    # 2. CONCESIONES (Modo Blindado: Código IDEAM -> Texto -> Espacial)
+    # 2. CONCESIONES (Filtro Universal Autodetectado)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
-        # Aseguramos traer la columna municipio_norm para el mapa de calor (Tab 5)
-        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'Territorio_Upper', 'municipio_norm']]
-        df_c_light = df_concesiones[cols_c].copy()
+        df_c_light = df_concesiones.copy()
         df_c = pd.DataFrame()
 
         if es_todo_antioquia:
             df_c = df_c_light.copy()
         else:
-            # 🚀 PLAN A: Extractor Infalible de Código IDEAM
             import re
+            # ¿Tiene código IDEAM entre paréntesis? -> Es Cuenca
             codigo_match = re.search(r'\((.*?)\)', str(nombre_seleccion))
             
             if codigo_match and 'Territorio' in df_c_light.columns:
                 codigo = codigo_match.group(1).strip()
-                # Buscamos si el código IDEAM exacto está dentro de la columna Territorio
                 mask = df_c_light['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)
                 df_c = df_c_light[mask].copy()
-            
-            # 🚀 PLAN B: Búsqueda por nombre exacto en mayúsculas (Si no hay código)
-            if df_c.empty and 'Territorio_Upper' in df_c_light.columns:
-                nombre_upper = str(nombre_seleccion).strip().upper()
-                df_c = df_c_light[df_c_light['Territorio_Upper'] == nombre_upper].copy()
-                
-            # 🌍 PLAN C: Fallback Espacial (Emergencia extrema)
-            if df_c.empty:
+            else:
+                # Si no tiene código IDEAM, asumimos Municipio/Región
+                if 'municipio_norm' in df_c_light.columns:
+                    lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
+                    # Normalizamos la columna en vivo para asegurar el match
+                    mask = df_c_light['municipio_norm'].apply(normalizar_texto) == lugar_norm
+                    df_c = df_c_light[mask].copy()
+
+            # Fallback Espacial de Emergencia
+            if df_c.empty and poligono_zona is not None:
                 df_c_light['coordenada_x'] = pd.to_numeric(df_c_light['coordenada_x'], errors='coerce').fillna(0)
                 df_c_light['coordenada_y'] = pd.to_numeric(df_c_light['coordenada_y'], errors='coerce').fillna(0)
-                
                 mask_wgs84 = df_c_light['coordenada_x'] < 0
                 mask_magna = df_c_light['coordenada_x'] > 100000
-                
                 import geopandas as gpd
-                
-                gdf_magna = gpd.GeoDataFrame(
-                    df_c_light[mask_magna], 
-                    geometry=gpd.points_from_xy(df_c_light[mask_magna].coordenada_x, df_c_light[mask_magna].coordenada_y), 
-                    crs="EPSG:3116"
-                )
-                
-                gdf_wgs84 = gpd.GeoDataFrame(
-                    df_c_light[mask_wgs84], 
-                    geometry=gpd.points_from_xy(df_c_light[mask_wgs84].coordenada_x, df_c_light[mask_wgs84].coordenada_y), 
-                    crs="EPSG:4326"
-                )
-                
-                if not gdf_wgs84.empty:
-                    gdf_wgs84 = gdf_wgs84.to_crs(epsg=3116)
-                    
+                gdf_magna = gpd.GeoDataFrame(df_c_light[mask_magna], geometry=gpd.points_from_xy(df_c_light[mask_magna].coordenada_x, df_c_light[mask_magna].coordenada_y), crs="EPSG:3116")
+                gdf_wgs84 = gpd.GeoDataFrame(df_c_light[mask_wgs84], geometry=gpd.points_from_xy(df_c_light[mask_wgs84].coordenada_x, df_c_light[mask_wgs84].coordenada_y), crs="EPSG:4326")
+                if not gdf_wgs84.empty: gdf_wgs84 = gdf_wgs84.to_crs(epsg=3116)
                 gdf_puntos_c = pd.concat([gdf_magna, gdf_wgs84], ignore_index=True)
-                
-                if not gdf_puntos_c.empty and poligono_zona is not None:
+                if not gdf_puntos_c.empty:
                     gdf_intersect_c = gdf_puntos_c[gdf_puntos_c.geometry.intersects(poligono_zona)]
                     df_c = pd.DataFrame(gdf_intersect_c).drop(columns=['geometry'], errors='ignore')
 
-        # Normalización final de sectores
+        # Normalización de variables nulas para evitar caídas
         if not df_c.empty:
-            def normalizar_fuente(x):
-                x_str = str(x).lower()
-                if pd.isna(x) or 'no especi' in x_str or 'nan' in x_str: return 'Superficial'
-                return 'Subterránea' if 'subterr' in x_str else 'Superficial'
-
-            def normalizar_sector(x):
-                x_str = str(x).lower()
-                if pd.isna(x) or 'otros' in x_str or 'no registr' in x_str or 'nan' in x_str: return 'Doméstico'
-                if 'agr' in x_str or 'pec' in x_str: return 'Agrícola/Pecuario'
-                if 'ind' in x_str: return 'Industrial'
-                return 'Doméstico'
-
-            df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
-            df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
-
             df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
             df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
-            
+        
         del df_c_light
     else:
         df_c = pd.DataFrame()
@@ -1823,39 +1785,31 @@ with tab_mapa:
 # ------------------------------------------------------------------------------
 with tab_sirena:
     st.header("📊 Explorador Ambiental Avanzado")
-    st.info(f"📍 **Contexto Global Activo:** Estás navegando la base de datos bajo la lupa de: **{nivel_sel_interno} - {nombre_seleccion}**.")
+    
+    # Hemos eliminado la etiqueta confusa nivel_sel_interno
+    st.info(f"📍 **Contexto Global Activo:** Explorando la base de datos oficial para: **{nombre_seleccion}**.")
     
     if not df_concesiones.empty:
         df_exp = df_concesiones.copy()
-        lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
-        
-        # 🚀 FIX: Extractor Infalible de Código IDEAM
         import re
+        
+        # 🚀 El Extractor Universal
         codigo_match = re.search(r'\((.*?)\)', str(nombre_seleccion))
         
-        if nivel_sel_interno in ["Cuenca", "Cuenca Hidrográfica", "AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
-            if codigo_match and 'Territorio' in df_exp.columns:
-                codigo = codigo_match.group(1).strip()
-                df_exp = df_exp[df_exp['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)]
-            elif 'Territorio_Upper' in df_exp.columns:
-                nombre_upper = str(nombre_seleccion).strip().upper()
-                df_exp = df_exp[df_exp['Territorio_Upper'] == nombre_upper]
-                
-        elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_exp.columns: 
-            df_exp = df_exp[df_exp['car_norm'] == lugar_norm]
-        elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_exp.columns: 
-            df_exp = df_exp[df_exp['departamento_norm'] == normalizar_texto(nombre_seleccion)]
-        elif nivel_sel_interno == "Regional" and 'region_norm' in df_exp.columns: 
-            df_exp = df_exp[df_exp['region_norm'] == normalizar_texto(nombre_seleccion)]
-        elif nivel_sel_interno == "Municipal" and 'municipio_norm' in df_exp.columns: 
-            df_exp = df_exp[df_exp['municipio_norm'] == lugar_norm]
-            
+        if codigo_match and 'Territorio' in df_exp.columns:
+            # Es una Cuenca (IDEAM)
+            codigo = codigo_match.group(1).strip()
+            df_exp = df_exp[df_exp['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)]
+        else:
+            # Es un Municipio o Región
+            lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
+            if 'municipio_norm' in df_exp.columns:
+                df_exp = df_exp[df_exp['municipio_norm'].apply(normalizar_texto) == lugar_norm]
+        
         c_exp1, c_exp2 = st.columns([2, 1.5])
- 
         with c_exp1:
             st.subheader(f"Registros Encontrados: {len(df_exp):,}")
             
-            # 🛡️ ESCUDO DE TABLA (Transformamos a texto SOLO las 1000 que vamos a mostrar)
             if len(df_exp) > 1000:
                 st.caption("⚠️ **Protección activada:** Se muestran los primeros 1,000 registros para evitar colapsar el navegador. El análisis lateral sí usa el 100% de la base.")
                 df_view_exp = df_exp.head(1000).astype(str)
@@ -1873,7 +1827,7 @@ with tab_sirena:
                 st.plotly_chart(fig_exp, use_container_width=True)
     else:
         st.warning("No se ha cargado correctamente la base de datos oficial.")
-
+        
 # ------------------------------------------------------------------------------
 # TAB 7: ANÁLISIS SECTORIAL DE EXTERNALIDADES (NIVEL AVANZADO)
 # ------------------------------------------------------------------------------
