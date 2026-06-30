@@ -52,12 +52,7 @@ else:
 
     # 5. ENCENDER EL MOTOR WEAP
     try:
-        import pandas as pd
-        import requests
-        import io
-        from sqlalchemy import text
-        from modules.db_manager import get_engine
-        
+        # Como get_engine y text ya fueron importados arriba, no los importamos de nuevo aquí
         territorio_str = territorio_final[0] if isinstance(territorio_final, list) else territorio_final
         
         # --- 1. CONEXIÓN DEMOGRÁFICA AUTÓNOMA (VÍA SUPABASE) ---
@@ -68,14 +63,12 @@ else:
         df_dem = pd.read_csv(io.StringIO(res_csv.content.decode('utf-8')))
         
         # 🔥 EL BISTURÍ DE NOMBRES
-        # Extraemos "Q. La Honda" de "Q. La Honda - (2308-01-04-24)"
         if " - (" in territorio_str:
             nombre_puro = territorio_str.split(" - (")[0].strip()
         else:
             nombre_puro = territorio_str.strip()
         
         # Filtramos por el nombre exacto Y garantizamos que traiga el Área 'Total'
-        # Convertimos todo a minúsculas temporalmente para evitar fallos por mayúsculas
         mascara = (df_dem['Territorio'].astype(str).str.strip().str.lower() == nombre_puro.lower()) & \
                   (df_dem['Area'].astype(str).str.strip().str.lower() == 'total')
         
@@ -89,7 +82,7 @@ else:
             st.sidebar.warning(f"⚠️ Demografía no hallada en el CSV para el nombre puro: {nombre_puro}")
 
         # --- 2. CONEXIÓN HIDROLÓGICA Y RURH (VÍA POSTGRESQL) ---
-        engine = get_engine()
+        engine = get_engine() # Ahora es globalmente conocido
         with engine.connect() as conn:
             # Oferta Hídrica
             query_hidro = text('SELECT "Caudal_Medio_m3s" FROM matriz_hidrologica_maestra WHERE "Territorio" = :t LIMIT 1')
