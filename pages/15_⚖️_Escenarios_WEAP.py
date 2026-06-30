@@ -3,6 +3,10 @@ import os
 import streamlit as st
 import pandas as pd
 
+# 🔥 FIX: Importaciones globales para la base de datos
+from sqlalchemy import text
+from modules.db_manager import get_engine
+
 # 1. Configuración de página
 st.set_page_config(page_title="SIHCLI | Escenarios WEAP", page_icon="⚖️", layout="wide")
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
