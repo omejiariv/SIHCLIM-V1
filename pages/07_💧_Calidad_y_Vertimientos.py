@@ -47,6 +47,11 @@ selectors.renderizar_menu_navegacion("Calidad y Vertimientos")
 encender_gemelo_digital()
 
 st.title("💧 Demanda, Calidad del Agua y Metabolismo Hídrico")
+
+# --- LÍNEA DE DIAGNÓSTICO (Borrar después) ---
+st.sidebar.info(f"📍 Rango X: {df_concesiones['coordenada_x'].min():.1f} a {df_concesiones['coordenada_x'].max():.1f}")
+# ---------------------------------------------
+
 st.markdown("""
 Modelo integral del ciclo hidrosocial: Desde la captación y uso del recurso, hasta el análisis de vertimientos y la autodepuración de los cuerpos de agua receptores.
 """)
@@ -502,14 +507,15 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
     # 2. CONCESIONES (Filtro Universal Autodetectado)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
-        df_c_light = df_concesiones.copy()
+        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'municipio_norm']]
+        df_c_light = df_concesiones[cols_c].copy()
         df_c = pd.DataFrame()
 
         if es_todo_antioquia:
             df_c = df_c_light.copy()
         else:
             import re
-            # ¿Tiene código IDEAM entre paréntesis? -> Es Cuenca
+            # 🚀 1. Extractor de Código (Para Cuencas)
             codigo_match = re.search(r'\((.*?)\)', str(nombre_seleccion))
             
             if codigo_match and 'Territorio' in df_c_light.columns:
@@ -517,30 +523,29 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
                 mask = df_c_light['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)
                 df_c = df_c_light[mask].copy()
             else:
-                # Si no tiene código IDEAM, asumimos Municipio/Región
+                # 🚀 2. Extractor de Nombre (Para Municipios)
                 if 'municipio_norm' in df_c_light.columns:
                     lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
-                    # Normalizamos la columna en vivo para asegurar el match
                     mask = df_c_light['municipio_norm'].apply(normalizar_texto) == lugar_norm
                     df_c = df_c_light[mask].copy()
 
-            # Fallback Espacial de Emergencia
-            if df_c.empty and poligono_zona is not None:
-                df_c_light['coordenada_x'] = pd.to_numeric(df_c_light['coordenada_x'], errors='coerce').fillna(0)
-                df_c_light['coordenada_y'] = pd.to_numeric(df_c_light['coordenada_y'], errors='coerce').fillna(0)
-                mask_wgs84 = df_c_light['coordenada_x'] < 0
-                mask_magna = df_c_light['coordenada_x'] > 100000
-                import geopandas as gpd
-                gdf_magna = gpd.GeoDataFrame(df_c_light[mask_magna], geometry=gpd.points_from_xy(df_c_light[mask_magna].coordenada_x, df_c_light[mask_magna].coordenada_y), crs="EPSG:3116")
-                gdf_wgs84 = gpd.GeoDataFrame(df_c_light[mask_wgs84], geometry=gpd.points_from_xy(df_c_light[mask_wgs84].coordenada_x, df_c_light[mask_wgs84].coordenada_y), crs="EPSG:4326")
-                if not gdf_wgs84.empty: gdf_wgs84 = gdf_wgs84.to_crs(epsg=3116)
-                gdf_puntos_c = pd.concat([gdf_magna, gdf_wgs84], ignore_index=True)
-                if not gdf_puntos_c.empty:
-                    gdf_intersect_c = gdf_puntos_c[gdf_puntos_c.geometry.intersects(poligono_zona)]
-                    df_c = pd.DataFrame(gdf_intersect_c).drop(columns=['geometry'], errors='ignore')
-
-        # Normalización de variables nulas para evitar caídas
+        # 🚀 3. Normalización final de variables
         if not df_c.empty:
+            def normalizar_fuente(x):
+                x_str = str(x).lower()
+                if pd.isna(x) or 'no especi' in x_str or 'nan' in x_str: return 'Superficial'
+                return 'Subterránea' if 'subterr' in x_str else 'Superficial'
+
+            def normalizar_sector(x):
+                x_str = str(x).lower()
+                if pd.isna(x) or 'otros' in x_str or 'no registr' in x_str or 'nan' in x_str: return 'Doméstico'
+                if 'agr' in x_str or 'pec' in x_str: return 'Agrícola/Pecuario'
+                if 'ind' in x_str: return 'Industrial'
+                return 'Doméstico'
+
+            df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
+            df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
+
             df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
             df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
         
@@ -1670,7 +1675,7 @@ with tab_mapa:
         else:
             df_filtro_anio = df_mpios 
             
-        # 🚀 FIX: Lógica exhaustiva para todas las escalas
+        # 🚀 Lógica exhaustiva para todas las escalas
         if nivel_sel_interno == "Nacional (Colombia)": 
             df_m = df_filtro_anio.copy()
         elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)":
@@ -1686,10 +1691,13 @@ with tab_mapa:
         elif nivel_sel_interno == "Municipal": 
             df_m = df_filtro_anio[df_filtro_anio['municipio_norm'] == normalizar_texto(nombre_seleccion)].copy()
         else: 
-            # 🚀 FIX PARA CUENCAS: Extraemos solo los municipios que tocan esta cuenca específica
+            # 🚀 FIX PARA CUENCAS: Extraemos municipios desde Concesiones Y Vertimientos
             mpios_cuenca = set()
             if 'df_c' in locals() and not df_c.empty and 'municipio_norm' in df_c.columns:
                 mpios_cuenca.update(df_c['municipio_norm'].dropna().unique())
+            if 'df_v' in locals() and not df_v.empty and 'municipio_norm' in df_v.columns:
+                mpios_cuenca.update(df_v['municipio_norm'].dropna().unique())
+                
             if mpios_cuenca:
                 df_m = df_filtro_anio[df_filtro_anio['municipio_norm'].isin(mpios_cuenca)].copy()
             else:
@@ -1700,8 +1708,8 @@ with tab_mapa:
             df_agg['Poblacion_Proy'] = df_agg['Poblacion'] * 1.15 
             
             if "Caudal" in var_mapa:
-                # Fallback seguro para la dotación
-                dot_segura = dotacion if 'dotacion' in locals() else 120.0
+                # 🛡️ Fallback seguro extrayendo de memoria global
+                dot_segura = dotacion if 'dotacion' in locals() else st.session_state.get('td_dotacion', 120.0)
                 df_agg['Valor'] = (df_agg['Poblacion_Proy'] * dot_segura) / 86400
                 fig_tree = px.treemap(df_agg, path=[px.Constant(nombre_seleccion), 'municipio'], values='Valor', color='Valor', color_continuous_scale='Blues', title="Caudal Doméstico Requerido (L/s)")
             else:
@@ -1718,7 +1726,6 @@ with tab_mapa:
     else:
         st.caption("Mapa de densidad sobre cartografía base (Convierte MAGNA-SIRGAS a WGS84 en tiempo real).")
         
-        # Utilizamos los DataFrames que ya pasaron por el filtro estricto de la Llave Maestra (df_c y df_v)
         df_map = df_c.copy() if "Concesión" in var_mapa else df_v.copy()
         
         if not df_map.empty:
@@ -1757,11 +1764,10 @@ with tab_mapa:
                         df_plot['lon'] = coords['lon']
                         df_plot['lat'] = coords['lat']
                         
-                        # Limpieza robusta de outliers (basura espacial) que alejan el zoom
+                        # Limpieza robusta de outliers que alejan el zoom (Ventana de Antioquia)
                         df_plot = df_plot[(df_plot['lon'] >= -78) & (df_plot['lon'] <= -73) & (df_plot['lat'] >= 5) & (df_plot['lat'] <= 9)]
                     
                     if not df_plot.empty:
-                        # 🚀 FIX: Zoom dinámico. Si es una cuenca local (pocos puntos muy juntos), acercamos más la cámara.
                         zoom_dinamico = 11 if total_puntos_reales < 500 else 8
                         
                         fig_dens = px.density_mapbox(df_plot, lat='lat', lon='lon', z=col_z, radius=15,
