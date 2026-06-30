@@ -81,20 +81,24 @@ def renderizar_inyeccion_rurh():
                 # 🧮 CÁLCULO DE CAUDAL
                 gdf_cruce['Caudal_m3s'] = pd.to_numeric(gdf_cruce[col_caudal], errors='coerce').fillna(0) / 1000.0
                 
-                # Agrupación final por Llave Maestra
+                # 📦 MATRIZ 1: PREPARAR DATOS CRUDOS (RAW) PARA EL MAPA Y CÁLCULOS DETALLADOS
+                # Eliminamos la geometría para guardarlo en formato tabular estándar en SQL
+                df_raw_to_sql = pd.DataFrame(gdf_cruce).drop(columns=['geometry'], errors='ignore')
+                
+                # 📊 MATRIZ 2: AGRUPACIÓN FINAL (RESUMEN)
                 df_consolidado = gdf_cruce.groupby('Territorio', as_index=False)['Caudal_m3s'].sum()
                 df_consolidado.rename(columns={'Caudal_m3s': 'Presion_Total_RURH_m3s'}, inplace=True)
 
                 with st.expander("👁️ Vista Previa del Consolidado Final"):
                     st.dataframe(df_consolidado.sort_values(by='Presion_Total_RURH_m3s', ascending=False).head(15), use_container_width=True)
 
-            with st.spinner("5. Inyectando base de datos final a PostgreSQL..."):
+            with st.spinner("5. Inyectando bases de datos a PostgreSQL..."):
                 with engine.begin() as conn:
-                    # Guardamos la tabla consolidada para que el simulador WEAP la consuma al instante
+                    # 1. Guardamos la tabla RAW (70,000 registros listos para la Pág 07)
+                    df_raw_to_sql.to_sql('concesiones_maestras_rurh_raw', con=conn, if_exists='replace', index=False, method='multi')
+                    
+                    # 2. Guardamos la tabla consolidada (Para simuladores rápidos como WEAP)
                     df_consolidado.to_sql('matriz_presiones_rurh', con=conn, if_exists='replace', index=False, method='multi')
                 
                 st.balloons()
-                st.success("🎉 ¡Inyección maestra completada! La base de datos RURH está actualizada y cuenta con la Llave Maestra oficial.")
-
-        except Exception as e:
-            st.error(f"🚨 Error crítico durante el proceso ETL Geoespacial: {str(e)}")
+                st.success("🎉 ¡Inyección maestra completada! Se han guardado los registros crudos y el consolidado oficial en PostgreSQL.")
