@@ -210,8 +210,11 @@ def cargar_concesiones():
         df['estado'] = df.get('Estado', 'Otorgada')
         
         # 🔥 Aseguramos la Llave Maestra para el cruce de texto
-        if 'Territorio' in df.columns:
-            df['Territorio'] = df['Territorio'].astype(str).str.strip()
+        col_terr = next((c for c in df.columns if str(c).lower() == 'territorio'), None)
+        if col_terr:
+            df['Territorio'] = df[col_terr].astype(str).str.strip()
+            # 🛡️ Creamos una llave infalible en mayúsculas
+            df['Territorio_Upper'] = df['Territorio'].str.upper()
         
         # 3. Clasificamos los sectores para la simbología del mapa
         def clasificar_uso(u):
@@ -505,15 +508,18 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
     # 2. CONCESIONES (Modo Híbrido: Texto Ultrarrápido o Espacial Seguro)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
-        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio']]
+        # Aseguramos traer la nueva columna Territorio_Upper
+        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'Territorio_Upper']]
         df_c_light = df_concesiones[cols_c].copy()
 
         if es_todo_antioquia:
             df_c = df_c_light.copy()
         else:
-            # 🚀 PLAN A: Filtrado instantáneo por Llave Maestra (Texto)
-            if 'Territorio' in df_c_light.columns and nombre_seleccion in df_c_light['Territorio'].values:
-                df_c = df_c_light[df_c_light['Territorio'] == nombre_seleccion].copy()
+            # 🚀 PLAN A: Filtrado instantáneo por Llave Maestra (Blindado contra mayúsculas)
+            nombre_upper = str(nombre_seleccion).strip().upper()
+            
+            if 'Territorio_Upper' in df_c_light.columns and nombre_upper in df_c_light['Territorio_Upper'].values:
+                df_c = df_c_light[df_c_light['Territorio_Upper'] == nombre_upper].copy()
                 
             # 🌍 PLAN B: Fallback Espacial con protección de CRS (Para Municipios o Regiones)
             else:
@@ -1815,10 +1821,14 @@ with tab_sirena:
         df_exp = df_concesiones.copy()
         lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
         
-        # 🚀 FIX: Filtro infalible por Llave Maestra para Cuencas
+        # 🚀 FIX: Filtro infalible por Llave Maestra (Insensible a mayúsculas)
+        nombre_upper = str(nombre_seleccion).strip().upper()
+        
         if nivel_sel_interno in ["Cuenca", "Cuenca Hidrográfica", "AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
-            if 'Territorio' in df_exp.columns:
-                df_exp = df_exp[df_exp['Territorio'] == nombre_seleccion]
+            if 'Territorio_Upper' in df_exp.columns:
+                df_exp = df_exp[df_exp['Territorio_Upper'] == nombre_upper]
+            elif 'Territorio' in df_exp.columns:
+                df_exp = df_exp[df_exp['Territorio'].astype(str).str.upper() == nombre_upper]
         elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_exp.columns: 
             df_exp = df_exp[df_exp['car_norm'] == lugar_norm]
         elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_exp.columns: 
