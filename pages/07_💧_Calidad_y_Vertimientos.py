@@ -183,28 +183,35 @@ def cargar_concesiones():
         from modules.db_manager import get_engine
         engine = get_engine()
         
-        # 1. Leemos la matriz cruda de concesiones que inyectamos con el cruce espacial
+        # 1. Leemos la matriz cruda de concesiones inyectada por el ETL
         query = text("SELECT * FROM concesiones_maestras_rurh_raw")
         df = pd.read_sql(query, engine)
         
         if df.empty:
             return pd.DataFrame()
 
-        # 2. Adaptamos los nombres a la nomenclatura que exigen tus gráficas
+        # 2. Adaptamos los nombres a la nomenclatura del simulador
         cols = df.columns.tolist()
         
-        # Detectamos las columnas de caudal y coordenadas dinámicamente
-        col_caudal = next((c for c in cols if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal']), None)
-        col_x = next((c for c in cols if str(c).lower() in ['coordenada_x', 'longitud_w', 'lon', 'x']), None)
-        col_y = next((c for c in cols if str(c).lower() in ['coordenada_y', 'latitud_n', 'lat', 'y']), None)
+        col_caudal = next((c for c in cols if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal', 'caudal_m3s']), None)
+        col_x = next((c for c in cols if str(c).lower() in ['coordenada_x', 'longitud_w', 'lon', 'x', 'x_coord']), None)
+        col_y = next((c for c in cols if str(c).lower() in ['coordenada_y', 'latitud_n', 'lat', 'y', 'y_coord']), None)
 
         df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0) if col_caudal else 0.0
+        # Si el ETL lo guardó en m3/s (como se ve en el código), lo pasamos a L/s
+        if 'm3s' in str(col_caudal).lower():
+            df['caudal_lps'] = df['caudal_lps'] * 1000.0
+
         df['coordenada_x'] = pd.to_numeric(df[col_x], errors='coerce').fillna(0) if col_x else 0.0
         df['coordenada_y'] = pd.to_numeric(df[col_y], errors='coerce').fillna(0) if col_y else 0.0
         
         df['tipo_agua'] = df.get('Tipo_Fuente', 'Superficial')
         df['uso_detalle'] = df.get('Uso_Agua', 'Consolidado')
         df['estado'] = df.get('Estado', 'Otorgada')
+        
+        # 🔥 Aseguramos la Llave Maestra para el cruce de texto
+        if 'Territorio' in df.columns:
+            df['Territorio'] = df['Territorio'].astype(str).str.strip()
         
         # 3. Clasificamos los sectores para la simbología del mapa
         def clasificar_uso(u):
@@ -495,26 +502,53 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
-    # 2. CONCESIONES
+    # 2. CONCESIONES (Modo Híbrido: Texto Ultrarrápido o Espacial Seguro)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
-        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado']]
+        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio']]
         df_c_light = df_concesiones[cols_c].copy()
 
         if es_todo_antioquia:
             df_c = df_c_light.copy()
         else:
-            mask_box = (df_c_light['coordenada_x'] >= minx) & (df_c_light['coordenada_x'] <= maxx) & \
-                       (df_c_light['coordenada_y'] >= miny) & (df_c_light['coordenada_y'] <= maxy)
-            df_c_box = df_c_light[mask_box].copy()
-
-            if not df_c_box.empty:
-                mask_exacta = df_c_box.apply(lambda row: poligono_preparado.contains(Point(row['coordenada_x'], row['coordenada_y'])), axis=1)
-                df_c = df_c_box[mask_exacta].copy()
+            # 🚀 PLAN A: Filtrado instantáneo por Llave Maestra (Texto)
+            if 'Territorio' in df_c_light.columns and nombre_seleccion in df_c_light['Territorio'].values:
+                df_c = df_c_light[df_c_light['Territorio'] == nombre_seleccion].copy()
+                
+            # 🌍 PLAN B: Fallback Espacial con protección de CRS (Para Municipios o Regiones)
             else:
-                df_c = pd.DataFrame()
-            del df_c_box, mask_box
+                df_c_light['coordenada_x'] = pd.to_numeric(df_c_light['coordenada_x'], errors='coerce').fillna(0)
+                df_c_light['coordenada_y'] = pd.to_numeric(df_c_light['coordenada_y'], errors='coerce').fillna(0)
+                
+                mask_wgs84 = df_c_light['coordenada_x'] < 0
+                mask_magna = df_c_light['coordenada_x'] > 100000
+                
+                import geopandas as gpd
+                
+                gdf_magna = gpd.GeoDataFrame(
+                    df_c_light[mask_magna], 
+                    geometry=gpd.points_from_xy(df_c_light[mask_magna].coordenada_x, df_c_light[mask_magna].coordenada_y), 
+                    crs="EPSG:3116"
+                )
+                
+                gdf_wgs84 = gpd.GeoDataFrame(
+                    df_c_light[mask_wgs84], 
+                    geometry=gpd.points_from_xy(df_c_light[mask_wgs84].coordenada_x, df_c_light[mask_wgs84].coordenada_y), 
+                    crs="EPSG:4326"
+                )
+                
+                if not gdf_wgs84.empty:
+                    gdf_wgs84 = gdf_wgs84.to_crs(epsg=3116)
+                    
+                gdf_puntos_c = pd.concat([gdf_magna, gdf_wgs84], ignore_index=True)
+                
+                if not gdf_puntos_c.empty and poligono_zona is not None:
+                    gdf_intersect_c = gdf_puntos_c[gdf_puntos_c.geometry.intersects(poligono_zona)]
+                    df_c = pd.DataFrame(gdf_intersect_c).drop(columns=['geometry'], errors='ignore')
+                else:
+                    df_c = pd.DataFrame()
 
+        # Normalización final de sectores
         if not df_c.empty:
             def normalizar_fuente(x):
                 x_str = str(x).lower()
@@ -538,10 +572,12 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
     else:
         df_c = pd.DataFrame()
 
+    # LIMPIEZA DE MEMORIA (GARBAGE COLLECTION)
+    # ---------------------------------------------------------
     if not es_todo_antioquia:
         del poligono_zona, poligono_preparado
     gc.collect()
-        
+    
 # ==============================================================================
 # 🐄 MOTOR MATEMÁTICO PECUARIO (Conectado a la Nube - Censo ICA Maestro)
 # ==============================================================================
