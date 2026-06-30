@@ -505,24 +505,34 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
-    # 2. CONCESIONES (Modo Híbrido: Texto Ultrarrápido o Espacial Seguro)
+    # 2. CONCESIONES (Modo Blindado: Código IDEAM -> Texto -> Espacial)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
-        # Aseguramos traer la nueva columna Territorio_Upper
-        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'Territorio_Upper']]
+        # Aseguramos traer la columna municipio_norm para el mapa de calor (Tab 5)
+        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'Territorio_Upper', 'municipio_norm']]
         df_c_light = df_concesiones[cols_c].copy()
+        df_c = pd.DataFrame()
 
         if es_todo_antioquia:
             df_c = df_c_light.copy()
         else:
-            # 🚀 PLAN A: Filtrado instantáneo por Llave Maestra (Blindado contra mayúsculas)
-            nombre_upper = str(nombre_seleccion).strip().upper()
+            # 🚀 PLAN A: Extractor Infalible de Código IDEAM
+            import re
+            codigo_match = re.search(r'\((.*?)\)', str(nombre_seleccion))
             
-            if 'Territorio_Upper' in df_c_light.columns and nombre_upper in df_c_light['Territorio_Upper'].values:
+            if codigo_match and 'Territorio' in df_c_light.columns:
+                codigo = codigo_match.group(1).strip()
+                # Buscamos si el código IDEAM exacto está dentro de la columna Territorio
+                mask = df_c_light['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)
+                df_c = df_c_light[mask].copy()
+            
+            # 🚀 PLAN B: Búsqueda por nombre exacto en mayúsculas (Si no hay código)
+            if df_c.empty and 'Territorio_Upper' in df_c_light.columns:
+                nombre_upper = str(nombre_seleccion).strip().upper()
                 df_c = df_c_light[df_c_light['Territorio_Upper'] == nombre_upper].copy()
                 
-            # 🌍 PLAN B: Fallback Espacial con protección de CRS (Para Municipios o Regiones)
-            else:
+            # 🌍 PLAN C: Fallback Espacial (Emergencia extrema)
+            if df_c.empty:
                 df_c_light['coordenada_x'] = pd.to_numeric(df_c_light['coordenada_x'], errors='coerce').fillna(0)
                 df_c_light['coordenada_y'] = pd.to_numeric(df_c_light['coordenada_y'], errors='coerce').fillna(0)
                 
@@ -551,8 +561,6 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
                 if not gdf_puntos_c.empty and poligono_zona is not None:
                     gdf_intersect_c = gdf_puntos_c[gdf_puntos_c.geometry.intersects(poligono_zona)]
                     df_c = pd.DataFrame(gdf_intersect_c).drop(columns=['geometry'], errors='ignore')
-                else:
-                    df_c = pd.DataFrame()
 
         # Normalización final de sectores
         if not df_c.empty:
@@ -573,7 +581,7 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
 
             df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
             df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
-        
+            
         del df_c_light
     else:
         df_c = pd.DataFrame()
@@ -1821,14 +1829,18 @@ with tab_sirena:
         df_exp = df_concesiones.copy()
         lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
         
-        # 🚀 FIX: Filtro infalible por Llave Maestra (Insensible a mayúsculas)
-        nombre_upper = str(nombre_seleccion).strip().upper()
+        # 🚀 FIX: Extractor Infalible de Código IDEAM
+        import re
+        codigo_match = re.search(r'\((.*?)\)', str(nombre_seleccion))
         
         if nivel_sel_interno in ["Cuenca", "Cuenca Hidrográfica", "AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
-            if 'Territorio_Upper' in df_exp.columns:
+            if codigo_match and 'Territorio' in df_exp.columns:
+                codigo = codigo_match.group(1).strip()
+                df_exp = df_exp[df_exp['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)]
+            elif 'Territorio_Upper' in df_exp.columns:
+                nombre_upper = str(nombre_seleccion).strip().upper()
                 df_exp = df_exp[df_exp['Territorio_Upper'] == nombre_upper]
-            elif 'Territorio' in df_exp.columns:
-                df_exp = df_exp[df_exp['Territorio'].astype(str).str.upper() == nombre_upper]
+                
         elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_exp.columns: 
             df_exp = df_exp[df_exp['car_norm'] == lugar_norm]
         elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_exp.columns: 
