@@ -3,9 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from sqlalchemy import text
-from modules.db_manager import get_engine
-import ast
-import geopandas as gpd
 
 def renderizar_motor_escenarios_weap(territorio="Territorio Global", gdf_zona=None):
     engine = get_engine()
