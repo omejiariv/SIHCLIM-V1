@@ -1684,68 +1684,80 @@ with tab_mapa:
         st.caption("Mapa de calor jerárquico (Treemap) basado en cálculos poblacionales.")
         df_agg = pd.DataFrame()
         
-        # 🚀 FIX KEYERROR: Detector dinámico de la columna de año (o fallback si no existe)
         col_anio = next((c for c in ['año', 'Año', 'anio', 'Anio', 'year', 'Year'] if c in df_mpios.columns), None)
         anio_mapa = anio_analisis if 'anio_analisis' in locals() else 2025
         
         if col_anio:
             if anio_mapa not in df_mpios[col_anio].unique():
-                anio_mapa = df_mpios[col_anio].max() # Si no existe 2025, usa el más reciente
+                anio_mapa = df_mpios[col_anio].max() 
             df_filtro_anio = df_mpios[df_mpios[col_anio] == anio_mapa]
         else:
-            df_filtro_anio = df_mpios # Si el dataset ya está aplanado y no tiene año, lo usamos todo
+            df_filtro_anio = df_mpios 
             
-        if nivel_sel_interno == "Nacional (Colombia)": df_m = df_filtro_anio.copy()
+        # 🚀 FIX: Lógica exhaustiva para todas las escalas
+        if nivel_sel_interno == "Nacional (Colombia)": 
+            df_m = df_filtro_anio.copy()
         elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)":
             car_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
             mpios_car = set()
             if not df_concesiones.empty: mpios_car.update(df_concesiones[df_concesiones['car_norm'] == car_norm]['municipio_norm'].unique())
             if not df_vertimientos.empty: mpios_car.update(df_vertimientos[df_vertimientos['car_norm'] == car_norm]['municipio_norm'].unique())
             df_m = df_filtro_anio[df_filtro_anio['municipio_norm'].isin(mpios_car)].copy()
-        elif nivel_sel_interno == "Departamental": df_m = df_filtro_anio[df_filtro_anio['depto_nom'] == nombre_seleccion].copy()
-        elif nivel_sel_interno == "Regional": df_m = df_filtro_anio[df_filtro_anio['region'] == nombre_seleccion].copy()
-        elif nivel_sel_interno == "Municipal": df_m = df_filtro_anio[df_filtro_anio['municipio_norm'] == normalizar_texto(nombre_seleccion)].copy()
-        else: df_m = df_filtro_anio.copy()
+        elif nivel_sel_interno == "Departamental": 
+            df_m = df_filtro_anio[df_filtro_anio['depto_nom'] == nombre_seleccion].copy()
+        elif nivel_sel_interno == "Regional": 
+            df_m = df_filtro_anio[df_filtro_anio['region'] == nombre_seleccion].copy()
+        elif nivel_sel_interno == "Municipal": 
+            df_m = df_filtro_anio[df_filtro_anio['municipio_norm'] == normalizar_texto(nombre_seleccion)].copy()
+        else: 
+            # 🚀 FIX PARA CUENCAS: Extraemos solo los municipios que tocan esta cuenca específica
+            mpios_cuenca = set()
+            if 'df_c' in locals() and not df_c.empty and 'municipio_norm' in df_c.columns:
+                mpios_cuenca.update(df_c['municipio_norm'].dropna().unique())
+            if mpios_cuenca:
+                df_m = df_filtro_anio[df_filtro_anio['municipio_norm'].isin(mpios_cuenca)].copy()
+            else:
+                df_m = pd.DataFrame()
             
         if not df_m.empty:
             df_agg = df_m.groupby('municipio')['Poblacion'].sum().reset_index()
-            df_agg['Poblacion_Proy'] = df_agg['Poblacion'] * 1.15 # Proyección proxy
+            df_agg['Poblacion_Proy'] = df_agg['Poblacion'] * 1.15 
             
             if "Caudal" in var_mapa:
-                df_agg['Valor'] = (df_agg['Poblacion_Proy'] * dotacion) / 86400
+                # Fallback seguro para la dotación
+                dot_segura = dotacion if 'dotacion' in locals() else 120.0
+                df_agg['Valor'] = (df_agg['Poblacion_Proy'] * dot_segura) / 86400
                 fig_tree = px.treemap(df_agg, path=[px.Constant(nombre_seleccion), 'municipio'], values='Valor', color='Valor', color_continuous_scale='Blues', title="Caudal Doméstico Requerido (L/s)")
             else:
-                df_agg['Valor'] = df_agg['Poblacion_Proy'] * 0.050 * (1 - (cobertura_ptar/100 * eficiencia_ptar/100))
+                cob_segura = cobertura_ptar if 'cobertura_ptar' in locals() else 15.0
+                efi_segura = eficiencia_ptar if 'eficiencia_ptar' in locals() else 80.0
+                df_agg['Valor'] = df_agg['Poblacion_Proy'] * 0.050 * (1 - (cob_segura/100 * efi_segura/100))
                 fig_tree = px.treemap(df_agg, path=[px.Constant(nombre_seleccion), 'municipio'], values='Valor', color='Valor', color_continuous_scale='Reds', title="Carga Orgánica DBO (kg/día) aportada por Municipio")
                 
             fig_tree.update_traces(textinfo="label+value")
             st.plotly_chart(fig_tree, use_container_width=True)
+        else:
+            st.warning("No hay intersección demográfica calculable para esta zona.")
             
     else:
         st.caption("Mapa de densidad sobre cartografía base (Convierte MAGNA-SIRGAS a WGS84 en tiempo real).")
         
-        # 🚀 CORRECCIÓN ESTRUCTURAL: Usamos los datos que ya pasaron por el filtro espacial (df_c y df_v)
+        # Utilizamos los DataFrames que ya pasaron por el filtro estricto de la Llave Maestra (df_c y df_v)
         df_map = df_c.copy() if "Concesión" in var_mapa else df_v.copy()
         
         if not df_map.empty:
-            # (Hemos eliminado los filtros de texto antiguos, porque df_map ya está recortado geográficamente)
-            
             col_z = 'caudal_lps' if "Concesión" in var_mapa else 'caudal_vert_lps'
             df_map['coordenada_x'] = pd.to_numeric(df_map['coordenada_x'], errors='coerce')
             df_map['coordenada_y'] = pd.to_numeric(df_map['coordenada_y'], errors='coerce')
             df_map[col_z] = pd.to_numeric(df_map[col_z], errors='coerce')
             df_map = df_map.dropna(subset=['coordenada_x', 'coordenada_y', col_z])
             
-            # ==============================================================================
-            # 🛡️ ESCUDO PROTECTOR DE MEMORIA (MUESTREO VISUAL)
-            # ==============================================================================
             LIMITE_PUNTOS = 2000
             total_puntos_reales = len(df_map)
             
             if total_puntos_reales > LIMITE_PUNTOS:
                 df_map = df_map.sample(n=LIMITE_PUNTOS, random_state=42)
-                st.warning(f"🗺️ **Optimización Visual Activada:** Hay {total_puntos_reales:,} puntos en esta zona. Para evitar colapsar la memoria, el mapa dibuja una muestra representativa de {LIMITE_PUNTOS} puntos. (Tus indicadores matemáticos de la parte superior están calculados con el 100% de los datos reales).")
-            # ==============================================================================
+                st.warning(f"🗺️ **Optimización Visual Activada:** Muestra de {LIMITE_PUNTOS} puntos de un total de {total_puntos_reales:,}.")
             
             mask_magna = (df_map['coordenada_x'] > 100000) & (df_map['coordenada_y'] > 100000)
             mask_wgs84 = (df_map['coordenada_x'] < 0) & (df_map['coordenada_x'] > -85) & (df_map['coordenada_y'] > -5)
@@ -1755,35 +1767,38 @@ with tab_mapa:
             if not df_plot.empty and df_plot[col_z].sum() > 0:
                 try:
                     import pyproj
-                    # EPSG:3116 es el origen Magna-Sirgas central
                     transformer = pyproj.Transformer.from_crs("epsg:3116", "epsg:4326", always_xy=True)
                     
                     def to_wgs84(row):
-                        if row['coordenada_x'] > 100000: # Es plana
+                        if row['coordenada_x'] > 100000:
                             lon, lat = transformer.transform(row['coordenada_x'], row['coordenada_y'])
                             return pd.Series({'lon': lon, 'lat': lat})
-                        else: # Ya es WGS84
+                        else:
                             return pd.Series({'lon': row['coordenada_x'], 'lat': row['coordenada_y']})
                             
                     with st.spinner("Proyectando coordenadas a satélite..."):
                         coords = df_plot.apply(to_wgs84, axis=1)
                         df_plot['lon'] = coords['lon']
                         df_plot['lat'] = coords['lat']
-                        # Limpiar errores de proyección
-                        df_plot = df_plot[(df_plot['lon'] >= -85) & (df_plot['lon'] <= -60) & (df_plot['lat'] >= -5) & (df_plot['lat'] <= 15)]
+                        
+                        # Limpieza robusta de outliers (basura espacial) que alejan el zoom
+                        df_plot = df_plot[(df_plot['lon'] >= -78) & (df_plot['lon'] <= -73) & (df_plot['lat'] >= 5) & (df_plot['lat'] <= 9)]
                     
-                    fig_dens = px.density_mapbox(df_plot, lat='lat', lon='lon', z=col_z, radius=12,
-                                                 center=dict(lat=df_plot['lat'].mean(), lon=df_plot['lon'].mean()),
-                                                 zoom=8, mapbox_style="carto-positron", 
-                                                 title=f"Densidad Espacial de Caudales (L/s)",
-                                                 color_continuous_scale="Viridis")
-                    st.plotly_chart(fig_dens, use_container_width=True)
-                    
+                    if not df_plot.empty:
+                        # 🚀 FIX: Zoom dinámico. Si es una cuenca local (pocos puntos muy juntos), acercamos más la cámara.
+                        zoom_dinamico = 11 if total_puntos_reales < 500 else 8
+                        
+                        fig_dens = px.density_mapbox(df_plot, lat='lat', lon='lon', z=col_z, radius=15,
+                                                     center=dict(lat=df_plot['lat'].mean(), lon=df_plot['lon'].mean()),
+                                                     zoom=zoom_dinamico, mapbox_style="carto-positron", 
+                                                     title=f"Densidad Espacial de Caudales (L/s) en {nombre_seleccion}",
+                                                     color_continuous_scale="Viridis")
+                        st.plotly_chart(fig_dens, use_container_width=True)
+                    else:
+                        st.warning("Las coordenadas proporcionadas están fuera del territorio antioqueño tras la proyección.")
+                        
                 except ImportError:
-                    st.error("💡 Para habilitar el mapa de fondo real, debes instalar 'pyproj'. Usando mapa base temporal.")
-                    fig_dens = px.density_contour(df_plot, x="coordenada_x", y="coordenada_y", z=col_z, histfunc="sum", title="Densidad (Sin mapa de fondo)")
-                    fig_dens.update_traces(contours_coloring="fill", colorscale="Viridis")
-                    st.plotly_chart(fig_dens, use_container_width=True)
+                    st.error("💡 Para habilitar el mapa de fondo real, debes instalar 'pyproj'.")
             else:
                 st.warning("No hay suficientes coordenadas válidas para generar un mapa en esta jurisdicción.")
         else:
@@ -1800,12 +1815,21 @@ with tab_sirena:
         df_exp = df_concesiones.copy()
         lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
         
-        if nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_exp.columns: df_exp = df_exp[df_exp['car_norm'] == lugar_norm]
-        elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_exp.columns: df_exp = df_exp[df_exp['departamento_norm'] == normalizar_texto(nombre_seleccion)]
-        elif nivel_sel_interno == "Regional" and 'region_norm' in df_exp.columns: df_exp = df_exp[df_exp['region_norm'] == normalizar_texto(nombre_seleccion)]
-        elif nivel_sel_interno == "Municipal": df_exp = df_exp[df_exp['municipio_norm'] == lugar_norm]
-        
+        # 🚀 FIX: Filtro infalible por Llave Maestra para Cuencas
+        if nivel_sel_interno in ["Cuenca", "Cuenca Hidrográfica", "AH", "ZH", "SZH", "NSS1", "NSS2", "NSS3"]:
+            if 'Territorio' in df_exp.columns:
+                df_exp = df_exp[df_exp['Territorio'] == nombre_seleccion]
+        elif nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_exp.columns: 
+            df_exp = df_exp[df_exp['car_norm'] == lugar_norm]
+        elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_exp.columns: 
+            df_exp = df_exp[df_exp['departamento_norm'] == normalizar_texto(nombre_seleccion)]
+        elif nivel_sel_interno == "Regional" and 'region_norm' in df_exp.columns: 
+            df_exp = df_exp[df_exp['region_norm'] == normalizar_texto(nombre_seleccion)]
+        elif nivel_sel_interno == "Municipal" and 'municipio_norm' in df_exp.columns: 
+            df_exp = df_exp[df_exp['municipio_norm'] == lugar_norm]
+            
         c_exp1, c_exp2 = st.columns([2, 1.5])
+ 
         with c_exp1:
             st.subheader(f"Registros Encontrados: {len(df_exp):,}")
             
