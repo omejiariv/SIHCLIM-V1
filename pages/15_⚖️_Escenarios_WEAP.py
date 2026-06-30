@@ -4,12 +4,14 @@ import streamlit as st
 import pandas as pd
 import requests
 import io
-from sqlalchemy import text
 
-# IMPORTACIONES CORE (Ruta absoluta desde la raíz)
+# Ajuste de rutas para asegurar que los módulos sean siempre visibles
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# IMPORTACIONES CENTRALES (Aquí radica la solución)
+from modules.db_manager import get_engine
+from sqlalchemy import text
 from modules import selectors, escenarios_weap
-from modules.db_manager import get_engine # 🔥 Importación explícita
 from modules.utils import normalizar_texto
 
 # 1. Configuración de página
