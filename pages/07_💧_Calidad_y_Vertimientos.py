@@ -1724,7 +1724,6 @@ with tab_mapa:
     else:
         st.caption("Mapa analítico multicapa (Densidad, Puntos Individuales y Polígonos WGS84).")
         
-        # Utilizamos los DataFrames que ya pasaron por el filtro estricto (df_c y df_v)
         df_map = df_c.copy() if "Concesión" in var_mapa else df_v.copy()
         
         if not df_map.empty:
@@ -1739,7 +1738,7 @@ with tab_mapa:
             
             if total_puntos_reales > LIMITE_PUNTOS:
                 df_map = df_map.sample(n=LIMITE_PUNTOS, random_state=42)
-                st.warning(f"🗺️ **Optimización Visual Activada:** Muestra de {LIMITE_PUNTOS} puntos de un total de {total_puntos_reales:,}.")
+                st.warning(f"🗺️ Optimización Visual Activada: Muestra de {LIMITE_PUNTOS} puntos.")
             
             mask_magna = (df_map['coordenada_x'] > 100000) & (df_map['coordenada_y'] > 100000)
             mask_wgs84 = (df_map['coordenada_x'] < 0) & (df_map['coordenada_x'] > -85) & (df_map['coordenada_y'] > -5)
@@ -1759,52 +1758,45 @@ with tab_mapa:
                         else:
                             return pd.Series({'lon': row['coordenada_x'], 'lat': row['coordenada_y']})
                             
-                    with st.spinner("Proyectando coordenadas a satélite..."):
+                    with st.spinner("Proyectando coordenadas..."):
                         coords = df_plot.apply(to_wgs84, axis=1)
                         df_plot['lon'] = coords['lon']
                         df_plot['lat'] = coords['lat']
-                        
-                        # Limpieza de basura espacial fuera de Antioquia/Colombia
                         df_plot = df_plot[(df_plot['lon'] >= -78) & (df_plot['lon'] <= -73) & (df_plot['lat'] >= 5) & (df_plot['lat'] <= 9)]
                     
                     if not df_plot.empty:
-                        # 🎛️ CONTROLES MULTICAPA
                         c_capa1, c_capa2, c_capa3 = st.columns(3)
-                        mostrar_calor = c_capa1.checkbox("🔥 Mapa de Calor (Densidad)", value=True)
+                        mostrar_calor = c_capa1.checkbox("🔥 Mapa de Calor", value=True)
                         mostrar_puntos = c_capa2.checkbox("📍 Puntos Individuales", value=True)
-                        mostrar_poli = c_capa3.checkbox("🗺️ Límite de la Cuenca", value=True)
+                        mostrar_poli = c_capa3.checkbox("🗺️ Límite Cuenca", value=True)
                         
-                        # Preparar polígono GeoJSON (WGS84)
                         mapbox_layers = []
                         if mostrar_poli and 'gdf_zona' in locals() and gdf_zona is not None and not gdf_zona.empty:
-                            gdf_wgs84 = gdf_zona.to_crs(epsg=4326)
-                            geojson_poly = json.loads(gdf_wgs84.to_json())
-                            mapbox_layers.append({
-                                "sourcetype": "geojson",
-                                "source": geojson_poly,
-                                "type": "fill",
-                                "color": "rgba(41, 128, 185, 0.15)", # Azul transparente
-                                "line": {"width": 2, "color": "#2980b9"}
-                            })
+                            try:
+                                gdf_wgs84 = gdf_zona.to_crs(epsg=4326)
+                                geojson_poly = json.loads(gdf_wgs84.to_json())
+                                mapbox_layers.append({
+                                    "sourcetype": "geojson",
+                                    "source": geojson_poly,
+                                    "type": "fill",
+                                    "color": "rgba(41, 128, 185, 0.2)",
+                                    "line": {"width": 2, "color": "#2980b9"}
+                                })
+                            except Exception:
+                                pass 
 
-                        # Configuración dinámica del zoom
-                        zoom_dinamico = 11 if total_puntos_reales < 500 else 9
-                        
-                        # Construcción de la figura multicapa
                         import plotly.graph_objects as go
                         fig_dens = go.Figure()
 
-                        # Capa 1: Mapa de Calor
                         if mostrar_calor:
                             fig_dens.add_trace(go.Densitymapbox(
                                 lat=df_plot['lat'], lon=df_plot['lon'], z=df_plot[col_z],
                                 radius=15, colorscale="Viridis", name="Densidad", showscale=True
                             ))
 
-                        # Capa 2: Puntos Individuales Interactivos
                         if mostrar_puntos:
-                            # Etiqueta para hover
                             col_info = 'Sector_Sihcli' if 'Sector_Sihcli' in df_plot.columns else 'tipo_vertimiento'
+                            if col_info not in df_plot.columns: df_plot[col_info] = "Desconocido"
                             etiquetas = df_plot[col_info].astype(str) + "<br>Caudal: " + df_plot[col_z].round(2).astype(str) + " L/s"
                             
                             fig_dens.add_trace(go.Scattermapbox(
@@ -1816,29 +1808,25 @@ with tab_mapa:
                                 name="Registros"
                             ))
 
-                        # Renderizado final
                         fig_dens.update_layout(
                             mapbox=dict(
                                 style="carto-positron",
                                 center=dict(lat=df_plot['lat'].mean(), lon=df_plot['lon'].mean()),
-                                zoom=zoom_dinamico,
+                                zoom=11 if total_puntos_reales < 500 else 9,
                                 layers=mapbox_layers
                             ),
                             margin={"r":0,"t":40,"l":0,"b":0},
                             title=f"Distribución Espacial en {nombre_seleccion}",
                             hovermode="closest"
                         )
-                        
-                        # Habilitamos scrollZoom nativo de Plotly
                         st.plotly_chart(fig_dens, use_container_width=True, config={'scrollZoom': True})
                         
                     else:
-                        st.warning("Las coordenadas proporcionadas están fuera del territorio antioqueño tras la proyección.")
-                        
-                except ImportError:
-                    st.error("💡 Para habilitar el mapa de fondo real, debes instalar 'pyproj'.")
+                        st.warning("Coordenadas fuera de Antioquia tras la proyección.")
+                except Exception as e:
+                    st.error(f"Error renderizando mapa: {e}")
             else:
-                st.warning("No hay suficientes coordenadas válidas para generar un mapa en esta jurisdicción.")
+                st.warning("No hay suficientes coordenadas válidas para generar un mapa.")
         else:
             st.warning("No hay base de datos disponible en la zona seleccionada.")
 
