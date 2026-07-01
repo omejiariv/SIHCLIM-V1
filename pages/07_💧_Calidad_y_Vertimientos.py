@@ -1722,8 +1722,9 @@ with tab_mapa:
             st.warning("No hay intersección demográfica calculable para esta zona.")
             
     else:
-        st.caption("Mapa de densidad sobre cartografía base (Convierte MAGNA-SIRGAS a WGS84 en tiempo real).")
+        st.caption("Mapa analítico multicapa (Densidad, Puntos Individuales y Polígonos WGS84).")
         
+        # Utilizamos los DataFrames que ya pasaron por el filtro estricto (df_c y df_v)
         df_map = df_c.copy() if "Concesión" in var_mapa else df_v.copy()
         
         if not df_map.empty:
@@ -1748,6 +1749,7 @@ with tab_mapa:
             if not df_plot.empty and df_plot[col_z].sum() > 0:
                 try:
                     import pyproj
+                    import json
                     transformer = pyproj.Transformer.from_crs("epsg:3116", "epsg:4326", always_xy=True)
                     
                     def to_wgs84(row):
@@ -1762,18 +1764,74 @@ with tab_mapa:
                         df_plot['lon'] = coords['lon']
                         df_plot['lat'] = coords['lat']
                         
-                        # Limpieza robusta de outliers que alejan el zoom (Ventana de Antioquia)
+                        # Limpieza de basura espacial fuera de Antioquia/Colombia
                         df_plot = df_plot[(df_plot['lon'] >= -78) & (df_plot['lon'] <= -73) & (df_plot['lat'] >= 5) & (df_plot['lat'] <= 9)]
                     
                     if not df_plot.empty:
-                        zoom_dinamico = 11 if total_puntos_reales < 500 else 8
+                        # 🎛️ CONTROLES MULTICAPA
+                        c_capa1, c_capa2, c_capa3 = st.columns(3)
+                        mostrar_calor = c_capa1.checkbox("🔥 Mapa de Calor (Densidad)", value=True)
+                        mostrar_puntos = c_capa2.checkbox("📍 Puntos Individuales", value=True)
+                        mostrar_poli = c_capa3.checkbox("🗺️ Límite de la Cuenca", value=True)
                         
-                        fig_dens = px.density_mapbox(df_plot, lat='lat', lon='lon', z=col_z, radius=15,
-                                                     center=dict(lat=df_plot['lat'].mean(), lon=df_plot['lon'].mean()),
-                                                     zoom=zoom_dinamico, mapbox_style="carto-positron", 
-                                                     title=f"Densidad Espacial de Caudales (L/s) en {nombre_seleccion}",
-                                                     color_continuous_scale="Viridis")
-                        st.plotly_chart(fig_dens, use_container_width=True)
+                        # Preparar polígono GeoJSON (WGS84)
+                        mapbox_layers = []
+                        if mostrar_poli and 'gdf_zona' in locals() and gdf_zona is not None and not gdf_zona.empty:
+                            gdf_wgs84 = gdf_zona.to_crs(epsg=4326)
+                            geojson_poly = json.loads(gdf_wgs84.to_json())
+                            mapbox_layers.append({
+                                "sourcetype": "geojson",
+                                "source": geojson_poly,
+                                "type": "fill",
+                                "color": "rgba(41, 128, 185, 0.15)", # Azul transparente
+                                "line": {"width": 2, "color": "#2980b9"}
+                            })
+
+                        # Configuración dinámica del zoom
+                        zoom_dinamico = 11 if total_puntos_reales < 500 else 9
+                        
+                        # Construcción de la figura multicapa
+                        import plotly.graph_objects as go
+                        fig_dens = go.Figure()
+
+                        # Capa 1: Mapa de Calor
+                        if mostrar_calor:
+                            fig_dens.add_trace(go.Densitymapbox(
+                                lat=df_plot['lat'], lon=df_plot['lon'], z=df_plot[col_z],
+                                radius=15, colorscale="Viridis", name="Densidad", showscale=True
+                            ))
+
+                        # Capa 2: Puntos Individuales Interactivos
+                        if mostrar_puntos:
+                            # Etiqueta para hover
+                            col_info = 'Sector_Sihcli' if 'Sector_Sihcli' in df_plot.columns else 'tipo_vertimiento'
+                            etiquetas = df_plot[col_info].astype(str) + "<br>Caudal: " + df_plot[col_z].round(2).astype(str) + " L/s"
+                            
+                            fig_dens.add_trace(go.Scattermapbox(
+                                lat=df_plot['lat'], lon=df_plot['lon'],
+                                mode='markers',
+                                marker=dict(size=8, color='#e74c3c', opacity=0.8),
+                                text=etiquetas,
+                                hoverinfo="text",
+                                name="Registros"
+                            ))
+
+                        # Renderizado final
+                        fig_dens.update_layout(
+                            mapbox=dict(
+                                style="carto-positron",
+                                center=dict(lat=df_plot['lat'].mean(), lon=df_plot['lon'].mean()),
+                                zoom=zoom_dinamico,
+                                layers=mapbox_layers
+                            ),
+                            margin={"r":0,"t":40,"l":0,"b":0},
+                            title=f"Distribución Espacial en {nombre_seleccion}",
+                            hovermode="closest"
+                        )
+                        
+                        # Habilitamos scrollZoom nativo de Plotly
+                        st.plotly_chart(fig_dens, use_container_width=True, config={'scrollZoom': True})
+                        
                     else:
                         st.warning("Las coordenadas proporcionadas están fuera del territorio antioqueño tras la proyección.")
                         
