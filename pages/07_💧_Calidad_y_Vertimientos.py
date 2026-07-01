@@ -503,7 +503,7 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
-    # 2. CONCESIONES (Modo Inteligente Autodetectado)
+    # 2. CONCESIONES (Filtro Universal por IDEAM)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
         cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'municipio_norm']]
@@ -543,7 +543,9 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
 
             df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
             df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
+
             df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
+            df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
         
         del df_c_light
     else:
