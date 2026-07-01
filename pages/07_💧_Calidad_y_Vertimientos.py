@@ -1770,15 +1770,25 @@ with tab_mapa:
                             try:
                                 gdf_wgs84 = gdf_zona.to_crs(epsg=4326)
                                 geojson_poly = json.loads(gdf_wgs84.to_json())
+                                
+                                # Capa 1: El relleno transparente
                                 mapbox_layers.append({
                                     "sourcetype": "geojson",
                                     "source": geojson_poly,
                                     "type": "fill",
-                                    "color": "rgba(41, 128, 185, 0.2)",
-                                    "line": {"width": 2, "color": "#2980b9"}
+                                    "color": "rgba(41, 128, 185, 0.15)"
+                                })
+                                
+                                # Capa 2: El borde resaltado (Sin romper las reglas de Plotly)
+                                mapbox_layers.append({
+                                    "sourcetype": "geojson",
+                                    "source": geojson_poly,
+                                    "type": "line",
+                                    "color": "#2980b9",
+                                    "line": {"width": 2}
                                 })
                             except Exception:
-                                pass 
+                                pass
 
                         import plotly.graph_objects as go
                         fig_dens = go.Figure()
