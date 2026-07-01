@@ -503,8 +503,7 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
-    # ---------------------------------------------------------
-    # 2. CONCESIONES (Filtro Universal por IDEAM)
+    # 2. CONCESIONES (Filtro Universal y Puente Maestro)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
         cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'municipio_norm']]
@@ -515,18 +514,38 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
             df_c = df_c_light.copy()
         else:
             import re
+            # 🚀 PLAN A: Extractor de Código IDEAM para Cuencas
             codigo_match = re.search(r'\((.*?)\)', str(nombre_seleccion))
             
             if codigo_match and 'Territorio' in df_c_light.columns:
                 codigo = codigo_match.group(1).strip()
                 mask = df_c_light['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)
                 df_c = df_c_light[mask].copy()
-            else:
-                if 'municipio_norm' in df_c_light.columns:
-                    lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
-                    mask = df_c_light['municipio_norm'].apply(normalizar_texto) == lugar_norm
-                    df_c = df_c_light[mask].copy()
+                
+            # 🚀 PLAN B: Filtro Exacto para Municipios
+            elif nivel_sel_interno == "Municipal" and 'municipio_norm' in df_c_light.columns:
+                lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
+                mask = df_c_light['municipio_norm'].apply(normalizar_texto) == lugar_norm
+                df_c = df_c_light[mask].copy()
+                
+            # 🚀 PLAN C: El "Puente Maestro" para Regiones, CARs y Departamentos
+            elif nivel_sel_interno in ["Regional", "Región", "Jurisdicción Ambiental (CAR)", "Departamental"]:
+                if 'df_territorio' in locals() and not df_territorio.empty:
+                    # En tu archivo maestro, las regiones se llaman 'subregion' (Ej: Oriente)
+                    col_busqueda = 'subregion' if nivel_sel_interno in ["Regional", "Región"] else 'car' if "CAR" in nivel_sel_interno else 'depto_nom'
+                    
+                    busqueda_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
+                    filtro_terr = df_territorio[col_busqueda].astype(str).apply(normalizar_texto)
+                    
+                    # Encontramos los municipios que pertenecen a esa Región/CAR
+                    mpios_validos = df_territorio[filtro_terr.str.contains(busqueda_norm, na=False)]['municipio_norm'].tolist()
+                    
+                    # Filtramos los puntos
+                    if 'municipio_norm' in df_c_light.columns:
+                        mask = df_c_light['municipio_norm'].isin(mpios_validos)
+                        df_c = df_c_light[mask].copy()
 
+        # Normalización final de variables
         if not df_c.empty:
             def normalizar_fuente(x):
                 x_str = str(x).lower()
@@ -542,14 +561,18 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
 
             df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
             df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
+
             df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
+            df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
         
         del df_c_light
     else:
         df_c = pd.DataFrame()
 
     if not es_todo_antioquia:
-        del poligono_zona, poligono_preparado
+        # Se verifica si estas variables existen antes de borrarlas para evitar NameErrors
+        if 'poligono_zona' in locals(): del poligono_zona
+        if 'poligono_preparado' in locals(): del poligono_preparado
     gc.collect()
     
 # ==============================================================================
