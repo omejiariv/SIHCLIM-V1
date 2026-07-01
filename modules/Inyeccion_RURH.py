@@ -88,6 +88,9 @@ def renderizar_inyeccion_rurh():
                 df_consolidado = gdf_cruce.groupby('Territorio', as_index=False)['Caudal_m3s'].sum()
                 df_consolidado.rename(columns={'Caudal_m3s': 'Presion_Total_RURH_m3s'}, inplace=True)
 
+                with st.expander("👁️ Vista Previa del Consolidado Final"):
+                    st.dataframe(df_consolidado.sort_values(by='Presion_Total_RURH_m3s', ascending=False).head(15), use_container_width=True)
+
             with st.spinner("5. Inyectando base de datos final a PostgreSQL..."):
                 with engine.begin() as conn:
                     # 1. Guardamos la tabla RAW (Para la Página 07)
