@@ -186,24 +186,22 @@ def cargar_concesiones():
         
         query = text("SELECT * FROM concesiones_maestras_rurh_raw")
         df = pd.read_sql(query, engine)
+        
         if df.empty: return pd.DataFrame()
 
         cols = df.columns.tolist()
         
-        # 🚀 Priorizamos las coordenadas WGS84 generadas por el ETL
+        col_caudal = next((c for c in cols if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal', 'caudal_m3s']), None)
         col_x = next((c for c in cols if str(c).lower() in ['x_coord', 'longitud_w', 'coordenada_x', 'lon', 'x']), None)
         col_y = next((c for c in cols if str(c).lower() in ['y_coord', 'latitud_n', 'coordenada_y', 'lat', 'y']), None)
-        col_caudal = next((c for c in cols if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal', 'caudal_m3s']), None)
+
+        df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0) if col_caudal else 0.0
+        if col_caudal and 'm3s' in str(col_caudal).lower(): df['caudal_lps'] = df['caudal_lps'] * 1000.0
 
         df['coordenada_x'] = pd.to_numeric(df[col_x], errors='coerce').fillna(0) if col_x else 0.0
         df['coordenada_y'] = pd.to_numeric(df[col_y], errors='coerce').fillna(0) if col_y else 0.0
-        df['caudal_lps'] = pd.to_numeric(df[col_caudal], errors='coerce').fillna(0) if col_caudal else 0.0
         
-        # Corrección de m3/s a L/s
-        if col_caudal and 'm3s' in str(col_caudal).lower():
-            df['caudal_lps'] = df['caudal_lps'] * 1000.0
-
-        # Renombrar columnas clave (Insensible a mayúsculas/minúsculas de PostgreSQL)
+        # 🚀 RESCATE DE LA LLAVE MAESTRA
         col_terr = next((c for c in cols if str(c).lower() == 'territorio'), None)
         if col_terr: df['Territorio'] = df[col_terr].astype(str).str.strip()
         
@@ -212,6 +210,7 @@ def cargar_concesiones():
 
         df['tipo_agua'] = df.get('Tipo_Fuente', 'Superficial')
         df['uso_detalle'] = df.get('Uso_Agua', 'Consolidado')
+        df['estado'] = df.get('Estado', 'Otorgada')
         
         def clasificar_uso(u):
             u = str(u).lower()
@@ -222,10 +221,9 @@ def cargar_concesiones():
             
         df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
         return df
-
     except Exception as e:
         import streamlit as st
-        st.error(f"Error crítico cargando concesiones: {e}")
+        st.error(f"Error cargando concesiones: {e}")
         return pd.DataFrame()
         
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -505,7 +503,7 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
-    # 2. CONCESIONES (Filtro Universal Autodetectado)
+    # 2. CONCESIONES (Modo Inteligente Autodetectado)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
         cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'municipio_norm']]
@@ -516,7 +514,7 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
             df_c = df_c_light.copy()
         else:
             import re
-            # 🚀 1. Extractor de Código (Para Cuencas)
+            # 🚀 PLAN A: Extractor de Código IDEAM para Cuencas
             codigo_match = re.search(r'\((.*?)\)', str(nombre_seleccion))
             
             if codigo_match and 'Territorio' in df_c_light.columns:
@@ -524,13 +522,12 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
                 mask = df_c_light['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)
                 df_c = df_c_light[mask].copy()
             else:
-                # 🚀 2. Extractor de Nombre (Para Municipios)
+                # 🚀 PLAN B: Extractor de Nombre para Municipios
                 if 'municipio_norm' in df_c_light.columns:
                     lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
                     mask = df_c_light['municipio_norm'].apply(normalizar_texto) == lugar_norm
                     df_c = df_c_light[mask].copy()
 
-        # 🚀 3. Normalización final de variables
         if not df_c.empty:
             def normalizar_fuente(x):
                 x_str = str(x).lower()
@@ -546,9 +543,7 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
 
             df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
             df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
-
             df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
-            df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
         
         del df_c_light
     else:
@@ -1792,26 +1787,23 @@ with tab_mapa:
 # ------------------------------------------------------------------------------
 with tab_sirena:
     st.header("📊 Explorador Ambiental Avanzado")
-    
-    # Hemos eliminado la etiqueta confusa nivel_sel_interno
-    st.info(f"📍 **Contexto Global Activo:** Explorando la base de datos oficial para: **{nombre_seleccion}**.")
+    st.info(f"📍 **Contexto Global Activo:** Estás navegando la base de datos bajo la lupa de: **{nivel_sel_interno} - {nombre_seleccion}**.")
     
     if not df_concesiones.empty:
         df_exp = df_concesiones.copy()
-        import re
+        lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
         
-        # 🚀 El Extractor Universal
+        import re
         codigo_match = re.search(r'\((.*?)\)', str(nombre_seleccion))
         
         if codigo_match and 'Territorio' in df_exp.columns:
-            # Es una Cuenca (IDEAM)
             codigo = codigo_match.group(1).strip()
             df_exp = df_exp[df_exp['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)]
         else:
-            # Es un Municipio o Región
-            lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
-            if 'municipio_norm' in df_exp.columns:
-                df_exp = df_exp[df_exp['municipio_norm'].apply(normalizar_texto) == lugar_norm]
+            if nivel_sel_interno == "Jurisdicción Ambiental (CAR)" and 'car_norm' in df_exp.columns: df_exp = df_exp[df_exp['car_norm'] == lugar_norm]
+            elif nivel_sel_interno == "Departamental" and 'departamento_norm' in df_exp.columns: df_exp = df_exp[df_exp['departamento_norm'] == normalizar_texto(nombre_seleccion)]
+            elif nivel_sel_interno == "Regional" and 'region_norm' in df_exp.columns: df_exp = df_exp[df_exp['region_norm'] == normalizar_texto(nombre_seleccion)]
+            elif nivel_sel_interno == "Municipal" and 'municipio_norm' in df_exp.columns: df_exp = df_exp[df_exp['municipio_norm'] == lugar_norm]
         
         c_exp1, c_exp2 = st.columns([2, 1.5])
         with c_exp1:
