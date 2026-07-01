@@ -503,6 +503,7 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
+    # ---------------------------------------------------------
     # 2. CONCESIONES (Filtro Universal por IDEAM)
     # ---------------------------------------------------------
     if not df_concesiones.empty:
@@ -514,7 +515,6 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
             df_c = df_c_light.copy()
         else:
             import re
-            # 🚀 PLAN A: Extractor de Código IDEAM para Cuencas
             codigo_match = re.search(r'\((.*?)\)', str(nombre_seleccion))
             
             if codigo_match and 'Territorio' in df_c_light.columns:
@@ -522,7 +522,6 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
                 mask = df_c_light['Territorio'].astype(str).str.contains(codigo, regex=False, na=False)
                 df_c = df_c_light[mask].copy()
             else:
-                # 🚀 PLAN B: Extractor de Nombre para Municipios
                 if 'municipio_norm' in df_c_light.columns:
                     lugar_norm = normalizar_texto(nombre_seleccion.replace("CAR: ", ""))
                     mask = df_c_light['municipio_norm'].apply(normalizar_texto) == lugar_norm
@@ -543,16 +542,12 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
 
             df_c['tipo_agua'] = df_c['tipo_agua'].apply(normalizar_fuente)
             df_c['Sector_Sihcli'] = df_c['Sector_Sihcli'].apply(normalizar_sector)
-
             df_c['caudal_lps'] = pd.to_numeric(df_c['caudal_lps'], errors='coerce').fillna(0.0)
-            df_c['caudal_lps'] = df_c['caudal_lps'].apply(lambda x: 0.5 if x <= 0.0 else x)
         
         del df_c_light
     else:
         df_c = pd.DataFrame()
 
-    # LIMPIEZA DE MEMORIA (GARBAGE COLLECTION)
-    # ---------------------------------------------------------
     if not es_todo_antioquia:
         del poligono_zona, poligono_preparado
     gc.collect()
@@ -1858,7 +1853,7 @@ with tab_sirena:
             st.subheader(f"Registros Encontrados: {len(df_exp):,}")
             
             if len(df_exp) > 1000:
-                st.caption("⚠️ **Protección activada:** Se muestran los primeros 1,000 registros para evitar colapsar el navegador. El análisis lateral sí usa el 100% de la base.")
+                st.caption("⚠️ **Protección activada:** Se muestran los primeros 1,000 registros para evitar colapsar el navegador.")
                 df_view_exp = df_exp.head(1000).astype(str)
             else:
                 df_view_exp = df_exp.astype(str)
@@ -1869,6 +1864,7 @@ with tab_sirena:
             if not df_exp.empty and df_exp['caudal_lps'].sum() > 0:
                 agrupador = st.selectbox("Agrupar Concesiones por:", ["tipo_agua", "Sector_Sihcli", "uso_detalle", "estado"], index=0)
                 df_agg = df_exp.groupby(agrupador)['caudal_lps'].sum().reset_index()
+                import plotly.express as px
                 fig_exp = px.pie(df_agg[df_agg['caudal_lps']>0], values='caudal_lps', names=agrupador, hole=0.4, title=f"Total: {df_agg['caudal_lps'].sum():,.1f} L/s")
                 fig_exp.update_traces(textposition='inside', textinfo='value+label')
                 st.plotly_chart(fig_exp, use_container_width=True)
