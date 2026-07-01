@@ -48,10 +48,6 @@ encender_gemelo_digital()
 
 st.title("💧 Demanda, Calidad del Agua y Metabolismo Hídrico")
 
-# --- LÍNEA DE DIAGNÓSTICO (Borrar después) ---
-st.sidebar.info(f"📍 Rango X: {df_concesiones['coordenada_x'].min():.1f} a {df_concesiones['coordenada_x'].max():.1f}")
-# ---------------------------------------------
-
 st.markdown("""
 Modelo integral del ciclo hidrosocial: Desde la captación y uso del recurso, hasta el análisis de vertimientos y la autodepuración de los cuerpos de agua receptores.
 """)
@@ -290,6 +286,11 @@ df_mpios = cargar_municipios()
 df_concesiones = cargar_concesiones()
 df_vertimientos = cargar_vertimientos()
 df_territorio = cargar_territorio_maestro()
+
+# --- LÍNEA DE DIAGNÓSTICO ---
+if not df_concesiones.empty and 'coordenada_x' in df_concesiones.columns:
+    st.sidebar.info(f"📍 Rango X: {df_concesiones['coordenada_x'].min():.1f} a {df_concesiones['coordenada_x'].max():.1f}")
+# ---------------------------------------------
 
 dict_pecuarios = cargar_maestros_pecuarios()
 df_bovinos = dict_pecuarios.get("bovinos", pd.DataFrame())
