@@ -91,13 +91,27 @@ def renderizar_inyeccion_rurh():
                 with st.expander("👁️ Vista Previa del Consolidado Final"):
                     st.dataframe(df_consolidado.sort_values(by='Presion_Total_RURH_m3s', ascending=False).head(15), use_container_width=True)
 
-            with st.spinner("5. Inyectando base de datos final a PostgreSQL..."):
+            with st.spinner("5. Inyectando base de datos final a PostgreSQL... (Enviando en paquetes seguros)"):
                 with engine.begin() as conn:
-                    # 1. Guardamos la tabla RAW (Para la Página 07)
-                    df_raw_to_sql.to_sql('concesiones_maestras_rurh_raw', con=conn, if_exists='replace', index=False, method='multi')
+                    # 1. Guardamos la tabla RAW (Para la Página 07) - Usamos chunksize para no colapsar la RAM
+                    df_raw_to_sql.to_sql(
+                        'concesiones_maestras_rurh_raw', 
+                        con=conn, 
+                        if_exists='replace', 
+                        index=False, 
+                        chunksize=2500,  # 🚀 EL SALVAVIDAS: Envía de a 2500 filas
+                        method='multi'
+                    )
                     
                     # 2. Guardamos la tabla consolidada (Para simuladores WEAP)
-                    df_consolidado.to_sql('matriz_presiones_rurh', con=conn, if_exists='replace', index=False, method='multi')
+                    df_consolidado.to_sql(
+                        'matriz_presiones_rurh', 
+                        con=conn, 
+                        if_exists='replace', 
+                        index=False, 
+                        chunksize=2500, 
+                        method='multi'
+                    )
                 
                 st.balloons()
                 st.success("🎉 ¡Inyección maestra completada! La base de datos RURH está actualizada y cuenta con la Llave Maestra oficial.")
