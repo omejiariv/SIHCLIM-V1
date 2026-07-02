@@ -16,17 +16,25 @@ except Exception:
 
 
 def get_engine():
-    """Crea y retorna el motor de conexión SQLAlchemy."""
+    """Crea y retorna el motor de conexión SQLAlchemy a prueba de desconexiones."""
     if not DATABASE_URL:
         return None
     try:
         # echo=False para producción
-        engine = create_engine(DATABASE_URL, echo=False)
+        # 🛡️ Armadura para Supabase (PgBouncer)
+        engine = create_engine(
+            DATABASE_URL, 
+            echo=False,
+            pool_pre_ping=True,    # 📡 Verifica si la conexión sigue viva antes de lanzar la consulta
+            pool_recycle=300,      # ♻️ Destruye y renueva conexiones en silencio cada 5 minutos
+            pool_size=5,           # 🧵 Mantiene 5 tuberías de conexión estables
+            max_overflow=10        # 🌊 Permite 10 tuberías extra si hay un pico de uso
+        )
         return engine
     except Exception as e:
+        import streamlit as st
         st.error(f"Error creando engine: {e}")
         return None
-
 
 def init_db():
     """
