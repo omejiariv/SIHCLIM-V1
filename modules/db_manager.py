@@ -16,19 +16,21 @@ except Exception:
 
 
 def get_engine():
-    """Crea y retorna el motor de conexión SQLAlchemy a prueba de desconexiones."""
+    """Crea y retorna el motor de conexión SQLAlchemy a prueba de desconexiones y timeouts."""
     if not DATABASE_URL:
         return None
     try:
-        # echo=False para producción
-        # 🛡️ Armadura para Supabase (PgBouncer)
+        # 🛡️ SOLUCIÓN ESTRUCTURAL: Forzamos el timeout desde el "handshake" del driver.
+        # Esto evita que PgBouncer o Supabase ignoren nuestros comandos de tiempo.
         engine = create_engine(
             DATABASE_URL, 
             echo=False,
-            pool_pre_ping=True,    # 📡 Verifica si la conexión sigue viva antes de lanzar la consulta
-            pool_recycle=300,      # ♻️ Destruye y renueva conexiones en silencio cada 5 minutos
-            pool_size=5,           # 🧵 Mantiene 5 tuberías de conexión estables
-            max_overflow=10        # 🌊 Permite 10 tuberías extra si hay un pico de uso
+            pool_pre_ping=True,
+            pool_recycle=300,
+            pool_size=5,
+            max_overflow=10,
+            # ESTA ES LA LLAVE MAESTRA: Se impone el límite directamente en la conexión PostgreSQL
+            connect_args={'options': '-c statement_timeout=300000'} 
         )
         return engine
     except Exception as e:
