@@ -32,7 +32,7 @@ else:
     territorio_final = nombre_zona
     
     # 🔥 FIX: Validar si no hay selección para no ejecutar consultas en vano
-    if not territorio_final or territorio_final == ["-- Seleccione --"] or territorio_final == "-- Seleccione --":
+    if not territorio_final or territorio_final in [["-- Seleccione --"], "-- Seleccione --"]:
         st.info("👆 Selecciona un territorio en el panel izquierdo para cargar el simulador hidrosocial.")
     else:
         # Si selectors nos envió lista de estaciones, rescatamos nombre
@@ -64,6 +64,9 @@ else:
                 # --- 2. CONEXIÓN HIDROLÓGICA/RURH (SQL) ---
                 engine = get_engine() 
                 with engine.connect() as conn:
+                    # 🛡️ Tolerancia de 120 segundos para evitar colapsos
+                    conn.execute(text("SET statement_timeout = '120000'"))
+                    
                     q_h = text('SELECT "Caudal_Medio_m3s" FROM matriz_hidrologica_maestra WHERE "Territorio" = :t LIMIT 1')
                     oferta_real = conn.execute(q_h, {"t": territorio_str}).scalar()
                     if oferta_real is not None:
