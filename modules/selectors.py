@@ -302,19 +302,14 @@ def render_cabezote_sintesis_body(nombre_zona):
 # ====================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_mapa_cuencas():
-    from sqlalchemy import text
+    # Volvemos a tu código original. ¡El engine ahora hará todo el trabajo duro!
     engine = db_manager.get_engine()
-    with engine.begin() as conn: # <-- Cambiado de connect() a begin()
-        conn.execute(text("SET LOCAL statement_timeout = '120000'"))
-        return gpd.read_postgis("SELECT * FROM cuencas", conn, geom_col='geometry')
+    return gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry")
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_mapa_municipios():
-    from sqlalchemy import text
     engine = db_manager.get_engine()
-    with engine.begin() as conn: # <-- Cambiado de connect() a begin()
-        conn.execute(text("SET LOCAL statement_timeout = '120000'"))
-        return gpd.read_postgis("SELECT * FROM municipios", conn, geom_col='geometry')
+    return gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
         
 def render_selector_espacial():
     ids_estaciones = []
