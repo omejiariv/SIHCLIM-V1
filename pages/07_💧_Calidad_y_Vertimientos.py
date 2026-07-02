@@ -186,14 +186,16 @@ def cargar_concesiones():
         
         if engine is None:
             return pd.DataFrame()
-        
-        # 🛡️ CONEXIÓN BLINDADA CONTRA TIMEOUTS DE SUPABASE
-        with engine.connect() as conn:
-            # Le pedimos a la base de datos 120 segundos de paciencia para esta consulta pesada
-            conn.execute(text("SET statement_timeout = '120000'"))
+            
+        # 🛡️ SOLUCIÓN DEFINITIVA A SUPABASE (PgBouncer)
+        # engine.begin() obliga a que el timeout y la consulta viajen por la misma tubería exacta.
+        with engine.begin() as conn:
+            conn.execute(text("SET LOCAL statement_timeout = '120000'"))
             query = text("SELECT * FROM concesiones_maestras_rurh_raw")
-            # Usamos 'conn' en lugar de 'engine' para que la regla aplique a esta sesión específica
-            df = pd.read_sql(query, conn)
+            
+            # 📦 Chunking: Descargamos la base de datos en paquetes de 10,000 para no ahogar la RAM
+            chunks = pd.read_sql(query, conn, chunksize=10000)
+            df = pd.concat(chunks, ignore_index=True)
         
         if df.empty: return pd.DataFrame()
 
