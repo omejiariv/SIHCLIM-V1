@@ -184,8 +184,16 @@ def cargar_concesiones():
         from modules.db_manager import get_engine
         engine = get_engine()
         
-        query = text("SELECT * FROM concesiones_maestras_rurh_raw")
-        df = pd.read_sql(query, engine)
+        if engine is None:
+            return pd.DataFrame()
+        
+        # 🛡️ CONEXIÓN BLINDADA CONTRA TIMEOUTS DE SUPABASE
+        with engine.connect() as conn:
+            # Le pedimos a la base de datos 120 segundos de paciencia para esta consulta pesada
+            conn.execute(text("SET statement_timeout = '120000'"))
+            query = text("SELECT * FROM concesiones_maestras_rurh_raw")
+            # Usamos 'conn' en lugar de 'engine' para que la regla aplique a esta sesión específica
+            df = pd.read_sql(query, conn)
         
         if df.empty: return pd.DataFrame()
 
