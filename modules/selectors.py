@@ -298,19 +298,25 @@ def render_cabezote_sintesis_body(nombre_zona):
         # Si las variables inician en 0 milisegundos antes de calcular, simplemente espera en silencio.
 
 # ====================================================================
-# 🌍 SELECTOR ESPACIAL MAESTRO (SQL ESTRICTO - TU CÓDIGO ORIGINAL)
+# 🌍 SELECTOR ESPACIAL MAESTRO (CARGA DIFERIDA - LAZY LOADING)
 # ====================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
-def cargar_mapa_cuencas():
-    # Volvemos a tu código original. ¡El engine ahora hará todo el trabajo duro!
+def cargar_atributos_cuencas():
+    """Descarga SOLO los textos para armar los filtros. 0% Geometría. 0% Timeouts."""
     engine = db_manager.get_engine()
-    return gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry")
+    # Usamos pandas puro y evitamos la pesada columna 'geometry'
+    query = "SELECT ah, nomah, zh, nomzh, szh, nom_szh, nss1, nom_nss1, nss2, nom_nss2, nss3, nom_nss3, corpoamb FROM cuencas"
+    return pd.read_sql(query, engine)
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def cargar_mapa_municipios():
+def cargar_atributos_municipios():
+    """Descarga los atributos básicos de municipios."""
     engine = db_manager.get_engine()
-    return gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
-        
+    try:
+        return pd.read_sql("SELECT mpio_ccdgo, mpio_cdpmp, mpio_cnmbr, dane FROM municipios", engine)
+    except:
+        return pd.read_sql("SELECT * FROM municipios", engine)
+
 def render_selector_espacial():
     ids_estaciones = []
     nombre_zona = "Antioquia"
@@ -328,7 +334,7 @@ def render_selector_espacial():
         
         # --- A. POR CUENCA ---
         if modo == "Por Cuenca":
-            gdf_c = cargar_mapa_cuencas()
+            df_c = cargar_atributos_cuencas() # 🚀 Usamos el DataFrame ligero
             ruta = st.selectbox("Ruta de Búsqueda:", ["Hidrología", "CAR"], index=0)
             
             if ruta == "Hidrología":
@@ -343,19 +349,16 @@ def render_selector_espacial():
                 nivel_display = st.selectbox("1. Escala a Evaluar:", list(nombres_niveles.values()), index=5)
                 nivel = next(key for key, value in nombres_niveles.items() if value == nivel_display)
             
-                # 🚀 BUSCADOR INTELIGENTE DE COLUMNAS (Ignora mayúsculas/minúsculas)
                 col_obj_esperada = {"AH": "nomah", "ZH": "nomzh", "SZH": "nom_szh", "NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
                 col_cod_esperada = {"AH": "ah", "ZH": "zh", "SZH": "szh", "NSS1": "nss1", "NSS2": "nss2", "NSS3": "nss3"}[nivel]
                 
-                # Encuentra el nombre real exacto en tu base de datos
-                col_obj = next((c for c in gdf_c.columns if c.lower() == col_obj_esperada.lower()), col_obj_esperada)
-                col_cod = next((c for c in gdf_c.columns if c.lower() == col_cod_esperada.lower()), col_cod_esperada)
+                col_obj = next((c for c in df_c.columns if c.lower() == col_obj_esperada.lower()), col_obj_esperada)
+                col_cod = next((c for c in df_c.columns if c.lower() == col_cod_esperada.lower()), col_cod_esperada)
                 
                 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
                 st.markdown("<span style='font-size:0.85em; color:gray;'>Filtros Opcionales de Búsqueda:</span>", unsafe_allow_html=True)
                 
-                df_f = gdf_c
-                # Extraemos los nombres de las columnas para los filtros opcionales también
+                df_f = df_c
                 col_f_ah = next((c for c in df_f.columns if c.lower() == 'nomah'), 'nomah')
                 col_f_zh = next((c for c in df_f.columns if c.lower() == 'nomzh'), 'nomzh')
                 col_f_szh = next((c for c in df_f.columns if c.lower() == 'nom_szh'), 'nom_szh')
@@ -377,25 +380,28 @@ def render_selector_espacial():
                     
                 st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
                 
-                # 🚀 CREACIÓN AL VUELO BLINDADA DE LA LLAVE VISUAL
                 df_f = df_f.copy()
                 if col_cod in df_f.columns and col_obj in df_f.columns:
-                    # Ignoramos nulos en el código para que no diga "None"
                     df_f['codigo_limpio'] = df_f[col_cod].fillna('Sin Código')
                     df_f['Llave_Visual'] = df_f[col_obj].astype(str) + " - (" + df_f['codigo_limpio'].astype(str) + ")"
                 elif col_obj in df_f.columns:
-                    st.warning(f"⚠️ No se encontró la columna de código '{col_cod_esperada}'. Usando solo el nombre.")
                     df_f['Llave_Visual'] = df_f[col_obj].astype(str)
                 else:
-                    st.error("🚨 Error crítico: No se encontró la columna de nombre.")
                     df_f['Llave_Visual'] = "Desconocido"
                 
                 sel_fin = st.selectbox(f"🎯 2. Territorio Exacto ({nivel}):", ["-- Seleccione --"] + sorted(df_f['Llave_Visual'].dropna().unique()))
                 
                 if sel_fin != "-- Seleccione --":
                     nombre_zona = sel_fin
-                    gdf_zona = df_f[df_f['Llave_Visual']==sel_fin]
-                    nivel_jerarquico = nivel 
+                    nivel_jerarquico = nivel
+                    
+                    # 🚀 CARGA DIFERIDA: Descargamos la geometría ÚNICAMENTE de la cuenca seleccionada
+                    cod_val = df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0]
+                    from sqlalchemy import text
+                    q_geom = text(f"SELECT *, geometry FROM cuencas WHERE {col_cod} = :cod LIMIT 1")
+                    try:
+                        gdf_zona = gpd.read_postgis(q_geom, engine, params={"cod": str(cod_val)}, geom_col="geometry")
+                    except: gdf_zona = None
                 else:
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
@@ -410,23 +416,24 @@ def render_selector_espacial():
                 car_sel = st.selectbox("Autoridad Ambiental (CAR):", ["-- Seleccione --"] + sorted(opciones_car))
                 
                 if car_sel != "-- Seleccione --":
-                    # Busca columna corpoamb o CorpoAmb
-                    col_car = next((c for c in gdf_c.columns if c.lower() == 'corpoamb'), 'corpoamb')
-                    if col_car in gdf_c.columns:
-                        if car_sel == "AMVA": mask_car = gdf_c[col_car].str.contains('AMVA|ABURR|METROPOLITANA', case=False, na=False)
-                        else: mask_car = gdf_c[col_car].str.contains(car_sel[:4], case=False, na=False)
-                        df_f = gdf_c[mask_car]
+                    col_car = next((c for c in df_c.columns if c.lower() == 'corpoamb'), 'corpoamb')
+                    if col_car in df_c.columns:
+                        if car_sel == "AMVA": mask_car = df_c[col_car].str.contains('AMVA|ABURR|METROPOLITANA', case=False, na=False)
+                        else: mask_car = df_c[col_car].str.contains(car_sel[:4], case=False, na=False)
+                        df_f = df_c[mask_car]
                     else:
-                        df_f = gdf_c
+                        df_f = df_c
                         
-                    if df_f.empty: df_f = gdf_c
+                    if df_f.empty: df_f = df_c
                     
                     nivel = st.selectbox("1. Resolución a Evaluar:", ["CAR", "NSS1", "NSS2", "NSS3"], index=0)
                     
                     if nivel == "CAR":
                         nombre_zona = car_sel
-                        gdf_zona = df_f if not df_f.empty else None
                         nivel_jerarquico = "CAR"
+                        # 🚀 CARGA DIFERIDA: Geometrías de toda la CAR
+                        q_geom = text(f"SELECT *, geometry FROM cuencas WHERE {col_car} ILIKE :car_n")
+                        gdf_zona = gpd.read_postgis(q_geom, engine, params={"car_n": f"%{car_sel[:4]}%"}, geom_col="geometry")
                     else:
                         col_obj_esperada = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
                         col_cod_esperada = {"NSS1": "nss1", "NSS2": "nss2", "NSS3": "nss3"}[nivel]
@@ -447,8 +454,12 @@ def render_selector_espacial():
                         
                         if sel_fin != "-- Seleccione --":
                             nombre_zona = sel_fin
-                            gdf_zona = df_f[df_f['Llave_Visual']==sel_fin]
                             nivel_jerarquico = nivel 
+                            # 🚀 CARGA DIFERIDA
+                            cod_val = df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0]
+                            q_geom = text(f"SELECT *, geometry FROM cuencas WHERE {col_cod} = :cod LIMIT 1")
+                            try: gdf_zona = gpd.read_postgis(q_geom, engine, params={"cod": str(cod_val)}, geom_col="geometry")
+                            except: gdf_zona = None
                         else:
                             nombre_zona, gdf_zona = "-- Seleccione --", None
                             nivel_jerarquico = "NINGUNO"
@@ -459,11 +470,9 @@ def render_selector_espacial():
         # --- B. POR REGIÓN (ROBUSTO Y FUSIONADO) ---
         elif modo == "Por Región":
             try:
-                # 1. Cargar el maestro de territorios desde Supabase
                 df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx", engine='openpyxl')
                 df_m.columns = [str(c).lower().strip() for c in df_m.columns]
                 
-                # 2. Prioridad a 'subregion'
                 col_reg = 'subregion' if 'subregion' in df_m.columns else next((c for c in df_m.columns if c in ['region', 'provincia']), None)
                 col_dane_ex = next((c for c in df_m.columns if c in ['dp_mp', 'cod_dane', 'dane', 'codigo_mpio']), None)
                 
@@ -475,36 +484,20 @@ def render_selector_espacial():
                         nombre_zona = sel_reg 
                         nivel_jerarquico = "Regional" 
                         
-                        # 3. PURIFICACIÓN DANE (EXCEL) -> Produce '05031'
                         cods_crudos = df_m[df_m[col_reg].astype(str).str.strip().str.lower() == sel_reg.lower()][col_dane_ex]
                         cods = pd.to_numeric(cods_crudos, errors='coerce').dropna().astype(int).astype(str).str.zfill(5).tolist()
                         
-                        # 4. Cargar el mapa y forzar selección de la columna completa de 5 dígitos
-                        gdf_mun = cargar_mapa_municipios()
-                        nombres_cols = [c.lower() for c in gdf_mun.columns]
-                        
-                        if 'mpio_cdpmp' in nombres_cols: col_mpio_geo = gdf_mun.columns[nombres_cols.index('mpio_cdpmp')]
-                        elif 'dane' in nombres_cols: col_mpio_geo = gdf_mun.columns[nombres_cols.index('dane')]
-                        else: col_mpio_geo = next((c for c in gdf_mun.columns if c.lower() in ['mpio_ccdgo', 'cod_dane']), None)
-                        
-                        if col_mpio_geo:
-                            # 5. PURIFICACIÓN DANE (CAPA GIS)
-                            gdf_mun['dane_match'] = pd.to_numeric(gdf_mun[col_mpio_geo], errors='coerce').fillna(0).astype(int).astype(str).str.zfill(5)
+                        # 🚀 CARGA DIFERIDA: Obtenemos solo los polígonos de los municipios de la región
+                        cods_tuple = tuple(cods)
+                        from sqlalchemy import text
+                        q_reg = text("SELECT *, geometry FROM municipios WHERE CAST(mpio_cdpmp AS TEXT) IN :cods OR CAST(dane AS TEXT) IN :cods OR CAST(mpio_ccdgo AS TEXT) IN :cods")
+                        gdf_zona_filtrada = gpd.read_postgis(q_reg, engine, params={"cods": cods_tuple}, geom_col="geometry")
                             
-                            # 🚀 SEGURO ANTI-FALLOS: Si atrapó la columna de 3 dígitos, forzamos el '05' de Antioquia
-                            gdf_mun['dane_match'] = gdf_mun['dane_match'].apply(lambda x: f"05{x[-3:]}" if x.startswith("000") else x)
-                            
-                            # 6. Filtrar y fusionar
-                            gdf_zona_filtrada = gdf_mun[gdf_mun['dane_match'].isin(cods)]
-                            
-                            if not gdf_zona_filtrada.empty:
-                                poly_region = gdf_zona_filtrada.unary_union
-                                gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_mun.crs)
-                            else:
-                                st.warning(f"⚠️ No se encontraron cruces. Excel buscó: {cods[:5]}...")
-                                nombre_zona, gdf_zona = "-- Seleccione --", None
+                        if not gdf_zona_filtrada.empty:
+                            poly_region = gdf_zona_filtrada.unary_union
+                            gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_zona_filtrada.crs)
                         else:
-                            st.error("⚠️ No se encontró la columna de código DANE en la capa de municipios.")
+                            st.warning(f"⚠️ No se encontraron cruces. Excel buscó: {cods[:5]}...")
                             nombre_zona, gdf_zona = "-- Seleccione --", None
                     else:
                         nombre_zona, gdf_zona = "-- Seleccione --", None
@@ -513,7 +506,6 @@ def render_selector_espacial():
                     st.error("⚠️ El archivo Excel no tiene las columnas 'subregion' o 'dp_mp' necesarias.")
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
-                    
             except Exception as e: 
                 st.error(f"🚨 Error conectando con el Maestro de Regiones: {e}")
                 nombre_zona, gdf_zona = "-- Seleccione --", None
@@ -521,51 +513,32 @@ def render_selector_espacial():
 
         # --- C. POR MUNICIPIO ---
         elif modo == "Por Municipio":
-            gdf_mun = cargar_mapa_municipios()
+            df_mun = cargar_atributos_municipios()
             try:
-                col_nombre = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
-                gdf_mun['display'] = gdf_mun[col_nombre].apply(decodificar_tildes).str.title()
-            except: gdf_mun['display'] = gdf_mun[col_nombre].str.title()
+                col_nombre = 'mpio_cnmbr' if 'mpio_cnmbr' in df_mun.columns else 'MPIO_CNMBR'
+                df_mun['display'] = df_mun[col_nombre].apply(decodificar_tildes).str.title()
+            except: df_mun['display'] = df_mun[col_nombre].str.title()
             
-            sel_mpio = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + sorted(gdf_mun['display'].unique()))
+            sel_mpio = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + sorted(df_mun['display'].dropna().unique()))
             if sel_mpio != "-- Seleccione --":
-                nombre_zona, gdf_zona = sel_mpio, gdf_mun[gdf_mun['display']==sel_mpio]
+                nombre_zona = sel_mpio
                 nivel_jerarquico = "Municipal" 
+                # 🚀 CARGA DIFERIDA
+                q_mun = text(f"SELECT *, geometry FROM municipios WHERE {col_nombre} ILIKE :mpio LIMIT 1")
+                try: gdf_zona = gpd.read_postgis(q_mun, engine, params={"mpio": sel_mpio}, geom_col="geometry")
+                except: gdf_zona = None
             else:
                 nombre_zona, gdf_zona = "-- Seleccione --", None
                 nivel_jerarquico = "NINGUNO"
 
         # --- D. DEPARTAMENTO ---
         else:
-            gdf_mun = cargar_mapa_municipios()
-            nombre_zona, gdf_zona = "Antioquia", gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_mun.unary_union], crs=gdf_mun.crs)
+            nombre_zona = "Antioquia"
             nivel_jerarquico = "Departamental" 
-
-        # --- FILTRO DE ESTACIONES (CON CONEXIÓN DINÁMICA AL BUFFER) ---
-        if gdf_zona is not None and not gdf_zona.empty:
-            buff = st.slider("Buffer (km):", 0.0, 50.0, 25.0)
-            
-            # 1. Extraemos los límites geográficos del territorio seleccionado
-            minx, miny, maxx, maxy = gdf_zona.to_crs(4326).total_bounds
-            
-            # 2. Convertimos el valor del slider (km) a su equivalente aproximado en grados decimales
-            tolerancia_grados = buff * 0.009
-            
-            # 3. Inyectamos la tolerancia dinámica en la consulta SQL
-            q = text(f"""
-                SELECT id_estacion, altitud 
-                FROM estaciones 
-                WHERE longitud BETWEEN {minx - tolerancia_grados} AND {maxx + tolerancia_grados} 
-                  AND latitud BETWEEN {miny - tolerancia_grados} AND {maxy + tolerancia_grados}
-            """)
-            
-            try:
-                df_est = pd.read_sql(q, engine)
-                ids_estaciones = df_est['id_estacion'].astype(str).tolist()
-                altitud_ref = df_est['altitud'].mean()
-            except Exception as e:
-                st.sidebar.error(f"Error consulta buffer SQL: {e}")
-                ids_estaciones = []
+            # 🚀 CARGA DIFERIDA DEPARTAMENTAL
+            q_dep = text("SELECT *, geometry FROM municipios")
+            gdf_muns = gpd.read_postgis(q_dep, engine, geom_col="geometry")
+            gdf_zona = gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_muns.unary_union], crs=gdf_muns.crs)
 
     # ====================================================================
     # 🧠 ORQUESTADOR SILENCIOSO (FUSIONADO CON CSV SUPABASE)
