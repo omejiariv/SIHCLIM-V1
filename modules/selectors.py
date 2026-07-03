@@ -303,20 +303,30 @@ def render_cabezote_sintesis_body(nombre_zona):
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_atributos_cuencas():
     """Descarga SOLO los textos. 0% Geometría. 100% Velocidad."""
+    import pandas as pd
+    from sqlalchemy import text # 🚀 EL ESCUDO FALTANTE
     engine = db_manager.get_engine()
-    query = "SELECT ah, nomah, zh, nomzh, szh, nom_szh, nss1, nom_nss1, nss2, nom_nss2, nss3, nom_nss3, corpoamb FROM cuencas"
-    with engine.connect() as conn:
-        return pd.read_sql(query, conn)
+    query = text("SELECT ah, nomah, zh, nomzh, szh, nom_szh, nss1, nom_nss1, nss2, nom_nss2, nss3, nom_nss3, corpoamb FROM cuencas")
+    try:
+        with engine.connect() as conn:
+            return pd.read_sql(query, conn)
+    except:
+        return pd.DataFrame()
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_atributos_municipios():
+    import pandas as pd
+    from sqlalchemy import text # 🚀 EL ESCUDO FALTANTE
     engine = db_manager.get_engine()
     try:
         with engine.connect() as conn:
-            return pd.read_sql("SELECT mpio_ccdgo, mpio_cdpmp, mpio_cnmbr, dane FROM municipios", conn)
+            return pd.read_sql(text("SELECT mpio_ccdgo, mpio_cdpmp, mpio_cnmbr, dane FROM municipios"), conn)
     except:
-        with engine.connect() as conn:
-            return pd.read_sql("SELECT * FROM municipios LIMIT 10", conn)
+        try:
+            with engine.connect() as conn:
+                return pd.read_sql(text("SELECT * FROM municipios"), conn)
+        except:
+            return pd.DataFrame()
 
 def render_selector_espacial():
     from sqlalchemy import text 
