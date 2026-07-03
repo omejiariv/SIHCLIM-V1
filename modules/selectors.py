@@ -298,37 +298,36 @@ def render_cabezote_sintesis_body(nombre_zona):
         # Si las variables inician en 0 milisegundos antes de calcular, simplemente espera en silencio.
 
 # ====================================================================
-# 🌍 SELECTOR ESPACIAL MAESTRO (CARGA DIFERIDA - LAZY LOADING)
+# 🌍 SELECTOR ESPACIAL MAESTRO (CARGA DIFERIDA BLINDADA)
 # ====================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_atributos_cuencas():
-    """Descarga SOLO los textos para armar los filtros. 0% Geometría. 0% Timeouts."""
+    """Descarga SOLO los textos. 0% Geometría. 100% Velocidad."""
     engine = db_manager.get_engine()
-    # Usamos pandas puro y evitamos la pesada columna 'geometry'
     query = "SELECT ah, nomah, zh, nomzh, szh, nom_szh, nss1, nom_nss1, nss2, nom_nss2, nss3, nom_nss3, corpoamb FROM cuencas"
-    return pd.read_sql(query, engine)
+    with engine.connect() as conn:
+        return pd.read_sql(query, conn)
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_atributos_municipios():
-    """Descarga los atributos básicos de municipios."""
     engine = db_manager.get_engine()
     try:
-        return pd.read_sql("SELECT mpio_ccdgo, mpio_cdpmp, mpio_cnmbr, dane FROM municipios", engine)
+        with engine.connect() as conn:
+            return pd.read_sql("SELECT mpio_ccdgo, mpio_cdpmp, mpio_cnmbr, dane FROM municipios", conn)
     except:
-        return pd.read_sql("SELECT * FROM municipios", engine)
+        with engine.connect() as conn:
+            return pd.read_sql("SELECT * FROM municipios LIMIT 10", conn)
 
 def render_selector_espacial():
-    from sqlalchemy import text # 🚀 SOLUCIÓN 1: Importación segura al inicio para evitar el error de variable local
-    
     ids_estaciones = []
     nombre_zona = "Antioquia"
     altitud_ref = 1500.0
     gdf_zona = None
     nivel_jerarquico = "DEPARTAMENTO" 
     
-    try: engine = db_manager.get_engine()
-    except Exception as e:
-        st.error(f"Error conectando a BD: {e}")
+    engine = db_manager.get_engine()
+    if engine is None:
+        st.error("Error crítico: No hay conexión a la base de datos.")
         return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
     
     with st.sidebar.expander("📍 Filtros Geográficos Principales", expanded=True):
@@ -397,19 +396,20 @@ def render_selector_espacial():
                     nombre_zona = sel_fin
                     nivel_jerarquico = nivel
                     
-                    cod_val = df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0]
-                    q_geom = text(f"SELECT *, geometry FROM cuencas WHERE {col_cod} = :cod LIMIT 1")
-                    try:
-                        gdf_zona = gpd.read_postgis(q_geom, engine, params={"cod": str(cod_val)}, geom_col="geometry")
-                    except: gdf_zona = None
+                    # 🚀 LECTURA DIRECTA BLINDADA
+                    cod_val = str(df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0])
+                    q_geom = f"SELECT *, geometry FROM cuencas WHERE {col_cod} = '{cod_val}' LIMIT 1"
+                    with engine.connect() as conn:
+                        gdf_zona = gpd.read_postgis(q_geom, conn, geom_col="geometry")
                 else:
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
             
             elif ruta == "CAR":
                 try:
-                    q_cars = text("SELECT DISTINCT territorio FROM matriz_maestra_hidrologia WHERE UPPER(nivel) = 'CAR' ORDER BY territorio")
-                    df_cars = pd.read_sql(q_cars, db_manager.get_engine())
+                    q_cars = "SELECT DISTINCT territorio FROM matriz_maestra_hidrologia WHERE UPPER(nivel) = 'CAR' ORDER BY territorio"
+                    with engine.connect() as conn:
+                        df_cars = pd.read_sql(q_cars, conn)
                     opciones_car = df_cars['territorio'].tolist() if not df_cars.empty else ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
                 except: opciones_car = ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
 
@@ -431,8 +431,9 @@ def render_selector_espacial():
                     if nivel == "CAR":
                         nombre_zona = car_sel
                         nivel_jerarquico = "CAR"
-                        q_geom = text(f"SELECT *, geometry FROM cuencas WHERE {col_car} ILIKE :car_n")
-                        gdf_zona = gpd.read_postgis(q_geom, engine, params={"car_n": f"%{car_sel[:4]}%"}, geom_col="geometry")
+                        q_geom = f"SELECT *, geometry FROM cuencas WHERE {col_car} ILIKE '%{car_sel[:4]}%'"
+                        with engine.connect() as conn:
+                            gdf_zona = gpd.read_postgis(q_geom, conn, geom_col="geometry")
                     else:
                         col_obj_esperada = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
                         col_cod_esperada = {"NSS1": "nss1", "NSS2": "nss2", "NSS3": "nss3"}[nivel]
@@ -454,10 +455,10 @@ def render_selector_espacial():
                         if sel_fin != "-- Seleccione --":
                             nombre_zona = sel_fin
                             nivel_jerarquico = nivel 
-                            cod_val = df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0]
-                            q_geom = text(f"SELECT *, geometry FROM cuencas WHERE {col_cod} = :cod LIMIT 1")
-                            try: gdf_zona = gpd.read_postgis(q_geom, engine, params={"cod": str(cod_val)}, geom_col="geometry")
-                            except: gdf_zona = None
+                            cod_val = str(df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0])
+                            q_geom = f"SELECT *, geometry FROM cuencas WHERE {col_cod} = '{cod_val}' LIMIT 1"
+                            with engine.connect() as conn:
+                                gdf_zona = gpd.read_postgis(q_geom, conn, geom_col="geometry")
                         else:
                             nombre_zona, gdf_zona = "-- Seleccione --", None
                             nivel_jerarquico = "NINGUNO"
@@ -465,7 +466,7 @@ def render_selector_espacial():
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
                     
-        # --- B. POR REGIÓN (ROBUSTO Y BLINDADO CONTRA DANE) ---
+        # --- B. POR REGIÓN (BLINDADO CON FORMATTING DIRECTO) ---
         elif modo == "Por Región":
             try:
                 df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx", engine='openpyxl')
@@ -485,22 +486,23 @@ def render_selector_espacial():
                         cods_crudos = df_m[df_m[col_reg].astype(str).str.strip().str.lower() == sel_reg.lower()][col_dane_ex]
                         cods = pd.to_numeric(cods_crudos, errors='coerce').dropna().astype(int).astype(str).str.zfill(5).tolist()
                         
-                        # 🚀 SOLUCIÓN 2: Constructor Dinámico de SQL
-                        # Analizamos qué columnas existen realmente antes de hacer la consulta
                         if cods:
-                            cods_tuple = tuple(cods)
                             df_mun_attr = cargar_atributos_municipios()
                             cols_mun = [c.lower() for c in df_mun_attr.columns]
                             
+                            # 🚀 Traducción directa a SQL para evadir problemas de arrays en SQLAlchemy
+                            cods_str = ", ".join([f"'{c}'" for c in cods])
                             condiciones = []
-                            if 'mpio_cdpmp' in cols_mun: condiciones.append("CAST(mpio_cdpmp AS TEXT) IN :cods")
-                            if 'dane' in cols_mun: condiciones.append("CAST(dane AS TEXT) IN :cods")
-                            if 'mpio_ccdgo' in cols_mun: condiciones.append("CAST(mpio_ccdgo AS TEXT) IN :cods")
+                            if 'mpio_cdpmp' in cols_mun: condiciones.append(f"CAST(mpio_cdpmp AS TEXT) IN ({cods_str})")
+                            if 'dane' in cols_mun: condiciones.append(f"CAST(dane AS TEXT) IN ({cods_str})")
+                            if 'mpio_ccdgo' in cols_mun: condiciones.append(f"CAST(mpio_ccdgo AS TEXT) IN ({cods_str})")
                             
                             if condiciones:
                                 where_clause = " OR ".join(condiciones)
-                                q_reg = text(f"SELECT *, geometry FROM municipios WHERE {where_clause}")
-                                gdf_zona_filtrada = gpd.read_postgis(q_reg, engine, params={"cods": cods_tuple}, geom_col="geometry")
+                                q_reg = f"SELECT *, geometry FROM municipios WHERE {where_clause}"
+                                
+                                with engine.connect() as conn:
+                                    gdf_zona_filtrada = gpd.read_postgis(q_reg, conn, geom_col="geometry")
                                 
                                 if not gdf_zona_filtrada.empty:
                                     poly_region = gdf_zona_filtrada.unary_union
@@ -537,10 +539,13 @@ def render_selector_espacial():
             sel_mpio = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + sorted(df_mun['display'].dropna().unique()))
             if sel_mpio != "-- Seleccione --":
                 nombre_zona = sel_mpio
-                nivel_jerarquico = "Municipal" 
-                q_mun = text(f"SELECT *, geometry FROM municipios WHERE {col_nombre} ILIKE :mpio LIMIT 1")
-                try: gdf_zona = gpd.read_postgis(q_mun, engine, params={"mpio": sel_mpio}, geom_col="geometry")
-                except: gdf_zona = None
+                nivel_jerarquico = "Municipal"
+                # Limpiamos posibles comillas simples en el nombre del municipio (ej: San Jose d'Algo)
+                mpio_limpio = sel_mpio.replace("'", "''") 
+                q_mun = f"SELECT *, geometry FROM municipios WHERE {col_nombre} ILIKE '{mpio_limpio}' LIMIT 1"
+                
+                with engine.connect() as conn:
+                    gdf_zona = gpd.read_postgis(q_mun, conn, geom_col="geometry")
             else:
                 nombre_zona, gdf_zona = "-- Seleccione --", None
                 nivel_jerarquico = "NINGUNO"
@@ -549,9 +554,11 @@ def render_selector_espacial():
         else:
             nombre_zona = "Antioquia"
             nivel_jerarquico = "Departamental" 
-            q_dep = text("SELECT *, geometry FROM municipios")
-            gdf_muns = gpd.read_postgis(q_dep, engine, geom_col="geometry")
-            gdf_zona = gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_muns.unary_union], crs=gdf_muns.crs)
+            q_dep = "SELECT *, geometry FROM municipios"
+            
+            with engine.connect() as conn:
+                gdf_muns = gpd.read_postgis(q_dep, conn, geom_col="geometry")
+                gdf_zona = gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_muns.unary_union], crs=gdf_muns.crs)
 
     # ====================================================================
     # 🧠 ORQUESTADOR SILENCIOSO (FUSIONADO CON CSV SUPABASE)
