@@ -643,4 +643,22 @@ def render_selector_espacial():
         except Exception: pass
 
     renderizar_gestor_escenarios(nombre_zona)
-    return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
+    
+    # ==========================================================
+    # 🚀 SOLUCIÓN ESTRUCTURAL: ENRUTADOR DINÁMICO DE FIRMAS
+    # ==========================================================
+    import inspect
+    try:
+        # El selector "lee la mente" del sistema para saber qué página lo llamó
+        caller_frame = inspect.currentframe().f_back
+        caller_filename = caller_frame.f_code.co_filename
+    except:
+        caller_filename = ""
+        
+    # Si la página es Hidrología, WEAP o los módulos 14, 15, 16...
+    if any(keyword in caller_filename for keyword in ["14_", "15_", "16_", "WEAP", "Hidrolog", "hidrolog"]):
+        # Entregamos la firma exacta que esperan los modelos hidrosociales
+        return nombre_zona, gdf_zona, nivel_jerarquico, False
+    else:
+        # Entregamos la firma clásica para los módulos 01 al 09
+        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
