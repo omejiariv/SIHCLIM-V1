@@ -94,12 +94,13 @@ def main():
     
     # --- A. SELECTOR ESPACIAL ---
     try:
-        ids_estaciones, nombre_zona, altitud_ref, gdf_zona = selectors.render_selector_espacial()
+        ids_estaciones_dummy, nombre_zona, altitud_ref, gdf_zona = selectors.render_selector_espacial()
     except Exception as e:
         st.sidebar.error(f"Error en Selector: {e}")
         st.stop()
 
-    if not ids_estaciones:
+    # 🔥 FIX 1: Validamos contra el nombre del territorio, no contra la lista vacía de estaciones
+    if not nombre_zona or nombre_zona in ["-- Seleccione --", "Sin Selección", "NINGUNO", "Antioquia"]:
         st.info("👈 Seleccione una Cuenca o Municipio en el menú lateral para comenzar.")
         st.stop()
 
@@ -110,7 +111,24 @@ def main():
         st.error(f"Error cargando datos base: {e}")
         st.stop()
 
-    if df_all_rain is not None and not df_all_rain.empty and ids_estaciones:
+    # 🌍 FIX 2: INTERSECCIÓN ESPACIAL (Recuperamos las estaciones perdidas)
+    # Cruzamos las geometrías en vivo usando Geopandas para detectar estaciones en la zona
+    ids_estaciones = []
+    if gdf_zona is not None and not gdf_zona.empty and gdf_stations is not None and not gdf_stations.empty:
+        # Aseguramos el mismo sistema de coordenadas (CRS) antes del cruce
+        if gdf_stations.crs != gdf_zona.crs:
+            gdf_zona = gdf_zona.to_crs(gdf_stations.crs)
+        
+        # Intersección espacial: ¿Qué estaciones están dentro de este polígono?
+        estaciones_dentro = gpd.sjoin(gdf_stations, gdf_zona, predicate='intersects')
+        ids_estaciones = estaciones_dentro['id_estacion'].tolist()
+
+    if not ids_estaciones:
+        st.warning(f"⚠️ No se encontraron estaciones meteorológicas dentro de la zona: {nombre_zona}.")
+        st.stop()
+
+    # --- C. FILTRO DE LLUVIAS ---
+    if df_all_rain is not None and not df_all_rain.empty:
         df_all_rain['id_estacion'] = df_all_rain['id_estacion'].astype(str).str.strip()
         ids_estaciones = [str(x).strip() for x in ids_estaciones]
         
