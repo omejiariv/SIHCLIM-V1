@@ -24,7 +24,8 @@ selectors.renderizar_menu_navegacion("Escenarios WEAP")
 
 # 4. SELECTOR ESPACIAL
 st.sidebar.markdown("---")
-nombre_zona, gdf_zona, nivel_jerarquico, es_busqueda_global = selectors.render_selector_espacial()
+# 🚀 FIX APLICADO: Invocamos el selector exigiendo la firma explícita para WEAP
+nombre_zona, gdf_zona, nivel_jerarquico, es_busqueda_global = selectors.render_selector_espacial(modo_firma="weap")
 
 # 5. GUARDIA Y LÓGICA PRINCIPAL
 if nivel_jerarquico == "Estaciones":
@@ -37,16 +38,13 @@ else:
     if not territorio_final or territorio_final in [["-- Seleccione --"], "-- Seleccione --"]:
         st.info("👆 Selecciona un territorio en el panel izquierdo para cargar el simulador hidrosocial.")
     else:
-        # Si selectors nos envió lista de estaciones, rescatamos nombre
-        if isinstance(nombre_zona, list) and all(str(t).strip().isdigit() for t in nombre_zona if str(t).strip()):
-            nombre_rescatado = next((val for key, val in st.session_state.items() if isinstance(val, str) and " - (" in val), None)
-            territorio_final = [nombre_rescatado] if nombre_rescatado else ["Territorio Global"]
+        # Como la firma está blindada, ya no necesitamos rescatar nombres perdidos
+        # Solo garantizamos que lo que evaluemos sea texto
+        territorio_str = territorio_final[0] if isinstance(territorio_final, list) else territorio_final
 
         # ENCENDER MOTOR SI HAY TERRITORIO VÁLIDO
-        if territorio_final[0] != "Territorio Global":
+        if territorio_str != "Territorio Global":
             try:
-                territorio_str = territorio_final[0] if isinstance(territorio_final, list) else territorio_final
-                
                 # --- 1. CONEXIÓN DEMOGRÁFICA (SUPABASE) ---
                 url_csv = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Multimodelo_Demografica.csv"
                 res_csv = requests.get(url_csv)
