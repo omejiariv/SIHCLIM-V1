@@ -328,7 +328,7 @@ def cargar_atributos_municipios():
         except:
             return pd.DataFrame()
 
-def render_selector_espacial():
+def render_selector_espacial(modo_firma="clasica"):
     from sqlalchemy import text 
     
     ids_estaciones = []
@@ -655,25 +655,10 @@ def render_selector_espacial():
     renderizar_gestor_escenarios(nombre_zona)
 
     # ==========================================================
-    # 🚀 SOLUCIÓN ESTRUCTURAL: ENRUTADOR DINÁMICO DE FIRMAS
+    # 🚀 SOLUCIÓN ESTRUCTURAL: FIRMA EXPLÍCITA
     # ==========================================================
-    import inspect
-    caller_filename = ""
-    try:
-        # Rastreo profundo para evadir el ocultamiento de Streamlit y hallar el nombre real de la página
-        for frame_info in inspect.stack():
-            if "pages" in frame_info.filename.lower() or "sihclim" in frame_info.filename.lower():
-                caller_filename = frame_info.filename
-                if "pages" in caller_filename.lower():
-                    break
-    except:
-        pass
-        
-    # 🎯 CIRUGÍA DE PRECISIÓN: 
-    # SÓLO la página de WEAP (15) requiere la firma invertida.
-    # Al quitar "Hidrología" de aquí, la Página 01 recupera su orden perfecto y deja de colapsar.
-    if "15_" in caller_filename or "weap" in caller_filename.lower():
+    if modo_firma == "weap":
         return nombre_zona, gdf_zona, nivel_jerarquico, False
     else:
-        # Todas las demás páginas clásicas (01 a 14, 16) reciben su firma original intacta
+        # Firma clásica para páginas 01 a 14 y 16
         return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
