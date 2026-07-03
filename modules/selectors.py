@@ -643,22 +643,27 @@ def render_selector_espacial():
         except Exception: pass
 
     renderizar_gestor_escenarios(nombre_zona)
-    
+
     # ==========================================================
     # 🚀 SOLUCIÓN ESTRUCTURAL: ENRUTADOR DINÁMICO DE FIRMAS
     # ==========================================================
     import inspect
+    caller_filename = ""
     try:
-        # El selector "lee la mente" del sistema para saber qué página lo llamó
-        caller_frame = inspect.currentframe().f_back
-        caller_filename = caller_frame.f_code.co_filename
+        # Rastreo profundo para evadir el ocultamiento de Streamlit y hallar el nombre real de la página
+        for frame_info in inspect.stack():
+            if "pages" in frame_info.filename.lower() or "sihclim" in frame_info.filename.lower():
+                caller_filename = frame_info.filename
+                if "pages" in caller_filename.lower():
+                    break
     except:
-        caller_filename = ""
+        pass
         
-    # Si la página es Hidrología, WEAP o los módulos 14, 15, 16...
-    if any(keyword in caller_filename for keyword in ["14_", "15_", "16_", "WEAP", "Hidrolog", "hidrolog"]):
-        # Entregamos la firma exacta que esperan los modelos hidrosociales
+    # 🎯 CIRUGÍA DE PRECISIÓN: 
+    # SÓLO la página de WEAP (15) requiere la firma invertida.
+    # Al quitar "Hidrología" de aquí, la Página 01 recupera su orden perfecto y deja de colapsar.
+    if "15_" in caller_filename or "weap" in caller_filename.lower():
         return nombre_zona, gdf_zona, nivel_jerarquico, False
     else:
-        # Entregamos la firma clásica para los módulos 01 al 09
+        # Todas las demás páginas clásicas (01 a 14, 16) reciben su firma original intacta
         return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
