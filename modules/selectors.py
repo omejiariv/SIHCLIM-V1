@@ -325,7 +325,7 @@ def render_selector_espacial():
     nombre_zona = "Antioquia"
     altitud_ref = 1500.0
     gdf_zona = None
-    nivel_jerarquico = "DEPARTAMENTO" 
+    nivel_jerarquico = "Departamento" 
     
     engine = db_manager.get_engine()
     if engine is None:
@@ -385,10 +385,16 @@ def render_selector_espacial():
                 
                 df_f = df_f.copy()
                 if col_cod in df_f.columns and col_obj in df_f.columns:
-                    df_f['codigo_limpio'] = df_f[col_cod].fillna('Sin Código')
-                    df_f['Llave_Visual'] = df_f[col_obj].astype(str) + " - (" + df_f['codigo_limpio'].astype(str) + ")"
+                    # 🚀 FIX: Eliminamos los ".0" de los códigos asegurando formato entero/texto puro
+                    def limpiar_codigo(x):
+                        if pd.isnull(x): return 'Sin Código'
+                        try: return str(int(float(x)))
+                        except: return str(x).strip()
+                        
+                    df_f['codigo_limpio'] = df_f[col_cod].apply(limpiar_codigo)
+                    df_f['Llave_Visual'] = df_f[col_obj].astype(str).str.strip() + " - (" + df_f['codigo_limpio'] + ")"
                 elif col_obj in df_f.columns:
-                    df_f['Llave_Visual'] = df_f[col_obj].astype(str)
+                    df_f['Llave_Visual'] = df_f[col_obj].astype(str).str.strip()
                 else:
                     df_f['Llave_Visual'] = "Desconocido"
                 
@@ -399,10 +405,9 @@ def render_selector_espacial():
                     nivel_jerarquico = nivel
                     
                     cod_val = str(df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0])
-                    # 🚀 INTERVENCIÓN: SELECT * en lugar de SELECT *, geometry
                     q_geom = f"SELECT * FROM cuencas WHERE {col_cod} = '{cod_val}' LIMIT 1"
                     with engine.connect() as conn:
-                        gdf_zona = gpd.read_postgis(q_geom, conn, geom_col="geometry")
+                        gdf_zona = gpd.read_postgis(text(q_geom), conn, geom_col="geometry")
                 else:
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
@@ -411,7 +416,7 @@ def render_selector_espacial():
                 try:
                     q_cars = "SELECT DISTINCT territorio FROM matriz_maestra_hidrologia WHERE UPPER(nivel) = 'CAR' ORDER BY territorio"
                     with engine.connect() as conn:
-                        df_cars = pd.read_sql(q_cars, conn)
+                        df_cars = pd.read_sql(text(q_cars), conn)
                     opciones_car = df_cars['territorio'].tolist() if not df_cars.empty else ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
                 except: opciones_car = ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
 
@@ -433,10 +438,9 @@ def render_selector_espacial():
                     if nivel == "CAR":
                         nombre_zona = car_sel
                         nivel_jerarquico = "CAR"
-                        # 🚀 INTERVENCIÓN: SELECT *
                         q_geom = f"SELECT * FROM cuencas WHERE {col_car} ILIKE '%{car_sel[:4]}%'"
                         with engine.connect() as conn:
-                            gdf_zona = gpd.read_postgis(q_geom, conn, geom_col="geometry")
+                            gdf_zona = gpd.read_postgis(text(q_geom), conn, geom_col="geometry")
                     else:
                         col_obj_esperada = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
                         col_cod_esperada = {"NSS1": "nss1", "NSS2": "nss2", "NSS3": "nss3"}[nivel]
@@ -446,10 +450,15 @@ def render_selector_espacial():
                         
                         df_f = df_f.copy()
                         if col_cod in df_f.columns and col_obj in df_f.columns:
-                            df_f['codigo_limpio'] = df_f[col_cod].fillna('Sin Código')
-                            df_f['Llave_Visual'] = df_f[col_obj].astype(str) + " - (" + df_f['codigo_limpio'].astype(str) + ")"
+                            def limpiar_codigo(x):
+                                if pd.isnull(x): return 'Sin Código'
+                                try: return str(int(float(x)))
+                                except: return str(x).strip()
+                            
+                            df_f['codigo_limpio'] = df_f[col_cod].apply(limpiar_codigo)
+                            df_f['Llave_Visual'] = df_f[col_obj].astype(str).str.strip() + " - (" + df_f['codigo_limpio'] + ")"
                         elif col_obj in df_f.columns:
-                            df_f['Llave_Visual'] = df_f[col_obj].astype(str)
+                            df_f['Llave_Visual'] = df_f[col_obj].astype(str).str.strip()
                         else:
                             df_f['Llave_Visual'] = "Desconocido"
                             
@@ -459,10 +468,9 @@ def render_selector_espacial():
                             nombre_zona = sel_fin
                             nivel_jerarquico = nivel 
                             cod_val = str(df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0])
-                            # 🚀 INTERVENCIÓN: SELECT *
                             q_geom = f"SELECT * FROM cuencas WHERE {col_cod} = '{cod_val}' LIMIT 1"
                             with engine.connect() as conn:
-                                gdf_zona = gpd.read_postgis(q_geom, conn, geom_col="geometry")
+                                gdf_zona = gpd.read_postgis(text(q_geom), conn, geom_col="geometry")
                         else:
                             nombre_zona, gdf_zona = "-- Seleccione --", None
                             nivel_jerarquico = "NINGUNO"
@@ -485,7 +493,7 @@ def render_selector_espacial():
                     
                     if sel_reg != "-- Seleccione --":
                         nombre_zona = sel_reg 
-                        nivel_jerarquico = "Regional" 
+                        nivel_jerarquico = "Región" # 🚀 FIX: Aseguramos el nombre oficial
                         
                         cods_crudos = df_m[df_m[col_reg].astype(str).str.strip().str.lower() == sel_reg.lower()][col_dane_ex]
                         cods = pd.to_numeric(cods_crudos, errors='coerce').dropna().astype(int).astype(str).str.zfill(5).tolist()
@@ -502,11 +510,10 @@ def render_selector_espacial():
                             
                             if condiciones:
                                 where_clause = " OR ".join(condiciones)
-                                # 🚀 INTERVENCIÓN: SELECT *
                                 q_reg = f"SELECT * FROM municipios WHERE {where_clause}"
                                 
                                 with engine.connect() as conn:
-                                    gdf_zona_filtrada = gpd.read_postgis(q_reg, conn, geom_col="geometry")
+                                    gdf_zona_filtrada = gpd.read_postgis(text(q_reg), conn, geom_col="geometry")
                                 
                                 if not gdf_zona_filtrada.empty:
                                     poly_region = gdf_zona_filtrada.unary_union
@@ -535,21 +542,25 @@ def render_selector_espacial():
         # --- C. POR MUNICIPIO ---
         elif modo == "Por Municipio":
             df_mun = cargar_atributos_municipios()
-            try:
-                col_nombre = 'mpio_cnmbr' if 'mpio_cnmbr' in df_mun.columns else 'MPIO_CNMBR'
-                df_mun['display'] = df_mun[col_nombre].apply(decodificar_tildes).str.title()
-            except: df_mun['display'] = df_mun[col_nombre].str.title()
+            col_nombre = 'mpio_cnmbr' if 'mpio_cnmbr' in df_mun.columns else 'MPIO_CNMBR'
             
-            sel_mpio = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + sorted(df_mun['display'].dropna().unique()))
-            if sel_mpio != "-- Seleccione --":
-                nombre_zona = sel_mpio
-                nivel_jerarquico = "Municipal"
-                mpio_limpio = sel_mpio.replace("'", "''") 
-                # 🚀 INTERVENCIÓN: SELECT *
-                q_mun = f"SELECT * FROM municipios WHERE {col_nombre} ILIKE '{mpio_limpio}' LIMIT 1"
+            # 🚀 FIX: Mapeo Inverso. Mostramos el nombre bonito en la UI, pero enviamos el texto ORIGINAL (con mayúsculas/sin tildes) al backend
+            mapeo_mun = {str(orig).strip(): str(orig).title() for orig in df_mun[col_nombre].dropna().unique()}
+            opciones_pretty = sorted(list(set(mapeo_mun.values())))
+            
+            sel_mpio_pretty = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + opciones_pretty)
+            if sel_mpio_pretty != "-- Seleccione --":
+                # Rescatamos la cadena de texto exacta de la base de datos
+                nombre_zona_orig = next((k for k, v in mapeo_mun.items() if v == sel_mpio_pretty), sel_mpio_pretty)
+                
+                nombre_zona = nombre_zona_orig
+                nivel_jerarquico = "Municipio" # 🚀 FIX: Restaurado de "Municipal" a "Municipio"
+                
+                mpio_limpio = nombre_zona_orig.replace("'", "''") 
+                q_mun = f"SELECT * FROM municipios WHERE {col_nombre} = '{mpio_limpio}' LIMIT 1"
                 
                 with engine.connect() as conn:
-                    gdf_zona = gpd.read_postgis(q_mun, conn, geom_col="geometry")
+                    gdf_zona = gpd.read_postgis(text(q_mun), conn, geom_col="geometry")
             else:
                 nombre_zona, gdf_zona = "-- Seleccione --", None
                 nivel_jerarquico = "NINGUNO"
@@ -557,12 +568,11 @@ def render_selector_espacial():
         # --- D. DEPARTAMENTO ---
         else:
             nombre_zona = "Antioquia"
-            nivel_jerarquico = "Departamental" 
-            # 🚀 INTERVENCIÓN: SELECT *
+            nivel_jerarquico = "Departamento" # 🚀 FIX: Restaurado a "Departamento"
             q_dep = "SELECT * FROM municipios"
             
             with engine.connect() as conn:
-                gdf_muns = gpd.read_postgis(q_dep, conn, geom_col="geometry")
+                gdf_muns = gpd.read_postgis(text(q_dep), conn, geom_col="geometry")
                 gdf_zona = gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_muns.unary_union], crs=gdf_muns.crs)
 
     # ====================================================================
