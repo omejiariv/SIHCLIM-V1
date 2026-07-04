@@ -212,8 +212,14 @@ def main():
     # --- D. FILTROS EN BARRA LATERAL (TIEMPO Y LIMPIEZA) ---
     with st.sidebar:
         with st.expander("⏳ Tiempo y Limpieza", expanded=False):
-            min_y = int(df_long[Config.YEAR_COL].min())
-            max_y = int(df_long[Config.YEAR_COL].max())
+            
+            # 🛡️ FIX: Blindaje del Slider de Tiempo
+            if df_long is not None and not df_long.empty:
+                min_y = int(df_long[Config.YEAR_COL].min())
+                max_y = int(df_long[Config.YEAR_COL].max())
+            else:
+                min_y, max_y = 1980, 2026 # Valores de seguridad
+                
             year_range = st.slider("📅 Años:", min_y, max_y, (min_y, max_y))
             
             c1, c2 = st.columns(2)
