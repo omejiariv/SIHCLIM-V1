@@ -1,7 +1,6 @@
 # modules/db_manager.py
 
 import json
-
 import streamlit as st
 import geopandas as gpd
 
@@ -15,21 +14,27 @@ except Exception:
     DATABASE_URL = None
 
 def get_engine():
-    # ... tu lógica de obtención de credenciales ...
-    db_url = "tu_cadena_de_conexion_postgresql"
+    # Asignamos la URL obtenida de los secrets a nuestra variable local
+    db_url = DATABASE_URL
     
-    engine = create_engine(
-        db_url,
-        pool_pre_ping=True,      # 👈 Verifica que Supabase no haya cortado la conexión
-        pool_recycle=3600,       # 👈 Reinicia las conexiones cada hora para mantenerlas frescas
-        connect_args={
-            'sslmode': 'require', 
-            'client_encoding': 'utf8'  # 👈 Evita el error "server didn't return client encoding"
-        }
-    )
-    return engine
+    if not db_url:
+        st.error("Error crítico: No se encontró DATABASE_URL en los secrets.")
+        return None
+
+    # AQUÍ INICIA EL BLOQUE TRY QUE FALTABA
+    try:
+        engine = create_engine(
+            db_url,
+            pool_pre_ping=True,      # 👈 Verifica que Supabase no haya cortado la conexión
+            pool_recycle=3600,       # 👈 Reinicia las conexiones cada hora para mantenerlas frescas
+            connect_args={
+                'sslmode': 'require', 
+                'client_encoding': 'utf8'  # 👈 Evita el error "server didn't return client encoding"
+            }
+        )
+        return engine
+        
     except Exception as e:
-        import streamlit as st
         st.error(f"Error creando engine: {e}")
         return None
 
