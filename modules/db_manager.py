@@ -14,25 +14,20 @@ try:
 except Exception:
     DATABASE_URL = None
 
-
 def get_engine():
-    """Crea y retorna el motor de conexión SQLAlchemy a prueba de desconexiones y timeouts."""
-    if not DATABASE_URL:
-        return None
-    try:
-        # 🛡️ SOLUCIÓN ESTRUCTURAL: Forzamos el timeout desde el "handshake" del driver.
-        # Esto evita que PgBouncer o Supabase ignoren nuestros comandos de tiempo.
-        engine = create_engine(
-            DATABASE_URL, 
-            echo=False,
-            pool_pre_ping=True,
-            pool_recycle=300,
-            pool_size=5,
-            max_overflow=10,
-            # ESTA ES LA LLAVE MAESTRA: Se impone el límite directamente en la conexión PostgreSQL
-            connect_args={'options': '-c statement_timeout=300000'} 
-        )
-        return engine
+    # ... tu lógica de obtención de credenciales ...
+    db_url = "tu_cadena_de_conexion_postgresql"
+    
+    engine = create_engine(
+        db_url,
+        pool_pre_ping=True,      # 👈 Verifica que Supabase no haya cortado la conexión
+        pool_recycle=3600,       # 👈 Reinicia las conexiones cada hora para mantenerlas frescas
+        connect_args={
+            'sslmode': 'require', 
+            'client_encoding': 'utf8'  # 👈 Evita el error "server didn't return client encoding"
+        }
+    )
+    return engine
     except Exception as e:
         import streamlit as st
         st.error(f"Error creando engine: {e}")
