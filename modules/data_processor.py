@@ -106,8 +106,14 @@ def load_and_process_all_data():
 
         # --- 2. PRECIPITACIÓN ---
         try:
-            sql_ppt = text("SELECT id_estacion, fecha, valor FROM precipitacion ORDER BY fecha")
-            df_ppt = pd.read_sql(sql_ppt, engine)
+            # 🚀 FIX: Conexión protegida y eliminación del ORDER BY en SQL
+            with engine.connect() as conn:
+                conn.execute(text("SET statement_timeout = '300000'")) # 5 minutos de tolerancia
+                sql_ppt = text("SELECT id_estacion, fecha, valor FROM precipitacion")
+                df_ppt = pd.read_sql(sql_ppt, conn)
+
+            # 🚀 FIX: Ordenamos en la memoria RAM (infinitamente más rápido)
+            df_ppt = df_ppt.sort_values(by='fecha')
 
             df_ppt = df_ppt.rename(columns={'fecha': Config.DATE_COL})
             df_ppt[Config.DATE_COL] = pd.to_datetime(df_ppt[Config.DATE_COL])
@@ -128,7 +134,7 @@ def load_and_process_all_data():
                 df_long[Config.MONTH_COL] = df_long[Config.DATE_COL].dt.month
         except Exception as e:
             st.error(f"⚠️ Error cargando Precipitación: {e}")
-            df_long = pd.DataFrame() 
+            df_long = pd.DataFrame()
             
         # --- 3. GEOMETRÍAS (Adiós a los archivos locales pesados) ---
         try:
