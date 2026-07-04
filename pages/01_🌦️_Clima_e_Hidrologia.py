@@ -90,7 +90,8 @@ def load_all_data_cached():
 # ==========================================
 def main():
     # 🛡️ IMPORTACIÓN DE SEGURIDAD INTERNA
-    import pandas as pd 
+    import pandas as pd
+    import geopandas as gpd
     
     # --- A. SELECTOR ESPACIAL ---
     try:
