@@ -87,6 +87,9 @@ modo_params = st.sidebar.radio(
 # Valores por defecto (se actualizarán si el satélite responde)
 pct_bosque, pct_agricola, pct_pecuario, pct_agua, pct_urbano = 40.0, 20.0, 30.0, 5.0, 5.0
 
+# 🛡️ FIX 1: Inicializamos la ruta temporal para que el Mapa Contexto sepa que existe
+ruta_temporal = None 
+
 # Lógica de Coberturas
 if modo_params == "Automático (Satélite)" and gdf_zona is not None and land_cover:
     with st.sidebar.status("🛰️ Conectando con Supabase Raster...", expanded=False) as status:
@@ -526,12 +529,14 @@ if gdf_zona is not None:
                 except: pass
 
             # Capa Raster (Coberturas)
-            if land_cover and os.path.exists(RUTA_RASTER) and gdf_zona is not None:
+            # 🛡️ FIX 2: Actualizamos a la ruta de la Nube (ruta_temporal)
+            if land_cover and ruta_temporal and os.path.exists(ruta_temporal) and gdf_zona is not None:
                 try:
-                    img_cob, bounds_cob = land_cover.obtener_imagen_folium_coberturas(gdf_zona, RUTA_RASTER)
+                    img_cob, bounds_cob = land_cover.obtener_imagen_folium_coberturas(gdf_zona, ruta_temporal)
                     if img_cob is not None:
                         folium.raster_layers.ImageOverlay(img_cob, bounds_cob, opacity=0.6, name="Coberturas").add_to(m)
-                except: pass
+                except Exception as e: 
+                    st.warning(f"No se pudo cargar la capa de coberturas en el mapa: {e}")
 
             # Marcadores Estaciones
             fg = folium.FeatureGroup(name="Estaciones", show=True)
