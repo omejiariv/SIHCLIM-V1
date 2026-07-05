@@ -560,7 +560,10 @@ if gdf_zona is not None:
             
             fg.add_to(m)
             folium.LayerControl().add_to(m)
-            st_folium(m, width=1400, height=600, key=f"map_ctx_{nombre_zona}", returned_objects=[])
+            
+            # 🚀 FIX DEFINITIVO: Renderizado HTML puro para evadir el colapso de memoria
+            import streamlit.components.v1 as components
+            components.html(m._repr_html_(), height=650)
 
         except Exception as e:
             st.error(f"Error renderizando mapa: {e}")
