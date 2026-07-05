@@ -3,7 +3,6 @@
 import json
 import streamlit as st
 import geopandas as gpd
-
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -13,23 +12,31 @@ try:
 except Exception:
     DATABASE_URL = None
 
+# 🚀 FIX DEFINITIVO: Almacenamos el motor en la memoria global del servidor.
+# Esto evita que Supabase colapse por exceso de peticiones simultáneas.
+@st.cache_resource(show_spinner=False)
 def get_engine():
-    # Asignamos la URL obtenida de los secrets a nuestra variable local
     db_url = DATABASE_URL
     
     if not db_url:
         st.error("Error crítico: No se encontró DATABASE_URL en los secrets.")
         return None
 
-    # AQUÍ INICIA EL BLOQUE TRY QUE FALTABA
     try:
         engine = create_engine(
             db_url,
-            pool_pre_ping=True,      # 👈 Verifica que Supabase no haya cortado la conexión
-            pool_recycle=3600,       # 👈 Reinicia las conexiones cada hora para mantenerlas frescas
+            pool_pre_ping=True,      
+            pool_recycle=1800,       # 👈 Reducido a 30 mins para ajustarse a Supabase
+            pool_size=5,             # 👈 Límite seguro de conexiones simultáneas
+            max_overflow=10,         # 👈 Margen de emergencia
             connect_args={
                 'sslmode': 'require', 
-                'client_encoding': 'utf8'  # 👈 Evita el error "server didn't return client encoding"
+                'client_encoding': 'utf8',
+                # 🛡️ Parámetros avanzados para mantener la línea viva (Keep-Alive)
+                'keepalives': 1,
+                'keepalives_idle': 30,
+                'keepalives_interval': 10,
+                'keepalives_count': 5
             }
         )
         return engine
