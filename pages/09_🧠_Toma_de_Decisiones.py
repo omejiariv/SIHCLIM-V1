@@ -378,13 +378,18 @@ if gdf_zona is not None and not gdf_zona.empty:
 
     st.session_state['aleph_oferta_m3s'] = oferta_nominal
 
-
-    
     # ---------------------------------------------------------
     # 4. METABOLISMO Y DEMANDA (SÍNTESIS FINAL)
     # ---------------------------------------------------------
-    demanda_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
-    demanda_m3s = (demanda_L_dia / 1000) / 86400
+    # 🚀 FIX 1: INTEGRACIÓN DEL RURH AL METABOLISMO
+    demanda_domestica_L_dia = (pob_total * 150) + (bovinos * 40) + (porcinos * 15) + (aves * 0.3)
+    demanda_domestica_m3s = (demanda_domestica_L_dia / 1000) / 86400
+    
+    # Llamamos a las concesiones de la industria y el agro (RURH)
+    dem_rurh_m3s = st.session_state.get('aleph_concesiones_m3s', 0.0)
+    
+    # La verdadera Demanda Total
+    demanda_m3s = demanda_domestica_m3s + dem_rurh_m3s
     
     st.session_state['demanda_total_m3s'] = demanda_m3s
     st.session_state['poblacion_servida'] = pob_total
@@ -392,10 +397,10 @@ if gdf_zona is not None and not gdf_zona.empty:
     
     # Evaluar si tenemos sincronización perfecta
     if origen_demo and origen_pecu and origen_hidro:
-        st.success(f"✅ **Sincronización Perfecta:** Las 3 matrices maestras están alimentando a '{nombre_zona}' en tiempo real.")
+        st.success(f"✅ **Sincronización Perfecta:** Las matrices maestras y el RURH están alimentando a '{nombre_zona}' en tiempo real.")
         origen_carga = "Modelación SQL Exacta"
     else:
-        st.warning(f"⚠️ **Sincronización Parcial:** Faltan datos en uno de los motores para '{nombre_zona}'. Se han activado valores refugio (0).")
+        st.warning(f"⚠️ **Sincronización Parcial:** Faltan datos en uno de los motores para '{nombre_zona}'. Se han activado valores refugio.")
         origen_carga = "Datos de Emergencia"
 
     with st.expander("🎛️ Simulación de Escenarios (Variables de Decisión)", expanded=False):
@@ -403,8 +408,15 @@ if gdf_zona is not None and not gdf_zona.empty:
         impacto_cc = c_sim1.slider("📉 Reducción Oferta por Cambio Climático (%):", 0, 80, 0, step=5)
         mitigacion_dbo = c_sim2.slider("🌿 Mitigación de Cargas (SbN + PTAR) %:", 0, 100, 0, step=5)
 
+    # 🚀 FIX 2: CÁLCULO REALISTA DE OFERTA (CAUDAL ECOLÓGICO + ENSO)
+    enso_actual = st.session_state.get('enso_estado', 'Neutral')
+    castigo_enso = 0.40 if enso_actual == 'El Niño' else 0.0
+    
+    # Restamos el 25% de la oferta porque es intocable (Caudal Ecológico de la cuenca)
+    oferta_utilizable = oferta_nominal * 0.75 
+
     # Cálculos de Oferta y Demanda Finales
-    oferta_anual_m3 = (oferta_nominal * 31536000) * (1 - (impacto_cc / 100))
+    oferta_anual_m3 = (oferta_utilizable * 31536000) * (1 - (impacto_cc / 100)) * (1 - castigo_enso)
     recarga_anual_m3 = recarga_base_mm * area_cuenca_km2 * 1000
     consumo_anual_m3 = demanda_m3s * 31536000
     
@@ -481,7 +493,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     with st.spinner("Sincronizando inventario predial de Supabase..."):
         ha_reales_sig, info_debug, gdf_predios_mapa = obtener_predios_y_hectareas(gdf_zona, nombre_zona)
 
-    # 🗺️ 2. EL MAPA SATELITAL (Tu código original intacto)
+    # 🗺️ 2. EL MAPA SATELITAL
     with st.expander(f"🛰️ EXPLORADOR ESPACIAL Y COBERTURAS (Google Earth Engine): {nombre_zona}", expanded=True):
         if estres_hidrico_porcentaje > 80: color_alerta, opacidad_alerta = '#8B0000', 0.5
         elif estres_hidrico_porcentaje > 40: color_alerta, opacidad_alerta = '#E74C3C', 0.4
@@ -554,7 +566,6 @@ if gdf_zona is not None and not gdf_zona.empty:
             <li style='margin-bottom: 6px;'><span style='background:#E4A63F; width: 16px; height: 16px; display: inline-block; margin-right: 8px;'></span>Pastos</li>
             <li style='margin-bottom: 6px;'><span style='background:#A55194; width: 16px; height: 16px; display: inline-block; margin-right: 8px;'></span>Cultivos</li>
             <li style='margin-bottom: 6px;'><span style='background:#C4281B; width: 16px; height: 16px; display: inline-block; margin-right: 8px;'></span>Urbano</li>
-
         </ul></div>{% endmacro %}"""
         macro = MacroElement()
         macro._template = Template(leyenda_html)
@@ -562,14 +573,14 @@ if gdf_zona is not None and not gdf_zona.empty:
         
         folium.LayerControl(position='topright').add_to(m)
         
-        # 🚀 FIX: Renderizado HTML puro para evadir el colapso de memoria
+        # 🚀 FIX 3: Renderizado HTML puro para evadir el colapso de memoria
         from folium import plugins
         import streamlit.components.v1 as components
         
         # Agregamos el botón de pantalla completa (Fullscreen)
         plugins.Fullscreen(position='topright', title='Pantalla Completa', title_cancel='Salir de Pantalla Completa').add_to(m)
         
-        # Renderizamos el mapa directamente en el navegador
+        # Renderizamos el mapa directamente en el navegador (ADIÓS st_folium)
         components.html(m._repr_html_(), height=550)
         
         # ==========================================
@@ -598,7 +609,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             </div>
             """, unsafe_allow_html=True)
 
-     # ==============================================================================
+    # ==============================================================================
     # 📍 PASO 1: LA FOTOGRAFÍA DEL PACIENTE (DIAGNÓSTICO BASE)
     # ==============================================================================
     st.markdown("---")
