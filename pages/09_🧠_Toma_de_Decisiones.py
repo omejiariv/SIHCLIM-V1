@@ -16,7 +16,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import math
 import folium
-from streamlit_folium import st_folium
 from folium import plugins
 from sqlalchemy import create_engine, text
 from scipy.interpolate import griddata
@@ -562,8 +561,17 @@ if gdf_zona is not None and not gdf_zona.empty:
         m.get_root().add_child(macro)
         
         folium.LayerControl(position='topright').add_to(m)
-        st_folium(m, width="100%", height=500, returned_objects=[])
-
+        
+        # 🚀 FIX: Renderizado HTML puro para evadir el colapso de memoria
+        from folium import plugins
+        import streamlit.components.v1 as components
+        
+        # Agregamos el botón de pantalla completa (Fullscreen)
+        plugins.Fullscreen(position='topright', title='Pantalla Completa', title_cancel='Salir de Pantalla Completa').add_to(m)
+        
+        # Renderizamos el mapa directamente en el navegador
+        components.html(m._repr_html_(), height=550)
+        
         # ==========================================
         # 5. MOSTRAR MÉTRICAS: NATURAL VS GESTIONADO
         # ==========================================
