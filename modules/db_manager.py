@@ -1,10 +1,13 @@
 # modules/db_manager.py
 
+import requests
+import pandas as pd
 import json
 import streamlit as st
 import geopandas as gpd
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
+from io import BytesIO
 
 # Obtener la URL de conexión desde secrets.toml
 try:
@@ -155,26 +158,34 @@ def get_user_preference(username, key, default=None):
 
     return default
 
-import streamlit as st
-import geopandas as gpd
-
 @st.cache_data(show_spinner=False, ttl=3600) # Cache de 1 hora para no saturar Supabase
 def cargar_concesiones_maestro():
     """
     Descarga y almacena en caché el archivo unificado de concesiones de agua 
-    directamente desde el bucket público de Supabase.
+    directamente desde el bucket público de Supabase, usando un buffer 
+    de memoria para evitar conflictos con el driver de PostgreSQL.
     """
+    
     url_concesiones = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Metabolismo_Hidrico_Antioquia_Maestro.geojson"
     
     try:
-        # GeoPandas es lo suficientemente inteligente para leer URLs públicas directamente
-        gdf_concesiones = gpd.read_file(url_concesiones)
+        # 🚀 FIX: Descargamos el archivo manualmente aislando a GeoPandas de la red
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url_concesiones, headers=headers, timeout=30)
         
-        # Opcional: Aseguramos que el Caudal sea numérico por si acaso
-        if 'Caudal_Lps' in gdf_concesiones.columns:
-            gdf_concesiones['Caudal_Lps'] = pd.to_numeric(gdf_concesiones['Caudal_Lps'], errors='coerce').fillna(0)
+        if response.status_code == 200:
+            # Leemos directamente desde la memoria RAM (BytesIO)
+            gdf_concesiones = gpd.read_file(BytesIO(response.content))
             
-        return gdf_concesiones
+            # Aseguramos que el Caudal sea numérico por si acaso
+            if 'Caudal_Lps' in gdf_concesiones.columns:
+                gdf_concesiones['Caudal_Lps'] = pd.to_numeric(gdf_concesiones['Caudal_Lps'], errors='coerce').fillna(0)
+                
+            return gdf_concesiones
+        else:
+            st.warning(f"⚠️ El servidor de archivos de Supabase devolvió el código: {response.status_code}")
+            return gpd.GeoDataFrame()
+            
     except Exception as e:
         st.error(f"⚠️ Error conectando con la Nube (Concesiones): {e}")
-        return None
+        return gpd.GeoDataFrame()
