@@ -204,6 +204,22 @@ with tab_dashboard:
         st.page_link("pages/13_🕵️_Detective.py", label="**Detective Espacial**", icon="🕵️")
         st.markdown("<small>Auditoría BD y diagnóstico de proyecciones (CRS).</small>", unsafe_allow_html=True)
 
+    st.markdown("---")
+    st.markdown("### 🚀 Nuevos Motores de Análisis Integrados")
+    col_w, col_r = st.columns(2)
+    
+    with col_w:
+        st.success("""
+        #### ⚖️ Escenarios WEAP
+        Simulador avanzado de balances hídricos. Permite proyectar escenarios de estrés, variabilidad climática (ENSO) y evaluar la resiliencia del sistema ante cambios en la demanda.
+        """)
+        
+    with col_r:
+        st.warning("""
+        #### 🏭 Inyección RURH
+        Motor ETL (Extracción, Transformación y Carga) geoespacial. Consolida en tiempo real las presiones sobre el recurso hídrico, procesando miles de concesiones directamente desde la nube.
+        """)
+
 
 # =====================================================================
 # PESTAÑA 2: ARQUITECTURA DEL SISTEMA (SUNBURST)
