@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 import geopandas as gpd
 
 import streamlit as st
+from sqlalchemy import text
 
 # --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
 st.set_page_config(page_title="Calidad y Vertimientos", page_icon="💧", layout="wide")
@@ -24,39 +25,31 @@ try:
     from modules import selectors
     from modules.config import Config
     from modules.utils import encender_gemelo_digital
+    from modules.db_manager import get_engine
 except ImportError:
-    # Fallback de rutas por si hay problemas de lectura entre carpetas
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors
     from modules.config import Config
     from modules.utils import encender_gemelo_digital
+    from modules.db_manager import get_engine
 
 try:
     import modules.water_quality as wq
 except ImportError:
-    # Fallback si el nombre del archivo es diferente en tu estructura
     import water_quality as wq
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
-# Llama al menú expandible y resalta la página actual
 selectors.renderizar_menu_navegacion("Calidad y Vertimientos")
-
-# Encendido automático del Gemelo Digital (Lectura de matrices maestras)
 encender_gemelo_digital()
 
 st.title("💧 Demanda, Calidad del Agua y Metabolismo Hídrico")
-
-st.markdown("""
-Modelo integral del ciclo hidrosocial: Desde la captación y uso del recurso, hasta el análisis de vertimientos y la autodepuración de los cuerpos de agua receptores.
-""")
+st.markdown("Modelo integral del ciclo hidrosocial: Desde la captación y uso del recurso, hasta el análisis de vertimientos y la autodepuración de los cuerpos de agua receptores.")
 
 # ====================================================================
 # 🛡️ ESTRUCTURA RAÍZ: PREVENCIÓN DE VARIABLES HUÉRFANAS
 # ====================================================================
-
-# Garantizamos que estas variables existan desde el segundo 0
 carga_total_anual_ton = 0.0
 max_dbo = 0.0
 od_minimo = 0.0
@@ -64,83 +57,52 @@ max_od_sat = 0.0
 oxigeno_salud_pct = 0.0
 demanda_m3s = st.session_state.get('demanda_total_m3s', 0.0)
 
-# 🛡️ ESCUDO DE INTERFAZ: Valores por defecto para la pestaña de Escenarios
+# Valores por defecto para Escenarios
 cobertura_ptar = 15.0
 eficiencia_ptar = 80.0
 vol_suero = 2000.0
 trat_porc = 20.0
 trat_ave = 75.0
 
-# ==============================================================================
-# 🧽 FUNCIÓN NORMALIZADORA (MATA-TILDES Y ESPACIOS)
-# ==============================================================================
 def normalizar_texto(texto):
     if pd.isna(texto): return ""
     texto_str = str(texto).lower().strip()
     return unicodedata.normalize('NFKD', texto_str).encode('ascii', 'ignore').decode('utf-8')
 
 # ==============================================================================
-# 🔌 CONECTORES A BASES DE DATOS MAESTRAS (SUPABASE DIRECTO)
+# 🔌 CONECTORES A BASES DE DATOS MAESTRAS (CLOUD NATIVE)
 # ==============================================================================
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestros_nube(tipo="vertimientos"):
-    import geopandas as gpd
-    from supabase import create_client
+    """
+    Descarga archivos públicos de Supabase aislando a GeoPandas de la red 
+    para evitar el colapso del driver psycopg2 (PostgreSQL).
+    """
+    if tipo == "vertimientos": 
+        archivo = "Vertimientos_Antioquia_Maestro.geojson"
+    else: 
+        archivo = "Metabolismo_Hidrico_Antioquia_Maestro.geojson"
+        
+    url_publica = f"https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/{archivo}"
     
-    # Búsqueda exhaustiva de credenciales (La verdadera versión a prueba de balas)
-    url_sb = None
-    key_sb = None
-    if "SUPABASE_URL" in st.secrets:
-        url_sb = st.secrets["SUPABASE_URL"]
-        key_sb = st.secrets["SUPABASE_KEY"]
-    elif "supabase" in st.secrets:
-        url_sb = st.secrets["supabase"].get("url") or st.secrets["supabase"].get("SUPABASE_URL")
-        key_sb = st.secrets["supabase"].get("key") or st.secrets["supabase"].get("SUPABASE_KEY")
-    elif "iri" in st.secrets and "SUPABASE_URL" in st.secrets["iri"]:
-        url_sb = st.secrets["iri"]["SUPABASE_URL"]
-        key_sb = st.secrets["iri"]["SUPABASE_KEY"]
-    elif "connections" in st.secrets and "supabase" in st.secrets["connections"]:
-        url_sb = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-        key_sb = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-        
-    if not url_sb or not key_sb:
-        st.error("❌ Faltan credenciales de Supabase en secrets.")
-        return gpd.GeoDataFrame()
-        
     try:
-        cliente = create_client(url_sb, key_sb)
-        bucket = "sihcli_maestros"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url_publica, headers=headers, timeout=30)
         
-        # Seleccionar el archivo correcto según lo que pida la página
-        if tipo == "vertimientos": archivo = "Vertimientos_Antioquia_Maestro.geojson"
-        else: archivo = "Metabolismo_Hidrico_Antioquia_Maestro.geojson"
-            
-        rutas_posibles = [f"Puntos_de_interes/{archivo}", archivo]
-        
-        gdf_maestro = gpd.GeoDataFrame()
-        for ruta in rutas_posibles:
-            try:
-                url_publica = cliente.storage.from_(bucket).get_public_url(ruta)
-                gdf_maestro = gpd.read_file(url_publica)
-                if not gdf_maestro.empty: break
-            except Exception:
-                continue
-        
-        if not gdf_maestro.empty and gdf_maestro.crs != "EPSG:3116":
-            gdf_maestro = gdf_maestro.to_crs(epsg=3116)
-            
-        return gdf_maestro
-        
+        if response.status_code == 200:
+            gdf_maestro = gpd.read_file(io.BytesIO(response.content))
+            if not gdf_maestro.empty and gdf_maestro.crs != "EPSG:3116":
+                gdf_maestro = gdf_maestro.to_crs(epsg=3116)
+            return gdf_maestro
+        else:
+            return gpd.GeoDataFrame()
     except Exception as e:
-        st.error(f"❌ Error crítico procesando la base de {tipo}: {e}")
+        st.error(f"❌ Error descargando capa {tipo}: {e}")
         return gpd.GeoDataFrame()
-        
-from modules.config import Config
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_municipios():
     try:
-        # ☁️ NUBE: Leemos el maestro demográfico oficial desde Supabase
         df = pd.read_parquet(Config.POBLACION_MAESTRA_URL)
         if 'departamento' in df.columns: df.rename(columns={'departamento': 'depto_nom'}, inplace=True)
         if not df.empty and 'municipio' in df.columns:
@@ -148,18 +110,13 @@ def cargar_municipios():
             df['municipio'] = df['municipio'].astype(str).str.strip().str.title()
             df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
             return df
-    except Exception as e:
-        pass
+    except: pass
     return pd.DataFrame()
 
-# 🌉 PUENTES DE COMPATIBILIDAD HÍBRIDOS (SUPABASE + POSTGRESQL)
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_vertimientos():
-    import pandas as pd
-    # Cargamos el estándar de oro desde la nube (Supabase)
     gdf = cargar_maestros_nube("vertimientos")
-    if gdf.empty: 
-        return pd.DataFrame()
+    if gdf.empty: return pd.DataFrame()
     
     df = pd.DataFrame(gdf)
     df['caudal_vert_lps'] = df.get('Caudal_Lps', 0.0)
@@ -167,7 +124,6 @@ def cargar_vertimientos():
     df['tipo_vertimiento'] = df.get('Tipo_Vertimiento', 'No Registrado')
     df['car_norm'] = df.get('Autoridad', '').apply(normalizar_texto)
     
-    # Extracción de coordenadas para el filtro espacial de tu página
     if 'geometry' in gdf.columns:
         centroides = gdf.geometry.centroid
         df['coordenada_x'] = centroides.x.fillna(0)
@@ -178,25 +134,18 @@ def cargar_vertimientos():
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_concesiones():
-    import pandas as pd
-    from sqlalchemy import text
-    try:
-        from modules.db_manager import get_engine
-        engine = get_engine()
+    engine = get_engine()
+    if engine is None: return pd.DataFrame()
         
-        if engine is None:
-            return pd.DataFrame()
-            
-        # 🚀 LECTURA DIRECTA Y LIMPIA: 
-        # El engine ya viene blindado desde db_manager.py con connect_args (statement_timeout), 
-        # por lo que ya no necesitamos parches ni chunking.
+    try:
+        # 🚀 FIX: Conexión explícita requerida por Pandas moderno
         query = text("SELECT * FROM concesiones_maestras_rurh_raw")
-        df = pd.read_sql(query, engine)
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
         
         if df.empty: return pd.DataFrame()
 
         cols = df.columns.tolist()
-        
         col_caudal = next((c for c in cols if str(c).lower() in ['caudal_total_requerido_lps', 'caudal_lps', 'caudal', 'caudal_m3s']), None)
         col_x = next((c for c in cols if str(c).lower() in ['x_coord', 'longitud_w', 'coordenada_x', 'lon', 'x']), None)
         col_y = next((c for c in cols if str(c).lower() in ['y_coord', 'latitud_n', 'coordenada_y', 'lat', 'y']), None)
@@ -207,7 +156,6 @@ def cargar_concesiones():
         df['coordenada_x'] = pd.to_numeric(df[col_x], errors='coerce').fillna(0) if col_x else 0.0
         df['coordenada_y'] = pd.to_numeric(df[col_y], errors='coerce').fillna(0) if col_y else 0.0
         
-        # 🚀 RESCATE DE LA LLAVE MAESTRA
         col_terr = next((c for c in cols if str(c).lower() == 'territorio'), None)
         if col_terr: df['Territorio'] = df[col_terr].astype(str).str.strip()
         
@@ -228,9 +176,17 @@ def cargar_concesiones():
         df['Sector_Sihcli'] = df['uso_detalle'].apply(clasificar_uso)
         return df
     except Exception as e:
-        import streamlit as st
-        st.error(f"Error cargando concesiones: {e}")
+        st.error(f"Error cargando concesiones RURH: {e}")
         return pd.DataFrame()
+
+# ==============================================================================
+# 🚀 FIX: ENCENDIDO DEL RURH EN LA TELEMETRÍA (NIVEL GLOBAL)
+# ==============================================================================
+# Invocamos la función y enviamos silenciosamente la data a la memoria del Aleph
+df_rurh_global = cargar_concesiones()
+if not df_rurh_global.empty:
+    st.session_state['aleph_concesiones_m3s'] = df_rurh_global['caudal_lps'].sum() / 1000.0
+    st.session_state['aleph_rurh_puntos'] = len(df_rurh_global)
         
 @st.cache_data(show_spinner=False, ttl=3600)
 def cargar_maestros_pecuarios():
