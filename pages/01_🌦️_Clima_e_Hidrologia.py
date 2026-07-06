@@ -128,41 +128,67 @@ def main():
         st.warning(f"⚠️ No se encontraron estaciones meteorológicas dentro de la zona: {nombre_zona}.")
         st.stop()
 
-    # --- C. FILTRO DE LLUVIAS ---
-    if df_all_rain is not None and not df_all_rain.empty:
-        df_all_rain['id_estacion'] = df_all_rain['id_estacion'].astype(str).str.strip()
-        ids_estaciones = [str(x).strip() for x in ids_estaciones]
-        
-        # 1. 📂 Extracción de la zona seleccionada (Copia segura)
-        df_long = df_all_rain[df_all_rain['id_estacion'].isin(ids_estaciones)].copy()
-        
-        # 🛡️ 2. FILTRO DE INTEGRIDAD FÍSICA (PURGA DE ANOMALÍAS EXTREMAS)
-        if not df_long.empty and Config.PRECIPITATION_COL in df_long.columns:
-            umbral_maximo = 8000  # Límite físico en mm (Ej. diluvios irreales > 30,000mm)
-            picos_mask = df_long[Config.PRECIPITATION_COL] > umbral_maximo
+    # =========================================================================
+    # --- C. DESCARGA DINÁMICA DE LLUVIAS (EL FIX ARQUITECTÓNICO) ---
+    # =========================================================================
+    # En lugar de descargar millones de datos, le pedimos a Supabase SOLO 
+    # los datos de las estaciones que caen en nuestra cuenca.
+    with st.spinner(f"☁️ Descargando historial de precipitaciones para {len(ids_estaciones)} estaciones..."):
+        try:
+            ids_fmt = ",".join([f"'{str(x).strip()}'" for x in ids_estaciones])
+            q_lluvia = text(f"SELECT id_estacion, fecha, valor FROM precipitacion WHERE id_estacion IN ({ids_fmt})")
             
-            if picos_mask.any():
-                num_picos = picos_mask.sum()
-                st.warning(f"⚠️ Alerta de Calidad: Se neutralizaron {num_picos} registros físicamente imposibles (> {umbral_maximo}mm) en esta zona. Han sido pasados a nulos para no sesgar la interpolación.")
-                df_long.loc[picos_mask, Config.PRECIPITATION_COL] = np.nan
-        
-        # 3. 📍 Filtro de geometrías espaciales
-        if gdf_stations is not None:
-            gdf_stations['id_estacion'] = gdf_stations['id_estacion'].astype(str).str.strip()
-            # Usamos .copy() también aquí por buenas prácticas espaciales
-            gdf_filtered = gdf_stations[gdf_stations['id_estacion'].isin(ids_estaciones)].copy()
-        else:
-            gdf_filtered = gpd.GeoDataFrame()
-    else:
-        st.warning("No hay datos de lluvia disponibles en el sistema para esta selección.")
-        st.stop()
+            engine_lluvia = get_engine()
+            with engine_lluvia.connect() as conn:
+                df_all_rain = pd.read_sql(q_lluvia, conn)
+            
+            if not df_all_rain.empty:
+                # Damos formato a las columnas
+                df_all_rain['id_estacion'] = df_all_rain['id_estacion'].astype(str).str.strip()
+                df_all_rain = df_all_rain.rename(columns={'fecha': Config.DATE_COL, 'valor': Config.PRECIPITATION_COL})
+                df_all_rain[Config.DATE_COL] = pd.to_datetime(df_all_rain[Config.DATE_COL])
+                df_all_rain[Config.PRECIPITATION_COL] = pd.to_numeric(df_all_rain[Config.PRECIPITATION_COL], errors='coerce')
+                df_all_rain = df_all_rain.dropna(subset=[Config.DATE_COL])
+                df_all_rain[Config.YEAR_COL] = df_all_rain[Config.DATE_COL].dt.year
+                df_all_rain[Config.MONTH_COL] = df_all_rain[Config.DATE_COL].dt.month
+                
+                # Unimos con los nombres de las estaciones
+                df_long = pd.merge(
+                    df_all_rain,
+                    gdf_stations[["id_estacion", Config.STATION_NAME_COL]],
+                    on="id_estacion",
+                    how="inner"
+                )
+            else:
+                df_long = pd.DataFrame()
+                
+        except Exception as e:
+            st.error(f"Error descargando historial de lluvias: {e}")
+            df_long = pd.DataFrame()
 
     if df_long.empty:
         st.warning(f"La zona '{nombre_zona}' no tiene registros históricos de precipitación válidos.")
         st.stop()
 
+    # 🛡️ 2. FILTRO DE INTEGRIDAD FÍSICA (PURGA DE ANOMALÍAS EXTREMAS)
+    if Config.PRECIPITATION_COL in df_long.columns:
+        umbral_maximo = 8000  # Límite físico en mm (Ej. diluvios irreales > 30,000mm)
+        picos_mask = df_long[Config.PRECIPITATION_COL] > umbral_maximo
+        
+        if picos_mask.any():
+            num_picos = picos_mask.sum()
+            st.warning(f"⚠️ Alerta de Calidad: Se neutralizaron {num_picos} registros físicamente imposibles (> {umbral_maximo}mm) en esta zona. Han sido pasados a nulos para no sesgar la interpolación.")
+            df_long.loc[picos_mask, Config.PRECIPITATION_COL] = np.nan
+    
+    # 3. 📍 Filtro de geometrías espaciales
+    if gdf_stations is not None:
+        gdf_stations['id_estacion'] = gdf_stations['id_estacion'].astype(str).str.strip()
+        gdf_filtered = gdf_stations[gdf_stations['id_estacion'].isin(ids_estaciones)].copy()
+    else:
+        gdf_filtered = gpd.GeoDataFrame()
+
     # =========================================================================
-    # --- C. JERARQUÍA DE NAVEGACIÓN ---
+    # --- JERARQUÍA DE NAVEGACIÓN ---
     # =========================================================================
     st.markdown("""
     <style>
