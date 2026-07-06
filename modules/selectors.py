@@ -47,10 +47,17 @@ def renderizar_telemetria_aleph():
         else:
             st.markdown("🌧️ **Hidrología:** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
 
-        # Sensor RURH (Concesiones y Extracciones)
-        rurh_viva = st.session_state.get('aleph_concesiones_m3s', 0.0)
-        if rurh_viva > 0:
-            st.markdown(f"🏭 **RURH (Extracción):** <span style='color:#e67e22'>Activa ({rurh_viva:,.3f} m³/s)</span>", unsafe_allow_html=True)
+        # 🚀 FIX: Sensor RURH Multi-Variable (Caudal y Puntos)
+        rurh_m3s = st.session_state.get('aleph_concesiones_m3s', 0.0)
+        rurh_lps = st.session_state.get('aleph_rurh_caudal_lps', 0.0)
+        rurh_puntos = st.session_state.get('aleph_rurh_puntos', 0)
+        
+        # Unificamos el caudal a m³/s para la visualización
+        caudal_total_m3s = rurh_m3s if rurh_m3s > 0 else (rurh_lps / 1000.0)
+        
+        if caudal_total_m3s > 0 or rurh_puntos > 0:
+            puntos_str = f" | {rurh_puntos} pts" if rurh_puntos > 0 else ""
+            st.markdown(f"🏭 **RURH (Extracción):** <span style='color:#e67e22'>Activa ({caudal_total_m3s:,.3f} m³/s{puntos_str})</span>", unsafe_allow_html=True)
         else:
             st.markdown("🏭 **RURH (Extracción):** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
             
