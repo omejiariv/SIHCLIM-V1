@@ -502,7 +502,9 @@ if gdf_zona is not None:
             st.info("Sin datos suficientes para el balance.")
 
 
+    # =========================================================================
     # --- TAB 2: MAPA DE CONTEXTO ---
+    # =========================================================================
     with tab2:
         if st.button("🔄 Recargar Mapa Contexto", key="btn_ctx_uniq"): st.rerun()
         
@@ -516,28 +518,38 @@ if gdf_zona is not None:
 
             st.markdown("<style>.leaflet-tooltip {white-space: normal !important; max-width: 300px;}</style>", unsafe_allow_html=True)
 
-            # Cargar capas externas (si existen)
+            # --- 1. CAPAS HIDROGEOLÓGICAS (VECTOR CON COLORES Y HOVER) ---
             if hasattr(hydrogeo_utils, 'cargar_capas_gis_optimizadas'):
                 try: 
                     layers = hydrogeo_utils.cargar_capas_gis_optimizadas(engine, [min_lon-pad, min_lat-pad, max_lon+pad, max_lat+pad])
                     
                     if 'hidro' in layers:
                         gdf_hidro = layers['hidro']
-                        # 🚀 FIX 1: Añadir HOVER (Tooltip) a la Hidrogeología
-                        # Extraemos las primeras columnas descriptivas para mostrarlas al pasar el ratón
                         cols_tooltip = [c for c in gdf_hidro.columns if c.lower() not in ['geometry', 'geom', 'shape', 'id', 'objectid', 'index']][:4]
                         
+                        # 🚀 FIX 1: Generador de colores únicos y traslúcidos basados en el nombre de la unidad
+                        import hashlib
+                        def obtener_color_unico(feature):
+                            props = list(feature['properties'].values())
+                            val = str(props[0]) if props else "default"
+                            hash_obj = hashlib.md5(val.encode())
+                            return '#' + hash_obj.hexdigest()[:6]
+
                         folium.GeoJson(
                             gdf_hidro, 
                             name="Hidrogeología", 
-                            style_function=lambda x: {'color': '#2c3e50', 'weight': 0.5, 'fillOpacity': 0.3},
+                            style_function=lambda feature: {
+                                'fillColor': obtener_color_unico(feature), 
+                                'color': '#2c3e50', 
+                                'weight': 1, 
+                                'fillOpacity': 0.5 # 👈 Traslucidez
+                            },
                             tooltip=folium.GeoJsonTooltip(fields=cols_tooltip) if cols_tooltip else None
                         ).add_to(m)
                 except Exception as e: 
                     pass
 
-            # Capa Raster (Coberturas)
-            # NOTA: Al ser Raster (píxeles) no soporta Hover nativo, pero se renderiza visualmente
+            # --- 2. CAPA DE COBERTURAS (RASTER) ---
             if land_cover and ruta_temporal and os.path.exists(ruta_temporal) and gdf_zona is not None:
                 try:
                     img_cob, bounds_cob = land_cover.obtener_imagen_folium_coberturas(gdf_zona, ruta_temporal)
@@ -545,6 +557,27 @@ if gdf_zona is not None:
                         folium.raster_layers.ImageOverlay(img_cob, bounds_cob, opacity=0.6, name="Coberturas").add_to(m)
                 except Exception as e: 
                     st.warning(f"No se pudo cargar la capa de coberturas en el mapa: {e}")
+
+            # --- 3. LEYENDA FLOTANTE DE COBERTURAS ---
+            # 🚀 FIX 2: Inyectamos una leyenda HTML estática en el mapa
+            from branca.element import Template, MacroElement
+            leyenda_html = """
+            {% macro html(this, kwargs) %}
+            <div style="position: fixed; bottom: 30px; left: 30px; width: 180px; height: auto; 
+                background-color: white; z-index:9999; font-size:12px; border:2px solid grey; 
+                padding: 10px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);">
+                <b>Coberturas (Leyenda)</b><br>
+                <i style="background: #228B22; width: 15px; height: 15px; float: left; margin-right: 5px; opacity: 0.8;"></i> Bosque/Natural<br>
+                <i style="background: #FFD700; width: 15px; height: 15px; float: left; margin-right: 5px; opacity: 0.8;"></i> Agrícola<br>
+                <i style="background: #FF8C00; width: 15px; height: 15px; float: left; margin-right: 5px; opacity: 0.8;"></i> Pecuario/Pastos<br>
+                <i style="background: #1E90FF; width: 15px; height: 15px; float: left; margin-right: 5px; opacity: 0.8;"></i> Cuerpos de Agua<br>
+                <i style="background: #A9A9A9; width: 15px; height: 15px; float: left; margin-right: 5px; opacity: 0.8;"></i> Urbano<br>
+            </div>
+            {% endmacro %}
+            """
+            macro = MacroElement()
+            macro._template = Template(leyenda_html)
+            m.get_root().add_child(macro)
 
             # Marcadores Estaciones
             fg = folium.FeatureGroup(name="Estaciones", show=True)
@@ -572,66 +605,56 @@ if gdf_zona is not None:
             components.html(m._repr_html_(), height=650)
 
         except Exception as e:
-            st.error(f"Error renderizando mapa: {e}")
+            st.error(f"Error renderizando mapa de contexto: {e}")
 
+    # =========================================================================
     # --- TAB 3: MAPA DE RECARGA (SUPERFICIE CONTINUA Y SEGURA) ---
+    # =========================================================================
     with tab3:
         st.markdown("##### 💧 Distribución Espacial de la Oferta Subterránea")
         
         if 'df_mapa_stats' not in locals() or df_mapa_stats.empty or 'recarga_calc' not in df_mapa_stats.columns:
             st.warning("⚠️ No hay datos suficientes para generar el mapa. Verifica las estaciones.")
         else:
-            # 1. Limpieza estricta de datos nulos
             df_valid = df_mapa_stats.dropna(subset=['latitud', 'longitud', 'recarga_calc']).copy()
             
-            # 🛡️ LA REGLA DE ORO GEOMÉTRICA: Mínimo 3 estaciones para crear una superficie
             if len(df_valid) < 3:
-                st.warning(f"⚠️ **Faltan Puntos de Control:** Se encontraron {len(df_valid)} estación(es) válida(s). Para generar un mapa de superficie continua mediante interpolación matemática, se requieren **mínimo 3 estaciones** que formen un polígono espacial.")
-                st.info("💡 **Solución:** Ve al panel lateral (Sidebar), aumenta el 'Radio de Búsqueda (Buffer)' y vuelve a procesar para capturar estaciones vecinas que rodeen tu cuenca.")
+                st.warning(f"⚠️ **Faltan Puntos de Control:** Se encontraron {len(df_valid)} estación(es) válida(s). Para generar la interpolación se requieren mínimo 3 estaciones.")
+                st.info("💡 **Solución:** Aumenta el 'Radio de Búsqueda (Buffer)' en el panel lateral.")
                 
-                # Fallback: Mostrar al menos los puntos y la cuenca si hay 1 o 2 estaciones
+                # Fallback: Solo puntos
                 if len(df_valid) > 0:
-                    with st.spinner("Mostrando puntos de control disponibles..."):
-                        c_lat = df_valid['latitud'].mean()
-                        c_lon = df_valid['longitud'].mean()
-                        m_recarga_fallback = folium.Map(location=[c_lat, c_lon], zoom_start=10, tiles='cartodbpositron')
+                    c_lat, c_lon = df_valid['latitud'].mean(), df_valid['longitud'].mean()
+                    m_recarga_fallback = folium.Map(location=[c_lat, c_lon], zoom_start=10, tiles='cartodbpositron')
 
-                        if gdf_zona is not None and not gdf_zona.empty:
-                            gdf_zona_4326 = gdf_zona.to_crs(epsg=4326)
-                            folium.GeoJson(
-                                gdf_zona_4326,
-                                name="Límite de Análisis",
-                                style_function=lambda x: {'fillColor': 'none', 'color': '#2c3e50', 'weight': 3, 'dashArray': '5, 5'}
-                            ).add_to(m_recarga_fallback)
+                    if gdf_zona is not None and not gdf_zona.empty:
+                        folium.GeoJson(
+                            gdf_zona.to_crs(epsg=4326),
+                            style_function=lambda x: {'fillColor': 'none', 'color': '#2c3e50', 'weight': 3, 'dashArray': '5, 5'}
+                        ).add_to(m_recarga_fallback)
 
-                        for idx, row in df_valid.iterrows():
-                            folium.CircleMarker(
-                                location=[row['latitud'], row['longitud']],
-                                radius=8, color="black", weight=1, fill=True, fill_color="#3498db", fill_opacity=0.8,
-                                popup=f"<b>Estación:</b> {row['nombre']}<br><b>Recarga:</b> {row['recarga_calc']:.1f} mm/año"
-                            ).add_to(m_recarga_fallback)
+                    for idx, row in df_valid.iterrows():
+                        folium.CircleMarker(
+                            location=[row['latitud'], row['longitud']], radius=8, color="black", weight=1, fill=True, fill_color="#3498db", fill_opacity=0.8,
+                            popup=f"<b>Estación:</b> {row['nombre']}<br><b>Recarga:</b> {row['recarga_calc']:.1f} mm/año"
+                        ).add_to(m_recarga_fallback)
 
-                        import streamlit.components.v1 as components
-                        components.html(m_recarga_fallback._repr_html_(), height=550)
-
+                    import streamlit.components.v1 as components
+                    components.html(m_recarga_fallback._repr_html_(), height=550)
             else:
-                # 🛡️ MOTOR DE SUPERFICIE CONTINUA (Griddata Blindado)
-                with st.spinner("Calculando superficie continua de recarga (Interpolación de grilla)..."):
+                with st.spinner("Calculando superficie de recarga (PNG Base64)..."):
                     try:
-                        c_lat = df_valid['latitud'].mean()
-                        c_lon = df_valid['longitud'].mean()
+                        c_lat, c_lon = df_valid['latitud'].mean(), df_valid['longitud'].mean()
                         m_recarga = folium.Map(location=[c_lat, c_lon], zoom_start=10, tiles='cartodbpositron')
 
-                        # 1. Dibujar el Límite de la Cuenca
                         if gdf_zona is not None and not gdf_zona.empty:
-                            gdf_zona_4326 = gdf_zona.to_crs(epsg=4326)
                             folium.GeoJson(
-                                gdf_zona_4326,
+                                gdf_zona.to_crs(epsg=4326),
                                 name="Límite de Análisis",
                                 style_function=lambda x: {'fillColor': 'none', 'color': '#2c3e50', 'weight': 3, 'dashArray': '5, 5'}
                             ).add_to(m_recarga)
 
-                        # 2. Interpolación Matemática (griddata)
+                        # Interpolación Matemática
                         import numpy as np
                         from scipy.interpolate import griddata
                         import matplotlib.cm as cm
@@ -642,7 +665,6 @@ if gdf_zona is not None:
                         min_lat, max_lat = df_valid['latitud'].min() - margen, df_valid['latitud'].max() + margen
                         
                         grid_lon, grid_lat = np.mgrid[min_lon:max_lon:100j, min_lat:max_lat:100j]
-                        
                         puntos = df_valid[['longitud', 'latitud']].values
                         valores = df_valid['recarga_calc'].values
                         
@@ -653,26 +675,38 @@ if gdf_zona is not None:
                             
                         grid_z = np.nan_to_num(grid_z, nan=np.nanmean(valores))
 
-                        # 🚀 FIX 2: CONVERSIÓN A PÍXELES (uint8) PARA QUE EL NAVEGADOR LO ENTIENDA
+                        # 🚀 FIX 3: Traducción de Matriz a Imagen PNG Codificada (Base64)
+                        # Rotamos y volteamos la matriz para que coincida con la geografía norte-sur
+                        grid_z_img = np.flipud(grid_z.T) 
+                        
                         norm = Normalize(vmin=valores.min(), vmax=valores.max())
                         cmap = cm.get_cmap('YlGnBu') 
-                        colored_grid = (cmap(norm(grid_z)) * 255).astype(np.uint8)
+                        rgba_img = cmap(norm(grid_z_img))
+                        colored_grid_uint8 = (rgba_img * 255).astype(np.uint8)
+                        
+                        from PIL import Image
+                        import base64
+                        from io import BytesIO
+                        
+                        # Creamos la imagen real en memoria
+                        img_pil = Image.fromarray(colored_grid_uint8, mode='RGBA')
+                        buffered = BytesIO()
+                        img_pil.save(buffered, format="PNG")
+                        img_base64 = base64.b64encode(buffered.getvalue()).decode()
+                        url_imagen_segura = f"data:image/png;base64,{img_base64}"
                         
                         folium.raster_layers.ImageOverlay(
-                            image=colored_grid,
+                            image=url_imagen_segura,
                             bounds=[[min_lat, min_lon], [max_lat, max_lon]],
-                            opacity=0.6,
-                            name="Superficie de Recarga Continua",
-                            interactive=True,
-                            cross_origin=False
+                            opacity=0.65,
+                            name="Superficie de Recarga Continua"
                         ).add_to(m_recarga)
                         
-                        # 3. Dibujar las estaciones reales encima
+                        # Estaciones
                         for idx, row in df_valid.iterrows():
                             folium.CircleMarker(
-                                location=[row['latitud'], row['longitud']],
-                                radius=5, color="black", weight=1, fill=True, fill_color="#e74c3c", fill_opacity=1,
-                                popup=f"<b>Estación:</b> {row['nombre']}<br><b>Recarga Base:</b> {row['recarga_calc']:.1f} mm/año"
+                                location=[row['latitud'], row['longitud']], radius=5, color="black", weight=1, fill=True, fill_color="#e74c3c", fill_opacity=1,
+                                popup=f"<b>Estación:</b> {row['nombre']}<br><b>Recarga:</b> {row['recarga_calc']:.1f} mm/año"
                             ).add_to(m_recarga)
 
                         folium.LayerControl().add_to(m_recarga)
@@ -684,7 +718,7 @@ if gdf_zona is not None:
                         
                     except Exception as e:
                         st.error(f"Error generando la superficie continua: {e}")
-
+                        
     # =========================================================================
     # ⚖️ TAB 4: ADMINISTRACIÓN SOSTENIBLE Y GOBERNANZA HÍDRICA
     # =========================================================================
