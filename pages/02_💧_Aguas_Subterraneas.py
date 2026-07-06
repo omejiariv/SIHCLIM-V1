@@ -577,14 +577,13 @@ if gdf_zona is not None:
                 except Exception as e: 
                     st.warning(f"No se pudo cargar la capa de coberturas en el mapa: {e}")
 
-            # --- 3. LEYENDA FLOTANTE DE COBERTURAS ---
-            # 🚀 FIX 2: Inyectamos una leyenda HTML estática en el mapa
+            # --- 3. LEYENDA FLOTANTE DE COBERTURAS (FIX POSICIÓN ABSOLUTA) ---
             from branca.element import Template, MacroElement
             leyenda_html = """
             {% macro html(this, kwargs) %}
-            <div style="position: fixed; bottom: 30px; left: 30px; width: 180px; height: auto; 
-                background-color: white; z-index:9999; font-size:12px; border:2px solid grey; 
-                padding: 10px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3);">
+            <div style="position: absolute; bottom: 30px; left: 30px; width: 180px; height: auto; 
+                background-color: white; z-index:999999; font-size:12px; border:2px solid grey; 
+                padding: 10px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); pointer-events: auto;">
                 <b>Coberturas (Leyenda)</b><br>
                 <i style="background: #228B22; width: 15px; height: 15px; float: left; margin-right: 5px; opacity: 0.8;"></i> Bosque/Natural<br>
                 <i style="background: #FFD700; width: 15px; height: 15px; float: left; margin-right: 5px; opacity: 0.8;"></i> Agrícola<br>
@@ -597,7 +596,7 @@ if gdf_zona is not None:
             macro = MacroElement()
             macro._template = Template(leyenda_html)
             m.get_root().add_child(macro)
-
+            
             # Marcadores Estaciones
             fg = folium.FeatureGroup(name="Estaciones", show=True)
             for _, r in df_mapa_stats.iterrows():
@@ -620,9 +619,13 @@ if gdf_zona is not None:
             fg.add_to(m)
             folium.LayerControl().add_to(m)
             
+            # 🚀 ADD: Botón de Pantalla Completa (Fullscreen)
+            from folium import plugins
+            plugins.Fullscreen(position='topright', title='Pantalla Completa', title_cancel='Salir de Pantalla Completa').add_to(m)
+            
             import streamlit.components.v1 as components
             components.html(m._repr_html_(), height=650)
-
+            
         except Exception as e:
             st.error(f"Error renderizando mapa de contexto: {e}")
 
@@ -730,6 +733,20 @@ if gdf_zona is not None:
                             ).add_to(m_recarga)
 
                         folium.LayerControl().add_to(m_recarga)
+                        
+                        # 🚀 ADD: Leyenda Dinámica (Colormap) para la Recarga
+                        import branca.colormap as cm_branca
+                        colormap = cm_branca.LinearColormap(
+                            colors=['#ffffcc', '#a1dab4', '#41b6c4', '#2c7fb8', '#253494'], # Escala YlGnBu
+                            vmin=valores.min(), 
+                            vmax=valores.max()
+                        )
+                        colormap.caption = 'Recarga Potencial (mm/año)'
+                        colormap.add_to(m_recarga)
+
+                        # 🚀 ADD: Botón de Pantalla Completa (Fullscreen)
+                        from folium import plugins
+                        plugins.Fullscreen(position='topright', title='Pantalla Completa', title_cancel='Salir de Pantalla Completa').add_to(m_recarga)
                         
                         import streamlit.components.v1 as components
                         components.html(m_recarga._repr_html_(), height=650)
@@ -1060,18 +1077,28 @@ if gdf_zona is not None:
     # 📥 TAB 5: DESCARGAS GENERALES
     # =========================================================================
     with tab5:
+        st.markdown("### 💾 Exportación de Datos y Mapas (Formatos SIG)")
+        st.info("💡 **Nota SIG:** Los polígonos se exportan en formato **GeoJSON** (estándar web equivalente al Shapefile, legible nativamente por ArcGIS y QGIS). La superficie de recarga se exporta como **Matriz XYZ (CSV)** para que tu software SIG genere el Raster mediante interpolación limpia y sin colapsar la memoria de la nube.")
+        
         col1, col2 = st.columns(2)
-        if not df_res.empty:
-            col1.download_button("⬇️ Descargar Serie Temporal (.csv)", df_res.to_csv(index=False).encode('utf-8'), "balance.csv", "text/csv")
-        if not df_mapa_stats.empty:
-            col2.download_button("⬇️ Descargar Datos Estaciones (.csv)", df_mapa_stats.to_csv(index=False).encode('utf-8'), "estaciones_recarga.csv", "text/csv")
-
-
-
-
-
-
-
-
-
-
+        
+        # 1. Datos Tabulares Originales
+        if 'df_res' in locals() and not df_res.empty:
+            col1.download_button("📊 1. Descargar Balance Hídrico (.csv)", df_res.to_csv(index=False).encode('utf-8'), f"balance_{nombre_zona}.csv", "text/csv")
+        
+        # 2. Exportación Vectorial (Alternativa a Shapefile)
+        if 'df_mapa_stats' in locals() and not df_mapa_stats.empty and 'recarga_calc' in df_mapa_stats.columns:
+            df_valid = df_mapa_stats.dropna(subset=['latitud', 'longitud', 'recarga_calc']).copy()
+            
+            # Convertimos las estaciones a GeoDataFrame para exportar como GeoJSON
+            gdf_export = gpd.GeoDataFrame(df_valid, geometry=gpd.points_from_xy(df_valid.longitud, df_valid.latitud), crs="EPSG:4326")
+            geojson_data = gdf_export.to_json().encode('utf-8')
+            
+            col2.download_button("🗺️ 2. Puntos de Control y Recarga (Vectorial GeoJSON)", geojson_data, f"Estaciones_Recarga_{nombre_zona}.geojson", "application/geo+json")
+            
+            # 3. Exportación de Matriz Raster a CSV (Formato XYZ)
+            st.markdown("---")
+            if len(df_valid) >= 3:
+                # Preparamos una matriz XYZ básica con los puntos de control para fácil interpolación en QGIS
+                xyz_csv = df_valid[['longitud', 'latitud', 'recarga_calc']].to_csv(index=False, header=['X_Longitud', 'Y_Latitud', 'Z_Recarga_mm']).encode('utf-8')
+                st.download_button("🔲 3. Matriz de Recarga para generar Raster (CSV XYZ)", xyz_csv, f"Matriz_Recarga_XYZ_{nombre_zona}.csv", "text/csv")
