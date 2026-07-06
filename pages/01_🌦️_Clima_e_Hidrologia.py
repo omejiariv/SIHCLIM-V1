@@ -149,6 +149,10 @@ def main():
     # los datos de las estaciones que caen en nuestra cuenca.
     with st.spinner(f"☁️ Descargando historial de precipitaciones para {len(ids_estaciones)} estaciones..."):
         try:
+            # 🛡️ FIX: Importaciones locales blindadas para evitar el error de "local variable 'text'"
+            from sqlalchemy import text
+            from modules.db_manager import get_engine
+
             ids_fmt = ",".join([f"'{str(x).strip()}'" for x in ids_estaciones])
             q_lluvia = text(f"SELECT id_estacion, fecha, valor FROM precipitacion WHERE id_estacion IN ({ids_fmt})")
             
