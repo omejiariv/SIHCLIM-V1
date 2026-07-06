@@ -100,10 +100,20 @@ def main():
         st.sidebar.error(f"Error en Selector: {e}")
         st.stop()
 
-    # 🔥 FIX 1: Validamos contra el nombre del territorio, no contra la lista vacía de estaciones
+    # 🔥 FIX 1: Validamos contra el nombre del territorio
     if not nombre_zona or nombre_zona in ["-- Seleccione --", "Sin Selección", "NINGUNO", "Antioquia"]:
         st.info("👈 Seleccione una Cuenca o Municipio en el menú lateral para comenzar.")
         st.stop()
+
+    # 🚀 FIX 2: RESTAURACIÓN DEL BUFFER ESPACIAL EN EL SIDEBAR
+    st.sidebar.markdown("---")
+    buffer_km = st.sidebar.slider(
+        "🎯 Radio de Búsqueda (Buffer en km):", 
+        min_value=0.0, max_value=50.0, value=15.0, step=1.0, 
+        help="Expande la zona de búsqueda para capturar estaciones vecinas. Es vital para cuencas pequeñas (como NSS3) que no tienen estaciones dentro de su límite exacto."
+    )
+    # Guardamos en sesión para que el Motor Aleph (Mapas) respete este mismo buffer
+    st.session_state['buffer_global_km'] = buffer_km
 
     # --- B. CARGA DE DATOS ---
     try:
@@ -112,20 +122,24 @@ def main():
         st.error(f"Error cargando datos base: {e}")
         st.stop()
 
-    # 🌍 FIX 2: INTERSECCIÓN ESPACIAL (Recuperamos las estaciones perdidas)
-    # Cruzamos las geometrías en vivo usando Geopandas para detectar estaciones en la zona
+    # 🌍 FIX 3: INTERSECCIÓN ESPACIAL GEODÉSICA (CON BUFFER)
     ids_estaciones = []
     if gdf_zona is not None and not gdf_zona.empty and gdf_stations is not None and not gdf_stations.empty:
-        # Aseguramos el mismo sistema de coordenadas (CRS) antes del cruce
-        if gdf_stations.crs != gdf_zona.crs:
-            gdf_zona = gdf_zona.to_crs(gdf_stations.crs)
+        # Proyectamos a Magna-Sirgas (EPSG:3116) para poder medir en metros exactos
+        gdf_zona_proj = gdf_zona.to_crs(epsg=3116)
+        gdf_stations_proj = gdf_stations.to_crs(epsg=3116)
         
-        # Intersección espacial: ¿Qué estaciones están dentro de este polígono?
-        estaciones_dentro = gpd.sjoin(gdf_stations, gdf_zona, predicate='intersects')
+        # Aplicamos el radio de expansión (convertimos km a metros)
+        if buffer_km > 0:
+            gdf_zona_proj['geometry'] = gdf_zona_proj.geometry.buffer(buffer_km * 1000)
+        
+        # Cruzamos las geometrías: ¿Qué estaciones caen en el área expandida?
+        estaciones_dentro = gpd.sjoin(gdf_stations_proj, gdf_zona_proj, predicate='intersects')
         ids_estaciones = estaciones_dentro['id_estacion'].tolist()
 
     if not ids_estaciones:
-        st.warning(f"⚠️ No se encontraron estaciones meteorológicas dentro de la zona: {nombre_zona}.")
+        st.warning(f"⚠️ No se encontraron estaciones meteorológicas a menos de {buffer_km} km de la zona: {nombre_zona}.")
+        st.info("💡 Sugerencia: Aumenta el 'Radio de Búsqueda' en el panel lateral.")
         st.stop()
 
     # =========================================================================
