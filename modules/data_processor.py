@@ -106,34 +106,13 @@ def load_and_process_all_data():
 
         # --- 2. PRECIPITACIÓN ---
         try:
-            # 🚀 FIX: Conexión protegida y eliminación del ORDER BY en SQL
-            with engine.connect() as conn:
-                conn.execute(text("SET statement_timeout = '300000'")) # 5 minutos de tolerancia
-                sql_ppt = text("SELECT id_estacion, fecha, valor FROM precipitacion")
-                df_ppt = pd.read_sql(sql_ppt, conn)
-
-            # 🚀 FIX: Ordenamos en la memoria RAM (infinitamente más rápido)
-            df_ppt = df_ppt.sort_values(by='fecha')
-
-            df_ppt = df_ppt.rename(columns={'fecha': Config.DATE_COL})
-            df_ppt[Config.DATE_COL] = pd.to_datetime(df_ppt[Config.DATE_COL])
-            df_ppt['valor'] = pd.to_numeric(df_ppt['valor'], errors='coerce')
-            df_ppt['id_estacion'] = df_ppt['id_estacion'].astype(str).str.strip()
-            df_ppt = df_ppt.dropna(subset=[Config.DATE_COL])
-
-            if not gdf_stations.empty:
-                gdf_stations['id_estacion'] = gdf_stations['id_estacion'].astype(str).str.strip()
-                df_long = pd.merge(
-                    df_ppt,
-                    gdf_stations[["id_estacion", Config.STATION_NAME_COL]],
-                    on="id_estacion",
-                    how="inner",
-                )
-                df_long = df_long.rename(columns={"valor": Config.PRECIPITATION_COL})
-                df_long[Config.YEAR_COL] = df_long[Config.DATE_COL].dt.year
-                df_long[Config.MONTH_COL] = df_long[Config.DATE_COL].dt.month
+            # 🚀 FIX ARQUITECTÓNICO: Apagamos la descarga masiva global.
+            # Intentar descargar millones de registros satura Supabase (QueryCanceled por Timeout).
+            # Enviaremos un DataFrame vacío aquí y la página 01 se encargará de descargar 
+            # de forma dinámica y ultra rápida SOLO los datos de la cuenca seleccionada.
+            df_long = pd.DataFrame()
         except Exception as e:
-            st.error(f"⚠️ Error cargando Precipitación: {e}")
+            st.error(f"⚠️ Error en Precipitación: {e}")
             df_long = pd.DataFrame()
             
         # --- 3. GEOMETRÍAS (Adiós a los archivos locales pesados) ---
