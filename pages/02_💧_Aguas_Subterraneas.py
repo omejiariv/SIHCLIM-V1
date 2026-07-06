@@ -587,8 +587,7 @@ if gdf_zona is not None:
             # 🛡️ LA REGLA DE ORO GEOMÉTRICA: Mínimo 3 estaciones para crear una superficie
             if len(df_valid) < 3:
                 st.warning(f"⚠️ **Faltan Puntos de Control:** Se encontraron {len(df_valid)} estación(es) válida(s). Para generar un mapa de superficie continua mediante interpolación matemática, se requieren **mínimo 3 estaciones** que formen un polígono espacial.")
-                
-                st.info("💡 **Solución:** Ve al panel lateral (Sidebar), aumenta el 'Buffer de Búsqueda (Grados)' y vuelve a procesar para capturar estaciones vecinas que rodeen tu cuenca.")
+                st.info("💡 **Solución:** Ve al panel lateral (Sidebar), aumenta el 'Radio de Búsqueda (Buffer)' y vuelve a procesar para capturar estaciones vecinas que rodeen tu cuenca.")
                 
                 # Fallback: Mostrar al menos los puntos y la cuenca si hay 1 o 2 estaciones
                 if len(df_valid) > 0:
@@ -612,7 +611,8 @@ if gdf_zona is not None:
                                 popup=f"<b>Estación:</b> {row['nombre']}<br><b>Recarga:</b> {row['recarga_calc']:.1f} mm/año"
                             ).add_to(m_recarga_fallback)
 
-                        st_folium(m_recarga_fallback, width="100%", height=500, key="mapa_recarga_fallback")
+                        import streamlit.components.v1 as components
+                        components.html(m_recarga_fallback._repr_html_(), height=550)
 
             else:
                 # 🛡️ MOTOR DE SUPERFICIE CONTINUA (Griddata Blindado)
@@ -637,32 +637,27 @@ if gdf_zona is not None:
                         import matplotlib.cm as cm
                         from matplotlib.colors import Normalize
                         
-                        # Definir los límites de la caja matemática
                         margen = 0.1
                         min_lon, max_lon = df_valid['longitud'].min() - margen, df_valid['longitud'].max() + margen
                         min_lat, max_lat = df_valid['latitud'].min() - margen, df_valid['latitud'].max() + margen
                         
-                        # Malla ligera (100x100 píxeles) para no colapsar el servidor
                         grid_lon, grid_lat = np.mgrid[min_lon:max_lon:100j, min_lat:max_lat:100j]
                         
                         puntos = df_valid[['longitud', 'latitud']].values
                         valores = df_valid['recarga_calc'].values
                         
-                        # Intento cúbico (suave), fallback a lineal
                         try:
                             grid_z = griddata(puntos, valores, (grid_lon, grid_lat), method='cubic')
                         except:
                             grid_z = griddata(puntos, valores, (grid_lon, grid_lat), method='linear')
                             
-                        # Limpiar valores vacíos (NaN) en los bordes
                         grid_z = np.nan_to_num(grid_z, nan=np.nanmean(valores))
 
-                        # Colorear la superficie (Tonos de agua)
+                        # 🚀 FIX 2: CONVERSIÓN A PÍXELES (uint8) PARA QUE EL NAVEGADOR LO ENTIENDA
                         norm = Normalize(vmin=valores.min(), vmax=valores.max())
                         cmap = cm.get_cmap('YlGnBu') 
-                        colored_grid = cmap(norm(grid_z))
+                        colored_grid = (cmap(norm(grid_z)) * 255).astype(np.uint8)
                         
-                        # Inyectar la imagen al mapa
                         folium.raster_layers.ImageOverlay(
                             image=colored_grid,
                             bounds=[[min_lat, min_lon], [max_lat, max_lon]],
@@ -672,7 +667,7 @@ if gdf_zona is not None:
                             cross_origin=False
                         ).add_to(m_recarga)
                         
-                        # 3. Dibujar las estaciones reales encima como chinchetas
+                        # 3. Dibujar las estaciones reales encima
                         for idx, row in df_valid.iterrows():
                             folium.CircleMarker(
                                 location=[row['latitud'], row['longitud']],
@@ -681,7 +676,10 @@ if gdf_zona is not None:
                             ).add_to(m_recarga)
 
                         folium.LayerControl().add_to(m_recarga)
-                        st_folium(m_recarga, width="100%", height=500, key="mapa_recarga_continuo_final", returned_objects=[])
+                        
+                        import streamlit.components.v1 as components
+                        components.html(m_recarga._repr_html_(), height=650)
+                        
                         st.caption("🗺️ Superficie interpolada a partir de los puntos de control. Las zonas más oscuras indican mayor recarga potencial al acuífero.")
                         
                     except Exception as e:
