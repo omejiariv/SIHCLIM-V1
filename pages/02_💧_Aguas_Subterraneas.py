@@ -67,10 +67,29 @@ with st.expander("🌊 Manifiesto de las Aguas Ocultas", expanded=False):
     """, unsafe_allow_html=True)
 st.divider()
 
-# --- 1. SELECTOR ESPACIAL (CONECTADO AL SELECTOR ARREGLADO) ---
+# --- 1. SELECTOR ESPACIAL (CONECTADO AL SELECTOR ARREGLADO) ---       
 ids_estaciones, nombre_zona, altitud_ref, gdf_zona = selectors.render_selector_espacial()
-engine = db_manager.get_engine()
+engine = db_manager.get_engine()                                       
 
+# 🚀 FIX: AÑADIR EL BUFFER ESPACIAL AL SIDEBAR DE AGUAS SUBTERRÁNEAS
+st.sidebar.markdown("---")
+buffer_km = st.sidebar.slider(
+    "🎯 Radio de Búsqueda (Buffer en km):", 
+    min_value=0.0, max_value=50.0, value=25.0, step=1.0, 
+    help="Expande la zona para capturar estaciones vecinas y mejorar la interpolación de recarga."
+)
+
+# 🌍 EXPANSIÓN GEOMÉTRICA DE LA ZONA DE BÚSQUEDA
+gdf_limite_original = None
+if gdf_zona is not None and not gdf_zona.empty:
+    gdf_limite_original = gdf_zona.copy() # Guardamos la cuenca exacta para dibujarla luego
+    
+    if buffer_km > 0:
+        # Proyectamos a metros (Magna-Sirgas), expandimos y devolvemos a grados (WGS84)
+        gdf_zona_proj = gdf_zona.to_crs(epsg=3116)
+        gdf_zona_proj['geometry'] = gdf_zona_proj.geometry.buffer(buffer_km * 1000)
+        gdf_zona = gdf_zona_proj.to_crs(gdf_zona.crs)
+        
 # --- 2. PARÁMETROS ECO-HIDROLÓGICOS ---
 st.sidebar.divider()
 st.sidebar.header("🎛️ Parámetros del Modelo")
@@ -647,9 +666,10 @@ if gdf_zona is not None:
                         c_lat, c_lon = df_valid['latitud'].mean(), df_valid['longitud'].mean()
                         m_recarga = folium.Map(location=[c_lat, c_lon], zoom_start=10, tiles='cartodbpositron')
 
-                        if gdf_zona is not None and not gdf_zona.empty:
+                        # Dibujar el Límite EXACTO de la Cuenca
+                        if gdf_limite_original is not None and not gdf_limite_original.empty:
                             folium.GeoJson(
-                                gdf_zona.to_crs(epsg=4326),
+                                gdf_limite_original.to_crs(epsg=4326),
                                 name="Límite de Análisis",
                                 style_function=lambda x: {'fillColor': 'none', 'color': '#2c3e50', 'weight': 3, 'dashArray': '5, 5'}
                             ).add_to(m_recarga)
