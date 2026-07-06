@@ -586,6 +586,21 @@ with tab_forestal:
                     style_function=lambda x: {'fillColor': 'none', 'color': '#FFD700', 'weight': 3}
                 ).add_to(m_usos)
 
+            # 🚀 FIX: RESTAURACIÓN DE LA CAPA DE COBERTURAS (RASTER EN NUBE)
+            if 'path_cov' in locals() and path_cov and os.path.exists(path_cov):
+                try:
+                    # Usamos el módulo land_cover (lc) para convertir el raster a imagen web
+                    img_cob, bounds_cob = lc.obtener_imagen_folium_coberturas(gdf_zona, path_cov)
+                    if img_cob is not None:
+                        folium.raster_layers.ImageOverlay(
+                            image=img_cob,
+                            bounds=bounds_cob,
+                            opacity=0.6,
+                            name="Coberturas del Suelo"
+                        ).add_to(m_usos)
+                except Exception as e:
+                    pass
+
             # Predios (si existen en la base)
             gdf_predios = load_layer_cached("Predios") if 'load_layer_cached' in locals() else None
             if gdf_predios is not None and not gdf_predios.empty:
