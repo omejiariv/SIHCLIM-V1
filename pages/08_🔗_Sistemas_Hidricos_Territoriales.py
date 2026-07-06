@@ -31,30 +31,25 @@ except ImportError:
     from modules.demografia_tools import render_motor_demografico
     from modules.utils import encender_gemelo_digital, obtener_metabolismo_exacto
 
-# --- 🚀 FUNCIÓN DE CONEXIÓN A MATRICES MAESTRAS ---
+# --- 🚀 FUNCIÓN DE CONEXIÓN A MATRICES MAESTRAS (BLINDADA) ---
 @st.cache_data(ttl=3600)
 def consultar_matriz_sql_sistemas(tabla, territorio, nivel, col_nivel="Nivel"):
+    import pandas as pd
+    from sqlalchemy import text
+    from modules.db_manager import get_engine
+    
+    engine = get_engine()
+    if engine is None: 
+        return pd.DataFrame()
+    
     try:
-        from sqlalchemy import text
-        engine_sql = get_engine()
-        q = text(f'''
-            SELECT * FROM {tabla} 
-            WHERE TRIM(UPPER("Territorio")) = UPPER(:t) 
-            AND TRIM(UPPER("{col_nivel}")) = UPPER(:n)
-        ''')
-        df_res = pd.read_sql(q, engine_sql, params={'t': str(territorio).strip(), 'n': str(nivel).strip()})
-        
-        # Rescate por aproximación si falla la exacta
-        if df_res.empty:
-            q_fall = text(f'''
-                SELECT * FROM {tabla} 
-                WHERE UPPER("Territorio") LIKE UPPER(:t) 
-                AND UPPER("{col_nivel}") LIKE UPPER(:n)
-            ''')
-            df_res = pd.read_sql(q_fall, engine_sql, params={'t': f"%{str(territorio).strip()}%", 'n': f"%{str(nivel)[:3]}%"})
-            
-        return df_res
-    except Exception:
+        # 🚀 FIX: Conexión explícita usando el administrador de contexto (with)
+        # Esto previene fugas de memoria y bloqueos con PostgreSQL en la nube
+        query = text(f'SELECT * FROM {tabla} WHERE "{col_nivel}" = :nivel AND "Territorio" = :zona')
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn, params={"nivel": nivel, "zona": territorio})
+        return df
+    except Exception as e:
         return pd.DataFrame()
 
 # ==========================================
