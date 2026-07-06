@@ -504,7 +504,6 @@ if gdf_zona is not None:
 
     # --- TAB 2: MAPA DE CONTEXTO ---
     with tab2:
-        # CORRECCIÓN DE ERROR: Agregamos key='btn_ctx_uniq' para evitar ID duplicado
         if st.button("🔄 Recargar Mapa Contexto", key="btn_ctx_uniq"): st.rerun()
         
         try:
@@ -523,13 +522,22 @@ if gdf_zona is not None:
                     layers = hydrogeo_utils.cargar_capas_gis_optimizadas(engine, [min_lon-pad, min_lat-pad, max_lon+pad, max_lat+pad])
                     
                     if 'hidro' in layers:
-                        folium.GeoJson(layers['hidro'], name="Hidrogeología", 
-                            style_function=lambda x: {'color': '#2c3e50', 'weight': 0.5, 'fillOpacity': 0.3}
+                        gdf_hidro = layers['hidro']
+                        # 🚀 FIX 1: Añadir HOVER (Tooltip) a la Hidrogeología
+                        # Extraemos las primeras columnas descriptivas para mostrarlas al pasar el ratón
+                        cols_tooltip = [c for c in gdf_hidro.columns if c.lower() not in ['geometry', 'geom', 'shape', 'id', 'objectid', 'index']][:4]
+                        
+                        folium.GeoJson(
+                            gdf_hidro, 
+                            name="Hidrogeología", 
+                            style_function=lambda x: {'color': '#2c3e50', 'weight': 0.5, 'fillOpacity': 0.3},
+                            tooltip=folium.GeoJsonTooltip(fields=cols_tooltip) if cols_tooltip else None
                         ).add_to(m)
-                except: pass
+                except Exception as e: 
+                    pass
 
             # Capa Raster (Coberturas)
-            # 🛡️ FIX 2: Actualizamos a la ruta de la Nube (ruta_temporal)
+            # NOTA: Al ser Raster (píxeles) no soporta Hover nativo, pero se renderiza visualmente
             if land_cover and ruta_temporal and os.path.exists(ruta_temporal) and gdf_zona is not None:
                 try:
                     img_cob, bounds_cob = land_cover.obtener_imagen_folium_coberturas(gdf_zona, ruta_temporal)
@@ -542,7 +550,6 @@ if gdf_zona is not None:
             fg = folium.FeatureGroup(name="Estaciones", show=True)
             for _, r in df_mapa_stats.iterrows():
                 if pd.notnull(r.get('latitud')) and pd.notnull(r.get('longitud')):
-                    # Tooltip seguro
                     p_val = r.get('p_media', 0) * 12
                     r_val = r.get('recarga_calc', 0) * 12
                     
@@ -561,7 +568,6 @@ if gdf_zona is not None:
             fg.add_to(m)
             folium.LayerControl().add_to(m)
             
-            # 🚀 FIX DEFINITIVO: Renderizado HTML puro para evadir el colapso de memoria
             import streamlit.components.v1 as components
             components.html(m._repr_html_(), height=650)
 
