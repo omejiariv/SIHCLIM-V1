@@ -6,18 +6,27 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 # --- 1. CONFIGURACIÓN DE PÁGINA (PANTALLA COMPLETA) ---
-# Usamos layout="wide" para aprovechar cada pixel del monitor
 st.set_page_config(page_title="Radar Meteorológico", page_icon="🛰️", layout="wide")
 
 # --- 2. IMPORTACIÓN DE MÓDULOS DEL SISTEMA ---
 try:
     from modules import selectors
+    from modules.utils import inicializar_torrente_sanguineo
 except ImportError:
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors
+    from modules.utils import inicializar_torrente_sanguineo
 
-# --- 3. MENÚ LATERAL ---
+# --- 3. INICIALIZACIÓN Y MENÚ LATERAL ---
+try:
+    inicializar_torrente_sanguineo()
+except:
+    pass
+
 selectors.renderizar_menu_navegacion("Radar Meteorológico")
+
+# 🚀 FIX: Traer de vuelta los selectores geográficos al panel lateral
+ids_sel, nombre_zona, alt_ref, gdf_zona = selectors.render_selector_espacial()
 
 # --- 4. INTERFAZ DEL CENTRO DE COMANDO ---
 st.title("🛰️ Centro de Observación Atmosférica (Tiempo Real)")
@@ -46,10 +55,30 @@ with c_ctrl2:
     else:
         overlay = "clouds"
         
-    # iFrame Dinámico: Centrado en Antioquia (Lat 6.24, Lon -75.58)
+    # 🚀 FIX MAGNÍFICO: Hacer que el radar se centre dinámicamente en el territorio seleccionado
+    lat_center = 6.24
+    lon_center = -75.58
+    zoom_level = 7
+    
+    # Si el usuario seleccionó un territorio, sacamos su centroide matemático
+    if gdf_zona is not None and not gdf_zona.empty:
+        try:
+            # Forzamos coordenadas GPS estándar por seguridad
+            if gdf_zona.crs.to_string() != "EPSG:4326":
+                gdf_zona = gdf_zona.to_crs("EPSG:4326")
+                
+            centroide = gdf_zona.geometry.unary_union.centroid
+            lat_center = centroide.y
+            lon_center = centroide.x
+            zoom_level = 10 # Hacemos zoom más cerca si hay una zona específica
+            st.success(f"📍 Radar alineado y centrado automáticamente en: **{nombre_zona}**")
+        except Exception as e:
+            pass
+        
+    # iFrame Dinámico con coordenadas y zoom inyectados en tiempo real
     windy_iframe = f"""
     <iframe width="100%" height="700" 
-        src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km/h&zoom=7&overlay={overlay}&product=ecmwf&level=surface&lat=6.24&lon=-75.58" 
+        src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km/h&zoom={zoom_level}&overlay={overlay}&product=ecmwf&level=surface&lat={lat_center}&lon={lon_center}" 
         frameborder="0" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
     </iframe>
     """
