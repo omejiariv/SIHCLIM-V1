@@ -78,7 +78,7 @@ st.markdown('<p class="sub-header">Sistema de Información Hidroclimática Integ
 
 # Panel de Métricas Globales (Dashboard)
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Módulos Analíticos", "15 Especializados", "Operativos") # Actualizado a 15 con el satélite
+col1.metric("Módulos Analíticos", "16 Especializados", "Operativos") # Actualizado a 16
 col2.metric("Resolución Temporal", "1950 - 2070", "Datos Históricos + Proyecciones")
 col3.metric("Cobertura Geográfica", "Región Andina", "Topología de Cuencas")
 col4.metric("Motores de Decisión", "WRI / AHP / Earth Engine", "Estándares Globales")
@@ -114,13 +114,19 @@ with tab_dashboard:
     c4, c5, c6 = st.columns(3)
     with c4:
         st.page_link("pages/04_🍃_Biodiversidad.py", label="**Biodiversidad**", icon="🍃")
-        st.markdown("<small>Monitor de especies (GBIF), endemismos y valoración económica de servicios ecosistémicos.</small>", unsafe_allow_html=True)
+        st.markdown("<small>Monitor de especies (GBIF), endemismos y valoración económica de ecosistemas.</small>", unsafe_allow_html=True)
     with c5:
         st.page_link("pages/05_🏔️_Geomorfologia.py", label="**Geomorfología**", icon="🏔️")
         st.markdown("<small>Análisis de Modelos Digitales de Elevación (DEM), redes de drenaje y morfometría.</small>", unsafe_allow_html=True)
     with c6:
-        st.page_link("pages/14_🛰️_Satelite_En_Vivo.py", label="**Satélite en Vivo**", icon="🛰️")
-        st.markdown("<small>Conexión directa a Google Earth Engine para monitoreo de coberturas Dynamic World a 10m.</small>", unsafe_allow_html=True)
+        # Renombrado según el Camino A
+        st.page_link("pages/14_🌍_Satelite_Terrestre.py", label="**Satélite Terrestre**", icon="🌍")
+        st.markdown("<small>Conexión a Earth Engine para monitoreo de coberturas Dynamic World a 10m.</small>", unsafe_allow_html=True)
+
+    c_rad1, c_rad2, c_rad3 = st.columns(3)
+    with c_rad1:
+        st.page_link("pages/17_🛰️_Radar_Meteorologico.py", label="**Radar Meteorológico**", icon="🛰️")
+        st.markdown("<small>Centro de observación atmosférica en tiempo real. Precipitaciones y vientos (ECMWF).</small>", unsafe_allow_html=True)
 
     st.markdown("<hr style='margin: 10px 0; border-top: 1px dashed #ccc;'>", unsafe_allow_html=True)
     
@@ -132,7 +138,7 @@ with tab_dashboard:
     with c7:
         st.page_link("pages/06_📈_Modelo_Demografico.py", label="**Modelo Demográfico (Humanos)**", icon="📈")
         st.markdown("<small>Proyecciones poblacionales (DANE) multimodelo con inyección a la Memoria Global.</small>", unsafe_allow_html=True)
-        st.write("") # Espaciador
+        st.write("") 
         
         st.page_link("pages/06_🐄_Modelo_Pecuario.py", label="**Modelo Pecuario (Animales)**", icon="🐄")
         st.markdown("<small>Proyecciones de crecimiento (ICA) para Bovinos, Porcinos y Aves en escalas hidrográficas.</small>", unsafe_allow_html=True)
@@ -140,7 +146,7 @@ with tab_dashboard:
     with c8:
         st.page_link("pages/07_💧_Calidad_y_Vertimientos.py", label="**Calidad y Vertimientos**", icon="🧪")
         st.markdown("<small>Mapeo de usuarios del recurso, modelación de concesiones y cargas contaminantes DBO.</small>", unsafe_allow_html=True)
-        st.write("") # Espaciador
+        st.write("") 
         st.page_link("pages/08_🔗_Sistemas_Hidricos_Territoriales.py", label="**Sistemas Hídricos Territoriales**", icon="🔗")
         st.markdown("<small>Topología de redes, diagramas de Sankey y huella hídrica consolidada en la nube.</small>", unsafe_allow_html=True)
 
@@ -178,14 +184,13 @@ with tab_dashboard:
     st.markdown("<hr style='margin: 10px 0; border-top: 1px dashed #ccc;'>", unsafe_allow_html=True)
 
     # ==============================================================================
-    # 🚀 NUEVOS MOTORES: WEAP Y RURH (CON LINKS ACTIVOS)
+    # 🚀 NUEVOS MOTORES: WEAP Y RURH
     # ==============================================================================
     st.markdown("### 🚀 Nuevos Motores de Análisis Integrados")
     st.caption("Herramientas avanzadas incorporadas en la última actualización del gemelo digital.")
     
     c14, c15 = st.columns(2)
     with c14:
-        # ⚠️ IMPORTANTE: Verifica que el nombre del archivo de WEAP sea exactamente este:
         st.page_link("pages/15_⚖️_Escenarios_WEAP.py", label="**Escenarios WEAP**", icon="⚖️")
         st.markdown("<small>Simulador avanzado de balances hídricos. Permite proyectar escenarios de estrés, variabilidad climática (ENSO) y evaluar la resiliencia del sistema.</small>", unsafe_allow_html=True)
     with c15:
@@ -200,19 +205,19 @@ with tab_arquitectura:
     st.info("Visualización jerárquica de la arquitectura de la plataforma y sus submódulos lógicos.")
     
     ids = ['SIHCLI-POTER', 'Soporte Biofísico', 'Metabolismo Territorial', 'Síntesis Estratégica', 'Herramientas', 
-           'Clima e Hidrología', 'Aguas Subterráneas', 'Isoyetas HD', 'Biodiversidad', 'Geomorfología', 'Satélite en Vivo',
+           'Clima e Hidrología', 'Aguas Subterráneas', 'Isoyetas HD', 'Biodiversidad', 'Geomorfología', 'Satélite Terrestre', 'Radar Meteorológico',
            'Modelo Demográfico', 'Modelo Pecuario', 'Calidad y Vertimientos', 'Sistemas Hídricos', 
            'Toma de Decisiones', 'Panel Administración', 'Escenarios WEAP', 'Inyección RURH',
            'Generador', 'Ayuda y Docs', 'Detective']
             
     parents = ['', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER', 'SIHCLI-POTER',
-               'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico',
+               'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico', 'Soporte Biofísico',
                'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial', 'Metabolismo Territorial',
                'Síntesis Estratégica', 'Síntesis Estratégica', 'Síntesis Estratégica', 'Herramientas',
                'Herramientas', 'Herramientas', 'Herramientas']
                 
     values = [100, 35, 35, 20, 10, 
-              5.8, 5.8, 5.8, 5.8, 5.8, 6.0, 
+              5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 
               8.75, 8.75, 8.75, 8.75, 
               6, 6, 8, 4,
               3.3, 3.3, 3.4]
