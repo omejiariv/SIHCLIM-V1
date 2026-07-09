@@ -74,7 +74,14 @@ if not st.session_state['admin_auth_status']:
 # 🔓 ZONA SEGURA: El código inferior solo se ejecuta si la contraseña es correcta
 # ==============================================================================
 st.success("✅ Acceso Concedido. Modo Administrador Activado.")
-
+# ==============================================================================
+# 🧠 MEMORIA DEL PANEL: Evitar que el archivo desaparezca si la página parpadea
+# ==============================================================================
+if 'copernicus_descargado' not in st.session_state:
+    st.session_state['copernicus_descargado'] = None
+    st.session_state['copernicus_metricas'] = None
+    st.session_state['copernicus_exitosas'] = []
+    st.session_state['copernicus_fallidas'] = []
 st.header("🛰️ Sincronizador Maestro Satelital (2021 - Presente)")
 st.info("Descarga el 'Delta' de datos faltantes (Lluvia, ETR, Temp, Rad) para todas las estaciones usando la red satelital Copernicus (Open-Meteo).")
 
