@@ -38,35 +38,6 @@ try:
 except Exception as e:
     pass # Fallback silencioso para no romper la UI en caso de error de importación
 
-# ==============================================================================
-# 🔒 MURO DE SEGURIDAD GLOBAL (ACCESO BETA)
-# ==============================================================================
-def muro_de_acceso_beta():
-    if "beta_unlocked" not in st.session_state:
-        st.session_state["beta_unlocked"] = False
-        
-    if not st.session_state["beta_unlocked"]:
-        st.title("🔒 Sihcli-Poter: Fase de Pruebas (Beta)")
-        st.info("Esta plataforma científica se encuentra en fase de acceso restringido. Por favor, ingresa la credencial proporcionada por el equipo de investigación.")
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            clave_beta = st.text_input("Credencial de Acceso:", type="password")
-            if st.button("Ingresar al Gemelo Digital", type="primary", use_container_width=True):
-                # 💡 La contraseña por defecto es "AdminPoter"
-                if clave_beta == st.secrets.get("CLAVE_BETA", "AdminPoter"):
-                    st.session_state["beta_unlocked"] = True
-                    st.rerun() # Recarga la página y muestra todo el contenido
-                else:
-                    st.error("❌ Credencial incorrecta. Acceso denegado.")
-        
-        # 🛑 st.stop() es la magia: evita que Python siga leyendo el código hacia abajo
-        st.stop() 
-
-# Llamamos a la función para activar el escudo
-muro_de_acceso_beta()
-# ==============================================================================
-
 # --- ESTILOS CSS PERSONALIZADOS (MEJORADOS) ---
 st.markdown("""
     <style>
