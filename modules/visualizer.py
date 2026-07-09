@@ -1161,88 +1161,45 @@ def display_realtime_dashboard(df_long, gdf_stations, gdf_filtered, **kwargs):
                     "No se pudo obtener el pronóstico para esta ubicación. Intente más tarde."
                 )
 
-    # --- SUB-PESTAÑA 2: SATÉLITE (ESTABILIZADA) ---
+    # --- SUB-PESTAÑA 2: SATÉLITE (ESTABILIZADA CON SERVIDORES EXTERNOS) ---
     with tab_sat:
-        st.subheader("Observación Satelital")
+        st.subheader("Observación Satelital y Radar")
 
         # Controles
         c_sat1, c_sat2 = st.columns([1, 3])
         with c_sat1:
             sat_mode = st.radio(
-                "Modo:",
-                ["Animación (Visible)", "Mapa Interactivo (Lluvia/Nubes)"],
-                index=1,
+                "Plataforma de Monitoreo:",
+                ["📡 Radar de Lluvia (Windy)", "🌍 Satélite Animado (Zoom Earth)"],
+                index=0,
             )
-            show_stations_sat = st.checkbox("Mostrar Estaciones", value=True)
 
         with c_sat2:
-            if sat_mode == "Animación (Visible)":
-                # 🚀 FIX 1: Bypass de proxy. Usamos HTML puro para que el navegador descargue el GIF directamente
-                st.markdown(
-                    """
-                    <div style="text-align: center;">
-                        <img src="https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/nsa/GEOCOLOR/GOES16-NSA-GEOCOLOR-600x600.gif" 
-                             style="width: 100%; max-width: 800px; border-radius: 10px; box-shadow: 0px 4px 10px rgba(0,0,0,0.1);">
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
-                st.caption("🛰️ GOES-16 GeoColor (Colombia y Región Andina en Tiempo Real). Actualización cada 10 min.")
+            import streamlit.components.v1 as components
+            
+            if sat_mode == "📡 Radar de Lluvia (Windy)":
+                st.info("Conectando a servidores de alta disponibilidad (Modelo ECMWF)...")
+                # El iFrame de Windy: Inmune a bloqueos y muestra lluvia en tiempo real
+                windy_iframe = """
+                <iframe width="100%" height="600" 
+                    src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km/h&zoom=8&overlay=rain&product=ecmwf&level=surface&lat=6.24&lon=-75.58" 
+                    frameborder="0">
+                </iframe>
+                """
+                components.html(windy_iframe, height=650)
+                st.caption("🟢 Radar de precipitación. Dale al botón de 'Play' ▶️ en la esquina inferior izquierda del mapa para ver la predicción de movimiento.")
+                
             else:
-                # Mapa Interactivo
-                try:
-                    m = folium.Map(location=[6.2, -75.5], zoom_start=7, tiles="OpenStreetMap")
-
-                    # 🚀 FIX 2: Extracción dinámica del 'host' y el 'path' oficial de RainViewer
-                    import requests
-                    try:
-                        rv_data = requests.get("https://api.rainviewer.com/public/weather-maps.json", timeout=5).json()
-                        # RainViewer cambia de servidor constantemente (tilecache1, tilecache2, etc.)
-                        host = rv_data.get('host', 'https://tilecache.rainviewer.com')
-                        latest_path = rv_data['radar']['past'][-1]['path']
-                        url_rv = f"{host}{latest_path}/256/{{z}}/{{x}}/{{y}}/2/1_1.png"
-                        
-                        folium.TileLayer(
-                            tiles=url_rv,
-                            attr="RainViewer",
-                            name="Radar de Lluvia (En Vivo)",
-                            overlay=True,
-                            control=True,
-                            opacity=0.7,
-                        ).add_to(m)
-                    except Exception as e:
-                        print(f"Alerta API RainViewer: {e}")
-
-                    # Capa de Nubes (Infrarrojo) IEM/NOAA
-                    folium.TileLayer(
-                        tiles="https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-east-ir-4km-900913/{z}/{x}/{y}.png",
-                        attr="IEM/NOAA",
-                        name="Nubes Infrarrojo (GOES-16)",
-                        overlay=True,
-                        control=True,
-                        opacity=0.5,
-                        show=False,
-                    ).add_to(m)
-
-                    # Mostrar Estaciones 
-                    if show_stations_sat and gdf_filtered is not None and not gdf_filtered.empty:
-                        for _, row in gdf_filtered.dropna(subset=["latitude", "longitude"]).iterrows():
-                            folium.CircleMarker(
-                                location=[row["latitude"], row["longitude"]],
-                                radius=3, color="red", fill=True, fill_opacity=1,
-                                tooltip=row.get(Config.STATION_NAME_COL, "Estación"),
-                            ).add_to(m)
-
-                    LocateControl(auto_start=False).add_to(m)
-                    folium.LayerControl(position='topright', collapsed=False).add_to(m)
-                    
-                    # 🚀 FIX 3: Usar folium_static. Dibuja perfectamente y NO ahoga la memoria.
-                    from streamlit_folium import folium_static
-                    folium_static(m, width=800, height=600)
-                    
-                    st.caption("🔵 Radar: RainViewer. ☁️ Nubes: GOES-16. | 📍 Usa el botón de GPS en el mapa para ubicarte.")
-                except Exception as e:
-                    st.error(f"Error cargando el mapa satelital: {e}")
+                st.info("Conectando a la red satelital geoestacionaria...")
+                # El iFrame de Zoom Earth: Excelente para ver la nubosidad real
+                zoom_iframe = """
+                <iframe width="100%" height="600" 
+                    src="https://zoom.earth/maps/satellite/#view=6.24,-75.58,7z" 
+                    frameborder="0" allowfullscreen>
+                </iframe>
+                """
+                components.html(zoom_iframe, height=650)
+                st.caption("☁️ Animación de nubes en tiempo real. Puedes acercarte, alejarte y explorar libremente.")
 
     # --- SUB-PESTAÑA 3: ALERTAS ---
     with tab_alert:
