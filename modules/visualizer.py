@@ -1161,46 +1161,45 @@ def display_realtime_dashboard(df_long, gdf_stations, gdf_filtered, **kwargs):
                     "No se pudo obtener el pronóstico para esta ubicación. Intente más tarde."
                 )
 
-    # --- SUB-PESTAÑA 2: SATÉLITE (ESTABILIZADA CON SERVIDORES EXTERNOS) ---
+    # --- SUB-PESTAÑA 2: RADAR Y OBSERVACIÓN 3D (WINDY) ---
     with tab_sat:
-        st.subheader("Observación Satelital y Radar")
+        st.subheader("Radar Meteorológico y Atmósfera 3D (Tiempo Real)")
 
         # Controles
-        c_sat1, c_sat2 = st.columns([1, 3])
+        c_sat1, c_sat2 = st.columns([1, 4])
         with c_sat1:
-            sat_mode = st.radio(
-                "Plataforma de Monitoreo:",
-                ["📡 Radar de Lluvia (Windy)", "🌍 Satélite Animado (Zoom Earth)"],
+            st.info("Selecciona la variable a monitorear:")
+            capa_windy = st.radio(
+                "Capa Atmosférica:",
+                ["🌧️ Lluvia y Truenos", "💨 Viento (Altitud 3D)", "☁️ Nubes (Altitud 3D)"],
                 index=0,
             )
+            
+            st.markdown("---")
+            st.caption("💡 **Nota sobre Altitud:** El selector de altura en el mapa se bloquea con la Lluvia (se mide en superficie). Si eliges Viento o Nubes, podrás explorar la atmósfera desde el suelo hasta los 13.5 km de altura.")
 
         with c_sat2:
             import streamlit.components.v1 as components
             
-            if sat_mode == "📡 Radar de Lluvia (Windy)":
-                st.info("Conectando a servidores de alta disponibilidad (Modelo ECMWF)...")
-                # El iFrame de Windy: Inmune a bloqueos y muestra lluvia en tiempo real
-                windy_iframe = """
-                <iframe width="100%" height="600" 
-                    src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km/h&zoom=8&overlay=rain&product=ecmwf&level=surface&lat=6.24&lon=-75.58" 
-                    frameborder="0">
-                </iframe>
-                """
-                components.html(windy_iframe, height=650)
-                st.caption("🟢 Radar de precipitación. Dale al botón de 'Play' ▶️ en la esquina inferior izquierda del mapa para ver la predicción de movimiento.")
-                
+            # Traductor de capas para el motor de Windy
+            if capa_windy == "🌧️ Lluvia y Truenos":
+                overlay = "rain"
+            elif capa_windy == "💨 Viento (Altitud 3D)":
+                overlay = "wind"
             else:
-                st.info("Conectando a la red satelital geoestacionaria...")
-                # El iFrame de Zoom Earth: Excelente para ver la nubosidad real
-                zoom_iframe = """
-                <iframe width="100%" height="600" 
-                    src="https://zoom.earth/maps/satellite/#view=6.24,-75.58,7z" 
-                    frameborder="0" allowfullscreen>
-                </iframe>
-                """
-                components.html(zoom_iframe, height=650)
-                st.caption("☁️ Animación de nubes en tiempo real. Puedes acercarte, alejarte y explorar libremente.")
-
+                overlay = "clouds"
+                
+            # iFrame Dinámico: Inmune a bloqueos, centrado en Antioquia y con la capa seleccionada
+            windy_iframe = f"""
+            <iframe width="100%" height="600" 
+                src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km/h&zoom=7&overlay={overlay}&product=ecmwf&level=surface&lat=6.24&lon=-75.58" 
+                frameborder="0">
+            </iframe>
+            """
+            components.html(windy_iframe, height=650)
+            
+            st.caption("🟢 **Línea de Tiempo:** Dale al botón de 'Play' ▶️ en la esquina inferior izquierda del mapa para ver la proyección y el movimiento histórico.")
+            
     # --- SUB-PESTAÑA 3: ALERTAS ---
     with tab_alert:
         if df_long is not None:
