@@ -1177,69 +1177,67 @@ def display_realtime_dashboard(df_long, gdf_stations, gdf_filtered, **kwargs):
 
         with c_sat2:
             if sat_mode == "Animación (Visible)":
-                # GIF Oficial NOAA (GeoColor) - Muy estable
-                st.image(
-                    "https://cdn.star.nesdis.noaa.gov/GOES16/ABI/GIFS/GOES16-ABI-GEOCOLOR-1000x1000.gif",
-                    caption="GOES-16 GeoColor (Tiempo Real)",
-                    use_column_width=True,
-                )
+                # 🚀 FIX 1: URL Regional de NOAA para el Norte de Sudamérica (nsa)
+                url_gif = "https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/nsa/GEOCOLOR/GOES16-NSA-GEOCOLOR-600x600.gif"
+                try:
+                    st.image(url_gif, caption="GOES-16 GeoColor (Colombia y Región Andina en Tiempo Real)", use_column_width=True)
+                except:
+                    st.error("NOAA está actualizando el satélite en este momento. Intenta en unos minutos.")
             else:
                 # Mapa Interactivo
                 try:
                     # Usamos OpenStreetMap por estabilidad, centrado en la zona de interés
-                    m = folium.Map(
-                        location=[6.2, -75.5], zoom_start=7, tiles="OpenStreetMap"
-                    )
+                    m = folium.Map(location=[6.2, -75.5], zoom_start=7, tiles="OpenStreetMap")
 
-                    # Capa de Radar de Lluvia (RainViewer - Cobertura Global y Rápida)
-                    folium.TileLayer(
-                        tiles="https://tile.rainviewer.com/nowcast/now/256/{z}/{x}/{y}/2/1_1.png",
-                        attr="RainViewer",
-                        name="Radar de Lluvia (Tiempo Real)",
-                        overlay=True,
-                        opacity=0.7,
-                    ).add_to(m)
+                    # 🚀 FIX 2: Sincronización en vivo con la API de RainViewer
+                    import requests
+                    try:
+                        # Extraemos la hora exacta del radar en tiempo real
+                        rv_data = requests.get("https://api.rainviewer.com/public/weather-maps.json", timeout=3).json()
+                        latest_timestamp = rv_data['radar']['past'][-1]['time']
+                        url_rainviewer = f"https://tilecache.rainviewer.com/v2/radar/{latest_timestamp}/256/{{z}}/{{x}}/{{y}}/2/1_1.png"
+                        
+                        folium.TileLayer(
+                            tiles=url_rainviewer,
+                            attr="RainViewer",
+                            name="Radar de Lluvia (En Vivo)",
+                            overlay=True,
+                            control=True,
+                            opacity=0.7,
+                        ).add_to(m)
+                    except Exception as e:
+                        pass # Si falla RainViewer, seguimos adelante silenciosamente
 
-                    # Capa de Nubes (Infrarrojo) - Opcional, si RainViewer falla
+                    # Capa de Nubes (Infrarrojo) IEM/NOAA - Muy estable para Colombia
                     folium.TileLayer(
                         tiles="https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-east-ir-4km-900913/{z}/{x}/{y}.png",
                         attr="IEM/NOAA",
-                        name="Nubes Infrarrojo",
+                        name="Nubes Infrarrojo (GOES-16)",
                         overlay=True,
+                        control=True,
                         opacity=0.5,
                         show=False,  # Oculta por defecto para no saturar
                     ).add_to(m)
 
-                    # Mostrar Estaciones (Lo que pediste recuperar)
-                    if (
-                        show_stations_sat
-                        and gdf_filtered is not None
-                        and not gdf_filtered.empty
-                    ):
-                        for _, row in gdf_filtered.dropna(
-                            subset=["latitude", "longitude"]
-                        ).iterrows():
+                    # Mostrar Estaciones 
+                    if show_stations_sat and gdf_filtered is not None and not gdf_filtered.empty:
+                        for _, row in gdf_filtered.dropna(subset=["latitude", "longitude"]).iterrows():
                             folium.CircleMarker(
                                 location=[row["latitude"], row["longitude"]],
-                                radius=3,
-                                color="red",
-                                fill=True,
-                                fill_opacity=1,
-                                tooltip=row[Config.STATION_NAME_COL],
+                                radius=3, color="red", fill=True, fill_opacity=1,
+                                tooltip=row.get(Config.STATION_NAME_COL, "Estación"),
                             ).add_to(m)
 
                     # --- GEOLOCALIZADOR NATIVO DE FOLIUM ---
-                    LocateControl(auto_start=False).add_to(m)  # <--- AQUÍ ESTÁ EL BOTÓN DE GPS
+                    LocateControl(auto_start=False).add_to(m)
 
-                    folium.LayerControl().add_to(m)
+                    # 🚀 FIX 3: Forzamos a que el control de capas se muestre correctamente
+                    folium.LayerControl(position='topright', collapsed=False).add_to(m)
                     
-                    # 🚀 FIX: Renderizado HTML puro para evadir el colapso silencioso de memoria
                     import streamlit.components.v1 as components
                     components.html(m._repr_html_(), height=650)
                     
-                    st.caption(
-                        "🔵 Radar: RainViewer. ☁️ Nubes: GOES-16. | 📍 Usa el botón de GPS en el mapa para ubicarte."
-                    )
+                    st.caption("🔵 Radar: RainViewer. ☁️ Nubes: GOES-16. | 📍 Usa el botón de GPS en el mapa para ubicarte.")
                 except Exception as e:
                     st.error(f"Error cargando el mapa satelital: {e}")
 
