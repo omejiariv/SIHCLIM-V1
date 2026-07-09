@@ -1229,12 +1229,14 @@ def display_realtime_dashboard(df_long, gdf_stations, gdf_filtered, **kwargs):
                             ).add_to(m)
 
                     # --- GEOLOCALIZADOR NATIVO DE FOLIUM ---
-                    LocateControl(auto_start=False).add_to(
-                        m
-                    )  # <--- AQUÍ ESTÁ EL BOTÓN DE GPS
+                    LocateControl(auto_start=False).add_to(m)  # <--- AQUÍ ESTÁ EL BOTÓN DE GPS
 
                     folium.LayerControl().add_to(m)
-                    st_folium(m, height=600, width="100%")
+                    
+                    # 🚀 FIX: Renderizado HTML puro para evadir el colapso silencioso de memoria
+                    import streamlit.components.v1 as components
+                    components.html(m._repr_html_(), height=650)
+                    
                     st.caption(
                         "🔵 Radar: RainViewer. ☁️ Nubes: GOES-16. | 📍 Usa el botón de GPS en el mapa para ubicarte."
                     )
