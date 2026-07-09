@@ -8,6 +8,7 @@ import json
 import tempfile
 import zipfile
 import shutil
+import datetime
 
 import pandas as pd
 import geopandas as gpd
@@ -28,18 +29,54 @@ try:
     from modules import selectors
     from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
     from modules.db_manager import get_engine
+    from modules import db_manager
+    from modules import openmeteo_api
+    from modules.ideam_api import extraer_datos_ideam
+    from modules.openmeteo_api import get_historical_monthly_series
 except ImportError:
     # Fallback de rutas por si hay problemas de lectura entre carpetas
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors
     from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
     from modules.db_manager import get_engine
+    from modules import db_manager
+    from modules import openmeteo_api
+    from modules.ideam_api import extraer_datos_ideam
+    from modules.openmeteo_api import get_historical_monthly_series
 
-import datetime
-from modules import db_manager
-from modules import openmeteo_api
-from modules.ideam_api import extraer_datos_ideam
-from modules.openmeteo_api import get_historical_monthly_series
+# ==============================================================================
+# 🔒 BARRERA DE SEGURIDAD ABSOLUTA (GATEKEEPER)
+# ==============================================================================
+st.title("👑 Centro de Control y Administración")
+st.markdown("---")
+
+# Inicializamos el estado de autenticación si no existe
+if 'admin_auth_status' not in st.session_state:
+    st.session_state['admin_auth_status'] = False
+
+# Si NO está autenticado, mostramos la pantalla de bloqueo y DETENEMOS el código
+if not st.session_state['admin_auth_status']:
+    st.warning("⚠️ **Área Restringida.** Por favor, identifícate para acceder a los motores de inyección y bases de datos maestras.")
+    
+    col_pwd1, col_pwd2 = st.columns([1, 2])
+    with col_pwd1:
+        pwd = st.text_input("🔑 Contraseña de Administrador:", type="password")
+        if st.button("Desbloquear Sistema", type="primary"):
+            # 💡 Aquí defines tu contraseña. (Ej: "CuencaVerde2026")
+            if pwd == st.secrets.get("admin_password", "CuencaVerde2026"): 
+                st.session_state['admin_auth_status'] = True
+                st.rerun()
+            else:
+                st.error("❌ Acceso Denegado. Contraseña incorrecta.")
+    
+    # 🛑 EL TRUCO MAGISTRAL: Esta función mata el script aquí mismo. 
+    # Nada del código inferior se leerá hasta que la contraseña sea correcta.
+    st.stop() 
+
+# ==============================================================================
+# 🔓 ZONA SEGURA: El código inferior solo se ejecuta si la contraseña es correcta
+# ==============================================================================
+st.success("✅ Acceso Concedido. Modo Administrador Activado.")
 
 st.header("🛰️ Sincronizador Maestro Satelital (2021 - Presente)")
 st.info("Descarga el 'Delta' de datos faltantes (Lluvia, ETR, Temp, Rad) para todas las estaciones usando la red satelital Copernicus (Open-Meteo).")
@@ -47,15 +84,6 @@ st.info("Descarga el 'Delta' de datos faltantes (Lluvia, ETR, Temp, Rad) para to
 col1, col2 = st.columns(2)
 fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2020, 1, 1))
 fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.timedelta(days=10))
-
-# ==============================================================================
-# 🧠 MEMORIA DEL PANEL: Evitar que el archivo desaparezca si la página parpadea
-# ==============================================================================
-if 'copernicus_descargado' not in st.session_state:
-    st.session_state['copernicus_descargado'] = None
-    st.session_state['copernicus_metricas'] = None
-    st.session_state['copernicus_exitosas'] = []
-    st.session_state['copernicus_fallidas'] = []
 
 # ==============================================================================
 # BOTÓN DE SINCRONIZACIÓN SATELITAL
@@ -204,31 +232,6 @@ if st.button("🏛️ Extraer Datos Oficiales IDEAM", type="primary"):
 # ==========================================
 # Llama al menú expandible y resalta la página actual
 selectors.renderizar_menu_navegacion("Panel Administración")
-
-# ==============================================================================
-# 0. 🔒 MURO DE SEGURIDAD (ACCESO ESTRICTO)
-# ==============================================================================
-if "admin_unlocked" not in st.session_state:
-    st.session_state["admin_unlocked"] = False
-
-if not st.session_state["admin_unlocked"]:
-    st.warning("⚠️ **Zona de Alto Riesgo:** Centro de Comando y Control de Bases de Datos.")
-    st.info("Ingresa la credencial de Arquitecto para acceder al núcleo del sistema.")
-    
-    col_k1, col_k2 = st.columns([1, 2])
-    with col_k1:
-        clave = st.text_input("Contraseña:", type="password")
-        if st.button("Desbloquear Panel", type="primary", use_container_width=True):
-            # 💡 Busca en secrets, si no hay secrets, la clave es "AdminPoter"
-            clave_correcta = st.secrets.get("CLAVE_ADMIN", "AdminPoter") 
-            if clave == clave_correcta:
-                st.session_state["admin_unlocked"] = True
-                st.rerun()
-            else:
-                st.error("❌ Credencial incorrecta. Acceso denegado al núcleo.")
-    st.stop() # 🛑 Esto detiene la lectura del archivo. Nada de lo de abajo se ejecuta.
-
-# ==============================================================================
 
 engine = get_engine()
 
