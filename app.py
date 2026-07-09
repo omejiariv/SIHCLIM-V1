@@ -256,23 +256,45 @@ with tab_arquitectura:
 # PESTAÑA 3: EL ALEPH (FILOSOFÍA)
 # =====================================================================
 with tab_aleph:
-    st.markdown("### La Visión Detrás de SIHCLI-POTER")
-    c_aleph1, c_aleph2 = st.columns([1, 1])
-    
-    with c_aleph1:
-        st.markdown("""
-        **La Complejidad de los Andes**
-        La región Andina presenta uno de los sistemas climáticos más complejos del mundo. Viajar hacia arriba es como viajar hacia los polos. Esta verticalidad y la interacción con dos océanos crean un mosaico de biodiversidad y clima, sometido al constante latido del ENSO (El Niño / La Niña).
+        st.markdown("### La Visión Detrás de SIHCLI-POTER")
+        c_aleph1, c_aleph2 = st.columns([1, 1])
         
-        SIHCLI-POTER nace para leer este latido. Es un esfuerzo por unificar datos dispersos en una sola fuente de verdad, permitiendo a los planificadores ver el impacto de una gota de lluvia desde su caída en el páramo hasta su llegada al embalse y su distribución en la ciudad.
-        """)
+        with c_aleph1:
+            st.markdown("""
+            **La Complejidad de los Andes**
+            La región Andina presenta uno de los sistemas climáticos más complejos del mundo. Viajar hacia arriba es como viajar hacia los polos. Esta verticalidad y la interacción con dos océanos crean un mosaico de biodiversidad y clima, sometido al constante latido del ENSO (El Niño / La Niña).
+            
+            SIHCLI-POTER nace para leer este latido. Es un esfuerzo por unificar datos dispersos en una sola fuente de verdad, permitiendo a los planificadores ver el impacto de una gota de lluvia desde su caída en el páramo hasta su llegada al embalse y su distribución en la ciudad.
+            """)
+            
+        with c_aleph2:
+            st.info("""
+            **Jorge Luis Borges - El Aleph (1945)**
+            > *"En la parte inferior del escalón, hacia la derecha, vi una pequeña esfera tornasolada, de casi intolerable fulgor... El diámetro del Aleph sería de dos o tres centímetros, pero el espacio cósmico estaba ahí, sin disminución de tamaño. Cada cosa era infinitas cosas, porque yo la veía claramente desde todos los puntos del universo... vi en el Aleph la tierra, y en la tierra otra vez el Aleph... y sentí vértigo"*
+            """)
+            
+        # ==============================================================================
+        # 🚀 NUEVO: PRESENTACIÓN DE LOS MOTORES AVANZADOS (WEAP Y RURH)
+        # ==============================================================================
+        st.markdown("---")
+        st.markdown("### ⚙️ Motores de Análisis Integrados")
         
-    with c_aleph2:
-        st.info("""
-        **Jorge Luis Borges - El Aleph (1945)**
-        > *"En la parte inferior del escalón, hacia la derecha, vi una pequeña esfera tornasolada, de casi intolerable fulgor... El diámetro del Aleph sería de dos o tres centímetros, pero el espacio cósmico estaba ahí, sin disminución de tamaño. Cada cosa era infinitas cosas, porque yo la veía claramente desde todos los puntos del universo... vi en el Aleph la tierra, y en la tierra otra vez el Aleph... y sentí vértigo"*
-        """)
+        col_w, col_r = st.columns(2)
+        
+        with col_w:
+            st.success("""
+            #### ⚖️ Escenarios y Resiliencia (WEAP)
+            Simulador avanzado de balances hídricos inspirado en el modelo WEAP. Permite proyectar escenarios de estrés, variabilidad climática severa (ENSO) y evaluar la resiliencia del sistema territorial ante cambios drásticos en la oferta y la demanda.
+            """)
+            
+        with col_r:
+            st.warning("""
+            #### 🏭 Inyección RURH (ETL Espacial)
+            Motor de procesamiento de datos maestros (Extracción, Transformación y Carga). Consolida en tiempo real las presiones sobre el recurso hídrico, procesando miles de concesiones directamente desde la nube mediante cruces espaciales de alta precisión.
+            """)
 
 # --- FOOTER ---
+st.divider()
+st.caption("💧 SIHCLI-POTER | Sistema de Información Hídrica y Climática | CuencaVerde")
 st.divider()
 st.caption("© 2026 omejia CV | SIHCLI-POTER v3.0 | Un Aleph Hidroclimático: Plataforma de Inteligencia Territorial")
