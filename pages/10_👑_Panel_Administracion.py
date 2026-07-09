@@ -62,15 +62,12 @@ if not st.session_state['admin_auth_status']:
     with col_pwd1:
         pwd = st.text_input("🔑 Contraseña de Administrador:", type="password")
         if st.button("Desbloquear Sistema", type="primary"):
-            # 💡 Aquí defines tu contraseña. (Ej: "CuencaVerde2026")
-            if pwd == st.secrets.get("admin_password", "CuencaVerde2026"): 
+            if pwd == st.secrets.get("admin_password", "AdminPoter"): 
                 st.session_state['admin_auth_status'] = True
                 st.rerun()
             else:
                 st.error("❌ Acceso Denegado. Contraseña incorrecta.")
     
-    # 🛑 EL TRUCO MAGISTRAL: Esta función mata el script aquí mismo. 
-    # Nada del código inferior se leerá hasta que la contraseña sea correcta.
     st.stop() 
 
 # ==============================================================================
