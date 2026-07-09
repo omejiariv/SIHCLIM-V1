@@ -530,24 +530,15 @@ def get_img_as_base64(url):
         print(f"Error Base64: {e}")
     return None
 
-
 def analyze_point_data(lat, lon, df_long, gdf_stations, gdf_municipios, gdf_subcuencas):
-    """
-    Analiza un punto geográfico: Contexto, Datos Históricos y Variables Ambientales.
-    Versión optimizada: Sin importaciones redundantes.
-    """
-    results = {}
+    """Analiza un punto geográfico: Contexto, Datos Históricos y Variables Ambientales."""
+    results = {"Municipio": "Desconocido", "Cuenca": "Fuera de cuencas", "Altitud": 1500, "Cobertura": "No disponible", "Ppt_Media": 0}
     point_geom = Point(lon, lat)  
-
-    # 1. CONTEXTO GEOGRÁFICO (Toponimia)
-    results["Municipio"] = "Desconocido"
-    results["Cuenca"] = "Fuera de cuencas principales"
 
     try:
         if gdf_municipios is not None and not gdf_municipios.empty:
             matches = gdf_municipios[gdf_municipios.contains(point_geom)]
             if not matches.empty:
-                # Usamos el mapeo seguro de columnas visto en el maps_engine
                 col_muni = next((c for c in matches.columns if 'MPIO_CNMBR' in c or 'nombre' in c), "nombre")
                 results["Municipio"] = matches.iloc[0].get(col_muni, "Sin Nombre")
 
@@ -555,36 +546,20 @@ def analyze_point_data(lat, lon, df_long, gdf_stations, gdf_municipios, gdf_subc
             matches_c = gdf_subcuencas[gdf_subcuencas.contains(point_geom)]
             if not matches_c.empty:
                 results["Cuenca"] = matches_c.iloc[0].get("nombre", "Sin Nombre")
-    except Exception as e:
-        print(f"Error en cruce espacial: {e}")
-
-    # 2. RASTERS (ALTITUD Y COBERTURA)
-    results["Altitud"] = 1500 # Valor base
-    results["Cobertura"] = "No disponible"
+    except Exception as e: print(f"Error espacial: {e}")
 
     try:
-        # A. Extracción de Altitud desde el DEM
         if os.path.exists(Config.DEM_FILE_PATH):
             with rasterio.open(Config.DEM_FILE_PATH) as src:
-                val_gen = src.sample([(lon, lat)])
-                val = next(val_gen)[0]
-                if val > -1000:
-                    results["Altitud"] = int(val)
-
-        # B. Cobertura (Uso de módulo especializado)
+                val = next(src.sample([(lon, lat)]))[0]
+                if val > -1000: results["Altitud"] = int(val)
         results["Cobertura"] = lc.get_land_cover_at_point(lat, lon, Config.LAND_COVER_RASTER_PATH)
-            
-    except Exception as e:
-        results["Cobertura"] = f"Error Raster: {str(e)}"
+    except Exception as e: results["Cobertura"] = f"Error Raster: {e}"
 
-    # 3. ZONA DE VIDA (Clasificación Holdridge)
     try:
-        # Ppt_Media debe venir de un cálculo previo o interpolación
-        ppt_ref = results.get("Ppt_Media", 2000) 
-        z_id = lz.classify_life_zone_alt_ppt(results["Altitud"], ppt_ref)
+        z_id = lz.classify_life_zone_alt_ppt(results["Altitud"], results["Ppt_Media"])
         results["Zona_Vida"] = lz.holdridge_int_to_name_simplified.get(z_id, "Desconocido")
-    except Exception:
-        results["Zona_Vida"] = "Error cálculo LZ"
+    except: results["Zona_Vida"] = "Error cálculo LZ"
 
     return results
 
@@ -1946,7 +1921,6 @@ def display_weekly_forecast_tab(stations_for_analysis, gdf_filtered, **kwargs):
             else:
                 st.error("No se pudo obtener el pronóstico.")
 
-
 def display_satellite_imagery_tab(gdf_filtered):
     """
     Muestra imágenes satelitales en tiempo real.
@@ -2012,7 +1986,8 @@ def display_satellite_imagery_tab(gdf_filtered):
                         ).add_to(mc)
 
                 folium.LayerControl().add_to(m)
-                st_folium(m, height=500, use_container_width=True)
+                import streamlit.components.v1 as components
+                components.html(m._repr_html_(), height=500)
 
             except Exception as e:
                 st.error(f"Error cargando mapa: {e}")
@@ -2099,8 +2074,9 @@ def display_advanced_maps_tab(df_long, gdf_stations, matrices, grid, mask, gdf_z
         opacidad=opacidad
     )
     
-    # 3. RENDERIZADO
-    st_folium(m, use_container_width=True, height=600, key=f"map_{capa_sel}")
+    # 3. RENDERIZADO HTML SEGURO
+    import streamlit.components.v1 as components
+    components.html(m._repr_html_(), height=600)
 
 # ==============================================================================
 # PESTAÑA DE PRONÓSTICO CLIMÁTICO (HISTORIA + NOAA + PROPHET)
