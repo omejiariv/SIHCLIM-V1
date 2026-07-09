@@ -1163,42 +1163,8 @@ def display_realtime_dashboard(df_long, gdf_stations, gdf_filtered, **kwargs):
 
     # --- SUB-PESTAÑA 2: RADAR Y OBSERVACIÓN 3D (WINDY) ---
     with tab_sat:
-        st.subheader("Radar Meteorológico y Atmósfera 3D (Tiempo Real)")
-
-        # Controles
-        c_sat1, c_sat2 = st.columns([1, 4])
-        with c_sat1:
-            st.info("Selecciona la variable a monitorear:")
-            capa_windy = st.radio(
-                "Capa Atmosférica:",
-                ["🌧️ Lluvia y Truenos", "💨 Viento (Altitud 3D)", "☁️ Nubes (Altitud 3D)"],
-                index=0,
-            )
-            
-            st.markdown("---")
-            st.caption("💡 **Nota sobre Altitud:** El selector de altura en el mapa se bloquea con la Lluvia (se mide en superficie). Si eliges Viento o Nubes, podrás explorar la atmósfera desde el suelo hasta los 13.5 km de altura.")
-
-        with c_sat2:
-            import streamlit.components.v1 as components
-            
-            # Traductor de capas para el motor de Windy
-            if capa_windy == "🌧️ Lluvia y Truenos":
-                overlay = "rain"
-            elif capa_windy == "💨 Viento (Altitud 3D)":
-                overlay = "wind"
-            else:
-                overlay = "clouds"
-                
-            # iFrame Dinámico: Inmune a bloqueos, centrado en Antioquia y con la capa seleccionada
-            windy_iframe = f"""
-            <iframe width="100%" height="600" 
-                src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km/h&zoom=7&overlay={overlay}&product=ecmwf&level=surface&lat=6.24&lon=-75.58" 
-                frameborder="0">
-            </iframe>
-            """
-            components.html(windy_iframe, height=650)
-            
-            st.caption("🟢 **Línea de Tiempo:** Dale al botón de 'Play' ▶️ en la esquina inferior izquierda del mapa para ver la proyección y el movimiento histórico.")
+        st.info("🛰️ El Radar Satelital ha sido promovido a su propio Centro de Comando.")
+        st.page_link("pages/17_🛰️_Radar_Meteorologico.py", label="Ir al Centro de Observación Atmosférica", icon="🚀", use_container_width=True)
             
     # --- SUB-PESTAÑA 3: ALERTAS ---
     with tab_alert:
