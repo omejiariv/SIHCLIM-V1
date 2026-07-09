@@ -90,146 +90,153 @@ fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2020, 1
 fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.timedelta(days=10))
 
 # ==============================================================================
-# BOTÓN DE SINCRONIZACIÓN SATELITAL
+# 📦 CAJA FUERTE EXPANDIBLE: MOTORES DE EXTRACCIÓN (Copernicus / IDEAM)
 # ==============================================================================
-st.markdown("### 🎯 Modo Francotirador (Descarga Incremental)")
-ids_especificos = st.text_area(
-    "Para no sobrecargar el satélite, pega aquí los IDs de las estaciones que fallaron o que deseas actualizar (separados por coma o espacio). Si deseas escanear TODA la red, deja este cuadro vacío:",
-    placeholder="Ejemplo: 11025010, 11100010, 23065110..."
-)
-
-if st.button("🚀 Iniciar Sincronización Satelital", type="primary"):
-    engine = db_manager.get_engine()
+with st.expander("🛠️ Herramientas de Sincronización y Extracción de Datos (Desplegar)", expanded=False):
     
-    with st.spinner("1. Extrayendo coordenadas de la base de datos..."):
-        try:
-            df_estaciones = pd.read_sql("SELECT id_estacion, latitud, longitud FROM estaciones WHERE latitud IS NOT NULL", engine)
-        except Exception as e:
-            st.error(f"Error conectando a BD: {e}")
-            st.stop()
+    # Cambiamos st.header por st.markdown("#### ...") para que el texto se adapte al tamaño de la caja
+    st.markdown("#### 🛰️ Sincronizador Maestro Satelital (2021 - Presente)")
+    st.info("Descarga el 'Delta' de datos faltantes (Lluvia, ETR, Temp, Rad) para todas las estaciones usando la red satelital Copernicus (Open-Meteo).")
 
-    # 🛡️ FILTRO FRANCOTIRADOR: Solo dejamos las estaciones que el usuario pegó
-    if ids_especificos.strip():
-        import re
-        # Extraer todos los números del texto ingresado
-        lista_ids = re.findall(r'\d+', ids_especificos)
-        if lista_ids:
-            df_estaciones = df_estaciones[df_estaciones['id_estacion'].astype(str).isin(lista_ids)]
-            st.info(f"🎯 Modo Francotirador Activado: Escaneando únicamente {len(df_estaciones)} estaciones específicas.")
+    col1, col2 = st.columns(2)
+    fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2020, 1, 1))
+    fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.timedelta(days=10))
 
-    if not df_estaciones.empty:
-        ids = df_estaciones['id_estacion'].tolist()
-        lats = df_estaciones['latitud'].tolist()
-        lons = df_estaciones['longitud'].tolist()
+    # ==============================================================================
+    # BOTÓN DE SINCRONIZACIÓN SATELITAL
+    # ==============================================================================
+    st.markdown("#### 🎯 Modo Francotirador (Descarga Incremental)")
+    ids_especificos = st.text_area(
+        "Para no sobrecargar el satélite, pega aquí los IDs de las estaciones que fallaron o que deseas actualizar (separados por coma o espacio). Si deseas escanear TODA la red, deja este cuadro vacío:",
+        placeholder="Ejemplo: 11025010, 11100010, 23065110..."
+    )
+
+    if st.button("🚀 Iniciar Sincronización Satelital", type="primary"):
+        engine = db_manager.get_engine()
         
-        # Escaneo profundo de Copérnicus (Usa el Modo Sigilo que ya programamos)
-        df_resultado = openmeteo_api.get_historical_monthly_series(
-            station_ids=ids, lats=lats, lons=lons, 
-            start_date=fecha_inicio.strftime('%Y-%m-%d'), 
-            end_date=fecha_fin.strftime('%Y-%m-%d')
+        with st.spinner("1. Extrayendo coordenadas de la base de datos..."):
+            try:
+                df_estaciones = pd.read_sql("SELECT id_estacion, latitud, longitud FROM estaciones WHERE latitud IS NOT NULL", engine)
+            except Exception as e:
+                st.error(f"Error conectando a BD: {e}")
+                st.stop()
+
+        # 🛡️ FILTRO FRANCOTIRADOR: Solo dejamos las estaciones que el usuario pegó
+        if ids_especificos.strip():
+            import re
+            lista_ids = re.findall(r'\d+', ids_especificos)
+            if lista_ids:
+                df_estaciones = df_estaciones[df_estaciones['id_estacion'].astype(str).isin(lista_ids)]
+                st.info(f"🎯 Modo Francotirador Activado: Escaneando únicamente {len(df_estaciones)} estaciones específicas.")
+
+        if not df_estaciones.empty:
+            ids = df_estaciones['id_estacion'].tolist()
+            lats = df_estaciones['latitud'].tolist()
+            lons = df_estaciones['longitud'].tolist()
+            
+            df_resultado = openmeteo_api.get_historical_monthly_series(
+                station_ids=ids, lats=lats, lons=lons, 
+                start_date=fecha_inicio.strftime('%Y-%m-%d'), 
+                end_date=fecha_fin.strftime('%Y-%m-%d')
+            )
+            
+            if not df_resultado.empty:
+                df_lluvia_ancha = df_resultado.pivot(index='date', columns='id_estacion', values='ppt_mm').reset_index()
+                df_lluvia_ancha['date'] = df_lluvia_ancha['date'].dt.strftime('%Y-%m-%d')
+                df_lluvia_ancha.rename(columns={'date': 'fecha'}, inplace=True)
+                
+                columnas_estaciones = [col for col in df_lluvia_ancha.columns if col != 'fecha']
+                estaciones_exitosas = [col for col in columnas_estaciones if df_lluvia_ancha[col].notna().any()]
+                estaciones_fallidas = list(set(ids) - set(estaciones_exitosas))
+                
+                st.session_state['copernicus_descargado'] = df_lluvia_ancha
+                st.session_state['copernicus_exitosas'] = estaciones_exitosas
+                st.session_state['copernicus_fallidas'] = estaciones_fallidas
+                st.rerun() 
+            else:
+                st.error("❌ Misión Abortada: El escaneo terminó, pero la tabla llegó 100% vacía.")
+        else:
+            st.warning("No se encontraron estaciones válidas para consultar. Revisa los IDs ingresados.")
+                
+    # ==============================================================================
+    # RENDERIZADO FUERA DEL BOTÓN
+    # ==============================================================================
+    if st.session_state['copernicus_descargado'] is not None:
+        st.markdown("---")
+        st.success("✅ ¡Datos satelitales descargados y protegidos en memoria!")
+        
+        df_lluvia_ancha = st.session_state['copernicus_descargado']
+        est_exit = st.session_state['copernicus_exitosas']
+        est_fall = st.session_state['copernicus_fallidas']
+        total_ids = len(est_exit) + len(est_fall)
+        
+        st.markdown("#### 📋 Reporte de Auditoría del Escaneo")
+        col_aud1, col_aud2 = st.columns(2)
+        
+        with col_aud1:
+            st.metric("🟢 Estaciones Actualizadas", f"{len(est_exit)} / {total_ids}")
+            if est_exit:
+                with st.expander("Ver lista de IDs Sincronizados"):
+                    st.write(est_exit)
+                    
+        with col_aud2:
+            st.metric("🔴 Estaciones Sin Datos (Bache)", f"{len(est_fall)} / {total_ids}")
+            if est_fall:
+                with st.expander("Ver lista de IDs Fallidos / Sin Coordenadas"):
+                    st.write(est_fall)
+                    
+        st.write("**Vista Previa del Delta de Lluvia**")
+        st.dataframe(df_lluvia_ancha.tail(10))
+        
+        csv_data = df_lluvia_ancha.to_csv(index=False, sep=";").encode('utf-8')
+        st.download_button(
+            label="📥 Descargar Delta de Lluvia Satelital",
+            data=csv_data,
+            file_name="DatosPptnmes_Delta_2021_HOY.csv",
+            mime="text/csv",
+            type="primary",
+            use_container_width=True
         )
         
-        if not df_resultado.empty:
-            # 1. PIVOTEO A MATRIZ ANCHA
-            df_lluvia_ancha = df_resultado.pivot(index='date', columns='id_estacion', values='ppt_mm').reset_index()
-            df_lluvia_ancha['date'] = df_lluvia_ancha['date'].dt.strftime('%Y-%m-%d')
-            df_lluvia_ancha.rename(columns={'date': 'fecha'}, inplace=True)
-            
-            # 2. AUDITORÍA FORENSE
-            columnas_estaciones = [col for col in df_lluvia_ancha.columns if col != 'fecha']
-            estaciones_exitosas = [col for col in columnas_estaciones if df_lluvia_ancha[col].notna().any()]
-            estaciones_fallidas = list(set(ids) - set(estaciones_exitosas))
-            
-            # 3. GUARDAR EN LA BÓVEDA (SESSION STATE)
-            st.session_state['copernicus_descargado'] = df_lluvia_ancha
-            st.session_state['copernicus_exitosas'] = estaciones_exitosas
-            st.session_state['copernicus_fallidas'] = estaciones_fallidas
-            st.rerun() 
-        else:
-            st.error("❌ Misión Abortada: El escaneo terminó, pero la tabla llegó 100% vacía. Causa probable: Bloqueo por límite diario de descargas de Open-Meteo. Intenta de nuevo en 12-24 horas.")
-    else:
-        st.warning("No se encontraron estaciones válidas para consultar. Revisa los IDs ingresados.")
-            
-# ==============================================================================
-# RENDERIZADO FUERA DEL BOTÓN (Para que nunca desaparezca)
-# ==============================================================================
-if st.session_state['copernicus_descargado'] is not None:
+    # ==============================================================================
+    # CONECTOR IDEAM
+    # ==============================================================================
     st.markdown("---")
-    st.success("✅ ¡Datos satelitales descargados y protegidos en memoria!")
-    
-    df_lluvia_ancha = st.session_state['copernicus_descargado']
-    est_exit = st.session_state['copernicus_exitosas']
-    est_fall = st.session_state['copernicus_fallidas']
-    total_ids = len(est_exit) + len(est_fall)
-    
-    st.markdown("### 📋 Reporte de Auditoría del Escaneo")
-    col_aud1, col_aud2 = st.columns(2)
-    
-    with col_aud1:
-        st.metric("🟢 Estaciones Actualizadas", f"{len(est_exit)} / {total_ids}")
-        if est_exit:
-            with st.expander("Ver lista de IDs Sincronizados"):
-                st.write(est_exit)
-                
-    with col_aud2:
-        st.metric("🔴 Estaciones Sin Datos (Bache)", f"{len(est_fall)} / {total_ids}")
-        if est_fall:
-            with st.expander("Ver lista de IDs Fallidos / Sin Coordenadas"):
-                st.write(est_fall)
-                
-    st.subheader("📊 Vista Previa del Delta de Lluvia")
-    st.dataframe(df_lluvia_ancha.tail(10))
-    
-    # BOTÓN DE DESCARGA ETERNO
-    csv_data = df_lluvia_ancha.to_csv(index=False, sep=";").encode('utf-8')
-    st.download_button(
-        label="📥 Descargar Delta de Lluvia Satelital",
-        data=csv_data,
-        file_name="DatosPptnmes_Delta_2021_HOY.csv",
-        mime="text/csv",
-        type="primary",
-        use_container_width=True
-    )
-    
-# Datos IDEAM
+    st.markdown("#### 🇨🇴 Conector Capa 2: Red Oficial IDEAM (Datos Abiertos)")
+    st.info("Descarga registros crudos de precipitación directamente de los servidores del Estado para rellenar vacíos recientes.")
 
-st.markdown("---")
-st.header("🇨🇴 Conector Capa 2: Red Oficial IDEAM (Datos Abiertos)")
-st.info("Descarga registros crudos de precipitación directamente de los servidores del Estado para rellenar vacíos recientes.")
+    fecha_inicio_ideam = st.date_input("Fecha de Inicio (Búsqueda IDEAM):", datetime.date(2020, 1, 1), key="ideam_date")
 
-fecha_inicio_ideam = st.date_input("Fecha de Inicio (Búsqueda IDEAM):", datetime.date(2020, 1, 1), key="ideam_date")
-
-if st.button("🏛️ Extraer Datos Oficiales IDEAM", type="primary"):
-    engine = db_manager.get_engine()
-    
-    with st.spinner("1. Extrayendo catálogo de estaciones de la base de datos..."):
-        try:
-            # Traemos TODAS las estaciones de Sihcli-Poter
-            df_est = pd.read_sql("SELECT id_estacion FROM estaciones", engine)
-            ids_sihcli = df_est['id_estacion'].astype(str).tolist()
-        except Exception as e:
-            st.error(f"Error conectando a BD: {e}")
-            st.stop()
-            
-    if ids_sihcli:
-        with st.spinner(f"2. Consultando la API del IDEAM para {len(ids_sihcli)} estaciones..."):
-            exito, resultado = extraer_datos_ideam(ids_sihcli, fecha_inicio_ideam.strftime('%Y-%m-%d'))
-            
-            if exito:
-                st.success("✅ ¡Datos oficiales extraídos con éxito desde el IDEAM!")
-                st.dataframe(resultado)
+    if st.button("🏛️ Extraer Datos Oficiales IDEAM", type="primary"):
+        engine = db_manager.get_engine()
+        
+        with st.spinner("1. Extrayendo catálogo de estaciones de la base de datos..."):
+            try:
+                df_est = pd.read_sql("SELECT id_estacion FROM estaciones", engine)
+                ids_sihcli = df_est['id_estacion'].astype(str).tolist()
+            except Exception as e:
+                st.error(f"Error conectando a BD: {e}")
+                st.stop()
                 
-                csv_ideam = resultado.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
-                st.download_button(
-                    label="📥 Descargar Parche IDEAM (Capa 2)",
-                    data=csv_ideam,
-                    file_name="Datos_IDEAM_Capa2.csv",
-                    mime="text/csv",
-                    type="primary"
-                )
-                st.caption("☝️ Este archivo es tu 'Parche Intermedio Institucional'. Úsalo en la Caja 2 de la herramienta de Fusión en Cascada.")
-            else:
-                st.warning(f"Aviso del sistema: {resultado}")
+        if ids_sihcli:
+            with st.spinner(f"2. Consultando la API del IDEAM para {len(ids_sihcli)} estaciones..."):
+                exito, resultado = extraer_datos_ideam(ids_sihcli, fecha_inicio_ideam.strftime('%Y-%m-%d'))
+                
+                if exito:
+                    st.success("✅ ¡Datos oficiales extraídos con éxito desde el IDEAM!")
+                    st.dataframe(resultado)
+                    
+                    csv_ideam = resultado.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
+                    st.download_button(
+                        label="📥 Descargar Parche IDEAM (Capa 2)",
+                        data=csv_ideam,
+                        file_name="Datos_IDEAM_Capa2.csv",
+                        mime="text/csv",
+                        type="primary"
+                    )
+                    st.caption("☝️ Este archivo es tu 'Parche Intermedio Institucional'. Úsalo en la Caja 2 de la herramienta de Fusión en Cascada.")
+                else:
+                    st.warning(f"Aviso del sistema: {resultado}")
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
