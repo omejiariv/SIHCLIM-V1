@@ -1,4 +1,4 @@
-# pages/14_🛰️_Satelite_En_Vivo.py
+# pages/14_🌍_Satelite_Terrestre.py
 
 import os
 import sys
