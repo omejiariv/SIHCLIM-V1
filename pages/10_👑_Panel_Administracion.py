@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 import shutil
 import datetime
+import re
 
 import pandas as pd
 import geopandas as gpd
@@ -32,9 +33,7 @@ try:
     from modules import db_manager
     from modules import openmeteo_api
     from modules.ideam_api import extraer_datos_ideam
-    from modules.openmeteo_api import get_historical_monthly_series
 except ImportError:
-    # Fallback de rutas por si hay problemas de lectura entre carpetas
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors
     from modules.admin_utils import get_raster_list, upload_raster_to_storage, delete_raster_from_storage
@@ -42,7 +41,12 @@ except ImportError:
     from modules import db_manager
     from modules import openmeteo_api
     from modules.ideam_api import extraer_datos_ideam
-    from modules.openmeteo_api import get_historical_monthly_series
+
+# ==============================================================================
+# 📂 MENÚ DE NAVEGACIÓN (DEBE IR ANTES DEL BLOQUEO)
+# ==============================================================================
+# 🚀 FIX 1: Lo ponemos aquí para que el sidebar NUNCA desaparezca.
+selectors.renderizar_menu_navegacion("Panel Administración")
 
 # ==============================================================================
 # 🔒 BARRERA DE SEGURIDAD ABSOLUTA (GATEKEEPER)
@@ -50,11 +54,9 @@ except ImportError:
 st.title("👑 Centro de Control y Administración")
 st.markdown("---")
 
-# Inicializamos el estado de autenticación si no existe
 if 'admin_auth_status' not in st.session_state:
     st.session_state['admin_auth_status'] = False
 
-# Si NO está autenticado, mostramos la pantalla de bloqueo y DETENEMOS el código
 if not st.session_state['admin_auth_status']:
     st.warning("⚠️ **Área Restringida.** Por favor, identifícate para acceder a los motores de inyección y bases de datos maestras.")
     
@@ -62,58 +64,53 @@ if not st.session_state['admin_auth_status']:
     with col_pwd1:
         pwd = st.text_input("🔑 Contraseña de Administrador:", type="password")
         if st.button("Desbloquear Sistema", type="primary"):
-            if pwd == st.secrets.get("admin_password", "AdminPoter"): 
+            # Rescate de clave de secrets
+            clave_correcta = st.secrets.get("admin_password", st.secrets.get("CLAVE_ADMIN", "AdminPoter"))
+            if pwd == clave_correcta: 
                 st.session_state['admin_auth_status'] = True
                 st.rerun()
             else:
                 st.error("❌ Acceso Denegado. Contraseña incorrecta.")
     
-    st.stop() 
+    st.stop() # 🛑 El código muere aquí si no hay clave.
 
 # ==============================================================================
 # 🔓 ZONA SEGURA: El código inferior solo se ejecuta si la contraseña es correcta
 # ==============================================================================
 st.success("✅ Acceso Concedido. Modo Administrador Activado.")
+
+engine = get_engine()
+
 # ==============================================================================
-# 🧠 MEMORIA DEL PANEL: Evitar que el archivo desaparezca si la página parpadea
+# 🧠 MEMORIA DEL PANEL
 # ==============================================================================
 if 'copernicus_descargado' not in st.session_state:
     st.session_state['copernicus_descargado'] = None
     st.session_state['copernicus_metricas'] = None
     st.session_state['copernicus_exitosas'] = []
     st.session_state['copernicus_fallidas'] = []
-st.header("🛰️ Sincronizador Maestro Satelital (2021 - Presente)")
-st.info("Descarga el 'Delta' de datos faltantes (Lluvia, ETR, Temp, Rad) para todas las estaciones usando la red satelital Copernicus (Open-Meteo).")
-
-col1, col2 = st.columns(2)
-fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2020, 1, 1))
-fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.timedelta(days=10))
 
 # ==============================================================================
-# 📦 CAJA FUERTE EXPANDIBLE: MOTORES DE EXTRACCIÓN (Copernicus / IDEAM)
+# 📦 CAJA FUERTE EXPANDIBLE: MOTORES DE EXTRACCIÓN
 # ==============================================================================
 with st.expander("🛠️ Herramientas de Sincronización y Extracción de Datos (Desplegar)", expanded=False):
     
-    # Cambiamos st.header por st.markdown("#### ...") para que el texto se adapte al tamaño de la caja
     st.markdown("#### 🛰️ Sincronizador Maestro Satelital (2021 - Presente)")
-    st.info("Descarga el 'Delta' de datos faltantes (Lluvia, ETR, Temp, Rad) para todas las estaciones usando la red satelital Copernicus (Open-Meteo).")
+    st.info("Descarga el 'Delta' de datos faltantes para todas las estaciones usando la red satelital Copernicus (Open-Meteo).")
 
     col1, col2 = st.columns(2)
-    fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2020, 1, 1))
-    fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.timedelta(days=10))
+    # 🚀 FIX 2: Añadimos 'key' únicos para evitar el error de DuplicateElementId
+    fecha_inicio = col1.date_input("Fecha de Inicio (Delta):", datetime.date(2020, 1, 1), key="delta_inicio")
+    fecha_fin = col2.date_input("Fecha de Fin:", datetime.date.today() - datetime.timedelta(days=10), key="delta_fin")
 
-    # ==============================================================================
-    # BOTÓN DE SINCRONIZACIÓN SATELITAL
-    # ==============================================================================
     st.markdown("#### 🎯 Modo Francotirador (Descarga Incremental)")
     ids_especificos = st.text_area(
         "Para no sobrecargar el satélite, pega aquí los IDs de las estaciones que fallaron o que deseas actualizar (separados por coma o espacio). Si deseas escanear TODA la red, deja este cuadro vacío:",
-        placeholder="Ejemplo: 11025010, 11100010, 23065110..."
+        placeholder="Ejemplo: 11025010, 11100010...",
+        key="txt_francotirador"
     )
 
-    if st.button("🚀 Iniciar Sincronización Satelital", type="primary"):
-        engine = db_manager.get_engine()
-        
+    if st.button("🚀 Iniciar Sincronización Satelital", type="primary", key="btn_sync"):
         with st.spinner("1. Extrayendo coordenadas de la base de datos..."):
             try:
                 df_estaciones = pd.read_sql("SELECT id_estacion, latitud, longitud FROM estaciones WHERE latitud IS NOT NULL", engine)
@@ -121,13 +118,11 @@ with st.expander("🛠️ Herramientas de Sincronización y Extracción de Datos
                 st.error(f"Error conectando a BD: {e}")
                 st.stop()
 
-        # 🛡️ FILTRO FRANCOTIRADOR: Solo dejamos las estaciones que el usuario pegó
         if ids_especificos.strip():
-            import re
             lista_ids = re.findall(r'\d+', ids_especificos)
             if lista_ids:
                 df_estaciones = df_estaciones[df_estaciones['id_estacion'].astype(str).isin(lista_ids)]
-                st.info(f"🎯 Modo Francotirador Activado: Escaneando únicamente {len(df_estaciones)} estaciones específicas.")
+                st.info(f"🎯 Modo Francotirador Activado: Escaneando {len(df_estaciones)} estaciones.")
 
         if not df_estaciones.empty:
             ids = df_estaciones['id_estacion'].tolist()
@@ -154,13 +149,10 @@ with st.expander("🛠️ Herramientas de Sincronización y Extracción de Datos
                 st.session_state['copernicus_fallidas'] = estaciones_fallidas
                 st.rerun() 
             else:
-                st.error("❌ Misión Abortada: El escaneo terminó, pero la tabla llegó 100% vacía.")
+                st.error("❌ Misión Abortada: El escaneo terminó vacío.")
         else:
-            st.warning("No se encontraron estaciones válidas para consultar. Revisa los IDs ingresados.")
+            st.warning("No se encontraron estaciones válidas.")
                 
-    # ==============================================================================
-    # RENDERIZADO FUERA DEL BOTÓN
-    # ==============================================================================
     if st.session_state['copernicus_descargado'] is not None:
         st.markdown("---")
         st.success("✅ ¡Datos satelitales descargados y protegidos en memoria!")
@@ -170,7 +162,7 @@ with st.expander("🛠️ Herramientas de Sincronización y Extracción de Datos
         est_fall = st.session_state['copernicus_fallidas']
         total_ids = len(est_exit) + len(est_fall)
         
-        st.markdown("#### 📋 Reporte de Auditoría del Escaneo")
+        st.markdown("#### 📋 Reporte de Auditoría")
         col_aud1, col_aud2 = st.columns(2)
         
         with col_aud1:
@@ -180,9 +172,9 @@ with st.expander("🛠️ Herramientas de Sincronización y Extracción de Datos
                     st.write(est_exit)
                     
         with col_aud2:
-            st.metric("🔴 Estaciones Sin Datos (Bache)", f"{len(est_fall)} / {total_ids}")
+            st.metric("🔴 Estaciones Sin Datos", f"{len(est_fall)} / {total_ids}")
             if est_fall:
-                with st.expander("Ver lista de IDs Fallidos / Sin Coordenadas"):
+                with st.expander("Ver lista de IDs Fallidos"):
                     st.write(est_fall)
                     
         st.write("**Vista Previa del Delta de Lluvia**")
@@ -190,27 +182,23 @@ with st.expander("🛠️ Herramientas de Sincronización y Extracción de Datos
         
         csv_data = df_lluvia_ancha.to_csv(index=False, sep=";").encode('utf-8')
         st.download_button(
-            label="📥 Descargar Delta de Lluvia Satelital",
+            label="📥 Descargar Delta de Lluvia",
             data=csv_data,
             file_name="DatosPptnmes_Delta_2021_HOY.csv",
             mime="text/csv",
             type="primary",
-            use_container_width=True
+            use_container_width=True,
+            key="btn_download_copernicus"
         )
         
-    # ==============================================================================
-    # CONECTOR IDEAM
-    # ==============================================================================
     st.markdown("---")
     st.markdown("#### 🇨🇴 Conector Capa 2: Red Oficial IDEAM (Datos Abiertos)")
-    st.info("Descarga registros crudos de precipitación directamente de los servidores del Estado para rellenar vacíos recientes.")
+    st.info("Descarga registros crudos de precipitación...")
 
-    fecha_inicio_ideam = st.date_input("Fecha de Inicio (Búsqueda IDEAM):", datetime.date(2020, 1, 1), key="ideam_date")
+    fecha_inicio_ideam = st.date_input("Fecha de Inicio (IDEAM):", datetime.date(2020, 1, 1), key="ideam_date_2")
 
-    if st.button("🏛️ Extraer Datos Oficiales IDEAM", type="primary"):
-        engine = db_manager.get_engine()
-        
-        with st.spinner("1. Extrayendo catálogo de estaciones de la base de datos..."):
+    if st.button("🏛️ Extraer Datos Oficiales IDEAM", type="primary", key="btn_ideam"):
+        with st.spinner("1. Extrayendo catálogo..."):
             try:
                 df_est = pd.read_sql("SELECT id_estacion FROM estaciones", engine)
                 ids_sihcli = df_est['id_estacion'].astype(str).tolist()
@@ -219,11 +207,11 @@ with st.expander("🛠️ Herramientas de Sincronización y Extracción de Datos
                 st.stop()
                 
         if ids_sihcli:
-            with st.spinner(f"2. Consultando la API del IDEAM para {len(ids_sihcli)} estaciones..."):
+            with st.spinner(f"2. Consultando API IDEAM para {len(ids_sihcli)} estaciones..."):
                 exito, resultado = extraer_datos_ideam(ids_sihcli, fecha_inicio_ideam.strftime('%Y-%m-%d'))
                 
                 if exito:
-                    st.success("✅ ¡Datos oficiales extraídos con éxito desde el IDEAM!")
+                    st.success("✅ ¡Datos oficiales extraídos con éxito!")
                     st.dataframe(resultado)
                     
                     csv_ideam = resultado.to_csv(sep=';', index=False, encoding='utf-8').encode('utf-8')
@@ -232,19 +220,11 @@ with st.expander("🛠️ Herramientas de Sincronización y Extracción de Datos
                         data=csv_ideam,
                         file_name="Datos_IDEAM_Capa2.csv",
                         mime="text/csv",
-                        type="primary"
+                        type="primary",
+                        key="btn_download_ideam"
                     )
-                    st.caption("☝️ Este archivo es tu 'Parche Intermedio Institucional'. Úsalo en la Caja 2 de la herramienta de Fusión en Cascada.")
                 else:
                     st.warning(f"Aviso del sistema: {resultado}")
-
-# ==========================================
-# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
-# ==========================================
-# Llama al menú expandible y resalta la página actual
-selectors.renderizar_menu_navegacion("Panel Administración")
-
-engine = get_engine()
 
 # --- 3. FUNCIONES AUXILIARES ---
 
