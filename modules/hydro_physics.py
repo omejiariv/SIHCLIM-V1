@@ -6,48 +6,40 @@ from rasterio.warp import reproject, Resampling
 from rasterio.io import MemoryFile
 import os
 import io
-import urllib.request
-import ssl
+import requests # 🚀 FIX: Usar requests es más eficiente y estable que urllib
+import tempfile
 import streamlit as st
 
-# Importamos el interpolador maestro blindado
 from modules.interpolation import interpolador_maestro
 
 # --- 🚀 CLOUD SMART CACHE BLINDADO ---
-@st.cache_data(show_spinner="📥 Descargando Raster desde Supabase...")
+@st.cache_resource # Cambiado a cache_resource para que sea un Singleton global
 def download_raster_secure(url):
     """
-    Descarga el raster asegurando que no haya bloqueos de SSL.
+    Descarga el raster asegurando que se almacene en memoria temporal volátil.
     """
     if not url or not isinstance(url, str) or not url.startswith("http"): 
         return url
         
-    cache_dir = os.path.join(os.getcwd(), "data", "cloud_cache")
-    os.makedirs(cache_dir, exist_ok=True)
+    # Usamos el directorio temporal del sistema (no /data/)
+    temp_dir = tempfile.gettempdir()
     filename = url.split("/")[-1]
-    local_path = os.path.join(cache_dir, filename)
+    local_path = os.path.join(temp_dir, filename)
     
-    if not os.path.exists(local_path) or os.path.getsize(local_path) < 1024:
-        try:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, context=ctx) as response, open(local_path, 'wb') as out_file:
-                out_file.write(response.read())
-        except Exception as e:
-            print(f"Error descargando {url}: {e}")
-            return None
-    return local_path
-
-# --- A. BASE DE CONOCIMIENTO ---
-CLC_C_BASE = {
-    111: 0.90, 112: 0.85, 121: 0.85, # Urbanos
-    211: 0.60, 231: 0.50, 241: 0.45, # Agrícolas
-    311: 0.15, 321: 0.20, 312: 0.18, # Bosques
-    322: 0.25, 511: 0.05,            # Herbazales/Páramo
-    'default': 0.50
-}
+    # Si ya existe en la caché volátil, saltamos la descarga
+    if os.path.exists(local_path):
+        return local_path
+        
+    try:
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, stream=True, timeout=60)
+        response.raise_for_status()
+        with open(local_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        return local_path
+    except Exception as e:
+        st.error(f"Error descargando ráster {filename}: {e}")
+        return None
 
 # --- B. INTERPOLACIÓN PUENTE ---
 def interpolar_variable(gdf_puntos, columna_valor, grid_x, grid_y, method='kriging', dem_array=None):
@@ -59,14 +51,13 @@ def interpolar_variable(gdf_puntos, columna_valor, grid_x, grid_y, method='krigi
         metodo=method.lower(),
         dem_grid=dem_array
     )
-    Z_Interp = np.nan_to_num(Z_Interp, nan=0)
-    return np.maximum(Z_Interp, 0), Z_Error
+    return np.nan_to_num(Z_Interp, nan=0), Z_Error
 
-# --- C. WARPING (NUBE Y LOCAL) ---
+# --- C. WARPING (OPTIMIZADO PARA MEMORIA) ---
 def _ejecutar_reproject(src, bounds, shape):
-    """Función interna modularizada para re-proyectar cualquier fuente raster."""
     dst_crs = 'EPSG:4326'
     minx, miny, maxx, maxy = bounds
+    # Definimos la ventana de transformación de destino
     dst_transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, shape[1], shape[0])
     destination = np.zeros(shape, dtype=np.float32)
 
@@ -80,21 +71,20 @@ def _ejecutar_reproject(src, bounds, shape):
         resampling=Resampling.bilinear,
         dst_nodata=np.nan 
     )
-    if np.isnan(destination).all(): return None
     return destination
 
 def warper_raster_to_grid(raster_path, bounds, shape):
-    """Lee un raster (ya sea desde URL o desde la RAM) y lo ajusta a la malla."""
-    # 1. Si el archivo viene desde la RAM (Supabase BytesIO)
-    if isinstance(raster_path, (io.BytesIO, bytes)) or hasattr(raster_path, 'read'):
-        if hasattr(raster_path, 'seek'): raster_path.seek(0) # Rebobinar
-        try:
-            with MemoryFile(raster_path) as memfile:
-                with memfile.open() as src:
-                    return _ejecutar_reproject(src, bounds, shape)
-        except Exception as e:
-            print(f"Error warper_raster_to_grid (Memoria): {e}")
-            return None
+    """Lee el raster usando la caché segura y procesa en memoria."""
+    # Descarga/Verifica en caché
+    safe_path = download_raster_secure(raster_path)
+    if not safe_path: return None
+    
+    try:
+        with rasterio.open(safe_path) as src:
+            return _ejecutar_reproject(src, bounds, shape)
+    except Exception as e:
+        print(f"Error en warper: {e}")
+        return None
             
     # 2. Si el archivo es un string (Ruta local o URL)
     safe_path = download_raster_secure(raster_path)
