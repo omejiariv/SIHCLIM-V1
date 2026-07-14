@@ -82,36 +82,40 @@ if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
             bbox = gdf_zona_seleccionada.unary_union.envelope
             gdf_zona_seleccionada = gpd.GeoDataFrame({'geometry': [bbox]}, crs=gdf_zona_seleccionada.crs)
 
-# --- 2. CARGA DEL DEM (CONECTADO A LA NUBE - OPTIMIZADO) ---
+# --- 2. CARGA DEL DEM (CONECTADO A LA NUBE - BLINDADO) ---
 SUPABASE_PROJECT_ID = "ldunpssoxvifemoyeuac"
 DEM_PATH = f"https://{SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public/rasters/DemAntioquia_EPSG3116.tif"
 
-@st.cache_data(show_spinner="Descargando y procesando terreno desde la Nube...")
+@st.cache_data(show_spinner="Descargando y procesando terreno...")
 def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
     if _gdf_corte is None or _gdf_corte.empty: 
         return None, None, None
     
-    # Descarga/Verifica en caché volátil local (en el servidor de Streamlit)
     safe_path = download_raster_secure(ruta_dem)
     if not safe_path: 
-        st.error("❌ Fallo Crítico: No se pudo descargar el DEM. Verifica la conexión con Supabase.")
+        st.error("❌ Fallo Crítico: No se pudo descargar el DEM.")
         return None, None, None
             
     try:
-        # 1. Blindaje de Geometría
+        # 1. Asegurar geometría válida
         geometria_valida = _gdf_corte.copy()
-        geometria_valida['geometry'] = geometria_valida.buffer(0) 
+        geometria_valida['geometry'] = geometria_valida.buffer(0).make_valid()
 
         with rasterio.open(safe_path) as src:
             from rasterio.windows import from_bounds
             
-            # Proyectar el bbox de la zona al CRS del DEM
+            # Reproyectar la geometría al CRS del DEM (src.crs)
             gdf_proy = geometria_valida.to_crs(src.crs)
-            minx, miny, maxx, maxy = gdf_proy.total_bounds
             
-            # 🚀 FIX: Asegurar un tamaño mínimo de ventana (ej. 5x5 píxeles) 
-            # para evitar el error de width/height <= 0
-            res = src.res[0] # Tamaño del píxel del DEM
+            # 🚀 FIX CARTOGRÁFICO: Búfer de seguridad del 10% para evitar "vacíos"
+            # Esto compensa posibles desalineaciones entre WGS84 y el sistema plano
+            b_minx, b_miny, b_maxx, b_maxy = gdf_proy.total_bounds
+            x_buffer = (b_maxx - b_minx) * 0.1
+            y_buffer = (b_maxy - b_miny) * 0.1
+            minx, miny, maxx, maxy = b_minx - x_buffer, b_miny - y_buffer, b_maxx + x_buffer, b_maxy + y_buffer
+            
+            # Asegurar tamaño mínimo (5 píxeles)
+            res = src.res[0]
             min_size = res * 5 
             if (maxx - minx) < min_size:
                 center_x = (minx + maxx) / 2
@@ -120,37 +124,32 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
                 center_y = (miny + maxy) / 2
                 miny, maxy = center_y - (min_size / 2), center_y + (min_size / 2)
             
-            # Definir la ventana de lectura con dimensiones seguras
+            # Definir ventana de lectura
             window = from_bounds(minx, miny, maxx, maxy, src.transform)
             
-            # Leer únicamente los píxeles dentro de la ventana
+            # Leer datos
             out_image = src.read(1, window=window)
-            
-            # 🚀 FIX ADICIONAL: Validar dimensiones antes de procesar
-            if out_image.shape[0] == 0 or out_image.shape[1] == 0:
+            if out_image.size == 0:
                 return None, "EMPTY_DATA", None
                 
             out_transform = src.window_transform(window)
-                
             out_meta = src.meta.copy()
             out_meta.update({
                 "driver": "GTiff",
-                "height": out_image.shape[0], # rasterio lee (filas, cols)
+                "height": out_image.shape[0],
                 "width": out_image.shape[1],
                 "transform": out_transform,
                 "count": 1
             })
             
-            # 2. Recorte preciso con máscara sobre la ventana ya leída
-            # Esto es mucho más ligero que mask() sobre el archivo completo
+            # 2. Recorte preciso con máscara
             from rasterio.features import geometry_mask
             mask_arr = geometry_mask(gdf_proy.geometry, out_shape=out_image.shape, transform=out_transform, invert=True)
             
             dem_array = np.where(mask_arr, out_image, np.nan)
             
-            # Limpieza
-            dem_array = np.where(dem_array == src.nodata, np.nan, dem_array)
-            dem_array = np.where(dem_array < -100, np.nan, dem_array)
+            # Limpieza final
+            dem_array = np.where((dem_array == src.nodata) | (dem_array < -100), np.nan, dem_array)
             
             if np.isnan(dem_array).all(): 
                 return None, "EMPTY_DATA", None
@@ -158,9 +157,9 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
             return dem_array, out_meta, out_transform
             
     except Exception as e:
-        st.error(f"Error procesando DEM (Windowed Read): {e}")
+        st.error(f"Error procesando DEM: {e}")
         return None, None, None
-
+        
 # --- CEREBRO DEL ANALISTA 🧠 ---
 def analista_hidrologico(pendiente_media, hi_value):
     if pendiente_media > 25:
