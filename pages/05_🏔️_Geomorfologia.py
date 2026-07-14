@@ -11,6 +11,8 @@ from rasterio import features
 from rasterio.io import MemoryFile
 import plotly.express as px
 import plotly.graph_objects as go
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from shapely.geometry import shape, LineString, MultiLineString, Polygon
 
@@ -939,7 +941,8 @@ if gdf_zona_seleccionada is not None:
                     m_pour.add_child(folium.LatLngPopup())
                     folium.LayerControl().add_to(m_pour)
                     
-                    mapa_clic = st_folium(m_pour, height=650, width="stretch", key="mapa_pour_point")
+                    # 🚀 FIX 2: Bloquea el tráfico de red inútil. Solo avisa al servidor cuando hay un clic efectivo.
+                    mapa_clic = st_folium(m_pour, height=650, width="stretch", key="mapa_pour_point", returned_objects=["last_clicked"])
                     
                 with c_controles_pour:
                     st.markdown("#### 📍 Controlador Hidrológico")
