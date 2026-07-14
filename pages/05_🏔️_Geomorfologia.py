@@ -960,54 +960,34 @@ if gdf_zona_seleccionada is not None:
                         
                         if st.button("🚀 Extraer Microcuenca", type="primary", use_container_width=True):
                             try:
-                                with st.spinner("⚙️ Procesando Topología y Morfometría..."):
-                                    from pysheds.grid import Grid
+                                with st.spinner("⚙️ Encajando coordenadas y extrayendo polígono..."):
                                     from shapely.geometry import shape
                                     import geopandas as gpd
-                                    import rasterio
                                     import numpy as np
-                                    import tempfile
-                                    import os
                                     
-                                    # 0. PURIFICACIÓN DE ENTRADA
-                                    arr_puro = np.squeeze(np.array(arr_elevacion)).astype(np.float32)
-                                    nodata_val = -9999.0
-                                    arr_puro = np.nan_to_num(arr_puro, nan=nodata_val)
+                                    # 🚀 FIX: Rescatamos el modelo físico directamente de la RAM, saltando minutos de recálculo
+                                    grid_mem = st.session_state.get('grid_obj')
+                                    fdir_mem = st.session_state.get('fdir_obj')
+                                    acc_mem = st.session_state.get('acc_obj')
                                     
-                                    # 1. PUENTE FÍSICO
-                                    with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
-                                        tmp_dem_path = tmp.name
-                                        
-                                    with rasterio.open(
-                                        tmp_dem_path, 'w', driver='GTiff', height=arr_puro.shape[0], width=arr_puro.shape[1],
-                                        count=1, dtype='float32', crs=meta['crs'], transform=transform, nodata=nodata_val
-                                    ) as dst:
-                                        dst.write(arr_puro, 1)
-                                        
-                                    # 2. PySheds (Carga Segura)
-                                    grid = Grid.from_raster(tmp_dem_path)
-                                    dem = grid.read_raster(tmp_dem_path)
+                                    if grid_mem is None or fdir_mem is None or acc_mem is None:
+                                        st.error("⚠️ El modelo hidrológico base no ha terminado de cargar. Ve a la pestaña '🌊 Hidrología' primero para inicializar el terreno.")
+                                        st.stop()
                                     
-                                    try: os.remove(tmp_dem_path) 
-                                    except: pass
-                                    
-                                    # 3. Flujos Hidrológicos
-                                    flooded_dem = grid.fill_depressions(dem)
-                                    inflated_dem = grid.resolve_flats(flooded_dem)
                                     dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
-                                    fdir = grid.flowdir(inflated_dem, dirmap=dirmap)
-                                    acc = grid.accumulation(fdir, dirmap=dirmap)
                                     
-                                    # 4. Snapping
+                                    # 4. Snapping (Encaje inteligente del clic al río más cercano)
                                     transformer_in = Transformer.from_crs("EPSG:4326", meta['crs'], always_xy=True)
                                     x_click, y_click = transformer_in.transform(lon_cierre, lat_cierre)
-                                    x_snap, y_snap = grid.snap_to_mask(acc > umbral_acc, (x_click, y_click), return_dist=False)
                                     
-                                    # 5. Delimitar y Vectorizar
-                                    catch = grid.catchment(x=x_snap, y=y_snap, fdir=fdir, dirmap=dirmap, xytype='coordinate')
+                                    x_snap, y_snap = grid_mem.snap_to_mask(acc_mem > umbral_acc, (x_click, y_click), return_dist=False)
+                                    
+                                    # 5. Delimitar y Vectorizar usando la memoria RAM
+                                    catch = grid_mem.catchment(x=x_snap, y=y_snap, fdir=fdir_mem, dirmap=dirmap, xytype='coordinate')
                                     catch_uint8 = catch.astype(np.uint8)
                                     
-                                    shapes = grid.polygonize(catch_uint8)
+                                    shapes = grid_mem.polygonize(catch_uint8)
+                                    
                                     catchment_geom = None
                                     for geom, val in shapes:
                                         if val == 1:
