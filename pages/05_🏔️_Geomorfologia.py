@@ -83,7 +83,9 @@ if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
             gdf_zona_seleccionada = gpd.GeoDataFrame({'geometry': [bbox]}, crs=gdf_zona_seleccionada.crs)
 
 # --- 2. CARGA DEL DEM (CONECTADO A LA NUBE) ---
-DEM_PATH = Config.DEM_FILE_PATH
+# 🚀 FIX: Forzamos la ruta directa a Supabase porque borramos los rasters locales
+SUPABASE_PROJECT_ID = "ldunpssoxvifemoyeuac"
+DEM_PATH = f"https://{SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public/rasters/DemAntioquia_EPSG3116.tif"
 
 @st.cache_data(show_spinner="Descargando y procesando terreno desde la Nube...")
 def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
@@ -93,6 +95,8 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
     # Descarga Segura desde Supabase
     safe_path = download_raster_secure(ruta_dem)
     if not safe_path: 
+        # Añadimos una alarma para que no vuelva a fallar en silencio
+        st.error("❌ Fallo Crítico: No se pudo descargar el DEM (Topografía) desde Supabase. Verifica que el archivo exista en la nube.")
         return None, None, None
             
     try:
