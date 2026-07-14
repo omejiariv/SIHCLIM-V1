@@ -82,8 +82,7 @@ if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
             bbox = gdf_zona_seleccionada.unary_union.envelope
             gdf_zona_seleccionada = gpd.GeoDataFrame({'geometry': [bbox]}, crs=gdf_zona_seleccionada.crs)
 
-# --- 2. CARGA DEL DEM (CONECTADO A LA NUBE) ---
-# 🚀 FIX: Forzamos la ruta directa a Supabase porque borramos los rasters locales
+# --- 2. CARGA DEL DEM (CONECTADO A LA NUBE - OPTIMIZADO) ---
 SUPABASE_PROJECT_ID = "ldunpssoxvifemoyeuac"
 DEM_PATH = f"https://{SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public/rasters/DemAntioquia_EPSG3116.tif"
 
@@ -92,39 +91,50 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
     if _gdf_corte is None or _gdf_corte.empty: 
         return None, None, None
     
-    # Descarga Segura desde Supabase
+    # Descarga/Verifica en caché volátil local (en el servidor de Streamlit)
     safe_path = download_raster_secure(ruta_dem)
     if not safe_path: 
-        # Añadimos una alarma para que no vuelva a fallar en silencio
-        st.error("❌ Fallo Crítico: No se pudo descargar el DEM (Topografía) desde Supabase. Verifica que el archivo exista en la nube.")
+        st.error("❌ Fallo Crítico: No se pudo descargar el DEM. Verifica la conexión con Supabase.")
         return None, None, None
             
     try:
-        # 1. Blindaje de Geometría (Repara polígonos inválidos)
+        # 1. Blindaje de Geometría
         geometria_valida = _gdf_corte.copy()
         geometria_valida['geometry'] = geometria_valida.buffer(0) 
 
         with rasterio.open(safe_path) as src:
-            crs_dem = src.crs
-            gdf_proyectado = geometria_valida.to_crs(crs_dem)
-            geoms = gdf_proyectado.geometry.values
+            # 🚀 OPTIMIZACIÓN: Calcular ventana de lectura exacta (Window)
+            # Esto evita cargar el archivo completo en memoria
+            from rasterio.windows import from_bounds
             
-            try:
-                out_image, out_transform = mask(src, geoms, crop=True)
-            except ValueError:
-                return None, "OUT_OF_BOUNDS", None
+            # Proyectar el bbox de la zona al CRS del DEM
+            gdf_proy = geometria_valida.to_crs(src.crs)
+            minx, miny, maxx, maxy = gdf_proy.total_bounds
+            
+            # Definir la ventana de lectura (Window)
+            window = from_bounds(minx, miny, maxx, maxy, src.transform)
+            
+            # Leer únicamente los píxeles dentro de la ventana
+            out_image = src.read(1, window=window)
+            out_transform = src.window_transform(window)
                 
             out_meta = src.meta.copy()
             out_meta.update({
                 "driver": "GTiff",
-                "height": out_image.shape[1],
-                "width": out_image.shape[2],
+                "height": out_image.shape[0], # rasterio lee (filas, cols)
+                "width": out_image.shape[1],
                 "transform": out_transform,
                 "count": 1
             })
             
-            dem_array = out_image[0]
-            # Limpieza de datos NoData y valores erróneos profundos
+            # 2. Recorte preciso con máscara sobre la ventana ya leída
+            # Esto es mucho más ligero que mask() sobre el archivo completo
+            from rasterio.features import geometry_mask
+            mask_arr = geometry_mask(gdf_proy.geometry, out_shape=out_image.shape, transform=out_transform, invert=True)
+            
+            dem_array = np.where(mask_arr, out_image, np.nan)
+            
+            # Limpieza
             dem_array = np.where(dem_array == src.nodata, np.nan, dem_array)
             dem_array = np.where(dem_array < -100, np.nan, dem_array)
             
@@ -134,7 +144,7 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
             return dem_array, out_meta, out_transform
             
     except Exception as e:
-        st.error(f"Error procesando DEM: {e}")
+        st.error(f"Error procesando DEM (Windowed Read): {e}")
         return None, None, None
 
 # --- CEREBRO DEL ANALISTA 🧠 ---
