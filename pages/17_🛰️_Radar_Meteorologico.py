@@ -75,13 +75,36 @@ with c_ctrl2:
         except Exception as e:
             pass
         
-    # iFrame Dinámico con coordenadas y zoom inyectados en tiempo real
-    windy_iframe = f"""
-    <iframe width="100%" height="700" 
-        src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km/h&zoom={zoom_level}&overlay={overlay}&product=ecmwf&level=surface&lat={lat_center}&lon={lon_center}" 
-        frameborder="0" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-    </iframe>
+    # iFrame Dinámico con wrapper HTML para Pantalla Completa
+    windy_html = f"""
+    <div id="map-container" style="position: relative; width: 100%; height: 700px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); overflow: hidden; background: #e5e9ec;">
+        <iframe id="windy-iframe" width="100%" height="100%" 
+            src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km/h&zoom={zoom_level}&overlay={overlay}&product=ecmwf&level=surface&lat={lat_center}&lon={lon_center}" 
+            frameborder="0" allowfullscreen>
+        </iframe>
+        
+        <!-- Botón de Fullscreen inyectado sobre el iframe -->
+        <button onclick="toggleFullScreen()" 
+                style="position: absolute; top: 15px; right: 15px; z-index: 999; padding: 10px 15px; background: rgba(255,255,255,0.9); border: 2px solid #ccc; border-radius: 6px; cursor: pointer; font-weight: bold; font-family: sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+            🔲 Pantalla Completa
+        </button>
+    </div>
+
+    <script>
+    function toggleFullScreen() {{
+        var elem = document.getElementById("map-container");
+        if (!document.fullscreenElement) {{
+            elem.requestFullscreen().catch(err => {{
+                alert(`Error al intentar pantalla completa: ${{err.message}}`);
+            }});
+        }} else {{
+            document.exitFullscreen();
+        }}
+    }}
+    </script>
     """
-    components.html(windy_iframe, height=750)
+    
+    # Renderizamos el bloque HTML
+    components.html(windy_html, height=750)
     
     st.caption("🟢 **Línea de Tiempo:** Dale al botón de 'Play' ▶️ en la esquina inferior izquierda del mapa para proyectar el movimiento del clima.")
