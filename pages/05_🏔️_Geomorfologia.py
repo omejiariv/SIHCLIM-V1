@@ -103,19 +103,33 @@ def cargar_y_cortar_dem(ruta_dem, _gdf_corte, zona_id):
         geometria_valida['geometry'] = geometria_valida.buffer(0) 
 
         with rasterio.open(safe_path) as src:
-            # 🚀 OPTIMIZACIÓN: Calcular ventana de lectura exacta (Window)
-            # Esto evita cargar el archivo completo en memoria
             from rasterio.windows import from_bounds
             
             # Proyectar el bbox de la zona al CRS del DEM
             gdf_proy = geometria_valida.to_crs(src.crs)
             minx, miny, maxx, maxy = gdf_proy.total_bounds
             
-            # Definir la ventana de lectura (Window)
+            # 🚀 FIX: Asegurar un tamaño mínimo de ventana (ej. 5x5 píxeles) 
+            # para evitar el error de width/height <= 0
+            res = src.res[0] # Tamaño del píxel del DEM
+            min_size = res * 5 
+            if (maxx - minx) < min_size:
+                center_x = (minx + maxx) / 2
+                minx, maxx = center_x - (min_size / 2), center_x + (min_size / 2)
+            if (maxy - miny) < min_size:
+                center_y = (miny + maxy) / 2
+                miny, maxy = center_y - (min_size / 2), center_y + (min_size / 2)
+            
+            # Definir la ventana de lectura con dimensiones seguras
             window = from_bounds(minx, miny, maxx, maxy, src.transform)
             
             # Leer únicamente los píxeles dentro de la ventana
             out_image = src.read(1, window=window)
+            
+            # 🚀 FIX ADICIONAL: Validar dimensiones antes de procesar
+            if out_image.shape[0] == 0 or out_image.shape[1] == 0:
+                return None, "EMPTY_DATA", None
+                
             out_transform = src.window_transform(window)
                 
             out_meta = src.meta.copy()
