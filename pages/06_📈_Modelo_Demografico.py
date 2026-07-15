@@ -530,26 +530,19 @@ elif escala_sel == "🏛️ Departamental (Colombia)":
 elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambientales (CARs)"]:
     col_agrupadora = 'subregion' if "Subregiones" in escala_sel else 'car'
     
-    # --- 🧽 TRADUCTOR UNIVERSAL (Limpieza Absoluta) ---
-    def limpiar_nombres(s):
-        if pd.isna(s): return ""
-        s = str(s).upper().strip() # Todo a mayúscula, sin espacios a los lados
-        import unicodedata
-        # Quitamos todas las tildes (á -> A)
-        s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
-        return s
+    # 🚀 FIX: Eliminamos la función local 'limpiar_nombres' y usamos directamente 
+    # la función mágica 'normalizar_texto' que contiene el diccionario maestro.
 
     # 1. Limpiamos el Maestro Territorial
     maestro_ant = df_maestro.copy()
     if 'depto_nom' in maestro_ant.columns:
-        maestro_ant['depto_nom_cln'] = maestro_ant['depto_nom'].apply(limpiar_nombres)
+        maestro_ant['depto_nom_cln'] = maestro_ant['depto_nom'].apply(normalizar_texto)
         maestro_ant = maestro_ant[maestro_ant['depto_nom_cln'] == 'ANTIOQUIA']
     
     if col_agrupadora in maestro_ant.columns:
-        maestro_ant[col_agrupadora] = maestro_ant[col_agrupadora].apply(limpiar_nombres)
+        maestro_ant[col_agrupadora] = maestro_ant[col_agrupadora].apply(normalizar_texto)
         opciones = maestro_ant[col_agrupadora].dropna().unique().tolist()
         
-        # 🔥 INYECCIÓN MANUAL DEL AMVA: Lo forzamos en la lista aunque el Excel diga Corantioquia
         if escala_sel == "🦅 Autoridades Ambientales (CARs)" and "AMVA" not in opciones:
             opciones.append("AMVA")
             
@@ -559,9 +552,9 @@ elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambient
     
     sel_territorio = st.sidebar.selectbox(f"Seleccione {col_agrupadora.title()}:", opciones)
     
-    # Mapeamos los municipios base (Garantizando el formato)
+    # Mapeamos los municipios base
     if 'municipio' in maestro_ant.columns:
-        maestro_ant['mun_norm_local'] = maestro_ant['municipio'].apply(limpiar_nombres)
+        maestro_ant['mun_norm_local'] = maestro_ant['municipio'].apply(normalizar_texto)
         mpios_en_zona = maestro_ant[maestro_ant[col_agrupadora] == sel_territorio]['mun_norm_local'].tolist()
     else:
         mpios_en_zona = []
@@ -569,11 +562,11 @@ elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambient
     # 2. Limpiamos el DANE (df_mun) para que hablen el mismo idioma
     df_mun_ant = df_mun.copy()
     if 'depto_nom' in df_mun_ant.columns:
-        df_mun_ant['depto_nom_cln'] = df_mun_ant['depto_nom'].apply(limpiar_nombres)
+        df_mun_ant['depto_nom_cln'] = df_mun_ant['depto_nom'].apply(normalizar_texto)
         df_mun_ant = df_mun_ant[df_mun_ant['depto_nom_cln'] == 'ANTIOQUIA']
     
     if 'municipio' in df_mun_ant.columns:
-        df_mun_ant['mun_norm_local'] = df_mun_ant['municipio'].apply(limpiar_nombres)
+        df_mun_ant['mun_norm_local'] = df_mun_ant['municipio'].apply(normalizar_texto)
     else:
         df_mun_ant['mun_norm_local'] = ""
     
@@ -2433,18 +2426,19 @@ with tab_matriz:
 
                         nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
                         nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
+                        # 🚀 FIX: Capturamos el nombre exacto de Río Grande - Chico en la base de datos
+                        nombre_real_riogrande = next((c for c in lista_todas_cuencas if 'grande' in str(c).lower() and 'chico' in str(c).lower()), 'R. Grande - Chico - NSS - (2701-02)')
 
                         df_final_cuencas = []
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
+                        mpios_riogrande_rescate = ['santarosadeosos', 'donmatias', 'sanpedrodelosmilagros', 'entrerrios', 'belmira']
                         
                         for mpio in df_area_v6['mun_norm_dane'].unique():
-                            # 🔥 FIX RAM 2: Copiamos SOLO Año y Total. Reducción del 95% del peso.
                             pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio][[col_anio, 'Total']].copy()
                             
                             if pob_mpio.empty: continue
                             fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
                             
-                            # Mini-función inyectora ligera
                             def agregar_fragmento(df_pob, cuenca_lbl, factor):
                                 df_temp = df_pob.copy()
                                 df_temp['Total_frag'] = df_temp['Total'] * factor
@@ -2452,12 +2446,16 @@ with tab_matriz:
                                 df_final_cuencas.append(df_temp)
                             
                             if mpio in mpios_amva_rescate:
-                                # 🔥 EL FIX DEFINITIVO: Usamos solo len() para evitar la ambigüedad de la Serie
                                 if mpio == 'medellin' and len(pesos_med_pct) > 0:
                                     for subc, peso in pesos_med_pct.items():
                                         agregar_fragmento(pob_mpio, subc, float(peso))
                                 else:
                                     agregar_fragmento(pob_mpio, nombre_real_aburra, 1.0)
+                                    
+                            # 🔥 OVERRIDE QUIRÚRGICO: Asignamos el 100% de la población de estos 5 mpios a Río Grande
+                            elif mpio in mpios_riogrande_rescate:
+                                agregar_fragmento(pob_mpio, nombre_real_riogrande, 1.0)
+                                
                             else:
                                 if tipo_area == 'Urbana':
                                     cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio] if not inter_urbana.empty else pd.DataFrame()
