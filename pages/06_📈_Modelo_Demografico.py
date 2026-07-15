@@ -1819,9 +1819,11 @@ with tab_mapas:
         with col_m3:
             st.success("🤖 **Motor Topológico Automático:** Conectando capas con precisión administrativa.")
 
-        if 'año' in df_mapa_base.columns and not df_mapa_base.empty:
-            año_maximo = max(df_mapa_base['año'])
-            df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(año_maximo, año_sel)].copy()
+        # 🛡️ ESCUDO 3: Selección segura del año y filtrado temporal
+        col_t = 'año' if 'año' in df_mapa_base.columns else ('Año' if 'Año' in df_mapa_base.columns else None)
+        if col_t and not df_mapa_base.empty:
+            año_maximo = max(df_mapa_base[col_t])
+            df_mapa_año = df_mapa_base[df_mapa_base[col_t] == min(año_maximo, año_sel)].copy()
         elif not df_mapa_base.empty:
             df_mapa_año = df_mapa_base.copy()
         else:
@@ -1905,9 +1907,13 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    if "veredal" in escala_sel.lower(): q_geo = "SELECT * FROM veredas_geometria"
-                    elif "cuencas" in escala_sel.lower(): q_geo = "SELECT * FROM cuencas"
-                    else: q_geo = "SELECT * FROM municipios"
+                    # 🚀 FIX TIMEOUT: Solo pedimos las columnas estrictamente necesarias
+                    if "veredal" in escala_sel.lower(): 
+                        q_geo = "SELECT nombre_ver, nomb_mpio, geometry FROM veredas_geometria"
+                    elif "cuencas" in escala_sel.lower(): 
+                        q_geo = "SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, geometry FROM cuencas"
+                    else: 
+                        q_geo = "SELECT mpio_cnmbr, dpto_ccdgo, nombre, geometry FROM municipios"
                     
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
