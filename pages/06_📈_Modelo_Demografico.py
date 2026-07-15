@@ -629,15 +629,13 @@ elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambient
         st.sidebar.warning(f"⚠️ No se encontraron municipios o datos históricos para {sel_territorio}")
         años_hist, pob_hist = np.array([]), np.array([])
     
-    # 🚀 FIX: Preparación y limpieza correcta para el mapa (Filtro espacial y poblacional)
+    # 🚀 FIX TOPOLÓGICO: Incluimos depto_nom en el agrupamiento y lo asignamos como Padre
     if not df_base.empty and col_anio:
-        df_mapa_base = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby(['municipio', col_anio])['Total'].sum().reset_index()
-        df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
-        # Asignamos la subregión o CAR como 'Padre' para respetar la delimitación local en el mapa
-        df_mapa_base['Padre'] = sel_territorio
+        df_mapa_base = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
+        df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
     else:
         df_mapa_base = pd.DataFrame()
-
+        
 elif escala_sel == "🧩 Regional (Macroregiones)":
     regiones_list = sorted([r for r in df_mun['Macroregion'].dropna().unique() if r != "Sin Región"])
     reg_sel = st.sidebar.selectbox("Seleccione la Macroregión:", regiones_list)
@@ -645,10 +643,8 @@ elif escala_sel == "🧩 Regional (Macroregiones)":
     filtro_zona = reg_sel
     titulo_terr = f"Región {reg_sel}"
     
-    # 🚀 FIX: Protección dinámica del nombre de la columna año
     col_anio = 'año' if 'año' in df_mun.columns else 'Año'
     
-    # 🚀 FIX: Quitamos el 'total' estático y vinculamos el area_global del sidebar
     df_terr = df_mun[(df_mun['Macroregion'] == reg_sel) & (df_mun['area_geografica'].str.lower() == area_global.lower())]
     
     if not df_terr.empty:
@@ -656,10 +652,9 @@ elif escala_sel == "🧩 Regional (Macroregiones)":
         años_hist = df_hist[col_anio].values
         pob_hist = df_hist['Total'].values
         
-        # 🚀 FIX: Sincronizamos el mapa con el filtro poblacional y ajustamos la jerarquía
-        df_mapa_base = df_terr.groupby(['municipio', col_anio])['Total'].sum().reset_index()
-        df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
-        df_mapa_base['Padre'] = reg_sel
+        # 🔥 FIX TOPOLÓGICO: Agrupamos conservando depto_nom como Padre
+        df_mapa_base = df_terr.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
+        df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
     else:
         años_hist, pob_hist = np.array([]), np.array([])
         df_mapa_base = pd.DataFrame()
