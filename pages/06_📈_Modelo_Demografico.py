@@ -2545,7 +2545,11 @@ with tab_matriz:
                         FROM cuencas
                     """)
                     
-                    df_arbol = pd.read_sql(q_jerarquia, engine_sql)
+                    # 🚀 FIX TIMEOUT: Refrescamos la conexión porque el motor quedó inactivo durante el procesamiento espacial
+                    from modules.db_manager import get_engine
+                    engine_sql_fresco = get_engine()
+                    
+                    df_arbol = pd.read_sql(q_jerarquia, engine_sql_fresco)
                     for c in df_arbol.columns:
                         df_arbol[c] = df_arbol[c].astype(str).str.strip()
                 except Exception as e:
