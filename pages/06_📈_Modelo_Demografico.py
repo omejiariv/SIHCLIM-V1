@@ -2269,6 +2269,10 @@ with tab_matriz:
                             conn.execute(text("SET statement_timeout = '300000';"))
                             gdf_cue = gpd.read_postgis(q_cue, conn, geom_col="geometry").to_crs(epsg=3116)
                         
+                        # 🔥 RECUPERAMOS LAS LÍNEAS PERDIDAS (Optimizador de RAM)
+                        gdf_cue_limpio = gdf_cue[['subc_lbl', 'geometry']].copy()
+                        gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
+
                         def cargar_y_proyectar(url):
                             temp_gdf = gpd.read_file(url)
                             if temp_gdf.crs is None: temp_gdf = temp_gdf.set_crs(epsg=4326)
