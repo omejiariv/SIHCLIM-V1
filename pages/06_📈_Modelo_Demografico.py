@@ -1906,7 +1906,7 @@ with tab_mapas:
                     elif "cuencas" in escala_sel.lower(): 
                         q_geo = "SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, geometry FROM cuencas"
                     else: 
-                        q_geo = "SELECT mpio_cnmbr, dpto_ccdgo, nombre, geometry FROM municipios"
+                        q_geo = "SELECT mpio_cnmbr, MPIO_NOMBR, dpto_ccdgo, nombre, geometry FROM municipios"
                     
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
