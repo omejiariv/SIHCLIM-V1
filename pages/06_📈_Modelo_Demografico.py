@@ -974,14 +974,13 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
 elif escala_sel == "🏙️ Escala Urbana (Cabeceras Antioquia)":
     st.sidebar.markdown("### 🏙️ Explorador de Cabeceras")
     
-    # 1. Filtramos solo la población urbana de Antioquia desde la base DANE
-    df_urbano_ant = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['area_geografica'] == 'urbano')].copy()
+    # 🔥 FIX VITAL: .str.lower() para evitar que el filtro falle por mayúsculas
+    df_urbano_ant = df_mun[(df_mun['depto_nom'] == 'Antioquia') & (df_mun['area_geografica'].str.lower() == 'urbano')].copy()
     
     # 2. Selector de Municipio para aislar la Cabecera
     lista_mpios = sorted(df_urbano_ant['municipio'].dropna().unique())
     mpio_sel = st.sidebar.selectbox("Municipio (Cabecera de):", ["TODAS (Ver Mapa Completo)"] + lista_mpios)
     
-    # 🚀 FIX: Blindaje del nombre de la columna temporal
     col_anio = 'año' if 'año' in df_urbano_ant.columns else 'Año'
     
     if mpio_sel != "TODAS (Ver Mapa Completo)":
@@ -1007,7 +1006,7 @@ elif escala_sel == "🏙️ Escala Urbana (Cabeceras Antioquia)":
         
         df_mapa_base = df_urbano_ant.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
         df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
-
+        
 # =====================================================================
 # 🏘️ ESCALA VEREDAL
 # =====================================================================
