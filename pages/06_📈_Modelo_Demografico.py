@@ -1855,8 +1855,6 @@ with tab_mapas:
                 if 'Territorio' in df_mapa_plot.columns:
                     df_mapa_plot['Territorio'] = df_mapa_plot['Territorio'].astype(str)
                     df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL', 'ANTIOQUIA', 'AMVA'])]
-                    if escala_sel == "💧 Cuencas Hidrográficas":
-                        df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.contains('CABECERA', case=False, na=False)]
 
         if not df_mapa_plot.empty:
             if 'Territorio' not in df_mapa_plot.columns:
