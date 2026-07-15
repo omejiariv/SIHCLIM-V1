@@ -1805,19 +1805,15 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR ZERO-CONFIG)
 # ==========================================
 with tab_mapas:
-    # 🛡️ ESCUDO 1: Título dinámico seguro
     titulo_seguro_mapa = locals().get('titulo_terr', globals().get('titulo_terr', "Territorio Seleccionado"))
     st.subheader(f"🗺️ Geovisor de Distribución Poblacional - {titulo_seguro_mapa} ({año_sel})")
     
-    # 🛡️ ESCUDO 2: Protección para Escala Global
     if escala_sel == "🌍 Global y Suramérica":
         st.info("🌍 A escala Global/Suramérica la visualización espacial se encuentra desactivada. Los datos consolidados están disponibles en el panel de tendencias.")
         
     else:
-        # Mini-menú integrado y estético
         col_m1, col_m2, col_m3 = st.columns([1, 1, 3])
         with col_m1:
-            # Sincronizamos con el filtro global definido arriba para evitar confusiones
             if escala_sel == "🌿 Veredal (Antioquia)":
                 area_mapa = "Rural"
                 st.info("ℹ️ Escala veredal: Población rural.")
@@ -1825,18 +1821,16 @@ with tab_mapas:
                 area_mapa = "Urbano"
                 st.info("ℹ️ Escala de Cabeceras: Población urbana.")
             else:
-                # El usuario puede cambiar el filtro localmente en el mapa
                 area_mapa = st.radio("Filtro Poblacional (Mapa):", ["Total", "Urbano", "Rural"], 
-                                     index=["Total", "Urbano", "Rural"].index(area_global), # Sincroniza con el sidebar
+                                     index=["Total", "Urbano", "Rural"].index(area_global),
                                      key="filtro_pob_mapa")
         with col_m2:
-            st.markdown("<br>", unsafe_allow_html=True) # Espaciador
+            st.markdown("<br>", unsafe_allow_html=True)
             mostrar_capa_cuencas = st.toggle("🌊 Superponer Cuencas", value=False)
                 
         with col_m3:
             st.success("🤖 **Motor Topológico Automático:** Conectando capas con precisión administrativa.")
 
-        # 🛡️ ESCUDO 3: LA CURA AL ValueError (max() arg is an empty sequence)
         if 'año' in df_mapa_base.columns and not df_mapa_base.empty:
             año_maximo = max(df_mapa_base['año'])
             df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(año_maximo, año_sel)].copy()
@@ -1845,31 +1839,25 @@ with tab_mapas:
         else:
             df_mapa_año = pd.DataFrame()
 
-        # 🔥 MOTOR DE FILTRADO Y AGRUPACIÓN (Anti-Duplicados)
         df_mapa_plot = pd.DataFrame()
 
         if not df_mapa_año.empty:
-            # 1. Filtro riguroso por área (Urbano/Rural/Total)
             if 'area_geografica' in df_mapa_año.columns:
                 df_mapa_plot = df_mapa_año[df_mapa_año['area_geografica'].str.lower() == area_mapa.lower()].copy()
             else:
                 df_mapa_plot = df_mapa_año.copy()
             
             if not df_mapa_plot.empty:
-                # 2. Agrupación por Territorio para evitar duplicar por sub-registros
                 cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_plot.columns]
                 if cols_agrupar:
                     df_mapa_plot = df_mapa_plot.groupby(cols_agrupar)['Total'].sum().reset_index()
                 
-                # 3. Limpieza de filas basura "TOTAL" o "CABECERA" que ensucian el mapa
                 if 'Territorio' in df_mapa_plot.columns:
                     df_mapa_plot['Territorio'] = df_mapa_plot['Territorio'].astype(str)
                     df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL', 'ANTIOQUIA', 'AMVA'])]
-                    
                     if escala_sel == "💧 Cuencas Hidrográficas":
                         df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.contains('CABECERA', case=False, na=False)]
 
-        # 4. ESTANDARIZACIÓN FINAL DE COLUMNAS PARA EL GEOVISOR
         if not df_mapa_plot.empty:
             if 'Territorio' not in df_mapa_plot.columns:
                 col_t = next((c for c in df_mapa_plot.columns if c.lower() in ['municipio', 'cuenca', 'vereda', 'nombre', 'subzona', 'nom_nss3']), df_mapa_plot.columns[0])
@@ -1919,102 +1907,32 @@ with tab_mapas:
                     for f in mapa_para_dibujar.get('features', []):
                         raw_val = str(f['properties'].get(prop_key, '')).replace('.0', '').strip().zfill(z_fill_val)
                         f['id'] = raw_val 
-                        
-                        if nivel_medellin == "Barrios y Corregimientos":
-                            nombre = f['properties'].get('NombreBarr', f'Territorio {raw_val}')
-                        else:
-                            nombre = dict_comunas_mapa.get(raw_val, f'Comuna {raw_val}')
-                            
+                        nombre = f['properties'].get('NombreBarr', f'Territorio {raw_val}') if nivel_medellin == "Barrios y Corregimientos" else dict_comunas_mapa.get(raw_val, f'Comuna {raw_val}')
                         nombres_reales[raw_val] = nombre
                         
                     datos_para_dibujar['Territorio'] = datos_para_dibujar['MATCH_ID'].map(nombres_reales).fillna(datos_para_dibujar['Territorio'])
-                    
                     safe_center_lat, safe_center_lon = 6.2518, -75.5636
-                    if titulo_terr in ["Todos los Barrios y Corregimientos", "Todas las Comunas y Corregimientos"]:
-                        safe_zoom = 11.0
-                    else:
-                        safe_zoom = 13.5
-                    
+                    safe_zoom = 11.0 if titulo_terr in ["Todos los Barrios y Corregimientos", "Todas las Comunas y Corregimientos"] else 13.5
                     llave_geojson = 'id'
                     
                 # =========================================================
-                # 🌍 VÍA LENTA: POSTGIS (Cuencas, Municipios, Veredas)
+                # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    import geopandas as gpd
-                    from sqlalchemy import text
-                    from modules.db_manager import get_engine
+                    if "veredal" in escala_sel.lower(): q_geo = "SELECT * FROM veredas_geometria"
+                    elif "cuencas" in escala_sel.lower(): q_geo = "SELECT * FROM cuencas"
+                    else: q_geo = "SELECT * FROM municipios"
                     
-                    engine_geo = get_engine()
-                    if "veredal" in escala_sel.lower(): q_geo = text("SELECT * FROM veredas_geometria")
-                    elif "cuencas" in escala_sel.lower(): q_geo = text("SELECT * FROM cuencas")
-                    else: q_geo = text("SELECT * FROM municipios")
-                        
-                    gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
-                    
-                    # 🚀 FIX 1: Generamos el MATCH_ID en el dataframe de datos PRIMERO
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
                         else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
                         axis=1
                     )
                     
-                    # 🚀 FIX 2: Extraemos los IDs que realmente necesitamos dibujar
-                    territorios_objetivo = set(df_mapa_plot['MATCH_ID'].dropna().tolist())
+                    territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    codigos_dane_deptos = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
-                    
-                    def generar_id_geojson(row):
-                        if "cuencas" in escala_sel.lower():
-                            cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
-                            
-                            # 🚀 FIX 3: Escaneo jerárquico inteligente.
-                            for c in cols_posibles:
-                                if c in row and pd.notnull(row[c]):
-                                    val_norm = normalizar_texto(str(row[c]).strip())
-                                    if val_norm in territorios_objetivo:
-                                        return val_norm
-                            
-                            # Fallback si no hay match perfecto
-                            val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "Cuenca Sin Nombre")
-                            if "-" in val_terr: val_terr = val_terr.split("-")[-1]
-                            return normalizar_texto(val_terr)
-                            
-                        elif "veredal" in escala_sel.lower():
-                            val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
-                            val_padre = str(row.get('NOMB_MPIO', row.get('nomb_mpio', row.get('MPIO_CNMBR', ''))))
-                            if val_padre.zfill(2) in codigos_dane_deptos: val_padre = codigos_dane_deptos[val_padre.zfill(2)]
-                            return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
-                        else:
-                            val_terr = str(row.get('MPIO_CNMBR', row.get('mpio_cnmbr', row.get('nombre', ''))))
-                            val_padre = str(row.get('DPTO_CCDGO', row.get('dpto_ccdgo', '')))
-                            if val_padre.zfill(2) in codigos_dane_deptos: val_padre = codigos_dane_deptos[val_padre.zfill(2)]
-                            if normalizar_texto(val_terr) == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
-                            return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
-
-                    # 🚀 FIX 4: Aplicamos la función
-                    gdf_mapa['MATCH_ID'] = gdf_mapa.apply(generar_id_geojson, axis=1)
-
-                    ids_geojson = set(gdf_mapa['MATCH_ID'].dropna().unique())
-                    df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(ids_geojson)
-                    
-                    faltantes_iniciales = df_mapa_plot[df_mapa_plot['En_Mapa'] == False]
-                    if not faltantes_iniciales.empty:
-                        import difflib
-                        ids_geojson_list = list(ids_geojson)
-                        for idx, row in faltantes_iniciales.iterrows():
-                            umbral = 0.90 if "cuencas" in escala_sel.lower() else 0.85
-                            matches = difflib.get_close_matches(row['MATCH_ID'], ids_geojson_list, n=1, cutoff=umbral)
-                            if matches:
-                                df_mapa_plot.at[idx, 'MATCH_ID'] = matches[0] 
-                                df_mapa_plot.at[idx, 'En_Mapa'] = True
-                                
-                    ids_curados = df_mapa_plot[df_mapa_plot['En_Mapa'] == True]['MATCH_ID'].unique()
-                    gdf_filtrado = gdf_mapa[gdf_mapa['MATCH_ID'].isin(ids_curados)].copy()
-                    
-                    # 🔥 EL GRAN FIX: DISOLVER LAS GEOMETRÍAS ANTES DE PASARLAS A PLOTLY 🔥
-                    if not gdf_filtrado.empty and len(gdf_filtrado) > 1:
-                        gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
+                    # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
+                    gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
                     if not gdf_filtrado.empty:
@@ -2029,13 +1947,12 @@ with tab_mapas:
                         elif max_diff < 2.5: safe_zoom = 7
                         elif max_diff < 5.0: safe_zoom = 6
                         
-                    mapa_para_dibujar = json.loads(gdf_filtrado.to_json())
+                    mapa_para_dibujar = json.loads(gdf_filtrado.to_json()) if not gdf_filtrado.empty else {"type": "FeatureCollection", "features": []}
                     
-                    # 🔥 Aseguramos que Plotly encuentre el ID exacto asignándolo explícitamente en el GeoJSON
                     for feature in mapa_para_dibujar.get('features', []):
                         feature['id'] = feature['properties'].get('MATCH_ID', '')
 
-                    datos_para_dibujar = df_mapa_plot[df_mapa_plot['En_Mapa'] == True].copy()
+                    datos_para_dibujar = df_mapa_plot.copy()
                     llave_geojson = 'id'
 
                 # =========================================================
@@ -2058,55 +1975,37 @@ with tab_mapas:
                     center={"lat": safe_center_lat, "lon": safe_center_lon},
                     opacity=0.8,
                     hover_name='Territorio',
-                    hover_data={
-                        'Color_Fix': False, 
-                        'Total': ':,.0f', 
-                        'MATCH_ID': False
-                    }
+                    hover_data={'Color_Fix': False, 'Total': ':,.0f', 'MATCH_ID': False}
                 )
                 
-                # 🔥 AÑADIR CAPA SECUNDARIA DE CUENCAS INTERACTIVA (Vía Rápida con Jerarquía Completa)
                 if mostrar_capa_cuencas:
                     try:
                         from sqlalchemy import text
                         from modules.db_manager import get_engine
                         import geopandas as gpd
-                        import json
                         import plotly.graph_objects as go
                         
                         engine_geo = get_engine()
-                        
-                        q_cue_overlay = text("""
-                            SELECT 
-                                nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, 
-                                geometry 
-                            FROM cuencas
-                        """)
+                        q_cue_overlay = text("SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, geometry FROM cuencas")
                         gdf_cue_overlay = gpd.read_postgis(q_cue_overlay, engine_geo, geom_col="geometry")
                         
                         if not gdf_cue_overlay.empty:
                             gdf_cue_overlay = gdf_cue_overlay.to_crs(epsg=4326)
-                            
                             gdf_cue_overlay['ID_CUE'] = gdf_cue_overlay.index.astype(str)
                             
                             cols_tooltip = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']
                             for col in cols_tooltip:
-                                gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(
-                                    lambda x: str(x).strip() if pd.notnull(x) and str(x).strip() not in ["", "None", "nan"] else "No Aplica"
-                                )
+                                gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(lambda x: str(x).strip() if pd.notnull(x) and str(x).strip() not in ["", "None", "nan"] else "No Aplica")
                             
                             geojson_cuencas = json.loads(gdf_cue_overlay.to_json())
-                            for i, f in enumerate(geojson_cuencas['features']):
-                                f['id'] = str(i)
+                            for i, f in enumerate(geojson_cuencas['features']): f['id'] = str(i)
                             
                             fig_mapa.add_trace(go.Choroplethmapbox(
                                 geojson=geojson_cuencas,
                                 locations=gdf_cue_overlay['ID_CUE'],
-                                z=[0] * len(gdf_cue_overlay), # Valor base para habilitar el hover
-                                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']], # Transparente
-                                marker_line_color='black',
-                                marker_line_width=1.5,
-                                showscale=False,
+                                z=[0] * len(gdf_cue_overlay),
+                                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
+                                marker_line_color='black', marker_line_width=1.5, showscale=False,
                                 customdata=gdf_cue_overlay[cols_tooltip],
                                 hovertemplate=(
                                     "<b>Microcuenca (NSS3):</b> %{customdata[5]}<br><br>" +
@@ -2114,22 +2013,18 @@ with tab_mapas:
                                     "<b>ZH:</b> %{customdata[1]}<br>" +
                                     "<b>SZH:</b> %{customdata[2]}<br>" +
                                     "<b>NSS1:</b> %{customdata[3]}<br>" +
-                                    "<b>NSS2:</b> %{customdata[4]}<br>" +
-                                    "<extra></extra>"
+                                    "<b>NSS2:</b> %{customdata[4]}<br><extra></extra>"
                                 )
                             ))
-                            
                     except Exception as e:
-                        st.sidebar.warning(f"No se pudo superponer la capa de cuencas interactiva: {e}")
+                        st.sidebar.warning(f"No se pudo superponer la capa de cuencas: {e}")
 
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
                 st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-                
-                st.success("✅ MAPA RENDERIZADO. Si los datos están en 0, recuerda procesar la matriz en la pestaña 4.")
+                st.success("✅ MAPA RENDERIZADO CON EXITO.")
                 
             except Exception as e:
-                st.error(f"❌ Error procesando el mapa o conectando a la Base de Datos: {e}")
-                
+                st.error(f"❌ Error procesando el geovisor: {e}")
         else:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
             
