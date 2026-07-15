@@ -1784,14 +1784,12 @@ with tab_mapas:
             st.success("🤖 **Motor Topológico Automático:** Conectando capas con precisión administrativa.")
 
         # 🛡️ ESCUDO 3: LA CURA AL ValueError (max() arg is an empty sequence)
-        # Solo calculamos el año si la tabla no está vacía
         if 'año' in df_mapa_base.columns and not df_mapa_base.empty:
             año_maximo = max(df_mapa_base['año'])
             df_mapa_año = df_mapa_base[df_mapa_base['año'] == min(año_maximo, año_sel)].copy()
         elif not df_mapa_base.empty:
             df_mapa_año = df_mapa_base.copy()
         else:
-            # Si el territorio no tiene datos para esa CAR o área, queda vacío pero no crashea
             df_mapa_año = pd.DataFrame()
 
         # 🔥 MOTOR DE FILTRADO Y AGRUPACIÓN (Anti-Duplicados)
@@ -1854,7 +1852,6 @@ with tab_mapas:
                         
                     datos_para_dibujar['MATCH_ID'] = datos_para_dibujar['MATCH_ID'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(z_fill_val)
                     
-                    # Diccionario para inyectar nombres reales si no existen en el GeoJSON original
                     dict_comunas_mapa = {
                         "01": "Popular", "02": "Santa Cruz", "03": "Manrique", "04": "Aranjuez",
                         "05": "Castilla", "06": "Doce de Octubre", "07": "Robledo", "08": "Villa Hermosa",
@@ -1870,7 +1867,6 @@ with tab_mapas:
                         raw_val = str(f['properties'].get(prop_key, '')).replace('.0', '').strip().zfill(z_fill_val)
                         f['id'] = raw_val 
                         
-                        # Asignación inteligente del nombre
                         if nivel_medellin == "Barrios y Corregimientos":
                             nombre = f['properties'].get('NombreBarr', f'Territorio {raw_val}')
                         else:
@@ -1903,23 +1899,34 @@ with tab_mapas:
                         
                     gdf_mapa = gpd.read_postgis(q_geo, engine_geo, geom_col="geometry")
                     
-                    # 🔥 FIX: Match ID más permisivo para Cuencas
+                    # 🚀 FIX 1: Generamos el MATCH_ID en el dataframe de datos PRIMERO
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
                         else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
                         axis=1
                     )
                     
+                    # 🚀 FIX 2: Extraemos los IDs que realmente necesitamos dibujar
+                    territorios_objetivo = set(df_mapa_plot['MATCH_ID'].dropna().tolist())
+                    
                     codigos_dane_deptos = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
                     
                     def generar_id_geojson(row):
                         if "cuencas" in escala_sel.lower():
                             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
-                            # 🔥 FIX: Agregamos el fallback exacto 'Cuenca Sin Nombre' para que Urrao no quede invisible
-                            val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "Cuenca Sin Nombre")
                             
+                            # 🚀 FIX 3: Escaneo jerárquico inteligente. Si la columna coincide con el filtro objetivo, usamos ese nivel.
+                            for c in cols_posibles:
+                                if c in row and pd.notnull(row[c]):
+                                    val_norm = normalizar_texto(str(row[c]).strip())
+                                    if val_norm in territorios_objetivo:
+                                        return val_norm
+                            
+                            # Fallback si no hay match perfecto
+                            val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "Cuenca Sin Nombre")
                             if "-" in val_terr: val_terr = val_terr.split("-")[-1]
                             return normalizar_texto(val_terr)
+                            
                         elif "veredal" in escala_sel.lower():
                             val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
                             val_padre = str(row.get('NOMB_MPIO', row.get('nomb_mpio', row.get('MPIO_CNMBR', ''))))
@@ -1932,10 +1939,8 @@ with tab_mapas:
                             if normalizar_texto(val_terr) == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
                             return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
 
+                    # 🚀 FIX 4: Ahora sí aplicamos la función conociendo el objetivo
                     gdf_mapa['MATCH_ID'] = gdf_mapa.apply(generar_id_geojson, axis=1)
-                    
-                    # --- FIX TOPOLÓGICO: Eliminamos el filtro 'padre_norm' que borraba a Cornare ---
-                    # No filtramos gdf_mapa por padre, dejamos que el MATCH_ID haga el trabajo.
 
                     ids_geojson = set(gdf_mapa['MATCH_ID'].dropna().unique())
                     df_mapa_plot['En_Mapa'] = df_mapa_plot['MATCH_ID'].isin(ids_geojson)
@@ -2009,8 +2014,6 @@ with tab_mapas:
                         
                         engine_geo = get_engine()
                         
-                        # 1. Traemos la jerarquía completa. 
-                        # Usamos TRIM y NULLIF para capturar vacíos en archivos de Cornare/Corpourabá.
                         q_cue_overlay = text("""
                             SELECT 
                                 nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, 
@@ -2022,22 +2025,18 @@ with tab_mapas:
                         if not gdf_cue_overlay.empty:
                             gdf_cue_overlay = gdf_cue_overlay.to_crs(epsg=4326)
                             
-                            # 2. Generamos un ID único por fila para el mapeo de Plotly
                             gdf_cue_overlay['ID_CUE'] = gdf_cue_overlay.index.astype(str)
                             
-                            # 3. Limpieza de nombres para el Tooltip (Sanación de Nulos y Espacios)
                             cols_tooltip = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']
                             for col in cols_tooltip:
                                 gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(
                                     lambda x: str(x).strip() if pd.notnull(x) and str(x).strip() not in ["", "None", "nan"] else "No Aplica"
                                 )
                             
-                            # 4. Construcción del GeoJSON interactivo
                             geojson_cuencas = json.loads(gdf_cue_overlay.to_json())
                             for i, f in enumerate(geojson_cuencas['features']):
                                 f['id'] = str(i)
                             
-                            # 5. Inyección de la Traza Invisible (Solo contornos y Tooltips)
                             fig_mapa.add_trace(go.Choroplethmapbox(
                                 geojson=geojson_cuencas,
                                 locations=gdf_cue_overlay['ID_CUE'],
@@ -2071,7 +2070,7 @@ with tab_mapas:
                 
         else:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
-
+            
 # =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
 # =====================================================================
