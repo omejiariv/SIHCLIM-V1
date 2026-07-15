@@ -2269,10 +2269,10 @@ with tab_matriz:
                             conn.execute(text("SET statement_timeout = '300000';"))
                             gdf_cue = gpd.read_postgis(q_cue, conn, geom_col="geometry").to_crs(epsg=3116)
                         
-                        # 🔥 RECUPERAMOS LAS LÍNEAS PERDIDAS (Optimizador de RAM)
+                        # 🔥 RECUPERAMOS LA VARIABLE DE SEGURIDAD (Limpieza y buffer para evitar errores topológicos)
                         gdf_cue_limpio = gdf_cue[['subc_lbl', 'geometry']].copy()
                         gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
-
+                        
                         def cargar_y_proyectar(url):
                             temp_gdf = gpd.read_file(url)
                             if temp_gdf.crs is None: temp_gdf = temp_gdf.set_crs(epsg=4326)
@@ -2283,7 +2283,7 @@ with tab_matriz:
                             t = str(t).lower().strip()
                             t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
                             return re.sub(r'[^a-z0-9]', '', t)
-
+                            
                         # --- 1. MEDELLÍN (Se cruza en ambas fases) ---
                         texto_progreso.markdown(f"🗺️ **Fase {tipo_area}:** Cruzando Barrios de Medellín con Cuencas...")
                         gdf_barrios = cargar_y_proyectar(URL_BARRIOS_MED)
