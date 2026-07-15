@@ -1748,6 +1748,21 @@ with tab_opt:
         else:
             st.caption("Presiona 'Optimizar Parámetros' o ajusta manualmente para visualizar las ecuaciones.")
             
+@st.cache_data(ttl=86400, show_spinner="Fundiendo geometrías espaciales...")
+def obtener_geometria_disuelta(q_geo_str, ids_curados_tuple):
+    """Descarga de PostGIS y funde los polígonos solo la primera vez."""
+    from modules.db_manager import get_engine
+    import geopandas as gpd
+    from sqlalchemy import text
+    
+    engine = get_engine()
+    gdf_bruto = gpd.read_postgis(text(q_geo_str), engine, geom_col="geometry")
+    gdf_filtrado = gdf_bruto[gdf_bruto['MATCH_ID'].isin(ids_curados_tuple)].copy()
+    
+    if not gdf_filtrado.empty and len(gdf_filtrado) > 1:
+        return gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
+    return gdf_filtrado
+
 # ==========================================
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR ZERO-CONFIG)
 # ==========================================
