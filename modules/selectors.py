@@ -422,21 +422,33 @@ def render_selector_espacial(modo_firma="clasica"):
                     nombre_zona = sel_fin
                     nivel_jerarquico = nivel
                     
-                    cod_val = str(df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0])
-                    q_geom = f"SELECT * FROM cuencas WHERE {col_cod} = '{cod_val}' LIMIT 1"
-                    with engine.connect() as conn:
-                        gdf_zona = gpd.read_postgis(text(q_geom), conn, geom_col="geometry")
+                    df_filtrado = df_f[df_f['Llave_Visual'] == sel_fin]
+                    if not df_filtrado.empty:
+                        cod_val = str(df_filtrado[col_cod].iloc[0])
+                        # 🚀 FIX: Sin LIMIT 1 y usando parámetros
+                        q_geom = text(f"SELECT * FROM cuencas WHERE {col_cod} = :cod")
+                        with engine.connect() as conn:
+                            gdf_zona = gpd.read_postgis(q_geom, conn, params={"cod": cod_val}, geom_col="geometry")
+                        
+                        # 🚀 FIX: Disolver geometrías hijas si existen múltiples
+                        if not gdf_zona.empty and len(gdf_zona) > 1:
+                            gdf_zona = gdf_zona.dissolve(by=col_cod).reset_index()
+                    else:
+                        nombre_zona, gdf_zona = "-- Seleccione --", None
+                        nivel_jerarquico = "NINGUNO"
                 else:
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
             
             elif ruta == "CAR":
                 try:
-                    q_cars = "SELECT DISTINCT territorio FROM matriz_maestra_hidrologia WHERE UPPER(nivel) = 'CAR' ORDER BY territorio"
+                    q_cars = text("SELECT DISTINCT territorio FROM matriz_maestra_hidrologia WHERE UPPER(nivel) = 'CAR' ORDER BY territorio")
                     with engine.connect() as conn:
-                        df_cars = pd.read_sql(text(q_cars), conn)
+                        df_cars = pd.read_sql(q_cars, conn)
                     opciones_car = df_cars['territorio'].tolist() if not df_cars.empty else ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
-                except: opciones_car = ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
+                except Exception as e:
+                    st.warning("No se pudo conectar a la base de datos de hidrología. Usando opciones CAR por defecto.")
+                    opciones_car = ["AMVA", "CORANTIOQUIA", "CORNARE", "CORPOURABA"]
 
                 car_sel = st.selectbox("Autoridad Ambiental (CAR):", ["-- Seleccione --"] + sorted(opciones_car))
                 
@@ -456,9 +468,10 @@ def render_selector_espacial(modo_firma="clasica"):
                     if nivel == "CAR":
                         nombre_zona = car_sel
                         nivel_jerarquico = "CAR"
-                        q_geom = f"SELECT * FROM cuencas WHERE {col_car} ILIKE '%{car_sel[:4]}%'"
+                        # 🚀 FIX: Parámetros seguros
+                        q_geom = text(f"SELECT * FROM cuencas WHERE {col_car} ILIKE :car_val")
                         with engine.connect() as conn:
-                            gdf_zona = gpd.read_postgis(text(q_geom), conn, geom_col="geometry")
+                            gdf_zona = gpd.read_postgis(q_geom, conn, params={"car_val": f"%{car_sel[:4]}%"}, geom_col="geometry")
                     else:
                         col_obj_esperada = {"NSS1": "nom_nss1", "NSS2": "nom_nss2", "NSS3": "nom_nss3"}[nivel]
                         col_cod_esperada = {"NSS1": "nss1", "NSS2": "nss2", "NSS3": "nss3"}[nivel]
@@ -485,10 +498,21 @@ def render_selector_espacial(modo_firma="clasica"):
                         if sel_fin != "-- Seleccione --":
                             nombre_zona = sel_fin
                             nivel_jerarquico = nivel 
-                            cod_val = str(df_f[df_f['Llave_Visual']==sel_fin][col_cod].iloc[0])
-                            q_geom = f"SELECT * FROM cuencas WHERE {col_cod} = '{cod_val}' LIMIT 1"
-                            with engine.connect() as conn:
-                                gdf_zona = gpd.read_postgis(text(q_geom), conn, geom_col="geometry")
+                            
+                            df_filtrado = df_f[df_f['Llave_Visual'] == sel_fin]
+                            if not df_filtrado.empty:
+                                cod_val = str(df_filtrado[col_cod].iloc[0])
+                                # 🚀 FIX: Sin LIMIT 1 y usando parámetros
+                                q_geom = text(f"SELECT * FROM cuencas WHERE {col_cod} = :cod")
+                                with engine.connect() as conn:
+                                    gdf_zona = gpd.read_postgis(q_geom, conn, params={"cod": cod_val}, geom_col="geometry")
+                                
+                                # 🚀 FIX: Disolver geometrías
+                                if not gdf_zona.empty and len(gdf_zona) > 1:
+                                    gdf_zona = gdf_zona.dissolve(by=col_cod).reset_index()
+                            else:
+                                nombre_zona, gdf_zona = "-- Seleccione --", None
+                                nivel_jerarquico = "NINGUNO"
                         else:
                             nombre_zona, gdf_zona = "-- Seleccione --", None
                             nivel_jerarquico = "NINGUNO"
