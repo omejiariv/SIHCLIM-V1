@@ -48,13 +48,14 @@ def normalizar_texto(texto):
     t = str(texto).upper()
     t = re.sub(r'\(.*?\)', '', t)
     
-    # --- DESTRUCTOR DE PREFIJOS VEREDALES ---
-    t = t.replace("VDA.", "").replace("VDA ", "").replace("VEREDA ", "").replace("SECTOR ", "").replace("CGE.", "")
+    # --- DESTRUCTOR DE PREFIJOS VEREDALES Y DE ÁREAS NO MUNICIPALIZADAS ---
+    # 🔥 FIX: Añadidos "CD." y "ANM" para rescatar los corregimientos del Amazonas
+    t = t.replace("VDA.", "").replace("VDA ", "").replace("VEREDA ", "").replace("SECTOR ", "").replace("CGE.", "").replace("CD.", "").replace("CD ", "").replace("ANM.", "").replace("ANM ", "")
     
     # 1. HOTFIX: Reparador de Caracteres Mutantes del DANE (UTF-8 a Latin-1)
     reparador = {
-        "Ã\x81": "A", "Ã": "A", "Ã\x89": "E", "Ã‰": "E",
-        "Ã\x8d": "I", "Ã": "I", "Ã\x93": "O", "Ã“": "O",
+        "Ã\x81": "A", "Ã ": "A", "Ã\x89": "E", "Ã‰": "E",
+        "Ã\x8d": "I", "Ã ": "I", "Ã\x93": "O", "Ã“": "O",
         "Ã\x9a": "U", "Ãš": "U", "Ã\x91": "N", "Ã‘": "N",
         "Ãœ": "U", "Ã\x9c": "U", "Ã¡": "A", "Ã©": "E", 
         "Ã­": "I", "Ã³": "O", "Ãº": "U", "Ã±": "N", "Ã¼": "U"
@@ -100,23 +101,16 @@ def normalizar_texto(texto):
         "PAPUNAUA": "PAPUNAHUA",
         "CHIBOLO": "CHIVOLO", 
         "MANAUREBALCONDELCESAR": "MANAURE",
-        # --- 🔥 FIX: HOMOLOGACIÓN CARs (CORNAR Y CORANTIOQUIA) ---
-        "ELPENOL": "PENOL", # O si el DANE dice PENOL y el mapa dice ELPENOL, usa "PENOL": "ELPENOL"
-        "PENOL": "ELPENOL", # (Cubrimos ambas direcciones por seguridad)
+        # --- 🔥 FIX DEFINITIVO: HOMOLOGACIÓN SIN BUCLES CIRCULARES ---
+        # Ahora todas las variaciones apuntan a UNA SOLA raíz inmutable.
+        "ELPENOL": "PENOL", 
         "ELRETIRO": "RETIRO", 
-        "RETIRO": "ELRETIRO",
         "ELSANTUARIO": "SANTUARIO",
-        "SANTUARIO": "ELSANTUARIO",
         "ELCARMENDEVIBORAL": "CARMENDEVIBORAL",
-        "CARMENDEVIBORAL": "ELCARMENDEVIBORAL",
         "SANVICENTEFERRER": "SANVICENTE", 
-        "SANVICENTE": "SANVICENTEFERRER", # Cubrimos ambas direcciones
-        "LACEJA": "LACEJADELTAMBO",
         "LACEJADELTAMBO": "LACEJA",
-        "CAROLINA": "CAROLINADELPRINCIPE",
         "CAROLINADELPRINCIPE": "CAROLINA",
-        "SANTAFEDEANTIOQUIA": "SANTAFE",
-        "SANTAFE": "SANTAFEDEANTIOQUIA"
+        "SANTAFEDEANTIOQUIA": "SANTAFE"
     }
     
     if t in diccionario_rebeldes: 
@@ -127,70 +121,70 @@ def normalizar_texto(texto):
         "ELVALLANO": "VALLANO",
         "LASPALMAS": "PALMAS",
         "MULATOS": "LOSMULATOS",
-        "LAQUIEBRA": "LARAYA", # En Caldas se llama La Raya en el mapa
+        "LAQUIEBRA": "LARAYA",
         "ELROSARIOLOMADELOSZULETA": "LOMADELOSZULETA",
         "ELMELLITO": "ELMELLITOALTO",
         "TABLAZOHATILLO": "ELHATILLO",
-        "MANDE": "GUAPANDE", # Urrao
-        "PANTANONEGRO": "PANTANOS", # Abejorral
-        "ELCHAGUALO": "CHAGUALO", # Abejorral
+        "MANDE": "GUAPANDE", 
+        "PANTANONEGRO": "PANTANOS", 
+        "ELCHAGUALO": "CHAGUALO", 
         "SANNICOLASDELRIO": "SANNICOLAS",
-        "ZARZALCURAZAO": "ZARZALCURZAO", # Copacabana (El IGAC lo escribió mal)
-        "SADEM": "SADEMGUACAMAYA", # Chigorodó
-        "COLORADO": "ELCOLORADO", # Guarne
-        "ELESCOBERO": "ESCOBERO", # Envigado
-        "LAVERDELAMARIA": "LAMARIA", # Itagüí
-        "NUEVOANTIOQUIA": "NUEVAUNION", # Turbo
-        "PARAISO": "ELPARAISO", # Barbosa
-        "LAAURORA": "LAMADERAAURORA", # El Carmen de V.
-        "GUAPA": "GUAPALEON", # Chigorodó
-        "SANJOSEDEMULATOS": "ALTODEMULATOS", # Turbo
-        "LACIONDOR-X10": "ELCONDOR", # Yondó
-        "AGUASCLARAS": "AGUASCLARASSONDORA", # El Carmen de V.
-        "POTREROMISERANGA": "POTRERAMISERENGA", # Medellín
-        "ELRETIRO": "RETIRO",    # ARGELIA
-        "PIÑONAL": "PINONAL",    # BETULIA
-        "LOSANTIOQUEÑOS": "LOSANTIOQUENOS",    # CANASGORDAS
-        "SANVICENTE-ELKIOSKO": "SANVICENTEELKIOSKO",    # GUADALUPE
-        "LAVERDE-LAMARIA": "LAVERDELAMARIA",    # ITAGUI
-        "LACABAÑA": "LACABANA",    # ITUANGO
-        "SANMIGUEL": "SANMIGUELLADORADA",    # LAUNION
-        "POTRERO–MISERANGA": "POTREROMISERANGA",    # MEDELLIN
-        "LAVOLCANA-GUAYABAL": "LAVOLCANAGUAYABAL",    # MEDELLIN
-        "PATIO-BOLAS": "PATIOBOLAS",    # MEDELLIN
-        "BEBARAMEÑO": "BEBARAMENO",    # MURINDO
-        "SANANTONIO-ELRIO": "SANANTONIOELRIO",    # REMEDIOS
-        "PUERTOGARZA-NARICES": "PUERTOGARZANARICES",    # SANCARLOS
-        "NORCASIA-7DEAGOSTO": "NORCASIA7DEAGOSTO",    # SANCARLOS
-        "LASPALMAS": "PALMAS",    # SANCARLOS
-        "QUEBRADON-20DEJULIO": "QUEBRADON20DEJULIO",    # SANCARLOS
-        "CAÑAFISTO": "CANAFISTO",    # SANCARLOS
-        "LANUTRIA-CAUNZALES": "LANUTRIACAUNZALES",    # SANFRANCISCO
-        "LAHABANA-PALESTINA": "LAHABANAPALESTINA",    # SANLUIS
-        "MANIZALES-VILLANUEVA": "MANIZALESVILLANUEVA",    # SANROQUE
-        "PEÑASAZULES": "PENASAZULES",    # SANROQUE
-        "MORTIÑAL": "MORTINAL",    # SANTAROSADEOSOS
-        "SANTAGERTRUDIS-PEÑAS": "SANTAGERTRUDISPENAS",    # SANTODOMINGO
-        "ROBLALABAJO-CHIRIMOYO": "ROBLALABAJOCHIRIMOYO",    # SONSON
-        "ELLLANO-CAÑAVERAL": "ELLLANOCANAVERAL",    # SONSON
-        "SIRGÜITA": "SIRGUITA",    # SONSON
-        "BRISAS-CAUNZAL": "BRISASCAUNZAL",    # SONSON
-        "SANTAROSA-LADANTA": "SANTAROSALADANTA",    # SONSON
-        "SANJOSEMONTAÑITAS": "SANJOSEMONTANITAS",    # URRAO
-        "MORRON-SEVILLA": "MORRONSEVILLA",    # VALDIVIA
-        "VEREDACABECERAMUNICIPAL": "CABECERAMUNICIPAL",    # YARUMAL
-        "LACONDOR-X10": "LACONDORX10",    # YONDO
-        "CAÑODONJUAN": "CANODONJUAN",    # YONDO
-        "LAROMPIDANO.1": "LAROMPIDANO1",    # YONDO
-        "LAROMPIDANO.2": "LAROMPIDANO2",    # YONDO
-        "ZONAURBANAVEREDAELDIQUE": "ZONAURBANAELDIQUE"    # YONDO
+        "ZARZALCURAZAO": "ZARZALCURZAO", 
+        "SADEM": "SADEMGUACAMAYA", 
+        "COLORADO": "ELCOLORADO", 
+        "ELESCOBERO": "ESCOBERO", 
+        "LAVERDELAMARIA": "LAMARIA", 
+        "NUEVOANTIOQUIA": "NUEVAUNION", 
+        "PARAISO": "ELPARAISO", 
+        "LAAURORA": "LAMADERAAURORA", 
+        "GUAPA": "GUAPALEON", 
+        "SANJOSEDEMULATOS": "ALTODEMULATOS", 
+        "LACIONDOR-X10": "ELCONDOR", 
+        "AGUASCLARAS": "AGUASCLARASSONDORA", 
+        "POTREROMISERANGA": "POTRERAMISERENGA", 
+        "ELRETIRO": "RETIRO",    
+        "PIÑONAL": "PINONAL",    
+        "LOSANTIOQUEÑOS": "LOSANTIOQUENOS",    
+        "SANVICENTE-ELKIOSKO": "SANVICENTEELKIOSKO",    
+        "LAVERDE-LAMARIA": "LAVERDELAMARIA",    
+        "LACABAÑA": "LACABANA",    
+        "SANMIGUEL": "SANMIGUELLADORADA",    
+        "POTRERO–MISERANGA": "POTREROMISERANGA",    
+        "LAVOLCANA-GUAYABAL": "LAVOLCANAGUAYABAL",    
+        "PATIO-BOLAS": "PATIOBOLAS",    
+        "BEBARAMEÑO": "BEBARAMENO",    
+        "SANANTONIO-ELRIO": "SANANTONIOELRIO",    
+        "PUERTOGARZA-NARICES": "PUERTOGARZANARICES",    
+        "NORCASIA-7DEAGOSTO": "NORCASIA7DEAGOSTO",    
+        "LASPALMAS": "PALMAS",    
+        "QUEBRADON-20DEJULIO": "QUEBRADON20DEJULIO",    
+        "CAÑAFISTO": "CANAFISTO",    
+        "LANUTRIA-CAUNZALES": "LANUTRIACAUNZALES",    
+        "LAHABANA-PALESTINA": "LAHABANAPALESTINA",    
+        "MANIZALES-VILLANUEVA": "MANIZALESVILLANUEVA",    
+        "PEÑASAZULES": "PENASAZULES",    
+        "MORTIÑAL": "MORTINAL",    
+        "SANTAGERTRUDIS-PEÑAS": "SANTAGERTRUDISPENAS",    
+        "ROBLALABAJO-CHIRIMOYO": "ROBLALABAJOCHIRIMOYO",    
+        "ELLLANO-CAÑAVERAL": "ELLLANOCANAVERAL",    
+        "SIRGÜITA": "SIRGUITA",    
+        "BRISAS-CAUNZAL": "BRISASCAUNZAL",    
+        "SANTAROSA-LADANTA": "SANTAROSALADANTA",    
+        "SANJOSEMONTAÑITAS": "SANJOSEMONTANITAS",    
+        "MORRON-SEVILLA": "MORRONSEVILLA",    
+        "VEREDACABECERAMUNICIPAL": "CABECERAMUNICIPAL",    
+        "LACONDOR-X10": "LACONDORX10",    
+        "CAÑODONJUAN": "CANODONJUAN",    
+        "LAROMPIDANO.1": "LAROMPIDANO1",    
+        "LAROMPIDANO.2": "LAROMPIDANO2",    
+        "ZONAURBANAVEREDAELDIQUE": "ZONAURBANAELDIQUE"    
     }
     
     if t in diccionario_veredas:
         t = diccionario_veredas[t]
         
     return t
-
+    
 @st.cache_data
 def cargar_maestro_territorial():
     # URL de tu archivo en Supabase o ruta local
