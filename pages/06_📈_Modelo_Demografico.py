@@ -2251,11 +2251,11 @@ with tab_matriz:
                             ) AS subc_lbl, geometry
                             FROM cuencas
                         """)
-                        gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=3116)
                         
-                        # 🔥 OPTIMIZACIÓN RAM 1: Dejamos solo lo esencial de las cuencas
-                        gdf_cue_limpio = gdf_cue[['subc_lbl', 'geometry']].copy()
-                        gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
+                        # 🚀 FIX TIMEOUT 1: Abrimos la conexión y le extendemos la vida útil a 5 minutos
+                        with engine_geo.connect() as conn:
+                            conn.execute(text("SET statement_timeout = '300000';"))
+                            gdf_cue = gpd.read_postgis(q_cue, conn, geom_col="geometry").to_crs(epsg=3116)
                         
                         def cargar_y_proyectar(url):
                             temp_gdf = gpd.read_file(url)
@@ -2366,7 +2366,19 @@ with tab_matriz:
                             del gdf_cp; gc.collect()
 
                             texto_progreso.markdown(f"🗺️ **Fase Rural 2/2:** Intersección Masiva de Polígonos Municipales (La operación más pesada ⚠️)...")
-                            gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), engine_geo, geom_col="geometry")
+                            
+                            # 🚀 FIX TIMEOUT 2: Aplicamos el mismo escudo de tiempo para la capa de municipios
+                            with engine_geo.connect() as conn:
+                                conn.execute(text("SET statement_timeout = '300000';"))
+                                gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), conn, geom_col="geometry")
+                                
+                            col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
+                            
+                            # 🚀 FIX TIMEOUT 2: Aplicamos el mismo escudo de tiempo para la capa de municipios
+                            with engine_geo.connect() as conn:
+                                conn.execute(text("SET statement_timeout = '300000';"))
+                                gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), conn, geom_col="geometry")
+                                
                             col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
                             if col_dpto in gdf_mun.columns: gdf_mun = gdf_mun[gdf_mun[col_dpto] == '05'].copy()
                             gdf_mun = gdf_mun.to_crs(epsg=3116)
