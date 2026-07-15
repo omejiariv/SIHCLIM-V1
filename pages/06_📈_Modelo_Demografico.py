@@ -1915,7 +1915,7 @@ with tab_mapas:
                         if "cuencas" in escala_sel.lower():
                             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
                             
-                            # 🚀 FIX 3: Escaneo jerárquico inteligente. Si la columna coincide con el filtro objetivo, usamos ese nivel.
+                            # 🚀 FIX 3: Escaneo jerárquico inteligente.
                             for c in cols_posibles:
                                 if c in row and pd.notnull(row[c]):
                                     val_norm = normalizar_texto(str(row[c]).strip())
@@ -1939,7 +1939,7 @@ with tab_mapas:
                             if normalizar_texto(val_terr) == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
                             return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
 
-                    # 🚀 FIX 4: Ahora sí aplicamos la función conociendo el objetivo
+                    # 🚀 FIX 4: Aplicamos la función
                     gdf_mapa['MATCH_ID'] = gdf_mapa.apply(generar_id_geojson, axis=1)
 
                     ids_geojson = set(gdf_mapa['MATCH_ID'].dropna().unique())
@@ -1957,7 +1957,11 @@ with tab_mapas:
                                 df_mapa_plot.at[idx, 'En_Mapa'] = True
                                 
                     ids_curados = df_mapa_plot[df_mapa_plot['En_Mapa'] == True]['MATCH_ID'].unique()
-                    gdf_filtrado = gdf_mapa[gdf_mapa['MATCH_ID'].isin(ids_curados)]
+                    gdf_filtrado = gdf_mapa[gdf_mapa['MATCH_ID'].isin(ids_curados)].copy()
+                    
+                    # 🔥 EL GRAN FIX: DISOLVER LAS GEOMETRÍAS ANTES DE PASARLAS A PLOTLY 🔥
+                    if not gdf_filtrado.empty and len(gdf_filtrado) > 1:
+                        gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
                     if not gdf_filtrado.empty:
@@ -1973,8 +1977,13 @@ with tab_mapas:
                         elif max_diff < 5.0: safe_zoom = 6
                         
                     mapa_para_dibujar = json.loads(gdf_filtrado.to_json())
+                    
+                    # 🔥 Aseguramos que Plotly encuentre el ID exacto asignándolo explícitamente en el GeoJSON
+                    for feature in mapa_para_dibujar.get('features', []):
+                        feature['id'] = feature['properties'].get('MATCH_ID', '')
+
                     datos_para_dibujar = df_mapa_plot[df_mapa_plot['En_Mapa'] == True].copy()
-                    llave_geojson = 'properties.MATCH_ID'
+                    llave_geojson = 'id'
 
                 # =========================================================
                 # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES
