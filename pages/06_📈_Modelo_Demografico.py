@@ -1948,26 +1948,36 @@ with tab_mapas:
                     llave_geojson = 'id'
 
                 # =========================================================
-                # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES
+                # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
                 # =========================================================
+                import numpy as np
+                
                 if datos_para_dibujar['Total'].sum() == 0:
                     datos_para_dibujar['Color_Fix'] = 1 
+                    datos_para_dibujar['Color_Mapa'] = 1
                 else:
                     datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
+                    # 🔥 Transformación Logarítmica Base 10 para revelar matices poblacionales
+                    datos_para_dibujar['Color_Mapa'] = np.log10(datos_para_dibujar['Total'] + 1)
                     
                 fig_mapa = px.choropleth_mapbox(
                     datos_para_dibujar, 
                     geojson=mapa_para_dibujar,
                     locations='MATCH_ID',        
                     featureidkey=llave_geojson, 
-                    color='Color_Fix', 
+                    color='Color_Mapa', # 🚀 Pintamos usando el logaritmo
                     color_continuous_scale="Viridis",
                     mapbox_style="carto-positron",
                     zoom=safe_zoom,
                     center={"lat": safe_center_lat, "lon": safe_center_lon},
                     opacity=0.8,
                     hover_name='Territorio',
-                    hover_data={'Color_Fix': False, 'Total': ':,.0f', 'MATCH_ID': False}
+                    hover_data={
+                        'Color_Mapa': False, # Ocultamos el logaritmo del tooltip
+                        'Color_Fix': False, 
+                        'Total': ':,.0f',    # Mantenemos visible la población real
+                        'MATCH_ID': False
+                    }
                 )
                 
                 if mostrar_capa_cuencas:
@@ -2011,7 +2021,16 @@ with tab_mapas:
                     except Exception as e:
                         st.sidebar.warning(f"No se pudo superponer la capa de cuencas: {e}")
 
-                fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=700)
+                # 🔥 FIX VISUAL: Integramos el formato de la barra de leyenda
+                fig_mapa.update_layout(
+                    margin={"r":0,"t":0,"l":0,"b":0}, 
+                    height=700,
+                    coloraxis_colorbar=dict(
+                        title="Habitantes",
+                        tickvals=np.log10([1000, 5000, 20000, 50000, 100000, 500000, 2000000]),
+                        ticktext=["1K", "5K", "20K", "50K", "100K", "500K", "2M+"]
+                    )
+                )
                 st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
                 st.success("✅ MAPA RENDERIZADO CON EXITO.")
                 
