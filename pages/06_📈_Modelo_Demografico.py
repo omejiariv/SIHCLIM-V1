@@ -3177,8 +3177,15 @@ if 'df_matriz_demografica' in st.session_state:
                                 # 2. Borramos las filas viejas manteniendo los permisos RLS intactos
                                 conn.execute(text("DELETE FROM matriz_maestra_demografica;"))
                                 
-                            # 3. Inyectamos la nueva matriz (que ahora incluye Lin_m, Lin_b y Lin_R2)
-                            df_matriz_demo.to_sql('matriz_maestra_demografica', engine_sql, if_exists='append', index=False)
+                            # 3. Inyectamos la nueva matriz en paquetes pequeños para no saturar Supabase
+                            df_matriz_demo.to_sql(
+                                'matriz_maestra_demografica', 
+                                engine_sql, 
+                                if_exists='append', 
+                                index=False,
+                                chunksize=500,  # Enviar en bloques de 500 filas
+                                method='multi'  # Optimiza la inserción masiva en PostgreSQL
+                            )
                             st.cache_data.clear()
                             
                             st.success(f"✅ ¡Inyección Exitosa! {len(df_matriz_demo)} registros actualizados en PostgreSQL.")
