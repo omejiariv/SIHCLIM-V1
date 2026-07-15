@@ -663,184 +663,181 @@ elif escala_sel == "🧩 Regional (Macroregiones)":
         df_mapa_base = pd.DataFrame()
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
-    # 🚀 FIX: Búsqueda indestructible del Nivel (Ignora mayúsculas/minúsculas)
-    if not df_matriz.empty and 'Nivel' in df_matriz.columns:
-        df_cuencas_solo = df_matriz[df_matriz['Nivel'].astype(str).str.strip().str.upper() == 'CUENCA'].copy()
+    # --- 1. MOTOR DE FILTROS EN CASCADA (Independiente de la Matriz) ---
+    @st.cache_data(ttl=3600)
+    def cargar_jerarquia_cuencas():
+        try:
+            from modules.db_manager import get_engine
+            from sqlalchemy import text
+            q_hier = text("""
+                SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
+                CASE WHEN nom_nss1 IS NOT NULL AND TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || COALESCE(' - (' || TRIM(CAST(nss1 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss1,
+                CASE WHEN nom_nss2 IS NOT NULL AND TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || COALESCE(' - (' || TRIM(CAST(nss2 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss2,
+                CASE WHEN nom_nss3 IS NOT NULL AND TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || COALESCE(' - (' || TRIM(CAST(nss3 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss3
+                FROM cuencas
+            """)
+            # 🚀 FIX TIMEOUT: Protegemos la consulta de los menús
+            engine = get_engine()
+            with engine.connect() as conn:
+                conn.execute(text("SET statement_timeout = '300000';"))
+                return pd.read_sql(q_hier, conn)
+        except: return pd.DataFrame()
+    
+    df_hier = cargar_jerarquia_cuencas()
+    
+    if not df_hier.empty:
+        st.sidebar.markdown("### 🌊 Filtros Jerárquicos")
+        ah_opts = sorted(df_hier['nomah'].dropna().unique())
+        sel_ah = st.sidebar.selectbox("1. Área Hidrográfica (AH):", ["-- Seleccione --"] + ah_opts)
         
-        if not df_cuencas_solo.empty:
-            # --- 1. MOTOR DE FILTROS EN CASCADA ---
-            @st.cache_data(ttl=3600)
-            def cargar_jerarquia_cuencas():
-                try:
-                    from modules.db_manager import get_engine
-                    from sqlalchemy import text
-                    q_hier = text("""
-                        SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
-                        CASE WHEN nom_nss1 IS NOT NULL AND TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || COALESCE(' - (' || TRIM(CAST(nss1 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss1,
-                        CASE WHEN nom_nss2 IS NOT NULL AND TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || COALESCE(' - (' || TRIM(CAST(nss2 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss2,
-                        CASE WHEN nom_nss3 IS NOT NULL AND TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || COALESCE(' - (' || TRIM(CAST(nss3 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss3
-                        FROM cuencas
-                    """)
-                    # 🚀 FIX TIMEOUT: Protegemos la consulta de los menús para que el servidor no la corte
-                    engine = get_engine()
-                    with engine.connect() as conn:
-                        conn.execute(text("SET statement_timeout = '300000';"))
-                        return pd.read_sql(q_hier, conn)
-                except: return pd.DataFrame()
-            
-            df_hier = cargar_jerarquia_cuencas()
-            
-            if not df_hier.empty:
-                st.sidebar.markdown("### 🌊 Filtros Jerárquicos")
-                ah_opts = sorted(df_hier['nomah'].dropna().unique())
-                sel_ah = st.sidebar.selectbox("1. Área Hidrográfica (AH):", ["-- Seleccione --"] + ah_opts)
-                
-                zh_opts = sorted(df_hier[df_hier['nomah'] == sel_ah]['nomzh'].dropna().unique()) if sel_ah != "-- Seleccione --" else []
-                sel_zh = st.sidebar.selectbox("2. Zona Hidrológica (ZH):", ["-- Seleccione --"] + zh_opts)
-                
-                szh_opts = sorted(df_hier[df_hier['nomzh'] == sel_zh]['nom_szh'].dropna().unique()) if sel_zh != "-- Seleccione --" else []
-                sel_szh = st.sidebar.selectbox("3. Subzona (SZH):", ["-- Seleccione --"] + szh_opts)
-                
-                resolucion = st.sidebar.radio("🔎 Resolución de visualización:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"])
-                
-                if 'NSS1' in resolucion:
-                    col_res_real, col_res_disp = 'nom_nss1', 'disp_nss1'
-                elif 'NSS2' in resolucion:
-                    col_res_real, col_res_disp = 'nom_nss2', 'disp_nss2'
-                else:
-                    col_res_real, col_res_disp = 'nom_nss3', 'disp_nss3'
-                
-                if sel_szh != "-- Seleccione --": 
-                    opciones = df_hier[df_hier['nom_szh'] == sel_szh][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
-                elif sel_zh != "-- Seleccione --": 
-                    opciones = df_hier[df_hier['nomzh'] == sel_zh][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
-                elif sel_ah != "-- Seleccione --": 
-                    opciones = df_hier[df_hier['nomah'] == sel_ah][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
-                else: 
-                    opciones = df_hier[[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
-                    
-                cuencas_disp = sorted(opciones[col_res_disp].tolist())
-            else:
-                col_res_real = 'Territorio'
-                cuencas_disp = sorted(df_cuencas_solo['Territorio'].dropna().astype(str).unique())
-
-            cuenca_sel_disp = st.sidebar.multiselect("🎯 Seleccione cuencas específicas:", cuencas_disp, default=None)
-            
-            # --- 2. 🎯 DETERMINAR QUÉ LEER DE LA MATRIZ ---
-            if cuenca_sel_disp:
-                filtro_zona = " + ".join(cuenca_sel_disp[:2]) + ("..." if len(cuenca_sel_disp)>2 else "")
-                titulo_terr = f"Cuencas Seleccionadas: {filtro_zona}"
-                
-                if not df_hier.empty:
-                    df_lookup = df_hier[df_hier[col_res_disp].isin(cuenca_sel_disp)]
-                    territorios_reales = df_lookup[col_res_real].dropna().unique().tolist()
-                else:
-                    territorios_reales = cuenca_sel_disp
-                    
-                territorios_a_buscar = territorios_reales
-                territorios_para_mapa = territorios_reales
-            else:
-                if not df_hier.empty:
-                    if sel_szh != "-- Seleccione --": 
-                        titulo_terr = f"SZH: {sel_szh}"
-                        territorios_a_buscar = [sel_szh]
-                        territorios_para_mapa = df_hier[df_hier['nom_szh'] == sel_szh][col_res_real].dropna().unique().tolist()
-                    elif sel_zh != "-- Seleccione --": 
-                        titulo_terr = f"ZH: {sel_zh}"
-                        territorios_a_buscar = [sel_zh]
-                        territorios_para_mapa = df_hier[df_hier['nomzh'] == sel_zh][col_res_real].dropna().unique().tolist()
-                    elif sel_ah != "-- Seleccione --": 
-                        titulo_terr = f"AH: {sel_ah}"
-                        territorios_a_buscar = [sel_ah]
-                        territorios_para_mapa = df_hier[df_hier['nomah'] == sel_ah][col_res_real].dropna().unique().tolist()
-                    else: 
-                        titulo_terr = "Todas las Cuencas"
-                        territorios_a_buscar = df_hier['nomah'].dropna().unique().tolist()
-                        territorios_para_mapa = df_hier['nomzh'].dropna().unique().tolist()
-                else:
-                    titulo_terr = "Todas las Cuencas"
-                    territorios_a_buscar = df_cuencas_solo['Territorio'].unique().tolist()
-                    territorios_para_mapa = territorios_a_buscar
-                filtro_zona = titulo_terr
-
-            # --- 3. ⚡ LECTURA MATEMÁTICA DIRECTA (Bypass Anti-Amnesia Rural) ---
-            años_hist = np.arange(1985, 2043)
-            pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
-            
-            df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
-            area_buscada = str(area_global).strip().lower()
-
-            def evaluar_curva(fila, anios):
-                mod = str(fila.get('Modelo_Recomendado', 'Desconocido'))
-                x = anios - 1985 
-                
-                if 'Logistico' in mod or 'Logístico' in mod: 
-                    return fila.get('Log_K', 0) / (1 + fila.get('Log_a', 0) * np.exp(-fila.get('Log_r', 0) * x))
-                if 'Exponencial' in mod: 
-                    return fila.get('Exp_a', 0) * np.exp(fila.get('Exp_b', 0) * x)
-                if 'Polinomial' in mod:
-                    return fila.get('Poly_A', 0)*(x**3) + fila.get('Poly_B', 0)*(x**2) + fila.get('Poly_C', 0)*x + fila.get('Poly_D', 0)
-                if 'Lineal' in mod:
-                    return fila.get('Lin_m', 0) * x + fila.get('Lin_b', 0)
-                    
-                return np.full_like(anios, fila.get('Pob_Base', 0))
-
-            import difflib
-            
-            def calcular_poblacion_bypass(t_norm, anios_array):
-                filas_terr = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == t_norm]
-                if filas_terr.empty:
-                    matches = difflib.get_close_matches(t_norm, df_cuencas_solo['MATCH_ID'].tolist(), n=1, cutoff=0.8)
-                    if matches: filas_terr = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == matches[0]]
-                
-                pob_calculada = np.zeros_like(anios_array, dtype=float)
-                if not filas_terr.empty:
-                    if area_buscada == 'total':
-                        fila_u = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
-                        fila_r = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
-                        sumo_partes = False
-                        
-                        if not fila_u.empty: 
-                            pob_calculada += evaluar_curva(fila_u.iloc[0], anios_array)
-                            sumo_partes = True
-                        if not fila_r.empty: 
-                            pob_calculada += evaluar_curva(fila_r.iloc[0], anios_array)
-                            sumo_partes = True
-                            
-                        if not sumo_partes:
-                            fila_t = filas_terr[filas_terr['Area'].str.lower() == 'total']
-                            if not fila_t.empty: pob_calculada += evaluar_curva(fila_t.iloc[0], anios_array)
-                    else:
-                        if 'urb' in area_buscada: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
-                        else: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
-                        if not fila_esp.empty: pob_calculada += evaluar_curva(fila_esp.iloc[0], anios_array)
-                return pob_calculada
-
-            # Aplicamos a las curvas históricas
-            for t_crudo in territorios_a_buscar:
-                pob_hist_acumulada += calcular_poblacion_bypass(normalizar_texto(t_crudo), años_hist)
-
-            pob_hist = pob_hist_acumulada
-
-            # 🚀 FIX VITAL: Generamos el df_mapa_base para que el mapa espacial tenga datos
-            mapa_data = []
-            for t_mapa in territorios_para_mapa:
-                pob_array = calcular_poblacion_bypass(normalizar_texto(t_mapa), años_hist)
-                for i, anio in enumerate(años_hist):
-                    mapa_data.append({
-                        'Territorio': t_mapa,
-                        'Padre': titulo_terr,
-                        'año': anio,
-                        'Total': pob_array[i]
-                    })
-            df_mapa_base = pd.DataFrame(mapa_data) if mapa_data else pd.DataFrame()
-
+        zh_opts = sorted(df_hier[df_hier['nomah'] == sel_ah]['nomzh'].dropna().unique()) if sel_ah != "-- Seleccione --" else []
+        sel_zh = st.sidebar.selectbox("2. Zona Hidrológica (ZH):", ["-- Seleccione --"] + zh_opts)
+        
+        szh_opts = sorted(df_hier[df_hier['nomzh'] == sel_zh]['nom_szh'].dropna().unique()) if sel_zh != "-- Seleccione --" else []
+        sel_szh = st.sidebar.selectbox("3. Subzona (SZH):", ["-- Seleccione --"] + szh_opts)
+        
+        resolucion = st.sidebar.radio("🔎 Resolución de visualización:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"])
+        
+        if 'NSS1' in resolucion:
+            col_res_real, col_res_disp = 'nom_nss1', 'disp_nss1'
+        elif 'NSS2' in resolucion:
+            col_res_real, col_res_disp = 'nom_nss2', 'disp_nss2'
         else:
-            años_hist, pob_hist = np.array([]), np.array([])
-            df_mapa_base = pd.DataFrame()
+            col_res_real, col_res_disp = 'nom_nss3', 'disp_nss3'
+        
+        if sel_szh != "-- Seleccione --": 
+            opciones = df_hier[df_hier['nom_szh'] == sel_szh][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
+        elif sel_zh != "-- Seleccione --": 
+            opciones = df_hier[df_hier['nomzh'] == sel_zh][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
+        elif sel_ah != "-- Seleccione --": 
+            opciones = df_hier[df_hier['nomah'] == sel_ah][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
+        else: 
+            opciones = df_hier[[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
+            
+        cuencas_disp = sorted(opciones[col_res_disp].tolist())
     else:
-        años_hist, pob_hist = np.array([]), np.array([])
+        col_res_real = 'Territorio'
+        cuencas_disp = []
+
+    cuenca_sel_disp = st.sidebar.multiselect("🎯 Seleccione cuencas específicas:", cuencas_disp, default=None)
+    
+    # --- 2. DETERMINAR TERRITORIOS A BUSCAR ---
+    if cuenca_sel_disp:
+        filtro_zona = " + ".join(cuenca_sel_disp[:2]) + ("..." if len(cuenca_sel_disp)>2 else "")
+        titulo_terr = f"Cuencas Seleccionadas: {filtro_zona}"
+        
+        if not df_hier.empty:
+            df_lookup = df_hier[df_hier[col_res_disp].isin(cuenca_sel_disp)]
+            territorios_reales = df_lookup[col_res_real].dropna().unique().tolist()
+        else:
+            territorios_reales = cuenca_sel_disp
+            
+        territorios_a_buscar = territorios_reales
+        territorios_para_mapa = territorios_reales
+    else:
+        if not df_hier.empty:
+            if sel_szh != "-- Seleccione --": 
+                titulo_terr = f"SZH: {sel_szh}"
+                territorios_a_buscar = [sel_szh]
+                territorios_para_mapa = df_hier[df_hier['nom_szh'] == sel_szh][col_res_real].dropna().unique().tolist()
+            elif sel_zh != "-- Seleccione --": 
+                titulo_terr = f"ZH: {sel_zh}"
+                territorios_a_buscar = [sel_zh]
+                territorios_para_mapa = df_hier[df_hier['nomzh'] == sel_zh][col_res_real].dropna().unique().tolist()
+            elif sel_ah != "-- Seleccione --": 
+                titulo_terr = f"AH: {sel_ah}"
+                territorios_a_buscar = [sel_ah]
+                territorios_para_mapa = df_hier[df_hier['nomah'] == sel_ah][col_res_real].dropna().unique().tolist()
+            else: 
+                titulo_terr = "Todas las Cuencas"
+                territorios_a_buscar = df_hier['nomah'].dropna().unique().tolist()
+                territorios_para_mapa = df_hier['nomzh'].dropna().unique().tolist()
+        else:
+            titulo_terr = "Todas las Cuencas"
+            territorios_a_buscar = []
+            territorios_para_mapa = []
+        filtro_zona = titulo_terr
+
+    # --- 3. LECTURA MATEMÁTICA DIRECTA DESDE LA MATRIZ ---
+    if not df_matriz.empty and 'Nivel' in df_matriz.columns:
+        # 🚀 FIX: Acepta variaciones en mayúsculas/minúsculas de la Matriz SQL
+        df_cuencas_solo = df_matriz[df_matriz['Nivel'].astype(str).str.strip().str.upper() == 'CUENCA'].copy()
+    else:
+        df_cuencas_solo = pd.DataFrame()
+
+    años_hist = np.arange(1985, 2043)
+    pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
+    
+    if not df_cuencas_solo.empty:
+        df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
+        area_buscada = str(area_global).strip().lower()
+
+        def evaluar_curva(fila, anios):
+            mod = str(fila.get('Modelo_Recomendado', 'Desconocido'))
+            x = anios - 1985 
+            
+            if 'Logistico' in mod or 'Logístico' in mod: 
+                return fila.get('Log_K', 0) / (1 + fila.get('Log_a', 0) * np.exp(-fila.get('Log_r', 0) * x))
+            if 'Exponencial' in mod: 
+                return fila.get('Exp_a', 0) * np.exp(fila.get('Exp_b', 0) * x)
+            if 'Polinomial' in mod:
+                return fila.get('Poly_A', 0)*(x**3) + fila.get('Poly_B', 0)*(x**2) + fila.get('Poly_C', 0)*x + fila.get('Poly_D', 0)
+            if 'Lineal' in mod:
+                return fila.get('Lin_m', 0) * x + fila.get('Lin_b', 0)
+                
+            return np.full_like(anios, fila.get('Pob_Base', 0))
+
+        import difflib
+        
+        def calcular_poblacion_bypass(t_norm, anios_array):
+            filas_terr = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == t_norm]
+            if filas_terr.empty:
+                matches = difflib.get_close_matches(t_norm, df_cuencas_solo['MATCH_ID'].tolist(), n=1, cutoff=0.8)
+                if matches: filas_terr = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == matches[0]]
+            
+            pob_calculada = np.zeros_like(anios_array, dtype=float)
+            if not filas_terr.empty:
+                if area_buscada == 'total':
+                    fila_u = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
+                    fila_r = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
+                    sumo_partes = False
+                    
+                    if not fila_u.empty: 
+                        pob_calculada += evaluar_curva(fila_u.iloc[0], anios_array)
+                        sumo_partes = True
+                    if not fila_r.empty: 
+                        pob_calculada += evaluar_curva(fila_r.iloc[0], anios_array)
+                        sumo_partes = True
+                        
+                    if not sumo_partes:
+                        fila_t = filas_terr[filas_terr['Area'].str.lower() == 'total']
+                        if not fila_t.empty: pob_calculada += evaluar_curva(fila_t.iloc[0], anios_array)
+                else:
+                    if 'urb' in area_buscada: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
+                    else: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
+                    if not fila_esp.empty: pob_calculada += evaluar_curva(fila_esp.iloc[0], anios_array)
+            return pob_calculada
+
+        for t_crudo in territorios_a_buscar:
+            pob_hist_acumulada += calcular_poblacion_bypass(normalizar_texto(t_crudo), años_hist)
+
+        pob_hist = pob_hist_acumulada
+
+        mapa_data = []
+        for t_mapa in territorios_para_mapa:
+            pob_array = calcular_poblacion_bypass(normalizar_texto(t_mapa), años_hist)
+            for i, anio in enumerate(años_hist):
+                mapa_data.append({
+                    'Territorio': t_mapa,
+                    'Padre': titulo_terr,
+                    'año': anio,
+                    'Total': pob_array[i]
+                })
+        df_mapa_base = pd.DataFrame(mapa_data) if mapa_data else pd.DataFrame()
+    else:
+        pob_hist = pob_hist_acumulada
         df_mapa_base = pd.DataFrame()
+        st.sidebar.warning("⚠️ Entrena la Matriz Demográfica para ver cálculos de población en cuencas.")
 
 elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)"]:
     if "Regiones" in escala_sel:
