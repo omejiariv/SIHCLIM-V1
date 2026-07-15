@@ -623,34 +623,52 @@ elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambient
         filtro_zona = "Sin Selección"
         titulo_terr = f"{col_agrupadora.upper()}: No Disponible"
     
-   
+    # 🚀 FIX: Resolvemos dinámicamente la columna 'Año' en caso de que varíe
+    col_anio = 'año' if 'año' in df_base.columns else 'Año' if 'Año' in df_base.columns else None
+    
     # Matemáticas para gráficos
-    if not df_base.empty:
-        df_hist = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby('año')['Total'].sum().reset_index()
-        años_hist = df_hist['año'].values
+    if not df_base.empty and col_anio:
+        df_hist = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby(col_anio)['Total'].sum().reset_index()
+        años_hist = df_hist[col_anio].values
         pob_hist = df_hist['Total'].values
     else:
-        st.sidebar.warning(f"⚠️ No se encontraron municipios para {sel_territorio}")
+        st.sidebar.warning(f"⚠️ No se encontraron municipios o datos históricos para {sel_territorio}")
         años_hist, pob_hist = np.array([]), np.array([])
     
-    # Preparación para el mapa
-    df_mapa_base = df_base.copy()
-    if not df_mapa_base.empty:
-        df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
+    # 🚀 FIX: Preparación y limpieza correcta para el mapa (Filtro espacial y poblacional)
+    if not df_base.empty and col_anio:
+        df_mapa_base = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby(['municipio', col_anio])['Total'].sum().reset_index()
+        df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
+        # Asignamos la subregión o CAR como 'Padre' para respetar la delimitación local en el mapa
+        df_mapa_base['Padre'] = sel_territorio
+    else:
+        df_mapa_base = pd.DataFrame()
 
 elif escala_sel == "🧩 Regional (Macroregiones)":
-    regiones_list = sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"])
+    regiones_list = sorted([r for r in df_mun['Macroregion'].dropna().unique() if r != "Sin Región"])
     reg_sel = st.sidebar.selectbox("Seleccione la Macroregión:", regiones_list)
     
     filtro_zona = reg_sel
     titulo_terr = f"Región {reg_sel}"
     
-    df_terr = df_mun[(df_mun['Macroregion'] == reg_sel) & (df_mun['area_geografica'] == 'total')].groupby('año')['Total'].sum().reset_index()
-    años_hist = df_terr['año'].values
-    pob_hist = df_terr['Total'].values
+    # 🚀 FIX: Protección dinámica del nombre de la columna año
+    col_anio = 'año' if 'año' in df_mun.columns else 'Año'
     
-    df_mapa_base = df_mun[df_mun['Macroregion'] == reg_sel].groupby(['municipio', 'depto_nom', 'año'])['Total'].sum().reset_index()
-    df_mapa_base = df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'})
+    # 🚀 FIX: Quitamos el 'total' estático y vinculamos el area_global del sidebar
+    df_terr = df_mun[(df_mun['Macroregion'] == reg_sel) & (df_mun['area_geografica'].str.lower() == area_global.lower())]
+    
+    if not df_terr.empty:
+        df_hist = df_terr.groupby(col_anio)['Total'].sum().reset_index()
+        años_hist = df_hist[col_anio].values
+        pob_hist = df_hist['Total'].values
+        
+        # 🚀 FIX: Sincronizamos el mapa con el filtro poblacional y ajustamos la jerarquía
+        df_mapa_base = df_terr.groupby(['municipio', col_anio])['Total'].sum().reset_index()
+        df_mapa_base.rename(columns={'municipio': 'Territorio'}, inplace=True)
+        df_mapa_base['Padre'] = reg_sel
+    else:
+        años_hist, pob_hist = np.array([]), np.array([])
+        df_mapa_base = pd.DataFrame()
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
     if not df_matriz.empty and 'Nivel' in df_matriz.columns:
@@ -663,7 +681,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 try:
                     from modules.db_manager import get_engine
                     from sqlalchemy import text
-                    # 🔥 FIX: Generamos los nombres compuestos (Nombre - Código IDEAM) directo en SQL
                     q_hier = text("""
                         SELECT DISTINCT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3,
                         CASE WHEN nom_nss1 IS NOT NULL AND TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || COALESCE(' - (' || TRIM(CAST(nss1 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss1,
@@ -689,7 +706,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 
                 resolucion = st.sidebar.radio("🔎 Resolución de visualización:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"])
                 
-                # 🚀 Definir la "Identidad Real" (nom_nssX) y la "Identidad Visual" (disp_nssX)
                 if 'NSS1' in resolucion:
                     col_res_real, col_res_disp = 'nom_nss1', 'disp_nss1'
                 elif 'NSS2' in resolucion:
@@ -697,7 +713,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 else:
                     col_res_real, col_res_disp = 'nom_nss3', 'disp_nss3'
                 
-                # Llenar las opciones del multiselect usando la Identidad Visual
                 if sel_szh != "-- Seleccione --": 
                     opciones = df_hier[df_hier['nom_szh'] == sel_szh][[col_res_disp, col_res_real]].dropna(subset=[col_res_disp]).drop_duplicates()
                 elif sel_zh != "-- Seleccione --": 
@@ -719,7 +734,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 filtro_zona = " + ".join(cuenca_sel_disp[:2]) + ("..." if len(cuenca_sel_disp)>2 else "")
                 titulo_terr = f"Cuencas Seleccionadas: {filtro_zona}"
                 
-                # 🚀 TRADUCCIÓN INVERSA: Buscamos el nombre real para cruzar con la matriz demográfica
                 if not df_hier.empty:
                     df_lookup = df_hier[df_hier[col_res_disp].isin(cuenca_sel_disp)]
                     territorios_reales = df_lookup[col_res_real].dropna().unique().tolist()
@@ -756,13 +770,12 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
             años_hist = np.arange(1985, 2043)
             pob_hist_acumulada = np.zeros_like(años_hist, dtype=float)
             
-            # Aplanamos los nombres para búsquedas infalibles
             df_cuencas_solo['MATCH_ID'] = df_cuencas_solo['Territorio'].astype(str).apply(normalizar_texto)
             area_buscada = str(area_global).strip().lower()
 
             def evaluar_curva(fila, anios):
                 mod = str(fila.get('Modelo_Recomendado', 'Desconocido'))
-                x = anios - 1985 # Offset base para alinear los años
+                x = anios - 1985 
                 
                 if 'Logistico' in mod or 'Logístico' in mod: 
                     return fila.get('Log_K', 0) / (1 + fila.get('Log_a', 0) * np.exp(-fila.get('Log_r', 0) * x))
@@ -777,7 +790,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
             import difflib
             
-            # 🔥 FUNCIÓN MAESTRA: Aplica el Bypass Rural tanto a gráficas como al mapa
             def calcular_poblacion_bypass(t_norm, anios_array):
                 filas_terr = df_cuencas_solo[df_cuencas_solo['MATCH_ID'] == t_norm]
                 if filas_terr.empty:
@@ -787,7 +799,6 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                 pob_calculada = np.zeros_like(anios_array, dtype=float)
                 if not filas_terr.empty:
                     if area_buscada == 'total':
-                        # Sumamos Urbano + Rural para evitar datos faltantes en SQL
                         fila_u = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
                         fila_r = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
                         sumo_partes = False
@@ -799,12 +810,10 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                             pob_calculada += evaluar_curva(fila_r.iloc[0], anios_array)
                             sumo_partes = True
                             
-                        # Fallback si no existen las partes, usa el Total crudo
                         if not sumo_partes:
                             fila_t = filas_terr[filas_terr['Area'].str.lower() == 'total']
                             if not fila_t.empty: pob_calculada += evaluar_curva(fila_t.iloc[0], anios_array)
                     else:
-                        # Filtrado directo si elige específicamente Urbano o Rural
                         if 'urb' in area_buscada: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['urbano', 'urbana', 'cabecera'])]
                         else: fila_esp = filas_terr[filas_terr['Area'].str.lower().isin(['rural', 'resto'])]
                         if not fila_esp.empty: pob_calculada += evaluar_curva(fila_esp.iloc[0], anios_array)
@@ -816,44 +825,55 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
 
             pob_hist = pob_hist_acumulada
 
-            # --- 4. 🗺️ DATOS PARA EL MAPA ---
+            # 🚀 FIX VITAL: Generamos el df_mapa_base para que el mapa espacial tenga datos
             mapa_data = []
             for t_mapa in territorios_para_mapa:
-                val_tot_arr = calcular_poblacion_bypass(normalizar_texto(t_mapa), np.array([2024]))
-                val_tot = val_tot_arr[0] if len(val_tot_arr) > 0 else 0
-                mapa_data.append({'Territorio': t_mapa, 'Total': val_tot, 'area_geografica': area_global.lower(), 'Padre': titulo_terr})
-            
-            df_mapa_base = pd.DataFrame(mapa_data)
+                pob_array = calcular_poblacion_bypass(normalizar_texto(t_mapa), años_hist)
+                for i, anio in enumerate(años_hist):
+                    mapa_data.append({
+                        'Territorio': t_mapa,
+                        'Padre': titulo_terr,
+                        'año': anio,
+                        'Total': pob_array[i]
+                    })
+            df_mapa_base = pd.DataFrame(mapa_data) if mapa_data else pd.DataFrame()
 
         else:
-            filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Ninguna", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
+            años_hist, pob_hist = np.array([]), np.array([])
+            df_mapa_base = pd.DataFrame()
     else:
-        st.sidebar.warning("⚠️ Entrena la matriz de cuencas en la pestaña 4.")
-        filtro_zona, titulo_terr, años_hist, pob_hist, df_mapa_base = "Error", "Sin Datos", np.array([]), np.array([]), pd.DataFrame()
-        
+        años_hist, pob_hist = np.array([]), np.array([])
+        df_mapa_base = pd.DataFrame()
+
 elif escala_sel in ["🏢 Municipal (Regiones)", "🏢 Municipal (Departamentos)"]:
     if "Regiones" in escala_sel:
         agrupador_col = 'Macroregion'
-        agrupador_sel = st.sidebar.selectbox("Macroregión:", sorted([r for r in df_mun['Macroregion'].unique() if r != "Sin Región"]))
+        agrupador_sel = st.sidebar.selectbox("Macroregión:", sorted([r for r in df_mun['Macroregion'].dropna().unique() if r != "Sin Región"]))
     else:
         agrupador_col = 'depto_nom'
-        agrupador_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].unique()))
+        agrupador_sel = st.sidebar.selectbox("Departamento:", sorted(df_mun['depto_nom'].dropna().unique()))
         
     mpios_filtrados = df_mun[df_mun[agrupador_col] == agrupador_sel]
-    municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_filtrados['municipio'].unique()))
+    municipio_sel = st.sidebar.selectbox("Municipio:", sorted(mpios_filtrados['municipio'].dropna().unique()))
     
     df_base = mpios_filtrados[mpios_filtrados['municipio'] == municipio_sel]
     filtro_zona = municipio_sel
     titulo_terr = f"{municipio_sel} ({agrupador_sel})"
     
-    col_anio = 'año' if 'año' in df_base.columns else 'Año'
-    # 🔥 FIX: Respetamos la selección (Total/Urbano/Rural)
-    df_hist = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby(col_anio)['Total'].sum().reset_index()
-    años_hist = df_hist[col_anio].values
-    pob_hist = df_hist['Total'].values
+    # 🚀 FIX: Blindaje del nombre de la columna temporal
+    col_anio = 'año' if 'año' in df_base.columns else 'Año' if 'Año' in df_base.columns else None
     
-    df_mapa_base = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].copy()
-    df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
+    if not df_base.empty and col_anio:
+        # Respetamos la selección (Total/Urbano/Rural) del panel lateral
+        df_hist = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].groupby(col_anio)['Total'].sum().reset_index()
+        años_hist = df_hist[col_anio].values
+        pob_hist = df_hist['Total'].values
+        
+        df_mapa_base = df_base[df_base['area_geografica'].str.lower() == area_global.lower()].copy()
+        df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
+    else:
+        años_hist, pob_hist = np.array([]), np.array([])
+        df_mapa_base = pd.DataFrame()
 
 # =====================================================================
 # 🏘️ ESCALA INTRA-URBANA (MEDELLÍN V7 - NOMBRES REALES)
@@ -955,6 +975,9 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         
     except Exception as e:
         st.sidebar.error(f"Error cargando datos intra-urbanos: {e}")
+        años_hist, pob_hist = np.array([]), np.array([])
+        df_mapa_base = pd.DataFrame()
+        filtro_zona, titulo_terr = "Error", "Error de Carga"
 
 # =====================================================================
 # 🏙️ ESCALA URBANA (CABECERAS MUNICIPALES - ANTIOQUIA)
@@ -969,34 +992,30 @@ elif escala_sel == "🏙️ Escala Urbana (Cabeceras Antioquia)":
     lista_mpios = sorted(df_urbano_ant['municipio'].dropna().unique())
     mpio_sel = st.sidebar.selectbox("Municipio (Cabecera de):", ["TODAS (Ver Mapa Completo)"] + lista_mpios)
     
+    # 🚀 FIX: Blindaje del nombre de la columna temporal
+    col_anio = 'año' if 'año' in df_urbano_ant.columns else 'Año'
+    
     if mpio_sel != "TODAS (Ver Mapa Completo)":
         df_base = df_urbano_ant[df_urbano_ant['municipio'] == mpio_sel]
         filtro_zona = mpio_sel
         titulo_terr = f"Cabecera Urbana de {mpio_sel}"
         
-        # Matemáticas Históricas para las gráficas
-        col_anio = 'año' if 'año' in df_base.columns else 'Año'
         df_hist = df_base.groupby(col_anio)['Total'].sum().reset_index()
         df_hist = df_hist.sort_values(by=col_anio)
         
         años_hist = df_hist[col_anio].values
         pob_hist = df_hist['Total'].values
         
-        # Preparación para el mapa
         df_mapa_base = df_base.copy()
         df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
     else:
-        # Vista de todo el departamento
         filtro_zona = "Antioquia"
         titulo_terr = "Todas las Cabeceras Urbanas (Antioquia)"
         
-        # Matemáticas de la suma total urbana
-        col_anio = 'año' if 'año' in df_urbano_ant.columns else 'Año'
         df_hist = df_urbano_ant.groupby(col_anio)['Total'].sum().reset_index()
         años_hist = df_hist[col_anio].values
         pob_hist = df_hist['Total'].values
         
-        # Preparación para el mapa global
         df_mapa_base = df_urbano_ant.groupby(['municipio', 'depto_nom', col_anio])['Total'].sum().reset_index()
         df_mapa_base.rename(columns={'municipio': 'Territorio', 'depto_nom': 'Padre'}, inplace=True)
 
@@ -1012,7 +1031,6 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
         from sqlalchemy import inspect
         
         engine_sql = get_engine()
-        
         inspector = inspect(engine_sql)
         tablas_existentes = inspector.get_table_names()
         
@@ -1028,8 +1046,7 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
             df_veredas.columns = df_veredas.columns.str.strip()
             cols_lower = [c.lower() for c in df_veredas.columns]
             
-            # --- FIX: SABUESO DE ALTA PRECISIÓN ---
-            # Prioridad 1: Nombres exactos (Para evitar el cruce con id-vereda_mpio)
+            # --- SABUESO DE ALTA PRECISIÓN ---
             if 'vereda' in cols_lower:
                 col_ver = df_veredas.columns[cols_lower.index('vereda')]
             else:
@@ -1042,8 +1059,8 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
                 
             col_pob = next((c for c in df_veredas.columns if 'pob' in c.lower() or 'hab' in c.lower() or 'total' in c.lower()), df_veredas.columns[-1])
             
-            # 🔥 ESCUDO NUMÉRICO VEREDAL: Transforma cualquier texto a número puro
-            df_veredas[col_pob] = pd.to_numeric(df_veredas[col_pob].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce').fillna(0)
+            # 🚀 FIX: regex=False para evitar advertencias de Deprecación en Pandas
+            df_veredas[col_pob] = pd.to_numeric(df_veredas[col_pob].astype(str).str.replace(',', '').str.replace('.', '', regex=False), errors='coerce').fillna(0)
             
             # Renombramos las columnas
             df_mapa_base = df_veredas.rename(columns={
@@ -1052,7 +1069,6 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
                 col_pob: 'Total'
             })
             
-            # 🔥 INYECCIÓN CRÍTICA PARA QUE EL MAPA FUNCIONE
             df_mapa_base['area_geografica'] = 'rural' 
             
             if 'Padre' not in df_mapa_base.columns:
@@ -1062,28 +1078,36 @@ elif escala_sel == "🌿 Veredal (Antioquia)":
             mpio_sel = st.sidebar.selectbox("📍 Municipio Padre:", ["TODOS (Ver Mapa Completo)"] + lista_mpios)
             
             if mpio_sel != "TODOS (Ver Mapa Completo)":
-                # Filtramos la base temporalmente para dejar solo las veredas de este municipio
                 df_mapa_base = df_mapa_base[df_mapa_base['Padre'] == mpio_sel]
                 
-                # --- 🔥 EL SUB-FILTRO VEREDAL RECUPERADO ---
                 lista_veredas = sorted(df_mapa_base['Territorio'].dropna().astype(str).unique())
                 vereda_sel = st.sidebar.selectbox("🌾 Vereda:", ["TODAS (Ver Municipio)"] + lista_veredas)
                 
                 if vereda_sel != "TODAS (Ver Municipio)":
-                    # Si elige una vereda específica, filtramos al nivel más profundo
                     df_mapa_base = df_mapa_base[df_mapa_base['Territorio'] == vereda_sel]
                     titulo_terr = f"{vereda_sel} ({mpio_sel})"
                 else:
                     titulo_terr = f"Veredas de {mpio_sel}"
             else:
                 titulo_terr = "Todas las Veredas (Antioquia)"
-                
+            
+            # 🚀 FIX VITAL: Generamos años_hist y pob_hist para evitar que los gráficos estadísticos rompan la app
+            filtro_zona = titulo_terr
+            pob_total_vereda = df_mapa_base['Total'].sum()
+            años_hist = np.arange(1985, 2043)
+            # Proyectamos una línea recta constante con la población del censo
+            pob_hist = np.full_like(años_hist, pob_total_vereda, dtype=float)
+            
         else:
             df_mapa_base = pd.DataFrame()
+            filtro_zona, titulo_terr = "Sin Datos", "Sin Datos"
+            años_hist, pob_hist = np.array([]), np.array([])
             
     except Exception as e:
         st.sidebar.error(f"❌ Error general: {e}")
         df_mapa_base = pd.DataFrame()
+        filtro_zona, titulo_terr = "Error", "Error de Consulta"
+        años_hist, pob_hist = np.array([]), np.array([])
     
 # =====================================================================
 # --- 4. CÁLCULO DE PROYECCIONES (NUEVO PARADIGMA TOP-DOWN) ---
@@ -1123,8 +1147,12 @@ año_maximo = int(max(df_nac[col_anio_nac].max() if 'df_nac' in locals() and not
 x_proj = np.arange(1950, año_maximo + 1, 1) 
 
 proyecciones = {'Año': x_proj, 'Real': [np.nan]*len(x_proj)}
+
+# 🚀 FIX: Mapeo seguro con diccionario para evitar errores de precisión flotante en np.where
+dict_hist = dict(zip(x_hist, y_hist))
 for i, año in enumerate(x_proj):
-    if año in x_hist: proyecciones['Real'][i] = y_hist[np.where(x_hist == año)[0][0]]
+    if año in dict_hist: 
+        proyecciones['Real'][i] = dict_hist[año]
 
 # 4. Cargar Matriz Maestra y aplicar Top-Down
 if 'df_matriz_demografica' in st.session_state:
@@ -1139,6 +1167,7 @@ else:
         try: df_matriz = pd.read_csv(os.path.join(RUTA_RAIZ, "data", "Matriz_Maestra_Demografica.csv"))
         except: df_matriz = pd.DataFrame()
 
+# Función Logística Matemática
 def f_log(t, k, a, r): return k / (1 + a * np.exp(-r * t))
 
 row_matriz = pd.DataFrame()
@@ -1168,7 +1197,6 @@ x_train, y_train = x_hist, y_hist
 if not row_matriz.empty:
     row = row_matriz.iloc[0]
     k_opt = float(str(row['Log_K']).replace('.', '').replace(',', '.')) if isinstance(row['Log_K'], str) else float(row['Log_K'])
-    # ... (el resto del código sigue igual)
     a_opt = float(str(row['Log_a']).replace(',', '.'))
     r_opt = float(str(row['Log_r']).replace(',', '.'))
     anio_base = int(row['Año_Base'])
@@ -1176,12 +1204,18 @@ if not row_matriz.empty:
     x_proj_norm = x_proj - anio_base
     proyecciones['Logístico'] = f_log(x_proj_norm, k_opt, a_opt, r_opt)
     
-    # Inyectar Polinomial y Exponencial si existen
-    if 'Poly_A' in row:
-        A, B, C, D = row['Poly_A'], row['Poly_B'], row['Poly_C'], row['Poly_D']
+    # 🚀 FIX: Inyectar Polinomial y Exponencial protegiendo el formato numérico (evita colapsos de numpy)
+    if 'Poly_A' in row and not pd.isna(row['Poly_A']):
+        A = float(str(row['Poly_A']).replace(',', '.'))
+        B = float(str(row['Poly_B']).replace(',', '.'))
+        C = float(str(row['Poly_C']).replace(',', '.'))
+        D = float(str(row['Poly_D']).replace(',', '.'))
         proyecciones['Lineal'] = A*(x_proj_norm**3) + B*(x_proj_norm**2) + C*x_proj_norm + D
-    if 'Exp_a' in row:
-        proyecciones['Exponencial'] = row['Exp_a'] * np.exp(row['Exp_b'] * x_proj_norm)
+        
+    if 'Exp_a' in row and not pd.isna(row['Exp_a']):
+        exp_a = float(str(row['Exp_a']).replace(',', '.'))
+        exp_b = float(str(row['Exp_b']).replace(',', '.'))
+        proyecciones['Exponencial'] = exp_a * np.exp(exp_b * x_proj_norm)
         
     param_K, param_r = k_opt, r_opt
 else:
@@ -1192,13 +1226,14 @@ else:
     x_proj_norm = x_proj - x_offset
     
     try:
-        p0_val = max(1, y_train[0] if len(y_train)>0 else 1)
+        # 🚀 FIX: Usamos 1e-5 para garantizar que p0_val nunca sea 0 y colapse la división
+        p0_val = max(1e-5, y_train[0] if len(y_train)>0 else 1)
         max_y = max(y_train) if len(y_train)>0 else p0_val
         es_creciente = (y_train[-1] if len(y_train)>0 else p0_val) >= p0_val
         
         # 🔥 EL ESCUDO: Ajuste para absorber la curva de la ONU sin romperse
         k_guess = max_y * 1.2 if es_creciente else max(1, y_train[-1] * 0.95)
-        a_guess = (k_guess - p0_val) / p0_val if p0_val > 0 else 1
+        a_guess = (k_guess - p0_val) / p0_val
         a_guess = max(-0.999, a_guess) 
         r_guess = 0.02 if es_creciente else -0.02
         
