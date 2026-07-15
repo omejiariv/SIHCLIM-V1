@@ -1757,7 +1757,6 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     import geopandas as gpd
     from sqlalchemy import text
     from modules.db_manager import get_engine
-    import unicodedata
     import pandas as pd
 
     engine_geo = get_engine()
@@ -1765,33 +1764,34 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     
     codigos_dane_deptos = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
     
-    def normalizar_local(s):
-        if pd.isna(s): return ""
-        s = str(s).upper().strip()
-        return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
-
+    # 🔥 FIX: La caché ahora invoca la función maestra global para heredar el diccionario_rebeldes
     def generar_id_geojson(row):
         if "cuencas" in escala.lower():
             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
             for c in cols_posibles:
                 if c in row and pd.notnull(row[c]):
-                    val_norm = normalizar_local(str(row[c]).strip())
+                    val_norm = normalizar_texto(str(row[c]).strip())
                     if val_norm in territorios_objetivo_tuple:
                         return val_norm
             val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "Cuenca Sin Nombre")
             if "-" in val_terr: val_terr = val_terr.split("-")[-1]
-            return normalizar_local(val_terr)
+            return normalizar_texto(val_terr)
+            
         elif "veredal" in escala.lower():
             val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
             val_padre = str(row.get('NOMB_MPIO', row.get('nomb_mpio', row.get('MPIO_CNMBR', ''))))
             if val_padre.zfill(2) in codigos_dane_deptos: val_padre = codigos_dane_deptos[val_padre.zfill(2)]
-            return normalizar_local(val_terr) + "_" + normalizar_local(val_padre)
+            return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
+            
         else:
             val_terr = str(row.get('MPIO_CNMBR', row.get('mpio_cnmbr', row.get('nombre', ''))))
             val_padre = str(row.get('DPTO_CCDGO', row.get('dpto_ccdgo', '')))
             if val_padre.zfill(2) in codigos_dane_deptos: val_padre = codigos_dane_deptos[val_padre.zfill(2)]
-            if normalizar_local(val_terr) == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
-            return normalizar_local(val_terr) + "_" + normalizar_local(val_padre)
+            
+            # Conservamos el parche de Manaure
+            if normalizar_texto(val_terr) == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
+            
+            return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
 
     gdf['MATCH_ID'] = gdf.apply(generar_id_geojson, axis=1)
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_objetivo_tuple)].copy()
@@ -1800,7 +1800,7 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
         gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
         
     return gdf_filtrado
-
+    
 # ==========================================
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR ZERO-CONFIG)
 # ==========================================
