@@ -349,15 +349,25 @@ def cargar_datos_limpios():
             from modules.db_manager import get_engine
             engine_db = get_engine()
             
-            # 1. Cargamos Veredas
-            df_ver = pd.read_sql("SELECT * FROM veredas_poblacion", engine_db)
-            
-            # 2. 🔥 FIX: CARGAMOS LA MATRIZ FRESCA RECIÉN ENTRENADA
-            df_matriz = pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine_db)
-            
+            # 1. Cargamos la Matriz de forma aislada e independiente
+            try:
+                df_matriz = pd.read_sql("SELECT * FROM matriz_maestra_demografica", engine_db)
+            except Exception:
+                df_matriz = pd.DataFrame()
+                
+            # 2. Cargamos Veredas buscando su nombre real
+            try:
+                from sqlalchemy import inspect
+                inspector = inspect(engine_db)
+                tablas_existentes = inspector.get_table_names()
+                nombre_tabla_veredas = next((t for t in tablas_existentes if 'vereda' in t.lower() and 'geo' not in t.lower()), 'veredas_poblacion')
+                df_ver = pd.read_sql(f'SELECT * FROM "{nombre_tabla_veredas}"', engine_db)
+            except Exception:
+                df_ver = pd.DataFrame()
+                
         except Exception as e:
-            df_ver = pd.DataFrame() # Escudo anti-errores
-            df_matriz = pd.DataFrame() # Si no hay conexión, queda vacía
+            df_ver = pd.DataFrame()
+            df_matriz = pd.DataFrame()
             
         # --- SINCRONIZACIÓN DE NOMBRES VEREDAS ---
         if 'Municipio' in df_ver.columns:
@@ -575,7 +585,7 @@ elif escala_sel in ["🗺️ Subregiones (Antioquia)", "🦅 Autoridades Ambient
     # ---------------------------------------------------------
     if escala_sel == "🦅 Autoridades Ambientales (CARs)":
         # Nombres limpios, en mayúscula y con espacios correctos
-        mpios_amva = ['MEDELLIN', 'BELLO', 'ITAGUI', 'ENVIGADO', 'SABANETA', 'COPACABANA', 'LA ESTRELLA', 'GIRARDOTA', 'CALDAS', 'BARBOSA']
+        mpios_amva = ['MEDELLIN', 'BELLO', 'ITAGUI', 'ENVIGADO', 'SABANETA', 'COPACABANA', 'LAESTRELLA', 'GIRARDOTA', 'CALDAS', 'BARBOSA']
         
         if sel_territorio == 'AMVA':
             df_amva_urb = df_mun_ant[(df_mun_ant['mun_norm_local'].isin(mpios_amva)) & (df_mun_ant['area_geografica'].str.lower() == 'urbano')].copy()
@@ -653,8 +663,9 @@ elif escala_sel == "🧩 Regional (Macroregiones)":
         df_mapa_base = pd.DataFrame()
 
 elif escala_sel == "💧 Cuencas Hidrográficas":
+    # 🚀 FIX: Búsqueda indestructible del Nivel (Ignora mayúsculas/minúsculas)
     if not df_matriz.empty and 'Nivel' in df_matriz.columns:
-        df_cuencas_solo = df_matriz[df_matriz['Nivel'] == 'Cuenca'].copy()
+        df_cuencas_solo = df_matriz[df_matriz['Nivel'].astype(str).str.strip().str.upper() == 'CUENCA'].copy()
         
         if not df_cuencas_solo.empty:
             # --- 1. MOTOR DE FILTROS EN CASCADA ---
@@ -670,7 +681,11 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
                         CASE WHEN nom_nss3 IS NOT NULL AND TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || COALESCE(' - (' || TRIM(CAST(nss3 AS TEXT)) || ')', '') ELSE NULL END AS disp_nss3
                         FROM cuencas
                     """)
-                    return pd.read_sql(q_hier, get_engine())
+                    # 🚀 FIX TIMEOUT: Protegemos la consulta de los menús para que el servidor no la corte
+                    engine = get_engine()
+                    with engine.connect() as conn:
+                        conn.execute(text("SET statement_timeout = '300000';"))
+                        return pd.read_sql(q_hier, conn)
                 except: return pd.DataFrame()
             
             df_hier = cargar_jerarquia_cuencas()
