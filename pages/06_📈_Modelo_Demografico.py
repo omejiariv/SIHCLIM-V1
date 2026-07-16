@@ -2459,8 +2459,12 @@ with tab_matriz:
 
                         df_final_cuencas = []
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
-                        mpios_riogrande_rescate = ['santarosadeosos', 'donmatias', 'sanpedrodelosmilagros', 'entrerrios', 'belmira']
                         
+                        # 🔥 FUNCIÓN CAZADORA: Atrapa todas las variaciones de nombres (IGAC vs DANE)
+                        def es_riogrande(m):
+                            if 'uraba' in m: return False # Evita atrapar a San Pedro de Urabá por error
+                            return any(k in m for k in ['santarosade', 'donmatias', 'sanpedro', 'entrerrio', 'belmira'])
+
                         for mpio in df_area_v6['mun_norm_dane'].unique():
                             pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio][[col_anio, 'Total']].copy()
                             
@@ -2480,8 +2484,8 @@ with tab_matriz:
                                 else:
                                     agregar_fragmento(pob_mpio, nombre_real_aburra, 1.0)
                                     
-                            # 🔥 OVERRIDE QUIRÚRGICO: Asignamos el 100% de la población de estos 5 mpios a Río Grande
-                            elif mpio in mpios_riogrande_rescate:
+                            # 🔥 OVERRIDE QUIRÚRGICO BLINDADO
+                            elif es_riogrande(mpio):
                                 agregar_fragmento(pob_mpio, nombre_real_riogrande, 1.0)
                                 
                             else:
