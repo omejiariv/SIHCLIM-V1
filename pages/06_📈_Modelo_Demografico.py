@@ -2459,8 +2459,9 @@ with tab_matriz:
                         # =========================================================
                         # 🔬 RAYOS X FORENSE: Imprime los nombres exactos en memoria
                         # =========================================================
-                        if tipo_area == 'Total': # Solo lo imprimimos una vez para no saturar
-                            with st.expander("🔍 DETECTIVE FORENSE: Nombres exactos en el Motor V6", expanded=False):
+                        if tipo_area == 'Urbana':
+                            with st.expander("🔍 DETECTIVE FORENSE: Nombres exactos en el Motor V6", expanded=True):
+                                st.write("Nombres que el motor está evaluando tras el cruce:")
                                 st.write(sorted(df_area_v6['mun_norm_dane'].unique().tolist()))
                         # =========================================================
 
