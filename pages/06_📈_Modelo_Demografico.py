@@ -2454,16 +2454,26 @@ with tab_matriz:
 
                         nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
                         nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
-                        # 🚀 FIX: Capturamos el nombre exacto de Río Grande - Chico en la base de datos
                         nombre_real_riogrande = next((c for c in lista_todas_cuencas if 'grande' in str(c).lower() and 'chico' in str(c).lower()), 'R. Grande - Chico - NSS - (2701-02)')
+
+                        # =========================================================
+                        # 🔬 RAYOS X FORENSE: Imprime los nombres exactos en memoria
+                        # =========================================================
+                        if tipo_area == 'Total': # Solo lo imprimimos una vez para no saturar
+                            with st.expander("🔍 DETECTIVE FORENSE: Nombres exactos en el Motor V6", expanded=False):
+                                st.write(sorted(df_area_v6['mun_norm_dane'].unique().tolist()))
+                        # =========================================================
 
                         df_final_cuencas = []
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
                         
-                        # 🔥 FUNCIÓN CAZADORA: Atrapa todas las variaciones de nombres (IGAC vs DANE)
+                        # 🔥 RED CAZADORA DE ALTA PRECISIÓN (Raíces silábicas)
                         def es_riogrande(m):
-                            if 'uraba' in m: return False # Evita atrapar a San Pedro de Urabá por error
-                            return any(k in m for k in ['santarosade', 'donmatias', 'sanpedro', 'entrerrio', 'belmira'])
+                            m_str = str(m)
+                            if 'uraba' in m_str: return False # Evita a San Pedro de Urabá
+                            # Si detecta cualquiera de estas raíces, lo atrapa:
+                            raices = ['santarosa', 'donmatias', 'matias', 'sanpedro', 'milagros', 'entrerrio', 'belmira']
+                            return any(k in m_str for k in raices)
 
                         for mpio in df_area_v6['mun_norm_dane'].unique():
                             pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio][[col_anio, 'Total']].copy()
