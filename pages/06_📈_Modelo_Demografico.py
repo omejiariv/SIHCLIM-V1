@@ -2430,7 +2430,8 @@ with tab_matriz:
                         df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
                         
                         agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
-                        df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].str.contains('|'.join(agregados_fantasma))]
+                        # 🚀 FIX DEFINITIVO PARA SANTA FE: Usamos isin() para coincidencia exacta
+                        df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].isin(agregados_fantasma)]
                         
                         mpios_mapa_lista = []
                         if tipo_area == 'Urbana' and not inter_urbana.empty: mpios_mapa_lista = inter_urbana['mun_norm'].tolist()
@@ -2456,25 +2457,11 @@ with tab_matriz:
                         nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
                         nombre_real_riogrande = next((c for c in lista_todas_cuencas if 'grande' in str(c).lower() and 'chico' in str(c).lower()), 'R. Grande - Chico - NSS - (2701-02)')
 
-                        # =========================================================
-                        # 🔬 RAYOS X FORENSE: Imprime los nombres exactos en memoria
-                        # =========================================================
-                        if tipo_area == 'Urbana':
-                            with st.expander("🔍 DETECTIVE FORENSE: Nombres exactos en el Motor V6", expanded=True):
-                                st.write("Nombres que el motor está evaluando tras el cruce:")
-                                st.write(sorted(df_area_v6['mun_norm_dane'].unique().tolist()))
-                        # =========================================================
-
                         df_final_cuencas = []
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
                         
-                        # 🔥 RED CAZADORA DE ALTA PRECISIÓN (Raíces silábicas)
-                        def es_riogrande(m):
-                            m_str = str(m)
-                            if 'uraba' in m_str: return False # Evita a San Pedro de Urabá
-                            # Si detecta cualquiera de estas raíces, lo atrapa:
-                            raices = ['santarosa', 'donmatias', 'matias', 'sanpedro', 'milagros', 'entrerrio', 'belmira']
-                            return any(k in m_str for k in raices)
+                        # 🔥 RED CAZADORA DE ACERO (Nombres exactos del Detective Forense)
+                        exact_riogrande = ['santarosadeosos', 'donmatias', 'sanpedrodelosmil', 'entrerrios', 'belmira']
 
                         for mpio in df_area_v6['mun_norm_dane'].unique():
                             pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio][[col_anio, 'Total']].copy()
@@ -2495,8 +2482,8 @@ with tab_matriz:
                                 else:
                                     agregar_fragmento(pob_mpio, nombre_real_aburra, 1.0)
                                     
-                            # 🔥 OVERRIDE QUIRÚRGICO BLINDADO
-                            elif es_riogrande(mpio):
+                            # 🔥 OVERRIDE QUIRÚRGICO ABSOLUTO
+                            elif mpio in exact_riogrande:
                                 agregar_fragmento(pob_mpio, nombre_real_riogrande, 1.0)
                                 
                             else:
