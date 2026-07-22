@@ -256,3 +256,23 @@ def display_plotly_download_buttons(fig, file_prefix):
             st.download_button("Descargar PNG", img_bytes, f"{file_prefix}.png", "image/png")
         except:
             st.info("💡 Para descarga PNG instala: `pip install kaleido`")
+
+import geopandas as gpd
+from sqlalchemy import text
+import streamlit as st
+
+@st.cache_data(ttl=86400, show_spinner=False) # Se guarda en RAM por 24 horas
+def cargar_capa_espacial_cache(query_sql):
+    """Descarga capas de PostGIS una sola vez y las guarda en memoria."""
+    try:
+        from modules.db_manager import get_engine
+        engine_geo = get_engine()
+        with engine_geo.connect() as conn:
+            # Escudo de tiempo para bases de datos lentas
+            conn.execute(text("SET statement_timeout = '300000';")) 
+            gdf = gpd.read_postgis(text(query_sql), conn, geom_col="geometry")
+            return gdf
+    except Exception as e:
+        import logging
+        logging.error(f"Error cargando mapa desde caché: {e}")
+        return None
