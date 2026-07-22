@@ -11,7 +11,6 @@ import numpy as np
 import plotly.graph_objects as go
 from sqlalchemy import text
 from rasterio.io import MemoryFile
-from modules.utils import cargar_capa_espacial_cache
 
 # 1. CONFIGURACIÓN DE PÁGINA (PRIMERA LÍNEA SIEMPRE)
 st.set_page_config(page_title="SIHCLI-POTER", page_icon="🌦️", layout="wide")
@@ -36,6 +35,7 @@ from modules.dem_extractor import completar_altitudes_con_dem
 try:
     from modules import hydro_physics as physics
     from modules.admin_utils import download_raster_to_temp
+    from modules.utils import cargar_capa_espacial_cache
     
     # Intentamos importar la función de análisis
     try:
