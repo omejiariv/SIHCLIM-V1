@@ -68,16 +68,17 @@ def renderizar_telemetria_aleph():
         else:
             st.markdown("☣️ **Carga DBO:** <span style='color:#95a5a6'>Inactiva</span>", unsafe_allow_html=True)
             
-    # --- CAJA DESPLEGABLE 2: PULSO CLIMÁTICO GLOBAL (ENSO) ---
+    # --- CAJA DESPLEGABLE 2: PULSO CLIMÁTICO GLOBAL (ENSO E ÍNDICES) ---
     with st.sidebar.expander("🌦️ Pulso Climático Global", expanded=True):
         if 'aleph_iri_nino' not in st.session_state:
             try:
-                from modules.climate_api import get_iri_enso_forecast
+                from modules.climate_api import get_iri_enso_forecast, get_live_oni_data, get_live_soi_data, get_live_iod_data
+                
+                # 1. Pronóstico IRI ENSO
                 df_enso, _ = get_iri_enso_forecast()
                 if df_enso is not None and not df_enso.empty:
-                    # 🚀 ACTUALIZADO a MJJ
-                    df_target = df_enso[df_enso['Trimestre'].str.contains('MJJ', na=False)]
-                    fila_actual = df_target.iloc[0] if not df_target.empty else df_enso.iloc[0]
+                    # 🚀 FIX: Toma dinámicamente el primer trimestre vigente (ej. JJA)
+                    fila_actual = df_enso.iloc[0]
                     
                     p_nina = float(fila_actual.get('La Niña', 0))
                     p_nino = float(fila_actual.get('El Niño', 0))
@@ -93,11 +94,24 @@ def renderizar_telemetria_aleph():
                     st.session_state['aleph_iri_neutro'] = int(p_neutro)
                     st.session_state['aleph_iri_nina'] = int(p_nina)
                     st.session_state['aleph_iri_trimestre'] = trim_txt
-                    # 🚀 ACTUALIZADO a MJJ
-                    st.session_state['aleph_iri_tendencia'] = "Sincronización MJJ Exitosa 📡"
+                    st.session_state['aleph_iri_tendencia'] = f"Sincronización {trim_txt} Exitosa 📡"
+                
+                # 2. Telemetría de Índices Climáticos Adicionales
+                df_oni = get_live_oni_data()
+                df_soi = get_live_soi_data()
+                df_iod = get_live_iod_data()
+                
+                if df_oni is not None and not df_oni.empty:
+                    st.session_state['aleph_oni_val'] = df_oni['anomalia_oni'].iloc[-1]
+                if df_soi is not None and not df_soi.empty:
+                    st.session_state['aleph_soi_val'] = df_soi['soi'].iloc[-1]
+                if df_iod is not None and not df_iod.empty:
+                    st.session_state['aleph_iod_val'] = df_iod['iod'].iloc[-1]
+                    
             except Exception as e:
                 st.session_state['aleph_iri_tendencia'] = f"Error: {str(e)}"
                 
+        # --- RENDERIZADO VISUAL DEL ESTADO GLOBAL ---
         enso_global = st.session_state.get('enso_fase', 'Desconocido ⚠️')
         color_enso = "#3498db" if "Niña" in enso_global else "#e74c3c" if "Niño" in enso_global else "#f39c12" if "Desconocido" in enso_global else "#2ecc71"
         st.markdown(f"🌍 **Clima ENSO:** <span style='color:{color_enso}'><b>{enso_global}</b></span>", unsafe_allow_html=True)
@@ -114,11 +128,24 @@ def renderizar_telemetria_aleph():
             st.progress(p_nino, text=f"☀️ El Niño ({p_nino}%)")
             st.progress(p_neutro, text=f"⚖️ Neutro ({p_neutro}%)")
             st.progress(p_nina, text=f"🌧️ La Niña ({p_nina}%)")
+            
+        # --- RENDERIZADO DE ÍNDICES ADICIONALES ---
+        st.markdown("---")
+        st.markdown("📊 **Índices Climáticos Actuales**")
+        col_oni, col_soi, col_iod = st.columns(3)
+        
+        oni_val = st.session_state.get('aleph_oni_val', 'N/A')
+        soi_val = st.session_state.get('aleph_soi_val', 'N/A')
+        iod_val = st.session_state.get('aleph_iod_val', 'N/A')
+        
+        col_oni.metric("ONI", f"{oni_val:.2f}" if isinstance(oni_val, float) else oni_val)
+        col_soi.metric("SOI", f"{soi_val:.2f}" if isinstance(soi_val, float) else soi_val)
+        col_iod.metric("IOD", f"{iod_val:.2f}" if isinstance(iod_val, float) else iod_val)
         
         if tendencia: st.caption(f"📈 **Estado:** {tendencia}")
 
     # --- BOTÓN DE PURGA (Fuera de los expanders) ---
-    st.sidebar.markdown("<br>", unsafe_allow_html=True) # Espaciador suave
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
     if st.sidebar.button("🧹 Purgar Memoria y Caché", use_container_width=True, key="btn_purga_telemetria_aleph"):
         st.session_state.clear()
         st.cache_data.clear()
