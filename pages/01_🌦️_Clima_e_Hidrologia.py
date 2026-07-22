@@ -1401,14 +1401,21 @@ def main():
                             url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
                             res_m = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
                             df_maestro = pd.read_excel(io.BytesIO(res_m.content))
-                            df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
+                            
+                            # 🚀 FIX QUIRÚRGICO 1: Forzar 5 dígitos exactos en el maestro (05079)
+                            df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(5)
                             
                             gdf_mun = cargar_capa_espacial_cache("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
                             posibles_cols = ['mpio_cdpmp', 'MPIO_CDPMP', 'dp_mp', 'mpio_cdp', 'MPIO_CDP']
                             col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
-                            gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
                             
+                            # 🚀 FIX QUIRÚRGICO 2: Forzar 5 dígitos exactos en el mapa PostGIS
+                            gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(5)
+                            
+                            # Cruce perfecto por Código DANE Dpto-Municipio
                             gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
+                            
+                            # Homologar Valle de Aburrá
                             mask_aburra = gdf_mun['subregion'].str.contains('Aburr', case=False, na=False)
                             gdf_mun.loc[mask_aburra, 'car'] = 'AMVA'
                             
@@ -1417,6 +1424,8 @@ def main():
                             gdf_mun['subregion'] = gdf_mun['subregion'].fillna('Sin Region')
                             gdf_mun['region'] = gdf_mun['region'].fillna('Sin Macroregion')
                             gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Antioquia')
+                            
+                            # Filtrar solo Antioquia (código 05)
                             gdf_mun = gdf_mun[gdf_mun['dp_mp'].str.startswith('05')].copy()
                             
                             niveles_admin = {'MUNICIPAL': 'municipio_clean', 'REGION': 'subregion', 'MACROREGION': 'region', 'DEPARTAMENTO': 'depto_nom', 'CAR': 'car'}
@@ -1427,16 +1436,24 @@ def main():
                             
                     prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
                     
-                    # --- 💾 GUARDADO MAESTRO ---
+                    # --- 💾 GUARDADO MAESTRO CON LLAVES UNIVERSALES PERFECTAS ---
                     with st.spinner("Forjando Llaves Universales e Inyectando a PostgreSQL..."):
                         from modules.utils import normalizar_texto
                         df_matriz = pd.DataFrame(res_multiescala)
                         
                         def forjar_llave_hidro(row):
                             jerarquia = str(row.get('Jerarquia', '')).upper()
-                            if jerarquia == "DEPARTAMENTAL": jerarquia = "DEPARTAMENTO"
-                            elif jerarquia == "REGIONAL": jerarquia = "REGION"
-                            if row.get('Territorio') is None or str(row.get('Territorio')) == 'nan': return None
+                            # 🚀 FIX QUIRÚRGICO 3: Homologar nombres de jerarquías con selectors.py
+                            if jerarquia in ["DEPARTAMENTAL", "DEPARTAMENTO"]: 
+                                jerarquia = "DEPARTAMENTO"
+                            elif jerarquia in ["REGIONAL", "REGION", "SUBREGION"]: 
+                                jerarquia = "REGION"
+                            elif jerarquia in ["MUNICIPAL", "MUNICIPIO"]: 
+                                jerarquia = "MUNICIPIO"
+                                
+                            if row.get('Territorio') is None or str(row.get('Territorio')) == 'nan': 
+                                return None
+                                
                             terr = str(normalizar_texto(row.get('Territorio', ''))).replace(" ", "_").upper()
                             return f"{jerarquia}_{terr}_TOTAL"
 
