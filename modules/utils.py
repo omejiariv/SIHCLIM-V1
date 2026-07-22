@@ -71,6 +71,8 @@ def cargar_diccionario_veredas():
     except:
         return pd.DataFrame()
 
+import re # Aseguramos la importación de expresiones regulares
+
 def normalizar_texto_maestro(t, municipio_padre=""):
     """
     La aplanadora de texto definitiva para el SIHCLI-POTER.
@@ -88,18 +90,24 @@ def normalizar_texto_maestro(t, municipio_padre=""):
         id_busqueda = t.upper() + "_" + str(municipio_padre).upper().strip()
         id_busqueda = re.sub(r'[^A-Z0-9_]', '', id_busqueda)
         
-        df_homologacion = cargar_diccionario_veredas()
-        if not df_homologacion.empty and 'ID_TABLA' in df_homologacion.columns:
-            match = df_homologacion[df_homologacion['ID_TABLA'] == id_busqueda]
-            if not match.empty:
-                id_curado = str(match.iloc[0]['ID_MAPA'])
-                return id_curado.split("_")[0].lower()
+        try:
+            df_homologacion = cargar_diccionario_veredas()
+            if not df_homologacion.empty and 'ID_TABLA' in df_homologacion.columns:
+                match = df_homologacion[df_homologacion['ID_TABLA'] == id_busqueda]
+                if not match.empty:
+                    id_curado = str(match.iloc[0]['ID_MAPA'])
+                    return id_curado.split("_")[0].lower()
+        except:
+            pass
     # ------------------------------------------------------------- 
+
+    # 🚀 FIX QUIRÚRGICO 1: Quitar paréntesis y su contenido oculto (Ej: "Caldas (Antioquia)" -> "caldas")
+    t = re.sub(r'\(.*?\)', '', t)
 
     # 2. Quitar sufijos técnicos de la UI si vienen pegados (NSS, SZH, etc.)
     t = re.sub(r'\s*-\s*nss.*|\s*-\s*szh.*|\s*-\s*zh.*|\s*-\s*ah.*', '', t)
 
-    # 3. Quitar tildes y caracteres especiales
+    # 3. Quitar tildes y caracteres especiales (Esto ya convierte "Itagüí" en "itagui" y "Aburrá" en "aburra")
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
 
     # 4. DICCIONARIO GENÉRICO HIDROLÓGICO Y ESPACIAL
@@ -118,7 +126,7 @@ def normalizar_texto_maestro(t, municipio_padre=""):
     for word in stop_words: 
         t = re.sub(word, '', t)
 
-    # 6. Rebeldes Municipales (Antioquia)
+    # 6. Rebeldes Municipales y Regionales (Antioquia)
     rebeldes_mpio = {
         r'\bel carmen de viboral\b': 'carmen de viboral',
         r'\bsan vicente ferrer\b': 'san vicente',
@@ -126,7 +134,9 @@ def normalizar_texto_maestro(t, municipio_padre=""):
         r'\bdonmatias\b': 'don matias',
         r'\bsantafe de antioquia\b': 'santa fe de antioquia',
         r'\bel santuario\b': 'santuario',
-        r'\bel penol\b': 'penol'
+        r'\bel penol\b': 'penol',
+        # 🚀 FIX QUIRÚRGICO 2: Homologación forzada de Valle de Aburrá
+        r'\barea metropolitana( del valle de aburra)?\b': 'valle de aburra' 
     }
     for regex, reemplazo in rebeldes_mpio.items(): 
         t = re.sub(regex, reemplazo, t)
