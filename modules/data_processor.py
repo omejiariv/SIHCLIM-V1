@@ -51,11 +51,13 @@ def load_and_process_all_data():
     df_enso = pd.DataFrame()
 
     try:
-        if "DATABASE_URL" not in st.secrets:
-            st.error("Falta DATABASE_URL en secrets.toml.")
+        # 🚀 FIX QUIRÚRGICO: Usar el motor blindado de db_manager en lugar de crear uno crudo
+        from modules.db_manager import get_engine
+        engine = get_engine()
+        
+        if engine is None:
+            st.error("No se pudo establecer la conexión segura con la base de datos.")
             return None, None, None, None, None, None
-
-        engine = create_engine(st.secrets["DATABASE_URL"])
 
         # --- 1. ESTACIONES (Ultra-rápido usando geom_col) ---
         try:
