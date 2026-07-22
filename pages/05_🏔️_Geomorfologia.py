@@ -32,6 +32,7 @@ from modules import selectors
 from modules.config import Config
 from modules.hydro_physics import download_raster_secure
 
+
 try:
     from modules.db_manager import get_engine
 except ImportError:
@@ -793,8 +794,8 @@ if gdf_zona_seleccionada is not None:
                     else: c_lat, c_lon = 6.2, -75.5
 
                     try:
-                        try: r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col='geometry')
-                        except: r = gpd.read_postgis("SELECT * FROM red_drenaje", engine, geom_col='geom')
+                        try: r = cargar_capa_espacial_cache("SELECT * FROM red_drenaje", engine, geom_col='geometry')
+                        except: r = cargar_capa_espacial_cache("SELECT * FROM red_drenaje", engine, geom_col='geom')
                         
                         if gdf_oficial is not None:
                             r_clip = gpd.clip(r.to_crs("EPSG:3116"), gdf_oficial.to_crs("EPSG:3116"))
@@ -1199,7 +1200,7 @@ with st.expander("⚙️ PANEL DE ADMINISTRADOR: Forja Masiva de Matriz Hidro-Ge
         
         # 1. Extraer todas las cuencas desde la base de datos oficial
         try:
-            gdf_todas_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine_sql, geom_col="geometry")
+            gdf_todas_cuencas = cargar_capa_espacial_cache("SELECT * FROM cuencas", engine_sql, geom_col="geometry")
         except Exception as e:
             st.error(f"Error cargando mapa de cuencas: {e}")
             st.stop()
