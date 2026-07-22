@@ -138,9 +138,21 @@ def renderizar_telemetria_aleph():
         soi_val = st.session_state.get('aleph_soi_val', 'N/A')
         iod_val = st.session_state.get('aleph_iod_val', 'N/A')
         
-        col_oni.metric("ONI", f"{oni_val:.2f}" if isinstance(oni_val, float) else oni_val)
-        col_soi.metric("SOI", f"{soi_val:.2f}" if isinstance(soi_val, float) else soi_val)
-        col_iod.metric("IOD", f"{iod_val:.2f}" if isinstance(iod_val, float) else iod_val)
+        col_oni.metric(
+            "ONI", 
+            f"{oni_val:.2f}" if isinstance(oni_val, float) else oni_val,
+            help="**Oceanic Niño Index (ONI):** Mide la anomalía de la temperatura superficial del mar en la región Niño 3.4 del Pacífico.\n\n🔴 **≥ +0.5°C:** Fase cálida (El Niño).\n🔵 **≤ -0.5°C:** Fase fría (La Niña).\n⚪ **Entre -0.5 y 0.5:** Neutro."
+        )
+        col_soi.metric(
+            "SOI", 
+            f"{soi_val:.2f}" if isinstance(soi_val, float) else soi_val,
+            help="**Southern Oscillation Index (SOI):** Mide la diferencia de presión atmosférica entre Tahití y Darwin.\n\n🔴 **Valores negativos sostenidos:** Indican El Niño (aguas más cálidas).\n🔵 **Valores positivos sostenidos:** Indican La Niña."
+        )
+        col_iod.metric(
+            "IOD", 
+            f"{iod_val:.2f}" if isinstance(iod_val, float) else iod_val,
+            help="**Indian Ocean Dipole (IOD):** Diferencia de temperatura superficial entre el este y el oeste del Océano Índico.\n\n🔴 **Fase Positiva:** Aguas más cálidas en el oeste.\n🔵 **Fase Negativa:** Aguas más frías en el oeste.\n*Afecta la humedad global y modula los efectos del ENSO en Suramérica.*"
+        )
         
         if tendencia: st.caption(f"📈 **Estado:** {tendencia}")
 
