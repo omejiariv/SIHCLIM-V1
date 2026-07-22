@@ -24,6 +24,26 @@ except ImportError:
     from modules import selectors
     from modules.utils import inicializar_torrente_sanguineo
 
+import uuid
+from sqlalchemy import text
+from modules.db_manager import get_engine
+
+def registrar_visita_silenciosa():
+    if 'sesion_activa_id' not in st.session_state:
+        st.session_state['sesion_activa_id'] = str(uuid.uuid4())
+        try:
+            # Inyecta la visita en segundo plano sin ralentizar la app
+            engine = get_engine()
+            with engine.begin() as conn:
+                conn.execute(
+                    text("INSERT INTO registro_visitas (sesion_id, modulo_visitado) VALUES (:sid, :mod)"),
+                    {"sid": st.session_state['sesion_activa_id'], "mod": "Inicio de App"}
+                )
+        except Exception:
+            pass # Si falla, la app sigue funcionando normal
+
+registrar_visita_silenciosa()
+
 # ==========================================
 # 📂 MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
