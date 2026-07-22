@@ -275,16 +275,28 @@ def cargar_territorio_maestro():
             break
             
     if not df.empty:
+        # Limpieza estándar de nombres de columnas
         df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
         
+        # 🚀 FIX FORENSE 1: Blindaje del Código DANE (dp_mp) a 5 dígitos exactos
+        if 'dp_mp' in df.columns:
+            # Eliminamos decimales fantasma (.0) y forzamos siempre 5 dígitos (Ej: 5079 -> 05079)
+            df['dp_mp'] = df['dp_mp'].astype(str).str.replace(r'\.0$', '', regex=True).str.zfill(5)
+            
         if 'municipio' in df.columns:
-            # 🔥 USAMOS EL CEREBRO LINGÜÍSTICO AQUÍ
+            # 🔥 USAMOS EL CEREBRO LINGÜÍSTICO
             df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto_maestro)
+            
         if 'car' in df.columns:
             df['car'] = df['car'].astype(str).str.upper()
+            
         if 'region' in df.columns:
             df['region'] = df['region'].astype(str).str.title()
-            # 🔥 USAMOS EL CEREBRO LINGÜÍSTICO AQUÍ
             df['region_norm'] = df['region'].astype(str).apply(normalizar_texto_maestro)
+            
+        # 🚀 FIX FORENSE 2: Inyección y normalización de la Subregión
+        if 'subregion' in df.columns:
+            df['subregion'] = df['subregion'].astype(str).str.title()
+            df['subregion_norm'] = df['subregion'].astype(str).apply(normalizar_texto_maestro)
             
     return df
