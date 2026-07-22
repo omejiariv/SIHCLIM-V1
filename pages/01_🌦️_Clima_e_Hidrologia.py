@@ -842,7 +842,7 @@ def main():
                 from modules.db_manager import get_engine
                 engine = get_engine()
                 if engine:
-                    gdf_bocatomas = gpd.read_postgis("SELECT * FROM bocatomas", engine, geom_col="geometry")
+                    gdf_bocatomas = cargar_capa_espacial_cache("SELECT * FROM bocatomas", engine, geom_col="geometry")
                     # Estandarización de nombre para visualizer
                     if 'nombre_bocatoma' in gdf_bocatomas.columns: 
                         gdf_bocatomas['nombre_predio'] = gdf_bocatomas['nombre_bocatoma'] 
@@ -927,7 +927,7 @@ def main():
                             from modules.db_manager import get_engine
                             eng = get_engine()
                             # Leemos la tabla v2 que acabas de subir
-                            gdf_municipios = gpd.read_postgis("SELECT * FROM municipios_v2", eng, geom_col="geometry")
+                            gdf_municipios = cargar_capa_espacial_cache("SELECT * FROM municipios_v2", eng, geom_col="geometry")
                             
                             # Forzar sistema de coordenadas para Folium
                             if gdf_municipios.crs is None:
@@ -991,7 +991,7 @@ def main():
                         try:
                             # Intentamos recargar DIRECTAMENTE de la BD para tener todas las columnas (pk_predios, nombre_pre, etc.)
                             from modules.db_manager import get_engine
-                            gdf_predios_viz = gpd.read_postgis("SELECT * FROM predios", get_engine(), geom_col="geometry")
+                            gdf_predios_viz = cargar_capa_espacial_cache("SELECT * FROM predios", get_engine(), geom_col="geometry")
                             
                             # Aseguramos proyección WGS84 para el mapa
                             if gdf_predios_viz.crs and gdf_predios_viz.crs.to_string() != "EPSG:4326":
@@ -1304,7 +1304,7 @@ def main():
                     # 1. Cargamos el clima global (Estaciones y Lluvia)
                     with st.spinner("📡 Cargando red de Estaciones Climáticas..."):
                         q_est = text("SELECT id_estacion, altitud, ST_SetSRID(ST_MakePoint(CAST(longitud AS FLOAT), CAST(latitud AS FLOAT)), 4326) as geometry FROM estaciones WHERE latitud IS NOT NULL")
-                        gdf_est = gpd.read_postgis(q_est, engine, geom_col="geometry").to_crs("EPSG:3116")
+                        gdf_est = cargar_capa_espacial_cache(q_est, engine, geom_col="geometry").to_crs("EPSG:3116")
                         gdf_est['id_estacion'] = gdf_est['id_estacion'].astype(str)
                         
                         df_rain = pd.read_sql("SELECT id_estacion, AVG(valor)*12 as ppt FROM precipitacion GROUP BY id_estacion", engine)
@@ -1370,7 +1370,7 @@ def main():
 
                     # --- 🗺️ FASE 1: PROCESAR CUENCAS ---
                     with st.spinner("Calculando red hidrográfica..."):
-                        gdf_cuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
+                        gdf_cuencas = cargar_capa_espacial_cache("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
 
                         # 🧬 INYECCIÓN DE ADN (LLAVE ÚNICA)
                         # Fusionamos Nombre + Código para evitar que cuencas homónimas se derritan en una sola
@@ -1402,7 +1402,7 @@ def main():
                             df_maestro = pd.read_excel(io.BytesIO(res_m.content))
                             df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
                             
-                            gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
+                            gdf_mun = cargar_capa_espacial_cache("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
                             posibles_cols = ['mpio_cdpmp', 'MPIO_CDPMP', 'dp_mp', 'mpio_cdp', 'MPIO_CDP']
                             col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                             gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
