@@ -12,7 +12,7 @@ import streamlit as st
 from modules.config import Config
 
 # 🔥 IMPORTAMOS LA APLANADORA MAESTRA (EL CEREBRO LINGÜÍSTICO)
-from modules.utils import normalizar_texto_maestro
+from modules.utils import normalizar_texto_maestro, cargar_capa_espacial_cache
 
 # Función auxiliar robusta para fechas en español (ene-70 -> datetime)
 def parse_spanish_date_robust(x):
@@ -70,7 +70,7 @@ def load_and_process_all_data():
                 FROM estaciones
             """
             # Leemos directamente la geometría sin pasar por WKT
-            gdf_stations = gpd.read_postgis(sql_est, engine, geom_col="geometry")
+            gdf_stations = gpd.read_postgis(text(sql_est), engine, geom_col="geometry")
             
             # Aseguramos el CRS Web Global
             if gdf_stations.crs is None:
@@ -107,28 +107,26 @@ def load_and_process_all_data():
         # --- 2. PRECIPITACIÓN ---
         try:
             # 🚀 FIX ARQUITECTÓNICO: Apagamos la descarga masiva global.
-            # Intentar descargar millones de registros satura Supabase (QueryCanceled por Timeout).
-            # Enviaremos un DataFrame vacío aquí y la página 01 se encargará de descargar 
-            # de forma dinámica y ultra rápida SOLO los datos de la cuenca seleccionada.
             df_long = pd.DataFrame()
         except Exception as e:
             st.error(f"⚠️ Error en Precipitación: {e}")
             df_long = pd.DataFrame()
             
-        # --- 3. GEOMETRÍAS (Adiós a los archivos locales pesados) ---
+        # --- 3. GEOMETRÍAS (Usando Caché Robusta) ---
         try:
-            # Ahora la app va directo a tus tablas súper indexadas
-            gdf_municipios = gpd.read_postgis("SELECT * FROM municipios", engine, geom_col="geometry")
-            gdf_subcuencas = gpd.read_postgis("SELECT * FROM cuencas", engine, geom_col="geometry")
+            # 🚀 FIX JINETE 2: Usamos la función blindada que creamos en utils.py
+            # Esto evitará el "Statement Timeout" y protegerá el disco de Supabase
+            gdf_municipios = cargar_capa_espacial_cache("SELECT * FROM municipios")
+            gdf_subcuencas = cargar_capa_espacial_cache("SELECT * FROM cuencas")
             
             try:
-                gdf_predios = gpd.read_postgis("SELECT * FROM predios", engine, geom_col="geometry")
+                gdf_predios = cargar_capa_espacial_cache("SELECT * FROM predios")
             except:
                 gdf_predios = gpd.GeoDataFrame() # Fallback seguro
                 
             # Validamos el sistema de coordenadas de todas las capas
             for capa in [gdf_municipios, gdf_subcuencas, gdf_predios]:
-                if not capa.empty and capa.crs is None:
+                if capa is not None and not capa.empty and capa.crs is None:
                     capa.set_crs(epsg=4326, inplace=True)
                     
         except Exception as e:
@@ -154,6 +152,37 @@ def load_and_process_all_data():
     except Exception as e:
         st.error(f"Error Crítico BD: {e}")
         return None, None, None, None, None, None
+
+# =====================================================================
+# 🚀 NUEVO ESCUDO PARA HISTORIAL DE PRECIPITACIÓN
+# =====================================================================
+@st.cache_data(ttl=3600, show_spinner=False) # Caché de 1 hora
+def load_precipitation_for_stations_cached(lista_estaciones):
+    """
+    Descarga el historial de lluvia SOLO para las estaciones seleccionadas
+    y guarda el resultado en caché para evitar el 'SSL connection closed'.
+    """
+    if not lista_estaciones:
+        return pd.DataFrame()
+        
+    try:
+        from modules.db_manager import get_engine
+        engine = get_engine()
+        
+        # Formateamos la lista para la consulta SQL IN ('A', 'B')
+        estaciones_str = "','".join([str(e).strip() for e in lista_estaciones])
+        query = f"SELECT id_estacion, fecha, valor FROM precipitacion WHERE id_estacion IN ('{estaciones_str}')"
+        
+        with engine.begin() as conn:
+            # Aumentamos el tiempo de espera por si son muchos datos
+            conn.execute(text("SET statement_timeout = '600000';"))
+            df = pd.read_sql(text(query), conn)
+            
+        return df
+    except Exception as e:
+        import logging
+        logging.error(f"Error descargando historial de lluvia: {e}")
+        return pd.DataFrame()
 
 def complete_series(df):
     if df is None or df.empty: return df
