@@ -3027,38 +3027,36 @@ def display_stats_tab(df_long, df_anual_melted, gdf_stations, **kwargs):
 
         try:
             # --- CORRECCIÓN MATRIZ ---
-            # Copiamos para no afectar el original
             df_matrix = df_long.copy()
 
-            # 1. Mapeo universal y blindado de meses
-            # (Soporta si vienen como "Ene", "Febrero", o números 1-12)
-            meses_map = {
-                'ene': 1, 'enero': 1, 'jan': 1, '1': 1, '01': 1, 1: 1, 1.0: 1,
-                'feb': 2, 'febrero': 2, '2': 2, '02': 2, 2: 2, 2.0: 2,
-                'mar': 3, 'marzo': 3, '3': 3, '03': 3, 3: 3, 3.0: 3,
-                'abr': 4, 'abril': 4, 'apr': 4, '4': 4, '04': 4, 4: 4, 4.0: 4,
-                'may': 5, 'mayo': 5, '5': 5, '05': 5, 5: 5, 5.0: 5,
-                'jun': 6, 'junio': 6, '6': 6, '06': 6, 6: 6, 6.0: 6,
-                'jul': 7, 'julio': 7, '7': 7, '07': 7, 7: 7, 7.0: 7,
-                'ago': 8, 'agosto': 8, 'aug': 8, '8': 8, '08': 8, 8: 8, 8.0: 8,
-                'sep': 9, 'septiembre': 9, '9': 9, '09': 9, 9: 9, 9.0: 9,
-                'oct': 10, 'octubre': 10, '10': 10, 10: 10, 10.0: 10,
-                'nov': 11, 'noviembre': 11, '11': 11, 11: 11, 11.0: 11,
-                'dic': 12, 'diciembre': 12, 'dec': 12, '12': 12, 12: 12, 12.0: 12
-            }
+            # 🚀 FIX DEFINITIVO: Extracción Matemática Temporal Directa
+            # Como vimos en tu tabla, existe la columna 'Fecha' (ej. 2010-02-28). 
+            # Extraeremos el año y el mes directamente de ahí, ignorando el frágil diccionario de texto.
+            col_fecha = 'Fecha' if 'Fecha' in df_matrix.columns else 'fecha'
             
-            # Limpiamos y aseguramos que el Año y Mes sean leídos matemáticamente
-            df_matrix['anio_limpio'] = pd.to_numeric(df_matrix[Config.YEAR_COL], errors='coerce').fillna(0).astype(int)
-            df_matrix['mes_limpio'] = df_matrix[Config.MONTH_COL].astype(str).str.lower().str.strip().map(meses_map)
-            
-            # 2. Eliminamos nulos para no colapsar el pivoteo
-            df_pivot = df_matrix.dropna(subset=['anio_limpio', 'mes_limpio'])
+            if col_fecha in df_matrix.columns:
+                df_matrix['fecha_dt'] = pd.to_datetime(df_matrix[col_fecha], errors='coerce')
+                df_matrix['anio_limpio'] = df_matrix['fecha_dt'].dt.year
+                df_matrix['mes_limpio'] = df_matrix['fecha_dt'].dt.month
+            else:
+                # Fallback de seguridad si la columna no se llama 'Fecha'
+                df_matrix['anio_limpio'] = pd.to_numeric(df_matrix[Config.YEAR_COL], errors='coerce').fillna(0).astype(int)
+                df_matrix['mes_limpio'] = pd.to_numeric(df_matrix[Config.MONTH_COL], errors='coerce').fillna(1).astype(int)
 
-            # 3. Creamos la matriz directamente (sin forzar pd.to_datetime)
-            matrix = df_pivot.pivot_table(
+            # 2. Eliminamos nulos para no colapsar el pivoteo
+            df_matrix = df_matrix.dropna(subset=['anio_limpio', 'mes_limpio'])
+            
+            # Aseguramos tipos enteros puros
+            df_matrix['anio_limpio'] = df_matrix['anio_limpio'].astype(int)
+            df_matrix['mes_limpio'] = df_matrix['mes_limpio'].astype(int)
+
+            # 3. Creamos la matriz (usamos 'valor' para contar los registros)
+            col_valor = 'valor' if 'valor' in df_matrix.columns else Config.PRECIPITATION_COL
+            
+            matrix = df_matrix.pivot_table(
                 index='anio_limpio',
                 columns='mes_limpio',
-                values=Config.PRECIPITATION_COL,
+                values=col_valor,
                 aggfunc="count"
             )
 
