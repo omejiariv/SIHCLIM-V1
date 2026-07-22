@@ -71,7 +71,7 @@ def get_live_oni_data():
     """Descarga el registro oficial en vivo del Oceanic Niño Index (ONI) desde NOAA."""
     url = "https://psl.noaa.gov/data/correlation/oni.data"
     try:
-        df = pd.read_csv(url, skiprows=1, delim_whitespace=True, header=None, 
+        df = pd.read_csv(url, skiprows=1, sep=r'\s+', header=None, 
                          names=['YEAR','01','02','03','04','05','06','07','08','09','10','11','12'])
         
         df['YEAR'] = pd.to_numeric(df['YEAR'], errors='coerce')
@@ -104,7 +104,7 @@ def get_live_soi_data():
     """Descarga el registro histórico oficial del SOI en formato de texto plano."""
     url = "https://www.cpc.ncep.noaa.gov/data/indices/soi"
     try:
-        df = pd.read_csv(url, skiprows=3, delim_whitespace=True, header=None, 
+        df = pd.read_csv(url, skiprows=3, sep=r'\s+', header=None, 
                          names=['YEAR','01','02','03','04','05','06','07','08','09','10','11','12'])
         df['YEAR'] = pd.to_numeric(df['YEAR'], errors='coerce')
         df = df.dropna(subset=['YEAR'])
@@ -126,7 +126,7 @@ def get_live_iod_data():
     """Descarga el registro histórico oficial del Dipolo del Océano Índico (DMI)."""
     url = "https://psl.noaa.gov/gcos_wgsp/Timeseries/Data/dmi.had.long.data"
     try:
-        df = pd.read_csv(url, skiprows=1, delim_whitespace=True, header=None, 
+        df = pd.read_csv(url, skiprows=1, sep=r'\s+', header=None, 
                          names=['YEAR','01','02','03','04','05','06','07','08','09','10','11','12'])
         df['YEAR'] = pd.to_numeric(df['YEAR'], errors='coerce')
         df = df.dropna(subset=['YEAR'])
