@@ -31,7 +31,7 @@ sys.path.append(parent_dir)
 from modules import selectors
 from modules.config import Config
 from modules.hydro_physics import download_raster_secure
-
+from modules.utils import cargar_capa_espacial_cache
 
 try:
     from modules.db_manager import get_engine
