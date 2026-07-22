@@ -22,6 +22,7 @@ warnings.filterwarnings('ignore')
 # --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
 try:
     from modules import selectors
+    from modules.utils import cargar_capa_espacial_cache
     from modules.utils import encender_gemelo_digital, normalizar_texto
 except ImportError:
     # Fallback de rutas por si hay problemas de lectura entre carpetas
@@ -100,7 +101,7 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
         raster_path = tmp_raster.name
 
         texto_progreso.info("🗺️ Fase 1/2: Cruzando cartografía (Municipios y Cuencas)...")
-        gdf_mun = gpd.read_postgis("SELECT * FROM municipios", engine_geo, geom_col="geometry").to_crs(epsg=4326)
+        gdf_mun = cargar_capa_espacial_cache("SELECT * FROM municipios", engine_geo, geom_col="geometry").to_crs(epsg=4326)
         q_cue = text("""
             SELECT COALESCE(
                 CASE WHEN TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' ELSE NULL END,
@@ -113,7 +114,7 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
             ) AS subc_lbl, geometry
             FROM cuencas
         """)
-        gdf_cue = gpd.read_postgis(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=4326)
+        gdf_cue = cargar_capa_espacial_cache(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=4326)
 
         col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
         gdf_mun['mun_norm'] = gdf_mun[col_mun].astype(str).str.upper().str.strip()
