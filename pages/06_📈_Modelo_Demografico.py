@@ -1883,8 +1883,14 @@ with tab_mapas:
                 # =========================================================
                 if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                     datos_para_dibujar = df_mapa_plot.copy()
-                    mapa_bruto = st.session_state.get('boveda_mapa_medellin', {})
-                    mapa_para_dibujar = copy.deepcopy(mapa_bruto)
+                    
+                    # 🚀 FIX JINETE 3 EN ACCIÓN: Generamos el JSON al vuelo.
+                    # Eliminamos por completo la lectura de st.session_state
+                    import json
+                    if 'gdf_plot' in locals() and gdf_plot is not None and not gdf_plot.empty:
+                        mapa_para_dibujar = json.loads(gdf_plot.to_json())
+                    else:
+                        mapa_para_dibujar = {"type": "FeatureCollection", "features": []}
                     
                     z_fill_val = 4 if nivel_medellin == "Barrios y Corregimientos" else 2
                     prop_key = 'Cod_Barrio' if nivel_medellin == "Barrios y Corregimientos" else 'Cod_Comuna'
@@ -1959,7 +1965,6 @@ with tab_mapas:
 
                     datos_para_dibujar = df_mapa_plot.copy()
                     llave_geojson = 'id'
-
                 # =========================================================
                 # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
                 # =========================================================
