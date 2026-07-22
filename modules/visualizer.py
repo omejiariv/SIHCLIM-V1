@@ -3026,20 +3026,25 @@ def display_stats_tab(df_long, df_anual_melted, gdf_stations, **kwargs):
         )
 
         try:
-            # --- CORRECCIÓN MATRIZ ---
+            # --- CORRECCIÓN MATRIZ (FIX FORENSE DE FECHAS INVERTIDAS) ---
             df_matrix = df_long.copy()
 
-            # 🚀 FIX DEFINITIVO: Extracción Matemática Temporal Directa
-            # Como vimos en tu tabla, existe la columna 'Fecha' (ej. 2010-02-28). 
-            # Extraeremos el año y el mes directamente de ahí, ignorando el frágil diccionario de texto.
-            col_fecha = 'Fecha' if 'Fecha' in df_matrix.columns else 'fecha'
+            # 1. Extracción Matemática Temporal Directa
+            col_fecha = 'Fecha' if 'Fecha' in df_matrix.columns else ('fecha' if 'fecha' in df_matrix.columns else None)
             
             if col_fecha in df_matrix.columns:
                 df_matrix['fecha_dt'] = pd.to_datetime(df_matrix[col_fecha], errors='coerce')
                 df_matrix['anio_limpio'] = df_matrix['fecha_dt'].dt.year
                 df_matrix['mes_limpio'] = df_matrix['fecha_dt'].dt.month
+                dia_extraido = df_matrix['fecha_dt'].dt.day
+                
+                # 🔥 EL BISTURÍ FORENSE: Corrección de Fechas Invertidas (YYYY-DD-MM)
+                # Rescata los meses de Febrero a Diciembre que fueron secuestrados por Enero
+                mask_invertida = (df_matrix['mes_limpio'] == 1) & (dia_extraido >= 2) & (dia_extraido <= 12)
+                df_matrix.loc[mask_invertida, 'mes_limpio'] = dia_extraido[mask_invertida]
+                
             else:
-                # Fallback de seguridad si la columna no se llama 'Fecha'
+                # Fallback de seguridad si no hay columna fecha
                 df_matrix['anio_limpio'] = pd.to_numeric(df_matrix[Config.YEAR_COL], errors='coerce').fillna(0).astype(int)
                 df_matrix['mes_limpio'] = pd.to_numeric(df_matrix[Config.MONTH_COL], errors='coerce').fillna(1).astype(int)
 
@@ -3050,7 +3055,7 @@ def display_stats_tab(df_long, df_anual_melted, gdf_stations, **kwargs):
             df_matrix['anio_limpio'] = df_matrix['anio_limpio'].astype(int)
             df_matrix['mes_limpio'] = df_matrix['mes_limpio'].astype(int)
 
-            # 3. Creamos la matriz (usamos 'valor' para contar los registros)
+            # 3. Creamos la matriz (usamos 'valor' o precipitación para contar los registros)
             col_valor = 'valor' if 'valor' in df_matrix.columns else Config.PRECIPITATION_COL
             
             matrix = df_matrix.pivot_table(
@@ -3061,10 +3066,11 @@ def display_stats_tab(df_long, df_anual_melted, gdf_stations, **kwargs):
             )
 
             # 4. ¡EL TRUCO MAESTRO!: Forzamos a que la matriz tenga exactamente 12 columnas (1 a 12)
-            # Así, si en los datos falta un mes, Plotly jamás desalineará las etiquetas
+            # Evita que Plotly desalinee el mapa si falta un mes en la serie histórica
             matrix = matrix.reindex(columns=range(1, 13), fill_value=0).fillna(0)
 
-            # Mapa de calor semáforo
+            # 5. Renderizado del Mapa de Calor
+            import plotly.express as px
             fig_matrix = px.imshow(
                 matrix,
                 labels=dict(x="Mes", y="Año", color="N° Registros"),
