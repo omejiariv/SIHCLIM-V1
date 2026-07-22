@@ -882,7 +882,7 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         import geopandas as gpd
         import json
         
-        @st.cache_data(ttl=60)
+        @st.cache_data(ttl=86400, show_spinner=False) # Caché en RAM, 24h
         def cargar_barrios_medellin_v6():
             URL_BARRIOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
             return gpd.read_file(URL_BARRIOS).to_crs(epsg=4326)
@@ -912,7 +912,11 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todos los Barrios y Corregimientos"
             
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Barrio'].astype(str).str.zfill(4)
-            st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json())
+            
+            # 🚀 FIX JINETE 3: Eliminamos la boveda de session_state. 
+            # Guardamos el GeoDataFrame localmente y lo convertiremos a JSON 
+            # solo en la Pestaña 3 (Mapa Demográfico) en el momento de dibujar.
+            # st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json()) 
             
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreBarr'],
@@ -940,7 +944,9 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                 titulo_terr = "Todas las Comunas y Corregimientos"
 
             gdf_plot['MATCH_ID'] = gdf_plot['Cod_Comuna'].astype(str).str.zfill(2)
-            st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json())
+            
+            # 🚀 FIX JINETE 3: Eliminamos la boveda de session_state
+            # st.session_state['boveda_mapa_medellin'] = json.loads(gdf_plot.to_json())
             
             df_mapa_base = pd.DataFrame({
                 'Territorio': gdf_plot['NombreComuna'],
@@ -973,6 +979,7 @@ elif escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
         años_hist, pob_hist = np.array([]), np.array([])
         df_mapa_base = pd.DataFrame()
         filtro_zona, titulo_terr = "Error", "Error de Carga"
+        gdf_plot = None # Inicializamos la variable por seguridad
 
 # =====================================================================
 # 🏙️ ESCALA URBANA (CABECERAS MUNICIPALES - ANTIOQUIA)
