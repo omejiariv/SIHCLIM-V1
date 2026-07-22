@@ -377,7 +377,7 @@ def cargar_atributos_municipios():
 
 def render_selector_espacial(modo_firma="clasica"):
     from sqlalchemy import text 
-    # 🚀 FIX QUIRÚRGICO: Importamos las librerías espaciales al inicio absoluto de la función
+    # 🚀 Asegúrate de que estas 3 líneas estén aquí arriba:
     import geopandas as gpd
     import pandas as pd
     from modules.utils import cargar_capa_espacial_cache
