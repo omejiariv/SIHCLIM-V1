@@ -261,18 +261,20 @@ import geopandas as gpd
 from sqlalchemy import text
 import streamlit as st
 
-@st.cache_data(ttl=86400, show_spinner=False) # Se guarda en RAM por 24 horas
+@st.cache_data(ttl=86400, show_spinner=False) # Caché 24h
 def cargar_capa_espacial_cache(query_sql):
-    """Descarga capas de PostGIS una sola vez y las guarda en memoria."""
+    """Descarga capas de PostGIS y las guarda en memoria con manejo robusto de conexión."""
     try:
         from modules.db_manager import get_engine
         engine_geo = get_engine()
-        with engine_geo.connect() as conn:
-            # Escudo de tiempo para bases de datos lentas
-            conn.execute(text("SET statement_timeout = '300000';")) 
+        
+        # Usamos engine_geo.begin() para transacciones seguras que se auto-cierran
+        with engine_geo.begin() as conn:
+            # Aumentamos el timeout para mapas pesados a 10 minutos (600,000 ms)
+            conn.execute(text("SET statement_timeout = '600000';")) 
             gdf = gpd.read_postgis(text(query_sql), conn, geom_col="geometry")
             return gdf
     except Exception as e:
         import logging
-        logging.error(f"Error cargando mapa desde caché: {e}")
+        logging.error(f"Error cargando mapa desde caché ({query_sql}): {e}")
         return None
