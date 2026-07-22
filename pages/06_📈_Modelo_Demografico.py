@@ -1753,7 +1753,7 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     import pandas as pd
 
     engine_geo = get_engine()
-    gdf = gpd.read_postgis(text(q_geo_str), engine_geo, geom_col="geometry")
+    gdf = cargar_capa_espacial_cache(text(q_geo_str), engine_geo, geom_col="geometry")
     
     codigos_dane_deptos = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
     
@@ -1994,7 +1994,7 @@ with tab_mapas:
                         
                         engine_geo = get_engine()
                         q_cue_overlay = text("SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, geometry FROM cuencas")
-                        gdf_cue_overlay = gpd.read_postgis(q_cue_overlay, engine_geo, geom_col="geometry")
+                        gdf_cue_overlay = cargar_capa_espacial_cache(q_cue_overlay, engine_geo, geom_col="geometry")
                         
                         if not gdf_cue_overlay.empty:
                             gdf_cue_overlay = gdf_cue_overlay.to_crs(epsg=4326)
@@ -2267,7 +2267,7 @@ with tab_matriz:
                         # 🚀 FIX TIMEOUT 1: Abrimos la conexión y le extendemos la vida útil a 5 minutos
                         with engine_geo.connect() as conn:
                             conn.execute(text("SET statement_timeout = '300000';"))
-                            gdf_cue = gpd.read_postgis(q_cue, conn, geom_col="geometry").to_crs(epsg=3116)
+                            gdf_cue = gdf_cue_overlay = cargar_capa_espacial_cache(q_cue_overlay, engine_geo, geom_col="geometry")(q_cue, conn, geom_col="geometry").to_crs(epsg=3116)
                         
                         # 🔥 RECUPERAMOS LA VARIABLE DE SEGURIDAD (Limpieza y buffer para evitar errores topológicos)
                         gdf_cue_limpio = gdf_cue[['subc_lbl', 'geometry']].copy()
@@ -2386,14 +2386,7 @@ with tab_matriz:
                             # 🚀 FIX TIMEOUT 2: Aplicamos el mismo escudo de tiempo para la capa de municipios
                             with engine_geo.connect() as conn:
                                 conn.execute(text("SET statement_timeout = '300000';"))
-                                gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), conn, geom_col="geometry")
-                                
-                            col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
-                            
-                            # 🚀 FIX TIMEOUT 2: Aplicamos el mismo escudo de tiempo para la capa de municipios
-                            with engine_geo.connect() as conn:
-                                conn.execute(text("SET statement_timeout = '300000';"))
-                                gdf_mun = gpd.read_postgis(text("SELECT * FROM municipios"), conn, geom_col="geometry")
+                                gdf_mun = cargar_capa_espacial_cache(text("SELECT * FROM municipios"), conn, geom_col="geometry")
                                 
                             col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
                             if col_dpto in gdf_mun.columns: gdf_mun = gdf_mun[gdf_mun[col_dpto] == '05'].copy()
