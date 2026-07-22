@@ -647,14 +647,28 @@ def render_selector_espacial(modo_firma="clasica"):
                 nivel_jerarquico = "NINGUNO"
 
         # --- D. DEPARTAMENTO ---
-        else:
+        elif modo == "Departamento":
             nombre_zona = "Antioquia"
-            nivel_jerarquico = "Departamento" # 🚀 FIX: Restaurado a "Departamento"
-            q_dep = "SELECT * FROM municipios"
+            nivel_jerarquico = "Departamento"
             
-            with engine.connect() as conn:
-                gdf_muns = gpd.read_postgis(text(q_dep), conn, geom_col="geometry")
-                gdf_zona = gpd.GeoDataFrame({'nombre':['Antioquia']}, geometry=[gdf_muns.unary_union], crs=gdf_muns.crs)
+            try:
+                import geopandas as gpd
+                from modules.utils import cargar_capa_espacial_cache
+                
+                # 🚀 FIX QUIRÚRGICO 1: Leemos los 125 municipios desde la Memoria RAM (Instantáneo)
+                gdf_muns = cargar_capa_espacial_cache("SELECT * FROM municipios")
+                
+                if gdf_muns is not None and not gdf_muns.empty:
+                    # 🚀 FIX QUIRÚRGICO 2: Fusión (unary_union) segura y asignación de CRS
+                    geometria_unida = gdf_muns.unary_union
+                    gdf_zona = gpd.GeoDataFrame({'nombre': ['Antioquia']}, geometry=[geometria_unida], crs=gdf_muns.crs)
+                else:
+                    gdf_zona = None
+                    
+            except Exception as e:
+                import logging
+                logging.error(f"Error procesando mapa departamental: {e}")
+                gdf_zona = None
 
     # ====================================================================
     # 🧠 ORQUESTADOR SILENCIOSO (FUSIONADO CON CSV SUPABASE)
