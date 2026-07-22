@@ -377,6 +377,10 @@ def cargar_atributos_municipios():
 
 def render_selector_espacial(modo_firma="clasica"):
     from sqlalchemy import text 
+    # 🚀 FIX QUIRÚRGICO: Importamos las librerías espaciales al inicio absoluto de la función
+    import geopandas as gpd
+    import pandas as pd
+    from modules.utils import cargar_capa_espacial_cache
     
     ids_estaciones = []
     nombre_zona = "Antioquia"
@@ -652,9 +656,6 @@ def render_selector_espacial(modo_firma="clasica"):
             nivel_jerarquico = "Departamento"
             
             try:
-                import geopandas as gpd
-                from modules.utils import cargar_capa_espacial_cache
-                
                 # 🚀 FIX QUIRÚRGICO 1: Leemos los 125 municipios desde la Memoria RAM (Instantáneo)
                 gdf_muns = cargar_capa_espacial_cache("SELECT * FROM municipios")
                 
