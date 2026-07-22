@@ -11,6 +11,7 @@ import numpy as np
 import plotly.graph_objects as go
 from sqlalchemy import text
 from rasterio.io import MemoryFile
+from modules.utils import cargar_capa_espacial_cache
 
 # 1. CONFIGURACIÓN DE PÁGINA (PRIMERA LÍNEA SIEMPRE)
 st.set_page_config(page_title="SIHCLI-POTER", page_icon="🌦️", layout="wide")
