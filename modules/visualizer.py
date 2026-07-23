@@ -4714,7 +4714,7 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
     
     # --- ☁️ MIGRACIÓN A SUPABASE STORAGE ---
     SUPABASE_PROJECT_ID = "ldunpssoxvifemoyeuac" # Tu ID de proyecto
-    url_nube = f"https://{SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public/rasters/Cob25m_WGS84.tif"
+    url_nube = f"https://{SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public/rasters/Cob2026_Actualizada.tif"
     
     raster_path = url_nube
     
