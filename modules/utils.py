@@ -271,20 +271,17 @@ import geopandas as gpd
 from sqlalchemy import text
 import streamlit as st
 
-# 🚀 FIX DEFINITIVO: Le enseñamos a Streamlit a leer objetos SQL usando hash_funcs
+# 🚀 ESCUDO FINAL: Sabe leer SQL y no necesita que le pasen el engine
 @st.cache_data(ttl=86400, show_spinner=False, hash_funcs={"sqlalchemy.sql.elements.TextClause": str})
-def cargar_capa_espacial_cache(query_sql, _engine=None, geom_col="geometry"):
-    """Descarga capas de PostGIS y las mantiene separadas usando su propia consulta como llave."""
+def cargar_capa_espacial_cache(query_sql, geom_col="geometry"):
+    """Descarga capas de PostGIS y gestiona su propia conexión."""
     try:
-        # Si no nos pasan el engine, lo buscamos de forma segura
-        if _engine is None:
-            from modules.db_manager import get_engine
-            _engine = get_engine()
-            
-        with _engine.connect() as conn:
+        from modules.db_manager import get_engine
+        engine_geo = get_engine() # Lo obtiene directamente de la fuente
+        
+        with engine_geo.connect() as conn:
             conn.execute(text("SET statement_timeout = '600000';")) 
             
-            # Soporte dual: Texto plano o TextClause de SQLAlchemy
             if isinstance(query_sql, str):
                 sql_a_ejecutar = text(query_sql)
             else:
