@@ -292,11 +292,11 @@ def cargar_territorio_maestro():
             
     # --- 3. LIMPIEZA Y FORJA DE LLAVES ---
     if not df.empty:
-        # Limpieza estándar de nombres de columnas
         df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
         
-        # 🚀 FIX FORENSE 1: Blindaje del Código DANE (dp_mp) a 5 dígitos exactos
+        # 🔥 FIX: Purgamos basura del Excel (filas sin código DANE)
         if 'dp_mp' in df.columns:
+            df = df.dropna(subset=['dp_mp'])
             df['dp_mp'] = df['dp_mp'].astype(str).str.replace(r'\.0$', '', regex=True).str.zfill(5)
             
         if 'municipio' in df.columns:
@@ -304,17 +304,17 @@ def cargar_territorio_maestro():
             df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto_maestro)
             
         if 'car' in df.columns:
-            df['car'] = df['car'].astype(str).str.upper()
+            df['car'] = df['car'].fillna('SIN CAR').astype(str).str.upper()
             
         if 'region' in df.columns:
             from modules.utils import normalizar_texto_maestro
-            df['region'] = df['region'].astype(str).str.title()
+            df['region'] = df['region'].fillna('Sin Region').astype(str).str.title()
             df['region_norm'] = df['region'].astype(str).apply(normalizar_texto_maestro)
             
-        # 🚀 FIX FORENSE 2: Inyección y normalización de la Subregión
         if 'subregion' in df.columns:
             from modules.utils import normalizar_texto_maestro
-            df['subregion'] = df['subregion'].astype(str).str.title()
+            # 🔥 FIX: Blindamos los nulos para extinguir el "Nan"
+            df['subregion'] = df['subregion'].fillna('Sin Subregion')
             df['subregion_norm'] = df['subregion'].astype(str).apply(normalizar_texto_maestro)
             
     return df
