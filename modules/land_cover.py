@@ -69,7 +69,8 @@ def process_land_cover_raster(raster_path, gdf_mask=None, scale_factor=1):
                 else: gdf_proj = gdf_mask
                 
                 try:
-                    out_image, out_transform = mask(src, gdf_proj.geometry, crop=True)
+                    # 🚀 FIX QUIRÚRGICO: all_touched=True salva a las cuencas diminutas
+                    out_image, out_transform = mask(src, gdf_proj.geometry, crop=True, all_touched=True)
                     data = out_image[0]
                 except ValueError: return None, None, None, None
             else:
