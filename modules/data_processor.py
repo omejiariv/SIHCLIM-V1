@@ -251,10 +251,16 @@ def cargar_censo_ica(tipo):
 def cargar_territorio_maestro():
     """
     Carga la base de datos maestra que relaciona municipios con regiones y CARs.
+    Con soporte dual: Local (Disco) y Remoto (Supabase).
     """
     import os
     import pandas as pd
+    import requests
+    import io
     
+    df = pd.DataFrame()
+    
+    # --- 1. INTENTO LOCAL (Rápido) ---
     rutas = [
         "data/territorio_maestro.xlsx", 
         "data/territorio_maestro.csv",
@@ -262,7 +268,6 @@ def cargar_territorio_maestro():
         "data/depto_region_car_territ_mpios.csv"
     ]
     
-    df = pd.DataFrame()
     for ruta in rutas:
         if os.path.exists(ruta):
             if ruta.endswith('.xlsx'): 
@@ -274,28 +279,41 @@ def cargar_territorio_maestro():
                     df = pd.read_csv(ruta)
             break
             
+    # --- 2. INTENTO NUBE (Plan B de Respaldo) ---
+    if df.empty:
+        try:
+            url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
+            res_m = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+            if res_m.status_code == 200:
+                df = pd.read_excel(io.BytesIO(res_m.content))
+        except Exception as e:
+            import logging
+            logging.error(f"Fallo descarga Supabase: {e}")
+            
+    # --- 3. LIMPIEZA Y FORJA DE LLAVES ---
     if not df.empty:
         # Limpieza estándar de nombres de columnas
         df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
         
         # 🚀 FIX FORENSE 1: Blindaje del Código DANE (dp_mp) a 5 dígitos exactos
         if 'dp_mp' in df.columns:
-            # Eliminamos decimales fantasma (.0) y forzamos siempre 5 dígitos (Ej: 5079 -> 05079)
             df['dp_mp'] = df['dp_mp'].astype(str).str.replace(r'\.0$', '', regex=True).str.zfill(5)
             
         if 'municipio' in df.columns:
-            # 🔥 USAMOS EL CEREBRO LINGÜÍSTICO
+            from modules.utils import normalizar_texto_maestro
             df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto_maestro)
             
         if 'car' in df.columns:
             df['car'] = df['car'].astype(str).str.upper()
             
         if 'region' in df.columns:
+            from modules.utils import normalizar_texto_maestro
             df['region'] = df['region'].astype(str).str.title()
             df['region_norm'] = df['region'].astype(str).apply(normalizar_texto_maestro)
             
         # 🚀 FIX FORENSE 2: Inyección y normalización de la Subregión
         if 'subregion' in df.columns:
+            from modules.utils import normalizar_texto_maestro
             df['subregion'] = df['subregion'].astype(str).str.title()
             df['subregion_norm'] = df['subregion'].astype(str).apply(normalizar_texto_maestro)
             
