@@ -1309,7 +1309,12 @@ def main():
                         gdf_est['id_estacion'] = gdf_est['id_estacion'].astype(str)
                         
                         df_rain = pd.read_sql("SELECT id_estacion, AVG(valor)*12 as ppt FROM precipitacion GROUP BY id_estacion", engine)
-                        df_rain['id_estacion'] = df_rain['id_estacion'].astype(str)
+                        # 🚀 FIX QUIRÚRGICO: Verificar que la columna exista antes de modificarla
+                        if not df_rain.empty and 'id_estacion' in df_rain.columns:
+                            df_rain['id_estacion'] = df_rain['id_estacion'].astype(str)
+                        else:
+                            st.warning("⚠️ No se encontraron datos históricos de lluvia. Los cálculos asumirán 2500mm por defecto.")
+                            df_rain = pd.DataFrame(columns=['id_estacion', 'ppt'])
 
                     res_multiescala = []
 
