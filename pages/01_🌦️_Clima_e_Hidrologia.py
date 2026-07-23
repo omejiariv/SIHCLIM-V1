@@ -1410,7 +1410,7 @@ def main():
                             # 🚀 FIX QUIRÚRGICO 1: Forzar 5 dígitos exactos en el maestro (05079)
                             df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(5)
                             
-                            gdf_mun = cargar_capa_espacial_cache("SELECT * FROM municipios", engine, geom_col="geometry").to_crs("EPSG:3116")
+                            gdf_mun = cargar_capa_espacial_cache("SELECT * FROM municipios", geom_col="geometry").to_crs("EPSG:3116")
                             posibles_cols = ['mpio_cdpmp', 'MPIO_CDPMP', 'dp_mp', 'mpio_cdp', 'MPIO_CDP']
                             col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                             
