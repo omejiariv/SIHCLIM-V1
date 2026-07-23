@@ -749,5 +749,5 @@ def render_selector_espacial(modo_firma="clasica"):
     if modo_firma == "weap":
         return nombre_zona, gdf_zona, nivel_jerarquico, False
     else:
-        # Firma clásica para páginas 01 a 14 y 16
-        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
+        # 🚀 FIX: Añadimos 'nivel_jerarquico' a la firma clásica
+        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona, nivel_jerarquico
