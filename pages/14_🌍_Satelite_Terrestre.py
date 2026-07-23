@@ -35,7 +35,7 @@ st.title("🛰️ Radar Dynamic World (En Vivo)")
 st.markdown("Clasificación de coberturas de la tierra en tiempo real mediante Inteligencia Artificial (Sentinel-2 / Google Earth Engine).")
 
 # 2. Recuperamos el selector espacial superior (Municipios/Subcuencas)
-ids_sel, nombre_zona, alt_ref, gdf_zona = selectors.render_selector_espacial()
+ids_sel, nombre_zona, alt_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
 
 # ==========================================
 # 1. MOTOR DE AUTENTICACIÓN
