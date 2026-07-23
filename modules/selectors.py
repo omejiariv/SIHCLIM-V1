@@ -563,66 +563,49 @@ def render_selector_espacial(modo_firma="clasica"):
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
                     
-        # --- B. POR REGIÓN (ESCUDO DE DOBLE VÍA Y VETO FORENSE) ---
+        # --- B. POR REGIÓN (BYPASS FORENSE POR NOMBRE) ---
         elif modo == "Por Región":
             try:
                 from modules.data_processor import cargar_territorio_maestro
                 df_m = cargar_territorio_maestro()
                 
                 if not df_m.empty and 'subregion_norm' in df_m.columns:
-                    lista_reg = sorted([str(r).strip().title() for r in df_m['subregion_norm'].unique() if str(r).strip() not in ['', 'Sin Subregion', 'Nan']])
+                    lista_reg = sorted([str(r).strip().title() for r in df_m['subregion_norm'].dropna().unique() if str(r).strip() not in ['', 'Sin Subregion', 'Nan']])
                     sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                     
                     if sel_reg != "-- Seleccione --":
                         nombre_zona = sel_reg 
                         nivel_jerarquico = "Región"
-                        
                         from modules.utils import normalizar_texto_maestro
                         reg_norm = normalizar_texto_maestro(sel_reg)
                         
-                        # 1. Obtenemos Códigos y Nombres Oficiales de la Región Seleccionada
-                        df_region = df_m[df_m['subregion_norm'] == reg_norm]
-                        codigos_esperados = df_region['dp_mp'].tolist()
-                        nombres_esperados = df_region['municipio_norm'].tolist()
+                        # 1. Extraemos los nombres exactos (limpios) que pertenecen a la región
+                        nombres_region = df_m[df_m['subregion_norm'] == reg_norm]['municipio_norm'].tolist()
                         
-                        # Lista de nombres que DEFINITIVAMENTE pertenecen a otras regiones
-                        nombres_otras_regiones = df_m[df_m['subregion_norm'] != reg_norm]['municipio_norm'].tolist()
-                        
-                        if codigos_esperados:
+                        if nombres_region:
                             from modules.utils import cargar_capa_espacial_cache
                             gdf_mun_full = cargar_capa_espacial_cache("SELECT * FROM municipios")
                             
                             if gdf_mun_full is not None and not gdf_mun_full.empty:
                                 cols_mapa = [c.lower() for c in gdf_mun_full.columns]
-                                col_id = next((c for c in cols_mapa if c in ['mpio_cdpmp', 'dane']), None)
                                 col_nom = next((c for c in cols_mapa if c in ['mpio_cnmbr', 'municipio', 'nombre_mpio']), None)
                                 
-                                if col_id and col_nom:
-                                    gdf_mun_full['id_clean'] = gdf_mun_full[col_id].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(5)
+                                if col_nom:
+                                    # 2. Limpiamos los nombres del mapa para que el cruce sea perfecto
                                     gdf_mun_full['nom_clean'] = gdf_mun_full[col_nom].astype(str).apply(normalizar_texto_maestro)
                                     
-                                    # 🚀 2. EL ALGORITMO VETO (Atrapa a los mutantes como Dabeiba)
-                                    def escudo_forense(row):
-                                        # Condición 1: ¿Tiene el código esperado?
-                                        if row['id_clean'] not in codigos_esperados:
-                                            return False
-                                        # Condición 2 (El Veto): Si el código pasó, pero su nombre oficial es de OTRA región... ¡Rechazado!
-                                        if row['nom_clean'] in nombres_otras_regiones and row['nom_clean'] not in nombres_esperados:
-                                            return False 
-                                        return True
-                                        
-                                    mask_valida = gdf_mun_full.apply(escudo_forense, axis=1)
-                                    gdf_zona_filtrada = gdf_mun_full[mask_valida]
+                                    # 3. Cruzamos ESTRICTAMENTE por nombre, ignorando los códigos corruptos
+                                    gdf_zona_filtrada = gdf_mun_full[gdf_mun_full['nom_clean'].isin(nombres_region)]
                                     
                                     if not gdf_zona_filtrada.empty:
                                         poly_region = gdf_zona_filtrada.unary_union
                                         import geopandas as gpd
                                         gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_zona_filtrada.crs)
                                     else:
-                                        st.warning("⚠️ Error: Todos los polígonos fueron rechazados por corrupción de datos cruzados.")
+                                        st.warning("⚠️ Ningún nombre del maestro coincidió con el mapa espacial.")
                                         nombre_zona, gdf_zona = "-- Seleccione --", None
                                 else:
-                                    st.error("⚠️ BD Espacial sin columnas de ID o Nombre para validar.")
+                                    st.error("⚠️ El mapa espacial no tiene columna de nombres.")
                                     nombre_zona, gdf_zona = "-- Seleccione --", None
                             else:
                                 nombre_zona, gdf_zona = "-- Seleccione --", None
@@ -632,7 +615,6 @@ def render_selector_espacial(modo_firma="clasica"):
                         nombre_zona, gdf_zona = "-- Seleccione --", None
                         nivel_jerarquico = "NINGUNO"
                 else:
-                    st.error("⚠️ BD Maestra sin columna de Subregiones. Revisa data_processor.py")
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
             except Exception as e: 
