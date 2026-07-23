@@ -563,7 +563,7 @@ def render_selector_espacial(modo_firma="clasica"):
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
                     
-        # --- B. POR REGIÓN (BYPASS FORENSE POR NOMBRE) ---
+        # --- B. POR REGIÓN (ESCUDO NACIONAL ANTI-HOMÓNIMOS) ---
         elif modo == "Por Región":
             try:
                 from modules.data_processor import cargar_territorio_maestro
@@ -579,33 +579,44 @@ def render_selector_espacial(modo_firma="clasica"):
                         from modules.utils import normalizar_texto_maestro
                         reg_norm = normalizar_texto_maestro(sel_reg)
                         
-                        # 1. Extraemos los nombres exactos (limpios) que pertenecen a la región
+                        # Extraemos los CÓDIGOS DANE oficiales de la región (5 dígitos exactos)
+                        codigos_region = df_m[df_m['subregion_norm'] == reg_norm]['dp_mp'].astype(str).str.zfill(5).tolist()
                         nombres_region = df_m[df_m['subregion_norm'] == reg_norm]['municipio_norm'].tolist()
                         
-                        if nombres_region:
+                        if codigos_region:
                             from modules.utils import cargar_capa_espacial_cache
                             gdf_mun_full = cargar_capa_espacial_cache("SELECT * FROM municipios")
                             
                             if gdf_mun_full is not None and not gdf_mun_full.empty:
                                 cols_mapa = [c.lower() for c in gdf_mun_full.columns]
-                                col_nom = next((c for c in cols_mapa if c in ['mpio_cnmbr', 'municipio', 'nombre_mpio']), None)
                                 
-                                if col_nom:
-                                    # 2. Limpiamos los nombres del mapa para que el cruce sea perfecto
-                                    gdf_mun_full['nom_clean'] = gdf_mun_full[col_nom].astype(str).apply(normalizar_texto_maestro)
+                                col_dpto = next((c for c in cols_mapa if c in ['dpto_cnmbr', 'departamento', 'nom_dpto']), None)
+                                col_id = next((c for c in cols_mapa if c in ['mpio_cdpmp', 'dane', 'mpio_crcod']), None)
+                                
+                                # 🛡️ EL ESCUDO 1: Bloquear cualquier cosa que no sea Antioquia (Evita a Barbosa/Santander)
+                                if col_dpto:
+                                    gdf_mun_full = gdf_mun_full[gdf_mun_full[col_dpto].astype(str).str.lower().str.contains('antioquia', na=False)]
+                                
+                                if col_id:
+                                    # Limpiamos el DANE espacial a 5 dígitos exactos
+                                    gdf_mun_full['id_clean'] = gdf_mun_full[col_id].astype(str).str.replace(r'\.0$', '', regex=True).str.zfill(5)
                                     
-                                    # 3. Cruzamos ESTRICTAMENTE por nombre, ignorando los códigos corruptos
-                                    gdf_zona_filtrada = gdf_mun_full[gdf_mun_full['nom_clean'].isin(nombres_region)]
+                                    # 🛡️ EL ESCUDO 2: Si el mapa no tenía nombre de dpto, filtramos por el prefijo '05' (Antioquia)
+                                    if not col_dpto:
+                                        gdf_mun_full = gdf_mun_full[gdf_mun_full['id_clean'].str.startswith('05')]
                                     
-                                    if not gdf_zona_filtrada.empty:
-                                        poly_region = gdf_zona_filtrada.unary_union
-                                        import geopandas as gpd
-                                        gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_zona_filtrada.crs)
-                                    else:
-                                        st.warning("⚠️ Ningún nombre del maestro coincidió con el mapa espacial.")
-                                        nombre_zona, gdf_zona = "-- Seleccione --", None
+                                    # Cruce matemático perfecto por DANE (Rescata a Medellín sin importar cómo se escriba)
+                                    gdf_zona_filtrada = gdf_mun_full[gdf_mun_full['id_clean'].isin(codigos_region)]
                                 else:
-                                    st.error("⚠️ El mapa espacial no tiene columna de nombres.")
+                                    st.error("⚠️ El mapa espacial no tiene columna DANE para hacer un cruce seguro.")
+                                    gdf_zona_filtrada = import_geopandas().GeoDataFrame() # Fallback vacío
+                                    
+                                if not gdf_zona_filtrada.empty:
+                                    poly_region = gdf_zona_filtrada.unary_union
+                                    import geopandas as gpd
+                                    gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_zona_filtrada.crs)
+                                else:
+                                    st.warning("⚠️ Los datos de la región no cruzaron con el mapa de Antioquia.")
                                     nombre_zona, gdf_zona = "-- Seleccione --", None
                             else:
                                 nombre_zona, gdf_zona = "-- Seleccione --", None
