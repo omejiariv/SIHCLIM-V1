@@ -249,7 +249,7 @@ def cargar_censo_ica(tipo):
 
 @st.cache_data
 def cargar_territorio_maestro():
-    """Carga la base de datos maestra con soporte dual (Local y Nube) y purga de nulos."""
+    """Carga la base de datos maestra con soporte dual (Local y Nube), purga de nulos y corrección de tildes."""
     import os
     import pandas as pd
     import requests
@@ -260,7 +260,14 @@ def cargar_territorio_maestro():
     
     for ruta in rutas:
         if os.path.exists(ruta):
-            df = pd.read_excel(ruta) if ruta.endswith('.xlsx') else pd.read_csv(ruta)
+            if ruta.endswith('.xlsx'):
+                df = pd.read_excel(ruta)
+            else:
+                # 🚀 FIX: Forzamos la lectura correcta de tildes colombianas (Latin-1 vs UTF-8)
+                try:
+                    df = pd.read_csv(ruta, encoding='latin-1') 
+                except:
+                    df = pd.read_csv(ruta, encoding='utf-8')
             break
             
     if df.empty:
