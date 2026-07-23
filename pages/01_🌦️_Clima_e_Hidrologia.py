@@ -1376,7 +1376,7 @@ def main():
 
                     # --- 🗺️ FASE 1: PROCESAR CUENCAS ---
                     with st.spinner("Calculando red hidrográfica..."):
-                        gdf_cuencas = cargar_capa_espacial_cache("SELECT * FROM cuencas", engine, geom_col="geometry").to_crs("EPSG:3116")
+                        gdf_cuencas = cargar_capa_espacial_cache("forja_cuencas", "SELECT * FROM cuencas", engine).to_crs("EPSG:3116")
 
                         # 🧬 INYECCIÓN DE ADN (LLAVE ÚNICA)
                         # Fusionamos Nombre + Código para evitar que cuencas homónimas se derritan en una sola
