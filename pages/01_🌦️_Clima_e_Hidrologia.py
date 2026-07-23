@@ -93,20 +93,25 @@ def main():
     # 🛡️ IMPORTACIÓN DE SEGURIDAD INTERNA
     import pandas as pd
     import geopandas as gpd
+    import streamlit as st # Aseguramos tener streamlit en el scope local
     
     # --- A. SELECTOR ESPACIAL ---
     try:
-        ids_estaciones_dummy, nombre_zona, altitud_ref, gdf_zona = selectors.render_selector_espacial()
+        # 🚀 FIX DEFINITIVO 1: Recibimos las 5 variables (Añadimos 'nivel_jerarquico')
+        ids_estaciones_dummy, nombre_zona, altitud_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
+    except ValueError:
+        st.sidebar.error("⚠️ Error de desempaquetado. Asegúrate de que 'selectors.py' esté retornando 5 variables al final.")
+        st.stop()
     except Exception as e:
         st.sidebar.error(f"Error en Selector: {e}")
         st.stop()
 
-    # 🔥 FIX 1: Validamos contra el nombre del territorio
-    if not nombre_zona or nombre_zona in ["-- Seleccione --", "Sin Selección", "NINGUNO", "Antioquia"]:
-        st.info("👈 Seleccione una Cuenca o Municipio en el menú lateral para comenzar.")
+    # 🔥 FIX DEFINITIVO 2: Retiramos "Antioquia" de la lista negra para que el Departamento pueda renderizarse
+    if not nombre_zona or nombre_zona in ["-- Seleccione --", "Sin Selección", "NINGUNO", ""]:
+        st.info("👈 Seleccione una Cuenca, Municipio, Región o Departamento en el menú lateral para comenzar.")
         st.stop()
 
-    # 🚀 FIX 2: RESTAURACIÓN DEL BUFFER ESPACIAL EN EL SIDEBAR
+    # 🚀 FIX 3: RESTAURACIÓN DEL BUFFER ESPACIAL EN EL SIDEBAR
     st.sidebar.markdown("---")
     buffer_km = st.sidebar.slider(
         "🎯 Radio de Búsqueda (Buffer en km):", 
@@ -115,7 +120,9 @@ def main():
     )
     # Guardamos en sesión para que el Motor Aleph (Mapas) respete este mismo buffer
     st.session_state['buffer_global_km'] = buffer_km
-
+    # Inyectamos el nivel jerárquico a la sesión para que el módulo de Coberturas Raster lo lea correctamente
+    st.session_state['nivel_activo_global'] = nivel_jerarquico
+    
     # --- B. CARGA DE DATOS ---
     try:
         (gdf_stations, gdf_municipios, df_all_rain, df_enso, gdf_subcuencas, gdf_predios) = load_all_data_cached()
