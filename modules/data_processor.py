@@ -118,10 +118,11 @@ def load_and_process_all_data():
         try:
             # 🚀 FIX JINETE 2: Usamos la función blindada que creamos en utils.py
             # Esto evitará el "Statement Timeout" y protegerá el disco de Supabase
-            gdf_municipios = cargar_capa_espacial_cache("capa_muns", "SELECT * FROM municipios")
-            gdf_subcuencas = cargar_capa_espacial_cache("capa_cuencas", "SELECT * FROM cuencas")
+            gdf_municipios = cargar_capa_espacial_cache("SELECT * FROM municipios")
+            gdf_subcuencas = cargar_capa_espacial_cache("SELECT * FROM cuencas")
+            
             try:
-                gdf_predios = cargar_capa_espacial_cache("capa_predios", "SELECT * FROM predios")
+                gdf_predios = cargar_capa_espacial_cache("SELECT * FROM predios")
             except:
                 gdf_predios = gpd.GeoDataFrame() # Fallback seguro
                 
@@ -132,7 +133,7 @@ def load_and_process_all_data():
                     
         except Exception as e:
             st.warning(f"⚠️ Error en lectura de polígonos: {e}")
-
+            
         # --- 4. ENSO ---
         try:
             df_enso = pd.read_sql(text("SELECT * FROM indices_climaticos"), engine)
