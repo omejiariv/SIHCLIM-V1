@@ -566,35 +566,41 @@ def render_selector_espacial(modo_firma="clasica"):
         # --- B. POR REGIÓN ---
         elif modo == "Por Región":
             try:
-                # 🚀 FIX 1: Usamos la matriz curada de memoria, no el Excel crudo de internet
                 from modules.data_processor import cargar_territorio_maestro
                 df_m = cargar_territorio_maestro()
                 
                 if not df_m.empty and 'subregion_norm' in df_m.columns:
-                    # Filtramos y organizamos las subregiones normalizadas
-                    lista_reg = sorted([str(r).strip().title() for r in df_m['subregion_norm'].dropna().unique() if str(r).strip() != ''])
+                    # 🔥 FIX: Filtramos "Sin Subregion" y "Nan" de la lista visible
+                    lista_reg = sorted([str(r).strip().title() for r in df_m['subregion_norm'].dropna().unique() if str(r).strip() not in ['', 'Sin Subregion', 'Nan']])
                     sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                     
                     if sel_reg != "-- Seleccione --":
                         nombre_zona = sel_reg 
                         nivel_jerarquico = "Región"
                         
-                        # 🚀 FIX 2: Buscamos usando el nombre normalizado (ignora mayúsculas/tildes)
                         from modules.utils import normalizar_texto_maestro
                         reg_norm = normalizar_texto_maestro(sel_reg)
                         
-                        # Obtenemos los códigos DANE curados (de 5 dígitos)
+                        # Extraemos códigos
                         cods = df_m[df_m['subregion_norm'] == reg_norm]['dp_mp'].tolist()
                         
                         if cods:
                             df_mun_attr = cargar_atributos_municipios()
                             cols_mun = [c.lower() for c in df_mun_attr.columns]
                             
-                            cods_str = ", ".join([f"'{c}'" for c in cods])
+                            # 🚀 FIX: Blindaje total. Buscamos tanto "05079" como "5079" para evitar que bases de datos sin ceros fallen.
+                            cods_formatos = []
+                            for c in cods:
+                                c_str = str(c).zfill(5)
+                                cods_formatos.append(f"'{c_str}'")
+                                cods_formatos.append(f"'{int(c_str)}'") # Sin cero inicial
+                            
+                            cods_str = ", ".join(list(set(cods_formatos)))
+                            
                             condiciones = []
+                            # 🔥 FIX: Retiramos mpio_ccdgo de la búsqueda para detener los polígonos mutantes
                             if 'mpio_cdpmp' in cols_mun: condiciones.append(f"CAST(mpio_cdpmp AS TEXT) IN ({cods_str})")
                             if 'dane' in cols_mun: condiciones.append(f"CAST(dane AS TEXT) IN ({cods_str})")
-                            if 'mpio_ccdgo' in cols_mun: condiciones.append(f"CAST(mpio_ccdgo AS TEXT) IN ({cods_str})")
                             
                             if condiciones:
                                 where_clause = " OR ".join(condiciones)
@@ -610,7 +616,7 @@ def render_selector_espacial(modo_firma="clasica"):
                                     st.warning(f"⚠️ No se encontraron cruces espaciales en la BD.")
                                     nombre_zona, gdf_zona = "-- Seleccione --", None
                             else:
-                                st.error("⚠️ No se encontró llave de cruce en BD espacial.")
+                                st.error("⚠️ No se encontró llave DANE o mpio_cdpmp en BD espacial.")
                                 nombre_zona, gdf_zona = "-- Seleccione --", None
                         else:
                             st.warning("⚠️ La región no tiene municipios en el maestro.")
