@@ -271,20 +271,29 @@ import geopandas as gpd
 from sqlalchemy import text
 import streamlit as st
 
-@st.cache_data(ttl=86400, show_spinner=False) # Caché 24h
-def cargar_capa_espacial_cache(_query_sql):
-    """Descarga capas de PostGIS y las guarda en memoria con manejo robusto de conexión."""
+@st.cache_data(ttl=86400, show_spinner=False)
+def cargar_capa_espacial_cache(_query_sql, _engine=None, geom_col="geometry"):
+    """Descarga capas de PostGIS una sola vez y las guarda en memoria."""
     try:
-        from modules.db_manager import get_engine
-        engine_geo = get_engine()
-        
-        # Usamos engine_geo.begin() para transacciones seguras que se auto-cierran
-        with engine_geo.begin() as conn:
-            # Aumentamos el timeout para mapas pesados a 10 minutos (600,000 ms)
+        # Si la página no nos manda un engine, lo traemos nosotros mismos
+        if _engine is None:
+            from modules.db_manager import get_engine
+            _engine = get_engine()
+            
+        with _engine.connect() as conn:
+            # Escudo de tiempo
             conn.execute(text("SET statement_timeout = '600000';")) 
-            gdf = gpd.read_postgis(text(_query_sql), conn, geom_col="geometry")
+            
+            # Soporte para texto plano o TextClause
+            if isinstance(_query_sql, str):
+                sql_a_ejecutar = text(_query_sql)
+            else:
+                sql_a_ejecutar = _query_sql
+                
+            # Usamos el geom_col dinámico que nos envíe la página
+            gdf = gpd.read_postgis(sql_a_ejecutar, conn, geom_col=geom_col)
             return gdf
     except Exception as e:
         import logging
-        logging.error(f"Error cargando mapa desde caché ({query_sql}): {e}")
+        logging.error(f"Error cargando mapa desde caché: {e}")
         return None
