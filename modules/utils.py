@@ -271,10 +271,12 @@ import geopandas as gpd
 from sqlalchemy import text
 import streamlit as st
 
-@st.cache_data(ttl=86400, show_spinner=False)
-def cargar_capa_espacial_cache(cache_id, _query_sql, _engine=None, geom_col="geometry"):
-    """Descarga capas de PostGIS. cache_id obliga a Streamlit a separar las memorias."""
+# 🚀 FIX DEFINITIVO: Le enseñamos a Streamlit a leer objetos SQL usando hash_funcs
+@st.cache_data(ttl=86400, show_spinner=False, hash_funcs={"sqlalchemy.sql.elements.TextClause": str})
+def cargar_capa_espacial_cache(query_sql, _engine=None, geom_col="geometry"):
+    """Descarga capas de PostGIS y las mantiene separadas usando su propia consulta como llave."""
     try:
+        # Si no nos pasan el engine, lo buscamos de forma segura
         if _engine is None:
             from modules.db_manager import get_engine
             _engine = get_engine()
@@ -282,14 +284,15 @@ def cargar_capa_espacial_cache(cache_id, _query_sql, _engine=None, geom_col="geo
         with _engine.connect() as conn:
             conn.execute(text("SET statement_timeout = '600000';")) 
             
-            if isinstance(_query_sql, str):
-                sql_a_ejecutar = text(_query_sql)
+            # Soporte dual: Texto plano o TextClause de SQLAlchemy
+            if isinstance(query_sql, str):
+                sql_a_ejecutar = text(query_sql)
             else:
-                sql_a_ejecutar = _query_sql
+                sql_a_ejecutar = query_sql
                 
             gdf = gpd.read_postgis(sql_a_ejecutar, conn, geom_col=geom_col)
             return gdf
     except Exception as e:
         import logging
-        logging.error(f"Error cargando mapa desde caché [{cache_id}]: {e}")
+        logging.error(f"Error cargando mapa desde caché: {e}")
         return None
