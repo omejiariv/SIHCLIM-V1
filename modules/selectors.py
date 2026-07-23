@@ -660,7 +660,7 @@ def render_selector_espacial(modo_firma="clasica"):
             
             try:
                 # 🚀 FIX QUIRÚRGICO 1: Leemos los 125 municipios desde la Memoria RAM (Instantáneo)
-                gdf_muns = cargar_capa_espacial_cache("sel_departamento", "SELECT * FROM municipios")
+                gdf_muns = cargar_capa_espacial_cache("SELECT * FROM municipios")
                 
                 if gdf_muns is not None and not gdf_muns.empty:
                     # 🚀 FIX QUIRÚRGICO 2: Fusión (unary_union) segura y asignación de CRS
