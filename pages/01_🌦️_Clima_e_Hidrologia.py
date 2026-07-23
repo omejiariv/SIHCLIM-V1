@@ -1305,7 +1305,7 @@ def main():
                     # 1. Cargamos el clima global (Estaciones y Lluvia)
                     with st.spinner("📡 Cargando red de Estaciones Climáticas..."):
                         q_est = text("SELECT id_estacion, altitud, ST_SetSRID(ST_MakePoint(CAST(longitud AS FLOAT), CAST(latitud AS FLOAT)), 4326) as geometry FROM estaciones WHERE latitud IS NOT NULL")
-                        gdf_est = cargar_capa_espacial_cache(q_est, engine, geom_col="geometry").to_crs("EPSG:3116")
+                        gdf_est = cargar_capa_espacial_cache(q_est, geom_col="geometry").to_crs("EPSG:3116")
                         gdf_est['id_estacion'] = gdf_est['id_estacion'].astype(str)
                         
                         df_rain = pd.read_sql("SELECT id_estacion, AVG(valor)*12 as ppt FROM precipitacion GROUP BY id_estacion", engine)
@@ -1376,7 +1376,7 @@ def main():
 
                     # --- 🗺️ FASE 1: PROCESAR CUENCAS ---
                     with st.spinner("Calculando red hidrográfica..."):
-                        gdf_cuencas = cargar_capa_espacial_cache("forja_cuencas", "SELECT * FROM cuencas", engine).to_crs("EPSG:3116")
+                        gdf_cuencas = cargar_capa_espacial_cache("SELECT * FROM cuencas", geom_col="geometry").to_crs("EPSG:3116")
 
                         # 🧬 INYECCIÓN DE ADN (LLAVE ÚNICA)
                         # Fusionamos Nombre + Código para evitar que cuencas homónimas se derritan en una sola
