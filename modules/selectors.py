@@ -563,14 +563,14 @@ def render_selector_espacial(modo_firma="clasica"):
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
                     
-        # --- B. POR REGIÓN (MÉTODO FORENSE RIGUROSO) ---
+        # --- B. POR REGIÓN (ESCUDO DE DOBLE VÍA Y VETO FORENSE) ---
         elif modo == "Por Región":
             try:
                 from modules.data_processor import cargar_territorio_maestro
                 df_m = cargar_territorio_maestro()
                 
                 if not df_m.empty and 'subregion_norm' in df_m.columns:
-                    lista_reg = sorted([str(r).strip().title() for r in df_m['subregion_norm'].dropna().unique() if str(r).strip() not in ['', 'Sin Subregion', 'Nan']])
+                    lista_reg = sorted([str(r).strip().title() for r in df_m['subregion_norm'].unique() if str(r).strip() not in ['', 'Sin Subregion', 'Nan']])
                     sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                     
                     if sel_reg != "-- Seleccione --":
@@ -580,54 +580,66 @@ def render_selector_espacial(modo_firma="clasica"):
                         from modules.utils import normalizar_texto_maestro
                         reg_norm = normalizar_texto_maestro(sel_reg)
                         
-                        # 1. Obtener la lista RIGUROSA de códigos de 5 dígitos para la región
-                        cods_region = df_m[df_m['subregion_norm'] == reg_norm]['dp_mp'].astype(str).str.replace(r'\.0$', '', regex=True).str.zfill(5).unique().tolist()
+                        # 1. Obtenemos Códigos y Nombres Oficiales de la Región Seleccionada
+                        df_region = df_m[df_m['subregion_norm'] == reg_norm]
+                        codigos_esperados = df_region['dp_mp'].tolist()
+                        nombres_esperados = df_region['municipio_norm'].tolist()
                         
-                        if cods_region:
-                            # 2. Cargar TODO el mapa de municipios a la memoria (Caché rápida)
+                        # Lista de nombres que DEFINITIVAMENTE pertenecen a otras regiones
+                        nombres_otras_regiones = df_m[df_m['subregion_norm'] != reg_norm]['municipio_norm'].tolist()
+                        
+                        if codigos_esperados:
                             from modules.utils import cargar_capa_espacial_cache
                             gdf_mun_full = cargar_capa_espacial_cache("SELECT * FROM municipios")
                             
                             if gdf_mun_full is not None and not gdf_mun_full.empty:
-                                # 3. AUDITORÍA DE LLAVES: Forzar una columna de 5 dígitos en el mapa espacial
                                 cols_mapa = [c.lower() for c in gdf_mun_full.columns]
-                                col_id = next((c for c in cols_mapa if c in ['mpio_cdpmp', 'dane', 'mpio_ccdgo']), None)
+                                col_id = next((c for c in cols_mapa if c in ['mpio_cdpmp', 'dane']), None)
+                                col_nom = next((c for c in cols_mapa if c in ['mpio_cnmbr', 'municipio', 'nombre_mpio']), None)
                                 
-                                if col_id:
-                                    # Limpieza estricta: convertir a string, quitar decimales, rellenar a 5 ceros
-                                    gdf_mun_full['codigo_limpio'] = gdf_mun_full[col_id].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(5)
+                                if col_id and col_nom:
+                                    gdf_mun_full['id_clean'] = gdf_mun_full[col_id].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(5)
+                                    gdf_mun_full['nom_clean'] = gdf_mun_full[col_nom].astype(str).apply(normalizar_texto_maestro)
                                     
-                                    # 4. FILTRADO MATEMÁTICO EXACTO (Imposible obtener falsos positivos)
-                                    gdf_zona_filtrada = gdf_mun_full[gdf_mun_full['codigo_limpio'].isin(cods_region)]
+                                    # 🚀 2. EL ALGORITMO VETO (Atrapa a los mutantes como Dabeiba)
+                                    def escudo_forense(row):
+                                        # Condición 1: ¿Tiene el código esperado?
+                                        if row['id_clean'] not in codigos_esperados:
+                                            return False
+                                        # Condición 2 (El Veto): Si el código pasó, pero su nombre oficial es de OTRA región... ¡Rechazado!
+                                        if row['nom_clean'] in nombres_otras_regiones and row['nom_clean'] not in nombres_esperados:
+                                            return False 
+                                        return True
+                                        
+                                    mask_valida = gdf_mun_full.apply(escudo_forense, axis=1)
+                                    gdf_zona_filtrada = gdf_mun_full[mask_valida]
                                     
                                     if not gdf_zona_filtrada.empty:
-                                        # Disolver geometrías en un solo polígono regional
                                         poly_region = gdf_zona_filtrada.unary_union
+                                        import geopandas as gpd
                                         gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_zona_filtrada.crs)
                                     else:
-                                        st.warning("⚠️ Los códigos de la región no cruzaron con el mapa de municipios. Verifica que el mapa tenga el DANE correcto.")
+                                        st.warning("⚠️ Error: Todos los polígonos fueron rechazados por corrupción de datos cruzados.")
                                         nombre_zona, gdf_zona = "-- Seleccione --", None
                                 else:
-                                    st.error("⚠️ El mapa espacial no tiene columnas de ID (dane, mpio_cdpmp).")
+                                    st.error("⚠️ BD Espacial sin columnas de ID o Nombre para validar.")
                                     nombre_zona, gdf_zona = "-- Seleccione --", None
                             else:
-                                st.error("⚠️ No se pudo cargar el mapa base de municipios.")
                                 nombre_zona, gdf_zona = "-- Seleccione --", None
                         else:
-                            st.warning("⚠️ La región no tiene municipios asignados en el maestro.")
                             nombre_zona, gdf_zona = "-- Seleccione --", None
                     else:
                         nombre_zona, gdf_zona = "-- Seleccione --", None
                         nivel_jerarquico = "NINGUNO"
                 else:
-                    st.error("⚠️ Base maestra sin columna 'subregion_norm'. Ejecuta la forja.")
+                    st.error("⚠️ BD Maestra sin columna de Subregiones. Revisa data_processor.py")
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
             except Exception as e: 
-                st.error(f"🚨 Error de Regiones: {e}")
+                st.error(f"🚨 Error Crítico en Regiones: {e}")
                 nombre_zona, gdf_zona = "-- Seleccione --", None
                 nivel_jerarquico = "NINGUNO"
-
+                
         # --- C. POR MUNICIPIO ---
         elif modo == "Por Municipio":
             df_mun = cargar_atributos_municipios()
