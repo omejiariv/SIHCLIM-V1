@@ -249,72 +249,41 @@ def cargar_censo_ica(tipo):
 
 @st.cache_data
 def cargar_territorio_maestro():
-    """
-    Carga la base de datos maestra que relaciona municipios con regiones y CARs.
-    Con soporte dual: Local (Disco) y Remoto (Supabase).
-    """
+    """Carga la base de datos maestra con soporte dual (Local y Nube) y purga de nulos."""
     import os
     import pandas as pd
     import requests
     import io
     
     df = pd.DataFrame()
-    
-    # --- 1. INTENTO LOCAL (Rápido) ---
-    rutas = [
-        "data/territorio_maestro.xlsx", 
-        "data/territorio_maestro.csv",
-        "data/depto_region_car_territ_mpios.xlsx",
-        "data/depto_region_car_territ_mpios.csv"
-    ]
+    rutas = ["data/territorio_maestro.xlsx", "data/territorio_maestro.csv", "data/depto_region_car_territ_mpios.xlsx"]
     
     for ruta in rutas:
         if os.path.exists(ruta):
-            if ruta.endswith('.xlsx'): 
-                df = pd.read_excel(ruta)
-            else: 
-                try:
-                    df = leer_csv_robusto(ruta) 
-                except:
-                    df = pd.read_csv(ruta)
+            df = pd.read_excel(ruta) if ruta.endswith('.xlsx') else pd.read_csv(ruta)
             break
             
-    # --- 2. INTENTO NUBE (Plan B de Respaldo) ---
     if df.empty:
         try:
-            url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-            res_m = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
-            if res_m.status_code == 200:
-                df = pd.read_excel(io.BytesIO(res_m.content))
-        except Exception as e:
-            import logging
-            logging.error(f"Fallo descarga Supabase: {e}")
+            url = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
+            res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
+            if res.status_code == 200: df = pd.read_excel(io.BytesIO(res.content))
+        except: pass
             
-    # --- 3. LIMPIEZA Y FORJA DE LLAVES ---
     if not df.empty:
         df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
         
-        # 🔥 FIX: Purgamos basura del Excel (filas sin código DANE)
-        if 'dp_mp' in df.columns:
-            df = df.dropna(subset=['dp_mp'])
-            df['dp_mp'] = df['dp_mp'].astype(str).str.replace(r'\.0$', '', regex=True).str.zfill(5)
-            
+        # 🔥 PURGA FORENSE: Eliminamos filas basura y evitamos el "Nan"
+        df = df.dropna(subset=['dp_mp'])
+        df['dp_mp'] = df['dp_mp'].astype(str).str.replace(r'\.0$', '', regex=True).str.zfill(5)
+        
+        from modules.utils import normalizar_texto_maestro
         if 'municipio' in df.columns:
-            from modules.utils import normalizar_texto_maestro
             df['municipio_norm'] = df['municipio'].astype(str).apply(normalizar_texto_maestro)
             
-        if 'car' in df.columns:
-            df['car'] = df['car'].fillna('SIN CAR').astype(str).str.upper()
-            
-        if 'region' in df.columns:
-            from modules.utils import normalizar_texto_maestro
-            df['region'] = df['region'].fillna('Sin Region').astype(str).str.title()
-            df['region_norm'] = df['region'].astype(str).apply(normalizar_texto_maestro)
-            
         if 'subregion' in df.columns:
-            from modules.utils import normalizar_texto_maestro
-            # 🔥 FIX: Blindamos los nulos para extinguir el "Nan"
-            df['subregion'] = df['subregion'].fillna('Sin Subregion')
+            df['subregion'] = df['subregion'].fillna('Sin Subregion').astype(str).str.title()
+            # Esta línea destruye a "Nan" para siempre
             df['subregion_norm'] = df['subregion'].astype(str).apply(normalizar_texto_maestro)
             
     return df
