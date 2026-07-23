@@ -566,22 +566,25 @@ def render_selector_espacial(modo_firma="clasica"):
         # --- B. POR REGIÓN ---
         elif modo == "Por Región":
             try:
-                df_m = pd.read_excel("https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx", engine='openpyxl')
-                df_m.columns = [str(c).lower().strip() for c in df_m.columns]
+                # 🚀 FIX 1: Usamos la matriz curada de memoria, no el Excel crudo de internet
+                from modules.data_processor import cargar_territorio_maestro
+                df_m = cargar_territorio_maestro()
                 
-                col_reg = 'subregion' if 'subregion' in df_m.columns else next((c for c in df_m.columns if c in ['region', 'provincia']), None)
-                col_dane_ex = next((c for c in df_m.columns if c in ['dp_mp', 'cod_dane', 'dane', 'codigo_mpio']), None)
-                
-                if col_reg and col_dane_ex:
-                    lista_reg = sorted([str(r).strip().title() for r in df_m[col_reg].dropna().unique() if str(r).strip() != ''])
+                if not df_m.empty and 'subregion_norm' in df_m.columns:
+                    # Filtramos y organizamos las subregiones normalizadas
+                    lista_reg = sorted([str(r).strip().title() for r in df_m['subregion_norm'].dropna().unique() if str(r).strip() != ''])
                     sel_reg = st.selectbox("📍 Región:", ["-- Seleccione --"] + lista_reg)
                     
                     if sel_reg != "-- Seleccione --":
                         nombre_zona = sel_reg 
-                        nivel_jerarquico = "Región" # 🚀 FIX: Aseguramos el nombre oficial
+                        nivel_jerarquico = "Región"
                         
-                        cods_crudos = df_m[df_m[col_reg].astype(str).str.strip().str.lower() == sel_reg.lower()][col_dane_ex]
-                        cods = pd.to_numeric(cods_crudos, errors='coerce').dropna().astype(int).astype(str).str.zfill(5).tolist()
+                        # 🚀 FIX 2: Buscamos usando el nombre normalizado (ignora mayúsculas/tildes)
+                        from modules.utils import normalizar_texto_maestro
+                        reg_norm = normalizar_texto_maestro(sel_reg)
+                        
+                        # Obtenemos los códigos DANE curados (de 5 dígitos)
+                        cods = df_m[df_m['subregion_norm'] == reg_norm]['dp_mp'].tolist()
                         
                         if cods:
                             df_mun_attr = cargar_atributos_municipios()
@@ -604,23 +607,23 @@ def render_selector_espacial(modo_firma="clasica"):
                                     poly_region = gdf_zona_filtrada.unary_union
                                     gdf_zona = gpd.GeoDataFrame({'nombre': [nombre_zona]}, geometry=[poly_region], crs=gdf_zona_filtrada.crs)
                                 else:
-                                    st.warning(f"⚠️ No se encontraron cruces espaciales para: {cods[:5]}...")
+                                    st.warning(f"⚠️ No se encontraron cruces espaciales en la BD.")
                                     nombre_zona, gdf_zona = "-- Seleccione --", None
                             else:
-                                st.error("⚠️ No se encontró la llave DANE ni mpio_cdpmp en la base espacial.")
+                                st.error("⚠️ No se encontró llave de cruce en BD espacial.")
                                 nombre_zona, gdf_zona = "-- Seleccione --", None
                         else:
-                            st.warning("⚠️ La región no tiene municipios asociados en el maestro.")
+                            st.warning("⚠️ La región no tiene municipios en el maestro.")
                             nombre_zona, gdf_zona = "-- Seleccione --", None
                     else:
                         nombre_zona, gdf_zona = "-- Seleccione --", None
                         nivel_jerarquico = "NINGUNO"
                 else:
-                    st.error("⚠️ El archivo Excel maestro no tiene las columnas requeridas.")
+                    st.error("⚠️ Base maestra sin columna 'subregion_norm'. Ejecuta la forja.")
                     nombre_zona, gdf_zona = "-- Seleccione --", None
                     nivel_jerarquico = "NINGUNO"
             except Exception as e: 
-                st.error(f"🚨 Error conectando con el Maestro de Regiones: {e}")
+                st.error(f"🚨 Error de Regiones: {e}")
                 nombre_zona, gdf_zona = "-- Seleccione --", None
                 nivel_jerarquico = "NINGUNO"
 
