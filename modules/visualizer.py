@@ -4760,9 +4760,9 @@ def display_land_cover_analysis_tab(df_long, gdf_stations, **kwargs):
         )
         
         if data is None:
-            st.error("Error cargando mapa. Verifica el archivo raster o la superposición con la cuenca.")
+            st.warning("🗺️ La zona seleccionada es demasiado pequeña o se encuentra fuera del límite del mapa satelital departamental.")
             return
-
+            
         # Cálculo Estadístico
         df_res, area_total_km2 = lc.calculate_land_cover_stats(
             data, transform, crs, nodata, manual_area_km2=area_cuenca_km2
