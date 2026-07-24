@@ -1414,25 +1414,37 @@ def main():
                             res_m = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
                             df_maestro = pd.read_excel(io.BytesIO(res_m.content))
                             
-                            # 🚀 FIX QUIRÚRGICO 1: Forzar 5 dígitos exactos en el maestro (05079)
+                            # Forzamos 5 dígitos exactos en el maestro (05079)
                             df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(5)
                             
                             gdf_mun = cargar_capa_espacial_cache("SELECT * FROM municipios", geom_col="geometry").to_crs("EPSG:3116")
-                            posibles_cols = ['mpio_cdpmp', 'MPIO_CDPMP', 'dp_mp', 'mpio_cdp', 'MPIO_CDP']
-                            col_id_mapa = next((c for c in posibles_cols if c in gdf_mun.columns), None)
                             
-                            # 🚀 FIX QUIRÚRGICO 2: Forzar 5 dígitos exactos en el mapa PostGIS
-                            gdf_mun['dp_mp'] = gdf_mun[col_id_mapa].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(5)
+                            # 🚀 FIX DEFINITIVO: Ahora buscamos las columnas limpias que creaste ayer ('id_municipio' y 'nombre_municipio')
+                            posibles_cols_id = ['id_municipio', 'mpio_cdpmp', 'dane']
+                            col_id_mapa = next((c for c in posibles_cols_id if c in [col.lower() for col in gdf_mun.columns]), None)
                             
-                            # Cruce perfecto por Código DANE Dpto-Municipio
+                            if not col_id_mapa:
+                                raise ValueError("No se encontró la columna de ID (DANE) en la tabla espacial de municipios.")
+
+                            # Identificamos el nombre exacto de la columna en el GeoDataFrame (respetando mayúsculas/minúsculas)
+                            col_id_exacta = next(c for c in gdf_mun.columns if c.lower() == col_id_mapa)
+                            
+                            # Forzamos 5 dígitos exactos en el mapa PostGIS
+                            gdf_mun['dp_mp'] = gdf_mun[col_id_exacta].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.zfill(5)
+                            
+                            # Cruce perfecto por Código DANE
                             gdf_mun = gdf_mun.merge(df_maestro[['dp_mp', 'municipio', 'subregion', 'region', 'depto_nom', 'car']], on='dp_mp', how='left')
                             
                             # Homologar Valle de Aburrá
                             mask_aburra = gdf_mun['subregion'].str.contains('Aburr', case=False, na=False)
                             gdf_mun.loc[mask_aburra, 'car'] = 'AMVA'
                             
-                            col_nom_mapa = next((c for c in ['mpio_cnmbr', 'MPIO_CNMBR', 'municipio'] if c in gdf_mun.columns), 'municipio')
-                            gdf_mun['municipio_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_mapa])
+                            # 🚀 FIX DEFINITIVO NOMBRES: Buscamos tu nueva columna 'nombre_municipio'
+                            posibles_cols_nom = ['nombre_municipio', 'mpio_cnmbr', 'municipio']
+                            col_nom_mapa = next((c for c in posibles_cols_nom if c in [col.lower() for col in gdf_mun.columns]), 'municipio')
+                            col_nom_exacta = next((c for c in gdf_mun.columns if c.lower() == col_nom_mapa), 'municipio')
+                            
+                            gdf_mun['municipio_clean'] = gdf_mun['municipio'].fillna(gdf_mun[col_nom_exacta])
                             gdf_mun['subregion'] = gdf_mun['subregion'].fillna('Sin Region')
                             gdf_mun['region'] = gdf_mun['region'].fillna('Sin Macroregion')
                             gdf_mun['depto_nom'] = gdf_mun['depto_nom'].fillna('Antioquia')
@@ -1442,8 +1454,9 @@ def main():
                             
                             niveles_admin = {'MUNICIPAL': 'municipio_clean', 'REGION': 'subregion', 'MACROREGION': 'region', 'DEPARTAMENTO': 'depto_nom', 'CAR': 'car'}
                             paso_actual = procesar_capa_espacial(gdf_mun, niveles_admin, paso_actual, pasos_totales)
+                        
                         except Exception as e:
-                            st.error(f"Error en Fase 2: {e}")
+                            st.error(f"🚨 Error Crítico en Fase 2: {e}")
                             st.stop()
                             
                     prog_nivel.progress(1.0, text="¡Física territorial procesada al 100%!")
