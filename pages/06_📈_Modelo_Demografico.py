@@ -2453,22 +2453,22 @@ with tab_matriz:
                             del gdf_mun; gc.collect()
 
                         # --- 3. DEDUCCIÓN DE FRAGMENTOS MATEMÁTICA (Bypass RAM 2.0) ---
-                        texto_progreso.markdown(f"🧮 **Fase {tipo_area}:** Extrayendo fracciones poblacionales (Optimizando Memoria)...")
+                        # 🚀 FIX QUIRÚRGICO 1: Indentamos esta fase para que SOLO corra en Urbana y Rural.
+                        # El 'Total' se forjará matemáticamente en la Fase 2 sumando ambas sin errores.
+                        texto_progreso.markdown(f"🗺️ **Fase {tipo_area}:** Extrayendo fracciones poblacionales (Optimizando Memoria)...")
+                        
                         df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
                         df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
                         
                         agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
-                        # 🚀 FIX DEFINITIVO PARA SANTA FE: Usamos isin() para coincidencia exacta
                         df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].isin(agregados_fantasma)]
                         
                         mpios_mapa_lista = []
                         if tipo_area == 'Urbana' and not inter_urbana.empty: mpios_mapa_lista = inter_urbana['mun_norm'].tolist()
-                        elif tipo_area == 'Rural' and not cp_en_cuenca.empty: mpios_mapa_lista = cp_en_cuenca['mun_norm'].tolist() 
-                            
+                        elif tipo_area == 'Rural' and not cp_en_cuenca.empty: mpios_mapa_lista = cp_en_cuenca['mun_norm'].tolist()
+                        
                         if mpios_mapa_lista:
                             mpios_mapa = set(mpios_mapa_lista)
-                            
-                            # 🔥 FIX RAM 1: Difflib a velocidad luz. (Calcula 125 veces en lugar de 7000)
                             unicos_dane = df_area_v6['mun_norm_dane'].unique()
                             map_nombres = {}
                             for m in unicos_dane:
@@ -2476,25 +2476,24 @@ with tab_matriz:
                                 else:
                                     matches = difflib.get_close_matches(m, mpios_mapa, n=1, cutoff=0.8)
                                     map_nombres[m] = matches[0] if matches else m
-                                    
                             df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].map(map_nombres)
                         
                         df_area_v6 = df_area_v6.groupby(['mun_norm_dane', col_anio])['Total'].sum().reset_index()
-
+                        
                         nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
                         nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
                         nombre_real_riogrande = next((c for c in lista_todas_cuencas if 'grande' in str(c).lower() and 'chico' in str(c).lower()), 'R. Grande - Chico - NSS - (2701-02)')
-
+                        
                         df_final_cuencas = []
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
                         
-                        # 🔥 RED CAZADORA DE ACERO (Nombres exactos del Detective Forense)
-                        exact_riogrande = ['santarosadeosos', 'donmatias', 'sanpedrodelosmil', 'entrerrios', 'belmira']
-
+                        # 🚀 FIX QUIRÚRGICO 2: Expandimos la red cazadora para incluir el nombre completo
+                        exact_riogrande = ['santarosadeosos', 'donmatias', 'sanpedrodelosmil', 'sanpedrodelosmilagros', 'entrerrios', 'belmira']
+                        
                         for mpio in df_area_v6['mun_norm_dane'].unique():
                             pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio][[col_anio, 'Total']].copy()
-                            
                             if pob_mpio.empty: continue
+                            
                             fallback_basin = nombre_real_leon if mpio in ['apartado', 'turbo', 'carepa', 'necocli', 'sanjuan'] else nombre_real_aburra
                             
                             def agregar_fragmento(df_pob, cuenca_lbl, factor):
@@ -2502,7 +2501,7 @@ with tab_matriz:
                                 df_temp['Total_frag'] = df_temp['Total'] * factor
                                 df_temp['subc_lbl'] = cuenca_lbl
                                 df_final_cuencas.append(df_temp)
-                            
+                                
                             if mpio in mpios_amva_rescate:
                                 if mpio == 'medellin' and len(pesos_med_pct) > 0:
                                     for subc, peso in pesos_med_pct.items():
@@ -2510,16 +2509,16 @@ with tab_matriz:
                                 else:
                                     agregar_fragmento(pob_mpio, nombre_real_aburra, 1.0)
                                     
-                            # 🔥 OVERRIDE QUIRÚRGICO ABSOLUTO
+                            # OVERRIDE QUIRÚRGICO ABSOLUTO
                             elif mpio in exact_riogrande:
                                 agregar_fragmento(pob_mpio, nombre_real_riogrande, 1.0)
-                                
                             else:
                                 if tipo_area == 'Urbana':
                                     cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio] if not inter_urbana.empty else pd.DataFrame()
                                     if not cuencas_urb.empty:
                                         sum_u = float(cuencas_urb['pct_area_urb'].sum())
                                         if sum_u > 0:
+                                            # 🚀 FIX QUIRÚRGICO 3: Corrección de sintaxis de tuplas en iterrows
                                             for _, u_row in cuencas_urb.iterrows():
                                                 agregar_fragmento(pob_mpio, u_row['subc_lbl'], float(u_row['pct_area_urb']) / sum_u)
                                         else:
@@ -2553,15 +2552,15 @@ with tab_matriz:
                                             agregar_fragmento(pob_mpio, a_row['subc_lbl'], factor)
                                     else:
                                         agregar_fragmento(pob_mpio, fallback_basin, 1.0)
-
+                                        
                         # 5. RECOLECCIÓN DE FRAGMENTOS (Sin entrenar todavía)
                         if df_final_cuencas:
                             df_cuencas_v6 = pd.concat(df_final_cuencas).groupby(['subc_lbl', col_anio])['Total_frag'].sum().reset_index()
                             df_cuencas_v6['Categoria_Area'] = tipo_area
                             historico_cuencas.append(df_cuencas_v6)
                             
-                            # 🔥 FIX RAM 3: Purgamos la lista gigante de memoria manualmente
-                            del df_final_cuencas; import gc; gc.collect()
+                        # FIX RAM 3: Purgamos la lista gigante de memoria manualmente
+                        del df_final_cuencas; import gc; gc.collect()
                             
                 except Exception as e:
                     st.error(f"❌ Error en Motor V6: {e}")
