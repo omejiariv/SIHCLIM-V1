@@ -132,10 +132,49 @@ if 'aleph_lugar' in st.session_state:
     aleph_lugar = st.session_state['aleph_lugar']
     aleph_anio = st.session_state.get('aleph_anio', 2025)
     
-    # Extraemos población real desde la memoria
-    datos_metabolismo = obtener_metabolismo_exacto(aleph_lugar, aleph_anio)
-    aleph_pob = datos_metabolismo['pob_total']
-    
+    # 🚀 FIX FORENSE: Bypass Directo a la Matriz SQL
+    # Consultamos directamente la base de datos exigiendo el Area "Total".
+    aleph_pob = 0.0
+    try:
+        from sqlalchemy import text
+        import numpy as np
+        import pandas as pd
+        
+        engine_demo = get_engine()
+        q_demo = text('SELECT * FROM matriz_multimodelo_demografica WHERE "Territorio" = :zona AND "Area" = \'Total\'')
+        
+        with engine_demo.connect() as conn:
+            df_demo = pd.read_sql(q_demo, conn, params={"zona": aleph_lugar})
+            
+        if not df_demo.empty:
+            row_demo = df_demo.iloc[0]
+            mejor_modelo = row_demo.get('Modelo_Recomendado', 'Logístico')
+            x_offset = float(row_demo.get('Año_Base', 2018))
+            delta_t = aleph_anio - x_offset
+            
+            # Proyección Matemática Nativa
+            if mejor_modelo == 'Logístico' and pd.notnull(row_demo.get('Log_K')):
+                k, a, r = float(row_demo['Log_K']), float(row_demo['Log_a']), float(row_demo['Log_r'])
+                aleph_pob = k / (1 + a * np.exp(-r * delta_t))
+            elif mejor_modelo == 'Exponencial' and pd.notnull(row_demo.get('Exp_a')):
+                a, b = float(row_demo['Exp_a']), float(row_demo['Exp_b'])
+                aleph_pob = a * np.exp(b * delta_t)
+            elif mejor_modelo == 'Polinomial_3' and pd.notnull(row_demo.get('Poly_A')):
+                A, B, C, D = float(row_demo['Poly_A']), float(row_demo['Poly_B']), float(row_demo['Poly_C']), float(row_demo['Poly_D'])
+                aleph_pob = A*(delta_t**3) + B*(delta_t**2) + C*delta_t + D
+            elif mejor_modelo == 'Lineal' and pd.notnull(row_demo.get('Lin_m')):
+                m, b = float(row_demo['Lin_m']), float(row_demo['Lin_b'])
+                aleph_pob = m * delta_t + b
+            else:
+                aleph_pob = float(row_demo.get('Pob_Base', 0))
+    except Exception as e:
+        pass 
+        
+    # Plan B de seguridad (Fallback a la función antigua por si falla la conexión)
+    if aleph_pob <= 0:
+        datos_metabolismo = obtener_metabolismo_exacto(aleph_lugar, aleph_anio)
+        aleph_pob = datos_metabolismo.get('pob_total', 0)
+        
     if aleph_pob > 0:
         conectado_aleph = True
         lugar_limpio = unicodedata.normalize('NFKD', str(aleph_lugar).lower()).encode('ascii', 'ignore').decode('utf-8')
@@ -144,9 +183,19 @@ if 'aleph_lugar' in st.session_state:
         claves_lafe = ["retiro", "ceja", "rionegro", "negro", "espiritu santo", "pantanillo", "buey", "piedras", "arma"]
         claves_amva = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "estrella", "girardota", "caldas", "barbosa", "aburra", "amva", "total"]
         
-        if any(x in lugar_limpio for x in claves_amva): st.session_state['nodo_sugerido'] = "La Fe" 
-        elif any(x in lugar_limpio for x in claves_rg2): st.session_state['nodo_sugerido'] = "Río Grande II"
-        elif any(x in lugar_limpio for x in claves_lafe): st.session_state['nodo_sugerido'] = "La Fe"
+        # 🚀 FIX CONEXIÓN: Asignamos explícitamente el valor a la variable 'pob_asig'
+        # Esto obliga a que el inventario del metabolismo (abajo) escuche a este bloque
+        if any(x in lugar_limpio for x in claves_amva): 
+            st.session_state['nodo_sugerido'] = "La Fe"
+            st.session_state['pob_asig_La Fe'] = aleph_pob
+        elif any(x in lugar_limpio for x in claves_rg2): 
+            st.session_state['nodo_sugerido'] = "Río Grande II"
+            st.session_state['pob_asig_Río Grande II'] = aleph_pob
+        elif any(x in lugar_limpio for x in claves_lafe): 
+            st.session_state['nodo_sugerido'] = "La Fe"
+            st.session_state['pob_asig_La Fe'] = aleph_pob
+        else:
+            st.session_state[f'pob_asig_{nodo_seleccionado}'] = aleph_pob
 
 # =========================================================================
 # 3. 🎛️ SIDEBAR Y MOTOR DE CONCESIONES (Cornare / Corantioquia)
