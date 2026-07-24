@@ -591,7 +591,7 @@ def render_selector_espacial(modo_firma="clasica"):
                                 cols_mapa = [c.lower() for c in gdf_mun_full.columns]
                                 
                                 col_dpto = next((c for c in cols_mapa if c in ['dpto_cnmbr', 'departamento', 'nom_dpto']), None)
-                                col_id = next((c for c in cols_mapa if c in ['mpio_cdpmp', 'dane', 'mpio_crcod']), None)
+                                col_id = next((c for c in cols_mapa if c in ['id_municipio', 'mpio_cdpmp', 'dane', 'mpio_crcod']), None)
                                 
                                 # 🛡️ EL ESCUDO 1: Bloquear cualquier cosa que no sea Antioquia (Evita a Barbosa/Santander)
                                 if col_dpto:
