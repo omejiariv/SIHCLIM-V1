@@ -609,7 +609,8 @@ def render_selector_espacial(modo_firma="clasica"):
                                     gdf_zona_filtrada = gdf_mun_full[gdf_mun_full['id_clean'].isin(codigos_region)]
                                 else:
                                     st.error("⚠️ El mapa espacial no tiene columna DANE para hacer un cruce seguro.")
-                                    gdf_zona_filtrada = import_geopandas().GeoDataFrame() # Fallback vacío
+                                    import geopandas as gpd
+                                    gdf_zona_filtrada = gpd.GeoDataFrame()
                                     
                                 if not gdf_zona_filtrada.empty:
                                     poly_region = gdf_zona_filtrada.unary_union
