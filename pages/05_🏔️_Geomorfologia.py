@@ -72,7 +72,7 @@ calcular pendientes, extraer vectores de drenaje y realizar diagnósticos hidrol
 """)
 
 # --- 1. BARRA LATERAL (SELECTOR) ---
-ids, nombre_zona, alt_ref, gdf_zona_seleccionada = selectors.render_selector_espacial()
+ids_sel, nombre_zona, alt_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
 
 # Corrección Geometría (Puntos -> Caja)
 if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
