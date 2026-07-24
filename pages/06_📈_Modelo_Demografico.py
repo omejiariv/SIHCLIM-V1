@@ -2289,14 +2289,21 @@ with tab_matriz:
                             FROM cuencas
                         """)
                         
-                        # 🚀 FIX TIMEOUT 1: Abrimos la conexión y le extendemos la vida útil a 5 minutos
-                        with engine_geo.connect() as conn:
-                            conn.execute(text("SET statement_timeout = '300000';"))
-                            gdf_cue = gdf_cue_overlay = cargar_capa_espacial_cache(q_cue_overlay, engine_geo, geom_col="geometry")(q_cue, conn, geom_col="geometry").to_crs(epsg=3116)
+                        # 🚀 FIX TIMEOUT: Aseguramos la consulta con un string plano
+                        q_cue = "SELECT subc_lbl, geometry FROM cuencas WHERE geometry IS NOT NULL"
                         
-                        # 🔥 RECUPERAMOS LA VARIABLE DE SEGURIDAD (Limpieza y buffer para evitar errores topológicos)
-                        gdf_cue_limpio = gdf_cue[['subc_lbl', 'geometry']].copy()
-                        gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
+                        # Llamada limpia a la función espacial unificada
+                        gdf_cue = cargar_capa_espacial_cache(q_cue, geom_col="geometry")
+                        
+                        if gdf_cue is not None and not gdf_cue.empty:
+                            # Reproyectamos al sistema métrico (EPSG:3116 - Magna-Sirgas Colombia Bogota) para cálculos espaciales
+                            gdf_cue = gdf_cue.to_crs(epsg=3116)
+                            
+                            # 🔥 RECUPERAMOS LA VARIABLE DE SEGURIDAD (Limpieza y buffer para evitar errores topológicos)
+                            gdf_cue_limpio = gdf_cue[['subc_lbl', 'geometry']].copy()
+                            gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
+                        else:
+                            st.warning("⚠️ No se pudieron cargar las cuencas para el procesamiento demográfico.")
                         
                         def cargar_y_proyectar(url):
                             temp_gdf = gpd.read_file(url)
