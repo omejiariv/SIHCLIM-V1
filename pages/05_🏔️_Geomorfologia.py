@@ -1,4 +1,4 @@
-# modules/05_🏔️_Geomorfologia.py
+# pages/05_🏔️_Geomorfologia.py
 
 import os
 import sys
@@ -72,7 +72,7 @@ calcular pendientes, extraer vectores de drenaje y realizar diagnósticos hidrol
 """)
 
 # --- 1. BARRA LATERAL (SELECTOR) ---
-ids_sel, nombre_zona, alt_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
+ids, nombre_zona, alt_ref, gdf_zona_seleccionada, nivel_jerarquico = selectors.render_selector_espacial()
 
 # Corrección Geometría (Puntos -> Caja)
 if gdf_zona_seleccionada is not None and not gdf_zona_seleccionada.empty:
