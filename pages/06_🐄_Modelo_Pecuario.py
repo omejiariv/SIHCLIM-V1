@@ -101,8 +101,17 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
         raster_path = tmp_raster.name
 
         texto_progreso.info("🗺️ Fase 1/2: Cruzando cartografía (Municipios y Cuencas)...")
-        gdf_mun = cargar_capa_espacial_cache("SELECT * FROM municipios", engine_geo, geom_col="geometry").to_crs(epsg=4326)
-        q_cue = text("""
+        
+        # 🚀 FIX 1: Consulta plana, sin 'engine_geo', y con filtro de geometrías nulas
+        q_mun = "SELECT * FROM municipios WHERE geometry IS NOT NULL"
+        gdf_mun = cargar_capa_espacial_cache(q_mun, geom_col="geometry")
+        if gdf_mun is not None and not gdf_mun.empty:
+            gdf_mun = gdf_mun.to_crs(epsg=4326)
+        else:
+            raise ValueError("La capa de municipios está vacía o no cargó correctamente.")
+
+        # 🚀 FIX 2: Quitamos el 'text()' y añadimos el escudo WHERE geometry IS NOT NULL
+        q_cue = """
             SELECT COALESCE(
                 CASE WHEN TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' ELSE NULL END,
                 CASE WHEN TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || ' - (' || TRIM(CAST(nss2 AS TEXT)) || ')' ELSE NULL END,
@@ -113,10 +122,20 @@ if st.button("⚙️ Iniciar Forja Pecuaria Integral (Espacial + Matemática)", 
                 'Cuenca Sin Nombre'
             ) AS subc_lbl, geometry
             FROM cuencas
-        """)
-        gdf_cue = cargar_capa_espacial_cache(q_cue, engine_geo, geom_col="geometry").to_crs(epsg=4326)
+            WHERE geometry IS NOT NULL
+        """
+        
+        # 🚀 FIX 3: Llamada limpia a la caché sin el 'engine_geo'
+        gdf_cue = cargar_capa_espacial_cache(q_cue, geom_col="geometry")
+        if gdf_cue is not None and not gdf_cue.empty:
+            gdf_cue = gdf_cue.to_crs(epsg=4326)
+        else:
+            raise ValueError("La capa de cuencas está vacía o no cargó correctamente.")
 
-        col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else ('MPIO_CNMBR' if 'MPIO_CNMBR' in gdf_mun.columns else 'municipio')
+        # 🚀 FIX 4: Adaptamos la búsqueda de columna al nombre limpio ('nombre_municipio')
+        posibles_cols_mun = ['nombre_municipio', 'mpio_cnmbr', 'MPIO_CNMBR', 'municipio']
+        col_mun = next((c for c in posibles_cols_mun if c in gdf_mun.columns), 'municipio')
+        
         gdf_mun['mun_norm'] = gdf_mun[col_mun].astype(str).str.upper().str.strip()
         
         gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
