@@ -252,7 +252,7 @@ def main():
 
     with col_nav3:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔄 Refrescar Memoria", help="Limpia el caché y recarga los datos desde cero", use_container_width=True):
+        if st.button("🔄 Refrescar Memoria", help="Limpia el caché y recarga los datos desde cero", width="stretch"):
             st.cache_data.clear()
             st.cache_resource.clear()
             keys_to_delete = ['df_long', 'gdf_stations', 'gdf_subcuencas', 'uploaded_file_hash']
@@ -420,7 +420,7 @@ def main():
                     data=PDFbyte,
                     file_name="Codificacion_Hidrologica_Antioquia_IDEAM.pdf",
                     mime='application/pdf',
-                    use_container_width=True
+                    width="stretch"
                 )
             except FileNotFoundError:
                 st.error("⚠️ El archivo PDF de referencia no se encontró en el servidor. (Asegúrate de subir 'Codificacion Hidrologica Antioquia IDEAM.pdf' a la carpeta principal de tu aplicación).")
@@ -662,7 +662,7 @@ def main():
                 
                 if registros_tabla:
                     df_reporte_final = pd.DataFrame(registros_tabla)
-                    st.dataframe(df_reporte_final, use_container_width=True, hide_index=True)
+                    st.dataframe(df_reporte_final, width="stretch", hide_index=True)
                     
                     csv_reporte = df_reporte_final.to_csv(index=False).encode('utf-8')
                     st.download_button(
@@ -670,7 +670,7 @@ def main():
                         data=csv_reporte,
                         file_name="Reporte_Consolidado_Forense_Hidro.csv",
                         mime="text/csv",
-                        use_container_width=True
+                        width="stretch"
                     )
             else:
                 st.error("❌ No se pudieron procesar las series para la estación seleccionada.")
@@ -715,7 +715,7 @@ def main():
                       delta_color="normal" if factor_esperado >= 1 else "inverse")
             st.markdown("<br>", unsafe_allow_html=True)
             
-            if st.button("🚀 Enviar Multiverso al Aleph", use_container_width=True):
+            if st.button("🚀 Enviar Multiverso al Aleph", width="stretch"):
                 # 1. Enviamos el paquete completo para el Optimizador de la Pág 09
                 st.session_state['aleph_clima_multiverso'] = {
                     "Niño": impacto_nino,
@@ -1233,7 +1233,7 @@ def main():
                         viz.add_context_layers_ghost(fig, gdf_filtered)
                         
                     fig.add_trace(go.Scatter(x=df_iso['lon'], y=df_iso['lat'], mode='markers', text=df_iso['nombre']))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 
                 else: 
                     st.warning("Datos insuficientes para interpolar (Mínimo 3 estaciones con datos en este año).")
