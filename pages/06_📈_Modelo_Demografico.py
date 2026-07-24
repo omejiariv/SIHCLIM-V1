@@ -2064,8 +2064,8 @@ with tab_matriz:
     st.subheader("📍 FASE 1: Cálculo Espacial de Cuencas (Dasimetría)")
     st.info("Calculando distribución poblacional territorial top-down. Este proceso puede tomar varios minutos.")
     
-    # 🚀 NUEVO BOTÓN CON BARRA DE PROGRESO INTELIGENTE
-    if st.button("⚙️ Iniciar Entrenamiento Masivo de Matriz (Automático)", type="primary", use_container_width=True):
+    # 🚀 FIX DEPRECATION: Actualizamos el parámetro de ancho a 'stretch' para evitar la advertencia
+    if st.button("⚙️ Iniciar Entrenamiento Masivo de Matriz (Automático)", type="primary", width="stretch"):
         st.info("🧠 Iniciando motor de Machine Learning. Por favor, no recargues ni cierres la página.")
         barra_progreso = st.progress(0)
         texto_progreso = st.empty()
@@ -2080,6 +2080,9 @@ with tab_matriz:
             import unicodedata
             import difflib
             import re
+            
+            # 🚀 FIX MOTOR V6: Inyectamos la llave de acceso a la función espacial
+            from modules.utils import cargar_capa_espacial_cache
             
             engine_sql = get_engine()
             start_time = time.time()
