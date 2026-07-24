@@ -2269,6 +2269,7 @@ with tab_matriz:
                         import re
                         from modules.db_manager import get_engine
                         import gc # Recolector de basura para liberar RAM
+                        from modules.utils import cargar_capa_espacial_cache # Aseguramos la importación
                         
                         engine_geo = get_engine()
                         
@@ -2276,7 +2277,8 @@ with tab_matriz:
                         URL_CENTROS_POBLADOS = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/CentrosPoblados_GisAnt_PT.geojson"
                         URL_BARRIOS_MED = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/geojson/PoblacionBarrioCorregimiento_optimizado.geojson"
                         
-                        q_cue = text("""
+                        # 🚀 FIX 1: Consulta SQL plana, con COALESCE y filtro de geometrías nulas.
+                        q_cue = """
                             SELECT COALESCE(
                                 CASE WHEN TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || ' - (' || TRIM(CAST(nss3 AS TEXT)) || ')' ELSE NULL END,
                                 CASE WHEN TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || ' - (' || TRIM(CAST(nss2 AS TEXT)) || ')' ELSE NULL END,
@@ -2287,10 +2289,8 @@ with tab_matriz:
                                 'Cuenca Sin Nombre'
                             ) AS subc_lbl, geometry
                             FROM cuencas
-                        """)
-                        
-                        # 🚀 FIX TIMEOUT: Aseguramos la consulta con un string plano
-                        q_cue = "SELECT subc_lbl, geometry FROM cuencas WHERE geometry IS NOT NULL"
+                            WHERE geometry IS NOT NULL
+                        """
                         
                         # Llamada limpia a la función espacial unificada
                         gdf_cue = cargar_capa_espacial_cache(q_cue, geom_col="geometry")
@@ -2303,7 +2303,8 @@ with tab_matriz:
                             gdf_cue_limpio = gdf_cue[['subc_lbl', 'geometry']].copy()
                             gdf_cue_limpio['geometry'] = gdf_cue_limpio.geometry.buffer(0)
                         else:
-                            st.warning("⚠️ No se pudieron cargar las cuencas para el procesamiento demográfico.")
+                            # 🚀 FIX 2: Si falla, abortamos con error controlado para no arrastrar variables vacías
+                            raise ValueError("No se pudieron cargar las cuencas para el procesamiento demográfico.")
                         
                         def cargar_y_proyectar(url):
                             temp_gdf = gpd.read_file(url)
@@ -2415,16 +2416,18 @@ with tab_matriz:
 
                             texto_progreso.markdown(f"🗺️ **Fase Rural 2/2:** Intersección Masiva de Polígonos Municipales (La operación más pesada ⚠️)...")
                             
-                            # 🚀 FIX TIMEOUT 2: Aplicamos el mismo escudo de tiempo para la capa de municipios
-                            with engine_geo.connect() as conn:
-                                conn.execute(text("SET statement_timeout = '300000';"))
-                                gdf_mun = cargar_capa_espacial_cache(text("SELECT * FROM municipios"), conn, geom_col="geometry")
-                                
+                            # 🚀 FIX 3: Usamos el sistema unificado de caché para municipios, sin timeouts complejos locales
+                            q_mun_clean = "SELECT * FROM municipios WHERE geometry IS NOT NULL"
+                            gdf_mun = cargar_capa_espacial_cache(q_mun_clean, geom_col="geometry")
+                            
                             col_dpto = 'dpto_ccdgo' if 'dpto_ccdgo' in gdf_mun.columns else 'DPTO_CCDGO'
                             if col_dpto in gdf_mun.columns: gdf_mun = gdf_mun[gdf_mun[col_dpto] == '05'].copy()
                             gdf_mun = gdf_mun.to_crs(epsg=3116)
-                            col_mun = 'mpio_cnmbr' if 'mpio_cnmbr' in gdf_mun.columns else 'MPIO_CNMBR'
+                            
+                            # 🚀 FIX 4: Soporte dual para nombre de municipio viejo y nuevo ('nombre_municipio')
+                            col_mun = next((c for c in ['nombre_municipio', 'mpio_cnmbr', 'MPIO_CNMBR'] if c in gdf_mun.columns), 'municipio')
                             gdf_mun['mun_norm'] = gdf_mun[col_mun].apply(clean_v6)
+                            
                             gdf_mun['geometry'] = gdf_mun.geometry.buffer(0)
                             gdf_mun = gdf_mun[['mun_norm', 'geometry']] # Saver RAM Absoluto
                             
