@@ -164,7 +164,7 @@ def load_context_layers(gdf_zona_bounds):
 render_metodologia()
 
 # 1. Selector Espacial Maestro
-ids_sel, nombre_zona, alt_ref, gdf_zona = selectors.render_selector_espacial()
+ids_sel, nombre_zona, alt_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
 
 # ==============================================================================
 # 🔥 ESCUDO ANTI-FANTASMAS (Bloquea placeholders del menú)
