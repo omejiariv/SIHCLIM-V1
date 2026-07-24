@@ -262,7 +262,7 @@ df_aves = dict_pecuarios.get("aves", pd.DataFrame())
 # ==============================================================================
 import modules.selectors as selectors
 # El selector nos entrega los IDs, el nombre, la altitud de referencia
-ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona = selectors.render_selector_espacial()
+ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
 
 if gdf_zona is None or gdf_zona.empty:
     st.info("👈 Por favor, utiliza el menú lateral para seleccionar una zona.")
