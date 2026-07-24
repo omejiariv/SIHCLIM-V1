@@ -50,7 +50,7 @@ y tratamiento de agua que el ecosistema realiza de forma gratuita.
 
 # 2. SELECTOR ESPACIAL
 try:
-    ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona = selectors.render_selector_espacial()
+    ids_seleccionados, nombre_seleccion, altitud_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
 except Exception as e:
     st.error(f"Error en selector: {e}")
     st.stop()
