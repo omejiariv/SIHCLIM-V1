@@ -2000,32 +2000,38 @@ with tab_mapas:
                 
                 if mostrar_capa_cuencas:
                     try:
-                        from sqlalchemy import text
-                        from modules.db_manager import get_engine
-                        import geopandas as gpd
-                        import plotly.graph_objects as go
+                        # 🚀 FIX 1: Consulta plana (string) y filtrado de geometrías nulas para estabilidad de caché
+                        q_cue_overlay = "SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, geometry FROM cuencas WHERE geometry IS NOT NULL"
                         
-                        engine_geo = get_engine()
-                        q_cue_overlay = text("SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, geometry FROM cuencas")
-                        gdf_cue_overlay = cargar_capa_espacial_cache(q_cue_overlay, engine_geo, geom_col="geometry")
+                        # 🚀 FIX 2: Llamada limpia a la función de caché (sin pasar engine)
+                        gdf_cue_overlay = cargar_capa_espacial_cache(q_cue_overlay, geom_col="geometry")
                         
-                        if not gdf_cue_overlay.empty:
+                        if gdf_cue_overlay is not None and not gdf_cue_overlay.empty:
+                            # Reproyectamos a WGS84 (EPSG:4326) para Plotly
                             gdf_cue_overlay = gdf_cue_overlay.to_crs(epsg=4326)
                             gdf_cue_overlay['ID_CUE'] = gdf_cue_overlay.index.astype(str)
                             
                             cols_tooltip = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']
+                            
+                            # 🚀 FIX 3: Escudo de Columnas - Valida que existan antes de limpiarlas
                             for col in cols_tooltip:
-                                gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(lambda x: str(x).strip() if pd.notnull(x) and str(x).strip() not in ["", "None", "nan"] else "No Aplica")
+                                if col in gdf_cue_overlay.columns:
+                                    gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(
+                                        lambda x: str(x).strip() if pd.notnull(x) and str(x).strip() not in ["", "None", "nan"] else "No Aplica"
+                                    )
                             
                             geojson_cuencas = json.loads(gdf_cue_overlay.to_json())
-                            for i, f in enumerate(geojson_cuencas['features']): f['id'] = str(i)
-                            
+                            for i, f in enumerate(geojson_cuencas['features']): 
+                                f['id'] = str(i)
+                                
                             fig_mapa.add_trace(go.Choroplethmapbox(
                                 geojson=geojson_cuencas,
                                 locations=gdf_cue_overlay['ID_CUE'],
                                 z=[0] * len(gdf_cue_overlay),
                                 colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
-                                marker_line_color='black', marker_line_width=1.5, showscale=False,
+                                marker_line_color='black', 
+                                marker_line_width=1.5, 
+                                showscale=False,
                                 customdata=gdf_cue_overlay[cols_tooltip],
                                 hovertemplate=(
                                     "<b>Microcuenca (NSS3):</b> %{customdata[5]}<br><br>" +
@@ -2036,9 +2042,12 @@ with tab_mapas:
                                     "<b>NSS2:</b> %{customdata[4]}<br><extra></extra>"
                                 )
                             ))
+                        else:
+                            st.sidebar.warning("⚠️ La capa espacial de cuencas está vacía o no se pudo extraer.")
+                            
                     except Exception as e:
                         st.sidebar.warning(f"No se pudo superponer la capa de cuencas: {e}")
-
+                        
                 # 🔥 FIX VISUAL: Integramos el formato de la barra de leyenda
                 fig_mapa.update_layout(
                     margin={"r":0,"t":0,"l":0,"b":0}, 
