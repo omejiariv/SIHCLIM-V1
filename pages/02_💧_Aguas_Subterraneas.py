@@ -513,10 +513,10 @@ if gdf_zona is not None:
                 yaxis=dict(title="Lámina de Agua (mm/mes)"),
                 yaxis2=dict(title="Rendimiento (m³/ha)", overlaying='y', side='right', showgrid=False)
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             
             with st.expander("📅 Ver Tabla de Datos Completa"):
-                st.dataframe(df_avg, use_container_width=True)
+                st.dataframe(df_avg, width="stretch")
         else:
             st.info("Sin datos suficientes para el balance.")
 
@@ -1040,7 +1040,7 @@ if gdf_zona is not None:
                         fig.update_layout(height=600, showlegend=False, template="plotly_white", margin=dict(l=0, r=0, t=40, b=0))
                         fig.update_xaxes(title_text="Caudal Concesionado (L/s)")
                         
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width="stretch")
                     else:
                         st.info("No hay datos suficientes para generar el ranking.")
                 
@@ -1063,7 +1063,7 @@ if gdf_zona is not None:
                         data=csv_data,
                         file_name=f"Inventario_Pozos_{nombre_zona_as}.csv",
                         mime="text/csv",
-                        use_container_width=True
+                        width="stretch"
                     )
                 else:
                     st.warning("No hay datos subterráneos disponibles para descargar en esta selección.")
