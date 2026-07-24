@@ -761,7 +761,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             name=f'Línea Base ({ishi_final:.1f}%)'
         ))
         fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=True, legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"), height=300, margin=dict(t=30, b=30, l=40, r=40))
-        st.plotly_chart(fig_radar, use_container_width=True)
+        st.plotly_chart(fig_radar, width="stretch")
 
     # ==============================================================================
     # 📥 PRE-PROCESAMIENTO Y DESCARGA PREDIAL (PROCESO SILENCIOSO DE DATOS)
@@ -916,7 +916,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             st.metric("💧 Oferta Regulada (Infiltrada)", f"{vol_infiltracion/1e6:,.1f} Mm³", "Trasladada al flujo base", delta_color="normal")
             st.caption("A mayor inversión en área conservada (SbN), aumenta la intercepción foliar y la infiltración, reduciendo drásticamente la vena roja de escorrentía rápida.")
         with c_sk2:
-            st.plotly_chart(fig_sankey, use_container_width=True)
+            st.plotly_chart(fig_sankey, width="stretch")
             
     st.markdown("---")
     st.markdown(f"#### 💼 2. Portafolios de Intervención Multi-Objetivo")
@@ -1125,7 +1125,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         fig_opt.add_trace(go.Scatterpolar(r=[estres_gauge_val, ind_calidad, resiliencia_real, ind_neutralidad, estres_gauge_val], theta=['Abastecimiento', 'Calidad (DBO)', 'Resiliencia', 'Neutralidad', 'Abastecimiento'], fill='toself', fillcolor='rgba(231, 76, 60, 0.15)', line=dict(color='#e74c3c', width=2, dash='dot'), name=f'Base ({ishi_final:.1f}%)'))
         fig_opt.add_trace(go.Scatterpolar(r=[new_estres, new_calidad, new_resiliencia, new_neutralidad, new_estres], theta=['Abastecimiento', 'Calidad (DBO)', 'Resiliencia', 'Neutralidad', 'Abastecimiento'], fill='toself', fillcolor='rgba(46, 204, 113, 0.4)', line=dict(color='#27ae60', width=2), name=f'Optimizado ({new_ishi:.1f}%)'))
         fig_opt.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=True, legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"), height=400, margin=dict(t=10, b=10, l=40, r=40))
-        st.plotly_chart(fig_opt, use_container_width=True)
+        st.plotly_chart(fig_opt, width="stretch")
         
         verbo_impacto = "expande" if new_ishi >= ishi_final else "mantiene"
         st.success(f"🚀 **Veredicto Estratégico:** La inyección de **${presupuesto_usd/1e6:,.1f} Millones USD** estratégicamente distribuidos {verbo_impacto} la huella de seguridad hídrica de la región de **{ishi_final:.1f}%** a **{new_ishi:.1f}%**.")
@@ -1164,7 +1164,7 @@ if gdf_zona is not None and not gdf_zona.empty:
         fig_curva.add_vline(x=presupuesto_M_actual, line_dash="dash", line_color="#e74c3c")
         fig_curva.add_annotation(x=presupuesto_M_actual, y=min(100, new_ishi + 10), text="Inversión Simulada", showarrow=False, font=dict(color="#e74c3c"))
         fig_curva.update_layout(height=250, margin=dict(t=10, b=10, l=10, r=10), yaxis=dict(range=[0, 100]))
-        st.plotly_chart(fig_curva, use_container_width=True)
+        st.plotly_chart(fig_curva, width="stretch")
 
     # ==============================================================================
     # 📍 PASO 5: ANÁLISIS COSTO-BENEFICIO (ACB) - CONECTADO A PÁGINA 08
@@ -1314,7 +1314,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     fig_acb.add_trace(go.Bar(x=df_flujos['Año'], y=df_flujos['Neto_Desc'], name='Flujo Neto Descontado', marker_color='#2ecc71'), secondary_y=False)
     fig_acb.add_trace(go.Scatter(x=df_flujos['Año'], y=df_flujos['Acumulado'], name='VPN Acumulado', line=dict(color='#2980b9', width=3)), secondary_y=True)
     fig_acb.update_layout(title=f"Proyección de Flujos: {perfil_acb['titulo']}", height=400, hovermode="x unified", legend=dict(orientation="h", y=-0.2))
-    st.plotly_chart(fig_acb, use_container_width=True)
+    st.plotly_chart(fig_acb, width="stretch")
 
     # 🧠 CAJA INTELIGENTE DE SÍNTESIS FINANCIERA (Sihcli-Poter AI)
     st.markdown("<br>", unsafe_allow_html=True)
@@ -1401,7 +1401,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             fig_line1.add_hrect(y0=0, y1=40, fillcolor="red", opacity=0.1, layer="below", annotation_text="  Zona Crítica (<40%)")
             fig_line1.add_hrect(y0=40, y1=70, fillcolor="orange", opacity=0.1, layer="below", annotation_text="  Zona Vulnerable (40-70%)")
             fig_line1.update_layout(height=400, hovermode="x unified", yaxis_range=[0, 105], title="Evolución de la Salud Integral del Sistema (0 = Colapso, 100 = Óptimo)")
-            st.plotly_chart(fig_line1, use_container_width=True)
+            st.plotly_chart(fig_line1, width="stretch")
 
         with tab_escenarios:
             col_e1, col_e2 = st.columns([1, 2])
@@ -1443,7 +1443,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 fig_esc = px.line(pd.DataFrame(datos_esc), x="Año", y="Valor (%)", color="Escenario")
                 fig_esc.update_traces(line=dict(width=3)) 
                 fig_esc.update_layout(height=400, hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
-                st.plotly_chart(fig_esc, use_container_width=True)
+                st.plotly_chart(fig_esc, width="stretch")
 
     # --- 2. RANKING TERRITORIAL MULTICRITERIO (AHP) Y RADAR ---
     with st.expander(f"🏆 RANKING TERRITORIAL MULTICRITERIO (AHP)", expanded=False):
@@ -1489,7 +1489,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 .background_gradient(cmap="Blues", subset=["Resiliencia (%)"])
                 .background_gradient(cmap="Greens", subset=["Neutralidad (%)", "Calidad de Agua (%)"])
                 .format({"Índice Prioridad (AHP)": "{:.1f}", "Neutralidad (%)": "{:.1f}%", "Resiliencia (%)": "{:.1f}%", "Estrés Hídrico (%)": "{:.1f}%", "Calidad de Agua (%)": "{:.1f}%"}),
-                use_container_width=True, hide_index=True
+                width="stretch", hide_index=True
             )
             st.download_button("📥 Descargar Ranking AHP (CSV)", df_ranking.to_csv(index=False).encode('utf-8'), "Ranking_Territorial_AHP.csv", "text/csv")
 
@@ -1498,7 +1498,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             fig_box = px.box(df_melt, x="Índice", y="Valor (%)", color="Índice", points="all", title="Distribución Regional de Indicadores",
                              color_discrete_map={"Neutralidad (%)": "#2ecc71", "Resiliencia (%)": "#3498db", "Estrés Hídrico (%)": "#e74c3c", "Calidad de Agua (%)": "#9b59b6"})
             fig_box.update_layout(height=300, showlegend=False, margin=dict(t=30, b=0, l=0, r=0))
-            st.plotly_chart(fig_box, use_container_width=True)
+            st.plotly_chart(fig_box, width="stretch")
 
         with c_rad:
             fig_radar = go.Figure()
@@ -1521,7 +1521,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 showlegend=True, legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
                 title=dict(text="Huella de Salud Territorial", font=dict(size=18)), height=380, margin=dict(l=40, r=40, t=50, b=20)
             )
-            st.plotly_chart(fig_radar, use_container_width=True)
+            st.plotly_chart(fig_radar, width="stretch")
             
             promedio_salud = np.mean(valores_radar)
             color_box, msg_estado = ("#27ae60", "🟢 <b>TERRITORIO ÓPTIMO</b>") if promedio_salud >= 70 else ("#f39c12", "🟡 <b>TERRITORIO VULNERABLE</b>") if promedio_salud >= 40 else ("#c0392b", "🔴 <b>TERRITORIO CRÍTICO</b>")
@@ -1669,7 +1669,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                 
                 with tab_tramos:
                     st.markdown("##### 📋 Matriz Detallada por Franja Riparia")
-                    st.dataframe(df_tramos.style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format(precision=2), use_container_width=True, hide_index=True)
+                    st.dataframe(df_tramos.style.background_gradient(cmap="Greens", subset=["Importancia Ecológica"]).format(precision=2), width="stretch", hide_index=True)
                 
                 with tab_predios:
                     st.markdown("##### 🧬 Álgebra de Mapas Avanzada: Reglas CuencaVerde + Valoración Financiera")
@@ -1761,7 +1761,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                                                 "Déficit Ripario (Ha)": "{:.2f}", "🟢 R1 (Cuidar)": "{:.2f}", "🟡 R2 (Mejorar)": "{:.2f}", "🔴 R3 (Conectar)": "{:.2f}",
                                                 "Presupuesto (M COP)": "${:.1f}", "Score Prioridad": "{:.0f}"
                                             }), 
-                                            use_container_width=True, hide_index=True
+                                            width="stretch", hide_index=True
                                         )
                                     with c_rank2:
                                         st.info("💡 **Inteligencia Financiera:** El presupuesto asume **PSA** para R1 (20% del costo), **Enriquecimiento** para R2 (60%) y **Restauración/Compra** para R3 (100%).")
@@ -1859,7 +1859,7 @@ if gdf_zona is not None and not gdf_zona.empty:
                     "box-shadow": "0 4px 6px rgba(0,0,0,0.3)"
                 }
             }
-            st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), use_container_width=True)
+            st.pydeck_chart(pdk.Deck(layers=capas_mapa, initial_view_state=view_state, map_style="light", tooltip=tooltip), width="stretch")
 
         else:
             st.warning("⚠️ El cruce predial y el mapa táctico están en pausa porque aún no se han calculado los ríos.")
@@ -1905,7 +1905,7 @@ if gdf_zona is not None and not gdf_zona.empty:
     st.markdown("---")
     
     # EL BOTÓN MAESTRO
-    if st.button("🚀 Generar y Descargar Manifiesto Estratégico", type="primary", use_container_width=True):
+    if st.button("🚀 Generar y Descargar Manifiesto Estratégico", type="primary", width="stretch"):
         with st.spinner("Capturando mapas geográficos y ensamblando el reporte..."):
             
             # 1. RECOLECCIÓN DE DATOS
@@ -2081,7 +2081,7 @@ if gdf_zona is not None and not gdf_zona.empty:
             file_name=st.session_state.get('nombre_archivo_docx', 'Plan_Estrategico.docx'),
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             type="primary",
-            use_container_width=True
+            width="stretch"
         )
 
 # Fin del archivo
