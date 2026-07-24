@@ -58,7 +58,7 @@ if "Kriging" in metodo_seleccionado:
     modelo_var_codigo = mapa_variogramas[modelo_var_seleccionado]
 
 # --- 3. SELECTOR ESPACIAL GLOBAL ---
-ids_sel, nombre_zona, alt_ref, gdf_zona = selectors.render_selector_espacial()
+ids_sel, nombre_zona, alt_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
 
 if not ids_sel or gdf_zona is None or gdf_zona.empty:
     st.info("👈 Seleccione un Territorio (Cuenca, Municipio o Región) en el menú lateral para iniciar.")
