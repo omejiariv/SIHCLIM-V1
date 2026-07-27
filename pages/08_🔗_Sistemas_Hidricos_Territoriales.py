@@ -132,7 +132,7 @@ if 'aleph_lugar' in st.session_state:
     aleph_lugar = st.session_state['aleph_lugar']
     aleph_anio = st.session_state.get('aleph_anio', 2025)
     
-    # 🚀 FIX DEFINITIVO: Volvemos a tu función original que está funcionando perfecto
+    # 🚀 Función original operativa y limpia
     datos_metabolismo = obtener_metabolismo_exacto(aleph_lugar, aleph_anio)
     aleph_pob = datos_metabolismo.get('pob_total', 0)
     
@@ -140,27 +140,25 @@ if 'aleph_lugar' in st.session_state:
         conectado_aleph = True
         lugar_limpio = unicodedata.normalize('NFKD', str(aleph_lugar).lower()).encode('ascii', 'ignore').decode('utf-8')
         
-        claves_rg2 = ["belmira", "donmatias", "san pedro", "entrerrios", "santa rosa", "chico", "grande", "animas"]
-        claves_lafe = ["retiro", "ceja", "rionegro", "negro", "espiritu santo", "pantanillo", "buey", "piedras", "arma"]
-        claves_amva = ["medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "estrella", "girardota", "caldas", "barbosa", "aburra", "amva", "total"]
+        # 🚀 OPTIMIZACIÓN: Diccionario de mapeo unificado (Más limpio y rápido que múltiples 'elif')
+        mapeo_nodos = {
+            "Río Grande II": ["belmira", "donmatias", "san pedro", "entrerrios", "santa rosa", "chico", "grande", "animas"],
+            "La Fe": ["retiro", "ceja", "rionegro", "negro", "espiritu santo", "pantanillo", "buey", "piedras", "arma", 
+                      "medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "estrella", "girardota", "caldas", "barbosa", "aburra", "amva", "total"]
+        }
         
-        # Inyectamos el valor correcto (ej. 66,795) directamente a las variables de metabolismo
-        if any(x in lugar_limpio for x in claves_amva): 
-            st.session_state['nodo_sugerido'] = "La Fe" 
-            st.session_state['pob_asig_La Fe'] = aleph_pob
-        elif any(x in lugar_limpio for x in claves_rg2): 
-            st.session_state['nodo_sugerido'] = "Río Grande II"
-            st.session_state['pob_asig_Río Grande II'] = aleph_pob
-        elif any(x in lugar_limpio for x in claves_lafe): 
-            st.session_state['nodo_sugerido'] = "La Fe"
-            st.session_state['pob_asig_La Fe'] = aleph_pob
+        nodo_encontrado = None
+        for nodo, claves in mapeo_nodos.items():
+            if any(clave in lugar_limpio for clave in claves):
+                nodo_encontrado = nodo
+                break
+                
+        # Inyectamos el valor al nodo detectado, o usamos la genérica si no hay coincidencia
+        if nodo_encontrado:
+            st.session_state['nodo_sugerido'] = nodo_encontrado
+            st.session_state[f'pob_asig_{nodo_encontrado}'] = aleph_pob
         else:
             st.session_state['pob_asig_generica'] = aleph_pob
-
-# Renderizamos el mensaje verde de éxito
-if conectado_aleph:
-    with st.expander("🧠 Conexión Activa con el Modelo Demográfico (El Aleph)", expanded=False):
-        st.success(f"Recibiendo proyección para **{aleph_lugar}** (Año **{aleph_anio}**): **{aleph_pob:,.0f} habitantes**.")
 
 # =========================================================================
 # 3. 🎛️ SIDEBAR Y MOTOR DE CONCESIONES (Cornare / Corantioquia)
@@ -204,7 +202,6 @@ fuentes_activas = []
 if nodo_seleccionado in concesiones_maestras:
     concesiones_sistema = concesiones_maestras[nodo_seleccionado]
     for fuente, q_max in concesiones_sistema.items():
-        # Deslizador para simular porcentaje de uso de la concesión otorgada
         pct_uso = st.sidebar.slider(f"{fuente} (Max: {q_max})", 0.0, float(q_max), float(q_max), step=0.1)
         caudal_total_trasvase += pct_uso
         fuentes_activas.append(fuente.split(" ")[1]) # Para los labels del Sankey
@@ -220,6 +217,11 @@ st.markdown("""
 Modelo de topología de redes para el **Sistema de Abastecimiento de Agua del Valle de Aburrá y Generación Eléctrica**. 
 Evalúa cómo los embalses integran las cuencas propias con los trasvases legales (Cornare/Corantioquia) requeridos para sostener la demanda.
 """)
+
+# 🚀 OPTIMIZACIÓN: Renderizamos el éxito una sola vez, justo debajo del título
+if conectado_aleph:
+    with st.expander("🧠 Conexión Activa con el Modelo Demográfico (El Aleph)", expanded=False):
+        st.success(f"Recibiendo proyección para **{aleph_lugar}** (Año **{aleph_anio}**): **{aleph_pob:,.0f} habitantes**.")
 
 contenedor_sankey = st.empty()
 
@@ -266,11 +268,7 @@ with st.expander("📜 Revelar el Aleph del Agua (Manuscrito Original)", expande
 </div>
 <p style="text-align: center; color: #7f8c8d; font-style: italic; font-size: 0.9em; margin-top: 15px;">Acércate a la obra para encender el Aleph y revelar sus secretos.</p>
     """, unsafe_allow_html=True)
-
-if conectado_aleph:
-    with st.expander("🧠 Conexión Activa con el Modelo Demográfico (El Aleph)", expanded=False):
-        st.success(f"Recibiendo proyección para **{aleph_lugar}** (Año **{aleph_anio}**): **{aleph_pob:,.0f} habitantes**.")
-
+    
 # =========================================================================
 # 5. CARGA DE CARTOGRAFÍA (Desde Supabase en la Nube)
 # =========================================================================
