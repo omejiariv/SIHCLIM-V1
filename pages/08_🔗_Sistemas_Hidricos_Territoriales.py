@@ -195,7 +195,9 @@ if 'aleph_lugar' in st.session_state:
             st.session_state['nodo_sugerido'] = "La Fe"
             st.session_state['pob_asig_La Fe'] = aleph_pob
         else:
-            st.session_state[f'pob_asig_{nodo_seleccionado}'] = aleph_pob
+            # 🚀 FIX FORENSE: Si el nombre no coincide con las cuencas maestras, 
+            # guardamos el dato en una variable genérica de respaldo para evitar el NameError.
+            st.session_state['pob_asig_generica'] = aleph_pob
 
 # =========================================================================
 # 3. 🎛️ SIDEBAR Y MOTOR DE CONCESIONES (Cornare / Corantioquia)
