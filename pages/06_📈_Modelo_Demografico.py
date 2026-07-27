@@ -2315,7 +2315,16 @@ with tab_matriz:
                             if not t or pd.isna(t): return ""
                             t = str(t).lower().strip()
                             t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-                            return re.sub(r'[^a-z0-9]', '', t)
+                            t = re.sub(r'[^a-z0-9]', '', t)
+                            # 🚀 TRADUCTOR SALVAVIDAS: Sincroniza nombres rotos del DANE con el mapa
+                            traducciones = {
+                                'sanpedrodelosmil': 'sanpedrodelosmilagros',
+                                'santarosadeoso': 'santarosadeosos',
+                                'donmatia': 'donmatias',
+                                'entrerrio': 'entrerrios',
+                                'belmir': 'belmira'
+                            }
+                            return traducciones.get(t, t)
                             
                         # --- 1. MEDELLÍN (Se cruza en ambas fases) ---
                         texto_progreso.markdown(f"🗺️ **Fase {tipo_area}:** Cruzando Barrios de Medellín con Cuencas...")
@@ -2452,9 +2461,7 @@ with tab_matriz:
                             inter_dispersa = inter_r 
                             del gdf_mun; gc.collect()
 
-                        # --- 3. DEDUCCIÓN DE FRAGMENTOS MATEMÁTICA (Bypass RAM 2.0) ---
-                        # 🚀 FIX QUIRÚRGICO 1: Indentamos esta fase para que SOLO corra en Urbana y Rural.
-                        # El 'Total' se forjará matemáticamente en la Fase 2 sumando ambas sin errores.
+                        # --- 3. DEDUCCIÓN DE FRAGMENTOS MATEMÁTICA (Bypass RAM 3.0) ---
                         texto_progreso.markdown(f"🗺️ **Fase {tipo_area}:** Extrayendo fracciones poblacionales (Optimizando Memoria)...")
                         
                         df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
@@ -2482,14 +2489,12 @@ with tab_matriz:
                         
                         nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
                         nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
-                        nombre_real_riogrande = next((c for c in lista_todas_cuencas if 'grande' in str(c).lower() and 'chico' in str(c).lower()), 'R. Grande - Chico - NSS - (2701-02)')
                         
                         df_final_cuencas = []
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
                         
-                        # 🚀 FIX QUIRÚRGICO 2: Expandimos la red cazadora para incluir el nombre completo
-                        exact_riogrande = ['santarosadeosos', 'donmatias', 'sanpedrodelosmil', 'sanpedrodelosmilagros', 'entrerrios', 'belmira']
-                        
+                        # 🚀 FIX DEFINITIVO: Eliminamos el "Override Quirúrgico". 
+                        # Dejamos que el Bisturí Espacial asigne los municipios a las microcuencas correctas de forma natural.
                         for mpio in df_area_v6['mun_norm_dane'].unique():
                             pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio][[col_anio, 'Total']].copy()
                             if pob_mpio.empty: continue
@@ -2508,17 +2513,12 @@ with tab_matriz:
                                         agregar_fragmento(pob_mpio, subc, float(peso))
                                 else:
                                     agregar_fragmento(pob_mpio, nombre_real_aburra, 1.0)
-                                    
-                            # OVERRIDE QUIRÚRGICO ABSOLUTO
-                            elif mpio in exact_riogrande:
-                                agregar_fragmento(pob_mpio, nombre_real_riogrande, 1.0)
                             else:
                                 if tipo_area == 'Urbana':
                                     cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio] if not inter_urbana.empty else pd.DataFrame()
                                     if not cuencas_urb.empty:
                                         sum_u = float(cuencas_urb['pct_area_urb'].sum())
                                         if sum_u > 0:
-                                            # 🚀 FIX QUIRÚRGICO 3: Corrección de sintaxis de tuplas en iterrows
                                             for _, u_row in cuencas_urb.iterrows():
                                                 agregar_fragmento(pob_mpio, u_row['subc_lbl'], float(u_row['pct_area_urb']) / sum_u)
                                         else:
@@ -2561,7 +2561,7 @@ with tab_matriz:
                             
                         # FIX RAM 3: Purgamos la lista gigante de memoria manualmente
                         del df_final_cuencas; import gc; gc.collect()
-                            
+                        
                 except Exception as e:
                     st.error(f"❌ Error en Motor V6: {e}")
 
