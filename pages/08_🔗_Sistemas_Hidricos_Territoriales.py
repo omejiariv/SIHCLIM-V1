@@ -120,6 +120,7 @@ sistemas_embalses = {
 }
 
 # ==============================================================================
+# ==============================================================================
 # 2. 🧠 EL ALEPH HÍDRICO (Sincronización Demográfica Directa)
 # ==============================================================================
 import unicodedata
@@ -187,7 +188,7 @@ if 'aleph_lugar' in st.session_state:
 if conectado_aleph:
     with st.expander("🧠 Conexión Activa con el Modelo Demográfico (El Aleph)", expanded=False):
         st.success(f"Recibiendo proyección para **{aleph_lugar}** (Año **{aleph_anio}**): **{aleph_pob:,.0f} habitantes**.")
-
+        
 # =========================================================================
 # 3. 🎛️ SIDEBAR Y MOTOR DE CONCESIONES (Cornare / Corantioquia)
 # =========================================================================
