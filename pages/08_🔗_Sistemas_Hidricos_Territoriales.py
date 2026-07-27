@@ -343,7 +343,7 @@ st.sidebar.markdown("### 🌍 Motor Climático (ENSO)")
 escenario_enso = st.sidebar.select_slider(
     "Fase actual del Pacífico:",
     options=["Niño Severo", "Niño Moderado", "Neutro", "Niña Moderada", "Niña Fuerte"],
-    value="Neutro"
+    value="Niño Severo"
 )
 
 # Acoplamiento Termodinámico
