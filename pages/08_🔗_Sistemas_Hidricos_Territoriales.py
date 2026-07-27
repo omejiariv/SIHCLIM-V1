@@ -120,9 +120,10 @@ sistemas_embalses = {
 }
 
 # ==============================================================================
-# 2. 🧠 EL ALEPH HÍDRICO (Sincronización Demográfica)
+# 2. 🧠 EL ALEPH HÍDRICO (Sincronización Demográfica Directa)
 # ==============================================================================
 import unicodedata
+import numpy as np
 
 conectado_aleph = False
 pob_amva_aleph = None
@@ -132,33 +133,60 @@ if 'aleph_lugar' in st.session_state:
     aleph_lugar = st.session_state['aleph_lugar']
     aleph_anio = st.session_state.get('aleph_anio', 2025)
     
-    # 🚀 Función original operativa y limpia
-    datos_metabolismo = obtener_metabolismo_exacto(aleph_lugar, aleph_anio)
-    aleph_pob = datos_metabolismo.get('pob_total', 0)
+    # 🚀 LECTURA DIRECTA DE LA MATRIZ MATEMÁTICA (Bypass definitivo a la función obsoleta)
+    df_demo = consultar_matriz_sql_sistemas("matriz_maestra_demografica", aleph_lugar, "Cuenca")
     
+    aleph_pob = 0.0
+    if not df_demo.empty:
+        # Extraemos la fila 'Total' para la cuenca
+        fila_total = df_demo[df_demo['Area'].str.lower() == 'total']
+        if not fila_total.empty:
+            row = fila_total.iloc[0]
+            # Proyección Matemática Dinámica
+            delta_t = aleph_anio - float(row.get('Año_Base', 2018))
+            mod = str(row.get('Modelo_Recomendado', 'Logístico'))
+            
+            try:
+                if 'Logístico' in mod and pd.notnull(row.get('Log_K')):
+                    aleph_pob = float(row['Log_K']) / (1 + float(row['Log_a']) * np.exp(-float(row['Log_r']) * delta_t))
+                elif 'Exponencial' in mod and pd.notnull(row.get('Exp_a')):
+                    aleph_pob = float(row['Exp_a']) * np.exp(float(row['Exp_b']) * delta_t)
+                elif 'Polinomial' in mod and pd.notnull(row.get('Poly_A')):
+                    aleph_pob = float(row['Poly_A'])*(delta_t**3) + float(row['Poly_B'])*(delta_t**2) + float(row['Poly_C'])*delta_t + float(row['Poly_D'])
+                elif 'Lineal' in mod and pd.notnull(row.get('Lin_m')):
+                    aleph_pob = float(row['Lin_m']) * delta_t + float(row['Lin_b'])
+                else:
+                    aleph_pob = float(row.get('Pob_Base', 0))
+            except Exception:
+                pass
+    
+    # Fallback de seguridad solo si la matriz SQL falla o está vacía
+    if aleph_pob <= 0:
+        datos_metabolismo = obtener_metabolismo_exacto(aleph_lugar, aleph_anio)
+        aleph_pob = datos_metabolismo.get('pob_total', 0)
+        
     if aleph_pob > 0:
         conectado_aleph = True
         lugar_limpio = unicodedata.normalize('NFKD', str(aleph_lugar).lower()).encode('ascii', 'ignore').decode('utf-8')
         
-        # 🚀 OPTIMIZACIÓN: Diccionario de mapeo unificado (Más limpio y rápido que múltiples 'elif')
+        # Diccionario unificado y eficiente
         mapeo_nodos = {
             "Río Grande II": ["belmira", "donmatias", "san pedro", "entrerrios", "santa rosa", "chico", "grande", "animas"],
             "La Fe": ["retiro", "ceja", "rionegro", "negro", "espiritu santo", "pantanillo", "buey", "piedras", "arma", 
                       "medellin", "bello", "itagui", "envigado", "sabaneta", "copacabana", "estrella", "girardota", "caldas", "barbosa", "aburra", "amva", "total"]
         }
         
-        nodo_encontrado = None
-        for nodo, claves in mapeo_nodos.items():
-            if any(clave in lugar_limpio for clave in claves):
-                nodo_encontrado = nodo
-                break
-                
-        # Inyectamos el valor al nodo detectado, o usamos la genérica si no hay coincidencia
+        nodo_encontrado = next((nodo for nodo, claves in mapeo_nodos.items() if any(c in lugar_limpio for c in claves)), None)
+        
         if nodo_encontrado:
             st.session_state['nodo_sugerido'] = nodo_encontrado
             st.session_state[f'pob_asig_{nodo_encontrado}'] = aleph_pob
         else:
             st.session_state['pob_asig_generica'] = aleph_pob
+
+if conectado_aleph:
+    with st.expander("🧠 Conexión Activa con el Modelo Demográfico (El Aleph)", expanded=False):
+        st.success(f"Recibiendo proyección para **{aleph_lugar}** (Año **{aleph_anio}**): **{aleph_pob:,.0f} habitantes**.")
 
 # =========================================================================
 # 3. 🎛️ SIDEBAR Y MOTOR DE CONCESIONES (Cornare / Corantioquia)
