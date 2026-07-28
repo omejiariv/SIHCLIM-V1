@@ -271,12 +271,16 @@ import geopandas as gpd
 from sqlalchemy import text
 import streamlit as st
 
-# 🚀 ESCUDO FINAL: Sabe leer SQL y no necesita que le pasen el engine
+# 🚀 ESCUDO FINAL INTELIGENTE: Sabe qué ignorar y qué rescatar
 @st.cache_data(ttl=86400, show_spinner=False, hash_funcs={"sqlalchemy.sql.elements.TextClause": str})
-def cargar_capa_espacial_cache(query_sql, _engine=None, geom_col="geometry"):
-    """Descarga capas de PostGIS y gestiona su propia conexión.
-    (El _engine absorbe conexiones viejas sin romper el caché de Streamlit)."""
+def cargar_capa_espacial_cache(query_sql, _arg2=None, geom_col="geometry", **kwargs):
+    """Descarga capas de PostGIS y gestiona su propia conexión."""
     
+    # Si en la posición 2 nos enviaron texto ('geom'), rescatamos el nombre de la columna.
+    # Si nos enviaron un Engine, lo ignoramos y usamos el geom_col por defecto.
+    if isinstance(_arg2, str):
+        geom_col = _arg2
+        
     try:
         from modules.db_manager import get_engine
         engine_geo = get_engine() # Lo obtiene directamente de la fuente
