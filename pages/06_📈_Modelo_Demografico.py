@@ -30,26 +30,6 @@ except ImportError:
     from modules import selectors
     from modules.utils import encender_gemelo_digital, normalizar_texto, cargar_capa_espacial_cache
 
-
-from sqlalchemy import text
-from modules.db_manager import get_engine # Asegúrate de que esta ruta sea correcta
-
-try:
-    motor = get_engine()
-    with motor.connect() as conn:
-        # Esta consulta le pregunta a PostgreSQL qué tablas existen
-        query = text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
-        resultado = conn.execute(query)
-        tablas = [fila[0] for fila in resultado]
-        
-        # Mostramos la lista de tablas en la barra lateral de Streamlit
-        st.sidebar.info("🕵️ Tablas encontradas en PostGIS:")
-        st.sidebar.write(tablas)
-except Exception as e:
-    st.sidebar.error(f"No pude leer las tablas: {e}")
-
-
-
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
