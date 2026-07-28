@@ -2311,7 +2311,7 @@ with tab_matriz:
                             if temp_gdf.crs is None: temp_gdf = temp_gdf.set_crs(epsg=4326)
                             return temp_gdf.to_crs(epsg=3116)
 
-                                                def clean_v6(t):
+                        def clean_v6(t):
                             if not t or pd.isna(t): return ""
                             t = str(t).lower().strip()
                             t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
