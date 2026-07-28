@@ -2464,8 +2464,13 @@ with tab_matriz:
                         df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].isin(agregados_fantasma)]
                         
                         mpios_mapa_lista = []
-                        if tipo_area == 'Urbana' and not inter_urbana.empty: mpios_mapa_lista = inter_urbana['mun_norm'].tolist()
-                        elif tipo_area == 'Rural' and not cp_en_cuenca.empty: mpios_mapa_lista = cp_en_cuenca['mun_norm'].tolist()
+                        if tipo_area == 'Urbana' and not inter_urbana.empty: 
+                            mpios_mapa_lista = inter_urbana['mun_norm'].tolist()
+                        elif tipo_area == 'Rural':
+                            # 🚀 MICRO-CIRUGÍA 1: Sellar la fuga rural
+                            lista_cp = cp_en_cuenca['mun_norm'].tolist() if not cp_en_cuenca.empty else []
+                            lista_rur = inter_dispersa['mun_norm'].tolist() if not inter_dispersa.empty else []
+                            mpios_mapa_lista = list(set(lista_cp + lista_rur))
                         
                         if mpios_mapa_lista:
                             mpios_mapa = set(mpios_mapa_lista)
@@ -2474,7 +2479,7 @@ with tab_matriz:
                             for m in unicos_dane:
                                 if m in mpios_mapa: map_nombres[m] = m
                                 else:
-                                    matches = difflib.get_close_matches(m, mpios_mapa, n=1, cutoff=0.8)
+                                    matches = difflib.get_close_matches(m, mpios_mapa, n=1, cutoff=0.85)
                                     map_nombres[m] = matches[0] if matches else m
                             df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].map(map_nombres)
                         
@@ -2483,15 +2488,11 @@ with tab_matriz:
                         nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
                         nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
                         
-                        # 🚀 LA CURA DEFINITIVA: Cambiamos 'and' por 'or' y buscamos una microcuenca VÁLIDA.
-                        # Esto ancla a los 5 municipios a una hoja real del árbol, evitando que la Fase 2 los borre.
-                        nombre_real_riogrande = next((c for c in lista_todas_cuencas if 'chico' in str(c).lower() or 'animas' in str(c).lower()), 'Rio Chico')
-                        
                         df_final_cuencas = []
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
                         
-                        # El Override original restaurado
-                        exact_riogrande = ['santarosadeosos', 'donmatias', 'sanpedrodelosmil', 'sanpedrodelosmilagros', 'entrerrios', 'belmira']
+                        # 🚀 MICRO-CIRUGÍA 2: ELIMINACIÓN DEL OVERRIDE MANUAL
+                        # Borramos "exact_riogrande" y su "elif". Dejamos que caigan naturalmente en la lógica espacial.
                         
                         for mpio in df_area_v6['mun_norm_dane'].unique():
                             pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio][[col_anio, 'Total']].copy()
@@ -2511,12 +2512,9 @@ with tab_matriz:
                                         agregar_fragmento(pob_mpio, subc, float(peso))
                                 else:
                                     agregar_fragmento(pob_mpio, nombre_real_aburra, 1.0)
-                                    
-                            # 🚀 OVERRIDE RESTAURADO: Salvamos a los 5 municipios del Norte
-                            elif mpio in exact_riogrande:
-                                agregar_fragmento(pob_mpio, nombre_real_riogrande, 1.0)
-                                
                             else:
+                                # 🚀 BISTURÍ ESPACIAL: Aquí caen los pueblos del Norte. El traductor cartográfico
+                                # asegura que sus nombres coincidan, encontrando sus microcuencas reales.
                                 if tipo_area == 'Urbana':
                                     cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio] if not inter_urbana.empty else pd.DataFrame()
                                     if not cuencas_urb.empty:
