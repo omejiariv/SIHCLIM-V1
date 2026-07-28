@@ -1916,7 +1916,7 @@ with tab_mapas:
                     nombres_reales = {}
                     for f in mapa_para_dibujar.get('features', []):
                         raw_val = str(f['properties'].get(prop_key, '')).replace('.0', '').strip().zfill(z_fill_val)
-                        f['id'] = raw_val.lower() # Aseguramos minúsculas para Plotly
+                        f['id'] = raw_val.lower() # Minúsculas estrictas
                         nombre = f['properties'].get('NombreBarr', f'Territorio {raw_val}') if nivel_medellin == "Barrios y Corregimientos" else dict_comunas_mapa.get(raw_val, f'Comuna {raw_val}')
                         nombres_reales[raw_val] = nombre
                         
@@ -1947,9 +1947,13 @@ with tab_mapas:
                             axis=1
                         )
                     
+                    # 🚀 EL ESLABÓN PERDIDO: Esta línea fue la que borré por error. 
+                    # Es obligatoria para que PostGIS entienda el texto y devuelva los polígonos.
+                    df_mapa_plot['MATCH_ID'] = df_mapa_plot['MATCH_ID'].astype(str).str.strip().str.lower()
+                    
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    # Llamamos a PostGIS con el ID original intacto
+                    # Llamamos a PostGIS
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
@@ -1967,6 +1971,7 @@ with tab_mapas:
                         
                     mapa_para_dibujar = json.loads(gdf_filtrado.to_json()) if not gdf_filtrado.empty else {"type": "FeatureCollection", "features": []}
                     
+                    # 🛡️ RESCATE DEL ID FANTASMA (Para Plotly)
                     for feature in mapa_para_dibujar.get('features', []):
                         feature_id = str(feature.get('id', ''))
                         if not feature_id or feature_id.lower() == "null":
@@ -1985,7 +1990,7 @@ with tab_mapas:
                 # =========================================================
                 import numpy as np
                 
-                # 🚀 EL TRUCO MAESTRO: Garantizamos la columna ID_PLOTLY para TODAS las escalas
+                # 🚀 COLUMNA GEMELA: Garantiza que Plotly siempre tenga dónde hacer 'match'
                 datos_para_dibujar['ID_PLOTLY'] = datos_para_dibujar['MATCH_ID'].astype(str).str.strip().str.lower()
                 
                 if datos_para_dibujar['Total'].sum() == 0:
