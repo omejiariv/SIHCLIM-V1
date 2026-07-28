@@ -2491,8 +2491,8 @@ with tab_matriz:
                         df_final_cuencas = []
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
                         
-                        # 🚀 MICRO-CIRUGÍA 2: ELIMINACIÓN DEL OVERRIDE MANUAL
-                        # Borramos "exact_riogrande" y su "elif". Dejamos que caigan naturalmente en la lógica espacial.
+                        # 🚀 OVERRIDE ACTUALIZADO: Los nombres VIP deben coincidir exactamente con el traductor
+                        exact_riogrande = ['santarosadeoso', 'donmatia', 'sanpedrodelosmil', 'entrerrio', 'belmir']
                         
                         for mpio in df_area_v6['mun_norm_dane'].unique():
                             pob_mpio = df_area_v6[df_area_v6['mun_norm_dane'] == mpio][[col_anio, 'Total']].copy()
