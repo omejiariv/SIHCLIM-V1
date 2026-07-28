@@ -1856,13 +1856,7 @@ with tab_mapas:
                 
                 if 'Territorio' in df_mapa_plot.columns:
                     df_mapa_plot['Territorio'] = df_mapa_plot['Territorio'].astype(str)
-                    
-                    # 🚀 FIX 1: ESCUDO DE EXCLUSIÓN INTELIGENTE
-                    # No eliminamos a Antioquia si estamos visualizando el país por Departamentos.
-                    if "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
-                        df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL'])]
-                    else:
-                        df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL', 'ANTIOQUIA', 'AMVA'])]
+                    df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL', 'ANTIOQUIA', 'AMVA'])]
 
         if not df_mapa_plot.empty:
             if 'Territorio' not in df_mapa_plot.columns:
@@ -1882,7 +1876,6 @@ with tab_mapas:
                 import json
                 import copy
                 import plotly.express as px
-                import plotly.graph_objects as go
                 
                 # =========================================================
                 # 🚀 VÍA RÁPIDA (BYPASS): MEDELLÍN INTRA-URBANO
@@ -1890,6 +1883,9 @@ with tab_mapas:
                 if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                     datos_para_dibujar = df_mapa_plot.copy()
                     
+                    # 🚀 FIX JINETE 3 EN ACCIÓN: Generamos el JSON al vuelo.
+                    # Eliminamos por completo la lectura de st.session_state
+                    import json
                     if 'gdf_plot' in locals() and gdf_plot is not None and not gdf_plot.empty:
                         mapa_para_dibujar = json.loads(gdf_plot.to_json())
                     else:
@@ -1916,7 +1912,7 @@ with tab_mapas:
                     nombres_reales = {}
                     for f in mapa_para_dibujar.get('features', []):
                         raw_val = str(f['properties'].get(prop_key, '')).replace('.0', '').strip().zfill(z_fill_val)
-                        f['id'] = raw_val.lower() # Minúsculas estrictas
+                        f['id'] = raw_val 
                         nombre = f['properties'].get('NombreBarr', f'Territorio {raw_val}') if nivel_medellin == "Barrios y Corregimientos" else dict_comunas_mapa.get(raw_val, f'Comuna {raw_val}')
                         nombres_reales[raw_val] = nombre
                         
@@ -1929,6 +1925,7 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
+                    # 🚀 FIX DEFINITIVO: Usamos SELECT * para evitar cualquier error de columnas inexistentes
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                     elif "cuencas" in escala_sel.lower(): 
@@ -1936,24 +1933,15 @@ with tab_mapas:
                     else: 
                         q_geo = "SELECT * FROM municipios"
                     
-                    if 'MATCH_ID' not in df_mapa_plot.columns:
-                        df_mapa_plot['MATCH_ID'] = ""
-                        
-                    mask_empty = df_mapa_plot['MATCH_ID'].isna() | (df_mapa_plot['MATCH_ID'] == "")
-                    if mask_empty.any():
-                        df_mapa_plot.loc[mask_empty, 'MATCH_ID'] = df_mapa_plot[mask_empty].apply(
-                            lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
-                            else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
-                            axis=1
-                        )
-                    
-                    # 🚀 EL ESLABÓN PERDIDO: Esta línea fue la que borré por error. 
-                    # Es obligatoria para que PostGIS entienda el texto y devuelva los polígonos.
-                    df_mapa_plot['MATCH_ID'] = df_mapa_plot['MATCH_ID'].astype(str).str.strip().str.lower()
+                    df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
+                        lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
+                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
+                        axis=1
+                    )
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    # Llamamos a PostGIS
+                    # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
@@ -1971,41 +1959,30 @@ with tab_mapas:
                         
                     mapa_para_dibujar = json.loads(gdf_filtrado.to_json()) if not gdf_filtrado.empty else {"type": "FeatureCollection", "features": []}
                     
-                    # 🛡️ RESCATE DEL ID FANTASMA (Para Plotly)
                     for feature in mapa_para_dibujar.get('features', []):
-                        feature_id = str(feature.get('id', ''))
-                        if not feature_id or feature_id.lower() == "null":
-                            props = feature.get('properties', {})
-                            for k, v in props.items():
-                                if k.lower() == 'match_id':
-                                    feature_id = str(v)
-                                    break
-                        feature['id'] = feature_id.strip().lower()
+                        feature['id'] = feature['properties'].get('MATCH_ID', '')
 
                     datos_para_dibujar = df_mapa_plot.copy()
                     llave_geojson = 'id'
-
                 # =========================================================
                 # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
                 # =========================================================
                 import numpy as np
-                
-                # 🚀 COLUMNA GEMELA: Garantiza que Plotly siempre tenga dónde hacer 'match'
-                datos_para_dibujar['ID_PLOTLY'] = datos_para_dibujar['MATCH_ID'].astype(str).str.strip().str.lower()
                 
                 if datos_para_dibujar['Total'].sum() == 0:
                     datos_para_dibujar['Color_Fix'] = 1 
                     datos_para_dibujar['Color_Mapa'] = 1
                 else:
                     datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
+                    # 🔥 Transformación Logarítmica Base 10 para revelar matices poblacionales
                     datos_para_dibujar['Color_Mapa'] = np.log10(datos_para_dibujar['Total'] + 1)
                     
                 fig_mapa = px.choropleth_mapbox(
                     datos_para_dibujar, 
                     geojson=mapa_para_dibujar,
-                    locations='ID_PLOTLY', 
+                    locations='MATCH_ID',        
                     featureidkey=llave_geojson, 
-                    color='Color_Mapa', 
+                    color='Color_Mapa', # 🚀 Pintamos usando el logaritmo
                     color_continuous_scale="Viridis",
                     mapbox_style="carto-positron",
                     zoom=safe_zoom,
@@ -2013,24 +1990,29 @@ with tab_mapas:
                     opacity=0.8,
                     hover_name='Territorio',
                     hover_data={
-                        'Color_Mapa': False, 
+                        'Color_Mapa': False, # Ocultamos el logaritmo del tooltip
                         'Color_Fix': False, 
-                        'ID_PLOTLY': False,
-                        'MATCH_ID': False,
-                        'Total': ':,.0f'
+                        'Total': ':,.0f',    # Mantenemos visible la población real
+                        'MATCH_ID': False
                     }
                 )
                 
                 if mostrar_capa_cuencas:
                     try:
+                        # 🚀 FIX 1: Consulta plana (string) y filtrado de geometrías nulas para estabilidad de caché
                         q_cue_overlay = "SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, geometry FROM cuencas WHERE geometry IS NOT NULL"
+                        
+                        # 🚀 FIX 2: Llamada limpia a la función de caché (sin pasar engine)
                         gdf_cue_overlay = cargar_capa_espacial_cache(q_cue_overlay, geom_col="geometry")
                         
                         if gdf_cue_overlay is not None and not gdf_cue_overlay.empty:
+                            # Reproyectamos a WGS84 (EPSG:4326) para Plotly
                             gdf_cue_overlay = gdf_cue_overlay.to_crs(epsg=4326)
                             gdf_cue_overlay['ID_CUE'] = gdf_cue_overlay.index.astype(str)
+                            
                             cols_tooltip = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']
                             
+                            # 🚀 FIX 3: Escudo de Columnas - Valida que existan antes de limpiarlas
                             for col in cols_tooltip:
                                 if col in gdf_cue_overlay.columns:
                                     gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(
@@ -2061,9 +2043,11 @@ with tab_mapas:
                             ))
                         else:
                             st.sidebar.warning("⚠️ La capa espacial de cuencas está vacía o no se pudo extraer.")
+                            
                     except Exception as e:
                         st.sidebar.warning(f"No se pudo superponer la capa de cuencas: {e}")
                         
+                # 🔥 FIX VISUAL: Integramos el formato de la barra de leyenda
                 fig_mapa.update_layout(
                     margin={"r":0,"t":0,"l":0,"b":0}, 
                     height=700,
@@ -2074,6 +2058,7 @@ with tab_mapas:
                     )
                 )
                 st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+                st.success("✅ MAPA RENDERIZADO CON EXITO.")
                 
             except Exception as e:
                 st.error(f"❌ Error procesando el geovisor: {e}")
