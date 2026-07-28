@@ -1876,7 +1876,15 @@ with tab_mapas:
                 
                 if 'Territorio' in df_mapa_plot.columns:
                     df_mapa_plot['Territorio'] = df_mapa_plot['Territorio'].astype(str)
-                    df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL', 'ANTIOQUIA', 'AMVA'])]
+                    
+                    # 🚀 FIX 1: No borrar a Antioquia ni al AMVA si son los protagonistas
+                    excluir = ['TOTAL']
+                    if "departamental" not in escala_sel.lower() and "nacional" not in escala_sel.lower():
+                        excluir.append('ANTIOQUIA')
+                    if "autoridades" not in escala_sel.lower():
+                        excluir.append('AMVA')
+                        
+                    df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(excluir)]
 
         if not df_mapa_plot.empty:
             if 'Territorio' not in df_mapa_plot.columns:
@@ -1945,29 +1953,26 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 FIX DEFINITIVO: Enrutamiento geográfico para todas las escalas
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                     elif "cuencas" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM cuencas"
-                    elif "subregion" in escala_sel.lower():
-                        q_geo = "SELECT * FROM subregiones"  # <-- Verifica que tu tabla se llame así
-                    elif "departamental" in escala_sel.lower():
-                        q_geo = "SELECT * FROM departamentos" # <-- Verifica que tu tabla se llame así
-                    elif "nacional" in escala_sel.lower():
-                        q_geo = "SELECT * FROM paises"       # <-- Verifica que tu tabla se llame así
                     else: 
                         q_geo = "SELECT * FROM municipios"
                     
+                    # 🚀 FIX 2: MATCH_ID INTELIGENTE
+                    # Para escalas agrupadas (Depto, Subregion) usa SOLO el Territorio para coincidir con el polígono disuelto
+                    es_escala_mayor = any(x in escala_sel.lower() for x in ["departamental", "subregion", "nacional", "regional", "autoridades"])
+                    
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
-                        lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
+                        lambda row: normalizar_texto(row['Territorio']) if ("cuencas" in escala_sel.lower() or es_escala_mayor) 
                         else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
                         axis=1
                     )
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
+                    # 🚀 LLAMADA A LA CACHÉ INTELIGENTE (Deja todo lo que sigue exactamente igual)
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
