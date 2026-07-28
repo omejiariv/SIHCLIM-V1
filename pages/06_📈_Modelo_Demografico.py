@@ -2003,6 +2003,39 @@ with tab_mapas:
                     # 🔥 Transformación Logarítmica Base 10 para revelar matices poblacionales
                     datos_para_dibujar['Color_Mapa'] = np.log10(datos_para_dibujar['Total'] + 1)
                     
+                # =========================================================
+                # 🔬 MESA DE AUTOPSIA DE DATOS (Telemetría Científica)
+                # =========================================================
+                with st.expander("🚨 CONSOLA DE DIAGNÓSTICO TOPOLÓGICO (Solo Desarrollo)", expanded=True):
+                    import streamlit as st
+                    
+                    st.markdown("### 1. ¿Qué IDs tienen nuestros datos matemáticos?")
+                    st.dataframe(datos_para_dibujar[['Territorio', 'MATCH_ID', 'Total']].head(10))
+                    
+                    st.markdown("### 2. ¿Qué IDs trajo el motor espacial (GeoJSON)?")
+                    ids_geojson = [str(f.get('id', 'SIN_ID')) for f in mapa_para_dibujar.get('features', [])]
+                    st.info(f"Total polígonos extraídos: {len(ids_geojson)}")
+                    st.write(f"Primeros 10 IDs espaciales: {ids_geojson[:10]}")
+                    
+                    st.markdown("### 3. Prueba Matemática de Intersección")
+                    ids_datos = set(datos_para_dibujar['MATCH_ID'].astype(str).str.strip().tolist())
+                    ids_geo = set(ids_geojson)
+                    
+                    comunes = ids_datos.intersection(ids_geo)
+                    huerfanos_datos = ids_datos - ids_geo
+                    huerfanos_geo = ids_geo - ids_datos
+                    
+                    st.metric("Coincidencias Exactas (Polígonos que se pintarán)", len(comunes))
+                    
+                    if huerfanos_datos:
+                        st.error("❌ Falla Topológica: Estos territorios tienen población, pero NO encontraron su polígono:")
+                        st.write(list(huerfanos_datos)[:15])
+                        
+                    if huerfanos_geo and len(huerfanos_geo) < 50:
+                        st.warning("⚠️ Estos polígonos llegaron del mapa, pero no tienen datos poblacionales:")
+                        st.write(list(huerfanos_geo)[:15])
+                
+                
                 fig_mapa = px.choropleth_mapbox(
                     datos_para_dibujar, 
                     geojson=mapa_para_dibujar,
