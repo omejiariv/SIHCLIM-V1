@@ -23,13 +23,12 @@ warnings.filterwarnings('ignore')
 # --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
 try:
     from modules import selectors
-    from modules.utils import encender_gemelo_digital, normalizar_texto
+    from modules.utils import encender_gemelo_digital, normalizar_texto, cargar_capa_espacial_cache
 except ImportError:
     # Fallback de rutas por si hay problemas de lectura entre carpetas
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from modules import selectors
-    from modules.utils import encender_gemelo_digital, normalizar_texto
-    from modules.utils import cargar_capa_espacial_cache
+    from modules.utils import encender_gemelo_digital, normalizar_texto, cargar_capa_espacial_cache
 
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
