@@ -1948,9 +1948,7 @@ with tab_mapas:
                             axis=1
                         )
                     
-                    # 🛡️ BLINDAJE 1: Estandarizamos el Dataframe (todo en minúsculas y sin espacios)
-                    df_mapa_plot['MATCH_ID'] = df_mapa_plot['MATCH_ID'].astype(str).str.strip().str.lower()
-                    
+                    # 🚀 FIX 1: Retiramos la alteración del texto. Respetamos el ID exacto para que PostGIS no falle.
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
@@ -1971,25 +1969,25 @@ with tab_mapas:
                         
                     mapa_para_dibujar = json.loads(gdf_filtrado.to_json()) if not gdf_filtrado.empty else {"type": "FeatureCollection", "features": []}
                     
-                    # 🛡️ BLINDAJE 2: EL RESCATE DEL ID FANTASMA
+                    # 🛡️ FIX 2: EL RESCATE DEL ID FANTASMA (Solo para Plotly)
                     for feature in mapa_para_dibujar.get('features', []):
-                        # 1. Si GeoPandas ya asignó el ID nativo al disolver, lo rescatamos directamente
-                        feature_id = str(feature.get('id', '')).strip().lower()
-                        
-                        # 2. Si no viene nativo (capas sin disolver), lo buscamos en las propiedades (ignora mayúsculas)
-                        if not feature_id or feature_id == "null":
+                        feature_id = str(feature.get('id', ''))
+                        if not feature_id or feature_id.lower() == "null":
                             props = feature.get('properties', {})
                             for k, v in props.items():
                                 if k.lower() == 'match_id':
-                                    feature_id = str(v).strip().lower()
+                                    feature_id = str(v)
                                     break
                                     
-                        # 3. Se lo asignamos a la fuerza para que Plotly siempre lo encuentre
-                        feature['id'] = feature_id
+                        # Guardamos el ID en minúsculas estrictas para que Plotly no tenga problemas de mayúsculas/minúsculas
+                        feature['id'] = feature_id.strip().lower()
 
                     datos_para_dibujar = df_mapa_plot.copy()
-                    llave_geojson = 'id'
                     
+                    # 🚀 EL TRUCO MAESTRO: Creamos una columna gemela en minúsculas exclusiva para cruzar con Plotly
+                    datos_para_dibujar['ID_PLOTLY'] = datos_para_dibujar['MATCH_ID'].astype(str).str.strip().str.lower()
+                    llave_geojson = 'id'
+
                 # =========================================================
                 # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
                 # =========================================================
@@ -2000,48 +1998,14 @@ with tab_mapas:
                     datos_para_dibujar['Color_Mapa'] = 1
                 else:
                     datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
-                    # 🔥 Transformación Logarítmica Base 10 para revelar matices poblacionales
                     datos_para_dibujar['Color_Mapa'] = np.log10(datos_para_dibujar['Total'] + 1)
                     
-                # =========================================================
-                # 🔬 MESA DE AUTOPSIA DE DATOS (Telemetría Científica)
-                # =========================================================
-                with st.expander("🚨 CONSOLA DE DIAGNÓSTICO TOPOLÓGICO (Solo Desarrollo)", expanded=True):
-                    import streamlit as st
-                    
-                    st.markdown("### 1. ¿Qué IDs tienen nuestros datos matemáticos?")
-                    st.dataframe(datos_para_dibujar[['Territorio', 'MATCH_ID', 'Total']].head(10))
-                    
-                    st.markdown("### 2. ¿Qué IDs trajo el motor espacial (GeoJSON)?")
-                    ids_geojson = [str(f.get('id', 'SIN_ID')) for f in mapa_para_dibujar.get('features', [])]
-                    st.info(f"Total polígonos extraídos: {len(ids_geojson)}")
-                    st.write(f"Primeros 10 IDs espaciales: {ids_geojson[:10]}")
-                    
-                    st.markdown("### 3. Prueba Matemática de Intersección")
-                    ids_datos = set(datos_para_dibujar['MATCH_ID'].astype(str).str.strip().tolist())
-                    ids_geo = set(ids_geojson)
-                    
-                    comunes = ids_datos.intersection(ids_geo)
-                    huerfanos_datos = ids_datos - ids_geo
-                    huerfanos_geo = ids_geo - ids_datos
-                    
-                    st.metric("Coincidencias Exactas (Polígonos que se pintarán)", len(comunes))
-                    
-                    if huerfanos_datos:
-                        st.error("❌ Falla Topológica: Estos territorios tienen población, pero NO encontraron su polígono:")
-                        st.write(list(huerfanos_datos)[:15])
-                        
-                    if huerfanos_geo and len(huerfanos_geo) < 50:
-                        st.warning("⚠️ Estos polígonos llegaron del mapa, pero no tienen datos poblacionales:")
-                        st.write(list(huerfanos_geo)[:15])
-                
-                
                 fig_mapa = px.choropleth_mapbox(
                     datos_para_dibujar, 
                     geojson=mapa_para_dibujar,
-                    locations='MATCH_ID',        
+                    locations='ID_PLOTLY',       # 🚀 IMPORTANTE: Usamos la nueva columna gemela
                     featureidkey=llave_geojson, 
-                    color='Color_Mapa', # 🚀 Pintamos usando el logaritmo
+                    color='Color_Mapa', 
                     color_continuous_scale="Viridis",
                     mapbox_style="carto-positron",
                     zoom=safe_zoom,
@@ -2049,10 +2013,11 @@ with tab_mapas:
                     opacity=0.8,
                     hover_name='Territorio',
                     hover_data={
-                        'Color_Mapa': False, # Ocultamos el logaritmo del tooltip
+                        'Color_Mapa': False, 
                         'Color_Fix': False, 
-                        'Total': ':,.0f',    # Mantenemos visible la población real
-                        'MATCH_ID': False
+                        'ID_PLOTLY': False,      # Ocultamos la columna técnica
+                        'MATCH_ID': False,
+                        'Total': ':,.0f'
                     }
                 )
                 
