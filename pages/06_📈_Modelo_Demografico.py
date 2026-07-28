@@ -1937,9 +1937,6 @@ with tab_mapas:
                     else: 
                         q_geo = "SELECT * FROM municipios"
                     
-                    # 🚀 FIX 2: CESE AL FUEGO AMIGO EN EL MATCH_ID
-                    # Respetamos el ID perfecto que construyó el cerebro demográfico.
-                    # Solo lo construimos desde cero para las filas que lleguen vacías.
                     if 'MATCH_ID' not in df_mapa_plot.columns:
                         df_mapa_plot['MATCH_ID'] = ""
                         
@@ -1951,9 +1948,10 @@ with tab_mapas:
                             axis=1
                         )
                     
-                    territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
+                    # 🛡️ BLINDAJE 1: Estandarizamos el Dataframe (todo en minúsculas y sin espacios)
+                    df_mapa_plot['MATCH_ID'] = df_mapa_plot['MATCH_ID'].astype(str).str.strip().str.lower()
                     
-                    # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
+                    territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
@@ -1973,11 +1971,25 @@ with tab_mapas:
                         
                     mapa_para_dibujar = json.loads(gdf_filtrado.to_json()) if not gdf_filtrado.empty else {"type": "FeatureCollection", "features": []}
                     
+                    # 🛡️ BLINDAJE 2: EL RESCATE DEL ID FANTASMA
                     for feature in mapa_para_dibujar.get('features', []):
-                        feature['id'] = feature['properties'].get('MATCH_ID', '')
+                        # 1. Si GeoPandas ya asignó el ID nativo al disolver, lo rescatamos directamente
+                        feature_id = str(feature.get('id', '')).strip().lower()
+                        
+                        # 2. Si no viene nativo (capas sin disolver), lo buscamos en las propiedades (ignora mayúsculas)
+                        if not feature_id or feature_id == "null":
+                            props = feature.get('properties', {})
+                            for k, v in props.items():
+                                if k.lower() == 'match_id':
+                                    feature_id = str(v).strip().lower()
+                                    break
+                                    
+                        # 3. Se lo asignamos a la fuerza para que Plotly siempre lo encuentre
+                        feature['id'] = feature_id
 
                     datos_para_dibujar = df_mapa_plot.copy()
                     llave_geojson = 'id'
+                    
                 # =========================================================
                 # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
                 # =========================================================
