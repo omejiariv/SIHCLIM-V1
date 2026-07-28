@@ -2453,12 +2453,20 @@ with tab_matriz:
                             del gdf_mun; gc.collect()
 
                         # --- 3. DEDUCCIÓN DE FRAGMENTOS MATEMÁTICA (Bypass RAM 2.0) ---
-                        # 🚀 FIX QUIRÚRGICO 1: Indentamos esta fase para que SOLO corra en Urbana y Rural.
-                        # El 'Total' se forjará matemáticamente en la Fase 2 sumando ambas sin errores.
                         texto_progreso.markdown(f"🗺️ **Fase {tipo_area}:** Extrayendo fracciones poblacionales (Optimizando Memoria)...")
                         
                         df_area_v6 = df_area_actual[df_area_actual['depto_nom'].str.upper() == 'ANTIOQUIA'].copy()
                         df_area_v6['mun_norm_dane'] = df_area_v6['municipio'].apply(clean_v6)
+                        
+                        # 🚀 MICRO-CIRUGÍA 1: Traductor Cartográfico
+                        traductor_mapas = {
+                            'sanpedrodelosmilagros': 'sanpedrodelosmil',
+                            'santarosadeosos': 'santarosadeoso',
+                            'donmatias': 'donmatia',
+                            'entrerrios': 'entrerrio',
+                            'belmira': 'belmir'
+                        }
+                        df_area_v6['mun_norm_dane'] = df_area_v6['mun_norm_dane'].replace(traductor_mapas)
                         
                         agregados_fantasma = ['valledeaburra', 'areametropolitana', 'total', 'antioquia']
                         df_area_v6 = df_area_v6[~df_area_v6['mun_norm_dane'].isin(agregados_fantasma)]
@@ -2467,7 +2475,6 @@ with tab_matriz:
                         if tipo_area == 'Urbana' and not inter_urbana.empty: 
                             mpios_mapa_lista = inter_urbana['mun_norm'].tolist()
                         elif tipo_area == 'Rural':
-                            # 🚀 MICRO-CIRUGÍA 1: Sellar la fuga rural
                             lista_cp = cp_en_cuenca['mun_norm'].tolist() if not cp_en_cuenca.empty else []
                             lista_rur = inter_dispersa['mun_norm'].tolist() if not inter_dispersa.empty else []
                             mpios_mapa_lista = list(set(lista_cp + lista_rur))
@@ -2488,10 +2495,15 @@ with tab_matriz:
                         nombre_real_aburra = next((c for c in lista_todas_cuencas if 'aburra' in str(c).lower() or 'aburrá' in str(c).lower()), 'Rio Aburra')
                         nombre_real_leon = next((c for c in lista_todas_cuencas if 'leon' in str(c).lower() or 'león' in str(c).lower()), 'Rio Leon')
                         
+                        # 🚀 MICRO-CIRUGÍA 2: Anclaje seguro a una microcuenca existente
+                        # Esto garantiza que las 100k almas no se borren en la Fase 2
+                        nombres_rio_grande = [c for c in lista_todas_cuencas if 'chico' in str(c).lower() or 'grande' in str(c).lower() or 'animas' in str(c).lower()]
+                        nombre_real_riogrande = nombres_rio_grande[0] if nombres_rio_grande else 'Rio Chico'
+                        
                         df_final_cuencas = []
                         mpios_amva_rescate = ['medellin', 'bello', 'itagui', 'envigado', 'sabaneta', 'copacabana', 'laestrella', 'girardota', 'caldas', 'barbosa']
                         
-                        # 🚀 OVERRIDE ACTUALIZADO: Los nombres VIP deben coincidir exactamente con el traductor
+                        # 🚀 MICRO-CIRUGÍA 3: LA LISTA VIP
                         exact_riogrande = ['santarosadeoso', 'donmatia', 'sanpedrodelosmil', 'entrerrio', 'belmir']
                         
                         for mpio in df_area_v6['mun_norm_dane'].unique():
@@ -2512,9 +2524,12 @@ with tab_matriz:
                                         agregar_fragmento(pob_mpio, subc, float(peso))
                                 else:
                                     agregar_fragmento(pob_mpio, nombre_real_aburra, 1.0)
+                                    
+                            # 🔥 EL PORTERO RESTAURADO: Aquí salvamos a las 100,000 almas
+                            elif mpio in exact_riogrande:
+                                agregar_fragmento(pob_mpio, nombre_real_riogrande, 1.0)
+                                
                             else:
-                                # 🚀 BISTURÍ ESPACIAL: Aquí caen los pueblos del Norte. El traductor cartográfico
-                                # asegura que sus nombres coincidan, encontrando sus microcuencas reales.
                                 if tipo_area == 'Urbana':
                                     cuencas_urb = inter_urbana[inter_urbana['mun_norm'] == mpio] if not inter_urbana.empty else pd.DataFrame()
                                     if not cuencas_urb.empty:
