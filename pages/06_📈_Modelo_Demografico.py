@@ -1882,6 +1882,7 @@ with tab_mapas:
                 import json
                 import copy
                 import plotly.express as px
+                import plotly.graph_objects as go
                 
                 # =========================================================
                 # 🚀 VÍA RÁPIDA (BYPASS): MEDELLÍN INTRA-URBANO
@@ -1889,8 +1890,6 @@ with tab_mapas:
                 if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                     datos_para_dibujar = df_mapa_plot.copy()
                     
-                    # 🚀 FIX JINETE 3 EN ACCIÓN: Generamos el JSON al vuelo.
-                    import json
                     if 'gdf_plot' in locals() and gdf_plot is not None and not gdf_plot.empty:
                         mapa_para_dibujar = json.loads(gdf_plot.to_json())
                     else:
@@ -1917,7 +1916,7 @@ with tab_mapas:
                     nombres_reales = {}
                     for f in mapa_para_dibujar.get('features', []):
                         raw_val = str(f['properties'].get(prop_key, '')).replace('.0', '').strip().zfill(z_fill_val)
-                        f['id'] = raw_val 
+                        f['id'] = raw_val.lower() # Aseguramos minúsculas para Plotly
                         nombre = f['properties'].get('NombreBarr', f'Territorio {raw_val}') if nivel_medellin == "Barrios y Corregimientos" else dict_comunas_mapa.get(raw_val, f'Comuna {raw_val}')
                         nombres_reales[raw_val] = nombre
                         
@@ -1948,10 +1947,9 @@ with tab_mapas:
                             axis=1
                         )
                     
-                    # 🚀 FIX 1: Retiramos la alteración del texto. Respetamos el ID exacto para que PostGIS no falle.
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
+                    # Llamamos a PostGIS con el ID original intacto
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
@@ -1969,7 +1967,6 @@ with tab_mapas:
                         
                     mapa_para_dibujar = json.loads(gdf_filtrado.to_json()) if not gdf_filtrado.empty else {"type": "FeatureCollection", "features": []}
                     
-                    # 🛡️ FIX 2: EL RESCATE DEL ID FANTASMA (Solo para Plotly)
                     for feature in mapa_para_dibujar.get('features', []):
                         feature_id = str(feature.get('id', ''))
                         if not feature_id or feature_id.lower() == "null":
@@ -1978,20 +1975,18 @@ with tab_mapas:
                                 if k.lower() == 'match_id':
                                     feature_id = str(v)
                                     break
-                                    
-                        # Guardamos el ID en minúsculas estrictas para que Plotly no tenga problemas de mayúsculas/minúsculas
                         feature['id'] = feature_id.strip().lower()
 
                     datos_para_dibujar = df_mapa_plot.copy()
-                    
-                    # 🚀 EL TRUCO MAESTRO: Creamos una columna gemela en minúsculas exclusiva para cruzar con Plotly
-                    datos_para_dibujar['ID_PLOTLY'] = datos_para_dibujar['MATCH_ID'].astype(str).str.strip().str.lower()
                     llave_geojson = 'id'
 
                 # =========================================================
                 # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
                 # =========================================================
                 import numpy as np
+                
+                # 🚀 EL TRUCO MAESTRO: Garantizamos la columna ID_PLOTLY para TODAS las escalas
+                datos_para_dibujar['ID_PLOTLY'] = datos_para_dibujar['MATCH_ID'].astype(str).str.strip().str.lower()
                 
                 if datos_para_dibujar['Total'].sum() == 0:
                     datos_para_dibujar['Color_Fix'] = 1 
@@ -2003,7 +1998,7 @@ with tab_mapas:
                 fig_mapa = px.choropleth_mapbox(
                     datos_para_dibujar, 
                     geojson=mapa_para_dibujar,
-                    locations='ID_PLOTLY',       # 🚀 IMPORTANTE: Usamos la nueva columna gemela
+                    locations='ID_PLOTLY', 
                     featureidkey=llave_geojson, 
                     color='Color_Mapa', 
                     color_continuous_scale="Viridis",
@@ -2015,7 +2010,7 @@ with tab_mapas:
                     hover_data={
                         'Color_Mapa': False, 
                         'Color_Fix': False, 
-                        'ID_PLOTLY': False,      # Ocultamos la columna técnica
+                        'ID_PLOTLY': False,
                         'MATCH_ID': False,
                         'Total': ':,.0f'
                     }
@@ -2023,20 +2018,14 @@ with tab_mapas:
                 
                 if mostrar_capa_cuencas:
                     try:
-                        # 🚀 FIX 1: Consulta plana (string) y filtrado de geometrías nulas para estabilidad de caché
                         q_cue_overlay = "SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, geometry FROM cuencas WHERE geometry IS NOT NULL"
-                        
-                        # 🚀 FIX 2: Llamada limpia a la función de caché (sin pasar engine)
                         gdf_cue_overlay = cargar_capa_espacial_cache(q_cue_overlay, geom_col="geometry")
                         
                         if gdf_cue_overlay is not None and not gdf_cue_overlay.empty:
-                            # Reproyectamos a WGS84 (EPSG:4326) para Plotly
                             gdf_cue_overlay = gdf_cue_overlay.to_crs(epsg=4326)
                             gdf_cue_overlay['ID_CUE'] = gdf_cue_overlay.index.astype(str)
-                            
                             cols_tooltip = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']
                             
-                            # 🚀 FIX 3: Escudo de Columnas - Valida que existan antes de limpiarlas
                             for col in cols_tooltip:
                                 if col in gdf_cue_overlay.columns:
                                     gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(
@@ -2067,11 +2056,9 @@ with tab_mapas:
                             ))
                         else:
                             st.sidebar.warning("⚠️ La capa espacial de cuencas está vacía o no se pudo extraer.")
-                            
                     except Exception as e:
                         st.sidebar.warning(f"No se pudo superponer la capa de cuencas: {e}")
                         
-                # 🔥 FIX VISUAL: Integramos el formato de la barra de leyenda
                 fig_mapa.update_layout(
                     margin={"r":0,"t":0,"l":0,"b":0}, 
                     height=700,
@@ -2082,7 +2069,6 @@ with tab_mapas:
                     )
                 )
                 st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-                st.success("✅ MAPA RENDERIZADO CON EXITO.")
                 
             except Exception as e:
                 st.error(f"❌ Error procesando el geovisor: {e}")
