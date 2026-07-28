@@ -273,8 +273,10 @@ import streamlit as st
 
 # 🚀 ESCUDO FINAL: Sabe leer SQL y no necesita que le pasen el engine
 @st.cache_data(ttl=86400, show_spinner=False, hash_funcs={"sqlalchemy.sql.elements.TextClause": str})
-def cargar_capa_espacial_cache(query_sql, geom_col="geometry"):
-    """Descarga capas de PostGIS y gestiona su propia conexión."""
+def cargar_capa_espacial_cache(query_sql, _engine=None, geom_col="geometry"):
+    """Descarga capas de PostGIS y gestiona su propia conexión.
+    (El _engine absorbe conexiones viejas sin romper el caché de Streamlit)."""
+    
     try:
         from modules.db_manager import get_engine
         engine_geo = get_engine() # Lo obtiene directamente de la fuente
