@@ -1925,11 +1925,17 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 FIX DEFINITIVO: Usamos SELECT * para evitar cualquier error de columnas inexistentes
+                    # 🚀 FIX DEFINITIVO: Enrutamiento geográfico para todas las escalas
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                     elif "cuencas" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM cuencas"
+                    elif "subregion" in escala_sel.lower():
+                        q_geo = "SELECT * FROM subregiones"  # <-- Verifica que tu tabla se llame así
+                    elif "departamental" in escala_sel.lower():
+                        q_geo = "SELECT * FROM departamentos" # <-- Verifica que tu tabla se llame así
+                    elif "nacional" in escala_sel.lower():
+                        q_geo = "SELECT * FROM paises"       # <-- Verifica que tu tabla se llame así
                     else: 
                         q_geo = "SELECT * FROM municipios"
                     
