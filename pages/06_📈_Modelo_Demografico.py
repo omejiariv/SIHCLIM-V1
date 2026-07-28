@@ -1849,6 +1849,9 @@ with tab_mapas:
             else:
                 df_mapa_plot = df_mapa_año.copy()
             
+            # Guardamos una copia pura ANTES de agrupar, para dársela al motor espacial
+            df_pura_para_mapa = df_mapa_plot.copy()
+            
             if not df_mapa_plot.empty:
                 cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_plot.columns]
                 if cols_agrupar:
@@ -1857,7 +1860,6 @@ with tab_mapas:
                 if 'Territorio' in df_mapa_plot.columns:
                     df_mapa_plot['Territorio'] = df_mapa_plot['Territorio'].astype(str)
                     
-                    # 🚀 FIX 1: No borrar a Antioquia ni al AMVA si son los protagonistas
                     excluir = ['TOTAL']
                     if "departamental" not in escala_sel.lower() and "nacional" not in escala_sel.lower():
                         excluir.append('ANTIOQUIA')
@@ -1867,6 +1869,7 @@ with tab_mapas:
                     df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(excluir)]
 
         if not df_mapa_plot.empty:
+            # (Mantén el código de renombramiento de columnas aquí igual)
             if 'Territorio' not in df_mapa_plot.columns:
                 col_t = next((c for c in df_mapa_plot.columns if c.lower() in ['municipio', 'cuenca', 'vereda', 'nombre', 'subzona', 'nom_nss3']), df_mapa_plot.columns[0])
                 df_mapa_plot = df_mapa_plot.rename(columns={col_t: 'Territorio'})
@@ -1940,19 +1943,11 @@ with tab_mapas:
                     else: 
                         q_geo = "SELECT * FROM municipios"
                     
-                    # 🚀 FIX 2: MATCH_ID INTELIGENTE
-                    # Para escalas agrupadas (Depto, Subregion) usa SOLO el Territorio para coincidir con el polígono disuelto
-                    es_escala_mayor = any(x in escala_sel.lower() for x in ["departamental", "subregion", "nacional", "regional", "autoridades"])
+                    # 🚀 EL TRUCO MAGISTRAL: Le pedimos al Aleph que traiga TODOS los municipios individuales
+                    # que componen la escala que estamos viendo, en lugar del nombre ya agrupado.
+                    territorios_objetivo = tuple(df_pura_para_mapa['MATCH_ID'].dropna().tolist())
                     
-                    df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
-                        lambda row: normalizar_texto(row['Territorio']) if ("cuencas" in escala_sel.lower() or es_escala_mayor) 
-                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
-                        axis=1
-                    )
-                    
-                    territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
-                    
-                    # 🚀 LLAMADA A LA CACHÉ INTELIGENTE (Deja todo lo que sigue exactamente igual)
+                    # Llamamos al Aleph con la lista de municipios individuales
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
