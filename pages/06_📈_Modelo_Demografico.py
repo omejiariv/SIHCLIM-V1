@@ -1856,7 +1856,13 @@ with tab_mapas:
                 
                 if 'Territorio' in df_mapa_plot.columns:
                     df_mapa_plot['Territorio'] = df_mapa_plot['Territorio'].astype(str)
-                    df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL', 'ANTIOQUIA', 'AMVA'])]
+                    
+                    # 🚀 FIX 1: ESCUDO DE EXCLUSIÓN INTELIGENTE
+                    # No eliminamos a Antioquia si estamos visualizando el país por Departamentos.
+                    if "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
+                        df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL'])]
+                    else:
+                        df_mapa_plot = df_mapa_plot[~df_mapa_plot['Territorio'].str.upper().isin(['TOTAL', 'ANTIOQUIA', 'AMVA'])]
 
         if not df_mapa_plot.empty:
             if 'Territorio' not in df_mapa_plot.columns:
@@ -1884,7 +1890,6 @@ with tab_mapas:
                     datos_para_dibujar = df_mapa_plot.copy()
                     
                     # 🚀 FIX JINETE 3 EN ACCIÓN: Generamos el JSON al vuelo.
-                    # Eliminamos por completo la lectura de st.session_state
                     import json
                     if 'gdf_plot' in locals() and gdf_plot is not None and not gdf_plot.empty:
                         mapa_para_dibujar = json.loads(gdf_plot.to_json())
@@ -1925,7 +1930,6 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 FIX DEFINITIVO: Usamos SELECT * para evitar cualquier error de columnas inexistentes
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                     elif "cuencas" in escala_sel.lower(): 
@@ -1933,13 +1937,23 @@ with tab_mapas:
                     else: 
                         q_geo = "SELECT * FROM municipios"
                     
-                    df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
-                        lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
-                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
-                        axis=1
-                    )
+                    # 🚀 FIX 2: CESE AL FUEGO AMIGO EN EL MATCH_ID
+                    # Respetamos el ID perfecto que construyó el cerebro demográfico.
+                    # Solo lo construimos desde cero para las filas que lleguen vacías.
+                    if 'MATCH_ID' not in df_mapa_plot.columns:
+                        df_mapa_plot['MATCH_ID'] = ""
+                        
+                    mask_empty = df_mapa_plot['MATCH_ID'].isna() | (df_mapa_plot['MATCH_ID'] == "")
+                    if mask_empty.any():
+                        df_mapa_plot.loc[mask_empty, 'MATCH_ID'] = df_mapa_plot[mask_empty].apply(
+                            lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
+                            else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
+                            axis=1
+                        )
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
+                    
+                    # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
                     
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
