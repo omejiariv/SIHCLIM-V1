@@ -1947,7 +1947,7 @@ with tab_mapas:
                     if not es_escala_base:
                         try:
                             # 1. Cargamos tu diccionario maestro
-                            df_terr_maestro = pd.read_excel('territorio_maestro.xlsx')
+                            df_terr_maestro = pd.read_excel('https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx')
                             
                             # 2. Le inyectamos el mismo ADN (Diccionario) que usa el Aleph
                             codigos_dane = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
