@@ -1849,9 +1849,6 @@ with tab_mapas:
             else:
                 df_mapa_plot = df_mapa_año.copy()
             
-            # Guardamos una copia pura ANTES de agrupar, para dársela al motor espacial
-            df_pura_para_mapa = df_mapa_plot.copy()
-            
             if not df_mapa_plot.empty:
                 cols_agrupar = [c for c in ['Territorio', 'Padre', 'MATCH_ID'] if c in df_mapa_plot.columns]
                 if cols_agrupar:
