@@ -1925,6 +1925,7 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
+                    # 🚀 FIX DEFINITIVO: Usamos SELECT * para evitar cualquier error de columnas inexistentes
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                     elif "cuencas" in escala_sel.lower(): 
@@ -1932,21 +1933,15 @@ with tab_mapas:
                     else: 
                         q_geo = "SELECT * FROM municipios"
                     
-                    if 'MATCH_ID' not in df_mapa_plot.columns:
-                        df_mapa_plot['MATCH_ID'] = ""
-                        
-                    mask_empty = df_mapa_plot['MATCH_ID'].isna() | (df_mapa_plot['MATCH_ID'] == "")
-                    if mask_empty.any():
-                        df_mapa_plot.loc[mask_empty, 'MATCH_ID'] = df_mapa_plot[mask_empty].apply(
-                            lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
-                            else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
-                            axis=1
-                        )
+                    df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
+                        lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
+                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
+                        axis=1
+                    )
                     
-                    df_mapa_plot['MATCH_ID'] = df_mapa_plot['MATCH_ID'].astype(str).str.strip().str.lower()
-                    territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().unique().tolist())
+                    territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    # 🚀 LLAMADA A LA CACHÉ
+                    # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
@@ -1965,18 +1960,10 @@ with tab_mapas:
                     mapa_para_dibujar = json.loads(gdf_filtrado.to_json()) if not gdf_filtrado.empty else {"type": "FeatureCollection", "features": []}
                     
                     for feature in mapa_para_dibujar.get('features', []):
-                        feature_id = str(feature.get('id', ''))
-                        if not feature_id or feature_id.lower() == "null":
-                            props = feature.get('properties', {})
-                            for k, v in props.items():
-                                if k.lower() == 'match_id':
-                                    feature_id = str(v)
-                                    break
-                        feature['id'] = feature_id.strip().lower()
+                        feature['id'] = feature['properties'].get('MATCH_ID', '')
 
                     datos_para_dibujar = df_mapa_plot.copy()
                     llave_geojson = 'id'
-                    
                 # =========================================================
                 # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
                 # =========================================================
