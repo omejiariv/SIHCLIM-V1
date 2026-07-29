@@ -1932,56 +1932,6 @@ with tab_mapas:
                     else: 
                         q_geo = "SELECT * FROM municipios"
                     
-                    # ---------------------------------------------------------
-                    # 🚀 FIX DEFINITIVO: EL PUENTE MAESTRO DESDE SUPABASE
-                    # ---------------------------------------------------------
-                    es_escala_base = any(x in escala_sel.lower() for x in ["veredal", "cuencas", "municip", "urbana", "intra-urbana"])
-                    
-                    if not es_escala_base:
-                        try:
-                            # 1. Cargamos el diccionario directo desde tu Supabase Público
-                            url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-                            df_terr_maestro = pd.read_excel(url_maestro)
-                            
-                            # 2. Re-creamos el ADN topológico que usa el Aleph
-                            codigos_dane_fix = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
-                            
-                            def generar_id_maestro(row):
-                                val_terr = str(row['municipio'])
-                                val_padre = str(row['dp']).replace('.0','').zfill(2)
-                                if val_padre in codigos_dane_fix: val_padre = codigos_dane_fix[val_padre]
-                                if normalizar_texto(val_terr) == "manaurebalcondelcesar": val_terr = "manaure"
-                                return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
-                                
-                            df_terr_maestro['mpio_match_id'] = df_terr_maestro.apply(generar_id_maestro, axis=1)
-                            
-                            # 3. Mapeamos la escala actual a su columna en el Excel
-                            escala_str = escala_sel.lower()
-                            if "nacional" in escala_str: 
-                                df_terr_maestro['Territorio_norm'] = normalizar_texto("Colombia")
-                            else:
-                                if "departamental" in escala_str: col_jerarquia = "depto_nom"
-                                elif "subregion" in escala_str: col_jerarquia = "subregion"
-                                elif "autoridades" in escala_str or "car" in escala_str: col_jerarquia = "car"
-                                elif "regional" in escala_str or "macroregion" in escala_str: col_jerarquia = "region"
-                                else: col_jerarquia = "municipio"
-                                
-                                df_terr_maestro['Territorio_norm'] = df_terr_maestro[col_jerarquia].apply(normalizar_texto)
-                            
-                            # 4. Explotamos las piezas grandes en sus municipios base
-                            df_mapa_plot['Territorio_norm'] = df_mapa_plot['Territorio'].apply(normalizar_texto)
-                            df_expandido = pd.merge(df_mapa_plot, df_terr_maestro[['Territorio_norm', 'mpio_match_id']].dropna(), on='Territorio_norm', how='inner')
-                            
-                            if not df_expandido.empty:
-                                df_mapa_plot = df_expandido
-                                df_mapa_plot['MATCH_ID'] = df_mapa_plot['mpio_match_id']
-                                
-                        except Exception as e:
-                            st.warning(f"⚠️ No se pudo cargar el archivo maestro desde Supabase: {e}")
-                    
-                    # ---------------------------------------------------------
-                    # Base Sólida de renderizado y Aleph
-                    # ---------------------------------------------------------
                     if 'MATCH_ID' not in df_mapa_plot.columns:
                         df_mapa_plot['MATCH_ID'] = ""
                         
@@ -1994,9 +1944,9 @@ with tab_mapas:
                         )
                     
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot['MATCH_ID'].astype(str).str.strip().str.lower()
-                    
-                    # El Aleph recibe la lista pura de territorios, agrupados o no.
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().unique().tolist())
+                    
+                    # 🚀 LLAMADA A LA CACHÉ
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
