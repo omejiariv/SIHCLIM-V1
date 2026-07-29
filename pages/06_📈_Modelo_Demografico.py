@@ -1884,6 +1884,7 @@ with tab_mapas:
                 import json
                 import copy
                 import plotly.express as px
+                import plotly.graph_objects as go
                 
                 # =========================================================
                 # 🚀 VÍA RÁPIDA (BYPASS): MEDELLÍN INTRA-URBANO
@@ -1891,8 +1892,6 @@ with tab_mapas:
                 if escala_sel == "🏘️ Escala Intra-Urbana (Medellín)":
                     datos_para_dibujar = df_mapa_plot.copy()
                     
-                    # 🚀 FIX JINETE 3 EN ACCIÓN: Generamos el JSON al vuelo.
-                    # Eliminamos por completo la lectura de st.session_state
                     import json
                     if 'gdf_plot' in locals() and gdf_plot is not None and not gdf_plot.empty:
                         mapa_para_dibujar = json.loads(gdf_plot.to_json())
@@ -1940,6 +1939,55 @@ with tab_mapas:
                     else: 
                         q_geo = "SELECT * FROM municipios"
                     
+                    # ---------------------------------------------------------
+                    # 🚀 FIX DEFINITIVO: EL PUENTE MAESTRO (Expansión Jerárquica)
+                    # ---------------------------------------------------------
+                    es_escala_base = any(x in escala_sel.lower() for x in ["veredal", "cuencas", "municip", "urbana", "intra-urbana"])
+                    
+                    if not es_escala_base:
+                        try:
+                            # 1. Cargamos tu diccionario maestro
+                            df_terr_maestro = pd.read_excel('territorio_maestro.xlsx')
+                            
+                            # 2. Le inyectamos el mismo ADN (Diccionario) que usa el Aleph
+                            codigos_dane = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
+                            
+                            def generar_id_maestro(row):
+                                val_terr = str(row['municipio'])
+                                val_padre = str(row['dp']).replace('.0','').zfill(2)
+                                if val_padre in codigos_dane: val_padre = codigos_dane[val_padre]
+                                if normalizar_texto(val_terr) == "manaurebalcondelcesar": val_terr = "manaure"
+                                return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
+                                
+                            df_terr_maestro['mpio_match_id'] = df_terr_maestro.apply(generar_id_maestro, axis=1)
+                            
+                            # 3. Mapeamos la escala seleccionada con su columna en el Excel
+                            escala_str = escala_sel.lower()
+                            if "nacional" in escala_str: 
+                                df_terr_maestro['Territorio_norm'] = normalizar_texto("Colombia")
+                            else:
+                                if "departamental" in escala_str: col_jerarquia = "depto_nom"
+                                elif "subregion" in escala_str: col_jerarquia = "subregion"
+                                elif "autoridades" in escala_str or "car" in escala_str: col_jerarquia = "car"
+                                elif "regional" in escala_str or "macroregion" in escala_str: col_jerarquia = "region"
+                                else: col_jerarquia = "municipio"
+                                
+                                df_terr_maestro['Territorio_norm'] = df_terr_maestro[col_jerarquia].apply(normalizar_texto)
+                            
+                            # 4. Rompemos las piezas grandes (Subregiones) en sus municipios para que el Aleph las entienda
+                            df_mapa_plot['Territorio_norm'] = df_mapa_plot['Territorio'].apply(normalizar_texto)
+                            df_expandido = pd.merge(df_mapa_plot, df_terr_maestro[['Territorio_norm', 'mpio_match_id']].dropna(), on='Territorio_norm', how='inner')
+                            
+                            if not df_expandido.empty:
+                                df_mapa_plot = df_expandido
+                                df_mapa_plot['MATCH_ID'] = df_mapa_plot['mpio_match_id']
+                                
+                        except Exception as e:
+                            st.warning(f"⚠️ No se pudo cargar territorio_maestro.xlsx: {e}")
+                    
+                    # ---------------------------------------------------------
+                    # Base Sólida para las escalas que ya funcionaban
+                    # ---------------------------------------------------------
                     if 'MATCH_ID' not in df_mapa_plot.columns:
                         df_mapa_plot['MATCH_ID'] = ""
                         
@@ -1952,8 +2000,9 @@ with tab_mapas:
                         )
                     
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot['MATCH_ID'].astype(str).str.strip().str.lower()
-                    territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
+                    # El Aleph ahora recibe la lista de municipios perfectos, sin importar la escala agrupada
+                    territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().unique().tolist())
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
@@ -1994,7 +2043,6 @@ with tab_mapas:
                     datos_para_dibujar['Color_Mapa'] = 1
                 else:
                     datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
-                    # 🔥 Transformación Logarítmica Base 10 para revelar matices poblacionales
                     datos_para_dibujar['Color_Mapa'] = np.log10(datos_para_dibujar['Total'] + 1)
                     
                 fig_mapa = px.choropleth_mapbox(
@@ -2002,7 +2050,7 @@ with tab_mapas:
                     geojson=mapa_para_dibujar,
                     locations='MATCH_ID',        
                     featureidkey=llave_geojson, 
-                    color='Color_Mapa', # 🚀 Pintamos usando el logaritmo
+                    color='Color_Mapa', 
                     color_continuous_scale="Viridis",
                     mapbox_style="carto-positron",
                     zoom=safe_zoom,
@@ -2010,9 +2058,9 @@ with tab_mapas:
                     opacity=0.8,
                     hover_name='Territorio',
                     hover_data={
-                        'Color_Mapa': False, # Ocultamos el logaritmo del tooltip
-                        'Color_Fix': False, 
-                        'Total': ':,.0f',    # Mantenemos visible la población real
+                        'Color_Mapa': False, 
+                        'Color_Fix': False,  
+                        'Total': ':,.0f',    
                         'MATCH_ID': False
                     }
                 )
