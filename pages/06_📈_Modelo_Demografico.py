@@ -188,7 +188,7 @@ def normalizar_texto(texto):
 @st.cache_data
 def cargar_maestro_territorial():
     # URL de tu archivo en Supabase o ruta local
-    url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.csv"
+    url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
     try:
         df = pd.read_csv(url_maestro)
         # Normalizamos para que coincida con df_mun
