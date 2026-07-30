@@ -42,16 +42,19 @@ encender_gemelo_digital()
 st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
 st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
 
+# --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
 def normalizar_texto(texto):
+    import pandas as pd
+    import re
+    import unicodedata
     if pd.isna(texto): return ""
     t = str(texto).upper()
     t = re.sub(r'\(.*?\)', '', t)
     
     # --- DESTRUCTOR DE PREFIJOS VEREDALES Y DE ÁREAS NO MUNICIPALIZADAS ---
-    # 🔥 FIX: Añadidos "CD." y "ANM" para rescatar los corregimientos del Amazonas
     t = t.replace("VDA.", "").replace("VDA ", "").replace("VEREDA ", "").replace("SECTOR ", "").replace("CGE.", "").replace("CD.", "").replace("CD ", "").replace("ANM.", "").replace("ANM ", "")
     
-    # 1. HOTFIX: Reparador de Caracteres Mutantes del DANE (UTF-8 a Latin-1)
+    # 1. HOTFIX: Reparador de Caracteres Mutantes del DANE
     reparador = {
         "Ã\x81": "A", "Ã ": "A", "Ã\x89": "E", "Ã‰": "E",
         "Ã\x8d": "I", "Ã ": "I", "Ã\x93": "O", "Ã“": "O",
@@ -64,9 +67,9 @@ def normalizar_texto(texto):
         
     # 2. Quitar tildes y dejar solo letras, números Y GUIONES BAJOS
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    t = re.sub(r'[^A-Z0-9_]', '', t) # 🚀 FIX FORENSE: Protegemos el guion bajo (_)
+    t = re.sub(r'[^A-Z0-9_]', '', t)
     
-    # 3. Traductor DANE-IGAC Actualizado (Con los 9 nombres pomposos y los rebeldes de las CARs)
+    # 3. Traductor DANE-IGAC Actualizado
     diccionario_rebeldes = {
         "BOGOTADC": "BOGOTA", "SANJOSEDECUCUTA": "CUCUTA", "LAGUAJIRA": "GUAJIRA", 
         "VALLE": "VALLEDELCAUCA", "VILLADESANDIEGODEUBATE": "UBATE", "SANTIAGODETOLU": "TOLU",
@@ -87,35 +90,17 @@ def normalizar_texto(texto):
         "COLON": "COLONGENOVA", "SANPEDRODECARTAGO": "SANPEDRODECARTAGOCARTAGO", "CERROSANANTONIO": "CERRODESANANTONIO",
         "ARBOLEDA": "ARBOLEDABERRUECOS", "ENCINO": "ELENCINO", "MACARAVITA": "MARACAVITA",
         "TUNUNGUA": "TUNUNGA", "LAMONTANITA": "MONTANITA", "ELPAUJIL": "PAUJIL", "VILLARICA": "VILLARRICA",
-        "GUADALAJARADEBUGA": "BUGA",
-        # --- NOMBRES POMPOSOS ---
-        "CARTAGENA": "CARTAGENADEINDIAS",
-        "PIENDAMO": "PIENDAMOTUNIA",
-        "MARIQUITA": "SANSEBASTIANDEMARIQUITA",
-        "TOLUVIEJO": "SANJOSEDETOLUVIEJO",
-        "SOTARA": "SOTARAPAISPAMBA",
-        "PURISIMA": "PURISIMADELACONCEPCION",
-        "GUICAN": "GUICANDELASIERRA",
-        "PAPUNAUACD": "PAPUNAHUA",
-        "PAPUNAUA": "PAPUNAHUA",
-        "CHIBOLO": "CHIVOLO", 
-        "MANAUREBALCONDELCESAR": "MANAURE",
-        # --- 🔥 FIX DEFINITIVO: HOMOLOGACIÓN SIN BUCLES CIRCULARES ---
-        # Ahora todas las variaciones apuntan a UNA SOLA raíz inmutable.
-        "ELPENOL": "PENOL", 
-        "ELRETIRO": "RETIRO", 
-        "ELSANTUARIO": "SANTUARIO",
-        "ELCARMENDEVIBORAL": "CARMENDEVIBORAL",
-        "SANVICENTEFERRER": "SANVICENTE", 
-        "LACEJADELTAMBO": "LACEJA",
-        "CAROLINADELPRINCIPE": "CAROLINA",
-        "SANTAFEDEANTIOQUIA": "SANTAFE"
+        "GUADALAJARADEBUGA": "BUGA", "CARTAGENA": "CARTAGENADEINDIAS", "PIENDAMO": "PIENDAMOTUNIA",
+        "MARIQUITA": "SANSEBASTIANDEMARIQUITA", "TOLUVIEJO": "SANJOSEDETOLUVIEJO", "SOTARA": "SOTARAPAISPAMBA",
+        "PURISIMA": "PURISIMADELACONCEPCION", "GUICAN": "GUICANDELASIERRA", "PAPUNAUACD": "PAPUNAHUA",
+        "PAPUNAUA": "PAPUNAHUA", "CHIBOLO": "CHIVOLO", "MANAUREBALCONDELCESAR": "MANAURE",
+        "ELPENOL": "PENOL", "ELRETIRO": "RETIRO", "ELSANTUARIO": "SANTUARIO",
+        "ELCARMENDEVIBORAL": "CARMENDEVIBORAL", "SANVICENTEFERRER": "SANVICENTE", 
+        "LACEJADELTAMBO": "LACEJA", "CAROLINADELPRINCIPE": "CAROLINA", "SANTAFEDEANTIOQUIA": "SANTAFE"
     }
     
-    if t in diccionario_rebeldes: 
-        t = diccionario_rebeldes[t]
-
-    # A la izquierda Excel, a la derecha el GeoJSON
+    if t in diccionario_rebeldes: t = diccionario_rebeldes[t]
+    
     diccionario_veredas = {
         "ELVALLANO": "VALLANO", "LASPALMAS": "PALMAS", "MULATOS": "LOSMULATOS",
         "LAQUIEBRA": "LARAYA", "ELROSARIOLOMADELOSZULETA": "LOMADELOSZULETA",
@@ -145,9 +130,7 @@ def normalizar_texto(texto):
         "LAROMPIDANO.2": "LAROMPIDANO2", "ZONAURBANAVEREDAELDIQUE": "ZONAURBANAELDIQUE"    
     }
     
-    if t in diccionario_veredas:
-        t = diccionario_veredas[t]
-        
+    if t in diccionario_veredas: t = diccionario_veredas[t]
     return t
     
 @st.cache_data
@@ -1724,12 +1707,11 @@ def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
     from shapely import wkb, wkt
     from shapely.geometry import shape
     import json
-    import re
-    import unicodedata
+    from modules.utils import normalizar_texto
+    import streamlit as st
 
     engine_geo = get_engine()
 
-    # 1. EXTRACCIÓN Y DECODIFICACIÓN (Confirmado que funciona por la sonda)
     try:
         with engine_geo.connect() as conn:
             df = pd.read_sql(text(q_geo_str), conn)
@@ -1746,24 +1728,15 @@ def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
             except: geometries.append(None)
 
         gdf = gpd.GeoDataFrame(df, geometry=geometries, crs="EPSG:4326").dropna(subset=['geometry'])
-    except Exception:
+    except Exception as e:
+        st.error(f"🚨 Error crítico de Base de Datos: {e}")
         return None
 
     if gdf.empty: return None
 
-    # 2. EL TRADUCTOR UNIVERSAL ESTRICTO (La cura al problema revelado)
-    def purificar_texto(t):
-        if pd.isna(t) or not t: return ""
-        t = str(t).upper()
-        # Quitamos tildes
-        t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-        # Quitamos espacios y símbolos raros
-        t = re.sub(r'[^A-Z0-9_]', '', t)
-        return t
-
     def armar_id_geo(row):
-        terr = purificar_texto(row.get('territorio_temp', row.get('Territorio_Temp', '')))
-        padre = purificar_texto(row.get('padre_temp', row.get('Padre_Temp', '')))
+        terr = normalizar_texto(row.get('territorio_temp', row.get('Territorio_Temp', '')))
+        padre = normalizar_texto(row.get('padre_temp', row.get('Padre_Temp', '')))
         
         if "cuencas" in escala.lower(): return terr
         if padre and padre not in ['NONE', 'NAN', '']:
@@ -1772,18 +1745,16 @@ def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
 
     gdf['MATCH_ID'] = gdf.apply(armar_id_geo, axis=1)
     
-    # Aseguramos que lo que pide la app también pase por el mismo filtro
-    objetivos = [purificar_texto(obj) for obj in territorios_objetivo_tuple]
+    objetivos = [normalizar_texto(obj) for obj in territorios_objetivo_tuple]
     db_ids = gdf['MATCH_ID'].tolist()
     territorios_validos = []
 
-    # 3. CRUCE CON INTELIGENCIA (Difflib sanará el "Medell n" roto por el CSV)
     for objetivo in objetivos:
         if objetivo in db_ids:
             territorios_validos.append(objetivo)
         else:
-            # Tolerancia del 75% para absorber la falta de vocales tildadas del DANE
-            matches = difflib.get_close_matches(objetivo, db_ids, n=1, cutoff=0.75)
+            # Tolerancia MUY estricta (0.85) para no inventar emparejamientos
+            matches = difflib.get_close_matches(objetivo, db_ids, n=1, cutoff=0.85)
             if matches:
                 gdf.loc[gdf['MATCH_ID'] == matches[0], 'MATCH_ID'] = objetivo
                 territorios_validos.append(objetivo)
@@ -1917,7 +1888,7 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL BLINDADO V2
+                    # 🚀 ENRUTADOR ESPACIAL BLINDADO V3 (Municipios como bloques de Lego)
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT nombre_ver AS territorio_temp, nomb_mpio AS padre_temp, geometry FROM veredas_geometria WHERE geometry IS NOT NULL"
                         
@@ -1930,19 +1901,10 @@ with tab_mapas:
                         else:
                             q_geo = "SELECT nom_nss3 AS territorio_temp, nss3 AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL AND nom_nss3 IS NOT NULL"
                             
-                    elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
-                        q_geo = "SELECT depto_nom AS territorio_temp, 'colombia' AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND depto_nom IS NOT NULL"
-                        
-                    elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
-                        q_geo = "SELECT region AS territorio_temp, 'colombia' AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND region IS NOT NULL"
-                        
-                    elif "subregiones" in escala_sel.lower():
-                        q_geo = "SELECT subregion AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND subregion IS NOT NULL"
-                        
-                    elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
-                        q_geo = "SELECT CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND car IS NOT NULL"
                     else: 
-                        # 🚀 FIX VITAL: Columna correcta (depto_nom en vez de departamento)
+                        # 🚀 EL FIX MAESTRO: Para TODAS las escalas administrativas 
+                        # (Nacional, Depto, Subregion, CAR, etc.) SIEMPRE pedimos los polígonos 
+                        # de los municipios. La app agrupará y coloreará los seleccionados automáticamente.
                         q_geo = "SELECT nombre_municipio AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL"
 
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
@@ -1953,7 +1915,7 @@ with tab_mapas:
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    # 🚀 LLAMAMOS AL NUEVO MOTOR (Destruye la caché anterior y obliga al recálculo)
+                    # Llamamos al motor definitivo
                     gdf_filtrado = motor_espacial_v2(escala_sel, q_geo, territorios_objetivo)
                     
                     # 🛡️ ESCUDO ANTI-VACÍOS (Evita el error 'NoneType' y detiene la sábana blanca)
