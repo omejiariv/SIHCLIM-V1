@@ -1936,22 +1936,22 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL DINÁMICO SEGÚN LA ESCALA Y NIVEL DE CUENCAS
+                    # 🚀 ENRUTADOR ESPACIAL DINÁMICO BLINDADO
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                         
                     elif "cuencas" in escala_sel.lower():
-                        # Evaluamos qué nivel de cuenca está pidiendo exactamente el panel analizando los datos solicitados
-                        ejemplo_obj = str(territorios_objetivo[0]) if 'territorios_objetivo' in locals() and territorios_objetivo else ""
+                        # Evaluamos los territorios solicitados para saber exactamente qué nivel hídrico agrupar en SQL
+                        muestra_terr = str(df_mapa_plot['Territorio'].values).upper() if not df_mapa_plot.empty else ""
                         
-                        # Si el panel pide Zonas Hidrográficas (ZH) o macro-unidades
-                        if any(k in str(df_mapa_plot.get('Territorio', '')) for k in ['ATRATODARIEN', 'CAUCA', 'MAGDALENA', 'CARIBE', 'SINU', 'NECHI']):
+                        if any(k in muestra_terr for k in ['ATRATODARIEN', 'CAUCA', 'MAGDALENA', 'CARIBE', 'SINU', 'NECHI', 'BAJOMAGDALENA']):
+                            # Nivel Zona Hidrográfica (ZH)
                             q_geo = 'SELECT nomzh AS "Territorio_Temp", zh AS "Padre_Temp", ST_Union(geometry) AS geometry FROM cuencas WHERE geometry IS NOT NULL GROUP BY nomzh, zh'
-                        # Si el panel pide Áreas Hidrográficas (AH)
-                        elif "ah" in escala_sel.lower() or len(df_mapa_plot) <= 5:
+                        elif any(k in muestra_terr for k in ['MAGDALENACAUCA', 'CARIBE']):
+                            # Nivel Área Hidrográfica (AH)
                             q_geo = 'SELECT nomah AS "Territorio_Temp", ah AS "Padre_Temp", ST_Union(geometry) AS geometry FROM cuencas WHERE geometry IS NOT NULL GROUP BY nomah, ah'
-                        # Por defecto para microcuencas (NSS3)
                         else:
+                            # Nivel por defecto: Microcuencas (NSS3) o Subzonas
                             q_geo = 'SELECT nom_nss3 AS "Territorio_Temp", nss3 AS "Padre_Temp", geometry FROM cuencas WHERE geometry IS NOT NULL'
                             
                     elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
