@@ -1936,14 +1936,21 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL INTELIGENTE DE CUENCAS Y MUNICIPIOS
+                    # 🚀 ENRUTADOR ESPACIAL DINÁMICO SEGÚN LA ESCALA Y NIVEL DE CUENCAS
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                         
                     elif "cuencas" in escala_sel.lower():
-                        # Detectamos automáticamente qué nivel hídrico está pidiendo el panel
-                        if "macro" in str(locals().get('resolucion_cuenca', '')).lower() or any(k in str(df_mapa_plot.get('Territorio', '')) for k in ['ATRATO', 'CAUCA', 'MAGDALENA']):
+                        # Evaluamos qué nivel de cuenca está pidiendo exactamente el panel analizando los datos solicitados
+                        ejemplo_obj = str(territorios_objetivo[0]) if 'territorios_objetivo' in locals() and territorios_objetivo else ""
+                        
+                        # Si el panel pide Zonas Hidrográficas (ZH) o macro-unidades
+                        if any(k in str(df_mapa_plot.get('Territorio', '')) for k in ['ATRATODARIEN', 'CAUCA', 'MAGDALENA', 'CARIBE', 'SINU', 'NECHI']):
                             q_geo = 'SELECT nomzh AS "Territorio_Temp", zh AS "Padre_Temp", ST_Union(geometry) AS geometry FROM cuencas WHERE geometry IS NOT NULL GROUP BY nomzh, zh'
+                        # Si el panel pide Áreas Hidrográficas (AH)
+                        elif "ah" in escala_sel.lower() or len(df_mapa_plot) <= 5:
+                            q_geo = 'SELECT nomah AS "Territorio_Temp", ah AS "Padre_Temp", ST_Union(geometry) AS geometry FROM cuencas WHERE geometry IS NOT NULL GROUP BY nomah, ah'
+                        # Por defecto para microcuencas (NSS3)
                         else:
                             q_geo = 'SELECT nom_nss3 AS "Territorio_Temp", nss3 AS "Padre_Temp", geometry FROM cuencas WHERE geometry IS NOT NULL'
                             
@@ -1975,7 +1982,6 @@ with tab_mapas:
                         axis=1
                     )
                     
-                    # Definimos la tupla objetivo primero
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
