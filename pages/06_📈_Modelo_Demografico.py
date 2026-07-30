@@ -1908,7 +1908,7 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL BLINDADO (Alias en minúsculas y sin ST_Union)
+                    # 🚀 ENRUTADOR ESPACIAL BLINDADO
                     if "veredal" in escala_sel.lower(): 
                         q_geo = """
                             SELECT nombre_ver AS territorio_temp, nomb_mpio AS padre_temp, 
@@ -1938,24 +1938,23 @@ with tab_mapas:
                                 FROM cuencas WHERE geometry IS NOT NULL AND nom_nss3 IS NOT NULL
                             """
                             
+                    # 🚀 FIX FINAL: La tabla municipios ahora tiene geometría nativa y perfecta. 
+                    # Ya NO decodificamos hex, llamamos a "geometry" directamente.
                     elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
                         q_geo = """
-                            SELECT depto_nom AS territorio_temp, 'colombia' AS padre_temp, 
-                                   ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
+                            SELECT depto_nom AS territorio_temp, 'colombia' AS padre_temp, geometry 
                             FROM municipios WHERE geometry IS NOT NULL AND depto_nom IS NOT NULL
                         """
                         
                     elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
                         q_geo = """
-                            SELECT region AS territorio_temp, 'colombia' AS padre_temp, 
-                                   ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
+                            SELECT region AS territorio_temp, 'colombia' AS padre_temp, geometry 
                             FROM municipios WHERE geometry IS NOT NULL AND region IS NOT NULL
                         """
                         
                     elif "subregiones" in escala_sel.lower():
                         q_geo = """
-                            SELECT subregion AS territorio_temp, depto_nom AS padre_temp, 
-                                   ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
+                            SELECT subregion AS territorio_temp, depto_nom AS padre_temp, geometry 
                             FROM municipios WHERE geometry IS NOT NULL AND subregion IS NOT NULL
                         """
                         
@@ -1964,13 +1963,12 @@ with tab_mapas:
                             SELECT 
                                 CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END AS territorio_temp, 
                                 depto_nom AS padre_temp,
-                                ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
+                                geometry 
                             FROM municipios WHERE geometry IS NOT NULL AND car IS NOT NULL
                         """
                     else: 
                         q_geo = """
-                            SELECT nombre_municipio AS territorio_temp, departamento AS padre_temp, 
-                                   ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
+                            SELECT nombre_municipio AS territorio_temp, departamento AS padre_temp, geometry 
                             FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL
                         """
 
