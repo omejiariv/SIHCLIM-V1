@@ -1942,8 +1942,7 @@ with tab_mapas:
                         
                     elif "cuencas" in escala_sel.lower():
                         # Detectamos automáticamente qué nivel hídrico está pidiendo el panel
-                        # para agrupar (dissolve) las geometrías en consecuencia desde la BD.
-                        if "macro" in str(locals().get('resolucion_cuenca', '')).lower() or any(k in str(territorios_objetivo) for k in ['ATRATO', 'CAUCA', 'MAGDALENA']):
+                        if "macro" in str(locals().get('resolucion_cuenca', '')).lower() or any(k in str(df_mapa_plot.get('Territorio', '')) for k in ['ATRATO', 'CAUCA', 'MAGDALENA']):
                             q_geo = 'SELECT nomzh AS "Territorio_Temp", zh AS "Padre_Temp", ST_Union(geometry) AS geometry FROM cuencas WHERE geometry IS NOT NULL GROUP BY nomzh, zh'
                         else:
                             q_geo = 'SELECT nom_nss3 AS "Territorio_Temp", nss3 AS "Padre_Temp", geometry FROM cuencas WHERE geometry IS NOT NULL'
@@ -1976,11 +1975,11 @@ with tab_mapas:
                         axis=1
                     )
                     
+                    # Definimos la tupla objetivo primero
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
-
                     
                     # ========================================================
                     # 🕵️‍♂️ BLOQUE FORENSE DE EMERGENCIA (INICIO)
