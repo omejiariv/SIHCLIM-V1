@@ -1751,52 +1751,91 @@ with tab_opt:
 @st.cache_data(ttl=86400, show_spinner="🧩 El Aleph unificando fronteras espaciales (Caché Activa)...")
 def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tuple):
     """
-    Descarga la capa espacial de PostGIS, calcula sus Llaves Universales (MATCH_ID)
-    y disuelve (fusiona) los polígonos correspondientes compartidos.
+    Descarga la capa espacial de PostGIS, inyecta la jerarquía del territorio_maestro,
+    calcula las Llaves Universales (MATCH_ID) y disuelve los polígonos compartidos.
     """
     import geopandas as gpd
     from sqlalchemy import text
     from modules.db_manager import get_engine
     import pandas as pd
+    import requests
+    import io
 
     engine_geo = get_engine()
     gdf = cargar_capa_espacial_cache(text(q_geo_str), engine_geo, geom_col="geometry")
     
-    codigos_dane_deptos = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
+    escala_lower = escala.lower()
+    es_escala_admin = not any(x in escala_lower for x in ["cuenca", "veredal", "intra"])
     
-    # 🔥 FIX: La caché ahora invoca la función maestra global para heredar el diccionario_rebeldes
+    # 🧬 INYECCIÓN DEL ADN MAESTRO (Solo para escalas administrativas)
+    if es_escala_admin and not gdf.empty and 'id_municipio' in gdf.columns:
+        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
+        try:
+            # Descargamos el Excel maestro que dicta la jerarquía bottom-up
+            resp = requests.get(url_maestro, verify=False, timeout=15)
+            if resp.status_code == 200:
+                df_maestro = pd.read_excel(io.BytesIO(resp.content))
+                # Limpieza estricta del código DANE para el cruce (5 dígitos)
+                df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
+                gdf['id_municipio'] = gdf['id_municipio'].astype(str).str.strip().str.zfill(5)
+                
+                # Fusión (Merge) Tabular-Espacial: Los polígonos adquieren las columnas region, subregion, car, etc.
+                gdf = gdf.merge(df_maestro, left_on='id_municipio', right_on='dp_mp', how='inner')
+        except Exception as e:
+            print(f"Error inyectando el maestro territorial en el motor espacial: {e}")
+
+    # 🔥 FIX: Lógica de construcción de llaves dinámicas
     def generar_id_geojson(row):
-        if "cuencas" in escala.lower():
+        if "cuencas" in escala_lower:
             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
             for c in cols_posibles:
                 if c in row and pd.notnull(row[c]):
                     val_norm = normalizar_texto(str(row[c]).strip())
-                    if val_norm in territorios_objetivo_tuple:
-                        return val_norm
+                    if val_norm in territorios_objetivo_tuple: return val_norm
             val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "Cuenca Sin Nombre")
             if "-" in val_terr: val_terr = val_terr.split("-")[-1]
             return normalizar_texto(val_terr)
             
-        elif "veredal" in escala.lower():
+        elif "veredal" in escala_lower:
             val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
             val_padre = str(row.get('NOMB_MPIO', row.get('nomb_mpio', row.get('MPIO_CNMBR', ''))))
             if val_padre.zfill(2) in codigos_dane_deptos: val_padre = codigos_dane_deptos[val_padre.zfill(2)]
             return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
             
         else:
-            val_terr = str(row.get('MPIO_CNMBR', row.get('mpio_cnmbr', row.get('nombre', ''))))
-            val_padre = str(row.get('DPTO_CCDGO', row.get('dpto_ccdgo', '')))
-            if val_padre.zfill(2) in codigos_dane_deptos: val_padre = codigos_dane_deptos[val_padre.zfill(2)]
-            
-            # Conservamos el parche de Manaure
-            if normalizar_texto(val_terr) == "MANAUREBALCONDELCESAR": val_terr = "MANAURE"
-            
-            return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
+            # 🏛️ MOTOR BOTTOM-UP: Forjado de llaves a partir de la jerarquía inyectada
+            if "departamental" in escala_lower or "nacional" in escala_lower:
+                terr = str(row.get('depto_nom', row.get('departamento', '')))
+                padre = "colombia"
+            elif "regional" in escala_lower or "macrorregion" in escala_lower:
+                terr = str(row.get('region', ''))
+                padre = "colombia"
+            elif "subregion" in escala_lower:
+                terr = str(row.get('subregion', ''))
+                padre = str(row.get('depto_nom', ''))
+            elif "corporaciones" in escala_lower or "cars" in escala_lower:
+                terr = str(row.get('car', ''))
+                padre = str(row.get('depto_nom', ''))
+            else:
+                # 🔑 Escala Municipal: Tu Llave Maestra (Código Único Concatendo)
+                dpto = normalizar_texto(str(row.get('depto_nom', row.get('departamento', ''))))
+                reg = normalizar_texto(str(row.get('region', '')))
+                car = normalizar_texto(str(row.get('car', '')))
+                mun = normalizar_texto(str(row.get('municipio', row.get('nombre_municipio', ''))))
+                
+                # Excepción de parche Manaure
+                if mun == "manaurebalcondelcesar": mun = "manaure"
+                
+                return f"{dpto}_{reg}_{car}_{mun}"
+
+            if not terr or terr == 'nan': return None
+            return normalizar_texto(terr) + "_" + normalizar_texto(padre)
 
     gdf['MATCH_ID'] = gdf.apply(generar_id_geojson, axis=1)
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_objetivo_tuple)].copy()
     
-    if not gdf_filtrado.empty and len(gdf_filtrado) > 1:
+    if not gdf_filtrado.empty and len(gdf_filtrado) > 0:
+        # Geopandas agrupa los municipios y construye la silueta regional/departamental automáticamente
         gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
         
     return gdf_filtrado
@@ -1925,66 +1964,21 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # Integración de la jerarquía topológica (bottom-up) mediante ST_Union
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
-                        
                     elif "cuencas" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM cuencas"
-                        
-                    elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
-                        # Agrupa las geometrías municipales a nivel de departamento
-                        q_geo = """
-                            SELECT depto_nom AS "Territorio_Temp", 
-                                   ST_Union(geometry) AS geometry 
-                            FROM municipios 
-                            GROUP BY depto_nom
-                        """
-                        
-                    elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
-                        # Agrupa las geometrías municipales a nivel de macroregión (ej. Amazonía)
-                        q_geo = """
-                            SELECT region AS "Territorio_Temp", 
-                                   ST_Union(geometry) AS geometry 
-                            FROM municipios 
-                            GROUP BY region
-                        """
-                        
-                    elif "subregiones" in escala_sel.lower():
-                        # Agrupa a nivel de subregión (incluye padre para evitar duplicados subregionales)
-                        q_geo = """
-                            SELECT subregion AS "Territorio_Temp", depto_nom AS "Padre_Temp",
-                                   ST_Union(geometry) AS geometry 
-                            FROM municipios 
-                            GROUP BY subregion, depto_nom
-                        """
-                        
-                    elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
-                        # Agrupa las geometrías por jurisdicción de la CAR
-                        q_geo = """
-                            SELECT car AS "Territorio_Temp", 
-                                   ST_Union(geometry) AS geometry 
-                            FROM municipios 
-                            GROUP BY car
-                        """
-                        
                     else: 
-                        # Escala municipal pura: Implementa tu filosofía de código único
-                        # Nota: Si en PostGIS ya tienes esta columna materializada (ej. 'codigo_unico'), 
-                        # simplemente usa: SELECT codigo_unico AS "Territorio_Temp", geometry FROM municipios
-                        q_geo = """
-                            SELECT (depto_nom || '_' || region || '_' || car || '_' || municipio) AS "Territorio_Temp", 
-                                   geometry 
-                            FROM municipios
-                        """
+                        # Extraemos los átomos municipales. El Aleph los agrupará.
+                        q_geo = "SELECT id_municipio, nombre_municipio, departamento, geometry FROM municipios WHERE geometry IS NOT NULL"
                     
-                    # Sincronización del ID tabular con el resultado de la consulta espacial
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
                         else (
-                            normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) 
-                            if str(row['Padre']).strip() 
-                            else normalizar_texto(row['Territorio'])
+                            # 🔑 Sincronización de la llave maestra para municipios en el DataFrame
+                            (normalizar_texto(row.get('depto_nom', '')) + "_" + normalizar_texto(row.get('region', '')) + "_" + normalizar_texto(row.get('car', '')) + "_" + normalizar_texto(row['Territorio']))
+                            if "municipal" in escala_sel.lower() and 'region' in row 
+                            else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio']))
                         ), 
                         axis=1
                     )
