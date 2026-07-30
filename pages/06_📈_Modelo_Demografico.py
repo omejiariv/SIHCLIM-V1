@@ -1748,73 +1748,83 @@ with tab_opt:
         else:
             st.caption("Presiona 'Optimizar Parámetros' o ajusta manualmente para visualizar las ecuaciones.")
             
-@st.cache_data(ttl=86400, show_spinner="🧩 El Aleph unificando fronteras espaciales (Caché Activa)...")
-def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tuple):
+@st.cache_data(ttl=86400, show_spinner="🧩 Motor Espacial V2 (Conectando geometrías...)")
+def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
     from sqlalchemy import text
     from modules.db_manager import get_engine
     import pandas as pd
     import geopandas as gpd
-    from shapely import wkb, wkt
-    from shapely.geometry import shape
-    import json
+    import streamlit as st
     from modules.utils import normalizar_texto
-    import streamlit as st # Necesario para mostrar errores en UI
-    
+    import difflib
+
     engine_geo = get_engine()
-    
-    # 1. LECTURA A PRUEBA DE BALAS Y SIN SILENCIOS
+
     try:
-        with engine_geo.connect() as conn:
-            df = pd.read_sql(text(q_geo_str), conn)
-    except Exception as e:
-        # 🚨 SE ACABÓ EL SILENCIO: Si SQL falla, lo veremos enorme y en rojo en la pantalla.
-        st.error(f"🚨 ERROR FATAL DE BASE DE DATOS: {e}")
-        return None
-        
-    if df is None or df.empty: 
-        return None
-        
-    # 2. DECODIFICADOR UNIVERSAL
-    geometries = []
-    for geom_val in df['geometry']:
-        if pd.isnull(geom_val):
-            geometries.append(None)
-            continue
-        
-        geom_str = str(geom_val).strip()
+        # Intentamos leer geometrías nativas (Tus nuevos municipios PostGIS)
+        gdf = gpd.read_postgis(text(q_geo_str), engine_geo.connect(), geom_col="geometry")
+    except Exception as e_postgis:
+        # Si falla (ej. Cuencas WKB antiguo), usamos el decodificador manual a prueba de balas
         try:
-            if geom_str.startswith('{'): geometries.append(shape(json.loads(geom_str)))
-            elif geom_str.startswith(('POLYGON', 'MULTIPOLYGON')): geometries.append(wkt.loads(geom_str))
-            else: geometries.append(wkb.loads(bytes.fromhex(geom_str)))
-        except:
-            geometries.append(None)
-            
-    # 3. Conversión segura a GeoDataFrame
-    gdf = gpd.GeoDataFrame(df, geometry=geometries, crs="EPSG:4326")
+            with engine_geo.connect() as conn:
+                df = pd.read_sql(text(q_geo_str), conn)
+            if df.empty: return None
+
+            from shapely import wkb, wkt
+            import json
+            from shapely.geometry import shape
+
+            geometries = []
+            for geom_val in df['geometry']:
+                if pd.isnull(geom_val): geometries.append(None); continue
+                geom_str = str(geom_val).strip()
+                try:
+                    if geom_str.startswith('{'): geometries.append(shape(json.loads(geom_str)))
+                    elif geom_str.startswith(('POLYGON', 'MULTIPOLYGON')): geometries.append(wkt.loads(geom_str))
+                    else: geometries.append(wkb.loads(bytes.fromhex(geom_str)))
+                except: geometries.append(None)
+
+            gdf = gpd.GeoDataFrame(df, geometry=geometries, crs="EPSG:4326")
+        except Exception as e:
+            # 🚨 SI SQL EXPLOTA, AHORA LO VEREMOS EN ROJO GIGANTE
+            st.error(f"🚨 Error crítico de Base de Datos: {e}")
+            return None
+
     gdf = gdf.dropna(subset=['geometry'])
-    
     if gdf.empty: return None
-    
+
     def armar_id_geo(row):
         terr = str(row.get('territorio_temp', row.get('Territorio_Temp', '')))
         padre = str(row.get('padre_temp', row.get('Padre_Temp', '')))
-        
+
         if "cuencas" in escala.lower(): return normalizar_texto(terr)
-            
         if padre and padre.strip() and padre.lower() not in ['none', 'nan', '']:
             return normalizar_texto(terr) + "_" + normalizar_texto(padre)
         return normalizar_texto(terr)
-            
+
     gdf['MATCH_ID'] = gdf.apply(armar_id_geo, axis=1)
-    territorios_validos = [t for t in territorios_objetivo_tuple if t in gdf['MATCH_ID'].values]
-    
+
+    # 🚀 ALGORITMO SANADOR: Reconecta nombres rotos ("Medelln" = "Medellin")
+    db_ids = gdf['MATCH_ID'].tolist()
+    territorios_validos = []
+
+    for objetivo in territorios_objetivo_tuple:
+        if objetivo in db_ids:
+            territorios_validos.append(objetivo)
+        else:
+            matches = difflib.get_close_matches(objetivo, db_ids, n=1, cutoff=0.8)
+            if matches:
+                gdf.loc[gdf['MATCH_ID'] == matches[0], 'MATCH_ID'] = objetivo
+                territorios_validos.append(objetivo)
+
     if not territorios_validos: return None
-        
+
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_validos)].copy()
-    
+
     if not gdf_filtrado.empty:
+        # Python hace la unión topológica, evitando sobrecargar Supabase
         gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
-        
+
     return gdf_filtrado
     
 # ==========================================
@@ -1938,7 +1948,7 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL BLINDADO (IDIOMAS SEPARADOS)
+                    # 🚀 ENRUTADOR ESPACIAL BLINDADO V2
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT nombre_ver AS territorio_temp, nomb_mpio AS padre_temp, geometry FROM veredas_geometria WHERE geometry IS NOT NULL"
                         
@@ -1951,20 +1961,20 @@ with tab_mapas:
                         else:
                             q_geo = "SELECT nom_nss3 AS territorio_temp, nss3 AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL AND nom_nss3 IS NOT NULL"
                             
-                    # 🚀 MAPA NUEVO: Usamos ST_AsText() para extraer la geometría real sin romper PostgreSQL
                     elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
-                        q_geo = "SELECT depto_nom AS territorio_temp, 'colombia' AS padre_temp, ST_AsText(geometry) AS geometry FROM municipios WHERE geometry IS NOT NULL AND depto_nom IS NOT NULL"
+                        q_geo = "SELECT depto_nom AS territorio_temp, 'colombia' AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND depto_nom IS NOT NULL"
                         
                     elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
-                        q_geo = "SELECT region AS territorio_temp, 'colombia' AS padre_temp, ST_AsText(geometry) AS geometry FROM municipios WHERE geometry IS NOT NULL AND region IS NOT NULL"
+                        q_geo = "SELECT region AS territorio_temp, 'colombia' AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND region IS NOT NULL"
                         
                     elif "subregiones" in escala_sel.lower():
-                        q_geo = "SELECT subregion AS territorio_temp, depto_nom AS padre_temp, ST_AsText(geometry) AS geometry FROM municipios WHERE geometry IS NOT NULL AND subregion IS NOT NULL"
+                        q_geo = "SELECT subregion AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND subregion IS NOT NULL"
                         
                     elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
-                        q_geo = "SELECT CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END AS territorio_temp, depto_nom AS padre_temp, ST_AsText(geometry) AS geometry FROM municipios WHERE geometry IS NOT NULL AND car IS NOT NULL"
+                        q_geo = "SELECT CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND car IS NOT NULL"
                     else: 
-                        q_geo = "SELECT nombre_municipio AS territorio_temp, departamento AS padre_temp, ST_AsText(geometry) AS geometry FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL"
+                        # 🚀 FIX VITAL: Columna correcta (depto_nom en vez de departamento)
+                        q_geo = "SELECT nombre_municipio AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL"
 
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
@@ -1973,7 +1983,9 @@ with tab_mapas:
                     )
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
-                    gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
+                    
+                    # 🚀 LLAMAMOS AL NUEVO MOTOR (Destruye la caché anterior y obliga al recálculo)
+                    gdf_filtrado = motor_espacial_v2(escala_sel, q_geo, territorios_objetivo)
                     
                     # 🛡️ ESCUDO ANTI-VACÍOS (Evita el error 'NoneType' y detiene la sábana blanca)
                     if gdf_filtrado is None or gdf_filtrado.empty:
