@@ -1748,113 +1748,86 @@ with tab_opt:
         else:
             st.caption("Presiona 'Optimizar Parámetros' o ajusta manualmente para visualizar las ecuaciones.")
             
-# 🛑 ATENCIÓN: FUNCIÓN SIN CACHÉ PARA DIAGNÓSTICO EN TIEMPO REAL
-def sonda_diagnostica(escala, q_geo_str, territorios_objetivo_tuple):
+@st.cache_data(ttl=86400, show_spinner="🧩 Motor Espacial Definitivo (Sincronizando...)")
+def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
     from sqlalchemy import text
     from modules.db_manager import get_engine
     import pandas as pd
     import geopandas as gpd
-    import streamlit as st
-    from modules.utils import normalizar_texto
     import difflib
+    from shapely import wkb, wkt
+    from shapely.geometry import shape
+    import json
+    import re
+    import unicodedata
 
     engine_geo = get_engine()
-    
-    st.error("🔬 **MODO DIAGNÓSTICO FORENSE ACTIVADO**")
-    st.write(f"**Escala seleccionada:** {escala}")
-    st.code(q_geo_str, language='sql')
-    
-    # --- PASO 1: CONEXIÓN Y DESCARGA CRUDAS ---
+
+    # 1. EXTRACCIÓN Y DECODIFICACIÓN (Confirmado que funciona por la sonda)
     try:
         with engine_geo.connect() as conn:
             df = pd.read_sql(text(q_geo_str), conn)
-            st.success(f"✅ **Paso 1 (Extracción SQL):** OK. Filas recuperadas: {len(df)}")
-            
-            if not df.empty:
-                st.write("📊 **Muestra de los datos que entrega Supabase (Primeras 3 filas):**")
-                st.dataframe(df.head(3))
-                
-                val_geo = df['geometry'].dropna().iloc[0] if not df['geometry'].dropna().empty else None
-                st.write(f"🧬 **Estructura de la 'geometry':** Tipo -> `{type(val_geo)}`")
-                st.write(f"🧬 **Muestra cruda (Primeros 50 caracteres):** `{str(val_geo)[:50]}`")
-            else:
-                st.warning("⚠️ **FALLO CRÍTICO EN PASO 1:** La base de datos devolvió 0 filas. La tabla está vacía o el filtro de la consulta (WHERE) eliminó todo.")
-                return None
-    except Exception as e:
-        st.error(f"🚨 **FALLO CRÍTICO EN PASO 1 (Error de Servidor):** {e}")
+        if df.empty: return None
+
+        geometries = []
+        for geom_val in df['geometry']:
+            if pd.isnull(geom_val): geometries.append(None); continue
+            geom_str = str(geom_val).strip()
+            try:
+                if geom_str.startswith('{'): geometries.append(shape(json.loads(geom_str)))
+                elif geom_str.startswith(('POLYGON', 'MULTIPOLYGON')): geometries.append(wkt.loads(geom_str))
+                else: geometries.append(wkb.loads(bytes.fromhex(geom_str)))
+            except: geometries.append(None)
+
+        gdf = gpd.GeoDataFrame(df, geometry=geometries, crs="EPSG:4326").dropna(subset=['geometry'])
+    except Exception:
         return None
 
-    # --- PASO 2: PARSEO GEOMÉTRICO ---
-    geometries = []
-    from shapely import wkb, wkt
-    import json
-    from shapely.geometry import shape
+    if gdf.empty: return None
 
-    exitos_parseo = 0
-    for geom_val in df['geometry']:
-        if pd.isnull(geom_val): 
-            geometries.append(None)
-            continue
-        geom_str = str(geom_val).strip()
-        try:
-            if geom_str.startswith('{'): geometries.append(shape(json.loads(geom_str)))
-            elif geom_str.startswith(('POLYGON', 'MULTIPOLYGON')): geometries.append(wkt.loads(geom_str))
-            else: geometries.append(wkb.loads(bytes.fromhex(geom_str)))
-            exitos_parseo += 1
-        except Exception:
-            geometries.append(None)
-            
-    if exitos_parseo > 0:
-        st.success(f"🧩 **Paso 2 (Decodificación Espacial):** OK. Geometrías válidas rescatadas: {exitos_parseo} de {len(df)}")
-    else:
-        st.error("🚨 **FALLO CRÍTICO EN PASO 2:** El script extrajo los datos, pero fue incapaz de descifrar la geometría. El formato guardado en Supabase no es WKB hexadecimal ni GeoJSON.")
-        return None
+    # 2. EL TRADUCTOR UNIVERSAL ESTRICTO (La cura al problema revelado)
+    def purificar_texto(t):
+        if pd.isna(t) or not t: return ""
+        t = str(t).upper()
+        # Quitamos tildes
+        t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+        # Quitamos espacios y símbolos raros
+        t = re.sub(r'[^A-Z0-9]', '', t)
+        return t
 
-    gdf = gpd.GeoDataFrame(df, geometry=geometries, crs="EPSG:4326").dropna(subset=['geometry'])
-    
-    # --- PASO 3: CONSTRUCCIÓN DE LLAVES ---
     def armar_id_geo(row):
-        terr = str(row.get('territorio_temp', row.get('Territorio_Temp', '')))
-        padre = str(row.get('padre_temp', row.get('Padre_Temp', '')))
-        if "cuencas" in escala.lower(): return normalizar_texto(terr)
-        if padre and padre.strip() and padre.lower() not in ['none', 'nan', '']:
-            return normalizar_texto(terr) + "_" + normalizar_texto(padre)
-        return normalizar_texto(terr)
+        terr = purificar_texto(row.get('territorio_temp', row.get('Territorio_Temp', '')))
+        padre = purificar_texto(row.get('padre_temp', row.get('Padre_Temp', '')))
+        
+        if "cuencas" in escala.lower(): return terr
+        if padre and padre not in ['NONE', 'NAN', '']:
+            return terr + "_" + padre
+        return terr
 
     gdf['MATCH_ID'] = gdf.apply(armar_id_geo, axis=1)
-    db_ids = gdf['MATCH_ID'].tolist()
-    objetivos = list(territorios_objetivo_tuple)
     
-    st.write("🔑 **Paso 3 (Análisis de Identidades - MATCH_ID)**")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.info(f"📌 **Qué busca tu Modelo Demográfico:** ({len(objetivos)} entidades)")
-        st.write(objetivos[:15])
-    with col2:
-        st.info(f"📌 **Qué tiene tu Base de Datos:** ({len(db_ids)} entidades)")
-        st.write(db_ids[:15])
-        
-    # --- PASO 4: ALGORITMO DE CRUCE (MATCHING) ---
+    # Aseguramos que lo que pide la app también pase por el mismo filtro
+    objetivos = [purificar_texto(obj) for obj in territorios_objetivo_tuple]
+    db_ids = gdf['MATCH_ID'].tolist()
     territorios_validos = []
-    for obj in objetivos:
-        if obj in db_ids: territorios_validos.append(obj)
-        else:
-            matches = difflib.get_close_matches(obj, db_ids, n=1, cutoff=0.8)
-            if matches:
-                gdf.loc[gdf['MATCH_ID'] == matches[0], 'MATCH_ID'] = obj
-                territorios_validos.append(obj)
 
-    if len(territorios_validos) > 0:
-        st.success(f"🔗 **Paso 4 (Cruce):** OK. Coincidencias logradas: {len(territorios_validos)} de {len(objetivos)} buscadas.")
-    else:
-        st.error("🚨 **FALLO CRÍTICO EN PASO 4:** 0 coincidencias. Los nombres de la base de datos y los del modelo demográfico no se parecen en lo absoluto (cruce roto).")
-        return None
+    # 3. CRUCE CON INTELIGENCIA (Difflib sanará el "Medell n" roto por el CSV)
+    for objetivo in objetivos:
+        if objetivo in db_ids:
+            territorios_validos.append(objetivo)
+        else:
+            # Tolerancia del 75% para absorber la falta de vocales tildadas del DANE
+            matches = difflib.get_close_matches(objetivo, db_ids, n=1, cutoff=0.75)
+            if matches:
+                gdf.loc[gdf['MATCH_ID'] == matches[0], 'MATCH_ID'] = objetivo
+                territorios_validos.append(objetivo)
+
+    if not territorios_validos: return None
 
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_validos)].copy()
     if not gdf_filtrado.empty:
         gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
 
-    st.success("✅ **DIAGNÓSTICO EXITOSO. ENVIANDO CAPA AL MAPA...**")
     return gdf_filtrado
     
 # ==========================================
@@ -2015,7 +1988,7 @@ with tab_mapas:
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
                     # 🚀 LLAMAMOS AL NUEVO MOTOR (Destruye la caché anterior y obliga al recálculo)
-                    gdf_filtrado = sonda_diagnostica(escala_sel, q_geo, territorios_objetivo)
+                    gdf_filtrado = motor_espacial_v2(escala_sel, q_geo, territorios_objetivo)
                     
                     # 🛡️ ESCUDO ANTI-VACÍOS (Evita el error 'NoneType' y detiene la sábana blanca)
                     if gdf_filtrado is None or gdf_filtrado.empty:
