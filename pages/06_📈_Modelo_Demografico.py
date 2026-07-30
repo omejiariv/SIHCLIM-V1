@@ -1936,7 +1936,7 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL DINÁMICO BLINDADO CON CONVERSIÓN WKB HEX -> GEOMETRY
+                    # 🚀 ENRUTADOR ESPACIAL DINÁMICO BLINDADO CON CASTING WKB HEX -> GEOMETRY
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT *, ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry FROM veredas_geometria WHERE geometry IS NOT NULL"
                         
@@ -1947,40 +1947,40 @@ with tab_mapas:
                             q_geo = '''
                                 SELECT nomzh AS "Territorio_Temp", zh AS "Padre_Temp", 
                                        ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                                FROM cuencas WHERE geometry IS NOT NULL GROUP BY nomzh, zh
+                                FROM cuencas WHERE geometry IS NOT NULL AND nomzh IS NOT NULL GROUP BY nomzh, zh
                             '''
                         elif any(k in muestra_terr for k in ['MAGDALENACAUCA', 'CARIBE']):
                             q_geo = '''
                                 SELECT nomah AS "Territorio_Temp", ah AS "Padre_Temp", 
                                        ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                                FROM cuencas WHERE geometry IS NOT NULL GROUP BY nomah, ah
+                                FROM cuencas WHERE geometry IS NOT NULL AND nomah IS NOT NULL GROUP BY nomah, ah
                             '''
                         else:
                             q_geo = '''
                                 SELECT nom_nss3 AS "Territorio_Temp", nss3 AS "Padre_Temp", 
                                        ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
-                                FROM cuencas WHERE geometry IS NOT NULL
+                                FROM cuencas WHERE geometry IS NOT NULL AND nom_nss3 IS NOT NULL
                             '''
                             
                     elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
                         q_geo = '''
                             SELECT depto_nom AS "Territorio_Temp", 'colombia' AS "Padre_Temp", 
                                    ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                            FROM municipios WHERE geometry IS NOT NULL GROUP BY depto_nom
+                            FROM municipios WHERE geometry IS NOT NULL AND depto_nom IS NOT NULL GROUP BY depto_nom
                         '''
                         
                     elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
                         q_geo = '''
                             SELECT region AS "Territorio_Temp", 'colombia' AS "Padre_Temp", 
                                    ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                            FROM municipios WHERE geometry IS NOT NULL GROUP BY region
+                            FROM municipios WHERE geometry IS NOT NULL AND region IS NOT NULL GROUP BY region
                         '''
                         
                     elif "subregiones" in escala_sel.lower():
                         q_geo = '''
                             SELECT subregion AS "Territorio_Temp", depto_nom AS "Padre_Temp", 
                                    ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                            FROM municipios WHERE geometry IS NOT NULL GROUP BY subregion, depto_nom
+                            FROM municipios WHERE geometry IS NOT NULL AND subregion IS NOT NULL GROUP BY subregion, depto_nom
                         '''
                         
                     elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
@@ -1990,14 +1990,14 @@ with tab_mapas:
                                 depto_nom AS "Padre_Temp",
                                 ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
                             FROM municipios 
-                            WHERE geometry IS NOT NULL
+                            WHERE geometry IS NOT NULL AND car IS NOT NULL
                             GROUP BY CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END, depto_nom
                         '''
                     else: 
                         q_geo = '''
                             SELECT nombre_municipio AS "Territorio_Temp", departamento AS "Padre_Temp", 
                                    ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
-                            FROM municipios WHERE geometry IS NOT NULL
+                            FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL
                         '''
 
                     # 🔑 MATCH ID SIMPLE Y UNIVERSAL (Territorio_Padre)
