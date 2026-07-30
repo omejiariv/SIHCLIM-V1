@@ -42,7 +42,6 @@ encender_gemelo_digital()
 st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
 st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
 
-# --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
 def normalizar_texto(texto):
     if pd.isna(texto): return ""
     t = str(texto).upper()
@@ -63,9 +62,9 @@ def normalizar_texto(texto):
     for malo, bueno in reparador.items():
         t = t.replace(malo, bueno)
         
-    # 2. Quitar tildes y dejar solo letras/números
+    # 2. Quitar tildes y dejar solo letras, números Y GUIONES BAJOS
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-    t = re.sub(r'[^A-Z0-9]', '', t)
+    t = re.sub(r'[^A-Z0-9_]', '', t) # 🚀 FIX FORENSE: Protegemos el guion bajo (_)
     
     # 3. Traductor DANE-IGAC Actualizado (Con los 9 nombres pomposos y los rebeldes de las CARs)
     diccionario_rebeldes = {
@@ -118,66 +117,32 @@ def normalizar_texto(texto):
 
     # A la izquierda Excel, a la derecha el GeoJSON
     diccionario_veredas = {
-        "ELVALLANO": "VALLANO",
-        "LASPALMAS": "PALMAS",
-        "MULATOS": "LOSMULATOS",
-        "LAQUIEBRA": "LARAYA",
-        "ELROSARIOLOMADELOSZULETA": "LOMADELOSZULETA",
-        "ELMELLITO": "ELMELLITOALTO",
-        "TABLAZOHATILLO": "ELHATILLO",
-        "MANDE": "GUAPANDE", 
-        "PANTANONEGRO": "PANTANOS", 
-        "ELCHAGUALO": "CHAGUALO", 
-        "SANNICOLASDELRIO": "SANNICOLAS",
-        "ZARZALCURAZAO": "ZARZALCURZAO", 
-        "SADEM": "SADEMGUACAMAYA", 
-        "COLORADO": "ELCOLORADO", 
-        "ELESCOBERO": "ESCOBERO", 
-        "LAVERDELAMARIA": "LAMARIA", 
-        "NUEVOANTIOQUIA": "NUEVAUNION", 
-        "PARAISO": "ELPARAISO", 
-        "LAAURORA": "LAMADERAAURORA", 
-        "GUAPA": "GUAPALEON", 
-        "SANJOSEDEMULATOS": "ALTODEMULATOS", 
-        "LACIONDOR-X10": "ELCONDOR", 
-        "AGUASCLARAS": "AGUASCLARASSONDORA", 
-        "POTREROMISERANGA": "POTRERAMISERENGA", 
-        "ELRETIRO": "RETIRO",    
-        "PIÑONAL": "PINONAL",    
-        "LOSANTIOQUEÑOS": "LOSANTIOQUENOS",    
-        "SANVICENTE-ELKIOSKO": "SANVICENTEELKIOSKO",    
-        "LAVERDE-LAMARIA": "LAVERDELAMARIA",    
-        "LACABAÑA": "LACABANA",    
-        "SANMIGUEL": "SANMIGUELLADORADA",    
-        "POTRERO–MISERANGA": "POTREROMISERANGA",    
-        "LAVOLCANA-GUAYABAL": "LAVOLCANAGUAYABAL",    
-        "PATIO-BOLAS": "PATIOBOLAS",    
-        "BEBARAMEÑO": "BEBARAMENO",    
-        "SANANTONIO-ELRIO": "SANANTONIOELRIO",    
-        "PUERTOGARZA-NARICES": "PUERTOGARZANARICES",    
-        "NORCASIA-7DEAGOSTO": "NORCASIA7DEAGOSTO",    
-        "LASPALMAS": "PALMAS",    
-        "QUEBRADON-20DEJULIO": "QUEBRADON20DEJULIO",    
-        "CAÑAFISTO": "CANAFISTO",    
-        "LANUTRIA-CAUNZALES": "LANUTRIACAUNZALES",    
-        "LAHABANA-PALESTINA": "LAHABANAPALESTINA",    
-        "MANIZALES-VILLANUEVA": "MANIZALESVILLANUEVA",    
-        "PEÑASAZULES": "PENASAZULES",    
-        "MORTIÑAL": "MORTINAL",    
-        "SANTAGERTRUDIS-PEÑAS": "SANTAGERTRUDISPENAS",    
-        "ROBLALABAJO-CHIRIMOYO": "ROBLALABAJOCHIRIMOYO",    
-        "ELLLANO-CAÑAVERAL": "ELLLANOCANAVERAL",    
-        "SIRGÜITA": "SIRGUITA",    
-        "BRISAS-CAUNZAL": "BRISASCAUNZAL",    
-        "SANTAROSA-LADANTA": "SANTAROSALADANTA",    
-        "SANJOSEMONTAÑITAS": "SANJOSEMONTANITAS",    
-        "MORRON-SEVILLA": "MORRONSEVILLA",    
-        "VEREDACABECERAMUNICIPAL": "CABECERAMUNICIPAL",    
-        "LACONDOR-X10": "LACONDORX10",    
-        "CAÑODONJUAN": "CANODONJUAN",    
-        "LAROMPIDANO.1": "LAROMPIDANO1",    
-        "LAROMPIDANO.2": "LAROMPIDANO2",    
-        "ZONAURBANAVEREDAELDIQUE": "ZONAURBANAELDIQUE"    
+        "ELVALLANO": "VALLANO", "LASPALMAS": "PALMAS", "MULATOS": "LOSMULATOS",
+        "LAQUIEBRA": "LARAYA", "ELROSARIOLOMADELOSZULETA": "LOMADELOSZULETA",
+        "ELMELLITO": "ELMELLITOALTO", "TABLAZOHATILLO": "ELHATILLO",
+        "MANDE": "GUAPANDE",  "PANTANONEGRO": "PANTANOS",  "ELCHAGUALO": "CHAGUALO", 
+        "SANNICOLASDELRIO": "SANNICOLAS", "ZARZALCURAZAO": "ZARZALCURZAO", 
+        "SADEM": "SADEMGUACAMAYA",  "COLORADO": "ELCOLORADO",  "ELESCOBERO": "ESCOBERO", 
+        "LAVERDELAMARIA": "LAMARIA",  "NUEVOANTIOQUIA": "NUEVAUNION",  "PARAISO": "ELPARAISO", 
+        "LAAURORA": "LAMADERAAURORA",  "GUAPA": "GUAPALEON",  "SANJOSEDEMULATOS": "ALTODEMULATOS", 
+        "LACIONDOR-X10": "ELCONDOR",  "AGUASCLARAS": "AGUASCLARASSONDORA",  "POTREROMISERANGA": "POTRERAMISERENGA", 
+        "ELRETIRO": "RETIRO", "PIÑONAL": "PINONAL", "LOSANTIOQUEÑOS": "LOSANTIOQUENOS", 
+        "SANVICENTE-ELKIOSKO": "SANVICENTEELKIOSKO", "LAVERDE-LAMARIA": "LAVERDELAMARIA", 
+        "LACABAÑA": "LACABANA", "SANMIGUEL": "SANMIGUELLADORADA", "POTRERO–MISERANGA": "POTREROMISERANGA", 
+        "LAVOLCANA-GUAYABAL": "LAVOLCANAGUAYABAL", "PATIO-BOLAS": "PATIOBOLAS", 
+        "BEBARAMEÑO": "BEBARAMENO", "SANANTONIO-ELRIO": "SANANTONIOELRIO", 
+        "PUERTOGARZA-NARICES": "PUERTOGARZANARICES", "NORCASIA-7DEAGOSTO": "NORCASIA7DEAGOSTO", 
+        "LASPALMAS": "PALMAS", "QUEBRADON-20DEJULIO": "QUEBRADON20DEJULIO", 
+        "CAÑAFISTO": "CANAFISTO", "LANUTRIA-CAUNZALES": "LANUTRIACAUNZALES", 
+        "LAHABANA-PALESTINA": "LAHABANAPALESTINA", "MANIZALES-VILLANUEVA": "MANIZALESVILLANUEVA", 
+        "PEÑASAZULES": "PENASAZULES", "MORTIÑAL": "MORTINAL", 
+        "SANTAGERTRUDIS-PEÑAS": "SANTAGERTRUDISPENAS", "ROBLALABAJO-CHIRIMOYO": "ROBLALABAJOCHIRIMOYO", 
+        "ELLLANO-CAÑAVERAL": "ELLLANOCANAVERAL", "SIRGÜITA": "SIRGUITA", 
+        "BRISAS-CAUNZAL": "BRISASCAUNZAL", "SANTAROSA-LADANTA": "SANTAROSALADANTA", 
+        "SANJOSEMONTAÑITAS": "SANJOSEMONTANITAS", "MORRON-SEVILLA": "MORRONSEVILLA", 
+        "VEREDACABECERAMUNICIPAL": "CABECERAMUNICIPAL", "LACONDOR-X10": "LACONDORX10", 
+        "CAÑODONJUAN": "CANODONJUAN", "LAROMPIDANO.1": "LAROMPIDANO1", 
+        "LAROMPIDANO.2": "LAROMPIDANO2", "ZONAURBANAVEREDAELDIQUE": "ZONAURBANAELDIQUE"    
     }
     
     if t in diccionario_veredas:
@@ -190,11 +155,12 @@ def cargar_maestro_territorial():
     # URL de tu archivo en Supabase o ruta local
     url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
     try:
-        df = pd.read_csv(url_maestro)
+        # 🚀 FIX: Pandas no puede leer un '.xlsx' con read_csv. Usamos read_excel.
+        df = pd.read_excel(url_maestro, engine='openpyxl')
         # Normalizamos para que coincida con df_mun
         df['municipio_norm'] = df['municipio'].apply(normalizar_texto)
         return df
-    except:
+    except Exception as e:
         return pd.DataFrame()
 
 df_maestro = cargar_maestro_territorial()
@@ -1792,7 +1758,7 @@ def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
         # Quitamos tildes
         t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
         # Quitamos espacios y símbolos raros
-        t = re.sub(r'[^A-Z0-9]', '', t)
+        t = re.sub(r'[^A-Z0-9_]', '', t)
         return t
 
     def armar_id_geo(row):
