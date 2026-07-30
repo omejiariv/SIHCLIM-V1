@@ -1750,49 +1750,17 @@ with tab_opt:
             
 @st.cache_data(ttl=86400, show_spinner="🧩 El Aleph unificando fronteras espaciales (Caché Activa)...")
 def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tuple):
-    """
-    Descarga la capa espacial de PostGIS, inyecta la jerarquía del territorio_maestro,
-    calcula las Llaves Universales (MATCH_ID) y disuelve los polígonos compartidos.
-    """
-    import geopandas as gpd
     from sqlalchemy import text
     from modules.db_manager import get_engine
     import pandas as pd
-    import requests
-    import io
-    from modules.utils import normalizar_texto
-
+    
     engine_geo = get_engine()
-    # Ejecuta la consulta (En escalas administrativas, bajará los átomos municipales puros)
     gdf = cargar_capa_espacial_cache(text(q_geo_str), engine_geo, geom_col="geometry")
     
-    escala_lower = escala.lower()
-    es_escala_admin = not any(x in escala_lower for x in ["cuenca", "veredal", "intra"])
+    if gdf.empty: return gdf
     
-    # 🧬 INYECCIÓN DEL ADN MAESTRO (Solo para escalas administrativas)
-    if es_escala_admin and not gdf.empty and 'id_municipio' in gdf.columns:
-        url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
-        try:
-            # 🔥 FIX CRÍTICO: Headers obligatorios para evadir el bloqueo de seguridad de Supabase Storage
-            resp = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
-            if resp.status_code == 200:
-                df_maestro = pd.read_excel(io.BytesIO(resp.content))
-                # Limpieza estricta de IDs para el cruce (5 dígitos DANE)
-                df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
-                gdf['id_municipio'] = gdf['id_municipio'].astype(str).str.strip().str.zfill(5)
-                
-                # Fusión Espacial-Tabular
-                gdf = gdf.merge(df_maestro, left_on='id_municipio', right_on='dp_mp', how='inner')
-            else:
-                print(f"Error HTTP al descargar maestro: {resp.status_code}")
-        except Exception as e:
-            print(f"Error inyectando el maestro territorial: {e}")
-
-    # 🔥 FIX Veredal: Reincorporación del Diccionario DANE
-    codigos_dane_deptos = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
-
-    def generar_id_geojson(row):
-        if "cuencas" in escala_lower:
+    def armar_id_geo(row):
+        if "cuencas" in escala.lower():
             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
             for c in cols_posibles:
                 if c in row and pd.notnull(row[c]):
@@ -1802,49 +1770,20 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
             if "-" in val_terr: val_terr = val_terr.split("-")[-1]
             return normalizar_texto(val_terr)
             
-        elif "veredal" in escala_lower:
+        elif "veredal" in escala.lower():
             val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
             val_padre = str(row.get('NOMB_MPIO', row.get('nomb_mpio', row.get('MPIO_CNMBR', ''))))
-            if val_padre.zfill(2) in codigos_dane_deptos: val_padre = codigos_dane_deptos[val_padre.zfill(2)]
             return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
             
         else:
-            # 🏛️ LÓGICA BOTTOM-UP: Garantiza sincronía perfecta (Territorio_Padre)
-            if "departamental" in escala_lower or "nacional" in escala_lower:
-                terr = str(row.get('depto_nom', row.get('departamento', '')))
-                padre = "colombia"
-            elif "regional" in escala_lower or "macrorregion" in escala_lower:
-                terr = str(row.get('region', ''))
-                padre = "colombia"
-            elif "subregion" in escala_lower:
-                terr = str(row.get('subregion', ''))
-                padre = str(row.get('depto_nom', row.get('departamento', '')))
-            elif "corporaciones" in escala_lower or "cars" in escala_lower:
-                terr = str(row.get('car', ''))
-                padre = str(row.get('depto_nom', row.get('departamento', '')))
-            else:
-                # Escalas Municipales
-                mun = str(row.get('municipio', row.get('nombre_municipio', '')))
-                if normalizar_texto(mun) == "manaurebalcondelcesar": mun = "manaure"
-                
-                # Adapta el padre según la selección visual
-                if "regiones" in escala_lower:
-                    padre = str(row.get('region', ''))
-                else:
-                    padre = str(row.get('depto_nom', row.get('departamento', '')))
-                return normalizar_texto(mun) + "_" + normalizar_texto(padre)
-
-            if not terr or terr == 'nan': return None
+            # 🚀 Usa los alias exactos que definimos en las consultas SQL
+            terr = str(row.get('Territorio_Temp', ''))
+            padre = str(row.get('Padre_Temp', 'colombia' if 'nacional' in escala.lower() or 'departamental' in escala.lower() or 'regional' in escala.lower() else ''))
             return normalizar_texto(terr) + "_" + normalizar_texto(padre)
-
-    # Forja de llaves y filtrado espacial
-    gdf['MATCH_ID'] = gdf.apply(generar_id_geojson, axis=1)
+            
+    gdf['MATCH_ID'] = gdf.apply(armar_id_geo, axis=1)
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_objetivo_tuple)].copy()
     
-    if not gdf_filtrado.empty and len(gdf_filtrado) > 0:
-        # El motor 'dissolve' fusionará los municipios compartidos en la silueta objetivo
-        gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
-        
     return gdf_filtrado
     
 # ==========================================
@@ -1971,7 +1910,7 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 Gracias a la inyección SQL, PostGIS hace el agrupamiento perfecto
+                    # 🚀 La base de datos asume el trabajo pesado gracias a la inyección SQL
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                     elif "cuencas" in escala_sel.lower(): 
@@ -1988,7 +1927,7 @@ with tab_mapas:
                         # Escala municipal
                         q_geo = 'SELECT nombre_municipio AS "Territorio_Temp", departamento AS "Padre_Temp", geometry FROM municipios'
 
-                    # 🔑 MATCH ID ULTRA SIMPLE: Territorio_Padre (Ej: Abejorral_Antioquia, o Amazonia_Colombia)
+                    # 🔑 MATCH ID SIMPLE Y UNIVERSAL (Territorio_Padre)
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
                         else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row.get('Padre', '')).strip() else normalizar_texto(row['Territorio'])), 
@@ -1998,7 +1937,6 @@ with tab_mapas:
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
-                    # Tu función obtener_geometria_disuelta_cached ahora solo necesita ejecutar el query y generar el MATCH_ID igual que arriba
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
