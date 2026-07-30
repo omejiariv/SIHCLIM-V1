@@ -759,13 +759,10 @@ def render_selector_espacial(modo_firma="clasica"):
     renderizar_gestor_escenarios(nombre_zona)
 
     # ==========================================================
-    # 🚀 SOLUCIÓN ESTRUCTURAL: FIRMA EXPLÍCITA PROTEGIDA
+    # 🚀 RETORNO UNIVERSAL (5 VARIABLES PARA TODA LA APP)
     # ==========================================================
-    if modo_firma == "weap":
-        return nombre_zona, gdf_zona, nivel_jerarquico, False
-    elif modo_firma == "demografia":
-        # 5 variables solo para la página demográfica
-        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona, nivel_jerarquico
-    else:
-        # 🚀 FIRMA CLÁSICA: 4 variables para no romper Aguas Subterráneas ni el resto de la app
-        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
+    # Si alguna variable no se definió en modos simples, la aseguramos:
+    if 'nivel_jerarquico' not in locals():
+        nivel_jerarquico = "NINGUNO"
+        
+    return ids_estaciones, nombre_zona, altitud_ref, gdf_zona, nivel_jerarquico
