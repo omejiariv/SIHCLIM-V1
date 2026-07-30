@@ -1971,24 +1971,34 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 FIX: Consultas planas, delegamos la agrupación compleja al Aleph
+                    # 🚀 Gracias a la inyección SQL, PostGIS hace el agrupamiento perfecto
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                     elif "cuencas" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM cuencas"
+                    elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
+                        q_geo = 'SELECT depto_nom AS "Territorio_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY depto_nom'
+                    elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
+                        q_geo = 'SELECT region AS "Territorio_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY region'
+                    elif "subregiones" in escala_sel.lower():
+                        q_geo = 'SELECT subregion AS "Territorio_Temp", depto_nom AS "Padre_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY subregion, depto_nom'
+                    elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
+                        q_geo = 'SELECT car AS "Territorio_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY car'
                     else: 
-                        q_geo = "SELECT id_municipio, nombre_municipio, departamento, geometry FROM municipios WHERE geometry IS NOT NULL"
-                    
-                    # 🔑 MATCH ID SIMPLE Y UNIVERSAL (Territorio_Padre)
+                        # Escala municipal
+                        q_geo = 'SELECT nombre_municipio AS "Territorio_Temp", departamento AS "Padre_Temp", geometry FROM municipios'
+
+                    # 🔑 MATCH ID ULTRA SIMPLE: Territorio_Padre (Ej: Abejorral_Antioquia, o Amazonia_Colombia)
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
-                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
+                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row.get('Padre', '')).strip() else normalizar_texto(row['Territorio'])), 
                         axis=1
                     )
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
+                    # Tu función obtener_geometria_disuelta_cached ahora solo necesita ejecutar el query y generar el MATCH_ID igual que arriba
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
