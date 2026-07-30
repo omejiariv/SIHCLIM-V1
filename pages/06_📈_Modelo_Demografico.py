@@ -1756,24 +1756,36 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     from modules.utils import normalizar_texto
     
     engine_geo = get_engine()
+    
+    # 1. Llamada a la base de datos
     gdf = cargar_capa_espacial_cache(text(q_geo_str), engine_geo, geom_col="geometry")
     
-    if gdf is None or gdf.empty: return gdf
+    # 🛡️ 2. ESCUDO ANTI-NONE: Si la consulta falló por completo, devolvemos None seguro
+    if gdf is None or type(gdf) == type(None) or gdf.empty: 
+        return None
     
+    # 3. Emparejamiento Topológico
     def armar_id_geo(row):
-        # 🚀 CONFIANZA CIEGA EN EL SQL: Leemos los alias generados por la base de datos
-        terr = str(row.get('Territorio_Temp', row.get('nombre_municipio', '')))
+        # Confiamos CIEGAMENTE en los alias que envía la consulta SQL
+        terr = str(row.get('Territorio_Temp', ''))
         padre = str(row.get('Padre_Temp', ''))
         
-        # Si tiene padre (ej. Antioquia), unimos; si no (ej. Cuenca pura), queda solo el territorio
         if padre and padre.strip() and padre.lower() not in ['none', 'nan', '']:
             return normalizar_texto(terr) + "_" + normalizar_texto(padre)
         return normalizar_texto(terr)
             
     gdf['MATCH_ID'] = gdf.apply(armar_id_geo, axis=1)
-    gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_objetivo_tuple)].copy()
     
-    if not gdf_filtrado.empty and len(gdf_filtrado) > 0:
+    # 4. Filtrar solo los polígonos que necesitamos (Cruce con la matriz demográfica)
+    territorios_validos = [t for t in territorios_objetivo_tuple if t in gdf['MATCH_ID'].values]
+    
+    if not territorios_validos:
+        return None # Si no hay cruce, devolvemos None
+        
+    gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_validos)].copy()
+    
+    # 5. Disolver y Unir (Romper fronteras internas)
+    if not gdf_filtrado.empty:
         gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
         
     return gdf_filtrado
@@ -1904,9 +1916,12 @@ with tab_mapas:
                 else:
                     # 🚀 ENRUTADOR ESPACIAL BLINDADO: WKB Hex a Geometría (Formato Seguro)
                     if "veredal" in escala_sel.lower(): 
+                        # 🚨 FIX VEREDAL: No usar SELECT * para evitar columnas geometry duplicadas
                         q_geo = """
-                            SELECT *, ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
-                            FROM veredas_geometria WHERE geometry IS NOT NULL
+                            SELECT nombre_ver AS "Territorio_Temp", nomb_mpio AS "Padre_Temp", 
+                                   ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
+                            FROM veredas_geometria 
+                            WHERE geometry IS NOT NULL
                         """
                         
                     elif "cuencas" in escala_sel.lower():
@@ -1993,26 +2008,33 @@ with tab_mapas:
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
                     
+                    # 🛡️ ESCUDO ANTI-VACÍOS (Evita el error 'NoneType' y detiene la sábana blanca)
+                    if gdf_filtrado is None or gdf_filtrado.empty:
+                        st.warning("⚠️ No se encontraron geometrías para los territorios seleccionados en la base de datos.")
+                        st.stop() # Detenemos el renderizado aquí para no colapsar la app
+                    
+                    # Cálculo dinámico del centro y zoom
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
-                    if not gdf_filtrado.empty:
-                        gdf_4326 = gdf_filtrado.to_crs(epsg=4326)
-                        minx, miny, maxx, maxy = gdf_4326.total_bounds
-                        safe_center_lon = (minx + maxx) / 2
-                        safe_center_lat = (miny + maxy) / 2
-                        max_diff = max(maxx - minx, maxy - miny)
-                        if max_diff < 0.1: safe_zoom = 11.5
-                        elif max_diff < 0.3: safe_zoom = 10
-                        elif max_diff < 0.8: safe_zoom = 8.5
-                        elif max_diff < 2.5: safe_zoom = 7
-                        elif max_diff < 5.0: safe_zoom = 6
-                        
-                    mapa_para_dibujar = json.loads(gdf_filtrado.to_json()) if not gdf_filtrado.empty else {"type": "FeatureCollection", "features": []}
+                    gdf_4326 = gdf_filtrado.to_crs(epsg=4326)
+                    minx, miny, maxx, maxy = gdf_4326.total_bounds
+                    safe_center_lon = (minx + maxx) / 2
+                    safe_center_lat = (miny + maxy) / 2
+                    max_diff = max(maxx - minx, maxy - miny)
+                    
+                    if max_diff < 0.1: safe_zoom = 11.5
+                    elif max_diff < 0.3: safe_zoom = 10
+                    elif max_diff < 0.8: safe_zoom = 8.5
+                    elif max_diff < 2.5: safe_zoom = 7
+                    elif max_diff < 5.0: safe_zoom = 6
+                    
+                    mapa_para_dibujar = json.loads(gdf_filtrado.to_json())
                     
                     for feature in mapa_para_dibujar.get('features', []):
                         feature['id'] = feature['properties'].get('MATCH_ID', '')
 
                     datos_para_dibujar = df_mapa_plot.copy()
                     llave_geojson = 'id'
+                    
                 # =========================================================
                 # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
                 # =========================================================
@@ -2048,10 +2070,14 @@ with tab_mapas:
                 
                 if mostrar_capa_cuencas:
                     try:
-                        # 🚀 FIX 1: Consulta plana (string) y filtrado de geometrías nulas para estabilidad de caché
-                        q_cue_overlay = "SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, geometry FROM cuencas WHERE geometry IS NOT NULL"
+                        # 🚀 FIX OVERLAY: Añadimos el casting WKB a las cuencas superpuestas
+                        q_cue_overlay = """
+                            SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, 
+                                   ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
+                            FROM cuencas 
+                            WHERE geometry IS NOT NULL
+                        """
                         
-                        # 🚀 FIX 2: Llamada limpia a la función de caché (sin pasar engine)
                         gdf_cue_overlay = cargar_capa_espacial_cache(q_cue_overlay, geom_col="geometry")
                         
                         if gdf_cue_overlay is not None and not gdf_cue_overlay.empty:
@@ -2061,7 +2087,6 @@ with tab_mapas:
                             
                             cols_tooltip = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']
                             
-                            # 🚀 FIX 3: Escudo de Columnas - Valida que existan antes de limpiarlas
                             for col in cols_tooltip:
                                 if col in gdf_cue_overlay.columns:
                                     gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(
@@ -2106,14 +2131,14 @@ with tab_mapas:
                         ticktext=["1K", "5K", "20K", "50K", "100K", "500K", "2M+"]
                     )
                 )
+                
                 st.plotly_chart(fig_mapa, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-                st.success("✅ MAPA RENDERIZADO CON EXITO.")
+                st.success("✅ MAPA RENDERIZADO CON ÉXITO.")
                 
             except Exception as e:
                 st.error(f"❌ Error procesando el geovisor: {e}")
         else:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
-
             
 # =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
