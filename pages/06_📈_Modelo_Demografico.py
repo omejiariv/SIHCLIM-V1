@@ -1964,6 +1964,30 @@ with tab_mapas:
                     
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
+
+                    
+                    # ========================================================
+                    # 🕵️‍♂️ BLOQUE FORENSE DE EMERGENCIA (INICIO)
+                    # ========================================================
+                    with st.expander("🚨 RESULTADOS DEL DIAGNÓSTICO FORENSE", expanded=True):
+                        st.write("**1. El Panel Demográfico está pidiendo esta llave exacta:**", territorios_objetivo)
+                        
+                        if gdf_filtrado is None or gdf_filtrado.empty:
+                            st.error("❌ FALLO ESPACIAL: 'gdf_filtrado' está vacío. O la consulta SQL falló, o las llaves no coinciden.")
+                            # Mostramos cómo armó la consulta SQL para revisarla
+                            st.code(q_geo, language="sql")
+                        else:
+                            st.success(f"✅ ÉXITO ESPACIAL: Se recuperaron {gdf_filtrado.shape[0]} polígonos de la base de datos.")
+                            # Si los encontró, mostramos qué llaves tienen los polígonos
+                            if 'MATCH_ID' in gdf_filtrado.columns:
+                                st.write("**2. Llaves reales entregadas por PostGIS (MATCH_ID):**", gdf_filtrado['MATCH_ID'].tolist())
+                            else:
+                                st.warning("El mapa cargó, pero le falta la columna 'MATCH_ID'.")
+                    # ========================================================
+                    # 🕵️‍♂️ BLOQUE FORENSE DE EMERGENCIA (FIN)
+                    # ========================================================
+
+                    safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5                    
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
                     if not gdf_filtrado.empty:
