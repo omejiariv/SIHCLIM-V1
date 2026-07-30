@@ -1925,17 +1925,67 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 FIX DEFINITIVO: Usamos SELECT * para evitar cualquier error de columnas inexistentes
+                    # Integración de la jerarquía topológica (bottom-up) mediante ST_Union
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
+                        
                     elif "cuencas" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM cuencas"
+                        
+                    elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
+                        # Agrupa las geometrías municipales a nivel de departamento
+                        q_geo = """
+                            SELECT depto_nom AS "Territorio_Temp", 
+                                   ST_Union(geometry) AS geometry 
+                            FROM municipios 
+                            GROUP BY depto_nom
+                        """
+                        
+                    elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
+                        # Agrupa las geometrías municipales a nivel de macroregión (ej. Amazonía)
+                        q_geo = """
+                            SELECT region AS "Territorio_Temp", 
+                                   ST_Union(geometry) AS geometry 
+                            FROM municipios 
+                            GROUP BY region
+                        """
+                        
+                    elif "subregiones" in escala_sel.lower():
+                        # Agrupa a nivel de subregión (incluye padre para evitar duplicados subregionales)
+                        q_geo = """
+                            SELECT subregion AS "Territorio_Temp", depto_nom AS "Padre_Temp",
+                                   ST_Union(geometry) AS geometry 
+                            FROM municipios 
+                            GROUP BY subregion, depto_nom
+                        """
+                        
+                    elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
+                        # Agrupa las geometrías por jurisdicción de la CAR
+                        q_geo = """
+                            SELECT car AS "Territorio_Temp", 
+                                   ST_Union(geometry) AS geometry 
+                            FROM municipios 
+                            GROUP BY car
+                        """
+                        
                     else: 
-                        q_geo = "SELECT * FROM municipios"
+                        # Escala municipal pura: Implementa tu filosofía de código único
+                        # Nota: Si en PostGIS ya tienes esta columna materializada (ej. 'codigo_unico'), 
+                        # simplemente usa: SELECT codigo_unico AS "Territorio_Temp", geometry FROM municipios
+                        q_geo = """
+                            SELECT (depto_nom || '_' || region || '_' || car || '_' || municipio) AS "Territorio_Temp", 
+                                   geometry 
+                            FROM municipios
+                        """
                     
+                    # Sincronización del ID tabular con el resultado de la consulta espacial
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
-                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
+                        else (
+                            normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) 
+                            if str(row['Padre']).strip() 
+                            else normalizar_texto(row['Territorio'])
+                        ), 
                         axis=1
                     )
                     
