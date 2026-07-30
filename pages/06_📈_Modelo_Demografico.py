@@ -1753,6 +1753,7 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     from sqlalchemy import text
     from modules.db_manager import get_engine
     import pandas as pd
+    from modules.utils import normalizar_texto
     
     engine_geo = get_engine()
     gdf = cargar_capa_espacial_cache(text(q_geo_str), engine_geo, geom_col="geometry")
@@ -1760,30 +1761,55 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     if gdf.empty: return gdf
     
     def armar_id_geo(row):
-        if "cuencas" in escala.lower():
-            cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
-            for c in cols_posibles:
-                if c in row and pd.notnull(row[c]):
-                    val_norm = normalizar_texto(str(row[c]).strip())
-                    if val_norm in territorios_objetivo_tuple: return val_norm
-            val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "Cuenca Sin Nombre")
-            if "-" in val_terr: val_terr = val_terr.split("-")[-1]
-            return normalizar_texto(val_terr)
+        escala_lower = escala.lower()
+        if "cuencas" in escala_lower:
+            # 🚀 LÓGICA IDEAM: Evaluamos la jerarquía para que cada micro-polígono
+            # sepa a qué cuenca mayor pertenece y adquiera la Llave Maestra.
+            niveles_hidro = [
+                ('nom_nss3', 'nss3'), ('nom_nss2', 'nss2'), ('nom_nss1', 'nss1'),
+                ('nom_szh', 'szh'), ('nomzh', 'zh'), ('nomah', 'ah'),
+                ('NOM_NSS3', 'NSS3'), ('NOM_NSS2', 'NSS2'), ('NOM_NSS1', 'NSS1'),
+                ('NOM_SZH', 'SZH'), ('NOMZH', 'ZH'), ('NOMAH', 'AH')
+            ]
             
-        elif "veredal" in escala.lower():
+            for col_nom, col_cod in niveles_hidro:
+                if col_nom in row and col_cod in row and pd.notnull(row[col_nom]) and pd.notnull(row[col_cod]):
+                    nom_str = str(row[col_nom]).strip()
+                    if nom_str in ["", "None", "nan"]: continue
+                    
+                    # 1. Limpiamos el código DANE/IDEAM (evitando decimales .0)
+                    try: cod_limpio = str(int(float(row[col_cod])))
+                    except: cod_limpio = str(row[col_cod]).strip()
+                    
+                    # 2. Forjamos la Llave Maestra exacta ("Nombre - (Código)")
+                    llave_maestra = f"{nom_str} - ({cod_limpio})"
+                    val_norm = normalizar_texto(llave_maestra)
+                    
+                    # 3. Si coincide con la búsqueda del panel, marcamos el polígono
+                    if val_norm in territorios_objetivo_tuple: 
+                        return val_norm
+                        
+            return None # Descarta el polígono si no pertenece a la cuenca buscada
+            
+        elif "veredal" in escala_lower:
             val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
             val_padre = str(row.get('NOMB_MPIO', row.get('nomb_mpio', row.get('MPIO_CNMBR', ''))))
             return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
             
         else:
-            # 🚀 Usa los alias exactos que definimos en las consultas SQL
+            # 🚀 Escalas Administrativas: Usa los alias exactos de SQL
             terr = str(row.get('Territorio_Temp', ''))
-            padre = str(row.get('Padre_Temp', 'colombia' if 'nacional' in escala.lower() or 'departamental' in escala.lower() or 'regional' in escala.lower() else ''))
+            padre = str(row.get('Padre_Temp', 'colombia' if 'nacional' in escala_lower or 'departamental' in escala_lower or 'regional' in escala_lower else ''))
             return normalizar_texto(terr) + "_" + normalizar_texto(padre)
             
     gdf['MATCH_ID'] = gdf.apply(armar_id_geo, axis=1)
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_objetivo_tuple)].copy()
     
+    # 🚀 FIX CRÍTICO: Disolver (fusionar) las geometrías agrupadas por su MATCH_ID
+    # Esto une todas las microcuencas (NSS3) en el polígono mayor (NSS1)
+    if not gdf_filtrado.empty and len(gdf_filtrado) > 0:
+        gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
+        
     return gdf_filtrado
     
 # ==========================================
