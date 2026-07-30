@@ -935,7 +935,7 @@ def main():
                             from modules.db_manager import get_engine
                             eng = get_engine()
                             # Leemos la tabla v2 que acabas de subir
-                            gdf_municipios = cargar_capa_espacial_cache("SELECT * FROM municipios_v2", eng, geom_col="geometry")
+                            gdf_municipios = cargar_capa_espacial_cache("SELECT * FROM municipios", eng, geom_col="geometry")
                             
                             # Forzar sistema de coordenadas para Folium
                             if gdf_municipios.crs is None:
