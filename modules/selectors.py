@@ -363,12 +363,16 @@ def cargar_atributos_cuencas():
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_atributos_municipios():
     import pandas as pd
-    from sqlalchemy import text # 🚀 EL ESCUDO FALTANTE
+    from sqlalchemy import text
+    from modules import db_manager 
+    
     engine = db_manager.get_engine()
     try:
+        # 🚀 FIX: Consultamos las columnas estandarizadas que sabemos que existen
         with engine.connect() as conn:
-            return pd.read_sql(text("SELECT mpio_ccdgo, mpio_cdpmp, mpio_cnmbr, dane FROM municipios"), conn)
-    except:
+            return pd.read_sql(text("SELECT id_municipio, nombre_municipio, depto_nom FROM municipios"), conn)
+    except Exception as e:
+        # Respaldo por si hay algún fallo temporal de lectura
         try:
             with engine.connect() as conn:
                 return pd.read_sql(text("SELECT * FROM municipios"), conn)
@@ -637,26 +641,30 @@ def render_selector_espacial(modo_firma="clasica"):
         # --- C. POR MUNICIPIO ---
         elif modo == "Por Municipio":
             df_mun = cargar_atributos_municipios()
-            col_nombre = 'mpio_cnmbr' if 'mpio_cnmbr' in df_mun.columns else 'MPIO_CNMBR'
+            # 🚀 FIX: Escudo dinámico para el nombre de la columna
+            col_nombre = next((c for c in df_mun.columns if c.lower() in ['nombre_municipio', 'mpio_cnmbr', 'municipio']), None)
             
-            # 🚀 FIX: Mapeo Inverso. Mostramos el nombre bonito en la UI, pero enviamos el texto ORIGINAL (con mayúsculas/sin tildes) al backend
-            mapeo_mun = {str(orig).strip(): str(orig).title() for orig in df_mun[col_nombre].dropna().unique()}
-            opciones_pretty = sorted(list(set(mapeo_mun.values())))
-            
-            sel_mpio_pretty = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + opciones_pretty)
-            if sel_mpio_pretty != "-- Seleccione --":
-                # Rescatamos la cadena de texto exacta de la base de datos
-                nombre_zona_orig = next((k for k, v in mapeo_mun.items() if v == sel_mpio_pretty), sel_mpio_pretty)
+            if col_nombre and not df_mun.empty:
+                mapeo_mun = {str(orig).strip(): str(orig).title() for orig in df_mun[col_nombre].dropna().unique()}
+                opciones_pretty = sorted(list(set(mapeo_mun.values())))
                 
-                nombre_zona = nombre_zona_orig
-                nivel_jerarquico = "Municipio" # 🚀 FIX: Restaurado de "Municipal" a "Municipio"
-                
-                mpio_limpio = nombre_zona_orig.replace("'", "''") 
-                q_mun = f"SELECT * FROM municipios WHERE {col_nombre} = '{mpio_limpio}' LIMIT 1"
-                
-                with engine.connect() as conn:
-                    gdf_zona = gpd.read_postgis(text(q_mun), conn, geom_col="geometry")
+                sel_mpio_pretty = st.selectbox("🏢 Municipio:", ["-- Seleccione --"] + opciones_pretty)
+                if sel_mpio_pretty != "-- Seleccione --":
+                    nombre_zona_orig = next((k for k, v in mapeo_mun.items() if v == sel_mpio_pretty), sel_mpio_pretty)
+                    nombre_zona = nombre_zona_orig
+                    nivel_jerarquico = "Municipio" 
+                    
+                    mpio_limpio = nombre_zona_orig.replace("'", "''") 
+                    # 🚀 FIX: Consulta adaptada a las columnas reales
+                    q_mun = f"SELECT * FROM municipios WHERE {col_nombre} = '{mpio_limpio}' LIMIT 1"
+                    
+                    with engine.connect() as conn:
+                        gdf_zona = gpd.read_postgis(text(q_mun), conn, geom_col="geometry")
+                else:
+                    nombre_zona, gdf_zona = "-- Seleccione --", None
+                    nivel_jerarquico = "NINGUNO"
             else:
+                st.error("⚠️ No se encontró la columna de nombres de municipio.")
                 nombre_zona, gdf_zona = "-- Seleccione --", None
                 nivel_jerarquico = "NINGUNO"
 
@@ -751,10 +759,13 @@ def render_selector_espacial(modo_firma="clasica"):
     renderizar_gestor_escenarios(nombre_zona)
 
     # ==========================================================
-    # 🚀 SOLUCIÓN ESTRUCTURAL: FIRMA EXPLÍCITA
+    # 🚀 SOLUCIÓN ESTRUCTURAL: FIRMA EXPLÍCITA PROTEGIDA
     # ==========================================================
     if modo_firma == "weap":
         return nombre_zona, gdf_zona, nivel_jerarquico, False
-    else:
-        # 🚀 FIX: Añadimos 'nivel_jerarquico' a la firma clásica
+    elif modo_firma == "demografia":
+        # 5 variables solo para la página demográfica
         return ids_estaciones, nombre_zona, altitud_ref, gdf_zona, nivel_jerarquico
+    else:
+        # 🚀 FIRMA CLÁSICA: 4 variables para no romper Aguas Subterráneas ni el resto de la app
+        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
